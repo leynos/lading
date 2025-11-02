@@ -121,14 +121,14 @@ def make_workspace(
 
 @pytest.fixture
 def publish_fixtures(
-    tmp_path: Path,
-    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
-    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_config: typ.Callable[..., config_module.LadingConfig],
-    make_dependency: typ.Callable[[str], WorkspaceDependency],
-    publish_options: publish.PublishOptions,
+    request: pytest.FixtureRequest, publish_options: publish.PublishOptions
 ) -> PublishFixtures:
     """Return the composite publish fixtures used across unit suites."""
+    tmp_path: Path = request.getfixturevalue("tmp_path")
+    make_crate = request.getfixturevalue("make_crate")
+    make_workspace = request.getfixturevalue("make_workspace")
+    make_config = request.getfixturevalue("make_config")
+    make_dependency = request.getfixturevalue("make_dependency")
     return PublishFixtures(
         tmp_path=tmp_path,
         make_crate=make_crate,

@@ -45,25 +45,18 @@ def _write_workspace_manifest(root: Path, members: tuple[str, ...]) -> Path:
     return manifest
 
 
-def _write_crate_manifest(
-    manifest_path: Path,
-    *,
-    name: str,
-    version: str,
-    extra_sections: str = "",
-    include_workspace_readme: bool = False,
-) -> None:
-    """Write a crate manifest with optional dependency sections."""
+def _write_crate_manifest(manifest_path: Path, spec: _CrateSpec) -> None:
+    """Write a crate manifest based on the provided crate specification."""
     header_lines = [
         "[package]",
-        f'name = "{name}"',
-        f'version = "{version}"',
+        f'name = "{spec.name}"',
+        f'version = "{spec.version}"',
     ]
-    if include_workspace_readme:
+    if spec.readme_workspace:
         header_lines.append("readme.workspace = true")
     content = "\n".join(header_lines) + "\n"
-    if extra_sections:
-        content += "\n" + textwrap.dedent(extra_sections).strip() + "\n"
+    if spec.manifest_extra:
+        content += "\n" + textwrap.dedent(spec.manifest_extra).strip() + "\n"
     manifest_path.write_text(content, encoding="utf-8")
 
 
@@ -86,13 +79,7 @@ def _build_workspace_with_internal_deps(
         crate_dir = root / "crates" / spec.name
         crate_dir.mkdir(parents=True, exist_ok=True)
         manifest_path = crate_dir / "Cargo.toml"
-        _write_crate_manifest(
-            manifest_path,
-            name=spec.name,
-            version=spec.version,
-            extra_sections=spec.manifest_extra,
-            include_workspace_readme=spec.readme_workspace,
-        )
+        _write_crate_manifest(manifest_path, spec)
         manifests[spec.name] = manifest_path
         crates.append(
             WorkspaceCrate(
