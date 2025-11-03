@@ -28,10 +28,24 @@ __all__ = [
 ]
 
 
-def make_config(**overrides: object) -> config_module.LadingConfig:
+def make_config(
+    *,
+    preflight_test_exclude: tuple[str, ...] | None = None,
+    preflight_unit_tests_only: bool | None = None,
+    **overrides: object,
+) -> config_module.LadingConfig:
     """Return a configuration tailored for publish command tests."""
     publish_table = config_module.PublishConfig(strip_patches="all", **overrides)
-    return config_module.LadingConfig(publish=publish_table)
+    preflight_config = config_module.PreflightConfig(
+        test_exclude=() if preflight_test_exclude is None else preflight_test_exclude,
+        unit_tests_only=False
+        if preflight_unit_tests_only is None
+        else preflight_unit_tests_only,
+    )
+    return config_module.LadingConfig(
+        publish=publish_table,
+        preflight=preflight_config,
+    )
 
 
 def make_crate(

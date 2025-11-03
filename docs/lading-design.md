@@ -408,6 +408,16 @@ names are listed before returning the user-specified order.
     `cargo::<name>` so that behavioural tests can record expectations without
     interfering with the `cargo metadata` stub used elsewhere.
 
+    The configuration layer exposes a `[preflight]` table so workspaces can
+    selectively skip crates during the `cargo test` pre-flight run. Entries in
+    `preflight.test_exclude` translate directly into `--exclude <crate>` flags
+    passed to the cargo invocation, letting release pipelines avoid expensive
+    cucumber suites or other integration-heavy members while still validating
+    the remaining crates. Setting `preflight.unit_tests_only = true` narrows the
+    command to library and binary targets by appending `--lib --bins`, providing
+    a lightweight alternative when integration and example tests are not
+    required for release validation.
+
 3. **Iterate and Publish:** For each crate in the determined order:
 
     - **Patch Handling (per-crate)**: If strip_patches is "per-crate" (or is

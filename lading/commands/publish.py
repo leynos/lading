@@ -105,6 +105,15 @@ class PublishPreflightError(RuntimeError):
     """Raised when required pre-publication checks fail."""
 
 
+@dc.dataclass(frozen=True, slots=True)
+class _CargoPreflightOptions:
+    """Options controlling a cargo pre-flight invocation."""
+
+    arguments: tuple[str, ...] = ("--workspace", "--all-targets")
+    test_excludes: tuple[str, ...] = ()
+    unit_tests_only: bool = False
+
+
 def _categorize_crates(
     workspace_crates: typ.Sequence[WorkspaceCrate],
     exclusion_set: set[str],
@@ -581,6 +590,7 @@ def run(
     _run_preflight_checks(
         root_path,
         allow_dirty=effective_options.allow_dirty,
+        configuration=active_configuration,
         runner=command_runner,
     )
     plan = plan_publication(
@@ -598,10 +608,12 @@ def _run_preflight_checks(
     workspace_root: Path,
     *,
     allow_dirty: bool,
+    configuration: LadingConfig | None = None,
     runner: _CommandRunner | None = None,
 ) -> None:
     """Execute publish pre-flight checks for ``workspace_root``."""
     command_runner = runner or _invoke
+    active_configuration = _ensure_configuration(configuration, workspace_root)
     _verify_clean_working_tree(
         workspace_root, allow_dirty=allow_dirty, runner=command_runner
     )
@@ -614,10 +626,20 @@ def _run_preflight_checks(
             f"--target-dir={target_path}",
         )
         _run_cargo_preflight(
-            workspace_root, "check", runner=command_runner, extra_args=extra_args
+            workspace_root,
+            "check",
+            runner=command_runner,
+            options=_CargoPreflightOptions(arguments=extra_args),
         )
         _run_cargo_preflight(
-            workspace_root, "test", runner=command_runner, extra_args=extra_args
+            workspace_root,
+            "test",
+            runner=command_runner,
+            options=_CargoPreflightOptions(
+                arguments=extra_args,
+                test_excludes=active_configuration.preflight.test_exclude,
+                unit_tests_only=active_configuration.preflight.unit_tests_only,
+            ),
         )
 
 
@@ -655,20 +677,36 @@ def _run_cargo_preflight(
     subcommand: typ.Literal["check", "test"],
     *,
     runner: _CommandRunner,
-    extra_args: tuple[str, ...] | None = None,
+    options: _CargoPreflightOptions | None = None,
 ) -> None:
     """Run ``cargo <subcommand>`` inside ``workspace_root``."""
-    arguments = extra_args or ("--workspace", "--all-targets")
+    effective_options = _CargoPreflightOptions() if options is None else options
+    arguments = list(effective_options.arguments)
+    if subcommand == "test":
+        if effective_options.unit_tests_only:
+            arguments.extend(("--lib", "--bins"))
+        for crate in effective_options.test_excludes:
+            crate_name = crate.strip()
+            if crate_name:
+                arguments.extend(("--exclude", crate_name))
     exit_code, stdout, stderr = runner(
         ("cargo", subcommand, *arguments),
         cwd=workspace_root,
     )
     if exit_code != 0:
-        detail = (stderr or stdout).strip()
-        message = f"Pre-flight cargo {subcommand} failed with exit code {exit_code}"
-        if detail:
-            message = f"{message}: {detail}"
+        message = _build_cargo_error_message(subcommand, exit_code, stdout, stderr)
         raise PublishPreflightError(message)
+
+
+def _build_cargo_error_message(
+    subcommand: str, exit_code: int, stdout: str, stderr: str
+) -> str:
+    """Return a consistent failure message for cargo pre-flight commands."""
+    message = f"Pre-flight cargo {subcommand} failed with exit code {exit_code}"
+    detail = (stderr or stdout).strip()
+    if detail:
+        message = f"{message}: {detail}"
+    return message
 
 
 def _invoke(

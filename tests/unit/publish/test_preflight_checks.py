@@ -99,6 +99,52 @@ def test_run_cargo_preflight_raises_on_failure(
     assert "boom" in message
 
 
+def test_run_cargo_preflight_honours_test_excludes(tmp_path: Path) -> None:
+    """Configured test exclusions append ``--exclude`` arguments."""
+    recorded: list[tuple[str, ...]] = []
+
+    def recording_runner(
+        command: tuple[str, ...], *, cwd: Path | None = None
+    ) -> tuple[int, str, str]:
+        recorded.append(command)
+        return 0, "", ""
+
+    publish._run_cargo_preflight(
+        tmp_path,
+        "test",
+        runner=recording_runner,
+        options=publish._CargoPreflightOptions(test_excludes=(" alpha ", "", "beta")),
+    )
+
+    command = recorded.pop()
+    assert command[:2] == ("cargo", "test")
+    assert command[2:4] == ("--workspace", "--all-targets")
+    assert command[4:] == ("--exclude", "alpha", "--exclude", "beta")
+
+
+def test_run_cargo_preflight_honours_unit_tests_only(tmp_path: Path) -> None:
+    """The unit test flag narrows cargo test targets to lib and bins."""
+    recorded: list[tuple[str, ...]] = []
+
+    def recording_runner(
+        command: tuple[str, ...], *, cwd: Path | None = None
+    ) -> tuple[int, str, str]:
+        recorded.append(command)
+        return 0, "", ""
+
+    publish._run_cargo_preflight(
+        tmp_path,
+        "test",
+        runner=recording_runner,
+        options=publish._CargoPreflightOptions(unit_tests_only=True),
+    )
+
+    command = recorded.pop()
+    assert command[:2] == ("cargo", "test")
+    assert command[2:4] == ("--workspace", "--all-targets")
+    assert command[4:6] == ("--lib", "--bins")
+
+
 def test_verify_clean_working_tree_detects_dirty_state(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

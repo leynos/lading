@@ -102,6 +102,51 @@ def given_publish_exclude_contains(
     _add_exclude_to_config(workspace_directory, "publish", crate_name)
 
 
+@given(parsers.parse('preflight.test_exclude contains "{crate_name}"'))
+def given_preflight_test_exclude_contains(
+    workspace_directory: Path,
+    crate_name: str,
+) -> None:
+    """Ensure ``crate_name`` appears in ``preflight.test_exclude``."""
+    config_path = workspace_directory / config_module.CONFIG_FILENAME
+    if config_path.exists():
+        doc = parse_toml(config_path.read_text(encoding="utf-8"))
+    else:
+        doc = make_document()
+    preflight_table = doc.get("preflight")
+    if preflight_table is None:
+        preflight_table = table()
+        doc["preflight"] = preflight_table
+    raw_excludes = preflight_table.get("test_exclude")
+    if raw_excludes is None:
+        excludes_array = array()
+        preflight_table["test_exclude"] = excludes_array
+    elif hasattr(raw_excludes, "append"):
+        excludes_array = raw_excludes
+    else:  # pragma: no cover - defensive guard for unexpected config edits
+        message = "preflight.test_exclude must be an array"
+        raise AssertionError(message)
+    if crate_name not in excludes_array:
+        excludes_array.append(crate_name)
+    config_path.write_text(doc.as_string(), encoding="utf-8")
+
+
+@given("preflight.unit_tests_only is true")
+def given_preflight_unit_tests_only_true(workspace_directory: Path) -> None:
+    """Enable unit-tests-only mode for publish pre-flight checks."""
+    config_path = workspace_directory / config_module.CONFIG_FILENAME
+    if config_path.exists():
+        doc = parse_toml(config_path.read_text(encoding="utf-8"))
+    else:
+        doc = make_document()
+    preflight_table = doc.get("preflight")
+    if preflight_table is None:
+        preflight_table = table()
+        doc["preflight"] = preflight_table
+    preflight_table["unit_tests_only"] = True
+    config_path.write_text(doc.as_string(), encoding="utf-8")
+
+
 @given(parsers.parse('publish.order is "{order}"'))
 def given_publish_order_is(workspace_directory: Path, order: str) -> None:
     """Set the publish order configuration to ``order``."""

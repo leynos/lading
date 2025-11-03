@@ -219,6 +219,85 @@ def test_run_executes_preflight_checks_in_workspace(
         assert any(arg.startswith("--target-dir=") for arg in command[4:])
 
 
+def test_run_includes_preflight_test_excludes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Configured test exclusions propagate to cargo test invocations."""
+    monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
+    root = tmp_path / "workspace"
+    root.mkdir()
+    workspace = make_workspace(root, make_crate(root, "alpha"))
+    configuration = make_config(preflight_test_exclude=("alpha", "beta"))
+
+    calls: list[tuple[tuple[str, ...], Path | None]] = []
+
+    def recording_invoke(
+        command: typ.Sequence[str], *, cwd: Path | None = None
+    ) -> tuple[int, str, str]:
+        calls.append((tuple(command), cwd))
+        return 0, "", ""
+
+    monkeypatch.setattr(publish, "_invoke", recording_invoke)
+
+    publish.run(root, configuration, workspace)
+
+    test_call = next(
+        command
+        for command in calls
+        if command[0][0] == "cargo" and command[0][1] == "test"
+    )
+
+    _, cwd = test_call
+    assert cwd == root
+    args = test_call[0]
+    assert args[2] == "--workspace"
+    assert args[3] == "--all-targets"
+    trailing = args[4:]
+    assert any(part.startswith("--target-dir=") for part in trailing)
+    assert trailing[-4:] == ("--exclude", "alpha", "--exclude", "beta")
+
+
+def test_run_honours_preflight_unit_tests_only(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Unit-test-only preflight mode narrows cargo test targets."""
+    monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
+    root = tmp_path / "workspace"
+    root.mkdir()
+    workspace = make_workspace(root, make_crate(root, "alpha"))
+    configuration = make_config(preflight_unit_tests_only=True)
+
+    calls: list[tuple[tuple[str, ...], Path | None]] = []
+
+    def recording_invoke(
+        command: typ.Sequence[str], *, cwd: Path | None = None
+    ) -> tuple[int, str, str]:
+        calls.append((tuple(command), cwd))
+        return 0, "", ""
+
+    monkeypatch.setattr(publish, "_invoke", recording_invoke)
+
+    publish.run(root, configuration, workspace)
+
+    test_call = next(
+        command
+        for command in calls
+        if command[0][0] == "cargo" and command[0][1] == "test"
+    )
+
+    _, cwd = test_call
+    assert cwd == root
+    args = test_call[0]
+    assert args[2] == "--workspace"
+    assert args[3] == "--all-targets"
+    assert any(part.startswith("--target-dir=") for part in args[4:])
+    assert "--lib" in args
+    assert "--bins" in args
+    lib_index = args.index("--lib")
+    bins_index = args.index("--bins")
+    assert bins_index == lib_index + 1
+
+
 @pytest.mark.parametrize(
     ("failing_subcommand", "expected_message"),
     [
