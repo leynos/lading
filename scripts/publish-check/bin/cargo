@@ -24,7 +24,7 @@ from typing import NoReturn, Sequence
 
 ALL_FEATURES_FLAG = "--all-features"
 ARGUMENT_SEPARATOR = "--"
-TARGET_SUBCOMMANDS = {"check", "test"}
+TARGET_SUBCOMMANDS = {"bench", "check", "clippy", "test"}
 
 # Options that may appear before a subcommand and consume the following token as
 # their value when expressed without ``=``.
@@ -71,10 +71,7 @@ def _find_target_subcommand_index(args: Sequence[str]) -> int | None:
         if argument.startswith("-"):
             option_key = argument.split("=", maxsplit=1)[0]
             if option_key in _OPTIONS_CONSUMING_VALUE:
-                if "=" not in argument and index + 1 < len(args):
-                    index += 2
-                else:
-                    index += 1
+                index += 2 if "=" not in argument and index + 1 < len(args) else 1
                 continue
             if any(
                 argument.startswith(short_option)

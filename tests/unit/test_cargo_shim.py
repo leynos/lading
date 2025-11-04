@@ -5,6 +5,8 @@ from importlib.machinery import SourceFileLoader
 from pathlib import Path
 from types import ModuleType
 
+import pytest
+
 SCRIPT_PATH = Path(__file__).resolve().parents[2] / "scripts" / "publish-check" / "bin" / "cargo"
 
 
@@ -29,6 +31,18 @@ def test_appends_flag_when_no_separator() -> None:
     shim = load_cargo_shim()
     result = shim.rewrite_args(["check"])
     assert result == ["check", "--all-features"]
+
+
+def test_leaves_empty_arguments_unchanged() -> None:
+    shim = load_cargo_shim()
+    result = shim.rewrite_args([])
+    assert result == []
+
+
+def test_leaves_only_separator_unchanged() -> None:
+    shim = load_cargo_shim()
+    result = shim.rewrite_args(["--"])
+    assert result == ["--"]
 
 
 def test_preserves_existing_flag_before_separator() -> None:
@@ -63,3 +77,10 @@ def test_handles_toolchain_and_global_flags() -> None:
         "test",
         "--all-features",
     ]
+
+
+@pytest.mark.parametrize("subcommand", ["bench", "clippy"])
+def test_inserts_flag_for_additional_subcommands(subcommand: str) -> None:
+    shim = load_cargo_shim()
+    result = shim.rewrite_args([subcommand])
+    assert result == [subcommand, "--all-features"]
