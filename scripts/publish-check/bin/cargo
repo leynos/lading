@@ -1,0 +1,150 @@
+#!/usr/bin/env -S uv run python
+# /// script
+# requires-python = ">=3.13"
+# ///
+"""Cargo wrapper used by publish-check workflows.
+
+The shim ensures ``cargo check`` and ``cargo test`` commands always run with
+``--all-features`` enabled. Lading forwards additional test arguments after a
+``--`` separator (for example, ``cargo test -- --test-threads 1``). Cargo stops
+processing flags after the separator, so naively appending ``--all-features`` to
+``argv`` forwards the flag to the test binary instead of Cargo.
+
+To keep the behaviour consistent the wrapper injects ``--all-features`` before
+any ``--`` separator and deduplicates stray occurrences that would otherwise be
+ignored by Cargo.
+"""
+
+from __future__ import annotations
+
+import os
+import shutil
+import sys
+from typing import NoReturn, Sequence
+
+ALL_FEATURES_FLAG = "--all-features"
+ARGUMENT_SEPARATOR = "--"
+TARGET_SUBCOMMANDS = {"check", "test"}
+
+# Options that may appear before a subcommand and consume the following token as
+# their value when expressed without ``=``.
+_OPTIONS_CONSUMING_VALUE = {
+    "--config",
+    "--color",
+    "--manifest-path",
+    "--message-format",
+    "--profile",
+    "--target",
+    "--timings",
+    "--jobs",
+    "--unit-graph",
+    "--features",
+    "--exclude",
+    "--future-incompat-report",
+    "--filter-platform",
+    "--out-dir",
+}
+
+# Short options that behave similarly. These may bundle the value into the flag
+# (for example ``-j4``) or provide it as the next argument (``-j 4``).
+_SHORT_OPTIONS_CONSUMING_VALUE = {"-F", "-Z", "-j"}
+
+
+def _find_target_subcommand_index(args: Sequence[str]) -> int | None:
+    """Return the index of the targeted cargo subcommand if present."""
+
+    index = 0
+    while index < len(args):
+        argument = args[index]
+
+        if index == 0 and argument.startswith("+"):
+            # Leading toolchain specifier (for example ``+nightly``).
+            index += 1
+            continue
+
+        if argument == ARGUMENT_SEPARATOR:
+            return None
+
+        if argument in TARGET_SUBCOMMANDS:
+            return index
+
+        if argument.startswith("-"):
+            option_key = argument.split("=", maxsplit=1)[0]
+            if option_key in _OPTIONS_CONSUMING_VALUE:
+                if "=" not in argument and index + 1 < len(args):
+                    index += 2
+                else:
+                    index += 1
+                continue
+            if any(
+                argument.startswith(short_option)
+                for short_option in _SHORT_OPTIONS_CONSUMING_VALUE
+            ):
+                # "-j4" embeds the value whereas "-j" stores it separately.
+                if argument in _SHORT_OPTIONS_CONSUMING_VALUE and index + 1 < len(args):
+                    index += 2
+                else:
+                    index += 1
+                continue
+            index += 1
+            continue
+
+        # First positional argument that is not one of our targets means we are
+        # dealing with another subcommand (for example ``cargo run``).
+        return None
+
+    return None
+
+
+def _insertion_index(args: Sequence[str], start_index: int) -> int:
+    """Return the index before which ``--all-features`` should be inserted."""
+
+    tail = list(args[start_index + 1 :])
+    try:
+        separator_offset = tail.index(ARGUMENT_SEPARATOR)
+    except ValueError:
+        return len(args)
+    return start_index + 1 + separator_offset
+
+
+def rewrite_args(argv: Sequence[str]) -> list[str]:
+    """Return ``argv`` with ``--all-features`` inserted for targeted commands."""
+
+    args = list(argv)
+    subcommand_index = _find_target_subcommand_index(args)
+    if subcommand_index is None:
+        return args
+
+    insert_at = _insertion_index(args, subcommand_index)
+    pre_separator = args[subcommand_index + 1 : insert_at]
+    if ALL_FEATURES_FLAG in pre_separator:
+        return args
+
+    before_separator = args[:insert_at]
+    after_separator = list(args[insert_at:])
+    try:
+        relocated_index = after_separator.index(ALL_FEATURES_FLAG)
+    except ValueError:
+        relocated_index = None
+    if relocated_index is not None:
+        after_separator.pop(relocated_index)
+    return [*before_separator, ALL_FEATURES_FLAG, *after_separator]
+
+
+def main(argv: Sequence[str] | None = None) -> NoReturn:
+    """Execute cargo with rewritten arguments."""
+
+    if argv is None:
+        argv = sys.argv[1:]
+
+    rewritten_args = rewrite_args(argv)
+    cargo = shutil.which("cargo")
+    if cargo is None:
+        message = "cargo executable not found on PATH"
+        raise SystemExit(message)
+
+    os.execvp(cargo, ["cargo", *rewritten_args])
+
+
+if __name__ == "__main__":  # pragma: no cover - CLI entry point
+    main()
