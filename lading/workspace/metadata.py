@@ -91,7 +91,7 @@ def _ensure_command() -> BoundCommand | _CmdMoxCommand:
         cargo = local[_CARGO_PROGRAM]
     except CommandNotFound as exc:
         raise CargoExecutableNotFoundError from exc
-    return cargo[list(_CARGO_METADATA_ARGS)]
+    return cargo[_CARGO_METADATA_ARGS]
 
 
 def _coerce_text(value: str | bytes) -> str:
@@ -107,7 +107,8 @@ def load_cargo_metadata(
     """Execute ``cargo metadata`` and parse the resulting JSON payload."""
     command = _ensure_command()
     root_path = normalise_workspace_root(workspace_root)
-    log_command_invocation(LOGGER, _CARGO_METADATA_COMMAND, root_path)
+    invocation = getattr(command, "argv", _CARGO_METADATA_COMMAND)
+    log_command_invocation(LOGGER, invocation, root_path)
     exit_code, stdout, stderr = command.run(retcode=None, cwd=str(root_path))
     stdout_text = _coerce_text(stdout)
     stderr_text = _coerce_text(stderr)
@@ -126,6 +127,11 @@ class _CmdMoxCommand:
     """Proxy ``cargo metadata`` through :mod:`cmd_mox`'s IPC server."""
 
     _ARGS = _CARGO_METADATA_ARGS
+
+    @property
+    def argv(self) -> tuple[str, ...]:
+        """Return the command line routed through cmd-mox."""
+        return (_CARGO_PROGRAM, *self._ARGS)
 
     def run(
         self,

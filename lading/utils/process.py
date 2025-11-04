@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import shlex
 import typing as typ
 
@@ -13,17 +14,17 @@ else:  # pragma: no cover - type-only imports
     PathType = typ.Any
 
 
-def _command_as_tuple(command: typ.Sequence[str]) -> tuple[str, ...]:
-    """Return ``command`` as an immutable tuple of strings."""
-    return tuple(command)
+_LOGGER = logging.getLogger(__name__)
 
 
 def format_command(command: typ.Sequence[str]) -> str:
     """Return a shell-style representation of ``command`` for logging."""
-    command_tuple = _command_as_tuple(command)
-    if not command_tuple:
+    if not command:
+        _LOGGER.warning(
+            "format_command received an empty command sequence; this is likely a bug."
+        )
         return ""
-    return shlex.join(command_tuple)
+    return shlex.join(command)
 
 
 def log_command_invocation(
@@ -32,7 +33,7 @@ def log_command_invocation(
     cwd: PathType | None,
 ) -> None:
     """Log ``command`` with optional ``cwd`` using ``logger``."""
-    rendered = format_command(command)
+    rendered = format_command(command) or "<empty command>"
     if cwd is None:
         logger.info("Running external command: %s", rendered)
     else:

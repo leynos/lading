@@ -68,6 +68,43 @@ def test_load_cargo_metadata_handles_stdout_variants(
     assert result == _METADATA_PAYLOAD
 
 
+def test_load_cargo_metadata_logs_invocation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Ensure the command invocation is logged with resolved arguments."""
+
+    class _Command:
+        argv = (
+            "cargo",
+            "metadata",
+            "--format-version",
+            "1",
+            "--locked",
+        )
+
+        def run(
+            self,
+            *,
+            retcode: int | tuple[int, ...] | None = None,
+            cwd: str | Path | None = None,
+        ) -> tuple[int, str, str]:
+            return 0, json.dumps(_METADATA_PAYLOAD), ""
+
+    monkeypatch.setattr(metadata_module, "_ensure_command", lambda: _Command())
+    monkeypatch.delenv(metadata_module.CMD_MOX_STUB_ENV_VAR, raising=False)
+    caplog.set_level(logging.INFO, logger="lading.workspace.metadata")
+
+    result = load_cargo_metadata(tmp_path)
+
+    assert result == _METADATA_PAYLOAD
+    assert (
+        "Running external command: cargo metadata --format-version 1 --locked"
+        in caplog.text
+    )
+
+
 def test_load_cargo_metadata_missing_executable(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
