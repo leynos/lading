@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import atexit
 import dataclasses as dc
+import logging
 import os
 import shutil
 import tempfile
@@ -12,6 +13,7 @@ from pathlib import Path
 
 from lading import config as config_module
 from lading.utils.path import normalise_workspace_root
+from lading.utils.process import log_command_invocation
 from lading.workspace import WorkspaceDependencyCycleError
 from lading.workspace import metadata as metadata_module
 
@@ -21,6 +23,8 @@ if typ.TYPE_CHECKING:
 
 from plumbum import local
 from plumbum.commands.processes import CommandNotFound
+
+LOGGER = logging.getLogger(__name__)
 
 
 class PublishPlanError(RuntimeError):
@@ -675,6 +679,7 @@ def _invoke(
     command: typ.Sequence[str], *, cwd: Path | None = None
 ) -> tuple[int, str, str]:
     """Execute ``command`` and return the exit status and decoded streams."""
+    log_command_invocation(LOGGER, command, cwd)
     if _should_use_cmd_mox_stub():
         return _invoke_via_cmd_mox(command, cwd)
 

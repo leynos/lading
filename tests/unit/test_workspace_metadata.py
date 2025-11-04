@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses as dc
 import json
+import logging
 import textwrap
 import typing as typ
 
@@ -316,3 +317,37 @@ def test_load_workspace_invokes_metadata(
 
     assert isinstance(graph, WorkspaceGraph)
     assert graph.crates[0].name == "crate"
+
+
+def test_load_cargo_metadata_logs_command(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """``load_cargo_metadata`` should log the command it executes."""
+    payload = {
+        "packages": [],
+        "workspace_root": str(tmp_path),
+        "workspace_members": [],
+    }
+
+    class _FakeCommand:
+        def run(
+            self,
+            *,
+            retcode: int | tuple[int, ...] | None = None,
+            cwd: object | None = None,
+        ) -> tuple[int, str, str]:
+            return 0, json.dumps(payload), ""
+
+    monkeypatch.setattr(metadata_module, "_ensure_command", lambda: _FakeCommand())
+
+    caplog.set_level(logging.INFO, logger="lading.workspace.metadata")
+    result = load_cargo_metadata(tmp_path)
+
+    assert result == payload
+    expected = (
+        "Running external command: cargo metadata --format-version 1 "
+        f"(cwd={tmp_path.resolve()})"
+    )
+    assert expected in caplog.messages
