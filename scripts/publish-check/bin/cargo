@@ -35,6 +35,7 @@ _OPTIONS_CONSUMING_VALUE = {
     "--message-format",
     "--profile",
     "--target",
+    "--target-dir",
     "--timings",
     "--jobs",
     "--unit-graph",

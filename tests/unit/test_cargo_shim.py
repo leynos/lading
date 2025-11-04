@@ -1,13 +1,22 @@
+"""Unit tests for the publish-check cargo shim."""
+
+# ruff: noqa: D103
+
 from __future__ import annotations
 
 import importlib.util
+import typing as typ
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
-from types import ModuleType
 
 import pytest
 
-SCRIPT_PATH = Path(__file__).resolve().parents[2] / "scripts" / "publish-check" / "bin" / "cargo"
+if typ.TYPE_CHECKING:
+    from types import ModuleType
+
+SCRIPT_PATH = (
+    Path(__file__).resolve().parents[2] / "scripts" / "publish-check" / "bin" / "cargo"
+)
 
 
 def load_cargo_shim() -> ModuleType:
@@ -84,3 +93,18 @@ def test_inserts_flag_for_additional_subcommands(subcommand: str) -> None:
     shim = load_cargo_shim()
     result = shim.rewrite_args([subcommand])
     assert result == [subcommand, "--all-features"]
+
+
+@pytest.mark.parametrize(
+    "flag_and_value",
+    [
+        ("--target-dir", "ci-target"),
+        ("--config", "ci-config.toml"),
+    ],
+)
+def test_handles_global_flags_consuming_values(flag_and_value: tuple[str, str]) -> None:
+    shim = load_cargo_shim()
+    flag, value = flag_and_value
+    args = [flag, value, "test", "--", "--nocapture"]
+    result = shim.rewrite_args(args)
+    assert result == [flag, value, "test", "--all-features", "--", "--nocapture"]
