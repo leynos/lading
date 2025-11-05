@@ -231,9 +231,19 @@ def test_run_executes_preflight_checks_in_workspace(
         pytest.param((" alpha ", "beta", "alpha"), ("alpha", "beta"), id="trimmed"),
         pytest.param(("", " ", "\t"), (), id="blank_entries"),
         pytest.param(
+            (" \n", "\rbeta\t", "\talpha", "beta"),
+            ("alpha", "beta"),
+            id="whitespace_variants",
+        ),
+        pytest.param(
             ("gamma", "beta", "alpha"), ("alpha", "beta", "gamma"), id="unsorted"
         ),
         pytest.param(("beta", "beta", "beta"), ("beta",), id="deduplicated"),
+        pytest.param(
+            ("alpha", "alpha", " alpha ", "\talpha\t"),
+            ("alpha",),
+            id="duplicate_whitespace",
+        ),
         pytest.param(("alpha", "", "beta"), ("alpha", "beta"), id="mixed_blank"),
     ],
 )
