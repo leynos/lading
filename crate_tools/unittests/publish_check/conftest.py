@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import dataclasses as dc
 import importlib.util
+import io
 import sys
 import typing as typ
 from pathlib import Path
@@ -18,7 +19,7 @@ SCRIPTS_DIR = Path(__file__).resolve().parents[2]
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-RunCallable = typ.Callable[[list[str], int | None], tuple[int, str, str]]
+RunCallable = typ.Callable[[list[str]], tuple[int, str, str]]
 
 
 @dc.dataclass(frozen=True)
@@ -157,8 +158,13 @@ class FakeCargoInvocation:
         self, *, retcode: object | None, timeout: int | None
     ) -> tuple[int, str, str]:
         """Record an invocation and delegate to the configured callable."""
-        self._local.invocations.append((self._args, timeout))
-        return self._local.run_callable(self._args, timeout)
+        self._local.invocations.append(self._args)
+        return self._local.run_callable(self._args)
+
+    def popen(self, *_args: object, **_kwargs: object) -> FakeProcess:
+        """Return a ``FakeProcess`` that mimics streaming behaviour."""
+        self._local.invocations.append(self._args)
+        return FakeProcess(self._args, self._local.run_callable)
 
 
 class FakeCargo:
@@ -174,6 +180,32 @@ class FakeCargo:
         return FakeCargoInvocation(self._local, extras)
 
 
+class FakeProcess:
+    """Simulate a subprocess for cargo command tests."""
+
+    def __init__(self, args: list[str], run_callable: RunCallable) -> None:
+        """Populate stdout/stderr buffers using the provided callable."""
+        self.args = args
+        return_code, stdout, stderr = run_callable(args)
+        self._return_code = return_code
+        self.stdout = io.BufferedReader(_to_buffer(stdout))
+        self.stderr = io.BufferedReader(_to_buffer(stderr))
+
+    def wait(self, timeout: int | None = None) -> int:
+        """Return the pre-configured exit code immediately."""
+        return self._return_code
+
+    def kill(self) -> None:
+        """Simulate killing the underlying process."""
+        self._return_code = -9
+
+
+def _to_buffer(stream: str | bytes) -> io.BytesIO:
+    """Convert string or bytes into a BytesIO buffer."""
+    data = stream if isinstance(stream, bytes) else stream.encode("utf-8")
+    return io.BytesIO(data)
+
+
 class FakeLocal:
     """Mimic a fabric ``local`` helper for cargo orchestration tests."""
 
@@ -182,7 +214,7 @@ class FakeLocal:
         self.run_callable = run_callable
         self.cwd_calls: list[Path] = []
         self.env_calls: list[dict[str, str]] = []
-        self.invocations: list[tuple[list[str], int | None]] = []
+        self.invocations: list[list[str]] = []
 
     def __getitem__(self, command: str) -> FakeCargo:
         """Return a ``FakeCargo`` proxy for the ``cargo`` command."""

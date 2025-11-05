@@ -37,10 +37,12 @@ import logging
 import os
 import shlex
 import shutil
+import subprocess
 import sys
 import tempfile
+import threading
 import typing as typ
-from contextlib import ExitStack
+from contextlib import ExitStack, suppress
 from pathlib import Path
 from types import MappingProxyType
 
@@ -159,6 +161,108 @@ class CommandResult:
     stderr: str
 
 
+def _drain_stream(
+    stream: typ.IO[typ.Any],
+    sink: typ.TextIO,
+    buffer: list[str],
+) -> None:
+    """Forward ``stream`` contents into ``sink`` while caching them."""
+    read_chunk = getattr(stream, "read1", stream.read)
+    while True:
+        chunk = read_chunk(4096)
+        if not chunk:
+            break
+        if isinstance(chunk, bytes):
+            text = chunk.decode("utf-8", errors="replace")
+        else:
+            text = str(chunk)
+        buffer.append(text)
+        sink.write(text)
+        sink.flush()
+
+
+def _stream_process_output(
+    process: subprocess.Popen[bytes],
+    command: Command,
+    *,
+    timeout_secs: int,
+) -> CommandResult:
+    """Stream stdout/stderr from ``process`` while capturing their contents."""
+    threads, stdout_chunks, stderr_chunks = _start_stream_threads(process)
+    try:
+        return_code = process.wait(timeout=timeout_secs)
+    except subprocess.TimeoutExpired as error:
+        _handle_process_timeout(process, threads, command, error)
+
+    _wait_for_stream_threads(threads)
+    _close_process_streams(process)
+    return CommandResult(
+        command=tuple(command),
+        return_code=return_code,
+        stdout="".join(stdout_chunks),
+        stderr="".join(stderr_chunks),
+    )
+
+
+def _start_stream_threads(
+    process: subprocess.Popen[bytes],
+) -> tuple[list[threading.Thread], list[str], list[str]]:
+    """Start background threads that mirror process output to this console."""
+    stdout_chunks: list[str] = []
+    stderr_chunks: list[str] = []
+    threads: list[threading.Thread] = []
+    if process.stdout is not None:
+        threads.append(
+            threading.Thread(
+                target=_drain_stream,
+                args=(process.stdout, sys.stdout, stdout_chunks),
+                daemon=True,
+            )
+        )
+    if process.stderr is not None:
+        threads.append(
+            threading.Thread(
+                target=_drain_stream,
+                args=(process.stderr, sys.stderr, stderr_chunks),
+                daemon=True,
+            )
+        )
+    for thread in threads:
+        thread.start()
+    return threads, stdout_chunks, stderr_chunks
+
+
+def _wait_for_stream_threads(threads: list[threading.Thread]) -> None:
+    """Wait for any running stream mirrors to exit."""
+    for thread in threads:
+        thread.join()
+
+
+def _close_process_streams(process: subprocess.Popen[bytes]) -> None:
+    """Close stdout/stderr pipes after streaming completes."""
+    for stream in (process.stdout, process.stderr):
+        if stream is not None:
+            with suppress(Exception):
+                stream.close()
+
+
+def _handle_process_timeout(
+    process: subprocess.Popen[bytes],
+    threads: list[threading.Thread],
+    command: Command,
+    error: subprocess.TimeoutExpired,
+) -> None:
+    """Convert timeout errors into ``ProcessTimedOut`` for callers."""
+    process.kill()
+    with suppress(Exception):
+        process.wait()
+    for thread in threads:
+        thread.join(timeout=0.1)
+    _close_process_streams(process)
+    argv = list(getattr(process, "args", command))
+    raise ProcessTimedOut(str(error), argv) from error
+
+
 @dc.dataclass(frozen=True)
 class CargoCommandContext:
     """Metadata describing where and how to run a Cargo command."""
@@ -215,13 +319,24 @@ def _execute_cargo_command_with_timeout(
 ) -> CommandResult:
     """Run the Cargo command within the configured workspace context."""
     cargo_invocation = local[command[0]][command[1:]]
+    LOGGER.info(
+        "Running cargo command for %s: %s",
+        context.crate,
+        shlex.join(command),
+    )
     try:
         with ExitStack() as stack:
             stack.enter_context(local.cwd(context.crate_dir))
             stack.enter_context(local.env(**context.env_overrides))
-            return_code, stdout, stderr = cargo_invocation.run(
-                retcode=None,
-                timeout=context.timeout_secs,
+            process = cargo_invocation.popen(
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                bufsize=1,
+            )
+            result = _stream_process_output(
+                process,
+                command,
+                timeout_secs=context.timeout_secs,
             )
     except ProcessTimedOut as error:
         LOGGER.exception(
@@ -236,12 +351,7 @@ def _execute_cargo_command_with_timeout(
         )
         raise SystemExit(message) from error
 
-    return CommandResult(
-        command=tuple(command),
-        return_code=return_code,
-        stdout=stdout,
-        stderr=stderr,
-    )
+    return result
 
 
 def _handle_cargo_result(
