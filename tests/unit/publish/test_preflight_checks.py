@@ -8,7 +8,8 @@ import pytest
 
 from lading.commands import publish
 from lading.workspace import metadata as metadata_module
-from tests.unit.publish.conftest import ORIGINAL_PREFLIGHT, make_config
+
+from .conftest import ORIGINAL_PREFLIGHT, make_config
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
@@ -94,7 +95,10 @@ def test_run_cargo_preflight_raises_on_failure(
 
     with pytest.raises(publish.PublishPreflightError) as excinfo:
         publish._run_cargo_preflight(
-            tmp_path, "check", runner=failing_runner, extra_args=("--workspace",)
+            tmp_path,
+            "check",
+            runner=failing_runner,
+            options=publish._CargoPreflightOptions(extra_args=("--workspace",)),
         )
 
     message = str(excinfo.value)
@@ -116,8 +120,10 @@ def test_run_cargo_preflight_honours_test_excludes(tmp_path: Path) -> None:
         tmp_path,
         "test",
         runner=recording_runner,
-        extra_args=("--workspace", "--all-targets"),
-        test_excludes=(" alpha ", "", "beta"),
+        options=publish._CargoPreflightOptions(
+            extra_args=("--workspace", "--all-targets"),
+            test_excludes=(" alpha ", "", "beta"),
+        ),
     )
 
     command = recorded.pop()
@@ -140,8 +146,9 @@ def test_run_cargo_preflight_honours_unit_tests_only(tmp_path: Path) -> None:
         tmp_path,
         "test",
         runner=recording_runner,
-        extra_args=("--workspace", "--all-targets"),
-        unit_tests_only=True,
+        options=publish._CargoPreflightOptions(
+            extra_args=("--workspace", "--all-targets"), unit_tests_only=True
+        ),
     )
 
     command = recorded.pop()
@@ -165,15 +172,9 @@ def test_preflight_checks_remove_all_targets_for_unit_only(
         subcommand: str,
         *,
         runner: publish._CommandRunner,
-        extra_args: typ.Sequence[str],
-        test_excludes: typ.Sequence[str] = (),
-        unit_tests_only: bool = False,
+        options: publish._CargoPreflightOptions,
     ) -> None:
-        recorded[subcommand] = {
-            "extra_args": tuple(extra_args),
-            "test_excludes": tuple(test_excludes),
-            "unit_tests_only": unit_tests_only,
-        }
+        recorded[subcommand] = options
 
     monkeypatch.setattr(publish, "_run_cargo_preflight", recording_preflight)
 
@@ -184,15 +185,63 @@ def test_preflight_checks_remove_all_targets_for_unit_only(
     publish._run_preflight_checks(root, allow_dirty=False, configuration=configuration)
 
     assert set(recorded) == {"check", "test"}
-    check_args = recorded["check"]["extra_args"]
+    check_args = recorded["check"].extra_args
     assert "--all-targets" in check_args
 
     test_options = recorded["test"]
-    test_args = test_options["extra_args"]
+    test_args = test_options.extra_args
     assert "--all-targets" not in test_args
     assert "--workspace" in test_args
     assert any(arg.startswith("--target-dir=") for arg in test_args)
-    assert test_options["unit_tests_only"] is True
+    assert test_options.unit_tests_only is True
+
+
+def test_preflight_checks_support_special_target_dir(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Target directories with spaces/symbols propagate without quoting issues."""
+    monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
+    monkeypatch.setattr(
+        publish, "_verify_clean_working_tree", lambda *_args, **_kwargs: None
+    )
+    recorded: dict[str, tuple[str, ...]] = {}
+
+    def recording_preflight(
+        workspace_root: Path,
+        subcommand: str,
+        *,
+        runner: publish._CommandRunner,
+        options: publish._CargoPreflightOptions,
+    ) -> None:
+        recorded[subcommand] = tuple(options.extra_args)
+
+    monkeypatch.setattr(publish, "_run_cargo_preflight", recording_preflight)
+
+    special_dir = tmp_path / "target dir with spaces & symbols!@#"
+
+    class DummyTempDir:
+        def __enter__(self) -> str:
+            special_dir.mkdir(parents=True, exist_ok=True)
+            return str(special_dir)
+
+        def __exit__(self, *_args: object) -> bool:
+            return False
+
+    monkeypatch.setattr(
+        publish.tempfile, "TemporaryDirectory", lambda prefix=None: DummyTempDir()
+    )
+
+    root = tmp_path / "workspace"
+    root.mkdir()
+    configuration = make_config()
+
+    publish._run_preflight_checks(root, allow_dirty=False, configuration=configuration)
+
+    assert set(recorded) == {"check", "test"}
+    for args in recorded.values():
+        assert any(
+            arg.startswith("--target-dir=") and str(special_dir) in arg for arg in args
+        )
 
 
 def test_verify_clean_working_tree_detects_dirty_state(
