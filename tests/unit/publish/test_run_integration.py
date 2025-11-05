@@ -223,33 +223,10 @@ def test_run_includes_preflight_test_excludes(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Configured test exclusions propagate to cargo test invocations."""
-    monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
-    root = tmp_path / "workspace"
-    root.mkdir()
-    workspace = make_workspace(root, make_crate(root, "alpha"))
     configuration = make_config(preflight_test_exclude=("alpha", "beta"))
-
-    calls: list[tuple[tuple[str, ...], Path | None]] = []
-
-    def recording_invoke(
-        command: typ.Sequence[str], *, cwd: Path | None = None
-    ) -> tuple[int, str, str]:
-        calls.append((tuple(command), cwd))
-        return 0, "", ""
-
-    monkeypatch.setattr(publish, "_invoke", recording_invoke)
-
-    publish.run(root, configuration, workspace)
-
-    test_call = next(
-        command
-        for command in calls
-        if command[0][0] == "cargo" and command[0][1] == "test"
-    )
-
-    _, cwd = test_call
+    root, _workspace, calls = _setup_preflight_test(monkeypatch, tmp_path, configuration)
+    args, cwd = _extract_cargo_test_call(calls)
     assert cwd == root
-    args = test_call[0]
     assert args[2] == "--workspace"
     assert args[3] == "--all-targets"
     trailing = args[4:]
@@ -261,33 +238,10 @@ def test_run_omits_preflight_excludes_when_empty(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """When no crates are excluded the test command omits --exclude flags."""
-    monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
-    root = tmp_path / "workspace"
-    root.mkdir()
-    workspace = make_workspace(root, make_crate(root, "alpha"))
     configuration = make_config()
-
-    calls: list[tuple[tuple[str, ...], Path | None]] = []
-
-    def recording_invoke(
-        command: typ.Sequence[str], *, cwd: Path | None = None
-    ) -> tuple[int, str, str]:
-        calls.append((tuple(command), cwd))
-        return 0, "", ""
-
-    monkeypatch.setattr(publish, "_invoke", recording_invoke)
-
-    publish.run(root, configuration, workspace)
-
-    test_call = next(
-        command
-        for command in calls
-        if command[0][0] == "cargo" and command[0][1] == "test"
-    )
-
-    _, cwd = test_call
+    root, _workspace, calls = _setup_preflight_test(monkeypatch, tmp_path, configuration)
+    args, cwd = _extract_cargo_test_call(calls)
     assert cwd == root
-    args = test_call[0]
     assert args[2] == "--workspace"
     assert args[3] == "--all-targets"
     assert any(part.startswith("--target-dir=") for part in args[4:])
@@ -298,33 +252,10 @@ def test_run_honours_preflight_unit_tests_only(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Unit-test-only preflight mode narrows cargo test targets."""
-    monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
-    root = tmp_path / "workspace"
-    root.mkdir()
-    workspace = make_workspace(root, make_crate(root, "alpha"))
     configuration = make_config(preflight_unit_tests_only=True)
-
-    calls: list[tuple[tuple[str, ...], Path | None]] = []
-
-    def recording_invoke(
-        command: typ.Sequence[str], *, cwd: Path | None = None
-    ) -> tuple[int, str, str]:
-        calls.append((tuple(command), cwd))
-        return 0, "", ""
-
-    monkeypatch.setattr(publish, "_invoke", recording_invoke)
-
-    publish.run(root, configuration, workspace)
-
-    test_call = next(
-        command
-        for command in calls
-        if command[0][0] == "cargo" and command[0][1] == "test"
-    )
-
-    _, cwd = test_call
+    root, _workspace, calls = _setup_preflight_test(monkeypatch, tmp_path, configuration)
+    args, cwd = _extract_cargo_test_call(calls)
     assert cwd == root
-    args = test_call[0]
     assert args[2] == "--workspace"
     assert "--all-targets" not in args
     assert any(part.startswith("--target-dir=") for part in args[3:])
@@ -333,47 +264,6 @@ def test_run_honours_preflight_unit_tests_only(
     lib_index = args.index("--lib")
     bins_index = args.index("--bins")
     assert bins_index == lib_index + 1
-
-
-@pytest.mark.parametrize(
-    ("failing_subcommand", "expected_message"),
-    [
-        ("check", "cargo check"),
-        ("test", "cargo test"),
-    ],
-    ids=["check_failure", "test_failure"],
-)
-def test_run_raises_when_preflight_cargo_fails(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    failing_subcommand: str,
-    expected_message: str,
-) -> None:
-    """Non-zero cargo check/test aborts the publish command."""
-    monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
-    root = tmp_path / "workspace"
-    root.mkdir()
-    workspace = make_workspace(root, make_crate(root, "alpha"))
-    configuration = make_config()
-
-    def failing_invoke(
-        command: typ.Sequence[str], *, cwd: Path | None = None
-    ) -> tuple[int, str, str]:
-        if command[0] == "git":
-            return 0, "", ""
-        if len(command) > 1 and command[1] == failing_subcommand:
-            return 1, "", expected_message
-        return 0, "", ""
-
-    monkeypatch.setattr(publish, "_invoke", failing_invoke)
-
-    with pytest.raises(publish.PublishPreflightError) as excinfo:
-        publish.run(root, configuration, workspace)
-
-    message = str(excinfo.value)
-    assert expected_message in message
-    assert f"cargo {failing_subcommand}" in message
-    assert "exit code 1" in message
 
 
 def _verify_cargo_commands_executed(
@@ -455,3 +345,78 @@ def test_allow_dirty_flag_bypasses_git_status_check(
 
     assert message.startswith(f"Publish plan for {root}")
     _verify_cargo_commands_executed(calls, root)
+
+
+def _setup_preflight_test(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    configuration: config_module.LadingConfig,
+) -> tuple[Path, WorkspaceGraph, list[tuple[tuple[str, ...], Path | None]]]:
+    """Execute ``publish.run`` with a test workspace and record cargo calls."""
+    monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
+    root = tmp_path / "workspace"
+    root.mkdir()
+    workspace = make_workspace(root, make_crate(root, "alpha"))
+    calls: list[tuple[tuple[str, ...], Path | None]] = []
+
+    def recording_invoke(
+        command: typ.Sequence[str], *, cwd: Path | None = None
+    ) -> tuple[int, str, str]:
+        calls.append((tuple(command), cwd))
+        return 0, "", ""
+
+    monkeypatch.setattr(publish, "_invoke", recording_invoke)
+    publish.run(root, configuration, workspace)
+    return root, workspace, calls
+
+
+def _extract_cargo_test_call(
+    calls: list[tuple[tuple[str, ...], Path | None]]
+) -> tuple[tuple[str, ...], Path | None]:
+    """Return the recorded cargo test command and working directory."""
+    return next(
+        (command, cwd)
+        for command, cwd in calls
+        if command[0] == "cargo" and len(command) > 1 and command[1] == "test"
+    )
+
+
+@pytest.mark.parametrize(
+    ("failing_subcommand", "expected_message"),
+    [
+        ("check", "cargo check"),
+        ("test", "cargo test"),
+    ],
+    ids=["check_failure", "test_failure"],
+)
+def test_run_raises_when_preflight_cargo_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    failing_subcommand: str,
+    expected_message: str,
+) -> None:
+    """Non-zero cargo check/test aborts the publish command."""
+    monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
+    root = tmp_path / "workspace"
+    root.mkdir()
+    workspace = make_workspace(root, make_crate(root, "alpha"))
+    configuration = make_config()
+
+    def failing_invoke(
+        command: typ.Sequence[str], *, cwd: Path | None = None
+    ) -> tuple[int, str, str]:
+        if command[0] == "git":
+            return 0, "", ""
+        if len(command) > 1 and command[1] == failing_subcommand:
+            return 1, "", expected_message
+        return 0, "", ""
+
+    monkeypatch.setattr(publish, "_invoke", failing_invoke)
+
+    with pytest.raises(publish.PublishPreflightError) as excinfo:
+        publish.run(root, configuration, workspace)
+
+    message = str(excinfo.value)
+    assert expected_message in message
+    assert f"cargo {failing_subcommand}" in message
+    assert "exit code 1" in message
