@@ -620,25 +620,29 @@ def _run_preflight_checks(
 
     with tempfile.TemporaryDirectory(prefix="lading-preflight-target-") as target:
         target_path = Path(target)
-        extra_args = (
-            "--workspace",
-            "--all-targets",
-            f"--target-dir={target_path}",
+        workspace_arg = ("--workspace",)
+        target_dir_arg = (f"--target-dir={target_path}",)
+        all_targets_arg = ("--all-targets",)
+        check_arguments = workspace_arg + all_targets_arg + target_dir_arg
+        preflight_config = active_configuration.preflight
+        unit_tests_only = preflight_config.unit_tests_only
+        test_arguments = (
+            workspace_arg + target_dir_arg if unit_tests_only else check_arguments
         )
         _run_cargo_preflight(
             workspace_root,
             "check",
             runner=command_runner,
-            options=_CargoPreflightOptions(arguments=extra_args),
+            options=_CargoPreflightOptions(arguments=check_arguments),
         )
         _run_cargo_preflight(
             workspace_root,
             "test",
             runner=command_runner,
             options=_CargoPreflightOptions(
-                arguments=extra_args,
-                test_excludes=active_configuration.preflight.test_exclude,
-                unit_tests_only=active_configuration.preflight.unit_tests_only,
+                arguments=test_arguments,
+                test_excludes=preflight_config.test_exclude,
+                unit_tests_only=unit_tests_only,
             ),
         )
 

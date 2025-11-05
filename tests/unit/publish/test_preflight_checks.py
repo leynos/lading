@@ -8,6 +8,7 @@ import pytest
 
 from lading.commands import publish
 from lading.workspace import metadata as metadata_module
+from tests.unit.publish.conftest import ORIGINAL_PREFLIGHT, make_config
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
@@ -143,6 +144,46 @@ def test_run_cargo_preflight_honours_unit_tests_only(tmp_path: Path) -> None:
     assert command[:2] == ("cargo", "test")
     assert command[2:4] == ("--workspace", "--all-targets")
     assert command[4:6] == ("--lib", "--bins")
+
+
+def test_preflight_checks_remove_all_targets_for_unit_only(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Unit-test-only mode omits --all-targets from cargo test pre-flight."""
+    monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
+    monkeypatch.setattr(
+        publish, "_verify_clean_working_tree", lambda *_args, **_kwargs: None
+    )
+    recorded: dict[str, publish._CargoPreflightOptions] = {}
+
+    def recording_preflight(
+        workspace_root: Path,
+        subcommand: str,
+        *,
+        runner: publish._CommandRunner,
+        options: publish._CargoPreflightOptions | None = None,
+    ) -> None:
+        assert options is not None
+        recorded[subcommand] = options
+
+    monkeypatch.setattr(publish, "_run_cargo_preflight", recording_preflight)
+
+    root = tmp_path / "workspace"
+    root.mkdir()
+    configuration = make_config(preflight_unit_tests_only=True)
+
+    publish._run_preflight_checks(root, allow_dirty=False, configuration=configuration)
+
+    assert set(recorded) == {"check", "test"}
+    check_args = recorded["check"].arguments
+    assert "--all-targets" in check_args
+
+    test_options = recorded["test"]
+    test_args = test_options.arguments
+    assert "--all-targets" not in test_args
+    assert "--workspace" in test_args
+    assert any(arg.startswith("--target-dir=") for arg in test_args)
+    assert test_options.unit_tests_only is True
 
 
 def test_verify_clean_working_tree_detects_dirty_state(

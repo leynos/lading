@@ -289,8 +289,8 @@ def test_run_honours_preflight_unit_tests_only(
     assert cwd == root
     args = test_call[0]
     assert args[2] == "--workspace"
-    assert args[3] == "--all-targets"
-    assert any(part.startswith("--target-dir=") for part in args[4:])
+    assert "--all-targets" not in args
+    assert any(part.startswith("--target-dir=") for part in args[3:])
     assert "--lib" in args
     assert "--bins" in args
     lib_index = args.index("--lib")

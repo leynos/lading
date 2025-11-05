@@ -162,7 +162,6 @@ def _register_preflight_commands(
             "cargo",
             "test",
             "--workspace",
-            "--all-targets",
         ): _CommandResponse(exit_code=0),
     }
     defaults.update(overrides)
@@ -251,8 +250,8 @@ def given_cargo_test_fails(
     preflight_overrides: dict[tuple[str, ...], _CommandResponse],
 ) -> None:
     """Simulate a failing cargo test command."""
-    preflight_overrides[("cargo", "test", "--workspace", "--all-targets")] = (
-        _CommandResponse(exit_code=1, stderr="cargo test failed")
+    preflight_overrides[("cargo", "test", "--workspace")] = _CommandResponse(
+        exit_code=1, stderr="cargo test failed"
     )
 
 
