@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses as dc
+import logging
 import os
 import typing as typ
 
@@ -192,6 +193,45 @@ def test_main_handles_invalid_subcommand(
     assert exit_code != 0
     captured = capsys.readouterr()
     assert "Unknown command" in captured.out
+
+
+@pytest.mark.usefixtures("minimal_config")
+def test_main_emits_publish_command_logs(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Ensure publish command logging is wired to stderr by default."""
+    workspace_graph = _make_workspace(tmp_path.resolve())
+    lading_logger = logging.getLogger("lading")
+    prior_handlers = list(lading_logger.handlers)
+    prior_level = lading_logger.level
+    prior_propagation = lading_logger.propagate
+
+    def fake_run(
+        workspace_root: Path,
+        configuration: object,
+        workspace_model: object,
+        *,
+        options: object | None = None,
+    ) -> str:
+        logging.getLogger("lading.commands.publish").info("Sentinel command log")
+        return "done"
+
+    monkeypatch.setattr(publish_command, "run", fake_run)
+    monkeypatch.setattr(cli, "load_workspace", lambda _: workspace_graph)
+    try:
+        exit_code = cli.main(["publish", "--workspace-root", str(tmp_path)])
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        assert "Sentinel command log" in captured.err
+    finally:
+        for handler in list(lading_logger.handlers):
+            lading_logger.removeHandler(handler)
+        for handler in prior_handlers:
+            lading_logger.addHandler(handler)
+        lading_logger.setLevel(prior_level)
+        lading_logger.propagate = prior_propagation
 
 
 def test_main_reports_missing_configuration(

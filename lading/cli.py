@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import sys
@@ -40,6 +41,20 @@ _ALLOW_DIRTY_PARAMETER = Parameter(
     help="Skip the clean working tree check before running publish pre-flight checks.",
 )
 AllowDirtyFlag = typ.Annotated[bool, _ALLOW_DIRTY_PARAMETER]
+
+LOG_LEVEL_ENV_VAR = "LADING_LOG_LEVEL"
+_DEFAULT_LOG_LEVEL = logging.INFO
+_LOG_FORMAT = "%(levelname)s: %(message)s"
+_LADING_HANDLER_NAME = "lading-cli-handler"
+_LOG_LEVEL_ALIASES: dict[str, int] = {
+    "CRITICAL": logging.CRITICAL,
+    "FATAL": logging.CRITICAL,
+    "ERROR": logging.ERROR,
+    "WARNING": logging.WARNING,
+    "WARN": logging.WARNING,
+    "INFO": logging.INFO,
+    "DEBUG": logging.DEBUG,
+}
 
 app = App(help="Manage Rust workspaces with the lading toolkit.")
 
@@ -94,6 +109,46 @@ def _extract_workspace_override(
     return workspace, remainder
 
 
+def _resolve_log_level(value: str | None) -> int:
+    """Return the configured log level or :data:`_DEFAULT_LOG_LEVEL`."""
+    if value is None:
+        return _DEFAULT_LOG_LEVEL
+    candidate = value.strip()
+    if not candidate:
+        return _DEFAULT_LOG_LEVEL
+    level = _LOG_LEVEL_ALIASES.get(candidate.upper())
+    if level is None:
+        choices = ", ".join(sorted(_LOG_LEVEL_ALIASES))
+        message = (
+            f"Invalid {LOG_LEVEL_ENV_VAR} value {value!r}; expected one of: {choices}"
+        )
+        raise SystemExit(message)
+    return level
+
+
+def _configure_logging(stream: typ.TextIO | None = None) -> None:
+    """Configure root logging so command execution is visible."""
+    level = _resolve_log_level(os.environ.get(LOG_LEVEL_ENV_VAR))
+    root_logger = logging.getLogger()
+    root_logger.setLevel(level)
+    handler = next(
+        (
+            existing
+            for existing in root_logger.handlers
+            if getattr(existing, "name", "") == _LADING_HANDLER_NAME
+        ),
+        None,
+    )
+    if handler is None:
+        handler = logging.StreamHandler(stream)
+        handler.name = _LADING_HANDLER_NAME
+        root_logger.addHandler(handler)
+    elif stream is not None:
+        handler.stream = stream
+    handler.setLevel(level)
+    handler.setFormatter(logging.Formatter(_LOG_FORMAT))
+
+
 @contextmanager
 def _workspace_env(value: Path) -> typ.Iterator[None]:
     """Temporarily set :data:`WORKSPACE_ROOT_ENV_VAR` to ``value``."""
@@ -132,6 +187,7 @@ def main(argv: typ.Sequence[str] | None = None) -> int:
     try:
         if argv is None:
             argv = sys.argv[1:]
+        _configure_logging()
         workspace_override, remaining = _extract_workspace_override(list(argv))
         workspace_root = normalise_workspace_root(workspace_override)
         if not remaining:

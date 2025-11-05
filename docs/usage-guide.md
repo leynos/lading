@@ -37,6 +37,20 @@ resolved path is also exported as the `LADING_WORKSPACE_ROOT` environment
 variable so that downstream helpers and configuration loading can share the
 location without re-parsing CLI arguments.
 
+## Logging
+
+`lading` prints each external command before it runs so release engineers can
+audit the workflow. The log stream defaults to level `INFO` and is emitted on
+standard error. Set the `LADING_LOG_LEVEL` environment variable to one of the
+standard Python levels (`DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL`) to
+adjust verbosity when troubleshooting:
+
+```bash
+LADING_LOG_LEVEL=DEBUG uv run lading publish
+```
+
+When the variable is unset, the CLI retains the default `INFO` level.
+
 ## Configuration file: `lading.toml`
 
 `lading` expects a `lading.toml` file at the workspace root. The CLI resolves
@@ -130,8 +144,8 @@ configuration, along with any exclusion entries that do not match a workspace
 crate. After building the plan, `publish` validates the workspace by running
 `cargo check --workspace --all-targets` followed by
 `cargo test --workspace --all-targets` directly inside the workspace root. Each
-command reuses a temporary target directory so that build artefacts are isolated
-and discarded once the checks finish. The commands execute after a
+command reuses a temporary target directory so that build artefacts are
+isolated and discarded once the checks finish. The commands execute after a
 `git status --porcelain` cleanliness check so that the pre-flight run sees the
 same files that would be published. Any non-zero exit aborts the command with a
 descriptive error message.
