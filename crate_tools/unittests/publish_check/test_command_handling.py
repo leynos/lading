@@ -101,15 +101,36 @@ def test_handle_command_failure(
 def test_run_cargo_command_streams_output(
     patch_local_runner: typ.Callable[[RunCallable], FakeLocal],
     fake_workspace: Path,
-    capsys: pytest.CaptureFixture[str],
     run_publish_check_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Verify stdout and stderr from cargo are streamed to the console."""
+    """Verify stdout and stderr stream chunk-by-chunk to the console."""
     crate_dir = fake_workspace / "crates" / "demo"
 
     fake_local = patch_local_runner(
-        lambda _args, _timeout: (0, "cargo ok\n", "cargo warn\n")
+        lambda _args: (
+            0,
+            ["cargo ok\n", "more ok\n"],
+            ["cargo warn\n", "warn again\n"],
+        )
     )
+
+    class Recorder:
+        def __init__(self) -> None:
+            self.writes: list[str] = []
+            self.flushes = 0
+
+        def write(self, text: str) -> int:
+            self.writes.append(text)
+            return len(text)
+
+        def flush(self) -> None:
+            self.flushes += 1
+
+    stdout_recorder = Recorder()
+    stderr_recorder = Recorder()
+    monkeypatch.setattr(run_publish_check_module.sys, "stdout", stdout_recorder)
+    monkeypatch.setattr(run_publish_check_module.sys, "stderr", stderr_recorder)
 
     context = run_publish_check_module.build_cargo_command_context(
         "demo",
@@ -121,12 +142,64 @@ def test_run_cargo_command_streams_output(
         ("cargo", "mock"),
     )
 
-    captured = capsys.readouterr()
-    assert "cargo ok" in captured.out
-    assert "cargo warn" in captured.err
+    assert stdout_recorder.writes[:2] == ["cargo ok\n", "more ok\n"]
+    assert stderr_recorder.writes[:2] == ["cargo warn\n", "warn again\n"]
+    assert stdout_recorder.flushes >= len(["cargo ok\n", "more ok\n"])
+    assert stderr_recorder.flushes >= len(["cargo warn\n", "warn again\n"])
     assert fake_local.cwd_calls == [crate_dir]
     assert fake_local.env_calls == [{"CARGO_HOME": str(fake_workspace / ".cargo-home")}]
-    assert fake_local.invocations == [(["cargo", "mock"], 5)]
+    assert fake_local.invocations == [["cargo", "mock"]]
+
+
+def test_run_cargo_command_invokes_popen_with_pipes(
+    patch_local_runner: typ.Callable[[RunCallable], FakeLocal],
+    fake_workspace: Path,
+    run_publish_check_module: ModuleType,
+) -> None:
+    """Ensure the cargo invocation requests pipe streaming for stdout/stderr."""
+    fake_local = patch_local_runner(lambda _args: (0, "ok", "warn"))
+
+    context = run_publish_check_module.build_cargo_command_context(
+        "demo",
+        fake_workspace,
+        timeout_secs=4,
+    )
+    run_publish_check_module.run_cargo_command(
+        context,
+        ("cargo", "mock"),
+    )
+
+    assert fake_local.popen_kwargs == [
+        {
+            "stdout": run_publish_check_module.subprocess.PIPE,
+            "stderr": run_publish_check_module.subprocess.PIPE,
+            "bufsize": 1,
+        }
+    ]
+
+
+def test_run_cargo_command_logs_invocation(
+    patch_local_runner: typ.Callable[[RunCallable], FakeLocal],
+    fake_workspace: Path,
+    caplog: pytest.LogCaptureFixture,
+    run_publish_check_module: ModuleType,
+) -> None:
+    """Ensure cargo commands log their resolved invocation."""
+    patch_local_runner(lambda _args: (0, "", ""))
+
+    context = run_publish_check_module.build_cargo_command_context(
+        "demo",
+        fake_workspace,
+        timeout_secs=5,
+    )
+
+    with caplog.at_level("INFO"):
+        run_publish_check_module.run_cargo_command(
+            context,
+            ("cargo", "mock"),
+        )
+
+    assert "Running cargo command for demo: cargo mock" in caplog.text
 
 
 def test_run_cargo_command_uses_env_timeout(
@@ -138,8 +211,31 @@ def test_run_cargo_command_uses_env_timeout(
     """Confirm the command respects ``PUBLISH_CHECK_TIMEOUT_SECS`` overrides."""
     crate_dir = fake_workspace / "crates" / "demo"
 
-    fake_local = patch_local_runner(lambda _args, timeout: (0, "", ""))
+    fake_local = patch_local_runner(lambda _args: (0, "", ""))
     monkeypatch.setenv("PUBLISH_CHECK_TIMEOUT_SECS", "11")
+
+    observed: dict[str, object] = {}
+
+    def fake_stream(
+        _process: object,
+        command: tuple[str, ...],
+        *,
+        timeout_secs: int,
+    ) -> run_publish_check_module.CommandResult:
+        observed["command"] = command
+        observed["timeout"] = timeout_secs
+        return run_publish_check_module.CommandResult(
+            command=command,
+            return_code=0,
+            stdout="",
+            stderr="",
+        )
+
+    monkeypatch.setattr(
+        run_publish_check_module,
+        "_stream_process_output",
+        fake_stream,
+    )
 
     context = run_publish_check_module.build_cargo_command_context(
         "demo",
@@ -152,7 +248,8 @@ def test_run_cargo_command_uses_env_timeout(
 
     assert fake_local.cwd_calls == [crate_dir]
     assert fake_local.env_calls == [{"CARGO_HOME": str(fake_workspace / ".cargo-home")}]
-    assert fake_local.invocations == [(["cargo", "mock"], 11)]
+    assert fake_local.invocations == [["cargo", "mock"]]
+    assert observed == {"command": ("cargo", "mock"), "timeout": 11}
 
 
 def test_run_cargo_command_logs_failures(
@@ -162,7 +259,7 @@ def test_run_cargo_command_logs_failures(
     """Ensure command failures record output and raise ``SystemExit``."""
     module = cargo_test_context.run_publish_check_module
     fake_local = cargo_test_context.patch_local_runner(
-        lambda _args, _timeout: (3, "bad stdout", "bad stderr")
+        lambda _args: (3, "bad stdout", "bad stderr")
     )
 
     with cargo_test_context.caplog.at_level("ERROR"):
@@ -191,7 +288,7 @@ def test_run_cargo_command_suppresses_failure_when_handler_accepts(
     run_publish_check_module: ModuleType,
 ) -> None:
     """Verify ``on_failure`` receives the result and suppresses default handling."""
-    fake_local = patch_local_runner(lambda _args, _timeout: (5, "out", "err"))
+    fake_local = patch_local_runner(lambda _args: (5, "out", "err"))
     observed: dict[str, object] = {}
 
     def record_failure(
@@ -226,7 +323,7 @@ def test_run_cargo_command_suppresses_failure_when_handler_accepts(
         stderr="err",
     )
     assert observed == {"crate": "demo", "result": expected}
-    assert fake_local.invocations == [(["cargo", "oops"], 9)]
+    assert fake_local.invocations == [["cargo", "oops"]]
 
 
 def test_run_cargo_command_calls_default_when_handler_declines(
@@ -236,7 +333,7 @@ def test_run_cargo_command_calls_default_when_handler_declines(
     run_publish_check_module: ModuleType,
 ) -> None:
     """Ensure declining handlers allow the default failure logic to run."""
-    fake_local = patch_local_runner(lambda _args, _timeout: (17, "out", "err"))
+    fake_local = patch_local_runner(lambda _args: (17, "out", "err"))
     observed: dict[str, object] = {}
 
     def decline_failure(
@@ -279,21 +376,32 @@ def test_run_cargo_command_calls_default_when_handler_declines(
         stderr="err",
     )
     assert observed == {"crate": "demo", "result": expected}
-    assert fake_local.invocations == [(["cargo", "oops"], 3)]
+    assert fake_local.invocations == [["cargo", "oops"]]
 
 
 def test_run_cargo_command_times_out(
+    monkeypatch: pytest.MonkeyPatch,
     patch_local_runner: typ.Callable[[RunCallable], FakeLocal],
     fake_workspace: Path,
     run_publish_check_module: ModuleType,
 ) -> None:
     """Raise ``SystemExit`` when cargo times out despite retries."""
+    patch_local_runner(lambda _args: (0, "", ""))
 
-    def raise_timeout(_args: list[str], _timeout: int | None) -> tuple[int, str, str]:
-        timeout_message = "timeout"
-        raise run_publish_check_module.ProcessTimedOut(timeout_message, _args)
+    def raise_timeout(
+        _process: object,
+        command: tuple[str, ...],
+        *,
+        timeout_secs: int,
+    ) -> run_publish_check_module.CommandResult:
+        timeout_message = f"timeout waiting for {command!r}"
+        raise run_publish_check_module.ProcessTimedOut(timeout_message, list(command))
 
-    patch_local_runner(raise_timeout)
+    monkeypatch.setattr(
+        run_publish_check_module,
+        "_stream_process_output",
+        raise_timeout,
+    )
 
     context = run_publish_check_module.build_cargo_command_context(
         "demo",
