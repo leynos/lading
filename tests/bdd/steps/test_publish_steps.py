@@ -36,13 +36,26 @@ class _CommandResponse:
     stderr: str = ""
 
 
+@dc.dataclass(slots=True)
+class _PreflightInvocationRecorder:
+    """Collect arguments recorded from cmd-mox double invocations."""
+
+    records: list[tuple[str, tuple[str, ...]]] = dc.field(default_factory=list)
+
+    def record(self, label: str, args: tuple[str, ...]) -> None:
+        self.records.append((label, args))
+
+    def by_label(self, label: str) -> list[tuple[str, ...]]:
+        return [args for entry_label, args in self.records if entry_label == label]
+
+
 @dc.dataclass(frozen=True, slots=True)
 class _PreflightStubConfig:
     """Configuration for cmd-mox preflight command stubs."""
 
     cmd_mox: CmdMox
     overrides: dict[tuple[str, ...], _CommandResponse] = dc.field(default_factory=dict)
-    captures: list[tuple[str, tuple[str, ...]]] | None = None
+    recorder: _PreflightInvocationRecorder | None = None
 
 
 class _CmdInvocation(typ.Protocol):
@@ -58,9 +71,9 @@ def preflight_overrides() -> dict[tuple[str, ...], _CommandResponse]:
 
 
 @pytest.fixture
-def preflight_invocations() -> list[tuple[str, tuple[str, ...]]]:
+def preflight_recorder() -> _PreflightInvocationRecorder:
     """Capture arguments passed to mocked pre-flight commands."""
-    return []
+    return _PreflightInvocationRecorder()
 
 
 @given("cmd-mox IPC socket is unset")
@@ -130,25 +143,21 @@ def _resolve_preflight_expectation(
 def _make_preflight_handler(
     response: _CommandResponse,
     expected_arguments: tuple[str, ...],
-    captures: list[tuple[str, tuple[str, ...]]] | None,
+    recorder: _PreflightInvocationRecorder | None,
     label: str,
 ) -> typ.Callable[[_CmdInvocation], tuple[str, str, int]]:
     """Build a cmd-mox handler that validates argument prefixes."""
 
     def _handler(invocation: _CmdInvocation) -> tuple[str, str, int]:
         _validate_stub_arguments(expected_arguments, tuple(invocation.args))
-        if captures is not None:
-            captures.append((label, tuple(invocation.args)))
+        if recorder is not None:
+            recorder.record(label, tuple(invocation.args))
         return (response.stdout, response.stderr, response.exit_code)
 
     return _handler
 
 
-def _register_preflight_commands(
-    cmd_mox: CmdMox,
-    overrides: dict[tuple[str, ...], _CommandResponse],
-    captures: list[tuple[str, tuple[str, ...]]] | None,
-) -> None:
+def _register_preflight_commands(config: _PreflightStubConfig) -> None:
     """Install cmd-mox doubles for publish pre-flight commands."""
     defaults = {
         ("git", "status", "--porcelain"): _CommandResponse(exit_code=0),
@@ -164,12 +173,12 @@ def _register_preflight_commands(
             "--workspace",
         ): _CommandResponse(exit_code=0),
     }
-    defaults.update(overrides)
+    defaults.update(config.overrides)
     for command, response in defaults.items():
         expectation_program, expectation_args = _resolve_preflight_expectation(command)
-        cmd_mox.stub(expectation_program).runs(
+        config.cmd_mox.stub(expectation_program).runs(
             _make_preflight_handler(
-                response, expectation_args, captures, expectation_program
+                response, expectation_args, config.recorder, expectation_program
             )
         )
 
@@ -183,9 +192,7 @@ def _invoke_publish_with_options(
     """Register preflight doubles, enable stubs, and run the CLI."""
     from .test_common_steps import _run_cli
 
-    _register_preflight_commands(
-        stub_config.cmd_mox, stub_config.overrides, stub_config.captures
-    )
+    _register_preflight_commands(stub_config)
     previous = os.environ.get(metadata_module.CMD_MOX_STUB_ENV_VAR)
     os.environ[metadata_module.CMD_MOX_STUB_ENV_VAR] = "1"
     try:
@@ -203,11 +210,11 @@ def when_invoke_lading_publish(
     repo_root: Path,
     cmd_mox: CmdMox,
     preflight_overrides: dict[tuple[str, ...], _CommandResponse],
-    preflight_invocations: list[tuple[str, tuple[str, ...]]],
+    preflight_recorder: _PreflightInvocationRecorder,
 ) -> dict[str, typ.Any]:
     """Execute the publish CLI via ``python -m`` and capture the result."""
     stub_config = _PreflightStubConfig(
-        cmd_mox, preflight_overrides, captures=preflight_invocations
+        cmd_mox, preflight_overrides, recorder=preflight_recorder
     )
     return _invoke_publish_with_options(repo_root, workspace_directory, stub_config)
 
@@ -221,11 +228,11 @@ def when_invoke_lading_publish_allow_dirty(
     repo_root: Path,
     cmd_mox: CmdMox,
     preflight_overrides: dict[tuple[str, ...], _CommandResponse],
-    preflight_invocations: list[tuple[str, tuple[str, ...]]],
+    preflight_recorder: _PreflightInvocationRecorder,
 ) -> dict[str, typ.Any]:
     """Execute the publish CLI with ``--allow-dirty`` enabled."""
     stub_config = _PreflightStubConfig(
-        cmd_mox, preflight_overrides, captures=preflight_invocations
+        cmd_mox, preflight_overrides, recorder=preflight_recorder
     )
     return _invoke_publish_with_options(
         repo_root,
@@ -283,13 +290,11 @@ def then_publish_prints_plan(cli_run: dict[str, typ.Any], crate_name: str) -> No
     )
 )
 def then_publish_excludes_preflight_crate(
-    preflight_invocations: list[tuple[str, tuple[str, ...]]],
+    preflight_recorder: _PreflightInvocationRecorder,
     crate_name: str,
 ) -> None:
     """Assert that cargo test pre-flight invocations skip ``crate_name``."""
-    test_invocations = [
-        args for label, args in preflight_invocations if label == "cargo::test"
-    ]
+    test_invocations = preflight_recorder.by_label("cargo::test")
     if not test_invocations:
         message = "cargo test pre-flight command was not invoked"
         raise AssertionError(message)
@@ -305,12 +310,10 @@ def then_publish_excludes_preflight_crate(
 
 @then("the publish command limits pre-flight tests to libraries and binaries")
 def then_publish_limits_preflight_targets(
-    preflight_invocations: list[tuple[str, tuple[str, ...]]],
+    preflight_recorder: _PreflightInvocationRecorder,
 ) -> None:
     """Assert that cargo test pre-flight invocations pass --lib and --bins."""
-    test_invocations = [
-        args for label, args in preflight_invocations if label == "cargo::test"
-    ]
+    test_invocations = preflight_recorder.by_label("cargo::test")
     if not test_invocations:
         message = "cargo test pre-flight command was not invoked"
         raise AssertionError(message)

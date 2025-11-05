@@ -93,7 +93,9 @@ def test_run_cargo_preflight_raises_on_failure(
         return 1, "", "boom"
 
     with pytest.raises(publish.PublishPreflightError) as excinfo:
-        publish._run_cargo_preflight(tmp_path, "check", runner=failing_runner)
+        publish._run_cargo_preflight(
+            tmp_path, "check", runner=failing_runner, extra_args=("--workspace",)
+        )
 
     message = str(excinfo.value)
     assert "cargo check" in message
@@ -114,7 +116,8 @@ def test_run_cargo_preflight_honours_test_excludes(tmp_path: Path) -> None:
         tmp_path,
         "test",
         runner=recording_runner,
-        options=publish._CargoPreflightOptions(test_excludes=(" alpha ", "", "beta")),
+        extra_args=("--workspace", "--all-targets"),
+        test_excludes=(" alpha ", "", "beta"),
     )
 
     command = recorded.pop()
@@ -137,7 +140,8 @@ def test_run_cargo_preflight_honours_unit_tests_only(tmp_path: Path) -> None:
         tmp_path,
         "test",
         runner=recording_runner,
-        options=publish._CargoPreflightOptions(unit_tests_only=True),
+        extra_args=("--workspace", "--all-targets"),
+        unit_tests_only=True,
     )
 
     command = recorded.pop()
@@ -154,17 +158,22 @@ def test_preflight_checks_remove_all_targets_for_unit_only(
     monkeypatch.setattr(
         publish, "_verify_clean_working_tree", lambda *_args, **_kwargs: None
     )
-    recorded: dict[str, publish._CargoPreflightOptions] = {}
+    recorded: dict[str, dict[str, typ.Any]] = {}
 
     def recording_preflight(
         workspace_root: Path,
         subcommand: str,
         *,
         runner: publish._CommandRunner,
-        options: publish._CargoPreflightOptions | None = None,
+        extra_args: typ.Sequence[str],
+        test_excludes: typ.Sequence[str] = (),
+        unit_tests_only: bool = False,
     ) -> None:
-        assert options is not None
-        recorded[subcommand] = options
+        recorded[subcommand] = {
+            "extra_args": tuple(extra_args),
+            "test_excludes": tuple(test_excludes),
+            "unit_tests_only": unit_tests_only,
+        }
 
     monkeypatch.setattr(publish, "_run_cargo_preflight", recording_preflight)
 
@@ -175,15 +184,15 @@ def test_preflight_checks_remove_all_targets_for_unit_only(
     publish._run_preflight_checks(root, allow_dirty=False, configuration=configuration)
 
     assert set(recorded) == {"check", "test"}
-    check_args = recorded["check"].arguments
+    check_args = recorded["check"]["extra_args"]
     assert "--all-targets" in check_args
 
     test_options = recorded["test"]
-    test_args = test_options.arguments
+    test_args = test_options["extra_args"]
     assert "--all-targets" not in test_args
     assert "--workspace" in test_args
     assert any(arg.startswith("--target-dir=") for arg in test_args)
-    assert test_options.unit_tests_only is True
+    assert test_options["unit_tests_only"] is True
 
 
 def test_verify_clean_working_tree_detects_dirty_state(

@@ -105,15 +105,6 @@ class PublishPreflightError(RuntimeError):
     """Raised when required pre-publication checks fail."""
 
 
-@dc.dataclass(frozen=True, slots=True)
-class _CargoPreflightOptions:
-    """Options controlling a cargo pre-flight invocation."""
-
-    arguments: tuple[str, ...] = ("--workspace", "--all-targets")
-    test_excludes: tuple[str, ...] = ()
-    unit_tests_only: bool = False
-
-
 def _categorize_crates(
     workspace_crates: typ.Sequence[WorkspaceCrate],
     exclusion_set: set[str],
@@ -620,31 +611,39 @@ def _run_preflight_checks(
 
     with tempfile.TemporaryDirectory(prefix="lading-preflight-target-") as target:
         target_path = Path(target)
-        workspace_arg = ("--workspace",)
-        target_dir_arg = (f"--target-dir={target_path}",)
-        all_targets_arg = ("--all-targets",)
-        check_arguments = workspace_arg + all_targets_arg + target_dir_arg
         preflight_config = active_configuration.preflight
         unit_tests_only = preflight_config.unit_tests_only
-        test_arguments = (
-            workspace_arg + target_dir_arg if unit_tests_only else check_arguments
+        check_arguments = _compose_preflight_arguments(
+            target_path, include_all_targets=True
+        )
+        test_arguments = _compose_preflight_arguments(
+            target_path, include_all_targets=not unit_tests_only
         )
         _run_cargo_preflight(
             workspace_root,
             "check",
             runner=command_runner,
-            options=_CargoPreflightOptions(arguments=check_arguments),
+            extra_args=check_arguments,
         )
         _run_cargo_preflight(
             workspace_root,
             "test",
             runner=command_runner,
-            options=_CargoPreflightOptions(
-                arguments=test_arguments,
-                test_excludes=preflight_config.test_exclude,
-                unit_tests_only=unit_tests_only,
-            ),
+            extra_args=test_arguments,
+            test_excludes=preflight_config.test_exclude,
+            unit_tests_only=unit_tests_only,
         )
+
+
+def _compose_preflight_arguments(
+    target_dir: Path, *, include_all_targets: bool
+) -> tuple[str, ...]:
+    """Build the ordered argument tuple shared by pre-flight cargo commands."""
+    arguments = ["--workspace"]
+    if include_all_targets:
+        arguments.append("--all-targets")
+    arguments.append(f"--target-dir={target_dir}")
+    return tuple(arguments)
 
 
 def _verify_clean_working_tree(
@@ -676,22 +675,22 @@ def _verify_clean_working_tree(
         raise PublishPreflightError(message)
 
 
-def _run_cargo_preflight(
+def _run_cargo_preflight(  # noqa: PLR0913 - deliberate explicit parameters
     workspace_root: Path,
     subcommand: typ.Literal["check", "test"],
     *,
     runner: _CommandRunner,
-    options: _CargoPreflightOptions | None = None,
+    extra_args: typ.Sequence[str],
+    test_excludes: typ.Sequence[str] = (),
+    unit_tests_only: bool = False,
 ) -> None:
     """Run ``cargo <subcommand>`` inside ``workspace_root``."""
-    effective_options = _CargoPreflightOptions() if options is None else options
-    arguments = list(effective_options.arguments)
+    arguments = list(extra_args)
     if subcommand == "test":
-        if effective_options.unit_tests_only:
+        if unit_tests_only:
             arguments.extend(("--lib", "--bins"))
-        for crate in effective_options.test_excludes:
-            crate_name = crate.strip()
-            if crate_name:
+        for crate in test_excludes:
+            if crate_name := crate.strip():
                 arguments.extend(("--exclude", crate_name))
     exit_code, stdout, stderr = runner(
         ("cargo", subcommand, *arguments),
@@ -707,8 +706,7 @@ def _build_cargo_error_message(
 ) -> str:
     """Return a consistent failure message for cargo pre-flight commands."""
     message = f"Pre-flight cargo {subcommand} failed with exit code {exit_code}"
-    detail = (stderr or stdout).strip()
-    if detail:
+    if detail := (stderr or stdout).strip():
         message = f"{message}: {detail}"
     return message
 

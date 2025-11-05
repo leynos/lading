@@ -130,8 +130,8 @@ configuration, along with any exclusion entries that do not match a workspace
 crate. After building the plan, `publish` validates the workspace by running
 `cargo check --workspace --all-targets` followed by
 `cargo test --workspace --all-targets` directly inside the workspace root. Each
-command reuses a temporary target directory so that build artefacts are isolated
-and discarded once the checks finish. The commands execute after a
+command reuses a temporary target directory so that build artefacts are
+isolated and discarded once the checks finish. The commands execute after a
 `git status --porcelain` cleanliness check so that the pre-flight run sees the
 same files that would be published. Any non-zero exit aborts the command with a
 descriptive error message.
