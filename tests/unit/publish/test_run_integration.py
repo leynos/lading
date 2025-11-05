@@ -17,6 +17,10 @@ from .conftest import (
     make_crate,
     make_workspace,
 )
+from .preflight_test_utils import (
+    _extract_cargo_test_call,
+    _setup_preflight_test,
+)
 
 
 def test_run_normalises_workspace_root(
@@ -219,19 +223,45 @@ def test_run_executes_preflight_checks_in_workspace(
         assert any(arg.startswith("--target-dir=") for arg in command[4:])
 
 
+@pytest.mark.parametrize(
+    ("configured_excludes", "expected_excludes"),
+    [
+        pytest.param(("alpha", "beta"), ("alpha", "beta"), id="ordered"),
+        pytest.param(("beta", "alpha"), ("alpha", "beta"), id="sorted"),
+        pytest.param((" alpha ", "beta", "alpha"), ("alpha", "beta"), id="trimmed"),
+        pytest.param(("", " ", "\t"), (), id="blank_entries"),
+        pytest.param(
+            ("gamma", "beta", "alpha"), ("alpha", "beta", "gamma"), id="unsorted"
+        ),
+        pytest.param(("beta", "beta", "beta"), ("beta",), id="deduplicated"),
+    ],
+)
 def test_run_includes_preflight_test_excludes(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    configured_excludes: tuple[str, ...],
+    expected_excludes: tuple[str, ...],
 ) -> None:
     """Configured test exclusions propagate to cargo test invocations."""
-    configuration = make_config(preflight_test_exclude=("alpha", "beta"))
-    root, _workspace, calls = _setup_preflight_test(monkeypatch, tmp_path, configuration)
+    configuration = make_config(preflight_test_exclude=configured_excludes)
+    root, _workspace, calls = _setup_preflight_test(
+        monkeypatch, tmp_path, configuration
+    )
     args, cwd = _extract_cargo_test_call(calls)
     assert cwd == root
     assert args[2] == "--workspace"
     assert args[3] == "--all-targets"
     trailing = args[4:]
     assert any(part.startswith("--target-dir=") for part in trailing)
-    assert trailing[-4:] == ("--exclude", "alpha", "--exclude", "beta")
+    exclude_values = [
+        trailing[index + 1]
+        for index, value in enumerate(trailing[:-1])
+        if value == "--exclude"
+    ]
+    if expected_excludes:
+        assert tuple(exclude_values) == expected_excludes
+    else:
+        assert "--exclude" not in trailing
 
 
 def test_run_omits_preflight_excludes_when_empty(
@@ -239,7 +269,9 @@ def test_run_omits_preflight_excludes_when_empty(
 ) -> None:
     """When no crates are excluded the test command omits --exclude flags."""
     configuration = make_config()
-    root, _workspace, calls = _setup_preflight_test(monkeypatch, tmp_path, configuration)
+    root, _workspace, calls = _setup_preflight_test(
+        monkeypatch, tmp_path, configuration
+    )
     args, cwd = _extract_cargo_test_call(calls)
     assert cwd == root
     assert args[2] == "--workspace"
@@ -253,7 +285,9 @@ def test_run_honours_preflight_unit_tests_only(
 ) -> None:
     """Unit-test-only preflight mode narrows cargo test targets."""
     configuration = make_config(preflight_unit_tests_only=True)
-    root, _workspace, calls = _setup_preflight_test(monkeypatch, tmp_path, configuration)
+    root, _workspace, calls = _setup_preflight_test(
+        monkeypatch, tmp_path, configuration
+    )
     args, cwd = _extract_cargo_test_call(calls)
     assert cwd == root
     assert args[2] == "--workspace"
@@ -261,6 +295,7 @@ def test_run_honours_preflight_unit_tests_only(
     assert any(part.startswith("--target-dir=") for part in args[3:])
     assert "--lib" in args
     assert "--bins" in args
+    assert "--exclude" not in args
     lib_index = args.index("--lib")
     bins_index = args.index("--bins")
     assert bins_index == lib_index + 1
@@ -345,40 +380,6 @@ def test_allow_dirty_flag_bypasses_git_status_check(
 
     assert message.startswith(f"Publish plan for {root}")
     _verify_cargo_commands_executed(calls, root)
-
-
-def _setup_preflight_test(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    configuration: config_module.LadingConfig,
-) -> tuple[Path, WorkspaceGraph, list[tuple[tuple[str, ...], Path | None]]]:
-    """Execute ``publish.run`` with a test workspace and record cargo calls."""
-    monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
-    root = tmp_path / "workspace"
-    root.mkdir()
-    workspace = make_workspace(root, make_crate(root, "alpha"))
-    calls: list[tuple[tuple[str, ...], Path | None]] = []
-
-    def recording_invoke(
-        command: typ.Sequence[str], *, cwd: Path | None = None
-    ) -> tuple[int, str, str]:
-        calls.append((tuple(command), cwd))
-        return 0, "", ""
-
-    monkeypatch.setattr(publish, "_invoke", recording_invoke)
-    publish.run(root, configuration, workspace)
-    return root, workspace, calls
-
-
-def _extract_cargo_test_call(
-    calls: list[tuple[tuple[str, ...], Path | None]]
-) -> tuple[tuple[str, ...], Path | None]:
-    """Return the recorded cargo test command and working directory."""
-    return next(
-        (command, cwd)
-        for command, cwd in calls
-        if command[0] == "cargo" and len(command) > 1 and command[1] == "test"
-    )
 
 
 @pytest.mark.parametrize(

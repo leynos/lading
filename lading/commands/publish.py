@@ -672,9 +672,12 @@ def _build_test_arguments(
     arguments = list(base_arguments)
     if options.unit_tests_only:
         arguments.extend(("--lib", "--bins"))
-    for crate in options.test_excludes:
-        if crate_name := crate.strip():
-            arguments.extend(("--exclude", crate_name))
+    normalized_excludes = sorted(
+        {crate.strip() for crate in options.test_excludes if crate.strip()}
+    )
+    for crate_name in normalized_excludes:
+        # Sorted unique values keep cargo invocations deterministic for tests/logging.
+        arguments.extend(("--exclude", crate_name))
     return arguments
 
 
