@@ -39,11 +39,12 @@ location without re-parsing CLI arguments.
 
 ## Logging
 
-`lading` prints each external command before it runs so release engineers can
-audit the workflow. The log stream defaults to level `INFO` and is emitted on
-standard error. Set the `LADING_LOG_LEVEL` environment variable to one of the
-standard Python levels (`DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL`) to
-adjust verbosity when troubleshooting:
+`lading` emits operational logs for each CLI command so release engineers can
+audit what the tool is doing, including the external processes (for example,
+`cargo` invocations) it spawns. The log stream defaults to level `INFO` and is
+emitted on standard error. Set the `LADING_LOG_LEVEL` environment variable to
+one of the standard Python levels (`DEBUG`, `INFO`, `WARNING`, `ERROR`, or
+`CRITICAL`) to adjust verbosity when troubleshooting:
 
 ```bash
 LADING_LOG_LEVEL=DEBUG uv run lading publish
