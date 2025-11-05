@@ -178,19 +178,25 @@ def _drain_stream(
         sink.write(text)
         sink.flush()
 
-    while True:
-        chunk = read_chunk(4096)
-        if not chunk:
-            if decoder is not None:
-                emit(decoder.decode(b"", final=True))
-            break
+    def finalize_decoder(dec: codecs.IncrementalDecoder | None) -> None:
+        if dec is None:
+            return
+        emit(dec.decode(b"", final=True))
+
+    def decode_chunk(
+        chunk: bytes | str,
+        dec: codecs.IncrementalDecoder | None,
+    ) -> tuple[str, codecs.IncrementalDecoder | None]:
         if isinstance(chunk, bytes):
-            if decoder is None:
-                decoder = codecs.getincrementaldecoder("utf-8")("replace")
-            text = decoder.decode(chunk)
-        else:
-            text = str(chunk)
+            if dec is None:
+                dec = codecs.getincrementaldecoder("utf-8")("replace")
+            return dec.decode(chunk), dec
+        return str(chunk), dec
+
+    while chunk := read_chunk(4096):
+        text, decoder = decode_chunk(chunk, decoder)
         emit(text)
+    finalize_decoder(decoder)
 
 
 def _stream_process_output(
