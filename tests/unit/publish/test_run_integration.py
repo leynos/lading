@@ -234,6 +234,7 @@ def test_run_executes_preflight_checks_in_workspace(
             ("gamma", "beta", "alpha"), ("alpha", "beta", "gamma"), id="unsorted"
         ),
         pytest.param(("beta", "beta", "beta"), ("beta",), id="deduplicated"),
+        pytest.param(("alpha", "", "beta"), ("alpha", "beta"), id="mixed_blank"),
     ],
 )
 def test_run_includes_preflight_test_excludes(
@@ -253,12 +254,12 @@ def test_run_includes_preflight_test_excludes(
     assert args[3] == "--all-targets"
     trailing = args[4:]
     assert any(part.startswith("--target-dir=") for part in trailing)
-    exclude_values = [
-        trailing[index + 1]
-        for index, value in enumerate(trailing[:-1])
-        if value == "--exclude"
-    ]
     if expected_excludes:
+        exclude_values = [
+            trailing[index + 1]
+            for index, value in enumerate(trailing[:-1])
+            if value == "--exclude"
+        ]
         assert tuple(exclude_values) == expected_excludes
     else:
         assert "--exclude" not in trailing
@@ -299,6 +300,28 @@ def test_run_honours_preflight_unit_tests_only(
     lib_index = args.index("--lib")
     bins_index = args.index("--bins")
     assert bins_index == lib_index + 1
+
+
+def test_run_unit_tests_only_with_excludes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Exclusions are still honoured when unit-tests-only mode is enabled."""
+    configuration = make_config(
+        preflight_unit_tests_only=True, preflight_test_exclude=("gamma", "alpha")
+    )
+    root, _workspace, calls = _setup_preflight_test(
+        monkeypatch,
+        tmp_path,
+        configuration,
+        crate_names=("alpha", "beta", "gamma"),
+    )
+    args, cwd = _extract_cargo_test_call(calls)
+    assert cwd == root
+    assert args[2] == "--workspace"
+    assert "--all-targets" not in args
+    assert "--lib" in args
+    assert "--bins" in args
+    assert args[-4:] == ("--exclude", "alpha", "--exclude", "gamma")
 
 
 def _verify_cargo_commands_executed(

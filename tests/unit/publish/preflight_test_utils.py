@@ -25,7 +25,7 @@ def _setup_preflight_test(
     configuration: config_module.LadingConfig,
     crate_names: typ.Sequence[str] | None = None,
 ) -> tuple[Path, WorkspaceGraph, RecordedCommands]:
-    """Execute ``publish.run`` with optional crates and capture cargo invocations."""
+    """Execute ``publish.run`` with optional workspace crates and capture calls."""
     monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
     root = tmp_path / "workspace"
     root.mkdir()
