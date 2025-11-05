@@ -32,6 +32,7 @@ Run with custom timeout and workspace preservation::
 # ///
 from __future__ import annotations
 
+import codecs
 import dataclasses as dc
 import logging
 import os
@@ -168,17 +169,28 @@ def _drain_stream(
 ) -> None:
     """Forward ``stream`` contents into ``sink`` while caching them."""
     read_chunk = getattr(stream, "read1", stream.read)
-    while True:
-        chunk = read_chunk(4096)
-        if not chunk:
-            break
-        if isinstance(chunk, bytes):
-            text = chunk.decode("utf-8", errors="replace")
-        else:
-            text = str(chunk)
+    decoder: codecs.IncrementalDecoder | None = None
+
+    def emit(text: str) -> None:
+        if not text:
+            return
         buffer.append(text)
         sink.write(text)
         sink.flush()
+
+    while True:
+        chunk = read_chunk(4096)
+        if not chunk:
+            if decoder is not None:
+                emit(decoder.decode(b"", final=True))
+            break
+        if isinstance(chunk, bytes):
+            if decoder is None:
+                decoder = codecs.getincrementaldecoder("utf-8")("replace")
+            text = decoder.decode(chunk)
+        else:
+            text = str(chunk)
+        emit(text)
 
 
 def _stream_process_output(

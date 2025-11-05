@@ -101,13 +101,36 @@ def test_handle_command_failure(
 def test_run_cargo_command_streams_output(
     patch_local_runner: typ.Callable[[RunCallable], FakeLocal],
     fake_workspace: Path,
-    capsys: pytest.CaptureFixture[str],
     run_publish_check_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Verify stdout and stderr from cargo are streamed to the console."""
+    """Verify stdout and stderr stream chunk-by-chunk to the console."""
     crate_dir = fake_workspace / "crates" / "demo"
 
-    fake_local = patch_local_runner(lambda _args: (0, "cargo ok\n", "cargo warn\n"))
+    fake_local = patch_local_runner(
+        lambda _args: (
+            0,
+            ["cargo ok\n", "more ok\n"],
+            ["cargo warn\n", "warn again\n"],
+        )
+    )
+
+    class Recorder:
+        def __init__(self) -> None:
+            self.writes: list[str] = []
+            self.flushes = 0
+
+        def write(self, text: str) -> int:
+            self.writes.append(text)
+            return len(text)
+
+        def flush(self) -> None:
+            self.flushes += 1
+
+    stdout_recorder = Recorder()
+    stderr_recorder = Recorder()
+    monkeypatch.setattr(run_publish_check_module.sys, "stdout", stdout_recorder)
+    monkeypatch.setattr(run_publish_check_module.sys, "stderr", stderr_recorder)
 
     context = run_publish_check_module.build_cargo_command_context(
         "demo",
@@ -119,12 +142,40 @@ def test_run_cargo_command_streams_output(
         ("cargo", "mock"),
     )
 
-    captured = capsys.readouterr()
-    assert "cargo ok" in captured.out
-    assert "cargo warn" in captured.err
+    assert stdout_recorder.writes[:2] == ["cargo ok\n", "more ok\n"]
+    assert stderr_recorder.writes[:2] == ["cargo warn\n", "warn again\n"]
+    assert stdout_recorder.flushes >= len(["cargo ok\n", "more ok\n"])
+    assert stderr_recorder.flushes >= len(["cargo warn\n", "warn again\n"])
     assert fake_local.cwd_calls == [crate_dir]
     assert fake_local.env_calls == [{"CARGO_HOME": str(fake_workspace / ".cargo-home")}]
     assert fake_local.invocations == [["cargo", "mock"]]
+
+
+def test_run_cargo_command_invokes_popen_with_pipes(
+    patch_local_runner: typ.Callable[[RunCallable], FakeLocal],
+    fake_workspace: Path,
+    run_publish_check_module: ModuleType,
+) -> None:
+    """Ensure the cargo invocation requests pipe streaming for stdout/stderr."""
+    fake_local = patch_local_runner(lambda _args: (0, "ok", "warn"))
+
+    context = run_publish_check_module.build_cargo_command_context(
+        "demo",
+        fake_workspace,
+        timeout_secs=4,
+    )
+    run_publish_check_module.run_cargo_command(
+        context,
+        ("cargo", "mock"),
+    )
+
+    assert fake_local.popen_kwargs == [
+        {
+            "stdout": run_publish_check_module.subprocess.PIPE,
+            "stderr": run_publish_check_module.subprocess.PIPE,
+            "bufsize": 1,
+        }
+    ]
 
 
 def test_run_cargo_command_logs_invocation(
