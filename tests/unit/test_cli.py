@@ -263,21 +263,21 @@ def test_main_handles_invalid_subcommand(
 
 @pytest.mark.usefixtures("minimal_config")
 @pytest.mark.parametrize(
-    "case",
+    ("env_value", "sentinel_state"),
     [
-        pytest.param((None, True), id="default-info"),
-        pytest.param(("INFO", True), id="explicit-info"),
-        pytest.param(("WARNING", False), id="suppress-info"),
+        pytest.param(None, "present", id="default-info"),
+        pytest.param("INFO", "present", id="explicit-info"),
+        pytest.param("WARNING", "absent", id="suppress-info"),
     ],
 )
 def test_main_emits_publish_command_logs(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
-    case: tuple[str | None, bool],
+    env_value: str | None,
+    sentinel_state: typ.Literal["present", "absent"],
 ) -> None:
     """Ensure publish logging honours ``LADING_LOG_LEVEL``."""
-    env_value, should_emit = case
     workspace_graph = _make_workspace(tmp_path.resolve())
 
     def fake_run(
@@ -308,7 +308,7 @@ def test_main_emits_publish_command_logs(
         assert exit_code == 0
         captured = capsys.readouterr()
 
-    if should_emit:
+    if sentinel_state == "present":
         assert sentinel in captured.err
     else:
         assert sentinel not in captured.err
