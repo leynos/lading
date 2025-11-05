@@ -257,6 +257,43 @@ def test_run_includes_preflight_test_excludes(
     assert trailing[-4:] == ("--exclude", "alpha", "--exclude", "beta")
 
 
+def test_run_omits_preflight_excludes_when_empty(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """When no crates are excluded the test command omits --exclude flags."""
+    monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
+    root = tmp_path / "workspace"
+    root.mkdir()
+    workspace = make_workspace(root, make_crate(root, "alpha"))
+    configuration = make_config()
+
+    calls: list[tuple[tuple[str, ...], Path | None]] = []
+
+    def recording_invoke(
+        command: typ.Sequence[str], *, cwd: Path | None = None
+    ) -> tuple[int, str, str]:
+        calls.append((tuple(command), cwd))
+        return 0, "", ""
+
+    monkeypatch.setattr(publish, "_invoke", recording_invoke)
+
+    publish.run(root, configuration, workspace)
+
+    test_call = next(
+        command
+        for command in calls
+        if command[0][0] == "cargo" and command[0][1] == "test"
+    )
+
+    _, cwd = test_call
+    assert cwd == root
+    args = test_call[0]
+    assert args[2] == "--workspace"
+    assert args[3] == "--all-targets"
+    assert any(part.startswith("--target-dir=") for part in args[4:])
+    assert "--exclude" not in args
+
+
 def test_run_honours_preflight_unit_tests_only(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -289,8 +326,8 @@ def test_run_honours_preflight_unit_tests_only(
     assert cwd == root
     args = test_call[0]
     assert args[2] == "--workspace"
-    assert args[3] == "--all-targets"
-    assert any(part.startswith("--target-dir=") for part in args[4:])
+    assert "--all-targets" not in args
+    assert any(part.startswith("--target-dir=") for part in args[3:])
     assert "--lib" in args
     assert "--bins" in args
     lib_index = args.index("--lib")

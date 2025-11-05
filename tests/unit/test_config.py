@@ -146,6 +146,24 @@ def test_load_configuration_requires_file(tmp_path: Path) -> None:
         config_module.load_configuration(tmp_path)
 
 
+def test_preflight_config_from_mapping_parses_fields() -> None:
+    """PreflightConfig.from_mapping converts values into tuples and booleans."""
+    mapping = {"test_exclude": ["alpha", "beta"], "unit_tests_only": True}
+
+    configuration = config_module.PreflightConfig.from_mapping(mapping)
+
+    assert configuration.test_exclude == ("alpha", "beta")
+    assert configuration.unit_tests_only is True
+
+
+def test_preflight_config_from_mapping_defaults() -> None:
+    """Missing preflight table falls back to the default configuration."""
+    configuration = config_module.PreflightConfig.from_mapping(None)
+
+    assert configuration.test_exclude == ()
+    assert configuration.unit_tests_only is False
+
+
 def test_use_configuration_sets_context(tmp_path: Path) -> None:
     """The configuration context manager exposes the active configuration."""
     _write_config(tmp_path, "")
