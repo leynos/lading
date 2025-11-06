@@ -257,9 +257,11 @@ def _string_tuple(value: object, field_name: str) -> tuple[str, ...]:
     if value is None:
         return ()
     if isinstance(value, str):
-        return (value,)
+        stripped = value.strip()
+        return (stripped,) if stripped else ()
     if isinstance(value, cabc.Sequence) and not isinstance(value, str | bytes):
-        return _validate_string_sequence(value, field_name)
+        validated = _validate_string_sequence(value, field_name)
+        return tuple(stripped for entry in validated if (stripped := entry.strip()))
     message = (
         f"{field_name} must be a string or a sequence of strings; "
         f"received {type(value).__name__}."
