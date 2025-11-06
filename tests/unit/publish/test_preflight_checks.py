@@ -115,6 +115,7 @@ def _run_and_record_cargo_preflight(
 
     Returns:
         The recorded cargo command as a tuple of strings.
+
     """
     recorded: list[tuple[str, ...]] = []
 

@@ -14,6 +14,9 @@ from lading import config as config_module
 if typ.TYPE_CHECKING:
     from pathlib import Path
 
+    from tomlkit.items import Array, Table
+    from tomlkit.toml_document import TOMLDocument
+
 
 def _add_exclude_to_config(
     workspace_directory: Path,
@@ -39,14 +42,14 @@ def _add_exclude_to_config(
     config_path.write_text(doc.as_string(), encoding="utf-8")
 
 
-def _load_or_create_toml_document(config_path: Path) -> typ.Any:
+def _load_or_create_toml_document(config_path: Path) -> TOMLDocument:
     """Parse ``config_path`` if it exists, otherwise return a new document."""
     if config_path.exists():
         return parse_toml(config_path.read_text(encoding="utf-8"))
     return make_document()
 
 
-def _ensure_table_exists(doc: typ.Any, table_name: str) -> typ.Any:
+def _ensure_table_exists(doc: TOMLDocument, table_name: str) -> Table:
     """Fetch or create ``table_name`` within ``doc``."""
     table_section = doc.get(table_name)
     if table_section is None:
@@ -55,7 +58,7 @@ def _ensure_table_exists(doc: typ.Any, table_name: str) -> typ.Any:
     return table_section
 
 
-def _ensure_array_field_exists(parent_table: typ.Any, field_name: str) -> typ.Any:
+def _ensure_array_field_exists(parent_table: Table, field_name: str) -> Array:
     """Fetch or create an array field inside ``parent_table``."""
     raw_field = parent_table.get(field_name)
     if raw_field is None:
@@ -68,7 +71,7 @@ def _ensure_array_field_exists(parent_table: typ.Any, field_name: str) -> typ.An
     raise AssertionError(message)  # pragma: no cover - defensive guard
 
 
-def _append_if_absent(target_array: typ.Any, value: str) -> None:
+def _append_if_absent(target_array: Array, value: str) -> None:
     """Append ``value`` to ``target_array`` if it is not already present."""
     if value not in target_array:
         target_array.append(value)

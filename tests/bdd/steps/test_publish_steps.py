@@ -226,9 +226,7 @@ def when_invoke_lading_publish(
     preflight_recorder: _PreflightInvocationRecorder,
 ) -> dict[str, typ.Any]:
     """Execute the publish CLI via ``python -m`` and capture the result."""
-    stub_config = _create_stub_config(
-        cmd_mox, preflight_overrides, preflight_recorder
-    )
+    stub_config = _create_stub_config(cmd_mox, preflight_overrides, preflight_recorder)
     return _invoke_publish_with_options(repo_root, workspace_directory, stub_config)
 
 
@@ -244,9 +242,7 @@ def when_invoke_lading_publish_allow_dirty(
     preflight_recorder: _PreflightInvocationRecorder,
 ) -> dict[str, typ.Any]:
     """Execute the publish CLI with ``--allow-dirty`` enabled."""
-    stub_config = _create_stub_config(
-        cmd_mox, preflight_overrides, preflight_recorder
-    )
+    stub_config = _create_stub_config(cmd_mox, preflight_overrides, preflight_recorder)
     return _invoke_publish_with_options(
         repo_root,
         workspace_directory,
