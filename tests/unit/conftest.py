@@ -61,6 +61,7 @@ def make_config() -> typ.Callable[..., config_module.LadingConfig]:
     def _make_config(
         *,
         preflight_test_exclude: tuple[str, ...] | None = None,
+        preflight_unit_tests_only: bool = False,
         **overrides: object,
     ) -> config_module.LadingConfig:
         publish_table = config_module.PublishConfig(strip_patches="all", **overrides)
@@ -68,6 +69,7 @@ def make_config() -> typ.Callable[..., config_module.LadingConfig]:
             test_exclude=()
             if preflight_test_exclude is None
             else preflight_test_exclude,
+            unit_tests_only=preflight_unit_tests_only,
         )
         return config_module.LadingConfig(
             publish=publish_table,
