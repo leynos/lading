@@ -58,6 +58,19 @@ class _PreflightStubConfig:
     recorder: _PreflightInvocationRecorder | None = None
 
 
+def _create_stub_config(
+    cmd_mox: CmdMox,
+    preflight_overrides: dict[tuple[str, ...], _CommandResponse],
+    preflight_recorder: _PreflightInvocationRecorder,
+) -> _PreflightStubConfig:
+    """Build a stub configuration that records preflight invocations."""
+    return _PreflightStubConfig(
+        cmd_mox,
+        preflight_overrides,
+        recorder=preflight_recorder,
+    )
+
+
 class _CmdInvocation(typ.Protocol):
     """Protocol describing the cmd-mox invocation payload."""
 
@@ -213,8 +226,8 @@ def when_invoke_lading_publish(
     preflight_recorder: _PreflightInvocationRecorder,
 ) -> dict[str, typ.Any]:
     """Execute the publish CLI via ``python -m`` and capture the result."""
-    stub_config = _PreflightStubConfig(
-        cmd_mox, preflight_overrides, recorder=preflight_recorder
+    stub_config = _create_stub_config(
+        cmd_mox, preflight_overrides, preflight_recorder
     )
     return _invoke_publish_with_options(repo_root, workspace_directory, stub_config)
 
@@ -231,8 +244,8 @@ def when_invoke_lading_publish_allow_dirty(
     preflight_recorder: _PreflightInvocationRecorder,
 ) -> dict[str, typ.Any]:
     """Execute the publish CLI with ``--allow-dirty`` enabled."""
-    stub_config = _PreflightStubConfig(
-        cmd_mox, preflight_overrides, recorder=preflight_recorder
+    stub_config = _create_stub_config(
+        cmd_mox, preflight_overrides, preflight_recorder
     )
     return _invoke_publish_with_options(
         repo_root,
@@ -284,6 +297,30 @@ def then_publish_prints_plan(cli_run: dict[str, typ.Any], crate_name: str) -> No
     assert f"- {crate_name} @ 0.1.0" in lines
 
 
+def _get_test_invocations(
+    recorder: _PreflightInvocationRecorder,
+) -> list[tuple[str, ...]]:
+    """Return recorded cargo test invocations or raise if missing."""
+    invocations = recorder.by_label("cargo::test")
+    if not invocations:
+        message = "cargo test pre-flight command was not invoked"
+        raise AssertionError(message)
+    return invocations
+
+
+def _find_consecutive_args(
+    invocations: list[tuple[str, ...]],
+    first: str,
+    second: str,
+) -> bool:
+    """Detect ``first`` immediately followed by ``second`` in args."""
+    for args in invocations:
+        for index in range(len(args) - 1):
+            if args[index] == first and args[index + 1] == second:
+                return True
+    return False
+
+
 @then(
     parsers.parse(
         'the publish command excludes crate "{crate_name}" from pre-flight tests'
@@ -294,18 +331,12 @@ def then_publish_excludes_preflight_crate(
     crate_name: str,
 ) -> None:
     """Assert that cargo test pre-flight invocations skip ``crate_name``."""
-    test_invocations = preflight_recorder.by_label("cargo::test")
-    if not test_invocations:
-        message = "cargo test pre-flight command was not invoked"
+    test_invocations = _get_test_invocations(preflight_recorder)
+    if not _find_consecutive_args(test_invocations, "--exclude", crate_name):
+        message = (
+            f"Expected --exclude {crate_name!r} in cargo test pre-flight invocations"
+        )
         raise AssertionError(message)
-
-    for args in test_invocations:
-        for index, value in enumerate(args[:-1]):
-            if value == "--exclude" and args[index + 1] == crate_name:
-                return
-
-    message = f"Expected --exclude {crate_name!r} in cargo test pre-flight invocations"
-    raise AssertionError(message)
 
 
 @then("the publish command limits pre-flight tests to libraries and binaries")
@@ -313,18 +344,12 @@ def then_publish_limits_preflight_targets(
     preflight_recorder: _PreflightInvocationRecorder,
 ) -> None:
     """Assert that cargo test pre-flight invocations pass --lib and --bins."""
-    test_invocations = preflight_recorder.by_label("cargo::test")
-    if not test_invocations:
-        message = "cargo test pre-flight command was not invoked"
+    test_invocations = _get_test_invocations(preflight_recorder)
+    if not _find_consecutive_args(test_invocations, "--lib", "--bins"):
+        message = (
+            "Expected --lib followed by --bins in cargo test pre-flight invocations"
+        )
         raise AssertionError(message)
-
-    for args in test_invocations:
-        for index, value in enumerate(args[:-1]):
-            if value == "--lib" and args[index + 1] == "--bins":
-                return
-
-    message = "Expected --lib followed by --bins in cargo test pre-flight invocations"
-    raise AssertionError(message)
 
 
 @then(parsers.parse('the publish command lists crates in order "{crate_names}"'))

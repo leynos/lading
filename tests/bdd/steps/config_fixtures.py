@@ -39,6 +39,41 @@ def _add_exclude_to_config(
     config_path.write_text(doc.as_string(), encoding="utf-8")
 
 
+def _load_or_create_toml_document(config_path: Path) -> typ.Any:
+    """Parse ``config_path`` if it exists, otherwise return a new document."""
+    if config_path.exists():
+        return parse_toml(config_path.read_text(encoding="utf-8"))
+    return make_document()
+
+
+def _ensure_table_exists(doc: typ.Any, table_name: str) -> typ.Any:
+    """Fetch or create ``table_name`` within ``doc``."""
+    table_section = doc.get(table_name)
+    if table_section is None:
+        table_section = table()
+        doc[table_name] = table_section
+    return table_section
+
+
+def _ensure_array_field_exists(parent_table: typ.Any, field_name: str) -> typ.Any:
+    """Fetch or create an array field inside ``parent_table``."""
+    raw_field = parent_table.get(field_name)
+    if raw_field is None:
+        field_array = array()
+        parent_table[field_name] = field_array
+        return field_array
+    if hasattr(raw_field, "append"):
+        return raw_field
+    message = f"{field_name} must be an array"
+    raise AssertionError(message)  # pragma: no cover - defensive guard
+
+
+def _append_if_absent(target_array: typ.Any, value: str) -> None:
+    """Append ``value`` to ``target_array`` if it is not already present."""
+    if value not in target_array:
+        target_array.append(value)
+
+
 @given("a workspace directory with configuration", target_fixture="workspace_directory")
 def given_workspace_directory(tmp_path: Path) -> Path:
     """Provide a temporary workspace root for CLI exercises."""
@@ -109,26 +144,11 @@ def given_preflight_test_exclude_contains(
 ) -> None:
     """Ensure ``crate_name`` appears in ``preflight.test_exclude``."""
     config_path = workspace_directory / config_module.CONFIG_FILENAME
-    if config_path.exists():
-        doc = parse_toml(config_path.read_text(encoding="utf-8"))
-    else:
-        doc = make_document()
-    preflight_table = doc.get("preflight")
-    if preflight_table is None:
-        preflight_table = table()
-        doc["preflight"] = preflight_table
-    raw_excludes = preflight_table.get("test_exclude")
-    if raw_excludes is None:
-        excludes_array = array()
-        preflight_table["test_exclude"] = excludes_array
-    elif hasattr(raw_excludes, "append"):
-        excludes_array = raw_excludes
-    else:  # pragma: no cover - defensive guard for unexpected config edits
-        message = "preflight.test_exclude must be an array"
-        raise AssertionError(message)
-    if crate_name not in excludes_array:
-        excludes_array.append(crate_name)
-    config_path.write_text(doc.as_string(), encoding="utf-8")
+    document = _load_or_create_toml_document(config_path)
+    preflight_table = _ensure_table_exists(document, "preflight")
+    excludes_array = _ensure_array_field_exists(preflight_table, "test_exclude")
+    _append_if_absent(excludes_array, crate_name)
+    config_path.write_text(document.as_string(), encoding="utf-8")
 
 
 @given("preflight.unit_tests_only is true")

@@ -114,10 +114,16 @@ class PreflightConfig:
         _validate_mapping_keys(
             mapping, {"test_exclude", "unit_tests_only"}, "preflight"
         )
+        raw_excludes = _string_tuple(
+            mapping.get("test_exclude"), "preflight.test_exclude"
+        )
+        filtered_excludes: list[str] = []
+        for entry in raw_excludes:
+            trimmed = entry.strip()
+            if trimmed:
+                filtered_excludes.append(trimmed)
         return cls(
-            test_exclude=_string_tuple(
-                mapping.get("test_exclude"), "preflight.test_exclude"
-            ),
+            test_exclude=tuple(filtered_excludes),
             unit_tests_only=_boolean(
                 mapping.get("unit_tests_only"), "preflight.unit_tests_only"
             ),
