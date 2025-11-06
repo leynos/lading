@@ -665,6 +665,24 @@ def _preflight_argument_sets(
     return check_arguments, test_arguments
 
 
+def _normalise_test_excludes(entries: typ.Sequence[str]) -> tuple[str, ...]:
+    """Return sorted, deduplicated, trimmed crate names for ``--exclude`` flags."""
+    return tuple(sorted({crate.strip() for crate in entries if crate.strip()}))
+
+
+def _build_test_arguments(
+    base_arguments: list[str], options: _CargoPreflightOptions
+) -> list[str]:
+    """Return cargo test arguments derived from ``options``."""
+    arguments = list(base_arguments)
+    if options.unit_tests_only:
+        arguments.extend(("--lib", "--bins"))
+    for crate_name in _normalise_test_excludes(options.test_excludes):
+        # Sorted unique values keep cargo invocations deterministic for tests/logging.
+        arguments.extend(("--exclude", crate_name))
+    return arguments
+
+
 def _verify_clean_working_tree(
     workspace_root: Path, *, allow_dirty: bool, runner: _CommandRunner
 ) -> None:
@@ -704,11 +722,7 @@ def _run_cargo_preflight(
     """Run ``cargo <subcommand>`` inside ``workspace_root``."""
     arguments = list(options.extra_args)
     if subcommand == "test":
-        if options.unit_tests_only:
-            arguments.extend(("--lib", "--bins"))
-        for crate in options.test_excludes:
-            if crate_name := crate.strip():
-                arguments.extend(("--exclude", crate_name))
+        arguments = _build_test_arguments(arguments, options)
     exit_code, stdout, stderr = runner(
         ("cargo", subcommand, *arguments),
         cwd=workspace_root,
