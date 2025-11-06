@@ -21,7 +21,22 @@ def test_drain_stream_handles_partial_utf8(
 
     assert "".join(buffer) == "💩"
     assert sink.writes == ["💩"]
-    assert sink.flushes == 1
+    assert sink.flush_count == 1
+
+
+def test_drain_stream_handles_empty_chunked_stream(
+    run_publish_check_module: ModuleType,
+) -> None:
+    """Empty streams should not emit writes or trigger flushes."""
+    stream = _ChunkedStream([])
+    sink = StreamRecorder()
+    buffer: list[str] = []
+
+    run_publish_check_module._drain_stream(stream, sink, buffer)
+
+    assert buffer == []
+    assert sink.writes == []
+    assert sink.flush_count == 0
 
 
 def test_stream_process_output_streams_chunks(
@@ -59,6 +74,41 @@ def test_stream_process_output_streams_chunks(
     assert result.stderr == "warn"
     assert stdout_recorder.writes == ["one", "two"]
     assert stderr_recorder.writes == ["warn"]
+    assert stdout_recorder.flush_count == 2
+    assert stderr_recorder.flush_count == 1
+
+
+def test_stream_process_output_handles_mixed_encoding(
+    run_publish_check_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Mixed encodings should replace undecodable bytes without crashing."""
+    stdout_stream = _ChunkedStream([b"ok", b"\xff\xfe", b"done"])
+    stderr_stream = _ChunkedStream([b"warn", b"\xff", b"error"])
+    process = SimpleNamespace(
+        stdout=stdout_stream,
+        stderr=stderr_stream,
+        args=["cargo", "mock"],
+    )
+
+    process.wait = lambda timeout=None: 0  # type: ignore[attr-defined]
+    process.kill = lambda: None  # type: ignore[attr-defined]
+
+    stdout_recorder = StreamRecorder()
+    stderr_recorder = StreamRecorder()
+    monkeypatch.setattr(run_publish_check_module.sys, "stdout", stdout_recorder)
+    monkeypatch.setattr(run_publish_check_module.sys, "stderr", stderr_recorder)
+
+    result = run_publish_check_module._stream_process_output(
+        process,
+        ("cargo", "mock"),
+        timeout_secs=3,
+    )
+
+    assert "\ufffd" in result.stdout
+    assert "\ufffd" in result.stderr
+    assert "".join(stdout_recorder.writes) == result.stdout
+    assert "".join(stderr_recorder.writes) == result.stderr
 
 
 def test_stream_process_output_cleans_up_on_timeout(
@@ -215,3 +265,26 @@ def test_handle_process_timeout_cleans_threads_and_streams(
     assert process.stdout.closed
     assert process.stderr.closed
     assert threads[0].join_args == [0.1]
+
+
+def test_stream_recorder_captures_writes_and_flushes() -> None:
+    """Ensure the recorder stores writes and tracks flush counters."""
+    recorder = StreamRecorder()
+    assert recorder.write("hello") == 5
+    recorder.flush()
+    recorder.write("world")
+    recorder.flush()
+
+    assert recorder.writes == ["hello", "world"]
+    assert recorder.flush_count == 2
+    assert recorder.flushes == recorder.flush_count
+
+
+def test_stream_recorder_flush_does_not_require_writes() -> None:
+    """Flushing without writes should still increment the counter."""
+    recorder = StreamRecorder()
+    recorder.flush()
+    recorder.flush()
+
+    assert recorder.flush_count == 2
+    assert recorder.writes == []

@@ -133,8 +133,8 @@ def test_run_cargo_command_streams_output(
 
     assert stdout_recorder.writes[:2] == ["cargo ok\n", "more ok\n"]
     assert stderr_recorder.writes[:2] == ["cargo warn\n", "warn again\n"]
-    assert stdout_recorder.flushes >= len(["cargo ok\n", "more ok\n"])
-    assert stderr_recorder.flushes >= len(["cargo warn\n", "warn again\n"])
+    assert stdout_recorder.flush_count >= len(["cargo ok\n", "more ok\n"])
+    assert stderr_recorder.flush_count >= len(["cargo warn\n", "warn again\n"])
     assert fake_local.cwd_calls == [crate_dir]
     assert fake_local.env_calls == [{"CARGO_HOME": str(fake_workspace / ".cargo-home")}]
     assert fake_local.invocations == [["cargo", "mock"]]
