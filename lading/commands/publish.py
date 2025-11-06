@@ -36,6 +36,15 @@ class PublishPreparationError(RuntimeError):
 
 
 @dc.dataclass(frozen=True, slots=True)
+class _CargoPreflightOptions:
+    """Options controlling how cargo pre-flight commands are invoked."""
+
+    extra_args: typ.Sequence[str]
+    test_excludes: typ.Sequence[str] = ()
+    unit_tests_only: bool = False
+
+
+@dc.dataclass(frozen=True, slots=True)
 class PublishPlan:
     """Describe which crates should be published from a workspace."""
 
@@ -585,6 +594,7 @@ def run(
     _run_preflight_checks(
         root_path,
         allow_dirty=effective_options.allow_dirty,
+        configuration=active_configuration,
         runner=command_runner,
     )
     plan = plan_publication(
@@ -602,27 +612,79 @@ def _run_preflight_checks(
     workspace_root: Path,
     *,
     allow_dirty: bool,
+    configuration: LadingConfig | None = None,
     runner: _CommandRunner | None = None,
 ) -> None:
     """Execute publish pre-flight checks for ``workspace_root``."""
     command_runner = runner or _invoke
+    active_configuration = _ensure_configuration(configuration, workspace_root)
     _verify_clean_working_tree(
         workspace_root, allow_dirty=allow_dirty, runner=command_runner
     )
 
     with tempfile.TemporaryDirectory(prefix="lading-preflight-target-") as target:
         target_path = Path(target)
-        extra_args = (
-            "--workspace",
-            "--all-targets",
-            f"--target-dir={target_path}",
+        preflight_config = active_configuration.preflight
+        unit_tests_only = preflight_config.unit_tests_only
+        check_arguments, test_arguments = _preflight_argument_sets(
+            target_path, unit_tests_only=unit_tests_only
         )
         _run_cargo_preflight(
-            workspace_root, "check", runner=command_runner, extra_args=extra_args
+            workspace_root,
+            "check",
+            runner=command_runner,
+            options=_CargoPreflightOptions(extra_args=check_arguments),
         )
         _run_cargo_preflight(
-            workspace_root, "test", runner=command_runner, extra_args=extra_args
+            workspace_root,
+            "test",
+            runner=command_runner,
+            options=_CargoPreflightOptions(
+                extra_args=test_arguments,
+                test_excludes=preflight_config.test_exclude,
+                unit_tests_only=unit_tests_only,
+            ),
         )
+
+
+def _compose_preflight_arguments(
+    target_dir: Path, *, include_all_targets: bool
+) -> tuple[str, ...]:
+    """Build the ordered argument tuple shared by pre-flight cargo commands."""
+    arguments = ["--workspace"]
+    if include_all_targets:
+        arguments.append("--all-targets")
+    arguments.append(f"--target-dir={target_dir}")
+    return tuple(arguments)
+
+
+def _preflight_argument_sets(
+    target_dir: Path, *, unit_tests_only: bool
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Return argument tuples for cargo check and cargo test pre-flight calls."""
+    check_arguments = _compose_preflight_arguments(target_dir, include_all_targets=True)
+    test_arguments = _compose_preflight_arguments(
+        target_dir, include_all_targets=not unit_tests_only
+    )
+    return check_arguments, test_arguments
+
+
+def _normalise_test_excludes(entries: typ.Sequence[str]) -> tuple[str, ...]:
+    """Return sorted, deduplicated, trimmed crate names for ``--exclude`` flags."""
+    return tuple(sorted({crate.strip() for crate in entries if crate.strip()}))
+
+
+def _build_test_arguments(
+    base_arguments: list[str], options: _CargoPreflightOptions
+) -> list[str]:
+    """Return cargo test arguments derived from ``options``."""
+    arguments = list(base_arguments)
+    if options.unit_tests_only:
+        arguments.extend(("--lib", "--bins"))
+    for crate_name in _normalise_test_excludes(options.test_excludes):
+        # Sorted unique values keep cargo invocations deterministic for tests/logging.
+        arguments.extend(("--exclude", crate_name))
+    return arguments
 
 
 def _verify_clean_working_tree(
@@ -659,20 +721,29 @@ def _run_cargo_preflight(
     subcommand: typ.Literal["check", "test"],
     *,
     runner: _CommandRunner,
-    extra_args: tuple[str, ...] | None = None,
+    options: _CargoPreflightOptions,
 ) -> None:
     """Run ``cargo <subcommand>`` inside ``workspace_root``."""
-    arguments = extra_args or ("--workspace", "--all-targets")
+    arguments = list(options.extra_args)
+    if subcommand == "test":
+        arguments = _build_test_arguments(arguments, options)
     exit_code, stdout, stderr = runner(
         ("cargo", subcommand, *arguments),
         cwd=workspace_root,
     )
     if exit_code != 0:
-        detail = (stderr or stdout).strip()
-        message = f"Pre-flight cargo {subcommand} failed with exit code {exit_code}"
-        if detail:
-            message = f"{message}: {detail}"
+        message = _build_cargo_error_message(subcommand, exit_code, stdout, stderr)
         raise PublishPreflightError(message)
+
+
+def _build_cargo_error_message(
+    subcommand: str, exit_code: int, stdout: str, stderr: str
+) -> str:
+    """Return a consistent failure message for cargo pre-flight commands."""
+    message = f"Pre-flight cargo {subcommand} failed with exit code {exit_code}"
+    if detail := (stderr or stdout).strip():
+        message = f"{message}: {detail}"
+    return message
 
 
 def _invoke(

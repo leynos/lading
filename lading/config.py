@@ -98,22 +98,55 @@ class PublishConfig:
 
 
 @dc.dataclass(frozen=True, slots=True)
+class PreflightConfig:
+    """Settings for publish pre-flight checks."""
+
+    test_exclude: tuple[str, ...] = ()
+    unit_tests_only: bool = False
+
+    @classmethod
+    def from_mapping(
+        cls, mapping: cabc.Mapping[str, typ.Any] | None
+    ) -> PreflightConfig:
+        """Create a :class:`PreflightConfig` from a TOML table mapping."""
+        if mapping is None:
+            return cls()
+        _validate_mapping_keys(
+            mapping, {"test_exclude", "unit_tests_only"}, "preflight"
+        )
+        return cls(
+            test_exclude=_string_tuple(
+                mapping.get("test_exclude"), "preflight.test_exclude"
+            ),
+            unit_tests_only=_boolean(
+                mapping.get("unit_tests_only"), "preflight.unit_tests_only"
+            ),
+        )
+
+
+@dc.dataclass(frozen=True, slots=True)
 class LadingConfig:
     """Strongly-typed representation of ``lading.toml``."""
 
     bump: BumpConfig = dc.field(default_factory=BumpConfig)
     publish: PublishConfig = dc.field(default_factory=PublishConfig)
+    preflight: PreflightConfig = dc.field(default_factory=PreflightConfig)
 
     @classmethod
     def from_mapping(cls, mapping: cabc.Mapping[str, typ.Any]) -> LadingConfig:
         """Create a :class:`LadingConfig` from a parsed configuration mapping."""
-        _validate_mapping_keys(mapping, {"bump", "publish"}, "configuration section")
+        _validate_mapping_keys(
+            mapping, {"bump", "publish", "preflight"}, "configuration section"
+        )
         return cls(
             bump=BumpConfig.from_mapping(
                 _optional_mapping(mapping.get("bump"), "bump")
             ),
             publish=PublishConfig.from_mapping(
                 _optional_mapping(mapping.get("publish"), "publish")
+            ),
+            preflight=PreflightConfig.from_mapping(
+                _optional_mapping(mapping.get("preflight"), "preflight")
             ),
         )
 
@@ -231,6 +264,16 @@ def _string_tuple(value: object, field_name: str) -> tuple[str, ...]:
         f"{field_name} must be a string or a sequence of strings; "
         f"received {type(value).__name__}."
     )
+    raise ConfigurationError(message)
+
+
+def _boolean(value: object, field_name: str) -> bool:
+    """Return a boolean parsed from ``value``."""
+    if value is None:
+        return False
+    if isinstance(value, bool):
+        return value
+    message = f"{field_name} must be a boolean; received {type(value).__name__}."
     raise ConfigurationError(message)
 
 

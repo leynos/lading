@@ -156,6 +156,20 @@ Feature: Lading CLI scaffolding
     Then the CLI exits with code 1
     And the stderr contains "Pre-flight cargo test failed with exit code 1: cargo test failed"
 
+  Scenario: Publish pre-flight skips configured cargo test crates
+    Given a workspace directory with configuration
+    And cargo metadata describes a sample workspace
+    And preflight.test_exclude contains "alpha"
+    When I invoke lading publish with that workspace
+    Then the publish command excludes crate "alpha" from pre-flight tests
+
+  Scenario: Publish pre-flight limits cargo test targets to libraries and binaries
+    Given a workspace directory with configuration
+    And cargo metadata describes a sample workspace
+    And preflight.unit_tests_only is true
+    When I invoke lading publish with that workspace
+    Then the publish command limits pre-flight tests to libraries and binaries
+
   Scenario: Publish pre-flight aborts when cmd-mox socket is missing
     Given a workspace directory with configuration
     And cmd-mox IPC socket is unset

@@ -34,6 +34,10 @@ def test_load_configuration_parses_values(tmp_path: Path) -> None:
         exclude = ["examples"]
         order = ["core"]
         strip_patches = "all"
+
+        [preflight]
+        test_exclude = ["cucumber"]
+        unit_tests_only = true
         """,
     )
 
@@ -47,6 +51,8 @@ def test_load_configuration_parses_values(tmp_path: Path) -> None:
     assert configuration.publish.exclude == ("examples",)
     assert configuration.publish.order == ("core",)
     assert configuration.publish.strip_patches == "all"
+    assert configuration.preflight.test_exclude == ("cucumber",)
+    assert configuration.preflight.unit_tests_only is True
 
 
 @pytest.mark.parametrize(
@@ -85,6 +91,27 @@ def test_load_configuration_parses_values(tmp_path: Path) -> None:
         ),
         pytest.param(
             """
+            [preflight]
+            unknown = true
+            """,
+            id="preflight_unknown_key",
+        ),
+        pytest.param(
+            """
+            [preflight]
+            test_exclude = ["alpha", 1]
+            """,
+            id="preflight_invalid_type",
+        ),
+        pytest.param(
+            """
+            [preflight]
+            unit_tests_only = "sometimes"
+            """,
+            id="preflight_invalid_boolean",
+        ),
+        pytest.param(
+            """
             [unknown]
             value = 1
             """,
@@ -110,12 +137,31 @@ def test_load_configuration_applies_defaults(tmp_path: Path) -> None:
 
     assert configuration.publish.strip_patches == "per-crate"
     assert configuration.bump.documentation.globs == ()
+    assert configuration.preflight.unit_tests_only is False
 
 
 def test_load_configuration_requires_file(tmp_path: Path) -> None:
     """Raise a descriptive error when ``lading.toml`` is absent."""
     with pytest.raises(config_module.MissingConfigurationError):
         config_module.load_configuration(tmp_path)
+
+
+def test_preflight_config_from_mapping_parses_fields() -> None:
+    """PreflightConfig.from_mapping converts values into tuples and booleans."""
+    mapping = {"test_exclude": ["alpha", "beta"], "unit_tests_only": True}
+
+    configuration = config_module.PreflightConfig.from_mapping(mapping)
+
+    assert configuration.test_exclude == ("alpha", "beta")
+    assert configuration.unit_tests_only is True
+
+
+def test_preflight_config_from_mapping_defaults() -> None:
+    """Missing preflight table falls back to the default configuration."""
+    configuration = config_module.PreflightConfig.from_mapping(None)
+
+    assert configuration.test_exclude == ()
+    assert configuration.unit_tests_only is False
 
 
 def test_use_configuration_sets_context(tmp_path: Path) -> None:

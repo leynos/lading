@@ -17,6 +17,35 @@ from .conftest import (
     make_crate,
     make_workspace,
 )
+from .preflight_test_utils import (
+    _extract_cargo_test_call,
+    _setup_preflight_test,
+)
+
+EXCLUDE_SCENARIOS = [
+    pytest.param((), (), id="none"),
+    pytest.param(("alpha", "beta"), ("alpha", "beta"), id="ordered"),
+    pytest.param(("beta", "alpha"), ("alpha", "beta"), id="sorted"),
+    pytest.param((" alpha ", "beta", "alpha"), ("alpha", "beta"), id="trimmed"),
+    pytest.param(("", " ", "\t"), (), id="blank_entries"),
+    pytest.param(
+        (" \n", "\rbeta\t", "\talpha", "beta"),
+        ("alpha", "beta"),
+        id="whitespace_variants",
+    ),
+    pytest.param(
+        ("gamma", "beta", "alpha"),
+        ("alpha", "beta", "gamma"),
+        id="unsorted",
+    ),
+    pytest.param(("beta", "beta", "beta"), ("beta",), id="deduplicated"),
+    pytest.param(
+        ("alpha", "alpha", " alpha ", "\talpha\t"),
+        ("alpha",),
+        id="duplicate_whitespace",
+    ),
+    pytest.param(("alpha", "", "beta"), ("alpha", "beta"), id="mixed_blank"),
+]
 
 
 def test_run_normalises_workspace_root(
@@ -220,44 +249,97 @@ def test_run_executes_preflight_checks_in_workspace(
 
 
 @pytest.mark.parametrize(
-    ("failing_subcommand", "expected_message"),
-    [
-        ("check", "cargo check"),
-        ("test", "cargo test"),
-    ],
-    ids=["check_failure", "test_failure"],
+    ("configured_excludes", "expected_excludes"),
+    EXCLUDE_SCENARIOS,
 )
-def test_run_raises_when_preflight_cargo_fails(
+def test_run_includes_preflight_test_excludes(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
-    failing_subcommand: str,
-    expected_message: str,
+    configured_excludes: tuple[str, ...],
+    expected_excludes: tuple[str, ...],
 ) -> None:
-    """Non-zero cargo check/test aborts the publish command."""
-    monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
-    root = tmp_path / "workspace"
-    root.mkdir()
-    workspace = make_workspace(root, make_crate(root, "alpha"))
-    configuration = make_config()
+    """Configured exclusions match the builder output and cargo invocation."""
+    configuration = make_config(preflight_test_exclude=configured_excludes)
+    root, _workspace, calls = _setup_preflight_test(
+        monkeypatch, tmp_path, configuration
+    )
+    args, cwd = _extract_cargo_test_call(calls)
+    assert cwd == root
+    arguments = list(args[2:])
+    assert arguments[0] == "--workspace"
+    include_all_targets = "--all-targets" in arguments
+    assert include_all_targets == (not configuration.preflight.unit_tests_only)
+    target_argument = next(
+        value for value in arguments if value.startswith("--target-dir=")
+    )
+    target_dir = Path(target_argument.split("=", 1)[1])
+    base_arguments = list(
+        publish._compose_preflight_arguments(
+            target_dir,
+            include_all_targets=include_all_targets,
+        )
+    )
+    options = publish._CargoPreflightOptions(
+        extra_args=tuple(base_arguments),
+        test_excludes=configured_excludes,
+        unit_tests_only=configuration.preflight.unit_tests_only,
+    )
+    rebuilt_arguments = publish._build_test_arguments(
+        list(base_arguments),
+        options,
+    )
+    assert rebuilt_arguments == arguments
+    exclude_values = tuple(
+        arguments[index + 1]
+        for index, value in enumerate(arguments[:-1])
+        if value == "--exclude"
+    )
+    assert exclude_values == expected_excludes
+    if not expected_excludes:
+        assert "--exclude" not in arguments
 
-    def failing_invoke(
-        command: typ.Sequence[str], *, cwd: Path | None = None
-    ) -> tuple[int, str, str]:
-        if command[0] == "git":
-            return 0, "", ""
-        if len(command) > 1 and command[1] == failing_subcommand:
-            return 1, "", expected_message
-        return 0, "", ""
 
-    monkeypatch.setattr(publish, "_invoke", failing_invoke)
+def test_run_honours_preflight_unit_tests_only(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Unit-test-only preflight mode narrows cargo test targets."""
+    configuration = make_config(preflight_unit_tests_only=True)
+    root, _workspace, calls = _setup_preflight_test(
+        monkeypatch, tmp_path, configuration
+    )
+    args, cwd = _extract_cargo_test_call(calls)
+    assert cwd == root
+    assert args[2] == "--workspace"
+    assert "--all-targets" not in args
+    assert any(part.startswith("--target-dir=") for part in args[3:])
+    assert "--lib" in args
+    assert "--bins" in args
+    assert "--exclude" not in args
+    lib_index = args.index("--lib")
+    bins_index = args.index("--bins")
+    assert bins_index == lib_index + 1
 
-    with pytest.raises(publish.PublishPreflightError) as excinfo:
-        publish.run(root, configuration, workspace)
 
-    message = str(excinfo.value)
-    assert expected_message in message
-    assert f"cargo {failing_subcommand}" in message
-    assert "exit code 1" in message
+def test_run_unit_tests_only_with_excludes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Exclusions are still honoured when unit-tests-only mode is enabled."""
+    configuration = make_config(
+        preflight_unit_tests_only=True, preflight_test_exclude=("gamma", "alpha")
+    )
+    root, _workspace, calls = _setup_preflight_test(
+        monkeypatch,
+        tmp_path,
+        configuration,
+        crate_names=("alpha", "beta", "gamma"),
+    )
+    args, cwd = _extract_cargo_test_call(calls)
+    assert cwd == root
+    assert args[2] == "--workspace"
+    assert "--all-targets" not in args
+    assert "--lib" in args
+    assert "--bins" in args
+    assert args[-4:] == ("--exclude", "alpha", "--exclude", "gamma")
 
 
 def _verify_cargo_commands_executed(
@@ -339,3 +421,44 @@ def test_allow_dirty_flag_bypasses_git_status_check(
 
     assert message.startswith(f"Publish plan for {root}")
     _verify_cargo_commands_executed(calls, root)
+
+
+@pytest.mark.parametrize(
+    ("failing_subcommand", "expected_message"),
+    [
+        ("check", "cargo check"),
+        ("test", "cargo test"),
+    ],
+    ids=["check_failure", "test_failure"],
+)
+def test_run_raises_when_preflight_cargo_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    failing_subcommand: str,
+    expected_message: str,
+) -> None:
+    """Non-zero cargo check/test aborts the publish command."""
+    monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
+    root = tmp_path / "workspace"
+    root.mkdir()
+    workspace = make_workspace(root, make_crate(root, "alpha"))
+    configuration = make_config()
+
+    def failing_invoke(
+        command: typ.Sequence[str], *, cwd: Path | None = None
+    ) -> tuple[int, str, str]:
+        if command[0] == "git":
+            return 0, "", ""
+        if len(command) > 1 and command[1] == failing_subcommand:
+            return 1, "", expected_message
+        return 0, "", ""
+
+    monkeypatch.setattr(publish, "_invoke", failing_invoke)
+
+    with pytest.raises(publish.PublishPreflightError) as excinfo:
+        publish.run(root, configuration, workspace)
+
+    message = str(excinfo.value)
+    assert expected_message in message
+    assert f"cargo {failing_subcommand}" in message
+    assert "exit code 1" in message

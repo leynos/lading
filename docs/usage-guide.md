@@ -151,6 +151,27 @@ isolated and discarded once the checks finish. The commands execute after a
 same files that would be published. Any non-zero exit aborts the command with a
 descriptive error message.
 
+Workspaces can opt out of expensive integration test suites by configuring a
+`[preflight]` section. Listing crate names under `preflight.test_exclude`
+instructs the CLI to pass `--exclude <crate>` for each entry when it executes
+`cargo test`. The check still runs for all other workspace members so a single
+misbehaving crate does not block the release pipeline. Example configuration:
+
+```toml
+[preflight]
+test_exclude = ["cucumber", "beta-cli"]
+```
+
+Setting `preflight.unit_tests_only = true` limits the pre-flight invocation to
+library and binary targets by appending `--lib --bins`. This helps release
+pipelines focus on fast unit suites while leaving integration, doc, and example
+tests for dedicated CI jobs:
+
+```toml
+[preflight]
+unit_tests_only = true
+```
+
 If the working tree contains uncommitted changes the run halts with a reminder
 to clean up or to re-run with `--allow-dirty`. Passing the flag skips the
 cleanliness check while still running the cargo pre-flight commands.
