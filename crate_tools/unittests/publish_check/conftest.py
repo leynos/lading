@@ -243,6 +243,24 @@ class _ChunkedStream(io.RawIOBase):
         super().close()
 
 
+class StreamRecorder:
+    """Recording sink used to assert streaming behaviour."""
+
+    def __init__(self) -> None:
+        """Initialise in-memory buffers for captured writes."""
+        self.writes: list[str] = []
+        self.flushes = 0
+
+    def write(self, text: str) -> int:
+        """Capture a write and report the consumed length."""
+        self.writes.append(text)
+        return len(text)
+
+    def flush(self) -> None:
+        """Record a flush event for downstream assertions."""
+        self.flushes += 1
+
+
 class FakeLocal:
     """Mimic a fabric ``local`` helper for cargo orchestration tests."""
 

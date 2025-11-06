@@ -6,47 +6,15 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
-
-class _ChunkStream:
-    """Stream fixture that yields predefined byte chunks."""
-
-    def __init__(self, *chunks: bytes) -> None:
-        self._chunks = list(chunks)
-        self.closed = False
-
-    def read(self, _size: int = -1) -> bytes:
-        return self.read1(_size)
-
-    def read1(self, _size: int = -1) -> bytes:
-        if not self._chunks:
-            return b""
-        return self._chunks.pop(0)
-
-    def close(self) -> None:
-        self.closed = True
-
-
-class _Recorder:
-    """Recording sink used to assert streaming behaviour."""
-
-    def __init__(self) -> None:
-        self.writes: list[str] = []
-        self.flushes = 0
-
-    def write(self, text: str) -> int:
-        self.writes.append(text)
-        return len(text)
-
-    def flush(self) -> None:
-        self.flushes += 1
+from .conftest import StreamRecorder, _ChunkedStream
 
 
 def test_drain_stream_handles_partial_utf8(
     run_publish_check_module: ModuleType,
 ) -> None:
     """Incremental decoder should stitch multi-byte UTF-8 sequences."""
-    stream = _ChunkStream(b"\xf0\x9f", b"\x92\xa9")
-    sink = _Recorder()
+    stream = _ChunkedStream([b"\xf0\x9f", b"\x92\xa9"])
+    sink = StreamRecorder()
     buffer: list[str] = []
 
     run_publish_check_module._drain_stream(stream, sink, buffer)
@@ -61,8 +29,8 @@ def test_stream_process_output_streams_chunks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """_stream_process_output should mirror stdout/stderr chunks immediately."""
-    stdout_stream = _ChunkStream(b"one", b"two")
-    stderr_stream = _ChunkStream(b"warn")
+    stdout_stream = _ChunkedStream([b"one", b"two"])
+    stderr_stream = _ChunkedStream([b"warn"])
     process = SimpleNamespace(
         stdout=stdout_stream,
         stderr=stderr_stream,
@@ -76,8 +44,8 @@ def test_stream_process_output_streams_chunks(
     process.wait = wait  # type: ignore[attr-defined]
     process.kill = lambda: None  # type: ignore[attr-defined]
 
-    stdout_recorder = _Recorder()
-    stderr_recorder = _Recorder()
+    stdout_recorder = StreamRecorder()
+    stderr_recorder = StreamRecorder()
     monkeypatch.setattr(run_publish_check_module.sys, "stdout", stdout_recorder)
     monkeypatch.setattr(run_publish_check_module.sys, "stderr", stderr_recorder)
 
@@ -98,8 +66,8 @@ def test_stream_process_output_cleans_up_on_timeout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Timeouts should kill the process, close streams, and re-raise."""
-    stdout_stream = _ChunkStream(b"partial")
-    stderr_stream = _ChunkStream(b"error")
+    stdout_stream = _ChunkedStream([b"partial"])
+    stderr_stream = _ChunkedStream([b"error"])
     state = {"kill": False, "wait": 0}
 
     def wait(timeout: int | None = None) -> None:
@@ -116,8 +84,8 @@ def test_stream_process_output_cleans_up_on_timeout(
         args=["cargo"],
     )
 
-    stdout_recorder = _Recorder()
-    stderr_recorder = _Recorder()
+    stdout_recorder = StreamRecorder()
+    stderr_recorder = StreamRecorder()
     monkeypatch.setattr(run_publish_check_module.sys, "stdout", stdout_recorder)
     monkeypatch.setattr(run_publish_check_module.sys, "stderr", stderr_recorder)
 

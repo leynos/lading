@@ -12,6 +12,7 @@ from .conftest import (
     CommandFailureTestCase,
     FakeLocal,
     RunCallable,
+    StreamRecorder,
 )
 
 if typ.TYPE_CHECKING:
@@ -115,20 +116,8 @@ def test_run_cargo_command_streams_output(
         )
     )
 
-    class Recorder:
-        def __init__(self) -> None:
-            self.writes: list[str] = []
-            self.flushes = 0
-
-        def write(self, text: str) -> int:
-            self.writes.append(text)
-            return len(text)
-
-        def flush(self) -> None:
-            self.flushes += 1
-
-    stdout_recorder = Recorder()
-    stderr_recorder = Recorder()
+    stdout_recorder = StreamRecorder()
+    stderr_recorder = StreamRecorder()
     monkeypatch.setattr(run_publish_check_module.sys, "stdout", stdout_recorder)
     monkeypatch.setattr(run_publish_check_module.sys, "stderr", stderr_recorder)
 
