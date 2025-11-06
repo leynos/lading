@@ -6,54 +6,39 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
-
-class _ChunkStream:
-    """Stream fixture that yields predefined byte chunks."""
-
-    def __init__(self, *chunks: bytes) -> None:
-        self._chunks = list(chunks)
-        self.closed = False
-
-    def read(self, _size: int = -1) -> bytes:
-        return self.read1(_size)
-
-    def read1(self, _size: int = -1) -> bytes:
-        if not self._chunks:
-            return b""
-        return self._chunks.pop(0)
-
-    def close(self) -> None:
-        self.closed = True
+from .conftest import StreamRecorder, _ChunkedStream
 
 
-class _Recorder:
-    """Recording sink used to assert streaming behaviour."""
-
-    def __init__(self) -> None:
-        self.writes: list[str] = []
-        self.flushes = 0
-
-    def write(self, text: str) -> int:
-        self.writes.append(text)
-        return len(text)
-
-    def flush(self) -> None:
-        self.flushes += 1
-
-
-def test_drain_stream_handles_partial_utf8(
+@pytest.mark.parametrize(
+    ("chunks", "expected_buffer", "expected_writes", "expected_flushes"),
+    [
+        pytest.param(
+            [b"\xf0\x9f", b"\x98\x88"],
+            "😈",
+            ["😈"],
+            1,
+            id="partial_utf8",
+        ),
+        pytest.param([], "", [], 0, id="empty_chunked_stream"),
+    ],
+)
+def test_drain_stream(
     run_publish_check_module: ModuleType,
+    chunks: list[bytes],
+    expected_buffer: str,
+    expected_writes: list[str],
+    expected_flushes: int,
 ) -> None:
-    """Incremental decoder should stitch multi-byte UTF-8 sequences."""
-    stream = _ChunkStream(b"\xf0\x9f", b"\x92\xa9")
-    sink = _Recorder()
+    """Test _drain_stream with various input scenarios."""
+    stream = _ChunkedStream(chunks)
+    sink = StreamRecorder()
     buffer: list[str] = []
 
     run_publish_check_module._drain_stream(stream, sink, buffer)
 
-    assert "".join(buffer) == "💩"
-    assert sink.writes == ["💩"]
-    assert sink.flushes == 1
+    assert "".join(buffer) == expected_buffer
+    assert sink.writes == expected_writes
+    assert sink.flushes == expected_flushes
 
 
 def test_stream_process_output_streams_chunks(
@@ -61,8 +46,8 @@ def test_stream_process_output_streams_chunks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """_stream_process_output should mirror stdout/stderr chunks immediately."""
-    stdout_stream = _ChunkStream(b"one", b"two")
-    stderr_stream = _ChunkStream(b"warn")
+    stdout_stream = _ChunkedStream([b"one", b"two"])
+    stderr_stream = _ChunkedStream([b"warn"])
     process = SimpleNamespace(
         stdout=stdout_stream,
         stderr=stderr_stream,
@@ -76,8 +61,8 @@ def test_stream_process_output_streams_chunks(
     process.wait = wait  # type: ignore[attr-defined]
     process.kill = lambda: None  # type: ignore[attr-defined]
 
-    stdout_recorder = _Recorder()
-    stderr_recorder = _Recorder()
+    stdout_recorder = StreamRecorder()
+    stderr_recorder = StreamRecorder()
     monkeypatch.setattr(run_publish_check_module.sys, "stdout", stdout_recorder)
     monkeypatch.setattr(run_publish_check_module.sys, "stderr", stderr_recorder)
 
@@ -91,6 +76,41 @@ def test_stream_process_output_streams_chunks(
     assert result.stderr == "warn"
     assert stdout_recorder.writes == ["one", "two"]
     assert stderr_recorder.writes == ["warn"]
+    assert stdout_recorder.flushes == 2
+    assert stderr_recorder.flushes == 1
+
+
+def test_stream_process_output_handles_mixed_encoding(
+    run_publish_check_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Mixed encodings should replace undecodable bytes without crashing."""
+    stdout_stream = _ChunkedStream([b"ok", b"\xff\xfe", b"done"])
+    stderr_stream = _ChunkedStream([b"warn", b"\xff", b"error"])
+    process = SimpleNamespace(
+        stdout=stdout_stream,
+        stderr=stderr_stream,
+        args=["cargo", "mock"],
+    )
+
+    process.wait = lambda timeout=None: 0  # type: ignore[attr-defined]
+    process.kill = lambda: None  # type: ignore[attr-defined]
+
+    stdout_recorder = StreamRecorder()
+    stderr_recorder = StreamRecorder()
+    monkeypatch.setattr(run_publish_check_module.sys, "stdout", stdout_recorder)
+    monkeypatch.setattr(run_publish_check_module.sys, "stderr", stderr_recorder)
+
+    result = run_publish_check_module._stream_process_output(
+        process,
+        ("cargo", "mock"),
+        timeout_secs=3,
+    )
+
+    assert "\ufffd" in result.stdout
+    assert "\ufffd" in result.stderr
+    assert "".join(stdout_recorder.writes) == result.stdout
+    assert "".join(stderr_recorder.writes) == result.stderr
 
 
 def test_stream_process_output_cleans_up_on_timeout(
@@ -98,8 +118,8 @@ def test_stream_process_output_cleans_up_on_timeout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Timeouts should kill the process, close streams, and re-raise."""
-    stdout_stream = _ChunkStream(b"partial")
-    stderr_stream = _ChunkStream(b"error")
+    stdout_stream = _ChunkedStream([b"partial"])
+    stderr_stream = _ChunkedStream([b"error"])
     state = {"kill": False, "wait": 0}
 
     def wait(timeout: int | None = None) -> None:
@@ -116,8 +136,8 @@ def test_stream_process_output_cleans_up_on_timeout(
         args=["cargo"],
     )
 
-    stdout_recorder = _Recorder()
-    stderr_recorder = _Recorder()
+    stdout_recorder = StreamRecorder()
+    stderr_recorder = StreamRecorder()
     monkeypatch.setattr(run_publish_check_module.sys, "stdout", stdout_recorder)
     monkeypatch.setattr(run_publish_check_module.sys, "stderr", stderr_recorder)
 
@@ -247,3 +267,25 @@ def test_handle_process_timeout_cleans_threads_and_streams(
     assert process.stdout.closed
     assert process.stderr.closed
     assert threads[0].join_args == [0.1]
+
+
+def test_stream_recorder_captures_writes_and_flushes() -> None:
+    """Ensure the recorder stores writes and tracks flush counters."""
+    recorder = StreamRecorder()
+    assert recorder.write("hello") == 5
+    recorder.flush()
+    recorder.write("world")
+    recorder.flush()
+
+    assert recorder.writes == ["hello", "world"]
+    assert recorder.flushes == 2
+
+
+def test_stream_recorder_flush_does_not_require_writes() -> None:
+    """Flushing without writes should still increment the counter."""
+    recorder = StreamRecorder()
+    recorder.flush()
+    recorder.flush()
+
+    assert recorder.flushes == 2
+    assert recorder.writes == []
