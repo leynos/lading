@@ -22,6 +22,31 @@ from .preflight_test_utils import (
     _setup_preflight_test,
 )
 
+EXCLUDE_SCENARIOS = [
+    pytest.param((), (), id="none"),
+    pytest.param(("alpha", "beta"), ("alpha", "beta"), id="ordered"),
+    pytest.param(("beta", "alpha"), ("alpha", "beta"), id="sorted"),
+    pytest.param((" alpha ", "beta", "alpha"), ("alpha", "beta"), id="trimmed"),
+    pytest.param(("", " ", "\t"), (), id="blank_entries"),
+    pytest.param(
+        (" \n", "\rbeta\t", "\talpha", "beta"),
+        ("alpha", "beta"),
+        id="whitespace_variants",
+    ),
+    pytest.param(
+        ("gamma", "beta", "alpha"),
+        ("alpha", "beta", "gamma"),
+        id="unsorted",
+    ),
+    pytest.param(("beta", "beta", "beta"), ("beta",), id="deduplicated"),
+    pytest.param(
+        ("alpha", "alpha", " alpha ", "\talpha\t"),
+        ("alpha",),
+        id="duplicate_whitespace",
+    ),
+    pytest.param(("alpha", "", "beta"), ("alpha", "beta"), id="mixed_blank"),
+]
+
 
 def test_run_normalises_workspace_root(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -225,27 +250,7 @@ def test_run_executes_preflight_checks_in_workspace(
 
 @pytest.mark.parametrize(
     ("configured_excludes", "expected_excludes"),
-    [
-        pytest.param(("alpha", "beta"), ("alpha", "beta"), id="ordered"),
-        pytest.param(("beta", "alpha"), ("alpha", "beta"), id="sorted"),
-        pytest.param((" alpha ", "beta", "alpha"), ("alpha", "beta"), id="trimmed"),
-        pytest.param(("", " ", "\t"), (), id="blank_entries"),
-        pytest.param(
-            (" \n", "\rbeta\t", "\talpha", "beta"),
-            ("alpha", "beta"),
-            id="whitespace_variants",
-        ),
-        pytest.param(
-            ("gamma", "beta", "alpha"), ("alpha", "beta", "gamma"), id="unsorted"
-        ),
-        pytest.param(("beta", "beta", "beta"), ("beta",), id="deduplicated"),
-        pytest.param(
-            ("alpha", "alpha", " alpha ", "\talpha\t"),
-            ("alpha",),
-            id="duplicate_whitespace",
-        ),
-        pytest.param(("alpha", "", "beta"), ("alpha", "beta"), id="mixed_blank"),
-    ],
+    EXCLUDE_SCENARIOS,
 )
 def test_run_includes_preflight_test_excludes(
     monkeypatch: pytest.MonkeyPatch,
@@ -253,42 +258,45 @@ def test_run_includes_preflight_test_excludes(
     configured_excludes: tuple[str, ...],
     expected_excludes: tuple[str, ...],
 ) -> None:
-    """Configured test exclusions propagate to cargo test invocations."""
+    """Configured exclusions match the builder output and cargo invocation."""
     configuration = make_config(preflight_test_exclude=configured_excludes)
     root, _workspace, calls = _setup_preflight_test(
         monkeypatch, tmp_path, configuration
     )
     args, cwd = _extract_cargo_test_call(calls)
     assert cwd == root
-    assert args[2] == "--workspace"
-    assert args[3] == "--all-targets"
-    trailing = args[4:]
-    assert any(part.startswith("--target-dir=") for part in trailing)
-    if expected_excludes:
-        exclude_values = [
-            trailing[index + 1]
-            for index, value in enumerate(trailing[:-1])
-            if value == "--exclude"
-        ]
-        assert tuple(exclude_values) == expected_excludes
-    else:
-        assert "--exclude" not in trailing
-
-
-def test_run_omits_preflight_excludes_when_empty(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """When no crates are excluded the test command omits --exclude flags."""
-    configuration = make_config()
-    root, _workspace, calls = _setup_preflight_test(
-        monkeypatch, tmp_path, configuration
+    arguments = list(args[2:])
+    assert arguments[0] == "--workspace"
+    include_all_targets = "--all-targets" in arguments
+    assert include_all_targets == (not configuration.preflight.unit_tests_only)
+    target_argument = next(
+        value for value in arguments if value.startswith("--target-dir=")
     )
-    args, cwd = _extract_cargo_test_call(calls)
-    assert cwd == root
-    assert args[2] == "--workspace"
-    assert args[3] == "--all-targets"
-    assert any(part.startswith("--target-dir=") for part in args[4:])
-    assert "--exclude" not in args
+    target_dir = Path(target_argument.split("=", 1)[1])
+    base_arguments = list(
+        publish._compose_preflight_arguments(
+            target_dir,
+            include_all_targets=include_all_targets,
+        )
+    )
+    options = publish._CargoPreflightOptions(
+        extra_args=tuple(base_arguments),
+        test_excludes=configured_excludes,
+        unit_tests_only=configuration.preflight.unit_tests_only,
+    )
+    rebuilt_arguments = publish._build_test_arguments(
+        list(base_arguments),
+        options,
+    )
+    assert rebuilt_arguments == arguments
+    exclude_values = tuple(
+        arguments[index + 1]
+        for index, value in enumerate(arguments[:-1])
+        if value == "--exclude"
+    )
+    assert exclude_values == expected_excludes
+    if not expected_excludes:
+        assert "--exclude" not in arguments
 
 
 def test_run_honours_preflight_unit_tests_only(
