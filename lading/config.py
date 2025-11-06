@@ -117,11 +117,9 @@ class PreflightConfig:
         raw_excludes = _string_tuple(
             mapping.get("test_exclude"), "preflight.test_exclude"
         )
-        filtered_excludes: list[str] = []
-        for entry in raw_excludes:
-            trimmed = entry.strip()
-            if trimmed:
-                filtered_excludes.append(trimmed)
+        filtered_excludes = [
+            trimmed for entry in raw_excludes if (trimmed := entry.strip())
+        ]
         return cls(
             test_exclude=tuple(filtered_excludes),
             unit_tests_only=_boolean(
