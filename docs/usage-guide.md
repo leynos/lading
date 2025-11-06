@@ -54,11 +54,13 @@ When the variable is unset, the CLI retains the default `INFO` level.
 
 ## Configuration file: `lading.toml`
 
-`lading` expects a `lading.toml` file at the workspace root. The CLI resolves
-the workspace directory, uses `cyclopts`' TOML loader to read the file, and
-exposes the resulting configuration to the active command. The configuration is
-validated with a dataclass-backed model to ensure that string lists and boolean
-flags conform to the schema described in the design document.
+`lading` looks for a `lading.toml` file at the workspace root. When the file is
+present the CLI resolves the workspace directory, uses `cyclopts`' TOML loader
+to read the file, and exposes the resulting configuration to the active
+command. If the file is absent the loader now returns an empty document, so the
+commands run with the default configuration. The configuration is validated
+with a dataclass-backed model to ensure that string lists and boolean flags
+conform to the schema described in the design document.
 
 An example minimal configuration looks like:
 
@@ -72,11 +74,10 @@ globs = ["README.md", "docs/**/*.md"]
 strip_patches = "all"
 ```
 
-If the file is missing or contains invalid values the CLI prints a descriptive
-error and exits with a non-zero status. Commands invoked programmatically via
+If the file contains invalid values the CLI prints a descriptive error and
+exits with a non-zero status. Commands invoked programmatically via
 `python -m lading.cli` load the configuration on demand, so helper scripts and
-tests can continue to exercise the commands directly as long as the file is
-present.
+tests can rely on the default behaviour when `lading.toml` is not supplied.
 
 ## Subcommands
 

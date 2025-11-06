@@ -140,10 +140,11 @@ def test_load_configuration_applies_defaults(tmp_path: Path) -> None:
     assert configuration.preflight.unit_tests_only is False
 
 
-def test_load_configuration_requires_file(tmp_path: Path) -> None:
-    """Raise a descriptive error when ``lading.toml`` is absent."""
-    with pytest.raises(config_module.MissingConfigurationError):
-        config_module.load_configuration(tmp_path)
+def test_load_configuration_defaults_without_file(tmp_path: Path) -> None:
+    """Missing configuration files fall back to the default configuration."""
+    configuration = config_module.load_configuration(tmp_path)
+
+    assert configuration == config_module.LadingConfig()
 
 
 def test_preflight_config_from_mapping_parses_fields() -> None:

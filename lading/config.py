@@ -189,7 +189,7 @@ def build_loader(workspace_root: Path) -> Toml:
     resolved = normalise_workspace_root(workspace_root)
     return Toml(
         path=resolved / CONFIG_FILENAME,
-        must_exist=True,
+        must_exist=False,
         search_parents=False,
         allow_unknown=True,
         use_commands_as_keys=True,
@@ -200,10 +200,6 @@ def load_from_loader(loader: Toml) -> LadingConfig:
     """Load and validate configuration using ``loader``."""
     try:
         raw = loader.config
-    except FileNotFoundError as exc:
-        missing_path = exc.filename or str(loader.path)
-        message = f"Configuration file not found: {missing_path}"
-        raise MissingConfigurationError(message) from exc
     except ValueError as exc:
         raise ConfigurationError(str(exc)) from exc
     if not isinstance(raw, cabc.Mapping):
