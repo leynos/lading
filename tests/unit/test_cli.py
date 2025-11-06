@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import dataclasses as dc
+import io
+import logging
 import os
 import typing as typ
+from contextlib import contextmanager
 
 import pytest
 
@@ -18,6 +21,24 @@ from lading.workspace import WorkspaceCrate, WorkspaceGraph
 if typ.TYPE_CHECKING:
     from pathlib import Path
     from types import ModuleType
+
+
+@contextmanager
+def _preserve_root_logger() -> typ.Iterator[logging.Logger]:
+    """Capture and restore the root logger configuration around a test."""
+    root_logger = logging.getLogger()
+    prior_handlers = list(root_logger.handlers)
+    prior_level = root_logger.level
+    prior_propagation = root_logger.propagate
+    try:
+        yield root_logger
+    finally:
+        for handler in list(root_logger.handlers):
+            root_logger.removeHandler(handler)
+        for handler in prior_handlers:
+            root_logger.addHandler(handler)
+        root_logger.setLevel(prior_level)
+        root_logger.propagate = prior_propagation
 
 
 @dc.dataclass(frozen=True)
@@ -38,6 +59,52 @@ class ExceptionHandlingCase:
     exception: BaseException
     expected_exit_code: int
     expected_message: str
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (None, logging.INFO),
+        ("", logging.INFO),
+        (" info ", logging.INFO),
+        ("DEBUG", logging.DEBUG),
+        ("warning", logging.WARNING),
+    ],
+)
+def test_resolve_log_level_parsing(value: str | None, expected: int) -> None:
+    """``_resolve_log_level`` should normalise supported variants."""
+    assert cli._resolve_log_level(value) == expected
+
+
+def test_resolve_log_level_rejects_unknown_value() -> None:
+    """Unknown log levels should raise ``SystemExit``."""
+    with pytest.raises(SystemExit) as excinfo:
+        cli._resolve_log_level("not-a-level")
+    message = str(excinfo.value)
+    assert "Invalid" in message
+    assert cli.LOG_LEVEL_ENV_VAR in message
+
+
+def test_configure_logging_installs_named_handler(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``_configure_logging`` should attach a reusable root handler."""
+    stream = io.StringIO()
+    with _preserve_root_logger() as root_logger:
+        for handler in list(root_logger.handlers):
+            root_logger.removeHandler(handler)
+        monkeypatch.setenv(cli.LOG_LEVEL_ENV_VAR, "DEBUG")
+        cli._configure_logging(stream)
+
+        handlers = [
+            handler
+            for handler in root_logger.handlers
+            if getattr(handler, "name", "") == cli._LADING_HANDLER_NAME
+        ]
+        assert len(handlers) == 1
+
+        logging.getLogger("lading").debug("probe message")
+        assert "probe message" in stream.getvalue()
 
 
 @pytest.mark.parametrize(
@@ -194,6 +261,60 @@ def test_main_handles_invalid_subcommand(
     assert "Unknown command" in captured.out
 
 
+@pytest.mark.usefixtures("minimal_config")
+@pytest.mark.parametrize(
+    ("env_value", "sentinel_state"),
+    [
+        pytest.param(None, "present", id="default-info"),
+        pytest.param("INFO", "present", id="explicit-info"),
+        pytest.param("WARNING", "absent", id="suppress-info"),
+    ],
+)
+def test_main_emits_publish_command_logs(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    env_value: str | None,
+    sentinel_state: typ.Literal["present", "absent"],
+) -> None:
+    """Ensure publish logging honours ``LADING_LOG_LEVEL``."""
+    workspace_graph = _make_workspace(tmp_path.resolve())
+
+    def fake_run(
+        workspace_root: Path,
+        configuration: object,
+        workspace_model: object,
+        *,
+        options: object | None = None,
+    ) -> str:
+        logging.getLogger("lading.commands.publish").info("Sentinel command log")
+        logging.getLogger("lading.commands.publish").warning(
+            "Elevated sentinel command log"
+        )
+        return "done"
+
+    monkeypatch.setattr(publish_command, "run", fake_run)
+    monkeypatch.setattr(cli, "load_workspace", lambda _: workspace_graph)
+    sentinel = "Sentinel command log"
+    elevated = "Elevated sentinel command log"
+
+    with _preserve_root_logger():
+        if env_value is None:
+            monkeypatch.delenv(cli.LOG_LEVEL_ENV_VAR, raising=False)
+        else:
+            monkeypatch.setenv(cli.LOG_LEVEL_ENV_VAR, env_value)
+
+        exit_code = cli.main(["publish", "--workspace-root", str(tmp_path)])
+        assert exit_code == 0
+        captured = capsys.readouterr()
+
+    if sentinel_state == "present":
+        assert sentinel in captured.err
+    else:
+        assert sentinel not in captured.err
+    assert elevated in captured.err
+
+
 def test_main_reports_missing_configuration(
     capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
@@ -206,6 +327,22 @@ def test_main_reports_missing_configuration(
         f"Configuration error: Configuration file not found: {expected_path}"
         in captured.err
     )
+
+
+@pytest.mark.usefixtures("minimal_config")
+def test_main_rejects_invalid_log_level(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Invalid ``LADING_LOG_LEVEL`` should abort early with a clear message."""
+    workspace_graph = _make_workspace(tmp_path.resolve())
+    monkeypatch.setenv(cli.LOG_LEVEL_ENV_VAR, "not-a-level")
+    monkeypatch.setattr(cli, "load_workspace", lambda _: workspace_graph)
+
+    with _preserve_root_logger(), pytest.raises(SystemExit) as excinfo:
+        cli.main(["publish", "--workspace-root", str(tmp_path)])
+
+    assert cli.LOG_LEVEL_ENV_VAR in str(excinfo.value)
 
 
 @pytest.mark.usefixtures("minimal_config")

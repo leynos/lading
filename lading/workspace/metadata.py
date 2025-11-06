@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import typing as typ
 
@@ -10,6 +11,7 @@ from plumbum import local
 from plumbum.commands.processes import CommandNotFound
 
 from lading.utils import normalise_workspace_root
+from lading.utils.process import log_command_invocation
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
@@ -73,6 +75,12 @@ class CargoMetadataParseError(CargoMetadataError):
 _CMD_MOX_STUB_ENV = "LADING_USE_CMD_MOX_STUB"
 CMD_MOX_STUB_ENV_VAR = _CMD_MOX_STUB_ENV
 _CMD_MOX_TIMEOUT_DEFAULT = 5.0
+_CARGO_PROGRAM = "cargo"
+_CARGO_METADATA_ARGS = ("metadata", "--format-version", "1")
+_CARGO_METADATA_COMMAND = (_CARGO_PROGRAM, *_CARGO_METADATA_ARGS)
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _ensure_command() -> BoundCommand | _CmdMoxCommand:
@@ -80,10 +88,10 @@ def _ensure_command() -> BoundCommand | _CmdMoxCommand:
     if os.environ.get(_CMD_MOX_STUB_ENV):
         return _build_cmd_mox_command()
     try:
-        cargo = local["cargo"]
+        cargo = local[_CARGO_PROGRAM]
     except CommandNotFound as exc:
         raise CargoExecutableNotFoundError from exc
-    return cargo["metadata", "--format-version", "1"]
+    return cargo[_CARGO_METADATA_ARGS]
 
 
 def _coerce_text(value: str | bytes) -> str:
@@ -99,6 +107,8 @@ def load_cargo_metadata(
     """Execute ``cargo metadata`` and parse the resulting JSON payload."""
     command = _ensure_command()
     root_path = normalise_workspace_root(workspace_root)
+    invocation = getattr(command, "argv", _CARGO_METADATA_COMMAND)
+    log_command_invocation(LOGGER, invocation, root_path)
     exit_code, stdout, stderr = command.run(retcode=None, cwd=str(root_path))
     stdout_text = _coerce_text(stdout)
     stderr_text = _coerce_text(stderr)
@@ -116,7 +126,12 @@ def load_cargo_metadata(
 class _CmdMoxCommand:
     """Proxy ``cargo metadata`` through :mod:`cmd_mox`'s IPC server."""
 
-    _ARGS = ("metadata", "--format-version", "1")
+    _ARGS = _CARGO_METADATA_ARGS
+
+    @property
+    def argv(self) -> tuple[str, ...]:
+        """Return the command line routed through cmd-mox."""
+        return (_CARGO_PROGRAM, *self._ARGS)
 
     def run(
         self,
@@ -134,7 +149,7 @@ class _CmdMoxCommand:
             raise CargoMetadataError(message)
         timeout = _resolve_cmd_mox_timeout(os.environ.get(env_mod.CMOX_IPC_TIMEOUT_ENV))
         invocation = ipc.Invocation(
-            command="cargo",
+            command=_CARGO_PROGRAM,
             args=list(self._ARGS),
             stdin="",
             env=_build_invocation_environment(cwd),

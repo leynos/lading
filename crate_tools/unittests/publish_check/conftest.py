@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import collections.abc as cabc
 import contextlib
 import dataclasses as dc
 import importlib.util
+import io
 import sys
 import typing as typ
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -18,7 +21,8 @@ SCRIPTS_DIR = Path(__file__).resolve().parents[2]
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-RunCallable = typ.Callable[[list[str], int | None], tuple[int, str, str]]
+StreamData = str | bytes | cabc.Sequence[str | bytes]
+RunCallable = typ.Callable[[list[str]], tuple[int, StreamData, StreamData]]
 
 
 @dc.dataclass(frozen=True)
@@ -155,10 +159,16 @@ class FakeCargoInvocation:
 
     def run(
         self, *, retcode: object | None, timeout: int | None
-    ) -> tuple[int, str, str]:
+    ) -> tuple[int, StreamData, StreamData]:
         """Record an invocation and delegate to the configured callable."""
-        self._local.invocations.append((self._args, timeout))
-        return self._local.run_callable(self._args, timeout)
+        self._local.invocations.append(self._args)
+        return self._local.run_callable(self._args)
+
+    def popen(self, *_args: object, **kwargs: object) -> SimpleNamespace:
+        """Return a ``SimpleNamespace`` process wired to the fake runner."""
+        self._local.invocations.append(self._args)
+        self._local.popen_kwargs.append(dict(kwargs))
+        return _build_process(self._args, self._local.run_callable)
 
 
 class FakeCargo:
@@ -174,6 +184,83 @@ class FakeCargo:
         return FakeCargoInvocation(self._local, extras)
 
 
+def _build_process(args: list[str], run_callable: RunCallable) -> SimpleNamespace:
+    """Return a lightweight process namespace for cargo tests."""
+    return_code, stdout_data, stderr_data = run_callable(args)
+    state = {"return_code": return_code, "killed": False}
+
+    def wait(timeout: int | None = None) -> int:
+        del timeout
+        return state["return_code"]
+
+    def kill() -> None:
+        state["return_code"] = -9
+        state["killed"] = True
+
+    return SimpleNamespace(
+        args=args,
+        stdout=_build_stream(stdout_data),
+        stderr=_build_stream(stderr_data),
+        wait=wait,
+        kill=kill,
+        state=state,
+    )
+
+
+def _build_stream(data: StreamData) -> io.IOBase:
+    """Create a byte-stream object from the provided data."""
+    if isinstance(data, cabc.Sequence) and not isinstance(
+        data, (bytes, bytearray, str)
+    ):
+        chunks = [_ensure_bytes(chunk) for chunk in data]
+        return _ChunkedStream(chunks)
+    return io.BytesIO(_ensure_bytes(data))
+
+
+def _ensure_bytes(value: str | bytes) -> bytes:
+    """Encode text to bytes when necessary."""
+    return value if isinstance(value, bytes) else value.encode("utf-8")
+
+
+class _ChunkedStream(io.RawIOBase):
+    """Raw stream that yields predefined byte chunks."""
+
+    def __init__(self, chunks: list[bytes]) -> None:
+        self._chunks = list(chunks)
+
+    def read(self, _size: int = -1) -> bytes:
+        return self.read1(_size)
+
+    def read1(self, _size: int = -1) -> bytes:
+        if not self._chunks:
+            return b""
+        return self._chunks.pop(0)
+
+    def readable(self) -> bool:
+        return True
+
+    def close(self) -> None:
+        super().close()
+
+
+class StreamRecorder:
+    """Recording sink used to assert streaming behaviour."""
+
+    def __init__(self) -> None:
+        """Initialise in-memory buffers for captured writes."""
+        self.writes: list[str] = []
+        self.flushes: int = 0
+
+    def write(self, text: str) -> int:
+        """Capture a write and report the consumed length."""
+        self.writes.append(text)
+        return len(text)
+
+    def flush(self) -> None:
+        """Record a flush event for downstream assertions."""
+        self.flushes += 1
+
+
 class FakeLocal:
     """Mimic a fabric ``local`` helper for cargo orchestration tests."""
 
@@ -182,7 +269,8 @@ class FakeLocal:
         self.run_callable = run_callable
         self.cwd_calls: list[Path] = []
         self.env_calls: list[dict[str, str]] = []
-        self.invocations: list[tuple[list[str], int | None]] = []
+        self.invocations: list[list[str]] = []
+        self.popen_kwargs: list[dict[str, object]] = []
 
     def __getitem__(self, command: str) -> FakeCargo:
         """Return a ``FakeCargo`` proxy for the ``cargo`` command."""
