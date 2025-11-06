@@ -9,34 +9,36 @@ import pytest
 from .conftest import StreamRecorder, _ChunkedStream
 
 
-def test_drain_stream_handles_partial_utf8(
+@pytest.mark.parametrize(
+    ("chunks", "expected_buffer", "expected_writes", "expected_flushes"),
+    [
+        pytest.param(
+            [b"\xf0\x9f", b"\x98\x88"],
+            "😈",
+            ["😈"],
+            1,
+            id="partial_utf8",
+        ),
+        pytest.param([], "", [], 0, id="empty_chunked_stream"),
+    ],
+)
+def test_drain_stream(
     run_publish_check_module: ModuleType,
+    chunks: list[bytes],
+    expected_buffer: str,
+    expected_writes: list[str],
+    expected_flushes: int,
 ) -> None:
-    """Incremental decoder should stitch multi-byte UTF-8 sequences."""
-    stream = _ChunkedStream([b"\xf0\x9f", b"\x92\xa9"])
+    """Test _drain_stream with various input scenarios."""
+    stream = _ChunkedStream(chunks)
     sink = StreamRecorder()
     buffer: list[str] = []
 
     run_publish_check_module._drain_stream(stream, sink, buffer)
 
-    assert "".join(buffer) == "💩"
-    assert sink.writes == ["💩"]
-    assert sink.flush_count == 1
-
-
-def test_drain_stream_handles_empty_chunked_stream(
-    run_publish_check_module: ModuleType,
-) -> None:
-    """Empty streams should not emit writes or trigger flushes."""
-    stream = _ChunkedStream([])
-    sink = StreamRecorder()
-    buffer: list[str] = []
-
-    run_publish_check_module._drain_stream(stream, sink, buffer)
-
-    assert buffer == []
-    assert sink.writes == []
-    assert sink.flush_count == 0
+    assert "".join(buffer) == expected_buffer
+    assert sink.writes == expected_writes
+    assert sink.flushes == expected_flushes
 
 
 def test_stream_process_output_streams_chunks(
@@ -74,8 +76,8 @@ def test_stream_process_output_streams_chunks(
     assert result.stderr == "warn"
     assert stdout_recorder.writes == ["one", "two"]
     assert stderr_recorder.writes == ["warn"]
-    assert stdout_recorder.flush_count == 2
-    assert stderr_recorder.flush_count == 1
+    assert stdout_recorder.flushes == 2
+    assert stderr_recorder.flushes == 1
 
 
 def test_stream_process_output_handles_mixed_encoding(
@@ -276,8 +278,7 @@ def test_stream_recorder_captures_writes_and_flushes() -> None:
     recorder.flush()
 
     assert recorder.writes == ["hello", "world"]
-    assert recorder.flush_count == 2
-    assert recorder.flushes == recorder.flush_count
+    assert recorder.flushes == 2
 
 
 def test_stream_recorder_flush_does_not_require_writes() -> None:
@@ -286,5 +287,5 @@ def test_stream_recorder_flush_does_not_require_writes() -> None:
     recorder.flush()
     recorder.flush()
 
-    assert recorder.flush_count == 2
+    assert recorder.flushes == 2
     assert recorder.writes == []

@@ -249,7 +249,7 @@ class StreamRecorder:
     def __init__(self) -> None:
         """Initialise in-memory buffers for captured writes."""
         self.writes: list[str] = []
-        self.flush_count = 0
+        self.flushes: int = 0
 
     def write(self, text: str) -> int:
         """Capture a write and report the consumed length."""
@@ -258,12 +258,7 @@ class StreamRecorder:
 
     def flush(self) -> None:
         """Record a flush event for downstream assertions."""
-        self.flush_count += 1
-
-    @property
-    def flushes(self) -> int:
-        """Provide backwards-compatible access to the flush counter."""
-        return self.flush_count
+        self.flushes += 1
 
 
 class FakeLocal:
