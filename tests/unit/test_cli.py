@@ -315,18 +315,34 @@ def test_main_emits_publish_command_logs(
     assert elevated in captured.err
 
 
-def test_main_reports_missing_configuration(
-    capsys: pytest.CaptureFixture[str], tmp_path: Path
+def test_main_uses_defaults_when_configuration_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
-    """Return a clear error when configuration is missing."""
+    """CLI commands fall back to default configuration when no file exists."""
+    workspace_graph = _make_workspace(tmp_path.resolve())
+    monkeypatch.setattr(cli, "load_workspace", lambda _: workspace_graph)
+    captured: dict[str, typ.Any] = {}
+
+    def fake_run(
+        workspace_root: Path,
+        version: str,
+        *,
+        options: bump_command.BumpOptions,
+    ) -> str:
+        captured["workspace_root"] = workspace_root
+        captured["version"] = version
+        captured["options"] = options
+        return "ok"
+
+    monkeypatch.setattr(bump_command, "run", fake_run)
     exit_code = cli.main(["bump", "1.2.3", "--workspace-root", str(tmp_path)])
-    assert exit_code == 1
-    captured = capsys.readouterr()
-    expected_path = tmp_path.resolve() / config_module.CONFIG_FILENAME
-    assert (
-        f"Configuration error: Configuration file not found: {expected_path}"
-        in captured.err
-    )
+
+    assert exit_code == 0
+    assert captured["workspace_root"] == tmp_path.resolve()
+    assert captured["version"] == "1.2.3"
+    options = typ.cast("bump_command.BumpOptions", captured["options"])
+    assert options.configuration == config_module.LadingConfig()
 
 
 @pytest.mark.usefixtures("minimal_config")

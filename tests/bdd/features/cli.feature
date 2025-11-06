@@ -193,5 +193,8 @@ Feature: Lading CLI scaffolding
 
   Scenario: Running the bump command without configuration
     Given a workspace directory without configuration
+    And cargo metadata describes a sample workspace
     When I invoke lading bump 1.2.3 with that workspace
-    Then the CLI reports a missing configuration error
+    Then the bump command reports manifest updates for "1.2.3"
+    And the workspace manifest version is "1.2.3"
+    And the crate "alpha" manifest version is "1.2.3"

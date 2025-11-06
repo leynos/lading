@@ -11,8 +11,6 @@ from pytest_bdd import parsers, scenarios, then
 from tomlkit import parse as parse_toml
 from tomlkit.items import InlineTable, Item, Table
 
-from lading import config as config_module
-
 from . import config_fixtures as _config_fixtures  # noqa: F401
 from . import manifest_fixtures as _manifest_fixtures  # noqa: F401
 from . import metadata_fixtures as _metadata_fixtures  # noqa: F401
@@ -174,17 +172,6 @@ def _then_dependency_requirement_step(
             section=section,
             expected_requirement=expected,
         ),
-    )
-
-
-@then("the CLI reports a missing configuration error")
-def then_cli_reports_missing_configuration(cli_run: dict[str, typ.Any]) -> None:
-    """Assert the CLI surfaces missing configuration errors."""
-    assert cli_run["returncode"] == 1
-    stderr = cli_run["stderr"]
-    expected_path = cli_run["workspace"] / config_module.CONFIG_FILENAME
-    assert (
-        f"Configuration error: Configuration file not found: {expected_path}" in stderr
     )
 
 

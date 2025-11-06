@@ -125,8 +125,10 @@ lading [--workspace-root <path>] <subcommand> [options]
 
 ### 2.2. Configuration: `lading.toml`
 
-A `lading.toml` file located at the workspace root will define the tool's
-behaviour. The design prioritises inference to keep this file as minimal as
+A `lading.toml` file located at the workspace root defines the tool's
+behaviour. When the file is absent the CLI treats it as an empty document and
+runs with the default configuration, so workspaces can opt in to overrides
+incrementally. The design prioritises inference to keep this file as minimal as
 possible.
 
 **Schema Definition:**
