@@ -297,22 +297,31 @@ def _get_test_invocations(
     recorder: _PreflightInvocationRecorder,
 ) -> list[tuple[str, ...]]:
     """Return recorded cargo test invocations or raise if missing."""
-    invocations = recorder.by_label("cargo::test")
-    if not invocations:
-        message = "cargo test pre-flight command was not invoked"
-        raise AssertionError(message)
-    return invocations
+    if invocations := recorder.by_label("cargo::test"):
+        return invocations
+    message = "cargo test pre-flight command was not invoked"
+    raise AssertionError(message)
 
 
-def _find_consecutive_args(
+def _has_ordered_args(
     invocations: list[tuple[str, ...]],
     first: str,
     second: str,
+    *,
+    contiguous: bool = True,
 ) -> bool:
-    """Detect ``first`` immediately followed by ``second`` in args."""
+    """Detect ``first`` followed by ``second`` in ``invocations``."""
     for args in invocations:
-        for index in range(len(args) - 1):
-            if args[index] == first and args[index + 1] == second:
+        if contiguous:
+            for index in range(len(args) - 1):
+                if args[index] == first and args[index + 1] == second:
+                    return True
+        else:
+            try:
+                start_index = args.index(first)
+            except ValueError:
+                continue
+            if second in args[start_index + 1 :]:
                 return True
     return False
 
@@ -328,7 +337,7 @@ def then_publish_excludes_preflight_crate(
 ) -> None:
     """Assert that cargo test pre-flight invocations skip ``crate_name``."""
     test_invocations = _get_test_invocations(preflight_recorder)
-    if not _find_consecutive_args(test_invocations, "--exclude", crate_name):
+    if not _has_ordered_args(test_invocations, "--exclude", crate_name):
         message = (
             f"Expected --exclude {crate_name!r} in cargo test pre-flight invocations"
         )
@@ -341,11 +350,23 @@ def then_publish_limits_preflight_targets(
 ) -> None:
     """Assert that cargo test pre-flight invocations pass --lib and --bins."""
     test_invocations = _get_test_invocations(preflight_recorder)
-    if not _find_consecutive_args(test_invocations, "--lib", "--bins"):
+    if not _has_ordered_args(test_invocations, "--lib", "--bins"):
         message = (
             "Expected --lib followed by --bins in cargo test pre-flight invocations"
         )
         raise AssertionError(message)
+
+
+@then("the publish command does not add pre-flight excludes")
+def then_publish_has_no_preflight_excludes(
+    preflight_recorder: _PreflightInvocationRecorder,
+) -> None:
+    """Assert that cargo test pre-flight invocations omit --exclude."""
+    test_invocations = _get_test_invocations(preflight_recorder)
+    for args in test_invocations:
+        if "--exclude" in args:
+            message = "Did not expect --exclude arguments in cargo test pre-flight"
+            raise AssertionError(message)
 
 
 @then(parsers.parse('the publish command lists crates in order "{crate_names}"'))

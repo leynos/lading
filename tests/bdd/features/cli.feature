@@ -163,6 +163,13 @@ Feature: Lading CLI scaffolding
     When I invoke lading publish with that workspace
     Then the publish command excludes crate "alpha" from pre-flight tests
 
+  Scenario: Publish pre-flight ignores blank test excludes
+    Given a workspace directory with configuration
+    And cargo metadata describes a sample workspace
+    And preflight.test_exclude contains blank entries
+    When I invoke lading publish with that workspace
+    Then the publish command does not add pre-flight excludes
+
   Scenario: Publish pre-flight limits cargo test targets to libraries and binaries
     Given a workspace directory with configuration
     And cargo metadata describes a sample workspace

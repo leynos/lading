@@ -117,11 +117,13 @@ class PreflightConfig:
         raw_excludes = _string_tuple(
             mapping.get("test_exclude"), "preflight.test_exclude"
         )
-        filtered_excludes = [
-            trimmed for entry in raw_excludes if (trimmed := entry.strip())
-        ]
+        filtered_excludes = tuple(
+            dict.fromkeys(
+                trimmed for entry in raw_excludes if (trimmed := entry.strip())
+            )
+        )
         return cls(
-            test_exclude=tuple(filtered_excludes),
+            test_exclude=filtered_excludes,
             unit_tests_only=_boolean(
                 mapping.get("unit_tests_only"), "preflight.unit_tests_only"
             ),

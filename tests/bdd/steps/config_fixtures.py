@@ -10,12 +10,10 @@ from tomlkit import document as make_document
 from tomlkit import parse as parse_toml
 
 from lading import config as config_module
+from tests.bdd import toml_utils
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
-
-    from tomlkit.items import Array, Table
-    from tomlkit.toml_document import TOMLDocument
 
 
 def _add_exclude_to_config(
@@ -25,56 +23,11 @@ def _add_exclude_to_config(
 ) -> None:
     """Ensure ``crate_name`` appears in the ``{table_name}.exclude`` configuration."""
     config_path = workspace_directory / config_module.CONFIG_FILENAME
-    if config_path.exists():
-        doc = parse_toml(config_path.read_text(encoding="utf-8"))
-    else:
-        doc = make_document()
-    table_section = doc.get(table_name)
-    if table_section is None:
-        table_section = table()
-        doc[table_name] = table_section
-    exclude = table_section.get("exclude")
-    if exclude is None:
-        exclude = array()
-        table_section["exclude"] = exclude
-    if crate_name not in exclude:
-        exclude.append(crate_name)
-    config_path.write_text(doc.as_string(), encoding="utf-8")
-
-
-def _load_or_create_toml_document(config_path: Path) -> TOMLDocument:
-    """Parse ``config_path`` if it exists, otherwise return a new document."""
-    if config_path.exists():
-        return parse_toml(config_path.read_text(encoding="utf-8"))
-    return make_document()
-
-
-def _ensure_table_exists(doc: TOMLDocument, table_name: str) -> Table:
-    """Fetch or create ``table_name`` within ``doc``."""
-    table_section = doc.get(table_name)
-    if table_section is None:
-        table_section = table()
-        doc[table_name] = table_section
-    return table_section
-
-
-def _ensure_array_field_exists(parent_table: Table, field_name: str) -> Array:
-    """Fetch or create an array field inside ``parent_table``."""
-    raw_field = parent_table.get(field_name)
-    if raw_field is None:
-        field_array = array()
-        parent_table[field_name] = field_array
-        return field_array
-    if hasattr(raw_field, "append"):
-        return raw_field
-    message = f"{field_name} must be an array"
-    raise AssertionError(message)  # pragma: no cover - defensive guard
-
-
-def _append_if_absent(target_array: Array, value: str) -> None:
-    """Append ``value`` to ``target_array`` if it is not already present."""
-    if value not in target_array:
-        target_array.append(value)
+    document = toml_utils.load_or_create_document(config_path)
+    table_section = toml_utils.ensure_table(document, table_name)
+    exclude = toml_utils.ensure_array_field(table_section, "exclude")
+    toml_utils.append_if_absent(exclude, crate_name)
+    config_path.write_text(document.as_string(), encoding="utf-8")
 
 
 @given("a workspace directory with configuration", target_fixture="workspace_directory")
@@ -147,10 +100,23 @@ def given_preflight_test_exclude_contains(
 ) -> None:
     """Ensure ``crate_name`` appears in ``preflight.test_exclude``."""
     config_path = workspace_directory / config_module.CONFIG_FILENAME
-    document = _load_or_create_toml_document(config_path)
-    preflight_table = _ensure_table_exists(document, "preflight")
-    excludes_array = _ensure_array_field_exists(preflight_table, "test_exclude")
-    _append_if_absent(excludes_array, crate_name)
+    document = toml_utils.load_or_create_document(config_path)
+    preflight_table = toml_utils.ensure_table(document, "preflight")
+    excludes_array = toml_utils.ensure_array_field(preflight_table, "test_exclude")
+    toml_utils.append_if_absent(excludes_array, crate_name)
+    config_path.write_text(document.as_string(), encoding="utf-8")
+
+
+@given("preflight.test_exclude contains blank entries")
+def given_preflight_test_exclude_blank_entries(workspace_directory: Path) -> None:
+    """Populate ``preflight.test_exclude`` with blank values for sanitisation tests."""
+    config_path = workspace_directory / config_module.CONFIG_FILENAME
+    document = toml_utils.load_or_create_document(config_path)
+    preflight_table = toml_utils.ensure_table(document, "preflight")
+    blank_entries = array()
+    for value in ("", "   ", "\t", "\n"):
+        blank_entries.append(value)
+    preflight_table["test_exclude"] = blank_entries
     config_path.write_text(document.as_string(), encoding="utf-8")
 
 
