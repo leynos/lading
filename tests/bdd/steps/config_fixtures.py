@@ -10,6 +10,7 @@ from tomlkit import document as make_document
 from tomlkit import parse as parse_toml
 
 from lading import config as config_module
+from tests.bdd import toml_utils
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
@@ -18,25 +19,16 @@ if typ.TYPE_CHECKING:
 def _add_exclude_to_config(
     workspace_directory: Path,
     table_name: str,
+    field_name: str,
     crate_name: str,
 ) -> None:
-    """Ensure ``crate_name`` appears in the ``{table_name}.exclude`` configuration."""
+    """Ensure ``crate_name`` appears in ``{table_name}.{field_name}``."""
     config_path = workspace_directory / config_module.CONFIG_FILENAME
-    if config_path.exists():
-        doc = parse_toml(config_path.read_text(encoding="utf-8"))
-    else:
-        doc = make_document()
-    table_section = doc.get(table_name)
-    if table_section is None:
-        table_section = table()
-        doc[table_name] = table_section
-    exclude = table_section.get("exclude")
-    if exclude is None:
-        exclude = array()
-        table_section["exclude"] = exclude
-    if crate_name not in exclude:
-        exclude.append(crate_name)
-    config_path.write_text(doc.as_string(), encoding="utf-8")
+    document = toml_utils.load_or_create_document(config_path)
+    table_section = toml_utils.ensure_table(document, table_name)
+    exclude = toml_utils.ensure_array_field(table_section, field_name)
+    toml_utils.append_if_absent(exclude, crate_name)
+    config_path.write_text(document.as_string(), encoding="utf-8")
 
 
 @given("a workspace directory with configuration", target_fixture="workspace_directory")
@@ -90,7 +82,7 @@ def given_bump_exclude_contains(
     crate_name: str,
 ) -> None:
     """Ensure ``crate_name`` appears in the ``bump.exclude`` configuration."""
-    _add_exclude_to_config(workspace_directory, "bump", crate_name)
+    _add_exclude_to_config(workspace_directory, "bump", "exclude", crate_name)
 
 
 @given(parsers.parse('publish.exclude contains "{crate_name}"'))
@@ -99,7 +91,7 @@ def given_publish_exclude_contains(
     crate_name: str,
 ) -> None:
     """Ensure ``crate_name`` appears in the ``publish.exclude`` configuration."""
-    _add_exclude_to_config(workspace_directory, "publish", crate_name)
+    _add_exclude_to_config(workspace_directory, "publish", "exclude", crate_name)
 
 
 @given(parsers.parse('preflight.test_exclude contains "{crate_name}"'))
@@ -108,27 +100,20 @@ def given_preflight_test_exclude_contains(
     crate_name: str,
 ) -> None:
     """Ensure ``crate_name`` appears in ``preflight.test_exclude``."""
+    _add_exclude_to_config(workspace_directory, "preflight", "test_exclude", crate_name)
+
+
+@given("preflight.test_exclude contains blank entries")
+def given_preflight_test_exclude_blank_entries(workspace_directory: Path) -> None:
+    """Populate ``preflight.test_exclude`` with blank values for sanitisation tests."""
     config_path = workspace_directory / config_module.CONFIG_FILENAME
-    if config_path.exists():
-        doc = parse_toml(config_path.read_text(encoding="utf-8"))
-    else:
-        doc = make_document()
-    preflight_table = doc.get("preflight")
-    if preflight_table is None:
-        preflight_table = table()
-        doc["preflight"] = preflight_table
-    raw_excludes = preflight_table.get("test_exclude")
-    if raw_excludes is None:
-        excludes_array = array()
-        preflight_table["test_exclude"] = excludes_array
-    elif hasattr(raw_excludes, "append"):
-        excludes_array = raw_excludes
-    else:  # pragma: no cover - defensive guard for unexpected config edits
-        message = "preflight.test_exclude must be an array"
-        raise AssertionError(message)
-    if crate_name not in excludes_array:
-        excludes_array.append(crate_name)
-    config_path.write_text(doc.as_string(), encoding="utf-8")
+    document = toml_utils.load_or_create_document(config_path)
+    preflight_table = toml_utils.ensure_table(document, "preflight")
+    blank_entries = array()
+    for value in ("", "   ", "\t", "\n"):
+        blank_entries.append(value)
+    preflight_table["test_exclude"] = blank_entries
+    config_path.write_text(document.as_string(), encoding="utf-8")
 
 
 @given("preflight.unit_tests_only is true")

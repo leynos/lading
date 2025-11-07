@@ -165,6 +165,28 @@ def test_preflight_config_from_mapping_defaults() -> None:
     assert configuration.unit_tests_only is False
 
 
+def test_preflight_config_from_mapping_trims_and_deduplicates_entries() -> None:
+    """Whitespace and duplicate test excludes collapse to unique trimmed values."""
+    mapping = {
+        "test_exclude": ["  alpha", "beta  ", "", "alpha", "beta", "\tALPHA"],
+        "unit_tests_only": False,
+    }
+
+    configuration = config_module.PreflightConfig.from_mapping(mapping)
+
+    assert configuration.test_exclude == ("alpha", "beta", "ALPHA")
+    assert configuration.unit_tests_only is False
+
+
+def test_preflight_config_from_mapping_drops_blank_entries() -> None:
+    """Blank-only entries are removed entirely."""
+    mapping = {"test_exclude": ["", "  ", "\n", "\t"]}
+
+    configuration = config_module.PreflightConfig.from_mapping(mapping)
+
+    assert configuration.test_exclude == ()
+
+
 def test_use_configuration_sets_context(tmp_path: Path) -> None:
     """The configuration context manager exposes the active configuration."""
     _write_config(tmp_path, "")
