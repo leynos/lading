@@ -132,6 +132,7 @@ def _run_and_record_cargo_preflight(
         options=options,
     )
 
+    assert len(recorded) == 1, f"Expected 1 recorded command, got {len(recorded)}"
     return recorded.pop()
 
 

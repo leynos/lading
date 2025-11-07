@@ -303,6 +303,25 @@ def _get_test_invocations(
     raise AssertionError(message)
 
 
+def _has_contiguous_args(args: tuple[str, ...], first: str, second: str) -> bool:
+    """Return True when ``first`` is immediately followed by ``second`` in ``args``."""
+    for index in range(len(args) - 1):
+        if args[index] == first and args[index + 1] == second:
+            return True
+    return False
+
+
+def _has_ordered_args_non_contiguous(
+    args: tuple[str, ...], first: str, second: str
+) -> bool:
+    """Return True when ``first`` appears before ``second`` in ``args``."""
+    try:
+        start_index = args.index(first)
+    except ValueError:
+        return False
+    return second in args[start_index + 1 :]
+
+
 def _has_ordered_args(
     invocations: list[tuple[str, ...]],
     first: str,
@@ -311,19 +330,8 @@ def _has_ordered_args(
     contiguous: bool = True,
 ) -> bool:
     """Detect ``first`` followed by ``second`` in ``invocations``."""
-    for args in invocations:
-        if contiguous:
-            for index in range(len(args) - 1):
-                if args[index] == first and args[index + 1] == second:
-                    return True
-        else:
-            try:
-                start_index = args.index(first)
-            except ValueError:
-                continue
-            if second in args[start_index + 1 :]:
-                return True
-    return False
+    checker = _has_contiguous_args if contiguous else _has_ordered_args_non_contiguous
+    return any(checker(args, first, second) for args in invocations)
 
 
 @then(

@@ -19,13 +19,14 @@ if typ.TYPE_CHECKING:
 def _add_exclude_to_config(
     workspace_directory: Path,
     table_name: str,
+    field_name: str,
     crate_name: str,
 ) -> None:
-    """Ensure ``crate_name`` appears in the ``{table_name}.exclude`` configuration."""
+    """Ensure ``crate_name`` appears in ``{table_name}.{field_name}``."""
     config_path = workspace_directory / config_module.CONFIG_FILENAME
     document = toml_utils.load_or_create_document(config_path)
     table_section = toml_utils.ensure_table(document, table_name)
-    exclude = toml_utils.ensure_array_field(table_section, "exclude")
+    exclude = toml_utils.ensure_array_field(table_section, field_name)
     toml_utils.append_if_absent(exclude, crate_name)
     config_path.write_text(document.as_string(), encoding="utf-8")
 
@@ -81,7 +82,7 @@ def given_bump_exclude_contains(
     crate_name: str,
 ) -> None:
     """Ensure ``crate_name`` appears in the ``bump.exclude`` configuration."""
-    _add_exclude_to_config(workspace_directory, "bump", crate_name)
+    _add_exclude_to_config(workspace_directory, "bump", "exclude", crate_name)
 
 
 @given(parsers.parse('publish.exclude contains "{crate_name}"'))
@@ -90,7 +91,7 @@ def given_publish_exclude_contains(
     crate_name: str,
 ) -> None:
     """Ensure ``crate_name`` appears in the ``publish.exclude`` configuration."""
-    _add_exclude_to_config(workspace_directory, "publish", crate_name)
+    _add_exclude_to_config(workspace_directory, "publish", "exclude", crate_name)
 
 
 @given(parsers.parse('preflight.test_exclude contains "{crate_name}"'))
@@ -99,12 +100,7 @@ def given_preflight_test_exclude_contains(
     crate_name: str,
 ) -> None:
     """Ensure ``crate_name`` appears in ``preflight.test_exclude``."""
-    config_path = workspace_directory / config_module.CONFIG_FILENAME
-    document = toml_utils.load_or_create_document(config_path)
-    preflight_table = toml_utils.ensure_table(document, "preflight")
-    excludes_array = toml_utils.ensure_array_field(preflight_table, "test_exclude")
-    toml_utils.append_if_absent(excludes_array, crate_name)
-    config_path.write_text(document.as_string(), encoding="utf-8")
+    _add_exclude_to_config(workspace_directory, "preflight", "test_exclude", crate_name)
 
 
 @given("preflight.test_exclude contains blank entries")

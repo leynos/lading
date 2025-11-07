@@ -45,7 +45,9 @@ def ensure_array_field(parent_table: Table, field_name: str) -> Array:
         field_array = array()
         parent_table[field_name] = field_array
         return field_array
-    if hasattr(raw_field, "append"):
+    from tomlkit.items import Array as ArrayType
+
+    if isinstance(raw_field, ArrayType):
         return raw_field
     message = f"{field_name} must be an array"
     raise AssertionError(message)  # pragma: no cover - defensive guard
