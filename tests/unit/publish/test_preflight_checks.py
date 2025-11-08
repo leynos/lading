@@ -9,7 +9,7 @@ import pytest
 from lading.commands import publish
 from lading.workspace import metadata as metadata_module
 
-from .conftest import ORIGINAL_PREFLIGHT, make_config
+from .conftest import ORIGINAL_PREFLIGHT, make_config, make_preflight_config
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
@@ -224,7 +224,7 @@ def test_preflight_checks_remove_all_targets_for_unit_only(
 
     root = tmp_path / "workspace"
     root.mkdir()
-    configuration = make_config(preflight_unit_tests_only=True)
+    configuration = make_config(preflight=make_preflight_config(unit_tests_only=True))
 
     publish._run_preflight_checks(root, allow_dirty=False, configuration=configuration)
 
@@ -309,7 +309,7 @@ def test_preflight_runs_aux_build_commands(
         publish, "_verify_clean_working_tree", lambda *_args, **_kwargs: None
     )
     configuration = make_config(
-        preflight_aux_build=(("cargo", "test", "-p", "lint"),),
+        preflight=make_preflight_config(aux_build=(("cargo", "test", "-p", "lint"),))
     )
 
     publish._run_preflight_checks(
@@ -348,7 +348,9 @@ def test_aux_build_failure_surfaces_error(
         publish, "_verify_clean_working_tree", lambda *_args, **_kwargs: None
     )
     configuration = make_config(
-        preflight_aux_build=(("cargo", "build", "--package", "lint"),)
+        preflight=make_preflight_config(
+            aux_build=(("cargo", "build", "--package", "lint"),)
+        )
     )
 
     with pytest.raises(publish.PublishPreflightError) as excinfo:
@@ -384,7 +386,7 @@ def test_preflight_env_overrides_forwarded(
         publish, "_verify_clean_working_tree", lambda *_args, **_kwargs: None
     )
     configuration = make_config(
-        preflight_env_overrides=(("DYLINT_LOCALE", "cy"),),
+        preflight=make_preflight_config(env_overrides=(("DYLINT_LOCALE", "cy"),))
     )
 
     publish._run_preflight_checks(
@@ -422,9 +424,9 @@ def test_preflight_append_compiletest_externs(
         publish, "_verify_clean_working_tree", lambda *_args, **_kwargs: None
     )
     configuration = make_config(
-        preflight_compiletest_externs=(
-            ("lint_macro", artifact.relative_to(root).as_posix()),
-        ),
+        preflight=make_preflight_config(
+            compiletest_externs=(("lint_macro", artifact.relative_to(root).as_posix()),)
+        )
     )
 
     publish._run_preflight_checks(

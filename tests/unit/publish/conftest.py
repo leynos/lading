@@ -23,43 +23,44 @@ __all__ = [
     "make_crate",
     "make_dependency",
     "make_dependency_chain",
+    "make_preflight_config",
     "make_workspace",
     "plan_with_crates",
 ]
 
 
-def make_config(  # noqa: PLR0913
+def make_preflight_config(  # noqa: PLR0913
     *,
-    preflight_test_exclude: tuple[str, ...] | None = None,
-    preflight_unit_tests_only: bool | None = None,
-    preflight_aux_build: tuple[tuple[str, ...], ...] | None = None,
-    preflight_compiletest_externs: tuple[tuple[str, str], ...] | None = None,
-    preflight_env_overrides: tuple[tuple[str, str], ...] | None = None,
-    preflight_tail_lines: int | None = None,
+    test_exclude: tuple[str, ...] = (),
+    unit_tests_only: bool = False,
+    aux_build: tuple[tuple[str, ...], ...] = (),
+    compiletest_externs: tuple[tuple[str, str], ...] = (),
+    env_overrides: tuple[tuple[str, str], ...] = (),
+    stderr_tail_lines: int = 40,
+) -> config_module.PreflightConfig:
+    """Build a :class:`PreflightConfig` with convenient defaults."""
+    externs = tuple(
+        config_module.CompiletestExtern(crate=name, path=path)
+        for name, path in compiletest_externs
+    )
+    return config_module.PreflightConfig(
+        test_exclude=test_exclude,
+        unit_tests_only=unit_tests_only,
+        aux_build=aux_build,
+        compiletest_externs=externs,
+        env_overrides=env_overrides,
+        stderr_tail_lines=stderr_tail_lines,
+    )
+
+
+def make_config(
+    *,
+    preflight: config_module.PreflightConfig | None = None,
     **overrides: object,
 ) -> config_module.LadingConfig:
     """Return a configuration tailored for publish command tests."""
     publish_table = config_module.PublishConfig(strip_patches="all", **overrides)
-    externs = (
-        tuple(
-            config_module.CompiletestExtern(crate=name, path=path)
-            for name, path in preflight_compiletest_externs
-        )
-        if preflight_compiletest_externs is not None
-        else ()
-    )
-    preflight_config = config_module.PreflightConfig(
-        test_exclude=() if preflight_test_exclude is None else preflight_test_exclude,
-        unit_tests_only=False
-        if preflight_unit_tests_only is None
-        else preflight_unit_tests_only,
-        aux_build=() if preflight_aux_build is None else preflight_aux_build,
-        compiletest_externs=externs,
-        env_overrides=()
-        if preflight_env_overrides is None
-        else preflight_env_overrides,
-        stderr_tail_lines=40 if preflight_tail_lines is None else preflight_tail_lines,
-    )
+    preflight_config = preflight if preflight is not None else make_preflight_config()
     return config_module.LadingConfig(
         publish=publish_table,
         preflight=preflight_config,

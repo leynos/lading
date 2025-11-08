@@ -306,6 +306,37 @@ def _string_tuple(value: object, field_name: str) -> tuple[str, ...]:
     raise ConfigurationError(message)
 
 
+def _validate_matrix_entry(
+    entry: object,
+    field_name: str,
+    index: int,
+) -> tuple[str, ...]:
+    """Validate and convert a single matrix entry to a string tuple."""
+    if isinstance(entry, cabc.Sequence) and not isinstance(entry, (str, bytes)):
+        return _validate_string_sequence(entry, f"{field_name}[{index}]")
+    message = (
+        f"{field_name}[{index}] must be a sequence of strings; "
+        f"received {type(entry).__name__}."
+    )
+    raise ConfigurationError(message)
+
+
+def _validate_string_pair(
+    key: object, raw_value: object, field_name: str
+) -> tuple[str, str]:
+    """Validate and return a string key-value pair for ``field_name``."""
+    if not isinstance(key, str):
+        message = f"{field_name} keys must be strings; received {type(key).__name__}."
+        raise ConfigurationError(message)
+    if not isinstance(raw_value, str):
+        message = (
+            f"{field_name}[{key}] must be a string; "
+            f"received {type(raw_value).__name__}."
+        )
+        raise ConfigurationError(message)
+    return (key, raw_value)
+
+
 def _string_matrix(value: object, field_name: str) -> tuple[tuple[str, ...], ...]:
     """Return a tuple-of-tuples parsed from ``value`` as nested string sequences."""
     if value is None:
@@ -313,16 +344,10 @@ def _string_matrix(value: object, field_name: str) -> tuple[tuple[str, ...], ...
     if not isinstance(value, cabc.Sequence) or isinstance(value, (str, bytes)):
         message = f"{field_name} must be a sequence of string sequences."
         raise ConfigurationError(message)
-    commands: list[tuple[str, ...]] = []
-    for index, entry in enumerate(value):
-        if isinstance(entry, cabc.Sequence) and not isinstance(entry, (str, bytes)):
-            commands.append(_validate_string_sequence(entry, f"{field_name}[{index}]"))
-            continue
-        message = (
-            f"{field_name}[{index}] must be a sequence of strings; "
-            f"received {type(entry).__name__}."
-        )
-        raise ConfigurationError(message)
+    commands = [
+        _validate_matrix_entry(entry, field_name, index)
+        for index, entry in enumerate(value)
+    ]
     return tuple(commands)
 
 
@@ -335,18 +360,7 @@ def _string_mapping(value: object, field_name: str) -> tuple[tuple[str, str], ..
         raise ConfigurationError(message)
     items: list[tuple[str, str]] = []
     for key, raw_value in value.items():
-        if not isinstance(key, str):
-            message = (
-                f"{field_name} keys must be strings; received {type(key).__name__}."
-            )
-            raise ConfigurationError(message)
-        if not isinstance(raw_value, str):
-            message = (
-                f"{field_name}[{key}] must be a string; "
-                f"received {type(raw_value).__name__}."
-            )
-            raise ConfigurationError(message)
-        items.append((key, raw_value))
+        items.append(_validate_string_pair(key, raw_value, field_name))
     return tuple(items)
 
 

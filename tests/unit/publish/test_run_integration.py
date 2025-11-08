@@ -15,6 +15,7 @@ from .conftest import (
     ORIGINAL_PREFLIGHT,
     make_config,
     make_crate,
+    make_preflight_config,
     make_workspace,
 )
 from .preflight_test_utils import (
@@ -262,7 +263,9 @@ def test_run_includes_preflight_test_excludes(
     expected_excludes: tuple[str, ...],
 ) -> None:
     """Configured exclusions match the builder output and cargo invocation."""
-    configuration = make_config(preflight_test_exclude=configured_excludes)
+    configuration = make_config(
+        preflight=make_preflight_config(test_exclude=configured_excludes)
+    )
     root, _workspace, calls = _setup_preflight_test(
         monkeypatch, tmp_path, configuration
     )
@@ -306,7 +309,7 @@ def test_run_honours_preflight_unit_tests_only(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Unit-test-only preflight mode narrows cargo test targets."""
-    configuration = make_config(preflight_unit_tests_only=True)
+    configuration = make_config(preflight=make_preflight_config(unit_tests_only=True))
     root, _workspace, calls = _setup_preflight_test(
         monkeypatch, tmp_path, configuration
     )
@@ -328,7 +331,9 @@ def test_run_unit_tests_only_with_excludes(
 ) -> None:
     """Exclusions are still honoured when unit-tests-only mode is enabled."""
     configuration = make_config(
-        preflight_unit_tests_only=True, preflight_test_exclude=("gamma", "alpha")
+        preflight=make_preflight_config(
+            unit_tests_only=True, test_exclude=("gamma", "alpha")
+        )
     )
     root, _workspace, calls = _setup_preflight_test(
         monkeypatch,
