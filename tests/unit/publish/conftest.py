@@ -29,28 +29,34 @@ __all__ = [
 ]
 
 
-def make_preflight_config(  # noqa: PLR0913
-    *,
-    test_exclude: tuple[str, ...] = (),
-    unit_tests_only: bool = False,
-    aux_build: tuple[tuple[str, ...], ...] = (),
-    compiletest_externs: tuple[tuple[str, str], ...] = (),
-    env_overrides: tuple[tuple[str, str], ...] = (),
-    stderr_tail_lines: int = 40,
-) -> config_module.PreflightConfig:
-    """Build a :class:`PreflightConfig` with convenient defaults."""
+def make_preflight_config(**overrides: object) -> config_module.PreflightConfig:
+    """Build a :class:`PreflightConfig` with convenient defaults.
+
+    Args:
+        **overrides: Keyword arguments passed to PreflightConfig constructor.
+            Special handling: compiletest_externs as tuple of (name, path) pairs
+            will be converted to CompiletestExtern objects.
+
+    Returns:
+        A PreflightConfig with defaults merged with the provided overrides.
+
+    """
+    compiletest_externs_raw = overrides.pop("compiletest_externs", ())
     externs = tuple(
         config_module.CompiletestExtern(crate=name, path=path)
-        for name, path in compiletest_externs
+        for name, path in compiletest_externs_raw
     )
-    return config_module.PreflightConfig(
-        test_exclude=test_exclude,
-        unit_tests_only=unit_tests_only,
-        aux_build=aux_build,
-        compiletest_externs=externs,
-        env_overrides=env_overrides,
-        stderr_tail_lines=stderr_tail_lines,
-    )
+
+    defaults: dict[str, object] = {
+        "test_exclude": (),
+        "unit_tests_only": False,
+        "aux_build": (),
+        "compiletest_externs": externs,
+        "env_overrides": (),
+        "stderr_tail_lines": 40,
+    }
+    defaults.update(overrides)
+    return config_module.PreflightConfig(**defaults)
 
 
 def make_config(
