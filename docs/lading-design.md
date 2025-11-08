@@ -299,8 +299,8 @@ lading bump <new_version> [--dry-run]
 - The command reports a concise summary that enumerates every manifest path on
   its own line. The live mode prefix is `Updated version to <version> in …`,
   while dry runs use `Dry run; would update version to <version> in …`. When no
-  manifest requires changes the CLI reports: `No manifest changes required; all
-  versions already <version>.`
+  manifest requires changes the CLI reports:
+  `No manifest changes required; all versions already <version>.`
 - A `--dry-run` flag bypasses file writes entirely while still computing the
   manifest diff. This allows automation to preview the impact of a bump without
   touching the workspace.
@@ -344,14 +344,15 @@ registry.
 **Command Signature:**
 
 ```shell
-lading publish [--live] [--allow-dirty]
+lading publish [--live] [--forbid-dirty]
 ```
 
 - `--live`: By default, the command simulates the entire process, including
   `cargo package` and `cargo publish --dry-run`, without uploading to the
   registry. Specifying `--live` takes the process to completion.
-- `--allow-dirty`: Allows the command to proceed even if the Git working tree
-  is dirty.
+- `--forbid-dirty`: Require a clean working tree before running the pre-flight
+  checks. When omitted the git status guard is skipped so that developers can
+  iterate on pending changes.
 
 **Execution Flow:**
 
@@ -401,9 +402,9 @@ names are listed before returning the user-specified order.
     per-run target directory created with `tempfile.TemporaryDirectory`; the
     directory (and any compiled artefacts) is discarded automatically once the
     checks complete. A preceding `git status --porcelain` verifies that the
-    working tree is clean; operators can pass `--allow-dirty` to bypass the
-    cleanliness guard when they intentionally want to exercise uncommitted
-    changes. For testing and controlled environments the helper honours the
+    working tree is clean only when operators pass `--forbid-dirty`. Skipping
+    the flag leaves the guard disabled so local experiments can reuse the same
+    entrypoint. For testing and controlled environments the helper honours the
     `LADING_USE_CMD_MOX_STUB` environment variable: when set to a truthy value
     (`1`, `true`, `yes`, or `on`) the pre-flight invocations contact the
     cmd-mox IPC server instead of spawning real processes. Each subcommand is
@@ -419,7 +420,20 @@ names are listed before returning the user-specified order.
     the remaining crates. Setting `preflight.unit_tests_only = true` narrows
     the command to library and binary targets by appending `--lib --bins`,
     providing a lightweight alternative when integration and example tests are
-    not required for release validation.
+    not required for release validation. Additional hooks support compiletest
+    workflows:
+
+    - `preflight.aux_build` – a list of auxiliary commands that run before the
+      cargo invocations so rule crates can precompile UI helpers.
+    - `preflight.compiletest_extern` – a mapping of crate names to artifact
+      paths that Lading injects into `RUSTFLAGS` as `--extern` arguments for
+      the cargo test invocation.
+    - `preflight.env` – a table of environment overrides applied to every
+      pre-flight command so localisation knobs such as `DYLINT_LOCALE` stay in
+      sync with the surrounding harness.
+    - `preflight.stderr_tail_lines` – the number of lines tailed from
+      compiletest `*.stderr` files when cargo test fails, exposing the debug
+      diff directly in the CLI output.
 
 3. **Iterate and Publish:** For each crate in the determined order:
 

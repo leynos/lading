@@ -36,7 +36,10 @@ def _setup_preflight_test(
     calls: RecordedCommands = []
 
     def recording_invoke(
-        command: typ.Sequence[str], *, cwd: Path | None = None
+        command: typ.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: typ.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
         calls.append((tuple(command), cwd))
         return 0, "", ""

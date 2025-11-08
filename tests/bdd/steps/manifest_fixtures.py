@@ -63,3 +63,13 @@ def given_workspace_versions_match(
     )
     crates_root = workspace_directory / "crates"
     _update_crate_manifests(crates_root, version)
+
+
+@given(parsers.parse('the workspace file "{relative_path}" contains "{contents}"'))
+def given_workspace_file_contents(
+    workspace_directory: Path, relative_path: str, contents: str
+) -> None:
+    """Create or overwrite ``relative_path`` with ``contents`` inside the workspace."""
+    target = workspace_directory / relative_path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(contents, encoding="utf-8")

@@ -6,6 +6,7 @@ import atexit
 import dataclasses as dc
 import logging
 import os
+import re
 import shutil
 import tempfile
 import typing as typ
@@ -42,6 +43,8 @@ class _CargoPreflightOptions:
     extra_args: typ.Sequence[str]
     test_excludes: typ.Sequence[str] = ()
     unit_tests_only: bool = False
+    env: typ.Mapping[str, str] | None = None
+    diagnostics_tail_lines: int | None = None
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -64,7 +67,11 @@ class _CommandRunner(typ.Protocol):
     """Protocol describing the callable used to execute shell commands."""
 
     def __call__(
-        self, command: typ.Sequence[str], *, cwd: Path | None = None
+        self,
+        command: typ.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: typ.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
         """Execute ``command`` and return exit status and decoded output."""
 
@@ -97,7 +104,7 @@ class PublishOptions:
 
     """
 
-    allow_dirty: bool = False
+    allow_dirty: bool = True
     build_directory: Path | None = None
     preserve_symlinks: bool = True
     cleanup: bool = False
@@ -410,6 +417,133 @@ def _format_plan(
     return "\n".join(lines)
 
 
+def _build_preflight_environment(
+    overrides: tuple[tuple[str, str], ...],
+) -> dict[str, str]:
+    """Return the base environment for publish pre-flight commands."""
+    env = dict(os.environ)
+    env.update(overrides)
+    return env
+
+
+def _run_aux_build_commands(
+    workspace_root: Path,
+    commands: tuple[tuple[str, ...], ...],
+    *,
+    runner: _CommandRunner,
+    env: typ.Mapping[str, str] | None,
+) -> None:
+    """Execute auxiliary build commands prior to cargo pre-flight runs."""
+    for command in commands:
+        exit_code, stdout, stderr = runner(command, cwd=workspace_root, env=env)
+        if exit_code != 0:
+            detail = (stderr or stdout).strip()
+            rendered = " ".join(command)
+            message = (
+                f"Auxiliary build command failed with exit code {exit_code}: {rendered}"
+            )
+            if detail:
+                message = f"{message}; {detail}"
+            raise PublishPreflightError(message)
+
+
+def _resolve_extern_path(workspace_root: Path, raw_path: str) -> Path:
+    """Return ``raw_path`` resolved relative to ``workspace_root`` when needed."""
+    candidate = Path(raw_path)
+    if not candidate.is_absolute():
+        candidate = workspace_root / candidate
+    return candidate.expanduser().resolve(strict=False)
+
+
+def _apply_compiletest_externs(
+    env: typ.Mapping[str, str],
+    externs: tuple[config_module.CompiletestExtern, ...],
+    *,
+    workspace_root: Path,
+) -> dict[str, str]:
+    """Return ``env`` with compiletest externs appended to ``RUSTFLAGS``."""
+    if not externs:
+        return dict(env)
+    updated = dict(env)
+    flags = " ".join(
+        f"--extern {extern.crate}={_resolve_extern_path(workspace_root, extern.path)}"
+        for extern in externs
+    ).strip()
+    if not flags:
+        return updated
+    previous = updated.get("RUSTFLAGS", "").strip()
+    updated["RUSTFLAGS"] = " ".join(filter(None, (previous, flags)))
+    return updated
+
+
+_STDERR_PATTERN = re.compile(r"(/[^\s)]+\\.stderr)")
+
+
+def _trim_artifact_token(token: str) -> str:
+    """Normalise compiletest artifact tokens by stripping punctuation."""
+    return token.rstrip(")]:,.;'\"")
+
+
+def _discover_stderr_artifacts(stream: str) -> tuple[Path, ...]:
+    """Return ``Path`` objects extracted from compiletest output stream."""
+    artifacts: list[Path] = []
+    seen: set[str] = set()
+    for match in _STDERR_PATTERN.finditer(stream):
+        raw = _trim_artifact_token(match.group(1))
+        if raw in seen:
+            continue
+        seen.add(raw)
+        artifacts.append(Path(raw))
+    return tuple(artifacts)
+
+
+def _read_tail_lines(path: Path, count: int) -> tuple[str, ...]:
+    """Return the last ``count`` lines from ``path`` when available."""
+    if count <= 0:
+        return ()
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ()
+    lines = text.splitlines()
+    return tuple(lines[-count:]) if lines else ()
+
+
+def _append_compiletest_diagnostics(
+    message: str,
+    stdout: str,
+    stderr: str,
+    *,
+    tail_lines: int,
+) -> str:
+    """Append compiletest stderr artifact hints to ``message`` when present."""
+    artifacts: list[Path] = []
+    seen: set[Path] = set()
+    for candidate in (
+        *_discover_stderr_artifacts(stdout),
+        *_discover_stderr_artifacts(stderr),
+    ):
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        artifacts.append(candidate)
+    if not artifacts:
+        return message
+    lines = [message, "Compiletest stderr artifacts:"]
+    for artifact in artifacts:
+        lines.append(f"- {artifact}")
+        if artifact.exists():
+            tail = _read_tail_lines(artifact, tail_lines)
+            if tail:
+                lines.append(
+                    f"  Last {tail_lines} line(s):" if tail_lines > 0 else "  Contents:"
+                )
+                lines.extend(f"    {entry}" for entry in tail)
+        else:
+            lines.append("  (file not found)")
+    return "\n".join(lines)
+
+
 def _normalise_build_directory(
     workspace_root: Path, build_directory: Path | None
 ) -> Path:
@@ -618,13 +752,20 @@ def _run_preflight_checks(
     """Execute publish pre-flight checks for ``workspace_root``."""
     command_runner = runner or _invoke
     active_configuration = _ensure_configuration(configuration, workspace_root)
+    preflight_config = active_configuration.preflight
+    base_env = _build_preflight_environment(preflight_config.env_overrides)
     _verify_clean_working_tree(
         workspace_root, allow_dirty=allow_dirty, runner=command_runner
+    )
+    _run_aux_build_commands(
+        workspace_root,
+        preflight_config.aux_build,
+        runner=command_runner,
+        env=base_env,
     )
 
     with tempfile.TemporaryDirectory(prefix="lading-preflight-target-") as target:
         target_path = Path(target)
-        preflight_config = active_configuration.preflight
         unit_tests_only = preflight_config.unit_tests_only
         check_arguments, test_arguments = _preflight_argument_sets(
             target_path, unit_tests_only=unit_tests_only
@@ -633,7 +774,15 @@ def _run_preflight_checks(
             workspace_root,
             "check",
             runner=command_runner,
-            options=_CargoPreflightOptions(extra_args=check_arguments),
+            options=_CargoPreflightOptions(
+                extra_args=check_arguments,
+                env=base_env,
+            ),
+        )
+        test_env = _apply_compiletest_externs(
+            base_env,
+            preflight_config.compiletest_externs,
+            workspace_root=workspace_root,
         )
         _run_cargo_preflight(
             workspace_root,
@@ -643,6 +792,8 @@ def _run_preflight_checks(
                 extra_args=test_arguments,
                 test_excludes=preflight_config.test_exclude,
                 unit_tests_only=unit_tests_only,
+                env=test_env,
+                diagnostics_tail_lines=preflight_config.stderr_tail_lines,
             ),
         )
 
@@ -711,7 +862,7 @@ def _verify_clean_working_tree(
     if stdout.strip():
         message = (
             "Workspace has uncommitted changes; commit or stash them "
-            "before publishing or re-run with --allow-dirty."
+            "before publishing or re-run without --forbid-dirty."
         )
         raise PublishPreflightError(message)
 
@@ -730,9 +881,17 @@ def _run_cargo_preflight(
     exit_code, stdout, stderr = runner(
         ("cargo", subcommand, *arguments),
         cwd=workspace_root,
+        env=options.env,
     )
     if exit_code != 0:
         message = _build_cargo_error_message(subcommand, exit_code, stdout, stderr)
+        if options.diagnostics_tail_lines is not None:
+            message = _append_compiletest_diagnostics(
+                message,
+                stdout,
+                stderr,
+                tail_lines=options.diagnostics_tail_lines,
+            )
         raise PublishPreflightError(message)
 
 
@@ -747,12 +906,15 @@ def _build_cargo_error_message(
 
 
 def _invoke(
-    command: typ.Sequence[str], *, cwd: Path | None = None
+    command: typ.Sequence[str],
+    *,
+    cwd: Path | None = None,
+    env: typ.Mapping[str, str] | None = None,
 ) -> tuple[int, str, str]:
     """Execute ``command`` and return the exit status and decoded streams."""
     log_command_invocation(LOGGER, command, cwd)
     if _should_use_cmd_mox_stub():
-        return _invoke_via_cmd_mox(command, cwd)
+        return _invoke_via_cmd_mox(command, cwd, env)
 
     program, args = _split_command(command)
     try:
@@ -765,6 +927,8 @@ def _invoke(
     kwargs: dict[str, typ.Any] = {"retcode": None}
     if cwd is not None:
         kwargs["cwd"] = str(cwd)
+    if env is not None:
+        kwargs["env"] = {key: str(value) for key, value in env.items()}
     exit_code, stdout, stderr = bound.run(**kwargs)
     return (
         exit_code,
@@ -790,7 +954,9 @@ def _should_use_cmd_mox_stub() -> bool:
 
 
 def _invoke_via_cmd_mox(
-    command: typ.Sequence[str], cwd: Path | None
+    command: typ.Sequence[str],
+    cwd: Path | None,
+    env: typ.Mapping[str, str] | None,
 ) -> tuple[int, str, str]:
     """Route ``command`` through the cmd-mox IPC server when enabled."""
     try:
@@ -807,13 +973,16 @@ def _invoke_via_cmd_mox(
         raise PublishPreflightError(message)
     program, args = _split_command(command)
     invocation_program, invocation_args = _normalise_cmd_mox_command(program, args)
+    invocation_env = metadata_module._build_invocation_environment(
+        None if cwd is None else str(cwd)
+    )
+    if env is not None:
+        invocation_env.update({key: str(value) for key, value in env.items()})
     invocation = ipc.Invocation(
         command=invocation_program,
         args=invocation_args,
         stdin="",
-        env=metadata_module._build_invocation_environment(
-            None if cwd is None else str(cwd)
-        ),
+        env=invocation_env,
     )
     response = ipc.invoke_server(invocation, timeout)
     return (

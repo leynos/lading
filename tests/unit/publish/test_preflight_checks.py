@@ -87,7 +87,10 @@ def test_run_cargo_preflight_raises_on_failure(
     """Non-zero command results are converted into preflight errors."""
 
     def failing_runner(
-        command: tuple[str, ...], *, cwd: Path | None = None
+        command: tuple[str, ...],
+        *,
+        cwd: Path | None = None,
+        env: typ.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
         assert cwd == tmp_path
         assert command[0] == "cargo"
@@ -120,7 +123,10 @@ def _run_and_record_cargo_preflight(
     recorded: list[tuple[str, ...]] = []
 
     def recording_runner(
-        command: tuple[str, ...], *, cwd: Path | None = None
+        command: tuple[str, ...],
+        *,
+        cwd: Path | None = None,
+        env: typ.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
         recorded.append(command)
         return 0, "", ""
@@ -282,6 +288,192 @@ def test_preflight_checks_support_special_target_dir(
         )
 
 
+def test_preflight_runs_aux_build_commands(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Auxiliary build commands execute before cargo pre-flight calls."""
+    root = tmp_path / "workspace"
+    root.mkdir()
+    commands: list[tuple[tuple[str, ...], Path | None]] = []
+
+    def recording_runner(
+        command: tuple[str, ...],
+        *,
+        cwd: Path | None = None,
+        env: typ.Mapping[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        commands.append((tuple(command), cwd))
+        return 0, "", ""
+
+    monkeypatch.setattr(
+        publish, "_verify_clean_working_tree", lambda *_args, **_kwargs: None
+    )
+    configuration = make_config(
+        preflight_aux_build=(("cargo", "test", "-p", "lint"),),
+    )
+
+    publish._run_preflight_checks(
+        root,
+        allow_dirty=True,
+        configuration=configuration,
+        runner=recording_runner,
+    )
+
+    assert commands, "expected at least one command invocation"
+    first_command, first_cwd = commands[0]
+    assert first_command == ("cargo", "test", "-p", "lint")
+    assert first_cwd == root
+
+
+def test_aux_build_failure_surfaces_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Failures in aux build commands abort pre-flight with context."""
+    root = tmp_path / "workspace"
+    root.mkdir()
+
+    failing_command = ("cargo", "build", "--package", "lint")
+
+    def runner(
+        command: tuple[str, ...],
+        *,
+        cwd: Path | None = None,
+        env: typ.Mapping[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        if tuple(command) == failing_command:
+            return 1, "", "aux failure"
+        return 0, "", ""
+
+    monkeypatch.setattr(
+        publish, "_verify_clean_working_tree", lambda *_args, **_kwargs: None
+    )
+    configuration = make_config(
+        preflight_aux_build=(("cargo", "build", "--package", "lint"),)
+    )
+
+    with pytest.raises(publish.PublishPreflightError) as excinfo:
+        publish._run_preflight_checks(
+            root,
+            allow_dirty=True,
+            configuration=configuration,
+            runner=runner,
+        )
+
+    assert "cargo build --package lint" in str(excinfo.value)
+
+
+def test_preflight_env_overrides_forwarded(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Environment overrides propagate to cargo pre-flight invocations."""
+    root = tmp_path / "workspace"
+    root.mkdir()
+    captured_env: dict[str, str] = {}
+
+    def env_recording_runner(
+        command: tuple[str, ...],
+        *,
+        cwd: Path | None = None,
+        env: typ.Mapping[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        if command[:2] == ("cargo", "test"):
+            captured_env.update(env or {})
+        return 0, "", ""
+
+    monkeypatch.setattr(
+        publish, "_verify_clean_working_tree", lambda *_args, **_kwargs: None
+    )
+    configuration = make_config(
+        preflight_env_overrides=(("DYLINT_LOCALE", "cy"),),
+    )
+
+    publish._run_preflight_checks(
+        root,
+        allow_dirty=True,
+        configuration=configuration,
+        runner=env_recording_runner,
+    )
+
+    assert captured_env["DYLINT_LOCALE"] == "cy"
+
+
+def test_preflight_append_compiletest_externs(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Compiletest externs extend RUSTFLAGS for cargo test."""
+    root = tmp_path / "workspace"
+    root.mkdir()
+    artifact = root / "target" / "lint" / "liblint_macro.so"
+    artifact.parent.mkdir(parents=True, exist_ok=True)
+    artifact.touch()
+    rustflags: list[str] = []
+
+    def recording_runner(
+        command: tuple[str, ...],
+        *,
+        cwd: Path | None = None,
+        env: typ.Mapping[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        if command[:2] == ("cargo", "test") and env is not None and "RUSTFLAGS" in env:
+            rustflags.append(env["RUSTFLAGS"])
+        return 0, "", ""
+
+    monkeypatch.setattr(
+        publish, "_verify_clean_working_tree", lambda *_args, **_kwargs: None
+    )
+    configuration = make_config(
+        preflight_compiletest_externs=(
+            ("lint_macro", artifact.relative_to(root).as_posix()),
+        ),
+    )
+
+    publish._run_preflight_checks(
+        root,
+        allow_dirty=True,
+        configuration=configuration,
+        runner=recording_runner,
+    )
+
+    assert rustflags, "Expected cargo test env to include RUSTFLAGS"
+    last_flags = rustflags[-1]
+    assert "--extern lint_macro" in last_flags
+    assert str(artifact) in last_flags
+
+
+def test_compiletest_diagnostic_details(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Failing cargo test pre-flight lists stderr artifacts with tail output."""
+    artifact = tmp_path / "ui.stderr"
+    artifact.write_text("line1\nline2\nline3\n", encoding="utf-8")
+
+    def failing_runner(
+        command: tuple[str, ...],
+        *,
+        cwd: Path | None = None,
+        env: typ.Mapping[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        return 1, f"diff at {artifact}", ""
+
+    options = publish._CargoPreflightOptions(
+        extra_args=("--workspace",),
+        env={},
+        diagnostics_tail_lines=2,
+    )
+    with pytest.raises(publish.PublishPreflightError) as excinfo:
+        publish._run_cargo_preflight(
+            tmp_path,
+            "test",
+            runner=failing_runner,
+            options=options,
+        )
+
+    message = str(excinfo.value)
+    assert str(artifact) in message
+    assert "line2" in message
+    assert "line3" in message
+
+
 def test_verify_clean_working_tree_detects_dirty_state(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -289,7 +481,10 @@ def test_verify_clean_working_tree_detects_dirty_state(
     root = tmp_path.resolve()
 
     def dirty_runner(
-        command: tuple[str, ...], *, cwd: Path | None = None
+        command: tuple[str, ...],
+        *,
+        cwd: Path | None = None,
+        env: typ.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
         assert cwd == root
         return 0, " M file\n", ""
@@ -309,7 +504,10 @@ def test_verify_clean_working_tree_reports_missing_repo(
     """A missing git repository surfaces a descriptive error."""
 
     def missing_runner(
-        command: tuple[str, ...], *, cwd: Path | None = None
+        command: tuple[str, ...],
+        *,
+        cwd: Path | None = None,
+        env: typ.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
         assert command == ("git", "status", "--porcelain")
         assert cwd == tmp_path

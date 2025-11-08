@@ -152,6 +152,74 @@ def given_publish_order_is(workspace_directory: Path, order: str) -> None:
     config_path.write_text(doc.as_string(), encoding="utf-8")
 
 
+@given(parsers.parse('preflight.aux_build contains command "{command}"'))
+def given_preflight_aux_build_command(workspace_directory: Path, command: str) -> None:
+    """Append ``command`` tokens to ``preflight.aux_build``."""
+    tokens = [segment for segment in command.split() if segment]
+    if not tokens:
+        message = "preflight.aux_build command must contain tokens"
+        raise AssertionError(message)
+    config_path = workspace_directory / config_module.CONFIG_FILENAME
+    document = toml_utils.load_or_create_document(config_path)
+    preflight_table = toml_utils.ensure_table(document, "preflight")
+    aux_array = preflight_table.get("aux_build")
+    if aux_array is None:
+        aux_array = array()
+        preflight_table["aux_build"] = aux_array
+    cmd_array = array()
+    for token in tokens:
+        cmd_array.append(token)
+    aux_array.append(cmd_array)
+    config_path.write_text(document.as_string(), encoding="utf-8")
+
+
+@given(
+    parsers.parse('preflight.compiletest_extern maps "{crate_name}" to "{path_value}"')
+)
+def given_preflight_compiletest_extern(
+    workspace_directory: Path, crate_name: str, path_value: str
+) -> None:
+    """Set ``preflight.compiletest_extern[crate_name]`` to ``path_value``."""
+    config_path = workspace_directory / config_module.CONFIG_FILENAME
+    document = toml_utils.load_or_create_document(config_path)
+    preflight_table = toml_utils.ensure_table(document, "preflight")
+    extern_table = preflight_table.get("compiletest_extern")
+    if extern_table is None:
+        extern_table = table()
+        preflight_table["compiletest_extern"] = extern_table
+    extern_table[crate_name] = path_value
+    config_path.write_text(document.as_string(), encoding="utf-8")
+
+
+@given(parsers.parse('preflight.env sets "{name}" to "{value}"'))
+def given_preflight_env_override(
+    workspace_directory: Path, name: str, value: str
+) -> None:
+    """Set ``preflight.env[name]`` to ``value``."""
+    config_path = workspace_directory / config_module.CONFIG_FILENAME
+    document = toml_utils.load_or_create_document(config_path)
+    preflight_table = toml_utils.ensure_table(document, "preflight")
+    env_table = preflight_table.get("env")
+    if env_table is None:
+        env_table = table()
+        preflight_table["env"] = env_table
+    env_table[name] = value
+    config_path.write_text(document.as_string(), encoding="utf-8")
+
+
+@given(parsers.parse("preflight.stderr_tail_lines is {count:d}"))
+def given_preflight_stderr_tail_lines(workspace_directory: Path, count: int) -> None:
+    """Set ``preflight.stderr_tail_lines`` to ``count``."""
+    if count < 0:
+        message = "stderr tail lines must be non-negative"
+        raise AssertionError(message)
+    config_path = workspace_directory / config_module.CONFIG_FILENAME
+    document = toml_utils.load_or_create_document(config_path)
+    preflight_table = toml_utils.ensure_table(document, "preflight")
+    preflight_table["stderr_tail_lines"] = count
+    config_path.write_text(document.as_string(), encoding="utf-8")
+
+
 @given(
     parsers.parse(
         'the workspace README contains a TOML dependency snippet for "{crate_name}"'
