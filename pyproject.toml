@@ -1,7 +1,7 @@
 [project]
-name = "crate-tools"
+name = "lading"
 version = "0.1.0"
-description = "crate-tools package"
+description = "lading package"
 readme = "README.md"
 requires-python = ">=3.13"
 license = { text = "ISC" }
@@ -39,8 +39,8 @@ dev = [
 [tool.pyright]
 pythonVersion = "3.13"
 typeCheckingMode = "strict"
-include = ["crate_tools", "lading"]
-exclude = ["crate_tools/unittests", "**/unittests"]
+include = ["lading"]
+exclude = ["crate_tools", "crate_tools/unittests", "**/unittests"]
 
 [tool.ruff]
 line-length = 88
