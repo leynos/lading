@@ -173,6 +173,24 @@ def given_preflight_aux_build_command(workspace_directory: Path, command: str) -
     config_path.write_text(document.as_string(), encoding="utf-8")
 
 
+def _set_preflight_table_entry(
+    workspace_directory: Path,
+    table_field: str,
+    key: str,
+    value: str,
+) -> None:
+    """Set ``preflight.{table_field}[key]`` to ``value`` in the config."""
+    config_path = workspace_directory / config_module.CONFIG_FILENAME
+    document = toml_utils.load_or_create_document(config_path)
+    preflight_table = toml_utils.ensure_table(document, "preflight")
+    nested_table = preflight_table.get(table_field)
+    if nested_table is None:
+        nested_table = table()
+        preflight_table[table_field] = nested_table
+    nested_table[key] = value
+    config_path.write_text(document.as_string(), encoding="utf-8")
+
+
 @given(
     parsers.parse('preflight.compiletest_extern maps "{crate_name}" to "{path_value}"')
 )
@@ -180,15 +198,9 @@ def given_preflight_compiletest_extern(
     workspace_directory: Path, crate_name: str, path_value: str
 ) -> None:
     """Set ``preflight.compiletest_extern[crate_name]`` to ``path_value``."""
-    config_path = workspace_directory / config_module.CONFIG_FILENAME
-    document = toml_utils.load_or_create_document(config_path)
-    preflight_table = toml_utils.ensure_table(document, "preflight")
-    extern_table = preflight_table.get("compiletest_extern")
-    if extern_table is None:
-        extern_table = table()
-        preflight_table["compiletest_extern"] = extern_table
-    extern_table[crate_name] = path_value
-    config_path.write_text(document.as_string(), encoding="utf-8")
+    _set_preflight_table_entry(
+        workspace_directory, "compiletest_extern", crate_name, path_value
+    )
 
 
 @given(parsers.parse('preflight.env sets "{name}" to "{value}"'))
@@ -196,15 +208,7 @@ def given_preflight_env_override(
     workspace_directory: Path, name: str, value: str
 ) -> None:
     """Set ``preflight.env[name]`` to ``value``."""
-    config_path = workspace_directory / config_module.CONFIG_FILENAME
-    document = toml_utils.load_or_create_document(config_path)
-    preflight_table = toml_utils.ensure_table(document, "preflight")
-    env_table = preflight_table.get("env")
-    if env_table is None:
-        env_table = table()
-        preflight_table["env"] = env_table
-    env_table[name] = value
-    config_path.write_text(document.as_string(), encoding="utf-8")
+    _set_preflight_table_entry(workspace_directory, "env", name, value)
 
 
 @given(parsers.parse("preflight.stderr_tail_lines is {count:d}"))

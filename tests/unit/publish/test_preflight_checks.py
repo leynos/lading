@@ -416,7 +416,14 @@ def test_preflight_append_compiletest_externs(
         cwd: Path | None = None,
         env: typ.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
-        if command[:2] == ("cargo", "test") and env is not None and "RUSTFLAGS" in env:
+        # Decompose complex conditional into readable business rules
+        is_cargo_test = command[:2] == ("cargo", "test")
+        has_environment = env is not None
+        has_rustflags = has_environment and "RUSTFLAGS" in (env or {})
+
+        should_record_rustflags = is_cargo_test and has_rustflags
+
+        if should_record_rustflags and env is not None:
             rustflags.append(env["RUSTFLAGS"])
         return 0, "", ""
 
