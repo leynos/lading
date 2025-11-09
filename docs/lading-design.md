@@ -435,6 +435,35 @@ names are listed before returning the user-specified order.
       compiletest `*.stderr` files when cargo test fails, exposing the debug
       diff directly in the CLI output.
 
+### Publish Preflight Sequence
+
+```mermaid
+sequenceDiagram
+    participant Caller
+    participant publish.py
+    participant publish_execution
+    participant publish_plan
+    participant publish_diagnostics
+
+    Caller->>publish.py: publish(..., forbid_dirty=...)
+    publish.py->>publish.py: _build_preflight_environment(config.preflight)
+    alt aux_build configured
+        publish.py->>publish_execution: _run_aux_build_commands(workspace_root, commands, runner, env)
+        publish_execution-->>publish.py: (rc, stdout, stderr)
+    end
+    publish.py->>publish_execution: _invoke(cargo test --lib, cwd=workspace_root, env=env)
+    publish_execution-->>publish.py: (rc, stdout, stderr)
+    alt rc != 0
+        publish.py->>publish_diagnostics: _append_compiletest_diagnostics(message, stdout, stderr, tail_lines)
+        publish_diagnostics-->>publish.py: augmented_message
+        publish.py-->>Caller: PublishPreflightError(augmented_message)
+    else rc == 0
+        publish.py->>publish_plan: plan_publication(workspace, configuration, workspace_root)
+        publish_plan-->>publish.py: PublishPlan
+        publish.py-->>Caller: Success
+    end
+```
+
 3. **Iterate and Publish:** For each crate in the determined order:
 
     - **Patch Handling (per-crate)**: If strip_patches is "per-crate" (or is
