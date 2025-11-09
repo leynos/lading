@@ -355,7 +355,10 @@ def _run_preflight_checks(
     preflight_config = active_configuration.preflight
     base_env = _build_preflight_environment(preflight_config.env_overrides)
     _verify_clean_working_tree(
-        workspace_root, allow_dirty=allow_dirty, runner=command_runner
+        workspace_root,
+        allow_dirty=allow_dirty,
+        runner=command_runner,
+        env=base_env,
     )
     _run_aux_build_commands(
         workspace_root,
@@ -439,7 +442,11 @@ def _build_test_arguments(
 
 
 def _verify_clean_working_tree(
-    workspace_root: Path, *, allow_dirty: bool, runner: _CommandRunner
+    workspace_root: Path,
+    *,
+    allow_dirty: bool,
+    runner: _CommandRunner,
+    env: typ.Mapping[str, str] | None = None,
 ) -> None:
     """Ensure ``workspace_root`` has no uncommitted changes unless allowed."""
     if allow_dirty:
@@ -448,6 +455,7 @@ def _verify_clean_working_tree(
     exit_code, stdout, stderr = runner(
         ("git", "status", "--porcelain"),
         cwd=workspace_root,
+        env=env,
     )
     if exit_code != 0:
         detail = (stderr or stdout).strip()

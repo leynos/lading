@@ -423,7 +423,7 @@ def test_preflight_append_compiletest_externs(
 
         should_record_rustflags = is_cargo_test and has_rustflags
 
-        if should_record_rustflags and env is not None:
+        if should_record_rustflags:
             rustflags.append(env["RUSTFLAGS"])
         return 0, "", ""
 

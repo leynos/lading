@@ -47,7 +47,7 @@ def _format_artifact_diagnostics(artifact: Path, tail_lines: int) -> list[str]:
     tail = _read_tail_lines(artifact, tail_lines)
     if not tail:
         return lines
-    header = "  Contents:" if tail_lines <= 0 else f"  Last {tail_lines} line(s):"
+    header = f"  Last {tail_lines} line(s):"
     lines.append(header)
     lines.extend(f"    {entry}" for entry in tail)
     return lines

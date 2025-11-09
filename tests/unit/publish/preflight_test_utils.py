@@ -15,7 +15,7 @@ if typ.TYPE_CHECKING:
     from lading import config as config_module
     from lading.workspace import WorkspaceGraph
 
-CallRecord = tuple[tuple[str, ...], Path | None]
+CallRecord = tuple[tuple[str, ...], Path | None, typ.Mapping[str, str] | None]
 RecordedCommands = list[CallRecord]
 
 
@@ -41,7 +41,7 @@ def _setup_preflight_test(
         cwd: Path | None = None,
         env: typ.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
-        calls.append((tuple(command), cwd))
+        calls.append((tuple(command), cwd, env))
         return 0, "", ""
 
     monkeypatch.setattr(publish, "_invoke", recording_invoke)
@@ -54,7 +54,7 @@ def _extract_cargo_test_call(
 ) -> CallRecord:
     """Return the captured cargo test invocation from ``calls``."""
     return next(
-        (command, cwd)
-        for command, cwd in calls
-        if command[0] == "cargo" and len(command) > 1 and command[1] == "test"
+        entry
+        for entry in calls
+        if entry[0][0] == "cargo" and len(entry[0]) > 1 and entry[0][1] == "test"
     )
