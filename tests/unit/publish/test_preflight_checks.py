@@ -419,7 +419,7 @@ def test_preflight_append_compiletest_externs(
         # Decompose complex conditional into readable business rules
         is_cargo_test = command[:2] == ("cargo", "test")
         has_environment = env is not None
-        has_rustflags = has_environment and "RUSTFLAGS" in (env or {})
+        has_rustflags = has_environment and "RUSTFLAGS" in env
 
         should_record_rustflags = is_cargo_test and has_rustflags
 
