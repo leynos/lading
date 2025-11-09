@@ -36,11 +36,11 @@ _DRY_RUN_PARAMETER = Parameter(
 )
 DryRunFlag = typ.Annotated[bool, _DRY_RUN_PARAMETER]
 
-_ALLOW_DIRTY_PARAMETER = Parameter(
-    name="allow-dirty",
-    help="Skip the clean working tree check before running publish pre-flight checks.",
+_FORBID_DIRTY_PARAMETER = Parameter(
+    name="forbid-dirty",
+    help=("Require a clean working tree before running publish pre-flight checks."),
 )
-AllowDirtyFlag = typ.Annotated[bool, _ALLOW_DIRTY_PARAMETER]
+ForbidDirtyFlag = typ.Annotated[bool, _FORBID_DIRTY_PARAMETER]
 
 LOG_LEVEL_ENV_VAR = "LADING_LOG_LEVEL"
 _DEFAULT_LOG_LEVEL = logging.INFO
@@ -284,7 +284,7 @@ def bump(
 def publish(
     workspace_root: WorkspaceRootOption | None = None,
     *,
-    allow_dirty: AllowDirtyFlag = False,
+    forbid_dirty: ForbidDirtyFlag = False,
 ) -> str:
     """Execute publish planning with pre-flight checks."""
     resolved = normalise_workspace_root(workspace_root)
@@ -294,7 +294,7 @@ def publish(
             root,
             configuration,
             workspace,
-            options=commands.publish.PublishOptions(allow_dirty=allow_dirty),
+            options=commands.publish.PublishOptions(allow_dirty=not forbid_dirty),
         ),
     )
 

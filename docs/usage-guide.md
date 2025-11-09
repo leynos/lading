@@ -124,8 +124,8 @@ Updated version to 1.2.3 in 3 manifest(s):
 All paths are relative to the workspace root. Documentation files appear in the
 same list with a `(documentation)` suffix, and the summary prefix reports both
 manifest and documentation counts. When every manifest already records the
-requested version, the CLI reports: `No manifest changes required; all versions
-already 1.2.3.`
+requested version, the CLI reports:
+`No manifest changes required; all versions already 1.2.3.`
 
 Pass `--dry-run` to preview the same summary without writing to disk. Example:
 
@@ -173,9 +173,30 @@ tests for dedicated CI jobs:
 unit_tests_only = true
 ```
 
-If the working tree contains uncommitted changes the run halts with a reminder
-to clean up or to re-run with `--allow-dirty`. Passing the flag skips the
-cleanliness check while still running the cargo pre-flight commands.
+Auxiliary builders and compiletest helpers are configured in the same table:
+
+- `aux_build` – each entry is an array of command tokens that should run before
+  Cargo. For example,
+  `aux_build = [["cargo", "+nightly", "test", "-p", "lint", "--no-run"]]`
+  precompiles a UI harness so that later compiletest invocations can reuse the
+  artifacts.
+- `compiletest_extern` – map crate names to artifact paths. Lading resolves the
+  paths relative to the workspace root and appends `--extern crate=path` to the
+  `RUSTFLAGS` passed to `cargo test`, ensuring proc-macro helpers are available
+  to compiletest.
+- `env` – a table of environment overrides that should be present whenever
+  Lading runs `git status`, `cargo check`, `cargo test`, or auxiliary builders.
+  This is ideal for localisation variables such as `DYLINT_LOCALE`.
+- `stderr_tail_lines` – the number of lines to tail from any compiletest
+  `*.stderr` files referenced in the test output when `cargo test` fails. The
+  default of `40` prints context along with the file paths so UI drift is
+  easier to debug.
+
+If the working tree contains uncommitted changes the run only halts when you
+explicitly pass `--forbid-dirty`. Skipping the flag leaves the git status guard
+disabled so you can iterate on fixes while still exercising the pre-flight
+commands. Add `--forbid-dirty` when you need to guarantee the publish plan was
+built from a clean tree.
 
 ```bash
 python -m lading.cli --workspace-root /workspace/path publish

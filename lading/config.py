@@ -98,11 +98,23 @@ class PublishConfig:
 
 
 @dc.dataclass(frozen=True, slots=True)
+class CompiletestExtern:
+    """Describe a compiletest extern crate override."""
+
+    crate: str
+    path: str
+
+
+@dc.dataclass(frozen=True, slots=True)
 class PreflightConfig:
     """Settings for publish pre-flight checks."""
 
     test_exclude: tuple[str, ...] = ()
     unit_tests_only: bool = False
+    aux_build: tuple[tuple[str, ...], ...] = ()
+    compiletest_externs: tuple[CompiletestExtern, ...] = ()
+    env_overrides: tuple[tuple[str, str], ...] = ()
+    stderr_tail_lines: int = 40
 
     @classmethod
     def from_mapping(
@@ -112,7 +124,16 @@ class PreflightConfig:
         if mapping is None:
             return cls()
         _validate_mapping_keys(
-            mapping, {"test_exclude", "unit_tests_only"}, "preflight"
+            mapping,
+            {
+                "test_exclude",
+                "unit_tests_only",
+                "aux_build",
+                "compiletest_extern",
+                "env",
+                "stderr_tail_lines",
+            },
+            "preflight",
         )
         raw_excludes = _string_tuple(
             mapping.get("test_exclude"), "preflight.test_exclude"
@@ -122,10 +143,26 @@ class PreflightConfig:
                 trimmed for entry in raw_excludes if (trimmed := entry.strip())
             )
         )
+        aux_build_commands = _string_matrix(
+            mapping.get("aux_build"), "preflight.aux_build"
+        )
+        extern_entries = _string_mapping(
+            mapping.get("compiletest_extern"), "preflight.compiletest_extern"
+        )
+        env_overrides = _string_mapping(mapping.get("env"), "preflight.env")
         return cls(
             test_exclude=filtered_excludes,
             unit_tests_only=_boolean(
                 mapping.get("unit_tests_only"), "preflight.unit_tests_only"
+            ),
+            aux_build=aux_build_commands,
+            compiletest_externs=tuple(
+                CompiletestExtern(crate=name, path=path)
+                for name, path in extern_entries
+            ),
+            env_overrides=env_overrides,
+            stderr_tail_lines=_non_negative_int(
+                mapping.get("stderr_tail_lines"), "preflight.stderr_tail_lines", 40
             ),
         )
 
@@ -267,6 +304,79 @@ def _string_tuple(value: object, field_name: str) -> tuple[str, ...]:
         f"received {type(value).__name__}."
     )
     raise ConfigurationError(message)
+
+
+def _validate_matrix_entry(
+    entry: object,
+    field_name: str,
+    index: int,
+) -> tuple[str, ...]:
+    """Validate and convert a single matrix entry to a string tuple."""
+    if isinstance(entry, cabc.Sequence) and not isinstance(entry, (str, bytes)):
+        return _validate_string_sequence(entry, f"{field_name}[{index}]")
+    message = (
+        f"{field_name}[{index}] must be a sequence of strings; "
+        f"received {type(entry).__name__}."
+    )
+    raise ConfigurationError(message)
+
+
+def _validate_string_pair(
+    key: object, raw_value: object, field_name: str
+) -> tuple[str, str]:
+    """Validate and return a string key-value pair for ``field_name``."""
+    if not isinstance(key, str):
+        message = f"{field_name} keys must be strings; received {type(key).__name__}."
+        raise ConfigurationError(message)
+    if not isinstance(raw_value, str):
+        message = (
+            f"{field_name}[{key}] must be a string; "
+            f"received {type(raw_value).__name__}."
+        )
+        raise ConfigurationError(message)
+    return (key, raw_value)
+
+
+def _string_matrix(value: object, field_name: str) -> tuple[tuple[str, ...], ...]:
+    """Return a tuple-of-tuples parsed from ``value`` as nested string sequences."""
+    if value is None:
+        return ()
+    if not isinstance(value, cabc.Sequence) or isinstance(value, (str, bytes)):
+        message = f"{field_name} must be a sequence of string sequences."
+        raise ConfigurationError(message)
+    commands = [
+        _validate_matrix_entry(entry, field_name, index)
+        for index, entry in enumerate(value)
+    ]
+    return tuple(commands)
+
+
+def _string_mapping(value: object, field_name: str) -> tuple[tuple[str, str], ...]:
+    """Return key/value string pairs derived from mapping ``value``."""
+    if value is None:
+        return ()
+    if not isinstance(value, cabc.Mapping):
+        message = f"{field_name} must be a TOML table; received {type(value).__name__}."
+        raise ConfigurationError(message)
+    items: list[tuple[str, str]] = []
+    for key, raw_value in value.items():
+        items.append(_validate_string_pair(key, raw_value, field_name))
+    return tuple(items)
+
+
+def _non_negative_int(value: object, field_name: str, default: int) -> int:
+    """Return a non-negative integer parsed from ``value`` or ``default`` when None."""
+    if value is None:
+        return default
+    try:
+        integer = int(value)
+    except (TypeError, ValueError) as exc:  # pragma: no cover - validation guard
+        message = f"{field_name} must be an integer; received {type(value).__name__}."
+        raise ConfigurationError(message) from exc
+    if integer < 0:
+        message = f"{field_name} must be non-negative."
+        raise ConfigurationError(message)
+    return integer
 
 
 def _boolean(value: object, field_name: str) -> bool:

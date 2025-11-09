@@ -172,11 +172,11 @@ occur.
 
 - [x] **Implement Pre-Publish Checks:**
 
-  - **Outcome:** The command executes `cargo check` and `cargo test` against the
+- **Outcome:** The command executes `cargo check` and `cargo test` against the
     workspace after verifying the working tree is clean before proceeding.
   - **Completion Criteria:** A test confirms that the publish command fails if
-    either of the pre-flight checks fails. The `--allow-dirty` flag is
-    correctly handled.
+    either of the pre-flight checks fails. The `--forbid-dirty` flag restores
+    the cleanliness guard when operators need to enforce it.
 
 ______________________________________________________________________
 

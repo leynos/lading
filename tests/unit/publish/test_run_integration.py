@@ -15,6 +15,7 @@ from .conftest import (
     ORIGINAL_PREFLIGHT,
     make_config,
     make_crate,
+    make_preflight_config,
     make_workspace,
 )
 from .preflight_test_utils import (
@@ -217,7 +218,10 @@ def test_run_executes_preflight_checks_in_workspace(
     calls: list[tuple[tuple[str, ...], Path | None]] = []
 
     def fake_invoke(
-        command: typ.Sequence[str], *, cwd: Path | None = None
+        command: typ.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: typ.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
         calls.append((tuple(command), cwd))
         return 0, "", ""
@@ -259,7 +263,9 @@ def test_run_includes_preflight_test_excludes(
     expected_excludes: tuple[str, ...],
 ) -> None:
     """Configured exclusions match the builder output and cargo invocation."""
-    configuration = make_config(preflight_test_exclude=configured_excludes)
+    configuration = make_config(
+        preflight=make_preflight_config(test_exclude=configured_excludes)
+    )
     root, _workspace, calls = _setup_preflight_test(
         monkeypatch, tmp_path, configuration
     )
@@ -303,7 +309,7 @@ def test_run_honours_preflight_unit_tests_only(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Unit-test-only preflight mode narrows cargo test targets."""
-    configuration = make_config(preflight_unit_tests_only=True)
+    configuration = make_config(preflight=make_preflight_config(unit_tests_only=True))
     root, _workspace, calls = _setup_preflight_test(
         monkeypatch, tmp_path, configuration
     )
@@ -325,7 +331,9 @@ def test_run_unit_tests_only_with_excludes(
 ) -> None:
     """Exclusions are still honoured when unit-tests-only mode is enabled."""
     configuration = make_config(
-        preflight_unit_tests_only=True, preflight_test_exclude=("gamma", "alpha")
+        preflight=make_preflight_config(
+            unit_tests_only=True, test_exclude=("gamma", "alpha")
+        )
     )
     root, _workspace, calls = _setup_preflight_test(
         monkeypatch,
@@ -342,33 +350,38 @@ def test_run_unit_tests_only_with_excludes(
     assert args[-4:] == ("--exclude", "alpha", "--exclude", "gamma")
 
 
-def _verify_cargo_commands_executed(
-    calls: list[tuple[tuple[str, ...], Path | None]],
-    expected_cwd: Path,
-) -> None:
-    """Verify cargo check and test were invoked with correct arguments."""
-    check_call = next(
-        command
-        for command in calls
-        if command[0][0] == "cargo" and command[0][1] == "check"
-    )
-    test_call = next(
-        command
-        for command in calls
-        if command[0][0] == "cargo" and command[0][1] == "test"
-    )
-
-    for command, cwd in (check_call, test_call):
-        assert cwd == expected_cwd
-        assert command[2] == "--workspace"
-        assert command[3] == "--all-targets"
-        assert any(arg.startswith("--target-dir=") for arg in command[4:])
-
-
-def test_dirty_workspace_rejected_without_allow_dirty(
+def test_dirty_workspace_allowed_by_default(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Publish rejects dirty workspaces when --allow-dirty is not set."""
+    """Publish skips git status when cleanliness enforcement is disabled."""
+    monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
+    root = tmp_path / "workspace"
+    root.mkdir()
+    workspace = make_workspace(root, make_crate(root, "alpha"))
+    configuration = make_config()
+
+    def skip_git_invoke(
+        command: typ.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: typ.Mapping[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        if command[0] == "git":
+            message = "git status should be skipped by default"
+            raise AssertionError(message)
+        return 0, "", ""
+
+    monkeypatch.setattr(publish, "_invoke", skip_git_invoke)
+
+    message = publish.run(root, configuration, workspace)
+
+    assert message.startswith(f"Publish plan for {root}")
+
+
+def test_forbid_dirty_flag_enforces_cleanliness(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Explicit forbid-dirty option requires a clean git status."""
     monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
     root = tmp_path / "workspace"
     root.mkdir()
@@ -376,7 +389,10 @@ def test_dirty_workspace_rejected_without_allow_dirty(
     configuration = make_config()
 
     def dirty_invoke(
-        command: typ.Sequence[str], *, cwd: Path | None = None
+        command: typ.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: typ.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
         if command[0] == "git":
             return 0, " M Cargo.toml\n", ""
@@ -385,42 +401,14 @@ def test_dirty_workspace_rejected_without_allow_dirty(
     monkeypatch.setattr(publish, "_invoke", dirty_invoke)
 
     with pytest.raises(publish.PublishPreflightError) as excinfo:
-        publish.run(root, configuration, workspace)
+        publish.run(
+            root,
+            configuration,
+            workspace,
+            options=publish.PublishOptions(allow_dirty=False),
+        )
 
     assert "uncommitted changes" in str(excinfo.value)
-
-
-def test_allow_dirty_flag_bypasses_git_status_check(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """``--allow-dirty`` skips git status check but runs cargo commands."""
-    monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
-    root = tmp_path / "workspace"
-    root.mkdir()
-    workspace = make_workspace(root, make_crate(root, "alpha"))
-    configuration = make_config()
-    calls: list[tuple[tuple[str, ...], Path | None]] = []
-
-    def allow_dirty_invoke(
-        command: typ.Sequence[str], *, cwd: Path | None = None
-    ) -> tuple[int, str, str]:
-        if command[0] == "git":
-            message = "git status should be skipped when allow-dirty is set"
-            raise AssertionError(message)
-        calls.append((tuple(command), cwd))
-        return 0, "", ""
-
-    monkeypatch.setattr(publish, "_invoke", allow_dirty_invoke)
-
-    message = publish.run(
-        root,
-        configuration,
-        workspace,
-        options=publish.PublishOptions(allow_dirty=True),
-    )
-
-    assert message.startswith(f"Publish plan for {root}")
-    _verify_cargo_commands_executed(calls, root)
 
 
 @pytest.mark.parametrize(
@@ -445,7 +433,10 @@ def test_run_raises_when_preflight_cargo_fails(
     configuration = make_config()
 
     def failing_invoke(
-        command: typ.Sequence[str], *, cwd: Path | None = None
+        command: typ.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: typ.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
         if command[0] == "git":
             return 0, "", ""

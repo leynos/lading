@@ -40,13 +40,19 @@ class _CommandResponse:
 class _PreflightInvocationRecorder:
     """Collect arguments recorded from cmd-mox double invocations."""
 
-    records: list[tuple[str, tuple[str, ...]]] = dc.field(default_factory=list)
+    records: list[tuple[str, tuple[str, ...], dict[str, str]]] = dc.field(
+        default_factory=list
+    )
 
-    def record(self, label: str, args: tuple[str, ...]) -> None:
-        self.records.append((label, args))
+    def record(self, label: str, args: tuple[str, ...], env: dict[str, str]) -> None:
+        self.records.append((label, args, env))
 
-    def by_label(self, label: str) -> list[tuple[str, ...]]:
-        return [args for entry_label, args in self.records if entry_label == label]
+    def by_label(self, label: str) -> list[tuple[tuple[str, ...], dict[str, str]]]:
+        return [
+            (args, env)
+            for entry_label, args, env in self.records
+            if entry_label == label
+        ]
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -164,7 +170,8 @@ def _make_preflight_handler(
     def _handler(invocation: _CmdInvocation) -> tuple[str, str, int]:
         _validate_stub_arguments(expected_arguments, tuple(invocation.args))
         if recorder is not None:
-            recorder.record(label, tuple(invocation.args))
+            env_mapping = dict(getattr(invocation, "env", {}))
+            recorder.record(label, tuple(invocation.args), env_mapping)
         return (response.stdout, response.stderr, response.exit_code)
 
     return _handler
@@ -231,23 +238,23 @@ def when_invoke_lading_publish(
 
 
 @when(
-    "I invoke lading publish with that workspace using --allow-dirty",
+    "I invoke lading publish with that workspace using --forbid-dirty",
     target_fixture="cli_run",
 )
-def when_invoke_lading_publish_allow_dirty(
+def when_invoke_lading_publish_forbid_dirty(
     workspace_directory: Path,
     repo_root: Path,
     cmd_mox: CmdMox,
     preflight_overrides: dict[tuple[str, ...], _CommandResponse],
     preflight_recorder: _PreflightInvocationRecorder,
 ) -> dict[str, typ.Any]:
-    """Execute the publish CLI with ``--allow-dirty`` enabled."""
+    """Execute the publish CLI with ``--forbid-dirty`` enabled."""
     stub_config = _create_stub_config(cmd_mox, preflight_overrides, preflight_recorder)
     return _invoke_publish_with_options(
         repo_root,
         workspace_directory,
         stub_config,
-        "--allow-dirty",
+        "--forbid-dirty",
     )
 
 
@@ -271,6 +278,22 @@ def given_cargo_test_fails(
     )
 
 
+@given(parsers.parse('cargo test fails with compiletest artifact "{relative_path}"'))
+def given_cargo_test_fails_with_artifact(
+    workspace_directory: Path,
+    preflight_overrides: dict[tuple[str, ...], _CommandResponse],
+    relative_path: str,
+) -> None:
+    """Create ``relative_path`` and configure cargo test to reference it."""
+    artifact = workspace_directory / relative_path
+    artifact.parent.mkdir(parents=True, exist_ok=True)
+    artifact.write_text("line1\nline2\n", encoding="utf-8")
+    preflight_overrides[("cargo", "test", "--workspace")] = _CommandResponse(
+        exit_code=1,
+        stderr=f"diff at {artifact}",
+    )
+
+
 @given("the workspace has uncommitted changes")
 def given_workspace_dirty(
     preflight_overrides: dict[tuple[str, ...], _CommandResponse],
@@ -279,6 +302,29 @@ def given_workspace_dirty(
     preflight_overrides[("git", "status", "--porcelain")] = _CommandResponse(
         exit_code=0,
         stdout=" M Cargo.toml\n",
+    )
+
+
+@given(
+    parsers.parse(
+        'the preflight command "{command}" exits with '
+        'code {exit_code:d} and stderr "{stderr}"'
+    )
+)
+def given_preflight_command_override(
+    preflight_overrides: dict[tuple[str, ...], _CommandResponse],
+    command: str,
+    exit_code: int,
+    stderr: str,
+) -> None:
+    """Override an arbitrary pre-flight command with a custom result."""
+    tokens = tuple(segment for segment in command.split() if segment)
+    if not tokens:
+        message = "preflight command override requires tokens"
+        raise AssertionError(message)
+    preflight_overrides[tokens] = _CommandResponse(
+        exit_code=exit_code,
+        stderr=stderr,
     )
 
 
@@ -298,7 +344,17 @@ def _get_test_invocations(
 ) -> list[tuple[str, ...]]:
     """Return recorded cargo test invocations or raise if missing."""
     if invocations := recorder.by_label("cargo::test"):
-        return invocations
+        return [args for args, _ in invocations]
+    message = "cargo test pre-flight command was not invoked"
+    raise AssertionError(message)
+
+
+def _get_test_invocation_envs(
+    recorder: _PreflightInvocationRecorder,
+) -> list[dict[str, str]]:
+    """Return recorded cargo test environments or raise if missing."""
+    if invocations := recorder.by_label("cargo::test"):
+        return [env for _, env in invocations]
     message = "cargo test pre-flight command was not invoked"
     raise AssertionError(message)
 
@@ -375,6 +431,42 @@ def then_publish_has_no_preflight_excludes(
         if "--exclude" in args:
             message = "Did not expect --exclude arguments in cargo test pre-flight"
             raise AssertionError(message)
+
+
+@then(parsers.parse('the publish command runs auxiliary build "{label}"'))
+def then_publish_runs_aux_build(
+    preflight_recorder: _PreflightInvocationRecorder,
+    label: str,
+) -> None:
+    """Assert that an auxiliary build command was executed."""
+    if not preflight_recorder.by_label(label):
+        message = f"Expected auxiliary build invocation for {label}"
+        raise AssertionError(message)
+
+
+@then(parsers.parse('the cargo test pre-flight env contains "{name}"="{value}"'))
+def then_cargo_test_env_contains(
+    preflight_recorder: _PreflightInvocationRecorder,
+    name: str,
+    value: str,
+) -> None:
+    """Assert that cargo test env propagates ``name`` with ``value``."""
+    envs = _get_test_invocation_envs(preflight_recorder)
+    if not any(environment.get(name) == value for environment in envs):
+        message = f"Expected cargo test env {name}={value!r}"
+        raise AssertionError(message)
+
+
+@then(parsers.parse('the cargo test pre-flight env includes "{snippet}" in RUSTFLAGS'))
+def then_cargo_test_env_rustflags_contains(
+    preflight_recorder: _PreflightInvocationRecorder,
+    snippet: str,
+) -> None:
+    """Assert that cargo test RUSTFLAGS contains ``snippet``."""
+    envs = _get_test_invocation_envs(preflight_recorder)
+    if not any(snippet in environment.get("RUSTFLAGS", "") for environment in envs):
+        message = f"Expected {snippet!r} in cargo test RUSTFLAGS"
+        raise AssertionError(message)
 
 
 @then(parsers.parse('the publish command lists crates in order "{crate_names}"'))

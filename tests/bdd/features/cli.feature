@@ -177,25 +177,58 @@ Feature: Lading CLI scaffolding
     When I invoke lading publish with that workspace
     Then the publish command limits pre-flight tests to libraries and binaries
 
+  Scenario: Auxiliary build commands run before publish pre-flight
+    Given a workspace directory with configuration
+    And cargo metadata describes a sample workspace
+    And preflight.aux_build contains command "cargo fmt"
+    And the preflight command "cargo fmt" exits with code 0 and stderr ""
+    When I invoke lading publish with that workspace
+    Then the publish command runs auxiliary build "cargo::fmt"
+
+  Scenario: Cargo test pre-flight forwards configured environment variables
+    Given a workspace directory with configuration
+    And cargo metadata describes a sample workspace
+    And preflight.env sets "DYLINT_LOCALE" to "cy"
+    When I invoke lading publish with that workspace
+    Then the cargo test pre-flight env contains "DYLINT_LOCALE"="cy"
+
+  Scenario: Cargo test pre-flight injects compiletest extern flags
+    Given a workspace directory with configuration
+    And cargo metadata describes a sample workspace
+    And preflight.compiletest_extern maps "lint_macro" to "target/liblint_macro.so"
+    When I invoke lading publish with that workspace
+    Then the cargo test pre-flight env includes "--extern lint_macro" in RUSTFLAGS
+
+  Scenario: Publish surfaces compiletest stderr artifacts
+    Given a workspace directory with configuration
+    And cargo metadata describes a sample workspace
+    And preflight.stderr_tail_lines is 1
+    And cargo test fails with compiletest artifact "ui.stderr"
+    When I invoke lading publish with that workspace
+    Then the CLI exits with code 1
+    And the stderr contains "Compiletest stderr artifacts"
+    And the stderr contains "ui.stderr"
+    And the stderr contains "line2"
+
   Scenario: Publish pre-flight aborts when cmd-mox socket is missing
     Given a workspace directory with configuration
     And cmd-mox IPC socket is unset
     When I run publish pre-flight checks for that workspace
     Then the publish pre-flight error contains "cmd-mox stub requested for publish pre-flight but CMOX_IPC_SOCKET is unset"
 
-  Scenario: Publish command rejects dirty workspaces without allow-dirty
+  Scenario: Publish command rejects dirty workspaces with --forbid-dirty
+    Given a workspace directory with configuration
+    And cargo metadata describes a sample workspace
+    And the workspace has uncommitted changes
+    When I invoke lading publish with that workspace using --forbid-dirty
+    Then the CLI exits with code 1
+    And the stderr contains "Workspace has uncommitted changes; commit or stash them before publishing or re-run without --forbid-dirty."
+
+  Scenario: Publish command allows dirty workspaces by default
     Given a workspace directory with configuration
     And cargo metadata describes a sample workspace
     And the workspace has uncommitted changes
     When I invoke lading publish with that workspace
-    Then the CLI exits with code 1
-    And the stderr contains "Workspace has uncommitted changes; commit or stash them before publishing or re-run with --allow-dirty."
-
-  Scenario: Publish command allows dirty workspaces with allow-dirty flag
-    Given a workspace directory with configuration
-    And cargo metadata describes a sample workspace
-    And the workspace has uncommitted changes
-    When I invoke lading publish with that workspace using --allow-dirty
     Then the publish command prints the publish plan for "alpha"
 
   Scenario: Running the bump command without configuration
