@@ -21,7 +21,9 @@ except ModuleNotFoundError:  # pragma: no cover - fallback when cmd-mox missing
 from lading.utils.process import format_command, log_command_invocation
 from lading.workspace import metadata as metadata_module
 
-LOGGER = logging.getLogger(__name__)
+# Use the publish module logger so CLI-facing tests can capture command logs
+# without needing to know about this helper module.
+LOGGER = logging.getLogger("lading.commands.publish")
 
 
 class CmdMoxModules(typ.NamedTuple):

@@ -24,31 +24,23 @@ from lading.commands.publish_diagnostics import _append_compiletest_diagnostics
 from lading.commands.publish_execution import (
     _CommandRunner,
     _invoke,
-)
-from lading.commands.publish_execution import (
     _normalise_cmd_mox_command as _execution_normalise_cmd_mox_command,
-)
-from lading.commands.publish_execution import (
     _should_use_cmd_mox_stub as _execution_should_use_cmd_mox_stub,
-)
-from lading.commands.publish_execution import (
     _split_command as _execution_split_command,
 )
 from lading.commands.publish_plan import (
     PublishPlan,
+    PublishPlanError as _PlanPublishPlanError,
+    _append_section as _plan_append_section,
     _format_plan,
     plan_publication,
 )
-from lading.commands.publish_plan import (
-    PublishPlanError as _PublishPlanErrorExport,
-)
-from lading.commands.publish_plan import (
-    _append_section as _plan_append_section,
-)
 from lading.utils.path import normalise_workspace_root
+from lading.workspace import metadata as _metadata_module
 
 StripPatchesSetting = config_module.StripPatchesSetting
-PublishPlanError = _PublishPlanErrorExport
+metadata_module = _metadata_module
+PublishPlanError = _PlanPublishPlanError
 _normalise_cmd_mox_command = _execution_normalise_cmd_mox_command
 _should_use_cmd_mox_stub = _execution_should_use_cmd_mox_stub
 _split_command = _execution_split_command
@@ -372,39 +364,75 @@ def _resolve_patch_tables(
     return patch_table, crates_io
 
 
+def _validate_and_load_manifest(
+    staging_root: Path, strategy: StripPatchesSetting
+) -> tuple[
+    TOMLDocument,
+    tuple[cabc.MutableMapping[str, typ.Any], cabc.MutableMapping[str, typ.Any]],
+] | None:
+    """Load and validate the manifest for patch stripping. Returns the document and patch tables when applicable, or None if stripping should be skipped."""
+    if strategy is False:
+        return None
+    manifest_path = staging_root / "Cargo.toml"
+    if not manifest_path.exists():
+        return None
+    document = _load_manifest_document(manifest_path)
+    patch_tables = _resolve_patch_tables(document)
+    if patch_tables is None:
+        return None
+    return document, patch_tables
+
+
+def _cleanup_empty_patch_tables(
+    document: TOMLDocument,
+    patch_table: cabc.MutableMapping[str, typ.Any],
+    crates_io: cabc.MutableMapping[str, typ.Any],
+) -> None:
+    """Remove empty patch tables from the document."""
+    if not crates_io:
+        patch_table.pop("crates-io", None)
+    if not patch_table:
+        document.pop("patch", None)
+
+
+def _apply_strategy_to_patches(
+    strategy: StripPatchesSetting,
+    patch_table: cabc.MutableMapping[str, typ.Any],
+    crates_io: cabc.MutableMapping[str, typ.Any],
+    publishable_names: tuple[str, ...],
+) -> bool:
+    """Apply the strip patch strategy and return True if modified."""
+    if strategy == "all":
+        return patch_table.pop("crates-io", None) is not None
+    if strategy == "per-crate":
+        return _remove_per_crate_entries(crates_io, publishable_names)
+    message = f"Unsupported strip patch strategy: {strategy}"
+    raise PublishPreparationError(message)
+
+
 def _apply_strip_patch_strategy(
     staging_root: Path,
     plan: PublishPlan,
     strategy: StripPatchesSetting,
 ) -> None:
     """Modify the staged manifest according to ``publish.strip_patches``."""
-    if strategy is False:
+    validation = _validate_and_load_manifest(staging_root, strategy)
+    if validation is None:
         return
-    manifest_path = staging_root / "Cargo.toml"
-    if not manifest_path.exists():
-        return
-    document = _load_manifest_document(manifest_path)
-    patch_tables = _resolve_patch_tables(document)
-    if patch_tables is None:
-        return
+    document, patch_tables = validation
     patch_table, crates_io = patch_tables
+    manifest_path = staging_root / "Cargo.toml"
 
-    modified = False
-    if strategy == "all":
-        modified = patch_table.pop("crates-io", None) is not None
-    elif strategy == "per-crate":
-        modified = _remove_per_crate_entries(crates_io, plan.publishable_names)
-    else:  # pragma: no cover - guarded by configuration validation
-        message = f"Unsupported strip patch strategy: {strategy}"
-        raise PublishPreparationError(message)
-
+    modified = _apply_strategy_to_patches(
+        strategy,
+        patch_table,
+        crates_io,
+        plan.publishable_names,
+    )
     if not modified:
         return
 
-    if not crates_io:
-        patch_table.pop("crates-io", None)
-    if not patch_table:
-        document.pop("patch", None)
+    _cleanup_empty_patch_tables(document, patch_table, crates_io)
     _write_manifest_document(manifest_path, document)
 
 
