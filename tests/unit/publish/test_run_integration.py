@@ -228,7 +228,12 @@ def test_run_executes_preflight_checks_in_workspace(
 
     monkeypatch.setattr(publish, "_invoke", fake_invoke)
 
-    publish.run(root, configuration, workspace)
+    publish.run(
+        root,
+        configuration,
+        workspace,
+        options=publish.PublishOptions(allow_dirty=False),
+    )
 
     assert (
         ("git", "status", "--porcelain"),

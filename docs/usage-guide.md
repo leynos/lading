@@ -229,6 +229,19 @@ reasons for skipping crates visible to the operator. The current release stops
 after producing the plan and running the pre-flight checks; cargo packaging and
 publication will arrive in a later milestone.
 
+After staging the workspace, `publish` also normalises the root
+`Cargo.toml` according to the `publish.strip_patches` strategy:
+
+- `"all"` removes the entire `[patch.crates-io]` section so every crate will
+  resolve dependencies from crates.io.
+- `"per-crate"` removes only the entries that match the crates scheduled for
+  publication, leaving third-party or out-of-scope patches intact.
+- `false` preserves the patch table, which is useful when the release process
+  relies on local registries or custom overrides.
+
+The staged manifest is edited in place within the temporary clone, so the
+original workspace configuration remains untouched.
+
 The preparation phase now clones the entire workspace into a temporary build
 directory before any packaging steps run. The CLI prints the location of this
 staging area so operators can inspect generated artifacts. Crates that declare

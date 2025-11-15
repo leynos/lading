@@ -187,7 +187,7 @@ interacting with the `cargo publish` command.
 
 **Tasks:**
 
-- [ ] **Implement Configurable Patch Stripping:**
+- [x] **Implement Configurable Patch Stripping:**
 
   - **Outcome:** The command correctly modifies the workspace `Cargo.toml` in
     the temporary clone according to the `publish.strip_patches` strategy
