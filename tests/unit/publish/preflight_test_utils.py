@@ -51,10 +51,11 @@ def _setup_preflight_test(
 
 def _extract_cargo_test_call(
     calls: RecordedCommands,
-) -> CallRecord:
+) -> tuple[tuple[str, ...], Path | None]:
     """Return the captured cargo test invocation from ``calls``."""
-    return next(
+    command, cwd, _env = next(
         entry
         for entry in calls
         if entry[0][0] == "cargo" and len(entry[0]) > 1 and entry[0][1] == "test"
     )
+    return command, cwd

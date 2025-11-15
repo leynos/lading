@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import atexit
+import collections.abc as cabc
 import dataclasses as dc
 import os
 import shutil
@@ -10,11 +11,35 @@ import tempfile
 import typing as typ
 from pathlib import Path
 
+from tomlkit import parse as parse_toml
+from tomlkit.exceptions import TOMLKitError
+
+try:  # pragma: no cover - typing helper
+    from tomlkit.toml_document import TOMLDocument
+except ImportError:  # pragma: no cover - mypy fallback for runtime
+    TOMLDocument = typ.Any  # type: ignore[assignment]
+
 from lading import config as config_module
+from lading.commands import publish_execution as _publish_execution
+from lading.commands import publish_plan as _publish_plan
 from lading.commands.publish_diagnostics import _append_compiletest_diagnostics
-from lading.commands.publish_execution import _CommandRunner, _invoke
-from lading.commands.publish_plan import PublishPlan, _format_plan, plan_publication
 from lading.utils.path import normalise_workspace_root
+from lading.workspace import metadata as _metadata_module
+
+StripPatchesSetting = config_module.StripPatchesSetting
+metadata_module = _metadata_module
+
+PublishPlan = _publish_plan.PublishPlan
+PublishPlanError = _publish_plan.PublishPlanError
+_append_section = _publish_plan._append_section
+_format_plan = _publish_plan._format_plan
+plan_publication = _publish_plan.plan_publication
+
+_CommandRunner = _publish_execution._CommandRunner
+_invoke = _publish_execution._invoke
+_split_command = _publish_execution._split_command
+_normalise_cmd_mox_command = _publish_execution._normalise_cmd_mox_command
+_should_use_cmd_mox_stub = _publish_execution._should_use_cmd_mox_stub
 
 if typ.TYPE_CHECKING:
     from lading.config import LadingConfig
@@ -280,6 +305,98 @@ def _format_preparation_summary(preparation: PublishPreparation) -> tuple[str, .
     return tuple(lines)
 
 
+def _load_manifest_document(manifest_path: Path) -> TOMLDocument:
+    """Parse and return the staged workspace manifest."""
+    try:
+        text = manifest_path.read_text(encoding="utf-8")
+    except FileNotFoundError as exc:  # pragma: no cover - defensive guard
+        message = f"Workspace manifest not found at {manifest_path}"
+        raise PublishPreparationError(message) from exc
+    try:
+        return parse_toml(text)
+    except TOMLKitError as exc:
+        message = f"Failed to parse staged workspace manifest: {manifest_path}"
+        raise PublishPreparationError(message) from exc
+
+
+def _write_manifest_document(manifest_path: Path, document: TOMLDocument) -> None:
+    """Persist ``document`` back to ``manifest_path`` preserving trivia."""
+    text = document.as_string()
+    if not text.endswith("\n"):
+        text = f"{text}\n"
+    manifest_path.write_text(text, encoding="utf-8")
+
+
+def _get_patch_tables(
+    document: TOMLDocument,
+) -> tuple[cabc.MutableMapping[str, typ.Any], cabc.MutableMapping[str, typ.Any]] | None:
+    """Return the ``patch`` and ``crates-io`` tables when present."""
+    patch_table = document.get("patch")
+    if not isinstance(patch_table, cabc.MutableMapping):
+        return None
+    crates_io = patch_table.get("crates-io")
+    if not isinstance(crates_io, cabc.MutableMapping):
+        return None
+    return patch_table, crates_io
+
+
+def _strip_all_patch_entries(document: TOMLDocument) -> bool:
+    """Remove the entire ``[patch.crates-io]`` section from ``document``."""
+    patch_tables = _get_patch_tables(document)
+    if patch_tables is None:
+        return False
+    patch_table, _ = patch_tables
+    patch_table.pop("crates-io", None)
+    if not patch_table:
+        document.pop("patch", None)
+    return True
+
+
+def _strip_named_patch_entries(
+    document: TOMLDocument,
+    crate_names: cabc.Iterable[str],
+) -> bool:
+    """Remove patch entries that match ``crate_names``."""
+    patch_tables = _get_patch_tables(document)
+    if patch_tables is None:
+        return False
+    patch_table, crates_io = patch_tables
+    removed = False
+    for crate in dict.fromkeys(crate_names):
+        if crate in crates_io:
+            del crates_io[crate]
+            removed = True
+    if removed:
+        if not crates_io:
+            patch_table.pop("crates-io", None)
+        if not patch_table:
+            document.pop("patch", None)
+    return removed
+
+
+def _apply_strip_patch_strategy(
+    staging_root: Path,
+    plan: PublishPlan,
+    strategy: StripPatchesSetting,
+) -> None:
+    """Modify the staged manifest according to ``publish.strip_patches``."""
+    if strategy is False:
+        return
+    manifest_path = staging_root / "Cargo.toml"
+    if not manifest_path.exists():
+        return
+    document = _load_manifest_document(manifest_path)
+    if strategy == "all":
+        modified = _strip_all_patch_entries(document)
+    elif strategy == "per-crate":
+        modified = _strip_named_patch_entries(document, plan.publishable_names)
+    else:  # pragma: no cover - guarded by configuration validation
+        message = f"Unsupported strip patch strategy: {strategy}"
+        raise PublishPreparationError(message)
+    if modified:
+        _write_manifest_document(manifest_path, document)
+
+
 def _ensure_configuration(
     configuration: LadingConfig | None, workspace_root: Path
 ) -> LadingConfig:
@@ -335,6 +452,11 @@ def run(
         active_workspace, active_configuration, workspace_root=root_path
     )
     preparation = prepare_workspace(plan, active_workspace, options=options)
+    _apply_strip_patch_strategy(
+        preparation.staging_root,
+        plan,
+        active_configuration.publish.strip_patches,
+    )
     plan_message = _format_plan(
         plan, strip_patches=active_configuration.publish.strip_patches
     )
