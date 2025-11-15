@@ -12,7 +12,9 @@ from plumbum.commands.processes import CommandNotFound
 from lading.utils.process import log_command_invocation
 from lading.workspace import metadata as metadata_module
 
-LOGGER = logging.getLogger(__name__)
+# Use the publish module logger so CLI-facing tests can capture command logs
+# without needing to know about this helper module.
+LOGGER = logging.getLogger("lading.commands.publish")
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing helper
     from pathlib import Path
