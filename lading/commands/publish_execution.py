@@ -21,7 +21,7 @@ except ModuleNotFoundError:  # pragma: no cover - fallback when cmd-mox missing
 from lading.utils.process import format_command, log_command_invocation
 from lading.workspace import metadata as metadata_module
 
-LOGGER = logging.getLogger("lading.commands.publish")
+LOGGER = logging.getLogger(__name__)
 
 
 class CmdMoxModules(typ.NamedTuple):
@@ -60,7 +60,7 @@ class _CommandRunner(typ.Protocol):
         """Execute ``command`` and return exit status and decoded output."""
 
 
-@dc.dataclass(frozen=True)
+@dc.dataclass(frozen=True, slots=True)
 class _SubprocessContext:
     """Execution context for subprocess invocations."""
 
@@ -239,7 +239,7 @@ def _invoke_via_subprocess(
             process.stdin.write(context.stdin_data.encode("utf-8"))
             process.stdin.close()
         except BrokenPipeError:
-            pass
+            LOGGER.debug("Process closed stdin before all data was written")
     exit_code = process.wait()
     for thread in threads:
         thread.join()
@@ -379,20 +379,24 @@ def _relay_stream(
     decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
     active_sink = sink
     try:
-        while True:
-            chunk = source.read(_STREAM_CHUNK_SIZE)
-            if not chunk:
-                break
-            text = decoder.decode(chunk)
-            if text:
-                buffer.append(text)
-                active_sink = _write_to_sink(active_sink, text)
-        tail = decoder.decode(b"", final=True)
-        if tail:
-            buffer.append(tail)
-            active_sink = _write_to_sink(active_sink, tail)
-    finally:
-        source.close()
+        try:
+            while True:
+                chunk = source.read(_STREAM_CHUNK_SIZE)
+                if not chunk:
+                    break
+                text = decoder.decode(chunk)
+                if text:
+                    buffer.append(text)
+                    active_sink = _write_to_sink(active_sink, text)
+            tail = decoder.decode(b"", final=True)
+            if tail:
+                buffer.append(tail)
+                active_sink = _write_to_sink(active_sink, tail)
+        finally:
+            source.close()
+    except Exception:  # pragma: no cover - defensive logging guard
+        LOGGER.exception("Stream relay thread failed")
+        raise
 
 
 def _write_to_sink(sink: typ.TextIO | None, payload: str) -> typ.TextIO | None:
