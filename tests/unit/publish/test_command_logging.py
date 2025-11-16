@@ -88,13 +88,9 @@ def test_cmd_mox_passthrough_streams_output(
     def fake_invoke(
         program: str,
         args: tuple[str, ...],
-        *,
-        cwd: Path | None,
-        env: typ.Mapping[str, str] | None,
-        stdin_data: str | None = None,
+        context: publish_execution._SubprocessContext,
     ) -> tuple[int, str, str]:
-        del cwd, env
-        calls.append((program, args, stdin_data))
+        calls.append((program, args, context.stdin_data))
         sys.stdout.write("alpha")
         sys.stdout.flush()
         sys.stderr.write("beta")

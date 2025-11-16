@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import codecs
+import dataclasses as dc
 import logging
 import os
 import re
@@ -21,6 +22,14 @@ from lading.utils.process import format_command, log_command_invocation
 from lading.workspace import metadata as metadata_module
 
 LOGGER = logging.getLogger("lading.commands.publish")
+
+class CmdMoxModules(typ.NamedTuple):
+    """Container for dynamically loaded cmd-mox modules."""
+
+    ipc: object
+    env: object
+    command_runner: object
+
 
 _ENV_REDACTION_TOKENS = (
     "TOKEN",
@@ -50,6 +59,15 @@ class _CommandRunner(typ.Protocol):
         """Execute ``command`` and return exit status and decoded output."""
 
 
+@dc.dataclass(frozen=True)
+class _SubprocessContext:
+    """Execution context for subprocess invocations."""
+
+    cwd: Path | None = None
+    env: typ.Mapping[str, str] | None = None
+    stdin_data: str | None = None
+
+
 def _publish_error(message: str) -> PublishPreflightError:
     """Return a PublishPreflightError instance without creating import cycles."""
     from lading.commands.publish import PublishPreflightError
@@ -69,7 +87,8 @@ def _invoke(
         return _invoke_via_cmd_mox(command, cwd, env)
 
     program, args = _split_command(command)
-    return _invoke_via_subprocess(program, args, cwd=cwd, env=env)
+    context = _SubprocessContext(cwd=cwd, env=env)
+    return _invoke_via_subprocess(program, args, context)
 
 
 def _split_command(command: typ.Sequence[str]) -> tuple[str, tuple[str, ...]]:
@@ -88,12 +107,8 @@ def _should_use_cmd_mox_stub() -> bool:
     return stub_env_val.lower() in {"1", "true", "yes", "on"}
 
 
-def _invoke_via_cmd_mox(
-    command: typ.Sequence[str],
-    cwd: Path | None,
-    env: typ.Mapping[str, str] | None,
-) -> tuple[int, str, str]:
-    """Route ``command`` through the cmd-mox IPC server when enabled."""
+def _prepare_cmd_mox_context() -> tuple[object, object, float]:
+    """Return cmd-mox IPC modules and timeout after validating env state."""
     if cmd_runner_module is None:  # pragma: no cover - defensive
         message = "cmd-mox is not available but the stub mode was requested"
         raise _publish_error(message)
@@ -109,13 +124,44 @@ def _invoke_via_cmd_mox(
             "cmd-mox stub requested for publish pre-flight but CMOX_IPC_SOCKET is unset"
         )
         raise _publish_error(message)
-    program, args = _split_command(command)
-    invocation_program, invocation_args = _normalise_cmd_mox_command(program, args)
+    return ipc, env_mod, timeout
+
+
+def _build_cmd_mox_invocation_env(
+    cwd: Path | None, env: typ.Mapping[str, str] | None
+) -> dict[str, str]:
+    """Return the environment mapping for cmd-mox invocations."""
     invocation_env = metadata_module._build_invocation_environment(
         None if cwd is None else str(cwd)
     )
     if env is not None:
         invocation_env.update({key: str(value) for key, value in env.items()})
+    return invocation_env
+
+
+def _process_cmd_mox_response(
+    response: object, *, streamed: bool
+) -> tuple[int, str, str]:
+    """Apply environment updates and return decoded response payloads."""
+    _apply_cmd_mox_environment(getattr(response, "env", {}))
+    stdout_text = metadata_module._coerce_text(getattr(response, "stdout", ""))
+    stderr_text = metadata_module._coerce_text(getattr(response, "stderr", ""))
+    if not streamed:
+        _echo_buffered_output(stdout_text, sys.stdout)
+        _echo_buffered_output(stderr_text, sys.stderr)
+    return getattr(response, "exit_code", 0), stdout_text, stderr_text
+
+
+def _invoke_via_cmd_mox(
+    command: typ.Sequence[str],
+    cwd: Path | None,
+    env: typ.Mapping[str, str] | None,
+) -> tuple[int, str, str]:
+    """Route ``command`` through the cmd-mox IPC server when enabled."""
+    ipc, env_mod, timeout = _prepare_cmd_mox_context()
+    program, args = _split_command(command)
+    invocation_program, invocation_args = _normalise_cmd_mox_command(program, args)
+    invocation_env = _build_cmd_mox_invocation_env(cwd, env)
     invocation = ipc.Invocation(
         command=invocation_program,
         args=invocation_args,
@@ -123,25 +169,14 @@ def _invoke_via_cmd_mox(
         env=invocation_env,
     )
     response = ipc.invoke_server(invocation, timeout)
+    modules = CmdMoxModules(ipc=ipc, env=env_mod, command_runner=cmd_runner_module)
     response, streamed = _handle_cmd_mox_passthrough(
         response,
         invocation,
         timeout=timeout,
-        ipc_module=ipc,
-        env_module=env_mod,
-        command_runner_module=cmd_runner_module,
+        modules=modules,
     )
-    _apply_cmd_mox_environment(response.env)
-    stdout_text = metadata_module._coerce_text(response.stdout)
-    stderr_text = metadata_module._coerce_text(response.stderr)
-    if not streamed:
-        _echo_buffered_output(stdout_text, sys.stdout)
-        _echo_buffered_output(stderr_text, sys.stderr)
-    return (
-        response.exit_code,
-        stdout_text,
-        stderr_text,
-    )
+    return _process_cmd_mox_response(response, streamed=streamed)
 
 
 def _normalise_cmd_mox_command(
@@ -157,27 +192,24 @@ def _normalise_cmd_mox_command(
     return invocation_program, invocation_args
 
 
-def _invoke_via_subprocess(  # noqa: PLR0913 - the subprocess context requires these parameters
+def _invoke_via_subprocess(
     program: str,
     args: tuple[str, ...],
-    *,
-    cwd: Path | None,
-    env: typ.Mapping[str, str] | None,
-    stdin_data: str | None = None,
+    context: _SubprocessContext,
 ) -> tuple[int, str, str]:
     """Spawn ``program`` with ``args`` while proxying its output streams."""
     command = (program, *args)
-    _log_subprocess_spawn(command, cwd)
-    _log_subprocess_environment(env)
-    normalised_env = _normalise_environment(env)
+    _log_subprocess_spawn(command, context.cwd)
+    _log_subprocess_environment(context.env)
+    normalised_env = _normalise_environment(context.env)
     try:
         process = subprocess.Popen(  # noqa: S603 - command list is fully controlled
             command,
-            cwd=None if cwd is None else str(cwd),
+            cwd=None if context.cwd is None else str(context.cwd),
             env=normalised_env,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            stdin=subprocess.PIPE if stdin_data is not None else None,
+            stdin=subprocess.PIPE if context.stdin_data is not None else None,
         )
     except (FileNotFoundError, PermissionError, OSError) as exc:
         message = f"Failed to execute {program!r}: {exc}"
@@ -201,9 +233,9 @@ def _invoke_via_subprocess(  # noqa: PLR0913 - the subprocess context requires t
     ]
     for thread in threads:
         thread.start()
-    if stdin_data is not None and process.stdin is not None:
+    if context.stdin_data is not None and process.stdin is not None:
         try:
-            process.stdin.write(stdin_data.encode("utf-8"))
+            process.stdin.write(context.stdin_data.encode("utf-8"))
             process.stdin.close()
         except BrokenPipeError:
             pass
@@ -224,14 +256,12 @@ def _normalise_environment(
     return {key: str(value) for key, value in env.items()}
 
 
-def _handle_cmd_mox_passthrough(  # noqa: PLR0913
+def _handle_cmd_mox_passthrough(
     response: object,
     invocation: object,
     *,
     timeout: float,
-    ipc_module: object,
-    env_module: object,
-    command_runner_module: object,
+    modules: CmdMoxModules,
 ) -> tuple[object, bool]:
     """Run passthrough commands locally to preserve streaming semantics."""
     directive = getattr(response, "passthrough", None)
@@ -241,39 +271,41 @@ def _handle_cmd_mox_passthrough(  # noqa: PLR0913
     passthrough_env = _build_cmd_mox_passthrough_env(
         directive,
         invocation,
-        env_module=env_module,
-        command_runner_module=command_runner_module,
+        modules=modules,
     )
-    resolved = command_runner_module.resolve_command_with_override(
+    resolved = modules.command_runner.resolve_command_with_override(
         invocation.command,
         passthrough_env.get("PATH", ""),
         os.environ.get(
-            f"{env_module.CMOX_REAL_COMMAND_ENV_PREFIX}{invocation.command}"
+            f"{modules.env.CMOX_REAL_COMMAND_ENV_PREFIX}{invocation.command}"
         ),
     )
-    if isinstance(resolved, ipc_module.Response):
-        passthrough_result = ipc_module.PassthroughResult(
+    if isinstance(resolved, modules.ipc.Response):
+        passthrough_result = modules.ipc.PassthroughResult(
             invocation_id=directive.invocation_id,
             stdout=resolved.stdout,
             stderr=resolved.stderr,
             exit_code=resolved.exit_code,
         )
-        return ipc_module.report_passthrough_result(passthrough_result, timeout), False
+        return modules.ipc.report_passthrough_result(passthrough_result, timeout), False
 
-    exit_code, stdout, stderr = _invoke_via_subprocess(
-        str(resolved),
-        tuple(invocation.args),
+    context = _SubprocessContext(
         cwd=None,
         env=passthrough_env,
         stdin_data=invocation.stdin or None,
     )
-    passthrough_result = ipc_module.PassthroughResult(
+    exit_code, stdout, stderr = _invoke_via_subprocess(
+        str(resolved),
+        tuple(invocation.args),
+        context,
+    )
+    passthrough_result = modules.ipc.PassthroughResult(
         invocation_id=directive.invocation_id,
         stdout=stdout,
         stderr=stderr,
         exit_code=exit_code,
     )
-    final_response = ipc_module.report_passthrough_result(
+    final_response = modules.ipc.report_passthrough_result(
         passthrough_result, timeout
     )
     return final_response, True
@@ -283,11 +315,10 @@ def _build_cmd_mox_passthrough_env(
     directive: object,
     invocation: object,
     *,
-    env_module: object,
-    command_runner_module: object,
+    modules: CmdMoxModules,
 ) -> dict[str, str]:
     """Return the merged environment for cmd-mox passthrough executions."""
-    env = command_runner_module.prepare_environment(
+    env = modules.command_runner.prepare_environment(
         directive.lookup_path,
         directive.extra_env,
         invocation.env,
@@ -295,7 +326,7 @@ def _build_cmd_mox_passthrough_env(
     env["PATH"] = _merge_cmd_mox_path_entries(
         env.get("PATH"),
         directive.lookup_path,
-        env_module=env_module,
+        env_module=modules.env,
     )
     return env
 
