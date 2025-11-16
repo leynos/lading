@@ -23,6 +23,7 @@ from lading.workspace import metadata as metadata_module
 
 LOGGER = logging.getLogger("lading.commands.publish")
 
+
 class CmdMoxModules(typ.NamedTuple):
     """Container for dynamically loaded cmd-mox modules."""
 
@@ -305,9 +306,7 @@ def _handle_cmd_mox_passthrough(
         stderr=stderr,
         exit_code=exit_code,
     )
-    final_response = modules.ipc.report_passthrough_result(
-        passthrough_result, timeout
-    )
+    final_response = modules.ipc.report_passthrough_result(passthrough_result, timeout)
     return final_response, True
 
 
