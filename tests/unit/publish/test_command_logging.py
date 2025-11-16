@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 import typing as typ
 
 from lading.commands import publish
@@ -13,9 +14,11 @@ if typ.TYPE_CHECKING:
     import pytest
 
     LogCaptureFixture = pytest.LogCaptureFixture
+    CaptureFixture = pytest.CaptureFixture
 else:  # pragma: no cover - typing helpers
     Path = typ.Any
     LogCaptureFixture = typ.Any
+    CaptureFixture = typ.Any
 
 
 def test_invoke_logs_command_with_cwd(
@@ -43,3 +46,23 @@ def test_invoke_logs_command_without_cwd(caplog: LogCaptureFixture) -> None:
     assert stderr == ""
     assert "Running external command: echo hello" in caplog.messages
     assert not any("(cwd=" in message for message in caplog.messages)
+
+
+def test_invoke_proxies_command_output(capsys: CaptureFixture[str]) -> None:
+    """``_invoke`` should stream stdout/stderr to the parent process."""
+    script = """\
+import sys
+sys.stdout.write("alpha")
+sys.stdout.flush()
+sys.stderr.write("beta")
+sys.stderr.flush()
+"""
+
+    exit_code, stdout, stderr = publish._invoke((sys.executable, "-c", script))
+
+    assert exit_code == 0
+    assert stdout == "alpha"
+    assert stderr == "beta"
+    captured = capsys.readouterr()
+    assert captured.out == "alpha"
+    assert captured.err == "beta"

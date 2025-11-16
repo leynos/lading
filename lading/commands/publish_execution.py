@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import codecs
 import logging
 import os
+import subprocess
+import sys
+import threading
 import typing as typ
-
-from plumbum import local
-from plumbum.commands.processes import CommandNotFound
 
 from lading.utils.process import log_command_invocation
 from lading.workspace import metadata as metadata_module
@@ -52,24 +53,7 @@ def _invoke(
         return _invoke_via_cmd_mox(command, cwd, env)
 
     program, args = _split_command(command)
-    try:
-        bound = local[program]
-    except CommandNotFound as exc:
-        message = f"{program} executable not found while running pre-flight checks"
-        raise _publish_error(message) from exc
-    if args:
-        bound = bound[list(args)]
-    kwargs: dict[str, typ.Any] = {"retcode": None}
-    if cwd is not None:
-        kwargs["cwd"] = str(cwd)
-    if env is not None:
-        kwargs["env"] = {key: str(value) for key, value in env.items()}
-    exit_code, stdout, stderr = bound.run(**kwargs)
-    return (
-        exit_code,
-        metadata_module._coerce_text(stdout),
-        metadata_module._coerce_text(stderr),
-    )
+    return _invoke_via_subprocess(program, args, cwd=cwd, env=env)
 
 
 def _split_command(command: typ.Sequence[str]) -> tuple[str, tuple[str, ...]]:
@@ -120,10 +104,14 @@ def _invoke_via_cmd_mox(
         env=invocation_env,
     )
     response = ipc.invoke_server(invocation, timeout)
+    stdout_text = metadata_module._coerce_text(response.stdout)
+    stderr_text = metadata_module._coerce_text(response.stderr)
+    _echo_buffered_output(stdout_text, sys.stdout)
+    _echo_buffered_output(stderr_text, sys.stderr)
     return (
         response.exit_code,
-        metadata_module._coerce_text(response.stdout),
-        metadata_module._coerce_text(response.stderr),
+        stdout_text,
+        stderr_text,
     )
 
 
@@ -138,3 +126,106 @@ def _normalise_cmd_mox_command(
         invocation_program = f"{program}::{args[0]}"
         invocation_args = list(args[1:])
     return invocation_program, invocation_args
+
+
+def _invoke_via_subprocess(
+    program: str,
+    args: tuple[str, ...],
+    *,
+    cwd: Path | None,
+    env: typ.Mapping[str, str] | None,
+) -> tuple[int, str, str]:
+    """Spawn ``program`` with ``args`` while proxying its output streams."""
+    command = (program, *args)
+    try:
+        process = subprocess.Popen(  # noqa: S603 - command list is fully controlled
+            command,
+            cwd=None if cwd is None else str(cwd),
+            env=_normalise_environment(env),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+    except FileNotFoundError as exc:
+        message = f"{program} executable not found while running pre-flight checks"
+        raise _publish_error(message) from exc
+
+    stdout_chunks: list[str] = []
+    stderr_chunks: list[str] = []
+    threads = [
+        threading.Thread(
+            target=_relay_stream,
+            args=(process.stdout, sys.stdout, stdout_chunks),
+            name=f"lading-publish-{program}-stdout",
+            daemon=True,
+        ),
+        threading.Thread(
+            target=_relay_stream,
+            args=(process.stderr, sys.stderr, stderr_chunks),
+            name=f"lading-publish-{program}-stderr",
+            daemon=True,
+        ),
+    ]
+    for thread in threads:
+        thread.start()
+    exit_code = process.wait()
+    for thread in threads:
+        thread.join()
+    return exit_code, "".join(stdout_chunks), "".join(stderr_chunks)
+
+
+def _normalise_environment(
+    env: typ.Mapping[str, str] | None,
+) -> dict[str, str] | None:
+    """Return ``env`` with stringified values to satisfy ``subprocess``."""
+    if env is None:
+        return None
+    return {key: str(value) for key, value in env.items()}
+
+
+def _relay_stream(
+    source: typ.IO[bytes] | None,
+    sink: typ.TextIO | None,
+    buffer: list[str],
+) -> None:
+    """Forward ``source`` into ``sink`` while preserving the captured output."""
+    if source is None:
+        return
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+    active_sink = sink
+    try:
+        while True:
+            chunk = source.read(_STREAM_CHUNK_SIZE)
+            if not chunk:
+                break
+            text = decoder.decode(chunk)
+            if text:
+                buffer.append(text)
+                active_sink = _write_to_sink(active_sink, text)
+        tail = decoder.decode(b"", final=True)
+        if tail:
+            buffer.append(tail)
+            active_sink = _write_to_sink(active_sink, tail)
+    finally:
+        source.close()
+
+
+def _write_to_sink(sink: typ.TextIO | None, payload: str) -> typ.TextIO | None:
+    """Write ``payload`` to ``sink`` and swallow broken pipes."""
+    if sink is None or not payload:
+        return sink
+    try:
+        sink.write(payload)
+        sink.flush()
+    except BrokenPipeError:
+        return None
+    return sink
+
+
+def _echo_buffered_output(payload: str, sink: typ.TextIO) -> None:
+    """Emit buffered cmd-mox output so callers still see command logs."""
+    if not payload:
+        return
+    _write_to_sink(sink, payload)
+
+
+_STREAM_CHUNK_SIZE = 4096
