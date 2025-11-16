@@ -22,10 +22,6 @@ from lading.workspace import metadata as metadata_module
 
 LOGGER = logging.getLogger("lading.commands.publish")
 
-if typ.TYPE_CHECKING:  # pragma: no cover - typing helper
-    from lading.commands.publish import PublishPreflightError
-
-
 _ENV_REDACTION_TOKENS = (
     "TOKEN",
     "AUTH",
@@ -35,6 +31,10 @@ _ENV_REDACTION_TOKENS = (
     "PASSPHRASE",
 )
 _THREAD_NAME_PATTERN = re.compile(r"[^A-Za-z0-9_.-]+")
+_STREAM_CHUNK_SIZE = 4096
+
+if typ.TYPE_CHECKING:  # pragma: no cover - typing helper
+    from lading.commands.publish import PublishPreflightError
 
 
 class _CommandRunner(typ.Protocol):
@@ -217,7 +217,11 @@ def _normalise_environment(
     env: typ.Mapping[str, str] | None,
 ) -> dict[str, str] | None:
     """Return ``env`` with stringified values to satisfy ``subprocess``."""
-    return None if env is None else {key: str(value) for key, value in env.items()}
+    if env is None:
+        return None
+    # Defensive: callers sometimes provide ``Path``/custom types despite the
+    # annotated signature; ``subprocess`` insists on ``str`` values.
+    return {key: str(value) for key, value in env.items()}
 
 
 def _handle_cmd_mox_passthrough(  # noqa: PLR0913
@@ -425,6 +429,3 @@ def _should_redact_env_key(key: str) -> bool:
     """Return True when ``key`` likely contains secret material."""
     upper_key = key.upper()
     return any(token in upper_key for token in _ENV_REDACTION_TOKENS)
-
-
-_STREAM_CHUNK_SIZE = 4096
