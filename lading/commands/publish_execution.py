@@ -206,7 +206,7 @@ def _invoke_via_subprocess(
     _log_subprocess_environment(context.env)
     normalised_env = _normalise_environment(context.env)
     try:
-        process = subprocess.Popen(  # noqa: S603 - command list is fully controlled
+        process = subprocess.Popen(  # noqa: S603 - shell=False prevents injection; commands already parsed/validated
             command,
             cwd=None if context.cwd is None else str(context.cwd),
             env=normalised_env,
