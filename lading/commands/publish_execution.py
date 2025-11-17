@@ -39,6 +39,8 @@ _ENV_REDACTION_TOKENS = (
     "PASS",
     "CRED",
     "PASSPHRASE",
+    "SECRET",
+    "KEY",
 )
 _THREAD_NAME_PATTERN = re.compile(r"[^A-Za-z0-9_.-]+")
 _STREAM_CHUNK_SIZE = 4096
