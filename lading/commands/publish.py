@@ -352,6 +352,18 @@ def _strip_all_patch_entries(document: TOMLDocument) -> bool:
     return True
 
 
+def _cleanup_empty_patch_tables(
+    document: TOMLDocument,
+    patch_table: cabc.MutableMapping[str, typ.Any],
+    crates_io: cabc.MutableMapping[str, typ.Any],
+) -> None:
+    """Remove empty patch tables from the document."""
+    if not crates_io:
+        patch_table.pop("crates-io", None)
+    if not patch_table:
+        document.pop("patch", None)
+
+
 def _strip_named_patch_entries(
     document: TOMLDocument,
     crate_names: cabc.Iterable[str],
@@ -367,10 +379,7 @@ def _strip_named_patch_entries(
             del crates_io[crate]
             removed = True
     if removed:
-        if not crates_io:
-            patch_table.pop("crates-io", None)
-        if not patch_table:
-            document.pop("patch", None)
+        _cleanup_empty_patch_tables(document, patch_table, crates_io)
     return removed
 
 
