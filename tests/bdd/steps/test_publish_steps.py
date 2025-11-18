@@ -323,15 +323,14 @@ def given_preflight_command_override(
     stderr: str,
 ) -> None:
     """Override an arbitrary pre-flight command with a custom result."""
-    exit_code_int = int(exit_code)
-    tokens = tuple(segment for segment in command.split() if segment)
-    if not tokens:
+    if tokens := tuple(segment for segment in command.split() if segment):
+        preflight_overrides[tokens] = _CommandResponse(
+            exit_code=int(exit_code),
+            stderr=stderr,
+        )
+    else:
         message = "preflight command override requires tokens"
         raise AssertionError(message)
-    preflight_overrides[tokens] = _CommandResponse(
-        exit_code=exit_code_int,
-        stderr=stderr,
-    )
 
 
 @then(parsers.parse('the publish command prints the publish plan for "{crate_name}"'))
@@ -362,9 +361,7 @@ def _get_patch_entries(document: typ.Mapping[str, typ.Any]) -> dict[str, typ.Any
     if not isinstance(patch_table, typ.Mapping):
         return {}
     crates_io = patch_table.get("crates-io")
-    if not isinstance(crates_io, typ.Mapping):
-        return {}
-    return dict(crates_io)
+    return {} if not isinstance(crates_io, typ.Mapping) else dict(crates_io)
 
 
 @then("the publish staging manifest has no patch section")

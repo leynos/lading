@@ -20,26 +20,39 @@ except ImportError:  # pragma: no cover - mypy fallback for runtime
     TOMLDocument = typ.Any  # type: ignore[assignment]
 
 from lading import config as config_module
-from lading.commands import publish_execution as _publish_execution
-from lading.commands import publish_plan as _publish_plan
 from lading.commands.publish_diagnostics import _append_compiletest_diagnostics
+from lading.commands.publish_execution import (
+    _CommandRunner,
+    _invoke,
+)
+from lading.commands.publish_execution import (
+    _normalise_cmd_mox_command as _execution_normalise_cmd_mox_command,
+)
+from lading.commands.publish_execution import (
+    _should_use_cmd_mox_stub as _execution_should_use_cmd_mox_stub,
+)
+from lading.commands.publish_execution import (
+    _split_command as _execution_split_command,
+)
+from lading.commands.publish_plan import (
+    PublishPlan,
+    _format_plan,
+    plan_publication,
+)
+from lading.commands.publish_plan import (
+    PublishPlanError as _PublishPlanErrorExport,
+)
+from lading.commands.publish_plan import (
+    _append_section as _plan_append_section,
+)
 from lading.utils.path import normalise_workspace_root
-from lading.workspace import metadata as _metadata_module
 
 StripPatchesSetting = config_module.StripPatchesSetting
-metadata_module = _metadata_module
-
-PublishPlan = _publish_plan.PublishPlan
-PublishPlanError = _publish_plan.PublishPlanError
-_append_section = _publish_plan._append_section
-_format_plan = _publish_plan._format_plan
-plan_publication = _publish_plan.plan_publication
-
-_CommandRunner = _publish_execution._CommandRunner
-_invoke = _publish_execution._invoke
-_split_command = _publish_execution._split_command
-_normalise_cmd_mox_command = _publish_execution._normalise_cmd_mox_command
-_should_use_cmd_mox_stub = _publish_execution._should_use_cmd_mox_stub
+PublishPlanError = _PublishPlanErrorExport
+_normalise_cmd_mox_command = _execution_normalise_cmd_mox_command
+_should_use_cmd_mox_stub = _execution_should_use_cmd_mox_stub
+_split_command = _execution_split_command
+_append_section = _plan_append_section
 
 if typ.TYPE_CHECKING:
     from lading.config import LadingConfig
@@ -312,6 +325,9 @@ def _load_manifest_document(manifest_path: Path) -> TOMLDocument:
     except FileNotFoundError as exc:  # pragma: no cover - defensive guard
         message = f"Workspace manifest not found at {manifest_path}"
         raise PublishPreparationError(message) from exc
+    except (PermissionError, OSError) as exc:  # pragma: no cover - defensive guard
+        message = f"Unable to read workspace manifest at {manifest_path}: {exc}"
+        raise PublishPreparationError(message) from exc
     try:
         return parse_toml(text)
     except TOMLKitError as exc:
@@ -324,13 +340,29 @@ def _write_manifest_document(manifest_path: Path, document: TOMLDocument) -> Non
     text = document.as_string()
     if not text.endswith("\n"):
         text = f"{text}\n"
-    manifest_path.write_text(text, encoding="utf-8")
+    try:
+        manifest_path.write_text(text, encoding="utf-8")
+    except OSError as exc:  # pragma: no cover - defensive guard
+        message = f"Failed to write manifest to {manifest_path}: {exc}"
+        raise PublishPreparationError(message) from exc
 
 
-def _get_patch_tables(
+def _remove_per_crate_entries(
+    crates_io: cabc.MutableMapping[str, typ.Any],
+    crate_names: cabc.Iterable[str],
+) -> bool:
+    """Remove entries for ``crate_names`` and return ``True`` when modified."""
+    removed = False
+    for crate in dict.fromkeys(crate_names):
+        if crates_io.pop(crate, None) is not None:
+            removed = True
+    return removed
+
+
+def _resolve_patch_tables(
     document: TOMLDocument,
 ) -> tuple[cabc.MutableMapping[str, typ.Any], cabc.MutableMapping[str, typ.Any]] | None:
-    """Return the ``patch`` and ``crates-io`` tables when present."""
+    """Return the patch mapping and crates-io table when available."""
     patch_table = document.get("patch")
     if not isinstance(patch_table, cabc.MutableMapping):
         return None
@@ -338,49 +370,6 @@ def _get_patch_tables(
     if not isinstance(crates_io, cabc.MutableMapping):
         return None
     return patch_table, crates_io
-
-
-def _strip_all_patch_entries(document: TOMLDocument) -> bool:
-    """Remove the entire ``[patch.crates-io]`` section from ``document``."""
-    patch_tables = _get_patch_tables(document)
-    if patch_tables is None:
-        return False
-    patch_table, _ = patch_tables
-    patch_table.pop("crates-io", None)
-    if not patch_table:
-        document.pop("patch", None)
-    return True
-
-
-def _cleanup_empty_patch_tables(
-    document: TOMLDocument,
-    patch_table: cabc.MutableMapping[str, typ.Any],
-    crates_io: cabc.MutableMapping[str, typ.Any],
-) -> None:
-    """Remove empty patch tables from the document."""
-    if not crates_io:
-        patch_table.pop("crates-io", None)
-    if not patch_table:
-        document.pop("patch", None)
-
-
-def _strip_named_patch_entries(
-    document: TOMLDocument,
-    crate_names: cabc.Iterable[str],
-) -> bool:
-    """Remove patch entries that match ``crate_names``."""
-    patch_tables = _get_patch_tables(document)
-    if patch_tables is None:
-        return False
-    patch_table, crates_io = patch_tables
-    removed = False
-    for crate in dict.fromkeys(crate_names):
-        if crate in crates_io:
-            del crates_io[crate]
-            removed = True
-    if removed:
-        _cleanup_empty_patch_tables(document, patch_table, crates_io)
-    return removed
 
 
 def _apply_strip_patch_strategy(
@@ -395,15 +384,28 @@ def _apply_strip_patch_strategy(
     if not manifest_path.exists():
         return
     document = _load_manifest_document(manifest_path)
+    patch_tables = _resolve_patch_tables(document)
+    if patch_tables is None:
+        return
+    patch_table, crates_io = patch_tables
+
+    modified = False
     if strategy == "all":
-        modified = _strip_all_patch_entries(document)
+        modified = patch_table.pop("crates-io", None) is not None
     elif strategy == "per-crate":
-        modified = _strip_named_patch_entries(document, plan.publishable_names)
+        modified = _remove_per_crate_entries(crates_io, plan.publishable_names)
     else:  # pragma: no cover - guarded by configuration validation
         message = f"Unsupported strip patch strategy: {strategy}"
         raise PublishPreparationError(message)
-    if modified:
-        _write_manifest_document(manifest_path, document)
+
+    if not modified:
+        return
+
+    if not crates_io:
+        patch_table.pop("crates-io", None)
+    if not patch_table:
+        document.pop("patch", None)
+    _write_manifest_document(manifest_path, document)
 
 
 def _ensure_configuration(

@@ -99,6 +99,27 @@ def test_strip_patches_per_crate_removes_publishable_only(
     assert "serde" in crates_io
 
 
+def test_strip_patches_per_crate_removes_entire_table_when_empty(
+    tmp_path: Path,
+    make_plan_factory: typ.Callable[[Path, tuple[str, ...]], publish.PublishPlan],
+) -> None:
+    """Per-crate strategy cleans up empty patch tables after removals."""
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    manifest_text = _base_manifest(
+        "[patch.crates-io]\n"
+        'alpha = { path = "crates/alpha" }\n'
+        'beta = { path = "crates/beta" }\n'
+    )
+    _write_manifest(workspace_root, manifest_text)
+    plan = make_plan_factory(workspace_root, ("alpha", "beta"))
+
+    publish._apply_strip_patch_strategy(workspace_root, plan, "per-crate")
+
+    document = parse_toml((workspace_root / "Cargo.toml").read_text(encoding="utf-8"))
+    assert "patch" not in document
+
+
 def test_strip_patches_disabled_keeps_section(
     tmp_path: Path,
     make_plan_factory: typ.Callable[[Path, tuple[str, ...]], publish.PublishPlan],
