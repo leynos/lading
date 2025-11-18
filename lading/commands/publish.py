@@ -366,10 +366,13 @@ def _resolve_patch_tables(
 
 def _validate_and_load_manifest(
     staging_root: Path, strategy: StripPatchesSetting
-) -> tuple[
-    TOMLDocument,
-    tuple[cabc.MutableMapping[str, typ.Any], cabc.MutableMapping[str, typ.Any]],
-] | None:
+) -> (
+    tuple[
+        TOMLDocument,
+        tuple[cabc.MutableMapping[str, typ.Any], cabc.MutableMapping[str, typ.Any]],
+    ]
+    | None
+):
     """Load and validate the manifest for patch stripping. Returns the document and patch tables when applicable, or None if stripping should be skipped."""
     if strategy is False:
         return None
