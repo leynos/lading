@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from pathlib import Path
 import typing as typ
 
 import pytest
@@ -10,9 +12,18 @@ from tomlkit import parse as parse_toml
 from lading.commands import publish
 
 if typ.TYPE_CHECKING:
-    from pathlib import Path
-
     from lading.workspace import WorkspaceCrate
+
+
+@dataclass(frozen=True)
+class _PatchStrategyTestSetup:
+    """Parameters for patch strategy test setup."""
+
+    tmp_path: Path
+    make_plan_factory: typ.Callable[[Path, tuple[str, ...]], publish.PublishPlan]
+    patch_entries: str
+    publishable_names: tuple[str, ...]
+    strategy: str | bool
 
 
 @pytest.fixture
@@ -56,20 +67,14 @@ def _base_manifest(entries: str = "") -> str:
     )
 
 
-def _apply_strategy_and_parse(
-    tmp_path: Path,
-    make_plan_factory: typ.Callable[[Path, tuple[str, ...]], publish.PublishPlan],
-    patch_entries: str,
-    publishable_names: tuple[str, ...],
-    strategy: str | bool,
-):
+def _apply_strategy_and_parse(setup: _PatchStrategyTestSetup):
     """Set up workspace, apply patch strategy, and return parsed document."""
-    workspace_root = tmp_path / "workspace"
+    workspace_root = setup.tmp_path / "workspace"
     workspace_root.mkdir()
-    manifest_text = _base_manifest(patch_entries)
+    manifest_text = _base_manifest(setup.patch_entries)
     _write_manifest(workspace_root, manifest_text)
-    plan = make_plan_factory(workspace_root, publishable_names)
-    publish._apply_strip_patch_strategy(workspace_root, plan, strategy)
+    plan = setup.make_plan_factory(workspace_root, setup.publishable_names)
+    publish._apply_strip_patch_strategy(workspace_root, plan, setup.strategy)
     return parse_toml((workspace_root / "Cargo.toml").read_text(encoding="utf-8"))
 
 
@@ -79,11 +84,13 @@ def test_strip_patches_all_removes_patch_section(
 ) -> None:
     """Strategy 'all' removes the entire [patch.crates-io] section."""
     document = _apply_strategy_and_parse(
-        tmp_path,
-        make_plan_factory,
-        '[patch.crates-io]\nalpha = { path = "crates/alpha" }\n',
-        ("alpha",),
-        "all",
+        _PatchStrategyTestSetup(
+            tmp_path=tmp_path,
+            make_plan_factory=make_plan_factory,
+            patch_entries='[patch.crates-io]\nalpha = { path = "crates/alpha" }\n',
+            publishable_names=("alpha",),
+            strategy="all",
+        )
     )
     assert "patch" not in document
 
@@ -94,15 +101,17 @@ def test_strip_patches_per_crate_removes_publishable_only(
 ) -> None:
     """Strategy 'per-crate' removes only entries for publishable crates."""
     document = _apply_strategy_and_parse(
-        tmp_path,
-        make_plan_factory,
-        (
-            "[patch.crates-io]\n"
-            'alpha = { path = "crates/alpha" }\n'
-            'serde = { git = "https://example.com/serde" }\n'
-        ),
-        ("alpha",),
-        "per-crate",
+        _PatchStrategyTestSetup(
+            tmp_path=tmp_path,
+            make_plan_factory=make_plan_factory,
+            patch_entries=(
+                "[patch.crates-io]\n"
+                'alpha = { path = "crates/alpha" }\n'
+                'serde = { git = "https://example.com/serde" }\n'
+            ),
+            publishable_names=("alpha",),
+            strategy="per-crate",
+        )
     )
     patch_table = document.get("patch", {})
     crates_io = patch_table.get("crates-io", {})
@@ -116,15 +125,17 @@ def test_strip_patches_per_crate_removes_entire_table_when_empty(
 ) -> None:
     """Per-crate strategy cleans up empty patch tables after removals."""
     document = _apply_strategy_and_parse(
-        tmp_path,
-        make_plan_factory,
-        (
-            "[patch.crates-io]\n"
-            'alpha = { path = "crates/alpha" }\n'
-            'beta = { path = "crates/beta" }\n'
-        ),
-        ("alpha", "beta"),
-        "per-crate",
+        _PatchStrategyTestSetup(
+            tmp_path=tmp_path,
+            make_plan_factory=make_plan_factory,
+            patch_entries=(
+                "[patch.crates-io]\n"
+                'alpha = { path = "crates/alpha" }\n'
+                'beta = { path = "crates/beta" }\n'
+            ),
+            publishable_names=("alpha", "beta"),
+            strategy="per-crate",
+        )
     )
     assert "patch" not in document
 
@@ -135,11 +146,13 @@ def test_strip_patches_disabled_keeps_section(
 ) -> None:
     """Boolean false leaves the patch section untouched."""
     document = _apply_strategy_and_parse(
-        tmp_path,
-        make_plan_factory,
-        '[patch.crates-io]\nalpha = { path = "crates/alpha" }\n',
-        ("alpha",),
-        False,
+        _PatchStrategyTestSetup(
+            tmp_path=tmp_path,
+            make_plan_factory=make_plan_factory,
+            patch_entries='[patch.crates-io]\nalpha = { path = "crates/alpha" }\n',
+            publishable_names=("alpha",),
+            strategy=False,
+        )
     )
     patch_table = document.get("patch", {})
     assert "crates-io" in patch_table

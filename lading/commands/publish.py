@@ -373,7 +373,12 @@ def _validate_and_load_manifest(
     ]
     | None
 ):
-    """Load and validate the manifest for patch stripping. Returns the document and patch tables when applicable, or None if stripping should be skipped."""
+    """Load and validate the manifest for patch stripping.
+
+    Returns the document and patch tables when applicable, or None if
+    stripping should be skipped.
+
+    """
     if strategy is False:
         return None
     manifest_path = staging_root / "Cargo.toml"
