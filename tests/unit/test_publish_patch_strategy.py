@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from pathlib import Path
+import dataclasses
 import typing as typ
 
 import pytest
@@ -12,15 +11,17 @@ from tomlkit import parse as parse_toml
 from lading.commands import publish
 
 if typ.TYPE_CHECKING:
+    from pathlib import Path
+
     from lading.workspace import WorkspaceCrate
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class _PatchStrategyTestSetup:
     """Parameters for patch strategy test setup."""
 
-    tmp_path: Path
-    make_plan_factory: typ.Callable[[Path, tuple[str, ...]], publish.PublishPlan]
+    tmp_path: "Path"
+    make_plan_factory: typ.Callable[["Path", tuple[str, ...]], publish.PublishPlan]
     patch_entries: str
     publishable_names: tuple[str, ...]
     strategy: str | bool
