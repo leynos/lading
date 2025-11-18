@@ -159,7 +159,7 @@ def _resolve_preflight_expectation(
     """Return the cmd-mox program and argument prefix for ``command``."""
     program, *args = command
     argument_tuple = tuple(args)
-    if program == "cargo" and argument_tuple and argument_tuple[0] in {"check", "test"}:
+    if _is_cargo_action_command(program, argument_tuple):
         return f"cargo::{argument_tuple[0]}", argument_tuple[1:]
     return program, argument_tuple
 
