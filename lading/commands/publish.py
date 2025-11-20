@@ -24,16 +24,26 @@ from lading.commands.publish_diagnostics import _append_compiletest_diagnostics
 from lading.commands.publish_execution import (
     _CommandRunner,
     _invoke,
+)
+from lading.commands.publish_execution import (
     _normalise_cmd_mox_command as _execution_normalise_cmd_mox_command,
+)
+from lading.commands.publish_execution import (
     _should_use_cmd_mox_stub as _execution_should_use_cmd_mox_stub,
+)
+from lading.commands.publish_execution import (
     _split_command as _execution_split_command,
 )
 from lading.commands.publish_plan import (
     PublishPlan,
-    PublishPlanError as _PlanPublishPlanError,
-    _append_section as _plan_append_section,
     _format_plan,
     plan_publication,
+)
+from lading.commands.publish_plan import (
+    PublishPlanError as _PlanPublishPlanError,
+)
+from lading.commands.publish_plan import (
+    _append_section as _plan_append_section,
 )
 from lading.utils.path import normalise_workspace_root
 from lading.workspace import metadata as _metadata_module

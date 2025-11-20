@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import dataclasses
+import dataclasses as dc
 import typing as typ
 
 import pytest
@@ -13,15 +13,17 @@ from lading.commands import publish
 if typ.TYPE_CHECKING:
     from pathlib import Path
 
+    from tomlkit.toml_document import TOMLDocument
+
     from lading.workspace import WorkspaceCrate
 
 
-@dataclasses.dataclass(frozen=True)
+@dc.dataclass(frozen=True)
 class _PatchStrategyTestSetup:
     """Parameters for patch strategy test setup."""
 
-    tmp_path: "Path"
-    make_plan_factory: typ.Callable[["Path", tuple[str, ...]], publish.PublishPlan]
+    tmp_path: Path
+    make_plan_factory: typ.Callable[[Path, tuple[str, ...]], publish.PublishPlan]
     patch_entries: str
     publishable_names: tuple[str, ...]
     strategy: str | bool
@@ -68,7 +70,7 @@ def _base_manifest(entries: str = "") -> str:
     )
 
 
-def _apply_strategy_and_parse(setup: _PatchStrategyTestSetup) -> typ.Any:
+def _apply_strategy_and_parse(setup: _PatchStrategyTestSetup) -> TOMLDocument:
     """Set up workspace, apply patch strategy, and return parsed document."""
     workspace_root = setup.tmp_path / "workspace"
     workspace_root.mkdir()
