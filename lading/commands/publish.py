@@ -56,10 +56,13 @@ _should_use_cmd_mox_stub = _execution_should_use_cmd_mox_stub
 _split_command = _execution_split_command
 _append_section = _plan_append_section
 
-type _ManifestValidation = tuple[
-    TOMLDocument,
-    tuple[cabc.MutableMapping[str, typ.Any], cabc.MutableMapping[str, typ.Any]],
-] | None
+type _ManifestValidation = (
+    tuple[
+        TOMLDocument,
+        tuple[cabc.MutableMapping[str, typ.Any], cabc.MutableMapping[str, typ.Any]],
+    ]
+    | None
+)
 
 if typ.TYPE_CHECKING:
     from lading.config import LadingConfig
