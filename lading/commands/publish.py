@@ -56,6 +56,11 @@ _should_use_cmd_mox_stub = _execution_should_use_cmd_mox_stub
 _split_command = _execution_split_command
 _append_section = _plan_append_section
 
+type _ManifestValidation = tuple[
+    TOMLDocument,
+    tuple[cabc.MutableMapping[str, typ.Any], cabc.MutableMapping[str, typ.Any]],
+] | None
+
 if typ.TYPE_CHECKING:
     from lading.config import LadingConfig
     from lading.workspace import WorkspaceCrate, WorkspaceGraph
@@ -355,6 +360,7 @@ def _remove_per_crate_entries(
 ) -> bool:
     """Remove entries for ``crate_names`` and return ``True`` when modified."""
     removed = False
+    # Deduplicate crate names while preserving order for deterministic updates
     for crate in dict.fromkeys(crate_names):
         if crates_io.pop(crate, None) is not None:
             removed = True
@@ -376,13 +382,7 @@ def _resolve_patch_tables(
 
 def _validate_and_load_manifest(
     staging_root: Path, strategy: StripPatchesSetting
-) -> (
-    tuple[
-        TOMLDocument,
-        tuple[cabc.MutableMapping[str, typ.Any], cabc.MutableMapping[str, typ.Any]],
-    ]
-    | None
-):
+) -> _ManifestValidation:
     """Load and validate the manifest for patch stripping.
 
     Returns the document and patch tables when applicable, or None if
