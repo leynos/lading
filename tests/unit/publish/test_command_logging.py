@@ -30,7 +30,7 @@ def test_invoke_logs_command_with_cwd(
     tmp_path: Path, caplog: LogCaptureFixture
 ) -> None:
     """``_invoke`` should log the command line and working directory."""
-    caplog.set_level(logging.INFO, logger="lading.commands.publish")
+    caplog.set_level(logging.INFO, logger="lading.commands.publish_execution")
     exit_code, stdout, stderr = publish._invoke(("echo", "hello"), cwd=tmp_path)
 
     assert exit_code == 0
@@ -42,7 +42,7 @@ def test_invoke_logs_command_with_cwd(
 
 def test_invoke_logs_command_without_cwd(caplog: LogCaptureFixture) -> None:
     """``_invoke`` should omit ``cwd`` details when not provided."""
-    caplog.set_level(logging.INFO, logger="lading.commands.publish")
+    caplog.set_level(logging.INFO, logger="lading.commands.publish_execution")
 
     exit_code, stdout, stderr = publish._invoke(("echo", "hello"))
 
