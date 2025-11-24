@@ -5,6 +5,7 @@ from __future__ import annotations
 import typing as typ
 
 from pytest_bdd import given, parsers
+from tomlkit import inline_table, table
 from tomlkit import parse as parse_toml
 
 if typ.TYPE_CHECKING:
@@ -73,3 +74,30 @@ def given_workspace_file_contents(
     target = workspace_directory / relative_path
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(contents, encoding="utf-8")
+
+
+@given(parsers.parse('the workspace manifest patches crates "{crate_names}"'))
+def given_workspace_manifest_patch_entries(
+    workspace_directory: Path,
+    crate_names: str,
+) -> None:
+    """Ensure ``[patch.crates-io]`` defines entries for ``crate_names``."""
+    manifest_path = workspace_directory / "Cargo.toml"
+    if not manifest_path.exists():
+        message = f"Workspace manifest not found: {manifest_path}"
+        raise AssertionError(message)
+    names = [name.strip() for name in crate_names.split(",") if name.strip()]
+    document = parse_toml(manifest_path.read_text(encoding="utf-8"))
+    patch_table = document.get("patch")
+    if patch_table is None:
+        patch_table = table()
+        document["patch"] = patch_table
+    crates_io = patch_table.get("crates-io")
+    if crates_io is None:
+        crates_io = table()
+        patch_table["crates-io"] = crates_io
+    for name in names:
+        entry = inline_table()
+        entry.update({"path": f"../{name}"})
+        crates_io[name] = entry
+    manifest_path.write_text(document.as_string(), encoding="utf-8")

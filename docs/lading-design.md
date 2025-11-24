@@ -172,6 +172,16 @@ possible.
 # runs.
 strip_patches = "per-crate"
 
+Implementation detail: the publish command rewrites the staged workspace
+`Cargo.toml` immediately after cloning the workspace tree. The helper loads the
+manifest with `tomlkit` so formatting and comments survive the transformation
+and either removes the entire `[patch.crates-io]` table when the strategy is
+`"all"` or deletes only the entries whose crate names appear in the publish
+plan when using `"per-crate"`. Setting the value to `false` leaves the patch
+table untouched so bespoke overrides (for example, third-party forks) remain
+available during packaging. Any parse errors or missing manifests surface as
+`PublishPreparationError` to keep the staging workflow predictable.
+
 ```
 
 ### 2.3. Workspace Discovery and Model

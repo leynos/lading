@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-_STDERR_PATTERN = re.compile(r"(/[^\s)]+\\.stderr)")
+_STDERR_PATTERN = re.compile(r"(/[^\s)]+\.stderr)")
 
 
 def _trim_artifact_token(token: str) -> str:

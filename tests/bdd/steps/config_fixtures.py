@@ -31,6 +31,15 @@ def _add_exclude_to_config(
     config_path.write_text(document.as_string(), encoding="utf-8")
 
 
+def _set_publish_strip_patches(workspace_directory: Path, value: object) -> None:
+    """Set ``publish.strip_patches`` to ``value`` in the workspace config."""
+    config_path = workspace_directory / config_module.CONFIG_FILENAME
+    document = toml_utils.load_or_create_document(config_path)
+    publish_table = toml_utils.ensure_table(document, "publish")
+    publish_table["strip_patches"] = value
+    config_path.write_text(document.as_string(), encoding="utf-8")
+
+
 @given("a workspace directory with configuration", target_fixture="workspace_directory")
 def given_workspace_directory(tmp_path: Path) -> Path:
     """Provide a temporary workspace root for CLI exercises."""
@@ -92,6 +101,21 @@ def given_publish_exclude_contains(
 ) -> None:
     """Ensure ``crate_name`` appears in the ``publish.exclude`` configuration."""
     _add_exclude_to_config(workspace_directory, "publish", "exclude", crate_name)
+
+
+@given(parsers.parse('publish.strip_patches is "{strategy}"'))
+def given_publish_strip_patches_strategy(
+    workspace_directory: Path,
+    strategy: str,
+) -> None:
+    """Set ``publish.strip_patches`` to ``strategy`` in ``lading.toml``."""
+    _set_publish_strip_patches(workspace_directory, strategy)
+
+
+@given("publish.strip_patches is false")
+def given_publish_strip_patches_disabled(workspace_directory: Path) -> None:
+    """Disable patch stripping via ``publish.strip_patches = false``."""
+    _set_publish_strip_patches(workspace_directory, value=False)
 
 
 @given(parsers.parse('preflight.test_exclude contains "{crate_name}"'))

@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 from pytest_bdd import given, parsers, then, when
+from tomlkit import parse as parse_toml
 
 from lading.commands import publish
 from lading.workspace import metadata as metadata_module
@@ -24,7 +25,11 @@ except ModuleNotFoundError:
 
 
 if typ.TYPE_CHECKING:
+    from tomlkit.toml_document import TOMLDocument
+
     from .test_common_steps import _run_cli  # noqa: F401
+else:  # pragma: no cover - runtime fallback for typing helpers
+    TOMLDocument = typ.Any  # type: ignore[assignment]
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -306,26 +311,26 @@ def given_workspace_dirty(
 
 
 @given(
-    parsers.parse(
-        'the preflight command "{command}" exits with '
-        'code {exit_code:d} and stderr "{stderr}"'
+    parsers.re(
+        r'the preflight command "(?P<command>.+)" exits with '
+        r'code (?P<exit_code>\d+) and stderr "(?P<stderr>.*)"'
     )
 )
 def given_preflight_command_override(
     preflight_overrides: dict[tuple[str, ...], _CommandResponse],
     command: str,
-    exit_code: int,
+    exit_code: str,
     stderr: str,
 ) -> None:
     """Override an arbitrary pre-flight command with a custom result."""
-    tokens = tuple(segment for segment in command.split() if segment)
-    if not tokens:
+    if tokens := tuple(segment for segment in command.split() if segment):
+        preflight_overrides[tokens] = _CommandResponse(
+            exit_code=int(exit_code),
+            stderr=stderr,
+        )
+    else:
         message = "preflight command override requires tokens"
         raise AssertionError(message)
-    preflight_overrides[tokens] = _CommandResponse(
-        exit_code=exit_code,
-        stderr=stderr,
-    )
 
 
 @then(parsers.parse('the publish command prints the publish plan for "{crate_name}"'))
@@ -335,8 +340,64 @@ def then_publish_prints_plan(cli_run: dict[str, typ.Any], crate_name: str) -> No
     workspace = cli_run["workspace"]
     lines = [line.strip() for line in cli_run["stdout"].splitlines() if line.strip()]
     assert lines[0] == f"Publish plan for {workspace}"
-    assert "Strip patch strategy: all" in lines[1]
+    assert lines[1].startswith("Strip patch strategy:")
     assert f"- {crate_name} @ 0.1.0" in lines
+
+
+def _load_staged_manifest(cli_run: dict[str, typ.Any]) -> TOMLDocument:
+    """Return the staged workspace manifest for ``cli_run``."""
+    lines = _publish_plan_lines(cli_run)
+    staging_root = _extract_staging_root_from_plan(lines)
+    manifest_path = staging_root / "Cargo.toml"
+    if not manifest_path.exists():
+        message = f"Staged manifest not found: {manifest_path}"
+        raise AssertionError(message)
+    return parse_toml(manifest_path.read_text(encoding="utf-8"))
+
+
+def _get_patch_entries(document: typ.Mapping[str, typ.Any]) -> dict[str, typ.Any]:
+    """Return the ``[patch.crates-io]`` mapping if it exists."""
+    patch_table = document.get("patch")
+    if not isinstance(patch_table, typ.Mapping):
+        return {}
+    crates_io = patch_table.get("crates-io")
+    return {} if not isinstance(crates_io, typ.Mapping) else dict(crates_io)
+
+
+@then("the publish staging manifest has no patch section")
+def then_publish_manifest_has_no_patch_section(cli_run: dict[str, typ.Any]) -> None:
+    """Assert the staged manifest lacks ``[patch.crates-io]`` entirely."""
+    document = _load_staged_manifest(cli_run)
+    entries = _get_patch_entries(document)
+    assert entries == {}
+
+
+def _split_names(crate_names: str) -> list[str]:
+    return [name.strip() for name in crate_names.split(",") if name.strip()]
+
+
+@then(parsers.parse('the publish staging manifest omits patch entries "{crate_names}"'))
+def then_publish_manifest_omits_entries(
+    cli_run: dict[str, typ.Any], crate_names: str
+) -> None:
+    """Assert that ``crate_names`` are absent from the staged patch table."""
+    document = _load_staged_manifest(cli_run)
+    entries = _get_patch_entries(document)
+    for name in _split_names(crate_names):
+        assert name not in entries
+
+
+@then(
+    parsers.parse('the publish staging manifest retains patch entries "{crate_names}"')
+)
+def then_publish_manifest_retains_entries(
+    cli_run: dict[str, typ.Any], crate_names: str
+) -> None:
+    """Assert that ``crate_names`` remain in the staged patch table."""
+    document = _load_staged_manifest(cli_run)
+    entries = _get_patch_entries(document)
+    for name in _split_names(crate_names):
+        assert name in entries
 
 
 def _get_test_invocations(

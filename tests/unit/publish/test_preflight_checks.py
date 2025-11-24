@@ -292,6 +292,7 @@ def test_preflight_runs_aux_build_commands(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Auxiliary build commands execute before cargo pre-flight calls."""
+    monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
     root = tmp_path / "workspace"
     root.mkdir()
     commands: list[tuple[tuple[str, ...], Path | None]] = []
@@ -329,6 +330,7 @@ def test_aux_build_failure_surfaces_error(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Failures in aux build commands abort pre-flight with context."""
+    monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
     root = tmp_path / "workspace"
     root.mkdir()
 
@@ -368,6 +370,7 @@ def test_preflight_env_overrides_forwarded(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Environment overrides propagate to cargo pre-flight invocations."""
+    monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
     root = tmp_path / "workspace"
     root.mkdir()
     captured_env: dict[str, str] = {}
@@ -403,6 +406,7 @@ def test_preflight_append_compiletest_externs(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Compiletest externs extend RUSTFLAGS for cargo test."""
+    monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
     root = tmp_path / "workspace"
     root.mkdir()
     artifact = root / "target" / "lint" / "liblint_macro.so"
@@ -453,6 +457,7 @@ def test_compiletest_diagnostic_details(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Failing cargo test pre-flight lists stderr artifacts with tail output."""
+    monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
     artifact = tmp_path / "ui.stderr"
     artifact.write_text("line1\nline2\nline3\n", encoding="utf-8")
 
