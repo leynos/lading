@@ -465,3 +465,16 @@ def _should_redact_env_key(key: str) -> bool:
     """Return True when ``key`` likely contains secret material."""
     upper_key = key.upper()
     return any(token in upper_key for token in _ENV_REDACTION_TOKENS)
+
+
+split_command = _split_command
+should_use_cmd_mox_stub = _should_use_cmd_mox_stub
+normalise_cmd_mox_command = _normalise_cmd_mox_command
+
+__all__ = [
+    "_CommandRunner",
+    "_invoke",
+    "normalise_cmd_mox_command",
+    "should_use_cmd_mox_stub",
+    "split_command",
+]

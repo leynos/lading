@@ -257,11 +257,16 @@ def _format_plan(plan: PublishPlan, *, strip_patches: StripPatchesSetting) -> st
     return "\n".join(lines)
 
 
+append_section = _append_section
+format_plan = _format_plan
+
 __all__ = [
     "PublishPlan",
     "PublishPlanError",
     "_append_section",
     "_format_crates_section",
     "_format_plan",
+    "append_section",
+    "format_plan",
     "plan_publication",
 ]

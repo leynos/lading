@@ -6,7 +6,8 @@ import typing as typ
 
 from pytest_bdd import given, parsers
 from tomlkit import inline_table, table
-from tomlkit import parse as parse_toml
+
+from tests.bdd import toml_utils
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
@@ -21,7 +22,7 @@ def _update_manifest_version(
     if not manifest_path.exists():
         message = f"Manifest not found: {manifest_path}"
         raise AssertionError(message)
-    document = parse_toml(manifest_path.read_text(encoding="utf-8"))
+    document = toml_utils.load_manifest(manifest_path)
     target = document
     for key in keys[:-1]:
         try:
@@ -87,7 +88,7 @@ def given_workspace_manifest_patch_entries(
         message = f"Workspace manifest not found: {manifest_path}"
         raise AssertionError(message)
     names = [name.strip() for name in crate_names.split(",") if name.strip()]
-    document = parse_toml(manifest_path.read_text(encoding="utf-8"))
+    document = toml_utils.load_manifest(manifest_path)
     patch_table = document.get("patch")
     if patch_table is None:
         patch_table = table()

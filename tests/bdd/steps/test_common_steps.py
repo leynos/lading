@@ -8,8 +8,9 @@ import sys
 import typing as typ
 
 from pytest_bdd import parsers, scenarios, then
-from tomlkit import parse as parse_toml
 from tomlkit.items import InlineTable, Item, Table
+
+from tests.bdd import toml_utils
 
 from . import config_fixtures as _config_fixtures  # noqa: F401
 from . import manifest_fixtures as _manifest_fixtures  # noqa: F401
@@ -68,7 +69,7 @@ def then_workspace_manifest_version(
 ) -> None:
     """Validate the workspace manifest was updated to ``version``."""
     manifest_path = cli_run["workspace"] / "Cargo.toml"
-    document = parse_toml(manifest_path.read_text(encoding="utf-8"))
+    document = toml_utils.load_manifest(manifest_path)
     workspace_package = document["workspace"]["package"]
     assert workspace_package["version"] == version
 
@@ -81,7 +82,7 @@ def then_crate_manifest_version(
 ) -> None:
     """Validate the crate manifest was updated to ``version``."""
     manifest_path = cli_run["workspace"] / "crates" / crate_name / "Cargo.toml"
-    document = parse_toml(manifest_path.read_text(encoding="utf-8"))
+    document = toml_utils.load_manifest(manifest_path)
     assert document["package"]["version"] == version
 
 
@@ -120,7 +121,7 @@ def then_dependency_requirement(
     section = check.section
     expected = check.expected_requirement
     manifest_path = cli_run["workspace"] / "crates" / crate_name / "Cargo.toml"
-    document = parse_toml(manifest_path.read_text(encoding="utf-8"))
+    document = toml_utils.load_manifest(manifest_path)
     try:
         dependency_table = document[section]
     except KeyError as exc:  # pragma: no cover - defensive guard

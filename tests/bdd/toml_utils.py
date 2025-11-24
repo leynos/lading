@@ -18,7 +18,10 @@ __all__ = [
     "append_if_absent",
     "ensure_array_field",
     "ensure_table",
+    "load_crate_manifest",
+    "load_manifest",
     "load_or_create_document",
+    "load_workspace_manifest",
 ]
 
 
@@ -57,3 +60,22 @@ def append_if_absent(target_array: Array, value: str) -> None:
     """Append ``value`` to ``target_array`` if it is not already present."""
     if value not in target_array:
         target_array.append(value)
+
+
+def load_manifest(manifest_path: Path) -> TOMLDocument:
+    """Load a TOML document from ``manifest_path`` with a helpful assertion."""
+    if not manifest_path.exists():
+        message = f"Manifest not found: {manifest_path}"
+        raise AssertionError(message)
+    return parse_toml(manifest_path.read_text(encoding="utf-8"))
+
+
+def load_workspace_manifest(workspace_root: Path) -> TOMLDocument:
+    """Load the workspace manifest from ``workspace_root``."""
+    return load_manifest(workspace_root / "Cargo.toml")
+
+
+def load_crate_manifest(workspace_root: Path, crate_name: str) -> TOMLDocument:
+    """Load the manifest for ``crate_name`` within ``workspace_root``."""
+    manifest_path = workspace_root / "crates" / crate_name / "Cargo.toml"
+    return load_manifest(manifest_path)
