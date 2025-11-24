@@ -7,7 +7,7 @@ import typing as typ
 from pytest_bdd import given, parsers
 from tomlkit import inline_table, table
 
-from tests.bdd import toml_utils
+from lading.testing import toml_utils
 
 if typ.TYPE_CHECKING:
     from pathlib import Path

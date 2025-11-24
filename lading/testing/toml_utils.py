@@ -1,4 +1,4 @@
-"""Shared TOML helpers for BDD fixtures."""
+"""Shared TOML helpers for tests."""
 
 from __future__ import annotations
 

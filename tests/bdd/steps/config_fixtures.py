@@ -8,7 +8,7 @@ from pytest_bdd import given, parsers
 from tomlkit import array, table
 
 from lading import config as config_module
-from tests.bdd import toml_utils
+from lading.testing import toml_utils
 
 if typ.TYPE_CHECKING:
     from pathlib import Path

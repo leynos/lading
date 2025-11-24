@@ -11,12 +11,8 @@ import pytest
 from pytest_bdd import given, parsers, then, when
 
 from lading.commands import publish
+from lading.testing import toml_utils
 from lading.workspace import metadata as metadata_module
-from tests.bdd import toml_utils
-
-from . import config_fixtures as _config_fixtures  # noqa: F401
-from . import manifest_fixtures as _manifest_fixtures  # noqa: F401
-from . import metadata_fixtures as _metadata_fixtures  # noqa: F401
 
 try:
     from cmd_mox import CmdMox
@@ -179,6 +175,34 @@ def _make_preflight_handler(
         return (response.stdout, response.stderr, response.exit_code)
 
     return _handler
+
+
+@pytest.mark.parametrize(
+    ("command", "expected_program", "expected_args_prefix"),
+    [
+        (("cargo", "check"), "cargo::check", ()),
+        (("cargo", "test"), "cargo::test", ()),
+        (("cargo", "clippy"), "cargo::clippy", ()),
+        (("cargo", "fmt"), "cargo::fmt", ()),
+        (("cargo", "build"), "cargo::build", ()),
+        (("cargo", "doc"), "cargo::doc", ()),
+        (
+            ("cargo", "test", "--package", "foo", "--", "--ignored"),
+            "cargo::test",
+            ("--package", "foo", "--", "--ignored"),
+        ),
+    ],
+)
+def test_resolve_preflight_expectation_normalises_cargo_commands(
+    command: tuple[str, ...],
+    expected_program: str,
+    expected_args_prefix: tuple[str, ...],
+) -> None:
+    """Ensure cmd-mox expectations follow publish command normalisation."""
+    program, args_prefix = _resolve_preflight_expectation(command)
+
+    assert program == expected_program
+    assert args_prefix == expected_args_prefix
 
 
 def _register_preflight_commands(config: _PreflightStubConfig) -> None:

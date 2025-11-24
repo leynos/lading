@@ -106,9 +106,7 @@ def _validate_and_load_manifest(
         return None
     document = _load_manifest_document(manifest_path)
     patch_tables = _resolve_patch_tables(document)
-    if patch_tables is None:
-        return None
-    return document, patch_tables
+    return None if patch_tables is None else (document, patch_tables)
 
 
 def _cleanup_empty_patch_tables(
