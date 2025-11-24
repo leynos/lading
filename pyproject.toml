@@ -36,12 +36,6 @@ dev = [
     "cmd-mox@git+https://github.com/leynos/cmd-mox@f583c279a15760aba5cfd9bddf1fbbe9b1f8c429",
 ]
 
-[tool.pyright]
-pythonVersion = "3.13"
-typeCheckingMode = "strict"
-include = ["lading"]
-exclude = ["crate_tools", "crate_tools/unittests", "**/unittests"]
-
 [tool.ruff]
 line-length = 88
 
@@ -84,13 +78,13 @@ select = [
     "D",
     "ANN",
     "C90",
-    "PLR0913",
+    "PLR",
 ]
 extend-ignore = [
     "D203",  # Conflicts with D211; prefer enforcing no blank line before class docstring.
     "D213",  # Conflicts with D212; keep summary on the first line.
 ]
-per-file-ignores = {"**/test_*.py" = ["S101", "PLR0913"]}
+per-file-ignores = {"**/test_*.py" = ["S101", "PLR0913", "PLR2004"]}
 
 [tool.ruff.lint.mccabe]
 max-complexity = 9
@@ -126,8 +120,6 @@ typing = "typ"
 dataclasses = "dc"
 
 [tool.pytest.ini_options]
-# Ensure asyncio fixtures create a new event loop for each test
-asyncio_default_fixture_loop_scope = "function"
 # Tests automatically killed after seconds elapsed
 timeout = 30
 

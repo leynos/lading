@@ -210,7 +210,7 @@ def _build_process(args: list[str], run_callable: RunCallable) -> SimpleNamespac
 def _build_stream(data: StreamData) -> io.IOBase:
     """Create a byte-stream object from the provided data."""
     if isinstance(data, cabc.Sequence) and not isinstance(
-        data, (bytes, bytearray, str)
+        data, bytes | bytearray | str
     ):
         chunks = [_ensure_bytes(chunk) for chunk in data]
         return _ChunkedStream(chunks)

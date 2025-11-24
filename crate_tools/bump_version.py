@@ -36,6 +36,8 @@ logger = logging.getLogger(__name__)
 TomlMapping = cabc.Mapping[str, typ.Any]
 TomlMutableMapping = cabc.MutableMapping[str, typ.Any]
 
+EXPECTED_ARG_COUNT = 2  # argv includes script path and the requested version
+
 if typ.TYPE_CHECKING:  # pragma: no cover - import for typing only
     from markdown_it.token import Token
 
@@ -393,7 +395,7 @@ def _validate_args_and_setup(argv: list[str]) -> tuple[str, Path] | None:
     ('1.2.3', True)
 
     """
-    if len(argv) != 2:
+    if len(argv) != EXPECTED_ARG_COUNT:
         prog = Path(argv[0]).name
         print(f"Usage: {prog} <version>", file=sys.stderr)
         return None

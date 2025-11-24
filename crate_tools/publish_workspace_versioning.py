@@ -9,6 +9,8 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
+MAX_EXCERPT_LINES = 8  # limit diagnostic context to keep output concise
+
 __all__ = [
     "_extract_section_lines",
     "_find_workspace_section_index",
@@ -87,7 +89,7 @@ def _should_include_more_lines(lines: list[str], end: int, start: int) -> bool:
     if end >= len(lines):
         return False
 
-    if end - start >= 8:
+    if end - start >= MAX_EXCERPT_LINES:
         return False
 
     stripped = lines[end].strip()

@@ -312,7 +312,7 @@ def _validate_matrix_entry(
     index: int,
 ) -> tuple[str, ...]:
     """Validate and convert a single matrix entry to a string tuple."""
-    if isinstance(entry, cabc.Sequence) and not isinstance(entry, (str, bytes)):
+    if isinstance(entry, cabc.Sequence) and not isinstance(entry, str | bytes):
         return _validate_string_sequence(entry, f"{field_name}[{index}]")
     message = (
         f"{field_name}[{index}] must be a sequence of strings; "
@@ -341,7 +341,7 @@ def _string_matrix(value: object, field_name: str) -> tuple[tuple[str, ...], ...
     """Return a tuple-of-tuples parsed from ``value`` as nested string sequences."""
     if value is None:
         return ()
-    if not isinstance(value, cabc.Sequence) or isinstance(value, (str, bytes)):
+    if not isinstance(value, cabc.Sequence) or isinstance(value, str | bytes):
         message = f"{field_name} must be a sequence of string sequences."
         raise ConfigurationError(message)
     commands = [
