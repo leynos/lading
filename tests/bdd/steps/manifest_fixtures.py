@@ -19,9 +19,6 @@ def _update_manifest_version(
     keys: tuple[str, ...],
 ) -> None:
     """Update version at nested ``keys`` path in the manifest at ``manifest_path``."""
-    if not manifest_path.exists():
-        message = f"Manifest not found: {manifest_path}"
-        raise AssertionError(message)
     document = toml_utils.load_manifest(manifest_path)
     target = document
     for key in keys[:-1]:
@@ -84,9 +81,6 @@ def given_workspace_manifest_patch_entries(
 ) -> None:
     """Ensure ``[patch.crates-io]`` defines entries for ``crate_names``."""
     manifest_path = workspace_directory / "Cargo.toml"
-    if not manifest_path.exists():
-        message = f"Workspace manifest not found: {manifest_path}"
-        raise AssertionError(message)
     names = [name.strip() for name in crate_names.split(",") if name.strip()]
     document = toml_utils.load_manifest(manifest_path)
     patch_table = document.get("patch")

@@ -1,4 +1,32 @@
-"""Manifest manipulation helpers for publish staging."""
+"""Publish manifest utilities.
+
+Summary
+-------
+Helpers for reading, mutating, and persisting staged ``Cargo.toml`` files
+used during ``lading publish``. These functions keep formatting and trivia
+intact while applying the configured patch-stripping strategy.
+
+Functions / Call sites
+----------------------
+* :func:`_apply_strip_patch_strategy` — invoked from ``publish.run`` after the
+  workspace is staged, to enforce ``publish.strip_patches`` settings.
+* Supporting helpers (_load_manifest_document, _resolve_patch_tables, etc.)
+  encapsulate TOML parsing/writing and patch-table cleanup.
+
+Examples
+--------
+>>> from pathlib import Path
+>>> from lading.commands.publish_manifest import _apply_strip_patch_strategy
+>>> from lading.commands.publish_plan import PublishPlan
+>>> plan = PublishPlan(
+...     workspace_root=Path("."),
+...     publishable=(),
+...     skipped_manifest=(),
+...     skipped_configuration=(),
+... )
+>>> _apply_strip_patch_strategy(Path("build/workspace"), plan, "all")
+
+"""
 
 from __future__ import annotations
 
@@ -25,7 +53,7 @@ StripPatchesSetting = config_module.StripPatchesSetting
 type _ManifestValidation = (
     tuple[
         TOMLDocument,
-        tuple[cabc.MutableMapping[str, typ.Any], cabc.MutableMapping[str, typ.Any]],
+        tuple[cabc.MutableMapping[str, object], cabc.MutableMapping[str, object]],
     ]
     | None
 )
@@ -65,7 +93,7 @@ def _write_manifest_document(manifest_path: Path, document: TOMLDocument) -> Non
 
 
 def _remove_per_crate_entries(
-    crates_io: cabc.MutableMapping[str, typ.Any],
+    crates_io: cabc.MutableMapping[str, object],
     crate_names: cabc.Iterable[str],
 ) -> bool:
     """Remove entries for ``crate_names`` and return ``True`` when modified."""
@@ -79,7 +107,7 @@ def _remove_per_crate_entries(
 
 def _resolve_patch_tables(
     document: TOMLDocument,
-) -> tuple[cabc.MutableMapping[str, typ.Any], cabc.MutableMapping[str, typ.Any]] | None:
+) -> tuple[cabc.MutableMapping[str, object], cabc.MutableMapping[str, object]] | None:
     """Return the patch mapping and crates-io table when available."""
     patch_table = document.get("patch")
     if not isinstance(patch_table, cabc.MutableMapping):
@@ -111,8 +139,8 @@ def _validate_and_load_manifest(
 
 def _cleanup_empty_patch_tables(
     document: TOMLDocument,
-    patch_table: cabc.MutableMapping[str, typ.Any],
-    crates_io: cabc.MutableMapping[str, typ.Any],
+    patch_table: cabc.MutableMapping[str, object],
+    crates_io: cabc.MutableMapping[str, object],
 ) -> None:
     """Remove empty patch tables from the document."""
     if not crates_io:
@@ -123,8 +151,8 @@ def _cleanup_empty_patch_tables(
 
 def _apply_strategy_to_patches(
     strategy: StripPatchesSetting,
-    patch_table: cabc.MutableMapping[str, typ.Any],
-    crates_io: cabc.MutableMapping[str, typ.Any],
+    patch_table: cabc.MutableMapping[str, object],
+    crates_io: cabc.MutableMapping[str, object],
     publishable_names: tuple[str, ...],
 ) -> bool:
     """Apply the strip patch strategy and return True if modified."""
