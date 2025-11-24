@@ -1,4 +1,24 @@
-"""Shared TOML helpers for tests."""
+"""Shared TOML helpers for tests.
+
+Summary
+-------
+Utilities for loading, creating, and modifying TOML documents within tests
+and BDD step fixtures. Centralising these helpers keeps scenarios focused on
+behaviour rather than TOML plumbing.
+
+Usage
+-----
+>>> from pathlib import Path
+>>> from lading.testing import toml_utils
+>>> doc = toml_utils.load_manifest(Path("Cargo.toml"))
+>>> publish_table = toml_utils.ensure_table(doc, "publish")
+>>> excludes = toml_utils.ensure_array_field(publish_table, "exclude")
+>>> toml_utils.append_if_absent(excludes, "alpha")
+
+Example manifests:
+    * load_workspace_manifest(Path("/tmp/workspace"))
+    * load_crate_manifest(Path("/tmp/workspace"), "alpha")
+"""
 
 from __future__ import annotations
 
@@ -75,7 +95,9 @@ def load_workspace_manifest(workspace_root: Path) -> TOMLDocument:
     return load_manifest(workspace_root / "Cargo.toml")
 
 
-def load_crate_manifest(workspace_root: Path, crate_name: str) -> TOMLDocument:
+def load_crate_manifest(
+    workspace_root: Path, crate_name: str, *, crates_dir: str = "crates"
+) -> TOMLDocument:
     """Load the manifest for ``crate_name`` within ``workspace_root``."""
-    manifest_path = workspace_root / "crates" / crate_name / "Cargo.toml"
+    manifest_path = workspace_root / crates_dir / crate_name / "Cargo.toml"
     return load_manifest(manifest_path)

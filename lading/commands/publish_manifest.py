@@ -60,7 +60,23 @@ type _ManifestValidation = (
 
 
 class PublishPreparationError(RuntimeError):
-    """Raised when publish preparation cannot stage required assets."""
+    """Publish staging failed to prepare required assets.
+
+    Raised when:
+        * the staged workspace manifest cannot be read or parsed.
+        * expected patch tables are missing or malformed.
+        * manifest writes fail while applying patch stripping.
+
+    Examples
+    --------
+    >>> from lading.commands.publish_manifest import PublishPreparationError
+    >>> try:
+    ...     raise PublishPreparationError("Workspace manifest not found")
+    ... except PublishPreparationError as exc:
+    ...     print(str(exc))
+    Workspace manifest not found
+
+    """
 
 
 def _load_manifest_document(manifest_path: Path) -> TOMLDocument:
