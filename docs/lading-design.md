@@ -182,6 +182,32 @@ table untouched so bespoke overrides (for example, third-party forks) remain
 available during packaging. Any parse errors or missing manifests surface as
 `PublishPreparationError` to keep the staging workflow predictable.
 
+#### Publish data flow
+
+```mermaid
+graph TD
+    A["User CLI command: lading publish"] --> B["Module: lading.commands.publish (publish.py)"]
+    B --> C["Module: lading.commands.publish_plan (publish_plan.py)"]
+    C --> C1["Build PublishPlan with publishable_names"]
+    B --> D["Module: lading.commands.publish_manifest (publish_manifest.py)"]
+    D --> D1["_apply_strip_patch_strategy(staging_root, plan, strategy)"]
+    D1 --> D2{"strip_patches configuration"}
+    D2 -->|"False"| E["Skip manifest modification"]
+    D2 -->|"all"| F["Remove all patch.crates-io entries"]
+    D2 -->|"per-crate"| G["Remove crates-io entries for plan.publishable_names"]
+    F --> H["Cleanup empty patch tables and write Cargo.toml"]
+    G --> H
+    H --> I["Updated staged manifest used for publish"]
+
+    B --> J["Module: lading.commands.publish_execution (publish_execution.py)"]
+    J --> K["split_command"]
+    J --> L["should_use_cmd_mox_stub"]
+    J --> M["normalise_cmd_mox_command"]
+
+    B --> N["Use re-exported helpers: append_section, format_plan, split_command, should_use_cmd_mox_stub, normalise_cmd_mox_command"]
+    N --> O["Compose final publish plan and execute commands"]
+```
+
 ```
 
 ### 2.3. Workspace Discovery and Model

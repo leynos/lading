@@ -6,7 +6,8 @@ import typing as typ
 
 from pytest_bdd import given, parsers
 from tomlkit import inline_table, table
-from tomlkit import parse as parse_toml
+
+from lading.testing import toml_utils
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
@@ -18,10 +19,7 @@ def _update_manifest_version(
     keys: tuple[str, ...],
 ) -> None:
     """Update version at nested ``keys`` path in the manifest at ``manifest_path``."""
-    if not manifest_path.exists():
-        message = f"Manifest not found: {manifest_path}"
-        raise AssertionError(message)
-    document = parse_toml(manifest_path.read_text(encoding="utf-8"))
+    document = toml_utils.load_manifest(manifest_path)
     target = document
     for key in keys[:-1]:
         try:
@@ -83,11 +81,8 @@ def given_workspace_manifest_patch_entries(
 ) -> None:
     """Ensure ``[patch.crates-io]`` defines entries for ``crate_names``."""
     manifest_path = workspace_directory / "Cargo.toml"
-    if not manifest_path.exists():
-        message = f"Workspace manifest not found: {manifest_path}"
-        raise AssertionError(message)
     names = [name.strip() for name in crate_names.split(",") if name.strip()]
-    document = parse_toml(manifest_path.read_text(encoding="utf-8"))
+    document = toml_utils.load_manifest(manifest_path)
     patch_table = document.get("patch")
     if patch_table is None:
         patch_table = table()

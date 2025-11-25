@@ -9,14 +9,10 @@ from pathlib import Path
 
 import pytest
 from pytest_bdd import given, parsers, then, when
-from tomlkit import parse as parse_toml
 
 from lading.commands import publish
+from lading.testing import toml_utils
 from lading.workspace import metadata as metadata_module
-
-from . import config_fixtures as _config_fixtures  # noqa: F401
-from . import manifest_fixtures as _manifest_fixtures  # noqa: F401
-from . import metadata_fixtures as _metadata_fixtures  # noqa: F401
 
 try:
     from cmd_mox import CmdMox
@@ -82,12 +78,6 @@ def _create_stub_config(
     )
 
 
-class _CmdInvocation(typ.Protocol):
-    """Protocol describing the cmd-mox invocation payload."""
-
-    args: typ.Sequence[str]
-
-
 @pytest.fixture
 def preflight_overrides() -> dict[tuple[str, ...], _CommandResponse]:
     """Provide per-scenario overrides for publish pre-flight commands."""
@@ -126,11 +116,6 @@ def when_run_publish_preflight_checks(workspace_directory: Path) -> dict[str, ty
     return {"error": error}
 
 
-def _is_cargo_action_command(program: str, args: tuple[str, ...]) -> bool:
-    """Check if command is a cargo check or test invocation."""
-    return program == "cargo" and bool(args) and args[0] in {"check", "test"}
-
-
 def _validate_stub_arguments(
     expected: tuple[str, ...],
     received: tuple[str, ...],
@@ -159,9 +144,19 @@ def _resolve_preflight_expectation(
     """Return the cmd-mox program and argument prefix for ``command``."""
     program, *args = command
     argument_tuple = tuple(args)
-    if _is_cargo_action_command(program, argument_tuple):
-        return f"cargo::{argument_tuple[0]}", argument_tuple[1:]
+    if program == "cargo":
+        normalised_program, invocation_args = publish._normalise_cmd_mox_command(
+            program,
+            argument_tuple,
+        )
+        return normalised_program, tuple(invocation_args)
     return program, argument_tuple
+
+
+class _CmdInvocation(typ.Protocol):
+    """Protocol describing the cmd-mox invocation payload."""
+
+    args: typ.Sequence[str]
 
 
 def _make_preflight_handler(
@@ -180,6 +175,34 @@ def _make_preflight_handler(
         return (response.stdout, response.stderr, response.exit_code)
 
     return _handler
+
+
+@pytest.mark.parametrize(
+    ("command", "expected_program", "expected_args_prefix"),
+    [
+        (("cargo", "check"), "cargo::check", ()),
+        (("cargo", "test"), "cargo::test", ()),
+        (("cargo", "clippy"), "cargo::clippy", ()),
+        (("cargo", "fmt"), "cargo::fmt", ()),
+        (("cargo", "build"), "cargo::build", ()),
+        (("cargo", "doc"), "cargo::doc", ()),
+        (
+            ("cargo", "test", "--package", "foo", "--", "--ignored"),
+            "cargo::test",
+            ("--package", "foo", "--", "--ignored"),
+        ),
+    ],
+)
+def test_resolve_preflight_expectation_normalises_cargo_commands(
+    command: tuple[str, ...],
+    expected_program: str,
+    expected_args_prefix: tuple[str, ...],
+) -> None:
+    """Ensure cmd-mox expectations follow publish command normalisation."""
+    program, args_prefix = _resolve_preflight_expectation(command)
+
+    assert program == expected_program
+    assert args_prefix == expected_args_prefix
 
 
 def _register_preflight_commands(config: _PreflightStubConfig) -> None:
@@ -349,10 +372,7 @@ def _load_staged_manifest(cli_run: dict[str, typ.Any]) -> TOMLDocument:
     lines = _publish_plan_lines(cli_run)
     staging_root = _extract_staging_root_from_plan(lines)
     manifest_path = staging_root / "Cargo.toml"
-    if not manifest_path.exists():
-        message = f"Staged manifest not found: {manifest_path}"
-        raise AssertionError(message)
-    return parse_toml(manifest_path.read_text(encoding="utf-8"))
+    return toml_utils.load_manifest(manifest_path)
 
 
 def _get_patch_entries(document: typ.Mapping[str, typ.Any]) -> dict[str, typ.Any]:

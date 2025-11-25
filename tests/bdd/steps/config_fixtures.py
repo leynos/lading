@@ -6,11 +6,9 @@ import typing as typ
 
 from pytest_bdd import given, parsers
 from tomlkit import array, table
-from tomlkit import document as make_document
-from tomlkit import parse as parse_toml
 
 from lading import config as config_module
-from tests.bdd import toml_utils
+from lading.testing import toml_utils
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
@@ -63,7 +61,7 @@ def given_workspace_without_configuration(tmp_path: Path) -> Path:
 def given_documentation_glob(workspace_directory: Path, pattern: str) -> None:
     """Append ``pattern`` to the documentation glob list in ``lading.toml``."""
     config_path = workspace_directory / config_module.CONFIG_FILENAME
-    document = parse_toml(config_path.read_text(encoding="utf-8"))
+    document = toml_utils.load_or_create_document(config_path)
     bump_table = document.get("bump")
     if bump_table is None:
         bump_table = table()
@@ -144,10 +142,7 @@ def given_preflight_test_exclude_blank_entries(workspace_directory: Path) -> Non
 def given_preflight_unit_tests_only_true(workspace_directory: Path) -> None:
     """Enable unit-tests-only mode for publish pre-flight checks."""
     config_path = workspace_directory / config_module.CONFIG_FILENAME
-    if config_path.exists():
-        doc = parse_toml(config_path.read_text(encoding="utf-8"))
-    else:
-        doc = make_document()
+    doc = toml_utils.load_or_create_document(config_path)
     preflight_table = doc.get("preflight")
     if preflight_table is None:
         preflight_table = table()
@@ -161,10 +156,7 @@ def given_publish_order_is(workspace_directory: Path, order: str) -> None:
     """Set the publish order configuration to ``order``."""
     names = [name.strip() for name in order.split(",") if name.strip()]
     config_path = workspace_directory / config_module.CONFIG_FILENAME
-    if config_path.exists():
-        doc = parse_toml(config_path.read_text(encoding="utf-8"))
-    else:
-        doc = make_document()
+    doc = toml_utils.load_or_create_document(config_path)
     publish_table = doc.get("publish")
     if publish_table is None:
         publish_table = table()
