@@ -60,7 +60,6 @@ class PublishPreparationError(RuntimeError):
 
     Raised when:
         * the staged workspace manifest cannot be read or parsed.
-        * expected patch tables are missing or malformed.
         * manifest writes fail while applying patch stripping.
 
     Examples
