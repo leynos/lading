@@ -125,13 +125,15 @@ def _resolve_patch_tables(
     document: TOMLDocument,
 ) -> tuple[cabc.MutableMapping[str, object], cabc.MutableMapping[str, object]] | None:
     """Return the patch mapping and crates-io table when available."""
-    patch_table = document.get("patch")
-    if not isinstance(patch_table, cabc.MutableMapping):
-        return None
-    crates_io = patch_table.get("crates-io")
-    if not isinstance(crates_io, cabc.MutableMapping):
-        return None
-    return patch_table, crates_io
+    match document:
+        case {"patch": cabc.MutableMapping() as patch_table}:
+            match patch_table:
+                case {"crates-io": cabc.MutableMapping() as crates_io}:
+                    return patch_table, crates_io
+                case _:
+                    return None
+        case _:
+            return None
 
 
 def _validate_and_load_manifest(
@@ -172,12 +174,14 @@ def _apply_strategy_to_patches(
     publishable_names: tuple[str, ...],
 ) -> bool:
     """Apply the strip patch strategy and return True if modified."""
-    if strategy == "all":
-        return patch_table.pop("crates-io", None) is not None
-    if strategy == "per-crate":
-        return _remove_per_crate_entries(crates_io, publishable_names)
-    message = f"Unsupported strip patch strategy: {strategy}"
-    raise PublishPreparationError(message)
+    match strategy:
+        case "all":
+            return patch_table.pop("crates-io", None) is not None
+        case "per-crate":
+            return _remove_per_crate_entries(crates_io, publishable_names)
+        case _:
+            message = f"Unsupported strip patch strategy: {strategy}"
+            raise PublishPreparationError(message)
 
 
 def _apply_strip_patch_strategy(
