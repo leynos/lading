@@ -35,13 +35,9 @@ import typing as typ
 
 from tomlkit import parse as parse_toml
 from tomlkit.exceptions import TOMLKitError
+from tomlkit.toml_document import TOMLDocument
 
 from lading import config as config_module
-
-try:  # pragma: no cover - typing helper
-    from tomlkit.toml_document import TOMLDocument
-except ImportError:  # pragma: no cover - mypy fallback for runtime
-    TOMLDocument = typ.Any  # type: ignore[assignment]
 
 if typ.TYPE_CHECKING:
     from pathlib import Path

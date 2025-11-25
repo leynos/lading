@@ -83,7 +83,24 @@ def append_if_absent(target_array: Array, value: str) -> None:
 
 
 def load_manifest(manifest_path: Path) -> TOMLDocument:
-    """Load a TOML document from ``manifest_path`` with a helpful assertion."""
+    """Load a TOML document from a manifest path.
+
+    Parameters
+    ----------
+    manifest_path : Path
+        Filesystem path to the TOML manifest to load.
+
+    Returns
+    -------
+    TOMLDocument
+        Parsed TOML document.
+
+    Raises
+    ------
+    AssertionError
+        If the manifest file does not exist.
+
+    """
     if not manifest_path.exists():
         message = f"Manifest not found: {manifest_path}"
         raise AssertionError(message)
@@ -91,13 +108,51 @@ def load_manifest(manifest_path: Path) -> TOMLDocument:
 
 
 def load_workspace_manifest(workspace_root: Path) -> TOMLDocument:
-    """Load the workspace manifest from ``workspace_root``."""
+    """Load the workspace-level Cargo.toml manifest.
+
+    Parameters
+    ----------
+    workspace_root : Path
+        Root directory of the Cargo workspace.
+
+    Returns
+    -------
+    TOMLDocument
+        Parsed workspace manifest document.
+
+    Raises
+    ------
+    AssertionError
+        If the workspace Cargo.toml does not exist.
+
+    """
     return load_manifest(workspace_root / "Cargo.toml")
 
 
 def load_crate_manifest(
     workspace_root: Path, crate_name: str, *, crates_dir: str = "crates"
 ) -> TOMLDocument:
-    """Load the manifest for ``crate_name`` within ``workspace_root``."""
+    """Load the Cargo.toml manifest for a specific crate.
+
+    Parameters
+    ----------
+    workspace_root : Path
+        Root directory of the Cargo workspace.
+    crate_name : str
+        Name of the crate whose manifest should be loaded.
+    crates_dir : str, optional
+        Subdirectory containing workspace crates (default: "crates").
+
+    Returns
+    -------
+    TOMLDocument
+        Parsed crate manifest document.
+
+    Raises
+    ------
+    AssertionError
+        If the crate manifest does not exist at the expected path.
+
+    """
     manifest_path = workspace_root / crates_dir / crate_name / "Cargo.toml"
     return load_manifest(manifest_path)
