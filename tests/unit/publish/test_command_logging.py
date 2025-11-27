@@ -27,7 +27,7 @@ else:  # pragma: no cover - typing helpers
 
 
 def test_invoke_logs_command_with_cwd(
-    tmp_path: Path, caplog: LogCaptureFixture
+    tmp_path: Path, caplog: LogCaptureFixture, use_real_invoke: None
 ) -> None:
     """``_invoke`` should log the command line and working directory."""
     caplog.set_level(logging.INFO, logger="lading.commands.publish_execution")
@@ -40,7 +40,9 @@ def test_invoke_logs_command_with_cwd(
     assert expected in caplog.messages
 
 
-def test_invoke_logs_command_without_cwd(caplog: LogCaptureFixture) -> None:
+def test_invoke_logs_command_without_cwd(
+    caplog: LogCaptureFixture, use_real_invoke: None
+) -> None:
     """``_invoke`` should omit ``cwd`` details when not provided."""
     caplog.set_level(logging.INFO, logger="lading.commands.publish_execution")
 
@@ -53,7 +55,9 @@ def test_invoke_logs_command_without_cwd(caplog: LogCaptureFixture) -> None:
     assert not any("(cwd=" in message for message in caplog.messages)
 
 
-def test_invoke_proxies_command_output(capsys: CaptureFixture[str]) -> None:
+def test_invoke_proxies_command_output(
+    capsys: CaptureFixture[str], use_real_invoke: None
+) -> None:
     """``_invoke`` should stream stdout/stderr to the parent process."""
     script = """\
 import sys
@@ -77,6 +81,7 @@ def test_cmd_mox_passthrough_streams_output(
     cmd_mox: CmdMox,
     capsys: CaptureFixture[str],
     monkeypatch: MonkeyPatch,
+    use_real_invoke: None,
 ) -> None:
     """cmd-mox passthrough should stream via the subprocess runner."""
     monkeypatch.setenv(metadata_module.CMD_MOX_STUB_ENV_VAR, "1")

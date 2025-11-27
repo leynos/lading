@@ -195,7 +195,7 @@ interacting with the `cargo publish` command.
   - **Completion Criteria:** Unit tests verify that the manifest is correctly
     manipulated for each of the three strategies.
 
-- [ ] **Implement Crate Packaging Loop:**
+- [x] **Implement Crate Packaging Loop:**
 
   - **Outcome:** The command iterates through the publish list, executing
     `cargo package` for each crate.
