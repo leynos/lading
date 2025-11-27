@@ -48,7 +48,7 @@ def test_package_publishable_crates_runs_in_plan_order(tmp_path: Path) -> None:
         cwd: Path | None = None,
         env: typ.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
-        del env  # env is not used by the packaging loop today
+        del env
         calls.append((tuple(command), cwd))
         return 0, "", ""
 
@@ -84,7 +84,7 @@ def test_package_publishable_crates_stops_on_failure(tmp_path: Path) -> None:
         cwd: Path | None = None,
         env: typ.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
-        del env, cwd  # parameters unused in the stub
+        del env, cwd
         calls.append(" ".join(command))
         return (1, "", "packaging failed")
 
