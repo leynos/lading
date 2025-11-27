@@ -98,3 +98,37 @@ def test_package_publishable_crates_stops_on_failure(tmp_path: Path) -> None:
     assert calls == ["cargo package"]
     assert "cargo package failed for crate alpha" in str(excinfo.value)
     assert "packaging failed" in str(excinfo.value)
+
+
+def test_package_publishable_crates_reports_stdout_on_failure(tmp_path: Path) -> None:
+    """Failure details fall back to stdout when stderr is empty."""
+    workspace_root = tmp_path / "workspace"
+    alpha, _beta, _gamma = make_dependency_chain(workspace_root)
+    plan = publish.plan_publication(
+        make_workspace(workspace_root, alpha), make_config()
+    )
+    staging_root = _prepare_staging_root(plan, tmp_path)
+    preparation = publish.PublishPreparation(
+        staging_root=staging_root,
+        copied_readmes=(),
+    )
+
+    def stdout_failure(
+        command: typ.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: typ.Mapping[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        del env, cwd
+        return (1, "stdout failure details", "")
+
+    with pytest.raises(publish.PublishPreflightError) as excinfo:
+        publish._package_publishable_crates(
+            plan,
+            preparation,
+            runner=stdout_failure,
+        )
+
+    message = str(excinfo.value)
+    assert "stdout failure details" in message
+    assert "cargo package failed for crate alpha" in message
