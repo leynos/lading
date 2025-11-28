@@ -132,3 +132,37 @@ def test_package_publishable_crates_reports_stdout_on_failure(tmp_path: Path) ->
     message = str(excinfo.value)
     assert "stdout failure details" in message
     assert "cargo package failed for crate alpha" in message
+
+
+def test_package_publishable_crates_prefers_stderr_over_stdout(tmp_path: Path) -> None:
+    """Error detail prefers stderr when both streams are populated."""
+    workspace_root = tmp_path / "workspace"
+    alpha, _beta, _gamma = make_dependency_chain(workspace_root)
+    plan = publish.plan_publication(
+        make_workspace(workspace_root, alpha), make_config()
+    )
+    staging_root = _prepare_staging_root(plan, tmp_path)
+    preparation = publish.PublishPreparation(
+        staging_root=staging_root,
+        copied_readmes=(),
+    )
+
+    def both_populated(
+        command: typ.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: typ.Mapping[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        del cwd, env
+        return (1, "stdout detail", "stderr detail")
+
+    with pytest.raises(publish.PublishPreflightError) as excinfo:
+        publish._package_publishable_crates(
+            plan,
+            preparation,
+            runner=both_populated,
+        )
+
+    message = str(excinfo.value)
+    assert "stderr detail" in message
+    assert "stdout detail" not in message
