@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import typing as typ
 
+if typ.TYPE_CHECKING:
+    import collections.abc as cabc
+
 import pytest
 
 from lading.commands import publish
@@ -43,10 +46,10 @@ def test_package_publishable_crates_runs_in_plan_order(tmp_path: Path) -> None:
     calls: list[tuple[tuple[str, ...], Path | None]] = []
 
     def runner(
-        command: typ.Sequence[str],
+        command: cabc.Sequence[str],
         *,
         cwd: Path | None = None,
-        env: typ.Mapping[str, str] | None = None,
+        env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
         del env
         calls.append((tuple(command), cwd))
@@ -79,10 +82,10 @@ def test_package_publishable_crates_stops_on_failure(tmp_path: Path) -> None:
     calls: list[str] = []
 
     def failing_runner(
-        command: typ.Sequence[str],
+        command: cabc.Sequence[str],
         *,
         cwd: Path | None = None,
-        env: typ.Mapping[str, str] | None = None,
+        env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
         del env, cwd
         calls.append(" ".join(command))
@@ -114,10 +117,10 @@ def test_package_publishable_crates_reports_stdout_on_failure(tmp_path: Path) ->
     )
 
     def stdout_failure(
-        command: typ.Sequence[str],
+        command: cabc.Sequence[str],
         *,
         cwd: Path | None = None,
-        env: typ.Mapping[str, str] | None = None,
+        env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
         del env, cwd
         return (1, "stdout failure details", "")
@@ -148,10 +151,10 @@ def test_package_publishable_crates_prefers_stderr_over_stdout(tmp_path: Path) -
     )
 
     def both_populated(
-        command: typ.Sequence[str],
+        command: cabc.Sequence[str],
         *,
         cwd: Path | None = None,
-        env: typ.Mapping[str, str] | None = None,
+        env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
         del cwd, env
         return (1, "stdout detail", "stderr detail")
