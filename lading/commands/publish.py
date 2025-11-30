@@ -304,6 +304,55 @@ def _format_preparation_summary(preparation: PublishPreparation) -> tuple[str, .
     return tuple(lines)
 
 
+def _resolve_staged_crate_root(
+    crate: WorkspaceCrate,
+    plan: PublishPlan,
+    staging_root: Path,
+) -> Path:
+    """Return the staged crate root, ensuring it resides within the workspace."""
+    try:
+        relative_root = crate.root_path.relative_to(plan.workspace_root)
+    except ValueError as exc:  # pragma: no cover - defensive guard
+        message = (
+            f"Crate {crate.name!r} root {crate.root_path} is outside workspace "
+            f"{plan.workspace_root}"
+        )
+        raise PublishPreparationError(message) from exc
+
+    staged_root = staging_root / relative_root
+    if not staged_root.exists():  # pragma: no cover - defensive guard
+        message = f"Staged crate root not found for {crate.name!r}: {staged_root}"
+        raise PublishPreparationError(message)
+
+    return staged_root
+
+
+def _package_publishable_crates(
+    plan: PublishPlan,
+    preparation: PublishPreparation,
+    *,
+    runner: _CommandRunner,
+) -> None:
+    """Package each publishable crate in order using the staged workspace."""
+    staging_root = preparation.staging_root
+    for crate in plan.publishable:
+        crate_root = _resolve_staged_crate_root(crate, plan, staging_root)
+        exit_code, stdout, stderr = runner(
+            ("cargo", "package"),
+            cwd=crate_root,
+            env=None,
+        )
+        if exit_code != 0:
+            detail = (stderr or stdout).strip()
+            message = (
+                f"cargo package failed for crate {crate.name} "
+                f"with exit code {exit_code}"
+            )
+            if detail:
+                message = f"{message}: {detail}"
+            raise PublishPreflightError(message)
+
+
 def _ensure_configuration(
     configuration: LadingConfig | None, workspace_root: Path
 ) -> LadingConfig:
@@ -363,6 +412,11 @@ def run(
         preparation.staging_root,
         plan,
         active_configuration.publish.strip_patches,
+    )
+    _package_publishable_crates(
+        plan,
+        preparation,
+        runner=command_runner,
     )
     plan_message = _format_plan(
         plan, strip_patches=active_configuration.publish.strip_patches

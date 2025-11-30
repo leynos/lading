@@ -516,9 +516,10 @@ sequenceDiagram
       gracefully handle cases where a specific version has already been
       published, logging a warning and proceeding to the next crate.
 
-    > **Current scope:** The implementation delivered in this phase plans the
-    > publication order and performs the pre-flight validation steps described
-    > above. Packaging and publish execution will follow in a subsequent phase.
+    > **Current scope:** The implementation now packages every publishable
+    > crate, in order, within the staged workspace using `cargo package`. The
+    > live `cargo publish` execution will follow in a subsequent phase; for
+    > now the workflow stops after successful packaging.
 
 ## 5. Refactoring and Project Structure
 

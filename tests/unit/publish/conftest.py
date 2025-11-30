@@ -2,22 +2,16 @@
 
 from __future__ import annotations
 
-import typing as typ
+from pathlib import Path
 
 import pytest
 
 from lading import config as config_module
 from lading.commands import publish
-from lading.workspace import (
-    WorkspaceCrate,
-    WorkspaceDependency,
-    WorkspaceGraph,
-)
-
-if typ.TYPE_CHECKING:
-    from pathlib import Path
+from lading.workspace import WorkspaceCrate, WorkspaceDependency, WorkspaceGraph
 
 __all__ = [
+    "ORIGINAL_INVOKE",
     "ORIGINAL_PREFLIGHT",
     "make_config",
     "make_crate",
@@ -81,8 +75,14 @@ def make_crate(
     dependencies: tuple[WorkspaceDependency, ...] | None = None,
 ) -> WorkspaceCrate:
     """Construct a :class:`WorkspaceCrate` rooted under ``root``."""
+    root = Path(root)
     crate_root = root / name
+    crate_root.mkdir(parents=True, exist_ok=True)
     manifest = crate_root / "Cargo.toml"
+    manifest.write_text(
+        f'[package]\nname = "{name}"\nversion = "0.1.0"\n',
+        encoding="utf-8",
+    )
     return WorkspaceCrate(
         id=f"{name}-id",
         name=name,
@@ -107,6 +107,8 @@ def make_dependency(name: str) -> WorkspaceDependency:
 
 def make_workspace(root: Path, *crates: WorkspaceCrate) -> WorkspaceGraph:
     """Construct a :class:`WorkspaceGraph` for ``crates`` rooted at ``root``."""
+    root = Path(root)
+    root.mkdir(parents=True, exist_ok=True)
     if not crates:
         crates = (make_crate(root, "alpha"),)
     return WorkspaceGraph(workspace_root=root, crates=tuple(crates))
@@ -134,6 +136,7 @@ def plan_with_crates(
     return publish.plan_publication(workspace, configuration)
 
 
+ORIGINAL_INVOKE = publish._invoke
 ORIGINAL_PREFLIGHT = publish._run_preflight_checks
 
 
@@ -143,3 +146,14 @@ def disable_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         publish, "_run_preflight_checks", lambda *_args, **_kwargs: None
     )
+    monkeypatch.setattr(
+        publish,
+        "_invoke",
+        lambda *_args, **_kwargs: (0, "", ""),
+    )
+
+
+@pytest.fixture
+def use_real_invoke(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Restore the original _invoke helper for tests that exercise it."""
+    monkeypatch.setattr(publish, "_invoke", ORIGINAL_INVOKE)

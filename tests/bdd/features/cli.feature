@@ -112,6 +112,12 @@ Feature: Lading CLI scaffolding
     When I invoke lading publish with that workspace
     Then the publish command lists crates in order "alpha, beta, gamma"
 
+  Scenario: Publish command packages crates in publish order
+    Given a workspace directory with configuration
+    And cargo metadata describes a workspace with a publish dependency chain
+    When I invoke lading publish with that workspace
+    Then the publish command packages crates in order "alpha, beta, gamma"
+
   Scenario: Publish command honours configured order
     Given a workspace directory with configuration
     And cargo metadata describes a workspace with a publish dependency chain

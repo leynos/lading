@@ -220,6 +220,7 @@ def _register_preflight_commands(config: _PreflightStubConfig) -> None:
             "test",
             "--workspace",
         ): _CommandResponse(exit_code=0),
+        ("cargo", "package"): _CommandResponse(exit_code=0),
     }
     defaults.update(config.overrides)
     for command, response in defaults.items():
@@ -430,6 +431,16 @@ def _get_test_invocations(
     raise AssertionError(message)
 
 
+def _get_package_invocations(
+    recorder: _PreflightInvocationRecorder,
+) -> list[tuple[tuple[str, ...], dict[str, str]]]:
+    """Return recorded cargo package invocations or raise if missing."""
+    if invocations := recorder.by_label("cargo::package"):
+        return invocations
+    message = "cargo package was not invoked for publishable crates"
+    raise AssertionError(message)
+
+
 def _get_test_invocation_envs(
     recorder: _PreflightInvocationRecorder,
 ) -> list[dict[str, str]]:
@@ -567,6 +578,21 @@ def then_publish_lists_crates_in_order(
         publish_lines.append(line[2:])
     actual = [entry.split(" @ ", 1)[0] for entry in publish_lines]
     assert actual == expected
+
+
+@then(parsers.parse('the publish command packages crates in order "{crate_names}"'))
+def then_publish_packages_crates_in_order(
+    preflight_recorder: _PreflightInvocationRecorder,
+    crate_names: str,
+) -> None:
+    """Assert that cargo package ran for each crate in publish order."""
+    expected = [name.strip() for name in crate_names.split(",") if name.strip()]
+    invocations = _get_package_invocations(preflight_recorder)
+    observed: list[str] = []
+    for _args, env in invocations:
+        cwd = env.get("PWD", "")
+        observed.append(Path(cwd).name if cwd else "")
+    assert observed == expected
 
 
 @then("the publish command reports that no crates are publishable")

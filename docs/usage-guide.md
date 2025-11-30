@@ -225,9 +225,12 @@ before continuing.
 
 When the configuration excludes additional crates, or a manifest sets the
 `publish = false` flag, the plan prints dedicated sections. These make the
-reasons for skipping crates visible to the operator. The current release stops
-after producing the plan and running the pre-flight checks; cargo packaging and
-publication will arrive in a later milestone.
+reasons for skipping crates visible to the operator. After staging the
+workspace, the command now runs `cargo package` for every publishable crate in
+plan order inside the staged copy. The workflow stops at the first non-zero
+exit code and surfaces any captured output so failures remain actionable.
+Publishing to crates.io is still a future milestone; the current default
+behaviour is a dry-run that validates packaging only.
 
 After staging the workspace, `publish` also normalises the root
 `Cargo.toml` according to the `publish.strip_patches` strategy:
