@@ -524,6 +524,55 @@ def _get_publish_invocations(
     raise AssertionError(message)
 
 
+def _extract_crate_names_from_invocations(
+    invocations: list[tuple[tuple[str, ...], dict[str, str]]],
+) -> list[str]:
+    """Extract crate directory names from invocation environments."""
+    crate_names: list[str] = []
+    for _args, env in invocations:
+        cwd = env.get("PWD", "")
+        crate_names.append(Path(cwd).name if cwd else "")
+    return crate_names
+
+
+def _assert_invocations_have_flag(
+    invocations: list[tuple[tuple[str, ...], dict[str, str]]],
+    flag: str,
+    command_name: str,
+) -> None:
+    """Assert that every invocation contains ``flag``."""
+    for args, _env in invocations:
+        if flag not in args:
+            message = f"Expected {flag!r} in {command_name} invocation"
+            raise AssertionError(message)
+
+
+def _assert_invocations_lack_flag(
+    invocations: list[tuple[tuple[str, ...], dict[str, str]]],
+    flag: str,
+    command_name: str,
+) -> None:
+    """Assert that no invocation contains ``flag``."""
+    for args, _env in invocations:
+        if flag in args:
+            message = f"Did not expect {flag!r} in {command_name} invocation"
+            raise AssertionError(message)
+
+
+def _assert_crate_order_matches(
+    observed: list[str],
+    expected: list[str],
+    context: str,
+) -> None:
+    """Assert observed crate names match expected order."""
+    if observed != expected:
+        message = (
+            f"Unexpected crate order for {context}: "
+            f"observed={observed!r}, expected={expected!r}"
+        )
+        raise AssertionError(message)
+
+
 def _get_test_invocation_envs(
     recorder: _PreflightInvocationRecorder,
 ) -> list[dict[str, str]]:
@@ -671,11 +720,8 @@ def then_publish_packages_crates_in_order(
     """Assert that cargo package ran for each crate in publish order."""
     expected = [name.strip() for name in crate_names.split(",") if name.strip()]
     invocations = _get_package_invocations(preflight_recorder)
-    observed: list[str] = []
-    for _args, env in invocations:
-        cwd = env.get("PWD", "")
-        observed.append(Path(cwd).name if cwd else "")
-    assert observed == expected
+    observed = _extract_crate_names_from_invocations(invocations)
+    _assert_crate_order_matches(observed, expected, "cargo package")
 
 
 @then(
@@ -689,14 +735,9 @@ def then_publish_runs_dry_run(
     """Assert that cargo publish --dry-run runs for each crate in order."""
     expected = [name.strip() for name in crate_names.split(",") if name.strip()]
     invocations = _get_publish_invocations(preflight_recorder)
-    observed: list[str] = []
-    for args, env in invocations:
-        if "--dry-run" not in args:
-            message = "Expected --dry-run flag in cargo publish invocation"
-            raise AssertionError(message)
-        cwd = env.get("PWD", "")
-        observed.append(Path(cwd).name if cwd else "")
-    assert observed == expected
+    _assert_invocations_have_flag(invocations, "--dry-run", "cargo publish")
+    observed = _extract_crate_names_from_invocations(invocations)
+    _assert_crate_order_matches(observed, expected, "cargo publish --dry-run order")
 
 
 @then(
@@ -710,14 +751,9 @@ def then_publish_runs_live(
     """Assert that live cargo publish runs without the dry-run flag."""
     expected = [name.strip() for name in crate_names.split(",") if name.strip()]
     invocations = _get_publish_invocations(preflight_recorder)
-    observed: list[str] = []
-    for args, env in invocations:
-        if "--dry-run" in args:
-            message = "Did not expect --dry-run flag in live cargo publish"
-            raise AssertionError(message)
-        cwd = env.get("PWD", "")
-        observed.append(Path(cwd).name if cwd else "")
-    assert observed == expected
+    _assert_invocations_lack_flag(invocations, "--dry-run", "cargo publish")
+    observed = _extract_crate_names_from_invocations(invocations)
+    _assert_crate_order_matches(observed, expected, "cargo publish live order")
 
 
 @then("the publish command reports that no crates are publishable")
