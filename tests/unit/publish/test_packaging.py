@@ -253,9 +253,7 @@ def test_publish_crates_continue_when_version_already_uploaded(
 
 
 def test_publish_crates_raise_on_failure(
-    publish_plan_and_prep: tuple[
-        publish.PublishPlan, publish.PublishPreparation, Path
-    ],
+    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
 ) -> None:
     """Unexpected cargo publish failures abort the workflow."""
     plan, preparation, _staging_root = publish_plan_and_prep
