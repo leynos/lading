@@ -202,6 +202,9 @@ built from a clean tree.
 python -m lading.cli --workspace-root /workspace/path publish
 ```
 
+Append `--live` to replace the default dry-run with real `cargo publish`
+invocations when you are ready to ship.
+
 Example output:
 
 ```text
@@ -226,11 +229,13 @@ before continuing.
 When the configuration excludes additional crates, or a manifest sets the
 `publish = false` flag, the plan prints dedicated sections. These make the
 reasons for skipping crates visible to the operator. After staging the
-workspace, the command now runs `cargo package` for every publishable crate in
-plan order inside the staged copy. The workflow stops at the first non-zero
-exit code and surfaces any captured output so failures remain actionable.
-Publishing to crates.io is still a future milestone; the current default
-behaviour is a dry-run that validates packaging only.
+workspace, the command runs `cargo package` for every publishable crate in
+plan order inside the staged copy. After packaging, Lading invokes
+`cargo publish --dry-run` for each crate so you can validate the full pipeline
+without uploading. Use `--live` to omit the `--dry-run` flag and perform the
+actual publication. If the registry reports that a crate version already
+exists, Lading logs a warning and continues with the remaining crates instead
+of aborting the run.
 
 After staging the workspace, `publish` also normalises the root
 `Cargo.toml` according to the `publish.strip_patches` strategy:

@@ -61,13 +61,13 @@ class _PreflightStubConfig:
     """Configuration for cmd-mox preflight command stubs."""
 
     cmd_mox: CmdMox
-    overrides: dict[tuple[str, ...], _CommandResponse] = dc.field(default_factory=dict)
+    overrides: dict[tuple[str, ...], ResponseProvider] = dc.field(default_factory=dict)
     recorder: _PreflightInvocationRecorder | None = None
 
 
 def _create_stub_config(
     cmd_mox: CmdMox,
-    preflight_overrides: dict[tuple[str, ...], _CommandResponse],
+    preflight_overrides: dict[tuple[str, ...], ResponseProvider],
     preflight_recorder: _PreflightInvocationRecorder,
 ) -> _PreflightStubConfig:
     """Build a stub configuration that records preflight invocations."""
@@ -79,8 +79,8 @@ def _create_stub_config(
 
 
 @pytest.fixture
-def preflight_overrides() -> dict[tuple[str, ...], _CommandResponse]:
-    """Provide per-scenario overrides for publish pre-flight commands."""
+def preflight_overrides() -> dict[tuple[str, ...], ResponseProvider]:
+    """Provide per-scenario overrides for publish command invocations."""
     return {}
 
 
@@ -159,8 +159,11 @@ class _CmdInvocation(typ.Protocol):
     args: typ.Sequence[str]
 
 
+ResponseProvider = _CommandResponse | typ.Callable[[_CmdInvocation], _CommandResponse]
+
+
 def _make_preflight_handler(
-    response: _CommandResponse,
+    response: ResponseProvider,
     expected_arguments: tuple[str, ...],
     recorder: _PreflightInvocationRecorder | None,
     label: str,
@@ -169,10 +172,15 @@ def _make_preflight_handler(
 
     def _handler(invocation: _CmdInvocation) -> tuple[str, str, int]:
         _validate_stub_arguments(expected_arguments, tuple(invocation.args))
+        active_response = response(invocation) if callable(response) else response
         if recorder is not None:
             env_mapping = dict(getattr(invocation, "env", {}))
             recorder.record(label, tuple(invocation.args), env_mapping)
-        return (response.stdout, response.stderr, response.exit_code)
+        return (
+            active_response.stdout,
+            active_response.stderr,
+            active_response.exit_code,
+        )
 
     return _handler
 
@@ -207,7 +215,7 @@ def test_resolve_preflight_expectation_normalises_cargo_commands(
 
 def _register_preflight_commands(config: _PreflightStubConfig) -> None:
     """Install cmd-mox doubles for publish pre-flight commands."""
-    defaults = {
+    defaults: dict[tuple[str, ...], ResponseProvider] = {
         ("git", "status", "--porcelain"): _CommandResponse(exit_code=0),
         (
             "cargo",
@@ -222,7 +230,26 @@ def _register_preflight_commands(config: _PreflightStubConfig) -> None:
         ): _CommandResponse(exit_code=0),
         ("cargo", "package"): _CommandResponse(exit_code=0),
     }
-    defaults.update(config.overrides)
+
+    publish_command: tuple[str, ...]
+    publish_response: ResponseProvider
+    for command, response in config.overrides.items():
+        if len(command) >= 2 and command[0] == "cargo" and command[1] == "publish":
+            publish_command = command
+            publish_response = response
+            break
+    else:
+        publish_command = ("cargo", "publish", "--dry-run")
+        publish_response = _CommandResponse(exit_code=0)
+
+    filtered_overrides = {
+        command: response
+        for command, response in config.overrides.items()
+        if not (len(command) >= 2 and command[0] == "cargo" and command[1] == "publish")
+    }
+
+    defaults.update(filtered_overrides)
+    defaults[publish_command] = publish_response
     for command, response in defaults.items():
         expectation_program, expectation_args = _resolve_preflight_expectation(command)
         config.cmd_mox.stub(expectation_program).runs(
@@ -258,7 +285,7 @@ def when_invoke_lading_publish(
     workspace_directory: Path,
     repo_root: Path,
     cmd_mox: CmdMox,
-    preflight_overrides: dict[tuple[str, ...], _CommandResponse],
+    preflight_overrides: dict[tuple[str, ...], ResponseProvider],
     preflight_recorder: _PreflightInvocationRecorder,
 ) -> dict[str, typ.Any]:
     """Execute the publish CLI via ``python -m`` and capture the result."""
@@ -274,7 +301,7 @@ def when_invoke_lading_publish_forbid_dirty(
     workspace_directory: Path,
     repo_root: Path,
     cmd_mox: CmdMox,
-    preflight_overrides: dict[tuple[str, ...], _CommandResponse],
+    preflight_overrides: dict[tuple[str, ...], ResponseProvider],
     preflight_recorder: _PreflightInvocationRecorder,
 ) -> dict[str, typ.Any]:
     """Execute the publish CLI with ``--forbid-dirty`` enabled."""
@@ -287,9 +314,32 @@ def when_invoke_lading_publish_forbid_dirty(
     )
 
 
+@when(
+    "I invoke lading publish with that workspace using --live",
+    target_fixture="cli_run",
+)
+def when_invoke_lading_publish_live(
+    workspace_directory: Path,
+    repo_root: Path,
+    cmd_mox: CmdMox,
+    preflight_overrides: dict[tuple[str, ...], ResponseProvider],
+    preflight_recorder: _PreflightInvocationRecorder,
+) -> dict[str, typ.Any]:
+    """Execute the publish CLI with live publishing enabled."""
+    if not any(command[:2] == ("cargo", "publish") for command in preflight_overrides):
+        preflight_overrides[("cargo", "publish")] = _CommandResponse(exit_code=0)
+    stub_config = _create_stub_config(cmd_mox, preflight_overrides, preflight_recorder)
+    return _invoke_publish_with_options(
+        repo_root,
+        workspace_directory,
+        stub_config,
+        "--live",
+    )
+
+
 @given("cargo check fails during publish pre-flight")
 def given_cargo_check_fails(
-    preflight_overrides: dict[tuple[str, ...], _CommandResponse],
+    preflight_overrides: dict[tuple[str, ...], ResponseProvider],
 ) -> None:
     """Simulate a failing cargo check command."""
     preflight_overrides[("cargo", "check", "--workspace", "--all-targets")] = (
@@ -299,7 +349,7 @@ def given_cargo_check_fails(
 
 @given("cargo test fails during publish pre-flight")
 def given_cargo_test_fails(
-    preflight_overrides: dict[tuple[str, ...], _CommandResponse],
+    preflight_overrides: dict[tuple[str, ...], ResponseProvider],
 ) -> None:
     """Simulate a failing cargo test command."""
     preflight_overrides[("cargo", "test", "--workspace")] = _CommandResponse(
@@ -310,7 +360,7 @@ def given_cargo_test_fails(
 @given(parsers.parse('cargo test fails with compiletest artifact "{relative_path}"'))
 def given_cargo_test_fails_with_artifact(
     workspace_directory: Path,
-    preflight_overrides: dict[tuple[str, ...], _CommandResponse],
+    preflight_overrides: dict[tuple[str, ...], ResponseProvider],
     relative_path: str,
 ) -> None:
     """Create ``relative_path`` and configure cargo test to reference it."""
@@ -323,9 +373,32 @@ def given_cargo_test_fails_with_artifact(
     )
 
 
+@given(parsers.parse('cargo publish reports crate "{crate_name}" already uploaded'))
+def given_cargo_publish_already_uploaded(
+    preflight_overrides: dict[tuple[str, ...], ResponseProvider],
+    crate_name: str,
+) -> None:
+    """Simulate cargo publish returning an already-uploaded error for ``crate_name``."""
+
+    def _handler(invocation: _CmdInvocation) -> _CommandResponse:
+        env_mapping = dict(getattr(invocation, "env", {}))
+        cwd = Path(env_mapping.get("PWD", ""))
+        if cwd.name == crate_name:
+            error_message = (
+                f"error: crate version `{crate_name} v0.1.0` is already uploaded"
+            )
+            return _CommandResponse(
+                exit_code=101,
+                stderr=error_message,
+            )
+        return _CommandResponse(exit_code=0)
+
+    preflight_overrides[("cargo", "publish", "--dry-run")] = _handler
+
+
 @given("the workspace has uncommitted changes")
 def given_workspace_dirty(
-    preflight_overrides: dict[tuple[str, ...], _CommandResponse],
+    preflight_overrides: dict[tuple[str, ...], ResponseProvider],
 ) -> None:
     """Simulate a dirty working tree for git status."""
     preflight_overrides[("git", "status", "--porcelain")] = _CommandResponse(
@@ -341,7 +414,7 @@ def given_workspace_dirty(
     )
 )
 def given_preflight_command_override(
-    preflight_overrides: dict[tuple[str, ...], _CommandResponse],
+    preflight_overrides: dict[tuple[str, ...], ResponseProvider],
     command: str,
     exit_code: str,
     stderr: str,
@@ -438,6 +511,16 @@ def _get_package_invocations(
     if invocations := recorder.by_label("cargo::package"):
         return invocations
     message = "cargo package was not invoked for publishable crates"
+    raise AssertionError(message)
+
+
+def _get_publish_invocations(
+    recorder: _PreflightInvocationRecorder,
+) -> list[tuple[tuple[str, ...], dict[str, str]]]:
+    """Return recorded cargo publish invocations or raise if missing."""
+    if invocations := recorder.by_label("cargo::publish"):
+        return invocations
+    message = "cargo publish was not invoked for publishable crates"
     raise AssertionError(message)
 
 
@@ -590,6 +673,48 @@ def then_publish_packages_crates_in_order(
     invocations = _get_package_invocations(preflight_recorder)
     observed: list[str] = []
     for _args, env in invocations:
+        cwd = env.get("PWD", "")
+        observed.append(Path(cwd).name if cwd else "")
+    assert observed == expected
+
+
+@then(
+    parsers.parse(
+        'the publish command performs cargo publish dry-run for crates "{crate_names}"'
+    )
+)
+def then_publish_runs_dry_run(
+    preflight_recorder: _PreflightInvocationRecorder, crate_names: str
+) -> None:
+    """Assert that cargo publish --dry-run runs for each crate in order."""
+    expected = [name.strip() for name in crate_names.split(",") if name.strip()]
+    invocations = _get_publish_invocations(preflight_recorder)
+    observed: list[str] = []
+    for args, env in invocations:
+        if "--dry-run" not in args:
+            message = "Expected --dry-run flag in cargo publish invocation"
+            raise AssertionError(message)
+        cwd = env.get("PWD", "")
+        observed.append(Path(cwd).name if cwd else "")
+    assert observed == expected
+
+
+@then(
+    parsers.parse(
+        'the publish command performs live cargo publish for crates "{crate_names}"'
+    )
+)
+def then_publish_runs_live(
+    preflight_recorder: _PreflightInvocationRecorder, crate_names: str
+) -> None:
+    """Assert that live cargo publish runs without the dry-run flag."""
+    expected = [name.strip() for name in crate_names.split(",") if name.strip()]
+    invocations = _get_publish_invocations(preflight_recorder)
+    observed: list[str] = []
+    for args, env in invocations:
+        if "--dry-run" in args:
+            message = "Did not expect --dry-run flag in live cargo publish"
+            raise AssertionError(message)
         cwd = env.get("PWD", "")
         observed.append(Path(cwd).name if cwd else "")
     assert observed == expected

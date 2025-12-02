@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import typing as typ
 
 if typ.TYPE_CHECKING:
@@ -169,3 +170,149 @@ def test_package_publishable_crates_prefers_stderr_over_stdout(tmp_path: Path) -
     message = str(excinfo.value)
     assert "stderr detail" in message
     assert "stdout detail" not in message
+
+
+def test_publish_crates_run_dry_run_in_order(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Cargo publish --dry-run runs for each crate in publish order."""
+    caplog.set_level(logging.INFO, logger="lading.commands.publish")
+    workspace_root = tmp_path / "workspace"
+    crates = make_dependency_chain(workspace_root)
+    plan = publish.plan_publication(
+        make_workspace(workspace_root, *crates), make_config()
+    )
+    staging_root = _prepare_staging_root(plan, tmp_path)
+    preparation = publish.PublishPreparation(
+        staging_root=staging_root,
+        copied_readmes=(),
+    )
+
+    calls: list[tuple[tuple[str, ...], Path | None]] = []
+
+    def runner(
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        del env
+        calls.append((tuple(command), cwd))
+        return 0, "", ""
+
+    publish._publish_crates(plan, preparation, runner=runner, live=False)
+
+    expected_roots = [
+        staging_root / crate.root_path.relative_to(plan.workspace_root)
+        for crate in plan.publishable
+    ]
+    assert calls == [
+        (("cargo", "publish", "--dry-run"), root) for root in expected_roots
+    ]
+    # Ensure we emit a helpful info log for the publish phase.
+    assert any("cargo publish" in message for message in caplog.messages)
+
+
+def test_publish_crates_run_live_without_dry_run(tmp_path: Path) -> None:
+    """Live mode omits the --dry-run flag when publishing crates."""
+    workspace_root = tmp_path / "workspace"
+    crates = make_dependency_chain(workspace_root)
+    plan = publish.plan_publication(
+        make_workspace(workspace_root, *crates), make_config()
+    )
+    staging_root = _prepare_staging_root(plan, tmp_path)
+    preparation = publish.PublishPreparation(
+        staging_root=staging_root,
+        copied_readmes=(),
+    )
+
+    calls: list[tuple[tuple[str, ...], Path | None]] = []
+
+    def runner(
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        del env
+        calls.append((tuple(command), cwd))
+        return 0, "", ""
+
+    publish._publish_crates(plan, preparation, runner=runner, live=True)
+
+    expected_roots = [
+        staging_root / crate.root_path.relative_to(plan.workspace_root)
+        for crate in plan.publishable
+    ]
+    assert calls == [(("cargo", "publish"), root) for root in expected_roots]
+
+
+def test_publish_crates_continue_when_version_already_uploaded(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Already-published versions log a warning and continue."""
+    caplog.set_level(logging.WARNING, logger="lading.commands.publish")
+    workspace_root = tmp_path / "workspace"
+    alpha, beta, _gamma = make_dependency_chain(workspace_root)
+    plan = publish.plan_publication(
+        make_workspace(workspace_root, alpha, beta), make_config()
+    )
+    staging_root = _prepare_staging_root(plan, tmp_path)
+    preparation = publish.PublishPreparation(
+        staging_root=staging_root,
+        copied_readmes=(),
+    )
+
+    calls: list[str] = []
+
+    def runner(
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        del env
+        crate_name = "" if cwd is None else cwd.name
+        calls.append(crate_name)
+        if crate_name == "alpha":
+            return (
+                101,
+                "",
+                "error: crate version `alpha v0.1.0` is already uploaded",
+            )
+        return (0, "", "")
+
+    publish._publish_crates(plan, preparation, runner=runner, live=False)
+
+    assert calls == ["alpha", "beta"]
+    assert any("already published" in message for message in caplog.messages)
+
+
+def test_publish_crates_raise_on_failure(tmp_path: Path) -> None:
+    """Unexpected cargo publish failures abort the workflow."""
+    workspace_root = tmp_path / "workspace"
+    crates = make_dependency_chain(workspace_root)
+    plan = publish.plan_publication(
+        make_workspace(workspace_root, *crates), make_config()
+    )
+    staging_root = _prepare_staging_root(plan, tmp_path)
+    preparation = publish.PublishPreparation(
+        staging_root=staging_root,
+        copied_readmes=(),
+    )
+
+    def failing_runner(
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        del command, cwd, env
+        return 1, "network offline", ""
+
+    with pytest.raises(publish.PublishPreflightError) as excinfo:
+        publish._publish_crates(plan, preparation, runner=failing_runner, live=False)
+
+    message = str(excinfo.value)
+    assert "cargo publish failed for crate" in message
+    assert "network offline" in message

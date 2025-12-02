@@ -510,16 +510,11 @@ sequenceDiagram
       workspace `README.md` into the crate's directory prior to packaging.
     - **Package:** Run `cargo package` to create the `.crate` file and verify
       its contents.
-    - **Publish:** Run `cargo publish`. If `--dry-run` is active (default
-      behaviour), the `--dry-run` flag will be passed to `cargo publish`. The
-      tool will check the command's output for confirmation. It will also
-      gracefully handle cases where a specific version has already been
-      published, logging a warning and proceeding to the next crate.
-
-    > **Current scope:** The implementation now packages every publishable
-    > crate, in order, within the staged workspace using `cargo package`. The
-    > live `cargo publish` execution will follow in a subsequent phase; for
-    > now the workflow stops after successful packaging.
+    - **Publish:** Run `cargo publish`. The command defaults to `--dry-run`
+      so operators can validate the full pipeline safely; passing `--live`
+      omits the flag and performs a real upload. When the registry reports
+      that a crate version already exists, Lading logs a warning and
+      continues to the next crate instead of aborting the publication loop.
 
 ## 5. Refactoring and Project Structure
 
