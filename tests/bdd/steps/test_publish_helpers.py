@@ -131,16 +131,31 @@ def _has_ordered_args(
     return any(checker(args, first, second) for args in invocations)
 
 
+def _assert_invocations_flag_presence(
+    invocations: list[tuple[tuple[str, ...], dict[str, str]]],
+    flag: str,
+    command_name: str,
+    *,
+    should_contain: bool,
+) -> None:
+    """Assert that invocations contain or lack ``flag`` based on ``should_contain``."""
+    for args, _env in invocations:
+        flag_present = flag in args
+        if flag_present != should_contain:
+            expectation = "Expected" if should_contain else "Did not expect"
+            message = f"{expectation} {flag!r} in {command_name} invocation"
+            raise AssertionError(message)
+
+
 def _assert_invocations_have_flag(
     invocations: list[tuple[tuple[str, ...], dict[str, str]]],
     flag: str,
     command_name: str,
 ) -> None:
     """Assert that every invocation contains ``flag``."""
-    for args, _env in invocations:
-        if flag not in args:
-            message = f"Expected {flag!r} in {command_name} invocation"
-            raise AssertionError(message)
+    _assert_invocations_flag_presence(
+        invocations, flag, command_name, should_contain=True
+    )
 
 
 def _assert_invocations_lack_flag(
@@ -149,10 +164,9 @@ def _assert_invocations_lack_flag(
     command_name: str,
 ) -> None:
     """Assert that no invocation contains ``flag``."""
-    for args, _env in invocations:
-        if flag in args:
-            message = f"Did not expect {flag!r} in {command_name} invocation"
-            raise AssertionError(message)
+    _assert_invocations_flag_presence(
+        invocations, flag, command_name, should_contain=False
+    )
 
 
 def _assert_crate_order_matches(
