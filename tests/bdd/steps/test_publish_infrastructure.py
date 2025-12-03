@@ -64,6 +64,19 @@ class _PreflightStubConfig:
     recorder: _PreflightInvocationRecorder | None = None
 
 
+@dc.dataclass
+class PreflightTestContext:
+    """Context for executing preflight tests with stubbed commands."""
+
+    cmd_mox: typ.Any
+    overrides: dict[tuple[str, ...], ResponseProvider]
+    recorder: _PreflightInvocationRecorder
+
+    def create_stub_config(self) -> _PreflightStubConfig:
+        """Create stub configuration from this context."""
+        return _create_stub_config(self.cmd_mox, self.overrides, self.recorder)
+
+
 class _CmdInvocation(typ.Protocol):
     """Protocol describing the cmd-mox invocation payload."""
 

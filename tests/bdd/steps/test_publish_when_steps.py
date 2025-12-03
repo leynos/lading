@@ -9,11 +9,9 @@ from pytest_bdd import when
 from lading.commands import publish
 
 from .test_publish_infrastructure import (
-    ResponseProvider,
+    PreflightTestContext,
     _CommandResponse,
-    _create_stub_config,
     _invoke_publish_with_options,
-    _PreflightInvocationRecorder,
 )
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
@@ -40,12 +38,10 @@ def when_run_publish_preflight_checks(workspace_directory: Path) -> dict[str, ty
 def when_invoke_lading_publish(
     workspace_directory: Path,
     repo_root: Path,
-    cmd_mox: _ImportedCmdMox,
-    preflight_overrides: dict[tuple[str, ...], ResponseProvider],
-    preflight_recorder: _PreflightInvocationRecorder,
+    preflight_test_context: PreflightTestContext,
 ) -> dict[str, typ.Any]:
     """Execute the publish CLI via ``python -m`` and capture the result."""
-    stub_config = _create_stub_config(cmd_mox, preflight_overrides, preflight_recorder)
+    stub_config = preflight_test_context.create_stub_config()
     return _invoke_publish_with_options(repo_root, workspace_directory, stub_config)
 
 
@@ -56,12 +52,10 @@ def when_invoke_lading_publish(
 def when_invoke_lading_publish_forbid_dirty(
     workspace_directory: Path,
     repo_root: Path,
-    cmd_mox: _ImportedCmdMox,
-    preflight_overrides: dict[tuple[str, ...], ResponseProvider],
-    preflight_recorder: _PreflightInvocationRecorder,
+    preflight_test_context: PreflightTestContext,
 ) -> dict[str, typ.Any]:
     """Execute the publish CLI with ``--forbid-dirty`` enabled."""
-    stub_config = _create_stub_config(cmd_mox, preflight_overrides, preflight_recorder)
+    stub_config = preflight_test_context.create_stub_config()
     return _invoke_publish_with_options(
         repo_root,
         workspace_directory,
@@ -77,14 +71,17 @@ def when_invoke_lading_publish_forbid_dirty(
 def when_invoke_lading_publish_live(
     workspace_directory: Path,
     repo_root: Path,
-    cmd_mox: _ImportedCmdMox,
-    preflight_overrides: dict[tuple[str, ...], ResponseProvider],
-    preflight_recorder: _PreflightInvocationRecorder,
+    preflight_test_context: PreflightTestContext,
 ) -> dict[str, typ.Any]:
     """Execute the publish CLI with live publishing enabled."""
-    if not any(command[:2] == ("cargo", "publish") for command in preflight_overrides):
-        preflight_overrides[("cargo", "publish")] = _CommandResponse(exit_code=0)
-    stub_config = _create_stub_config(cmd_mox, preflight_overrides, preflight_recorder)
+    if not any(
+        command[:2] == ("cargo", "publish")
+        for command in preflight_test_context.overrides
+    ):
+        preflight_test_context.overrides[("cargo", "publish")] = _CommandResponse(
+            exit_code=0
+        )
+    stub_config = preflight_test_context.create_stub_config()
     return _invoke_publish_with_options(
         repo_root,
         workspace_directory,
