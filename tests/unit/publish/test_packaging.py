@@ -89,13 +89,14 @@ def make_failing_runner(
 
 
 def _assert_packaging_failure_message_contains(
-    plan: publish.PublishPlan,
-    preparation: publish.PublishPreparation,
+    plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation],
     runner: cabc.Callable[..., tuple[int, str, str]],
     expected_in_message: str,
     not_expected_in_message: str | None = None,
 ) -> None:
     """Assert that packaging failure produces expected error message content."""
+    plan, preparation = plan_and_prep
+
     with pytest.raises(publish.PublishPreflightError) as excinfo:
         publish._package_publishable_crates(
             plan,
@@ -161,12 +162,11 @@ def test_package_publishable_crates_reports_stdout_on_failure(
     publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
 ) -> None:
     """Failure details fall back to stdout when stderr is empty."""
-    plan, preparation, _staging_root = publish_plan_and_prep
+    plan_and_prep = publish_plan_and_prep[:2]
     stdout_failure = make_failing_runner(stdout="stdout failure details")
 
     _assert_packaging_failure_message_contains(
-        plan,
-        preparation,
+        plan_and_prep,
         stdout_failure,
         expected_in_message="stdout failure details",
     )
@@ -176,12 +176,11 @@ def test_package_publishable_crates_prefers_stderr_over_stdout(
     publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
 ) -> None:
     """Error detail prefers stderr when both streams are populated."""
-    plan, preparation, _staging_root = publish_plan_and_prep
+    plan_and_prep = publish_plan_and_prep[:2]
     both_populated = make_failing_runner(stdout="stdout detail", stderr="stderr detail")
 
     _assert_packaging_failure_message_contains(
-        plan,
-        preparation,
+        plan_and_prep,
         both_populated,
         expected_in_message="stderr detail",
         not_expected_in_message="stdout detail",
