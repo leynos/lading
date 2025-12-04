@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import typing as typ
 
-if typ.TYPE_CHECKING:
+if typ.TYPE_CHECKING:  # pragma: no cover - typing helper only
     from lading.workspace import WorkspaceGraph
 
 

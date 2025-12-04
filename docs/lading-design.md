@@ -208,8 +208,6 @@ graph TD
     N --> O["Compose final publish plan and execute commands"]
 ```
 
-```
-
 ### 2.3. Workspace Discovery and Model
 
 The tool's internal representation of the workspace is critical for its
@@ -481,7 +479,7 @@ sequenceDiagram
     participant publish_plan
     participant publish_diagnostics
 
-    Caller->>publish.py: publish(..., forbid_dirty=...)
+    Caller->>publish.py: publish(…, forbid_dirty=…)
     publish.py->>publish.py: _build_preflight_environment(config.preflight)
     alt aux_build configured
         publish.py->>publish_execution: _run_aux_build_commands(workspace_root, commands, runner, env)
@@ -500,7 +498,7 @@ sequenceDiagram
     end
 ```
 
-3. **Iterate and Publish:** For each crate in the determined order:
+1. **Iterate and Publish:** For each crate in the determined order:
 
     - **Patch Handling (per-crate)**: If strip_patches is "per-crate" (or is
       unset and this is a live run), remove the specific patch entry for the
@@ -524,31 +522,18 @@ package structure for `lading`.
 **Proposed Directory Structure:**
 
 ```plaintext
-lading/
-├── __init__.py
-├── cli.py          # Cyclopts app definition and command wiring
-├── commands/
-│   ├── __init__.py
-│   ├── _shared.py  # Command-level helper utilities
-│   ├── bump.py     # Logic for the 'bump' subcommand
-│   └── publish.py  # Logic for the 'publish' subcommand
-├── config.py       # Frozen dataclasses for lading.toml
-├── utils/
-│   ├── __init__.py
-│   └── path.py     # Filesystem helpers such as normalise_workspace_root
-└── workspace/
+lading/ ├── __init__.py ├── cli.py          # Cyclopts app definition and
+command wiring ├── commands/ │   ├── __init__.py │   ├── _shared.py  #
+Command-level helper utilities │   ├── bump.py     # Logic for the 'bump'
+subcommand │   └── publish.py  # Logic for the 'publish' subcommand ├──
+config.py       # Frozen dataclasses for lading.toml ├── utils/ │   ├──
+__init__.py │   └── path.py     # Filesystem helpers such as
+normalise_workspace_root └── workspace/
     ├── __init__.py
     ├── metadata.py  # cargo metadata invocation and parsing
     └── models.py    # Workspace graph and manifest helpers
-tests/
-├── conftest.py
-├── fixtures/
-│   └── simple_workspace/
-│       ├── Cargo.toml
-│       └── lading.toml
-│       └── ...
-└── test_*.py
-pyproject.toml
+tests/ ├── conftest.py ├── fixtures/ │   └── simple_workspace/ │       ├──
+Cargo.toml │       └── lading.toml │       └── … └── test_*.py pyproject.toml
 ```
 
 This structure separates concerns, improves testability, and establishes a
@@ -578,3 +563,16 @@ and performs releases.
 
 This multi-layered approach will ensure correctness from the lowest-level
 utilities to the highest-level user-facing commands.
+
+### Phase 4 testing updates
+
+- Introduced `pytest-cov` as a development dependency so coverage can be
+  reported via `uv run pytest --cov` without additional tooling. Phase 4 sets a
+  floor of >90% line coverage for new modules; focused unit tests now exercise
+  configuration validation edges, publish manifest handling, cmd-mox IPC
+  fallbacks, and workspace model error paths to keep defensive code paths
+  observable.
+- Cmd-mox remains the default mechanism for mocking external commands. Tests
+  covering publish pre-flight and `cargo metadata` IPC use stubbed cmd-mox
+  modules rather than spawning real processes, keeping suites deterministic
+  while still traversing streaming/IPC code paths.

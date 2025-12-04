@@ -30,6 +30,7 @@ lading = "lading.cli:main"
 dev = [
     "pytest",
     "pytest-bdd",
+    "pytest-cov",
     "ruff",
     "pyright",
     "pytest-timeout",

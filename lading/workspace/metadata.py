@@ -13,7 +13,7 @@ from plumbum.commands.processes import CommandNotFound
 from lading.utils import normalise_workspace_root
 from lading.utils.process import log_command_invocation
 
-if typ.TYPE_CHECKING:
+if typ.TYPE_CHECKING:  # pragma: no cover - import-time typing aids only
     from pathlib import Path
 
     from plumbum.commands.base import BoundCommand

@@ -12,7 +12,7 @@ from cyclopts.config import Toml
 
 from lading.utils import normalise_workspace_root
 
-if typ.TYPE_CHECKING:
+if typ.TYPE_CHECKING:  # pragma: no cover - type checking only
     from pathlib import Path
 
 CONFIG_FILENAME = "lading.toml"

@@ -39,7 +39,7 @@ from tomlkit.toml_document import TOMLDocument
 
 from lading import config as config_module
 
-if typ.TYPE_CHECKING:
+if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers only
     from pathlib import Path
 
     from lading.commands.publish_plan import PublishPlan
