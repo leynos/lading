@@ -24,7 +24,12 @@ def _extract_staging_root_from_plan(lines: list[str]) -> Path:
         (line for line in lines if line.startswith("Staged workspace at:")), None
     )
     assert staging_line is not None, "Staging location not found in publish plan output"
-    return Path(staging_line.split(": ", 1)[1])
+    try:
+        _, root_str = staging_line.split(": ", 1)
+    except ValueError:
+        message = f"Malformed staging line in publish plan output: {staging_line!r}"
+        raise AssertionError(message) from None
+    return Path(root_str)
 
 
 def _load_staged_manifest(cli_run: dict[str, typ.Any]) -> TOMLDocument:

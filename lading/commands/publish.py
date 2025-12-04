@@ -473,7 +473,7 @@ def run(
     *,
     options: PublishOptions | None = None,
 ) -> str:
-    """Plan and prepare crate publication for ``workspace_root``."""
+    """Run pre-flight checks, package crates, and publish from ``workspace_root``."""
     root_path = normalise_workspace_root(workspace_root)
     effective_options = PublishOptions() if options is None else options
     configuration_override = configuration or effective_options.configuration

@@ -231,7 +231,7 @@ When the configuration excludes additional crates, or a manifest sets the
 reasons for skipping crates visible to the operator. After staging the
 workspace, the command runs `cargo package` for every publishable crate in
 plan order inside the staged copy. After packaging, Lading invokes
-`cargo publish --dry-run` for each crate so the full pipeline can be validated
+`cargo publish --dry-run` for each crate, so the full pipeline can be validated
 without uploading. Use `--live` to omit the `--dry-run` flag and perform the
 actual publication. If the registry reports that a crate version already
 exists, Lading logs a warning and continues with the remaining crates instead

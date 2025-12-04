@@ -35,7 +35,7 @@ def then_publish_prints_plan(cli_run: dict[str, typ.Any], crate_name: str) -> No
     """Assert that the publish command emits a publication plan summary."""
     assert cli_run["returncode"] == 0
     workspace = cli_run["workspace"]
-    lines = [line.strip() for line in cli_run["stdout"].splitlines() if line.strip()]
+    lines = _publish_plan_lines(cli_run)
     assert lines[0] == f"Publish plan for {workspace}"
     assert lines[1].startswith("Strip patch strategy:")
     assert f"- {crate_name} @ 0.1.0" in lines
@@ -84,9 +84,7 @@ def then_publish_excludes_preflight_crate(
 ) -> None:
     """Assert that cargo test pre-flight invocations skip ``crate_name``."""
     test_invocations = _get_test_invocations(preflight_recorder)
-    if not any(
-        args for args in test_invocations if _has_ordered_args_single(args, crate_name)
-    ):
+    if not any(_has_ordered_args_single(args, crate_name) for args in test_invocations):
         message = (
             f"Expected --exclude {crate_name!r} in cargo test pre-flight invocations"
         )
@@ -166,7 +164,7 @@ def then_publish_lists_crates_in_order(
     cli_run: dict[str, typ.Any], crate_names: str
 ) -> None:
     """Assert that publishable crates appear in the expected order."""
-    expected = [name.strip() for name in crate_names.split(",") if name.strip()]
+    expected = _split_names(crate_names)
     lines = _publish_plan_lines(cli_run)
     header = f"Crates to publish ({len(expected)}):"
     assert header in lines
@@ -201,7 +199,7 @@ def then_publish_runs_dry_run(
     preflight_recorder: _PreflightInvocationRecorder, crate_names: str
 ) -> None:
     """Assert that cargo publish --dry-run runs for each crate in order."""
-    expected = [name.strip() for name in crate_names.split(",") if name.strip()]
+    expected = _split_names(crate_names)
     invocations = _get_publish_invocations(preflight_recorder)
     _assert_invocations_have_flag(invocations, "--dry-run", "cargo publish")
     observed = _extract_crate_names_from_invocations(invocations)
@@ -217,7 +215,7 @@ def then_publish_runs_live(
     preflight_recorder: _PreflightInvocationRecorder, crate_names: str
 ) -> None:
     """Assert that live cargo publish runs without the dry-run flag."""
-    expected = [name.strip() for name in crate_names.split(",") if name.strip()]
+    expected = _split_names(crate_names)
     invocations = _get_publish_invocations(preflight_recorder)
     _assert_invocations_lack_flag(invocations, "--dry-run", "cargo publish")
     observed = _extract_crate_names_from_invocations(invocations)

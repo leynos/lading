@@ -64,7 +64,7 @@ class _PreflightStubConfig:
     recorder: _PreflightInvocationRecorder | None = None
 
 
-@dc.dataclass
+@dc.dataclass(frozen=True, slots=True)
 class PreflightTestContext:
     """Context for executing preflight tests with stubbed commands."""
 
@@ -245,6 +245,7 @@ def _invoke_publish_with_options(
             "cargo::test",
             ("--package", "foo", "--", "--ignored"),
         ),
+        (("cargo", "publish", "--dry-run"), "cargo::publish", ("--dry-run",)),
     ],
 )
 def test_resolve_preflight_expectation_normalises_cargo_commands(

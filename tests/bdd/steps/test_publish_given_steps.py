@@ -82,7 +82,13 @@ def given_cargo_publish_already_uploaded(
 
     def _handler(invocation: _CmdInvocation) -> _CommandResponse:
         env_mapping = dict(getattr(invocation, "env", {}))
-        cwd = Path(env_mapping.get("PWD", ""))
+        if "PWD" not in env_mapping:
+            message = (
+                "cargo publish pre-flight stub expected PWD in the invocation "
+                "environment"
+            )
+            raise AssertionError(message)
+        cwd = Path(env_mapping["PWD"])
         if cwd.name == crate_name:
             error_message = (
                 f"error: crate version `{crate_name} v0.1.0` is already uploaded"
