@@ -88,6 +88,28 @@ def make_failing_runner(
     return _runner
 
 
+def _assert_packaging_failure_message_contains(
+    plan: publish.PublishPlan,
+    preparation: publish.PublishPreparation,
+    runner: cabc.Callable[..., tuple[int, str, str]],
+    expected_in_message: str,
+    not_expected_in_message: str | None = None,
+) -> None:
+    """Assert that packaging failure produces expected error message content."""
+    with pytest.raises(publish.PublishPreflightError) as excinfo:
+        publish._package_publishable_crates(
+            plan,
+            preparation,
+            runner=runner,
+        )
+
+    message = str(excinfo.value)
+    assert "cargo package failed for crate alpha" in message
+    assert expected_in_message in message
+    if not_expected_in_message is not None:
+        assert not_expected_in_message not in message
+
+
 def test_package_publishable_crates_runs_in_plan_order(
     publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
 ) -> None:
@@ -142,16 +164,12 @@ def test_package_publishable_crates_reports_stdout_on_failure(
     plan, preparation, _staging_root = publish_plan_and_prep
     stdout_failure = make_failing_runner(stdout="stdout failure details")
 
-    with pytest.raises(publish.PublishPreflightError) as excinfo:
-        publish._package_publishable_crates(
-            plan,
-            preparation,
-            runner=stdout_failure,
-        )
-
-    message = str(excinfo.value)
-    assert "stdout failure details" in message
-    assert "cargo package failed for crate alpha" in message
+    _assert_packaging_failure_message_contains(
+        plan,
+        preparation,
+        stdout_failure,
+        expected_in_message="stdout failure details",
+    )
 
 
 def test_package_publishable_crates_prefers_stderr_over_stdout(
@@ -161,16 +179,13 @@ def test_package_publishable_crates_prefers_stderr_over_stdout(
     plan, preparation, _staging_root = publish_plan_and_prep
     both_populated = make_failing_runner(stdout="stdout detail", stderr="stderr detail")
 
-    with pytest.raises(publish.PublishPreflightError) as excinfo:
-        publish._package_publishable_crates(
-            plan,
-            preparation,
-            runner=both_populated,
-        )
-
-    message = str(excinfo.value)
-    assert "stderr detail" in message
-    assert "stdout detail" not in message
+    _assert_packaging_failure_message_contains(
+        plan,
+        preparation,
+        both_populated,
+        expected_in_message="stderr detail",
+        not_expected_in_message="stdout detail",
+    )
 
 
 def test_publish_crates_run_dry_run_in_order(
