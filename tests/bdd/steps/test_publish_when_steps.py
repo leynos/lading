@@ -12,12 +12,11 @@ from .test_publish_infrastructure import (
     PreflightTestContext,
     _CommandResponse,
     _invoke_publish_with_options,
+    _is_cargo_publish_command,
 )
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
     from pathlib import Path
-
-_ImportedCmdMox = typ.Any  # type: ignore[assignment]
 
 
 @when(
@@ -75,7 +74,7 @@ def when_invoke_lading_publish_live(
 ) -> dict[str, typ.Any]:
     """Execute the publish CLI with live publishing enabled."""
     if not any(
-        command[:2] == ("cargo", "publish")
+        _is_cargo_publish_command(command)
         for command in preflight_test_context.overrides
     ):
         preflight_test_context.overrides[("cargo", "publish")] = _CommandResponse(

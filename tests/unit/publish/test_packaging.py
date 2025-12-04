@@ -71,9 +71,7 @@ class CallTrackingRunner:
 
 def make_failing_runner(
     stdout: str = "", stderr: str = ""
-) -> cabc.Callable[
-    [cabc.Sequence[str]], tuple[int, str, str]
-]:  # pragma: no cover - simple factory
+) -> cabc.Callable[..., tuple[int, str, str]]:  # pragma: no cover - simple factory
     """Return a runner that always fails with exit code 1."""
 
     def _runner(

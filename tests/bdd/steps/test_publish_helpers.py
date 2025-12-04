@@ -41,7 +41,7 @@ def _get_patch_entries(document: typ.Mapping[str, typ.Any]) -> dict[str, typ.Any
     if not isinstance(patch_table, typ.Mapping):
         return {}
     crates_io = patch_table.get("crates-io")
-    return {} if not isinstance(crates_io, typ.Mapping) else dict(crates_io)
+    return dict(crates_io) if isinstance(crates_io, typ.Mapping) else {}
 
 
 def _split_names(crate_names: str) -> list[str]:
@@ -102,10 +102,10 @@ def _get_test_invocation_envs(
 
 def _has_contiguous_args(args: tuple[str, ...], first: str, second: str) -> bool:
     """Return True when ``first`` is immediately followed by ``second`` in ``args``."""
-    for index in range(len(args) - 1):
-        if args[index] == first and args[index + 1] == second:
-            return True
-    return False
+    return any(
+        args[index] == first and args[index + 1] == second
+        for index in range(len(args) - 1)
+    )
 
 
 def _has_ordered_args_non_contiguous(

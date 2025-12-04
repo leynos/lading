@@ -144,7 +144,7 @@ def then_cargo_test_env_contains(
 ) -> None:
     """Assert that cargo test env propagates ``name`` with ``value``."""
     envs = _get_test_invocation_envs(preflight_recorder)
-    if not any(environment.get(name) == value for environment in envs):
+    if all(environment.get(name) != value for environment in envs):
         message = f"Expected cargo test env {name}={value!r}"
         raise AssertionError(message)
 
@@ -156,7 +156,7 @@ def then_cargo_test_env_rustflags_contains(
 ) -> None:
     """Assert that cargo test RUSTFLAGS contains ``snippet``."""
     envs = _get_test_invocation_envs(preflight_recorder)
-    if not any(snippet in environment.get("RUSTFLAGS", "") for environment in envs):
+    if all(snippet not in environment.get("RUSTFLAGS", "") for environment in envs):
         message = f"Expected {snippet!r} in cargo test RUSTFLAGS"
         raise AssertionError(message)
 

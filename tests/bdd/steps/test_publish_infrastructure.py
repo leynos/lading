@@ -199,7 +199,7 @@ def _register_preflight_commands(config: _PreflightStubConfig) -> None:
         if not _is_cargo_publish_command(command)
     }
 
-    defaults.update(filtered_overrides)
+    defaults |= filtered_overrides
     defaults[publish_command] = publish_response
     for command, response in defaults.items():
         expectation_program, expectation_args = _resolve_preflight_expectation(command)

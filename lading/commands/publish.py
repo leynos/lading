@@ -364,7 +364,8 @@ def _package_publishable_crates(
 _ALREADY_PUBLISHED_MARKERS: tuple[str, ...] = (
     "already uploaded",
     "already published",
-    "already exists",
+    "already exists on crates.io",
+    "already exists on crates.io index",
 )
 
 
