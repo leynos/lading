@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import atexit
 import dataclasses as dc
+import logging
 import os
 import shutil
 import tempfile
@@ -44,6 +45,8 @@ _split_command = split_command
 _append_section = append_section
 _format_plan = format_plan
 
+LOGGER = logging.getLogger(__name__)
+
 if typ.TYPE_CHECKING:
     from lading.config import LadingConfig
     from lading.workspace import WorkspaceCrate, WorkspaceGraph
@@ -68,6 +71,10 @@ class PublishOptions:
     ----------
     allow_dirty:
         When ``True`` the git cleanliness guard is skipped.
+    live:
+        When :data:`True`, execute ``cargo publish`` without ``--dry-run``.
+        Defaults to :data:`False` so publishing remains a dry-run unless
+        explicitly enabled.
     build_directory:
         Optional directory used to stage workspace artifacts. When ``None``,
         a temporary directory is created for each invocation.
@@ -89,6 +96,7 @@ class PublishOptions:
     """
 
     allow_dirty: bool = True
+    live: bool = False
     build_directory: Path | None = None
     preserve_symlinks: bool = True
     cleanup: bool = False
@@ -107,6 +115,10 @@ class PublishPreparation:
 
 class PublishPreflightError(RuntimeError):
     """Raised when required pre-publication checks fail."""
+
+
+class PublishError(PublishPreflightError):
+    """Raised when publishing crates fails after pre-flight checks."""
 
 
 def _build_preflight_environment(
@@ -327,6 +339,23 @@ def _resolve_staged_crate_root(
     return staged_root
 
 
+def _format_cargo_failure_message(
+    command: str,
+    crate_name: str,
+    exit_code: int,
+    output: tuple[str, str],
+) -> str:
+    """Format a consistent error message for cargo command failures."""
+    stdout, stderr = output
+    detail = (stderr or stdout).strip()
+    message = (
+        f"cargo {command} failed for crate {crate_name} with exit code {exit_code}"
+    )
+    if detail:
+        message = f"{message}: {detail}"
+    return message
+
+
 def _package_publishable_crates(
     plan: PublishPlan,
     preparation: PublishPreparation,
@@ -343,14 +372,73 @@ def _package_publishable_crates(
             env=None,
         )
         if exit_code != 0:
-            detail = (stderr or stdout).strip()
-            message = (
-                f"cargo package failed for crate {crate.name} "
-                f"with exit code {exit_code}"
+            message = _format_cargo_failure_message(
+                "package", crate.name, exit_code, (stdout, stderr)
             )
-            if detail:
-                message = f"{message}: {detail}"
             raise PublishPreflightError(message)
+
+
+_ALREADY_PUBLISHED_MARKERS: tuple[str, ...] = (
+    "already uploaded",
+    "already published",
+    "already exists on crates.io",
+    "already exists on crates.io index",
+)
+
+_CARGO_REGISTRY_ERROR_CODE = 101
+
+
+def _is_already_published_error(exit_code: int, stdout: str, stderr: str) -> bool:
+    """Return True when ``cargo publish`` failed because the version exists.
+
+    Cargo returns exit code 101 for registry errors including already-published
+    versions. This function checks both the exit code and output to minimise
+    false positives from unrelated failures.
+    """
+    # Only consider exit code 101 (cargo registry error)
+    if exit_code != _CARGO_REGISTRY_ERROR_CODE:
+        return False
+
+    haystack = f"{stdout}\n{stderr}".lower()
+    return any(marker in haystack for marker in _ALREADY_PUBLISHED_MARKERS)
+
+
+def _publish_crates(
+    plan: PublishPlan,
+    preparation: PublishPreparation,
+    *,
+    runner: _CommandRunner,
+    live: bool,
+) -> None:
+    """Publish each crate in order, respecting dry-run vs live mode."""
+    staging_root = preparation.staging_root
+    publish_args: tuple[str, ...] = () if live else ("--dry-run",)
+    for crate in plan.publishable:
+        crate_root = _resolve_staged_crate_root(crate, plan, staging_root)
+        LOGGER.info(
+            "Running cargo publish%s for crate %s",
+            "" if live else " --dry-run",
+            crate.name,
+        )
+        exit_code, stdout, stderr = runner(
+            ("cargo", "publish", *publish_args),
+            cwd=crate_root,
+            env=None,
+        )
+        if exit_code == 0:
+            continue
+        if _is_already_published_error(exit_code, stdout, stderr):
+            LOGGER.warning(
+                "Crate %s @ %s is already published; skipping",
+                crate.name,
+                crate.version,
+            )
+            continue
+
+        message = _format_cargo_failure_message(
+            "publish", crate.name, exit_code, (stdout, stderr)
+        )
+        raise PublishError(message)
 
 
 def _ensure_configuration(
@@ -389,7 +477,7 @@ def run(
     *,
     options: PublishOptions | None = None,
 ) -> str:
-    """Plan and prepare crate publication for ``workspace_root``."""
+    """Run pre-flight checks, package crates, and publish from ``workspace_root``."""
     root_path = normalise_workspace_root(workspace_root)
     effective_options = PublishOptions() if options is None else options
     configuration_override = configuration or effective_options.configuration
@@ -417,6 +505,12 @@ def run(
         plan,
         preparation,
         runner=command_runner,
+    )
+    _publish_crates(
+        plan,
+        preparation,
+        runner=command_runner,
+        live=effective_options.live,
     )
     plan_message = _format_plan(
         plan, strip_patches=active_configuration.publish.strip_patches

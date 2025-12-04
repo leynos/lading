@@ -118,6 +118,25 @@ Feature: Lading CLI scaffolding
     When I invoke lading publish with that workspace
     Then the publish command packages crates in order "alpha, beta, gamma"
 
+  Scenario: Publish command executes cargo publish in dry-run mode
+    Given a workspace directory with configuration
+    And cargo metadata describes a workspace with a publish dependency chain
+    When I invoke lading publish with that workspace
+    Then the publish command performs cargo publish dry-run for crates "alpha, beta, gamma"
+
+  Scenario: Publish command supports live publishing
+    Given a workspace directory with configuration
+    And cargo metadata describes a workspace with a publish dependency chain
+    When I invoke lading publish with that workspace using --live
+    Then the publish command performs live cargo publish for crates "alpha, beta, gamma"
+
+  Scenario: Publish command continues past already published crate versions
+    Given a workspace directory with configuration
+    And cargo metadata describes a workspace with a publish dependency chain
+    And cargo publish reports crate "alpha" already uploaded
+    When I invoke lading publish with that workspace
+    Then the publish command performs cargo publish dry-run for crates "alpha, beta, gamma"
+
   Scenario: Publish command honours configured order
     Given a workspace directory with configuration
     And cargo metadata describes a workspace with a publish dependency chain

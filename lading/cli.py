@@ -36,6 +36,12 @@ _DRY_RUN_PARAMETER = Parameter(
 )
 DryRunFlag = typ.Annotated[bool, _DRY_RUN_PARAMETER]
 
+_LIVE_PARAMETER = Parameter(
+    name="live",
+    help="Run cargo publish without --dry-run; default behaviour is dry-run.",
+)
+LiveFlag = typ.Annotated[bool, _LIVE_PARAMETER]
+
 _FORBID_DIRTY_PARAMETER = Parameter(
     name="forbid-dirty",
     help=("Require a clean working tree before running publish pre-flight checks."),
@@ -285,8 +291,14 @@ def publish(
     workspace_root: WorkspaceRootOption | None = None,
     *,
     forbid_dirty: ForbidDirtyFlag = False,
+    live: LiveFlag = False,
 ) -> str:
-    """Execute publish planning with pre-flight checks."""
+    """Run pre-flight checks, package crates, and execute cargo publish.
+
+    The command performs pre-flight validation, stages the workspace, runs
+    ``cargo package`` for each publishable crate, and then executes ``cargo
+    publish`` (dry-run by default, live when ``--live`` is supplied).
+    """
     resolved = normalise_workspace_root(workspace_root)
     return _run_with_context(
         resolved,
@@ -294,7 +306,10 @@ def publish(
             root,
             configuration,
             workspace,
-            options=commands.publish.PublishOptions(allow_dirty=not forbid_dirty),
+            options=commands.publish.PublishOptions(
+                allow_dirty=not forbid_dirty,
+                live=live,
+            ),
         ),
     )
 

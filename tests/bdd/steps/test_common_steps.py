@@ -174,4 +174,6 @@ def _then_dependency_requirement_step(
 
 # Import subcommand-specific steps so their definitions register with pytest-bdd.
 from . import test_bump_steps as _bump_steps  # noqa: E402,F401  # isort: skip
-from . import test_publish_steps as _publish_steps  # noqa: E402,F401  # isort: skip
+from . import test_publish_given_steps as _publish_given  # noqa: E402,F401  # isort: skip
+from . import test_publish_when_steps as _publish_when  # noqa: E402,F401  # isort: skip
+from . import test_publish_then_steps as _publish_then  # noqa: E402,F401  # isort: skip
