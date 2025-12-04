@@ -223,8 +223,12 @@ def test_publish_crates_run_live_without_dry_run(
     assert runner.calls == [(("cargo", "publish"), root) for root in expected_roots]
 
 
+@pytest.mark.parametrize(
+    "live",
+    [pytest.param(False, id="dry-run"), pytest.param(True, id="live")],
+)
 def test_publish_crates_continue_when_version_already_uploaded(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, *, live: bool
 ) -> None:
     """Already-published versions log a warning and continue."""
     caplog.set_level(logging.WARNING, logger="lading.commands.publish")
@@ -258,7 +262,7 @@ def test_publish_crates_continue_when_version_already_uploaded(
             )
         return (0, "", "")
 
-    publish._publish_crates(plan, preparation, runner=runner, live=False)
+    publish._publish_crates(plan, preparation, runner=runner, live=live)
 
     assert calls == ["alpha", "beta"]
     assert any("already published" in message for message in caplog.messages)
