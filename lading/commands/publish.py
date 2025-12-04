@@ -117,6 +117,10 @@ class PublishPreflightError(RuntimeError):
     """Raised when required pre-publication checks fail."""
 
 
+class PublishError(PublishPreflightError):
+    """Raised when publishing crates fails after pre-flight checks."""
+
+
 def _build_preflight_environment(
     overrides: tuple[tuple[str, str], ...],
 ) -> dict[str, str]:
@@ -434,7 +438,7 @@ def _publish_crates(
         message = _format_cargo_failure_message(
             "publish", crate.name, exit_code, (stdout, stderr)
         )
-        raise PublishPreflightError(message)
+        raise PublishError(message)
 
 
 def _ensure_configuration(
