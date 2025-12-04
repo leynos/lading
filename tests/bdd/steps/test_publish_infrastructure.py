@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses as dc
 import os
 import typing as typ
@@ -165,7 +166,15 @@ def _create_stub_config(
 
 
 def _register_preflight_commands(config: _PreflightStubConfig) -> None:
-    """Install cmd-mox doubles for publish pre-flight commands."""
+    """Install cmd-mox doubles for publish pre-flight commands.
+
+    Notes
+    -----
+    Only a single cargo publish override is honoured. If multiple cargo publish
+    entries are present in ``config.overrides``, the first inserted entry
+    determines the stubbed behaviour.
+
+    """
     defaults: dict[tuple[str, ...], ResponseProvider] = {
         ("git", "status", "--porcelain"): _CommandResponse(exit_code=0),
         (
@@ -219,16 +228,22 @@ def _invoke_publish_with_options(
     """Register preflight doubles, enable stubs, and run the CLI."""
     from .test_common_steps import _run_cli
 
+    @contextlib.contextmanager
+    def _cmd_mox_stub_env_enabled() -> typ.Iterator[None]:
+        """Temporarily enable CMD_MOX_STUB_ENV_VAR for cmd-mox stubs."""
+        previous = os.environ.get(metadata_module.CMD_MOX_STUB_ENV_VAR)
+        os.environ[metadata_module.CMD_MOX_STUB_ENV_VAR] = "1"
+        try:
+            yield
+        finally:
+            if previous is None:
+                os.environ.pop(metadata_module.CMD_MOX_STUB_ENV_VAR, None)
+            else:
+                os.environ[metadata_module.CMD_MOX_STUB_ENV_VAR] = previous
+
     _register_preflight_commands(stub_config)
-    previous = os.environ.get(metadata_module.CMD_MOX_STUB_ENV_VAR)
-    os.environ[metadata_module.CMD_MOX_STUB_ENV_VAR] = "1"
-    try:
+    with _cmd_mox_stub_env_enabled():
         return _run_cli(repo_root, workspace_directory, "publish", *extra_args)
-    finally:
-        if previous is None:
-            os.environ.pop(metadata_module.CMD_MOX_STUB_ENV_VAR, None)
-        else:
-            os.environ[metadata_module.CMD_MOX_STUB_ENV_VAR] = previous
 
 
 @pytest.mark.parametrize(

@@ -293,7 +293,12 @@ def publish(
     forbid_dirty: ForbidDirtyFlag = False,
     live: LiveFlag = False,
 ) -> str:
-    """Execute publish planning with pre-flight checks."""
+    """Run pre-flight checks, package crates, and execute cargo publish.
+
+    The command performs pre-flight validation, stages the workspace, runs
+    ``cargo package`` for each publishable crate, and then executes ``cargo
+    publish`` (dry-run by default, live when ``--live`` is supplied).
+    """
     resolved = normalise_workspace_root(workspace_root)
     return _run_with_context(
         resolved,
