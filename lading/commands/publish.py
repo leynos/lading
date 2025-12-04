@@ -335,6 +335,23 @@ def _resolve_staged_crate_root(
     return staged_root
 
 
+def _format_cargo_failure_message(
+    command: str,
+    crate_name: str,
+    exit_code: int,
+    output: tuple[str, str],
+) -> str:
+    """Format a consistent error message for cargo command failures."""
+    stdout, stderr = output
+    detail = (stderr or stdout).strip()
+    message = (
+        f"cargo {command} failed for crate {crate_name} with exit code {exit_code}"
+    )
+    if detail:
+        message = f"{message}: {detail}"
+    return message
+
+
 def _package_publishable_crates(
     plan: PublishPlan,
     preparation: PublishPreparation,
@@ -351,13 +368,9 @@ def _package_publishable_crates(
             env=None,
         )
         if exit_code != 0:
-            detail = (stderr or stdout).strip()
-            message = (
-                f"cargo package failed for crate {crate.name} "
-                f"with exit code {exit_code}"
+            message = _format_cargo_failure_message(
+                "package", crate.name, exit_code, (stdout, stderr)
             )
-            if detail:
-                message = f"{message}: {detail}"
             raise PublishPreflightError(message)
 
 
@@ -368,11 +381,20 @@ _ALREADY_PUBLISHED_MARKERS: tuple[str, ...] = (
     "already exists on crates.io index",
 )
 
+_CARGO_REGISTRY_ERROR_CODE = 101
+
 
 def _is_already_published_error(exit_code: int, stdout: str, stderr: str) -> bool:
-    """Return True when ``cargo publish`` failed because the version exists."""
-    if exit_code == 0:
+    """Return True when ``cargo publish`` failed because the version exists.
+
+    Cargo returns exit code 101 for registry errors including already-published
+    versions. This function checks both the exit code and output to minimise
+    false positives from unrelated failures.
+    """
+    # Only consider exit code 101 (cargo registry error)
+    if exit_code != _CARGO_REGISTRY_ERROR_CODE:
         return False
+
     haystack = f"{stdout}\n{stderr}".lower()
     return any(marker in haystack for marker in _ALREADY_PUBLISHED_MARKERS)
 
@@ -409,12 +431,9 @@ def _publish_crates(
             )
             continue
 
-        detail = (stderr or stdout).strip()
-        message = (
-            f"cargo publish failed for crate {crate.name} with exit code {exit_code}"
+        message = _format_cargo_failure_message(
+            "publish", crate.name, exit_code, (stdout, stderr)
         )
-        if detail:
-            message = f"{message}: {detail}"
         raise PublishPreflightError(message)
 
 
