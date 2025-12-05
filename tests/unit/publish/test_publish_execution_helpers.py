@@ -15,19 +15,12 @@ from lading.commands.publish import PublishPreflightError
 
 
 @pytest.fixture
-def mock_cmd_mox_env_module() -> type:
-    """Provide a cmd-mox environment module stub with required constants."""
+def mock_cmd_mox_modules(tmp_path: Path) -> SimpleNamespace:
+    """Provide complete cmd-mox module stubs for passthrough handling."""
 
     class _Env:
         CMOX_IPC_SOCKET_ENV = "CMOX_IPC_SOCKET"
         CMOX_REAL_COMMAND_ENV_PREFIX = "CMOX_REAL_"
-
-    return _Env
-
-
-@pytest.fixture
-def mock_cmd_mox_ipc_module() -> type:
-    """Provide a cmd-mox IPC module stub with response container types."""
 
     class _IPC:
         class Response:
@@ -54,15 +47,6 @@ def mock_cmd_mox_ipc_module() -> type:
                 exit_code=getattr(result, "exit_code", 0),
             )
 
-    return _IPC
-
-
-@pytest.fixture
-def mock_cmd_mox_command_runner(
-    mock_cmd_mox_ipc_module: type,
-) -> type:
-    """Provide a cmd-mox command runner stub for passthrough handling."""
-
     class _CommandRunner:
         def prepare_environment(
             self,
@@ -70,7 +54,7 @@ def mock_cmd_mox_command_runner(
             extra_env: dict[str, str],
             invocation_env: dict[str, str],
         ) -> dict[str, str]:
-            shim_dir = Path(os.environ.get("CMOX_IPC_SOCKET", "")).parent
+            shim_dir = (tmp_path / "cmox" / "shim").parent
             env = {"PATH": f"{lookup_path}{os.pathsep}{shim_dir}{os.pathsep}/usr/bin"}
             env.update(extra_env)
             env.update(invocation_env)
@@ -78,12 +62,14 @@ def mock_cmd_mox_command_runner(
 
         def resolve_command_with_override(
             self, command: str, path: str, override: str | None
-        ) -> mock_cmd_mox_ipc_module.Response:
-            return mock_cmd_mox_ipc_module.Response(
-                stdout="pass", stderr="through", exit_code=0
-            )
+        ) -> _IPC.Response:
+            return _IPC.Response(stdout="pass", stderr="through", exit_code=0)
 
-    return _CommandRunner
+    return SimpleNamespace(
+        env_module=_Env,
+        ipc_module=_IPC,
+        command_runner=_CommandRunner,
+    )
 
 
 def test_build_cmd_mox_invocation_env_merges_overrides(
@@ -148,9 +134,7 @@ def test_handle_cmd_mox_passthrough_returns_unmodified_response() -> None:
 def test_handle_cmd_mox_passthrough_reports_response(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
-    mock_cmd_mox_env_module: type,
-    mock_cmd_mox_ipc_module: type,
-    mock_cmd_mox_command_runner: type,
+    mock_cmd_mox_modules: SimpleNamespace,
 ) -> None:
     """Passthrough directives resolved to responses should be reported back."""
     socket_path = str(tmp_path / "cmox" / "shim" / "socket")
@@ -168,9 +152,9 @@ def test_handle_cmd_mox_passthrough_reports_response(
         stdin="",
     )
     modules = publish_execution.CmdMoxModules(
-        ipc=mock_cmd_mox_ipc_module(),
-        env=mock_cmd_mox_env_module,
-        command_runner=mock_cmd_mox_command_runner(),
+        ipc=mock_cmd_mox_modules.ipc_module(),
+        env=mock_cmd_mox_modules.env_module,
+        command_runner=mock_cmd_mox_modules.command_runner(),
     )
     response = SimpleNamespace(passthrough=directive)
 
@@ -182,7 +166,7 @@ def test_handle_cmd_mox_passthrough_reports_response(
     )
 
     assert streamed is False
-    assert isinstance(returned, mock_cmd_mox_ipc_module.Response)
+    assert isinstance(returned, mock_cmd_mox_modules.ipc_module.Response)
     assert returned.stdout == "pass"
 
 
