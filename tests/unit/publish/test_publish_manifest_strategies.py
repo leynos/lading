@@ -30,41 +30,47 @@ def _write_manifest(path: Path, body: str) -> None:
     path.write_text(body, encoding="utf-8")
 
 
+def _test_strip_patch_strategy_helper(
+    tmp_path: Path,
+    manifest_content: str,
+    publishable_names: tuple[str, ...],
+    strategy: str,
+) -> tomlkit.TOMLDocument:
+    """Write, mutate, and reload a staged manifest for strip patch checks."""
+    manifest_path = tmp_path / "Cargo.toml"
+    _write_manifest(manifest_path, manifest_content)
+    plan = _make_plan(tmp_path, publishable_names)
+    publish_manifest._apply_strip_patch_strategy(tmp_path, plan, strategy)
+    return tomlkit.parse(manifest_path.read_text(encoding="utf-8"))
+
+
 def test_apply_strip_patch_strategy_removes_all_entries(tmp_path: Path) -> None:
     """The 'all' strategy should drop the entire patch table."""
-    manifest_path = tmp_path / "Cargo.toml"
-    _write_manifest(
-        manifest_path,
+    document = _test_strip_patch_strategy_helper(
+        tmp_path,
         """
         [patch.crates-io]
         alpha = { path = "../alpha" }
         serde = { git = "https://example.com/serde" }
         """,
+        ("alpha",),
+        "all",
     )
-    plan = _make_plan(tmp_path, ("alpha",))
-
-    publish_manifest._apply_strip_patch_strategy(tmp_path, plan, "all")
-
-    document = tomlkit.parse(manifest_path.read_text(encoding="utf-8"))
     assert "patch" not in document
 
 
 def test_apply_strip_patch_strategy_removes_publishable_entries(tmp_path: Path) -> None:
     """The per-crate strategy should prune only publishable crate entries."""
-    manifest_path = tmp_path / "Cargo.toml"
-    _write_manifest(
-        manifest_path,
+    document = _test_strip_patch_strategy_helper(
+        tmp_path,
         """
         [patch.crates-io]
         alpha = { path = "../alpha" }
         serde = { git = "https://example.com/serde" }
         """,
+        ("alpha",),
+        "per-crate",
     )
-    plan = _make_plan(tmp_path, ("alpha",))
-
-    publish_manifest._apply_strip_patch_strategy(tmp_path, plan, "per-crate")
-
-    document = tomlkit.parse(manifest_path.read_text(encoding="utf-8"))
     crates_io = document["patch"]["crates-io"]
     assert "alpha" not in crates_io
     assert "serde" in crates_io
@@ -95,19 +101,15 @@ def test_apply_strategy_to_patches_rejects_unknown_strategy(tmp_path: Path) -> N
 
 def test_apply_strip_patch_strategy_handles_unmodified_manifest(tmp_path: Path) -> None:
     """When no matching crates exist, the manifest should be left untouched."""
-    manifest_path = tmp_path / "Cargo.toml"
-    _write_manifest(
-        manifest_path,
+    document = _test_strip_patch_strategy_helper(
+        tmp_path,
         """
         [patch.crates-io]
         other = { path = "../other" }
         """,
+        ("alpha",),
+        "per-crate",
     )
-    plan = _make_plan(tmp_path, ("alpha",))
-
-    publish_manifest._apply_strip_patch_strategy(tmp_path, plan, "per-crate")
-
-    document = tomlkit.parse(manifest_path.read_text(encoding="utf-8"))
     assert "other" in document["patch"]["crates-io"]
 
 
