@@ -417,7 +417,7 @@ involved to the operator. When `publish.order` is configured the planner
 validates that every publishable crate appears exactly once and that no unknown
 names are listed before returning the user-specified order.
 
-4. **Prepare Workspace Manifest**: Within the workspace root determine the
+4. **Prepare Workspace Manifest**: Within the workspace root, determine the
    patch stripping strategy based on the publish.strip_patches configuration
    and the execution mode (--dry-run flag).
 

@@ -206,12 +206,14 @@ def _register_preflight_commands(
     publish_command: tuple[str, ...]
     publish_response: ResponseProvider
     normalized_overrides: dict[tuple[str, ...], ResponseProvider] = {}
+    publish_command_found = False
     for command, response in config.overrides.items():
         if _is_cargo_publish_command(command):
             base_args = tuple(arg for arg in command[2:] if arg != "--allow-dirty")
             publish_args = ("--allow-dirty",) if config.allow_dirty else ()
             publish_command = ("cargo", "publish", *publish_args, *base_args)
             publish_response = response
+            publish_command_found = True
         else:
             if command[:2] == ("cargo", "package"):
                 base_args = tuple(arg for arg in command[2:] if arg != "--allow-dirty")
@@ -219,7 +221,7 @@ def _register_preflight_commands(
                 command = ("cargo", "package", *package_args, *base_args)
             normalized_overrides[command] = response
 
-    if "publish_command" not in locals():
+    if not publish_command_found:
         publish_command = (
             "cargo",
             "publish",
@@ -247,15 +249,10 @@ def _cmd_mox_stub_env_enabled() -> typ.Iterator[None]:
     try:
         yield
     finally:
-        _restore_env_var(metadata_module.CMD_MOX_STUB_ENV_VAR, previous)
-
-
-def _restore_env_var(key: str, previous: str | None) -> None:
-    """Restore an environment variable to its previous state."""
-    if previous is None:
-        os.environ.pop(key, None)
-    else:
-        os.environ[key] = previous
+        if previous is None:
+            os.environ.pop(metadata_module.CMD_MOX_STUB_ENV_VAR, None)
+        else:
+            os.environ[metadata_module.CMD_MOX_STUB_ENV_VAR] = previous
 
 
 def _invoke_publish_with_options(
