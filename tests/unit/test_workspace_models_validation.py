@@ -8,7 +8,7 @@ import pytest
 
 from lading.workspace import models
 
-if typ.TYPE_CHECKING:
+if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers only
     from pathlib import Path
 
 
@@ -47,14 +47,32 @@ def test_build_dependencies_handles_missing_entries() -> None:
     assert dependencies == ()
 
 
-def test_dependency_validation_errors() -> None:
+@pytest.mark.parametrize(
+    ("callable_obj", "args"),
+    [
+        pytest.param(
+            models._validate_dependency_mapping,
+            ("not-a-mapping",),
+            id="mapping_not_dict",
+        ),
+        pytest.param(
+            models._validate_dependency_kind,
+            ({"kind": 123},),
+            id="kind_not_string",
+        ),
+        pytest.param(
+            models._validate_dependency_kind,
+            ({"kind": "unknown"},),
+            id="kind_unsupported",
+        ),
+    ],
+)
+def test_dependency_validation_errors(
+    callable_obj: typ.Callable[..., object], args: tuple[object, ...]
+) -> None:
     """Invalid dependency shapes should raise WorkspaceModelError."""
     with pytest.raises(models.WorkspaceModelError):
-        models._validate_dependency_mapping("not-a-mapping")
-    with pytest.raises(models.WorkspaceModelError):
-        models._validate_dependency_kind({"kind": 123})
-    with pytest.raises(models.WorkspaceModelError):
-        models._validate_dependency_kind({"kind": "unknown"})
+        callable_obj(*args)
 
 
 def test_lookup_workspace_target_handles_missing_entries() -> None:
@@ -104,6 +122,9 @@ def test_extract_readme_workspace_flag_handles_non_mappings(tmp_path: Path) -> N
     assert models._extract_readme_workspace_flag("invalid") is False
     assert models._extract_readme_workspace_flag({"readme": "README.md"}) is False
 
+
+def test_manifest_uses_workspace_readme_detects_flag(tmp_path: Path) -> None:
+    """Manifest helper should detect readme.workspace usage."""
     manifest_path = tmp_path / "Cargo.toml"
     manifest_path.write_text("[package]\nname = 'demo'\nreadme.workspace = true\n")
     assert models._manifest_uses_workspace_readme(manifest_path) is True

@@ -20,7 +20,7 @@ def _make_plan(workspace_root: Path, publishable_names: tuple[str, ...]) -> Publ
     publishable = tuple(SimpleNamespace(name=name) for name in publishable_names)
     return PublishPlan(
         workspace_root=workspace_root,
-        publishable=publishable,  # type: ignore[arg-type]
+        publishable=publishable,  # pyright: ignore[reportArgumentType] - test stubs only require .name
         skipped_manifest=(),
         skipped_configuration=(),
     )

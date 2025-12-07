@@ -67,18 +67,17 @@ def test_append_compiletest_diagnostics_deduplicates_artifacts(tmp_path: Path) -
 
 
 def test_read_tail_lines_handles_zero_and_errors(
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Tail helper should handle zero counts and read failures."""
     bogus_path = Path("/nonexistent/nowhere.stderr")
     assert publish_diagnostics._read_tail_lines(bogus_path, 0) == ()
 
-    def _raise(_: object, **__: object) -> str:
-        message = "boom"
-        raise OSError(message)
+    class _UnreliablePath:
+        def read_text(self, *args: object, **kwargs: object) -> str:
+            message = "boom"
+            raise OSError(message)
 
-    monkeypatch.setattr(Path, "read_text", _raise)
-    assert publish_diagnostics._read_tail_lines(bogus_path, 2) == ()
+    assert publish_diagnostics._read_tail_lines(_UnreliablePath(), 2) == ()
 
 
 def test_format_artifact_diagnostics_when_no_tail(tmp_path: Path) -> None:

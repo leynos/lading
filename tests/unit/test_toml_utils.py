@@ -19,7 +19,7 @@ def test_load_or_create_document_initialises_empty_document(tmp_path: Path) -> N
 
     document_obj = toml_utils.load_or_create_document(config_path)
 
-    assert list(document_obj) == []
+    assert not list(document_obj)
 
 
 def test_ensure_table_rejects_non_table_values() -> None:
@@ -31,6 +31,17 @@ def test_ensure_table_rejects_non_table_values() -> None:
         toml_utils.ensure_table(doc, "publish")
 
 
+def test_ensure_table_creates_and_returns_table() -> None:
+    """Missing keys should be initialised to a TOML table and returned."""
+    doc = document()
+
+    table_obj = toml_utils.ensure_table(doc, "publish")
+
+    assert "publish" in doc
+    assert doc["publish"] is table_obj
+    assert isinstance(table_obj, type(table()))
+
+
 def test_ensure_array_field_rejects_non_array_values() -> None:
     """Arrays must already be TOML arrays when present."""
     parent_table = table()
@@ -38,6 +49,17 @@ def test_ensure_array_field_rejects_non_array_values() -> None:
 
     with pytest.raises(AssertionError, match="exclude must be an array"):
         toml_utils.ensure_array_field(parent_table, "exclude")
+
+
+def test_ensure_array_field_creates_empty_array_when_missing() -> None:
+    """Missing array keys should be initialised and returned."""
+    parent_table = table()
+
+    array_obj = toml_utils.ensure_array_field(parent_table, "exclude")
+
+    assert "exclude" in parent_table
+    assert parent_table["exclude"] is array_obj
+    assert list(array_obj) == []
 
 
 def test_append_if_absent_does_not_duplicate_values() -> None:

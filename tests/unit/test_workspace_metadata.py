@@ -424,11 +424,12 @@ def test_cmd_mox_command_requires_socket(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 def test_resolve_cmd_mox_timeout_validates_values() -> None:
-    """Timeout parsing should reject non-positive values."""
+    """Timeout parsing should reject non-positive and non-numeric values."""
     assert metadata_module._resolve_cmd_mox_timeout(None) > 0
     assert metadata_module._resolve_cmd_mox_timeout("2.5") == 2.5
-    with pytest.raises(metadata_module.CargoMetadataError):
-        metadata_module._resolve_cmd_mox_timeout("0")
+    for value in ("0", "-1", "abc"):
+        with pytest.raises(metadata_module.CargoMetadataError):
+            metadata_module._resolve_cmd_mox_timeout(value)
 
 
 def test_build_invocation_environment_sets_pwd(tmp_path: Path) -> None:
@@ -463,6 +464,7 @@ def test_load_cmd_mox_modules_errors_when_missing(
     real_import = builtins.__import__
 
     def _fake_import(name: str, *args: object, **kwargs: object) -> object:
+        """Force cmd_mox imports to fail without affecting other modules."""
         if name.startswith("cmd_mox"):
             raise ModuleNotFoundError(name)
         return real_import(name, *args, **kwargs)

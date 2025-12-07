@@ -54,11 +54,12 @@ def mock_cmd_mox_modules(tmp_path: Path) -> SimpleNamespace:
             extra_env: dict[str, str],
             invocation_env: dict[str, str],
         ) -> dict[str, str]:
-            shim_dir = (tmp_path / "cmox" / "shim").parent
-            env = {"PATH": f"{lookup_path}{os.pathsep}{shim_dir}{os.pathsep}/usr/bin"}
-            env.update(extra_env)
-            env.update(invocation_env)
-            return env
+            shim_dir = tmp_path / "cmox" / "shim"
+            return (
+                {"PATH": f"{lookup_path}{os.pathsep}{shim_dir}{os.pathsep}/usr/bin"}
+                | extra_env
+                | invocation_env
+            )
 
         def resolve_command_with_override(
             self, command: str, path: str, override: str | None
