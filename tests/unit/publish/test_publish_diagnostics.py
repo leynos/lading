@@ -66,8 +66,7 @@ def test_append_compiletest_diagnostics_deduplicates_artifacts(tmp_path: Path) -
     assert message.count("dupe.stderr") == 1
 
 
-def test_read_tail_lines_handles_zero_and_errors(
-) -> None:
+def test_read_tail_lines_handles_zero_and_errors() -> None:
     """Tail helper should handle zero counts and read failures."""
     bogus_path = Path("/nonexistent/nowhere.stderr")
     assert publish_diagnostics._read_tail_lines(bogus_path, 0) == ()
