@@ -74,9 +74,11 @@ class PreflightTestContext:
     overrides: dict[tuple[str, ...], ResponseProvider]
     recorder: _PreflightInvocationRecorder
 
-    def create_stub_config(self) -> _PreflightStubConfig:
+    def create_stub_config(self, *, allow_dirty: bool = True) -> _PreflightStubConfig:
         """Create stub configuration from this context."""
-        return _create_stub_config(self.cmd_mox, self.overrides, self.recorder)
+        return _create_stub_config(
+            self.cmd_mox, self.overrides, self.recorder, allow_dirty=allow_dirty
+        )
 
 
 class _CmdInvocation(typ.Protocol):
@@ -237,6 +239,25 @@ def _register_preflight_commands(
         )
 
 
+@contextlib.contextmanager
+def _cmd_mox_stub_env_enabled() -> typ.Iterator[None]:
+    """Temporarily enable CMD_MOX_STUB_ENV_VAR for cmd-mox stubs."""
+    previous = os.environ.get(metadata_module.CMD_MOX_STUB_ENV_VAR)
+    os.environ[metadata_module.CMD_MOX_STUB_ENV_VAR] = "1"
+    try:
+        yield
+    finally:
+        _restore_env_var(metadata_module.CMD_MOX_STUB_ENV_VAR, previous)
+
+
+def _restore_env_var(key: str, previous: str | None) -> None:
+    """Restore an environment variable to its previous state."""
+    if previous is None:
+        os.environ.pop(key, None)
+    else:
+        os.environ[key] = previous
+
+
 def _invoke_publish_with_options(
     repo_root: Path,
     workspace_directory: Path,
@@ -246,21 +267,7 @@ def _invoke_publish_with_options(
     """Register preflight doubles, enable stubs, and run the CLI."""
     from .test_common_steps import _run_cli
 
-    @contextlib.contextmanager
-    def _cmd_mox_stub_env_enabled() -> typ.Iterator[None]:
-        """Temporarily enable CMD_MOX_STUB_ENV_VAR for cmd-mox stubs."""
-        previous = os.environ.get(metadata_module.CMD_MOX_STUB_ENV_VAR)
-        os.environ[metadata_module.CMD_MOX_STUB_ENV_VAR] = "1"
-        try:
-            yield
-        finally:
-            if previous is None:
-                os.environ.pop(metadata_module.CMD_MOX_STUB_ENV_VAR, None)
-            else:
-                os.environ[metadata_module.CMD_MOX_STUB_ENV_VAR] = previous
-
-    allow_dirty = "--forbid-dirty" not in extra_args
-    _register_preflight_commands(stub_config, allow_dirty=allow_dirty)
+    _register_preflight_commands(stub_config)
     with _cmd_mox_stub_env_enabled():
         return _run_cli(repo_root, workspace_directory, "publish", *extra_args)
 

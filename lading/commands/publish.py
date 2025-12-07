@@ -373,9 +373,7 @@ def _package_publishable_crates(
 ) -> None:
     """Package each publishable crate in order using the staged workspace."""
     staging_root = preparation.staging_root
-    package_args: tuple[str, ...] = (
-        ("--allow-dirty",) if options.allow_dirty else ()
-    )
+    package_args: tuple[str, ...] = ("--allow-dirty",) if options.allow_dirty else ()
     for crate in plan.publishable:
         crate_root = _resolve_staged_crate_root(crate, plan, staging_root)
         exit_code, stdout, stderr = runner(
@@ -415,7 +413,7 @@ def _is_already_published_error(exit_code: int, stdout: str, stderr: str) -> boo
     return any(marker in haystack for marker in _ALREADY_PUBLISHED_MARKERS)
 
 
-def _publish_crates(  # noqa: PLR0913 - explicit parameters improve clarity for tests
+def _publish_crates(
     plan: PublishPlan,
     preparation: PublishPreparation,
     *,
