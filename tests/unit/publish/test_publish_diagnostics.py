@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest  # noqa: TC002
+
 from lading.commands import publish_diagnostics
 
 
@@ -62,17 +64,36 @@ def test_append_compiletest_diagnostics_deduplicates_artifacts(tmp_path: Path) -
     assert message.count("dupe.stderr") == 1
 
 
-def test_read_tail_lines_handles_zero_and_errors() -> None:
+def test_read_tail_lines_handles_zero_and_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Tail helper should handle zero counts and read failures."""
     bogus_path = Path("/nonexistent/nowhere.stderr")
     assert publish_diagnostics._read_tail_lines(bogus_path, 0) == ()
 
-    class _UnreliablePath:
-        def read_text(self, *args: object, **kwargs: object) -> str:
-            message = "boom"
-            raise OSError(message)
+    def _raise(*args: object, **kwargs: object) -> str:
+        message = "boom"
+        raise OSError(message)
 
-    assert publish_diagnostics._read_tail_lines(_UnreliablePath(), 2) == ()
+    with monkeypatch.context() as patch:
+        # Path instances disallow attribute assignment; attempt instance patch
+        # first for clarity, then fall back to a class-level patch when
+        # immutability blocks direct replacement.
+        instance_overridden = False
+        try:
+            patch.setattr(bogus_path, "read_text", _raise, raising=False)
+            instance_overridden = bogus_path.read_text is _raise
+        except AttributeError:
+            patch._setattr.clear()
+            instance_overridden = False
+        if instance_overridden:
+            assert publish_diagnostics._read_tail_lines(bogus_path, 2) == ()
+            return
+
+        patch._setattr.clear()
+        with monkeypatch.context() as class_patch:
+            class_patch.setattr(Path, "read_text", _raise)
+            assert publish_diagnostics._read_tail_lines(bogus_path, 2) == ()
 
 
 def test_format_artifact_diagnostics_when_no_tail(tmp_path: Path) -> None:
