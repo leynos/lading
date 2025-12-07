@@ -64,6 +64,14 @@ class _CargoPreflightOptions:
 
 
 @dc.dataclass(frozen=True, slots=True)
+class _PublishExecutionOptions:
+    """Runtime flags that affect cargo package/publish invocations."""
+
+    live: bool
+    allow_dirty: bool
+
+
+@dc.dataclass(frozen=True, slots=True)
 class PublishOptions:
     """Runtime configuration for publish planning, staging, and checks.
 
@@ -360,12 +368,14 @@ def _package_publishable_crates(
     plan: PublishPlan,
     preparation: PublishPreparation,
     *,
-    allow_dirty: bool,
+    options: _PublishExecutionOptions,
     runner: _CommandRunner,
 ) -> None:
     """Package each publishable crate in order using the staged workspace."""
     staging_root = preparation.staging_root
-    package_args: tuple[str, ...] = ("--allow-dirty",) if allow_dirty else ()
+    package_args: tuple[str, ...] = (
+        ("--allow-dirty",) if options.allow_dirty else ()
+    )
     for crate in plan.publishable:
         crate_root = _resolve_staged_crate_root(crate, plan, staging_root)
         exit_code, stdout, stderr = runner(
@@ -410,22 +420,21 @@ def _publish_crates(  # noqa: PLR0913 - explicit parameters improve clarity for 
     preparation: PublishPreparation,
     *,
     runner: _CommandRunner,
-    live: bool,
-    allow_dirty: bool,
+    options: _PublishExecutionOptions,
 ) -> None:
     """Publish each crate in order, respecting dry-run vs live mode."""
     staging_root = preparation.staging_root
     publish_args: list[str] = []
-    if allow_dirty:
+    if options.allow_dirty:
         publish_args.append("--allow-dirty")
-    if not live:
+    if not options.live:
         publish_args.append("--dry-run")
     publish_args_tuple = tuple(publish_args)
     for crate in plan.publishable:
         crate_root = _resolve_staged_crate_root(crate, plan, staging_root)
         LOGGER.info(
             "Running cargo publish%s for crate %s",
-            "" if live else " --dry-run",
+            "" if options.live else " --dry-run",
             crate.name,
         )
         exit_code, stdout, stderr = runner(
@@ -509,18 +518,21 @@ def run(
         plan,
         active_configuration.publish.strip_patches,
     )
+    execution_options = _PublishExecutionOptions(
+        live=effective_options.live,
+        allow_dirty=effective_options.allow_dirty,
+    )
     _package_publishable_crates(
         plan,
         preparation,
-        allow_dirty=effective_options.allow_dirty,
+        options=execution_options,
         runner=command_runner,
     )
     _publish_crates(
         plan,
         preparation,
         runner=command_runner,
-        live=effective_options.live,
-        allow_dirty=effective_options.allow_dirty,
+        options=execution_options,
     )
     plan_message = _format_plan(
         plan, strip_patches=active_configuration.publish.strip_patches

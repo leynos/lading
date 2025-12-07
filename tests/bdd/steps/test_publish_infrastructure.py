@@ -63,6 +63,7 @@ class _PreflightStubConfig:
     cmd_mox: CmdMox
     overrides: dict[tuple[str, ...], ResponseProvider] = dc.field(default_factory=dict)
     recorder: _PreflightInvocationRecorder | None = None
+    allow_dirty: bool = True
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -156,17 +157,20 @@ def _create_stub_config(
     cmd_mox: CmdMox,
     preflight_overrides: dict[tuple[str, ...], ResponseProvider],
     preflight_recorder: _PreflightInvocationRecorder,
+    *,
+    allow_dirty: bool,
 ) -> _PreflightStubConfig:
     """Build a stub configuration that records preflight invocations."""
     return _PreflightStubConfig(
         cmd_mox,
         preflight_overrides,
         recorder=preflight_recorder,
+        allow_dirty=allow_dirty,
     )
 
 
 def _register_preflight_commands(
-    config: _PreflightStubConfig, *, allow_dirty: bool
+    config: _PreflightStubConfig,
 ) -> None:
     """Install cmd-mox doubles for publish pre-flight commands.
 
@@ -193,7 +197,7 @@ def _register_preflight_commands(
         (
             "cargo",
             "package",
-            *(("--allow-dirty",) if allow_dirty else ()),
+            *(("--allow-dirty",) if config.allow_dirty else ()),
         ): _CommandResponse(exit_code=0),
     }
 
@@ -203,13 +207,13 @@ def _register_preflight_commands(
     for command, response in config.overrides.items():
         if _is_cargo_publish_command(command):
             base_args = tuple(arg for arg in command[2:] if arg != "--allow-dirty")
-            publish_args = ("--allow-dirty",) if allow_dirty else ()
+            publish_args = ("--allow-dirty",) if config.allow_dirty else ()
             publish_command = ("cargo", "publish", *publish_args, *base_args)
             publish_response = response
         else:
             if command[:2] == ("cargo", "package"):
                 base_args = tuple(arg for arg in command[2:] if arg != "--allow-dirty")
-                package_args = ("--allow-dirty",) if allow_dirty else ()
+                package_args = ("--allow-dirty",) if config.allow_dirty else ()
                 command = ("cargo", "package", *package_args, *base_args)
             normalized_overrides[command] = response
 
@@ -217,7 +221,7 @@ def _register_preflight_commands(
         publish_command = (
             "cargo",
             "publish",
-            *(("--allow-dirty",) if allow_dirty else ()),
+            *(("--allow-dirty",) if config.allow_dirty else ()),
             "--dry-run",
         )
         publish_response = _CommandResponse(exit_code=0)

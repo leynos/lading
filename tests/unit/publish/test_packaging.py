@@ -99,7 +99,7 @@ def _assert_packaging_failure_message_contains(
         publish._package_publishable_crates(
             plan,
             preparation,
-            allow_dirty=True,
+            options=publish._PublishExecutionOptions(live=False, allow_dirty=True),
             runner=runner,
         )
 
@@ -120,7 +120,7 @@ def test_package_publishable_crates_runs_in_plan_order(
     publish._package_publishable_crates(
         plan,
         preparation,
-        allow_dirty=True,
+        options=publish._PublishExecutionOptions(live=False, allow_dirty=True),
         runner=runner,
     )
 
@@ -154,7 +154,7 @@ def test_package_publishable_crates_stops_on_failure(
         publish._package_publishable_crates(
             plan,
             preparation,
-            allow_dirty=True,
+            options=publish._PublishExecutionOptions(live=False, allow_dirty=True),
             runner=tracked_runner,
         )
 
@@ -205,8 +205,7 @@ def test_publish_crates_run_dry_run_in_order(
         plan,
         preparation,
         runner=runner,
-        live=False,
-        allow_dirty=True,
+        options=publish._PublishExecutionOptions(live=False, allow_dirty=True),
     )
 
     expected_roots = [
@@ -232,8 +231,7 @@ def test_publish_crates_run_live_without_dry_run(
         plan,
         preparation,
         runner=runner,
-        live=True,
-        allow_dirty=True,
+        options=publish._PublishExecutionOptions(live=True, allow_dirty=True),
     )
 
     expected_roots = [
@@ -288,8 +286,7 @@ def test_publish_crates_continue_when_version_already_uploaded(
         plan,
         preparation,
         runner=runner,
-        live=live,
-        allow_dirty=True,
+        options=publish._PublishExecutionOptions(live=live, allow_dirty=True),
     )
 
     assert calls == ["alpha", "beta"]
@@ -308,8 +305,7 @@ def test_publish_crates_raise_on_failure(
             plan,
             preparation,
             runner=failing_runner,
-            live=False,
-            allow_dirty=True,
+            options=publish._PublishExecutionOptions(live=False, allow_dirty=True),
         )
 
     message = str(excinfo.value)
