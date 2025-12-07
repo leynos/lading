@@ -2,13 +2,9 @@
 
 from __future__ import annotations
 
-import typing as typ
 from pathlib import Path
 
 from lading.commands import publish_diagnostics
-
-if typ.TYPE_CHECKING:
-    import pytest
 
 
 def test_append_compiletest_diagnostics_includes_tail_lines(tmp_path: Path) -> None:
