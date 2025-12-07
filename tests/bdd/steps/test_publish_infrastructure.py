@@ -165,7 +165,9 @@ def _create_stub_config(
     )
 
 
-def _register_preflight_commands(config: _PreflightStubConfig) -> None:
+def _register_preflight_commands(
+    config: _PreflightStubConfig, *, allow_dirty: bool
+) -> None:
     """Install cmd-mox doubles for publish pre-flight commands.
 
     Notes
@@ -188,27 +190,39 @@ def _register_preflight_commands(config: _PreflightStubConfig) -> None:
             "test",
             "--workspace",
         ): _CommandResponse(exit_code=0),
-        ("cargo", "package"): _CommandResponse(exit_code=0),
+        (
+            "cargo",
+            "package",
+            *(("--allow-dirty",) if allow_dirty else ()),
+        ): _CommandResponse(exit_code=0),
     }
 
     publish_command: tuple[str, ...]
     publish_response: ResponseProvider
+    normalized_overrides: dict[tuple[str, ...], ResponseProvider] = {}
     for command, response in config.overrides.items():
         if _is_cargo_publish_command(command):
-            publish_command = command
+            base_args = tuple(arg for arg in command[2:] if arg != "--allow-dirty")
+            publish_args = ("--allow-dirty",) if allow_dirty else ()
+            publish_command = ("cargo", "publish", *publish_args, *base_args)
             publish_response = response
-            break
-    else:
-        publish_command = ("cargo", "publish", "--dry-run")
+        else:
+            if command[:2] == ("cargo", "package"):
+                base_args = tuple(arg for arg in command[2:] if arg != "--allow-dirty")
+                package_args = ("--allow-dirty",) if allow_dirty else ()
+                command = ("cargo", "package", *package_args, *base_args)
+            normalized_overrides[command] = response
+
+    if "publish_command" not in locals():
+        publish_command = (
+            "cargo",
+            "publish",
+            *(("--allow-dirty",) if allow_dirty else ()),
+            "--dry-run",
+        )
         publish_response = _CommandResponse(exit_code=0)
 
-    filtered_overrides = {
-        command: response
-        for command, response in config.overrides.items()
-        if not _is_cargo_publish_command(command)
-    }
-
-    defaults |= filtered_overrides
+    defaults |= normalized_overrides
     defaults[publish_command] = publish_response
     for command, response in defaults.items():
         expectation_program, expectation_args = _resolve_preflight_expectation(command)
@@ -241,7 +255,8 @@ def _invoke_publish_with_options(
             else:
                 os.environ[metadata_module.CMD_MOX_STUB_ENV_VAR] = previous
 
-    _register_preflight_commands(stub_config)
+    allow_dirty = "--forbid-dirty" not in extra_args
+    _register_preflight_commands(stub_config, allow_dirty=allow_dirty)
     with _cmd_mox_stub_env_enabled():
         return _run_cli(repo_root, workspace_directory, "publish", *extra_args)
 
@@ -260,7 +275,11 @@ def _invoke_publish_with_options(
             "cargo::test",
             ("--package", "foo", "--", "--ignored"),
         ),
-        (("cargo", "publish", "--dry-run"), "cargo::publish", ("--dry-run",)),
+        (
+            ("cargo", "publish", "--allow-dirty", "--dry-run"),
+            "cargo::publish",
+            ("--allow-dirty", "--dry-run"),
+        ),
     ],
 )
 def test_resolve_preflight_expectation_normalises_cargo_commands(

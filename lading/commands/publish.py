@@ -360,14 +360,16 @@ def _package_publishable_crates(
     plan: PublishPlan,
     preparation: PublishPreparation,
     *,
+    allow_dirty: bool,
     runner: _CommandRunner,
 ) -> None:
     """Package each publishable crate in order using the staged workspace."""
     staging_root = preparation.staging_root
+    package_args: tuple[str, ...] = ("--allow-dirty",) if allow_dirty else ()
     for crate in plan.publishable:
         crate_root = _resolve_staged_crate_root(crate, plan, staging_root)
         exit_code, stdout, stderr = runner(
-            ("cargo", "package"),
+            ("cargo", "package", *package_args),
             cwd=crate_root,
             env=None,
         )
@@ -403,16 +405,22 @@ def _is_already_published_error(exit_code: int, stdout: str, stderr: str) -> boo
     return any(marker in haystack for marker in _ALREADY_PUBLISHED_MARKERS)
 
 
-def _publish_crates(
+def _publish_crates(  # noqa: PLR0913 - explicit parameters improve clarity for tests
     plan: PublishPlan,
     preparation: PublishPreparation,
     *,
     runner: _CommandRunner,
     live: bool,
+    allow_dirty: bool,
 ) -> None:
     """Publish each crate in order, respecting dry-run vs live mode."""
     staging_root = preparation.staging_root
-    publish_args: tuple[str, ...] = () if live else ("--dry-run",)
+    publish_args: list[str] = []
+    if allow_dirty:
+        publish_args.append("--allow-dirty")
+    if not live:
+        publish_args.append("--dry-run")
+    publish_args_tuple = tuple(publish_args)
     for crate in plan.publishable:
         crate_root = _resolve_staged_crate_root(crate, plan, staging_root)
         LOGGER.info(
@@ -421,7 +429,7 @@ def _publish_crates(
             crate.name,
         )
         exit_code, stdout, stderr = runner(
-            ("cargo", "publish", *publish_args),
+            ("cargo", "publish", *publish_args_tuple),
             cwd=crate_root,
             env=None,
         )
@@ -504,6 +512,7 @@ def run(
     _package_publishable_crates(
         plan,
         preparation,
+        allow_dirty=effective_options.allow_dirty,
         runner=command_runner,
     )
     _publish_crates(
@@ -511,6 +520,7 @@ def run(
         preparation,
         runner=command_runner,
         live=effective_options.live,
+        allow_dirty=effective_options.allow_dirty,
     )
     plan_message = _format_plan(
         plan, strip_patches=active_configuration.publish.strip_patches
