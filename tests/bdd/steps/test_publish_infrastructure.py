@@ -244,15 +244,14 @@ def _register_preflight_commands(
 @contextlib.contextmanager
 def _cmd_mox_stub_env_enabled() -> typ.Iterator[None]:
     """Temporarily enable CMD_MOX_STUB_ENV_VAR for cmd-mox stubs."""
-    previous = os.environ.get(metadata_module.CMD_MOX_STUB_ENV_VAR)
-    os.environ[metadata_module.CMD_MOX_STUB_ENV_VAR] = "1"
+    var_name = metadata_module.CMD_MOX_STUB_ENV_VAR
+    snapshot = {var_name: os.environ.get(var_name)}
+    os.environ[var_name] = "1"
     try:
         yield
     finally:
-        if previous is None:
-            os.environ.pop(metadata_module.CMD_MOX_STUB_ENV_VAR, None)
-        else:
-            os.environ[metadata_module.CMD_MOX_STUB_ENV_VAR] = previous
+        os.environ.pop(var_name, None)
+        os.environ.update({k: v for k, v in snapshot.items() if v is not None})
 
 
 def _invoke_publish_with_options(
