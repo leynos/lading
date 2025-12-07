@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import typing as typ
 from pathlib import Path
 
-import pytest  # noqa: TC002
-
 from lading.commands import publish_diagnostics
+
+if typ.TYPE_CHECKING:
+    import pytest
 
 
 def test_append_compiletest_diagnostics_includes_tail_lines(tmp_path: Path) -> None:
@@ -75,25 +77,8 @@ def test_read_tail_lines_handles_zero_and_errors(
         message = "boom"
         raise OSError(message)
 
-    with monkeypatch.context() as patch:
-        # Path instances disallow attribute assignment; attempt instance patch
-        # first for clarity, then fall back to a class-level patch when
-        # immutability blocks direct replacement.
-        instance_overridden = False
-        try:
-            patch.setattr(bogus_path, "read_text", _raise, raising=False)
-            instance_overridden = bogus_path.read_text is _raise
-        except AttributeError:
-            patch._setattr.clear()
-            instance_overridden = False
-        if instance_overridden:
-            assert publish_diagnostics._read_tail_lines(bogus_path, 2) == ()
-            return
-
-        patch._setattr.clear()
-        with monkeypatch.context() as class_patch:
-            class_patch.setattr(Path, "read_text", _raise)
-            assert publish_diagnostics._read_tail_lines(bogus_path, 2) == ()
+    monkeypatch.setattr(Path, "read_text", _raise)
+    assert publish_diagnostics._read_tail_lines(bogus_path, 2) == ()
 
 
 def test_format_artifact_diagnostics_when_no_tail(tmp_path: Path) -> None:

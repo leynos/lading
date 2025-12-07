@@ -498,7 +498,7 @@ sequenceDiagram
     end
 ```
 
-1. **Iterate and Publish:** For each crate in the determined order:
+3. **Iterate and Publish:** For each crate in the determined order:
 
     - **Patch Handling (per-crate)**: If strip_patches is "per-crate" (or is
       unset and this is a live run), remove the specific patch entry for the
