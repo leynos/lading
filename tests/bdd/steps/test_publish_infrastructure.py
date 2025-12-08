@@ -244,7 +244,9 @@ def _register_preflight_commands(
 def _build_env_restore_dict(var_name: str) -> dict[str, str]:
     """Build a dictionary for restoring an environment variable."""
     previous = os.environ.get(var_name)
-    return {var_name: previous} if previous is not None else {}
+    if previous is None:
+        return {}
+    return {var_name: previous}
 
 
 @contextlib.contextmanager
