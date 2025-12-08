@@ -583,9 +583,9 @@ utilities to the highest-level user-facing commands.
 - Introduced `pytest-cov` as a development dependency, so coverage can be
   reported via `uv run pytest --cov` without additional tooling. Phase 4 sets a
   floor of >90% line coverage for new modules; focused unit tests now exercise
-  configuration validation edges, publish manifest handling, cmd-mox
-  inter-process communication (IPC) fallbacks, and workspace model error paths
-  to keep defensive code paths observable.
+  configuration validation edges, publish manifest handling, cmd-mox IPC
+  fallback mechanisms, and workspace model error paths to keep defensive code
+  paths observable.
 - cmd-mox remains the default mechanism for mocking external commands. Tests
   covering publish pre-flight and `cargo metadata` IPC use stubbed cmd-mox
   modules rather than spawning real processes, keeping suites deterministic
