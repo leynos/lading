@@ -241,12 +241,17 @@ def _register_preflight_commands(
         )
 
 
+def _build_env_restore_dict(var_name: str) -> dict[str, str]:
+    """Build a dictionary for restoring an environment variable."""
+    previous = os.environ.get(var_name)
+    return {var_name: previous} if previous is not None else {}
+
+
 @contextlib.contextmanager
 def _cmd_mox_stub_env_enabled() -> typ.Iterator[None]:
     """Temporarily enable CMD_MOX_STUB_ENV_VAR for cmd-mox stubs."""
     var_name = metadata_module.CMD_MOX_STUB_ENV_VAR
-    previous = os.environ.get(var_name)
-    restore = {var_name: previous} if previous is not None else {}
+    restore = _build_env_restore_dict(var_name)
     os.environ[var_name] = "1"
     try:
         yield
