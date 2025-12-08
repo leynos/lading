@@ -209,6 +209,8 @@ def _register_preflight_commands(
     publish_command_found = False
     for command, response in config.overrides.items():
         if _is_cargo_publish_command(command):
+            if publish_command_found:
+                continue
             base_args = tuple(arg for arg in command[2:] if arg != "--allow-dirty")
             publish_args = ("--allow-dirty",) if config.allow_dirty else ()
             publish_command = ("cargo", "publish", *publish_args, *base_args)
