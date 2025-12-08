@@ -63,6 +63,7 @@ class _PreflightStubConfig:
     cmd_mox: CmdMox
     overrides: dict[tuple[str, ...], ResponseProvider] = dc.field(default_factory=dict)
     recorder: _PreflightInvocationRecorder | None = None
+    allow_dirty: bool = True
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -73,9 +74,11 @@ class PreflightTestContext:
     overrides: dict[tuple[str, ...], ResponseProvider]
     recorder: _PreflightInvocationRecorder
 
-    def create_stub_config(self) -> _PreflightStubConfig:
+    def create_stub_config(self, *, allow_dirty: bool = True) -> _PreflightStubConfig:
         """Create stub configuration from this context."""
-        return _create_stub_config(self.cmd_mox, self.overrides, self.recorder)
+        return _create_stub_config(
+            self.cmd_mox, self.overrides, self.recorder, allow_dirty=allow_dirty
+        )
 
 
 class _CmdInvocation(typ.Protocol):
@@ -156,16 +159,21 @@ def _create_stub_config(
     cmd_mox: CmdMox,
     preflight_overrides: dict[tuple[str, ...], ResponseProvider],
     preflight_recorder: _PreflightInvocationRecorder,
+    *,
+    allow_dirty: bool,
 ) -> _PreflightStubConfig:
     """Build a stub configuration that records preflight invocations."""
     return _PreflightStubConfig(
         cmd_mox,
         preflight_overrides,
         recorder=preflight_recorder,
+        allow_dirty=allow_dirty,
     )
 
 
-def _register_preflight_commands(config: _PreflightStubConfig) -> None:
+def _register_preflight_commands(
+    config: _PreflightStubConfig,
+) -> None:
     """Install cmd-mox doubles for publish pre-flight commands.
 
     Notes
@@ -188,27 +196,43 @@ def _register_preflight_commands(config: _PreflightStubConfig) -> None:
             "test",
             "--workspace",
         ): _CommandResponse(exit_code=0),
-        ("cargo", "package"): _CommandResponse(exit_code=0),
+        (
+            "cargo",
+            "package",
+            *(("--allow-dirty",) if config.allow_dirty else ()),
+        ): _CommandResponse(exit_code=0),
     }
 
     publish_command: tuple[str, ...]
     publish_response: ResponseProvider
+    normalized_overrides: dict[tuple[str, ...], ResponseProvider] = {}
+    publish_command_found = False
     for command, response in config.overrides.items():
         if _is_cargo_publish_command(command):
-            publish_command = command
+            if publish_command_found:
+                continue
+            base_args = tuple(arg for arg in command[2:] if arg != "--allow-dirty")
+            publish_args = ("--allow-dirty",) if config.allow_dirty else ()
+            publish_command = ("cargo", "publish", *publish_args, *base_args)
             publish_response = response
-            break
-    else:
-        publish_command = ("cargo", "publish", "--dry-run")
+            publish_command_found = True
+        else:
+            if command[:2] == ("cargo", "package"):
+                base_args = tuple(arg for arg in command[2:] if arg != "--allow-dirty")
+                package_args = ("--allow-dirty",) if config.allow_dirty else ()
+                command = ("cargo", "package", *package_args, *base_args)
+            normalized_overrides[command] = response
+
+    if not publish_command_found:
+        publish_command = (
+            "cargo",
+            "publish",
+            *(("--allow-dirty",) if config.allow_dirty else ()),
+            "--dry-run",
+        )
         publish_response = _CommandResponse(exit_code=0)
 
-    filtered_overrides = {
-        command: response
-        for command, response in config.overrides.items()
-        if not _is_cargo_publish_command(command)
-    }
-
-    defaults |= filtered_overrides
+    defaults |= normalized_overrides
     defaults[publish_command] = publish_response
     for command, response in defaults.items():
         expectation_program, expectation_args = _resolve_preflight_expectation(command)
@@ -219,6 +243,27 @@ def _register_preflight_commands(config: _PreflightStubConfig) -> None:
         )
 
 
+def _build_env_restore_dict(var_name: str) -> dict[str, str]:
+    """Build a dictionary for restoring an environment variable."""
+    previous = os.environ.get(var_name)
+    if previous is None:
+        return {}
+    return {var_name: previous}
+
+
+@contextlib.contextmanager
+def _cmd_mox_stub_env_enabled() -> typ.Iterator[None]:
+    """Temporarily enable CMD_MOX_STUB_ENV_VAR for cmd-mox stubs."""
+    var_name = metadata_module.CMD_MOX_STUB_ENV_VAR
+    restore = _build_env_restore_dict(var_name)
+    os.environ[var_name] = "1"
+    try:
+        yield
+    finally:
+        os.environ.pop(var_name, None)
+        os.environ.update(restore)
+
+
 def _invoke_publish_with_options(
     repo_root: Path,
     workspace_directory: Path,
@@ -227,19 +272,6 @@ def _invoke_publish_with_options(
 ) -> dict[str, typ.Any]:
     """Register preflight doubles, enable stubs, and run the CLI."""
     from .test_common_steps import _run_cli
-
-    @contextlib.contextmanager
-    def _cmd_mox_stub_env_enabled() -> typ.Iterator[None]:
-        """Temporarily enable CMD_MOX_STUB_ENV_VAR for cmd-mox stubs."""
-        previous = os.environ.get(metadata_module.CMD_MOX_STUB_ENV_VAR)
-        os.environ[metadata_module.CMD_MOX_STUB_ENV_VAR] = "1"
-        try:
-            yield
-        finally:
-            if previous is None:
-                os.environ.pop(metadata_module.CMD_MOX_STUB_ENV_VAR, None)
-            else:
-                os.environ[metadata_module.CMD_MOX_STUB_ENV_VAR] = previous
 
     _register_preflight_commands(stub_config)
     with _cmd_mox_stub_env_enabled():
@@ -260,7 +292,11 @@ def _invoke_publish_with_options(
             "cargo::test",
             ("--package", "foo", "--", "--ignored"),
         ),
-        (("cargo", "publish", "--dry-run"), "cargo::publish", ("--dry-run",)),
+        (
+            ("cargo", "publish", "--allow-dirty", "--dry-run"),
+            "cargo::publish",
+            ("--allow-dirty", "--dry-run"),
+        ),
     ],
 )
 def test_resolve_preflight_expectation_normalises_cargo_commands(

@@ -30,7 +30,7 @@ from tomlkit import parse as parse_toml
 from tomlkit.items import Array as ArrayItem
 from tomlkit.items import Table as TableItem
 
-if typ.TYPE_CHECKING:
+if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers only
     from pathlib import Path
 
     from tomlkit.items import Array, Table

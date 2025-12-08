@@ -225,7 +225,7 @@ behaviours.
 
 **Tasks:**
 
-- [ ] **Achieve High Test Coverage:**
+- [x] **Achieve High Test Coverage:**
 
   - **Outcome:** The entire `lading` codebase has a high level of unit and
     integration test coverage.

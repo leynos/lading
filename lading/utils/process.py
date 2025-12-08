@@ -6,7 +6,7 @@ import logging
 import shlex
 import typing as typ
 
-if typ.TYPE_CHECKING:
+if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers only
     from logging import Logger as LoggerType
     from pathlib import Path as PathType
 else:  # pragma: no cover - type-only imports

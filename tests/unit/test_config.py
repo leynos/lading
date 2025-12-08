@@ -198,6 +198,89 @@ def test_use_configuration_sets_context(tmp_path: Path) -> None:
     with config_module.use_configuration(configuration):
         assert config_module.current_configuration() is configuration
 
+
+def test_preflight_config_parses_extended_fields() -> None:
+    """Aux build commands, externs, and env overrides should be normalised."""
+    mapping = {
+        "test_exclude": ["alpha", "alpha", "beta"],
+        "unit_tests_only": False,
+        "aux_build": [["cargo", "fmt"], ["echo", "ok"]],
+        "compiletest_extern": {"lint": "target/liblint.so"},
+        "env": {"DYLINT_LOCALE": "cy"},
+        "stderr_tail_lines": 5,
+    }
+
+    configuration = config_module.PreflightConfig.from_mapping(mapping)
+
+    assert configuration.aux_build == (("cargo", "fmt"), ("echo", "ok"))
+    assert configuration.compiletest_externs == (
+        config_module.CompiletestExtern(crate="lint", path="target/liblint.so"),
+    )
+    assert configuration.env_overrides == (("DYLINT_LOCALE", "cy"),)
+    assert configuration.stderr_tail_lines == 5
+    assert configuration.test_exclude == ("alpha", "beta")
+    assert configuration.unit_tests_only is False
+
+
+def test_validate_mapping_keys_reports_unknown_section() -> None:
+    """Unknown keys in a configuration section should raise a clear error."""
+    with pytest.raises(
+        config_module.ConfigurationError,
+        match=r"Unknown configuration section\(s\): unexpected.",
+    ):
+        config_module._validate_mapping_keys(
+            {"unexpected": True}, set(), "configuration section"
+        )
+
+
+def test_validate_mapping_keys_allows_none_mapping() -> None:
+    """A missing mapping should be treated as valid and skipped."""
+    config_module._validate_mapping_keys(None, set(), "section")
+
+
+def test_string_tuple_and_matrix_validation() -> None:
+    """String conversion helpers should accept sequences and reject bad types."""
+    assert config_module._string_tuple(["a", "b"], "field") == ("a", "b")
+    assert config_module._string_matrix([["a", "b"]], "matrix") == (("a", "b"),)
+    with pytest.raises(config_module.ConfigurationError):
+        config_module._string_tuple(123, "field")
+    with pytest.raises(config_module.ConfigurationError):
+        config_module._string_matrix("oops", "matrix")
+    with pytest.raises(config_module.ConfigurationError):
+        config_module._string_matrix([1], "matrix")
+
+
+def test_string_mapping_and_optional_mapping_validation() -> None:
+    """Mapping helpers should normalise values and reject invalid structures."""
+    mapping = {"alpha": "one"}
+    assert config_module._string_mapping(mapping, "table") == (("alpha", "one"),)
+    with pytest.raises(config_module.ConfigurationError):
+        config_module._string_mapping("oops", "table")
+    with pytest.raises(config_module.ConfigurationError):
+        config_module._optional_mapping(["not", "mapping"], "table")
+
+
+def test_integer_and_boolean_normalisation() -> None:
+    """Numeric and boolean helpers should enforce allowed shapes."""
+    assert config_module._non_negative_int(None, "lines", 3) == 3
+    assert config_module._non_negative_int("7", "lines", 0) == 7
+    with pytest.raises(config_module.ConfigurationError):
+        config_module._non_negative_int(-1, "lines", 0)
+    assert config_module._boolean(None, "flag") is False
+    assert config_module._boolean(value=True, field_name="flag") is True
+    with pytest.raises(config_module.ConfigurationError):
+        config_module._boolean("yes", "flag")
+
+
+def test_strip_patches_rejects_true_and_unknown_values() -> None:
+    """Only specific values should be accepted for publish.strip_patches."""
+    assert config_module._strip_patches(None) == "per-crate"
+    assert config_module._strip_patches(value=False) is False
+    assert config_module._strip_patches("all") == "all"
+    with pytest.raises(config_module.ConfigurationError):
+        config_module._strip_patches(value=True)
+    with pytest.raises(config_module.ConfigurationError):
+        config_module._strip_patches("unexpected")
     with pytest.raises(config_module.ConfigurationNotLoadedError):
         config_module.current_configuration()
 

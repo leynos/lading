@@ -208,8 +208,6 @@ graph TD
     N --> O["Compose final publish plan and execute commands"]
 ```
 
-```
-
 ### 2.3. Workspace Discovery and Model
 
 The tool's internal representation of the workspace is critical for its
@@ -419,14 +417,14 @@ involved to the operator. When `publish.order` is configured the planner
 validates that every publishable crate appears exactly once and that no unknown
 names are listed before returning the user-specified order.
 
-1. **Prepare Workspace Manifest**: Within the workspace root determine the
+4. **Prepare Workspace Manifest**: Within the workspace root, determine the
    patch stripping strategy based on the publish.strip_patches configuration
    and the execution mode (--dry-run flag).
 
     - If strip_patches is "all" (or is unset and this is a dry run), remove the
       entire [patch.crates-io] section from the Cargo.toml.
 
-2. **Execute Pre-Publish Checks:** Before publishing, run a series of checks in
+5. **Execute Pre-Publish Checks:** Before publishing, run a series of checks in
    the workspace itself to ensure integrity:
 
     - Run `cargo check --all-targets` for the entire workspace.
@@ -481,7 +479,7 @@ sequenceDiagram
     participant publish_plan
     participant publish_diagnostics
 
-    Caller->>publish.py: publish(..., forbid_dirty=...)
+    Caller->>publish.py: publish(…, forbid_dirty=…)
     publish.py->>publish.py: _build_preflight_environment(config.preflight)
     alt aux_build configured
         publish.py->>publish_execution: _run_aux_build_commands(workspace_root, commands, runner, env)
@@ -500,7 +498,7 @@ sequenceDiagram
     end
 ```
 
-3. **Iterate and Publish:** For each crate in the determined order:
+6. **Iterate and Publish:** For each crate in the determined order:
 
     - **Patch Handling (per-crate)**: If strip_patches is "per-crate" (or is
       unset and this is a live run), remove the specific patch entry for the
@@ -540,14 +538,15 @@ lading/
     ├── __init__.py
     ├── metadata.py  # cargo metadata invocation and parsing
     └── models.py    # Workspace graph and manifest helpers
+
 tests/
 ├── conftest.py
 ├── fixtures/
 │   └── simple_workspace/
 │       ├── Cargo.toml
 │       └── lading.toml
-│       └── ...
 └── test_*.py
+
 pyproject.toml
 ```
 
@@ -578,3 +577,16 @@ and performs releases.
 
 This multi-layered approach will ensure correctness from the lowest-level
 utilities to the highest-level user-facing commands.
+
+### Phase 4 testing updates
+
+- Introduced `pytest-cov` as a development dependency, so coverage can be
+  reported via `uv run pytest --cov` without additional tooling. Phase 4 sets a
+  floor of >90% line coverage for new modules; focused unit tests now exercise
+  configuration validation edges, publish manifest handling, cmd-mox IPC
+  fallback mechanisms, and workspace model error paths to keep defensive code
+  paths observable.
+- cmd-mox remains the default mechanism for mocking external commands. Tests
+  covering publish pre-flight and `cargo metadata` IPC use stubbed cmd-mox
+  modules rather than spawning real processes, keeping suites deterministic
+  while still traversing streaming/IPC code paths.

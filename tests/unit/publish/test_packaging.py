@@ -99,6 +99,7 @@ def _assert_packaging_failure_message_contains(
         publish._package_publishable_crates(
             plan,
             preparation,
+            options=publish._PublishExecutionOptions(live=False, allow_dirty=True),
             runner=runner,
         )
 
@@ -116,15 +117,20 @@ def test_package_publishable_crates_runs_in_plan_order(
     plan, preparation, staging_root = publish_plan_and_prep
     runner = CallTrackingRunner()
 
-    publish._package_publishable_crates(plan, preparation, runner=runner)
+    publish._package_publishable_crates(
+        plan,
+        preparation,
+        options=publish._PublishExecutionOptions(live=False, allow_dirty=True),
+        runner=runner,
+    )
 
     expected_roots = [
         staging_root / crate.root_path.relative_to(plan.workspace_root)
         for crate in plan.publishable
     ]
-    assert runner.calls == [(("cargo", "package"), root) for root in expected_roots], (
-        "cargo package should run once per publishable crate in order"
-    )
+    assert runner.calls == [
+        (("cargo", "package", "--allow-dirty"), root) for root in expected_roots
+    ], "cargo package should run once per publishable crate in order"
 
 
 def test_package_publishable_crates_stops_on_failure(
@@ -148,10 +154,11 @@ def test_package_publishable_crates_stops_on_failure(
         publish._package_publishable_crates(
             plan,
             preparation,
+            options=publish._PublishExecutionOptions(live=False, allow_dirty=True),
             runner=tracked_runner,
         )
 
-    assert calls == ["cargo package"]
+    assert calls == ["cargo package --allow-dirty"]
     assert "cargo package failed for crate alpha" in str(excinfo.value)
     assert "packaging failed" in str(excinfo.value)
 
@@ -194,14 +201,20 @@ def test_publish_crates_run_dry_run_in_order(
     plan, preparation, staging_root = publish_plan_and_prep
     runner = CallTrackingRunner()
 
-    publish._publish_crates(plan, preparation, runner=runner, live=False)
+    publish._publish_crates(
+        plan,
+        preparation,
+        runner=runner,
+        options=publish._PublishExecutionOptions(live=False, allow_dirty=True),
+    )
 
     expected_roots = [
         staging_root / crate.root_path.relative_to(plan.workspace_root)
         for crate in plan.publishable
     ]
     assert runner.calls == [
-        (("cargo", "publish", "--dry-run"), root) for root in expected_roots
+        (("cargo", "publish", "--allow-dirty", "--dry-run"), root)
+        for root in expected_roots
     ]
     # Ensure we emit a helpful info log for the publish phase.
     assert any("cargo publish" in message for message in caplog.messages)
@@ -214,13 +227,20 @@ def test_publish_crates_run_live_without_dry_run(
     plan, preparation, staging_root = publish_plan_and_prep
     runner = CallTrackingRunner()
 
-    publish._publish_crates(plan, preparation, runner=runner, live=True)
+    publish._publish_crates(
+        plan,
+        preparation,
+        runner=runner,
+        options=publish._PublishExecutionOptions(live=True, allow_dirty=True),
+    )
 
     expected_roots = [
         staging_root / crate.root_path.relative_to(plan.workspace_root)
         for crate in plan.publishable
     ]
-    assert runner.calls == [(("cargo", "publish"), root) for root in expected_roots]
+    assert runner.calls == [
+        (("cargo", "publish", "--allow-dirty"), root) for root in expected_roots
+    ]
 
 
 @pytest.mark.parametrize(
@@ -262,7 +282,12 @@ def test_publish_crates_continue_when_version_already_uploaded(
             )
         return (0, "", "")
 
-    publish._publish_crates(plan, preparation, runner=runner, live=live)
+    publish._publish_crates(
+        plan,
+        preparation,
+        runner=runner,
+        options=publish._PublishExecutionOptions(live=live, allow_dirty=True),
+    )
 
     assert calls == ["alpha", "beta"]
     assert any("already published" in message for message in caplog.messages)
@@ -276,7 +301,12 @@ def test_publish_crates_raise_on_failure(
     failing_runner = make_failing_runner(stdout="network offline")
 
     with pytest.raises(publish.PublishPreflightError) as excinfo:
-        publish._publish_crates(plan, preparation, runner=failing_runner, live=False)
+        publish._publish_crates(
+            plan,
+            preparation,
+            runner=failing_runner,
+            options=publish._PublishExecutionOptions(live=False, allow_dirty=True),
+        )
 
     message = str(excinfo.value)
     assert "cargo publish failed for crate" in message
