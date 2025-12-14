@@ -144,6 +144,10 @@ def given_cargo_commands_stubbed(
     git_spy = cmd_mox.spy("git").passthrough()
     invocation_records: list[tuple[str, tuple[str, ...], dict[str, str]]] = []
 
+    def _has_valid_target_dir(args: tuple[str, ...]) -> bool:
+        """Check if args contains a valid --target-dir flag at position 2."""
+        return len(args) >= 3 and args[2].startswith("--target-dir=")
+
     def _recording_handler(
         label: str,
         expected_prefix: tuple[str, ...] = (),
@@ -156,9 +160,7 @@ def given_cargo_commands_stubbed(
                 raise E2EExpectationError.args_prefix_mismatch(
                     label, expected_prefix, args
                 )
-            if require_target_dir and (
-                len(args) < 3 or not args[2].startswith("--target-dir=")
-            ):
+            if require_target_dir and not _has_valid_target_dir(args):
                 raise E2EExpectationError.target_dir_missing(label, args)
             invocation_records.append((label, args, dict(invocation.env)))
             return ("", "", 0)

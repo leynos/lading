@@ -14,6 +14,60 @@ from lading.commands import publish_execution
 from lading.commands.publish import PublishPreflightError
 
 
+class _MockCmdMoxEnv:
+    """Minimal cmd-mox environment module stub."""
+
+    CMOX_IPC_SOCKET_ENV = "CMOX_IPC_SOCKET"
+    CMOX_REAL_COMMAND_ENV_PREFIX = "CMOX_REAL_"
+
+
+class _MockCmdMoxIPC:
+    """Minimal cmd-mox IPC module stub for passthrough handling."""
+
+    class Response:
+        """Sentinel response type used by passthrough resolution checks."""
+
+    class PassthroughResult:
+        """Payload sent back to cmd-mox after passthrough execution."""
+
+        def __init__(
+            self,
+            invocation_id: str,
+            stdout: str,
+            stderr: str,
+            exit_code: int,
+        ) -> None:
+            self.invocation_id = invocation_id
+            self.stdout = stdout
+            self.stderr = stderr
+            self.exit_code = exit_code
+
+    def report_passthrough_result(self, result: object, timeout: float) -> object:
+        """Return ``result`` to emulate reporting a passthrough result."""
+        del timeout
+        return result
+
+
+class _MockCommandRunner:
+    """Minimal cmd-mox command runner stub for passthrough resolution."""
+
+    def prepare_environment(
+        self,
+        lookup_path: str,
+        extra_env: dict[str, str],
+        invocation_env: dict[str, str],
+    ) -> dict[str, str]:
+        """Merge lookup path, extra env, and invocation env."""
+        return {"PATH": lookup_path} | extra_env | invocation_env
+
+    def resolve_command_with_override(
+        self, command: str, path: str, override: str | None
+    ) -> Path:
+        """Resolve the underlying command to the current Python executable."""
+        del command, path, override
+        return Path(sys.executable)
+
+
 @pytest.fixture
 def mock_cmd_mox_modules(tmp_path: Path) -> SimpleNamespace:
     """Provide complete cmd-mox module stubs for passthrough handling."""
@@ -190,41 +244,6 @@ def test_handle_cmd_mox_passthrough_uses_pwd_for_cwd(
     tmp_path: Path,
 ) -> None:
     """Passthrough subprocesses should run with cwd derived from PWD."""
-
-    class _Env:
-        CMOX_IPC_SOCKET_ENV = "CMOX_IPC_SOCKET"
-        CMOX_REAL_COMMAND_ENV_PREFIX = "CMOX_REAL_"
-
-    class _IPC:
-        class Response:
-            pass
-
-        class PassthroughResult:
-            def __init__(
-                self, invocation_id: str, stdout: str, stderr: str, exit_code: int
-            ) -> None:
-                self.invocation_id = invocation_id
-                self.stdout = stdout
-                self.stderr = stderr
-                self.exit_code = exit_code
-
-        def report_passthrough_result(self, result: object, timeout: float) -> object:
-            return result
-
-    class _CommandRunner:
-        def prepare_environment(
-            self,
-            lookup_path: str,
-            extra_env: dict[str, str],
-            invocation_env: dict[str, str],
-        ) -> dict[str, str]:
-            return {"PATH": lookup_path} | extra_env | invocation_env
-
-        def resolve_command_with_override(
-            self, command: str, path: str, override: str | None
-        ) -> Path:
-            return Path(sys.executable)
-
     shim_socket = tmp_path / "cmox" / "shim" / "socket"
     shim_socket.parent.mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("CMOX_IPC_SOCKET", str(shim_socket))
@@ -242,9 +261,9 @@ def test_handle_cmd_mox_passthrough_uses_pwd_for_cwd(
         stdin="",
     )
     modules = publish_execution.CmdMoxModules(
-        ipc=_IPC(),
-        env=_Env,
-        command_runner=_CommandRunner(),
+        ipc=_MockCmdMoxIPC(),
+        env=_MockCmdMoxEnv,
+        command_runner=_MockCommandRunner(),
     )
 
     captured: dict[str, Path | None] = {"cwd": None}
@@ -271,7 +290,7 @@ def test_handle_cmd_mox_passthrough_uses_pwd_for_cwd(
     )
 
     assert streamed is True
-    assert isinstance(returned, _IPC.PassthroughResult)
+    assert isinstance(returned, _MockCmdMoxIPC.PassthroughResult)
     assert captured["cwd"] == expected_cwd
 
 
