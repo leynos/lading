@@ -3,14 +3,9 @@
 from __future__ import annotations
 
 import shutil
-import typing as typ
+from pathlib import Path
 
 from plumbum import local
-
-if typ.TYPE_CHECKING:  # pragma: no cover
-    from pathlib import Path
-else:  # pragma: no cover - runtime typing fallback
-    Path = typ.Any  # type: ignore[assignment]
 
 
 class GitCommandError(RuntimeError):
@@ -37,6 +32,7 @@ class GitCommandError(RuntimeError):
 
 
 def _run_git(repo_path: Path, *args: str) -> tuple[int, str, str]:
+    repo_path = Path(repo_path)
     with local.cwd(str(repo_path)):
         return local["git"].run(args, retcode=None)
 
@@ -82,4 +78,4 @@ def git_is_clean(repo_path: Path) -> bool:
 
 def rmtree(path: Path) -> None:
     """Remove ``path`` recursively, ignoring missing paths."""
-    shutil.rmtree(path, ignore_errors=True)
+    shutil.rmtree(Path(path), ignore_errors=True)

@@ -14,8 +14,8 @@ Feature: Lading end-to-end workflows in a temporary Git repository
     And cargo commands are stubbed for publish operations
     When I run lading publish --forbid-dirty in the E2E workspace
     Then the command succeeds
+    And cargo preflight was run for the workspace
     And the publish order is "core, utils, app"
     And cargo package was invoked for each crate
     And cargo publish --dry-run was invoked for each crate
     And the workspace README was staged for all crates
-

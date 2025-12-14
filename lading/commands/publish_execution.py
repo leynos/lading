@@ -292,7 +292,7 @@ def _handle_cmd_mox_passthrough(
         )
         return modules.ipc.report_passthrough_result(passthrough_result, timeout), False
 
-    cwd_value = getattr(invocation, "env", {}).get("PWD")
+    cwd_value = passthrough_env.get("PWD")
     cwd = None if not cwd_value else Path(str(cwd_value))
     context = _SubprocessContext(
         cwd=cwd,

@@ -26,7 +26,7 @@ class _CmdMoxInvocation(typ.Protocol):
 
 
 class _CmdMoxDouble(typ.Protocol):
-    invocations: list[typ.Any]
+    invocations: list[_CmdMoxInvocation]
     call_count: int
 
     def passthrough(self) -> _CmdMoxDouble: ...
@@ -92,16 +92,15 @@ def _run_cli(repo_root: Path, workspace_root: Path, *args: str) -> dict[str, typ
 
 
 def _extract_dependency_requirement(entry: object) -> str:
-    if isinstance(entry, Item):
-        value = entry.value
-        if isinstance(value, str):
+    match entry:
+        case Item() as item if isinstance(item.value, str):
+            return item.value
+        case str() as value:
             return value
-    if isinstance(entry, str):
-        return entry
-    if isinstance(entry, InlineTable | Table):
-        version_value = entry.get("version")
-        return _extract_dependency_requirement(version_value)
-    raise E2EExpectationError.dependency_entry_not_string(entry)
+        case InlineTable() | Table() as table:
+            return _extract_dependency_requirement(table.get("version"))
+        case _:
+            raise E2EExpectationError.dependency_entry_not_string(entry)
 
 
 def _stub_cargo_metadata(
@@ -287,13 +286,27 @@ def _find_staging_root(stdout: str) -> Path:
     raise E2EExpectationError.staging_root_missing()
 
 
+def _filter_records(
+    publish_spies: dict[str, typ.Any], label: str
+) -> list[tuple[str, tuple[str, ...], dict[str, str]]]:
+    """Return invocation records matching the given label."""
+    return [record for record in publish_spies["records"] if record[0] == label]
+
+
+@then("cargo preflight was run for the workspace")
+def then_cargo_preflight_ran(publish_spies: dict[str, typ.Any]) -> None:
+    """Assert publish executed cargo check and cargo test pre-flight commands."""
+    check_calls = _filter_records(publish_spies, "cargo::check")
+    test_calls = _filter_records(publish_spies, "cargo::test")
+    assert check_calls, "expected at least one cargo::check preflight invocation"
+    assert test_calls, "expected at least one cargo::test preflight invocation"
+
+
 @then(parsers.parse('the publish order is "{expected}"'))
 def then_publish_order(publish_spies: dict[str, typ.Any], expected: str) -> None:
     """Assert cargo package calls occur in the expected crate order."""
     expected_names = [name.strip() for name in expected.split(",") if name.strip()]
-    package_calls = [
-        record for record in publish_spies["records"] if record[0] == "cargo::package"
-    ]
+    package_calls = _filter_records(publish_spies, "cargo::package")
     seen = []
     for _label, _args, env in package_calls:
         cwd = Path(env["PWD"])
@@ -305,9 +318,7 @@ def then_publish_order(publish_spies: dict[str, typ.Any], expected: str) -> None
 def then_cargo_package_invoked(publish_spies: dict[str, typ.Any]) -> None:
     """Assert cargo package was invoked once per crate."""
     workspace: workspace_builder.NonTrivialWorkspace = publish_spies["workspace"]
-    package_calls = [
-        record for record in publish_spies["records"] if record[0] == "cargo::package"
-    ]
+    package_calls = _filter_records(publish_spies, "cargo::package")
     assert len(package_calls) == len(workspace.crate_names)
     called = {Path(env["PWD"]).name for _label, _args, env in package_calls}
     assert called == set(workspace.crate_names)
@@ -317,9 +328,7 @@ def then_cargo_package_invoked(publish_spies: dict[str, typ.Any]) -> None:
 def then_cargo_publish_invoked(publish_spies: dict[str, typ.Any]) -> None:
     """Assert cargo publish --dry-run was invoked once per crate."""
     workspace: workspace_builder.NonTrivialWorkspace = publish_spies["workspace"]
-    publish_calls = [
-        record for record in publish_spies["records"] if record[0] == "cargo::publish"
-    ]
+    publish_calls = _filter_records(publish_spies, "cargo::publish")
     assert len(publish_calls) == len(workspace.crate_names)
     called = {Path(env["PWD"]).name for _label, _args, env in publish_calls}
     assert called == set(workspace.crate_names)
