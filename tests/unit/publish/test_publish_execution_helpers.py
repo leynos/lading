@@ -90,6 +90,20 @@ def test_build_cmd_mox_invocation_env_merges_overrides(
     assert env["EXISTING"] == "keep"
 
 
+def test_build_cmd_mox_invocation_env_prefers_cwd_over_pwd_override(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Explicit cwd should win even when env overrides include PWD."""
+    workspace_root = tmp_path / "workspace"
+    env = publish_execution._build_cmd_mox_invocation_env(
+        workspace_root,
+        {"PWD": "/root/repo", "OTHER": "ok"},
+    )
+
+    assert env["PWD"] == str(workspace_root)
+    assert env["OTHER"] == "ok"
+
+
 def test_process_cmd_mox_response_updates_environment(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
@@ -169,6 +183,96 @@ def test_handle_cmd_mox_passthrough_reports_response(
     assert streamed is False
     assert isinstance(returned, mock_cmd_mox_modules.ipc_module.Response)
     assert returned.stdout == "pass"
+
+
+def test_handle_cmd_mox_passthrough_uses_pwd_for_cwd(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Passthrough subprocesses should run with cwd derived from PWD."""
+
+    class _Env:
+        CMOX_IPC_SOCKET_ENV = "CMOX_IPC_SOCKET"
+        CMOX_REAL_COMMAND_ENV_PREFIX = "CMOX_REAL_"
+
+    class _IPC:
+        class Response:
+            pass
+
+        class PassthroughResult:
+            def __init__(
+                self, invocation_id: str, stdout: str, stderr: str, exit_code: int
+            ) -> None:
+                self.invocation_id = invocation_id
+                self.stdout = stdout
+                self.stderr = stderr
+                self.exit_code = exit_code
+
+        def report_passthrough_result(self, result: object, timeout: float) -> object:
+            return result
+
+    class _CommandRunner:
+        def prepare_environment(
+            self,
+            lookup_path: str,
+            extra_env: dict[str, str],
+            invocation_env: dict[str, str],
+        ) -> dict[str, str]:
+            return {"PATH": lookup_path} | extra_env | invocation_env
+
+        def resolve_command_with_override(
+            self, command: str, path: str, override: str | None
+        ) -> Path:
+            return Path(sys.executable)
+
+    shim_socket = tmp_path / "cmox" / "shim" / "socket"
+    shim_socket.parent.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("CMOX_IPC_SOCKET", str(shim_socket))
+
+    directive = SimpleNamespace(
+        invocation_id="cwd-test",
+        lookup_path=str(tmp_path / "cmox" / "bin"),
+        extra_env={},
+    )
+    expected_cwd = tmp_path / "workspace"
+    invocation = SimpleNamespace(
+        env={"PATH": str(tmp_path / "cmox" / "bin"), "PWD": str(expected_cwd)},
+        command="git",
+        args=("status",),
+        stdin="",
+    )
+    modules = publish_execution.CmdMoxModules(
+        ipc=_IPC(),
+        env=_Env,
+        command_runner=_CommandRunner(),
+    )
+
+    captured: dict[str, Path | None] = {"cwd": None}
+
+    def _fake_invoke_via_subprocess(
+        program: str,
+        args: tuple[str, ...],
+        context: publish_execution._SubprocessContext,
+    ) -> tuple[int, str, str]:
+        del program, args
+        captured["cwd"] = context.cwd
+        return 0, "", ""
+
+    monkeypatch.setattr(
+        publish_execution, "_invoke_via_subprocess", _fake_invoke_via_subprocess
+    )
+    response = SimpleNamespace(passthrough=directive)
+
+    returned, streamed = publish_execution._handle_cmd_mox_passthrough(
+        response,
+        invocation,
+        timeout=1.0,
+        modules=modules,
+    )
+
+    assert streamed is True
+    assert isinstance(returned, _IPC.PassthroughResult)
+    assert captured["cwd"] == expected_cwd
 
 
 def test_invoke_via_subprocess_surfaces_spawn_errors() -> None:

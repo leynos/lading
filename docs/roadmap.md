@@ -232,7 +232,7 @@ behaviours.
   - **Completion Criteria:** Code coverage reports show over 90% line coverage
     for all new modules.
 
-- [ ] **Create End-to-End Test Suite:**
+- [x] **Create End-to-End Test Suite:**
 
   - **Outcome:** A suite of tests exists that covers the full user workflow in
     a temporary Git repository.

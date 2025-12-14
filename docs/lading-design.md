@@ -417,14 +417,14 @@ involved to the operator. When `publish.order` is configured the planner
 validates that every publishable crate appears exactly once and that no unknown
 names are listed before returning the user-specified order.
 
-4. **Prepare Workspace Manifest**: Within the workspace root, determine the
+1. **Prepare Workspace Manifest**: Within the workspace root, determine the
    patch stripping strategy based on the publish.strip_patches configuration
    and the execution mode (--dry-run flag).
 
     - If strip_patches is "all" (or is unset and this is a dry run), remove the
       entire [patch.crates-io] section from the Cargo.toml.
 
-5. **Execute Pre-Publish Checks:** Before publishing, run a series of checks in
+2. **Execute Pre-Publish Checks:** Before publishing, run a series of checks in
    the workspace itself to ensure integrity:
 
     - Run `cargo check --all-targets` for the entire workspace.
@@ -498,7 +498,7 @@ sequenceDiagram
     end
 ```
 
-6. **Iterate and Publish:** For each crate in the determined order:
+1. **Iterate and Publish:** For each crate in the determined order:
 
     - **Patch Handling (per-crate)**: If strip_patches is "per-crate" (or is
       unset and this is a live run), remove the specific patch entry for the
@@ -522,33 +522,21 @@ package structure for `lading`.
 **Proposed Directory Structure:**
 
 ```plaintext
-lading/
-├── __init__.py
-├── cli.py          # Cyclopts app definition and command wiring
-├── commands/
-│   ├── __init__.py
-│   ├── _shared.py  # Command-level helper utilities
-│   ├── bump.py     # Logic for the 'bump' subcommand
-│   └── publish.py  # Logic for the 'publish' subcommand
-├── config.py       # Frozen dataclasses for lading.toml
-├── utils/
-│   ├── __init__.py
-│   └── path.py     # Filesystem helpers such as normalise_workspace_root
-└── workspace/
+lading/ ├── __init__.py ├── cli.py          # Cyclopts app definition and
+command wiring ├── commands/ │   ├── __init__.py │   ├── _shared.py  #
+Command-level helper utilities │   ├── bump.py     # Logic for the 'bump'
+subcommand │   └── publish.py  # Logic for the 'publish' subcommand ├──
+config.py       # Frozen dataclasses for lading.toml ├── utils/ │   ├──
+__init__.py │   └── path.py     # Filesystem helpers such as
+normalise_workspace_root └── workspace/
     ├── __init__.py
     ├── metadata.py  # cargo metadata invocation and parsing
     └── models.py    # Workspace graph and manifest helpers
 
-tests/
-├── conftest.py
-├── fixtures/
-│   └── simple_workspace/
-│       ├── Cargo.toml
-│       └── lading.toml
-└── test_*.py
+tests/ ├── conftest.py ├── fixtures/ │   └── simple_workspace/ │       ├──
+Cargo.toml │       └── lading.toml └── test_*.py
 
-pyproject.toml
-```
+```pyproject.toml
 
 This structure separates concerns, improves testability, and establishes a
 clear architecture for future development.
@@ -586,6 +574,12 @@ utilities to the highest-level user-facing commands.
   configuration validation edges, publish manifest handling, cmd-mox IPC
   fallback mechanisms, and workspace model error paths to keep defensive code
   paths observable.
+- End-to-end behavioural coverage now lives under `tests/e2e/` and executes
+  the CLI in a temporary Git repository. The suite uses real git operations
+  (`git init`, `git commit`, `git status`) while stubbing `cargo` interactions
+  via cmd-mox (`cargo metadata`, `cargo::check`, `cargo::test`,
+  `cargo::package`, and `cargo::publish`) so that workflows can be validated
+  without a Rust toolchain.
 - cmd-mox remains the default mechanism for mocking external commands. Tests
   covering publish pre-flight and `cargo metadata` IPC use stubbed cmd-mox
   modules rather than spawning real processes, keeping suites deterministic

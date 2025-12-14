@@ -274,6 +274,10 @@ tools. This pattern keeps the tests faithful to real user interactions while
 still providing strict control over command invocations. Use the same approach
 when adding new end-to-end scenarios.
 
+The end-to-end suite in `tests/e2e/` keeps git interactions real while stubbing
+only `cargo` operations, using cmd-mox passthrough spies for `git status` when
+publish runs with stub mode enabled.
+
 ## Workspace discovery helpers
 
 Roadmap Step 1.2 introduces a thin wrapper around `cargo metadata` to expose

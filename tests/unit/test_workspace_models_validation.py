@@ -117,6 +117,78 @@ def test_coerce_publish_setting_allows_sequences_and_bools() -> None:
         models._coerce_publish_setting("invalid", "crate")
 
 
+def test_topological_sort_dedupes_duplicate_dependencies(tmp_path: Path) -> None:
+    """Duplicate edges should not force false dependency cycles."""
+    core_manifest = tmp_path / "crates" / "core" / "Cargo.toml"
+    utils_manifest = tmp_path / "crates" / "utils" / "Cargo.toml"
+    app_manifest = tmp_path / "crates" / "app" / "Cargo.toml"
+
+    core = models.WorkspaceCrate(
+        id="core-id",
+        name="core",
+        version="0.1.0",
+        manifest_path=core_manifest,
+        root_path=core_manifest.parent,
+        publish=True,
+        readme_is_workspace=False,
+        dependencies=(),
+    )
+    utils = models.WorkspaceCrate(
+        id="utils-id",
+        name="utils",
+        version="0.1.0",
+        manifest_path=utils_manifest,
+        root_path=utils_manifest.parent,
+        publish=True,
+        readme_is_workspace=False,
+        dependencies=(
+            models.WorkspaceDependency(
+                package_id="core-id",
+                name="core",
+                manifest_name="core",
+                kind=None,
+            ),
+        ),
+    )
+    app = models.WorkspaceCrate(
+        id="app-id",
+        name="app",
+        version="0.1.0",
+        manifest_path=app_manifest,
+        root_path=app_manifest.parent,
+        publish=True,
+        readme_is_workspace=False,
+        dependencies=(
+            models.WorkspaceDependency(
+                package_id="core-id",
+                name="core",
+                manifest_name="core",
+                kind=None,
+            ),
+            models.WorkspaceDependency(
+                package_id="core-id",
+                name="core",
+                manifest_name="core",
+                kind="build",
+            ),
+            models.WorkspaceDependency(
+                package_id="utils-id",
+                name="utils",
+                manifest_name="utils",
+                kind=None,
+            ),
+        ),
+    )
+
+    workspace = models.WorkspaceGraph(
+        workspace_root=tmp_path,
+        crates=(core, utils, app),
+    )
+
+    ordered = [crate.name for crate in workspace.topologically_sorted_crates()]
+    assert ordered == ["core", "utils", "app"]
+
+
 def test_extract_readme_workspace_flag_handles_non_mappings(tmp_path: Path) -> None:
     """Non-mapping package tables should return False."""
     assert models._extract_readme_workspace_flag("invalid") is False

@@ -134,11 +134,11 @@ def _build_cmd_mox_invocation_env(
     cwd: Path | None, env: typ.Mapping[str, str] | None
 ) -> dict[str, str]:
     """Return the environment mapping for cmd-mox invocations."""
-    invocation_env = metadata_module._build_invocation_environment(
-        None if cwd is None else str(cwd)
-    )
+    invocation_env = metadata_module._build_invocation_environment(None)
     if env is not None:
         invocation_env.update({key: str(value) for key, value in env.items()})
+    if cwd is not None:
+        invocation_env["PWD"] = str(cwd)
     return invocation_env
 
 
@@ -292,8 +292,10 @@ def _handle_cmd_mox_passthrough(
         )
         return modules.ipc.report_passthrough_result(passthrough_result, timeout), False
 
+    cwd_value = getattr(invocation, "env", {}).get("PWD")
+    cwd = None if not cwd_value else Path(str(cwd_value))
     context = _SubprocessContext(
-        cwd=None,
+        cwd=cwd,
         env=passthrough_env,
         stdin_data=invocation.stdin or None,
     )
