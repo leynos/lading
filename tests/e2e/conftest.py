@@ -40,6 +40,15 @@ def e2e_git_repo(e2e_workspace: workspace_builder.NonTrivialWorkspace) -> Path:
 
 
 @pytest.fixture
+def e2e_workspace_with_git(
+    e2e_workspace: workspace_builder.NonTrivialWorkspace,
+    e2e_git_repo: Path,
+) -> tuple[workspace_builder.NonTrivialWorkspace, Path]:
+    """Return the E2E workspace paired with its Git repository root."""
+    return e2e_workspace, e2e_git_repo
+
+
+@pytest.fixture
 def staging_cleanup() -> typ.Callable[[Path], None]:
     """Return a helper that removes the publish staging directory parent."""
 

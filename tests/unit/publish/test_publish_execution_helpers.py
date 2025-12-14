@@ -262,7 +262,7 @@ def test_handle_cmd_mox_passthrough_uses_pwd_for_cwd(
     )
     modules = publish_execution.CmdMoxModules(
         ipc=_MockCmdMoxIPC(),
-        env=_MockCmdMoxEnv,
+        env=_MockCmdMoxEnv(),
         command_runner=_MockCommandRunner(),
     )
 
