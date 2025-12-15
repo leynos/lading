@@ -58,7 +58,7 @@ def test_create_nontrivial_workspace_metadata_payload_is_json_serialisable(
 
     def _dependency_signature(
         entry: dict[str, object],
-    ) -> tuple[object, object, object]:
+    ) -> tuple[object | None, object | None, object | None]:
         return entry.get("name"), entry.get("package"), entry.get("kind")
 
     utils_deps = packages["utils"]["dependencies"]
@@ -72,4 +72,6 @@ def test_create_nontrivial_workspace_metadata_payload_is_json_serialisable(
         ("utils", "utils-id", None),
         ("core", "core-id", "build"),
     }
-    assert json.dumps(payload), "cargo_metadata_payload must be JSON-serialisable"
+    json.dumps(
+        payload
+    )  # Raises TypeError/ValueError if payload isn't JSON-serialisable.

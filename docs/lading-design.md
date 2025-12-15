@@ -417,9 +417,9 @@ involved to the operator. When `publish.order` is configured the planner
 validates that every publishable crate appears exactly once and that no unknown
 names are listed before returning the user-specified order.
 
-1. **Prepare Workspace Manifest**: Within the workspace root, determine the
-   patch stripping strategy based on the publish.strip_patches configuration
-   and the execution mode (--dry-run flag).
+1. **Prepare workspace manifest**: Within the workspace root, determine the
+   patch stripping strategy based on the `publish.strip_patches` configuration
+   value and the execution mode (`--dry-run` flag).
 
     - If strip_patches is "all" (or is unset and this is a dry run), remove the
       entire [patch.crates-io] section from the Cargo.toml.
@@ -521,21 +521,32 @@ package structure for `lading`.
 
 **Proposed Directory Structure:**
 
-```plaintext
-lading/ ├── __init__.py ├── cli.py               # Cyclopts app definition and
-command wiring ├── commands/ │   ├── __init__.py │   ├── _shared.py       #
-Command-level helper utilities │   ├── bump.py          # Logic for the `bump`
-subcommand │   └── publish.py       # Logic for the `publish` subcommand ├──
-config.py            # Frozen dataclasses for `lading.toml` ├── utils/ │   ├──
-__init__.py │   └── path.py          # Filesystem helpers such as
-`normalise_workspace_root` └── workspace/
-    ├── __init__.py
-    ├── metadata.py      # `cargo metadata` invocation and parsing
-    └── models.py        # Workspace graph and manifest helpers
+<!-- markdownlint-disable MD046 -->
+    lading/
+      ├── __init__.py
+      ├── cli.py  # Cyclopts app definition + command wiring
+      ├── commands/
+      │   ├── __init__.py
+      │   ├── _shared.py  # Command-level helper utilities
+      │   ├── bump.py  # Logic for the `bump` subcommand
+      │   └── publish.py  # Logic for the `publish` subcommand
+      ├── config.py  # Frozen dataclasses for `lading.toml`
+      ├── utils/
+      │   ├── __init__.py
+      │   └── path.py  # Filesystem helpers (eg `normalise_workspace_root`)
+      └── workspace/
+          ├── __init__.py
+          ├── metadata.py  # `cargo metadata` invocation and parsing
+          └── models.py  # Workspace graph and manifest helpers
 
-tests/ ├── conftest.py ├── fixtures/ │   └── simple_workspace/ │       ├──
-Cargo.toml │       └── lading.toml └── test_*.py
-```
+    tests/
+      ├── conftest.py
+      ├── fixtures/
+      │   └── simple_workspace/
+      │       ├── Cargo.toml
+      │       └── lading.toml
+      └── test_*.py
+<!-- markdownlint-enable MD046 -->
 
 This structure separates concerns, improves testability, and establishes a
 clear architecture for future development.
