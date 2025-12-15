@@ -29,7 +29,7 @@ def test_create_nontrivial_workspace_writes_expected_structure(tmp_path: Path) -
     assert "```toml" in readme_text
     assert "[dependencies]" in readme_text
     for crate_name in workspace.crate_names:
-        assert f'{crate_name} = "0.1.0"' in readme_text
+        assert f'{crate_name} = "{workspace.version}"' in readme_text
 
     config_text = (workspace_root / "lading.toml").read_text(encoding="utf-8")
     assert "[bump.documentation]" in config_text

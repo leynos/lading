@@ -424,7 +424,7 @@ names are listed before returning the user-specified order.
     - If strip_patches is "all" (or is unset and this is a dry run), remove the
       entire [patch.crates-io] section from the Cargo.toml.
 
-2. **Execute Pre-Publish Checks:** Before publishing, run a series of checks in
+2. **Execute pre-flight checks:** Before publishing, run a series of checks in
    the workspace itself to ensure integrity:
 
     - Run `cargo check --all-targets` for the entire workspace.
@@ -498,7 +498,7 @@ sequenceDiagram
     end
 ```
 
-1. **Iterate and Publish:** For each crate in the determined order:
+1. **Iterate and publish:** For each crate in the determined order:
 
     - **Patch Handling (per-crate)**: If strip_patches is "per-crate" (or is
       unset and this is a live run), remove the specific patch entry for the
