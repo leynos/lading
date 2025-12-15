@@ -9,8 +9,6 @@ from tests.e2e.helpers import workspace_builder
 
 if typ.TYPE_CHECKING:  # pragma: no cover
     from pathlib import Path
-else:  # pragma: no cover - runtime typing fallback
-    Path = typ.Any  # type: ignore[assignment]
 
 
 def test_create_nontrivial_workspace_writes_expected_structure(tmp_path: Path) -> None:
@@ -25,6 +23,9 @@ def test_create_nontrivial_workspace_writes_expected_structure(tmp_path: Path) -
     assert (workspace_root / "lading.toml").exists()
 
     readme_text = (workspace_root / "README.md").read_text(encoding="utf-8")
+    assert readme_text.count("```") >= 2, (
+        "expected README to contain a fenced TOML block"
+    )
     assert "```toml" in readme_text
     assert "[dependencies]" in readme_text
     for crate_name in workspace.crate_names:
@@ -71,4 +72,4 @@ def test_create_nontrivial_workspace_metadata_payload_is_json_serialisable(
         ("utils", "utils-id", None),
         ("core", "core-id", "build"),
     }
-    json.dumps(payload)
+    assert json.dumps(payload), "cargo_metadata_payload must be JSON-serialisable"

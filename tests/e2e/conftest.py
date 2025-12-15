@@ -10,8 +10,6 @@ from tests.e2e.helpers import git_helpers, workspace_builder
 
 if typ.TYPE_CHECKING:  # pragma: no cover
     from pathlib import Path
-else:  # pragma: no cover - runtime typing fallback
-    Path = typ.Any  # type: ignore[assignment]
 
 
 @pytest.fixture

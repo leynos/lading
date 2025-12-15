@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import shutil
-from pathlib import Path
+import typing as typ
 
 from plumbum import local
+
+if typ.TYPE_CHECKING:  # pragma: no cover
+    from pathlib import Path
 
 
 class GitCommandError(RuntimeError):
@@ -32,7 +35,6 @@ class GitCommandError(RuntimeError):
 
 
 def _run_git(repo_path: Path, *args: str) -> tuple[int, str, str]:
-    repo_path = Path(repo_path)
     with local.cwd(str(repo_path)):
         return local["git"].run(args, retcode=None)
 
@@ -78,4 +80,7 @@ def git_is_clean(repo_path: Path) -> bool:
 
 def rmtree(path: Path) -> None:
     """Remove ``path`` recursively, ignoring missing paths."""
-    shutil.rmtree(Path(path), ignore_errors=True)
+    try:
+        shutil.rmtree(path)
+    except FileNotFoundError:
+        return

@@ -2,115 +2,28 @@
 
 from __future__ import annotations
 
-import json
-import os
-import sys
 import typing as typ
 from pathlib import Path
 
-from plumbum import local
 from pytest_bdd import given, parsers, then, when
-from tomlkit.items import InlineTable, Item, Table
 
 from lading.testing import toml_utils
 from tests.e2e.helpers import git_helpers, workspace_builder
+from tests.e2e.helpers.e2e_steps_helpers import (
+    E2EExpectationError,
+    extract_dependency_requirement,
+    filter_records,
+    find_staging_root,
+    run_cli,
+    stub_cargo_metadata,
+)
+from tests.e2e.helpers.e2e_steps_helpers import (
+    _CmdMoxInvocation as CmdMoxInvocation,
+)
 
 if typ.TYPE_CHECKING:  # pragma: no cover
     import pytest
     from cmd_mox import CmdMox
-
-
-class _CmdMoxInvocation(typ.Protocol):
-    args: typ.Sequence[str]
-    env: typ.Mapping[str, str]
-
-
-class _CmdMoxDouble(typ.Protocol):
-    invocations: list[_CmdMoxInvocation]
-    call_count: int
-
-    def passthrough(self) -> _CmdMoxDouble: ...
-
-
-class E2EExpectationError(AssertionError):
-    """Raised when an end-to-end test expectation is violated."""
-
-    @classmethod
-    def unsupported_fixture_version(cls, version: str) -> E2EExpectationError:
-        """Return an error for unsupported fixture versions."""
-        return cls(f"E2E fixture currently supports version 0.1.0 only (got {version})")
-
-    @classmethod
-    def dependency_entry_not_string(cls, entry: object) -> E2EExpectationError:
-        """Return an error when a TOML dependency entry is not a string-like version."""
-        return cls(f"Dependency entry is not a version string: {entry!r}")
-
-    @classmethod
-    def args_prefix_mismatch(
-        cls,
-        label: str,
-        expected_prefix: tuple[str, ...],
-        args: tuple[str, ...],
-    ) -> E2EExpectationError:
-        """Return an error when recorded args do not match the expected prefix."""
-        return cls(f"{label} expected args prefix {expected_prefix!r}, got {args!r}")
-
-    @classmethod
-    def target_dir_missing(
-        cls, label: str, args: tuple[str, ...]
-    ) -> E2EExpectationError:
-        """Return an error when the pre-flight target dir flag is missing."""
-        return cls(f"{label} expected --target-dir=... at args[2], got {args!r}")
-
-    @classmethod
-    def staging_root_missing(cls) -> E2EExpectationError:
-        """Return an error when publish output lacks the staging root line."""
-        return cls("publish output did not include staging root")
-
-
-def _run_cli(repo_root: Path, workspace_root: Path, *args: str) -> dict[str, typ.Any]:
-    with local.cwd(str(repo_root)):
-        exit_code, stdout, stderr = local[sys.executable].run(
-            ["-m", "lading.cli", "--workspace-root", str(workspace_root), *args],
-            retcode=None,
-            env=dict(os.environ),
-        )
-    return {
-        "command": [
-            sys.executable,
-            "-m",
-            "lading.cli",
-            "--workspace-root",
-            str(workspace_root),
-            *args,
-        ],
-        "returncode": exit_code,
-        "stdout": stdout,
-        "stderr": stderr,
-        "workspace_root": workspace_root,
-    }
-
-
-def _extract_dependency_requirement(entry: object) -> str:
-    match entry:
-        case Item() as item if isinstance(item.value, str):
-            return item.value
-        case str() as value:
-            return value
-        case InlineTable() | Table() as table:
-            return _extract_dependency_requirement(table.get("version"))
-        case _:
-            raise E2EExpectationError.dependency_entry_not_string(entry)
-
-
-def _stub_cargo_metadata(
-    cmd_mox: CmdMox, workspace: workspace_builder.NonTrivialWorkspace
-) -> None:
-    cmd_mox.mock("cargo").with_args("metadata", "--format-version", "1").returns(
-        exit_code=0,
-        stdout=json.dumps(dict(workspace.cargo_metadata_payload)),
-        stderr="",
-    ).any_order()
 
 
 @given(
@@ -128,7 +41,7 @@ def given_nontrivial_workspace_in_git_repo(
         raise E2EExpectationError.unsupported_fixture_version(version)
     e2e_workspace, e2e_git_repo = e2e_workspace_with_git
     monkeypatch.setenv("LADING_USE_CMD_MOX_STUB", "1")
-    _stub_cargo_metadata(cmd_mox, e2e_workspace)
+    stub_cargo_metadata(cmd_mox, e2e_workspace)
     return {"workspace": e2e_workspace, "git_repo": e2e_git_repo}
 
 
@@ -140,7 +53,7 @@ def given_cargo_commands_stubbed(
     e2e_state: dict[str, typ.Any],
 ) -> dict[str, typ.Any]:
     """Stub cargo pre-flight and publish loop commands; allow real git status."""
-    git_spy = cmd_mox.spy("git").passthrough()
+    cmd_mox.spy("git").passthrough()
     invocation_records: list[tuple[str, tuple[str, ...], dict[str, str]]] = []
 
     def _has_valid_target_dir(args: tuple[str, ...]) -> bool:
@@ -152,8 +65,8 @@ def given_cargo_commands_stubbed(
         expected_prefix: tuple[str, ...] = (),
         *,
         require_target_dir: bool = False,
-    ) -> typ.Callable[[_CmdMoxInvocation], tuple[str, str, int]]:
-        def _handler(invocation: _CmdMoxInvocation) -> tuple[str, str, int]:
+    ) -> typ.Callable[[CmdMoxInvocation], tuple[str, str, int]]:
+        def _handler(invocation: CmdMoxInvocation) -> tuple[str, str, int]:
             args = tuple(invocation.args)
             if expected_prefix and args[: len(expected_prefix)] != expected_prefix:
                 raise E2EExpectationError.args_prefix_mismatch(
@@ -186,7 +99,6 @@ def given_cargo_commands_stubbed(
     )
 
     return {
-        "git_spy": git_spy,
         "records": invocation_records,
         "workspace": e2e_state["workspace"],
     }
@@ -203,7 +115,7 @@ def when_run_lading_bump(
 ) -> dict[str, typ.Any]:
     """Invoke `lading bump` against the E2E workspace and capture output."""
     workspace: workspace_builder.NonTrivialWorkspace = e2e_state["workspace"]
-    return _run_cli(repo_root, workspace.root, "bump", version)
+    return run_cli(repo_root, workspace.root, "bump", version)
 
 
 @when(
@@ -215,7 +127,7 @@ def when_run_lading_publish(
 ) -> dict[str, typ.Any]:
     """Invoke `lading publish` (dry-run default) with `--forbid-dirty`."""
     workspace: workspace_builder.NonTrivialWorkspace = e2e_state["workspace"]
-    return _run_cli(repo_root, workspace.root, "publish", "--forbid-dirty")
+    return run_cli(repo_root, workspace.root, "publish", "--forbid-dirty")
 
 
 @then("the command succeeds")
@@ -244,19 +156,16 @@ def then_internal_dependencies_updated(e2e_state: dict[str, typ.Any]) -> None:
     utils_doc = toml_utils.load_manifest(
         workspace.root / "crates" / "utils" / "Cargo.toml"
     )
+    assert extract_dependency_requirement(utils_doc["dependencies"]["core"]) == "^1.0.0"
     assert (
-        _extract_dependency_requirement(utils_doc["dependencies"]["core"]) == "^1.0.0"
-    )
-    assert (
-        _extract_dependency_requirement(utils_doc["dev-dependencies"]["core"])
+        extract_dependency_requirement(utils_doc["dev-dependencies"]["core"])
         == "~1.0.0"
     )
     app_doc = toml_utils.load_manifest(workspace.root / "crates" / "app" / "Cargo.toml")
-    assert _extract_dependency_requirement(app_doc["dependencies"]["core"]) == "1.0.0"
-    assert _extract_dependency_requirement(app_doc["dependencies"]["utils"]) == "~1.0.0"
+    assert extract_dependency_requirement(app_doc["dependencies"]["core"]) == "1.0.0"
+    assert extract_dependency_requirement(app_doc["dependencies"]["utils"]) == "~1.0.0"
     assert (
-        _extract_dependency_requirement(app_doc["build-dependencies"]["core"])
-        == "1.0.0"
+        extract_dependency_requirement(app_doc["build-dependencies"]["core"]) == "1.0.0"
     )
 
 
@@ -278,26 +187,11 @@ def then_git_dirty(e2e_state: dict[str, typ.Any]) -> None:
     assert status.strip(), "expected a dirty git status"
 
 
-def _find_staging_root(stdout: str) -> Path:
-    """Parse the publish CLI output and return the staging root directory."""
-    for line in stdout.splitlines():
-        if line.startswith("Staged workspace at: "):
-            return Path(line.partition(": ")[2].strip())
-    raise E2EExpectationError.staging_root_missing()
-
-
-def _filter_records(
-    publish_spies: dict[str, typ.Any], label: str
-) -> list[tuple[str, tuple[str, ...], dict[str, str]]]:
-    """Return invocation records matching the given label."""
-    return [record for record in publish_spies["records"] if record[0] == label]
-
-
 @then("cargo preflight was run for the workspace")
 def then_cargo_preflight_ran(publish_spies: dict[str, typ.Any]) -> None:
     """Assert publish executed cargo check and cargo test pre-flight commands."""
-    check_calls = _filter_records(publish_spies, "cargo::check")
-    test_calls = _filter_records(publish_spies, "cargo::test")
+    check_calls = filter_records(publish_spies, "cargo::check")
+    test_calls = filter_records(publish_spies, "cargo::test")
     assert check_calls, "expected at least one cargo::check preflight invocation"
     assert test_calls, "expected at least one cargo::test preflight invocation"
 
@@ -306,7 +200,7 @@ def then_cargo_preflight_ran(publish_spies: dict[str, typ.Any]) -> None:
 def then_publish_order(publish_spies: dict[str, typ.Any], expected: str) -> None:
     """Assert cargo package calls occur in the expected crate order."""
     expected_names = [name.strip() for name in expected.split(",") if name.strip()]
-    package_calls = _filter_records(publish_spies, "cargo::package")
+    package_calls = filter_records(publish_spies, "cargo::package")
     seen = []
     for _label, _args, env in package_calls:
         cwd = Path(env["PWD"])
@@ -318,7 +212,7 @@ def then_publish_order(publish_spies: dict[str, typ.Any], expected: str) -> None
 def then_cargo_package_invoked(publish_spies: dict[str, typ.Any]) -> None:
     """Assert cargo package was invoked once per crate."""
     workspace: workspace_builder.NonTrivialWorkspace = publish_spies["workspace"]
-    package_calls = _filter_records(publish_spies, "cargo::package")
+    package_calls = filter_records(publish_spies, "cargo::package")
     assert len(package_calls) == len(workspace.crate_names)
     called = {Path(env["PWD"]).name for _label, _args, env in package_calls}
     assert called == set(workspace.crate_names)
@@ -328,7 +222,7 @@ def then_cargo_package_invoked(publish_spies: dict[str, typ.Any]) -> None:
 def then_cargo_publish_invoked(publish_spies: dict[str, typ.Any]) -> None:
     """Assert cargo publish --dry-run was invoked once per crate."""
     workspace: workspace_builder.NonTrivialWorkspace = publish_spies["workspace"]
-    publish_calls = _filter_records(publish_spies, "cargo::publish")
+    publish_calls = filter_records(publish_spies, "cargo::publish")
     assert len(publish_calls) == len(workspace.crate_names)
     called = {Path(env["PWD"]).name for _label, _args, env in publish_calls}
     assert called == set(workspace.crate_names)
@@ -342,7 +236,7 @@ def then_readme_staged(
 ) -> None:
     """Assert publish staging copied the workspace README into each crate."""
     workspace: workspace_builder.NonTrivialWorkspace = publish_spies["workspace"]
-    staging_root = _find_staging_root(cli_run["stdout"])
+    staging_root = find_staging_root(cli_run["stdout"])
     try:
         expected_paths = [
             staging_root / "crates" / name / "README.md"
