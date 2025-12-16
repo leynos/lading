@@ -521,32 +521,32 @@ package structure for `lading`.
 
 **Proposed Directory Structure:**
 
-<!-- markdownlint-disable MD046 -->
-    lading/
+```plaintext
+lading/
+  ├── __init__.py
+  ├── cli.py               # Cyclopts app definition and command wiring
+  ├── commands/
+  │   ├── __init__.py
+  │   ├── _shared.py       # Command-level helper utilities
+  │   ├── bump.py          # Logic for the `bump` subcommand
+  │   └── publish.py       # Logic for the `publish` subcommand
+  ├── config.py            # Frozen dataclasses for `lading.toml`
+  ├── utils/
+  │   ├── __init__.py
+  │   └── path.py          # Filesystem helpers such as `normalise_workspace_root`
+  └── workspace/
       ├── __init__.py
-      ├── cli.py  # Cyclopts app definition + command wiring
-      ├── commands/
-      │   ├── __init__.py
-      │   ├── _shared.py  # Command-level helper utilities
-      │   ├── bump.py  # Logic for the `bump` subcommand
-      │   └── publish.py  # Logic for the `publish` subcommand
-      ├── config.py  # Frozen dataclasses for `lading.toml`
-      ├── utils/
-      │   ├── __init__.py
-      │   └── path.py  # Filesystem helpers (eg `normalise_workspace_root`)
-      └── workspace/
-          ├── __init__.py
-          ├── metadata.py  # `cargo metadata` invocation and parsing
-          └── models.py  # Workspace graph and manifest helpers
+      ├── metadata.py      # `cargo metadata` invocation and parsing
+      └── models.py        # Workspace graph and manifest helpers
 
-    tests/
-      ├── conftest.py
-      ├── fixtures/
-      │   └── simple_workspace/
-      │       ├── Cargo.toml
-      │       └── lading.toml
-      └── test_*.py
-<!-- markdownlint-enable MD046 -->
+tests/
+  ├── conftest.py
+  ├── fixtures/
+  │   └── simple_workspace/
+  │       ├── Cargo.toml
+  │       └── lading.toml
+  └── test_*.py
+```
 
 This structure separates concerns, improves testability, and establishes a
 clear architecture for future development.
