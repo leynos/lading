@@ -498,6 +498,8 @@ sequenceDiagram
     end
 ```
 
+### Publishing iteration
+
 1. **Iterate and publish:** For each crate in the determined order:
 
     - **Patch Handling (per-crate)**: If strip_patches is "per-crate" (or is
