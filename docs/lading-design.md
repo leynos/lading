@@ -184,6 +184,11 @@ available during packaging. Any parse errors or missing manifests surface as
 
 #### Publish data flow
 
+The publish data flow shows how the publish command orchestrates manifest
+preparation, crate planning, and command execution. The workflow splits
+configuration-driven patch stripping logic (all vs. per-crate) based on dry-run
+and live modes, and feeds the resulting plan to execution helpers.
+
 ```mermaid
 graph TD
     A["User CLI command: lading publish"] --> B["Module: lading.commands.publish (publish.py)"]
@@ -471,6 +476,12 @@ names are listed before returning the user-specified order.
 
 ### Publish Preflight Sequence
 
+The preflight sequence diagram illustrates the pre-flight checks that run
+before crate publication. Auxiliary build commands (if configured) execute
+first, followed by cargo check and cargo test with environment overrides
+applied. Preflight failures abort the publish workflow; success advances to
+crate-by-crate publishing.
+
 ```mermaid
 sequenceDiagram
     participant Caller
@@ -524,30 +535,19 @@ package structure for `lading`.
 **Proposed Directory Structure:**
 
 ```plaintext
-lading/
-  ├── __init__.py
-  ├── cli.py               # Cyclopts app definition and command wiring
-  ├── commands/
-  │   ├── __init__.py
-  │   ├── _shared.py       # Command-level helper utilities
-  │   ├── bump.py          # Logic for the `bump` subcommand
-  │   └── publish.py       # Logic for the `publish` subcommand
-  ├── config.py            # Frozen dataclasses for `lading.toml`
-  ├── utils/
-  │   ├── __init__.py
-  │   └── path.py          # Filesystem helpers such as `normalise_workspace_root`
-  └── workspace/
+lading/ ├── __init__.py ├── cli.py               # Cyclopts app definition and
+command wiring ├── commands/ │   ├── __init__.py │   ├── _shared.py       #
+Command-level helper utilities │   ├── bump.py          # Logic for the `bump`
+subcommand │   └── publish.py       # Logic for the `publish` subcommand ├──
+config.py            # Frozen dataclasses for `lading.toml` ├── utils/ │   ├──
+__init__.py │   └── path.py          # Filesystem helpers such as
+`normalise_workspace_root` └── workspace/
       ├── __init__.py
       ├── metadata.py      # `cargo metadata` invocation and parsing
       └── models.py        # Workspace graph and manifest helpers
 
-tests/
-  ├── conftest.py
-  ├── fixtures/
-  │   └── simple_workspace/
-  │       ├── Cargo.toml
-  │       └── lading.toml
-  └── test_*.py
+tests/ ├── conftest.py ├── fixtures/ │   └── simple_workspace/ │       ├──
+Cargo.toml │       └── lading.toml └── test_*.py
 ```
 
 This structure separates concerns, improves testability, and establishes a
