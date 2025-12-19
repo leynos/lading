@@ -26,6 +26,45 @@ if typ.TYPE_CHECKING:  # pragma: no cover
     from cmd_mox import CmdMox
 
 
+def _validate_args_prefix(
+    label: str,
+    args: tuple[str, ...],
+    expected_prefixes: tuple[tuple[str, ...], ...],
+) -> None:
+    """Validate that ``args`` begins with one of ``expected_prefixes``."""
+    if expected_prefixes and not any(
+        args[: len(prefix)] == prefix for prefix in expected_prefixes
+    ):
+        expected = expected_prefixes[0]
+        raise E2EExpectationError.args_prefix_mismatch(label, expected, args)
+
+
+def _validate_target_dir(label: str, args: tuple[str, ...]) -> None:
+    """Validate that ``args`` contains ``--target-dir=...`` at position 2."""
+    if len(args) < 3 or not args[2].startswith("--target-dir="):
+        raise E2EExpectationError.target_dir_missing(label, args)
+
+
+def _create_recording_handler(
+    label: str,
+    invocation_records: list[tuple[str, tuple[str, ...], dict[str, str]]],
+    expected_prefixes: tuple[tuple[str, ...], ...] = (),
+    *,
+    require_target_dir: bool = False,
+) -> typ.Callable[[CmdMoxInvocation], tuple[str, str, int]]:
+    """Create an invocation handler that validates and records cmd-mox calls."""
+
+    def _handler(invocation: CmdMoxInvocation) -> tuple[str, str, int]:
+        args = tuple(invocation.args)
+        _validate_args_prefix(label, args, expected_prefixes)
+        if require_target_dir:
+            _validate_target_dir(label, args)
+        invocation_records.append((label, args, dict(invocation.env)))
+        return ("", "", 0)
+
+    return _handler
+
+
 @given(
     parsers.parse('a non-trivial workspace in a Git repository at version "{version}"'),
     target_fixture="e2e_state",
@@ -56,54 +95,28 @@ def given_cargo_commands_stubbed(
     cmd_mox.spy("git").passthrough()
     invocation_records: list[tuple[str, tuple[str, ...], dict[str, str]]] = []
 
-    def _has_valid_target_dir(args: tuple[str, ...]) -> bool:
-        """Check if args contains a valid --target-dir flag at position 2."""
-        return len(args) >= 3 and args[2].startswith("--target-dir=")
-
-    def _recording_handler(
-        label: str,
-        expected_prefixes: tuple[tuple[str, ...], ...] = (),
-        *,
-        require_target_dir: bool = False,
-    ) -> typ.Callable[[CmdMoxInvocation], tuple[str, str, int]]:
-        def _handler(invocation: CmdMoxInvocation) -> tuple[str, str, int]:
-            args = tuple(invocation.args)
-            if expected_prefixes and not any(
-                args[: len(prefix)] == prefix for prefix in expected_prefixes
-            ):
-                expected = expected_prefixes[0]
-                raise E2EExpectationError.args_prefix_mismatch(label, expected, args)
-            if require_target_dir and not _has_valid_target_dir(args):
-                raise E2EExpectationError.target_dir_missing(label, args)
-            invocation_records.append((label, args, dict(invocation.env)))
-            return ("", "", 0)
-
-        return _handler
-
-    cmd_mox.stub("cargo::check").runs(
-        _recording_handler(
-            "cargo::check",
-            (("--workspace", "--all-targets"),),
-            require_target_dir=True,
-        )
-    )
-    cmd_mox.stub("cargo::test").runs(
-        _recording_handler(
-            "cargo::test",
-            (("--workspace", "--all-targets"),),
-            require_target_dir=True,
-        )
-    )
-    cmd_mox.stub("cargo::package").runs(_recording_handler("cargo::package"))
-    cmd_mox.stub("cargo::publish").runs(
-        _recording_handler(
+    stub_configs: list[tuple[str, tuple[tuple[str, ...], ...], bool]] = [
+        ("cargo::check", (("--workspace", "--all-targets"),), True),
+        ("cargo::test", (("--workspace", "--all-targets"),), True),
+        ("cargo::package", (), False),
+        (
             "cargo::publish",
             (
                 ("--dry-run",),
                 ("--allow-dirty", "--dry-run"),
             ),
+            False,
+        ),
+    ]
+
+    for cmd_name, prefixes, requires_target in stub_configs:
+        handler = _create_recording_handler(
+            cmd_name,
+            invocation_records,
+            prefixes,
+            require_target_dir=requires_target,
         )
-    )
+        cmd_mox.stub(cmd_name).runs(handler)
 
     return {
         "records": invocation_records,
