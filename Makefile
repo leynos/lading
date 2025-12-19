@@ -2,7 +2,7 @@ MDLINT ?= $(shell which markdownlint)
 NIXIE ?= $(shell which nixie)
 MDFORMAT_ALL ?= $(shell which mdformat-all)
 TOOLS = $(MDFORMAT_ALL) ruff ty $(MDLINT) $(NIXIE) uv
-PY_SOURCES := $(sort $(shell rg --files -g'*.py' lading scripts))
+PY_SOURCES := $(sort $(shell find lading scripts -type f -name '*.py' -print))
 VENV_TOOLS = pytest
 
 .PHONY: help all clean build build-release lint fmt check-fmt \
