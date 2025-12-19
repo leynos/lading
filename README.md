@@ -32,8 +32,11 @@ release plan.
 
 ## Learn more
 
-Ready for a full tour? Sail over to the
-[usage guide](https://github.com/leynos/lading/blob/main/docs/usage-guide.md)
-for detailed walkthroughs, configuration examples, and command reference.
+Ready for a full tour?
+
+- [User guide](docs/users-guide.md) – installation, tutorial, and full
+  `lading.toml` reference.
+- [Usage guide](docs/usage-guide.md) – implementation notes, library entry
+  points, and testing hooks.
 
 Fair winds and following seas! ⚓

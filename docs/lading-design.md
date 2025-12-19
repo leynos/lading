@@ -608,3 +608,14 @@ utilities to the highest-level user-facing commands.
   covering publish pre-flight and `cargo metadata` IPC use stubbed cmd-mox
   modules rather than spawning real processes, keeping suites deterministic
   while still traversing streaming/IPC code paths.
+
+### Phase 4 documentation updates
+
+- Added `docs/users-guide.md` as the primary end-user guide. It contains an
+  installation guide, a tutorial, and a complete `lading.toml` reference.
+- Added tests that assert the user guide documents every supported `lading.toml`
+  option, so configuration schema changes cannot silently drift out of sync
+  with the documentation.
+- Standardised release builds via `make build-release`, which uses the
+  repository-managed virtual environment (`uv run python -m build`) to produce
+  `sdist` and `wheel` artefacts.

@@ -249,7 +249,7 @@ distribution.
 
 **Tasks:**
 
-- [ ] **Write User Guide:**
+- [x] **Write User Guide:**
 
   - **Outcome:** A comprehensive `README.md` or set of documentation files
     exists for the `lading` project.
@@ -257,7 +257,7 @@ distribution.
     a tutorial, and a complete reference for the `lading.toml` configuration
     file.
 
-- [ ] **Package for PyPI:**
+- [x] **Package for PyPI:**
 
   - **Outcome:** The `lading` tool is packaged as a standard Python wheel.
   - **Completion Criteria:** The `pyproject.toml` is fully configured for

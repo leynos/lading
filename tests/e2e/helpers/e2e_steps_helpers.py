@@ -99,7 +99,7 @@ def stub_cargo_metadata(
     cmd_mox: CmdMox, workspace: workspace_builder.NonTrivialWorkspace
 ) -> None:
     """Stub `cargo metadata` so the CLI can construct its workspace model."""
-    cmd_mox.mock("cargo").with_args("metadata", "--format-version", "1").returns(
+    cmd_mox.stub("cargo").with_args("metadata", "--format-version", "1").returns(
         exit_code=0,
         stdout=json.dumps(dict(workspace.cargo_metadata_payload)),
         stderr="",

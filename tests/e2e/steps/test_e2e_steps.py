@@ -62,16 +62,17 @@ def given_cargo_commands_stubbed(
 
     def _recording_handler(
         label: str,
-        expected_prefix: tuple[str, ...] = (),
+        expected_prefixes: tuple[tuple[str, ...], ...] = (),
         *,
         require_target_dir: bool = False,
     ) -> typ.Callable[[CmdMoxInvocation], tuple[str, str, int]]:
         def _handler(invocation: CmdMoxInvocation) -> tuple[str, str, int]:
             args = tuple(invocation.args)
-            if expected_prefix and args[: len(expected_prefix)] != expected_prefix:
-                raise E2EExpectationError.args_prefix_mismatch(
-                    label, expected_prefix, args
-                )
+            if expected_prefixes and not any(
+                args[: len(prefix)] == prefix for prefix in expected_prefixes
+            ):
+                expected = expected_prefixes[0]
+                raise E2EExpectationError.args_prefix_mismatch(label, expected, args)
             if require_target_dir and not _has_valid_target_dir(args):
                 raise E2EExpectationError.target_dir_missing(label, args)
             invocation_records.append((label, args, dict(invocation.env)))
@@ -82,20 +83,26 @@ def given_cargo_commands_stubbed(
     cmd_mox.stub("cargo::check").runs(
         _recording_handler(
             "cargo::check",
-            ("--workspace", "--all-targets"),
+            (("--workspace", "--all-targets"),),
             require_target_dir=True,
         )
     )
     cmd_mox.stub("cargo::test").runs(
         _recording_handler(
             "cargo::test",
-            ("--workspace", "--all-targets"),
+            (("--workspace", "--all-targets"),),
             require_target_dir=True,
         )
     )
     cmd_mox.stub("cargo::package").runs(_recording_handler("cargo::package"))
     cmd_mox.stub("cargo::publish").runs(
-        _recording_handler("cargo::publish", ("--dry-run",))
+        _recording_handler(
+            "cargo::publish",
+            (
+                ("--dry-run",),
+                ("--allow-dirty", "--dry-run"),
+            ),
+        )
     )
 
     return {
@@ -128,6 +135,16 @@ def when_run_lading_publish(
     """Invoke `lading publish` (dry-run default) with `--forbid-dirty`."""
     workspace: workspace_builder.NonTrivialWorkspace = e2e_state["workspace"]
     return run_cli(repo_root, workspace.root, "publish", "--forbid-dirty")
+
+
+@when("I run lading publish in the E2E workspace", target_fixture="cli_run")
+def when_run_lading_publish_allow_dirty(
+    repo_root: Path,
+    e2e_state: dict[str, typ.Any],
+) -> dict[str, typ.Any]:
+    """Invoke `lading publish` using the default allow-dirty behaviour."""
+    workspace: workspace_builder.NonTrivialWorkspace = e2e_state["workspace"]
+    return run_cli(repo_root, workspace.root, "publish")
 
 
 @then("the command succeeds")

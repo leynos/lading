@@ -1,7 +1,7 @@
 [project]
 name = "lading"
 version = "0.1.0"
-description = "lading package"
+description = "Manage Rust workspace versioning and publishing."
 readme = "README.md"
 requires-python = ">=3.13"
 license = { text = "ISC" }
@@ -28,6 +28,7 @@ lading = "lading.cli:main"
 
 [dependency-groups]
 dev = [
+    "build",
     "pytest",
     "pytest-bdd",
     "pytest-cov",

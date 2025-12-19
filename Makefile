@@ -18,8 +18,8 @@ all: check-fmt lint test typecheck
 build: uv .venv ## Build virtual-env and install deps
 	uv sync --group dev
 
-build-release: ## Build artefacts (sdist & wheel)
-	python -m build --sdist --wheel
+build-release: build ## Build artefacts (sdist & wheel)
+	uv run python -m build --sdist --wheel
 
 clean: ## Remove build artifacts
 	rm -rf build dist *.egg-info \

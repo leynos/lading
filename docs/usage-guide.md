@@ -4,10 +4,15 @@ The `lading` command-line tool orchestrates versioning and publication tasks
 for Rust workspaces. This guide documents the CLI scaffolding introduced in
 roadmap Step 1.1 and the manifest version propagation delivered in Step 2.1.
 
+For an end-user tutorial and a complete `lading.toml` reference, see
+`docs/users-guide.md`.
+
 ## Installation and invocation
 
-The CLI ships with the repository and can be executed via the `lading` console
-script or directly with Python:
+The CLI can be installed from a wheel (for example, one built locally with
+`make build-release`) or executed directly from a checkout during development.
+
+To run the tool from a local checkout using `uv`:
 
 ```bash
 uv run lading --help
