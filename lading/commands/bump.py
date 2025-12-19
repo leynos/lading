@@ -159,7 +159,9 @@ def run(
         )
     )
 
-    ordered_documents = tuple(sorted(changed_documents, key=str))
+    ordered_documents: tuple[Path, ...] = tuple(
+        sorted(changed_documents, key=lambda path: str(path))
+    )
 
     return _format_result_message(
         BumpChanges(manifests=ordered_manifests, documents=ordered_documents),
@@ -280,7 +282,7 @@ def _should_skip_crate_update(
 
 
 def _freeze_dependency_sections(
-    sections: dict[str, typ.Collection[str]],
+    sections: typ.Mapping[str, typ.Collection[str]],
 ) -> typ.Mapping[str, typ.Collection[str]]:
     """Return an immutable mapping for dependency sections."""
     if not sections:

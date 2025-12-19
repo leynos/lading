@@ -49,6 +49,49 @@ if typ.TYPE_CHECKING:  # pragma: no cover - typing helper
     from lading.commands.publish import PublishPreflightError
 
 
+class _CmdMoxEnvModule(typ.Protocol):
+    """Cmd-mox environment constants used by publish execution."""
+
+    CMOX_IPC_SOCKET_ENV: str
+    CMOX_IPC_TIMEOUT_ENV: str
+    CMOX_REAL_COMMAND_ENV_PREFIX: str
+
+
+class _CmdMoxCommandRunner(typ.Protocol):
+    """Command runner functions surfaced by cmd-mox."""
+
+    def prepare_environment(
+        self,
+        lookup_path: str,
+        extra_env: typ.Mapping[str, str] | None,
+        invocation_env: typ.Mapping[str, str],
+    ) -> dict[str, str]: ...
+
+    def resolve_command_with_override(
+        self,
+        command: str,
+        lookup_path: str,
+        override: str | None,
+    ) -> object: ...
+
+
+class _CmdMoxPassthroughDirective(typ.Protocol):
+    """Passthrough directive returned by cmd-mox responses."""
+
+    invocation_id: str
+    lookup_path: str
+    extra_env: typ.Mapping[str, str] | None
+
+
+class _CmdMoxInvocation(typ.Protocol):
+    """Invocation object passed to cmd-mox and used for passthrough."""
+
+    command: str
+    args: typ.Sequence[str]
+    stdin: str
+    env: typ.Mapping[str, str]
+
+
 class _CommandRunner(typ.Protocol):
     """Protocol describing the callable used to execute shell commands."""
 
@@ -165,13 +208,14 @@ def _invoke_via_cmd_mox(
     program, args = _split_command(command)
     invocation_program, invocation_args = _normalise_cmd_mox_command(program, args)
     invocation_env = _build_cmd_mox_invocation_env(cwd, env)
-    invocation = ipc.Invocation(
+    ipc_module = typ.cast("typ.Any", ipc)
+    invocation = ipc_module.Invocation(
         command=invocation_program,
         args=invocation_args,
         stdin="",
         env=invocation_env,
     )
-    response = ipc.invoke_server(invocation, timeout)
+    response = ipc_module.invoke_server(invocation, timeout)
     modules = CmdMoxModules(ipc=ipc, env=env_mod, command_runner=cmd_runner_module)
     response, streamed = _handle_cmd_mox_passthrough(
         response,
@@ -271,57 +315,65 @@ def _handle_cmd_mox_passthrough(
     if directive is None:
         return response, False
 
+    env_module = typ.cast("_CmdMoxEnvModule", modules.env)
+    runner = typ.cast("_CmdMoxCommandRunner", modules.command_runner)
+    ipc_module = typ.cast("typ.Any", modules.ipc)
+    invocation_typed = typ.cast("_CmdMoxInvocation", invocation)
+    directive_typed = typ.cast("_CmdMoxPassthroughDirective", directive)
+
     passthrough_env = _build_cmd_mox_passthrough_env(
-        directive,
-        invocation,
+        directive_typed,
+        invocation_typed,
         modules=modules,
     )
-    resolved = modules.command_runner.resolve_command_with_override(
-        invocation.command,
+    resolved = runner.resolve_command_with_override(
+        invocation_typed.command,
         passthrough_env.get("PATH", ""),
         os.environ.get(
-            f"{modules.env.CMOX_REAL_COMMAND_ENV_PREFIX}{invocation.command}"
+            f"{env_module.CMOX_REAL_COMMAND_ENV_PREFIX}{invocation_typed.command}"
         ),
     )
-    if isinstance(resolved, modules.ipc.Response):
-        passthrough_result = modules.ipc.PassthroughResult(
-            invocation_id=directive.invocation_id,
+    if isinstance(resolved, ipc_module.Response):
+        passthrough_result = ipc_module.PassthroughResult(
+            invocation_id=directive_typed.invocation_id,
             stdout=resolved.stdout,
             stderr=resolved.stderr,
             exit_code=resolved.exit_code,
         )
-        return modules.ipc.report_passthrough_result(passthrough_result, timeout), False
+        return ipc_module.report_passthrough_result(passthrough_result, timeout), False
 
     cwd_value = passthrough_env.get("PWD")
     cwd = None if not cwd_value else Path(str(cwd_value))
     context = _SubprocessContext(
         cwd=cwd,
         env=passthrough_env,
-        stdin_data=invocation.stdin or None,
+        stdin_data=invocation_typed.stdin or None,
     )
     exit_code, stdout, stderr = _invoke_via_subprocess(
         str(resolved),
-        tuple(invocation.args),
+        tuple(invocation_typed.args),
         context,
     )
-    passthrough_result = modules.ipc.PassthroughResult(
-        invocation_id=directive.invocation_id,
+    passthrough_result = ipc_module.PassthroughResult(
+        invocation_id=directive_typed.invocation_id,
         stdout=stdout,
         stderr=stderr,
         exit_code=exit_code,
     )
-    final_response = modules.ipc.report_passthrough_result(passthrough_result, timeout)
+    final_response = ipc_module.report_passthrough_result(passthrough_result, timeout)
     return final_response, True
 
 
 def _build_cmd_mox_passthrough_env(
-    directive: object,
-    invocation: object,
+    directive: _CmdMoxPassthroughDirective,
+    invocation: _CmdMoxInvocation,
     *,
     modules: CmdMoxModules,
 ) -> dict[str, str]:
     """Return the merged environment for cmd-mox passthrough executions."""
-    env = modules.command_runner.prepare_environment(
+    runner = typ.cast("_CmdMoxCommandRunner", modules.command_runner)
+    env_module = typ.cast("_CmdMoxEnvModule", modules.env)
+    env = runner.prepare_environment(
         directive.lookup_path,
         directive.extra_env,
         invocation.env,
@@ -329,7 +381,7 @@ def _build_cmd_mox_passthrough_env(
     env["PATH"] = _merge_cmd_mox_path_entries(
         env.get("PATH"),
         directive.lookup_path,
-        env_module=modules.env,
+        env_module=env_module,
     )
     return env
 
@@ -338,7 +390,7 @@ def _merge_cmd_mox_path_entries(
     current_path: str | None,
     lookup_path: str,
     *,
-    env_module: object,
+    env_module: _CmdMoxEnvModule,
 ) -> str:
     """Combine PATH entries while filtering the cmd-mox shim directory."""
     shim_dir = _cmd_mox_shim_directory(env_module)
@@ -364,7 +416,7 @@ def _merge_cmd_mox_path_entries(
     return os.pathsep.join(merged)
 
 
-def _cmd_mox_shim_directory(env_module: object) -> Path | None:
+def _cmd_mox_shim_directory(env_module: _CmdMoxEnvModule) -> Path | None:
     """Return the shim directory recorded in cmd-mox environment variables."""
     socket_path = os.environ.get(env_module.CMOX_IPC_SOCKET_ENV)
     if not socket_path:

@@ -129,8 +129,6 @@ package = true
 
 [tool.setuptools.packages.find]
 include = [
-    "crate_tools",
-    "crate_tools.*",
     "lading",
     "lading.*",
     "scripts",

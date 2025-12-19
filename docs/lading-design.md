@@ -530,8 +530,8 @@ sequenceDiagram
 
 ## 5. Refactoring and Project Structure
 
-The existing code from `crate_tools` will be refactored into a new Python
-package structure for `lading`.
+The legacy repository-specific scripts have been consolidated into the `lading`
+package structure.
 
 **Proposed Directory Structure:**
 
