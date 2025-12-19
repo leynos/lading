@@ -171,6 +171,7 @@ possible.
 # If unset, the tool defaults to "all" for dry runs and "per-crate" for live
 # runs.
 strip_patches = "per-crate"
+```
 
 Implementation detail: the publish command rewrites the staged workspace
 `Cargo.toml` immediately after cloning the workspace tree. The helper loads the
@@ -535,19 +536,30 @@ package structure for `lading`.
 **Proposed Directory Structure:**
 
 ```plaintext
-lading/ ├── __init__.py ├── cli.py               # Cyclopts app definition and
-command wiring ├── commands/ │   ├── __init__.py │   ├── _shared.py       #
-Command-level helper utilities │   ├── bump.py          # Logic for the `bump`
-subcommand │   └── publish.py       # Logic for the `publish` subcommand ├──
-config.py            # Frozen dataclasses for `lading.toml` ├── utils/ │   ├──
-__init__.py │   └── path.py          # Filesystem helpers such as
-`normalise_workspace_root` └── workspace/
+lading/
+  ├── __init__.py
+  ├── cli.py  # Cyclopts app definition and command wiring
+  ├── commands/
+  │   ├── __init__.py
+  │   ├── _shared.py  # Command-level helper utilities
+  │   ├── bump.py  # Logic for the `bump` subcommand
+  │   └── publish.py  # Logic for the `publish` subcommand
+  ├── config.py  # Frozen dataclasses for `lading.toml`
+  ├── utils/
+  │   ├── __init__.py
+  │   └── path.py  # Filesystem helpers such as `normalise_workspace_root`
+  └── workspace/
       ├── __init__.py
-      ├── metadata.py      # `cargo metadata` invocation and parsing
-      └── models.py        # Workspace graph and manifest helpers
+      ├── metadata.py  # `cargo metadata` invocation and parsing
+      └── models.py  # Workspace graph and manifest helpers
 
-tests/ ├── conftest.py ├── fixtures/ │   └── simple_workspace/ │       ├──
-Cargo.toml │       └── lading.toml └── test_*.py
+tests/
+  ├── conftest.py
+  ├── fixtures/
+  │   └── simple_workspace/
+  │       ├── Cargo.toml
+  │       └── lading.toml
+  └── test_*.py
 ```
 
 This structure separates concerns, improves testability, and establishes a
