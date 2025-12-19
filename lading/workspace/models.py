@@ -84,9 +84,11 @@ class WorkspaceGraph(msgspec.Struct, frozen=True, kw_only=True):
         for crate in crates_by_name.values():
             dependency_names = tuple(
                 sorted(
-                    dependency.name
-                    for dependency in crate.dependencies
-                    if _is_ordering_dependency(dependency, crates_by_name)
+                    {
+                        dependency.name
+                        for dependency in crate.dependencies
+                        if _is_ordering_dependency(dependency, crates_by_name)
+                    }
                 )
             )
             dependency_map[crate.name] = dependency_names

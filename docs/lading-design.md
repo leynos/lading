@@ -171,6 +171,7 @@ possible.
 # If unset, the tool defaults to "all" for dry runs and "per-crate" for live
 # runs.
 strip_patches = "per-crate"
+```
 
 Implementation detail: the publish command rewrites the staged workspace
 `Cargo.toml` immediately after cloning the workspace tree. The helper loads the
@@ -183,6 +184,11 @@ available during packaging. Any parse errors or missing manifests surface as
 `PublishPreparationError` to keep the staging workflow predictable.
 
 #### Publish data flow
+
+The publish data flow shows how the publish command orchestrates manifest
+preparation, crate planning, and command execution. The workflow splits
+configuration-driven patch stripping logic (all vs. per-crate) based on dry-run
+and live modes, and feeds the resulting plan to execution helpers.
 
 ```mermaid
 graph TD
@@ -417,14 +423,14 @@ involved to the operator. When `publish.order` is configured the planner
 validates that every publishable crate appears exactly once and that no unknown
 names are listed before returning the user-specified order.
 
-4. **Prepare Workspace Manifest**: Within the workspace root, determine the
-   patch stripping strategy based on the publish.strip_patches configuration
-   and the execution mode (--dry-run flag).
+1. **Prepare workspace manifest**: Within the workspace root, determine the
+   patch stripping strategy based on the `publish.strip_patches` configuration
+   value and the execution mode (`--dry-run` flag).
 
     - If strip_patches is "all" (or is unset and this is a dry run), remove the
       entire [patch.crates-io] section from the Cargo.toml.
 
-5. **Execute Pre-Publish Checks:** Before publishing, run a series of checks in
+2. **Execute pre-flight checks:** Before publishing, run a series of checks in
    the workspace itself to ensure integrity:
 
     - Run `cargo check --all-targets` for the entire workspace.
@@ -471,6 +477,12 @@ names are listed before returning the user-specified order.
 
 ### Publish Preflight Sequence
 
+The preflight sequence diagram illustrates the pre-flight checks that run
+before crate publication. Auxiliary build commands (if configured) execute
+first, followed by cargo check and cargo test with environment overrides
+applied. Preflight failures abort the publish workflow; success advances to
+crate-by-crate publishing.
+
 ```mermaid
 sequenceDiagram
     participant Caller
@@ -498,7 +510,9 @@ sequenceDiagram
     end
 ```
 
-6. **Iterate and Publish:** For each crate in the determined order:
+### Publishing iteration
+
+1. **Iterate and publish:** For each crate in the determined order:
 
     - **Patch Handling (per-crate)**: If strip_patches is "per-crate" (or is
       unset and this is a live run), remove the specific patch entry for the
@@ -523,31 +537,29 @@ package structure for `lading`.
 
 ```plaintext
 lading/
-├── __init__.py
-├── cli.py          # Cyclopts app definition and command wiring
-├── commands/
-│   ├── __init__.py
-│   ├── _shared.py  # Command-level helper utilities
-│   ├── bump.py     # Logic for the 'bump' subcommand
-│   └── publish.py  # Logic for the 'publish' subcommand
-├── config.py       # Frozen dataclasses for lading.toml
-├── utils/
-│   ├── __init__.py
-│   └── path.py     # Filesystem helpers such as normalise_workspace_root
-└── workspace/
-    ├── __init__.py
-    ├── metadata.py  # cargo metadata invocation and parsing
-    └── models.py    # Workspace graph and manifest helpers
+  ├── __init__.py
+  ├── cli.py  # Cyclopts app definition and command wiring
+  ├── commands/
+  │   ├── __init__.py
+  │   ├── _shared.py  # Command-level helper utilities
+  │   ├── bump.py  # Logic for the `bump` subcommand
+  │   └── publish.py  # Logic for the `publish` subcommand
+  ├── config.py  # Frozen dataclasses for `lading.toml`
+  ├── utils/
+  │   ├── __init__.py
+  │   └── path.py  # Filesystem helpers such as `normalise_workspace_root`
+  └── workspace/
+      ├── __init__.py
+      ├── metadata.py  # `cargo metadata` invocation and parsing
+      └── models.py  # Workspace graph and manifest helpers
 
 tests/
-├── conftest.py
-├── fixtures/
-│   └── simple_workspace/
-│       ├── Cargo.toml
-│       └── lading.toml
-└── test_*.py
-
-pyproject.toml
+  ├── conftest.py
+  ├── fixtures/
+  │   └── simple_workspace/
+  │       ├── Cargo.toml
+  │       └── lading.toml
+  └── test_*.py
 ```
 
 This structure separates concerns, improves testability, and establishes a
@@ -586,6 +598,12 @@ utilities to the highest-level user-facing commands.
   configuration validation edges, publish manifest handling, cmd-mox IPC
   fallback mechanisms, and workspace model error paths to keep defensive code
   paths observable.
+- End-to-end behavioural coverage now lives under `tests/e2e/` and executes
+  the CLI in a temporary Git repository. The suite uses real git operations
+  (`git init`, `git commit`, `git status`) while stubbing `cargo` interactions
+  via cmd-mox (`cargo metadata`, `cargo::check`, `cargo::test`,
+  `cargo::package`, and `cargo::publish`) so that workflows can be validated
+  without a Rust toolchain.
 - cmd-mox remains the default mechanism for mocking external commands. Tests
   covering publish pre-flight and `cargo metadata` IPC use stubbed cmd-mox
   modules rather than spawning real processes, keeping suites deterministic

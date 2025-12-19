@@ -19,6 +19,7 @@ pytest_plugins = (
     "tests.bdd.steps.test_publish_given_steps",
     "tests.bdd.steps.test_publish_when_steps",
     "tests.bdd.steps.test_publish_then_steps",
+    "tests.e2e.steps.test_e2e_steps",
 )
 
 
