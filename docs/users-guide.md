@@ -31,8 +31,8 @@ uv run lading --help
 
 ## Tutorial
 
-This tutorial assumes you have a Rust workspace with a root `Cargo.toml` and
-one or more member crates.
+This tutorial assumes a Rust workspace with a root `Cargo.toml` and one or
+more member crates.
 
 ### 1. Create `lading.toml`
 
@@ -46,7 +46,7 @@ globs = ["README.md", "docs/**/*.md"]
 strip_patches = "per-crate"
 ```
 
-You can omit `lading.toml` entirely. When absent, `lading` uses the defaults
+`lading.toml` can be omitted entirely. When absent, `lading` uses the defaults
 documented in the configuration reference below.
 
 ### 2. Bump versions
@@ -63,14 +63,14 @@ To preview changes without writing any files:
 lading bump 1.2.3 --dry-run
 ```
 
-If you configured `bump.documentation.globs`, `lading` will also search those
-Markdown files for TOML code fences and update version values that refer to
+If `bump.documentation.globs` is configured, `lading` also searches those
+Markdown files for TOML code fences and updates version values that refer to
 workspace crates.
 
 ### 3. Publish in dry-run mode
 
-By default, `publish` runs `cargo publish --dry-run` so you can validate the
-full pipeline without uploading crates.
+By default, `publish` runs `cargo publish --dry-run` so the full pipeline can
+be validated without uploading crates.
 
 ```bash
 lading publish
@@ -128,29 +128,29 @@ stderr_tail_lines = 40
 
 | Key       | Type            | Default | Meaning |
 | --------- | --------------- | ------- | ------- |
-| `exclude` | array of string | `[]`    | Crate names to exclude from manifest updates. |
+| `exclude` | array of strings | `[]`    | Crate names to exclude from manifest updates. |
 
 ### `[bump.documentation]`
 
 | Key     | Type            | Default | Meaning |
 | ------- | --------------- | ------- | ------- |
-| `globs` | array of string | `[]`    | Glob patterns for Markdown files whose TOML code fences should be updated. |
+| `globs` | array of strings | `[]`    | Glob patterns for Markdown files whose TOML code fences should be updated. |
 
 ### `[publish]`
 
 | Key            | Type                       | Default     | Meaning |
 | -------------- | -------------------------- | ----------- | ------- |
-| `exclude`      | array of string            | `[]`        | Crate names to exclude from publication. |
-| `order`        | array of string            | `[]`        | Explicit publish order; overrides dependency-derived ordering when present. |
+| `exclude`      | array of strings            | `[]`        | Crate names to exclude from publication. |
+| `order`        | array of strings            | `[]`        | Explicit publish order; overrides dependency-derived ordering when present. |
 | `strip_patches`| `"all"` \| `"per-crate"` \| `false` | `"per-crate"` | How to edit `[patch.crates-io]` in the staged workspace before packaging. |
 
 ### `[preflight]`
 
 | Key                 | Type                     | Default | Meaning |
 | ------------------- | ------------------------ | ------- | ------- |
-| `test_exclude`      | array of string          | `[]`    | Crate names to exclude from `cargo test` by passing `--exclude`. |
+| `test_exclude`      | array of strings          | `[]`    | Crate names to exclude from `cargo test` by passing `--exclude`. |
 | `unit_tests_only`   | boolean                  | `false` | Append `--lib --bins` to the pre-flight `cargo test` invocation. |
-| `aux_build`         | array of array of string | `[]`    | Extra commands (tokenised) to run before cargo pre-flight checks. |
+| `aux_build`         | array of array of strings | `[]`    | Extra commands (tokenised) to run before cargo pre-flight checks. |
 | `compiletest_extern`| table (string → string)  | `{}`    | Extra `--extern` entries to append to `RUSTFLAGS` for compiletest-style suites. |
 | `env`               | table (string → string)  | `{}`    | Environment overrides applied to git/cargo invocations run by `publish`. |
 | `stderr_tail_lines` | integer (≥ 0)            | `40`    | Number of lines to tail from referenced `*.stderr` files when tests fail. |
@@ -174,4 +174,3 @@ the duration of the command.
 
 Set `LADING_LOG_LEVEL` to control verbosity (`DEBUG`, `INFO`, `WARNING`,
 `ERROR`, `CRITICAL`). The default is `INFO`.
-

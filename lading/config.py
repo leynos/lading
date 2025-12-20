@@ -19,6 +19,25 @@ CONFIG_FILENAME = "lading.toml"
 
 StripPatchesSetting = typ.Literal["all", "per-crate"] | bool
 
+CONFIG_ROOT_TOML_KEYS: typ.Final[frozenset[str]] = frozenset(
+    {"bump", "publish", "preflight"}
+)
+BUMP_TOML_KEYS: typ.Final[frozenset[str]] = frozenset({"exclude", "documentation"})
+BUMP_DOCUMENTATION_TOML_KEYS: typ.Final[frozenset[str]] = frozenset({"globs"})
+PUBLISH_TOML_KEYS: typ.Final[frozenset[str]] = frozenset(
+    {"exclude", "order", "strip_patches"}
+)
+PREFLIGHT_TOML_KEYS: typ.Final[frozenset[str]] = frozenset(
+    {
+        "test_exclude",
+        "unit_tests_only",
+        "aux_build",
+        "compiletest_extern",
+        "env",
+        "stderr_tail_lines",
+    }
+)
+
 
 class ConfigurationError(RuntimeError):
     """Raised when the :mod:`lading` configuration is invalid."""
@@ -45,7 +64,9 @@ class DocumentationConfig:
         """Create a :class:`DocumentationConfig` from a TOML table mapping."""
         if mapping is None:
             return cls()
-        _validate_mapping_keys(mapping, {"globs"}, "bump.documentation")
+        _validate_mapping_keys(
+            mapping, set(BUMP_DOCUMENTATION_TOML_KEYS), "bump.documentation"
+        )
         return cls(
             globs=_string_tuple(mapping.get("globs"), "bump.documentation.globs"),
         )
@@ -63,7 +84,7 @@ class BumpConfig:
         """Create a :class:`BumpConfig` from a TOML table mapping."""
         if mapping is None:
             return cls()
-        _validate_mapping_keys(mapping, {"exclude", "documentation"}, "bump")
+        _validate_mapping_keys(mapping, set(BUMP_TOML_KEYS), "bump")
         return cls(
             exclude=_string_tuple(mapping.get("exclude"), "bump.exclude"),
             documentation=DocumentationConfig.from_mapping(
@@ -85,11 +106,7 @@ class PublishConfig:
         """Create a :class:`PublishConfig` from a TOML table mapping."""
         if mapping is None:
             return cls()
-        _validate_mapping_keys(
-            mapping,
-            {"exclude", "order", "strip_patches"},
-            "publish",
-        )
+        _validate_mapping_keys(mapping, set(PUBLISH_TOML_KEYS), "publish")
         return cls(
             exclude=_string_tuple(mapping.get("exclude"), "publish.exclude"),
             order=_string_tuple(mapping.get("order"), "publish.order"),
@@ -123,18 +140,7 @@ class PreflightConfig:
         """Create a :class:`PreflightConfig` from a TOML table mapping."""
         if mapping is None:
             return cls()
-        _validate_mapping_keys(
-            mapping,
-            {
-                "test_exclude",
-                "unit_tests_only",
-                "aux_build",
-                "compiletest_extern",
-                "env",
-                "stderr_tail_lines",
-            },
-            "preflight",
-        )
+        _validate_mapping_keys(mapping, set(PREFLIGHT_TOML_KEYS), "preflight")
         raw_excludes = _string_tuple(
             mapping.get("test_exclude"), "preflight.test_exclude"
         )
@@ -179,7 +185,7 @@ class LadingConfig:
     def from_mapping(cls, mapping: cabc.Mapping[str, typ.Any]) -> LadingConfig:
         """Create a :class:`LadingConfig` from a parsed configuration mapping."""
         _validate_mapping_keys(
-            mapping, {"bump", "publish", "preflight"}, "configuration section"
+            mapping, set(CONFIG_ROOT_TOML_KEYS), "configuration section"
         )
         return cls(
             bump=BumpConfig.from_mapping(

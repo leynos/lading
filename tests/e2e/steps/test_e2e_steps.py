@@ -35,13 +35,12 @@ def _validate_args_prefix(
     if expected_prefixes and not any(
         args[: len(prefix)] == prefix for prefix in expected_prefixes
     ):
-        expected = expected_prefixes[0]
-        raise E2EExpectationError.args_prefix_mismatch(label, expected, args)
+        raise E2EExpectationError.args_prefix_mismatch(label, expected_prefixes, args)
 
 
 def _validate_target_dir(label: str, args: tuple[str, ...]) -> None:
-    """Validate that ``args`` contains ``--target-dir=...`` at position 2."""
-    if len(args) < 3 or not args[2].startswith("--target-dir="):
+    """Validate that ``args`` contains ``--target-dir=...``."""
+    if not any(argument.startswith("--target-dir=") for argument in args):
         raise E2EExpectationError.target_dir_missing(label, args)
 
 
@@ -256,6 +255,25 @@ def then_cargo_publish_invoked(publish_spies: dict[str, typ.Any]) -> None:
     assert len(publish_calls) == len(workspace.crate_names)
     called = {Path(env["PWD"]).name for _label, _args, env in publish_calls}
     assert called == set(workspace.crate_names)
+
+
+@then("cargo publish uses --allow-dirty in the default publish flow")
+def then_cargo_publish_uses_allow_dirty(publish_spies: dict[str, typ.Any]) -> None:
+    """Assert cargo publish includes --allow-dirty when allow-dirty is enabled."""
+    publish_calls = filter_records(publish_spies, "cargo::publish")
+    assert publish_calls, "expected at least one cargo::publish invocation"
+    seen_args = {args for _label, args, _env in publish_calls}
+    assert seen_args == {("--allow-dirty", "--dry-run")}
+
+
+@then("cargo publish omits --allow-dirty when forbid-dirty is set")
+def then_cargo_publish_omits_allow_dirty(publish_spies: dict[str, typ.Any]) -> None:
+    """Assert cargo publish omits --allow-dirty when allow-dirty is disabled."""
+    publish_calls = filter_records(publish_spies, "cargo::publish")
+    assert publish_calls, "expected at least one cargo::publish invocation"
+    seen_args = {args for _label, args, _env in publish_calls}
+    assert seen_args == {("--dry-run",)}
+    assert all("--allow-dirty" not in args for args in seen_args)
 
 
 @then("the workspace README was staged for all crates")

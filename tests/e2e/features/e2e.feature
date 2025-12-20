@@ -18,6 +18,7 @@ Feature: Lading end-to-end workflows in a temporary Git repository
     And the publish order is "core, utils, app"
     And cargo package was invoked for each crate
     And cargo publish --dry-run was invoked for each crate
+    And cargo publish omits --allow-dirty when forbid-dirty is set
     And the workspace README was staged for all crates
 
   Scenario: Tutorial workflow bumps and publishes in dry-run mode
@@ -32,3 +33,4 @@ Feature: Lading end-to-end workflows in a temporary Git repository
     Then the command succeeds
     And cargo preflight was run for the workspace
     And the publish order is "core, utils, app"
+    And cargo publish uses --allow-dirty in the default publish flow
