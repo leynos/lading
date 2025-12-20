@@ -131,8 +131,6 @@ package = true
 include = [
     "lading",
     "lading.*",
-    "scripts",
-    "scripts.*",
 ]
 
 
