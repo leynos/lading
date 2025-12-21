@@ -47,11 +47,11 @@ jobs:
         run: |
           uv pip install slipcover pytest-forked
           uv run python -m slipcover \
-            --source=./crate_tools \
-            --omit="*/unittests/*,*/.venv/*" \
+            --source=./lading \
+            --omit="*/.venv/*" \
             --branch \
             --out coverage.xml \
-            -m pytest --forked -v crate_tools/unittests
+            -m pytest --forked -v
 
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4

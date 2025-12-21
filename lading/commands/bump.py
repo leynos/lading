@@ -64,6 +64,19 @@ class BumpChanges:
     documents: typ.Sequence[Path] = ()
 
 
+@dc.dataclass(frozen=True, slots=True)
+class _BumpContext:
+    """Initialisation context for bump operations."""
+
+    root_path: Path
+    configuration: LadingConfig
+    workspace: WorkspaceGraph
+    base_options: BumpOptions
+    workspace_manifest: Path
+    excluded: frozenset[str]
+    updated_crate_names: frozenset[str]
+
+
 def _build_changes_description(changes: BumpChanges) -> str:
     """Build a human-readable description of changed files."""
     parts: list[str] = []
@@ -98,75 +111,121 @@ def run(
     options: BumpOptions | None = None,
 ) -> str:
     """Update workspace and crate manifest versions to ``target_version``."""
-    options = BumpOptions() if options is None else options
+    context = _initialize_bump_context(workspace_root, options)
+    changed_manifests: set[Path] = set()
+    _process_workspace_manifest(context, target_version, changed_manifests)
+    _process_crate_manifests(context, target_version, changed_manifests)
+    changed_documents = _process_documentation_files(context, target_version)
+    changes = _prepare_sorted_changes(context, changed_manifests, changed_documents)
+    return _format_result_message(
+        changes,
+        target_version,
+        dry_run=context.base_options.dry_run,
+        workspace_root=context.root_path,
+    )
+
+
+def _initialize_bump_context(
+    workspace_root: Path | str,
+    options: BumpOptions | None,
+) -> _BumpContext:
+    """Return initialised bump context for ``workspace_root``."""
+    resolved_options = BumpOptions() if options is None else options
     root_path = normalise_workspace_root(workspace_root)
-    configuration = options.configuration
+    configuration = resolved_options.configuration
     if configuration is None:
         configuration = config_module.current_configuration()
-    workspace = options.workspace
+
+    workspace = resolved_options.workspace
     if workspace is None:
         from lading.workspace import load_workspace
 
         workspace = load_workspace(root_path)
+
     base_options = BumpOptions(
-        dry_run=options.dry_run,
+        dry_run=resolved_options.dry_run,
         configuration=configuration,
         workspace=workspace,
     )
-
-    excluded = set(configuration.bump.exclude)
-    updated_crate_names = {
+    excluded = frozenset(configuration.bump.exclude)
+    updated_crate_names = frozenset(
         crate.name for crate in workspace.crates if crate.name not in excluded
-    }
-
-    changed_manifests: set[Path] = set()
+    )
     workspace_manifest = root_path / "Cargo.toml"
-    workspace_dependency_sections = _workspace_dependency_sections(updated_crate_names)
+    return _BumpContext(
+        root_path=root_path,
+        configuration=configuration,
+        workspace=workspace,
+        base_options=base_options,
+        workspace_manifest=workspace_manifest,
+        excluded=excluded,
+        updated_crate_names=updated_crate_names,
+    )
+
+
+def _process_workspace_manifest(
+    context: _BumpContext,
+    target_version: str,
+    changed_manifests: set[Path],
+) -> None:
+    """Update the workspace manifest when necessary."""
+    dependency_sections = _workspace_dependency_sections(context.updated_crate_names)
     workspace_options = dc.replace(
-        base_options,
-        dependency_sections=_freeze_dependency_sections(workspace_dependency_sections),
+        context.base_options,
+        dependency_sections=_freeze_dependency_sections(dependency_sections),
     )
     if _update_manifest(
-        workspace_manifest,
+        context.workspace_manifest,
         _WORKSPACE_SELECTORS,
         target_version,
         workspace_options,
     ):
-        changed_manifests.add(workspace_manifest)
+        changed_manifests.add(context.workspace_manifest)
 
-    for crate in workspace.crates:
-        if _update_crate_manifest(
-            crate,
-            target_version,
-            base_options,
-        ):
+
+def _process_crate_manifests(
+    context: _BumpContext,
+    target_version: str,
+    changed_manifests: set[Path],
+) -> None:
+    """Update member crate manifests for the workspace."""
+    for crate in context.workspace.crates:
+        if _update_crate_manifest(crate, target_version, context.base_options):
             changed_manifests.add(crate.manifest_path)
 
+
+def _process_documentation_files(
+    context: _BumpContext,
+    target_version: str,
+) -> set[Path]:
+    """Update configured documentation targets for the workspace."""
     documentation_paths = _resolve_documentation_targets(
-        root_path, configuration.bump.documentation
+        context.root_path, context.configuration.bump.documentation
     )
-    changed_documents = _update_documentation_files(
+    return _update_documentation_files(
         documentation_paths,
         target_version,
-        updated_crate_names,
-        dry_run=base_options.dry_run,
+        context.updated_crate_names,
+        dry_run=context.base_options.dry_run,
     )
 
+
+def _prepare_sorted_changes(
+    context: _BumpContext,
+    changed_manifests: set[Path],
+    changed_documents: set[Path],
+) -> BumpChanges:
+    """Return ordered :class:`BumpChanges` suitable for result rendering."""
     ordered_manifests = tuple(
         sorted(
             changed_manifests,
-            key=lambda path: (path != workspace_manifest, str(path)),
+            key=lambda path: (path != context.workspace_manifest, str(path)),
         )
     )
-
-    ordered_documents = tuple(sorted(changed_documents, key=str))
-
-    return _format_result_message(
-        BumpChanges(manifests=ordered_manifests, documents=ordered_documents),
-        target_version,
-        dry_run=base_options.dry_run,
-        workspace_root=root_path,
+    ordered_documents: tuple[Path, ...] = tuple(
+        sorted(changed_documents, key=lambda path: str(path))
     )
+    return BumpChanges(manifests=ordered_manifests, documents=ordered_documents)
 
 
 def _update_crate_manifest(
@@ -280,7 +339,7 @@ def _should_skip_crate_update(
 
 
 def _freeze_dependency_sections(
-    sections: dict[str, typ.Collection[str]],
+    sections: typ.Mapping[str, typ.Collection[str]],
 ) -> typ.Mapping[str, typ.Collection[str]]:
     """Return an immutable mapping for dependency sections."""
     if not sections:

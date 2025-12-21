@@ -218,17 +218,18 @@ def build_workspace_graph(
 
 
 def _index_workspace_packages(
-    packages: cabc.Sequence[cabc.Mapping[str, typ.Any]],
+    packages: cabc.Sequence[object],
     workspace_member_ids: cabc.Sequence[str],
 ) -> dict[str, cabc.Mapping[str, typ.Any]]:
     """Return mapping of workspace member IDs to package metadata."""
     member_set = set(workspace_member_ids)
     index: dict[str, cabc.Mapping[str, typ.Any]] = {}
     for package in packages:
-        package_id = _expect_string(package.get("id"), "packages[].id")
+        package_mapping = _expect_mapping(package, "packages[]")
+        package_id = _expect_string(package_mapping.get("id"), "packages[].id")
         if package_id not in member_set:
             continue
-        index[package_id] = package
+        index[package_id] = package_mapping
     return index
 
 
@@ -290,7 +291,7 @@ def _validate_dependency_mapping(
     if not isinstance(entry, cabc.Mapping):
         message = "dependency entries must be mappings"
         raise WorkspaceModelError(message)
-    return entry
+    return typ.cast("cabc.Mapping[str, typ.Any]", entry)
 
 
 def _lookup_workspace_target(
@@ -374,6 +375,32 @@ def _normalise_manifest_path(value: object, field_name: str) -> Path:
     return path_value.resolve(strict=False)
 
 
+def _expect_mapping(value: object, field_name: str) -> cabc.Mapping[str, typ.Any]:
+    """Return ``value`` as a string-keyed mapping or raise an error."""
+    if isinstance(value, cabc.Mapping):
+        return typ.cast("cabc.Mapping[str, typ.Any]", value)
+    message = f"{field_name} must be a mapping; received {type(value).__name__}"
+    raise WorkspaceModelError(message)
+
+
+@typ.overload
+def _expect_sequence(
+    value: object,
+    field_name: str,
+    *,
+    allow_none: typ.Literal[False] = False,
+) -> cabc.Sequence[object]: ...
+
+
+@typ.overload
+def _expect_sequence(
+    value: object,
+    field_name: str,
+    *,
+    allow_none: typ.Literal[True],
+) -> cabc.Sequence[object] | None: ...
+
+
 def _expect_sequence(
     value: object,
     field_name: str,
@@ -431,10 +458,12 @@ def _extract_readme_workspace_flag(package_table: object) -> bool:
     """Return ``True`` when ``package_table`` opts into workspace readme."""
     if not isinstance(package_table, cabc.Mapping):
         return False
-    readme_value = package_table.get("readme")
+    package_mapping = typ.cast("cabc.Mapping[str, typ.Any]", package_table)
+    readme_value = package_mapping.get("readme")
     if not isinstance(readme_value, cabc.Mapping):
         return False
-    workspace_flag = readme_value.get("workspace")
+    readme_mapping = typ.cast("cabc.Mapping[str, typ.Any]", readme_value)
+    workspace_flag = readme_mapping.get("workspace")
     return bool(workspace_flag)
 
 

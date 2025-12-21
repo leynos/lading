@@ -369,7 +369,7 @@ def _non_negative_int(value: object, field_name: str, default: int) -> int:
     if value is None:
         return default
     try:
-        integer = int(value)
+        integer = int(typ.cast("typ.Any", value))
     except (TypeError, ValueError) as exc:  # pragma: no cover - validation guard
         message = f"{field_name} must be an integer; received {type(value).__name__}."
         raise ConfigurationError(message) from exc
@@ -411,6 +411,6 @@ def _optional_mapping(
     if value is None:
         return None
     if isinstance(value, cabc.Mapping):
-        return value
+        return typ.cast("cabc.Mapping[str, typ.Any]", value)
     message = f"{field_name} must be a TOML table; received {type(value).__name__}."
     raise ConfigurationError(message)
