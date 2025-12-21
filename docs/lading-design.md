@@ -616,6 +616,6 @@ utilities to the highest-level user-facing commands.
 - Added tests that assert the user guide documents every supported `lading.toml`
   option, so configuration schema changes cannot silently drift out of sync
   with the documentation.
-- Standardised release builds via `make build-release`, which uses the
+- Standardized release builds via `make build-release`, which uses the
   repository-managed virtual environment (`uv run python -m build`) to produce
   `sdist` and `wheel` artefacts.

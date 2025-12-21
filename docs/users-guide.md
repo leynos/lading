@@ -150,7 +150,7 @@ stderr_tail_lines = 40
 | ------------------- | ------------------------ | ------- | ------- |
 | `test_exclude`      | array of strings          | `[]`    | Crate names to exclude from `cargo test` by passing `--exclude`. |
 | `unit_tests_only`   | boolean                  | `false` | Append `--lib --bins` to the pre-flight `cargo test` invocation. |
-| `aux_build`         | array of array of strings | `[]`    | Extra commands (tokenised) to run before cargo pre-flight checks. |
+| `aux_build`         | array of array of strings | `[]`    | Extra commands (tokenized) to run before cargo pre-flight checks. |
 | `compiletest_extern`| table (string → string)  | `{}`    | Extra `--extern` entries to append to `RUSTFLAGS` for compiletest-style suites. |
 | `env`               | table (string → string)  | `{}`    | Environment overrides applied to git/cargo invocations run by `publish`. |
 | `stderr_tail_lines` | integer (≥ 0)            | `40`    | Number of lines to tail from referenced `*.stderr` files when tests fail. |
