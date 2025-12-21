@@ -26,6 +26,44 @@ if typ.TYPE_CHECKING:  # pragma: no cover
     from cmd_mox import CmdMox
 
 
+def _validate_args_prefix(
+    label: str,
+    args: tuple[str, ...],
+    expected_prefixes: tuple[tuple[str, ...], ...],
+) -> None:
+    """Validate that ``args`` begins with one of ``expected_prefixes``."""
+    if expected_prefixes and not any(
+        args[: len(prefix)] == prefix for prefix in expected_prefixes
+    ):
+        raise E2EExpectationError.args_prefix_mismatch(label, expected_prefixes, args)
+
+
+def _validate_target_dir(label: str, args: tuple[str, ...]) -> None:
+    """Validate that ``args`` contains ``--target-dir=...``."""
+    if not any(argument.startswith("--target-dir=") for argument in args):
+        raise E2EExpectationError.target_dir_missing(label, args)
+
+
+def _create_recording_handler(
+    label: str,
+    invocation_records: list[tuple[str, tuple[str, ...], dict[str, str]]],
+    expected_prefixes: tuple[tuple[str, ...], ...] = (),
+    *,
+    require_target_dir: bool = False,
+) -> typ.Callable[[CmdMoxInvocation], tuple[str, str, int]]:
+    """Create an invocation handler that validates and records cmd-mox calls."""
+
+    def _handler(invocation: CmdMoxInvocation) -> tuple[str, str, int]:
+        args = tuple(invocation.args)
+        _validate_args_prefix(label, args, expected_prefixes)
+        if require_target_dir:
+            _validate_target_dir(label, args)
+        invocation_records.append((label, args, dict(invocation.env)))
+        return ("", "", 0)
+
+    return _handler
+
+
 @given(
     parsers.parse('a non-trivial workspace in a Git repository at version "{version}"'),
     target_fixture="e2e_state",
@@ -56,47 +94,28 @@ def given_cargo_commands_stubbed(
     cmd_mox.spy("git").passthrough()
     invocation_records: list[tuple[str, tuple[str, ...], dict[str, str]]] = []
 
-    def _has_valid_target_dir(args: tuple[str, ...]) -> bool:
-        """Check if args contains a valid --target-dir flag at position 2."""
-        return len(args) >= 3 and args[2].startswith("--target-dir=")
+    stub_configs: list[tuple[str, tuple[tuple[str, ...], ...], bool]] = [
+        ("cargo::check", (("--workspace", "--all-targets"),), True),
+        ("cargo::test", (("--workspace", "--all-targets"),), True),
+        ("cargo::package", (), False),
+        (
+            "cargo::publish",
+            (
+                ("--dry-run",),
+                ("--allow-dirty", "--dry-run"),
+            ),
+            False,
+        ),
+    ]
 
-    def _recording_handler(
-        label: str,
-        expected_prefix: tuple[str, ...] = (),
-        *,
-        require_target_dir: bool = False,
-    ) -> typ.Callable[[CmdMoxInvocation], tuple[str, str, int]]:
-        def _handler(invocation: CmdMoxInvocation) -> tuple[str, str, int]:
-            args = tuple(invocation.args)
-            if expected_prefix and args[: len(expected_prefix)] != expected_prefix:
-                raise E2EExpectationError.args_prefix_mismatch(
-                    label, expected_prefix, args
-                )
-            if require_target_dir and not _has_valid_target_dir(args):
-                raise E2EExpectationError.target_dir_missing(label, args)
-            invocation_records.append((label, args, dict(invocation.env)))
-            return ("", "", 0)
-
-        return _handler
-
-    cmd_mox.stub("cargo::check").runs(
-        _recording_handler(
-            "cargo::check",
-            ("--workspace", "--all-targets"),
-            require_target_dir=True,
+    for cmd_name, prefixes, requires_target in stub_configs:
+        handler = _create_recording_handler(
+            cmd_name,
+            invocation_records,
+            prefixes,
+            require_target_dir=requires_target,
         )
-    )
-    cmd_mox.stub("cargo::test").runs(
-        _recording_handler(
-            "cargo::test",
-            ("--workspace", "--all-targets"),
-            require_target_dir=True,
-        )
-    )
-    cmd_mox.stub("cargo::package").runs(_recording_handler("cargo::package"))
-    cmd_mox.stub("cargo::publish").runs(
-        _recording_handler("cargo::publish", ("--dry-run",))
-    )
+        cmd_mox.stub(cmd_name).runs(handler)
 
     return {
         "records": invocation_records,
@@ -128,6 +147,16 @@ def when_run_lading_publish(
     """Invoke `lading publish` (dry-run default) with `--forbid-dirty`."""
     workspace: workspace_builder.NonTrivialWorkspace = e2e_state["workspace"]
     return run_cli(repo_root, workspace.root, "publish", "--forbid-dirty")
+
+
+@when("I run lading publish in the E2E workspace", target_fixture="cli_run")
+def when_run_lading_publish_allow_dirty(
+    repo_root: Path,
+    e2e_state: dict[str, typ.Any],
+) -> dict[str, typ.Any]:
+    """Invoke `lading publish` using the default allow-dirty behaviour."""
+    workspace: workspace_builder.NonTrivialWorkspace = e2e_state["workspace"]
+    return run_cli(repo_root, workspace.root, "publish")
 
 
 @then("the command succeeds")
@@ -226,6 +255,25 @@ def then_cargo_publish_invoked(publish_spies: dict[str, typ.Any]) -> None:
     assert len(publish_calls) == len(workspace.crate_names)
     called = {Path(env["PWD"]).name for _label, _args, env in publish_calls}
     assert called == set(workspace.crate_names)
+
+
+@then("cargo publish uses --allow-dirty in the default publish flow")
+def then_cargo_publish_uses_allow_dirty(publish_spies: dict[str, typ.Any]) -> None:
+    """Assert cargo publish includes --allow-dirty when allow-dirty is enabled."""
+    publish_calls = filter_records(publish_spies, "cargo::publish")
+    assert publish_calls, "expected at least one cargo::publish invocation"
+    seen_args = {args for _label, args, _env in publish_calls}
+    assert seen_args == {("--allow-dirty", "--dry-run")}
+
+
+@then("cargo publish omits --allow-dirty when forbid-dirty is set")
+def then_cargo_publish_omits_allow_dirty(publish_spies: dict[str, typ.Any]) -> None:
+    """Assert cargo publish omits --allow-dirty when allow-dirty is disabled."""
+    publish_calls = filter_records(publish_spies, "cargo::publish")
+    assert publish_calls, "expected at least one cargo::publish invocation"
+    seen_args = {args for _label, args, _env in publish_calls}
+    assert seen_args == {("--dry-run",)}
+    assert all("--allow-dirty" not in args for args in seen_args)
 
 
 @then("the workspace README was staged for all crates")

@@ -39,18 +39,19 @@ class E2EExpectationError(AssertionError):
     def args_prefix_mismatch(
         cls,
         label: str,
-        expected_prefix: tuple[str, ...],
+        expected_prefixes: tuple[tuple[str, ...], ...],
         args: tuple[str, ...],
     ) -> E2EExpectationError:
-        """Return an error when recorded args do not match the expected prefix."""
-        return cls(f"{label} expected args prefix {expected_prefix!r}, got {args!r}")
+        """Return an error when recorded args do not match the expected prefix(es)."""
+        expected = ", ".join(repr(prefix) for prefix in expected_prefixes)
+        return cls(f"{label} expected args prefix in ({expected}), got {args!r}")
 
     @classmethod
     def target_dir_missing(
         cls, label: str, args: tuple[str, ...]
     ) -> E2EExpectationError:
         """Return an error when the pre-flight target dir flag is missing."""
-        return cls(f"{label} expected --target-dir=... at args[2], got {args!r}")
+        return cls(f"{label} expected --target-dir=... in args, got {args!r}")
 
     @classmethod
     def staging_root_missing(cls) -> E2EExpectationError:
@@ -99,7 +100,7 @@ def stub_cargo_metadata(
     cmd_mox: CmdMox, workspace: workspace_builder.NonTrivialWorkspace
 ) -> None:
     """Stub `cargo metadata` so the CLI can construct its workspace model."""
-    cmd_mox.mock("cargo").with_args("metadata", "--format-version", "1").returns(
+    cmd_mox.stub("cargo").with_args("metadata", "--format-version", "1").returns(
         exit_code=0,
         stdout=json.dumps(dict(workspace.cargo_metadata_payload)),
         stderr="",
