@@ -332,7 +332,7 @@ ______________________________________________________________________
 
 ### **Step 5.3: Test Helper Migration**
 
-**Description:** Update end-to-end test helpers to use cuprum for git operations.
+**Description:** Update end-to-end (e2e) test helpers to use cuprum for git operations.
 
 **Tasks:**
 

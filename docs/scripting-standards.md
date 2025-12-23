@@ -135,6 +135,30 @@ Cuprum provides allowlist-based command execution with built-in observability.
 Programs must be registered in a catalogue before they can be executed,
 preventing accidental shell access.
 
+### Shared vs local catalogues
+
+For application code within `lading/`, use the shared catalogue defined in
+`lading/utils/commands.py`. This centralises the list of allowed programs and
+ensures consistent access control across the codebase:
+
+```python
+from lading.utils.commands import LADING_CATALOGUE
+from cuprum import sh
+
+with sh.scoped(LADING_CATALOGUE):
+    # All lading code uses the shared catalogue
+    ...
+```
+
+For standalone scripts and tests, define a local catalogue scoped to that file's
+requirements. This keeps scripts self-contained and avoids coupling to the main
+application:
+
+```python
+# In a standalone script or test file
+CATALOGUE = Catalogue.from_programs("git", "cargo")
+```
+
 ### Catalogue and allowlisting
 
 ```python
@@ -233,7 +257,7 @@ with sh.scoped(CATALOGUE):
 
 ### Async execution
 
-For I/O-bound workflows, cuprum supports async execution:
+For I/O-bound workflows, Cuprum supports async execution:
 
 ```python
 import asyncio
@@ -497,6 +521,13 @@ def test_spy_and_record(cmd_mox, monkeypatch, tmp_path):
 
 ## Migration guidance (plumbum → cuprum)
 
+**Important semantic change:** Plumbum raises `ProcessExecutionError` on
+non-zero exit codes by default, whereas Cuprum's `run_sync()` always returns a
+`CommandResult` without raising. Code that relied on exception handling for
+failure detection must be rewritten to check `result.exit_code` explicitly. This
+shift improves predictability but requires careful attention when porting
+existing error handling logic.
+
 1. Dependencies: replace `plumbum` with `cuprum` in `pyproject.toml` or the
    script's `uv` block.
 2. Define a catalogue: create a `Catalogue.from_programs(...)` listing all
@@ -507,7 +538,8 @@ def test_spy_and_record(cmd_mox, monkeypatch, tmp_path):
 5. Execution: replace `command()` with `command.run_sync()` and access
    `result.stdout`, `result.stderr`, `result.exit_code`.
 6. Non‑raising execution: replace `.run(retcode=None)` patterns with
-   `run_sync()` and check `result.exit_code` explicitly.
+   `run_sync()` and check `result.exit_code` explicitly. Note that this is now
+   the default behaviour, not a special case.
 7. Working directory: replace `with local.cwd(path):` context manager with
    `cwd=path` parameter on the command.
 8. Environment: replace `with local.env(VAR=value):` with `env={"VAR": value}`

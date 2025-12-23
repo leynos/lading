@@ -691,10 +691,35 @@ with sh.scoped(LADING_CATALOGUE):
 
 The existing cmd-mox integration for test isolation must be preserved. The
 migration will maintain the `LADING_USE_CMD_MOX_STUB` environment variable
-pattern, routing invocations through IPC when enabled. The `_CmdMoxCommand`
-proxy class in `metadata.py` will be adapted to work alongside cuprum's
-execution model, ensuring behavioural tests continue to function without a Rust
-toolchain.
+pattern, routing invocations through inter-process communication (IPC) when
+enabled. The `_CmdMoxCommand` proxy class in `metadata.py` will be adapted to
+work alongside cuprum's execution model, ensuring behavioural tests continue to
+function without a Rust toolchain.
+
+The integration pattern separates catalogue-based command construction from the
+actual execution backend. When `LADING_USE_CMD_MOX_STUB` is set, the execution
+layer routes commands through cmd-mox IPC rather than spawning real processes:
+
+```python
+from cuprum import sh
+from lading.utils.commands import LADING_CATALOGUE
+
+def _invoke(command: Sequence[str], *, cwd: Path | None = None) -> CommandResult:
+    """Execute command, routing through cmd-mox when stub mode is enabled."""
+    if _should_use_cmd_mox_stub():
+        # Route to cmd-mox IPC server for test isolation
+        return _invoke_via_cmd_mox(command, cwd)
+
+    # Production path: use cuprum's scoped catalogue
+    with sh.scoped(LADING_CATALOGUE):
+        program, *args = command
+        cmd = sh.make(program)(*args, cwd=cwd)
+        return cmd.run_sync()
+```
+
+Test authors configure expectations via the cmd-mox fixture, and the
+`LADING_USE_CMD_MOX_STUB` environment variable controls which execution path is
+taken at runtime.
 
 ### 7.5. Streaming Output Migration
 
