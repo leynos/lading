@@ -619,3 +619,95 @@ utilities to the highest-level user-facing commands.
 - Standardized release builds via `make build-release`, which uses the
   repository-managed virtual environment (`uv run python -m build`) to produce
   `sdist` and `wheel` artefacts.
+
+## 7. Command Execution Migration (Phase 5)
+
+### 7.1. Rationale for Cuprum Adoption
+
+The project currently uses plumbum for structured command execution and raw
+subprocess for streaming output scenarios. [Cuprum](https://github.com/leynos/cuprum/)
+provides several advantages that warrant migration:
+
+- **Security-first design**: Allowlist-based program registration prevents
+  accidental shell access; unknown executables raise `UnknownProgramError`
+  rather than silently executing arbitrary commands.
+- **Unified API**: Both synchronous and asynchronous execution through
+  `run_sync()` and `run()`, eliminating the split between plumbum for simple
+  invocations and subprocess for streaming scenarios.
+- **Built-in observability**: Hooks and structured events integrate naturally
+  with logging without custom wrappers, replacing the ad-hoc
+  `log_command_invocation` helpers.
+- **Pipeline composition**: Native support for command pipelines with
+  backpressure handling via the `|` operator, matching plumbum's ergonomics
+  while adding safety guarantees.
+- **Typed command building**: `sh.make()` constructs `SafeCmd` instances from
+  curated programs, with keyword arguments transformed into `--flag=value`
+  format automatically.
+
+### 7.2. Migration Scope
+
+The migration affects four code locations:
+
+1. **`lading/workspace/metadata.py`**: Replace `plumbum.local` command
+   construction and `CommandNotFound` exception handling with cuprum catalogue
+   lookups and `SafeCmd` execution.
+2. **`lading/utils/path.py`**: Replace `local.path()` with direct pathlib usage.
+   Plumbum's path normalisation adds no value over the standard library for the
+   current use case.
+3. **`lading/commands/publish_execution.py`**: Replace `subprocess.Popen` with
+   threaded stream relay with cuprum's execution model. This is the most
+   complex migration point as it requires preserving real-time output streaming
+   semantics.
+4. **`tests/e2e/helpers/git_helpers.py`**: Replace plumbum git invocations with
+   cuprum catalogue-based commands.
+
+### 7.3. Catalogue Definition
+
+A project catalogue will register allowed executables. The catalogue will be
+defined in a new module `lading/utils/commands.py`:
+
+```python
+from cuprum import Catalogue
+
+LADING_CATALOGUE = Catalogue.from_programs(
+    "cargo",
+    "git",
+)
+```
+
+Command construction will use cuprum's scoped context manager to ensure all
+invocations are validated against the catalogue:
+
+```python
+from cuprum import sh
+from lading.utils.commands import LADING_CATALOGUE
+
+with sh.scoped(LADING_CATALOGUE):
+    cargo = sh.make("cargo")
+    result = cargo("metadata", "--format-version", "1").run_sync()
+```
+
+### 7.4. Compatibility with cmd-mox
+
+The existing cmd-mox integration for test isolation must be preserved. The
+migration will maintain the `LADING_USE_CMD_MOX_STUB` environment variable
+pattern, routing invocations through IPC when enabled. The `_CmdMoxCommand`
+proxy class in `metadata.py` will be adapted to work alongside cuprum's
+execution model, ensuring behavioural tests continue to function without a Rust
+toolchain.
+
+### 7.5. Streaming Output Migration
+
+The `publish_execution.py` module currently uses `subprocess.Popen` with
+threaded stream relay to provide real-time output during long-running cargo
+operations. The migration will evaluate cuprum's streaming capabilities and
+either:
+
+1. Use cuprum's native streaming support if it provides equivalent real-time
+   output relay, or
+2. Retain a thin subprocess wrapper for streaming-specific scenarios while
+   using cuprum for all other command execution.
+
+The goal is to eliminate the current split between plumbum and subprocess while
+preserving the user experience of seeing cargo output as it happens rather than
+buffered at completion.

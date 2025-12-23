@@ -262,3 +262,117 @@ distribution.
   - **Outcome:** The `lading` tool is packaged as a standard Python wheel.
   - **Completion Criteria:** The `pyproject.toml` is fully configured for
     building a distributable package, and a successful build can be triggered.
+
+## Phase 5: Command Execution Modernisation
+
+**Objective:** Replace plumbum and subprocess with cuprum for unified,
+security-conscious command execution with built-in observability.
+
+______________________________________________________________________
+
+### **Step 5.1: Core Infrastructure Migration**
+
+**Description:** Establish cuprum catalogue and migrate the cargo metadata
+invocation and path utilities.
+
+**Tasks:**
+
+- [ ] **Define Lading Catalogue:**
+
+  - **Outcome:** A cuprum `Catalogue` registers `cargo` and `git` as allowed
+    programs in a new `lading/utils/commands.py` module.
+  - **Completion Criteria:** Catalogue is importable and can be used with
+    `sh.scoped()` to construct commands.
+
+- [ ] **Migrate `lading/workspace/metadata.py`:**
+
+  - **Outcome:** Cargo metadata invocation uses cuprum instead of plumbum.
+    The `_ensure_command()` function returns a cuprum `SafeCmd` or the existing
+    cmd-mox proxy when stub mode is enabled.
+  - **Completion Criteria:** All unit tests pass; cmd-mox integration preserved;
+    `CargoExecutableNotFoundError` raised via cuprum's `UnknownProgramError`.
+
+- [ ] **Migrate `lading/utils/path.py`:**
+
+  - **Outcome:** Path normalisation uses `pathlib.Path` directly, removing the
+    `plumbum.local.path()` dependency.
+  - **Completion Criteria:** `normalise_workspace_root()` behaviour unchanged;
+    plumbum import removed from the module.
+
+______________________________________________________________________
+
+### **Step 5.2: Publish Execution Migration**
+
+**Description:** Replace subprocess-based streaming with cuprum execution while
+preserving real-time output relay.
+
+**Tasks:**
+
+- [ ] **Evaluate cuprum streaming capabilities:**
+
+  - **Outcome:** Document whether cuprum's `run_sync()` or async `run()` can
+    provide real-time stdout/stderr relay equivalent to the current threaded
+    subprocess implementation.
+  - **Completion Criteria:** Decision documented; implementation approach chosen.
+
+- [ ] **Migrate `_invoke_via_subprocess()`:**
+
+  - **Outcome:** The streaming command execution in `publish_execution.py` uses
+    cuprum's execution model or a minimal cuprum-compatible wrapper.
+  - **Completion Criteria:** Real-time output streaming preserved; all publish
+    tests pass; thread-based relay simplified or eliminated.
+
+- [ ] **Verify cmd-mox passthrough:**
+
+  - **Outcome:** Passthrough semantics work correctly with cuprum.
+  - **Completion Criteria:** End-to-end publish tests pass with both stubbed
+    and real command execution.
+
+______________________________________________________________________
+
+### **Step 5.3: Test Helper Migration**
+
+**Description:** Update end-to-end test helpers to use cuprum for git operations.
+
+**Tasks:**
+
+- [ ] **Migrate `tests/e2e/helpers/git_helpers.py`:**
+
+  - **Outcome:** Git helpers use cuprum catalogue instead of `plumbum.local`.
+    The `_run_git()` function uses `sh.make("git")` within a scoped catalogue.
+  - **Completion Criteria:** All e2e tests pass; `GitCommandError` exception
+    handling preserved.
+
+- [ ] **Update `tests/e2e/helpers/e2e_steps_helpers.py`:**
+
+  - **Outcome:** Any plumbum imports removed or replaced with cuprum.
+  - **Completion Criteria:** No plumbum references remain in test helpers.
+
+______________________________________________________________________
+
+### **Step 5.4: Documentation and Dependency Cleanup**
+
+**Description:** Update scripting standards documentation and remove the plumbum
+dependency from the project.
+
+**Tasks:**
+
+- [ ] **Update `docs/scripting-standards.md`:**
+
+  - **Outcome:** Cuprum documented as the standard for command execution,
+    replacing the plumbum section with equivalent cuprum patterns and examples.
+  - **Completion Criteria:** All code examples use cuprum; migration guidance
+    from plumbum to cuprum provided.
+
+- [ ] **Remove plumbum dependency:**
+
+  - **Outcome:** `plumbum>=1.8` removed from `pyproject.toml` dependencies.
+  - **Completion Criteria:** `uv sync` succeeds; `uv run pytest` passes; no
+    plumbum imports remain in the codebase.
+
+- [ ] **Add cuprum dependency:**
+
+  - **Outcome:** `cuprum` added to `pyproject.toml` with appropriate version
+    constraint.
+  - **Completion Criteria:** Dependency resolves correctly; version pinned to
+    stable release.
