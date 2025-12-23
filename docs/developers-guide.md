@@ -2,12 +2,12 @@
 
 This guide documents internal APIs, testing patterns, and development workflows
 for contributors to `lading`. For the end-user CLI reference and `lading.toml`
-configuration, see `docs/users-guide.md`.
+configuration, see the [user guide](./users-guide.md).
 
 ## Development invocation
 
-The console script resolves to `lading.cli.main`. During development you can
-invoke the implementation module directly:
+The console script resolves to `lading.cli.main`. During development, the
+implementation module can be invoked directly:
 
 ```bash
 uv run python -m lading.cli --help
@@ -18,7 +18,8 @@ uv run python -m lading.cli --help
 Behavioural tests invoke the CLI as an external process and spy on the `python`
 executable with [`cmd-mox`](./cmd-mox-usage-guide.md). Setting
 `LADING_USE_CMD_MOX_STUB` to a truthy value such as `1` or `true` forces
-publish pre-flight checks to proxy through the cmd-mox IPC server so that the
+publish pre-flight checks to proxy through the cmd-mox inter-process
+communication (IPC) server so that the
 suite can assert on `cargo::<subcommand>` invocations without launching real
 tools. This pattern keeps the tests faithful to real user interactions while
 still providing strict control over command invocations. Use the same approach
@@ -72,10 +73,11 @@ future round-tripping.
 ## Programmatic publish options
 
 When invoking `lading.commands.publish.prepare_workspace` programmatically,
-callers can customise behaviour via `PublishOptions`:
+callers can customise behaviour via `PublishOptions`. The defaults are
+`preserve_symlinks=True` and `cleanup=False`:
 
-- `PublishOptions(preserve_symlinks=False)` — disable the default symlink
-  preservation when staging the workspace (useful when external assets need to
-  be copied rather than linked).
+- `PublishOptions(preserve_symlinks=False)` — disable symlink preservation when
+  staging the workspace (useful when external assets need to be copied rather
+  than linked).
 - `PublishOptions(cleanup=True)` — remove the temporary staging directory
-  automatically at process exit.
+  automatically at process exit instead of leaving it for inspection.
