@@ -7,7 +7,7 @@ configuration, see the [user guide](./users-guide.md).
 ## Development invocation
 
 The console script resolves to `lading.cli.main`. During development, the
-implementation module can be invoked directly:
+implementation module may be invoked directly:
 
 ```bash
 uv run python -m lading.cli --help
@@ -18,7 +18,7 @@ uv run python -m lading.cli --help
 Behavioural tests invoke the CLI as an external process and spy on the `python`
 executable with [`cmd-mox`](./cmd-mox-usage-guide.md). Setting
 `LADING_USE_CMD_MOX_STUB` to a truthy value such as `1` or `true` forces
-publish pre-flight checks to proxy through the cmd-mox inter-process
+publish pre-flight checks to be proxied through the cmd-mox inter-process
 communication (IPC) server so that the
 suite can assert on `cargo::<subcommand>` invocations without launching real
 tools. This pattern keeps the tests faithful to real user interactions while
@@ -45,10 +45,10 @@ metadata = load_cargo_metadata(Path("/path/to/workspace"))
 print(metadata["workspace_root"])
 ```
 
-The helper normalises the workspace path, invokes
+The helper normalizes the workspace path, invokes
 `cargo metadata --format-version 1` using `plumbum`, and returns the parsed
 JSON mapping. Any execution errors or invalid output raise `CargoMetadataError`
-with a descriptive message so callers can present actionable feedback to users.
+with a descriptive message, so callers can present actionable feedback to users.
 
 ### Workspace graph model
 
@@ -73,11 +73,25 @@ future round-tripping.
 ## Programmatic publish options
 
 When invoking `lading.commands.publish.prepare_workspace` programmatically,
-callers can customise behaviour via `PublishOptions`. The defaults are
-`preserve_symlinks=True` and `cleanup=False`:
+callers can customize behaviour via `PublishOptions`. The defaults are:
+
+- `allow_dirty=True` — skip the git cleanliness guard. **Security note:** this
+  means uncommitted changes are permitted by default; pass `allow_dirty=False`
+  to enforce a clean working tree before staging.
+- `live=False` — run `cargo publish --dry-run` rather than uploading crates.
+- `build_directory=None` — create a fresh temporary directory for staging.
+- `preserve_symlinks=True` — preserve symbolic links in the staged workspace.
+- `cleanup=False` — leave the staging directory intact for inspection.
+
+Additional parameters `configuration`, `workspace`, and `command_runner` allow
+dependency injection for testing and are typically left unset.
+
+Examples:
 
 - `PublishOptions(preserve_symlinks=False)` — disable symlink preservation when
   staging the workspace (useful when external assets need to be copied rather
   than linked).
 - `PublishOptions(cleanup=True)` — remove the temporary staging directory
   automatically at process exit instead of leaving it for inspection.
+- `PublishOptions(allow_dirty=False)` — require a clean git working tree before
+  proceeding with publish preparation.
