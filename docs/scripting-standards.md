@@ -32,8 +32,10 @@ as a default.
   expectations travel with the file. Prefer the shebang
   `#!/usr/bin/env -S uv run python` followed by the metadata block shown in the
   example below.
-- External processes are invoked via [`plumbum`](https://plumbum.readthedocs.io)
-  to provide structured command execution rather than ad‑hoc shell strings.
+- External processes are invoked via [`cuprum`](https://github.com/leynos/cuprum/)
+  to provide typed, allowlist-based command execution rather than ad‑hoc shell
+  strings. Cuprum's catalogue system ensures only registered programs can be
+  executed, preventing accidental shell access.
 - File‑system interactions use `pathlib.Path`. Higher‑level operations (for
   example, copying or removing trees) go through the `shutil` standard library
   module.
@@ -51,8 +53,7 @@ from typing import Optional, Annotated
 
 import cyclopts
 from cyclopts import App, Parameter
-from plumbum import local
-from plumbum.cmd import tofu
+from cuprum import Catalogue, sh
 
 # Map INPUT_<PARAM> → function parameter without additional glue
 app = App(config=cyclopts.config.Env("INPUT_", command=False))
@@ -96,8 +97,9 @@ def default(
         return
 
     build_dir.mkdir(parents=True, exist_ok=True)
-    with local.cwd(build_dir):
-        tofu["plan"]()  # replace with real build tooling
+    catalogue = Catalogue.from_programs("tofu")
+    with sh.scoped(catalogue):
+        sh.make("tofu")("plan", cwd=build_dir).run_sync()
 
 def main():
     """CLI Entrypoint"""
@@ -127,70 +129,150 @@ Guidance:
   config_out: Annotated[Optional[Path], Parameter(env_var="INPUT_CONFIG_PATH")] = None
   ```
 
-## plumbum: command calling and pipelines
+## cuprum: typed command execution
 
-### Basics: command calls, capturing output, handling failures
+Cuprum provides allowlist-based command execution with built-in observability.
+Programs must be registered in a catalogue before they can be executed,
+preventing accidental shell access.
+
+### Shared vs local catalogues
+
+For application code within `lading/`, use the shared catalogue defined in
+`lading/utils/commands.py`. This centralises the list of allowed programs and
+ensures consistent access control across the codebase:
 
 ```python
-from __future__ annotations
-from plumbum import local
-from plumbum.cmd import git, grep
+from lading.utils.commands import LADING_CATALOGUE
+from cuprum import sh
 
-# Capture stdout (raises ProcessExecutionError on non‑zero exit)
-last_commit = git["--no-pager", "log", "-1", "--pretty=%H"]().strip()
-
-# Obtain (rc, out, err) without raising
-rc, out, err = git["status"].run(retcode=None)
-if rc != 0:
-    # handle gracefully; err is available for logging
+with sh.scoped(LADING_CATALOGUE):
+    # All lading code uses the shared catalogue
     ...
+```
 
-# Pipelines via the | operator
-shortlog = (git["--no-pager", "log", "--oneline"] | grep["fix"])()
+For standalone scripts and tests, define a local catalogue scoped to that file's
+requirements. This keeps scripts self-contained and avoids coupling to the main
+application:
+
+```python
+# In a standalone script or test file
+CATALOGUE = Catalogue.from_programs("git", "cargo")
+```
+
+### Catalogue and allowlisting
+
+```python
+from cuprum import Catalogue, sh
+
+# Define allowed programs for this script
+CATALOGUE = Catalogue.from_programs("git", "cargo", "grep")
+
+# Commands can only be constructed within a scoped catalogue
+with sh.scoped(CATALOGUE):
+    git = sh.make("git")
+    result = git("--no-pager", "log", "-1", "--pretty=%H").run_sync()
+    last_commit = result.stdout.strip()
+```
+
+### Capturing output and handling failures
+
+```python
+from cuprum import Catalogue, sh
+
+CATALOGUE = Catalogue.from_programs("git", "grep")
+
+with sh.scoped(CATALOGUE):
+    git = sh.make("git")
+
+    # run_sync() returns CommandResult with exit_code, stdout, stderr
+    result = git("status").run_sync()
+    if result.exit_code != 0:
+        # handle gracefully; result.stderr is available for logging
+        ...
+
+    # Pipelines via the | operator with backpressure handling
+    log_cmd = git("--no-pager", "log", "--oneline")
+    grep_cmd = sh.make("grep")("fix")
+    shortlog = (log_cmd | grep_cmd).run_sync().stdout
 ```
 
 ### Working directory and environment management
 
 ```python
 from pathlib import Path
-from plumbum import local
+from cuprum import Catalogue, sh
 
+CATALOGUE = Catalogue.from_programs("git")
 repo_dir = Path(__file__).resolve().parents[1]
 
-with local.cwd(repo_dir):
-    tags = local["git"]["tag", "--list"]()
+with sh.scoped(CATALOGUE):
+    git = sh.make("git")
 
-# Temporary env overrides
-with local.env(GIT_AUTHOR_NAME="CI", GIT_AUTHOR_EMAIL="ci@example.org"):
-    local["git"]["config", "user.name", "CI"]()
+    # Working directory via cwd parameter
+    result = git("tag", "--list", cwd=repo_dir).run_sync()
+    tags = result.stdout
+
+    # Environment overrides via env parameter
+    result = git(
+        "config", "user.name", "CI",
+        env={"GIT_AUTHOR_NAME": "CI", "GIT_AUTHOR_EMAIL": "ci@example.org"},
+    ).run_sync()
 ```
 
-### Foreground execution and background jobs
+### Keyword arguments as flags
+
+Cuprum transforms keyword arguments into `--flag=value` format automatically,
+with underscores converted to hyphens:
 
 ```python
-from plumbum import FG, BG
-from plumbum.cmd import make
+from cuprum import Catalogue, sh
 
-# Stream output to terminal
-make["-j4"] & FG
+CATALOGUE = Catalogue.from_programs("cargo")
 
-# Background process
-proc = local["sleep"]["5"] & BG
-proc.wait()
+with sh.scoped(CATALOGUE):
+    cargo = sh.make("cargo")
+    # Equivalent to: cargo build --release --target=x86_64-unknown-linux-gnu
+    result = cargo("build", release=True, target="x86_64-unknown-linux-gnu").run_sync()
 ```
 
-### Piping stdin and redirecting
+### Observability hooks
 
 ```python
-from plumbum import local
-from plumbum.cmd import sed, git, grep, wc
+import logging
+from cuprum import Catalogue, sh, Hook
 
-# Provide stdin explicitly
-_, out, _ = sed["-n", "s/^v//p"].run(stdin="v1.2.3\nv2.0.0\n")
-assert out.splitlines() == ["1.2.3", "2.0.0"]
+LOGGER = logging.getLogger(__name__)
+CATALOGUE = Catalogue.from_programs("cargo")
 
-# Multi‑stage pipelines
-count = (git["--no-pager", "log", "--oneline"] | grep["chore"] | wc["-l"])().strip()
+def log_before(event):
+    LOGGER.info("Executing: %s", event.command)
+
+def log_after(event):
+    LOGGER.info("Completed with exit code %d", event.result.exit_code)
+
+with sh.scoped(CATALOGUE):
+    with sh.observe(Hook(before=log_before, after=log_after)):
+        sh.make("cargo")("check").run_sync()
+```
+
+### Async execution
+
+For I/O-bound workflows, Cuprum supports async execution:
+
+```python
+import asyncio
+from cuprum import Catalogue, sh
+
+CATALOGUE = Catalogue.from_programs("cargo")
+
+async def run_checks():
+    with sh.scoped(CATALOGUE):
+        cargo = sh.make("cargo")
+        # Async execution with run()
+        result = await cargo("check", "--all-targets").run()
+        return result.exit_code == 0
+
+asyncio.run(run_checks())
 ```
 
 ## pathlib: robust path manipulation
@@ -247,13 +329,13 @@ except FileNotFoundError:
     pass
 ```
 
-## Cyclopts + plumbum + pathlib together (reference script)
+## Cyclopts + cuprum + pathlib together (reference script)
 
 ```python
 #!/usr/bin/env -S uv run python
 # /// script
 # requires-python = ">=3.13"
-# dependencies = ["cyclopts>=2.9", "plumbum", "cmd-mox"]
+# dependencies = ["cyclopts>=2.9", "cuprum", "cmd-mox"]
 # ///
 
 from __future__ import annotations
@@ -262,8 +344,9 @@ from typing import Optional, Annotated
 
 import cyclopts
 from cyclopts import App, Parameter
-from plumbum import local, FG
-from plumbum.cmd import git
+from cuprum import Catalogue, sh
+
+CATALOGUE = Catalogue.from_programs("git")
 
 app = App(config=cyclopts.config.Env("INPUT_", command=False))
 
@@ -281,8 +364,9 @@ def main(
     dist.mkdir(parents=True, exist_ok=True)
 
     if not dry_run:
-        with local.cwd(project_root):
-            (git["tag", f"v{version}"] & FG)
+        with sh.scoped(CATALOGUE):
+            git = sh.make("git")
+            git("tag", f"v{version}", cwd=project_root).run_sync()
 
     print({
         "bin_name": bin_name,
@@ -349,7 +433,9 @@ pytest_plugins = ("cmd_mox.pytest_plugin",)
 ```
 
 ```python
-from plumbum import local
+from cuprum import Catalogue, sh
+
+CATALOGUE = Catalogue.from_programs("git")
 
 
 def test_git_tag_happy_path(cmd_mox, monkeypatch, tmp_path):
@@ -360,7 +446,8 @@ def test_git_tag_happy_path(cmd_mox, monkeypatch, tmp_path):
 
     # Run the code under test while shims are active
     cmd_mox.replay()
-    local["git"]["tag", "v1.2.3"]()
+    with sh.scoped(CATALOGUE):
+        sh.make("git")("tag", "v1.2.3").run_sync()
     cmd_mox.verify()
 
 
@@ -370,19 +457,19 @@ def test_git_tag_failure_surface_error(cmd_mox, monkeypatch, tmp_path):
     cmd_mox.mock("git").with_args("tag", "v1.2.3").returns(exit_code=1, stderr="denied")
 
     cmd_mox.replay()
-    try:
-        local["git"]["tag", "v1.2.3"]()  # raises due to non‑zero rc
-        assert False, "expected ProcessExecutionError"
-    except Exception as exc:
-        assert "Command exited with code" in str(exc)
-    finally:
-        cmd_mox.verify()
+    with sh.scoped(CATALOGUE):
+        result = sh.make("git")("tag", "v1.2.3").run_sync()
+        assert result.exit_code == 1
+        assert "denied" in result.stderr
+    cmd_mox.verify()
 ```
 
 ### Spies and passthrough capture (turn real calls into fixtures)
 
 ```python
-from plumbum import local
+from cuprum import Catalogue, sh
+
+CATALOGUE = Catalogue.from_programs("echo")
 
 
 def test_spy_and_record(cmd_mox, monkeypatch, tmp_path):
@@ -392,7 +479,8 @@ def test_spy_and_record(cmd_mox, monkeypatch, tmp_path):
     spy = cmd_mox.spy("echo").passthrough()
 
     cmd_mox.replay()
-    (local["echo"]["hello world"])()
+    with sh.scoped(CATALOGUE):
+        sh.make("echo")("hello world").run_sync()
     cmd_mox.verify()
 
     # Inspect what happened
@@ -417,7 +505,7 @@ def test_spy_and_record(cmd_mox, monkeypatch, tmp_path):
 
 ## Migration guidance (Typer → Cyclopts)
 
-1. Dependencies: replace Typer with Cyclopts in the script’s `uv` block.
+1. Dependencies: replace Typer with Cyclopts in the script's `uv` block.
 2. Entry point: replace `app = typer.Typer(...)` with `app = App(...)` and
    configure `Env("INPUT_", command=False)` where environment variables are
    authoritative in CI.
@@ -430,6 +518,37 @@ def test_spy_and_record(cmd_mox, monkeypatch, tmp_path):
 6. Bash glue: delete argument arrays and conditional appends in GitHub
    Actions. Export `INPUT_*` environment variables and call `uv run` on the
    script.
+
+## Migration guidance (plumbum → cuprum)
+
+**Important semantic change:** Plumbum raises `ProcessExecutionError` on
+non-zero exit codes by default, whereas Cuprum's `run_sync()` always returns a
+`CommandResult` without raising. Code that relied on exception handling for
+failure detection must be rewritten to check `result.exit_code` explicitly. This
+shift improves predictability but requires careful attention when porting
+existing error handling logic.
+
+1. Dependencies: replace `plumbum` with `cuprum` in `pyproject.toml` or the
+   script's `uv` block.
+2. Define a catalogue: create a `Catalogue.from_programs(...)` listing all
+   executables the script requires.
+3. Scope execution: wrap command construction in `with sh.scoped(CATALOGUE):`.
+4. Command construction: replace `local["git"]["args"]` with
+   `sh.make("git")("args")`.
+5. Execution: replace `command()` with `command.run_sync()` and access
+   `result.stdout`, `result.stderr`, `result.exit_code`.
+6. Non‑raising execution: replace `.run(retcode=None)` patterns with
+   `run_sync()` and check `result.exit_code` explicitly. Note that this is now
+   the default behaviour, not a special case.
+7. Working directory: replace `with local.cwd(path):` context manager with
+   `cwd=path` parameter on the command.
+8. Environment: replace `with local.env(VAR=value):` with `env={"VAR": value}`
+   parameter on the command.
+9. Pipelines: the `|` operator works identically; ensure both commands are
+   constructed via `sh.make()`.
+10. Error handling: replace `CommandNotFound` with cuprum's
+    `UnknownProgramError`; replace `ProcessExecutionError` with exit code
+    checks on `CommandResult`.
 
 ## CI wiring: GitHub Actions (Cyclopts‑first)
 
@@ -451,12 +570,14 @@ def test_spy_and_record(cmd_mox, monkeypatch, tmp_path):
 
 - Newline‑separated lists are preferred for CI inputs to avoid shell quoting
   issues across platforms.
-- `Command.run(retcode=None)` permits inspection of non‑zero exits without
-  raising.
+- Cuprum's `run_sync()` always returns a `CommandResult`; check `exit_code`
+  explicitly rather than relying on exceptions for non‑zero exits.
 - Production code should present friendly error messages; tests may assert raw
   behaviours (non‑zero exits, stderr contents) via `cmd-mox`.
 - On Windows, newline‑separated lists are recommended for `list[Path]` to
   sidestep `;`/`:` semantics.
+- Cuprum's catalogue must include all programs used by the script; attempting
+  to construct a command for an unregistered program raises `UnknownProgramError`.
 
 This document should be referenced when introducing or updating automation
 scripts to maintain a consistent developer experience across the repository.
