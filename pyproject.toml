@@ -16,6 +16,7 @@ classifiers = [
 keywords = ["rust", "cargo", "workspace", "release", "lading"]
 authors = [{ name = "Payton McIntosh", email = "pmcintosh@df12.net" }]
 dependencies = [
+    "cuprum",
     "cyclopts>=2.9",
     "markdown-it-py>=3,<4",
     "msgspec>=0.18,<1.0",

@@ -32,7 +32,8 @@ as a default.
   expectations travel with the file. Prefer the shebang
   `#!/usr/bin/env -S uv run python` followed by the metadata block shown in the
   example below.
-- External processes are invoked via [`cuprum`](https://github.com/leynos/cuprum/)
+- External processes are invoked via
+  [`cuprum`](https://github.com/leynos/cuprum/)
   to provide typed, allowlist-based command execution rather than ad‑hoc shell
   strings. Cuprum's catalogue system ensures only registered programs can be
   executed, preventing accidental shell access.
@@ -150,9 +151,9 @@ with sh.scoped(LADING_CATALOGUE):
     ...
 ```
 
-For standalone scripts and tests, define a local catalogue scoped to that file's
-requirements. This keeps scripts self-contained and avoids coupling to the main
-application:
+For standalone scripts and tests, define a local catalogue scoped to that
+file's requirements. This keeps scripts self-contained and avoids coupling to
+the main application:
 
 ```python
 # In a standalone script or test file
@@ -524,8 +525,8 @@ def test_spy_and_record(cmd_mox, monkeypatch, tmp_path):
 **Important semantic change:** Plumbum raises `ProcessExecutionError` on
 non-zero exit codes by default, whereas Cuprum's `run_sync()` always returns a
 `CommandResult` without raising. Code that relied on exception handling for
-failure detection must be rewritten to check `result.exit_code` explicitly. This
-shift improves predictability but requires careful attention when porting
+failure detection must be rewritten to check `result.exit_code` explicitly.
+This shift improves predictability but requires careful attention when porting
 existing error handling logic.
 
 1. Dependencies: replace `plumbum` with `cuprum` in `pyproject.toml` or the
@@ -577,7 +578,8 @@ existing error handling logic.
 - On Windows, newline‑separated lists are recommended for `list[Path]` to
   sidestep `;`/`:` semantics.
 - Cuprum's catalogue must include all programs used by the script; attempting
-  to construct a command for an unregistered program raises `UnknownProgramError`.
+  to construct a command for an unregistered program raises
+  `UnknownProgramError`.
 
 This document should be referenced when introducing or updating automation
 scripts to maintain a consistent developer experience across the repository.

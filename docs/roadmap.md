@@ -277,7 +277,7 @@ invocation and path utilities.
 
 **Tasks:**
 
-- [ ] **Define Lading Catalogue:**
+- [x] **Define Lading Catalogue:**
 
   - **Outcome:** A cuprum `Catalogue` registers `cargo` and `git` as allowed
     programs in a new `lading/utils/commands.py` module.
@@ -313,7 +313,8 @@ preserving real-time output relay.
   - **Outcome:** Document whether cuprum's `run_sync()` or async `run()` can
     provide real-time stdout/stderr relay equivalent to the current threaded
     subprocess implementation.
-  - **Completion Criteria:** Decision documented; implementation approach chosen.
+  - **Completion Criteria:** Decision documented; implementation approach
+    chosen.
 
 - [ ] **Migrate `_invoke_via_subprocess()`:**
 
@@ -332,7 +333,8 @@ ______________________________________________________________________
 
 ### **Step 5.3: Test Helper Migration**
 
-**Description:** Update end-to-end (e2e) test helpers to use cuprum for git operations.
+**Description:** Update end-to-end (e2e) test helpers to use cuprum for git
+operations.
 
 **Tasks:**
 
@@ -352,8 +354,8 @@ ______________________________________________________________________
 
 ### **Step 5.4: Documentation and Dependency Cleanup**
 
-**Description:** Update scripting standards documentation and remove the plumbum
-dependency from the project.
+**Description:** Update scripting standards documentation and remove the
+plumbum dependency from the project.
 
 **Tasks:**
 

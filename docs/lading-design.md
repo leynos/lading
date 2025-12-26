@@ -625,8 +625,9 @@ utilities to the highest-level user-facing commands.
 ### 7.1. Rationale for Cuprum Adoption
 
 The project currently uses plumbum for structured command execution and raw
-subprocess for streaming output scenarios. [Cuprum](https://github.com/leynos/cuprum/)
-provides several advantages that warrant migration:
+subprocess for streaming output scenarios.
+[Cuprum](https://github.com/leynos/cuprum/) provides several advantages that
+warrant migration:
 
 - **Security-first design**: Allowlist-based program registration prevents
   accidental shell access; unknown executables raise `UnknownProgramError`
@@ -663,29 +664,53 @@ The migration affects four code locations:
 
 ### 7.3. Catalogue Definition
 
-A project catalogue will register allowed executables. The catalogue will be
-defined in a new module `lading/utils/commands.py`:
+A project catalogue registers allowed executables. The catalogue is defined in
+`lading/utils/commands.py` using cuprum's `ProgramCatalogue` and
+`ProjectSettings`:
 
 ```python
-from cuprum import Catalogue
+from cuprum import Program, ProgramCatalogue, ProjectSettings
 
-LADING_CATALOGUE = Catalogue.from_programs(
-    "cargo",
-    "git",
+# Programme objects for allowed executables
+CARGO = Program("cargo")
+GIT = Program("git")
+
+# Project settings for the lading package
+_LADING_PROJECT = ProjectSettings(
+    name="lading",
+    programs=(CARGO, GIT),
+    documentation_locations=("docs/lading-design.md#command-execution-migration",),
+    noise_rules=(),
 )
+
+# Shared catalogue for all lading modules
+LADING_CATALOGUE = ProgramCatalogue(projects=(_LADING_PROJECT,))
 ```
 
-Command construction will use cuprum's scoped context manager to ensure all
-invocations are validated against the catalogue:
+Command construction uses cuprum's scoped context manager with the catalogue's
+allowlist, passing the catalogue explicitly to `sh.make()`:
 
 ```python
-from cuprum import sh
-from lading.utils.commands import LADING_CATALOGUE
+from cuprum import scoped, sh
+from lading.utils.commands import CARGO, LADING_CATALOGUE
 
-with sh.scoped(LADING_CATALOGUE):
-    cargo = sh.make("cargo")
-    result = cargo("metadata", "--format-version", "1").run_sync()
+with scoped(allowlist=LADING_CATALOGUE.allowlist):
+    cargo_builder = sh.make(CARGO, catalogue=LADING_CATALOGUE)
+    result = cargo_builder("metadata", "--format-version", "1").run_sync()
 ```
+
+#### Implementation Notes (Step 5.1)
+
+- The catalogue is defined in `lading/utils/commands.py` and exported via
+  `lading.utils.LADING_CATALOGUE` for convenient access across the codebase.
+- `CARGO` and `GIT` programme constants are also exported, enabling type-safe
+  command construction without string literals.
+- The `ProjectSettings` includes a reference to this design document section for
+  discoverability when debugging catalogue-related issues.
+- Unit tests verify catalogue construction, programme registration, and
+  `UnknownProgramError` handling for unregistered programmes.
+- BDD scenarios document the expected behaviour for downstream consumers,
+  including command construction within scoped contexts.
 
 ### 7.4. Compatibility with cmd-mox
 
@@ -701,19 +726,19 @@ actual execution backend. When `LADING_USE_CMD_MOX_STUB` is set, the execution
 layer routes commands through cmd-mox IPC rather than spawning real processes:
 
 ```python
-from cuprum import sh
-from lading.utils.commands import LADING_CATALOGUE
+from cuprum import scoped, sh
+from lading.utils.commands import CARGO, GIT, LADING_CATALOGUE
 
-def _invoke(command: Sequence[str], *, cwd: Path | None = None) -> CommandResult:
+def _invoke(program: Program, args: tuple[str, ...], *, cwd: Path | None = None) -> CommandResult:
     """Execute command, routing through cmd-mox when stub mode is enabled."""
     if _should_use_cmd_mox_stub():
         # Route to cmd-mox IPC server for test isolation
-        return _invoke_via_cmd_mox(command, cwd)
+        return _invoke_via_cmd_mox(program, args, cwd)
 
     # Production path: use cuprum's scoped catalogue
-    with sh.scoped(LADING_CATALOGUE):
-        program, *args = command
-        cmd = sh.make(program)(*args, cwd=cwd)
+    with scoped(allowlist=LADING_CATALOGUE.allowlist):
+        cmd_builder = sh.make(program, catalogue=LADING_CATALOGUE)
+        cmd = cmd_builder(*args)
         return cmd.run_sync()
 ```
 

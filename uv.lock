@@ -101,6 +101,15 @@ wheels = [
 ]
 
 [[package]]
+name = "cuprum"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/41/2a/75534f4578a7437fab7d0075ea5955a1553bf4cf016ab0d9a6e5a24f6f7f/cuprum-0.1.0.tar.gz", hash = "sha256:bdc6ab92b1895613f7bfc35c762376f4830928add3d39061f7b3806d7aa422b4", size = 47214, upload-time = "2025-12-25T23:15:10.091Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2f/2b/a5ada0f42e8e27c0ce8102256344db5adc339334293431319da06e33a80c/cuprum-0.1.0-py3-none-any.whl", hash = "sha256:b03e813bb56afe75f6cc38ec742091a0b1dc183480630abbaf8f205c984c3e72", size = 60578, upload-time = "2025-12-25T23:15:08.336Z" },
+]
+
+[[package]]
 name = "cyclopts"
 version = "3.24.0"
 source = { registry = "https://pypi.org/simple" }
@@ -156,6 +165,7 @@ name = "lading"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "cuprum" },
     { name = "cyclopts" },
     { name = "markdown-it-py" },
     { name = "msgspec" },
@@ -177,6 +187,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "cuprum" },
     { name = "cyclopts", specifier = ">=2.9" },
     { name = "markdown-it-py", specifier = ">=3,<4" },
     { name = "msgspec", specifier = ">=0.18,<1.0" },
