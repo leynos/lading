@@ -16,8 +16,51 @@ scenarios("../features/commands_catalogue.feature")
 
 
 def _parse_quoted_args(args_str: str) -> tuple[str, ...]:
-    """Parse a space-separated list of quoted arguments."""
-    return tuple(re.findall(r'"([^"]*)"', args_str))
+    """Parse a space-separated list of quoted arguments.
+
+    All non-whitespace content must be enclosed in double quotes. Raises
+    ValueError if any unexpected unquoted content is present.
+
+    Examples:
+        '"foo" "bar baz"' -> ("foo", "bar baz")
+        '"" "bar"'        -> ("", "bar")
+        'foo "bar"'       -> ValueError
+
+    """
+    pattern = r'"([^"]*)"'
+    matches = list(re.finditer(pattern, args_str))
+
+    # If there are no quoted segments but there is non-whitespace content,
+    # treat that as invalid.
+    if not matches and args_str.strip():
+        msg = (
+            f"Unquoted arguments found in step text: {args_str!r}. "
+            "All arguments must be enclosed in double quotes."
+        )
+        raise ValueError(msg)
+
+    last_end = 0
+    for match in matches:
+        # Any non-whitespace between the end of the last match and the start
+        # of this one is invalid (unquoted content).
+        if args_str[last_end : match.start()].strip():
+            msg = (
+                f"Unquoted arguments found in step text: {args_str!r}. "
+                "All arguments must be enclosed in double quotes."
+            )
+            raise ValueError(msg)
+        last_end = match.end()
+
+    # Any non-whitespace after the last match is also invalid.
+    if args_str[last_end:].strip():
+        msg = (
+            f"Unquoted arguments found in step text: {args_str!r}. "
+            "All arguments must be enclosed in double quotes."
+        )
+        raise ValueError(msg)
+
+    # Empty quotes ("") are allowed; embedded spaces are preserved.
+    return tuple(m.group(1) for m in matches)
 
 
 def _construct_command_with_args(
@@ -124,3 +167,78 @@ def then_unknown_program_error_raised(unregistered_error: Exception | None) -> N
     from cuprum import UnknownProgramError
 
     assert isinstance(unregistered_error, UnknownProgramError)
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for _parse_quoted_args helper
+# ---------------------------------------------------------------------------
+
+
+class TestParseQuotedArgs:
+    """Unit tests for the _parse_quoted_args helper function."""
+
+    def test_single_quoted_arg(self) -> None:
+        """A single quoted argument should be parsed correctly."""
+        assert _parse_quoted_args('"foo"') == ("foo",)
+
+    def test_multiple_quoted_args(self) -> None:
+        """Multiple quoted arguments should be parsed correctly."""
+        assert _parse_quoted_args('"foo" "bar"') == ("foo", "bar")
+
+    def test_quoted_arg_with_spaces(self) -> None:
+        """Embedded spaces within quotes should be preserved."""
+        assert _parse_quoted_args('"foo bar"') == ("foo bar",)
+
+    def test_multiple_args_with_embedded_spaces(self) -> None:
+        """Multiple args with embedded spaces should all be preserved."""
+        assert _parse_quoted_args('"foo bar" "baz qux"') == ("foo bar", "baz qux")
+
+    def test_empty_quoted_arg(self) -> None:
+        """Empty quotes should produce an empty string argument."""
+        assert _parse_quoted_args('""') == ("",)
+
+    def test_empty_quotes_with_other_args(self) -> None:
+        """Empty quotes mixed with non-empty args should work."""
+        assert _parse_quoted_args('"" "bar"') == ("", "bar")
+        assert _parse_quoted_args('"foo" ""') == ("foo", "")
+
+    def test_empty_string_input(self) -> None:
+        """An empty string input should return an empty tuple."""
+        assert _parse_quoted_args("") == ()
+
+    def test_whitespace_only_input(self) -> None:
+        """Whitespace-only input should return an empty tuple."""
+        assert _parse_quoted_args("   ") == ()
+
+    def test_unquoted_arg_raises_valueerror(self) -> None:
+        """Unquoted arguments should raise ValueError."""
+        import pytest
+
+        with pytest.raises(ValueError, match="Unquoted arguments"):
+            _parse_quoted_args("foo")
+
+    def test_unquoted_before_quoted_raises_valueerror(self) -> None:
+        """Unquoted content before a quoted arg should raise ValueError."""
+        import pytest
+
+        with pytest.raises(ValueError, match="Unquoted arguments"):
+            _parse_quoted_args('foo "bar"')
+
+    def test_unquoted_after_quoted_raises_valueerror(self) -> None:
+        """Unquoted content after a quoted arg should raise ValueError."""
+        import pytest
+
+        with pytest.raises(ValueError, match="Unquoted arguments"):
+            _parse_quoted_args('"foo" bar')
+
+    def test_unquoted_between_quoted_raises_valueerror(self) -> None:
+        """Unquoted content between quoted args should raise ValueError."""
+        import pytest
+
+        with pytest.raises(ValueError, match="Unquoted arguments"):
+            _parse_quoted_args('"foo" bar "baz"')
+
+    def test_extra_whitespace_between_args_allowed(self) -> None:
+        """Extra whitespace between quoted args should be allowed."""
+        assert _parse_quoted_args('"foo"   "bar"') == ("foo", "bar")
+        assert _parse_quoted_args('  "foo"  "bar"  ') == ("foo", "bar")

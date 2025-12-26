@@ -73,6 +73,7 @@ class TestProgramConstants:
 
         assert utils.CARGO is CARGO
         assert utils.GIT is GIT
+        assert utils.LADING_CATALOGUE is LADING_CATALOGUE
 
 
 class TestScopedContext:
