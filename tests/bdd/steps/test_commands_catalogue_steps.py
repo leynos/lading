@@ -10,7 +10,7 @@ from pytest_bdd import given, parsers, scenarios, then, when
 from lading.utils.commands import CARGO, GIT, LADING_CATALOGUE
 
 if typ.TYPE_CHECKING:
-    from cuprum import ProgramCatalogue, SafeCmd
+    from cuprum import Program, ProgramCatalogue, SafeCmd
 
 scenarios("../features/commands_catalogue.feature")
 
@@ -18,6 +18,20 @@ scenarios("../features/commands_catalogue.feature")
 def _parse_quoted_args(args_str: str) -> tuple[str, ...]:
     """Parse a space-separated list of quoted arguments."""
     return tuple(re.findall(r'"([^"]*)"', args_str))
+
+
+def _construct_command_with_args(
+    catalogue_context: ProgramCatalogue,
+    program: Program,
+    args: str,
+) -> SafeCmd:
+    """Construct a command with the given program and arguments."""
+    from cuprum import scoped, sh
+
+    parsed_args = _parse_quoted_args(args)
+    with scoped(allowlist=catalogue_context.allowlist):
+        cmd_builder = sh.make(program, catalogue=catalogue_context)
+        return cmd_builder(*parsed_args)
 
 
 @given("the lading catalogue", target_fixture="catalogue")
@@ -55,12 +69,7 @@ def when_construct_cargo_command(
     args: str,
 ) -> SafeCmd:
     """Construct a cargo command with the given arguments."""
-    from cuprum import scoped, sh
-
-    parsed_args = _parse_quoted_args(args)
-    with scoped(allowlist=catalogue_context.allowlist):
-        cargo_builder = sh.make(CARGO, catalogue=catalogue_context)
-        return cargo_builder(*parsed_args)
+    return _construct_command_with_args(catalogue_context, CARGO, args)
 
 
 @when(
@@ -72,12 +81,7 @@ def when_construct_git_command(
     args: str,
 ) -> SafeCmd:
     """Construct a git command with the given arguments."""
-    from cuprum import scoped, sh
-
-    parsed_args = _parse_quoted_args(args)
-    with scoped(allowlist=catalogue_context.allowlist):
-        git_builder = sh.make(GIT, catalogue=catalogue_context)
-        return git_builder(*parsed_args)
+    return _construct_command_with_args(catalogue_context, GIT, args)
 
 
 @when(
