@@ -31,8 +31,8 @@ uv run lading --help
 
 ## Tutorial
 
-This tutorial assumes a Rust workspace with a root `Cargo.toml` and one or
-more member crates.
+This tutorial assumes a Rust workspace with a root `Cargo.toml` and one or more
+member crates.
 
 ### 1. Create `lading.toml`
 
@@ -126,34 +126,34 @@ stderr_tail_lines = 40
 
 ### `[bump]`
 
-| Key       | Type            | Default | Meaning |
-| --------- | --------------- | ------- | ------- |
+| Key       | Type             | Default | Meaning                                       |
+| --------- | ---------------- | ------- | --------------------------------------------- |
 | `exclude` | array of strings | `[]`    | Crate names to exclude from manifest updates. |
 
 ### `[bump.documentation]`
 
-| Key     | Type            | Default | Meaning |
-| ------- | --------------- | ------- | ------- |
+| Key     | Type             | Default | Meaning                                                                    |
+| ------- | ---------------- | ------- | -------------------------------------------------------------------------- |
 | `globs` | array of strings | `[]`    | Glob patterns for Markdown files whose TOML code fences should be updated. |
 
 ### `[publish]`
 
-| Key            | Type                       | Default     | Meaning |
-| -------------- | -------------------------- | ----------- | ------- |
-| `exclude`      | array of strings            | `[]`        | Crate names to exclude from publication. |
-| `order`        | array of strings            | `[]`        | Explicit publish order; overrides dependency-derived ordering when present. |
-| `strip_patches`| `"all"` \| `"per-crate"` \| `false` | `"per-crate"` | How to edit `[patch.crates-io]` in the staged workspace before packaging. |
+| Key             | Type                                  | Default       | Meaning                                                                     |
+| --------------- | ------------------------------------- | ------------- | --------------------------------------------------------------------------- |
+| `exclude`       | array of strings                      | `[]`          | Crate names to exclude from publication.                                    |
+| `order`         | array of strings                      | `[]`          | Explicit publish order; overrides dependency-derived ordering when present. |
+| `strip_patches` | `"all"` \| `"per-crate"` \| `false`   | `"per-crate"` | How to edit `[patch.crates-io]` in the staged workspace before packaging.   |
 
 ### `[preflight]`
 
-| Key                 | Type                     | Default | Meaning |
-| ------------------- | ------------------------ | ------- | ------- |
-| `test_exclude`      | array of strings          | `[]`    | Crate names to exclude from `cargo test` by passing `--exclude`. |
-| `unit_tests_only`   | boolean                  | `false` | Append `--lib --bins` to the pre-flight `cargo test` invocation. |
-| `aux_build`         | array of array of strings | `[]`    | Extra commands (tokenized) to run before cargo pre-flight checks. |
-| `compiletest_extern`| table (string → string)  | `{}`    | Extra `--extern` entries to append to `RUSTFLAGS` for compiletest-style suites. |
-| `env`               | table (string → string)  | `{}`    | Environment overrides applied to git/cargo invocations run by `publish`. |
-| `stderr_tail_lines` | integer (≥ 0)            | `40`    | Number of lines to tail from referenced `*.stderr` files when tests fail. |
+| Key                  | Type                      | Default | Meaning                                                                         |
+| -------------------- | ------------------------- | ------- | ------------------------------------------------------------------------------- |
+| `test_exclude`       | array of strings          | `[]`    | Crate names to exclude from `cargo test` by passing `--exclude`.                |
+| `unit_tests_only`    | boolean                   | `false` | Append `--lib --bins` to the pre-flight `cargo test` invocation.                |
+| `aux_build`          | nested array of strings   | `[]`    | Extra commands (tokenized) to run before cargo pre-flight checks.               |
+| `compiletest_extern` | table (string → string)   | `{}`    | Extra `--extern` entries to append to `RUSTFLAGS` for compiletest-style suites. |
+| `env`                | table (string → string)   | `{}`    | Environment overrides applied to git/cargo invocations run by `publish`.        |
+| `stderr_tail_lines`  | integer (≥ 0)             | `40`    | Number of lines to tail from referenced `*.stderr` files when tests fail.       |
 
 ## Reference: CLI flags and environment variables
 
