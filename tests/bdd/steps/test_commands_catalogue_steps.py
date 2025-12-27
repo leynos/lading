@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import typing as typ
 
+import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
 from lading.utils.commands import CARGO, GIT, LADING_CATALOGUE
@@ -13,6 +14,15 @@ if typ.TYPE_CHECKING:
     from cuprum import Program, ProgramCatalogue, SafeCmd
 
 scenarios("../features/commands_catalogue.feature")
+
+
+def _raise_unquoted_args_error(args_str: str) -> typ.NoReturn:
+    """Raise a ValueError for unquoted arguments in step text."""
+    msg = (
+        f"Unquoted arguments found in step text: {args_str!r}. "
+        "All arguments must be enclosed in double quotes."
+    )
+    raise ValueError(msg)
 
 
 def _parse_quoted_args(args_str: str) -> tuple[str, ...]:
@@ -33,31 +43,19 @@ def _parse_quoted_args(args_str: str) -> tuple[str, ...]:
     # If there are no quoted segments but there is non-whitespace content,
     # treat that as invalid.
     if not matches and args_str.strip():
-        msg = (
-            f"Unquoted arguments found in step text: {args_str!r}. "
-            "All arguments must be enclosed in double quotes."
-        )
-        raise ValueError(msg)
+        _raise_unquoted_args_error(args_str)
 
     last_end = 0
     for match in matches:
         # Any non-whitespace between the end of the last match and the start
         # of this one is invalid (unquoted content).
         if args_str[last_end : match.start()].strip():
-            msg = (
-                f"Unquoted arguments found in step text: {args_str!r}. "
-                "All arguments must be enclosed in double quotes."
-            )
-            raise ValueError(msg)
+            _raise_unquoted_args_error(args_str)
         last_end = match.end()
 
     # Any non-whitespace after the last match is also invalid.
     if args_str[last_end:].strip():
-        msg = (
-            f"Unquoted arguments found in step text: {args_str!r}. "
-            "All arguments must be enclosed in double quotes."
-        )
-        raise ValueError(msg)
+        _raise_unquoted_args_error(args_str)
 
     # Empty quotes ("") are allowed; embedded spaces are preserved.
     return tuple(m.group(1) for m in matches)
@@ -212,29 +210,21 @@ class TestParseQuotedArgs:
 
     def test_unquoted_arg_raises_valueerror(self) -> None:
         """Unquoted arguments should raise ValueError."""
-        import pytest
-
         with pytest.raises(ValueError, match="Unquoted arguments"):
             _parse_quoted_args("foo")
 
     def test_unquoted_before_quoted_raises_valueerror(self) -> None:
         """Unquoted content before a quoted arg should raise ValueError."""
-        import pytest
-
         with pytest.raises(ValueError, match="Unquoted arguments"):
             _parse_quoted_args('foo "bar"')
 
     def test_unquoted_after_quoted_raises_valueerror(self) -> None:
         """Unquoted content after a quoted arg should raise ValueError."""
-        import pytest
-
         with pytest.raises(ValueError, match="Unquoted arguments"):
             _parse_quoted_args('"foo" bar')
 
     def test_unquoted_between_quoted_raises_valueerror(self) -> None:
         """Unquoted content between quoted args should raise ValueError."""
-        import pytest
-
         with pytest.raises(ValueError, match="Unquoted arguments"):
             _parse_quoted_args('"foo" bar "baz"')
 

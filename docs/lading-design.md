@@ -665,13 +665,13 @@ The migration affects four code locations:
 ### 7.3. Catalogue Definition
 
 A project catalogue registers allowed executables. The catalogue is defined in
-`lading/utils/commands.py` using cuprum's `ProgramCatalogue` and
+`lading/utils/commands.py` using Cuprum's `ProgramCatalogue` and
 `ProjectSettings`:
 
 ```python
 from cuprum import Program, ProgramCatalogue, ProjectSettings
 
-# Programme objects for allowed executables
+# Program objects for allowed executables
 CARGO = Program("cargo")
 GIT = Program("git")
 
@@ -703,13 +703,14 @@ with scoped(allowlist=LADING_CATALOGUE.allowlist):
 
 - The catalogue is defined in `lading/utils/commands.py` and exported via
   `lading.utils.LADING_CATALOGUE` for convenient access across the codebase.
-- `CARGO` and `GIT` programme constants are also exported, enabling type-safe
+- `CARGO` and `GIT` program constants are also exported, enabling type-safe
   command construction without string literals.
 - The `ProjectSettings` includes a reference to this design document section for
   discoverability when debugging catalogue-related issues.
-- Unit tests verify catalogue construction, programme registration, and
-  `UnknownProgramError` handling for unregistered programmes.
-- BDD scenarios document the expected behaviour for downstream consumers,
+- Unit tests verify catalogue construction, program registration, and
+  `UnknownProgramError` handling for unregistered programs.
+- Behaviour-driven development (BDD) scenarios document the expected behaviour
+  for downstream consumers,
   including command construction within scoped contexts.
 
 ### 7.4. Compatibility with cmd-mox

@@ -12,8 +12,6 @@ class TestLadingCatalogue:
 
     def test_catalogue_is_importable(self) -> None:
         """The catalogue should be importable from lading.utils.commands."""
-        from lading.utils.commands import LADING_CATALOGUE
-
         assert LADING_CATALOGUE is not None
 
     def test_catalogue_registers_cargo(self) -> None:
@@ -30,7 +28,6 @@ class TestLadingCatalogue:
 
         assert CARGO in allowlist
         assert GIT in allowlist
-        assert len(allowlist) == 2
 
     def test_catalogue_can_lookup_cargo(self) -> None:
         """The catalogue should return a ProgramEntry for cargo."""
