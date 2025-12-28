@@ -17,12 +17,21 @@ scenarios("../features/commands_catalogue.feature")
 
 
 def _raise_unquoted_args_error(args_str: str) -> typ.NoReturn:
-    """Raise a ValueError for unquoted arguments in step text."""
+    """Raise ValueError for unquoted arguments."""
     msg = (
         f"Unquoted arguments found in step text: {args_str!r}. "
         "All arguments must be enclosed in double quotes."
     )
     raise ValueError(msg)
+
+
+def _validate_segment_whitespace_only(args_str: str, start: int, end: int) -> None:
+    """Validate that a segment contains only whitespace.
+
+    Raises ValueError if non-whitespace content is found.
+    """
+    if args_str[start:end].strip():
+        _raise_unquoted_args_error(args_str)
 
 
 def _parse_quoted_args(args_str: str) -> tuple[str, ...]:
@@ -49,13 +58,11 @@ def _parse_quoted_args(args_str: str) -> tuple[str, ...]:
     for match in matches:
         # Any non-whitespace between the end of the last match and the start
         # of this one is invalid (unquoted content).
-        if args_str[last_end : match.start()].strip():
-            _raise_unquoted_args_error(args_str)
+        _validate_segment_whitespace_only(args_str, last_end, match.start())
         last_end = match.end()
 
     # Any non-whitespace after the last match is also invalid.
-    if args_str[last_end:].strip():
-        _raise_unquoted_args_error(args_str)
+    _validate_segment_whitespace_only(args_str, last_end, len(args_str))
 
     # Empty quotes ("") are allowed; embedded spaces are preserved.
     return tuple(m.group(1) for m in matches)
