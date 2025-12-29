@@ -61,6 +61,7 @@ class BumpOptions:
     dependency_sections: typ.Mapping[str, typ.Collection[str]] = dc.field(
         default_factory=lambda: types.MappingProxyType({})
     )
+    include_workspace_sections: bool = False
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -180,6 +181,7 @@ def _process_workspace_manifest(
     workspace_options = dc.replace(
         context.base_options,
         dependency_sections=_freeze_dependency_sections(dependency_sections),
+        include_workspace_sections=True,
     )
     if _update_manifest(
         context.workspace_manifest,
@@ -361,7 +363,11 @@ def _update_manifest(
     target_version: str,
     options: BumpOptions,
 ) -> bool:
-    """Apply ``target_version`` to each table described by ``selectors``."""
+    """Apply ``target_version`` to each table described by ``selectors``.
+
+    When ``options.include_workspace_sections`` is True, workspace-level
+    dependency sections (e.g. ``[workspace.dependencies]``) are also updated.
+    """
     document = _parse_manifest(manifest_path)
     changed = False
     for selector in selectors:
@@ -369,6 +375,10 @@ def _update_manifest(
         changed |= _assign_version(table, target_version)
     if options.dependency_sections:
         changed |= _update_dependency_sections(
+            document, options.dependency_sections, target_version
+        )
+    if options.include_workspace_sections and options.dependency_sections:
+        changed |= _update_workspace_dependency_sections(
             document, options.dependency_sections, target_version
         )
     if changed and not options.dry_run:
@@ -425,6 +435,26 @@ def _update_dependency_sections(
         if not names:
             continue
         table = _select_table(document, (section,))
+        if table is None:
+            continue
+        changed |= _update_dependency_table(table, names, target_version)
+    return changed
+
+
+def _update_workspace_dependency_sections(
+    document: TOMLDocument,
+    dependency_sections: typ.Mapping[str, typ.Collection[str]],
+    target_version: str,
+) -> bool:
+    """Apply ``target_version`` to workspace-level dependency sections.
+
+    Updates sections like ``[workspace.dependencies]`` rather than ``[dependencies]``.
+    """
+    changed = False
+    for section, names in dependency_sections.items():
+        if not names:
+            continue
+        table = _select_table(document, ("workspace", section))
         if table is None:
             continue
         changed |= _update_dependency_table(table, names, target_version)
