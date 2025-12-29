@@ -14,6 +14,7 @@ from pathlib import Path
 from markdown_it import MarkdownIt
 from tomlkit import parse as parse_toml
 from tomlkit import string
+from tomlkit.container import OutOfOrderTableProxy
 from tomlkit.exceptions import TOMLKitError
 from tomlkit.items import InlineTable, Item, Table
 
@@ -28,6 +29,9 @@ if typ.TYPE_CHECKING:
     from lading.workspace import WorkspaceCrate, WorkspaceGraph
 else:  # pragma: no cover - provide runtime placeholders for type checking imports
     LadingConfig = WorkspaceCrate = WorkspaceGraph = TOMLDocument = Token = typ.Any
+
+type _TableLike = Table | OutOfOrderTableProxy
+_TABLE_LIKE_TYPES: typ.Final = (Table, OutOfOrderTableProxy)
 
 _WORKSPACE_SELECTORS: typ.Final[tuple[tuple[str, ...], ...]] = (
     ("package",),
@@ -425,7 +429,7 @@ def _update_dependency_sections(
 
 
 def _update_dependency_table(
-    table: Table,
+    table: _TableLike,
     dependency_names: typ.Collection[str],
     target_version: str,
 ) -> bool:
@@ -434,14 +438,14 @@ def _update_dependency_table(
     for name in dependency_names:
         if name not in table:
             continue
-        entry = table[name]
+        entry = table[name]  # type: ignore[index]
         if _update_dependency_entry(table, name, entry, target_version):
             changed = True
     return changed
 
 
 def _update_dependency_entry(
-    container: Table,
+    container: _TableLike,
     key: str,
     entry: object,
     target_version: str,
@@ -452,7 +456,7 @@ def _update_dependency_entry(
     replacement = _prepare_version_replacement(entry, target_version)
     if replacement is None:
         return False
-    container[key] = replacement
+    container[key] = replacement  # type: ignore[index]
     return True
 
 
@@ -685,25 +689,25 @@ def _parse_manifest(manifest_path: Path) -> TOMLDocument:
 
 
 def _select_table(
-    document: TOMLDocument | Table,
+    document: TOMLDocument | _TableLike,
     keys: tuple[str, ...],
-) -> Table | None:
+) -> _TableLike | None:
     """Return the nested table located by ``keys`` if it exists."""
     if not keys:
-        return document if isinstance(document, Table) else None
+        return document if isinstance(document, _TABLE_LIKE_TYPES) else None
     current: object = document
     for key in keys:
         getter = getattr(current, "get", None)
         if getter is None:
             return None
         next_value = getter(key)
-        if not isinstance(next_value, Table):
+        if not isinstance(next_value, _TABLE_LIKE_TYPES):
             return None
         current = next_value
-    return current if isinstance(current, Table) else None
+    return current if isinstance(current, _TABLE_LIKE_TYPES) else None
 
 
-def _assign_version(table: Table | None, target_version: str) -> bool:
+def _assign_version(table: _TableLike | None, target_version: str) -> bool:
     """Update ``table['version']`` when ``table`` is present."""
     if table is None:
         return False
