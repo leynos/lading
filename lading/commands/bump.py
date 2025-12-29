@@ -357,16 +357,24 @@ def _freeze_dependency_sections(
     return types.MappingProxyType(frozen_sections)
 
 
-def _update_manifest(  # noqa: PLR0913
+def _update_manifest(
     manifest_path: Path,
     selectors: tuple[tuple[str, ...], ...],
     target_version: str,
     options: BumpOptions,
 ) -> bool:
     """Apply ``target_version`` to each table described by ``selectors``.
+ 
+    Args:
+        manifest_path: Path to the Cargo.toml manifest file.
+        selectors: Tuple of key tuples identifying version tables to update.
+        target_version: The target version to apply.
+        options: Bump options controlling dry-run, dependency sections, and
+            whether to include workspace-level dependency sections.
 
-    When ``options.include_workspace_sections`` is True, workspace-level
-    dependency sections (e.g. ``[workspace.dependencies]``) are also updated.
+    Returns:
+        True if any changes were made.
+
     """
     document = _parse_manifest(manifest_path)
     changed = False
@@ -453,10 +461,18 @@ def _update_section(
     names: typ.Collection[str],
     target_version: str,
 ) -> bool:
-    """Update dependency entries within a table at the given path.
+    """Update dependency versions in the table at ``path``.
 
-    The ``path`` is a tuple of keys identifying the table location,
-    e.g. ``("dependencies",)`` or ``("workspace", "dependencies")``.
+    Args:
+        document: The parsed TOML manifest document.
+        path: Tuple of keys identifying the table path (e.g., ``("workspace",
+            "dependencies")``).
+        names: Collection of dependency names to update.
+        target_version: The target version to apply.
+
+    Returns:
+        True if any version entries were changed.
+
     """
     table = _select_table(document, path)
     if table is None:

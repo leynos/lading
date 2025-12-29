@@ -297,32 +297,32 @@ def test_run_dry_run_reports_changes_without_modifying_files(
     for path in manifest_paths:
         assert path.read_text(encoding="utf-8") == original_contents[path]
 
-
 @pytest.mark.parametrize(
-    ("section_name", "initial_version", "target_version"),
+    ("section", "version_spec", "target_version", "expected_version"),
     [
-        ("dependencies", '"0.1.0"', "1.2.3"),
-        ("dev-dependencies", '{ version = "0.1.0" }', "2.0.0"),
-        ("build-dependencies", '"0.1.0"', "3.0.0"),
+        ("dependencies", '"0.1.0"', "1.2.3", "1.2.3"),
+        ("dev-dependencies", '"~0.1.0"', "2.0.0", "~2.0.0"),
+        ("build-dependencies", '{ version = "0.1.0" }', "3.0.0", "3.0.0"),
     ],
     ids=["dependencies", "dev-dependencies", "build-dependencies"],
 )
 def test_run_updates_workspace_dependency_sections(
     tmp_path: pathlib.Path,
-    section_name: str,
-    initial_version: str,
+    section: str,
+    version_spec: str,
     target_version: str,
+    expected_version: str,
 ) -> None:
-    """Workspace-level dependency sections are updated with the new version."""
+    """Workspace dependency entries in [workspace.<section>] are updated."""
     workspace = _make_workspace(tmp_path)
     manifest_path = tmp_path / "Cargo.toml"
     manifest_path.write_text(
         "[workspace]\n"
-        f'members = ["crates/alpha", "crates/beta"]\n\n'
+        'members = ["crates/alpha", "crates/beta"]\n\n'
         "[workspace.package]\n"
         'version = "0.1.0"\n\n'
-        f"[workspace.{section_name}]\n"
-        f"alpha = {initial_version}\n",
+        f"[workspace.{section}]\n"
+        f"alpha = {version_spec}\n",
         encoding="utf-8",
     )
     configuration = _make_config()
@@ -333,13 +333,13 @@ def test_run_updates_workspace_dependency_sections(
     )
 
     document = parse_toml(manifest_path.read_text(encoding="utf-8"))
-    entry = document["workspace"][section_name]["alpha"]
-    # Handle both table/inline-table format and simple string format
+    entry = document["workspace"][section]["alpha"]
+    # Handle both string format ("0.1.0") and table format ({ version = "0.1.0" })
     if isinstance(entry, (tk_items.Table, tk_items.InlineTable)):
-        version = entry["version"].value
+        actual_version = entry["version"].value
     else:
-        version = entry.value
-    assert version == target_version
+        actual_version = entry.value
+    assert actual_version == expected_version
 
 
 def test_run_updates_workspace_dependency_prefixes(tmp_path: pathlib.Path) -> None:
