@@ -58,10 +58,16 @@ def _validate_segment_whitespace_only(args_str: str, start: int, end: int) -> No
 
 
 def _parse_quoted_args(args_str: str) -> tuple[str, ...]:
-    """Parse a space-separated list of quoted arguments.
+    r"""Parse a space-separated list of quoted arguments.
 
     All non-whitespace content must be enclosed in double quotes. Raises
     ValueError if any unexpected unquoted content is present.
+
+    Note:
+    ----
+    This implementation does not support escaped quotes (e.g., ``\"``) inside
+    quoted strings. If shell-like escaping is required, consider using
+    ``shlex.split`` instead.
 
     Examples:
         '"foo" "bar baz"' -> ("foo", "bar baz")
