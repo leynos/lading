@@ -298,22 +298,21 @@ def test_run_dry_run_reports_changes_without_modifying_files(
         assert path.read_text(encoding="utf-8") == original_contents[path]
 
 @pytest.mark.parametrize(
-    ("section", "version_spec", "target_version", "expected_version"),
+    ("section", "versions"),
     [
-        ("dependencies", '"0.1.0"', "1.2.3", "1.2.3"),
-        ("dev-dependencies", '"~0.1.0"', "2.0.0", "~2.0.0"),
-        ("build-dependencies", '{ version = "0.1.0" }', "3.0.0", "3.0.0"),
+        ("dependencies", ('"0.1.0"', "1.2.3", "1.2.3")),
+        ("dev-dependencies", ('"~0.1.0"', "2.0.0", "~2.0.0")),
+        ("build-dependencies", ('{ version = "0.1.0" }', "3.0.0", "3.0.0")),
     ],
     ids=["dependencies", "dev-dependencies", "build-dependencies"],
 )
 def test_run_updates_workspace_dependency_sections(
     tmp_path: pathlib.Path,
     section: str,
-    version_spec: str,
-    target_version: str,
-    expected_version: str,
+    versions: tuple[str, str, str],
 ) -> None:
     """Workspace dependency entries in [workspace.<section>] are updated."""
+    version_spec, target_version, expected_version = versions
     workspace = _make_workspace(tmp_path)
     manifest_path = tmp_path / "Cargo.toml"
     manifest_path.write_text(
