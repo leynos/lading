@@ -357,7 +357,7 @@ def _freeze_dependency_sections(
     return types.MappingProxyType(frozen_sections)
 
 
-def _update_manifest(
+def _update_manifest(  # noqa: PLR0913
     manifest_path: Path,
     selectors: tuple[tuple[str, ...], ...],
     target_version: str,

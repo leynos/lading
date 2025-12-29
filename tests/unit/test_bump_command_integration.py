@@ -340,3 +340,31 @@ def test_run_updates_workspace_dependency_sections(
     else:
         version = entry.value
     assert version == target_version
+
+
+def test_run_updates_workspace_dependency_prefixes(tmp_path: pathlib.Path) -> None:
+    """Workspace dependency requirements preserve prefixes and extra fields."""
+    workspace = _make_workspace(tmp_path)
+    manifest_path = tmp_path / "Cargo.toml"
+    manifest_path.write_text(
+        "[workspace]\n"
+        'members = ["crates/alpha", "crates/beta"]\n\n'
+        "[workspace.package]\n"
+        'version = "0.1.0"\n\n'
+        "[workspace.dependencies]\n"
+        'alpha = "^0.1.0"\n'
+        'beta = { version = "~0.1.0", path = "crates/beta" }\n',
+        encoding="utf-8",
+    )
+    configuration = _make_config()
+    bump.run(
+        tmp_path,
+        "1.2.3",
+        options=bump.BumpOptions(configuration=configuration, workspace=workspace),
+    )
+
+    document = parse_toml(manifest_path.read_text(encoding="utf-8"))
+    assert document["workspace"]["dependencies"]["alpha"].value == "^1.2.3"
+    beta_entry = document["workspace"]["dependencies"]["beta"]
+    assert beta_entry["version"].value == "~1.2.3"
+    assert beta_entry["path"].value == "crates/beta"
