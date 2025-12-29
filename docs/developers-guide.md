@@ -19,11 +19,11 @@ Behavioural tests invoke the CLI as an external process and spy on the `python`
 executable with [`cmd-mox`](./cmd-mox-usage-guide.md). Setting
 `LADING_USE_CMD_MOX_STUB` to a truthy value such as `1` or `true` forces
 publish pre-flight checks to be proxied through the cmd-mox inter-process
-communication (IPC) server so that the
-suite can assert on `cargo::<subcommand>` invocations without launching real
-tools. This pattern keeps the tests faithful to real user interactions while
-still providing strict control over command invocations. Use the same approach
-when adding new end-to-end scenarios.
+communication (IPC) server so that the suite can assert on
+`cargo::<subcommand>` invocations without launching real tools. This pattern
+keeps the tests faithful to real user interactions while still providing strict
+control over command invocations. Use the same approach when adding new
+end-to-end scenarios.
 
 The end-to-end suite in `tests/e2e/` keeps git interactions real while stubbing
 only `cargo` operations, using cmd-mox passthrough spies for `git status` when
