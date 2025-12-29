@@ -375,11 +375,10 @@ def _update_manifest(
         changed |= _assign_version(table, target_version)
     if options.dependency_sections:
         changed |= _update_dependency_sections(
-            document, options.dependency_sections, target_version
-        )
-    if options.include_workspace_sections and options.dependency_sections:
-        changed |= _update_workspace_dependency_sections(
-            document, options.dependency_sections, target_version
+            document,
+            options.dependency_sections,
+            target_version,
+            include_workspace_sections=options.include_workspace_sections,
         )
     if changed and not options.dry_run:
         _write_atomic_text(manifest_path, document.as_string())
@@ -428,37 +427,41 @@ def _update_dependency_sections(
     document: TOMLDocument,
     dependency_sections: typ.Mapping[str, typ.Collection[str]],
     target_version: str,
+    *,
+    include_workspace_sections: bool = False,
 ) -> bool:
-    """Apply ``target_version`` to dependency entries for the provided sections."""
-    changed = False
-    for section, names in dependency_sections.items():
-        if not names:
-            continue
-        table = _select_table(document, (section,))
-        if table is None:
-            continue
-        changed |= _update_dependency_table(table, names, target_version)
-    return changed
+    """Apply ``target_version`` to dependency entries for the provided sections.
 
-
-def _update_workspace_dependency_sections(
-    document: TOMLDocument,
-    dependency_sections: typ.Mapping[str, typ.Collection[str]],
-    target_version: str,
-) -> bool:
-    """Apply ``target_version`` to workspace-level dependency sections.
-
-    Updates sections like ``[workspace.dependencies]`` rather than ``[dependencies]``.
+    When ``include_workspace_sections`` is True, workspace-level sections
+    (e.g. ``[workspace.dependencies]``) are also updated.
     """
     changed = False
     for section, names in dependency_sections.items():
         if not names:
             continue
-        table = _select_table(document, ("workspace", section))
-        if table is None:
-            continue
-        changed |= _update_dependency_table(table, names, target_version)
+        changed |= _update_section(document, (section,), names, target_version)
+        if include_workspace_sections:
+            changed |= _update_section(
+                document, ("workspace", section), names, target_version
+            )
     return changed
+
+
+def _update_section(
+    document: TOMLDocument,
+    path: tuple[str, ...],
+    names: typ.Collection[str],
+    target_version: str,
+) -> bool:
+    """Update dependency entries within a table at the given path.
+
+    The ``path`` is a tuple of keys identifying the table location,
+    e.g. ``("dependencies",)`` or ``("workspace", "dependencies")``.
+    """
+    table = _select_table(document, path)
+    if table is None:
+        return False
+    return _update_dependency_table(table, names, target_version)
 
 
 def _update_dependency_table(
