@@ -298,11 +298,11 @@ def test_run_dry_run_reports_changes_without_modifying_files(
 
 
 @pytest.mark.parametrize(
-    ("section_name", "initial_version", "target_version", "expected_version"),
+    ("section_name", "initial_version", "target_version"),
     [
-        ("dependencies", '"0.1.0"', "1.2.3", "1.2.3"),
-        ("dev-dependencies", '{ version = "0.1.0" }', "2.0.0", "2.0.0"),
-        ("build-dependencies", '"0.1.0"', "3.0.0", "3.0.0"),
+        ("dependencies", '"0.1.0"', "1.2.3"),
+        ("dev-dependencies", '{ version = "0.1.0" }', "2.0.0"),
+        ("build-dependencies", '"0.1.0"', "3.0.0"),
     ],
     ids=["dependencies", "dev-dependencies", "build-dependencies"],
 )
@@ -311,7 +311,6 @@ def test_run_updates_workspace_dependency_sections(
     section_name: str,
     initial_version: str,
     target_version: str,
-    expected_version: str,
 ) -> None:
     """Workspace-level dependency sections are updated with the new version."""
     workspace = _make_workspace(tmp_path)
@@ -336,4 +335,4 @@ def test_run_updates_workspace_dependency_sections(
     entry = document["workspace"][section_name]["alpha"]
     # Handle both simple string format and table format with version key
     version = entry["version"].value if hasattr(entry, "get") else entry.value
-    assert version == expected_version
+    assert version == target_version
