@@ -1,4 +1,27 @@
-"""BDD steps for the command catalogue feature."""
+"""BDD step definitions for the command catalogue feature.
+
+This module provides pytest-bdd step definitions that exercise the Cuprum-based
+command catalogue defined in :mod:`lading.utils.commands`. The steps verify
+that:
+
+- The ``LADING_CATALOGUE`` registers ``cargo`` and ``git`` as allowed programs
+- Commands can be constructed within a scoped catalogue context
+- Unregistered programs are rejected with ``UnknownProgramError``
+
+The step definitions integrate with the feature file at
+``tests/bdd/features/commands_catalogue.feature`` and use fixtures to share
+state between Given/When/Then steps.
+
+Example:
+-------
+A typical scenario using these steps::
+
+    Scenario: Constructing a cargo command within the catalogue scope
+        Given the lading catalogue is active
+        When I construct a cargo command with arguments "build" "--release"
+        Then the command argv should be "cargo" "build" "--release"
+
+"""
 
 from __future__ import annotations
 
@@ -84,26 +107,55 @@ def _construct_command_with_args(
 
 @given("the lading catalogue", target_fixture="catalogue")
 def given_lading_catalogue() -> ProgramCatalogue:
-    """Provide the shared lading catalogue."""
+    """Provide the shared lading catalogue.
+
+    Returns
+    -------
+    ProgramCatalogue
+        The ``LADING_CATALOGUE`` instance containing cargo and git programs.
+
+    """
     return LADING_CATALOGUE
 
 
 @given("the lading catalogue is active", target_fixture="catalogue_context")
 def given_catalogue_is_active() -> ProgramCatalogue:
-    """Provide the catalogue for use in a scoped context."""
+    """Provide the catalogue for use in a scoped context.
+
+    Returns
+    -------
+    ProgramCatalogue
+        The ``LADING_CATALOGUE`` instance for use with Cuprum's ``scoped()``
+        context manager.
+
+    """
     return LADING_CATALOGUE
 
 
 @then("cargo should be in the allowlist")
 def then_cargo_in_allowlist(catalogue: ProgramCatalogue) -> None:
-    """Assert that cargo is registered in the catalogue."""
+    """Assert that cargo is registered in the catalogue.
+
+    Parameters
+    ----------
+    catalogue : ProgramCatalogue
+        The catalogue fixture provided by a preceding Given step.
+
+    """
     assert catalogue.is_allowed(CARGO)
     assert CARGO in catalogue.allowlist
 
 
 @then("git should be in the allowlist")
 def then_git_in_allowlist(catalogue: ProgramCatalogue) -> None:
-    """Assert that git is registered in the catalogue."""
+    """Assert that git is registered in the catalogue.
+
+    Parameters
+    ----------
+    catalogue : ProgramCatalogue
+        The catalogue fixture provided by a preceding Given step.
+
+    """
     assert catalogue.is_allowed(GIT)
     assert GIT in catalogue.allowlist
 
@@ -116,7 +168,21 @@ def when_construct_cargo_command(
     catalogue_context: ProgramCatalogue,
     args: str,
 ) -> SafeCmd:
-    """Construct a cargo command with the given arguments."""
+    """Construct a cargo command with the given arguments.
+
+    Parameters
+    ----------
+    catalogue_context : ProgramCatalogue
+        The catalogue fixture provided by a preceding Given step.
+    args : str
+        Space-separated quoted arguments from the step text.
+
+    Returns
+    -------
+    SafeCmd
+        The constructed command object with cargo as the program.
+
+    """
     return _construct_command_with_args(catalogue_context, CARGO, args)
 
 
@@ -128,7 +194,21 @@ def when_construct_git_command(
     catalogue_context: ProgramCatalogue,
     args: str,
 ) -> SafeCmd:
-    """Construct a git command with the given arguments."""
+    """Construct a git command with the given arguments.
+
+    Parameters
+    ----------
+    catalogue_context : ProgramCatalogue
+        The catalogue fixture provided by a preceding Given step.
+    args : str
+        Space-separated quoted arguments from the step text.
+
+    Returns
+    -------
+    SafeCmd
+        The constructed command object with git as the program.
+
+    """
     return _construct_command_with_args(catalogue_context, GIT, args)
 
 
@@ -142,7 +222,21 @@ def when_construct_unregistered_command(
     catalogue_context: ProgramCatalogue,
     program_name: str,
 ) -> Exception | None:
-    """Attempt to construct a command for an unregistered program."""
+    """Attempt to construct a command for an unregistered program.
+
+    Parameters
+    ----------
+    catalogue_context : ProgramCatalogue
+        The catalogue fixture provided by a preceding Given step.
+    program_name : str
+        The name of the unregistered program to attempt.
+
+    Returns
+    -------
+    Exception | None
+        The ``UnknownProgramError`` if raised, otherwise ``None``.
+
+    """
     from cuprum import Program, UnknownProgramError, scoped, sh
 
     unregistered = Program(program_name)
@@ -161,14 +255,31 @@ def then_command_argv_matches(
     constructed_command: SafeCmd,
     expected_argv: str,
 ) -> None:
-    """Assert that the constructed command has the expected argv."""
+    """Assert that the constructed command has the expected argv.
+
+    Parameters
+    ----------
+    constructed_command : SafeCmd
+        The command fixture produced by a preceding When step.
+    expected_argv : str
+        Space-separated quoted expected arguments from the step text.
+
+    """
     expected = _parse_quoted_args(expected_argv)
     assert constructed_command.argv_with_program == expected
 
 
 @then("an UnknownProgramError should be raised")
 def then_unknown_program_error_raised(unregistered_error: Exception | None) -> None:
-    """Assert that an UnknownProgramError was raised."""
+    """Assert that an UnknownProgramError was raised.
+
+    Parameters
+    ----------
+    unregistered_error : Exception | None
+        The error fixture produced by a preceding When step, or ``None`` if
+        no error was raised.
+
+    """
     from cuprum import UnknownProgramError
 
     assert isinstance(unregistered_error, UnknownProgramError)
