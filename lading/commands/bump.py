@@ -31,7 +31,10 @@ else:  # pragma: no cover - provide runtime placeholders for type checking impor
     LadingConfig = WorkspaceCrate = WorkspaceGraph = TOMLDocument = Token = typ.Any
 
 type _TableLike = Table | OutOfOrderTableProxy
-_TABLE_LIKE_TYPES: typ.Final = (Table, OutOfOrderTableProxy)
+_TABLE_LIKE_TYPES: typ.Final[tuple[type[Table], type[OutOfOrderTableProxy]]] = (
+    Table,
+    OutOfOrderTableProxy,
+)
 
 _WORKSPACE_SELECTORS: typ.Final[tuple[tuple[str, ...], ...]] = (
     ("package",),
@@ -438,7 +441,7 @@ def _update_dependency_table(
     for name in dependency_names:
         if name not in table:
             continue
-        entry = table[name]  # type: ignore[index]
+        entry = table[name]  # type: ignore[index]  # OutOfOrderTableProxy supports indexing
         if _update_dependency_entry(table, name, entry, target_version):
             changed = True
     return changed
@@ -456,7 +459,7 @@ def _update_dependency_entry(
     replacement = _prepare_version_replacement(entry, target_version)
     if replacement is None:
         return False
-    container[key] = replacement  # type: ignore[index]
+    container[key] = replacement  # type: ignore[index]  # OutOfOrderTableProxy supports item assignment
     return True
 
 
