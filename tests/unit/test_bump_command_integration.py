@@ -7,6 +7,7 @@ import pathlib
 import typing as typ
 
 import pytest
+from tomlkit import items as tk_items
 from tomlkit import parse as parse_toml
 
 from lading import config as config_module
@@ -333,6 +334,9 @@ def test_run_updates_workspace_dependency_sections(
 
     document = parse_toml(manifest_path.read_text(encoding="utf-8"))
     entry = document["workspace"][section_name]["alpha"]
-    # Handle both simple string format and table format with version key
-    version = entry["version"].value if hasattr(entry, "get") else entry.value
+    # Handle both table/inline-table format and simple string format
+    if isinstance(entry, (tk_items.Table, tk_items.InlineTable)):
+        version = entry["version"].value
+    else:
+        version = entry.value
     assert version == target_version
