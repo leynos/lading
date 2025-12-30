@@ -1,7 +1,37 @@
-"""Documentation processing utilities for version bumping."""
+"""Documentation processing utilities for version bumping.
+
+This module provides utilities for updating version references within Markdown
+documentation files. It scans fenced TOML code blocks (e.g., Cargo.toml
+snippets in README files) and rewrites version entries to match the target
+workspace version.
+
+Functions
+---------
+resolve_documentation_targets
+    Locate documentation files matching configured glob patterns.
+update_documentation_files
+    Rewrite TOML fences in documentation to reflect updated versions.
+rewrite_markdown_toml_fences
+    Parse Markdown and transform TOML code blocks.
+update_toml_snippet_versions
+    Update version entries within a single TOML snippet.
+
+Examples
+--------
+>>> from pathlib import Path
+>>> from lading.commands import bump_docs
+>>> paths = bump_docs.resolve_documentation_targets(
+...     Path("/workspace"), documentation_config
+... )
+>>> changed = bump_docs.update_documentation_files(
+...     paths, "1.2.0", {"my-crate"}, dry_run=False
+... )
+
+"""
 
 from __future__ import annotations
 
+import logging
 import re
 import typing as typ
 
@@ -10,6 +40,8 @@ from tomlkit import parse as parse_toml
 from tomlkit.exceptions import TOMLKitError
 
 from lading.commands import bump_toml
+
+_LOGGER = logging.getLogger(__name__)
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
@@ -82,7 +114,11 @@ def update_documentation_files(
     changed: set[Path] = set()
     dependency_targets = {name for name in updated_crates if name}
     for doc_path in documentation_paths:
-        original_text = doc_path.read_text(encoding="utf-8")
+        try:
+            original_text = doc_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            _LOGGER.warning("Skipping %s: %s", doc_path, exc)
+            continue
         updated_text, snippet_changed = rewrite_markdown_toml_fences(
             original_text, dependency_targets, target_version
         )
