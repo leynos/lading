@@ -408,3 +408,33 @@ def test_value_matches_handles_toml_items() -> None:
     item = document["version"]
     assert bump._value_matches(item, "3.0.0") is True
     assert bump._value_matches(item, "4.0.0") is False
+
+
+def test_select_table_handles_out_of_order_package() -> None:
+    """Out-of-order tables (OutOfOrderTableProxy) are accepted."""
+    # When [package.metadata.docs.rs] appears after other tables,
+    # tomlkit returns an OutOfOrderTableProxy instead of a Table
+    document = parse_toml(
+        '[package]\nname = "x"\nversion = "0.1.0"\n'
+        "[dependencies]\n"
+        'foo = "1"\n'
+        "[package.metadata.docs.rs]\n"
+        "all-features = true\n"
+    )
+    table = bump._select_table(document, ("package",))
+    assert table is not None
+    assert table.get("version") == "0.1.0"
+
+
+def test_assign_version_works_with_out_of_order_table() -> None:
+    """Version assignment works with OutOfOrderTableProxy."""
+    document = parse_toml(
+        '[package]\nname = "x"\nversion = "0.1.0"\n'
+        "[dependencies]\n"
+        'foo = "1"\n'
+        "[package.metadata.docs.rs]\n"
+        "all-features = true\n"
+    )
+    table = bump._select_table(document, ("package",))
+    assert bump._assign_version(table, "2.0.0") is True
+    assert table.get("version") == "2.0.0"
