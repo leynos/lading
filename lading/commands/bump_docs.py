@@ -178,13 +178,13 @@ def update_toml_snippet_dependencies(
     if not dependency_targets:
         return False
 
-    sections = ("dependencies", "dev-dependencies", "build-dependencies")
-    return any(
-        _update_single_dependency_section(
+    changed = False
+    for section in ("dependencies", "dev-dependencies", "build-dependencies"):
+        if _update_single_dependency_section(
             document, section, dependency_targets, target_version
-        )
-        for section in sections
-    )
+        ):
+            changed = True
+    return changed
 
 
 def update_toml_snippet_versions(
@@ -198,15 +198,13 @@ def update_toml_snippet_versions(
     except TOMLKitError:
         return snippet, False
 
-    changed = (
-        _try_assign_version_at_path(document, ("package",), target_version)
-        or _try_assign_version_at_path(
-            document, ("workspace", "package"), target_version
-        )
-        or update_toml_snippet_dependencies(
-            document, dependency_targets, target_version
-        )
-    )
+    changed = False
+    if _try_assign_version_at_path(document, ("package",), target_version):
+        changed = True
+    if _try_assign_version_at_path(document, ("workspace", "package"), target_version):
+        changed = True
+    if update_toml_snippet_dependencies(document, dependency_targets, target_version):
+        changed = True
 
     if not changed:
         return snippet, False
