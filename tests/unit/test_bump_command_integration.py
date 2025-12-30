@@ -297,6 +297,7 @@ def test_run_dry_run_reports_changes_without_modifying_files(
     for path in manifest_paths:
         assert path.read_text(encoding="utf-8") == original_contents[path]
 
+
 @pytest.mark.parametrize(
     ("section", "versions"),
     [

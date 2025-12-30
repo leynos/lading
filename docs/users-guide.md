@@ -138,11 +138,11 @@ stderr_tail_lines = 40
 
 ### `[publish]`
 
-| Key             | Type                                  | Default       | Meaning                                                                     |
-| --------------- | ------------------------------------- | ------------- | --------------------------------------------------------------------------- |
-| `exclude`       | array of strings                      | `[]`          | Crate names to exclude from publication.                                    |
-| `order`         | array of strings                      | `[]`          | Explicit publish order; overrides dependency-derived ordering when present. |
-| `strip_patches` | `"all"` \| `"per-crate"` \| `false`   | `"per-crate"` | How to edit `[patch.crates-io]` in the staged workspace before packaging.   |
+| Key             | Type                                   | Default       | Meaning                                                                     |
+| --------------- | -------------------------------------- | ------------- | --------------------------------------------------------------------------- |
+| `exclude`       | array of strings                       | `[]`          | Crate names to exclude from publication.                                    |
+| `order`         | array of strings                       | `[]`          | Explicit publish order; overrides dependency-derived ordering when present. |
+| `strip_patches` | one of `"all"`, `"per-crate"`, `false` | `"per-crate"` | How to edit `[patch.crates-io]` in the staged workspace before packaging.   |
 
 ### `[preflight]`
 
