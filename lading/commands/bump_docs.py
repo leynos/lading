@@ -145,6 +145,30 @@ def extract_fence_indent(line: str, fence_marker: str) -> str:
     return "" if position < 0 else line[:position]
 
 
+def _try_assign_version_at_path(
+    document: TOMLDocument,
+    path: tuple[str, ...],
+    target_version: str,
+) -> bool:
+    """Attempt to assign version at the specified table path."""
+    return bump_toml.assign_version(
+        bump_toml.select_table(document, path), target_version
+    )
+
+
+def _update_single_dependency_section(
+    document: TOMLDocument,
+    section: str,
+    dependency_targets: typ.Collection[str],
+    target_version: str,
+) -> bool:
+    """Update a single dependency section if it exists."""
+    table = bump_toml.select_table(document, (section,))
+    if table is None:
+        return False
+    return bump_toml.update_dependency_table(table, dependency_targets, target_version)
+
+
 def update_toml_snippet_dependencies(
     document: TOMLDocument,
     dependency_targets: typ.Collection[str],
@@ -154,14 +178,13 @@ def update_toml_snippet_dependencies(
     if not dependency_targets:
         return False
 
-    changed = False
-    for section in ("dependencies", "dev-dependencies", "build-dependencies"):
-        table = bump_toml.select_table(document, (section,))
-        if table is None:
-            continue
-        if bump_toml.update_dependency_table(table, dependency_targets, target_version):
-            changed = True
-    return changed
+    sections = ("dependencies", "dev-dependencies", "build-dependencies")
+    return any(
+        _update_single_dependency_section(
+            document, section, dependency_targets, target_version
+        )
+        for section in sections
+    )
 
 
 def update_toml_snippet_versions(
@@ -175,18 +198,15 @@ def update_toml_snippet_versions(
     except TOMLKitError:
         return snippet, False
 
-    changed = False
-    if bump_toml.assign_version(
-        bump_toml.select_table(document, ("package",)), target_version
-    ):
-        changed = True
-    if bump_toml.assign_version(
-        bump_toml.select_table(document, ("workspace", "package")), target_version
-    ):
-        changed = True
-
-    if update_toml_snippet_dependencies(document, dependency_targets, target_version):
-        changed = True
+    changed = (
+        _try_assign_version_at_path(document, ("package",), target_version)
+        or _try_assign_version_at_path(
+            document, ("workspace", "package"), target_version
+        )
+        or update_toml_snippet_dependencies(
+            document, dependency_targets, target_version
+        )
+    )
 
     if not changed:
         return snippet, False
