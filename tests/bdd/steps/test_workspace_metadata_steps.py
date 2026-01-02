@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import textwrap
 import typing as typ
+from pathlib import Path
 
 from pytest_bdd import given, scenarios, then, when
 
@@ -12,14 +13,14 @@ from lading.workspace import load_cargo_metadata, load_workspace
 from tests.helpers.workspace_helpers import install_cargo_stub
 
 if typ.TYPE_CHECKING:
-    from pathlib import Path
-
     import pytest
     from cmd_mox import CmdMox
 
     from lading.workspace import WorkspaceGraph
 
-scenarios("../features/workspace_metadata.feature")
+_FEATURES_DIR = Path(__file__).resolve().parent.parent / "features"
+
+scenarios(str(_FEATURES_DIR / "workspace_metadata.feature"))
 
 
 @given("a workspace directory", target_fixture="workspace_directory")

@@ -6,16 +6,16 @@ import dataclasses as dc
 import subprocess
 import sys
 import typing as typ
+from pathlib import Path
 
 from pytest_bdd import parsers, scenarios, then
 from tomlkit.items import InlineTable, Item, Table
 
 from lading.testing import toml_utils
 
-if typ.TYPE_CHECKING:
-    from pathlib import Path
+_FEATURES_DIR = Path(__file__).resolve().parent.parent / "features"
 
-scenarios("../features/cli.feature")
+scenarios(str(_FEATURES_DIR / "cli.feature"))
 
 
 def _run_cli(

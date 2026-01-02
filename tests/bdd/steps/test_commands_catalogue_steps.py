@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import re
 import typing as typ
+from pathlib import Path
 
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
@@ -36,7 +37,9 @@ from lading.utils.commands import CARGO, GIT, LADING_CATALOGUE
 if typ.TYPE_CHECKING:
     from cuprum import Program, ProgramCatalogue, SafeCmd
 
-scenarios("../features/commands_catalogue.feature")
+_FEATURES_DIR = Path(__file__).resolve().parent.parent / "features"
+
+scenarios(str(_FEATURES_DIR / "commands_catalogue.feature"))
 
 
 def _raise_unquoted_args_error(args_str: str) -> typ.NoReturn:

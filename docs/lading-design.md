@@ -710,8 +710,8 @@ with scoped(allowlist=LADING_CATALOGUE.allowlist):
 - Unit tests verify catalogue construction, program registration, and
   `UnknownProgramError` handling for unregistered programs.
 - Behaviour-driven development (BDD) scenarios document the expected behaviour
-  for downstream consumers,
-  including command construction within scoped contexts.
+  for downstream consumers, including command construction within scoped
+  contexts.
 
 ### 7.4. Compatibility with cmd-mox
 

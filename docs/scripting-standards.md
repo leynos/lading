@@ -33,10 +33,10 @@ as a default.
   `#!/usr/bin/env -S uv run python` followed by the metadata block shown in the
   example below.
 - External processes are invoked via
-  [`cuprum`](https://github.com/leynos/cuprum/)
-  to provide typed, allowlist-based command execution rather than ad‑hoc shell
-  strings. Cuprum's catalogue system ensures only registered programs can be
-  executed, preventing accidental shell access.
+  [`cuprum`](https://github.com/leynos/cuprum/) to provide typed,
+  allowlist-based command execution rather than ad‑hoc shell strings. Cuprum's
+  catalogue system ensures only registered programs can be executed, preventing
+  accidental shell access.
 - File‑system interactions use `pathlib.Path`. Higher‑level operations (for
   example, copying or removing trees) go through the `shutil` standard library
   module.
