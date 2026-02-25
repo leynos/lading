@@ -137,7 +137,7 @@ def _configure_logging(stream: typ.TextIO | None = None) -> None:
     level = _resolve_log_level(os.environ.get(LOG_LEVEL_ENV_VAR))
     root_logger = logging.getLogger()
     root_logger.setLevel(level)
-    handler = next(
+    existing_handler = next(
         (
             existing
             for existing in root_logger.handlers
@@ -145,11 +145,13 @@ def _configure_logging(stream: typ.TextIO | None = None) -> None:
         ),
         None,
     )
-    if handler is None:
+    if existing_handler is None:
         handler = logging.StreamHandler(stream)
         handler.name = _LADING_HANDLER_NAME
         root_logger.addHandler(handler)
-    elif stream is not None:
+    else:
+        handler = existing_handler
+    if stream is not None and isinstance(handler, logging.StreamHandler):
         handler.stream = stream
     handler.setLevel(level)
     handler.setFormatter(logging.Formatter(_LOG_FORMAT))

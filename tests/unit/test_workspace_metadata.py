@@ -257,8 +257,8 @@ def test_build_workspace_graph_constructs_models(tmp_path: Path) -> None:
                 "0.1.0",
                 crate_manifest,
                 dependencies=[
-                    {"name": "helper", "package": "helper-id", "kind": "dev"},
-                    {"name": "external", "package": "external-id"},
+                    {"name": "helper", "kind": "dev"},
+                    {"name": "external"},
                 ],
                 publish=[],
             ),
@@ -293,6 +293,128 @@ def test_build_workspace_graph_constructs_models(tmp_path: Path) -> None:
     assert helper.publish is True
     assert helper.readme_is_workspace is False
     assert helper.dependencies == ()
+
+
+def test_build_workspace_graph_path_version_dependency(tmp_path: Path) -> None:
+    """Internal path+version dependencies should be resolved as workspace deps."""
+    workspace_root = tmp_path
+    crate_manifest = create_test_manifest(
+        workspace_root,
+        "crate",
+        """
+        [package]
+        name = "crate"
+        version = "0.1.0"
+
+        [dependencies]
+        whitaker = { version = "0.1.0", path = "../whitaker" }
+        """,
+    )
+    whitaker_manifest = create_test_manifest(
+        workspace_root,
+        "whitaker",
+        """
+        [package]
+        name = "whitaker"
+        version = "0.1.0"
+        """,
+    )
+    metadata = {
+        "workspace_root": str(workspace_root),
+        "packages": [
+            build_test_package(
+                "crate",
+                "0.1.0",
+                crate_manifest,
+                dependencies=[
+                    {
+                        "name": "whitaker",
+                        "req": "^0.1.0",
+                        "kind": None,
+                        "path": str(workspace_root / "whitaker"),
+                    }
+                ],
+            ),
+            build_test_package(
+                "whitaker",
+                "0.1.0",
+                whitaker_manifest,
+            ),
+        ],
+        "workspace_members": ["crate-id", "whitaker-id"],
+    }
+
+    graph = build_workspace_graph(metadata)
+
+    assert graph.crates_by_name["crate"].dependencies == (
+        WorkspaceDependency(
+            package_id="whitaker-id",
+            name="whitaker",
+            manifest_name="whitaker",
+            kind=None,
+        ),
+    )
+
+
+def test_build_workspace_graph_aliased_dependency(tmp_path: Path) -> None:
+    """Aliased dependencies should preserve manifest key names."""
+    workspace_root = tmp_path
+    crate_manifest = create_test_manifest(
+        workspace_root,
+        "crate",
+        """
+        [package]
+        name = "crate"
+        version = "0.1.0"
+
+        [dependencies]
+        alpha-core = { package = "alpha", version = "^0.1.0", path = "../alpha" }
+        """,
+    )
+    alpha_manifest = create_test_manifest(
+        workspace_root,
+        "alpha",
+        """
+        [package]
+        name = "alpha"
+        version = "0.1.0"
+        """,
+    )
+    metadata = {
+        "workspace_root": str(workspace_root),
+        "packages": [
+            build_test_package(
+                "crate",
+                "0.1.0",
+                crate_manifest,
+                dependencies=[
+                    {
+                        "name": "alpha",
+                        "rename": "alpha-core",
+                        "req": "^0.1.0",
+                        "kind": None,
+                    }
+                ],
+            ),
+            build_test_package(
+                "alpha",
+                "0.1.0",
+                alpha_manifest,
+            ),
+        ],
+        "workspace_members": ["crate-id", "alpha-id"],
+    }
+
+    graph = build_workspace_graph(metadata)
+
+    assert graph.crates_by_name["crate"].dependencies == (
+        WorkspaceDependency(
+            package_id="alpha-id",
+            name="alpha",
+            manifest_name="alpha-core",
+            kind=None,
+        ),
+    )
 
 
 def test_build_workspace_graph_rejects_missing_members(tmp_path: Path) -> None:

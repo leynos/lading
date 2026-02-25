@@ -11,10 +11,22 @@ if typ.TYPE_CHECKING:
     from pathlib import Path
 
 
+class DependencyEntry(typ.TypedDict, total=False):
+    """Representative ``cargo metadata`` dependency entry for test fixtures."""
+
+    name: str
+    rename: str
+    kind: str | None
+    req: str
+    path: str
+    features: list[str]
+    optional: bool
+
+
 class PackageKwargs(typ.TypedDict, total=False):
     """Optional arguments accepted by :func:`build_test_package`."""
 
-    dependencies: list[dict[str, str]]
+    dependencies: list[DependencyEntry]
     publish: list[str] | None
 
 

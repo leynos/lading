@@ -42,7 +42,7 @@ def test_build_dependencies_handles_missing_entries() -> None:
     """None dependencies should be treated as empty."""
     package = {"id": "crate", "dependencies": None}
 
-    dependencies = models._build_dependencies(package, {}, set())
+    dependencies = models._build_dependencies(package, {}, {})
 
     assert dependencies == ()
 
@@ -77,7 +77,7 @@ def test_dependency_validation_errors(
 
 def test_lookup_workspace_target_handles_missing_entries() -> None:
     """Targets outside the workspace should return None."""
-    result = models._lookup_workspace_target({}, {}, set())
+    result = models._lookup_workspace_target({}, {}, {})
 
     assert result is None
 

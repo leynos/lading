@@ -200,8 +200,8 @@ def build_workspace_graph(
         )
     )
     package_lookup = _index_workspace_packages(packages, workspace_member_ids)
+    workspace_members_by_name = _build_workspace_members_by_name(package_lookup)
     crates: list[WorkspaceCrate] = []
-    workspace_member_set = set(workspace_member_ids)
     for member_id in workspace_member_ids:
         raw_package = package_lookup.get(member_id)
         if raw_package is None:
@@ -211,7 +211,7 @@ def build_workspace_graph(
             _build_crate(
                 raw_package,
                 package_lookup,
-                workspace_member_set,
+                workspace_members_by_name,
             )
         )
     return WorkspaceGraph(workspace_root=workspace_root, crates=tuple(crates))
@@ -236,7 +236,7 @@ def _index_workspace_packages(
 def _build_crate(
     package: cabc.Mapping[str, typ.Any],
     package_lookup: cabc.Mapping[str, cabc.Mapping[str, typ.Any]],
-    workspace_member_ids: set[str],
+    workspace_members_by_name: cabc.Mapping[str, str],
 ) -> WorkspaceCrate:
     """Construct a :class:`WorkspaceCrate` from ``cargo metadata`` package data."""
     package_id = _expect_string(package.get("id"), "packages[].id")
@@ -245,7 +245,11 @@ def _build_crate(
     manifest_path = _normalise_manifest_path(
         package.get("manifest_path"), f"package {package_id!r} manifest_path"
     )
-    dependencies = _build_dependencies(package, package_lookup, workspace_member_ids)
+    dependencies = _build_dependencies(
+        package,
+        package_lookup,
+        workspace_members_by_name,
+    )
     publish = _coerce_publish_setting(package.get("publish"), package_id)
     readme_is_workspace = _manifest_uses_workspace_readme(manifest_path)
     root_path = manifest_path.parent
@@ -264,7 +268,7 @@ def _build_crate(
 def _build_dependencies(
     package: cabc.Mapping[str, typ.Any],
     package_lookup: cabc.Mapping[str, cabc.Mapping[str, typ.Any]],
-    workspace_member_ids: set[str],
+    workspace_members_by_name: cabc.Mapping[str, str],
 ) -> tuple[WorkspaceDependency, ...]:
     """Return dependencies that reference other workspace members."""
     raw_dependencies = _expect_sequence(
@@ -277,11 +281,28 @@ def _build_dependencies(
     return tuple(
         dependency
         for dependency in (
-            _as_workspace_dependency(entry, package_lookup, workspace_member_ids)
+            _as_workspace_dependency(
+                entry,
+                package_lookup,
+                workspace_members_by_name,
+            )
             for entry in raw_dependencies
         )
         if dependency is not None
     )
+
+
+def _build_workspace_members_by_name(
+    package_lookup: cabc.Mapping[str, cabc.Mapping[str, typ.Any]],
+) -> dict[str, str]:
+    """Return a mapping of workspace package names to package IDs."""
+    members_by_name: dict[str, str] = {}
+    for package_id, package in package_lookup.items():
+        package_name = _expect_string(
+            package.get("name"), f"package {package_id!r} name"
+        )
+        members_by_name[package_name] = package_id
+    return members_by_name
 
 
 def _validate_dependency_mapping(
@@ -297,11 +318,14 @@ def _validate_dependency_mapping(
 def _lookup_workspace_target(
     entry: cabc.Mapping[str, typ.Any],
     package_lookup: cabc.Mapping[str, cabc.Mapping[str, typ.Any]],
-    workspace_member_ids: set[str],
+    workspace_members_by_name: cabc.Mapping[str, str],
 ) -> tuple[str, str] | None:
     """Return the dependency target id and name when in the workspace."""
-    target_id = entry.get("package")
-    if not isinstance(target_id, str) or target_id not in workspace_member_ids:
+    package_name = entry.get("name")
+    if not isinstance(package_name, str):
+        return None
+    target_id = workspace_members_by_name.get(package_name)
+    if target_id is None:
         return None
     target_package = package_lookup.get(target_id)
     if target_package is None:
@@ -333,18 +357,26 @@ def _validate_dependency_kind(
 def _as_workspace_dependency(
     entry: cabc.Mapping[str, typ.Any] | object,
     package_lookup: cabc.Mapping[str, cabc.Mapping[str, typ.Any]],
-    workspace_member_ids: set[str],
+    workspace_members_by_name: cabc.Mapping[str, str],
 ) -> WorkspaceDependency | None:
     """Convert ``entry`` into a :class:`WorkspaceDependency` when possible."""
     dependency = _validate_dependency_mapping(entry)
-    target = _lookup_workspace_target(dependency, package_lookup, workspace_member_ids)
+    target = _lookup_workspace_target(
+        dependency,
+        package_lookup,
+        workspace_members_by_name,
+    )
     if target is None:
         return None
     target_id, target_name = target
-    manifest_name = _expect_string(
-        dependency.get("name"),
-        f"dependency {target_id!r} name",
-    )
+    rename_value = dependency.get("rename")
+    if isinstance(rename_value, str) and rename_value:
+        manifest_name = rename_value
+    else:
+        manifest_name = _expect_string(
+            dependency.get("name"),
+            f"dependency {target_id!r} name",
+        )
     kind_literal = _validate_dependency_kind(dependency)
     return WorkspaceDependency(
         package_id=target_id,

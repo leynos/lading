@@ -61,7 +61,7 @@ def prepare_version_replacement(
     replacement = string(replacement_text)
     if isinstance(value, Item):
         with suppress(AttributeError):  # Preserve inline comments and whitespace trivia
-            replacement._trivia = value._trivia  # type: ignore[attr-defined]
+            replacement._trivia = value._trivia
     return replacement
 
 
@@ -104,7 +104,7 @@ def update_dependency_table(
     for name in dependency_names:
         if name not in table:
             continue
-        entry = table[name]  # type: ignore[index]  # OutOfOrderTableProxy supports indexing
+        entry = table[name]  # OutOfOrderTableProxy supports indexing
         if update_dependency_entry(table, name, entry, target_version):
             changed = True
     return changed
@@ -202,7 +202,7 @@ def assign_version(table: _TableLike | None, target_version: str) -> bool:
     if isinstance(current, Item):
         replacement = string(target_version)
         with suppress(AttributeError):  # Preserve existing formatting and comments
-            replacement._trivia = current._trivia  # type: ignore[attr-defined]
+            replacement._trivia = current._trivia
         table["version"] = replacement
     else:
         table["version"] = target_version
