@@ -417,6 +417,116 @@ def test_build_workspace_graph_aliased_dependency(tmp_path: Path) -> None:
     )
 
 
+def test_build_workspace_graph_ignores_registry_name_collisions(
+    tmp_path: Path,
+) -> None:
+    """Registry dependencies should not resolve to same-name workspace crates."""
+    workspace_root = tmp_path
+    crate_manifest = create_test_manifest(
+        workspace_root,
+        "crate",
+        """
+        [package]
+        name = "crate"
+        version = "0.1.0"
+
+        [dependencies]
+        serde = "1"
+        """,
+    )
+    serde_manifest = create_test_manifest(
+        workspace_root,
+        "serde",
+        """
+        [package]
+        name = "serde"
+        version = "0.1.0"
+        """,
+    )
+    metadata = {
+        "workspace_root": str(workspace_root),
+        "packages": [
+            build_test_package(
+                "crate",
+                "0.1.0",
+                crate_manifest,
+                dependencies=[
+                    {
+                        "name": "serde",
+                        "source": "registry+https://github.com/rust-lang/crates.io-index",
+                        "req": "^1",
+                        "kind": None,
+                    }
+                ],
+            ),
+            build_test_package(
+                "serde",
+                "0.1.0",
+                serde_manifest,
+            ),
+        ],
+        "workspace_members": ["crate-id", "serde-id"],
+    }
+
+    graph = build_workspace_graph(metadata)
+
+    assert graph.crates_by_name["crate"].dependencies == ()
+
+
+def test_build_workspace_graph_ignores_path_mismatches(tmp_path: Path) -> None:
+    """Path dependencies should match workspace target paths before resolution."""
+    workspace_root = tmp_path
+    crate_manifest = create_test_manifest(
+        workspace_root,
+        "crate",
+        """
+        [package]
+        name = "crate"
+        version = "0.1.0"
+
+        [dependencies]
+        helper = { path = "../external/helper", version = "0.1.0" }
+        """,
+    )
+    helper_manifest = create_test_manifest(
+        workspace_root,
+        "helper",
+        """
+        [package]
+        name = "helper"
+        version = "0.1.0"
+        """,
+    )
+    metadata = {
+        "workspace_root": str(workspace_root),
+        "packages": [
+            build_test_package(
+                "crate",
+                "0.1.0",
+                crate_manifest,
+                dependencies=[
+                    {
+                        "name": "helper",
+                        "req": "^0.1.0",
+                        "kind": None,
+                        "path": str(workspace_root / "external" / "helper"),
+                    }
+                ],
+            ),
+            build_test_package(
+                "helper",
+                "0.1.0",
+                helper_manifest,
+            ),
+        ],
+        "workspace_members": ["crate-id", "helper-id"],
+    }
+
+    graph = build_workspace_graph(metadata)
+
+    assert graph.crates_by_name["crate"].dependencies == ()
+
+
 def test_build_workspace_graph_rejects_missing_members(tmp_path: Path) -> None:
     """Missing package entries should surface as ``WorkspaceModelError``."""
     metadata = {

@@ -16,6 +16,7 @@ class DependencyEntry(typ.TypedDict, total=False):
 
     name: str
     rename: str
+    source: str | None
     kind: str | None
     req: str
     path: str

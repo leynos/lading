@@ -321,6 +321,8 @@ def _lookup_workspace_target(
     workspace_members_by_name: cabc.Mapping[str, str],
 ) -> tuple[str, str] | None:
     """Return the dependency target id and name when in the workspace."""
+    if _has_non_workspace_source(entry):
+        return None
     package_name = entry.get("name")
     if not isinstance(package_name, str):
         return None
@@ -330,10 +332,35 @@ def _lookup_workspace_target(
     target_package = package_lookup.get(target_id)
     if target_package is None:
         return None
+    if not _matches_workspace_dependency_path(entry, target_package):
+        return None
     target_name = _expect_string(
         target_package.get("name"), f"package {target_id!r} name"
     )
     return target_id, target_name
+
+
+def _has_non_workspace_source(entry: cabc.Mapping[str, typ.Any]) -> bool:
+    """Return ``True`` when ``entry`` declares an external dependency source."""
+    return entry.get("source") is not None
+
+
+def _matches_workspace_dependency_path(
+    entry: cabc.Mapping[str, typ.Any],
+    target_package: cabc.Mapping[str, typ.Any],
+) -> bool:
+    """Return ``True`` when dependency path is absent or matches ``target_package``."""
+    dependency_path = entry.get("path")
+    if dependency_path is None:
+        return True
+    if not isinstance(dependency_path, str):
+        return False
+    target_manifest_path = _normalise_manifest_path(
+        target_package.get("manifest_path"),
+        "dependency target manifest_path",
+    )
+    dependency_root = Path(dependency_path).expanduser().resolve(strict=False)
+    return dependency_root == target_manifest_path.parent
 
 
 def _validate_dependency_kind(
