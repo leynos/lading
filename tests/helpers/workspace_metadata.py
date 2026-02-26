@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-__all__ = ["build_test_package", "create_test_manifest"]
+__all__ = ["ErrorScenario", "build_test_package", "create_test_manifest"]
 
+import dataclasses as dc
 import textwrap
 import typing as typ
 
@@ -11,10 +12,34 @@ if typ.TYPE_CHECKING:
     from pathlib import Path
 
 
+@dc.dataclass(frozen=True, slots=True)
+class ErrorScenario:
+    """Test scenario for cargo metadata error cases."""
+
+    exit_code: int
+    stdout: str
+    stderr: str
+    expected_message: str
+
+
+class DependencyEntry(typ.TypedDict, total=False):
+    """Representative ``cargo metadata`` dependency entry for test fixtures."""
+
+    name: str
+    package: str
+    rename: str
+    source: str | None
+    kind: str | None
+    req: str
+    path: str
+    features: list[str]
+    optional: bool
+
+
 class PackageKwargs(typ.TypedDict, total=False):
     """Optional arguments accepted by :func:`build_test_package`."""
 
-    dependencies: list[dict[str, str]]
+    dependencies: list[DependencyEntry]
     publish: list[str] | None
 
 

@@ -1,29 +1,24 @@
-"""Tests for the ``cargo metadata`` wrapper."""
+"""Tests for loading cargo metadata payloads."""
 
 from __future__ import annotations
 
-import dataclasses as dc
 import json
 import logging
 import textwrap
 import typing as typ
-from types import SimpleNamespace
 
 import pytest
 
 from lading.workspace import (
     CargoExecutableNotFoundError,
     CargoMetadataError,
-    WorkspaceDependency,
     WorkspaceGraph,
-    WorkspaceModelError,
-    build_workspace_graph,
     load_cargo_metadata,
     load_workspace,
 )
 from lading.workspace import metadata as metadata_module
 from tests.helpers.workspace_helpers import install_cargo_stub
-from tests.helpers.workspace_metadata import build_test_package, create_test_manifest
+from tests.helpers.workspace_metadata import ErrorScenario
 
 _METADATA_PAYLOAD: typ.Final[dict[str, typ.Any]] = {
     "workspace_root": "./",
@@ -107,7 +102,8 @@ def test_load_cargo_metadata_logs_invocation(
 
 
 def test_load_cargo_metadata_missing_executable(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     """Absent ``cargo`` binaries should raise ``CargoExecutableNotFoundError``."""
 
@@ -121,7 +117,9 @@ def test_load_cargo_metadata_missing_executable(
 
 
 def test_load_cargo_metadata_error_decodes_byte_streams(
-    cmd_mox: CmdMox, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    cmd_mox: CmdMox,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     """Failure messages should be decoded when provided as bytes."""
     install_cargo_stub(cmd_mox, monkeypatch)
@@ -135,16 +133,6 @@ def test_load_cargo_metadata_error_decodes_byte_streams(
         load_cargo_metadata(tmp_path)
 
     assert "manifest missing" in str(excinfo.value)
-
-
-@dc.dataclass(frozen=True, slots=True)
-class ErrorScenario:
-    """Test scenario for cargo metadata error cases."""
-
-    exit_code: int
-    stdout: str
-    stderr: str
-    expected_message: str
 
 
 @pytest.mark.parametrize(
@@ -221,93 +209,6 @@ def test_ensure_command_raises_on_missing_executable(
 
     with pytest.raises(CargoExecutableNotFoundError):
         metadata_module._ensure_command()
-
-
-def test_build_workspace_graph_constructs_models(tmp_path: Path) -> None:
-    """Convert metadata payloads into strongly typed workspace models."""
-    workspace_root = tmp_path
-    crate_manifest = create_test_manifest(
-        workspace_root,
-        "crate",
-        """
-        [package]
-        name = "crate"
-        version = "0.1.0"
-        readme.workspace = true
-
-        [dependencies]
-        helper = { path = "../helper", version = "0.1.0" }
-        """,
-    )
-    helper_manifest = create_test_manifest(
-        workspace_root,
-        "helper",
-        """
-        [package]
-        name = "helper"
-        version = "0.1.0"
-        readme = "README.md"
-        """,
-    )
-    metadata = {
-        "workspace_root": str(workspace_root),
-        "packages": [
-            build_test_package(
-                "crate",
-                "0.1.0",
-                crate_manifest,
-                dependencies=[
-                    {"name": "helper", "package": "helper-id", "kind": "dev"},
-                    {"name": "external", "package": "external-id"},
-                ],
-                publish=[],
-            ),
-            build_test_package(
-                "helper",
-                "0.1.0",
-                helper_manifest,
-                publish=["crates-io"],
-            ),
-        ],
-        "workspace_members": ["crate-id", "helper-id"],
-    }
-
-    graph = build_workspace_graph(metadata)
-
-    assert isinstance(graph, WorkspaceGraph)
-    assert graph.workspace_root == workspace_root.resolve()
-    crates = graph.crates_by_name
-    assert set(crates) == {"crate", "helper"}
-    crate = crates["crate"]
-    assert crate.publish is False
-    assert crate.readme_is_workspace is True
-    assert crate.dependencies == (
-        WorkspaceDependency(
-            package_id="helper-id",
-            name="helper",
-            manifest_name="helper",
-            kind="dev",
-        ),
-    )
-    helper = crates["helper"]
-    assert helper.publish is True
-    assert helper.readme_is_workspace is False
-    assert helper.dependencies == ()
-
-
-def test_build_workspace_graph_rejects_missing_members(tmp_path: Path) -> None:
-    """Missing package entries should surface as ``WorkspaceModelError``."""
-    metadata = {
-        "workspace_root": str(tmp_path),
-        "packages": [],
-        "workspace_members": ["crate-id"],
-    }
-
-    with pytest.raises(
-        WorkspaceModelError,
-        match=r"workspace member 'crate-id' missing from package list",
-    ):
-        build_workspace_graph(metadata)
 
 
 def test_load_workspace_invokes_metadata(
@@ -391,70 +292,6 @@ def test_load_cargo_metadata_logs_command(
     assert expected in caplog.messages
 
 
-def test_cmd_mox_command_requires_socket(monkeypatch: pytest.MonkeyPatch) -> None:
-    """cmd-mox stub should fail fast when the socket is not configured."""
-
-    class _StubEnv:
-        CMOX_IPC_SOCKET_ENV = "CMOX_IPC_SOCKET"
-        CMOX_IPC_TIMEOUT_ENV = "CMOX_IPC_TIMEOUT"
-
-    class _StubIPC:
-        class Invocation:
-            def __init__(
-                self, command: str, args: list[str], stdin: str, env: dict[str, str]
-            ) -> None:
-                self.command = command
-                self.args = args
-                self.stdin = stdin
-                self.env = env
-
-        def invoke_server(self, invocation: object, timeout: float) -> object:
-            message = "invoke_server should not be called without socket"
-            raise AssertionError(message)
-
-    monkeypatch.setattr(
-        metadata_module, "_load_cmd_mox_modules", lambda: (_StubIPC(), _StubEnv)
-    )
-    monkeypatch.delenv("CMOX_IPC_SOCKET", raising=False)
-
-    with pytest.raises(
-        metadata_module.CargoMetadataError, match="CMOX_IPC_SOCKET is unset"
-    ):
-        metadata_module._CmdMoxCommand().run()
-
-
-def test_resolve_cmd_mox_timeout_validates_values() -> None:
-    """Timeout parsing should reject non-positive and non-numeric values."""
-    assert metadata_module._resolve_cmd_mox_timeout(None) > 0
-    assert metadata_module._resolve_cmd_mox_timeout("2.5") == 2.5
-    for value in ("0", "-1", "abc"):
-        with pytest.raises(metadata_module.CargoMetadataError):
-            metadata_module._resolve_cmd_mox_timeout(value)
-
-
-def test_build_invocation_environment_sets_pwd(tmp_path: Path) -> None:
-    """The invocation environment should include PWD when cwd is provided."""
-    working_dir = tmp_path / "work"
-    env = metadata_module._build_invocation_environment(str(working_dir))
-
-    assert env["PWD"] == str(working_dir)
-
-
-def test_coerce_text_handles_bytes() -> None:
-    """Byte streams should be decoded to strings."""
-    assert metadata_module._coerce_text(b"bytes") == "bytes"
-
-
-def test_error_convenience_constructors() -> None:
-    """Helper constructors should expose descriptive messages."""
-    assert "Invalid CMOX_IPC_TIMEOUT value" in str(
-        metadata_module.CargoMetadataError.invalid_cmd_mox_timeout()
-    )
-    assert "must be positive" in str(
-        metadata_module.CargoMetadataError.non_positive_cmd_mox_timeout()
-    )
-
-
 def test_load_cmd_mox_modules_errors_when_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -473,66 +310,3 @@ def test_load_cmd_mox_modules_errors_when_missing(
 
     with pytest.raises(metadata_module.CargoMetadataError):
         metadata_module._load_cmd_mox_modules()
-
-
-def test_build_cmd_mox_command_returns_proxy() -> None:
-    """The cmd-mox command factory should return a command proxy instance."""
-    result = metadata_module._build_cmd_mox_command()
-
-    assert isinstance(result, metadata_module._CmdMoxCommand)
-
-
-def test_ensure_command_prefers_cmd_mox_stub(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The stub command should be returned when the environment requests it."""
-    sentinel = object()
-    monkeypatch.setenv(metadata_module.CMD_MOX_STUB_ENV_VAR, "1")
-    monkeypatch.setattr(metadata_module, "_build_cmd_mox_command", lambda: sentinel)
-
-    assert metadata_module._ensure_command() is sentinel
-
-
-def test_cmd_mox_command_executes_via_ipc(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Successful IPC execution should decode and return server responses."""
-    socket_path = tmp_path / "cmox" / "socket"
-    monkeypatch.setenv("CMOX_IPC_SOCKET", str(socket_path))
-    monkeypatch.setenv("CMOX_IPC_TIMEOUT", "1.5")
-
-    class _StubEnv:
-        CMOX_IPC_SOCKET_ENV = "CMOX_IPC_SOCKET"
-        CMOX_IPC_TIMEOUT_ENV = "CMOX_IPC_TIMEOUT"
-
-    class _StubIPC:
-        class Invocation:
-            def __init__(
-                self, command: str, args: list[str], stdin: str, env: dict[str, str]
-            ) -> None:
-                self.command = command
-                self.args = args
-                self.stdin = stdin
-                self.env = env
-
-        def __init__(self) -> None:
-            self.last_invocation: _StubIPC.Invocation | None = None
-            self.timeout: float | None = None
-
-        def invoke_server(self, invocation: object, timeout: float) -> object:
-            self.last_invocation = invocation  # type: ignore[assignment]
-            self.timeout = timeout
-            return SimpleNamespace(exit_code=0, stdout="{}", stderr="")
-
-    ipc = _StubIPC()
-    monkeypatch.setattr(
-        metadata_module, "_load_cmd_mox_modules", lambda: (ipc, _StubEnv)
-    )
-
-    command = metadata_module._CmdMoxCommand()
-    exit_code, stdout, stderr = command.run(cwd=str(tmp_path / "workspace"))
-
-    assert command.argv == ("cargo", "metadata", "--format-version", "1")
-    assert exit_code == 0
-    assert stdout == "{}"
-    assert stderr == ""
-    assert ipc.last_invocation is not None
-    assert ipc.timeout == 1.5

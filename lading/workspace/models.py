@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses as dc
 import heapq
 import typing as typ
 from collections import abc as cabc
@@ -173,6 +174,14 @@ class WorkspaceGraph(msgspec.Struct, frozen=True, kw_only=True):
         return {crate.name: crate for crate in self.crates}
 
 
+@dc.dataclass(frozen=True, slots=True)
+class WorkspaceIndex:
+    """Lookup index used to resolve workspace dependencies."""
+
+    packages: cabc.Mapping[str, cabc.Mapping[str, typ.Any]]
+    members_by_name: cabc.Mapping[str, str]
+
+
 def load_workspace(
     workspace_root: Path | str | None = None,
 ) -> WorkspaceGraph:
@@ -200,8 +209,8 @@ def build_workspace_graph(
         )
     )
     package_lookup = _index_workspace_packages(packages, workspace_member_ids)
+    workspace_index = _build_workspace_index(package_lookup)
     crates: list[WorkspaceCrate] = []
-    workspace_member_set = set(workspace_member_ids)
     for member_id in workspace_member_ids:
         raw_package = package_lookup.get(member_id)
         if raw_package is None:
@@ -210,8 +219,7 @@ def build_workspace_graph(
         crates.append(
             _build_crate(
                 raw_package,
-                package_lookup,
-                workspace_member_set,
+                workspace_index,
             )
         )
     return WorkspaceGraph(workspace_root=workspace_root, crates=tuple(crates))
@@ -235,8 +243,7 @@ def _index_workspace_packages(
 
 def _build_crate(
     package: cabc.Mapping[str, typ.Any],
-    package_lookup: cabc.Mapping[str, cabc.Mapping[str, typ.Any]],
-    workspace_member_ids: set[str],
+    workspace_index: WorkspaceIndex,
 ) -> WorkspaceCrate:
     """Construct a :class:`WorkspaceCrate` from ``cargo metadata`` package data."""
     package_id = _expect_string(package.get("id"), "packages[].id")
@@ -245,7 +252,7 @@ def _build_crate(
     manifest_path = _normalise_manifest_path(
         package.get("manifest_path"), f"package {package_id!r} manifest_path"
     )
-    dependencies = _build_dependencies(package, package_lookup, workspace_member_ids)
+    dependencies = _build_dependencies(package, workspace_index)
     publish = _coerce_publish_setting(package.get("publish"), package_id)
     readme_is_workspace = _manifest_uses_workspace_readme(manifest_path)
     root_path = manifest_path.parent
@@ -263,8 +270,7 @@ def _build_crate(
 
 def _build_dependencies(
     package: cabc.Mapping[str, typ.Any],
-    package_lookup: cabc.Mapping[str, cabc.Mapping[str, typ.Any]],
-    workspace_member_ids: set[str],
+    workspace_index: WorkspaceIndex,
 ) -> tuple[WorkspaceDependency, ...]:
     """Return dependencies that reference other workspace members."""
     raw_dependencies = _expect_sequence(
@@ -277,11 +283,31 @@ def _build_dependencies(
     return tuple(
         dependency
         for dependency in (
-            _as_workspace_dependency(entry, package_lookup, workspace_member_ids)
+            _as_workspace_dependency(entry, workspace_index)
             for entry in raw_dependencies
         )
         if dependency is not None
     )
+
+
+def _build_workspace_index(
+    package_lookup: cabc.Mapping[str, cabc.Mapping[str, typ.Any]],
+) -> WorkspaceIndex:
+    """Return workspace package lookups keyed by id and package name."""
+    members_by_name: dict[str, str] = {}
+    for package_id, package in package_lookup.items():
+        package_name = _expect_string(
+            package.get("name"), f"package {package_id!r} name"
+        )
+        existing_id = members_by_name.get(package_name)
+        if existing_id is not None and existing_id != package_id:
+            message = (
+                f"workspace package name {package_name!r} maps to multiple ids: "
+                f"{existing_id!r}, {package_id!r}"
+            )
+            raise WorkspaceModelError(message)
+        members_by_name[package_name] = package_id
+    return WorkspaceIndex(packages=package_lookup, members_by_name=members_by_name)
 
 
 def _validate_dependency_mapping(
@@ -294,22 +320,60 @@ def _validate_dependency_mapping(
     return typ.cast("cabc.Mapping[str, typ.Any]", entry)
 
 
+def _validate_workspace_dependency_path(
+    entry: cabc.Mapping[str, typ.Any],
+    target_package: cabc.Mapping[str, typ.Any],
+) -> bool:
+    """Return whether an entry path matches the workspace dependency target."""
+    dependency_path = entry.get("path")
+    if dependency_path is None:
+        return True
+    if not isinstance(dependency_path, str):
+        return False
+    target_manifest_path = _normalise_manifest_path(
+        target_package.get("manifest_path"),
+        "dependency target manifest_path",
+    )
+    dependency_root = Path(dependency_path).expanduser().resolve(strict=False)
+    return dependency_root == target_manifest_path.parent
+
+
 def _lookup_workspace_target(
     entry: cabc.Mapping[str, typ.Any],
-    package_lookup: cabc.Mapping[str, cabc.Mapping[str, typ.Any]],
-    workspace_member_ids: set[str],
+    workspace_index: WorkspaceIndex,
 ) -> tuple[str, str] | None:
     """Return the dependency target id and name when in the workspace."""
-    target_id = entry.get("package")
-    if not isinstance(target_id, str) or target_id not in workspace_member_ids:
+    # External sources should never resolve to workspace dependencies.
+    if entry.get("source") is not None:
         return None
-    target_package = package_lookup.get(target_id)
-    if target_package is None:
-        return None
-    target_name = _expect_string(
-        target_package.get("name"), f"package {target_id!r} name"
-    )
-    return target_id, target_name
+    for candidate_name in _dependency_candidate_names(entry):
+        target_id = workspace_index.members_by_name.get(candidate_name)
+        if target_id is None:
+            continue
+        target_package = workspace_index.packages.get(target_id)
+        if target_package is None:
+            continue
+        if not _validate_workspace_dependency_path(entry, target_package):
+            continue
+
+        target_name = _expect_string(
+            target_package.get("name"), f"package {target_id!r} name"
+        )
+        return target_id, target_name
+    return None
+
+
+def _dependency_candidate_names(entry: cabc.Mapping[str, typ.Any]) -> tuple[str, ...]:
+    """Return candidate dependency package names from metadata."""
+    names: list[str] = []
+    dependency_name = entry.get("name")
+    if isinstance(dependency_name, str):
+        names.append(dependency_name)
+    # Some metadata producers include `package` for canonical dependency names.
+    package_name = entry.get("package")
+    if isinstance(package_name, str) and package_name not in names:
+        names.append(package_name)
+    return tuple(names)
 
 
 def _validate_dependency_kind(
@@ -332,25 +396,41 @@ def _validate_dependency_kind(
 
 def _as_workspace_dependency(
     entry: cabc.Mapping[str, typ.Any] | object,
-    package_lookup: cabc.Mapping[str, cabc.Mapping[str, typ.Any]],
-    workspace_member_ids: set[str],
+    workspace_index: WorkspaceIndex,
 ) -> WorkspaceDependency | None:
     """Convert ``entry`` into a :class:`WorkspaceDependency` when possible."""
     dependency = _validate_dependency_mapping(entry)
-    target = _lookup_workspace_target(dependency, package_lookup, workspace_member_ids)
+    target = _lookup_workspace_target(dependency, workspace_index)
     if target is None:
         return None
     target_id, target_name = target
-    manifest_name = _expect_string(
-        dependency.get("name"),
-        f"dependency {target_id!r} name",
-    )
+    manifest_name = _dependency_manifest_name(dependency, target_id)
     kind_literal = _validate_dependency_kind(dependency)
     return WorkspaceDependency(
         package_id=target_id,
         name=target_name,
         manifest_name=manifest_name,
         kind=kind_literal,
+    )
+
+
+def _dependency_manifest_name(
+    dependency: cabc.Mapping[str, typ.Any],
+    target_id: str,
+) -> str:
+    """Return the dependency name used in manifests."""
+    rename_value = dependency.get("rename")
+    if isinstance(rename_value, str) and rename_value:
+        return rename_value
+    dependency_name = dependency.get("name")
+    if isinstance(dependency_name, str):
+        return dependency_name
+    package_name = dependency.get("package")
+    if isinstance(package_name, str):
+        return package_name
+    return _expect_string(
+        dependency_name,
+        f"dependency {target_id!r} name",
     )
 
 
