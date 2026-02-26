@@ -15,6 +15,7 @@ class DependencyEntry(typ.TypedDict, total=False):
     """Representative ``cargo metadata`` dependency entry for test fixtures."""
 
     name: str
+    package: str
     rename: str
     source: str | None
     kind: str | None

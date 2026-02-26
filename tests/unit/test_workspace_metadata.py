@@ -417,6 +417,119 @@ def test_build_workspace_graph_aliased_dependency(tmp_path: Path) -> None:
     )
 
 
+def test_build_workspace_graph_supports_package_name_fallback(tmp_path: Path) -> None:
+    """Dependencies should fall back to `package` for workspace resolution."""
+    workspace_root = tmp_path
+    crate_manifest = create_test_manifest(
+        workspace_root,
+        "crate",
+        """
+        [package]
+        name = "crate"
+        version = "0.1.0"
+
+        [dependencies]
+        alpha-core = { package = "alpha", version = "^0.1.0", path = "../alpha" }
+        """,
+    )
+    alpha_manifest = create_test_manifest(
+        workspace_root,
+        "alpha",
+        """
+        [package]
+        name = "alpha"
+        version = "0.1.0"
+        """,
+    )
+    metadata = {
+        "workspace_root": str(workspace_root),
+        "packages": [
+            build_test_package(
+                "crate",
+                "0.1.0",
+                crate_manifest,
+                dependencies=[
+                    {
+                        "name": "alpha-core",
+                        "package": "alpha",
+                        "req": "^0.1.0",
+                        "kind": None,
+                        "path": str(workspace_root / "alpha"),
+                    }
+                ],
+            ),
+            build_test_package(
+                "alpha",
+                "0.1.0",
+                alpha_manifest,
+            ),
+        ],
+        "workspace_members": ["crate-id", "alpha-id"],
+    }
+
+    graph = build_workspace_graph(metadata)
+
+    assert graph.crates_by_name["crate"].dependencies == (
+        WorkspaceDependency(
+            package_id="alpha-id",
+            name="alpha",
+            manifest_name="alpha-core",
+            kind=None,
+        ),
+    )
+
+
+def test_build_workspace_graph_rejects_duplicate_member_names(tmp_path: Path) -> None:
+    """Duplicate workspace package names should fail index construction."""
+    workspace_root = tmp_path
+    shared_manifest_a = create_test_manifest(
+        workspace_root,
+        "shared-a",
+        """
+        [package]
+        name = "shared"
+        version = "0.1.0"
+        """,
+    )
+    shared_manifest_b = create_test_manifest(
+        workspace_root,
+        "shared-b",
+        """
+        [package]
+        name = "shared"
+        version = "0.1.0"
+        """,
+    )
+    metadata = {
+        "workspace_root": str(workspace_root),
+        "packages": [
+            {
+                "name": "shared",
+                "version": "0.1.0",
+                "id": "shared-a-id",
+                "manifest_path": str(shared_manifest_a),
+                "dependencies": [],
+                "publish": None,
+            },
+            {
+                "name": "shared",
+                "version": "0.1.0",
+                "id": "shared-b-id",
+                "manifest_path": str(shared_manifest_b),
+                "dependencies": [],
+                "publish": None,
+            },
+        ],
+        "workspace_members": ["shared-a-id", "shared-b-id"],
+    }
+
+    with pytest.raises(
+        WorkspaceModelError,
+        match=r"workspace package name 'shared' maps to multiple ids",
+    ):
+        build_workspace_graph(metadata)
+
+
 def test_build_workspace_graph_ignores_registry_name_collisions(
     tmp_path: Path,
 ) -> None:
