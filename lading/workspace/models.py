@@ -320,6 +320,24 @@ def _validate_dependency_mapping(
     return typ.cast("cabc.Mapping[str, typ.Any]", entry)
 
 
+def _validate_workspace_dependency_path(
+    entry: cabc.Mapping[str, typ.Any],
+    target_package: cabc.Mapping[str, typ.Any],
+) -> bool:
+    """Return whether an entry path matches the workspace dependency target."""
+    dependency_path = entry.get("path")
+    if dependency_path is None:
+        return True
+    if not isinstance(dependency_path, str):
+        return False
+    target_manifest_path = _normalise_manifest_path(
+        target_package.get("manifest_path"),
+        "dependency target manifest_path",
+    )
+    dependency_root = Path(dependency_path).expanduser().resolve(strict=False)
+    return dependency_root == target_manifest_path.parent
+
+
 def _lookup_workspace_target(
     entry: cabc.Mapping[str, typ.Any],
     workspace_index: WorkspaceIndex,
@@ -335,18 +353,8 @@ def _lookup_workspace_target(
         target_package = workspace_index.packages.get(target_id)
         if target_package is None:
             continue
-
-        dependency_path = entry.get("path")
-        if dependency_path is not None:
-            if not isinstance(dependency_path, str):
-                return None
-            target_manifest_path = _normalise_manifest_path(
-                target_package.get("manifest_path"),
-                "dependency target manifest_path",
-            )
-            dependency_root = Path(dependency_path).expanduser().resolve(strict=False)
-            if dependency_root != target_manifest_path.parent:
-                continue
+        if not _validate_workspace_dependency_path(entry, target_package):
+            continue
 
         target_name = _expect_string(
             target_package.get("name"), f"package {target_id!r} name"
