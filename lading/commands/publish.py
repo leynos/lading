@@ -7,6 +7,7 @@ import collections.abc as cabc
 import dataclasses as dc
 import logging
 import os
+import re
 import shutil
 import tempfile
 import typing as typ
@@ -70,6 +71,7 @@ class _PublishExecutionOptions:
 
     live: bool
     allow_dirty: bool
+    allow_unpublished_workspace_deps: bool = False
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -101,6 +103,12 @@ class PublishOptions:
     command_runner:
         Optional callable used to execute shell commands. Primarily intended
         for tests and dependency injection.
+    allow_unpublished_workspace_deps:
+        When :data:`True`, downgrade ``cargo package`` failures caused by a
+        sibling workspace crate version not yet visible on the crates.io index
+        to a warning, provided the missing crate is part of the planned
+        publish set. Only valid in dry-run mode (``live=False``); combining it
+        with ``live=True`` raises :class:`PublishPreflightError`.
 
     """
 
@@ -112,6 +120,7 @@ class PublishOptions:
     configuration: LadingConfig | None = None
     workspace: WorkspaceGraph | None = None
     command_runner: _CommandRunner | None = None
+    allow_unpublished_workspace_deps: bool = False
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -364,7 +373,73 @@ def _format_cargo_failure_message(
         message = f"{message}: {detail}"
     return message
 
+def _is_index_missing_version_error(exit_code: int, stdout: str, stderr: str) -> bool:
+    """Return True when ``cargo package`` failed due to an unindexed dependency.
 
+    The cargo command exits non-zero with output that simultaneously mentions
+    the version selection failure and the crates.io index. Both markers are
+    required to minimise false positives from unrelated lookup failures.
+    """
+    if exit_code == 0:
+        return False
+    haystack = f"{stdout}\n{stderr}".lower()
+    return all(marker in haystack for marker in _INDEX_MISSING_VERSION_MARKERS)
+
+def _extract_missing_dependency_name(stdout: str, stderr: str) -> str | None:
+    """Return the missing dependency crate name parsed from cargo output."""
+    for stream in (stderr, stdout):
+        match = _INDEX_MISSING_VERSION_NAME_PATTERN.search(stream)
+        if match is not None:
+            return match.group("name")
+    return None
+
+def _handle_index_missing_version(
+    crate_name: str,
+    cargo_output: tuple[int, str, str],
+    *,
+    plan: PublishPlan,
+    options: _PublishExecutionOptions,
+) -> None:
+    """Handle a cargo package failure caused by an unindexed dependency.
+
+    Raises :class:`PublishPreflightError` unless the missing dependency is in
+    the current publish plan and the caller opted into the dry-run override.
+    """
+    exit_code, stdout, stderr = cargo_output
+    package_failure = _format_cargo_failure_message(
+        "package", crate_name, exit_code, (stdout, stderr)
+    )
+    missing_name = _extract_missing_dependency_name(stdout, stderr)
+    if missing_name is None:
+        # We matched the marker pair but could not extract a crate name; treat
+        # as a generic packaging failure to avoid silently masking the issue.
+        raise PublishPreflightError(package_failure)
+
+    publishable_names = {entry.name for entry in plan.publishable}
+    if missing_name not in publishable_names:
+        message = (
+            f"{package_failure}; missing dependency {missing_name!r} is not part "
+            "of the current publish plan, so --allow-unpublished-workspace-deps "
+            "cannot help. Publish or index the dependency first."
+        )
+        raise PublishPreflightError(message)
+
+    if not options.allow_unpublished_workspace_deps:
+        message = (
+            f"{package_failure}; dependency {missing_name!r} is scheduled in "
+            "this publish run but is not yet on crates.io. Re-run with "
+            "--allow-unpublished-workspace-deps (dry-run only) or follow the "
+            "staged-publish workaround in the user guide."
+        )
+        raise PublishPreflightError(message)
+
+    LOGGER.warning(
+        "cargo package for crate %s could not resolve sibling dependency %s "
+        "from crates.io; continuing because "
+        "--allow-unpublished-workspace-deps is set",
+        crate_name,
+        missing_name,
+    )
 def _package_publishable_crates(
     plan: PublishPlan,
     preparation: PublishPreparation,
@@ -382,11 +457,20 @@ def _package_publishable_crates(
             cwd=crate_root,
             env=None,
         )
-        if exit_code != 0:
-            message = _format_cargo_failure_message(
-                "package", crate.name, exit_code, (stdout, stderr)
+        if exit_code == 0:
+            continue
+        if _is_index_missing_version_error(exit_code, stdout, stderr):
+            _handle_index_missing_version(
+                crate.name,
+                (exit_code, stdout, stderr),
+                plan=plan,
+                options=options,
             )
-            raise PublishPreflightError(message)
+            continue
+        message = _format_cargo_failure_message(
+            "package", crate.name, exit_code, (stdout, stderr)
+        )
+        raise PublishPreflightError(message)
 
 
 _ALREADY_PUBLISHED_MARKERS: tuple[str, ...] = (
@@ -496,6 +580,12 @@ def run(
     """Run pre-flight checks, package crates, and publish from ``workspace_root``."""
     root_path = normalise_workspace_root(workspace_root)
     effective_options = PublishOptions() if options is None else options
+    if effective_options.live and effective_options.allow_unpublished_workspace_deps:
+        message = (
+            "--allow-unpublished-workspace-deps is only valid in dry-run mode; "
+            "re-run without --live."
+        )
+        raise PublishPreflightError(message)
     configuration_override = configuration or effective_options.configuration
     workspace_override = workspace or effective_options.workspace
     command_runner = effective_options.command_runner or _invoke
@@ -520,6 +610,9 @@ def run(
     execution_options = _PublishExecutionOptions(
         live=effective_options.live,
         allow_dirty=effective_options.allow_dirty,
+        allow_unpublished_workspace_deps=(
+            effective_options.allow_unpublished_workspace_deps
+        ),
     )
     _package_publishable_crates(
         plan,

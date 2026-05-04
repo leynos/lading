@@ -94,6 +94,98 @@ any member crate sets `readme.workspace = true`, `lading` copies the workspace
 `README.md` into that crate in the staged workspace so `cargo package` can
 include it.
 
+
+#### Dry-run limitations with unpublished workspace dependencies
+
+`cargo package` validates dependency versions against the live crates.io index,
+even in dry-run mode. When two or more workspace crates are released together
+for the first time and one depends on another at a version that is not yet on
+crates.io, `cargo package` will fail with an error similar to:
+
+```text
+error: failed to prepare local package for uploading
+
+Caused by:
+  failed to select a version for the requirement `inner_crate = "^0.8.0"`
+  candidate versions found which didn't match: 0.7.0, 0.6.0, ...
+  location searched: crates.io index
+  required by package `outer_crate v0.8.0`
+```
+
+This affects release trains that introduce a new shared version across multiple
+workspace crates. Setting `publish.order` to package the foundational crate
+first does **not** bypass this limitation, because each crate is still packaged
+against the live crates.io index rather than the locally packaged sibling.
+
+
+##### Workarounds
+
+Two patterns avoid the issue. Both require an initial real publish for the
+foundational crate so its new version becomes visible on crates.io.
+
+
+###### Staged publish
+
+Run `lading publish --live` for the foundational crate first, then run
+`lading publish` (dry-run) or `lading publish --live` for the rest of the
+workspace once the new version is indexed:
+
+```bash
+
+# 1. Publish the foundational crate live so crates.io has the new version.
+lading publish --live --workspace-root path/to/workspace
+
+# 2. Once the new version is indexed, publish (or dry-run) dependent crates.
+lading publish --workspace-root path/to/workspace
+```
+
+`lading` skips crates whose versions are already on crates.io, so the second
+invocation only acts on the remaining crates.
+
+
+###### Temporary `publish.exclude`
+
+Exclude dependent crates from the first run, publish the foundational crate,
+then remove the exclusion and run again:
+
+```toml
+
+# lading.toml during the first publish
+[publish]
+order = ["inner_crate", "outer_crate"]
+exclude = ["outer_crate"]
+```
+
+```bash
+lading publish --live
+```
+
+After the foundational crate is indexed, restore `lading.toml`:
+
+```toml
+[publish]
+order = ["inner_crate", "outer_crate"]
+```
+
+```bash
+lading publish # or `lading publish --live`
+```
+
+
+##### `--allow-unpublished-workspace-deps` (dry-run only)
+
+For CI gating where a real publish is not desirable, pass
+`--allow-unpublished-workspace-deps` to downgrade the index-lookup failure to a
+warning when the missing dependency is itself part of the planned publish set:
+
+```bash
+lading publish --allow-unpublished-workspace-deps
+```
+
+The flag is rejected when combined with `--live` because the failure cannot be
+bypassed during a real publish. When the missing dependency is **not** in the
+publish plan, the failure is still treated as an error.
+
 ## Configuration reference (`lading.toml`)
 
 `lading` looks for `lading.toml` in the workspace root. The file must be a TOML

@@ -49,6 +49,19 @@ _FORBID_DIRTY_PARAMETER = Parameter(
 )
 ForbidDirtyFlag = typ.Annotated[bool, _FORBID_DIRTY_PARAMETER]
 
+_ALLOW_UNPUBLISHED_WORKSPACE_DEPS_PARAMETER = Parameter(
+    name="allow-unpublished-workspace-deps",
+    help=(
+        "Dry-run only: downgrade cargo package failures caused by a sibling "
+        "workspace crate version not yet on crates.io to a warning when the "
+        "missing crate is part of the planned publish set. Cannot be combined "
+        "with --live."
+    ),
+)
+AllowUnpublishedWorkspaceDepsFlag = typ.Annotated[
+    bool, _ALLOW_UNPUBLISHED_WORKSPACE_DEPS_PARAMETER
+]
+
 LOG_LEVEL_ENV_VAR = "LADING_LOG_LEVEL"
 _DEFAULT_LOG_LEVEL = logging.INFO
 _LOG_FORMAT = "%(levelname)s: %(message)s"
@@ -295,6 +308,7 @@ def publish(
     *,
     forbid_dirty: ForbidDirtyFlag = False,
     live: LiveFlag = False,
+    allow_unpublished_workspace_deps: AllowUnpublishedWorkspaceDepsFlag = False,
 ) -> str:
     """Run pre-flight checks, package crates, and execute cargo publish.
 
@@ -312,6 +326,7 @@ def publish(
             options=commands.publish.PublishOptions(
                 allow_dirty=not forbid_dirty,
                 live=live,
+                allow_unpublished_workspace_deps=allow_unpublished_workspace_deps,
             ),
         ),
     )

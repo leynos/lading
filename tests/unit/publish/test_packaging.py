@@ -312,3 +312,207 @@ def test_publish_crates_raise_on_failure(
     message = str(excinfo.value)
     assert "cargo publish failed for crate" in message
     assert "network offline" in message
+
+@pytest.mark.parametrize(
+    ("exit_code", "stdout", "stderr", "expected"),
+    [
+        pytest.param(0, "", "", False, id="success"),
+        pytest.param(1, "", "", False, id="failure-without-markers"),
+        pytest.param(
+            1,
+            "",
+            "failed to select a version for the requirement",
+            False,
+            id="missing-index-marker",
+        ),
+        pytest.param(
+            1,
+            "",
+            "location searched: crates.io index",
+            False,
+            id="missing-version-marker",
+        ),
+        pytest.param(
+            1,
+            "",
+            _INDEX_MISSING_STDERR_BETA,
+            True,
+            id="full-stderr-shape",
+        ),
+        pytest.param(
+            1,
+            _INDEX_MISSING_STDERR_BETA,
+            "",
+            True,
+            id="markers-on-stdout",
+        ),
+    ],
+)
+def test_is_index_missing_version_error(
+    exit_code: int, stdout: str, stderr: str, *, expected: bool
+) -> None:
+    """Both markers must be present and the command must have failed."""
+    assert (
+        publish._is_index_missing_version_error(exit_code, stdout, stderr) is expected
+    )
+
+@pytest.mark.parametrize(
+    ("stdout", "stderr", "expected"),
+    [
+        pytest.param("", _INDEX_MISSING_STDERR_BETA, "alpha", id="stderr-backticks"),
+        pytest.param(
+            "",
+            "failed to select a version for the requirement 'inner_crate = \"^0.8.0\"'",
+            "inner_crate",
+            id="single-quotes",
+        ),
+        pytest.param(
+            'failed to select a version for the requirement "foo-bar = ^1"',
+            "",
+            "foo-bar",
+            id="hyphenated-on-stdout",
+        ),
+        pytest.param("", "no match here", None, id="no-match"),
+    ],
+)
+def test_extract_missing_dependency_name(
+    stdout: str, stderr: str, expected: str | None
+) -> None:
+    """Regex extraction handles backticks, quotes, and hyphens."""
+    assert publish._extract_missing_dependency_name(stdout, stderr) == expected
+
+def test_run_rejects_allow_unpublished_with_live(tmp_path: Path) -> None:
+    """Combining ``--live`` with the override flag is a hard error."""
+    workspace_root = tmp_path / "workspace"
+    crates = make_dependency_chain(workspace_root)
+    workspace = make_workspace(workspace_root, *crates)
+    configuration = make_config()
+
+    with pytest.raises(publish.PublishPreflightError) as excinfo:
+        publish.run(
+            workspace_root,
+            configuration,
+            workspace,
+            options=publish.PublishOptions(
+                live=True,
+                allow_unpublished_workspace_deps=True,
+            ),
+        )
+
+    assert "dry-run" in str(excinfo.value)
+
+def test_package_continues_when_missing_dep_is_in_plan_and_flag_set(
+    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Flag downgrades the missing-index error to a warning and proceeds."""
+    caplog.set_level(logging.WARNING, logger="lading.commands.publish")
+    plan, preparation, _staging_root = publish_plan_and_prep
+    calls: list[str] = []
+
+    def runner(
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        del env
+        crate_name = "" if cwd is None else cwd.name
+        calls.append(crate_name)
+        if crate_name == "beta":
+            return (1, "", _INDEX_MISSING_STDERR_BETA)
+        return (0, "", "")
+
+    publish._package_publishable_crates(
+        plan,
+        preparation,
+        options=publish._PublishExecutionOptions(
+            live=False,
+            allow_dirty=True,
+            allow_unpublished_workspace_deps=True,
+        ),
+        runner=runner,
+    )
+
+    assert calls == ["alpha", "beta", "gamma"]
+    assert any("alpha" in message and "beta" in message for message in caplog.messages)
+
+def test_package_raises_without_flag_even_when_missing_dep_in_plan(
+    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+) -> None:
+    """Without the override, the index lookup error remains fatal."""
+    plan, preparation, _staging_root = publish_plan_and_prep
+
+    def runner(
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        del env, command
+        crate_name = "" if cwd is None else cwd.name
+        if crate_name == "beta":
+            return (1, "", _INDEX_MISSING_STDERR_BETA)
+        return (0, "", "")
+
+    with pytest.raises(publish.PublishPreflightError) as excinfo:
+        publish._package_publishable_crates(
+            plan,
+            preparation,
+            options=publish._PublishExecutionOptions(
+                live=False,
+                allow_dirty=True,
+                allow_unpublished_workspace_deps=False,
+            ),
+            runner=runner,
+        )
+
+    message = str(excinfo.value)
+    assert "alpha" in message
+    assert "--allow-unpublished-workspace-deps" in message
+
+def test_package_raises_when_missing_dep_not_in_plan(
+    tmp_path: Path,
+) -> None:
+    """The missing dependency must belong to the publish plan to be tolerated."""
+    workspace_root = tmp_path / "workspace"
+    alpha, beta, _gamma = make_dependency_chain(workspace_root)
+    plan = publish.plan_publication(
+        make_workspace(workspace_root, alpha, beta), make_config()
+    )
+    staging_root = _prepare_staging_root(plan, tmp_path)
+    preparation = publish.PublishPreparation(
+        staging_root=staging_root,
+        copied_readmes=(),
+    )
+    external_stderr = (
+        "error: failed to prepare local package for uploading\n"
+        "Caused by:\n"
+        '  failed to select a version for the requirement `external_crate = "^1"`\n'
+        "  location searched: crates.io index\n"
+    )
+
+    def runner(
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        del env, command, cwd
+        return (1, "", external_stderr)
+
+    with pytest.raises(publish.PublishPreflightError) as excinfo:
+        publish._package_publishable_crates(
+            plan,
+            preparation,
+            options=publish._PublishExecutionOptions(
+                live=False,
+                allow_dirty=True,
+                allow_unpublished_workspace_deps=True,
+            ),
+            runner=runner,
+        )
+
+    message = str(excinfo.value)
+    assert "external_crate" in message
+    assert "not part of the current publish plan" in message
