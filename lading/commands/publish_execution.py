@@ -13,15 +13,23 @@ import threading
 import typing as typ
 from pathlib import Path
 
-try:  # pragma: no cover - optional dependency hook
-    from cmd_mox import command_runner as cmd_runner_module
-except ModuleNotFoundError:  # pragma: no cover - fallback when cmd-mox missing
-    cmd_runner_module = None  # type: ignore[assignment]
-
 from lading.utils.process import format_command, log_command_invocation
 from lading.workspace import metadata as metadata_module
 
 LOGGER = logging.getLogger(__name__)
+
+if typ.TYPE_CHECKING:  # pragma: no cover - typing helper
+    import types
+
+    from lading.commands.publish import PublishPreflightError
+
+cmd_runner_module: types.ModuleType | None
+try:  # pragma: no cover - optional dependency hook
+    from cmd_mox import command_runner as _cmd_runner_module
+except ModuleNotFoundError:  # pragma: no cover - fallback when cmd-mox missing
+    cmd_runner_module = None
+else:
+    cmd_runner_module = _cmd_runner_module
 
 
 class CmdMoxModules(typ.NamedTuple):
@@ -44,9 +52,6 @@ _ENV_REDACTION_TOKENS = (
 )
 _THREAD_NAME_PATTERN = re.compile(r"[^A-Za-z0-9_.-]+")
 _STREAM_CHUNK_SIZE = 4096
-
-if typ.TYPE_CHECKING:  # pragma: no cover - typing helper
-    from lading.commands.publish import PublishPreflightError
 
 
 class _CmdMoxEnvModule(typ.Protocol):
