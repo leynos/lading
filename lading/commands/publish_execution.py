@@ -14,6 +14,7 @@ command naming before IPC.
 
 from __future__ import annotations
 
+from pathlib import Path
 import codecs
 import collections.abc as cabc
 import dataclasses as dc
@@ -25,7 +26,6 @@ import sys
 import threading
 import types
 import typing as typ
-from pathlib import Path
 
 from lading.utils.process import format_command, log_command_invocation
 from lading.workspace import metadata as metadata_module
@@ -42,6 +42,7 @@ except ModuleNotFoundError:  # pragma: no cover - fallback when cmd-mox missing
     cmd_runner_module = None
 else:
     cmd_runner_module = _cmd_runner_module
+import importlib
 
 
 class CmdMoxModules(typ.NamedTuple):
