@@ -393,50 +393,63 @@ def _extract_missing_dependency_name(stdout: str, stderr: str) -> str | None:
             return match.group("name")
     return None
 
+@dc.dataclass(frozen=True, slots=True)
+class _CargoInvocation:
+    """Identifies a cargo invocation that produced an index-lookup failure."""
+
+    crate_name: str
+    subcommand: typ.Literal["package", "publish"]
+    output: tuple[int, str, str]
+
+
 def _handle_index_missing_version(
-    crate_name: str,
-    cargo_output: tuple[int, str, str],
+    invocation: _CargoInvocation,
     *,
     plan: PublishPlan,
     options: _PublishExecutionOptions,
 ) -> None:
-    """Handle a cargo package failure caused by an unindexed dependency.
+    """Handle a cargo failure caused by an unindexed sibling dependency.
 
-    Raises :class:`PublishPreflightError` unless the missing dependency is in
-    the current publish plan and the caller opted into the dry-run override.
+    Raises :class:`PublishPreflightError` (or :class:`PublishError` for the
+    publish phase) unless the missing dependency is in the current publish
+    plan and the caller opted into the dry-run override.
     """
-    exit_code, stdout, stderr = cargo_output
-    package_failure = _format_cargo_failure_message(
-        "package", crate_name, exit_code, (stdout, stderr)
+    exit_code, stdout, stderr = invocation.output
+    subcommand = invocation.subcommand
+    crate_name = invocation.crate_name
+    error_cls = PublishError if subcommand == "publish" else PublishPreflightError
+    failure = _format_cargo_failure_message(
+        subcommand, crate_name, exit_code, (stdout, stderr)
     )
     missing_name = _extract_missing_dependency_name(stdout, stderr)
     if missing_name is None:
-        # We matched the marker pair but could not extract a crate name; treat
-        # as a generic packaging failure to avoid silently masking the issue.
-        raise PublishPreflightError(package_failure)
+        # The marker pair matched but the crate name could not be extracted;
+        # treat as a generic failure to avoid silently masking the issue.
+        raise error_cls(failure)
 
     publishable_names = {entry.name for entry in plan.publishable}
     if missing_name not in publishable_names:
         message = (
-            f"{package_failure}; missing dependency {missing_name!r} is not part "
+            f"{failure}; missing dependency {missing_name!r} is not part "
             "of the current publish plan, so --allow-unpublished-workspace-deps "
             "cannot help. Publish or index the dependency first."
         )
-        raise PublishPreflightError(message)
+        raise error_cls(message)
 
     if not options.allow_unpublished_workspace_deps:
         message = (
-            f"{package_failure}; dependency {missing_name!r} is scheduled in "
+            f"{failure}; dependency {missing_name!r} is scheduled in "
             "this publish run but is not yet on crates.io. Re-run with "
             "--allow-unpublished-workspace-deps (dry-run only) or follow the "
             "staged-publish workaround in the user guide."
         )
-        raise PublishPreflightError(message)
+        raise error_cls(message)
 
     LOGGER.warning(
-        "cargo package for crate %s could not resolve sibling dependency %s "
+        "cargo %s for crate %s could not resolve sibling dependency %s "
         "from crates.io; continuing because "
         "--allow-unpublished-workspace-deps is set",
+        subcommand,
         crate_name,
         missing_name,
     )
@@ -461,8 +474,11 @@ def _package_publishable_crates(
             continue
         if _is_index_missing_version_error(exit_code, stdout, stderr):
             _handle_index_missing_version(
-                crate.name,
-                (exit_code, stdout, stderr),
+                _CargoInvocation(
+                    crate_name=crate.name,
+                    subcommand="package",
+                    output=(exit_code, stdout, stderr),
+                ),
                 plan=plan,
                 options=options,
             )
@@ -532,6 +548,20 @@ def _publish_crates(
                 "Crate %s @ %s is already published; skipping",
                 crate.name,
                 crate.version,
+            )
+            continue
+        if _is_index_missing_version_error(exit_code, stdout, stderr):
+            # cargo publish --dry-run packages internally and hits the same
+            # crates.io index lookup as cargo package, so honour the override
+            # consistently across both phases.
+            _handle_index_missing_version(
+                _CargoInvocation(
+                    crate_name=crate.name,
+                    subcommand="publish",
+                    output=(exit_code, stdout, stderr),
+                ),
+                plan=plan,
+                options=options,
             )
             continue
 

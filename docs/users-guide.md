@@ -182,6 +182,10 @@ warning when the missing dependency is itself part of the planned publish set:
 lading publish --allow-unpublished-workspace-deps
 ```
 
+The override applies to both the `cargo package` step and the subsequent
+`cargo publish --dry-run` step (which packages internally and hits the same
+crates.io index lookup), so the dry run completes end-to-end.
+
 The flag is rejected when combined with `--live` because the failure cannot be
 bypassed during a real publish. When the missing dependency is **not** in the
 publish plan, the failure is still treated as an error.

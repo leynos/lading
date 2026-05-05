@@ -516,3 +516,124 @@ def test_package_raises_when_missing_dep_not_in_plan(
     message = str(excinfo.value)
     assert "external_crate" in message
     assert "not part of the current publish plan" in message
+
+def test_publish_dry_run_continues_when_missing_dep_in_plan_and_flag_set(
+    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Dry-run cargo publish honours the override the same way packaging does.
+
+    cargo publish --dry-run packages internally and re-runs the same
+    crates.io index lookup, so the override must apply there too — otherwise
+    the flag breaks the end-to-end dry run.
+    """
+    caplog.set_level(logging.WARNING, logger="lading.commands.publish")
+    plan, preparation, _staging_root = publish_plan_and_prep
+    calls: list[str] = []
+
+    def runner(
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        del env, command
+        crate_name = "" if cwd is None else cwd.name
+        calls.append(crate_name)
+        if crate_name == "beta":
+            return (1, "", _INDEX_MISSING_STDERR_BETA)
+        return (0, "", "")
+
+    publish._publish_crates(
+        plan,
+        preparation,
+        runner=runner,
+        options=publish._PublishExecutionOptions(
+            live=False,
+            allow_dirty=True,
+            allow_unpublished_workspace_deps=True,
+        ),
+    )
+
+    assert calls == ["alpha", "beta", "gamma"]
+    assert any("alpha" in message and "beta" in message for message in caplog.messages)
+
+def test_publish_dry_run_raises_without_flag_when_missing_dep_in_plan(
+    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+) -> None:
+    """Without the override, the index lookup failure during publish is fatal."""
+    plan, preparation, _staging_root = publish_plan_and_prep
+
+    def runner(
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        del env, command
+        crate_name = "" if cwd is None else cwd.name
+        if crate_name == "beta":
+            return (1, "", _INDEX_MISSING_STDERR_BETA)
+        return (0, "", "")
+
+    with pytest.raises(publish.PublishError) as excinfo:
+        publish._publish_crates(
+            plan,
+            preparation,
+            runner=runner,
+            options=publish._PublishExecutionOptions(
+                live=False,
+                allow_dirty=True,
+                allow_unpublished_workspace_deps=False,
+            ),
+        )
+
+    message = str(excinfo.value)
+    assert "cargo publish failed for crate beta" in message
+    assert "--allow-unpublished-workspace-deps" in message
+
+def test_publish_dry_run_raises_when_missing_dep_not_in_plan(
+    tmp_path: Path,
+) -> None:
+    """The missing dependency must belong to the publish plan to be tolerated."""
+    workspace_root = tmp_path / "workspace"
+    alpha, beta, _gamma = make_dependency_chain(workspace_root)
+    plan = publish.plan_publication(
+        make_workspace(workspace_root, alpha, beta), make_config()
+    )
+    staging_root = _prepare_staging_root(plan, tmp_path)
+    preparation = publish.PublishPreparation(
+        staging_root=staging_root,
+        copied_readmes=(),
+    )
+    external_stderr = (
+        "error: failed to prepare local package for uploading\n"
+        "Caused by:\n"
+        '  failed to select a version for the requirement `external_crate = "^1"`\n'
+        "  location searched: crates.io index\n"
+    )
+
+    def runner(
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        del env, command, cwd
+        return (1, "", external_stderr)
+
+    with pytest.raises(publish.PublishError) as excinfo:
+        publish._publish_crates(
+            plan,
+            preparation,
+            runner=runner,
+            options=publish._PublishExecutionOptions(
+                live=False,
+                allow_dirty=True,
+                allow_unpublished_workspace_deps=True,
+            ),
+        )
+
+    message = str(excinfo.value)
+    assert "external_crate" in message
+    assert "not part of the current publish plan" in message
