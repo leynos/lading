@@ -1,4 +1,10 @@
-"""Command execution helpers for publish operations."""
+"""Command execution helpers for publish operations.
+
+The stdlib `types` import remains at module scope (rather than only under
+`typing.TYPE_CHECKING`) so `cmd_runner_module: types.ModuleType | None` cannot
+raise ``NameError`` if annotation evaluation ever runs outside
+``from __future__ import annotations`` deferral for this module.
+"""
 
 from __future__ import annotations
 
@@ -10,6 +16,7 @@ import re
 import subprocess
 import sys
 import threading
+import types  # noqa: TC003
 import typing as typ
 from pathlib import Path
 
@@ -19,8 +26,6 @@ from lading.workspace import metadata as metadata_module
 LOGGER = logging.getLogger(__name__)
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing helper
-    import types
-
     from lading.commands.publish import PublishPreflightError
 
 cmd_runner_module: types.ModuleType | None
