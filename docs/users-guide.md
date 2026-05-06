@@ -121,8 +121,7 @@ against the live crates.io index rather than the locally packaged sibling.
 ##### Workarounds
 
 Two patterns avoid the issue. Both require an initial real publish for the
-foundational crate so its new version becomes visible on crates.io.
-
+foundational crate, so its new version becomes visible on crates.io.
 
 ###### Staged publish
 
