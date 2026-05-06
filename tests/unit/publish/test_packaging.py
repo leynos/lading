@@ -22,6 +22,8 @@ from .conftest import (
 if typ.TYPE_CHECKING:
     from pathlib import Path
 
+    from syrupy.assertion import SnapshotAssertion
+
 
 def _prepare_staging_root(plan: publish.PublishPlan, base_dir: Path) -> Path:
     """Create a staged workspace tree matching ``plan`` under ``base_dir``."""
@@ -313,6 +315,33 @@ def test_publish_crates_raise_on_failure(
     assert "cargo publish failed for crate" in message
     assert "network offline" in message
 
+
+_INDEX_MISSING_STDERR_BETA = (
+    "error: failed to prepare local package for uploading\n"
+    "\n"
+    "Caused by:\n"
+    '  failed to select a version for the requirement `alpha = "^0.1.0"`\n'
+    "  candidate versions found which didn't match: 0.0.1\n"
+    "  location searched: crates.io index\n"
+    "  required by package `beta v0.1.0`\n"
+)
+
+_INDEX_MISSING_STDERR_UNPARSEABLE = (
+    "error: failed to prepare local package for uploading\n"
+    "\n"
+    "Caused by:\n"
+    "  failed to select a version for the requirement without a quoted name\n"
+    "  location searched: crates.io index\n"
+)
+
+_INDEX_MISSING_STDERR_EXTERNAL = (
+    "error: failed to prepare local package for uploading\n"
+    "Caused by:\n"
+    '  failed to select a version for the requirement `external_crate = "^1"`\n'
+    "  location searched: crates.io index\n"
+)
+
+
 @pytest.mark.parametrize(
     ("exit_code", "stdout", "stderr", "expected"),
     [
@@ -381,7 +410,9 @@ def test_extract_missing_dependency_name(
     """Regex extraction handles backticks, quotes, and hyphens."""
     assert publish._extract_missing_dependency_name(stdout, stderr) == expected
 
-def test_run_rejects_allow_unpublished_with_live(tmp_path: Path) -> None:
+def test_run_rejects_allow_unpublished_with_live(
+    tmp_path: Path, snapshot: SnapshotAssertion
+) -> None:
     """Combining ``--live`` with the override flag is a hard error."""
     workspace_root = tmp_path / "workspace"
     crates = make_dependency_chain(workspace_root)
@@ -399,11 +430,108 @@ def test_run_rejects_allow_unpublished_with_live(tmp_path: Path) -> None:
             ),
         )
 
-    assert "dry-run" in str(excinfo.value)
+    assert str(excinfo.value) == snapshot()
+
+def _warning_records(
+    caplog: pytest.LogCaptureFixture,
+) -> tuple[tuple[str, tuple[object, ...]], ...]:
+    """Return captured warning format strings and arguments."""
+    return tuple(
+        (record.msg, record.args)
+        for record in caplog.records
+        if record.levelno == logging.WARNING
+    )
+
+def _handle_index_missing_version_message(
+    plan: publish.PublishPlan,
+    *,
+    stderr: str,
+    allow_unpublished_workspace_deps: bool,
+    caplog: pytest.LogCaptureFixture,
+) -> str:
+    """Return the raised index-missing-version message for snapshot tests."""
+    caplog.set_level(logging.WARNING, logger="lading.commands.publish")
+    invocation = publish._CargoInvocation(
+        crate_name="beta",
+        subcommand="package",
+        output=(1, "", stderr),
+    )
+
+    with pytest.raises(publish.PublishPreflightError) as excinfo:
+        publish._handle_index_missing_version(
+            invocation,
+            plan=plan,
+            options=publish._PublishExecutionOptions(
+                live=False,
+                allow_dirty=True,
+                allow_unpublished_workspace_deps=allow_unpublished_workspace_deps,
+            ),
+        )
+
+    return str(excinfo.value)
+
+def test_index_missing_name_extraction_failure_message_snapshot(
+    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    caplog: pytest.LogCaptureFixture,
+    snapshot: SnapshotAssertion,
+) -> None:
+    """Snapshot the fatal message and warning for name extraction failures."""
+    plan, _preparation, _staging_root = publish_plan_and_prep
+
+    message = _handle_index_missing_version_message(
+        plan,
+        stderr=_INDEX_MISSING_STDERR_UNPARSEABLE,
+        allow_unpublished_workspace_deps=True,
+        caplog=caplog,
+    )
+
+    assert message == snapshot(name="message")
+    assert _warning_records(caplog) == snapshot(name="warning")
+
+def test_index_missing_out_of_plan_message_snapshot(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    snapshot: SnapshotAssertion,
+) -> None:
+    """Snapshot the fatal message and warning for out-of-plan dependencies."""
+    workspace_root = tmp_path / "workspace"
+    alpha, beta, _gamma = make_dependency_chain(workspace_root)
+    plan = publish.plan_publication(
+        make_workspace(workspace_root, alpha, beta), make_config()
+    )
+
+    message = _handle_index_missing_version_message(
+        plan,
+        stderr=_INDEX_MISSING_STDERR_EXTERNAL,
+        allow_unpublished_workspace_deps=True,
+        caplog=caplog,
+    )
+
+    assert message == snapshot(name="message")
+    assert _warning_records(caplog) == snapshot(name="warning")
+
+def test_index_missing_flag_disabled_message_snapshot(
+    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    caplog: pytest.LogCaptureFixture,
+    snapshot: SnapshotAssertion,
+) -> None:
+    """Snapshot the fatal message and warning when the override is disabled."""
+    plan, _preparation, _staging_root = publish_plan_and_prep
+
+    message = _handle_index_missing_version_message(
+        plan,
+        stderr=_INDEX_MISSING_STDERR_BETA,
+        allow_unpublished_workspace_deps=False,
+        caplog=caplog,
+    )
+
+    assert message == snapshot(name="message")
+    assert _warning_records(caplog) == snapshot(name="warning")
 
 def test_package_continues_when_missing_dep_is_in_plan_and_flag_set(
     publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
     caplog: pytest.LogCaptureFixture,
+    snapshot: SnapshotAssertion,
 ) -> None:
     """Flag downgrades the missing-index error to a warning and proceeds."""
     caplog.set_level(logging.WARNING, logger="lading.commands.publish")
@@ -435,10 +563,11 @@ def test_package_continues_when_missing_dep_is_in_plan_and_flag_set(
     )
 
     assert calls == ["alpha", "beta", "gamma"]
-    assert any("alpha" in message and "beta" in message for message in caplog.messages)
+    assert _warning_records(caplog) == snapshot()
 
 def test_package_raises_without_flag_even_when_missing_dep_in_plan(
     publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Without the override, the index lookup error remains fatal."""
     plan, preparation, _staging_root = publish_plan_and_prep
@@ -455,6 +584,7 @@ def test_package_raises_without_flag_even_when_missing_dep_in_plan(
             return (1, "", _INDEX_MISSING_STDERR_BETA)
         return (0, "", "")
 
+    caplog.set_level(logging.WARNING, logger="lading.commands.publish")
     with pytest.raises(publish.PublishPreflightError) as excinfo:
         publish._package_publishable_crates(
             plan,
@@ -470,9 +600,14 @@ def test_package_raises_without_flag_even_when_missing_dep_in_plan(
     message = str(excinfo.value)
     assert "alpha" in message
     assert "--allow-unpublished-workspace-deps" in message
+    assert any(
+        "failed due to unindexed sibling dependency" in message
+        for message in caplog.messages
+    )
 
 def test_package_raises_when_missing_dep_not_in_plan(
     tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """The missing dependency must belong to the publish plan to be tolerated."""
     workspace_root = tmp_path / "workspace"
@@ -485,12 +620,6 @@ def test_package_raises_when_missing_dep_not_in_plan(
         staging_root=staging_root,
         copied_readmes=(),
     )
-    external_stderr = (
-        "error: failed to prepare local package for uploading\n"
-        "Caused by:\n"
-        '  failed to select a version for the requirement `external_crate = "^1"`\n'
-        "  location searched: crates.io index\n"
-    )
 
     def runner(
         command: cabc.Sequence[str],
@@ -499,8 +628,9 @@ def test_package_raises_when_missing_dep_not_in_plan(
         env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
         del env, command, cwd
-        return (1, "", external_stderr)
+        return (1, "", _INDEX_MISSING_STDERR_EXTERNAL)
 
+    caplog.set_level(logging.WARNING, logger="lading.commands.publish")
     with pytest.raises(publish.PublishPreflightError) as excinfo:
         publish._package_publishable_crates(
             plan,
@@ -516,6 +646,10 @@ def test_package_raises_when_missing_dep_not_in_plan(
     message = str(excinfo.value)
     assert "external_crate" in message
     assert "not part of the current publish plan" in message
+    assert any(
+        "which is not in the current publish plan" in message
+        for message in caplog.messages
+    )
 
 def test_publish_dry_run_continues_when_missing_dep_in_plan_and_flag_set(
     publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
@@ -560,6 +694,7 @@ def test_publish_dry_run_continues_when_missing_dep_in_plan_and_flag_set(
 
 def test_publish_dry_run_raises_without_flag_when_missing_dep_in_plan(
     publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Without the override, the index lookup failure during publish is fatal."""
     plan, preparation, _staging_root = publish_plan_and_prep
@@ -576,6 +711,7 @@ def test_publish_dry_run_raises_without_flag_when_missing_dep_in_plan(
             return (1, "", _INDEX_MISSING_STDERR_BETA)
         return (0, "", "")
 
+    caplog.set_level(logging.WARNING, logger="lading.commands.publish")
     with pytest.raises(publish.PublishError) as excinfo:
         publish._publish_crates(
             plan,
@@ -591,9 +727,14 @@ def test_publish_dry_run_raises_without_flag_when_missing_dep_in_plan(
     message = str(excinfo.value)
     assert "cargo publish failed for crate beta" in message
     assert "--allow-unpublished-workspace-deps" in message
+    assert any(
+        "failed due to unindexed sibling dependency" in message
+        for message in caplog.messages
+    )
 
 def test_publish_dry_run_raises_when_missing_dep_not_in_plan(
     tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """The missing dependency must belong to the publish plan to be tolerated."""
     workspace_root = tmp_path / "workspace"
@@ -606,12 +747,6 @@ def test_publish_dry_run_raises_when_missing_dep_not_in_plan(
         staging_root=staging_root,
         copied_readmes=(),
     )
-    external_stderr = (
-        "error: failed to prepare local package for uploading\n"
-        "Caused by:\n"
-        '  failed to select a version for the requirement `external_crate = "^1"`\n'
-        "  location searched: crates.io index\n"
-    )
 
     def runner(
         command: cabc.Sequence[str],
@@ -620,8 +755,9 @@ def test_publish_dry_run_raises_when_missing_dep_not_in_plan(
         env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
         del env, command, cwd
-        return (1, "", external_stderr)
+        return (1, "", _INDEX_MISSING_STDERR_EXTERNAL)
 
+    caplog.set_level(logging.WARNING, logger="lading.commands.publish")
     with pytest.raises(publish.PublishError) as excinfo:
         publish._publish_crates(
             plan,
@@ -637,3 +773,7 @@ def test_publish_dry_run_raises_when_missing_dep_not_in_plan(
     message = str(excinfo.value)
     assert "external_crate" in message
     assert "not part of the current publish plan" in message
+    assert any(
+        "which is not in the current publish plan" in message
+        for message in caplog.messages
+    )

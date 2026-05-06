@@ -151,3 +151,39 @@ Examples:
   automatically at process exit instead of leaving it for inspection.
 - `PublishOptions(allow_dirty=False)` — require a clean git working tree before
   proceeding with publish preparation.
+
+
+## Publish command internals
+
+`PublishOptions.allow_unpublished_workspace_deps` is a dry-run-only override for
+release trains where one workspace crate depends on another crate version that
+is part of the same publish plan but is not visible in the crates.io index yet.
+When enabled, `lading publish` downgrades that specific index-lookup failure to
+a warning and continues. The option is rejected at runtime when `live=True`, so
+it cannot mask a real upload failure.
+
+The index-lookup handling is split across three helpers:
+
+- `_is_index_missing_version_error(exit_code, stdout, stderr) -> bool` checks
+  for both Cargo's version-selection failure marker and the crates.io index
+  marker after confirming the command failed. Requiring both markers minimises
+  false positives from unrelated resolver, registry, or command failures.
+- `_extract_missing_dependency_name(stdout, stderr) -> str | None` parses the
+  missing crate name from Cargo's requirement line. The regex accepts Cargo's
+  backtick, single-quote, and double-quote delimiters around the requirement,
+  captures the dependency name before `=`, and searches `stderr` before
+  `stdout` because Cargo normally reports this failure on the error stream.
+- `_handle_index_missing_version(_CargoInvocation, *, plan, options)` applies
+  the decision tree. If name extraction fails, the original Cargo failure stays
+  fatal. If the parsed name is not in the publish plan, the failure is fatal
+  with guidance to publish or index that dependency first. If the parsed name
+  is in the plan and `allow_unpublished_workspace_deps` is set, the helper logs
+  a warning and continues; otherwise it raises with guidance to use the flag in
+  dry-run mode or follow the staged-publish workaround.
+
+`lading.commands.publish_execution` loads the optional `cmd_mox` command-runner
+module with `importlib.import_module("cmd_mox.command_runner")`. Keeping the
+module in an `object | None` variable avoids relying on
+`from cmd_mox import ...  # type: ignore` when the package is absent, and it
+prevents conflicting type declarations when `cmd_mox` is present in the type
+checker environment.

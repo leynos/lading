@@ -353,3 +353,40 @@ def then_publish_preflight_reports_missing_socket(
         "cmd-mox stub requested for publish pre-flight but CMOX_IPC_SOCKET is unset"
         in str(error)
     )
+
+
+@then("the command should not raise a preflight error about the flag")
+def then_publish_flag_is_accepted(cli_run: dict[str, typ.Any]) -> None:
+    """Assert that the dry-run override flag does not fail pre-flight."""
+    assert cli_run["returncode"] == 0
+    assert "--allow-unpublished-workspace-deps is only valid" not in cli_run["stderr"]
+
+
+@then("a PublishPreflightError should be raised")
+def then_publish_preflight_error_is_reported(cli_run: dict[str, typ.Any]) -> None:
+    """Assert that the CLI surfaced a publish pre-flight failure."""
+    assert cli_run["returncode"] == 1
+
+
+@then(parsers.parse('the error message should contain "{expected}"'))
+def then_publish_error_message_contains(
+    cli_run: dict[str, typ.Any], expected: str
+) -> None:
+    """Assert that the CLI error output contains ``expected``."""
+    assert expected in cli_run["stderr"]
+
+
+@then(parsers.parse('a WARNING log should be emitted containing "{expected}"'))
+def then_publish_warning_log_contains(
+    cli_run: dict[str, typ.Any], expected: str
+) -> None:
+    """Assert that a warning log containing ``expected`` was emitted."""
+    assert "WARNING: " in cli_run["stderr"]
+    assert expected in cli_run["stderr"]
+
+
+@then("no PublishPreflightError should be raised")
+def then_publish_preflight_error_is_not_reported(cli_run: dict[str, typ.Any]) -> None:
+    """Assert that publish completed without a pre-flight failure."""
+    assert cli_run["returncode"] == 0
+    assert "PublishPreflightError" not in cli_run["stderr"]

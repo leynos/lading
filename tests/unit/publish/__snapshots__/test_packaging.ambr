@@ -1,0 +1,79 @@
+# serializer version: 1
+# name: test_index_missing_flag_disabled_message_snapshot[message]
+  '''
+  cargo package failed for crate beta with exit code 1: error: failed to prepare local package for uploading
+  
+  Caused by:
+    failed to select a version for the requirement `alpha = "^0.1.0"`
+    candidate versions found which didn't match: 0.0.1
+    location searched: crates.io index
+    required by package `beta v0.1.0`; dependency 'alpha' is scheduled in this publish run but is not yet on crates.io. Re-run with --allow-unpublished-workspace-deps (dry-run only) or follow the staged-publish workaround in the user guide.
+  '''
+# ---
+# name: test_index_missing_flag_disabled_message_snapshot[warning]
+  tuple(
+    tuple(
+      'cargo %s for crate %s failed due to unindexed sibling dependency %r (in plan); re-run with --allow-unpublished-workspace-deps to downgrade to a warning, or follow the staged-publish workaround',
+      tuple(
+        'package',
+        'beta',
+        'alpha',
+      ),
+    ),
+  )
+# ---
+# name: test_index_missing_name_extraction_failure_message_snapshot[message]
+  '''
+  cargo package failed for crate beta with exit code 1: error: failed to prepare local package for uploading
+  
+  Caused by:
+    failed to select a version for the requirement without a quoted name
+    location searched: crates.io index
+  '''
+# ---
+# name: test_index_missing_name_extraction_failure_message_snapshot[warning]
+  tuple(
+    tuple(
+      'cargo %s for crate %s matched index-missing-version markers but the dependency name could not be extracted; treating as fatal',
+      tuple(
+        'package',
+        'beta',
+      ),
+    ),
+  )
+# ---
+# name: test_index_missing_out_of_plan_message_snapshot[message]
+  '''
+  cargo package failed for crate beta with exit code 1: error: failed to prepare local package for uploading
+  Caused by:
+    failed to select a version for the requirement `external_crate = "^1"`
+    location searched: crates.io index; missing dependency 'external_crate' is not part of the current publish plan, so --allow-unpublished-workspace-deps cannot help. Publish or index the dependency first.
+  '''
+# ---
+# name: test_index_missing_out_of_plan_message_snapshot[warning]
+  tuple(
+    tuple(
+      'cargo %s for crate %s failed due to unindexed dependency %r which is not in the current publish plan; cannot continue',
+      tuple(
+        'package',
+        'beta',
+        'external_crate',
+      ),
+    ),
+  )
+# ---
+# name: test_package_continues_when_missing_dep_is_in_plan_and_flag_set
+  tuple(
+    tuple(
+      'cargo %s for crate %s could not resolve sibling dependency %s from crates.io; continuing because --allow-unpublished-workspace-deps is set',
+      tuple(
+        'package',
+        'beta',
+        'alpha',
+      ),
+    ),
+  )
+# ---
+# name: test_run_rejects_allow_unpublished_with_live
+  '--allow-unpublished-workspace-deps is only valid in dry-run mode; re-run without --live.'
+# ---

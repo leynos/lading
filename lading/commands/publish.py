@@ -312,6 +312,7 @@ def prepare_workspace(
         build_root = staging_root.parent
 
         def _cleanup() -> None:
+            """Remove the staged build directory on process exit."""
             shutil.rmtree(build_root, ignore_errors=True)
 
         atexit.register(_cleanup)
@@ -425,6 +426,12 @@ def _handle_index_missing_version(
     if missing_name is None:
         # The marker pair matched but the crate name could not be extracted;
         # treat as a generic failure to avoid silently masking the issue.
+        LOGGER.warning(
+            "cargo %s for crate %s matched index-missing-version markers "
+            "but the dependency name could not be extracted; treating as fatal",
+            invocation.subcommand,
+            invocation.crate_name,
+        )
         raise error_cls(failure)
 
     publishable_names = {entry.name for entry in plan.publishable}
@@ -434,6 +441,13 @@ def _handle_index_missing_version(
             "of the current publish plan, so --allow-unpublished-workspace-deps "
             "cannot help. Publish or index the dependency first."
         )
+        LOGGER.warning(
+            "cargo %s for crate %s failed due to unindexed dependency %r "
+            "which is not in the current publish plan; cannot continue",
+            invocation.subcommand,
+            invocation.crate_name,
+            missing_name,
+        )
         raise error_cls(message)
 
     if not options.allow_unpublished_workspace_deps:
@@ -442,6 +456,14 @@ def _handle_index_missing_version(
             "this publish run but is not yet on crates.io. Re-run with "
             "--allow-unpublished-workspace-deps (dry-run only) or follow the "
             "staged-publish workaround in the user guide."
+        )
+        LOGGER.warning(
+            "cargo %s for crate %s failed due to unindexed sibling dependency %r "
+            "(in plan); re-run with --allow-unpublished-workspace-deps to downgrade "
+            "to a warning, or follow the staged-publish workaround",
+            invocation.subcommand,
+            invocation.crate_name,
+            missing_name,
         )
         raise error_cls(message)
 
