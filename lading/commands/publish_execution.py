@@ -1,9 +1,15 @@
 """Command execution helpers for publish operations.
 
-The stdlib `types` import remains at module scope (rather than only under
-`typing.TYPE_CHECKING`) so `cmd_runner_module: types.ModuleType | None` cannot
-raise ``NameError`` if annotation evaluation ever runs outside
-``from __future__ import annotations`` deferral for this module.
+``_invoke`` is the primary entry used by publish pre-flight logic: it runs argv
+sequences through local ``subprocess`` or routes them via the cmd-mox IPC stub
+when stub mode is enabled. ``_CommandRunner`` describes the callable contract.
+
+The aliases ``split_command``, ``should_use_cmd_mox_stub`` and
+``normalise_cmd_mox_command`` are exported so :mod:`~lading.commands.publish`
+and tests reuse the same rules: ``split_command`` validates non-empty sequences
+into program plus args; ``should_use_cmd_mox_stub`` reads the stub environment
+toggle; ``normalise_cmd_mox_command`` reshapes ``cargo`` invocations for cmd-mox
+command naming before IPC.
 """
 
 from __future__ import annotations
@@ -16,7 +22,7 @@ import re
 import subprocess
 import sys
 import threading
-import types  # noqa: TC003
+import types  # noqa: TC003 -- module-scope for cmd_runner_module: types.ModuleType | None (NameError guard)
 import typing as typ
 from pathlib import Path
 
