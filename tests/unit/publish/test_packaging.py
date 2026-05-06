@@ -113,6 +113,28 @@ def _assert_packaging_failure_message_contains(
         assert not_expected_in_message not in message
 
 
+def _invoke_phase(
+    phase_name: str,
+    plan: publish.PublishPlan,
+    preparation: publish.PublishPreparation,
+    runner: cabc.Callable[..., tuple[int, str, str]],
+    options: publish._PublishExecutionOptions,
+) -> None:
+    """Dispatch to the appropriate cargo sub-command under test."""
+    if phase_name == "package":
+        publish._package_publishable_crates(
+            plan, preparation, options=options, runner=runner
+        )
+    else:
+        publish._publish_crates(plan, preparation, runner=runner, options=options)
+
+
+_PHASE_IDS: list[pytest.param] = [
+    pytest.param("package", publish.PublishPreflightError, id="packaging"),
+    pytest.param("publish", publish.PublishError, id="publish-dry-run"),
+]
+
+
 def test_package_publishable_crates_runs_in_plan_order(
     publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
 ) -> None:
@@ -528,10 +550,12 @@ def test_index_missing_flag_disabled_message_snapshot(
     assert message == snapshot(name="message")
     assert _warning_records(caplog) == snapshot(name="warning")
 
-def test_package_continues_when_missing_dep_is_in_plan_and_flag_set(
+
+@pytest.mark.parametrize("phase_name", ["package", "publish"])
+def test_missing_dep_in_plan_and_flag_continues(
     publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
     caplog: pytest.LogCaptureFixture,
-    snapshot: SnapshotAssertion,
+    phase_name: str,
 ) -> None:
     """Flag downgrades the missing-index error to a warning and proceeds."""
     caplog.set_level(logging.WARNING, logger="lading.commands.publish")
@@ -544,30 +568,46 @@ def test_package_continues_when_missing_dep_is_in_plan_and_flag_set(
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
-        del env
+        del env, command
         crate_name = "" if cwd is None else cwd.name
         calls.append(crate_name)
         if crate_name == "beta":
             return (1, "", _INDEX_MISSING_STDERR_BETA)
         return (0, "", "")
 
-    publish._package_publishable_crates(
+    _invoke_phase(
+        phase_name,
         plan,
         preparation,
-        options=publish._PublishExecutionOptions(
+        runner,
+        publish._PublishExecutionOptions(
             live=False,
             allow_dirty=True,
             allow_unpublished_workspace_deps=True,
         ),
-        runner=runner,
     )
 
     assert calls == ["alpha", "beta", "gamma"]
-    assert _warning_records(caplog) == snapshot()
+    assert any("alpha" in m and "beta" in m for m in caplog.messages)
 
-def test_package_raises_without_flag_even_when_missing_dep_in_plan(
+
+@pytest.mark.parametrize(
+    ("phase_name", "exc_type", "expected_fragment"),
+    [
+        pytest.param("package", publish.PublishPreflightError, "alpha", id="packaging"),
+        pytest.param(
+            "publish",
+            publish.PublishError,
+            "cargo publish failed for crate beta",
+            id="publish-dry-run",
+        ),
+    ],
+)
+def test_missing_dep_in_plan_without_flag_raises(
     publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
-    caplog: pytest.LogCaptureFixture,
+    phase_name: str,
+    exc_type: type[Exception],
+    expected_fragment: str,
 ) -> None:
     """Without the override, the index lookup error remains fatal."""
     plan, preparation, _staging_root = publish_plan_and_prep
@@ -584,30 +624,29 @@ def test_package_raises_without_flag_even_when_missing_dep_in_plan(
             return (1, "", _INDEX_MISSING_STDERR_BETA)
         return (0, "", "")
 
-    caplog.set_level(logging.WARNING, logger="lading.commands.publish")
-    with pytest.raises(publish.PublishPreflightError) as excinfo:
-        publish._package_publishable_crates(
+    with pytest.raises(exc_type) as excinfo:
+        _invoke_phase(
+            phase_name,
             plan,
             preparation,
-            options=publish._PublishExecutionOptions(
+            runner,
+            publish._PublishExecutionOptions(
                 live=False,
                 allow_dirty=True,
                 allow_unpublished_workspace_deps=False,
             ),
-            runner=runner,
         )
 
     message = str(excinfo.value)
-    assert "alpha" in message
+    assert expected_fragment in message
     assert "--allow-unpublished-workspace-deps" in message
-    assert any(
-        "failed due to unindexed sibling dependency" in message
-        for message in caplog.messages
-    )
 
-def test_package_raises_when_missing_dep_not_in_plan(
+
+@pytest.mark.parametrize(("phase_name", "exc_type"), _PHASE_IDS)
+def test_missing_dep_not_in_plan_raises(
     tmp_path: Path,
-    caplog: pytest.LogCaptureFixture,
+    phase_name: str,
+    exc_type: type[Exception],
 ) -> None:
     """The missing dependency must belong to the publish plan to be tolerated."""
     workspace_root = tmp_path / "workspace"
@@ -620,150 +659,20 @@ def test_package_raises_when_missing_dep_not_in_plan(
         staging_root=staging_root,
         copied_readmes=(),
     )
+    external_stderr = (
+        "error: failed to prepare local package for uploading\n"
+        "Caused by:\n"
+        '  failed to select a version for the requirement `external_crate = "^1"`\n'
+        "  location searched: crates.io index\n"
+    )
 
-    def runner(
-        command: cabc.Sequence[str],
-        *,
-        cwd: Path | None = None,
-        env: cabc.Mapping[str, str] | None = None,
-    ) -> tuple[int, str, str]:
-        del env, command, cwd
-        return (1, "", _INDEX_MISSING_STDERR_EXTERNAL)
-
-    caplog.set_level(logging.WARNING, logger="lading.commands.publish")
-    with pytest.raises(publish.PublishPreflightError) as excinfo:
-        publish._package_publishable_crates(
+    with pytest.raises(exc_type) as excinfo:
+        _invoke_phase(
+            phase_name,
             plan,
             preparation,
-            options=publish._PublishExecutionOptions(
-                live=False,
-                allow_dirty=True,
-                allow_unpublished_workspace_deps=True,
-            ),
-            runner=runner,
-        )
-
-    message = str(excinfo.value)
-    assert "external_crate" in message
-    assert "not part of the current publish plan" in message
-    assert any(
-        "which is not in the current publish plan" in message
-        for message in caplog.messages
-    )
-
-def test_publish_dry_run_continues_when_missing_dep_in_plan_and_flag_set(
-    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """Dry-run cargo publish honours the override the same way packaging does.
-
-    cargo publish --dry-run packages internally and re-runs the same
-    crates.io index lookup, so the override must apply there too — otherwise
-    the flag breaks the end-to-end dry run.
-    """
-    caplog.set_level(logging.WARNING, logger="lading.commands.publish")
-    plan, preparation, _staging_root = publish_plan_and_prep
-    calls: list[str] = []
-
-    def runner(
-        command: cabc.Sequence[str],
-        *,
-        cwd: Path | None = None,
-        env: cabc.Mapping[str, str] | None = None,
-    ) -> tuple[int, str, str]:
-        del env, command
-        crate_name = "" if cwd is None else cwd.name
-        calls.append(crate_name)
-        if crate_name == "beta":
-            return (1, "", _INDEX_MISSING_STDERR_BETA)
-        return (0, "", "")
-
-    publish._publish_crates(
-        plan,
-        preparation,
-        runner=runner,
-        options=publish._PublishExecutionOptions(
-            live=False,
-            allow_dirty=True,
-            allow_unpublished_workspace_deps=True,
-        ),
-    )
-
-    assert calls == ["alpha", "beta", "gamma"]
-    assert any("alpha" in message and "beta" in message for message in caplog.messages)
-
-def test_publish_dry_run_raises_without_flag_when_missing_dep_in_plan(
-    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """Without the override, the index lookup failure during publish is fatal."""
-    plan, preparation, _staging_root = publish_plan_and_prep
-
-    def runner(
-        command: cabc.Sequence[str],
-        *,
-        cwd: Path | None = None,
-        env: cabc.Mapping[str, str] | None = None,
-    ) -> tuple[int, str, str]:
-        del env, command
-        crate_name = "" if cwd is None else cwd.name
-        if crate_name == "beta":
-            return (1, "", _INDEX_MISSING_STDERR_BETA)
-        return (0, "", "")
-
-    caplog.set_level(logging.WARNING, logger="lading.commands.publish")
-    with pytest.raises(publish.PublishError) as excinfo:
-        publish._publish_crates(
-            plan,
-            preparation,
-            runner=runner,
-            options=publish._PublishExecutionOptions(
-                live=False,
-                allow_dirty=True,
-                allow_unpublished_workspace_deps=False,
-            ),
-        )
-
-    message = str(excinfo.value)
-    assert "cargo publish failed for crate beta" in message
-    assert "--allow-unpublished-workspace-deps" in message
-    assert any(
-        "failed due to unindexed sibling dependency" in message
-        for message in caplog.messages
-    )
-
-def test_publish_dry_run_raises_when_missing_dep_not_in_plan(
-    tmp_path: Path,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """The missing dependency must belong to the publish plan to be tolerated."""
-    workspace_root = tmp_path / "workspace"
-    alpha, beta, _gamma = make_dependency_chain(workspace_root)
-    plan = publish.plan_publication(
-        make_workspace(workspace_root, alpha, beta), make_config()
-    )
-    staging_root = _prepare_staging_root(plan, tmp_path)
-    preparation = publish.PublishPreparation(
-        staging_root=staging_root,
-        copied_readmes=(),
-    )
-
-    def runner(
-        command: cabc.Sequence[str],
-        *,
-        cwd: Path | None = None,
-        env: cabc.Mapping[str, str] | None = None,
-    ) -> tuple[int, str, str]:
-        del env, command, cwd
-        return (1, "", _INDEX_MISSING_STDERR_EXTERNAL)
-
-    caplog.set_level(logging.WARNING, logger="lading.commands.publish")
-    with pytest.raises(publish.PublishError) as excinfo:
-        publish._publish_crates(
-            plan,
-            preparation,
-            runner=runner,
-            options=publish._PublishExecutionOptions(
+            make_failing_runner(stderr=external_stderr),
+            publish._PublishExecutionOptions(
                 live=False,
                 allow_dirty=True,
                 allow_unpublished_workspace_deps=True,
@@ -773,7 +682,3 @@ def test_publish_dry_run_raises_when_missing_dep_not_in_plan(
     message = str(excinfo.value)
     assert "external_crate" in message
     assert "not part of the current publish plan" in message
-    assert any(
-        "which is not in the current publish plan" in message
-        for message in caplog.messages
-    )

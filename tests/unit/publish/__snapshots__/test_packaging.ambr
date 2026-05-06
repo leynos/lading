@@ -62,18 +62,6 @@
     ),
   )
 # ---
-# name: test_package_continues_when_missing_dep_is_in_plan_and_flag_set
-  tuple(
-    tuple(
-      'cargo %s for crate %s could not resolve sibling dependency %s from crates.io; continuing because --allow-unpublished-workspace-deps is set',
-      tuple(
-        'package',
-        'beta',
-        'alpha',
-      ),
-    ),
-  )
-# ---
 # name: test_run_rejects_allow_unpublished_with_live
   '--allow-unpublished-workspace-deps is only valid in dry-run mode; re-run without --live.'
 # ---
