@@ -1,4 +1,16 @@
-"""Command execution helpers for publish operations."""
+"""Command execution helpers for publish operations.
+
+``_invoke`` is the primary entry used by publish pre-flight logic: it runs argv
+sequences through local ``subprocess`` or routes them via the cmd-mox IPC stub
+when stub mode is enabled. ``_CommandRunner`` describes the callable contract.
+
+The aliases ``split_command``, ``should_use_cmd_mox_stub`` and
+``normalise_cmd_mox_command`` are exported so :mod:`~lading.commands.publish`
+and tests reuse the same rules: ``split_command`` validates non-empty sequences
+into program plus args; ``should_use_cmd_mox_stub`` reads the stub environment
+toggle; ``normalise_cmd_mox_command`` reshapes ``cargo`` invocations for cmd-mox
+command naming before IPC.
+"""
 
 from __future__ import annotations
 
@@ -10,18 +22,25 @@ import re
 import subprocess
 import sys
 import threading
+import types  # noqa: TC003 -- module-scope for cmd_runner_module: types.ModuleType | None (NameError guard)
 import typing as typ
 from pathlib import Path
-
-try:  # pragma: no cover - optional dependency hook
-    from cmd_mox import command_runner as cmd_runner_module
-except ModuleNotFoundError:  # pragma: no cover - fallback when cmd-mox missing
-    cmd_runner_module = None  # type: ignore[assignment]
 
 from lading.utils.process import format_command, log_command_invocation
 from lading.workspace import metadata as metadata_module
 
 LOGGER = logging.getLogger(__name__)
+
+if typ.TYPE_CHECKING:  # pragma: no cover - typing helper
+    from lading.commands.publish import PublishPreflightError
+
+cmd_runner_module: types.ModuleType | None
+try:  # pragma: no cover - optional dependency hook
+    from cmd_mox import command_runner as _cmd_runner_module
+except ModuleNotFoundError:  # pragma: no cover - fallback when cmd-mox missing
+    cmd_runner_module = None
+else:
+    cmd_runner_module = _cmd_runner_module
 
 
 class CmdMoxModules(typ.NamedTuple):
@@ -44,9 +63,6 @@ _ENV_REDACTION_TOKENS = (
 )
 _THREAD_NAME_PATTERN = re.compile(r"[^A-Za-z0-9_.-]+")
 _STREAM_CHUNK_SIZE = 4096
-
-if typ.TYPE_CHECKING:  # pragma: no cover - typing helper
-    from lading.commands.publish import PublishPreflightError
 
 
 class _CmdMoxEnvModule(typ.Protocol):

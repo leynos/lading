@@ -1,5 +1,7 @@
 # Lading
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/leynos/lading)
+
 Welcome aboard the Lading! This repository packages a cheerful command-line
 assistant that keeps Rust workspaces shipshape by coordinating version bumps
 and publication plans. Whether you're preparing a release or just keeping
