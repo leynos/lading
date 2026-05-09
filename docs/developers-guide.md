@@ -166,7 +166,7 @@ The index-lookup handling is split across three helpers:
 
 - `_is_index_missing_version_error(exit_code, stdout, stderr) -> bool` checks
   for both Cargo's version-selection failure marker and the crates.io index
-  marker after confirming the command failed. Requiring both markers minimises
+  marker after confirming the command failed. Requiring both markers minimizes
   false positives from unrelated resolver, registry, or command failures.
 - `_extract_missing_dependency_name(stdout, stderr) -> str | None` parses the
   missing crate name from Cargo's requirement line. The regex accepts Cargo's

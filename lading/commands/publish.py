@@ -379,7 +379,7 @@ def _is_index_missing_version_error(exit_code: int, stdout: str, stderr: str) ->
 
     The cargo command exits non-zero with output that simultaneously mentions
     the version selection failure and the crates.io index. Both markers are
-    required to minimise false positives from unrelated lookup failures.
+    required to minimize false positives from unrelated lookup failures.
     """
     if exit_code == 0:
         return False
