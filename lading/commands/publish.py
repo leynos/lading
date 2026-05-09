@@ -7,7 +7,6 @@ import collections.abc as cabc
 import dataclasses as dc
 import logging
 import os
-import re
 import shutil
 import tempfile
 import typing as typ
@@ -21,6 +20,11 @@ from lading.commands.publish_execution import (
     normalise_cmd_mox_command,
     should_use_cmd_mox_stub,
     split_command,
+)
+from lading.commands.publish_index_check import (
+    _CargoInvocation,
+    _extract_missing_dependency_name,
+    _is_index_missing_version_error,
 )
 from lading.commands.publish_manifest import (
     PublishPreparationError,
@@ -373,35 +377,6 @@ def _format_cargo_failure_message(
     if detail:
         message = f"{message}: {detail}"
     return message
-
-def _is_index_missing_version_error(exit_code: int, stdout: str, stderr: str) -> bool:
-    """Return True when ``cargo package`` failed due to an unindexed dependency.
-
-    The cargo command exits non-zero with output that simultaneously mentions
-    the version selection failure and the crates.io index. Both markers are
-    required to minimize false positives from unrelated lookup failures.
-    """
-    if exit_code == 0:
-        return False
-    haystack = f"{stdout}\n{stderr}".lower()
-    return all(marker in haystack for marker in _INDEX_MISSING_VERSION_MARKERS)
-
-def _extract_missing_dependency_name(stdout: str, stderr: str) -> str | None:
-    """Return the missing dependency crate name parsed from cargo output."""
-    for stream in (stderr, stdout):
-        match = _INDEX_MISSING_VERSION_NAME_PATTERN.search(stream)
-        if match is not None:
-            return match.group("name")
-    return None
-
-@dc.dataclass(frozen=True, slots=True)
-class _CargoInvocation:
-    """Identifies a cargo invocation that produced an index-lookup failure."""
-
-    crate_name: str
-    subcommand: typ.Literal["package", "publish"]
-    output: tuple[int, str, str]
-
 
 def _handle_index_missing_version(
     invocation: _CargoInvocation,
