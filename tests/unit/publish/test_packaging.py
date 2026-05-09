@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import collections.abc as cabc
+import dataclasses as dc
 import logging
 import typing as typ
 
@@ -112,21 +112,26 @@ def _assert_packaging_failure_message_contains(
     if not_expected_in_message is not None:
         assert not_expected_in_message not in message
 
+@dc.dataclass(frozen=True)
+class _PhaseContext:
+    """Execution context shared across both cargo phase dispatches."""
 
-def _invoke_phase(
-    phase_name: str,
-    plan: publish.PublishPlan,
-    preparation: publish.PublishPreparation,
-    runner: cabc.Callable[..., tuple[int, str, str]],
-    options: publish._PublishExecutionOptions,
-) -> None:
+    plan: publish.PublishPlan
+    preparation: publish.PublishPreparation
+    runner: cabc.Callable[..., tuple[int, str, str]]
+    options: publish._PublishExecutionOptions
+
+
+def _invoke_phase(phase_name: str, ctx: _PhaseContext) -> None:
     """Dispatch to the appropriate cargo sub-command under test."""
     if phase_name == "package":
         publish._package_publishable_crates(
-            plan, preparation, options=options, runner=runner
+            ctx.plan, ctx.preparation, options=ctx.options, runner=ctx.runner
         )
     else:
-        publish._publish_crates(plan, preparation, runner=runner, options=options)
+        publish._publish_crates(
+            ctx.plan, ctx.preparation, runner=ctx.runner, options=ctx.options
+        )
 
 
 _PHASE_IDS: list[pytest.param] = [
@@ -577,13 +582,15 @@ def test_missing_dep_in_plan_and_flag_continues(
 
     _invoke_phase(
         phase_name,
-        plan,
-        preparation,
-        runner,
-        publish._PublishExecutionOptions(
-            live=False,
-            allow_dirty=True,
-            allow_unpublished_workspace_deps=True,
+        _PhaseContext(
+            plan=plan,
+            preparation=preparation,
+            runner=runner,
+            options=publish._PublishExecutionOptions(
+                live=False,
+                allow_dirty=True,
+                allow_unpublished_workspace_deps=True,
+            ),
         ),
     )
 
@@ -627,13 +634,15 @@ def test_missing_dep_in_plan_without_flag_raises(
     with pytest.raises(exc_type) as excinfo:
         _invoke_phase(
             phase_name,
-            plan,
-            preparation,
-            runner,
-            publish._PublishExecutionOptions(
-                live=False,
-                allow_dirty=True,
-                allow_unpublished_workspace_deps=False,
+            _PhaseContext(
+                plan=plan,
+                preparation=preparation,
+                runner=runner,
+                options=publish._PublishExecutionOptions(
+                    live=False,
+                    allow_dirty=True,
+                    allow_unpublished_workspace_deps=False,
+                ),
             ),
         )
 
@@ -669,13 +678,15 @@ def test_missing_dep_not_in_plan_raises(
     with pytest.raises(exc_type) as excinfo:
         _invoke_phase(
             phase_name,
-            plan,
-            preparation,
-            make_failing_runner(stderr=external_stderr),
-            publish._PublishExecutionOptions(
-                live=False,
-                allow_dirty=True,
-                allow_unpublished_workspace_deps=True,
+            _PhaseContext(
+                plan=plan,
+                preparation=preparation,
+                runner=make_failing_runner(stderr=external_stderr),
+                options=publish._PublishExecutionOptions(
+                    live=False,
+                    allow_dirty=True,
+                    allow_unpublished_workspace_deps=True,
+                ),
             ),
         )
 
