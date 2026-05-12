@@ -128,10 +128,13 @@ def _invoke_phase(phase_name: str, ctx: _PhaseContext) -> None:
         publish._package_publishable_crates(
             ctx.plan, ctx.preparation, options=ctx.options, runner=ctx.runner
         )
-    else:
+    elif phase_name == "publish":
         publish._publish_crates(
             ctx.plan, ctx.preparation, runner=ctx.runner, options=ctx.options
         )
+    else:
+        message = f"Unknown phase_name {phase_name!r}; expected 'package' or 'publish'."
+        raise ValueError(message)
 
 
 _PHASE_IDS: list[pytest.param] = [
@@ -668,20 +671,13 @@ def test_missing_dep_not_in_plan_raises(
         staging_root=staging_root,
         copied_readmes=(),
     )
-    external_stderr = (
-        "error: failed to prepare local package for uploading\n"
-        "Caused by:\n"
-        '  failed to select a version for the requirement `external_crate = "^1"`\n'
-        "  location searched: crates.io index\n"
-    )
-
     with pytest.raises(exc_type) as excinfo:
         _invoke_phase(
             phase_name,
             _PhaseContext(
                 plan=plan,
                 preparation=preparation,
-                runner=make_failing_runner(stderr=external_stderr),
+                runner=make_failing_runner(stderr=_INDEX_MISSING_STDERR_EXTERNAL),
                 options=publish._PublishExecutionOptions(
                     live=False,
                     allow_dirty=True,
