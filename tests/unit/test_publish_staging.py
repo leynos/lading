@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import collections.abc as cabc
 import dataclasses as dc
 import typing as typ
 
@@ -198,8 +199,8 @@ def test_stage_workspace_readmes_returns_empty_list_when_unused(
 )
 def test_collect_workspace_readme_targets_by_opt_in(
     tmp_path: Path,
-    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
-    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
+    make_crate: cabc.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    make_workspace: cabc.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
     scenario: dict[str, bool | int],
 ) -> None:
     """Collection includes only crates with readme.workspace = true."""
@@ -221,7 +222,7 @@ def test_collect_workspace_readme_targets_by_opt_in(
 
 def test_stage_workspace_readmes_copies_and_sorts_targets(
     tmp_path: Path,
-    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    make_crate: cabc.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
 ) -> None:
     """Workspace README is copied into each opted-in crate in sorted order."""
     workspace_root = tmp_path / "workspace"
@@ -268,7 +269,7 @@ def test_stage_workspace_readmes_copies_and_sorts_targets(
 )
 def test_stage_workspace_readmes_validation_errors(
     tmp_path: Path,
-    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    make_crate: cabc.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
     case: _StageReadmeValidationCase,
 ) -> None:
     """Staging readmes validates workspace README existence and crate location."""
@@ -361,9 +362,9 @@ def test_prepare_workspace_registers_cleanup(
     plan = publish.plan_publication(workspace, pf.make_config())
 
     build_directory = fx.publish_options.build_directory
-    registered: list[typ.Callable[[], None]] = []
+    registered: list[cabc.Callable[[], None]] = []
 
-    def capture(callback: typ.Callable[[], None]) -> None:
+    def capture(callback: cabc.Callable[[], None]) -> None:
         registered.append(callback)
 
     monkeypatch.setattr(publish.atexit, "register", capture)
@@ -445,9 +446,9 @@ def test_prepare_workspace_does_not_register_cleanup_when_disabled(
     workspace = pf.make_workspace(workspace_root, crate)
     plan = publish.plan_publication(workspace, pf.make_config())
 
-    registered: list[typ.Callable[[], None]] = []
+    registered: list[cabc.Callable[[], None]] = []
 
-    def capture(callback: typ.Callable[[], None]) -> None:
+    def capture(callback: cabc.Callable[[], None]) -> None:
         registered.append(callback)
 
     monkeypatch.setattr(publish.atexit, "register", capture)

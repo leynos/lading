@@ -31,7 +31,8 @@ def make_preflight_config(**overrides: object) -> config_module.PreflightConfig:
             Special handling: compiletest_externs as tuple of (name, path) pairs
             will be converted to CompiletestExtern objects.
 
-    Returns:
+    Returns
+    -------
         A PreflightConfig with defaults merged with the provided overrides.
 
     """

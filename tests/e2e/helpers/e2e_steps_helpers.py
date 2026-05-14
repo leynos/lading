@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import collections.abc as cabc
 import json
 import os
 import sys
@@ -18,8 +19,8 @@ if typ.TYPE_CHECKING:  # pragma: no cover
 
 
 class _CmdMoxInvocation(typ.Protocol):
-    args: typ.Sequence[str]
-    env: typ.Mapping[str, str]
+    args: cabc.Sequence[str]
+    env: cabc.Mapping[str, str]
 
 
 class E2EExpectationError(AssertionError):

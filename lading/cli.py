@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import collections.abc as cabc
 import logging
 import os
 import re
@@ -72,7 +73,7 @@ def _validate_workspace_value(value: str) -> str:
     return value
 
 
-def _parse_workspace_flag(tokens: typ.Sequence[str], index: int) -> tuple[str, int]:
+def _parse_workspace_flag(tokens: cabc.Sequence[str], index: int) -> tuple[str, int]:
     """Parse ``--workspace-root <path>`` form starting at ``index``."""
     try:
         candidate = tokens[index + 1]
@@ -90,7 +91,7 @@ def _parse_workspace_equals(argument: str, index: int) -> tuple[str, int]:
 
 
 def _extract_workspace_override(
-    tokens: typ.Sequence[str],
+    tokens: cabc.Sequence[str],
 ) -> tuple[str | None, list[str]]:
     """Split ``--workspace-root`` from CLI tokens.
 
@@ -158,7 +159,7 @@ def _configure_logging(stream: typ.TextIO | None = None) -> None:
 
 
 @contextmanager
-def _workspace_env(value: Path) -> typ.Iterator[None]:
+def _workspace_env(value: Path) -> cabc.Iterator[None]:
     """Temporarily set :data:`WORKSPACE_ROOT_ENV_VAR` to ``value``."""
     previous = os.environ.get(WORKSPACE_ROOT_ENV_VAR)
     os.environ[WORKSPACE_ROOT_ENV_VAR] = str(value)
@@ -171,7 +172,7 @@ def _workspace_env(value: Path) -> typ.Iterator[None]:
             os.environ[WORKSPACE_ROOT_ENV_VAR] = previous
 
 
-def _dispatch_and_print(tokens: typ.Sequence[str]) -> int:
+def _dispatch_and_print(tokens: cabc.Sequence[str]) -> int:
     """Execute the Cyclopts app and print command results."""
     try:
         result = app(tokens)
@@ -190,7 +191,7 @@ def _dispatch_and_print(tokens: typ.Sequence[str]) -> int:
     return 0
 
 
-def main(argv: typ.Sequence[str] | None = None) -> int:
+def main(argv: cabc.Sequence[str] | None = None) -> int:
     """Entry point for ``python -m lading.cli``."""
     try:
         if argv is None:
@@ -231,7 +232,7 @@ def main(argv: typ.Sequence[str] | None = None) -> int:
 
 def _run_with_context(
     workspace_root: Path,
-    runner: typ.Callable[
+    runner: cabc.Callable[
         [Path, config.LadingConfig | None, WorkspaceGraph | None],
         str,
     ],

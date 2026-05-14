@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import collections.abc as cabc
 import dataclasses as dc
 import heapq
 import typing as typ
-from collections import abc as cabc
 from collections import defaultdict
 from pathlib import Path
 
@@ -84,13 +84,11 @@ class WorkspaceGraph(msgspec.Struct, frozen=True, kw_only=True):
         dependency_map: dict[str, tuple[str, ...]] = {}
         for crate in crates_by_name.values():
             dependency_names = tuple(
-                sorted(
-                    {
-                        dependency.name
-                        for dependency in crate.dependencies
-                        if _is_ordering_dependency(dependency, crates_by_name)
-                    }
-                )
+                sorted({
+                    dependency.name
+                    for dependency in crate.dependencies
+                    if _is_ordering_dependency(dependency, crates_by_name)
+                })
             )
             dependency_map[crate.name] = dependency_names
         return dependency_map

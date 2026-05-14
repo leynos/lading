@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import collections.abc as cabc
 import logging
 import shlex
 import typing as typ
@@ -17,7 +18,7 @@ else:  # pragma: no cover - type-only imports
 _LOGGER = logging.getLogger(__name__)
 
 
-def format_command(command: typ.Sequence[str]) -> str:
+def format_command(command: cabc.Sequence[str]) -> str:
     """Return a shell-style representation of ``command`` for logging."""
     if not command:
         _LOGGER.warning(
@@ -29,7 +30,7 @@ def format_command(command: typ.Sequence[str]) -> str:
 
 def log_command_invocation(
     logger: LoggerType,
-    command: typ.Sequence[str],
+    command: cabc.Sequence[str],
     cwd: PathType | None,
 ) -> None:
     """Log ``command`` with optional ``cwd`` using ``logger``."""

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import typing as typ
+import collections.abc as cabc
 from pathlib import Path
 
 import pytest
@@ -218,10 +218,10 @@ def test_run_executes_preflight_checks_in_workspace(
     calls: list[tuple[tuple[str, ...], Path | None]] = []
 
     def fake_invoke(
-        command: typ.Sequence[str],
+        command: cabc.Sequence[str],
         *,
         cwd: Path | None = None,
-        env: typ.Mapping[str, str] | None = None,
+        env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
         calls.append((tuple(command), cwd))
         return 0, "", ""
@@ -366,10 +366,10 @@ def test_dirty_workspace_allowed_by_default(
     configuration = make_config()
 
     def skip_git_invoke(
-        command: typ.Sequence[str],
+        command: cabc.Sequence[str],
         *,
         cwd: Path | None = None,
-        env: typ.Mapping[str, str] | None = None,
+        env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
         if command[0] == "git":
             message = "git status should be skipped by default"
@@ -394,10 +394,10 @@ def test_forbid_dirty_flag_enforces_cleanliness(
     configuration = make_config()
 
     def dirty_invoke(
-        command: typ.Sequence[str],
+        command: cabc.Sequence[str],
         *,
         cwd: Path | None = None,
-        env: typ.Mapping[str, str] | None = None,
+        env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
         if command[0] == "git":
             return 0, " M Cargo.toml\n", ""
@@ -438,10 +438,10 @@ def test_run_raises_when_preflight_cargo_fails(
     configuration = make_config()
 
     def failing_invoke(
-        command: typ.Sequence[str],
+        command: cabc.Sequence[str],
         *,
         cwd: Path | None = None,
-        env: typ.Mapping[str, str] | None = None,
+        env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
         if command[0] == "git":
             return 0, "", ""

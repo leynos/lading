@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import collections.abc as cabc
 import typing as typ
 
 import pytest
@@ -69,7 +70,7 @@ def test_build_dependencies_handles_missing_entries() -> None:
     ],
 )
 def test_dependency_validation_errors(
-    callable_obj: typ.Callable[..., object], args: tuple[object, ...]
+    callable_obj: cabc.Callable[..., object], args: tuple[object, ...]
 ) -> None:
     """Invalid dependency shapes should raise WorkspaceModelError."""
     with pytest.raises(models.WorkspaceModelError):

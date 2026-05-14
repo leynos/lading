@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+import collections.abc as cabc
 import contextlib
 import contextvars
 import dataclasses as dc
 import typing as typ
-from collections import abc as cabc
 
 from cyclopts.config import Toml
 
@@ -19,24 +19,26 @@ CONFIG_FILENAME = "lading.toml"
 
 StripPatchesSetting = typ.Literal["all", "per-crate"] | bool
 
-CONFIG_ROOT_TOML_KEYS: typ.Final[frozenset[str]] = frozenset(
-    {"bump", "publish", "preflight"}
-)
+CONFIG_ROOT_TOML_KEYS: typ.Final[frozenset[str]] = frozenset({
+    "bump",
+    "publish",
+    "preflight",
+})
 BUMP_TOML_KEYS: typ.Final[frozenset[str]] = frozenset({"exclude", "documentation"})
 BUMP_DOCUMENTATION_TOML_KEYS: typ.Final[frozenset[str]] = frozenset({"globs"})
-PUBLISH_TOML_KEYS: typ.Final[frozenset[str]] = frozenset(
-    {"exclude", "order", "strip_patches"}
-)
-PREFLIGHT_TOML_KEYS: typ.Final[frozenset[str]] = frozenset(
-    {
-        "test_exclude",
-        "unit_tests_only",
-        "aux_build",
-        "compiletest_extern",
-        "env",
-        "stderr_tail_lines",
-    }
-)
+PUBLISH_TOML_KEYS: typ.Final[frozenset[str]] = frozenset({
+    "exclude",
+    "order",
+    "strip_patches",
+})
+PREFLIGHT_TOML_KEYS: typ.Final[frozenset[str]] = frozenset({
+    "test_exclude",
+    "unit_tests_only",
+    "aux_build",
+    "compiletest_extern",
+    "env",
+    "stderr_tail_lines",
+})
 
 
 class ConfigurationError(RuntimeError):
@@ -217,7 +219,8 @@ def _validate_mapping_keys(
         allowed_keys: Set of permitted key names.
         context: Context for error message (e.g., "bump", "publish").
 
-    Raises:
+    Raises
+    ------
         ConfigurationError: If mapping contains unknown keys.
 
     """
@@ -264,7 +267,7 @@ def load_configuration(workspace_root: Path) -> LadingConfig:
 
 
 @contextlib.contextmanager
-def use_configuration(configuration: LadingConfig) -> typ.Iterator[None]:
+def use_configuration(configuration: LadingConfig) -> cabc.Iterator[None]:
     """Set ``configuration`` as the active configuration for the current context."""
     token = _active_config.set(configuration)
     try:

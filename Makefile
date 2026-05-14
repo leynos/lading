@@ -1,9 +1,15 @@
 MDLINT ?= $(shell which markdownlint)
 NIXIE ?= $(shell which nixie)
 MDFORMAT_ALL ?= $(shell which mdformat-all)
+UV ?= $(shell command -v uv 2>/dev/null || printf '%s/.local/bin/uv' "$$HOME")
 TOOLS = $(MDFORMAT_ALL) ruff ty $(MDLINT) $(NIXIE) uv
 PY_SOURCES := $(sort $(shell find lading scripts -type f -name '*.py' -print))
 VENV_TOOLS = pytest
+PYLINT_PYTHON ?= pypy
+PYLINT_TARGETS ?= lading scripts tests
+PYLINT_PYPY_SHIM_REF ?= 726d09f968b4d729ee4b29c71fc732e744854f3b
+PYLINT_PYPY_SHIM = git+https://github.com/leynos/pylint-pypy-shim.git@$(PYLINT_PYPY_SHIM_REF)
+PYLINT = $(UV) tool run --python $(PYLINT_PYTHON) --from '$(PYLINT_PYPY_SHIM)' pylint-pypy
 
 .PHONY: help all clean build build-release lint fmt check-fmt \
 	markdownlint nixie test typecheck $(TOOLS) $(VENV_TOOLS)
@@ -64,6 +70,7 @@ check-fmt: ruff ## Verify formatting
 
 lint: ruff ## Run linters
 	ruff check
+	$(PYLINT) $(PYLINT_TARGETS)
 
 typecheck: build ty ## Run typechecking
 	ty check --python-version 3.13 $(PY_SOURCES)

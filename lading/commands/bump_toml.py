@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import collections.abc as cabc
 import os
 import re
 import tempfile
@@ -96,7 +97,7 @@ def update_dependency_entry(
 
 def update_dependency_table(
     table: _TableLike,
-    dependency_names: typ.Collection[str],
+    dependency_names: cabc.Collection[str],
     target_version: str,
 ) -> bool:
     """Update dependency requirements within ``table`` for ``dependency_names``."""
@@ -113,7 +114,7 @@ def update_dependency_table(
 def update_section(
     document: TOMLDocument,
     path: tuple[str, ...],
-    names: typ.Collection[str],
+    names: cabc.Collection[str],
     target_version: str,
 ) -> bool:
     """Update dependency versions in the table at ``path``.
@@ -125,7 +126,8 @@ def update_section(
         names: Collection of dependency names to update.
         target_version: The target version to apply.
 
-    Returns:
+    Returns
+    -------
         True if any version entries were changed.
 
     """
@@ -137,7 +139,7 @@ def update_section(
 
 def update_dependency_sections(
     document: TOMLDocument,
-    dependency_sections: typ.Mapping[str, typ.Collection[str]],
+    dependency_sections: cabc.Mapping[str, cabc.Collection[str]],
     target_version: str,
     *,
     include_workspace_sections: bool = False,
@@ -151,7 +153,8 @@ def update_dependency_sections(
         include_workspace_sections: When True, also update entries in
             ``[workspace.<section>]`` tables (e.g., ``[workspace.dependencies]``).
 
-    Returns:
+    Returns
+    -------
         True if any version entries were changed.
 
     """

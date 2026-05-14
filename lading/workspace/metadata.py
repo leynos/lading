@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import collections.abc as cabc
 import json
 import logging
 import os
@@ -103,7 +104,7 @@ def _coerce_text(value: str | bytes) -> str:
 
 def load_cargo_metadata(
     workspace_root: Path | str | None = None,
-) -> typ.Mapping[str, typ.Any]:
+) -> cabc.Mapping[str, typ.Any]:
     """Execute ``cargo metadata`` and parse the resulting JSON payload."""
     command = _ensure_command()
     root_path = normalise_workspace_root(workspace_root)

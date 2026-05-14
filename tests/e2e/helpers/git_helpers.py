@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 import typing as typ
+from contextlib import suppress
 
 from plumbum import local
 
@@ -80,7 +81,5 @@ def git_is_clean(repo_path: Path) -> bool:
 
 def rmtree(path: Path) -> None:
     """Remove ``path`` recursively, ignoring missing paths."""
-    try:
+    with suppress(FileNotFoundError):
         shutil.rmtree(path)
-    except FileNotFoundError:
-        return

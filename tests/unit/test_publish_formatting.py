@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import collections.abc as cabc
 import typing as typ
 
 from lading.commands import publish
@@ -53,7 +54,7 @@ def test_append_section_omits_header_for_empty_sequences() -> None:
 
 def test_format_plan_formats_skipped_sections(
     tmp_path: Path,
-    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    make_crate: cabc.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
 ) -> None:
     """``_format_plan`` renders skipped crates using their names only."""
     root = tmp_path.resolve()

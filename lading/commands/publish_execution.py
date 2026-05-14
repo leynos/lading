@@ -15,6 +15,7 @@ command naming before IPC.
 from __future__ import annotations
 
 import codecs
+import collections.abc as cabc
 import dataclasses as dc
 import logging
 import os
@@ -22,7 +23,7 @@ import re
 import subprocess
 import sys
 import threading
-import types  # noqa: TC003 -- module-scope for cmd_runner_module: types.ModuleType | None (NameError guard)
+import types
 import typing as typ
 from pathlib import Path
 
@@ -79,8 +80,8 @@ class _CmdMoxCommandRunner(typ.Protocol):
     def prepare_environment(
         self,
         lookup_path: str,
-        extra_env: typ.Mapping[str, str] | None,
-        invocation_env: typ.Mapping[str, str],
+        extra_env: cabc.Mapping[str, str] | None,
+        invocation_env: cabc.Mapping[str, str],
     ) -> dict[str, str]: ...
 
     def resolve_command_with_override(
@@ -96,16 +97,16 @@ class _CmdMoxPassthroughDirective(typ.Protocol):
 
     invocation_id: str
     lookup_path: str
-    extra_env: typ.Mapping[str, str] | None
+    extra_env: cabc.Mapping[str, str] | None
 
 
 class _CmdMoxInvocation(typ.Protocol):
     """Invocation object passed to cmd-mox and used for passthrough."""
 
     command: str
-    args: typ.Sequence[str]
+    args: cabc.Sequence[str]
     stdin: str
-    env: typ.Mapping[str, str]
+    env: cabc.Mapping[str, str]
 
 
 class _CommandRunner(typ.Protocol):
@@ -113,10 +114,10 @@ class _CommandRunner(typ.Protocol):
 
     def __call__(
         self,
-        command: typ.Sequence[str],
+        command: cabc.Sequence[str],
         *,
         cwd: Path | None = None,
-        env: typ.Mapping[str, str] | None = None,
+        env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
         """Execute ``command`` and return exit status and decoded output."""
 
@@ -126,7 +127,7 @@ class _SubprocessContext:
     """Execution context for subprocess invocations."""
 
     cwd: Path | None = None
-    env: typ.Mapping[str, str] | None = None
+    env: cabc.Mapping[str, str] | None = None
     stdin_data: str | None = None
 
 
@@ -138,10 +139,10 @@ def _publish_error(message: str) -> PublishPreflightError:
 
 
 def _invoke(
-    command: typ.Sequence[str],
+    command: cabc.Sequence[str],
     *,
     cwd: Path | None = None,
-    env: typ.Mapping[str, str] | None = None,
+    env: cabc.Mapping[str, str] | None = None,
 ) -> tuple[int, str, str]:
     """Execute ``command`` and return the exit status and decoded streams."""
     log_command_invocation(LOGGER, command, cwd)
@@ -153,7 +154,7 @@ def _invoke(
     return _invoke_via_subprocess(program, args, context)
 
 
-def _split_command(command: typ.Sequence[str]) -> tuple[str, tuple[str, ...]]:
+def _split_command(command: cabc.Sequence[str]) -> tuple[str, tuple[str, ...]]:
     """Return the program and argument tuple for ``command``."""
     if not command:
         message = "Command sequence must contain at least one entry"
@@ -190,7 +191,7 @@ def _prepare_cmd_mox_context() -> tuple[object, object, float]:
 
 
 def _build_cmd_mox_invocation_env(
-    cwd: Path | None, env: typ.Mapping[str, str] | None
+    cwd: Path | None, env: cabc.Mapping[str, str] | None
 ) -> dict[str, str]:
     """Return the environment mapping for cmd-mox invocations."""
     invocation_env = metadata_module._build_invocation_environment(None)
@@ -215,9 +216,9 @@ def _process_cmd_mox_response(
 
 
 def _invoke_via_cmd_mox(
-    command: typ.Sequence[str],
+    command: cabc.Sequence[str],
     cwd: Path | None,
-    env: typ.Mapping[str, str] | None,
+    env: cabc.Mapping[str, str] | None,
 ) -> tuple[int, str, str]:
     """Route ``command`` through the cmd-mox IPC server when enabled."""
     ipc, env_mod, timeout = _prepare_cmd_mox_context()
@@ -309,7 +310,7 @@ def _invoke_via_subprocess(
 
 
 def _normalise_environment(
-    env: typ.Mapping[str, str] | None,
+    env: cabc.Mapping[str, str] | None,
 ) -> dict[str, str] | None:
     """Return ``env`` with stringified values to satisfy ``subprocess``."""
     if env is None:
@@ -483,7 +484,7 @@ def _write_to_sink(sink: typ.TextIO | None, payload: str) -> typ.TextIO | None:
     return sink
 
 
-def _apply_cmd_mox_environment(env: typ.Mapping[str, str] | None) -> None:
+def _apply_cmd_mox_environment(env: cabc.Mapping[str, str] | None) -> None:
     """Merge cmd-mox supplied environment updates into ``os.environ``."""
     if not env:
         return
@@ -505,7 +506,7 @@ def _format_thread_name(program: str, stream: str) -> str:
 
 
 def _log_subprocess_spawn(
-    command: typ.Sequence[str], cwd: Path | None
+    command: cabc.Sequence[str], cwd: Path | None
 ) -> None:  # pragma: no cover - logging only
     rendered = format_command(command)
     if cwd is None:
@@ -514,7 +515,7 @@ def _log_subprocess_spawn(
         LOGGER.info("Spawning subprocess: %s (cwd=%s)", rendered, cwd)
 
 
-def _log_subprocess_environment(env: typ.Mapping[str, str] | None) -> None:
+def _log_subprocess_environment(env: cabc.Mapping[str, str] | None) -> None:
     """Log redacted environment overrides for subprocess execution."""
     if not env:
         LOGGER.debug("Spawning subprocess with inherited environment")
@@ -523,7 +524,7 @@ def _log_subprocess_environment(env: typ.Mapping[str, str] | None) -> None:
     LOGGER.debug("Subprocess environment overrides: %s", redacted)
 
 
-def _redact_environment(env: typ.Mapping[str, str]) -> dict[str, str]:
+def _redact_environment(env: cabc.Mapping[str, str]) -> dict[str, str]:
     """Return ``env`` with sensitive values replaced by placeholders."""
     redacted: dict[str, str] = {}
     for key, value in env.items():

@@ -77,7 +77,7 @@ def when_invoke_lading_publish_live(
         _is_cargo_publish_command(command)
         for command in preflight_test_context.overrides
     ):
-        preflight_test_context.overrides[("cargo", "publish")] = _CommandResponse(
+        preflight_test_context.overrides["cargo", "publish"] = _CommandResponse(
             exit_code=0
         )
     stub_config = preflight_test_context.create_stub_config()

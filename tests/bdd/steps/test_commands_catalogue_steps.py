@@ -72,7 +72,8 @@ def _parse_quoted_args(args_str: str) -> tuple[str, ...]:
     quoted strings. If shell-like escaping is required, consider using
     ``shlex.split`` instead.
 
-    Examples:
+    Examples
+    --------
         '"foo" "bar baz"' -> ("foo", "bar baz")
         '"" "bar"'        -> ("", "bar")
         'foo "bar"'       -> ValueError

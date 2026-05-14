@@ -91,7 +91,8 @@ def _make_workspace_with_alpha_dependency(
         dependency: Tuple of (dependency_name, dependency_version) for beta's
             dependency.
 
-    Returns:
+    Returns
+    -------
         Tuple of (beta_crate, workspace_graph).
 
     """
@@ -131,7 +132,8 @@ def _parse_manifest_versions(
     Args:
         manifest_path: Path to the Cargo.toml manifest.
 
-    Returns:
+    Returns
+    -------
         Tuple of (package_version, alpha_dependency_version).
 
     """

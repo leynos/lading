@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import collections.abc as cabc
 import typing as typ
 from pathlib import Path
 
@@ -50,7 +51,7 @@ def _create_recording_handler(
     expected_prefixes: tuple[tuple[str, ...], ...] = (),
     *,
     require_target_dir: bool = False,
-) -> typ.Callable[[CmdMoxInvocation], tuple[str, str, int]]:
+) -> cabc.Callable[[CmdMoxInvocation], tuple[str, str, int]]:
     """Create an invocation handler that validates and records cmd-mox calls."""
 
     def _handler(invocation: CmdMoxInvocation) -> tuple[str, str, int]:
@@ -280,7 +281,7 @@ def then_cargo_publish_omits_allow_dirty(publish_spies: dict[str, typ.Any]) -> N
 def then_readme_staged(
     cli_run: dict[str, typ.Any],
     publish_spies: dict[str, typ.Any],
-    staging_cleanup: typ.Callable[[Path], None],
+    staging_cleanup: cabc.Callable[[Path], None],
 ) -> None:
     """Assert publish staging copied the workspace README into each crate."""
     workspace: workspace_builder.NonTrivialWorkspace = publish_spies["workspace"]

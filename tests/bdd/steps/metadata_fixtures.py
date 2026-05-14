@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import collections.abc as cabc
 import json
 import textwrap
 import typing as typ
@@ -23,7 +24,7 @@ if typ.TYPE_CHECKING:
 
 def _write_workspace_manifest(
     workspace_directory: Path,
-    members: typ.Sequence[str],
+    members: cabc.Sequence[str],
     version: str = "0.1.0",
 ) -> None:
     """Write a minimal workspace manifest for behavioural test fixtures.
@@ -65,8 +66,8 @@ def _write_workspace_readme(
 def _mock_cargo_metadata(
     cmd_mox: CmdMox,
     workspace_directory: Path,
-    packages: typ.Sequence[dict[str, typ.Any]],
-    member_ids: typ.Sequence[str],
+    packages: cabc.Sequence[dict[str, typ.Any]],
+    member_ids: cabc.Sequence[str],
 ) -> None:
     """Register a ``cargo metadata`` stub response for behavioural tests.
 
@@ -353,7 +354,7 @@ def given_cargo_metadata_with_internal_dependencies(
 
 def _install_publish_filter_metadata(
     workspace_directory: Path,
-    crate_specs: typ.Sequence[tuple[str, bool]],
+    crate_specs: cabc.Sequence[tuple[str, bool]],
     *,
     cmd_mox: CmdMox,
     monkeypatch: pytest.MonkeyPatch,
