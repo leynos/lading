@@ -267,7 +267,9 @@ def _invoke_via_subprocess(
     _log_subprocess_environment(context.env)
     normalised_env = _normalise_environment(context.env)
     try:
-        process = subprocess.Popen(  # noqa: S603 - shell=False prevents injection; commands already parsed/validated
+        # This path owns `Popen` directly so relay threads can drain both pipes
+        # before the function returns.
+        process = subprocess.Popen(  # noqa: S603 # pylint: disable=consider-using-with
             command,
             cwd=None if context.cwd is None else str(context.cwd),
             env=normalised_env,
