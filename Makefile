@@ -68,7 +68,7 @@ check-fmt: ruff ## Verify formatting
 	ruff format --check
 	# mdformat-all doesn't currently do checking
 
-lint: ruff ## Run linters
+lint: ruff uv ## Run linters
 	ruff check
 	$(PYLINT) $(PYLINT_TARGETS)
 
