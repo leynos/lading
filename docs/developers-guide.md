@@ -41,7 +41,7 @@ The relevant Makefile variables are:
 
 The `lint` target depends on both `ruff` and `uv`, so it fails during tool
 checks if either command is unavailable. Keep any future lint additions wired
-through Makefile prerequisites as well as command invocations so local failures
+through Makefile prerequisites as well as command invocations, so local failures
 remain early and clear.
 
 Ruff and Pylint policy live in `pyproject.toml`. The Ruff configuration enables
