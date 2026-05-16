@@ -119,41 +119,47 @@ strip_patches = "per-crate" # "all" | "per-crate" | false
 test_exclude = ["slow-integration-suite"]
 unit_tests_only = false
 aux_build = [["cargo", "+nightly", "test", "-p", "lint", "--no-run"]]
-compiletest_extern = { ui_test_helpers = "target/debug/deps/libui_test_helpers.so" }
+compiletest_extern = {
+  ui_test_helpers = "target/debug/deps/libui_test_helpers.so"
+}
 env = { DYLINT_LOCALE = "en_GB" }
 stderr_tail_lines = 40
 ```
 
 ### `[bump]`
 
-| Key       | Type             | Default | Meaning                                       |
-| --------- | ---------------- | ------- | --------------------------------------------- |
-| `exclude` | array of strings | `[]`    | Crate names to exclude from manifest updates. |
+- `exclude`: array of strings, default `[]`. Crate names to exclude from
+  manifest updates.
 
 ### `[bump.documentation]`
 
-| Key     | Type             | Default | Meaning                                                                    |
-| ------- | ---------------- | ------- | -------------------------------------------------------------------------- |
-| `globs` | array of strings | `[]`    | Glob patterns for Markdown files whose TOML code fences should be updated. |
+- `globs`: array of strings, default `[]`. Glob patterns for Markdown files
+  whose TOML code fences should be updated.
 
 ### `[publish]`
 
-| Key             | Type                                   | Default       | Meaning                                                                     |
-| --------------- | -------------------------------------- | ------------- | --------------------------------------------------------------------------- |
-| `exclude`       | array of strings                       | `[]`          | Crate names to exclude from publication.                                    |
-| `order`         | array of strings                       | `[]`          | Explicit publish order; overrides dependency-derived ordering when present. |
-| `strip_patches` | one of `"all"`, `"per-crate"`, `false` | `"per-crate"` | How to edit `[patch.crates-io]` in the staged workspace before packaging.   |
+- `exclude`: array of strings, default `[]`. Crate names to exclude from
+  publication.
+- `order`: array of strings, default `[]`. Explicit publish order; overrides
+  dependency-derived ordering when present.
+- `strip_patches`: one of `"all"`, `"per-crate"`, or `false`; default
+  `"per-crate"`. Controls how `[patch.crates-io]` is edited in the staged
+  workspace before packaging.
 
 ### `[preflight]`
 
-| Key                  | Type                      | Default | Meaning                                                                         |
-| -------------------- | ------------------------- | ------- | ------------------------------------------------------------------------------- |
-| `test_exclude`       | array of strings          | `[]`    | Crate names to exclude from `cargo test` by passing `--exclude`.                |
-| `unit_tests_only`    | boolean                   | `false` | Append `--lib --bins` to the pre-flight `cargo test` invocation.                |
-| `aux_build`          | nested array of strings   | `[]`    | Extra commands (tokenized) to run before cargo pre-flight checks.               |
-| `compiletest_extern` | table (string → string)   | `{}`    | Extra `--extern` entries to append to `RUSTFLAGS` for compiletest-style suites. |
-| `env`                | table (string → string)   | `{}`    | Environment overrides applied to git/cargo invocations run by `publish`.        |
-| `stderr_tail_lines`  | integer (≥ 0)             | `40`    | Number of lines to tail from referenced `*.stderr` files when tests fail.       |
+- `test_exclude`: array of strings, default `[]`. Crate names to exclude from
+  `cargo test` by passing `--exclude`.
+- `unit_tests_only`: boolean, default `false`. Append `--lib --bins` to the
+  pre-flight `cargo test` invocation.
+- `aux_build`: nested array of strings, default `[]`. Extra tokenized commands
+  to run before cargo pre-flight checks.
+- `compiletest_extern`: table of string keys and values, default `{}`. Extra
+  `--extern` entries to append to `RUSTFLAGS` for compiletest-style suites.
+- `env`: table of string keys and values, default `{}`. Environment overrides
+  applied to git/cargo invocations run by `publish`.
+- `stderr_tail_lines`: integer greater than or equal to zero, default `40`.
+  Number of lines to tail from referenced `*.stderr` files when tests fail.
 
 ## Reference: CLI flags and environment variables
 

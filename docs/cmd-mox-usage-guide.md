@@ -73,7 +73,7 @@ A typical test brings the three phases together:
 cmd_mox.mock("git").with_args("clone", "repo").returns(exit_code=0)
 
 my_tool.clone_repo("repo")
-# Replay begins automatically before the test function executes; verification runs during teardown.
+# Replay begins before the test executes; verification runs during teardown.
 ```
 
 ## Stubs, mocks and spies
