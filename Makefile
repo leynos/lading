@@ -18,14 +18,14 @@ PYLINT = $(UV) tool run --python $(PYLINT_PYTHON) --from '$(PYLINT_PYPY_SHIM)' p
 
 all: check-fmt lint test typecheck
 
-.venv: pyproject.toml
-	uv venv --clear
+.venv: pyproject.toml $(UV)
+	$(UV) venv --clear
 
-build: uv .venv ## Build virtual-env and install deps
-	uv sync --group dev
+build: $(UV) .venv ## Build virtual-env and install deps
+	$(UV) sync --group dev
 
 build-release: build ## Build artefacts (sdist & wheel)
-	uv run python -m build --sdist --wheel
+	$(UV) run python -m build --sdist --wheel
 
 clean: ## Remove build artifacts
 	rm -rf build dist *.egg-info \
@@ -41,7 +41,7 @@ define ensure_tool
 endef
 
 define ensure_tool_venv
-	@uv run which $(1) >/dev/null 2>&1 || { \
+	@$(UV) run which $(1) >/dev/null 2>&1 || { \
 	  printf "Error: '%s' is required in the virtualenv, but is not installed\n" "$(1)" >&2; \
 	  exit 1; \
 	}
@@ -82,8 +82,8 @@ markdownlint: $(MDLINT) ## Lint Markdown files
 nixie: $(NIXIE) ## Validate Mermaid diagrams
 	nixie --no-sandbox
 
-test: build uv pytest ## Run tests
-	uv run pytest -v
+test: build $(UV) pytest ## Run tests
+	$(UV) run pytest -v
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?##' $(MAKEFILE_LIST) | \
