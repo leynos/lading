@@ -161,6 +161,21 @@ yet. When enabled, `lading publish` downgrades that specific index-lookup
 failure to a warning and continues. The option is rejected at runtime when
 `live=True`, so it cannot mask a real upload failure.
 
+### `_PublishExecutionOptions`
+
+`_PublishExecutionOptions` is a frozen dataclass that carries the runtime flags
+forwarded to every `cargo package` and `cargo publish` invocation within a
+single `lading publish` run. Its fields are:
+
+| Field | Type | Default | Purpose |
+| --- | --- | --- | --- |
+| `live` | `bool` | — | When `True`, omits `--dry-run` from `cargo publish`. |
+| `allow_dirty` | `bool` | — | Passes `--allow-dirty` to both cargo subcommands. |
+| `allow_unpublished_workspace_deps` | `bool` | `False` | Dry-run-only override; see `allow_unpublished_workspace_deps` above. |
+
+The dataclass is an internal implementation detail; callers interact with the
+public `PublishOptions` dataclass, which `run()` converts before dispatching.
+
 The index-lookup handling is split across three helpers:
 
 - `_is_index_missing_version_error(exit_code, stdout, stderr) -> bool` checks
@@ -179,6 +194,15 @@ The index-lookup handling is split across three helpers:
   is in the plan and `allow_unpublished_workspace_deps` is set, the helper logs
   a warning and continues; otherwise it raises with guidance to use the flag in
   dry-run mode or follow the staged-publish workaround.
+
+`_format_cargo_failure_message(command, crate_name, exit_code, output)` assembles
+the human-readable error string that is embedded in every `PublishPreflightError`
+or `PublishError` raised on a non-zero cargo exit. It is a pure function with no
+side-effects: given the cargo subcommand string, the crate name, the numeric
+exit code, and the `(stdout, stderr)` pair, it returns a formatted message that
+includes all four values. Using a single function for message construction keeps
+the error format consistent across the packaging and publish phases and makes
+snapshot testing straightforward.
 
 `lading.commands.publish_execution` loads the optional `cmd_mox` command-runner
 module with `importlib.import_module("cmd_mox.command_runner")`. Keeping the
