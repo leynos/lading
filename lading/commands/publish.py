@@ -387,6 +387,8 @@ def _handle_index_missing_version(
     _raw_handle_index_missing_version(
         invocation, plan=plan, options=options, error_cls=error_cls
     )
+
+
 def _package_publishable_crates(
     plan: PublishPlan,
     preparation: PublishPreparation,

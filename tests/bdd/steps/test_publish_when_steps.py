@@ -44,6 +44,7 @@ def when_invoke_lading_publish(
     stub_config = preflight_test_context.create_stub_config()
     return _invoke_publish_with_options(repo_root, workspace_directory, stub_config)
 
+
 @when(parsers.parse('I run "{command}"'), target_fixture="cli_run")
 def when_run_lading_publish_command(
     workspace_directory: Path,
@@ -64,6 +65,8 @@ def when_run_lading_publish_command(
         stub_config,
         *extra_args,
     )
+
+
 @when(
     "I invoke lading publish with that workspace using --forbid-dirty",
     target_fixture="cli_run",

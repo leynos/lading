@@ -113,6 +113,7 @@ def given_cargo_publish_already_uploaded(
 
     preflight_overrides["cargo", "publish", "--dry-run"] = _handler
 
+
 @given("a workspace where a sibling crate dependency is not yet indexed")
 def given_sibling_dependency_is_not_indexed(
     preflight_overrides: dict[tuple[str, ...], ResponseProvider],
@@ -126,11 +127,14 @@ def given_sibling_dependency_is_not_indexed(
             return _CommandResponse(exit_code=1, stderr=_INDEX_MISSING_STDERR_ALPHA)
         return _CommandResponse(exit_code=0)
 
-    preflight_overrides[("cargo", "package")] = _handler
+    preflight_overrides["cargo", "package"] = _handler
+
 
 @given("the missing dependency is part of the planned publish set")
 def given_missing_dependency_is_in_plan() -> None:
     """Document that the dependency-chain fixture includes alpha in the plan."""
+
+
 @given("the workspace has uncommitted changes")
 def given_workspace_dirty(
     preflight_overrides: dict[tuple[str, ...], ResponseProvider],
@@ -163,6 +167,7 @@ def given_preflight_command_override(
     else:
         message = "preflight command override requires tokens"
         raise AssertionError(message)
+
 
 @given("a valid lading workspace", target_fixture="workspace_directory")
 def given_valid_lading_workspace(

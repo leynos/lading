@@ -14,7 +14,6 @@ command naming before IPC.
 
 from __future__ import annotations
 
-from pathlib import Path
 import codecs
 import collections.abc as cabc
 import dataclasses as dc
@@ -26,6 +25,7 @@ import sys
 import threading
 import types
 import typing as typ
+from pathlib import Path
 
 from lading.utils.process import format_command, log_command_invocation
 from lading.workspace import metadata as metadata_module
@@ -42,7 +42,6 @@ except ModuleNotFoundError:  # pragma: no cover - fallback when cmd-mox missing
     cmd_runner_module = None
 else:
     cmd_runner_module = _cmd_runner_module
-import importlib
 
 
 class CmdMoxModules(typ.NamedTuple):
@@ -83,20 +82,18 @@ class _CmdMoxCommandRunner(typ.Protocol):
         lookup_path: str,
         extra_env: cabc.Mapping[str, str] | None,
         invocation_env: cabc.Mapping[str, str],
-
     ) -> dict[str, str]:
         """Return the environment cmd-mox uses for passthrough execution."""
-        ...
+        raise NotImplementedError
 
     def resolve_command_with_override(
         self,
         command: str,
         lookup_path: str,
         override: str | None,
-
     ) -> object:
         """Resolve the real command path for a cmd-mox passthrough."""
-        ...
+        raise NotImplementedError
 
 
 class _CmdMoxPassthroughDirective(typ.Protocol):

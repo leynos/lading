@@ -175,6 +175,7 @@ def plan_with_crates(
     configuration = make_config(**config_overrides)
     return publish.plan_publication(workspace, configuration)
 
+
 def prepare_staging_root(plan: publish.PublishPlan, base_dir: Path) -> Path:
     """Create a staged workspace tree matching ``plan`` under ``base_dir``."""
     staging_root = base_dir / "staging" / plan.workspace_root.name
@@ -182,6 +183,7 @@ def prepare_staging_root(plan: publish.PublishPlan, base_dir: Path) -> Path:
         relative_root = crate.root_path.relative_to(plan.workspace_root)
         (staging_root / relative_root).mkdir(parents=True, exist_ok=True)
     return staging_root
+
 
 @pytest.fixture
 def publish_plan_and_prep(
@@ -199,6 +201,12 @@ def publish_plan_and_prep(
         copied_readmes=(),
     )
     return plan, preparation, staging_root
+
+
+ORIGINAL_INVOKE = publish._invoke
+ORIGINAL_PREFLIGHT = publish._run_preflight_checks
+
+
 @pytest.fixture(autouse=True)
 def disable_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
     """Stub publish pre-flight checks for tests unless explicitly restored."""
@@ -216,6 +224,7 @@ def disable_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
 def use_real_invoke(monkeypatch: pytest.MonkeyPatch) -> None:
     """Restore the original _invoke helper for tests that exercise it."""
     monkeypatch.setattr(publish, "_invoke", ORIGINAL_INVOKE)
+
 
 class CallTrackingRunner:
     """Track command invocations while returning successful results."""
@@ -236,6 +245,7 @@ class CallTrackingRunner:
         self.calls.append((tuple(command), cwd))
         return 0, "", ""
 
+
 @dc.dataclass(frozen=True)
 class PhaseContext:
     """Execution context shared across both cargo phase dispatches."""
@@ -244,6 +254,7 @@ class PhaseContext:
     preparation: publish.PublishPreparation
     runner: cabc.Callable[..., tuple[int, str, str]]
     options: publish._PublishExecutionOptions
+
 
 def invoke_phase(phase_name: str, ctx: PhaseContext) -> None:
     """Dispatch to the appropriate cargo sub-command under test."""
@@ -258,6 +269,7 @@ def invoke_phase(phase_name: str, ctx: PhaseContext) -> None:
     else:
         message = f"Unknown phase_name {phase_name!r}; expected 'package' or 'publish'."
         raise ValueError(message)
+
 
 def make_failing_runner(
     stdout: str = "", stderr: str = ""

@@ -152,15 +152,14 @@ Examples:
 - `PublishOptions(allow_dirty=False)` — require a clean git working tree before
   proceeding with publish preparation.
 
-
 ## Publish command internals
 
-`PublishOptions.allow_unpublished_workspace_deps` is a dry-run-only override for
-release trains where one workspace crate depends on another crate version that
-is part of the same publish plan but is not visible in the crates.io index yet.
-When enabled, `lading publish` downgrades that specific index-lookup failure to
-a warning and continues. The option is rejected at runtime when `live=True`, so
-it cannot mask a real upload failure.
+`PublishOptions.allow_unpublished_workspace_deps` is a dry-run-only override
+for release trains where one workspace crate depends on another crate version
+that is part of the same publish plan but is not visible in the crates.io index
+yet. When enabled, `lading publish` downgrades that specific index-lookup
+failure to a warning and continues. The option is rejected at runtime when
+`live=True`, so it cannot mask a real upload failure.
 
 The index-lookup handling is split across three helpers:
 

@@ -94,7 +94,6 @@ any member crate sets `readme.workspace = true`, `lading` copies the workspace
 `README.md` into that crate in the staged workspace so `cargo package` can
 include it.
 
-
 #### Dry-run limitations with unpublished workspace dependencies
 
 `cargo package` validates dependency versions against the live crates.io index,
@@ -116,7 +115,6 @@ This affects release trains that introduce a new shared version across multiple
 workspace crates. Setting `publish.order` to package the foundational crate
 first does **not** bypass this limitation, because each crate is still packaged
 against the live crates.io index rather than the locally packaged sibling.
-
 
 ##### Workarounds
 
@@ -140,7 +138,6 @@ lading publish --workspace-root path/to/workspace
 
 `lading` skips crates whose versions are already on crates.io, so the second
 invocation only acts on the remaining crates.
-
 
 ###### Temporary `publish.exclude`
 
@@ -169,7 +166,6 @@ order = ["inner_crate", "outer_crate"]
 ```bash
 lading publish # or `lading publish --live`
 ```
-
 
 ##### `--allow-unpublished-workspace-deps` (dry-run only)
 
