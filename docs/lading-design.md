@@ -192,7 +192,7 @@ and live modes, and feeds the resulting plan to execution helpers.
 
 ```mermaid
 graph TD
-    A["User CLI command: lading publish"] --> B["Module: lading.commands.publish (publish.py)"]
+    A["CLI: lading publish"] --> B["Module: lading.commands.publish"]
     B --> C["Module: lading.commands.publish_plan (publish_plan.py)"]
     C --> C1["Build PublishPlan with publishable_names"]
     B --> D["Module: lading.commands.publish_manifest (publish_manifest.py)"]
@@ -210,7 +210,7 @@ graph TD
     J --> L["should_use_cmd_mox_stub"]
     J --> M["normalise_cmd_mox_command"]
 
-    B --> N["Use re-exported helpers: append_section, format_plan, split_command, should_use_cmd_mox_stub, normalise_cmd_mox_command"]
+    B --> N["Use re-exported publish helpers"]
     N --> O["Compose final publish plan and execute commands"]
 ```
 
@@ -494,13 +494,13 @@ sequenceDiagram
     Caller->>publish.py: publish(…, forbid_dirty=…)
     publish.py->>publish.py: _build_preflight_environment(config.preflight)
     alt aux_build configured
-        publish.py->>publish_execution: _run_aux_build_commands(workspace_root, commands, runner, env)
+        publish.py->>publish_execution: _run_aux_build_commands(...)
         publish_execution-->>publish.py: (rc, stdout, stderr)
     end
-    publish.py->>publish_execution: _invoke(cargo test --lib, cwd=workspace_root, env=env)
+    publish.py->>publish_execution: _invoke(cargo test --lib, ...)
     publish_execution-->>publish.py: (rc, stdout, stderr)
     alt rc != 0
-        publish.py->>publish_diagnostics: _append_compiletest_diagnostics(message, stdout, stderr, tail_lines)
+        publish.py->>publish_diagnostics: _append_compiletest_diagnostics(...)
         publish_diagnostics-->>publish.py: augmented_message
         publish.py-->>Caller: PublishPreflightError(augmented_message)
     else rc == 0
@@ -730,7 +730,12 @@ layer routes commands through cmd-mox IPC rather than spawning real processes:
 from cuprum import scoped, sh
 from lading.utils.commands import CARGO, GIT, LADING_CATALOGUE
 
-def _invoke(program: Program, args: tuple[str, ...], *, cwd: Path | None = None) -> CommandResult:
+def _invoke(
+    program: Program,
+    args: tuple[str, ...],
+    *,
+    cwd: Path | None = None,
+) -> CommandResult:
     """Execute command, routing through cmd-mox when stub mode is enabled."""
     if _should_use_cmd_mox_stub():
         # Route to cmd-mox IPC server for test isolation

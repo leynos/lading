@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import collections.abc as cabc
 import json
 import textwrap
 import typing as typ
@@ -45,14 +46,14 @@ def given_cargo_metadata_response(
 
 
 @when("I inspect the workspace metadata", target_fixture="metadata_payload")
-def when_inspect_metadata(workspace_directory: Path) -> typ.Mapping[str, typ.Any]:
+def when_inspect_metadata(workspace_directory: Path) -> cabc.Mapping[str, typ.Any]:
     """Execute the discovery helper against the stubbed command."""
     return load_cargo_metadata(workspace_directory)
 
 
 @then("the metadata payload contains the workspace root")
 def then_metadata_contains_workspace(
-    metadata_payload: typ.Mapping[str, typ.Any], workspace_directory: Path
+    metadata_payload: cabc.Mapping[str, typ.Any], workspace_directory: Path
 ) -> None:
     """Assert that the workspace root was parsed from the JSON payload."""
     assert metadata_payload["workspace_root"] == str(workspace_directory)

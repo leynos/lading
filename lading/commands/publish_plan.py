@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import collections.abc as cabc
 import dataclasses as dc
 import typing as typ
 
@@ -35,7 +36,7 @@ class PublishPlan:
 
 
 def _categorize_crates(
-    workspace_crates: typ.Sequence[WorkspaceCrate],
+    workspace_crates: cabc.Sequence[WorkspaceCrate],
     exclusion_set: set[str],
 ) -> tuple[list[WorkspaceCrate], list[WorkspaceCrate], list[WorkspaceCrate]]:
     """Split workspace crates into publishable and skipped categories."""
@@ -55,7 +56,7 @@ def _categorize_crates(
 
 
 def _process_order_and_collect_errors(
-    configured_order: typ.Sequence[str],
+    configured_order: cabc.Sequence[str],
     publishable_by_name: dict[str, WorkspaceCrate],
 ) -> tuple[list[WorkspaceCrate], set[str], set[str], list[str]]:
     """Collect ordering results and validation state for ``configured_order``."""
@@ -79,9 +80,9 @@ def _process_order_and_collect_errors(
 
 
 def _build_order_validation_messages(
-    duplicates: typ.AbstractSet[str],
-    unknown: typ.Sequence[str],
-    missing: typ.Sequence[str],
+    duplicates: cabc.Set[str],
+    unknown: cabc.Sequence[str],
+    missing: cabc.Sequence[str],
 ) -> list[str]:
     """Render validation failure messages for publish order problems."""
     messages: list[str] = []
@@ -102,7 +103,7 @@ def _build_order_validation_messages(
 
 def _resolve_configured_order(
     publishable_by_name: dict[str, WorkspaceCrate],
-    configured_order: typ.Sequence[str],
+    configured_order: cabc.Sequence[str],
 ) -> tuple[WorkspaceCrate, ...]:
     """Validate and return crates ordered according to configuration."""
     publishable_names = set(publishable_by_name)
@@ -212,10 +213,10 @@ def _format_crates_section(
 
 def _append_section[T](
     lines: list[str],
-    items: typ.Sequence[T],
+    items: cabc.Sequence[T],
     *,
     header: str,
-    formatter: typ.Callable[[T], str] = str,
+    formatter: cabc.Callable[[T], str] = str,
 ) -> None:
     """Append formatted ``items`` to ``lines`` when a section has content."""
     if items:

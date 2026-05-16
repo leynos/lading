@@ -13,6 +13,62 @@ implementation module may be invoked directly:
 uv run python -m lading.cli --help
 ```
 
+## Build environment
+
+The Makefile resolves the `uv` executable through the `UV` variable:
+
+```make
+UV ?= $(shell command -v uv 2>/dev/null || printf '%s/.local/bin/uv' "$$HOME")
+```
+
+When `uv` is available on `PATH`, `command -v uv` supplies the executable path.
+If it is not on `PATH`, the Makefile falls back to `$HOME/.local/bin/uv`, which
+matches the default user-local installation path used by the project
+environment. Targets that create the virtual environment, sync dependencies,
+run builds, or execute tests should depend on and invoke `$(UV)` rather than a
+literal `uv` command, so Makefile validation and command execution use the same
+resolved executable.
+
+## Linting workflow
+
+Run the Python lint gate with:
+
+```bash
+make lint
+```
+
+The target is deliberately two-tiered. Ruff runs first because it is fast,
+handles broad style and correctness checks, and imports the stricter lint
+policy used by `leynos/episodic`. If Ruff passes, the target then runs Pylint
+through the pinned `pylint-pypy-shim` tool under PyPy. This second tier is
+focused on rule families that complement Ruff, especially logging format
+safety, pattern matching checks, selected simplification checks, deprecated
+standard-library usage, file hygiene, and design-size limits.
+
+The relevant Makefile variables are:
+
+- `PYLINT_PYTHON` — Python executable used by `uv tool run`; defaults to `pypy`.
+- `PYLINT_TARGETS` — directories passed to Pylint; defaults to `lading scripts
+  tests`.
+- `PYLINT_PYPY_SHIM_REF` — pinned `pylint-pypy-shim` revision.
+- `PYLINT_PYPY_SHIM` — Git URL assembled from the pinned shim revision.
+- `PYLINT` — full `uv tool run --python $(PYLINT_PYTHON)` invocation for the
+  shimmed Pylint command.
+
+The `lint` target depends on both `ruff` and `uv`, so it fails during tool
+checks if either command is unavailable. Keep any future lint additions wired
+through Makefile prerequisites as well as command invocations, so local
+failures remain early and clear.
+
+Ruff and Pylint policy live in `pyproject.toml`. The Ruff configuration enables
+preview rules, targets Python 3.13, imports the selected `episodic` rule set,
+and bans deprecated `typing` aliases in favour of built-in collection types,
+`collections.abc`, `collections`, `contextlib`, or `re` as appropriate. The
+Pylint configuration keeps the pass opt-in by disabling all messages first and
+then enabling only the chosen second-tier checks. Local ignores and thresholds
+document existing codebase constraints that should be addressed as focused
+cleanup work rather than incidental lint-gate churn.
+
 ## Testing hooks
 
 Behavioural tests invoke the CLI as an external process and spy on the `python`

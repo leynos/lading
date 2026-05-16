@@ -42,7 +42,7 @@ def given_cargo_check_fails(
     preflight_overrides: dict[tuple[str, ...], ResponseProvider],
 ) -> None:
     """Simulate a failing cargo check command."""
-    preflight_overrides[("cargo", "check", "--workspace", "--all-targets")] = (
+    preflight_overrides["cargo", "check", "--workspace", "--all-targets"] = (
         _CommandResponse(exit_code=1, stderr="cargo check failed")
     )
 
@@ -52,7 +52,7 @@ def given_cargo_test_fails(
     preflight_overrides: dict[tuple[str, ...], ResponseProvider],
 ) -> None:
     """Simulate a failing cargo test command."""
-    preflight_overrides[("cargo", "test", "--workspace")] = _CommandResponse(
+    preflight_overrides["cargo", "test", "--workspace"] = _CommandResponse(
         exit_code=1, stderr="cargo test failed"
     )
 
@@ -67,7 +67,7 @@ def given_cargo_test_fails_with_artifact(
     artifact = workspace_directory / relative_path
     artifact.parent.mkdir(parents=True, exist_ok=True)
     artifact.write_text("line1\nline2\n", encoding="utf-8")
-    preflight_overrides[("cargo", "test", "--workspace")] = _CommandResponse(
+    preflight_overrides["cargo", "test", "--workspace"] = _CommandResponse(
         exit_code=1,
         stderr=f"diff at {artifact}",
     )
@@ -99,7 +99,7 @@ def given_cargo_publish_already_uploaded(
             )
         return _CommandResponse(exit_code=0)
 
-    preflight_overrides[("cargo", "publish", "--dry-run")] = _handler
+    preflight_overrides["cargo", "publish", "--dry-run"] = _handler
 
 
 @given("the workspace has uncommitted changes")
@@ -107,7 +107,7 @@ def given_workspace_dirty(
     preflight_overrides: dict[tuple[str, ...], ResponseProvider],
 ) -> None:
     """Simulate a dirty working tree for git status."""
-    preflight_overrides[("git", "status", "--porcelain")] = _CommandResponse(
+    preflight_overrides["git", "status", "--porcelain"] = _CommandResponse(
         exit_code=0,
         stdout=" M Cargo.toml\n",
     )

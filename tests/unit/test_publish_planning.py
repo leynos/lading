@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import collections.abc as cabc
 import typing as typ
 
 import pytest
@@ -18,8 +19,8 @@ if typ.TYPE_CHECKING:
 
 def _plan_with_crates(
     tmp_path: Path,
-    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_config: typ.Callable[..., config_module.LadingConfig],
+    make_workspace: cabc.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
+    make_config: cabc.Callable[..., config_module.LadingConfig],
     crates: tuple[WorkspaceCrate, ...],
     **config_overrides: object,
 ) -> publish.PublishPlan:
@@ -33,8 +34,8 @@ def _plan_with_crates(
 def _make_dependency_chain(
     root: Path,
     *,
-    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
-    make_dependency: typ.Callable[[str], WorkspaceDependency],
+    make_crate: cabc.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    make_dependency: cabc.Callable[[str], WorkspaceDependency],
 ) -> tuple[WorkspaceCrate, WorkspaceCrate, WorkspaceCrate]:
     """Return crates that form a simple alpha→beta→gamma dependency chain."""
     alpha = make_crate(root, "alpha")
@@ -140,7 +141,7 @@ def test_plan_publication_filtering(
 
 def test_plan_publication_empty_workspace(
     tmp_path: Path,
-    make_config: typ.Callable[..., config_module.LadingConfig],
+    make_config: cabc.Callable[..., config_module.LadingConfig],
 ) -> None:
     """Planner returns empty results when the workspace has no crates."""
     from lading.workspace import WorkspaceGraph

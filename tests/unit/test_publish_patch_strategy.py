@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import collections.abc as cabc
 import dataclasses as dc
 import typing as typ
 
@@ -23,7 +24,7 @@ class _PatchStrategyTestSetup:
     """Parameters for patch strategy test setup."""
 
     tmp_path: Path
-    make_plan_factory: typ.Callable[[Path, tuple[str, ...]], publish.PublishPlan]
+    make_plan_factory: cabc.Callable[[Path, tuple[str, ...]], publish.PublishPlan]
     patch_entries: str
     publishable_names: tuple[str, ...]
     strategy: str | bool
@@ -31,8 +32,8 @@ class _PatchStrategyTestSetup:
 
 @pytest.fixture
 def make_plan_factory(
-    make_crate: typ.Callable[[Path, str, object | None], WorkspaceCrate],
-) -> typ.Callable[[Path, tuple[str, ...]], publish.PublishPlan]:
+    make_crate: cabc.Callable[[Path, str, object | None], WorkspaceCrate],
+) -> cabc.Callable[[Path, tuple[str, ...]], publish.PublishPlan]:
     """Return a factory for building publish plans rooted at ``workspace_root``."""
 
     def _builder(
@@ -83,7 +84,7 @@ def _apply_strategy_and_parse(setup: _PatchStrategyTestSetup) -> TOMLDocument:
 
 def test_strip_patches_all_removes_patch_section(
     tmp_path: Path,
-    make_plan_factory: typ.Callable[[Path, tuple[str, ...]], publish.PublishPlan],
+    make_plan_factory: cabc.Callable[[Path, tuple[str, ...]], publish.PublishPlan],
 ) -> None:
     """Strategy 'all' removes the entire [patch.crates-io] section."""
     document = _apply_strategy_and_parse(
@@ -100,7 +101,7 @@ def test_strip_patches_all_removes_patch_section(
 
 def test_strip_patches_per_crate_removes_publishable_only(
     tmp_path: Path,
-    make_plan_factory: typ.Callable[[Path, tuple[str, ...]], publish.PublishPlan],
+    make_plan_factory: cabc.Callable[[Path, tuple[str, ...]], publish.PublishPlan],
 ) -> None:
     """Strategy 'per-crate' removes only entries for publishable crates."""
     document = _apply_strategy_and_parse(
@@ -124,7 +125,7 @@ def test_strip_patches_per_crate_removes_publishable_only(
 
 def test_strip_patches_per_crate_removes_entire_table_when_empty(
     tmp_path: Path,
-    make_plan_factory: typ.Callable[[Path, tuple[str, ...]], publish.PublishPlan],
+    make_plan_factory: cabc.Callable[[Path, tuple[str, ...]], publish.PublishPlan],
 ) -> None:
     """Per-crate strategy cleans up empty patch tables after removals."""
     document = _apply_strategy_and_parse(
@@ -145,7 +146,7 @@ def test_strip_patches_per_crate_removes_entire_table_when_empty(
 
 def test_strip_patches_disabled_keeps_section(
     tmp_path: Path,
-    make_plan_factory: typ.Callable[[Path, tuple[str, ...]], publish.PublishPlan],
+    make_plan_factory: cabc.Callable[[Path, tuple[str, ...]], publish.PublishPlan],
 ) -> None:
     """Boolean false leaves the patch section untouched."""
     document = _apply_strategy_and_parse(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import atexit
+import collections.abc as cabc
 import dataclasses as dc
 import logging
 import os
@@ -56,10 +57,10 @@ if typ.TYPE_CHECKING:
 class _CargoPreflightOptions:
     """Options controlling how cargo pre-flight commands are invoked."""
 
-    extra_args: typ.Sequence[str]
-    test_excludes: typ.Sequence[str] = ()
+    extra_args: cabc.Sequence[str]
+    test_excludes: cabc.Sequence[str] = ()
     unit_tests_only: bool = False
-    env: typ.Mapping[str, str] | None = None
+    env: cabc.Mapping[str, str] | None = None
     diagnostics_tail_lines: int | None = None
 
 
@@ -143,7 +144,7 @@ def _run_aux_build_commands(
     commands: tuple[tuple[str, ...], ...],
     *,
     runner: _CommandRunner,
-    env: typ.Mapping[str, str] | None,
+    env: cabc.Mapping[str, str] | None,
 ) -> None:
     """Execute auxiliary build commands prior to cargo pre-flight runs."""
     for command in commands:
@@ -168,7 +169,7 @@ def _resolve_extern_path(workspace_root: Path, raw_path: str) -> Path:
 
 
 def _apply_compiletest_externs(
-    env: typ.Mapping[str, str],
+    env: cabc.Mapping[str, str],
     externs: tuple[config_module.CompiletestExtern, ...],
     *,
     workspace_root: Path,
@@ -620,7 +621,7 @@ def _preflight_argument_sets(
     return check_arguments, test_arguments
 
 
-def _normalise_test_excludes(entries: typ.Sequence[str]) -> tuple[str, ...]:
+def _normalise_test_excludes(entries: cabc.Sequence[str]) -> tuple[str, ...]:
     """Return sorted, deduplicated, trimmed crate names for ``--exclude`` flags."""
     return tuple(sorted({crate.strip() for crate in entries if crate.strip()}))
 
@@ -643,7 +644,7 @@ def _verify_clean_working_tree(
     *,
     allow_dirty: bool,
     runner: _CommandRunner,
-    env: typ.Mapping[str, str] | None = None,
+    env: cabc.Mapping[str, str] | None = None,
 ) -> None:
     """Ensure ``workspace_root`` has no uncommitted changes unless allowed."""
     if allow_dirty:

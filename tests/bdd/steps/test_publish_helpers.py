@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import collections.abc as cabc
 import typing as typ
 from pathlib import Path
 
@@ -40,13 +41,13 @@ def _load_staged_manifest(cli_run: dict[str, typ.Any]) -> TOMLDocument:
     return toml_utils.load_manifest(manifest_path)
 
 
-def _get_patch_entries(document: typ.Mapping[str, typ.Any]) -> dict[str, typ.Any]:
+def _get_patch_entries(document: cabc.Mapping[str, typ.Any]) -> dict[str, typ.Any]:
     """Return the ``[patch.crates-io]`` mapping if it exists."""
     patch_table = document.get("patch")
-    if not isinstance(patch_table, typ.Mapping):
+    if not isinstance(patch_table, cabc.Mapping):
         return {}
     crates_io = patch_table.get("crates-io")
-    return dict(crates_io) if isinstance(crates_io, typ.Mapping) else {}
+    return dict(crates_io) if isinstance(crates_io, cabc.Mapping) else {}
 
 
 def _split_names(crate_names: str) -> list[str]:

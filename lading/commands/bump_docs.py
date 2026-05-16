@@ -31,6 +31,7 @@ Examples
 
 from __future__ import annotations
 
+import collections.abc as cabc
 import logging
 import re
 import typing as typ
@@ -86,9 +87,9 @@ def resolve_documentation_targets(
 
 
 def update_documentation_files(
-    documentation_paths: typ.Iterable[Path],
+    documentation_paths: cabc.Iterable[Path],
     target_version: str,
-    updated_crates: typ.Collection[str],
+    updated_crates: cabc.Collection[str],
     *,
     dry_run: bool,
 ) -> set[Path]:
@@ -132,7 +133,7 @@ def update_documentation_files(
 
 def rewrite_markdown_toml_fences(
     markdown_text: str,
-    dependency_targets: typ.Collection[str],
+    dependency_targets: cabc.Collection[str],
     target_version: str,
 ) -> tuple[str, bool]:
     """Rewrite TOML fences for ``dependency_targets`` within Markdown text.
@@ -171,7 +172,7 @@ def rewrite_markdown_toml_fences(
 def replace_markdown_fences(
     markdown_text: str,
     language: str,
-    transform: typ.Callable[[str], str],
+    transform: cabc.Callable[[str], str],
 ) -> str:
     """Replace fenced code blocks of ``language`` with ``transform``.
 
@@ -233,7 +234,7 @@ def render_fence(
     token: Token,
     lines: list[str],
     language: str,
-    transform: typ.Callable[[str], str],
+    transform: cabc.Callable[[str], str],
 ) -> str:
     """Return a rewritten fence for ``token`` using ``transform``.
 
@@ -311,7 +312,7 @@ def _try_assign_version_at_path(
 def _update_single_dependency_section(
     document: TOMLDocument,
     section: str,
-    dependency_targets: typ.Collection[str],
+    dependency_targets: cabc.Collection[str],
     target_version: str,
 ) -> bool:
     """Update a single dependency section if it exists."""
@@ -323,7 +324,7 @@ def _update_single_dependency_section(
 
 def update_toml_snippet_dependencies(
     document: TOMLDocument,
-    dependency_targets: typ.Collection[str],
+    dependency_targets: cabc.Collection[str],
     target_version: str,
 ) -> bool:
     """Update dependency sections in a TOML snippet document.
@@ -357,7 +358,7 @@ def update_toml_snippet_dependencies(
 
 def update_toml_snippet_versions(
     snippet: str,
-    dependency_targets: typ.Collection[str],
+    dependency_targets: cabc.Collection[str],
     target_version: str,
 ) -> tuple[str, bool]:
     """Return a TOML snippet with dependency versions rewritten.

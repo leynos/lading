@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import collections.abc as cabc
 import dataclasses as dc
 import types
 import typing as typ
@@ -38,7 +39,7 @@ class BumpOptions:
     dry_run: bool = False
     configuration: LadingConfig | None = None
     workspace: WorkspaceGraph | None = None
-    dependency_sections: typ.Mapping[str, typ.Collection[str]] = dc.field(
+    dependency_sections: cabc.Mapping[str, cabc.Collection[str]] = dc.field(
         default_factory=lambda: types.MappingProxyType({})
     )
     include_workspace_sections: bool = False
@@ -48,8 +49,8 @@ class BumpOptions:
 class BumpChanges:
     """Collection of files altered by a bump run."""
 
-    manifests: typ.Sequence[Path] = ()
-    documents: typ.Sequence[Path] = ()
+    manifests: cabc.Sequence[Path] = ()
+    documents: cabc.Sequence[Path] = ()
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -284,10 +285,12 @@ def _format_manifest_path(manifest_path: Path, workspace_root: Path) -> str:
 def _validate_bump_options(options: BumpOptions) -> tuple[LadingConfig, WorkspaceGraph]:
     """Validate and extract required configuration and workspace from options.
 
-    Raises:
+    Raises
+    ------
         ValueError: If configuration or workspace is None.
 
-    Returns:
+    Returns
+    -------
         Tuple of (configuration, workspace).
 
     """
@@ -299,7 +302,7 @@ def _validate_bump_options(options: BumpOptions) -> tuple[LadingConfig, Workspac
 
 def _determine_package_selectors(
     crate_name: str,
-    excluded: typ.Collection[str],
+    excluded: cabc.Collection[str],
 ) -> tuple[tuple[str, ...], ...]:
     """Return package selectors for the crate, respecting exclusion rules.
 
@@ -307,7 +310,8 @@ def _determine_package_selectors(
         crate_name: Name of the crate to check.
         excluded: Collection of excluded crate names.
 
-    Returns:
+    Returns
+    -------
         Package selectors tuple, or empty tuple if crate is excluded.
 
     """
@@ -316,11 +320,12 @@ def _determine_package_selectors(
 
 def _should_skip_crate_update(
     selectors: tuple[tuple[str, ...], ...],
-    dependency_sections: typ.Mapping[str, typ.Collection[str]],
+    dependency_sections: cabc.Mapping[str, cabc.Collection[str]],
 ) -> bool:
     """Check if a crate update should be skipped due to no work required.
 
-    Returns:
+    Returns
+    -------
         True if both selectors and dependency_sections are empty.
 
     """
@@ -328,8 +333,8 @@ def _should_skip_crate_update(
 
 
 def _freeze_dependency_sections(
-    sections: typ.Mapping[str, typ.Collection[str]],
-) -> typ.Mapping[str, typ.Collection[str]]:
+    sections: cabc.Mapping[str, cabc.Collection[str]],
+) -> cabc.Mapping[str, cabc.Collection[str]]:
     """Return an immutable mapping for dependency sections."""
     if not sections:
         return types.MappingProxyType({})
@@ -352,7 +357,8 @@ def _update_manifest(
         options: Bump options controlling dry-run, dependency sections, and
             whether to include workspace-level dependency sections.
 
-    Returns:
+    Returns
+    -------
         True if any changes were made.
 
     """
@@ -374,7 +380,7 @@ def _update_manifest(
 
 
 def _workspace_dependency_sections(
-    updated_crates: typ.Collection[str],
+    updated_crates: cabc.Collection[str],
 ) -> dict[str, set[str]]:
     """Return dependency names to update for the workspace manifest."""
     crate_names = {name for name in updated_crates if name}
@@ -389,7 +395,7 @@ def _workspace_dependency_sections(
 
 def _dependency_sections_for_crate(
     crate: WorkspaceCrate,
-    updated_crates: typ.Collection[str],
+    updated_crates: cabc.Collection[str],
 ) -> dict[str, set[str]]:
     """Return dependency names grouped by section for ``crate``."""
     if not crate.dependencies:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import collections.abc as cabc
 import dataclasses as dc
 import io
 import logging
@@ -24,7 +25,7 @@ if typ.TYPE_CHECKING:
 
 
 @contextmanager
-def _preserve_root_logger() -> typ.Iterator[logging.Logger]:
+def _preserve_root_logger() -> cabc.Iterator[logging.Logger]:
     """Capture and restore the root logger configuration around a test."""
     root_logger = logging.getLogger()
     prior_handlers = list(root_logger.handlers)
@@ -128,7 +129,7 @@ def test_configure_logging_installs_named_handler(
     ],
 )
 def test_extract_workspace_override(
-    tokens: typ.Sequence[str],
+    tokens: cabc.Sequence[str],
     expected_workspace: str | None,
     expected_remaining: list[str],
 ) -> None:
@@ -377,15 +378,13 @@ def test_bump_cli_accepts_dry_run_flag(
     monkeypatch.setattr(bump_command, "run", fake_run)
     monkeypatch.setattr(cli, "load_workspace", lambda _: workspace_graph)
 
-    exit_code = cli.main(
-        [
-            "--workspace-root",
-            str(tmp_path),
-            "bump",
-            "1.2.3",
-            "--dry-run",
-        ]
-    )
+    exit_code = cli.main([
+        "--workspace-root",
+        str(tmp_path),
+        "bump",
+        "1.2.3",
+        "--dry-run",
+    ])
 
     assert exit_code == 0
     options = captured_kwargs["options"]
@@ -417,7 +416,7 @@ def test_main_handles_exceptions(
 ) -> None:
     """Handle exceptions during command execution."""
 
-    def boom(_: typ.Sequence[str]) -> int:
+    def boom(_: cabc.Sequence[str]) -> int:
         raise case.exception
 
     monkeypatch.setattr(cli, "_dispatch_and_print", boom)

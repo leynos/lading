@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import collections.abc as cabc
 import contextlib
 import dataclasses as dc
 import os
@@ -84,10 +85,10 @@ class PreflightTestContext:
 class _CmdInvocation(typ.Protocol):
     """Protocol describing the cmd-mox invocation payload."""
 
-    args: typ.Sequence[str]
+    args: cabc.Sequence[str]
 
 
-ResponseProvider = _CommandResponse | typ.Callable[[_CmdInvocation], _CommandResponse]
+ResponseProvider = _CommandResponse | cabc.Callable[[_CmdInvocation], _CommandResponse]
 
 
 def _validate_stub_arguments(
@@ -137,7 +138,7 @@ def _make_preflight_handler(
     expected_arguments: tuple[str, ...],
     recorder: _PreflightInvocationRecorder | None,
     label: str,
-) -> typ.Callable[[_CmdInvocation], tuple[str, str, int]]:
+) -> cabc.Callable[[_CmdInvocation], tuple[str, str, int]]:
     """Build a cmd-mox handler that validates argument prefixes."""
 
     def _handler(invocation: _CmdInvocation) -> tuple[str, str, int]:
@@ -252,7 +253,7 @@ def _build_env_restore_dict(var_name: str) -> dict[str, str]:
 
 
 @contextlib.contextmanager
-def _cmd_mox_stub_env_enabled() -> typ.Iterator[None]:
+def _cmd_mox_stub_env_enabled() -> cabc.Iterator[None]:
     """Temporarily enable CMD_MOX_STUB_ENV_VAR for cmd-mox stubs."""
     var_name = metadata_module.CMD_MOX_STUB_ENV_VAR
     restore = _build_env_restore_dict(var_name)

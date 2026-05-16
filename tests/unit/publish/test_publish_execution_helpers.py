@@ -403,9 +403,10 @@ def test_log_subprocess_environment_redacts_sensitive_values(
     """Environment logging should redact common secret tokens."""
     caplog.set_level("DEBUG", logger="lading.commands.publish_execution")
 
-    publish_execution._log_subprocess_environment(
-        {"TOKEN": "secret", "PATH": "/usr/bin"}
-    )
+    publish_execution._log_subprocess_environment({
+        "TOKEN": "secret",
+        "PATH": "/usr/bin",
+    })
 
     assert "PATH" in caplog.text
     assert "<redacted>" in caplog.text

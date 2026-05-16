@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import collections.abc as cabc
 import dataclasses as dc
 import json
 import textwrap
@@ -20,7 +21,7 @@ class NonTrivialWorkspace:
     root: Path
     version: str
     crate_names: tuple[str, ...]
-    cargo_metadata_payload: typ.Mapping[str, typ.Any]
+    cargo_metadata_payload: cabc.Mapping[str, typ.Any]
 
 
 def create_nontrivial_workspace(
@@ -181,7 +182,7 @@ def _build_cargo_metadata_payload(
     *,
     version: str,
     manifests: dict[str, Path],
-) -> typ.Mapping[str, typ.Any]:
+) -> cabc.Mapping[str, typ.Any]:
     """Return a cargo metadata JSON payload describing the fixture workspace."""
     workspace_members = [f"{name}-id" for name in ("core", "utils", "app")]
     packages: list[dict[str, typ.Any]] = [

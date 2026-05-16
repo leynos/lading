@@ -41,9 +41,19 @@ dev = [
 
 [tool.ruff]
 line-length = 88
+preview = true
+target-version = "py313"
+extend-exclude = [
+    ".rules",
+    "docs",
+]
 
 [tool.ruff.format]
-exclude = ["tests/bdd/steps/test_bump_steps.py"]
+exclude = [
+    ".rules",
+    "docs",
+    "tests/bdd/steps/test_bump_steps.py",
+]
 
 [tool.ruff.lint]
 select = [
@@ -82,18 +92,47 @@ select = [
     "ANN",
     "C90",
     "PLR",
+    "PLE4703",
+    "PLR0202",
+    "PLR0203",
+    "PLR0914",
+    "PLR0916",
+    "PLR1702",
+    "PLR6104",
+    "PLR6201",
+    "PLR6301",
+    "PLW0108",
+    "RUF036",
+    "RUF053",
+    "RUF055",
+    "RUF064",
+    "RUF066",
 ]
 extend-ignore = [
     "D203",  # Conflicts with D211; prefer enforcing no blank line before class docstring.
     "D213",  # Conflicts with D212; keep summary on the first line.
+    "B903",  # Existing test doubles intentionally use lightweight classes.
+    "D420",  # Existing Google-style docstrings are not part of this lint import.
+    "FURB113",  # Existing append groups can be modernised separately.
+    "PLR0914",  # Existing functions exceed the imported local-variable ceiling.
+    "PLR6301",  # Existing helper methods retain instance-oriented grouping.
+    "PLW0108",  # Existing lambdas preserve local test monkeypatch clarity.
+    "RUF027",  # Existing template-string replacements intentionally use literals.
+    "RUF069",  # Existing float comparisons are exact parser expectations.
+    "S404",  # Existing subprocess wrappers are the intended process boundary.
+    "TC003",  # Type-only stdlib imports will be moved in a focused cleanup.
 ]
-per-file-ignores = {"**/test_*.py" = ["S101", "PLR0913", "PLR2004"]}
+[tool.ruff.lint.per-file-ignores]
+"**/test_*.py" = ["S101", "PLR0913", "PLR0917", "PLR2004", "PLR6301"]
+"tests/bdd/steps/*.py" = ["S101", "PLR0913", "PLR0917", "PLR2004", "PLR6301"]
 
 [tool.ruff.lint.mccabe]
-max-complexity = 9
+max-complexity = 8
 
 [tool.ruff.lint.pylint]
 max-args = 4
+max-bool-expr = 2
+max-locals = 10
 
 [tool.ruff.lint.flake8-import-conventions]
 # Declare the banned `from` imports.
@@ -121,6 +160,193 @@ datetime = "dt"
 "msgspec.json" = "msjson"
 typing = "typ"
 dataclasses = "dc"
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"typing.AbstractSet".msg = "Use collections.abc.Set instead of deprecated typing generics."
+"typing.AsyncContextManager".msg = "Use contextlib.AbstractAsyncContextManager instead of deprecated typing generics."
+"typing.AsyncGenerator".msg = "Use collections.abc.AsyncGenerator instead of deprecated typing generics."
+"typing.AsyncIterable".msg = "Use collections.abc.AsyncIterable instead of deprecated typing generics."
+"typing.AsyncIterator".msg = "Use collections.abc.AsyncIterator instead of deprecated typing generics."
+"typing.Awaitable".msg = "Use collections.abc.Awaitable instead of deprecated typing generics."
+"typing.Callable".msg = "Use collections.abc.Callable instead of deprecated typing generics."
+"typing.ChainMap".msg = "Use collections.ChainMap instead of deprecated typing generics."
+"typing.Collection".msg = "Use collections.abc.Collection instead of deprecated typing generics."
+"typing.Container".msg = "Use collections.abc.Container instead of deprecated typing generics."
+"typing.ContextManager".msg = "Use contextlib.AbstractContextManager instead of deprecated typing generics."
+"typing.Coroutine".msg = "Use collections.abc.Coroutine instead of deprecated typing generics."
+"typing.Counter".msg = "Use collections.Counter instead of deprecated typing generics."
+"typing.DefaultDict".msg = "Use collections.defaultdict instead of deprecated typing generics."
+"typing.Deque".msg = "Use collections.deque instead of deprecated typing generics."
+"typing.Dict".msg = "Use dict instead of deprecated typing generics."
+"typing.FrozenSet".msg = "Use frozenset instead of deprecated typing generics."
+"typing.Generator".msg = "Use collections.abc.Generator instead of deprecated typing generics."
+"typing.ItemsView".msg = "Use collections.abc.ItemsView instead of deprecated typing generics."
+"typing.Iterable".msg = "Use collections.abc.Iterable instead of deprecated typing generics."
+"typing.Iterator".msg = "Use collections.abc.Iterator instead of deprecated typing generics."
+"typing.KeysView".msg = "Use collections.abc.KeysView instead of deprecated typing generics."
+"typing.List".msg = "Use list instead of deprecated typing generics."
+"typing.Mapping".msg = "Use collections.abc.Mapping instead of deprecated typing generics."
+"typing.Match".msg = "Use re.Match instead of deprecated typing generics."
+"typing.MutableMapping".msg = "Use collections.abc.MutableMapping instead of deprecated typing generics."
+"typing.MutableSequence".msg = "Use collections.abc.MutableSequence instead of deprecated typing generics."
+"typing.MutableSet".msg = "Use collections.abc.MutableSet instead of deprecated typing generics."
+"typing.OrderedDict".msg = "Use collections.OrderedDict instead of deprecated typing generics."
+"typing.Pattern".msg = "Use re.Pattern instead of deprecated typing generics."
+"typing.Reversible".msg = "Use collections.abc.Reversible instead of deprecated typing generics."
+"typing.Sequence".msg = "Use collections.abc.Sequence instead of deprecated typing generics."
+"typing.Set".msg = "Use set instead of deprecated typing generics."
+"typing.Tuple".msg = "Use tuple instead of deprecated typing generics."
+"typing.Type".msg = "Use type instead of deprecated typing generics."
+"typing.ValuesView".msg = "Use collections.abc.ValuesView instead of deprecated typing generics."
+
+[tool.ruff.lint.pydocstyle]
+# Enforce NumPy docstring style
+convention = "numpy"
+
+[tool.pylint.main]
+# Expand directory targets like lading and tests even when a target is not a
+# package.
+recursive = true
+# Keep Pylint's module-size check active without forcing an unrelated module
+# split while importing the second-tier lint action.
+max-module-lines = 800
+
+[tool.pylint.design]
+# Keep function call surfaces small enough to understand without memorising
+# positional argument order.
+max-args = 5
+# The new Pylint gate complements Ruff's stricter PLR0914 threshold without
+# forcing broad refactors while introducing the additional rule families below.
+max-locals = 20
+# Use Pylint's statement-count proxy for function length; Pylint 4 does not
+# expose a distinct physical-lines-per-function option.
+max-statements = 70
+# Keep positional call surfaces aligned with Ruff's existing argument limit.
+max-positional-arguments = 5
+
+[tool.pylint."messages control"]
+# Keep this Pylint pass focused on the explicitly selected messages.
+disable = [
+    "all",
+    # Managed PyPy is currently 3.11 while the project targets Python 3.13
+    # syntax; keep PyPy-backed Pylint useful on files it can parse.
+    "syntax-error",
+]
+enable = [
+    # Logging format safety.
+    "logging-format-interpolation",
+    "logging-format-truncated",
+    "logging-fstring-interpolation",
+    "logging-not-lazy",
+    "logging-too-few-args",
+    "logging-too-many-args",
+    "logging-unsupported-format",
+
+    # Pattern matching correctness and readability.
+    "bare-name-capture-pattern",
+    "invalid-match-args-definition",
+    "match-class-bind-self",
+    "match-class-positional-attributes",
+    "multiple-class-sub-patterns",
+    "too-many-positional-sub-patterns",
+
+    # Control-flow simplification.
+    "chained-comparison",
+    "condition-evals-to-constant",
+    "consider-merging-isinstance",
+    "consider-swap-variables",
+    "consider-using-in",
+    "consider-using-max-builtin",
+    "consider-using-min-builtin",
+    "consider-using-sys-exit",
+    "consider-using-ternary",
+    "inconsistent-return-statements",
+    "no-else-break",
+    "no-else-continue",
+    "no-else-raise",
+    "no-else-return",
+    "redefined-argument-from-local",
+    "simplifiable-condition",
+    "simplifiable-if-expression",
+    "simplifiable-if-statement",
+    "simplify-boolean-expression",
+    "stop-iteration-return",
+    "super-with-arguments",
+    "trailing-comma-tuple",
+    "unnecessary-negation",
+    "useless-return",
+
+    # Collection and iterator idioms.
+    "consider-iterating-dictionary",
+    "consider-using-dict-comprehension",
+    "consider-using-dict-items",
+    "consider-using-enumerate",
+    "consider-using-f-string",
+    "consider-using-generator",
+    "consider-using-get",
+    "consider-using-join",
+    "consider-using-set-comprehension",
+    "unnecessary-comprehension",
+    "unnecessary-dict-index-lookup",
+    "unnecessary-list-index-lookup",
+    "use-a-generator",
+    "use-dict-literal",
+    "use-implicit-booleaness-not-comparison",
+    "use-implicit-booleaness-not-comparison-to-string",
+    "use-implicit-booleaness-not-len",
+    "use-list-literal",
+    "use-maxsplit-arg",
+    "use-sequence-for-iteration",
+    "use-yield-from",
+
+    # Runtime APIs, resources, and compatibility hazards.
+    "bad-open-mode",
+    "bad-thread-instantiation",
+    "boolean-datetime",
+    "consider-using-with",
+    "deprecated-argument",
+    "deprecated-attribute",
+    "deprecated-class",
+    "deprecated-decorator",
+    "deprecated-method",
+    "forgotten-debug-statement",
+    "invalid-envvar-default",
+    "invalid-envvar-value",
+    "method-cache-max-size-none",
+    "redundant-unittest-assert",
+    "shallow-copy-environ",
+    "singledispatch-method",
+    "singledispatchmethod-function",
+    "subprocess-popen-preexec-fn",
+    "subprocess-run-check",
+    "unnecessary-dunder-call",
+    "unnecessary-ellipsis",
+    "unspecified-encoding",
+
+    # Source layout and text hygiene.
+    "missing-final-newline",
+    "mixed-line-endings",
+    "superfluous-parens",
+    "trailing-newlines",
+    "trailing-whitespace",
+    "unexpected-line-ending-format",
+
+    # Mutation during iteration.
+    "modified-iterating-dict",
+    "modified-iterating-list",
+    "modified-iterating-set",
+
+    # Structural complexity limits.
+    "too-many-arguments",
+    "too-many-boolean-expressions",
+    "too-many-branches",
+    "too-many-lines",
+    "too-many-locals",
+    "too-many-nested-blocks",
+    "too-many-positional-arguments",
+    "too-many-public-methods",
+    "too-many-statements",
+]
 
 [tool.pytest.ini_options]
 # Tests automatically killed after seconds elapsed

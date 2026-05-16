@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import collections.abc as cabc
 import typing as typ
 
 import pytest
@@ -90,7 +91,7 @@ def test_run_cargo_preflight_raises_on_failure(
         command: tuple[str, ...],
         *,
         cwd: Path | None = None,
-        env: typ.Mapping[str, str] | None = None,
+        env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
         assert cwd == tmp_path
         assert command[0] == "cargo"
@@ -116,7 +117,8 @@ def _run_and_record_cargo_preflight(
 ) -> tuple[str, ...]:
     """Run cargo preflight with a recording runner and return the command.
 
-    Returns:
+    Returns
+    -------
         The recorded cargo command as a tuple of strings.
 
     """
@@ -126,7 +128,7 @@ def _run_and_record_cargo_preflight(
         command: tuple[str, ...],
         *,
         cwd: Path | None = None,
-        env: typ.Mapping[str, str] | None = None,
+        env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
         recorded.append(command)
         return 0, "", ""
@@ -301,7 +303,7 @@ def test_preflight_runs_aux_build_commands(
         command: tuple[str, ...],
         *,
         cwd: Path | None = None,
-        env: typ.Mapping[str, str] | None = None,
+        env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
         commands.append((tuple(command), cwd))
         return 0, "", ""
@@ -340,7 +342,7 @@ def test_aux_build_failure_surfaces_error(
         command: tuple[str, ...],
         *,
         cwd: Path | None = None,
-        env: typ.Mapping[str, str] | None = None,
+        env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
         if tuple(command) == failing_command:
             return 1, "", "aux failure"
@@ -379,7 +381,7 @@ def test_preflight_env_overrides_forwarded(
         command: tuple[str, ...],
         *,
         cwd: Path | None = None,
-        env: typ.Mapping[str, str] | None = None,
+        env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
         if command[:2] == ("cargo", "test"):
             captured_env.update(env or {})
@@ -418,7 +420,7 @@ def test_preflight_append_compiletest_externs(
         command: tuple[str, ...],
         *,
         cwd: Path | None = None,
-        env: typ.Mapping[str, str] | None = None,
+        env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
         # Decompose complex conditional into readable business rules
         is_cargo_test = command[:2] == ("cargo", "test")
@@ -465,7 +467,7 @@ def test_compiletest_diagnostic_details(
         command: tuple[str, ...],
         *,
         cwd: Path | None = None,
-        env: typ.Mapping[str, str] | None = None,
+        env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
         return 1, f"diff at {artifact}", ""
 
@@ -498,7 +500,7 @@ def test_verify_clean_working_tree_detects_dirty_state(
         command: tuple[str, ...],
         *,
         cwd: Path | None = None,
-        env: typ.Mapping[str, str] | None = None,
+        env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
         assert cwd == root
         return 0, " M file\n", ""
@@ -521,7 +523,7 @@ def test_verify_clean_working_tree_reports_missing_repo(
         command: tuple[str, ...],
         *,
         cwd: Path | None = None,
-        env: typ.Mapping[str, str] | None = None,
+        env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
         assert command == ("git", "status", "--porcelain")
         assert cwd == tmp_path

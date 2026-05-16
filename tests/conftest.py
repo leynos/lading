@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import collections.abc as cabc
 import os
 import textwrap
-import typing as typ
 from pathlib import Path
 
 import pytest
@@ -30,7 +30,7 @@ def repo_root() -> Path:
 
 
 @pytest.fixture(autouse=True)
-def _restore_workspace_env() -> typ.Iterator[None]:
+def _restore_workspace_env() -> cabc.Iterator[None]:
     """Ensure tests do not leak ``LADING_WORKSPACE_ROOT`` between runs."""
     from lading.cli import WORKSPACE_ROOT_ENV_VAR
 
@@ -45,7 +45,7 @@ def _restore_workspace_env() -> typ.Iterator[None]:
 
 
 @pytest.fixture
-def write_config(tmp_path: Path) -> typ.Callable[[str], Path]:
+def write_config(tmp_path: Path) -> cabc.Callable[[str], Path]:
     """Return a helper that writes ``lading.toml`` into ``tmp_path``."""
     from lading import config as config_module
 
@@ -58,7 +58,7 @@ def write_config(tmp_path: Path) -> typ.Callable[[str], Path]:
 
 
 @pytest.fixture
-def minimal_config(write_config: typ.Callable[[str], Path]) -> Path:
+def minimal_config(write_config: cabc.Callable[[str], Path]) -> Path:
     """Persist a representative configuration file for CLI exercises."""
     return write_config(
         """

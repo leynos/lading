@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import collections.abc as cabc
 import typing as typ
 from pathlib import Path
 
@@ -15,7 +16,7 @@ if typ.TYPE_CHECKING:
     from lading import config as config_module
     from lading.workspace import WorkspaceGraph
 
-CallRecord = tuple[tuple[str, ...], Path | None, typ.Mapping[str, str] | None]
+CallRecord = tuple[tuple[str, ...], Path | None, cabc.Mapping[str, str] | None]
 RecordedCommands = list[CallRecord]
 
 
@@ -23,7 +24,7 @@ def _setup_preflight_test(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     configuration: config_module.LadingConfig,
-    crate_names: typ.Sequence[str] | None = None,
+    crate_names: cabc.Sequence[str] | None = None,
 ) -> tuple[Path, WorkspaceGraph, RecordedCommands]:
     """Execute ``publish.run`` with optional workspace crates and capture calls."""
     monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
@@ -36,10 +37,10 @@ def _setup_preflight_test(
     calls: RecordedCommands = []
 
     def recording_invoke(
-        command: typ.Sequence[str],
+        command: cabc.Sequence[str],
         *,
         cwd: Path | None = None,
-        env: typ.Mapping[str, str] | None = None,
+        env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
         calls.append((tuple(command), cwd, env))
         return 0, "", ""

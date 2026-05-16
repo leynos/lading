@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import collections.abc as cabc
 import typing as typ
 from dataclasses import dataclass  # noqa: ICN003
 
@@ -32,10 +33,10 @@ class PublishFixtures:
     """Bundle reusable publish helpers to trim fixture fan-out."""
 
     tmp_path: Path
-    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate]
-    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph]
-    make_config: typ.Callable[..., config_module.LadingConfig]
-    make_dependency: typ.Callable[[str], WorkspaceDependency]
+    make_crate: cabc.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate]
+    make_workspace: cabc.Callable[[Path, WorkspaceCrate], WorkspaceGraph]
+    make_config: cabc.Callable[..., config_module.LadingConfig]
+    make_dependency: cabc.Callable[[str], WorkspaceDependency]
     publish_options: publish.PublishOptions
 
 
@@ -55,7 +56,7 @@ def disable_publish_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture
-def make_config() -> typ.Callable[..., config_module.LadingConfig]:
+def make_config() -> cabc.Callable[..., config_module.LadingConfig]:
     """Return a factory for publish-friendly configuration objects."""
 
     def _make_config(
@@ -80,7 +81,7 @@ def make_config() -> typ.Callable[..., config_module.LadingConfig]:
 
 
 @pytest.fixture
-def make_crate() -> typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate]:
+def make_crate() -> cabc.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate]:
     """Return a factory that materialises temporary workspace crates."""
 
     def _make_crate(
@@ -121,8 +122,8 @@ def make_crate() -> typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate]
 
 @pytest.fixture
 def make_workspace(
-    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
-) -> typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph]:
+    make_crate: cabc.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+) -> cabc.Callable[[Path, WorkspaceCrate], WorkspaceGraph]:
     """Return a factory that assembles workspace graphs for tests."""
 
     def _make_workspace(root: Path, *crates: WorkspaceCrate) -> WorkspaceGraph:
@@ -166,7 +167,7 @@ def preparation_fixtures(publish_fixtures: PublishFixtures) -> PreparationFixtur
 
 
 @pytest.fixture
-def make_dependency() -> typ.Callable[[str], WorkspaceDependency]:
+def make_dependency() -> cabc.Callable[[str], WorkspaceDependency]:
     """Return a factory for workspace dependency records."""
 
     def _make_dependency(name: str) -> WorkspaceDependency:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import collections.abc as cabc
 import typing as typ
 
 import pytest
@@ -47,7 +48,7 @@ def e2e_workspace_with_git(
 
 
 @pytest.fixture
-def staging_cleanup() -> typ.Callable[[Path], None]:
+def staging_cleanup() -> cabc.Callable[[Path], None]:
     """Return a helper that removes the publish staging directory parent."""
 
     def _cleanup(staging_root: Path) -> None:
