@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import dataclasses as dc
+import typing as typ
 from pathlib import Path
 
 import pytest
@@ -10,17 +12,54 @@ from lading import config as config_module
 from lading.commands import publish
 from lading.workspace import WorkspaceCrate, WorkspaceDependency, WorkspaceGraph
 
+if typ.TYPE_CHECKING:
+    import collections.abc as cabc
+
 __all__ = [
+    "INDEX_MISSING_STDERR_BETA",
+    "INDEX_MISSING_STDERR_EXTERNAL",
+    "INDEX_MISSING_STDERR_UNPARSEABLE",
     "ORIGINAL_INVOKE",
     "ORIGINAL_PREFLIGHT",
+    "CallTrackingRunner",
+    "PhaseContext",
+    "invoke_phase",
     "make_config",
     "make_crate",
     "make_dependency",
     "make_dependency_chain",
+    "make_failing_runner",
     "make_preflight_config",
     "make_workspace",
     "plan_with_crates",
+    "prepare_staging_root",
+    "publish_plan_and_prep",
 ]
+
+INDEX_MISSING_STDERR_BETA = (
+    "error: failed to prepare local package for uploading\n"
+    "\n"
+    "Caused by:\n"
+    '  failed to select a version for the requirement `alpha = "^0.1.0"`\n'
+    "  candidate versions found which didn't match: 0.0.1\n"
+    "  location searched: crates.io index\n"
+    "  required by package `beta v0.1.0`\n"
+)
+
+INDEX_MISSING_STDERR_UNPARSEABLE = (
+    "error: failed to prepare local package for uploading\n"
+    "\n"
+    "Caused by:\n"
+    "  failed to select a version for the requirement without a quoted name\n"
+    "  location searched: crates.io index\n"
+)
+
+INDEX_MISSING_STDERR_EXTERNAL = (
+    "error: failed to prepare local package for uploading\n"
+    "Caused by:\n"
+    '  failed to select a version for the requirement `external_crate = "^1"`\n'
+    "  location searched: crates.io index\n"
+)
 
 
 def make_preflight_config(**overrides: object) -> config_module.PreflightConfig:
@@ -136,11 +175,30 @@ def plan_with_crates(
     configuration = make_config(**config_overrides)
     return publish.plan_publication(workspace, configuration)
 
+def prepare_staging_root(plan: publish.PublishPlan, base_dir: Path) -> Path:
+    """Create a staged workspace tree matching ``plan`` under ``base_dir``."""
+    staging_root = base_dir / "staging" / plan.workspace_root.name
+    for crate in plan.publishable:
+        relative_root = crate.root_path.relative_to(plan.workspace_root)
+        (staging_root / relative_root).mkdir(parents=True, exist_ok=True)
+    return staging_root
 
-ORIGINAL_INVOKE = publish._invoke
-ORIGINAL_PREFLIGHT = publish._run_preflight_checks
-
-
+@pytest.fixture
+def publish_plan_and_prep(
+    tmp_path: Path,
+) -> tuple[publish.PublishPlan, publish.PublishPreparation, Path]:
+    """Provide a publish plan, preparation object, and staging root."""
+    workspace_root = tmp_path / "workspace"
+    crates = make_dependency_chain(workspace_root)
+    plan = publish.plan_publication(
+        make_workspace(workspace_root, *crates), make_config()
+    )
+    staging_root = prepare_staging_root(plan, tmp_path)
+    preparation = publish.PublishPreparation(
+        staging_root=staging_root,
+        copied_readmes=(),
+    )
+    return plan, preparation, staging_root
 @pytest.fixture(autouse=True)
 def disable_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
     """Stub publish pre-flight checks for tests unless explicitly restored."""
@@ -158,3 +216,61 @@ def disable_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
 def use_real_invoke(monkeypatch: pytest.MonkeyPatch) -> None:
     """Restore the original _invoke helper for tests that exercise it."""
     monkeypatch.setattr(publish, "_invoke", ORIGINAL_INVOKE)
+
+class CallTrackingRunner:
+    """Track command invocations while returning successful results."""
+
+    def __init__(self) -> None:
+        """Initialise the runner with an empty call log."""
+        self.calls: list[tuple[tuple[str, ...], Path | None]] = []
+
+    def __call__(
+        self,
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        """Record the invocation and return a successful result."""
+        del env
+        self.calls.append((tuple(command), cwd))
+        return 0, "", ""
+
+@dc.dataclass(frozen=True)
+class PhaseContext:
+    """Execution context shared across both cargo phase dispatches."""
+
+    plan: publish.PublishPlan
+    preparation: publish.PublishPreparation
+    runner: cabc.Callable[..., tuple[int, str, str]]
+    options: publish._PublishExecutionOptions
+
+def invoke_phase(phase_name: str, ctx: PhaseContext) -> None:
+    """Dispatch to the appropriate cargo sub-command under test."""
+    if phase_name == "package":
+        publish._package_publishable_crates(
+            ctx.plan, ctx.preparation, options=ctx.options, runner=ctx.runner
+        )
+    elif phase_name == "publish":
+        publish._publish_crates(
+            ctx.plan, ctx.preparation, runner=ctx.runner, options=ctx.options
+        )
+    else:
+        message = f"Unknown phase_name {phase_name!r}; expected 'package' or 'publish'."
+        raise ValueError(message)
+
+def make_failing_runner(
+    stdout: str = "", stderr: str = ""
+) -> cabc.Callable[..., tuple[int, str, str]]:  # pragma: no cover - simple factory
+    """Return a runner that always fails with exit code 1."""
+
+    def _runner(
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        del command, cwd, env
+        return 1, stdout, stderr
+
+    return _runner

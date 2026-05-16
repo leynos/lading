@@ -2,91 +2,25 @@
 
 from __future__ import annotations
 
-import dataclasses as dc
 import logging
 import typing as typ
 
 if typ.TYPE_CHECKING:
     import collections.abc as cabc
+    from pathlib import Path
 
 import pytest
 
 from lading.commands import publish
 
 from .conftest import (
+    CallTrackingRunner,
     make_config,
     make_dependency_chain,
+    make_failing_runner,
     make_workspace,
+    prepare_staging_root,
 )
-
-if typ.TYPE_CHECKING:
-    from pathlib import Path
-
-    from syrupy.assertion import SnapshotAssertion
-
-
-def _prepare_staging_root(plan: publish.PublishPlan, base_dir: Path) -> Path:
-    """Create a staged workspace tree matching ``plan`` under ``base_dir``."""
-    staging_root = base_dir / "staging" / plan.workspace_root.name
-    for crate in plan.publishable:
-        relative_root = crate.root_path.relative_to(plan.workspace_root)
-        (staging_root / relative_root).mkdir(parents=True, exist_ok=True)
-    return staging_root
-
-
-@pytest.fixture
-def publish_plan_and_prep(
-    tmp_path: Path,
-) -> tuple[publish.PublishPlan, publish.PublishPreparation, Path]:
-    """Provide a publish plan, preparation object, and staging root."""
-    workspace_root = tmp_path / "workspace"
-    crates = make_dependency_chain(workspace_root)
-    plan = publish.plan_publication(
-        make_workspace(workspace_root, *crates), make_config()
-    )
-    staging_root = _prepare_staging_root(plan, tmp_path)
-    preparation = publish.PublishPreparation(
-        staging_root=staging_root,
-        copied_readmes=(),
-    )
-    return plan, preparation, staging_root
-
-
-class CallTrackingRunner:
-    """Track command invocations while returning successful results."""
-
-    def __init__(self) -> None:
-        """Initialise the runner with an empty call log."""
-        self.calls: list[tuple[tuple[str, ...], Path | None]] = []
-
-    def __call__(
-        self,
-        command: cabc.Sequence[str],
-        *,
-        cwd: Path | None = None,
-        env: cabc.Mapping[str, str] | None = None,
-    ) -> tuple[int, str, str]:
-        """Record the invocation and return a successful result."""
-        del env
-        self.calls.append((tuple(command), cwd))
-        return 0, "", ""
-
-
-def make_failing_runner(
-    stdout: str = "", stderr: str = ""
-) -> cabc.Callable[..., tuple[int, str, str]]:  # pragma: no cover - simple factory
-    """Return a runner that always fails with exit code 1."""
-
-    def _runner(
-        command: cabc.Sequence[str],
-        *,
-        cwd: Path | None = None,
-        env: cabc.Mapping[str, str] | None = None,
-    ) -> tuple[int, str, str]:
-        del command, cwd, env
-        return 1, stdout, stderr
-
-    return _runner
 
 
 def _assert_packaging_failure_message_contains(
@@ -111,36 +45,6 @@ def _assert_packaging_failure_message_contains(
     assert expected_in_message in message
     if not_expected_in_message is not None:
         assert not_expected_in_message not in message
-
-@dc.dataclass(frozen=True)
-class _PhaseContext:
-    """Execution context shared across both cargo phase dispatches."""
-
-    plan: publish.PublishPlan
-    preparation: publish.PublishPreparation
-    runner: cabc.Callable[..., tuple[int, str, str]]
-    options: publish._PublishExecutionOptions
-
-
-def _invoke_phase(phase_name: str, ctx: _PhaseContext) -> None:
-    """Dispatch to the appropriate cargo sub-command under test."""
-    if phase_name == "package":
-        publish._package_publishable_crates(
-            ctx.plan, ctx.preparation, options=ctx.options, runner=ctx.runner
-        )
-    elif phase_name == "publish":
-        publish._publish_crates(
-            ctx.plan, ctx.preparation, runner=ctx.runner, options=ctx.options
-        )
-    else:
-        message = f"Unknown phase_name {phase_name!r}; expected 'package' or 'publish'."
-        raise ValueError(message)
-
-
-_PHASE_IDS: list[pytest.param] = [
-    pytest.param("package", publish.PublishPreflightError, id="packaging"),
-    pytest.param("publish", publish.PublishError, id="publish-dry-run"),
-]
 
 
 def test_package_publishable_crates_runs_in_plan_order(
@@ -249,7 +153,6 @@ def test_publish_crates_run_dry_run_in_order(
         (("cargo", "publish", "--allow-dirty", "--dry-run"), root)
         for root in expected_roots
     ]
-    # Ensure we emit a helpful info log for the publish phase.
     assert any("cargo publish" in message for message in caplog.messages)
 
 
@@ -290,7 +193,7 @@ def test_publish_crates_continue_when_version_already_uploaded(
     plan = publish.plan_publication(
         make_workspace(workspace_root, alpha, beta), make_config()
     )
-    staging_root = _prepare_staging_root(plan, tmp_path)
+    staging_root = prepare_staging_root(plan, tmp_path)
     preparation = publish.PublishPreparation(
         staging_root=staging_root,
         copied_readmes=(),
@@ -344,348 +247,3 @@ def test_publish_crates_raise_on_failure(
     message = str(excinfo.value)
     assert "cargo publish failed for crate" in message
     assert "network offline" in message
-
-
-_INDEX_MISSING_STDERR_BETA = (
-    "error: failed to prepare local package for uploading\n"
-    "\n"
-    "Caused by:\n"
-    '  failed to select a version for the requirement `alpha = "^0.1.0"`\n'
-    "  candidate versions found which didn't match: 0.0.1\n"
-    "  location searched: crates.io index\n"
-    "  required by package `beta v0.1.0`\n"
-)
-
-_INDEX_MISSING_STDERR_UNPARSEABLE = (
-    "error: failed to prepare local package for uploading\n"
-    "\n"
-    "Caused by:\n"
-    "  failed to select a version for the requirement without a quoted name\n"
-    "  location searched: crates.io index\n"
-)
-
-_INDEX_MISSING_STDERR_EXTERNAL = (
-    "error: failed to prepare local package for uploading\n"
-    "Caused by:\n"
-    '  failed to select a version for the requirement `external_crate = "^1"`\n'
-    "  location searched: crates.io index\n"
-)
-
-
-@pytest.mark.parametrize(
-    ("exit_code", "stdout", "stderr", "expected"),
-    [
-        pytest.param(0, "", "", False, id="success"),
-        pytest.param(1, "", "", False, id="failure-without-markers"),
-        pytest.param(
-            1,
-            "",
-            "failed to select a version for the requirement",
-            False,
-            id="missing-index-marker",
-        ),
-        pytest.param(
-            1,
-            "",
-            "location searched: crates.io index",
-            False,
-            id="missing-version-marker",
-        ),
-        pytest.param(
-            1,
-            "",
-            _INDEX_MISSING_STDERR_BETA,
-            True,
-            id="full-stderr-shape",
-        ),
-        pytest.param(
-            1,
-            _INDEX_MISSING_STDERR_BETA,
-            "",
-            True,
-            id="markers-on-stdout",
-        ),
-    ],
-)
-def test_is_index_missing_version_error(
-    exit_code: int, stdout: str, stderr: str, *, expected: bool
-) -> None:
-    """Both markers must be present and the command must have failed."""
-    assert (
-        publish._is_index_missing_version_error(exit_code, stdout, stderr) is expected
-    )
-
-@pytest.mark.parametrize(
-    ("stdout", "stderr", "expected"),
-    [
-        pytest.param("", _INDEX_MISSING_STDERR_BETA, "alpha", id="stderr-backticks"),
-        pytest.param(
-            "",
-            "failed to select a version for the requirement 'inner_crate = \"^0.8.0\"'",
-            "inner_crate",
-            id="single-quotes",
-        ),
-        pytest.param(
-            'failed to select a version for the requirement "foo-bar = ^1"',
-            "",
-            "foo-bar",
-            id="hyphenated-on-stdout",
-        ),
-        pytest.param("", "no match here", None, id="no-match"),
-    ],
-)
-def test_extract_missing_dependency_name(
-    stdout: str, stderr: str, expected: str | None
-) -> None:
-    """Regex extraction handles backticks, quotes, and hyphens."""
-    assert publish._extract_missing_dependency_name(stdout, stderr) == expected
-
-def test_run_rejects_allow_unpublished_with_live(
-    tmp_path: Path, snapshot: SnapshotAssertion
-) -> None:
-    """Combining ``--live`` with the override flag is a hard error."""
-    workspace_root = tmp_path / "workspace"
-    crates = make_dependency_chain(workspace_root)
-    workspace = make_workspace(workspace_root, *crates)
-    configuration = make_config()
-
-    with pytest.raises(publish.PublishPreflightError) as excinfo:
-        publish.run(
-            workspace_root,
-            configuration,
-            workspace,
-            options=publish.PublishOptions(
-                live=True,
-                allow_unpublished_workspace_deps=True,
-            ),
-        )
-
-    assert str(excinfo.value) == snapshot()
-
-def _warning_records(
-    caplog: pytest.LogCaptureFixture,
-) -> tuple[tuple[str, tuple[object, ...]], ...]:
-    """Return captured warning format strings and arguments."""
-    return tuple(
-        (record.msg, record.args)
-        for record in caplog.records
-        if record.levelno == logging.WARNING
-    )
-
-def _handle_index_missing_version_message(
-    plan: publish.PublishPlan,
-    *,
-    stderr: str,
-    allow_unpublished_workspace_deps: bool,
-    caplog: pytest.LogCaptureFixture,
-) -> str:
-    """Return the raised index-missing-version message for snapshot tests."""
-    caplog.set_level(logging.WARNING, logger="lading.commands.publish")
-    invocation = publish._CargoInvocation(
-        crate_name="beta",
-        subcommand="package",
-        output=(1, "", stderr),
-    )
-
-    with pytest.raises(publish.PublishPreflightError) as excinfo:
-        publish._handle_index_missing_version(
-            invocation,
-            plan=plan,
-            options=publish._PublishExecutionOptions(
-                live=False,
-                allow_dirty=True,
-                allow_unpublished_workspace_deps=allow_unpublished_workspace_deps,
-            ),
-        )
-
-    return str(excinfo.value)
-
-def test_index_missing_name_extraction_failure_message_snapshot(
-    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
-    caplog: pytest.LogCaptureFixture,
-    snapshot: SnapshotAssertion,
-) -> None:
-    """Snapshot the fatal message and warning for name extraction failures."""
-    plan, _preparation, _staging_root = publish_plan_and_prep
-
-    message = _handle_index_missing_version_message(
-        plan,
-        stderr=_INDEX_MISSING_STDERR_UNPARSEABLE,
-        allow_unpublished_workspace_deps=True,
-        caplog=caplog,
-    )
-
-    assert message == snapshot(name="message")
-    assert _warning_records(caplog) == snapshot(name="warning")
-
-def test_index_missing_out_of_plan_message_snapshot(
-    tmp_path: Path,
-    caplog: pytest.LogCaptureFixture,
-    snapshot: SnapshotAssertion,
-) -> None:
-    """Snapshot the fatal message and warning for out-of-plan dependencies."""
-    workspace_root = tmp_path / "workspace"
-    alpha, beta, _gamma = make_dependency_chain(workspace_root)
-    plan = publish.plan_publication(
-        make_workspace(workspace_root, alpha, beta), make_config()
-    )
-
-    message = _handle_index_missing_version_message(
-        plan,
-        stderr=_INDEX_MISSING_STDERR_EXTERNAL,
-        allow_unpublished_workspace_deps=True,
-        caplog=caplog,
-    )
-
-    assert message == snapshot(name="message")
-    assert _warning_records(caplog) == snapshot(name="warning")
-
-def test_index_missing_flag_disabled_message_snapshot(
-    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
-    caplog: pytest.LogCaptureFixture,
-    snapshot: SnapshotAssertion,
-) -> None:
-    """Snapshot the fatal message and warning when the override is disabled."""
-    plan, _preparation, _staging_root = publish_plan_and_prep
-
-    message = _handle_index_missing_version_message(
-        plan,
-        stderr=_INDEX_MISSING_STDERR_BETA,
-        allow_unpublished_workspace_deps=False,
-        caplog=caplog,
-    )
-
-    assert message == snapshot(name="message")
-    assert _warning_records(caplog) == snapshot(name="warning")
-
-
-@pytest.mark.parametrize("phase_name", ["package", "publish"])
-def test_missing_dep_in_plan_and_flag_continues(
-    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
-    caplog: pytest.LogCaptureFixture,
-    phase_name: str,
-) -> None:
-    """Flag downgrades the missing-index error to a warning and proceeds."""
-    caplog.set_level(logging.WARNING, logger="lading.commands.publish")
-    plan, preparation, _staging_root = publish_plan_and_prep
-    calls: list[str] = []
-
-    def runner(
-        command: cabc.Sequence[str],
-        *,
-        cwd: Path | None = None,
-        env: cabc.Mapping[str, str] | None = None,
-    ) -> tuple[int, str, str]:
-        del env, command
-        crate_name = "" if cwd is None else cwd.name
-        calls.append(crate_name)
-        if crate_name == "beta":
-            return (1, "", _INDEX_MISSING_STDERR_BETA)
-        return (0, "", "")
-
-    _invoke_phase(
-        phase_name,
-        _PhaseContext(
-            plan=plan,
-            preparation=preparation,
-            runner=runner,
-            options=publish._PublishExecutionOptions(
-                live=False,
-                allow_dirty=True,
-                allow_unpublished_workspace_deps=True,
-            ),
-        ),
-    )
-
-    assert calls == ["alpha", "beta", "gamma"]
-    assert any("alpha" in m and "beta" in m for m in caplog.messages)
-
-
-@pytest.mark.parametrize(
-    ("phase_name", "exc_type", "expected_fragment"),
-    [
-        pytest.param("package", publish.PublishPreflightError, "alpha", id="packaging"),
-        pytest.param(
-            "publish",
-            publish.PublishError,
-            "cargo publish failed for crate beta",
-            id="publish-dry-run",
-        ),
-    ],
-)
-def test_missing_dep_in_plan_without_flag_raises(
-    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
-    phase_name: str,
-    exc_type: type[Exception],
-    expected_fragment: str,
-) -> None:
-    """Without the override, the index lookup error remains fatal."""
-    plan, preparation, _staging_root = publish_plan_and_prep
-
-    def runner(
-        command: cabc.Sequence[str],
-        *,
-        cwd: Path | None = None,
-        env: cabc.Mapping[str, str] | None = None,
-    ) -> tuple[int, str, str]:
-        del env, command
-        crate_name = "" if cwd is None else cwd.name
-        if crate_name == "beta":
-            return (1, "", _INDEX_MISSING_STDERR_BETA)
-        return (0, "", "")
-
-    with pytest.raises(exc_type) as excinfo:
-        _invoke_phase(
-            phase_name,
-            _PhaseContext(
-                plan=plan,
-                preparation=preparation,
-                runner=runner,
-                options=publish._PublishExecutionOptions(
-                    live=False,
-                    allow_dirty=True,
-                    allow_unpublished_workspace_deps=False,
-                ),
-            ),
-        )
-
-    message = str(excinfo.value)
-    assert expected_fragment in message
-    assert "--allow-unpublished-workspace-deps" in message
-
-
-@pytest.mark.parametrize(("phase_name", "exc_type"), _PHASE_IDS)
-def test_missing_dep_not_in_plan_raises(
-    tmp_path: Path,
-    phase_name: str,
-    exc_type: type[Exception],
-) -> None:
-    """The missing dependency must belong to the publish plan to be tolerated."""
-    workspace_root = tmp_path / "workspace"
-    alpha, beta, _gamma = make_dependency_chain(workspace_root)
-    plan = publish.plan_publication(
-        make_workspace(workspace_root, alpha, beta), make_config()
-    )
-    staging_root = _prepare_staging_root(plan, tmp_path)
-    preparation = publish.PublishPreparation(
-        staging_root=staging_root,
-        copied_readmes=(),
-    )
-    with pytest.raises(exc_type) as excinfo:
-        _invoke_phase(
-            phase_name,
-            _PhaseContext(
-                plan=plan,
-                preparation=preparation,
-                runner=make_failing_runner(stderr=_INDEX_MISSING_STDERR_EXTERNAL),
-                options=publish._PublishExecutionOptions(
-                    live=False,
-                    allow_dirty=True,
-                    allow_unpublished_workspace_deps=True,
-                ),
-            ),
-        )
-
-    message = str(excinfo.value)
-    assert "external_crate" in message
-    assert "not part of the current publish plan" in message
