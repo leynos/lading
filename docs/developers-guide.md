@@ -198,7 +198,7 @@ The index-lookup handling is split across three helpers:
 `_format_cargo_failure_message(command, crate_name, exit_code, output)` assembles
 the human-readable error string that is embedded in every `PublishPreflightError`
 or `PublishError` raised on a non-zero cargo exit. It is a pure function with no
-side-effects: given the cargo subcommand string, the crate name, the numeric
+side effects: given the cargo subcommand string, the crate name, the numeric
 exit code, and the `(stdout, stderr)` pair, it returns a formatted message that
 includes all four values. Using a single function for message construction keeps
 the error format consistent across the packaging and publish phases and makes
