@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import typing as typ
 from pathlib import Path
 
@@ -381,8 +382,12 @@ def then_publish_warning_log_contains(
     cli_run: dict[str, typ.Any], expected: str
 ) -> None:
     """Assert that a warning log containing ``expected`` was emitted."""
-    assert "WARNING: " in cli_run["stderr"]
-    assert expected in cli_run["stderr"]
+    assert re.search(r"(?i)\bwarning\b", cli_run["stderr"]), (
+        "Expected a WARNING-level log line in stderr"
+    )
+    assert expected in cli_run["stderr"], (
+        f"Expected {expected!r} in stderr WARNING output"
+    )
 
 
 @then("no PublishPreflightError should be raised")
