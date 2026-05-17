@@ -9,6 +9,8 @@ if typ.TYPE_CHECKING:
     import collections.abc as cabc
     from pathlib import Path
 
+    from syrupy.assertion import SnapshotAssertion
+
 import pytest
 
 from lading.commands import publish
@@ -17,6 +19,7 @@ from .conftest import (
     INDEX_MISSING_STDERR_BETA,
     INDEX_MISSING_STDERR_EXTERNAL,
     PhaseContext,
+    _warning_records,
     invoke_phase,
     make_config,
     make_dependency_chain,
@@ -35,6 +38,7 @@ _PHASE_IDS: list[pytest.param] = [
 def test_missing_dep_in_plan_and_flag_continues(
     publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
     caplog: pytest.LogCaptureFixture,
+    snapshot: SnapshotAssertion,
     phase_name: str,
 ) -> None:
     """Flag downgrades the missing-index error to a warning and proceeds."""
@@ -70,7 +74,7 @@ def test_missing_dep_in_plan_and_flag_continues(
     )
 
     assert calls == ["alpha", "beta", "gamma"]
-    assert any("alpha" in m and "beta" in m for m in caplog.messages)
+    assert _warning_records(caplog) == snapshot(name=phase_name)
 
 
 @pytest.mark.parametrize(

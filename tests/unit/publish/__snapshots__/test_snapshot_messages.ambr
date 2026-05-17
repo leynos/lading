@@ -22,6 +22,18 @@
     ),
   )
 # ---
+# name: test_index_missing_in_plan_downgrade_snapshot[warning]
+  tuple(
+    tuple(
+      'cargo %s for crate %s could not resolve sibling dependency %s from crates.io; continuing because --allow-unpublished-workspace-deps is set',
+      tuple(
+        'package',
+        'beta',
+        'alpha',
+      ),
+    ),
+  )
+# ---
 # name: test_index_missing_name_extraction_failure_message_snapshot[message]
   '''
   cargo package failed for crate beta with exit code 1: error: failed to prepare local package for uploading

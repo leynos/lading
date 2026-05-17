@@ -18,6 +18,7 @@ from .conftest import (
     INDEX_MISSING_STDERR_BETA,
     INDEX_MISSING_STDERR_EXTERNAL,
     INDEX_MISSING_STDERR_UNPARSEABLE,
+    _warning_records,
     make_config,
     make_dependency_chain,
     make_workspace,
@@ -45,17 +46,6 @@ def test_run_rejects_allow_unpublished_with_live(
         )
 
     assert str(excinfo.value) == snapshot()
-
-
-def _warning_records(
-    caplog: pytest.LogCaptureFixture,
-) -> tuple[tuple[str, tuple[object, ...]], ...]:
-    """Return captured warning format strings and arguments."""
-    return tuple(
-        (record.msg, record.args)
-        for record in caplog.records
-        if record.levelno == logging.WARNING
-    )
 
 
 def _handle_index_missing_version_message(
@@ -103,6 +93,34 @@ def test_index_missing_name_extraction_failure_message_snapshot(
     )
 
     assert message == snapshot(name="message")
+    assert _warning_records(caplog) == snapshot(name="warning")
+
+
+def test_index_missing_in_plan_downgrade_snapshot(
+    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    caplog: pytest.LogCaptureFixture,
+    snapshot: SnapshotAssertion,
+) -> None:
+    """Snapshot the warning emitted when the flag downgrades a failure to a warning."""
+    caplog.set_level(logging.WARNING, logger="lading.commands.publish")
+    plan, _preparation, _staging_root = publish_plan_and_prep
+    invocation = publish._CargoInvocation(
+        crate_name="beta",
+        subcommand="package",
+        output=(1, "", INDEX_MISSING_STDERR_BETA),
+    )
+
+    # Must not raise - the success/downgrade path returns without raising.
+    publish._handle_index_missing_version(
+        invocation,
+        plan=plan,
+        options=publish._PublishExecutionOptions(
+            live=False,
+            allow_dirty=True,
+            allow_unpublished_workspace_deps=True,
+        ),
+    )
+
     assert _warning_records(caplog) == snapshot(name="warning")
 
 

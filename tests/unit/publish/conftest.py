@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses as dc
+import logging
 import typing as typ
 from pathlib import Path
 
@@ -23,6 +24,7 @@ __all__ = [
     "ORIGINAL_PREFLIGHT",
     "CallTrackingRunner",
     "PhaseContext",
+    "_warning_records",
     "invoke_phase",
     "make_config",
     "make_crate",
@@ -183,6 +185,17 @@ def prepare_staging_root(plan: publish.PublishPlan, base_dir: Path) -> Path:
         relative_root = crate.root_path.relative_to(plan.workspace_root)
         (staging_root / relative_root).mkdir(parents=True, exist_ok=True)
     return staging_root
+
+
+def _warning_records(
+    caplog: pytest.LogCaptureFixture,
+) -> tuple[tuple[str, tuple[object, ...]], ...]:
+    """Return captured warning format strings and arguments."""
+    return tuple(
+        (record.msg, record.args)
+        for record in caplog.records
+        if record.levelno == logging.WARNING
+    )
 
 
 @pytest.fixture
