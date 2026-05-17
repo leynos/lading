@@ -147,3 +147,10 @@ def _handle_index_missing_version(
         crate_name,
         missing_name,
     )
+    LOGGER.info(
+        "Downgraded cargo %s failure for crate %s because dependency %s is "
+        "part of the publish plan and --allow-unpublished-workspace-deps is set",
+        subcommand,
+        crate_name,
+        missing_name,
+    )

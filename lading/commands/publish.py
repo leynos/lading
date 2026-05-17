@@ -401,6 +401,7 @@ def _package_publishable_crates(
     package_args: tuple[str, ...] = ("--allow-dirty",) if options.allow_dirty else ()
     for crate in plan.publishable:
         crate_root = _resolve_staged_crate_root(crate, plan, staging_root)
+        LOGGER.info("Running cargo package for crate %s", crate.name)
         exit_code, stdout, stderr = runner(
             ("cargo", "package", *package_args),
             cwd=crate_root,
@@ -552,6 +553,10 @@ def run(
             "re-run without --live."
         )
         raise PublishPreflightError(message)
+    if effective_options.allow_unpublished_workspace_deps:
+        LOGGER.info(
+            "Allowing unpublished workspace dependencies during dry-run publish"
+        )
     configuration_override = configuration or effective_options.configuration
     workspace_override = workspace or effective_options.workspace
     command_runner = effective_options.command_runner or _invoke

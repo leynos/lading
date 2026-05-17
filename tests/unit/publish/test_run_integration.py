@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import collections.abc as cabc
+import logging
 from pathlib import Path
 
 import pytest
@@ -139,6 +140,28 @@ def test_run_formats_plan_summary(tmp_path: Path) -> None:
     assert "- gamma" in lines
     assert "Configured exclusions not found in workspace:" in lines
     assert "- missing" in lines
+
+
+def test_run_logs_when_unpublished_workspace_dependency_override_is_enabled(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """``run`` logs when the dry-run unpublished-dependency override is enabled."""
+    caplog.set_level(logging.INFO, logger="lading.commands.publish")
+    root = tmp_path.resolve()
+    workspace = make_workspace(root, make_crate(root, "alpha"))
+    configuration = make_config()
+
+    publish.run(
+        root,
+        configuration,
+        workspace,
+        options=publish.PublishOptions(allow_unpublished_workspace_deps=True),
+    )
+
+    assert (
+        "Allowing unpublished workspace dependencies during dry-run publish"
+        in caplog.messages
+    )
 
 
 def test_run_reports_no_publishable_crates(tmp_path: Path) -> None:

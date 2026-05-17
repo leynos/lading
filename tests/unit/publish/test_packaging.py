@@ -49,8 +49,10 @@ def _assert_packaging_failure_message_contains(
 
 def test_package_publishable_crates_runs_in_plan_order(
     publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Cargo package is invoked for every publishable crate in plan order."""
+    caplog.set_level(logging.INFO, logger="lading.commands.publish")
     plan, preparation, staging_root = publish_plan_and_prep
     runner = CallTrackingRunner()
 
@@ -68,6 +70,11 @@ def test_package_publishable_crates_runs_in_plan_order(
     assert runner.calls == [
         (("cargo", "package", "--allow-dirty"), root) for root in expected_roots
     ], "cargo package should run once per publishable crate in order"
+    assert caplog.messages == [
+        "Running cargo package for crate alpha",
+        "Running cargo package for crate beta",
+        "Running cargo package for crate gamma",
+    ]
 
 
 def test_package_publishable_crates_stops_on_failure(

@@ -102,7 +102,7 @@ def test_index_missing_in_plan_downgrade_snapshot(
     snapshot: SnapshotAssertion,
 ) -> None:
     """Snapshot the warning emitted when the flag downgrades a failure to a warning."""
-    caplog.set_level(logging.WARNING, logger="lading.commands.publish")
+    caplog.set_level(logging.INFO)
     plan, _preparation, _staging_root = publish_plan_and_prep
     invocation = publish._CargoInvocation(
         crate_name="beta",
@@ -122,6 +122,11 @@ def test_index_missing_in_plan_downgrade_snapshot(
     )
 
     assert _warning_records(caplog) == snapshot(name="warning")
+    assert any(
+        "Downgraded cargo package failure for crate beta" in message
+        and "dependency alpha is part of the publish plan" in message
+        for message in caplog.messages
+    )
 
 
 def test_index_missing_out_of_plan_message_snapshot(
