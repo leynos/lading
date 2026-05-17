@@ -1,4 +1,11 @@
-"""Index-missing-version detection helpers for cargo package/publish errors."""
+"""Handle cargo index-lookup failures during publish workflows.
+
+This module keeps the error detection and downgrade logic for missing registry
+versions separate from the publish command orchestration. ``publish.py``
+imports these helpers while running ``cargo package`` and ``cargo publish`` so
+both phases share the same index-missing-version checks, dependency-name
+extraction, failure formatting, and override handling.
+"""
 
 from __future__ import annotations
 
