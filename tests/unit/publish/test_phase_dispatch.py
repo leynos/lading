@@ -16,6 +16,7 @@ Warning messages are verified via snapshot assertions backed by syrupy.
 from __future__ import annotations
 
 import logging
+import re
 import typing as typ
 
 if typ.TYPE_CHECKING:
@@ -168,7 +169,7 @@ def test_missing_dep_in_plan_without_flag_raises(
             return (1, "", INDEX_MISSING_STDERR_BETA)
         return (0, "", "")
 
-    with pytest.raises(exc_type) as excinfo:
+    with pytest.raises(exc_type, match=re.escape(expected_fragment)) as excinfo:
         invoke_phase(
             phase_name,
             PhaseContext(
@@ -205,7 +206,7 @@ def test_missing_dep_not_in_plan_raises(
         staging_root=staging_root,
         copied_readmes=(),
     )
-    with pytest.raises(exc_type) as excinfo:
+    with pytest.raises(exc_type, match=r"external_crate") as excinfo:
         invoke_phase(
             phase_name,
             PhaseContext(
