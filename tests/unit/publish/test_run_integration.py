@@ -13,9 +13,11 @@ from lading.commands import publish
 from lading.workspace import WorkspaceGraph, WorkspaceModelError
 
 from .conftest import (
+    INDEX_MISSING_STDERR_BETA,
     ORIGINAL_PREFLIGHT,
     make_config,
     make_crate,
+    make_dependency_chain,
     make_preflight_config,
     make_workspace,
 )
@@ -145,23 +147,54 @@ def test_run_formats_plan_summary(tmp_path: Path) -> None:
 def test_run_logs_when_unpublished_workspace_dependency_override_is_enabled(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """``run`` logs when the dry-run unpublished-dependency override is enabled."""
+    """``run`` downgrades in-plan index misses when the override is enabled."""
     caplog.set_level(logging.INFO, logger="lading.commands.publish")
-    root = tmp_path.resolve()
-    workspace = make_workspace(root, make_crate(root, "alpha"))
+    root = tmp_path / "workspace"
+    workspace = make_workspace(root, *make_dependency_chain(root))
     configuration = make_config()
 
     publish.run(
         root,
         configuration,
         workspace,
-        options=publish.PublishOptions(allow_unpublished_workspace_deps=True),
+        options=publish.PublishOptions(
+            build_directory=tmp_path / "build",
+            command_runner=_make_beta_package_index_failure_runner(),
+            allow_unpublished_workspace_deps=True,
+        ),
     )
 
     assert (
         "Allowing unpublished workspace dependencies during dry-run publish"
         in caplog.messages
     )
+    assert any(
+        "cargo package for crate beta could not resolve sibling dependency alpha"
+        in message
+        and "continuing because --allow-unpublished-workspace-deps is set" in message
+        for message in caplog.messages
+    )
+
+
+def _make_beta_package_index_failure_runner() -> cabc.Callable[
+    [cabc.Sequence[str]], tuple[int, str, str]
+]:
+    """Return a runner that simulates beta failing cargo package."""
+
+    def runner(
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        del env
+        is_package = tuple(command[:2]) == ("cargo", "package")
+        is_beta = cwd is not None and cwd.name == "beta"
+        if is_package and is_beta:
+            return (1, "", INDEX_MISSING_STDERR_BETA)
+        return (0, "", "")
+
+    return runner
 
 
 def test_run_reports_no_publishable_crates(tmp_path: Path) -> None:
