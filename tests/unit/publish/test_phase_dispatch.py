@@ -42,7 +42,7 @@ from .conftest import (
     prepare_staging_root,
 )
 
-_PHASE_IDS: list[pytest.param] = [
+_PHASE_IDS: list[pytest.mark.ParameterSet] = [
     pytest.param("package", publish.PublishPreflightError, id="packaging"),
     pytest.param("publish", publish.PublishError, id="publish-dry-run"),
 ]
