@@ -82,6 +82,67 @@ def _format_cargo_failure_message(
     return message
 
 
+def _raise_name_extraction_failure(
+    error_cls: type[Exception],
+    invocation: _CargoInvocation,
+    failure: str,
+) -> typ.NoReturn:
+    """Log and raise when the missing dependency name cannot be extracted."""
+    LOGGER.warning(
+        "cargo %s for crate %s matched index-missing-version markers "
+        "but the dependency name could not be extracted; treating as fatal",
+        invocation.subcommand,
+        invocation.crate_name,
+    )
+    raise error_cls(failure)
+
+
+def _raise_out_of_plan_dependency(
+    error_cls: type[Exception],
+    invocation: _CargoInvocation,
+    failure: str,
+    missing_name: str,
+) -> typ.NoReturn:
+    """Log and raise when the unindexed dependency is outside the publish plan."""
+    message = (
+        f"{failure}; missing dependency {missing_name!r} is not part "
+        "of the current publish plan, so --allow-unpublished-workspace-deps "
+        "cannot help. Publish or index the dependency first."
+    )
+    LOGGER.warning(
+        "cargo %s for crate %s failed due to unindexed dependency %r "
+        "which is not in the current publish plan; cannot continue",
+        invocation.subcommand,
+        invocation.crate_name,
+        missing_name,
+    )
+    raise error_cls(message)
+
+
+def _raise_flag_not_set(
+    error_cls: type[Exception],
+    invocation: _CargoInvocation,
+    failure: str,
+    missing_name: str,
+) -> typ.NoReturn:
+    """Log and raise when the override flag is not enabled."""
+    message = (
+        f"{failure}; dependency {missing_name!r} is scheduled in "
+        "this publish run but is not yet on crates.io. Re-run with "
+        "--allow-unpublished-workspace-deps (dry-run only) or follow the "
+        "staged-publish workaround in the user guide."
+    )
+    LOGGER.warning(
+        "cargo %s for crate %s failed due to unindexed sibling dependency %r "
+        "(in plan); re-run with --allow-unpublished-workspace-deps to "
+        "downgrade to a warning, or follow the staged-publish workaround",
+        invocation.subcommand,
+        invocation.crate_name,
+        missing_name,
+    )
+    raise error_cls(message)
+
+
 def _handle_index_missing_version(
     invocation: _CargoInvocation,
     *,
@@ -96,68 +157,33 @@ def _handle_index_missing_version(
     override.
     """
     exit_code, stdout, stderr = invocation.output
-    subcommand = invocation.subcommand
-    crate_name = invocation.crate_name
     failure = _format_cargo_failure_message(
-        subcommand, crate_name, exit_code, (stdout, stderr)
+        invocation.subcommand, invocation.crate_name, exit_code, (stdout, stderr)
     )
+
     missing_name = _extract_missing_dependency_name(stdout, stderr)
     if missing_name is None:
-        # The marker pair matched but the crate name could not be extracted;
-        # treat as a generic failure to avoid silently masking the issue.
-        LOGGER.warning(
-            "cargo %s for crate %s matched index-missing-version markers "
-            "but the dependency name could not be extracted; treating as fatal",
-            subcommand,
-            crate_name,
-        )
-        raise error_cls(failure)
+        _raise_name_extraction_failure(error_cls, invocation, failure)
 
     publishable_names = {entry.name for entry in plan.publishable}
     if missing_name not in publishable_names:
-        message = (
-            f"{failure}; missing dependency {missing_name!r} is not part "
-            "of the current publish plan, so --allow-unpublished-workspace-deps "
-            "cannot help. Publish or index the dependency first."
-        )
-        LOGGER.warning(
-            "cargo %s for crate %s failed due to unindexed dependency %r "
-            "which is not in the current publish plan; cannot continue",
-            subcommand,
-            crate_name,
-            missing_name,
-        )
-        raise error_cls(message)
+        _raise_out_of_plan_dependency(error_cls, invocation, failure, missing_name)
 
     if not options.allow_unpublished_workspace_deps:
-        message = (
-            f"{failure}; dependency {missing_name!r} is scheduled in "
-            "this publish run but is not yet on crates.io. Re-run with "
-            "--allow-unpublished-workspace-deps (dry-run only) or follow the "
-            "staged-publish workaround in the user guide."
-        )
-        LOGGER.warning(
-            "cargo %s for crate %s failed due to unindexed sibling dependency %r "
-            "(in plan); re-run with --allow-unpublished-workspace-deps to "
-            "downgrade to a warning, or follow the staged-publish workaround",
-            subcommand,
-            crate_name,
-            missing_name,
-        )
-        raise error_cls(message)
+        _raise_flag_not_set(error_cls, invocation, failure, missing_name)
 
     LOGGER.warning(
         "cargo %s for crate %s could not resolve sibling dependency %s "
         "from crates.io; continuing because "
         "--allow-unpublished-workspace-deps is set",
-        subcommand,
-        crate_name,
+        invocation.subcommand,
+        invocation.crate_name,
         missing_name,
     )
     LOGGER.info(
         "Downgraded cargo %s failure for crate %s because dependency %s is "
         "part of the publish plan and --allow-unpublished-workspace-deps is set",
-        subcommand,
-        crate_name,
+        invocation.subcommand,
+        invocation.crate_name,
         missing_name,
     )
