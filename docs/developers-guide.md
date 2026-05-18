@@ -195,9 +195,9 @@ The index-lookup handling is split across three helpers:
   a warning and continues; otherwise it raises with guidance to use the flag in
   dry-run mode or follow the staged-publish workaround.
 
-#### Crate-name canonicalisation
+#### Crate-name canonicalization
 
-`_canonical_crate_name(name)` normalises a crate name by replacing every
+`_canonical_crate_name(name)` normalizes a crate name by replacing every
 hyphen with an underscore. It is applied to both sides of the
 `publishable_names` membership check inside `_handle_index_missing_version`:
 
@@ -209,7 +209,7 @@ if _canonical_crate_name(missing_name) not in publishable_names:
 This is necessary because Cargo error diagnostics may report a missing
 dependency using hyphens (e.g. `my-crate`), while the corresponding
 `Cargo.toml` entry and the `PublishPlan` store the same package name with
-underscores (e.g. `my_crate`). Without normalisation, a hyphenated cargo
+underscores (e.g. `my_crate`). Without normalization, a hyphenated cargo
 diagnostic would be incorrectly classified as an out-of-plan dependency and
 raise a fatal error instead of triggering the downgrade path.
 
