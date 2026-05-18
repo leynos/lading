@@ -48,7 +48,12 @@ def _is_index_missing_version_error(exit_code: int, stdout: str, stderr: str) ->
 
 
 def _extract_missing_dependency_name(stdout: str, stderr: str) -> str | None:
-    """Return the missing dependency crate name parsed from cargo output."""
+    """Return the missing dependency crate name parsed from cargo output.
+
+    Searches ``stderr`` before ``stdout`` using
+    ``_INDEX_MISSING_VERSION_NAME_PATTERN``. Returns ``None`` when neither
+    stream contains a parseable dependency name.
+    """
     for stream in (stderr, stdout):
         match = _INDEX_MISSING_VERSION_NAME_PATTERN.search(stream)
         if match is not None:
@@ -71,7 +76,14 @@ def _format_cargo_failure_message(
     exit_code: int,
     output: tuple[str, str],
 ) -> str:
-    """Format a consistent error message for cargo command failures."""
+    """Format a human-readable error string for a failed cargo invocation.
+
+    ``output`` is a ``(stdout, stderr)`` pair; ``stderr`` is preferred as the
+    detail source and falls back to ``stdout`` when stderr is empty. Using a
+    single function for all cargo failure messages keeps the format identical
+    across the packaging and publish phases, which makes snapshot assertions
+    stable.
+    """
     stdout, stderr = output
     detail = (stderr or stdout).strip()
     message = (
@@ -119,13 +131,18 @@ def _raise_out_of_plan_dependency(
     raise error_cls(message)
 
 
-def _raise_flag_not_set(
+def _raise_allow_unpublished_flag_required(
     error_cls: type[Exception],
     invocation: _CargoInvocation,
     failure: str,
     missing_name: str,
 ) -> typ.NoReturn:
-    """Log and raise when the override flag is not enabled."""
+    """Log and raise when ``--allow-unpublished-workspace-deps`` is not set.
+
+    Called when the missing dependency is part of the publish plan but the
+    caller has not opted into the dry-run override that downgrades the failure
+    to a warning.
+    """
     message = (
         f"{failure}; dependency {missing_name!r} is scheduled in "
         "this publish run but is not yet on crates.io. Re-run with "
@@ -170,7 +187,9 @@ def _handle_index_missing_version(
         _raise_out_of_plan_dependency(error_cls, invocation, failure, missing_name)
 
     if not options.allow_unpublished_workspace_deps:
-        _raise_flag_not_set(error_cls, invocation, failure, missing_name)
+        _raise_allow_unpublished_flag_required(
+            error_cls, invocation, failure, missing_name
+        )
 
     LOGGER.warning(
         "cargo %s for crate %s could not resolve sibling dependency %s "
