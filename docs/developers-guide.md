@@ -161,6 +161,15 @@ yet. When enabled, `lading publish` downgrades that specific index-lookup
 failure to a warning and continues. The option is rejected at runtime when
 `live=True`, so it cannot mask a real upload failure.
 
+### Crate-name canonicalisation
+
+`_handle_index_missing_version(_CargoInvocation, *, plan, options)` compares
+the missing dependency name reported by Cargo against publish-plan entries
+after normalising hyphens to underscores on both sides. This keeps the
+dry-run override aligned with Cargo's crate-name reporting, so workspace
+crates whose names differ only by hyphen versus underscore are treated as the
+same dependency.
+
 ### `_PublishExecutionOptions`
 
 `_PublishExecutionOptions` is a frozen dataclass that carries the runtime flags
