@@ -197,14 +197,21 @@ The index-lookup handling is split across three helpers:
 
 #### Crate-name canonicalisation
 
-Cargo error diagnostics may report a missing dependency using hyphens
-(e.g. `my-crate`), while the corresponding `Cargo.toml` entry and the
-`PublishPlan` store the same package name with underscores (`my_crate`).
-The helper `_canonical_crate_name(name)` normalises both sides of the
-membership check by replacing hyphens with underscores before comparing.
-Without this step, a hyphenated cargo diagnostic would be incorrectly
-classified as an out-of-plan dependency and raise a fatal error instead of
-triggering the downgrade path.
+`_canonical_crate_name(name)` normalises a crate name by replacing every
+hyphen with an underscore. It is applied to both sides of the
+`publishable_names` membership check inside `_handle_index_missing_version`:
+
+```python
+publishable_names = {_canonical_crate_name(entry.name) for entry in plan.publishable}
+if _canonical_crate_name(missing_name) not in publishable_names:
+```
+
+This is necessary because Cargo error diagnostics may report a missing
+dependency using hyphens (e.g. `my-crate`), while the corresponding
+`Cargo.toml` entry and the `PublishPlan` store the same package name with
+underscores (e.g. `my_crate`). Without normalisation, a hyphenated cargo
+diagnostic would be incorrectly classified as an out-of-plan dependency and
+raise a fatal error instead of triggering the downgrade path.
 
 `_format_cargo_failure_message(command, crate_name, exit_code, output)` assembles
 the human-readable error string that is embedded in every `PublishPreflightError`
