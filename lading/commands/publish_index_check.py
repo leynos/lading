@@ -182,8 +182,8 @@ def _handle_index_missing_version(
     if missing_name is None:
         _raise_name_extraction_failure(error_cls, invocation, failure)
 
-    publishable_names = {entry.name for entry in plan.publishable}
-    if missing_name not in publishable_names:
+    publishable_names = {entry.name.replace("-", "_") for entry in plan.publishable}
+    if missing_name.replace("-", "_") not in publishable_names:
         _raise_out_of_plan_dependency(error_cls, invocation, failure, missing_name)
 
     if not options.allow_unpublished_workspace_deps:

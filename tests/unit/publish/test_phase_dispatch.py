@@ -22,6 +22,7 @@ from .conftest import (
     _warning_records,
     invoke_phase,
     make_config,
+    make_crate,
     make_dependency_chain,
     make_failing_runner,
     make_workspace,
@@ -75,6 +76,41 @@ def test_missing_dep_in_plan_and_flag_continues(
 
     assert calls == ["alpha", "beta", "gamma"]
     assert _warning_records(caplog) == snapshot(name=phase_name)
+
+
+def test_missing_dep_in_plan_allows_cargo_name_normalisation(tmp_path: Path) -> None:
+    """Cargo-reported underscores match hyphenated publish-plan crate names."""
+    workspace_root = tmp_path / "workspace"
+    alpha = make_crate(workspace_root, "alpha-crate")
+    beta = make_crate(workspace_root, "beta")
+    plan = publish.plan_publication(
+        make_workspace(workspace_root, alpha, beta), make_config()
+    )
+    invocation = publish._CargoInvocation(
+        crate_name="beta",
+        subcommand="package",
+        output=(
+            1,
+            "",
+            (
+                "error: failed to prepare local package for uploading\n"
+                "Caused by:\n"
+                "  failed to select a version for the requirement "
+                '`alpha_crate = "^1"`\n'
+                "  location searched: crates.io index\n"
+            ),
+        ),
+    )
+
+    publish._handle_index_missing_version(
+        invocation,
+        plan=plan,
+        options=publish._PublishExecutionOptions(
+            live=False,
+            allow_dirty=True,
+            allow_unpublished_workspace_deps=True,
+        ),
+    )
 
 
 @pytest.mark.parametrize(
