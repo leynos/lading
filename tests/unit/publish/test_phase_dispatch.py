@@ -91,8 +91,12 @@ def test_missing_dep_in_plan_and_flag_continues(
     assert _warning_records(caplog) == snapshot(name=phase_name)
 
 
-def test_missing_dep_in_plan_allows_cargo_name_normalisation(tmp_path: Path) -> None:
+def test_missing_dep_in_plan_allows_cargo_name_normalisation(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     """Cargo-reported underscores match hyphenated publish-plan crate names."""
+    caplog.set_level(logging.WARNING)
     workspace_root = tmp_path / "workspace"
     alpha = make_crate(workspace_root, "alpha-crate")
     beta = make_crate(workspace_root, "beta")
@@ -124,6 +128,11 @@ def test_missing_dep_in_plan_allows_cargo_name_normalisation(tmp_path: Path) -> 
             allow_unpublished_workspace_deps=True,
         ),
     )
+    assert any(
+        "could not resolve sibling dependency alpha_crate" in message
+        and "continuing because --allow-unpublished-workspace-deps is set" in message
+        for message in caplog.messages
+    ), "expected canonicalised in-plan dependency to be downgraded to a warning"
 
 
 @pytest.mark.parametrize(
