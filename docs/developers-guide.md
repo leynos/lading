@@ -161,15 +161,6 @@ yet. When enabled, `lading publish` downgrades that specific index-lookup
 failure to a warning and continues. The option is rejected at runtime when
 `live=True`, so it cannot mask a real upload failure.
 
-### Crate-name canonicalisation
-
-`_handle_index_missing_version(_CargoInvocation, *, plan, options)` compares
-the missing dependency name reported by Cargo against publish-plan entries
-after normalising hyphens to underscores on both sides. This keeps the
-dry-run override aligned with Cargo's crate-name reporting, so workspace
-crates whose names differ only by hyphen versus underscore are treated as the
-same dependency.
-
 ### `_PublishExecutionOptions`
 
 `_PublishExecutionOptions` is a frozen dataclass that carries the runtime flags
@@ -203,6 +194,17 @@ The index-lookup handling is split across three helpers:
   is in the plan and `allow_unpublished_workspace_deps` is set, the helper logs
   a warning and continues; otherwise it raises with guidance to use the flag in
   dry-run mode or follow the staged-publish workaround.
+
+#### Crate-name canonicalisation
+
+Cargo error diagnostics may report a missing dependency using hyphens
+(e.g. `my-crate`), while the corresponding `Cargo.toml` entry and the
+`PublishPlan` store the same package name with underscores (`my_crate`).
+The helper `_canonical_crate_name(name)` normalises both sides of the
+membership check by replacing hyphens with underscores before comparing.
+Without this step, a hyphenated cargo diagnostic would be incorrectly
+classified as an out-of-plan dependency and raise a fatal error instead of
+triggering the downgrade path.
 
 `_format_cargo_failure_message(command, crate_name, exit_code, output)` assembles
 the human-readable error string that is embedded in every `PublishPreflightError`

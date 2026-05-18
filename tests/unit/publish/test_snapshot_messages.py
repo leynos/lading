@@ -1,4 +1,17 @@
-"""Snapshot tests for publish index-missing-version messages."""
+"""Snapshot tests for human-readable messages emitted by publish index handling.
+
+Covers every distinct message path in
+``lading.commands.publish_index_check._handle_index_missing_version``:
+
+- rejection of ``--allow-unpublished-workspace-deps`` when combined with ``--live``,
+- name-extraction failure (unparseable cargo stderr),
+- in-plan downgrade (flag set, missing dep scheduled in this publish run),
+- out-of-plan failure (missing dep not in the publish plan),
+- flag-disabled failure (flag unset, dep in plan).
+
+All message assertions use syrupy ``snapshot()`` comparisons rather than
+substring matching to lock in the exact format for regression detection.
+"""
 
 from __future__ import annotations
 

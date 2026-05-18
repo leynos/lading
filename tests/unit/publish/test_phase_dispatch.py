@@ -1,4 +1,17 @@
-"""Unit tests for handling index failures across publish phases."""
+"""Unit tests for publish-phase dispatch behaviour under index-missing-version failures.
+
+Exercises ``lading.commands.publish._package_publishable_crates`` and
+``lading.commands.publish._publish_crates`` through the shared
+``invoke_phase`` dispatcher from ``tests.unit.publish.conftest``.
+
+Three parametrised scenarios (package phase and publish-dry-run phase) verify:
+- the downgrade path when ``--allow-unpublished-workspace-deps`` is set and
+  the missing dependency is in the publish plan,
+- the fatal path when the flag is unset, and
+- the fatal path when the missing dependency is outside the publish plan.
+
+Warning messages are verified via snapshot assertions backed by syrupy.
+"""
 
 from __future__ import annotations
 
@@ -201,3 +214,44 @@ def test_missing_dep_not_in_plan_raises(
     message = str(excinfo.value)
     assert "external_crate" in message
     assert "not part of the current publish plan" in message
+
+
+@pytest.mark.parametrize("phase_name", ["package", "publish"])
+def test_hyphenated_dep_in_plan_matches_with_canonicalisation(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    phase_name: str,
+) -> None:
+    """Hyphenated cargo output name matches underscore manifest name."""
+    caplog.set_level(logging.WARNING, logger="lading.commands.publish")
+    workspace_root = tmp_path / "workspace"
+    dependency = make_crate(workspace_root, "my_crate")
+    dependent = make_crate(workspace_root, "dependent")
+    plan = publish.plan_publication(
+        make_workspace(workspace_root, dependency, dependent), make_config()
+    )
+    staging_root = prepare_staging_root(plan, tmp_path)
+    preparation = publish.PublishPreparation(
+        staging_root=staging_root,
+        copied_readmes=(),
+    )
+    hyphenated_stderr = (
+        "error: failed to prepare local package for uploading\n"
+        "Caused by:\n"
+        '  failed to select a version for the requirement `my-crate = "^0.1.0"`\n'
+        "  location searched: crates.io index\n"
+    )
+    ctx = PhaseContext(
+        plan=plan,
+        preparation=preparation,
+        runner=make_failing_runner(stderr=hyphenated_stderr),
+        options=publish._PublishExecutionOptions(
+            live=False,
+            allow_dirty=True,
+            allow_unpublished_workspace_deps=True,
+        ),
+    )
+
+    invoke_phase(phase_name, ctx)
+
+    assert any("my-crate" in message for message in caplog.messages)

@@ -1,4 +1,16 @@
-"""Unit tests for cargo index-missing-version detection."""
+"""Unit tests for cargo index-missing-version detection helpers.
+
+Tests :func:`lading.commands.publish._is_index_missing_version_error` and
+:func:`lading.commands.publish._extract_missing_dependency_name`, both
+extracted into ``lading.commands.publish_index_check``.
+
+``_is_index_missing_version_error`` is parametrised across exit-code and
+marker combinations to verify the two-marker detection strategy.
+``_extract_missing_dependency_name`` is parametrised across backtick,
+single-quote, double-quote, and hyphenated name variants to confirm the
+regex handles the full range of cargo diagnostic formatting, including
+hyphenated crate names that cargo normalises differently from manifest names.
+"""
 
 from __future__ import annotations
 
@@ -68,6 +80,17 @@ def test_is_index_missing_version_error(
             "",
             "foo-bar",
             id="hyphenated-on-stdout",
+        ),
+        pytest.param(
+            "",
+            (
+                "error: failed to prepare local package for uploading\n"
+                "Caused by:\n"
+                '  failed to select a version for the requirement `my-crate = "^1"`\n'
+                "  location searched: crates.io index\n"
+            ),
+            "my-crate",
+            id="hyphenated-name",
         ),
         pytest.param("", "no match here", None, id="no-match"),
     ],

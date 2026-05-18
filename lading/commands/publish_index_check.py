@@ -160,6 +160,18 @@ def _raise_allow_unpublished_flag_required(
     raise error_cls(message)
 
 
+def _canonical_crate_name(name: str) -> str:
+    """Return the canonical crate name by normalising hyphens to underscores.
+
+    Cargo error diagnostics report crate names using hyphens (e.g.
+    ``my-crate``), whereas ``Cargo.toml`` manifests typically record the same
+    package under underscores (e.g. ``my_crate``). Normalising both sides of
+    any membership comparison prevents false out-of-plan classifications that
+    would block the downgrade override.
+    """
+    return name.replace("-", "_")
+
+
 def _handle_index_missing_version(
     invocation: _CargoInvocation,
     *,
@@ -182,8 +194,10 @@ def _handle_index_missing_version(
     if missing_name is None:
         _raise_name_extraction_failure(error_cls, invocation, failure)
 
-    publishable_names = {entry.name.replace("-", "_") for entry in plan.publishable}
-    if missing_name.replace("-", "_") not in publishable_names:
+    publishable_names = {
+        _canonical_crate_name(entry.name) for entry in plan.publishable
+    }
+    if _canonical_crate_name(missing_name) not in publishable_names:
         _raise_out_of_plan_dependency(error_cls, invocation, failure, missing_name)
 
     if not options.allow_unpublished_workspace_deps:
