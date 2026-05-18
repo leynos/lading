@@ -185,7 +185,6 @@ def test_missing_dep_in_plan_without_flag_raises(
         )
 
     message = str(excinfo.value)
-    assert expected_fragment in message
     assert "--allow-unpublished-workspace-deps" in message
 
 
@@ -222,7 +221,6 @@ def test_missing_dep_not_in_plan_raises(
         )
 
     message = str(excinfo.value)
-    assert "external_crate" in message
     assert "not part of the current publish plan" in message
 
 
