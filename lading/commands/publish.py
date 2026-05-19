@@ -587,6 +587,51 @@ def _ensure_workspace(
         raise WorkspaceModelError(message) from exc
 
 
+def _validate_publication_options(options: PublishOptions) -> None:
+    """Raise :class:`PublishPreflightError` for invalid option combinations."""
+    if options.live and options.allow_unpublished_workspace_deps:
+        message = (
+            "--allow-unpublished-workspace-deps is only valid in dry-run mode; "
+            "re-run without --live."
+        )
+        LOGGER.warning(message)
+        raise PublishPreflightError(message)
+    if options.allow_unpublished_workspace_deps:
+        LOGGER.info(
+            "Allowing unpublished workspace dependencies during dry-run publish"
+        )
+
+
+def _dispatch_publication(
+    plan: PublishPlan,
+    preparation: PublishPreparation,
+    *,
+    options: _PublishExecutionOptions,
+    runner: _CommandRunner,
+) -> None:
+    """Route to the live or dry-run publication pipeline."""
+    if options.live:
+        _execute_live_publication_pipeline(
+            plan,
+            preparation,
+            options=options,
+            runner=runner,
+        )
+    else:
+        _package_publishable_crates(
+            plan,
+            preparation,
+            options=options,
+            runner=runner,
+        )
+        _publish_crates(
+            plan,
+            preparation,
+            runner=runner,
+            options=options,
+        )
+
+
 def run(
     workspace_root: Path,
     configuration: LadingConfig | None = None,
@@ -597,17 +642,7 @@ def run(
     """Run pre-flight checks, package crates, and publish from ``workspace_root``."""
     root_path = normalise_workspace_root(workspace_root)
     effective_options = PublishOptions() if options is None else options
-    if effective_options.live and effective_options.allow_unpublished_workspace_deps:
-        message = (
-            "--allow-unpublished-workspace-deps is only valid in dry-run mode; "
-            "re-run without --live."
-        )
-        LOGGER.warning(message)
-        raise PublishPreflightError(message)
-    if effective_options.allow_unpublished_workspace_deps:
-        LOGGER.info(
-            "Allowing unpublished workspace dependencies during dry-run publish"
-        )
+    _validate_publication_options(effective_options)
     configuration_override = configuration or effective_options.configuration
     workspace_override = workspace or effective_options.workspace
     command_runner = effective_options.command_runner or _invoke
@@ -636,26 +671,12 @@ def run(
             effective_options.allow_unpublished_workspace_deps
         ),
     )
-    if execution_options.live:
-        _execute_live_publication_pipeline(
-            plan,
-            preparation,
-            options=execution_options,
-            runner=command_runner,
-        )
-    else:
-        _package_publishable_crates(
-            plan,
-            preparation,
-            options=execution_options,
-            runner=command_runner,
-        )
-        _publish_crates(
-            plan,
-            preparation,
-            runner=command_runner,
-            options=execution_options,
-        )
+    _dispatch_publication(
+        plan,
+        preparation,
+        options=execution_options,
+        runner=command_runner,
+    )
     plan_message = _format_plan(
         plan, strip_patches=active_configuration.publish.strip_patches
     )
