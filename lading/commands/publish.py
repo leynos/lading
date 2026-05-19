@@ -1,5 +1,7 @@
 """Publication planning helpers for :mod:`lading.commands.publish`."""
 
+# pylint: disable=too-many-lines
+
 from __future__ import annotations
 
 import atexit
@@ -82,6 +84,16 @@ class _PublishExecutionOptions:
     live: bool
     allow_dirty: bool
     allow_unpublished_workspace_deps: bool = False
+
+
+@dc.dataclass(frozen=True, slots=True)
+class _PublicationPipelineContext:
+    """Shared inputs for cargo package and publish invocations."""
+
+    plan: PublishPlan
+    preparation: PublishPreparation
+    options: _PublishExecutionOptions
+    runner: _CommandRunner
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -397,33 +409,45 @@ def _package_publishable_crates(
     runner: _CommandRunner,
 ) -> None:
     """Package each publishable crate in order using the staged workspace."""
-    staging_root = preparation.staging_root
-    package_args: tuple[str, ...] = ("--allow-dirty",) if options.allow_dirty else ()
+    context = _PublicationPipelineContext(plan, preparation, options, runner)
     for crate in plan.publishable:
-        crate_root = _resolve_staged_crate_root(crate, plan, staging_root)
-        LOGGER.info("Running cargo package for crate %s", crate.name)
-        exit_code, stdout, stderr = runner(
-            ("cargo", "package", *package_args),
-            cwd=crate_root,
-            env=None,
+        _package_crate(crate, context)
+
+
+def _package_crate(
+    crate: WorkspaceCrate,
+    context: _PublicationPipelineContext,
+) -> None:
+    """Package one publishable crate using the staged workspace."""
+    plan = context.plan
+    options = context.options
+    package_args: tuple[str, ...] = ("--allow-dirty",) if options.allow_dirty else ()
+    crate_root = _resolve_staged_crate_root(
+        crate, plan, context.preparation.staging_root
+    )
+    LOGGER.info("Running cargo package for crate %s", crate.name)
+    exit_code, stdout, stderr = context.runner(
+        ("cargo", "package", *package_args),
+        cwd=crate_root,
+        env=None,
+    )
+    if exit_code == 0:
+        return
+    if _is_index_missing_version_error(exit_code, stdout, stderr):
+        _handle_index_missing_version(
+            _CargoInvocation(
+                crate_name=crate.name,
+                subcommand="package",
+                output=(exit_code, stdout, stderr),
+            ),
+            plan=plan,
+            options=options,
         )
-        if exit_code == 0:
-            continue
-        if _is_index_missing_version_error(exit_code, stdout, stderr):
-            _handle_index_missing_version(
-                _CargoInvocation(
-                    crate_name=crate.name,
-                    subcommand="package",
-                    output=(exit_code, stdout, stderr),
-                ),
-                plan=plan,
-                options=options,
-            )
-            continue
-        message = _format_cargo_failure_message(
-            "package", crate.name, exit_code, (stdout, stderr)
-        )
-        raise PublishPreflightError(message)
+        return
+    message = _format_cargo_failure_message(
+        "package", crate.name, exit_code, (stdout, stderr)
+    )
+    raise PublishPreflightError(message)
 
 
 _ALREADY_PUBLISHED_MARKERS: tuple[str, ...] = (
@@ -459,53 +483,79 @@ def _publish_crates(
     options: _PublishExecutionOptions,
 ) -> None:
     """Publish each crate in order, respecting dry-run vs live mode."""
-    staging_root = preparation.staging_root
+    context = _PublicationPipelineContext(plan, preparation, options, runner)
+    for crate in plan.publishable:
+        _publish_crate(crate, context)
+
+
+def _publish_crate(
+    crate: WorkspaceCrate,
+    context: _PublicationPipelineContext,
+) -> None:
+    """Publish one crate from the staged workspace."""
+    plan = context.plan
+    options = context.options
     publish_args: list[str] = []
     if options.allow_dirty:
         publish_args.append("--allow-dirty")
     if not options.live:
         publish_args.append("--dry-run")
     publish_args_tuple = tuple(publish_args)
-    for crate in plan.publishable:
-        crate_root = _resolve_staged_crate_root(crate, plan, staging_root)
-        LOGGER.info(
-            "Running cargo publish%s for crate %s",
-            "" if options.live else " --dry-run",
+    crate_root = _resolve_staged_crate_root(
+        crate, plan, context.preparation.staging_root
+    )
+    LOGGER.info(
+        "Running cargo publish%s for crate %s",
+        "" if options.live else " --dry-run",
+        crate.name,
+    )
+    exit_code, stdout, stderr = context.runner(
+        ("cargo", "publish", *publish_args_tuple),
+        cwd=crate_root,
+        env=None,
+    )
+    if exit_code == 0:
+        return
+    if _is_already_published_error(exit_code, stdout, stderr):
+        LOGGER.warning(
+            "Crate %s @ %s is already published; skipping",
             crate.name,
+            crate.version,
         )
-        exit_code, stdout, stderr = runner(
-            ("cargo", "publish", *publish_args_tuple),
-            cwd=crate_root,
-            env=None,
+        return
+    if _is_index_missing_version_error(exit_code, stdout, stderr):
+        # cargo publish --dry-run packages internally and hits the same
+        # crates.io index lookup as cargo package, so honour the override
+        # consistently across both phases.
+        _handle_index_missing_version(
+            _CargoInvocation(
+                crate_name=crate.name,
+                subcommand="publish",
+                output=(exit_code, stdout, stderr),
+            ),
+            plan=plan,
+            options=options,
         )
-        if exit_code == 0:
-            continue
-        if _is_already_published_error(exit_code, stdout, stderr):
-            LOGGER.warning(
-                "Crate %s @ %s is already published; skipping",
-                crate.name,
-                crate.version,
-            )
-            continue
-        if _is_index_missing_version_error(exit_code, stdout, stderr):
-            # cargo publish --dry-run packages internally and hits the same
-            # crates.io index lookup as cargo package, so honour the override
-            # consistently across both phases.
-            _handle_index_missing_version(
-                _CargoInvocation(
-                    crate_name=crate.name,
-                    subcommand="publish",
-                    output=(exit_code, stdout, stderr),
-                ),
-                plan=plan,
-                options=options,
-            )
-            continue
+        return
 
-        message = _format_cargo_failure_message(
-            "publish", crate.name, exit_code, (stdout, stderr)
-        )
-        raise PublishError(message)
+    message = _format_cargo_failure_message(
+        "publish", crate.name, exit_code, (stdout, stderr)
+    )
+    raise PublishError(message)
+
+
+def _execute_live_publication_pipeline(
+    plan: PublishPlan,
+    preparation: PublishPreparation,
+    *,
+    options: _PublishExecutionOptions,
+    runner: _CommandRunner,
+) -> None:
+    """Package and publish each crate before moving to the next crate."""
+    context = _PublicationPipelineContext(plan, preparation, options, runner)
+    for crate in plan.publishable:
+        _package_crate(crate, context)
+        _publish_crate(crate, context)
 
 
 def _ensure_configuration(
@@ -586,18 +636,26 @@ def run(
             effective_options.allow_unpublished_workspace_deps
         ),
     )
-    _package_publishable_crates(
-        plan,
-        preparation,
-        options=execution_options,
-        runner=command_runner,
-    )
-    _publish_crates(
-        plan,
-        preparation,
-        runner=command_runner,
-        options=execution_options,
-    )
+    if execution_options.live:
+        _execute_live_publication_pipeline(
+            plan,
+            preparation,
+            options=execution_options,
+            runner=command_runner,
+        )
+    else:
+        _package_publishable_crates(
+            plan,
+            preparation,
+            options=execution_options,
+            runner=command_runner,
+        )
+        _publish_crates(
+            plan,
+            preparation,
+            runner=command_runner,
+            options=execution_options,
+        )
     plan_message = _format_plan(
         plan, strip_patches=active_configuration.publish.strip_patches
     )

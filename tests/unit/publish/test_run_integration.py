@@ -15,6 +15,7 @@ from lading.workspace import WorkspaceGraph, WorkspaceModelError
 from .conftest import (
     INDEX_MISSING_STDERR_BETA,
     ORIGINAL_PREFLIGHT,
+    CallTrackingRunner,
     make_config,
     make_crate,
     make_dependency_chain,
@@ -173,6 +174,36 @@ def test_run_logs_when_unpublished_workspace_dependency_override_is_enabled(
         in message
         and "continuing because --allow-unpublished-workspace-deps is set" in message
         for message in caplog.messages
+    )
+
+
+def test_run_keeps_dry_run_publication_batched(tmp_path: Path) -> None:
+    """Dry-run publish still packages all crates before publish dry-runs."""
+    root = tmp_path / "workspace"
+    workspace = make_workspace(root, *make_dependency_chain(root))
+    configuration = make_config()
+    runner = CallTrackingRunner()
+
+    publish.run(
+        root,
+        configuration,
+        workspace,
+        options=publish.PublishOptions(
+            build_directory=tmp_path / "build",
+            command_runner=runner,
+            live=False,
+        ),
+    )
+
+    publishable_count = len(workspace.crates)
+    commands = [command for command, _cwd in runner.calls]
+    assert (
+        commands[:publishable_count]
+        == [("cargo", "package", "--allow-dirty")] * publishable_count
+    )
+    assert (
+        commands[publishable_count:]
+        == [("cargo", "publish", "--allow-dirty", "--dry-run")] * publishable_count
     )
 
 

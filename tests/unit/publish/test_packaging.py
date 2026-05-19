@@ -77,6 +77,46 @@ def test_package_publishable_crates_runs_in_plan_order(
     ]
 
 
+def test_package_crate_runs_cargo_package_for_single_crate(
+    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+) -> None:
+    """The single-crate packaging helper invokes cargo package."""
+    plan, preparation, staging_root = publish_plan_and_prep
+    runner = CallTrackingRunner()
+    crate = plan.publishable[1]
+    context = publish._PublicationPipelineContext(
+        plan,
+        preparation,
+        publish._PublishExecutionOptions(live=False, allow_dirty=True),
+        runner,
+    )
+
+    publish._package_crate(crate, context)
+
+    expected_root = staging_root / crate.root_path.relative_to(plan.workspace_root)
+    assert runner.calls == [(("cargo", "package", "--allow-dirty"), expected_root)]
+
+
+def test_package_crate_raises_on_failure(
+    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+) -> None:
+    """The single-crate packaging helper preserves package failure handling."""
+    plan, preparation, _staging_root = publish_plan_and_prep
+    failing_runner = make_failing_runner(stderr="packaging failed")
+    context = publish._PublicationPipelineContext(
+        plan,
+        preparation,
+        publish._PublishExecutionOptions(live=False, allow_dirty=True),
+        failing_runner,
+    )
+
+    with pytest.raises(publish.PublishPreflightError) as excinfo:
+        publish._package_crate(plan.publishable[0], context)
+
+    assert "cargo package failed for crate alpha" in str(excinfo.value)
+    assert "packaging failed" in str(excinfo.value)
+
+
 def test_package_publishable_crates_stops_on_failure(
     publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
 ) -> None:
@@ -186,6 +226,75 @@ def test_publish_crates_run_live_without_dry_run(
     ]
 
 
+def test_publish_crate_runs_cargo_publish_for_single_crate(
+    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+) -> None:
+    """The single-crate publish helper invokes cargo publish."""
+    plan, preparation, staging_root = publish_plan_and_prep
+    runner = CallTrackingRunner()
+    crate = plan.publishable[1]
+    context = publish._PublicationPipelineContext(
+        plan,
+        preparation,
+        publish._PublishExecutionOptions(live=True, allow_dirty=True),
+        runner,
+    )
+
+    publish._publish_crate(crate, context)
+
+    expected_root = staging_root / crate.root_path.relative_to(plan.workspace_root)
+    assert runner.calls == [(("cargo", "publish", "--allow-dirty"), expected_root)]
+
+
+def test_publish_crate_continues_when_version_already_uploaded(
+    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The single-crate publish helper keeps already-published handling."""
+    caplog.set_level(logging.WARNING, logger="lading.commands.publish")
+    plan, preparation, _staging_root = publish_plan_and_prep
+
+    def already_uploaded_runner(
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        del command, cwd, env
+        return 101, "", "error: crate version `alpha v0.1.0` is already uploaded"
+
+    context = publish._PublicationPipelineContext(
+        plan,
+        preparation,
+        publish._PublishExecutionOptions(live=True, allow_dirty=True),
+        already_uploaded_runner,
+    )
+
+    publish._publish_crate(plan.publishable[0], context)
+
+    assert any("already published" in message for message in caplog.messages)
+
+
+def test_publish_crate_raises_on_failure(
+    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+) -> None:
+    """The single-crate publish helper preserves publish failure handling."""
+    plan, preparation, _staging_root = publish_plan_and_prep
+    context = publish._PublicationPipelineContext(
+        plan,
+        preparation,
+        publish._PublishExecutionOptions(live=True, allow_dirty=True),
+        make_failing_runner(stdout="network offline"),
+    )
+
+    with pytest.raises(publish.PublishError) as excinfo:
+        publish._publish_crate(plan.publishable[0], context)
+
+    message = str(excinfo.value)
+    assert "cargo publish failed for crate alpha" in message
+    assert "network offline" in message
+
+
 @pytest.mark.parametrize(
     "live",
     [pytest.param(False, id="dry-run"), pytest.param(True, id="live")],
@@ -234,6 +343,31 @@ def test_publish_crates_continue_when_version_already_uploaded(
 
     assert calls == ["alpha", "beta"]
     assert any("already published" in message for message in caplog.messages)
+
+
+def test_execute_live_publication_pipeline_interleaves_package_and_publish(
+    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+) -> None:
+    """Live publication packages and publishes each crate before continuing."""
+    plan, preparation, staging_root = publish_plan_and_prep
+    runner = CallTrackingRunner()
+
+    publish._execute_live_publication_pipeline(
+        plan,
+        preparation,
+        options=publish._PublishExecutionOptions(live=True, allow_dirty=True),
+        runner=runner,
+    )
+
+    expected_calls: list[tuple[tuple[str, ...], Path]] = []
+    for crate in plan.publishable:
+        crate_root = staging_root / crate.root_path.relative_to(plan.workspace_root)
+        expected_calls.extend([
+            (("cargo", "package", "--allow-dirty"), crate_root),
+            (("cargo", "publish", "--allow-dirty"), crate_root),
+        ])
+
+    assert runner.calls == expected_calls
 
 
 def test_publish_crates_raise_on_failure(

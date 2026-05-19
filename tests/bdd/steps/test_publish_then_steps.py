@@ -223,6 +223,39 @@ def then_publish_runs_live(
     _assert_crate_order_matches(observed, expected, "cargo publish live order")
 
 
+@then(
+    parsers.parse(
+        "the publish command interleaves live package and publish for crates "
+        '"{crate_names}"'
+    )
+)
+def then_publish_interleaves_live_package_and_publish(
+    preflight_recorder: _PreflightInvocationRecorder, crate_names: str
+) -> None:
+    """Assert live publish packages and publishes each crate before the next."""
+    expected_names = _split_names(crate_names)
+    observed_sequence: list[tuple[str, str]] = []
+    for label, _args, env in preflight_recorder.records:
+        if label not in {"cargo::package", "cargo::publish"}:
+            continue
+        cwd = env.get("PWD", "")
+        observed_sequence.append((label, Path(cwd).name if cwd else ""))
+
+    expected_sequence: list[tuple[str, str]] = []
+    for crate_name in expected_names:
+        expected_sequence.extend([
+            ("cargo::package", crate_name),
+            ("cargo::publish", crate_name),
+        ])
+
+    if observed_sequence != expected_sequence:
+        message = (
+            "Unexpected live package/publish order: "
+            f"observed={observed_sequence!r}, expected={expected_sequence!r}"
+        )
+        raise AssertionError(message)
+
+
 @then("the publish command reports that no crates are publishable")
 def then_publish_reports_none(cli_run: dict[str, typ.Any]) -> None:
     """Assert that the publish command highlights the empty publish list."""

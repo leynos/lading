@@ -129,6 +129,7 @@ Feature: Lading CLI scaffolding
     And cargo metadata describes a workspace with a publish dependency chain
     When I invoke lading publish with that workspace using --live
     Then the publish command performs live cargo publish for crates "alpha, beta, gamma"
+    And the publish command interleaves live package and publish for crates "alpha, beta, gamma"
 
   Scenario: Publish command continues past already published crate versions
     Given a workspace directory with configuration
