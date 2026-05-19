@@ -82,14 +82,18 @@ class _CmdMoxCommandRunner(typ.Protocol):
         lookup_path: str,
         extra_env: cabc.Mapping[str, str] | None,
         invocation_env: cabc.Mapping[str, str],
-    ) -> dict[str, str]: ...
+    ) -> dict[str, str]:
+        """Return the environment cmd-mox uses for passthrough execution."""
+        raise NotImplementedError
 
     def resolve_command_with_override(
         self,
         command: str,
         lookup_path: str,
         override: str | None,
-    ) -> object: ...
+    ) -> object:
+        """Resolve the real command path for a cmd-mox passthrough."""
+        raise NotImplementedError
 
 
 class _CmdMoxPassthroughDirective(typ.Protocol):
@@ -417,6 +421,7 @@ def _merge_cmd_mox_path_entries(
     seen: set[str] = set()
 
     def _add_entries(raw: str | None) -> None:
+        """Append unseen non-shim PATH entries to the merged path."""
         if not raw:
             return
         for entry in raw.split(os.pathsep):
@@ -510,6 +515,7 @@ def _format_thread_name(program: str, stream: str) -> str:
 def _log_subprocess_spawn(
     command: cabc.Sequence[str], cwd: Path | None
 ) -> None:  # pragma: no cover - logging only
+    """Log the rendered subprocess command and optional working directory."""
     rendered = format_command(command)
     if cwd is None:
         LOGGER.info("Spawning subprocess: %s", rendered)

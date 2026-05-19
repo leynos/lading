@@ -151,3 +151,80 @@ Examples:
   automatically at process exit instead of leaving it for inspection.
 - `PublishOptions(allow_dirty=False)` — require a clean git working tree before
   proceeding with publish preparation.
+
+## Publish command internals
+
+`PublishOptions.allow_unpublished_workspace_deps` is a dry-run-only override
+for release trains where one workspace crate depends on another crate version
+that is part of the same publish plan but is not visible in the crates.io index
+yet. When enabled, `lading publish` downgrades that specific index-lookup
+failure to a warning and continues. The option is rejected at runtime when
+`live=True`, so it cannot mask a real upload failure.
+
+### `_PublishExecutionOptions`
+
+`_PublishExecutionOptions` is a frozen dataclass that carries the runtime flags
+forwarded to every `cargo package` and `cargo publish` invocation within a
+single `lading publish` run. Its fields are:
+
+| Field | Type | Default | Purpose |
+| --- | --- | --- | --- |
+| `live` | `bool` | — | When `True`, omits `--dry-run` from `cargo publish`. |
+| `allow_dirty` | `bool` | — | Passes `--allow-dirty` to both cargo subcommands. |
+| `allow_unpublished_workspace_deps` | `bool` | `False` | Dry-run-only override; see `allow_unpublished_workspace_deps` above. |
+
+The dataclass is an internal implementation detail; callers interact with the
+public `PublishOptions` dataclass, which `run()` converts before dispatching.
+
+The index-lookup handling is split across three helpers:
+
+- `_is_index_missing_version_error(exit_code, stdout, stderr) -> bool` checks
+  for both Cargo's version-selection failure marker and the crates.io index
+  marker after confirming the command failed. Requiring both markers minimizes
+  false positives from unrelated resolver, registry, or command failures.
+- `_extract_missing_dependency_name(stdout, stderr) -> str | None` parses the
+  missing crate name from Cargo's requirement line. The regex accepts Cargo's
+  backtick, single-quote, and double-quote delimiters around the requirement,
+  captures the dependency name before `=`, and searches `stderr` before
+  `stdout` because Cargo normally reports this failure on the error stream.
+- `_handle_index_missing_version(_CargoInvocation, *, plan, options)` applies
+  the decision tree. If name extraction fails, the original Cargo failure stays
+  fatal. If the parsed name is not in the publish plan, the failure is fatal
+  with guidance to publish or index that dependency first. If the parsed name
+  is in the plan and `allow_unpublished_workspace_deps` is set, the helper logs
+  a warning and continues; otherwise it raises with guidance to use the flag in
+  dry-run mode or follow the staged-publish workaround.
+
+#### Crate-name canonicalization
+
+`_canonical_crate_name(name)` normalizes a crate name by replacing every
+hyphen with an underscore. It is applied to both sides of the
+`publishable_names` membership check inside `_handle_index_missing_version`:
+
+```python
+publishable_names = {_canonical_crate_name(entry.name) for entry in plan.publishable}
+if _canonical_crate_name(missing_name) not in publishable_names:
+```
+
+This is necessary because Cargo error diagnostics may report a missing
+dependency using hyphens (e.g. `my-crate`), while the corresponding
+`Cargo.toml` entry and the `PublishPlan` store the same package name with
+underscores (e.g. `my_crate`). Without normalization, a hyphenated cargo
+diagnostic would be incorrectly classified as an out-of-plan dependency and
+raise a fatal error instead of triggering the downgrade path.
+
+`_format_cargo_failure_message(command, crate_name, exit_code, output)` assembles
+the human-readable error string that is embedded in every `PublishPreflightError`
+or `PublishError` raised on a non-zero cargo exit. It is a pure function with no
+side effects: given the cargo subcommand string, the crate name, the numeric
+exit code, and the `(stdout, stderr)` pair, it returns a formatted message that
+includes all four values. Using a single function for message construction keeps
+the error format consistent across the packaging and publish phases and makes
+snapshot testing straightforward.
+
+`lading.commands.publish_execution` loads the optional `cmd_mox` command-runner
+module with `importlib.import_module("cmd_mox.command_runner")`. Keeping the
+module in an `object | None` variable avoids relying on
+`from cmd_mox import ...  # type: ignore` when the package is absent, and it
+prevents conflicting type declarations when `cmd_mox` is present in the type
+checker environment.

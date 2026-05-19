@@ -1,0 +1,25 @@
+# serializer version: 1
+# name: test_missing_dep_in_plan_and_flag_continues[package][package]
+  tuple(
+    tuple(
+      'cargo %s for crate %s could not resolve sibling dependency %s from crates.io; continuing because --allow-unpublished-workspace-deps is set',
+      tuple(
+        'package',
+        'beta',
+        'alpha',
+      ),
+    ),
+  )
+# ---
+# name: test_missing_dep_in_plan_and_flag_continues[publish][publish]
+  tuple(
+    tuple(
+      'cargo %s for crate %s could not resolve sibling dependency %s from crates.io; continuing because --allow-unpublished-workspace-deps is set',
+      tuple(
+        'publish',
+        'beta',
+        'alpha',
+      ),
+    ),
+  )
+# ---

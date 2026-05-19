@@ -2,89 +2,25 @@
 
 from __future__ import annotations
 
-import collections.abc as cabc
 import logging
 import typing as typ
 
 if typ.TYPE_CHECKING:
     import collections.abc as cabc
+    from pathlib import Path
 
 import pytest
 
 from lading.commands import publish
 
 from .conftest import (
+    CallTrackingRunner,
     make_config,
     make_dependency_chain,
+    make_failing_runner,
     make_workspace,
+    prepare_staging_root,
 )
-
-if typ.TYPE_CHECKING:
-    from pathlib import Path
-
-
-def _prepare_staging_root(plan: publish.PublishPlan, base_dir: Path) -> Path:
-    """Create a staged workspace tree matching ``plan`` under ``base_dir``."""
-    staging_root = base_dir / "staging" / plan.workspace_root.name
-    for crate in plan.publishable:
-        relative_root = crate.root_path.relative_to(plan.workspace_root)
-        (staging_root / relative_root).mkdir(parents=True, exist_ok=True)
-    return staging_root
-
-
-@pytest.fixture
-def publish_plan_and_prep(
-    tmp_path: Path,
-) -> tuple[publish.PublishPlan, publish.PublishPreparation, Path]:
-    """Provide a publish plan, preparation object, and staging root."""
-    workspace_root = tmp_path / "workspace"
-    crates = make_dependency_chain(workspace_root)
-    plan = publish.plan_publication(
-        make_workspace(workspace_root, *crates), make_config()
-    )
-    staging_root = _prepare_staging_root(plan, tmp_path)
-    preparation = publish.PublishPreparation(
-        staging_root=staging_root,
-        copied_readmes=(),
-    )
-    return plan, preparation, staging_root
-
-
-class CallTrackingRunner:
-    """Track command invocations while returning successful results."""
-
-    def __init__(self) -> None:
-        """Initialise the runner with an empty call log."""
-        self.calls: list[tuple[tuple[str, ...], Path | None]] = []
-
-    def __call__(
-        self,
-        command: cabc.Sequence[str],
-        *,
-        cwd: Path | None = None,
-        env: cabc.Mapping[str, str] | None = None,
-    ) -> tuple[int, str, str]:
-        """Record the invocation and return a successful result."""
-        del env
-        self.calls.append((tuple(command), cwd))
-        return 0, "", ""
-
-
-def make_failing_runner(
-    stdout: str = "", stderr: str = ""
-) -> cabc.Callable[..., tuple[int, str, str]]:  # pragma: no cover - simple factory
-    """Return a runner that always fails with exit code 1."""
-
-    def _runner(
-        command: cabc.Sequence[str],
-        *,
-        cwd: Path | None = None,
-        env: cabc.Mapping[str, str] | None = None,
-    ) -> tuple[int, str, str]:
-        del command, cwd, env
-        return 1, stdout, stderr
-
-    return _runner
 
 
 def _assert_packaging_failure_message_contains(
@@ -113,8 +49,10 @@ def _assert_packaging_failure_message_contains(
 
 def test_package_publishable_crates_runs_in_plan_order(
     publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Cargo package is invoked for every publishable crate in plan order."""
+    caplog.set_level(logging.INFO, logger="lading.commands.publish")
     plan, preparation, staging_root = publish_plan_and_prep
     runner = CallTrackingRunner()
 
@@ -132,6 +70,11 @@ def test_package_publishable_crates_runs_in_plan_order(
     assert runner.calls == [
         (("cargo", "package", "--allow-dirty"), root) for root in expected_roots
     ], "cargo package should run once per publishable crate in order"
+    assert caplog.messages == [
+        "Running cargo package for crate alpha",
+        "Running cargo package for crate beta",
+        "Running cargo package for crate gamma",
+    ]
 
 
 def test_package_publishable_crates_stops_on_failure(
@@ -217,7 +160,6 @@ def test_publish_crates_run_dry_run_in_order(
         (("cargo", "publish", "--allow-dirty", "--dry-run"), root)
         for root in expected_roots
     ]
-    # Ensure we emit a helpful info log for the publish phase.
     assert any("cargo publish" in message for message in caplog.messages)
 
 
@@ -258,7 +200,7 @@ def test_publish_crates_continue_when_version_already_uploaded(
     plan = publish.plan_publication(
         make_workspace(workspace_root, alpha, beta), make_config()
     )
-    staging_root = _prepare_staging_root(plan, tmp_path)
+    staging_root = prepare_staging_root(plan, tmp_path)
     preparation = publish.PublishPreparation(
         staging_root=staging_root,
         copied_readmes=(),

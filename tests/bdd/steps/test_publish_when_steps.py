@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import shlex
 import typing as typ
 
-from pytest_bdd import when
+from pytest_bdd import parsers, when
 
 from lading.commands import publish
 
@@ -42,6 +43,28 @@ def when_invoke_lading_publish(
     """Execute the publish CLI via ``python -m`` and capture the result."""
     stub_config = preflight_test_context.create_stub_config()
     return _invoke_publish_with_options(repo_root, workspace_directory, stub_config)
+
+
+@when(parsers.parse('I run "{command}"'), target_fixture="cli_run")
+def when_run_lading_publish_command(
+    workspace_directory: Path,
+    repo_root: Path,
+    preflight_test_context: PreflightTestContext,
+    command: str,
+) -> dict[str, typ.Any]:
+    """Execute the quoted publish command through the CLI test harness."""
+    tokens = tuple(shlex.split(command))
+    if tokens[:2] != ("lading", "publish"):
+        message = f"Unexpected publish command: {command}"
+        raise AssertionError(message)
+    extra_args = tokens[2:]
+    stub_config = preflight_test_context.create_stub_config()
+    return _invoke_publish_with_options(
+        repo_root,
+        workspace_directory,
+        stub_config,
+        *extra_args,
+    )
 
 
 @when(

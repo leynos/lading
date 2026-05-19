@@ -9,6 +9,7 @@ from pytest_bdd import given, parsers
 
 from lading.workspace import metadata as metadata_module
 
+from .metadata_fixtures import given_cargo_metadata_with_dependency_chain
 from .test_publish_infrastructure import (
     CmdMox,
     ResponseProvider,
@@ -23,6 +24,17 @@ try:
     from cmd_mox import CmdMox as _ImportedCmdMox
 except ModuleNotFoundError:  # pragma: no cover - runtime fallback
     _ImportedCmdMox = CmdMox  # type: ignore[misc]
+
+
+_INDEX_MISSING_STDERR_ALPHA = (
+    "error: failed to prepare local package for uploading\n"
+    "\n"
+    "Caused by:\n"
+    '  failed to select a version for the requirement `alpha = "^0.1.0"`\n'
+    "  candidate versions found which didn't match: 0.0.1\n"
+    "  location searched: crates.io index\n"
+    "  required by package `beta v0.1.0`\n"
+)
 
 
 @given("cmd-mox IPC socket is unset")
@@ -102,6 +114,27 @@ def given_cargo_publish_already_uploaded(
     preflight_overrides["cargo", "publish", "--dry-run"] = _handler
 
 
+@given("a workspace where a sibling crate dependency is not yet indexed")
+def given_sibling_dependency_is_not_indexed(
+    preflight_overrides: dict[tuple[str, ...], ResponseProvider],
+) -> None:
+    """Make cargo package fail for beta because alpha is not indexed yet."""
+
+    def _handler(invocation: _CmdInvocation) -> _CommandResponse:
+        env_mapping = dict(getattr(invocation, "env", {}))
+        cwd = Path(env_mapping.get("PWD", ""))
+        if cwd.name == "beta":
+            return _CommandResponse(exit_code=1, stderr=_INDEX_MISSING_STDERR_ALPHA)
+        return _CommandResponse(exit_code=0)
+
+    preflight_overrides["cargo", "package"] = _handler
+
+
+@given("the missing dependency is part of the planned publish set")
+def given_missing_dependency_is_in_plan() -> None:
+    """Document that the dependency-chain fixture includes alpha in the plan."""
+
+
 @given("the workspace has uncommitted changes")
 def given_workspace_dirty(
     preflight_overrides: dict[tuple[str, ...], ResponseProvider],
@@ -134,3 +167,20 @@ def given_preflight_command_override(
     else:
         message = "preflight command override requires tokens"
         raise AssertionError(message)
+
+
+@given("a valid lading workspace", target_fixture="workspace_directory")
+def given_valid_lading_workspace(
+    tmp_path: Path,
+    cmd_mox: _ImportedCmdMox,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Path:
+    """Create a configured workspace with a publish dependency chain."""
+    from lading import config as config_module
+
+    config_path = tmp_path / config_module.CONFIG_FILENAME
+    config_path.write_text(
+        '[bump]\n\n[publish]\nstrip_patches = "all"\n', encoding="utf-8"
+    )
+    given_cargo_metadata_with_dependency_chain(cmd_mox, monkeypatch, tmp_path)
+    return tmp_path

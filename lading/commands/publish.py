@@ -21,6 +21,17 @@ from lading.commands.publish_execution import (
     should_use_cmd_mox_stub,
     split_command,
 )
+from lading.commands.publish_index_check import (
+    _CargoInvocation,
+    _format_cargo_failure_message,
+    _is_index_missing_version_error,
+)
+from lading.commands.publish_index_check import (
+    _extract_missing_dependency_name as _extract_missing_dependency_name,
+)
+from lading.commands.publish_index_check import (
+    _handle_index_missing_version as _raw_handle_index_missing_version,
+)
 from lading.commands.publish_manifest import (
     PublishPreparationError,
     _apply_strip_patch_strategy,
@@ -70,6 +81,7 @@ class _PublishExecutionOptions:
 
     live: bool
     allow_dirty: bool
+    allow_unpublished_workspace_deps: bool = False
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -101,6 +113,12 @@ class PublishOptions:
     command_runner:
         Optional callable used to execute shell commands. Primarily intended
         for tests and dependency injection.
+    allow_unpublished_workspace_deps:
+        When :data:`True`, downgrade ``cargo package`` failures caused by a
+        sibling workspace crate version not yet visible on the crates.io index
+        to a warning, provided the missing crate is part of the planned
+        publish set. Only valid in dry-run mode (``live=False``); combining it
+        with ``live=True`` raises :class:`PublishPreflightError`.
 
     """
 
@@ -112,6 +130,7 @@ class PublishOptions:
     configuration: LadingConfig | None = None
     workspace: WorkspaceGraph | None = None
     command_runner: _CommandRunner | None = None
+    allow_unpublished_workspace_deps: bool = False
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -303,6 +322,7 @@ def prepare_workspace(
         build_root = staging_root.parent
 
         def _cleanup() -> None:
+            """Remove the staged build directory on process exit."""
             shutil.rmtree(build_root, ignore_errors=True)
 
         atexit.register(_cleanup)
@@ -348,21 +368,25 @@ def _resolve_staged_crate_root(
     return staged_root
 
 
-def _format_cargo_failure_message(
-    command: str,
-    crate_name: str,
-    exit_code: int,
-    output: tuple[str, str],
-) -> str:
-    """Format a consistent error message for cargo command failures."""
-    stdout, stderr = output
-    detail = (stderr or stdout).strip()
-    message = (
-        f"cargo {command} failed for crate {crate_name} with exit code {exit_code}"
+def _handle_index_missing_version(
+    invocation: _CargoInvocation,
+    *,
+    plan: PublishPlan,
+    options: _PublishExecutionOptions,
+) -> None:
+    """Pick the phase-appropriate error class and delegate to the helper.
+
+    ``publish_index_check`` cannot import :class:`PublishError` /
+    :class:`PublishPreflightError` without a circular dependency, so the
+    error class is resolved here based on the cargo subcommand and passed
+    through to the relocated implementation.
+    """
+    error_cls = (
+        PublishError if invocation.subcommand == "publish" else PublishPreflightError
     )
-    if detail:
-        message = f"{message}: {detail}"
-    return message
+    _raw_handle_index_missing_version(
+        invocation, plan=plan, options=options, error_cls=error_cls
+    )
 
 
 def _package_publishable_crates(
@@ -377,16 +401,29 @@ def _package_publishable_crates(
     package_args: tuple[str, ...] = ("--allow-dirty",) if options.allow_dirty else ()
     for crate in plan.publishable:
         crate_root = _resolve_staged_crate_root(crate, plan, staging_root)
+        LOGGER.info("Running cargo package for crate %s", crate.name)
         exit_code, stdout, stderr = runner(
             ("cargo", "package", *package_args),
             cwd=crate_root,
             env=None,
         )
-        if exit_code != 0:
-            message = _format_cargo_failure_message(
-                "package", crate.name, exit_code, (stdout, stderr)
+        if exit_code == 0:
+            continue
+        if _is_index_missing_version_error(exit_code, stdout, stderr):
+            _handle_index_missing_version(
+                _CargoInvocation(
+                    crate_name=crate.name,
+                    subcommand="package",
+                    output=(exit_code, stdout, stderr),
+                ),
+                plan=plan,
+                options=options,
             )
-            raise PublishPreflightError(message)
+            continue
+        message = _format_cargo_failure_message(
+            "package", crate.name, exit_code, (stdout, stderr)
+        )
+        raise PublishPreflightError(message)
 
 
 _ALREADY_PUBLISHED_MARKERS: tuple[str, ...] = (
@@ -450,6 +487,20 @@ def _publish_crates(
                 crate.version,
             )
             continue
+        if _is_index_missing_version_error(exit_code, stdout, stderr):
+            # cargo publish --dry-run packages internally and hits the same
+            # crates.io index lookup as cargo package, so honour the override
+            # consistently across both phases.
+            _handle_index_missing_version(
+                _CargoInvocation(
+                    crate_name=crate.name,
+                    subcommand="publish",
+                    output=(exit_code, stdout, stderr),
+                ),
+                plan=plan,
+                options=options,
+            )
+            continue
 
         message = _format_cargo_failure_message(
             "publish", crate.name, exit_code, (stdout, stderr)
@@ -496,6 +547,17 @@ def run(
     """Run pre-flight checks, package crates, and publish from ``workspace_root``."""
     root_path = normalise_workspace_root(workspace_root)
     effective_options = PublishOptions() if options is None else options
+    if effective_options.live and effective_options.allow_unpublished_workspace_deps:
+        message = (
+            "--allow-unpublished-workspace-deps is only valid in dry-run mode; "
+            "re-run without --live."
+        )
+        LOGGER.warning(message)
+        raise PublishPreflightError(message)
+    if effective_options.allow_unpublished_workspace_deps:
+        LOGGER.info(
+            "Allowing unpublished workspace dependencies during dry-run publish"
+        )
     configuration_override = configuration or effective_options.configuration
     workspace_override = workspace or effective_options.workspace
     command_runner = effective_options.command_runner or _invoke
@@ -520,6 +582,9 @@ def run(
     execution_options = _PublishExecutionOptions(
         live=effective_options.live,
         allow_dirty=effective_options.allow_dirty,
+        allow_unpublished_workspace_deps=(
+            effective_options.allow_unpublished_workspace_deps
+        ),
     )
     _package_publishable_crates(
         plan,
