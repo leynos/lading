@@ -27,7 +27,7 @@ if typ.TYPE_CHECKING:
 
 import pytest
 
-from lading.commands import publish
+from lading.commands import publish, publish_index_check
 
 from .conftest import (
     INDEX_MISSING_STDERR_BETA,
@@ -59,6 +59,10 @@ def test_missing_dep_in_plan_and_flag_continues(
     """Flag downgrades the missing-index error to a warning and proceeds."""
     caplog.set_level(logging.WARNING, logger="lading.commands.publish")
     plan, preparation, _staging_root = publish_plan_and_prep
+    metric_key = (phase_name, "beta", "alpha")
+    before_count = publish_index_check._INDEX_MISSING_VERSION_DOWNGRADE_COUNTER[
+        metric_key
+    ]
     calls: list[str] = []
 
     def runner(
@@ -90,6 +94,10 @@ def test_missing_dep_in_plan_and_flag_continues(
 
     assert calls == ["alpha", "beta", "gamma"]
     assert _warning_records(caplog) == snapshot(name=phase_name)
+    assert (
+        publish_index_check._INDEX_MISSING_VERSION_DOWNGRADE_COUNTER[metric_key]
+        == before_count + 1
+    )
 
 
 def test_missing_dep_in_plan_allows_cargo_name_normalisation(

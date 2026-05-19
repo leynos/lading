@@ -39,9 +39,12 @@ from .conftest import (
 
 
 def test_run_rejects_allow_unpublished_with_live(
-    tmp_path: Path, snapshot: SnapshotAssertion
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    snapshot: SnapshotAssertion,
 ) -> None:
     """Combining ``--live`` with the override flag is a hard error."""
+    caplog.set_level(logging.WARNING, logger="lading.commands.publish")
     workspace_root = tmp_path / "workspace"
     crates = make_dependency_chain(workspace_root)
     workspace = make_workspace(workspace_root, *crates)
@@ -59,6 +62,12 @@ def test_run_rejects_allow_unpublished_with_live(
         )
 
     assert str(excinfo.value) == snapshot()
+    assert caplog.messages == [
+        (
+            "--allow-unpublished-workspace-deps is only valid in dry-run mode; "
+            "re-run without --live."
+        )
+    ]
 
 
 def _handle_index_missing_version_message(

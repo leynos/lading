@@ -9,6 +9,7 @@ extraction, failure formatting, and override handling.
 
 from __future__ import annotations
 
+import collections
 import dataclasses as dc
 import logging
 import re
@@ -23,6 +24,9 @@ LOGGER = logging.getLogger(__name__)
 _INDEX_MISSING_VERSION_MARKERS: tuple[str, ...] = (
     "failed to select a version for the requirement",
     "location searched: crates.io index",
+)
+_INDEX_MISSING_VERSION_DOWNGRADE_COUNTER: collections.Counter[tuple[str, str, str]] = (
+    collections.Counter()
 )
 
 # Capture the dependency crate name from cargo's index-lookup error, e.g.
@@ -172,6 +176,15 @@ def _canonical_crate_name(name: str) -> str:
     return name.replace("-", "_")
 
 
+def _record_index_missing_version_downgrade(
+    invocation: _CargoInvocation, missing_name: str
+) -> None:
+    """Increment the downgrade counter for an index-missing-version failure."""
+    _INDEX_MISSING_VERSION_DOWNGRADE_COUNTER[
+        invocation.subcommand, invocation.crate_name, missing_name
+    ] += 1
+
+
 def _handle_index_missing_version(
     invocation: _CargoInvocation,
     *,
@@ -205,6 +218,7 @@ def _handle_index_missing_version(
             error_cls, invocation, failure, missing_name
         )
 
+    _record_index_missing_version_downgrade(invocation, missing_name)
     LOGGER.warning(
         "cargo %s for crate %s could not resolve sibling dependency %s "
         "from crates.io; continuing because "

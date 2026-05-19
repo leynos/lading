@@ -552,6 +552,7 @@ def run(
             "--allow-unpublished-workspace-deps is only valid in dry-run mode; "
             "re-run without --live."
         )
+        LOGGER.warning(message)
         raise PublishPreflightError(message)
     if effective_options.allow_unpublished_workspace_deps:
         LOGGER.info(
