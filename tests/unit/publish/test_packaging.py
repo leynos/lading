@@ -78,17 +78,17 @@ def test_package_publishable_crates_runs_in_plan_order(
 
 
 @pytest.mark.parametrize(
-    ("fn", "live", "expected_cmd"),
+    ("fn", "options", "expected_cmd"),
     [
         pytest.param(
             publish._package_crate,
-            False,
+            publish._PublishExecutionOptions(live=False, allow_dirty=True),
             ("cargo", "package", "--allow-dirty"),
             id="package",
         ),
         pytest.param(
             publish._publish_crate,
-            True,
+            publish._PublishExecutionOptions(live=True, allow_dirty=True),
             ("cargo", "publish", "--allow-dirty"),
             id="publish",
         ),
@@ -97,7 +97,7 @@ def test_package_publishable_crates_runs_in_plan_order(
 def test_single_crate_helper_invokes_correct_cargo_command(
     publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
     fn: cabc.Callable[..., None],
-    live: bool,
+    options: publish._PublishExecutionOptions,
     expected_cmd: tuple[str, ...],
 ) -> None:
     """Each single-crate helper invokes the correct cargo subcommand."""
@@ -107,7 +107,7 @@ def test_single_crate_helper_invokes_correct_cargo_command(
     context = publish._PublicationPipelineContext(
         plan,
         preparation,
-        publish._PublishExecutionOptions(live=live, allow_dirty=True),
+        options,
         runner,
     )
 
