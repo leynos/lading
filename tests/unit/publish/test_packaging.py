@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+import collections.abc as cabc
 import logging
 import typing as typ
 
 if typ.TYPE_CHECKING:
-    import collections.abc as cabc
     from pathlib import Path
 
 import pytest
@@ -77,24 +77,44 @@ def test_package_publishable_crates_runs_in_plan_order(
     ]
 
 
-def test_package_crate_runs_cargo_package_for_single_crate(
+@pytest.mark.parametrize(
+    ("fn", "live", "expected_cmd"),
+    [
+        pytest.param(
+            publish._package_crate,
+            False,
+            ("cargo", "package", "--allow-dirty"),
+            id="package",
+        ),
+        pytest.param(
+            publish._publish_crate,
+            True,
+            ("cargo", "publish", "--allow-dirty"),
+            id="publish",
+        ),
+    ],
+)
+def test_single_crate_helper_invokes_correct_cargo_command(
     publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    fn: cabc.Callable[..., None],
+    live: bool,
+    expected_cmd: tuple[str, ...],
 ) -> None:
-    """The single-crate packaging helper invokes cargo package."""
+    """Each single-crate helper invokes the correct cargo subcommand."""
     plan, preparation, staging_root = publish_plan_and_prep
     runner = CallTrackingRunner()
     crate = plan.publishable[1]
     context = publish._PublicationPipelineContext(
         plan,
         preparation,
-        publish._PublishExecutionOptions(live=False, allow_dirty=True),
+        publish._PublishExecutionOptions(live=live, allow_dirty=True),
         runner,
     )
 
-    publish._package_crate(crate, context)
+    fn(crate, context)
 
     expected_root = staging_root / crate.root_path.relative_to(plan.workspace_root)
-    assert runner.calls == [(("cargo", "package", "--allow-dirty"), expected_root)]
+    assert runner.calls == [(expected_cmd, expected_root)]
 
 
 def test_package_crate_raises_on_failure(
@@ -224,26 +244,6 @@ def test_publish_crates_run_live_without_dry_run(
     assert runner.calls == [
         (("cargo", "publish", "--allow-dirty"), root) for root in expected_roots
     ]
-
-
-def test_publish_crate_runs_cargo_publish_for_single_crate(
-    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
-) -> None:
-    """The single-crate publish helper invokes cargo publish."""
-    plan, preparation, staging_root = publish_plan_and_prep
-    runner = CallTrackingRunner()
-    crate = plan.publishable[1]
-    context = publish._PublicationPipelineContext(
-        plan,
-        preparation,
-        publish._PublishExecutionOptions(live=True, allow_dirty=True),
-        runner,
-    )
-
-    publish._publish_crate(crate, context)
-
-    expected_root = staging_root / crate.root_path.relative_to(plan.workspace_root)
-    assert runner.calls == [(("cargo", "publish", "--allow-dirty"), expected_root)]
 
 
 def test_publish_crate_continues_when_version_already_uploaded(
