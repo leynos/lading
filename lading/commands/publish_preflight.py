@@ -1,4 +1,22 @@
-"""Pre-flight checks for publish command workflows."""
+"""Pre-flight checks for publish command workflows.
+
+``publish_preflight`` contains the local validation work that runs before the
+publish pipeline packages or uploads crates. It builds the cargo environment,
+checks whether the working tree is clean, runs configured auxiliary build
+commands, and executes cargo check/test commands with the publish pre-flight
+configuration.
+
+The publish command calls :func:`_run_preflight_checks` before planning and
+dispatching publication. The function returns ``None`` when every check passes
+and raises :class:`lading.commands.publish_errors.PublishPreflightError` when a
+required check fails.
+
+Examples
+--------
+>>> from pathlib import Path
+>>> from lading.commands.publish_preflight import _run_preflight_checks
+>>> _run_preflight_checks(Path("."), allow_dirty=False, configuration=config)
+"""
 
 from __future__ import annotations
 
