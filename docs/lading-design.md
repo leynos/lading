@@ -389,7 +389,9 @@ lading publish [--live] [--forbid-dirty]
 
 - `--live`: By default, the command simulates the entire process, including
   `cargo package` and `cargo publish --dry-run`, without uploading to the
-  registry. Specifying `--live` takes the process to completion.
+  registry. Specifying `--live` takes the process to completion by packaging
+  and publishing each crate before moving to the next crate in the publish
+  order.
 - `--forbid-dirty`: Require a clean working tree before running the pre-flight
   checks. When omitted the git status guard is skipped so that developers can
   iterate on pending changes.
@@ -512,7 +514,8 @@ sequenceDiagram
 
 ### Publishing iteration
 
-1. **Iterate and publish:** For each crate in the determined order:
+1. **Prepare staged workspace:** Apply patch stripping and README staging in
+   the temporary workspace before invoking Cargo for individual crates.
 
     - **Patch Handling (per-crate)**: If strip_patches is "per-crate" (or is
       unset and this is a live run), remove the specific patch entry for the
@@ -520,13 +523,23 @@ sequenceDiagram
       prepared for packaging.
     - **README Handling:** If the crate has `readme.workspace = true`, copy the
       workspace `README.md` into the crate's directory prior to packaging.
-    - **Package:** Run `cargo package` to create the `.crate` file and verify
-      its contents.
-    - **Publish:** Run `cargo publish`. The command defaults to `--dry-run`
-      so operators can validate the full pipeline safely; passing `--live`
-      omits the flag and performs a real upload. When the registry reports
-      that a crate version already exists, Lading logs a warning and
-      continues to the next crate instead of aborting the publication loop.
+
+2. **Dispatch Cargo operations:** The publish mode determines how Cargo is
+   invoked for the planned crate order.
+
+    - **Dry-run:** Run `cargo package` for every publishable crate first, then
+      run `cargo publish --dry-run` for every crate. This validates the full
+      batch without uploading anything.
+    - **Live:** For each crate, run `cargo package` and then `cargo publish`
+      before moving to the next crate. This makes a newly uploaded earlier
+      crate visible to later crates that depend on it in the same release
+      train.
+
+    When the registry reports that a crate version already exists, Lading logs
+    a warning and continues to the next crate instead of aborting the
+    publication loop. Live publishing is not transactional: if a later crate
+    fails, any earlier successful uploads remain on crates.io and are skipped
+    on a subsequent run.
 
 ## 5. Refactoring and Project Structure
 

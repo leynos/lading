@@ -370,6 +370,47 @@ def test_execute_live_publication_pipeline_interleaves_package_and_publish(
     assert runner.calls == expected_calls
 
 
+def test_execute_live_publication_pipeline_stops_after_partial_publish(
+    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+) -> None:
+    """A later live failure leaves earlier publish attempts completed."""
+    plan, preparation, staging_root = publish_plan_and_prep
+    beta_root = staging_root / plan.publishable[1].root_path.relative_to(
+        plan.workspace_root
+    )
+    calls: list[tuple[tuple[str, ...], Path | None]] = []
+
+    def runner(
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        del env
+        normalised = tuple(command)
+        calls.append((normalised, cwd))
+        if normalised[:2] == ("cargo", "package") and cwd == beta_root:
+            return 1, "", "packaging failed"
+        return 0, "", ""
+
+    with pytest.raises(publish.PublishPreflightError):
+        publish._execute_live_publication_pipeline(
+            plan,
+            preparation,
+            options=publish._PublishExecutionOptions(live=True, allow_dirty=True),
+            runner=runner,
+        )
+
+    alpha_root = staging_root / plan.publishable[0].root_path.relative_to(
+        plan.workspace_root
+    )
+    assert calls == [
+        (("cargo", "package", "--allow-dirty"), alpha_root),
+        (("cargo", "publish", "--allow-dirty"), alpha_root),
+        (("cargo", "package", "--allow-dirty"), beta_root),
+    ]
+
+
 def test_publish_crates_raise_on_failure(
     publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
 ) -> None:

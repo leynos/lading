@@ -89,6 +89,15 @@ To perform a real publish (no `--dry-run`), pass `--live`:
 lading publish --live
 ```
 
+Dry-run publishing packages every publishable crate first, then runs
+`cargo publish --dry-run` for every crate. Live publishing follows
+`publish.order` crate by crate: `cargo package`, then `cargo publish`, then the
+next crate. This lets a later crate depend on a newly published earlier crate
+in the same `--live` run. Live publishing is not transactional; if a later
+crate fails, crates already uploaded to crates.io are not rolled back. Reruns
+skip versions that are already present on crates.io and continue with the
+remaining crates.
+
 `publish` stages the workspace into a temporary directory before packaging. If
 any member crate sets `readme.workspace = true`, `lading` copies the workspace
 `README.md` into that crate in the staged workspace so `cargo package` can
@@ -111,21 +120,18 @@ Caused by:
   required by package `outer_crate v0.8.0`
 ```
 
-This affects release trains that introduce a new shared version across multiple
-workspace crates. Setting `publish.order` to package the foundational crate
-first does **not** bypass this limitation, because each crate is still packaged
-against the live crates.io index rather than the locally packaged sibling.
+This affects dry-run release trains that introduce a new shared version across
+multiple workspace crates. `lading publish --live` avoids the limitation by
+publishing each crate immediately after it is packaged, so a later crate can
+resolve a dependency that an earlier crate in `publish.order` just uploaded.
+Plain dry-runs still use Cargo's live index and may need the override below.
 
-##### Workarounds
+##### Manual staged publishing
 
-Two patterns avoid the issue. Both require an initial real publish for the
-foundational crate, so its new version becomes visible on crates.io.
-
-###### Staged publish
-
-Run `lading publish --live` for the foundational crate first, then run
-`lading publish` (dry-run) or `lading publish --live` for the rest of the
-workspace once the new version is indexed:
+If you need to split a release manually, run `lading publish --live` for the
+foundational crate first, then run `lading publish` (dry-run) or
+`lading publish --live` for the rest of the workspace once the new version is
+indexed:
 
 ```bash
 
@@ -138,34 +144,6 @@ lading publish --workspace-root path/to/workspace
 
 `lading` skips crates whose versions are already on crates.io, so the second
 invocation only acts on the remaining crates.
-
-###### Temporary `publish.exclude`
-
-Exclude dependent crates from the first run, publish the foundational crate,
-then remove the exclusion and run again:
-
-```toml
-
-# lading.toml during the first publish
-[publish]
-order = ["inner_crate", "outer_crate"]
-exclude = ["outer_crate"]
-```
-
-```bash
-lading publish --live
-```
-
-After the foundational crate is indexed, restore `lading.toml`:
-
-```toml
-[publish]
-order = ["inner_crate", "outer_crate"]
-```
-
-```bash
-lading publish # or `lading publish --live`
-```
 
 ##### `--allow-unpublished-workspace-deps` (dry-run only)
 

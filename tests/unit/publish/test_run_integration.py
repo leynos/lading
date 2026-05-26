@@ -207,6 +207,35 @@ def test_run_keeps_dry_run_publication_batched(tmp_path: Path) -> None:
     )
 
 
+def test_run_keeps_live_publication_interleaved(tmp_path: Path) -> None:
+    """Live publish packages and publishes each crate before advancing."""
+    root = tmp_path / "workspace"
+    workspace = make_workspace(root, *make_dependency_chain(root))
+    configuration = make_config()
+    runner = CallTrackingRunner()
+
+    publish.run(
+        root,
+        configuration,
+        workspace,
+        options=publish.PublishOptions(
+            build_directory=tmp_path / "build",
+            command_runner=runner,
+            live=True,
+        ),
+    )
+
+    commands = [command for command, _cwd in runner.calls]
+    assert commands == [
+        command
+        for _crate in workspace.crates
+        for command in (
+            ("cargo", "package", "--allow-dirty"),
+            ("cargo", "publish", "--allow-dirty"),
+        )
+    ]
+
+
 def _make_beta_package_index_failure_runner() -> cabc.Callable[
     [cabc.Sequence[str]], tuple[int, str, str]
 ]:

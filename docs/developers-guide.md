@@ -176,6 +176,16 @@ single `lading publish` run. Its fields are:
 The dataclass is an internal implementation detail; callers interact with the
 public `PublishOptions` dataclass, which `run()` converts before dispatching.
 
+Publication dispatch deliberately differs by mode. Dry-run mode keeps the
+historical two-phase pipeline: package every publishable crate, then run
+`cargo publish --dry-run` for every crate. Live mode interleaves the pipeline
+per crate: package the next crate, publish it, then advance to the next entry
+in `PublishPlan.publishable`. That ordering lets dependent crates resolve newly
+uploaded in-plan dependencies during a single live release train. The live
+pipeline does not roll back earlier uploads if a later crate fails; reruns rely
+on the already-published detection path to log and skip versions already
+visible in the registry.
+
 The index-lookup handling is split across three helpers:
 
 - `_is_index_missing_version_error(exit_code, stdout, stderr) -> bool` checks
