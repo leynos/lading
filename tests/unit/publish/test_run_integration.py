@@ -225,15 +225,16 @@ def test_run_keeps_live_publication_interleaved(tmp_path: Path) -> None:
         ),
     )
 
-    commands = [command for command, _cwd in runner.calls]
-    assert commands == [
-        command
-        for _crate in workspace.crates
+    staging_root = (tmp_path / "build") / root.name
+    expected_pairs = [
+        (command, staging_root / crate.root_path.relative_to(root))
+        for crate in workspace.crates
         for command in (
             ("cargo", "package", "--allow-dirty"),
             ("cargo", "publish", "--allow-dirty"),
         )
     ]
+    assert runner.calls == expected_pairs
 
 
 def _make_beta_package_index_failure_runner() -> cabc.Callable[

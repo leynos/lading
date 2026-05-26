@@ -524,7 +524,7 @@ sequenceDiagram
     - **README Handling:** If the crate has `readme.workspace = true`, copy the
       workspace `README.md` into the crate's directory prior to packaging.
 
-2. **Dispatch Cargo operations:** The publish mode determines how Cargo is
+2. **Dispatch Cargo operations:** The publishing mode determines how Cargo is
    invoked for the planned crate order.
 
     - **Dry-run:** Run `cargo package` for every publishable crate first, then

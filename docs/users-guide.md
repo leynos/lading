@@ -128,9 +128,9 @@ Plain dry-runs still use Cargo's live index and may need the override below.
 
 ##### Manual staged publishing
 
-If you need to split a release manually, run `lading publish --live` for the
+When a release must be split manually, run `lading publish --live` for the
 foundational crate first, then run `lading publish` (dry-run) or
-`lading publish --live` for the rest of the workspace once the new version is
+`lading publish --live` for the remaining workspace once the new version is
 indexed:
 
 ```bash
