@@ -178,7 +178,11 @@ def test_run_logs_when_unpublished_workspace_dependency_override_is_enabled(
 
 
 def test_run_keeps_dry_run_publication_batched(tmp_path: Path) -> None:
-    """Dry-run publish still packages all crates before publish dry-runs."""
+    """Dry-run publish still packages all crates before publish dry-runs.
+
+    Assert full ``(command, cwd)`` pairs to confirm each crate operation
+    runs in the correct staging directory.
+    """
     root = tmp_path / "workspace"
     workspace = make_workspace(root, *make_dependency_chain(root))
     configuration = make_config()
@@ -195,16 +199,21 @@ def test_run_keeps_dry_run_publication_batched(tmp_path: Path) -> None:
         ),
     )
 
-    publishable_count = len(workspace.crates)
-    commands = [command for command, _cwd in runner.calls]
-    assert (
-        commands[:publishable_count]
-        == [("cargo", "package", "--allow-dirty")] * publishable_count
-    )
-    assert (
-        commands[publishable_count:]
-        == [("cargo", "publish", "--allow-dirty", "--dry-run")] * publishable_count
-    )
+    staging_root = (tmp_path / "build") / root.name
+    expected_crate_roots = [
+        staging_root / crate.root_path.relative_to(root) for crate in workspace.crates
+    ]
+    expected_pairs = [
+        *(
+            (("cargo", "package", "--allow-dirty"), root)
+            for root in expected_crate_roots
+        ),
+        *(
+            (("cargo", "publish", "--allow-dirty", "--dry-run"), root)
+            for root in expected_crate_roots
+        ),
+    ]
+    assert runner.calls == expected_pairs
 
 
 def test_run_keeps_live_publication_interleaved(tmp_path: Path) -> None:

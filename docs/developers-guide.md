@@ -232,6 +232,51 @@ includes all four values. Using a single function for message construction keeps
 the error format consistent across the packaging and publish phases and makes
 snapshot testing straightforward.
 
+### Publish exception types
+
+Two public exception types are raised from the publish workflow, defined in
+:mod:`lading.commands.publish_errors` and re-exported from
+:mod:`lading.commands.publish`.
+
+#### `PublishPreflightError`
+
+Raised when pre-publication checks cannot prove the workspace is ready to
+publish. This covers packaging failures, missing index entries (when the
+allow-unpublished-workspace-deps override is not set or not applicable), dirty
+working trees, and cargo check/test failures. It is the **outermost** catch
+boundary: all publish failures, including those from the publish phase, can be
+handled as `PublishPreflightError`.
+
+```python
+from lading.commands.publish import PublishPreflightError, run
+
+try:
+    run(Path("/workspace"), configuration)
+except PublishPreflightError as exc:
+    print(f"Publish aborted: {exc}")
+```
+
+#### `PublishError`
+
+Subclasses `PublishPreflightError` and is raised specifically when
+`cargo publish` fails after pre-flight checks have succeeded. This lets callers
+distinguish packaging (pre-flight) failures from upload (publish) failures
+while still allowing a single catch-all:
+
+```python
+from lading.commands.publish import PublishError, PublishPreflightError, run
+
+try:
+    run(Path("/workspace"), configuration, options=PublishOptions(live=True))
+except PublishError as exc:
+    print(f"Upload failed after checks: {exc}")
+except PublishPreflightError as exc:
+    print(f"Pre-flight check failed: {exc}")
+```
+
+Both classes inherit from `RuntimeError`, carry their message through the
+standard `args` tuple, and avoid additional mutable state.
+
 `lading.commands.publish_execution` loads the optional `cmd_mox` command-runner
 module with `importlib.import_module("cmd_mox.command_runner")`. Keeping the
 module in an `object | None` variable avoids relying on

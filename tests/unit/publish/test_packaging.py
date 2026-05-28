@@ -9,6 +9,8 @@ import typing as typ
 if typ.TYPE_CHECKING:
     from pathlib import Path
 
+    from syrupy.assertion import SnapshotAssertion
+
 import pytest
 
 from lading.commands import publish
@@ -72,8 +74,11 @@ def test_package_publishable_crates_runs_in_plan_order(
     ], "cargo package should run once per publishable crate in order"
     assert caplog.messages == [
         "Running cargo package for crate alpha",
+        "Successfully packaged crate alpha",
         "Running cargo package for crate beta",
+        "Successfully packaged crate beta",
         "Running cargo package for crate gamma",
+        "Successfully packaged crate gamma",
     ]
 
 
@@ -429,3 +434,41 @@ def test_publish_crates_raise_on_failure(
     message = str(excinfo.value)
     assert "cargo publish failed for crate" in message
     assert "network offline" in message
+
+
+def test_package_crate_error_message_snapshot(
+    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    snapshot: SnapshotAssertion,
+) -> None:
+    """Snapshot the error message raised by ``_package_crate`` on failure."""
+    plan, preparation, _staging_root = publish_plan_and_prep
+    context = publish._PublicationPipelineContext(
+        plan,
+        preparation,
+        publish._PublishExecutionOptions(live=False, allow_dirty=True),
+        make_failing_runner(stdout="", stderr="packaging failed"),
+    )
+
+    with pytest.raises(publish.PublishPreflightError) as excinfo:
+        publish._package_crate(plan.publishable[0], context)
+
+    assert str(excinfo.value) == snapshot()
+
+
+def test_publish_crate_error_message_snapshot(
+    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    snapshot: SnapshotAssertion,
+) -> None:
+    """Snapshot the error message raised by ``_publish_crate`` on failure."""
+    plan, preparation, _staging_root = publish_plan_and_prep
+    context = publish._PublicationPipelineContext(
+        plan,
+        preparation,
+        publish._PublishExecutionOptions(live=True, allow_dirty=True),
+        make_failing_runner(stdout="", stderr="publish failed"),
+    )
+
+    with pytest.raises(publish.PublishError) as excinfo:
+        publish._publish_crate(plan.publishable[0], context)
+
+    assert str(excinfo.value) == snapshot()

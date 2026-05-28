@@ -1,4 +1,48 @@
-"""Publication planning helpers for :mod:`lading.commands.publish`."""
+"""Orchestrate the ``lading publish`` workflow.
+
+``run()`` is the primary entry point. It loads configuration, discovers the
+workspace graph, runs pre-flight checks (:mod:`~lading.commands.publish_preflight`),
+plans publication order, stages the workspace, and dispatches to one of two
+**publish pipelines** depending on the ``live`` flag.
+
+**Pipeline dispatch**
+
+*Dry-run* (``live=False``) keeps the historical batched two-phase pipeline:
+package every publishable crate, then ``cargo publish --dry-run`` every crate
+in plan order.
+
+*Live* (``live=True``) interleaves packaging and publishing per crate via
+:func:`_execute_live_publication_pipeline`: package the next crate, publish it,
+then advance. This ordering lets dependent crates resolve newly uploaded
+in-plan dependencies during a single release train.
+
+**Per-crate helpers**
+
+:func:`_package_crate` and :func:`_publish_crate` each invoke ``cargo`` in the
+correct staged directory for a single crate. Both detect
+index-missing-version failures (:func:`_is_index_missing_version_error`) and
+publish-phase already-uploaded errors (:func:`_is_already_published_error`) to
+support non-fatal downgrade paths.
+
+**Error boundary**
+
+:class:`~lading.commands.publish_errors.PublishPreflightError` signals
+pre-publication failures (packaging, pre-flight checks).
+:class:`~lading.commands.publish_errors.PublishError` signals post-pre-flight
+publish failures and subclasses the preflight error so callers can handle all
+failures through one catch boundary or distinguish the publish phase when
+needed.
+
+**Related modules**
+
+* :mod:`lading.commands.publish_plan` — plan construction and formatting
+* :mod:`lading.commands.publish_preflight` — ``cargo check`` / ``cargo test`` /
+  git-status guards
+* :mod:`lading.commands.publish_errors` — :class:`PublishPreflightError` and
+  :class:`PublishError`
+* :mod:`lading.commands.publish_execution` — subprocess invocation and cmd-mox
+  integration
+"""
 
 from __future__ import annotations
 
@@ -358,6 +402,7 @@ def _package_crate(
         env=None,
     )
     if exit_code == 0:
+        LOGGER.info("Successfully packaged crate %s", crate.name)
         return
     if _is_index_missing_version_error(exit_code, stdout, stderr):
         _handle_index_missing_version(
@@ -461,6 +506,7 @@ def _handle_publish_result(
     """Handle a completed ``cargo publish`` invocation."""
     exit_code, stdout, stderr = invocation.output
     if exit_code == 0:
+        LOGGER.info("Successfully published crate %s", crate.name)
         return
     if _is_already_published_error(exit_code, stdout, stderr):
         LOGGER.warning(
