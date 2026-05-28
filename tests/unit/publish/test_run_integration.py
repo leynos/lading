@@ -200,20 +200,21 @@ def test_run_keeps_dry_run_publication_batched(tmp_path: Path) -> None:
     )
 
     staging_root = (tmp_path / "build") / root.name
-    expected_crate_roots = [
-        staging_root / crate.root_path.relative_to(root) for crate in workspace.crates
+    expected_packages = [
+        (
+            ("cargo", "package", "--allow-dirty"),
+            staging_root / crate.root_path.relative_to(root),
+        )
+        for crate in workspace.crates
     ]
-    expected_pairs = [
-        *(
-            (("cargo", "package", "--allow-dirty"), root)
-            for root in expected_crate_roots
-        ),
-        *(
-            (("cargo", "publish", "--allow-dirty", "--dry-run"), root)
-            for root in expected_crate_roots
-        ),
+    expected_dry_runs = [
+        (
+            ("cargo", "publish", "--allow-dirty", "--dry-run"),
+            staging_root / crate.root_path.relative_to(root),
+        )
+        for crate in workspace.crates
     ]
-    assert runner.calls == expected_pairs
+    assert runner.calls == expected_packages + expected_dry_runs
 
 
 def test_run_keeps_live_publication_interleaved(tmp_path: Path) -> None:

@@ -161,6 +161,22 @@ yet. When enabled, `lading publish` downgrades that specific index-lookup
 failure to a warning and continues. The option is rejected at runtime when
 `live=True`, so it cannot mask a real upload failure.
 
+### Exception hierarchy (`publish_errors`)
+
+`lading.commands.publish_errors` defines the public error boundary for
+publish orchestration. Both classes inherit from `RuntimeError` and carry
+their message through the standard `args` tuple.
+
+| Exception | Raised when |
+| --- | --- |
+| `PublishPreflightError` | A local check fails before publication begins — dirty working tree, auxiliary build failure, failed `cargo check`/`cargo test` preflight, or an invalid option combination (e.g. `--live` combined with `--allow-unpublished-workspace-deps`). |
+| `PublishError` | A `cargo publish` invocation fails after pre-flight checks have passed. Subclasses `PublishPreflightError`. |
+
+Callers of `lading.commands.publish.run` may catch `PublishPreflightError`
+to handle both validation and publish-phase failures through one `except`
+clause, or catch `PublishError` first when publish-phase failures require
+distinct handling.
+
 ### `_PublishExecutionOptions`
 
 `_PublishExecutionOptions` is a frozen dataclass that carries the runtime flags
@@ -231,51 +247,6 @@ exit code, and the `(stdout, stderr)` pair, it returns a formatted message that
 includes all four values. Using a single function for message construction keeps
 the error format consistent across the packaging and publish phases and makes
 snapshot testing straightforward.
-
-### Publish exception types
-
-Two public exception types are raised from the publish workflow, defined in
-:mod:`lading.commands.publish_errors` and re-exported from
-:mod:`lading.commands.publish`.
-
-#### `PublishPreflightError`
-
-Raised when pre-publication checks cannot prove the workspace is ready to
-publish. This covers packaging failures, missing index entries (when the
-allow-unpublished-workspace-deps override is not set or not applicable), dirty
-working trees, and cargo check/test failures. It is the **outermost** catch
-boundary: all publish failures, including those from the publish phase, can be
-handled as `PublishPreflightError`.
-
-```python
-from lading.commands.publish import PublishPreflightError, run
-
-try:
-    run(Path("/workspace"), configuration)
-except PublishPreflightError as exc:
-    print(f"Publish aborted: {exc}")
-```
-
-#### `PublishError`
-
-Subclasses `PublishPreflightError` and is raised specifically when
-`cargo publish` fails after pre-flight checks have succeeded. This lets callers
-distinguish packaging (pre-flight) failures from upload (publish) failures
-while still allowing a single catch-all:
-
-```python
-from lading.commands.publish import PublishError, PublishPreflightError, run
-
-try:
-    run(Path("/workspace"), configuration, options=PublishOptions(live=True))
-except PublishError as exc:
-    print(f"Upload failed after checks: {exc}")
-except PublishPreflightError as exc:
-    print(f"Pre-flight check failed: {exc}")
-```
-
-Both classes inherit from `RuntimeError`, carry their message through the
-standard `args` tuple, and avoid additional mutable state.
 
 `lading.commands.publish_execution` loads the optional `cmd_mox` command-runner
 module with `importlib.import_module("cmd_mox.command_runner")`. Keeping the

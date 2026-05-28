@@ -506,7 +506,7 @@ def _handle_publish_result(
     """Handle a completed ``cargo publish`` invocation."""
     exit_code, stdout, stderr = invocation.output
     if exit_code == 0:
-        LOGGER.info("Successfully published crate %s", crate.name)
+        LOGGER.info("Successfully published crate %s", invocation.crate_name)
         return
     if _is_already_published_error(exit_code, stdout, stderr):
         LOGGER.warning(
