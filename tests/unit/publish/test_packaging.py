@@ -25,6 +25,13 @@ from .conftest import (
 )
 
 
+class _SnapshotCase(typ.NamedTuple):
+    fn: cabc.Callable[..., None]
+    options: publish._PublishExecutionOptions
+    exc_type: type[Exception]
+    stderr_text: str
+
+
 def _assert_packaging_failure_message_contains(
     plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation],
     runner: cabc.Callable[..., tuple[int, str, str]],
@@ -437,20 +444,24 @@ def test_publish_crates_raise_on_failure(
 
 
 @pytest.mark.parametrize(
-    ("fn", "options", "exc_type", "stderr_text"),
+    "case",
     [
         pytest.param(
-            publish._package_crate,
-            publish._PublishExecutionOptions(live=False, allow_dirty=True),
-            publish.PublishPreflightError,
-            "packaging failed",
+            _SnapshotCase(
+                fn=publish._package_crate,
+                options=publish._PublishExecutionOptions(live=False, allow_dirty=True),
+                exc_type=publish.PublishPreflightError,
+                stderr_text="packaging failed",
+            ),
             id="package",
         ),
         pytest.param(
-            publish._publish_crate,
-            publish._PublishExecutionOptions(live=True, allow_dirty=True),
-            publish.PublishError,
-            "publish failed",
+            _SnapshotCase(
+                fn=publish._publish_crate,
+                options=publish._PublishExecutionOptions(live=True, allow_dirty=True),
+                exc_type=publish.PublishError,
+                stderr_text="publish failed",
+            ),
             id="publish",
         ),
     ],
@@ -458,21 +469,18 @@ def test_publish_crates_raise_on_failure(
 def test_crate_helper_error_message_snapshot(
     publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
     snapshot: SnapshotAssertion,
-    fn: cabc.Callable[..., None],
-    options: publish._PublishExecutionOptions,
-    exc_type: type[Exception],
-    stderr_text: str,
+    case: _SnapshotCase,
 ) -> None:
     """Snapshot the error message raised by each single-crate helper on failure."""
     plan, preparation, _staging_root = publish_plan_and_prep
     context = publish._PublicationPipelineContext(
         plan,
         preparation,
-        options,
-        make_failing_runner(stdout="", stderr=stderr_text),
+        case.options,
+        make_failing_runner(stdout="", stderr=case.stderr_text),
     )
 
-    with pytest.raises(exc_type) as excinfo:
-        fn(plan.publishable[0], context)
+    with pytest.raises(case.exc_type) as excinfo:
+        case.fn(plan.publishable[0], context)
 
     assert str(excinfo.value) == snapshot()
