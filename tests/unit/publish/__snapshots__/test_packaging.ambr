@@ -1,7 +1,7 @@
 # serializer version: 1
-# name: test_package_crate_error_message_snapshot
+# name: test_crate_helper_error_message_snapshot[package]
   'cargo package failed for crate alpha with exit code 1: packaging failed'
 # ---
-# name: test_publish_crate_error_message_snapshot
+# name: test_crate_helper_error_message_snapshot[publish]
   'cargo publish failed for crate alpha with exit code 1: publish failed'
 # ---

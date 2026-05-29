@@ -436,39 +436,43 @@ def test_publish_crates_raise_on_failure(
     assert "network offline" in message
 
 
-def test_package_crate_error_message_snapshot(
+@pytest.mark.parametrize(
+    ("fn", "options", "exc_type", "stderr_text"),
+    [
+        pytest.param(
+            publish._package_crate,
+            publish._PublishExecutionOptions(live=False, allow_dirty=True),
+            publish.PublishPreflightError,
+            "packaging failed",
+            id="package",
+        ),
+        pytest.param(
+            publish._publish_crate,
+            publish._PublishExecutionOptions(live=True, allow_dirty=True),
+            publish.PublishError,
+            "publish failed",
+            id="publish",
+        ),
+    ],
+)
+def test_crate_helper_error_message_snapshot(
     publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
     snapshot: SnapshotAssertion,
+    fn: cabc.Callable[..., None],
+    options: publish._PublishExecutionOptions,
+    exc_type: type[Exception],
+    stderr_text: str,
 ) -> None:
-    """Snapshot the error message raised by ``_package_crate`` on failure."""
+    """Snapshot the error message raised by each single-crate helper on failure."""
     plan, preparation, _staging_root = publish_plan_and_prep
     context = publish._PublicationPipelineContext(
         plan,
         preparation,
-        publish._PublishExecutionOptions(live=False, allow_dirty=True),
-        make_failing_runner(stdout="", stderr="packaging failed"),
+        options,
+        make_failing_runner(stdout="", stderr=stderr_text),
     )
 
-    with pytest.raises(publish.PublishPreflightError) as excinfo:
-        publish._package_crate(plan.publishable[0], context)
-
-    assert str(excinfo.value) == snapshot()
-
-
-def test_publish_crate_error_message_snapshot(
-    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
-    snapshot: SnapshotAssertion,
-) -> None:
-    """Snapshot the error message raised by ``_publish_crate`` on failure."""
-    plan, preparation, _staging_root = publish_plan_and_prep
-    context = publish._PublicationPipelineContext(
-        plan,
-        preparation,
-        publish._PublishExecutionOptions(live=True, allow_dirty=True),
-        make_failing_runner(stdout="", stderr="publish failed"),
-    )
-
-    with pytest.raises(publish.PublishError) as excinfo:
-        publish._publish_crate(plan.publishable[0], context)
+    with pytest.raises(exc_type) as excinfo:
+        fn(plan.publishable[0], context)
 
     assert str(excinfo.value) == snapshot()
