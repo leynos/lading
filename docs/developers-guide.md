@@ -248,6 +248,61 @@ includes all four values. Using a single function for message construction keeps
 the error format consistent across the packaging and publish phases and makes
 snapshot testing straightforward.
 
+### Pre-flight validation (`publish_preflight`)
+
+`lading.commands.publish_preflight` performs workspace validation before
+any crate is packaged or published. Its public entry point is:
+
+```python
+_run_preflight_checks(
+    workspace_root: Path,
+    *,
+    allow_dirty: bool,
+    configuration: LadingConfig,
+    runner: _CommandRunner | None = None,
+) -> None
+```
+
+The function verifies the git working tree is clean (unless `allow_dirty`
+is set), then executes `cargo check` and `cargo test` in a temporary
+`--target-dir` to keep preflight artefacts separate from the workspace's
+own target directory. A non-zero exit from any step raises
+`PublishPreflightError` with a descriptive message.
+
+| Helper | Purpose |
+| --- | --- |
+| `_compose_preflight_arguments` | Builds the base `cargo` argument tuple for a given target directory and `--all-targets` flag. |
+| `_preflight_argument_sets` | Returns `(check_args, test_args)` tuples adapted for unit-test-only mode. |
+| `_run_cargo_preflight` | Executes a single `cargo check` or `cargo test` invocation and raises on failure. |
+| `_verify_clean_working_tree` | Runs `git status --porcelain` and raises if the tree is dirty and `allow_dirty` is `False`. |
+
+### Per-crate publication helpers
+
+`_package_crate` and `_publish_crate` are the atomic units of the
+publication pipeline. Both accept a `CrateEntry` and a
+`_PublicationPipelineContext` and execute exactly one `cargo` invocation
+against the crate's staging root:
+
+```python
+_package_crate(crate: CrateEntry, context: _PublicationPipelineContext) -> None
+_publish_crate(crate: CrateEntry, context: _PublicationPipelineContext) -> None
+```
+
+`_PublicationPipelineContext` is a frozen dataclass that groups the four
+inputs shared across every per-crate call within a single `run()` invocation:
+
+| Field | Type | Purpose |
+| --- | --- | --- |
+| `plan` | `PublishPlan` | Resolved publication plan including the `publishable` crate list. |
+| `preparation` | `PublishPreparation` | Staging workspace metadata including `staging_root`. |
+| `options` | `_PublishExecutionOptions` | Runtime flags (`live`, `allow_dirty`, `allow_unpublished_workspace_deps`). |
+| `runner` | `_CommandRunner` | Injectable command runner; defaults to `_invoke` in production. |
+
+`_dispatch_publication` selects the live or dry-run pipeline and delegates
+accordingly. It is the sole branch that decides between the interleaved
+per-crate flow and the historical two-phase batch flow, keeping `run()`
+free of that decision.
+
 `lading.commands.publish_execution` loads the optional `cmd_mox` command-runner
 module with `importlib.import_module("cmd_mox.command_runner")`. Keeping the
 module in an `object | None` variable avoids relying on

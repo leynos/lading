@@ -9,6 +9,16 @@ workspaces. It can:
 - Plan and execute publication (`cargo package` + `cargo publish`) in dependency
   order, with pre-flight `cargo check`/`cargo test` validation.
 
+> **Breaking change in 0.1.0 — `--live` interleaving**
+>
+> Prior to 0.1.0, `lading publish --live` ran a two-phase pipeline: all
+> crates were packaged before any were published. From 0.1.0 onwards the
+> live pipeline is interleaved — each crate is packaged and published in
+> turn before the next crate is processed. Dry-run mode retains the
+> original two-phase order. Workspaces that relied on the old sequencing
+> must adopt the new per-crate ordering; no configuration knob restores
+> the prior behaviour.
+
 ## Installation
 
 ### Install from a wheel (recommended for internal distribution)

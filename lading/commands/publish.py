@@ -538,8 +538,10 @@ def _execute_live_publication_pipeline(
     """Package and publish each crate before moving to the next crate."""
     context = _PublicationPipelineContext(plan, preparation, options, runner)
     for crate in plan.publishable:
+        LOGGER.info("Live pipeline: starting crate %s", crate.name)
         _package_crate(crate, context)
         _publish_crate(crate, context)
+        LOGGER.info("Live pipeline: completed crate %s", crate.name)
 
 
 def _ensure_configuration(
@@ -595,6 +597,7 @@ def _dispatch_publication(
 ) -> None:
     """Route to the live or dry-run publication pipeline."""
     if options.live:
+        LOGGER.info("Publication mode: live (interleaved per-crate pipeline)")
         _execute_live_publication_pipeline(
             plan,
             preparation,
@@ -602,6 +605,7 @@ def _dispatch_publication(
             runner=runner,
         )
     else:
+        LOGGER.info("Publication mode: dry-run (batched two-phase pipeline)")
         _package_publishable_crates(
             plan,
             preparation,
