@@ -1,4 +1,41 @@
-"""Unit tests for publish crate packaging workflow."""
+"""Unit tests for publish crate packaging workflow.
+
+Exercises the per-crate publication helpers and the interleaved live
+pipeline introduced in :mod:`lading.commands.publish`:
+
+- :func:`~lading.commands.publish._package_crate` — packages one crate
+  from the staged workspace via ``cargo package``.
+- :func:`~lading.commands.publish._publish_crate` — publishes one crate
+  via ``cargo publish``, with ``--dry-run`` injected when not in live
+  mode.
+- :func:`~lading.commands.publish._execute_live_publication_pipeline` —
+  orchestrates the interleaved per-crate package-then-publish flow.
+
+Test helpers
+------------
+``CallTrackingRunner``
+    Records ``(command, cwd)`` pairs without executing real ``cargo``
+    subprocesses, enabling post-call assertion of both the invoked
+    command and the working directory.
+``make_failing_runner``
+    Returns a runner that yields a configurable non-zero exit code with
+    injected stdout/stderr text, used to exercise failure branches.
+``_SnapshotCase``
+    Named tuple bundling the four parametrised fields for snapshot tests
+    (helper function, execution options, expected exception type, and
+    injected stderr text), keeping the test function's argument count
+    within the four-parameter threshold.
+
+Coverage
+--------
+- Correct ``cargo`` subcommand and ``cwd`` for each single-crate helper.
+- ``PublishPreflightError`` raised on package failure with injected stderr.
+- ``PublishError`` raised on publish failure with injected stderr.
+- Already-published continuation: warning logged, no exception raised.
+- Live pipeline interleaving: package then publish per crate in plan order.
+- Live pipeline abort after a partial publish: earlier pairs complete first.
+- Exact error-message formatting locked in via syrupy snapshot assertions.
+"""
 
 from __future__ import annotations
 

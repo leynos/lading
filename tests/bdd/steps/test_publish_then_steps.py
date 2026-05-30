@@ -1,4 +1,27 @@
-"""Then steps for publish BDD scenarios."""
+"""Then-step definitions for publish BDD scenarios.
+
+Implements :mod:`pytest_bdd` *then* steps that assert post-command
+outcomes for ``lading publish`` scenarios defined in
+``tests/bdd/features/cli.feature``.
+
+Step inventory
+--------------
+``then_publish_interleaves_live_package_and_publish(preflight_recorder, crate_names)``
+    Filters recorded invocations to ``cargo::package`` and
+    ``cargo::publish`` operations, derives the observed crate name from
+    each invocation's ``PWD`` directory basename, and asserts that the
+    sequence matches the expected interleaved order for the
+    comma-separated ``crate_names``.
+
+Related step modules
+--------------------
+``test_publish_given_steps``
+    *Given* steps that configure the workspace and publish plan.
+``test_publish_when_steps``
+    *When* steps that invoke the CLI command under test.
+``test_publish_helpers``
+    Shared assertion helpers used across given/when/then step modules.
+"""
 
 from __future__ import annotations
 
