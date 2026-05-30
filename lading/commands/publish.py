@@ -612,6 +612,7 @@ def _dispatch_publication(
             options=options,
             runner=runner,
         )
+        LOGGER.info("Dry-run pipeline: packaging complete; starting publish phase")
         _publish_crates(
             plan,
             preparation,
