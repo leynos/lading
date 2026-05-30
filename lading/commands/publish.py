@@ -418,6 +418,7 @@ def _package_crate(
     message = _format_cargo_failure_message(
         "package", crate.name, exit_code, (stdout, stderr)
     )
+    LOGGER.error(message)
     raise PublishPreflightError(message)
 
 
@@ -525,6 +526,7 @@ def _handle_publish_result(
     message = _format_cargo_failure_message(
         "publish", crate.name, exit_code, (stdout, stderr)
     )
+    LOGGER.error(message)
     raise PublishError(message)
 
 
@@ -537,11 +539,23 @@ def _execute_live_publication_pipeline(
 ) -> None:
     """Package and publish each crate before moving to the next crate."""
     context = _PublicationPipelineContext(plan, preparation, options, runner)
+    completed: list[str] = []
     for crate in plan.publishable:
         LOGGER.info("Live pipeline: starting crate %s", crate.name)
-        _package_crate(crate, context)
-        _publish_crate(crate, context)
+        try:
+            _package_crate(crate, context)
+            _publish_crate(crate, context)
+        except (PublishPreflightError, PublishError):
+            LOGGER.exception(
+                "Live pipeline: aborted on crate %s — %d/%d crates completed (%s)",
+                crate.name,
+                len(completed),
+                len(plan.publishable),
+                ", ".join(completed) if completed else "none",
+            )
+            raise
         LOGGER.info("Live pipeline: completed crate %s", crate.name)
+        completed.append(crate.name)
 
 
 def _ensure_configuration(
@@ -580,7 +594,7 @@ def _validate_publication_options(options: PublishOptions) -> None:
             "--allow-unpublished-workspace-deps is only valid in dry-run mode; "
             "re-run without --live."
         )
-        LOGGER.warning(message)
+        LOGGER.error(message)
         raise PublishPreflightError(message)
     if options.allow_unpublished_workspace_deps:
         LOGGER.info(
