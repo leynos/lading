@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import collections.abc as cabc
 import logging
+import shutil
 import typing as typ
 
 if typ.TYPE_CHECKING:
@@ -458,6 +459,36 @@ def test_execute_live_publication_pipeline_stops_after_partial_publish(
         (("cargo", "publish", "--allow-dirty"), alpha_root),
         (("cargo", "package", "--allow-dirty"), beta_root),
     ]
+
+
+def test_execute_live_publication_pipeline_wraps_preparation_errors(
+    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Preparation failures surface as ``PublishPreflightError`` for the caller."""
+    caplog.set_level(logging.ERROR, logger="lading.commands.publish")
+    plan, preparation, staging_root = publish_plan_and_prep
+    # Remove the staged tree for the second crate so resolving its root fails
+    # mid-pipeline, after the first crate has packaged and published cleanly.
+    beta_root = staging_root / plan.publishable[1].root_path.relative_to(
+        plan.workspace_root
+    )
+    shutil.rmtree(beta_root)
+    runner = CallTrackingRunner()
+
+    with pytest.raises(publish.PublishPreflightError) as excinfo:
+        publish._execute_live_publication_pipeline(
+            plan,
+            preparation,
+            options=publish._PublishExecutionOptions(live=True, allow_dirty=True),
+            runner=runner,
+        )
+
+    assert isinstance(excinfo.value.__cause__, publish.PublishPreparationError)
+    assert str(beta_root) in str(excinfo.value)
+    assert any(
+        "Live pipeline: aborted on crate beta" in message for message in caplog.messages
+    )
 
 
 def test_publish_crates_raise_on_failure(

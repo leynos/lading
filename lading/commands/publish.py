@@ -507,7 +507,12 @@ def _handle_publish_result(
     """Handle a completed ``cargo publish`` invocation."""
     exit_code, stdout, stderr = invocation.output
     if exit_code == 0:
-        LOGGER.info("Successfully published crate %s", invocation.crate_name)
+        success_message = (
+            "Successfully published crate %s"
+            if options.live
+            else "Dry-run publish succeeded for crate %s"
+        )
+        LOGGER.info(success_message, invocation.crate_name)
         return
     if _is_already_published_error(exit_code, stdout, stderr):
         LOGGER.warning(
@@ -545,6 +550,17 @@ def _execute_live_publication_pipeline(
         try:
             _package_crate(crate, context)
             _publish_crate(crate, context)
+        except PublishPreparationError as exc:
+            # Preparation failures escape the preflight/publish error taxonomy;
+            # normalise them so the live pipeline reports a single abort class.
+            LOGGER.exception(
+                "Live pipeline: aborted on crate %s — %d/%d crates completed (%s)",
+                crate.name,
+                len(completed),
+                len(plan.publishable),
+                ", ".join(completed) if completed else "none",
+            )
+            raise PublishPreflightError(str(exc)) from exc
         except (PublishPreflightError, PublishError):
             LOGGER.exception(
                 "Live pipeline: aborted on crate %s — %d/%d crates completed (%s)",

@@ -257,12 +257,15 @@ def then_publish_interleaves_live_package_and_publish(
 ) -> None:
     """Assert live publish packages and publishes each crate before the next."""
     expected_names = _split_names(crate_names)
-    observed_sequence: list[tuple[str, str]] = []
-    for label, _args, env in preflight_recorder.records:
-        if label not in {"cargo::package", "cargo::publish"}:
-            continue
-        cwd = env.get("PWD", "")
-        observed_sequence.append((label, Path(cwd).name if cwd else ""))
+    filtered = [
+        (label, (args, env))
+        for label, args, env in preflight_recorder.records
+        if label in {"cargo::package", "cargo::publish"}
+    ]
+    labels = [label for label, _ in filtered]
+    invocations = [invocation for _, invocation in filtered]
+    crate_names_observed = _extract_crate_names_from_invocations(invocations)
+    observed_sequence = list(zip(labels, crate_names_observed, strict=True))
 
     expected_sequence: list[tuple[str, str]] = []
     for crate_name in expected_names:
