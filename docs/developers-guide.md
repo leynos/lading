@@ -204,7 +204,7 @@ index-lookup downgrade is only valid for dry-run workflows.
 the live-mode dispatcher. It walks `PublishPlan.publishable` in order and runs
 `cargo package` followed by `cargo publish` for each crate before advancing to
 the next crate. It logs per-crate progress, records completed crates for abort
-diagnostics, and normalises staging/preparation failures into
+diagnostics, and normalizes staging/preparation failures into
 `PublishPreflightError` so callers receive the same publish command error
 boundary.
 
