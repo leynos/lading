@@ -486,6 +486,13 @@ def test_execute_live_publication_pipeline_wraps_preparation_errors(
 
     assert isinstance(excinfo.value.__cause__, publish.PublishPreparationError)
     assert str(beta_root) in str(excinfo.value)
+    alpha_root = staging_root / plan.publishable[0].root_path.relative_to(
+        plan.workspace_root
+    )
+    assert runner.calls == [
+        (("cargo", "package", "--allow-dirty"), alpha_root),
+        (("cargo", "publish", "--allow-dirty"), alpha_root),
+    ]
     assert any(
         "Live pipeline: aborted on crate beta" in message for message in caplog.messages
     )
