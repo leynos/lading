@@ -492,7 +492,11 @@ def test_execute_live_publication_pipeline_wraps_preparation_errors(
     assert runner.calls == [
         (("cargo", "package", "--allow-dirty"), alpha_root),
         (("cargo", "publish", "--allow-dirty"), alpha_root),
-    ]
+    ], (
+        "expected alpha to be packaged and published "
+        "(cargo package + cargo publish) in alpha_root before beta "
+        f"preparation aborted; alpha_root={alpha_root!s}, calls={runner.calls!r}"
+    )
     assert any(
         "Live pipeline: aborted on crate beta" in message for message in caplog.messages
     )
