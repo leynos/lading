@@ -1,4 +1,63 @@
-"""Integration-style tests for :func:`lading.commands.publish.run`."""
+"""Integration-style tests for :func:`lading.commands.publish.run`.
+
+Verifies the end-to-end behaviour of ``run()`` from workspace-root
+resolution through preflight execution, plan construction, and cargo
+command sequencing, using injectable runners and monkeypatched loaders
+rather than real cargo or git processes.
+
+Test coverage
+-------------
+- Workspace root normalisation: ``run`` resolves a relative root before
+  planning.
+- Configuration loading: ``run`` falls back to the active configuration
+  or loads from disk when no active configuration is present.
+- Plan summary formatting: the return value contains structured sections
+  for publishable crates, skipped crates, and configured exclusions.
+- Unpublished workspace dependency override: ``--allow-unpublished-workspace-
+  deps`` downgrades index-lookup failures to warnings and logs the
+  correct INFO message.
+- Dry-run batching: ``live=False`` emits all ``cargo package --allow-dirty``
+  calls before any ``cargo publish --allow-dirty --dry-run`` calls;
+  verified via full ``(command, cwd)`` pair assertions to confirm each
+  operation targets the correct staged crate directory.
+- Live interleaving: ``live=True`` emits a ``cargo package`` immediately
+  followed by ``cargo publish`` for each crate in plan order; verified via
+  full ``(command, cwd)`` pair assertions.
+- No publishable crates: the summary calls out "Crates to publish: none".
+- Missing workspace: a ``FileNotFoundError`` from the workspace loader is
+  converted to a ``WorkspaceModelError``.
+- Configuration errors: ``ConfigurationError`` from the loader propagates
+  unchanged.
+- Preflight invocation location: ``cargo check`` and ``cargo test`` run
+  inside the resolved workspace root, not the staging directory.
+- Test-exclude normalisation: exclusions are sorted, deduplicated, and
+  whitespace-trimmed before being passed to ``cargo test --exclude``.
+- Unit-tests-only mode: ``--all-targets`` is omitted and ``--lib --bins``
+  are injected.
+- Dirty-workspace handling: git status is skipped by default;
+  ``allow_dirty=False`` enforces cleanliness and raises on uncommitted
+  changes.
+- Preflight cargo failures: non-zero ``cargo check`` or ``cargo test``
+  raises ``PublishPreflightError`` containing the subcommand name and exit
+  code.
+
+Test infrastructure
+-------------------
+``CallTrackingRunner``
+    Records ``(command, cwd)`` pairs without executing real subprocesses,
+    enabling post-call assertion of both command and working directory.
+``make_workspace`` / ``make_crate`` / ``make_dependency_chain``
+    Construct in-memory ``WorkspaceGraph`` instances for use as fixtures.
+``make_config`` / ``make_preflight_config``
+    Build ``LadingConfig`` instances with controlled field values.
+``_setup_preflight_test`` / ``_extract_cargo_test_call``
+    Shared helpers from ``preflight_test_utils`` that configure a
+    monkeypatched preflight run and extract the recorded cargo test call.
+``ORIGINAL_PREFLIGHT``
+    The real ``_run_preflight_checks`` function, restored via
+    ``monkeypatch.setattr`` in tests that exercise full preflight
+    behaviour end-to-end.
+"""
 
 from __future__ import annotations
 

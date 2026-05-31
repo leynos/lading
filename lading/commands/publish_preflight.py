@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import collections.abc as cabc
 import dataclasses as dc
+import logging
 import os
 import tempfile
 import typing as typ
@@ -33,6 +34,9 @@ from lading.commands.publish_execution import _CommandRunner, _invoke
 
 if typ.TYPE_CHECKING:
     from lading.config import CompiletestExtern, LadingConfig
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -73,6 +77,7 @@ def _run_aux_build_commands(
             )
             if detail:
                 message = f"{message}; {detail}"
+            LOGGER.error(message)
             raise PublishPreflightError(message)
 
 
@@ -228,12 +233,14 @@ def _verify_clean_working_tree(
         )
         if detail:
             message = f"{message}: {detail}"
+        LOGGER.error(message)
         raise PublishPreflightError(message)
     if stdout.strip():
         message = (
             "Workspace has uncommitted changes; commit or stash them "
             "before publishing or re-run without --forbid-dirty."
         )
+        LOGGER.error(message)
         raise PublishPreflightError(message)
 
 
@@ -262,6 +269,7 @@ def _run_cargo_preflight(
                 stderr,
                 tail_lines=options.diagnostics_tail_lines,
             )
+        LOGGER.error(message)
         raise PublishPreflightError(message)
 
 
