@@ -192,6 +192,36 @@ single `lading publish` run. Its fields are:
 The dataclass is an internal implementation detail; callers interact with the
 public `PublishOptions` dataclass, which `run()` converts before dispatching.
 
+### Publication orchestration helpers
+
+`_validate_publication_options(options)` is the first publish-specific guard in
+`run()`. It rejects invalid option combinations before workspace loading or
+staging begins. Today that means `live=True` cannot be combined with
+`allow_unpublished_workspace_deps=True`, because the sibling-dependency
+index-lookup downgrade is only valid for dry-run workflows.
+
+`_execute_live_publication_pipeline(plan, preparation, *, options, runner)` is
+the live-mode dispatcher. It walks `PublishPlan.publishable` in order and runs
+`cargo package` followed by `cargo publish` for each crate before advancing to
+the next crate. It logs per-crate progress, records completed crates for abort
+diagnostics, and normalises staging/preparation failures into
+`PublishPreflightError` so callers receive the same publish command error
+boundary.
+
+`_handle_publish_result(invocation, crate, plan, options)` owns the result
+classification for a completed `cargo publish` command. It logs success,
+skips already-published crate versions, delegates in-plan crates.io index
+visibility failures to `_handle_index_missing_version`, and raises
+`PublishError` for all other non-zero publish exits after formatting the cargo
+failure message.
+
+`_CargoPreflightOptions` lives in `publish_preflight.py` and carries the
+per-invocation settings for cargo pre-flight commands: extra cargo arguments,
+test exclusions, unit-test-only narrowing, environment overrides, and optional
+stderr-tail diagnostics. `_run_preflight_checks` builds these option objects
+for `cargo check` and `cargo test` so command construction stays explicit and
+testable.
+
 Publication dispatch deliberately differs by mode. Dry-run mode keeps the
 historical two-phase pipeline: package every publishable crate, then run
 `cargo publish --dry-run` for every crate. Live mode interleaves the pipeline
