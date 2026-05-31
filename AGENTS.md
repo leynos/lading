@@ -74,7 +74,7 @@
   - **Formatting:** Adheres to formatting standards (`make check-fmt`; use
     `make fmt` to apply fixes).
   - **Typechecking:** Passes type checking (`make typecheck`).
-- **Markdown files (`.md` only):**
+- **For Markdown files (`.md` only):**
   - **Linting:** Passes markdown lint checks (`make markdownlint`).
   - **Mermaid diagrams:** Passes validation using nixie (`make nixie`).
 - **Committing:**
