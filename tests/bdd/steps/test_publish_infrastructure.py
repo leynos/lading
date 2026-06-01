@@ -187,6 +187,12 @@ def _register_preflight_commands(
         ("git", "status", "--porcelain"): _CommandResponse(exit_code=0),
         (
             "cargo",
+            "metadata",
+            "--locked",
+            "--manifest-path",
+        ): _CommandResponse(exit_code=0),
+        (
+            "cargo",
             "check",
             "--workspace",
             "--all-targets",
@@ -234,6 +240,20 @@ def _register_preflight_commands(
 
     defaults |= normalized_overrides
     defaults[publish_command] = publish_response
+    git_responses = {
+        command[1:]: response
+        for command, response in defaults.items()
+        if command[0] == "git"
+    }
+    defaults = {
+        command: response
+        for command, response in defaults.items()
+        if command[0] != "git"
+    }
+    if git_responses:
+        config.cmd_mox.stub("git").runs(
+            _make_git_handler(git_responses, config.recorder)
+        )
     for command, response in defaults.items():
         expectation_program, expectation_args = _resolve_preflight_expectation(command)
         config.cmd_mox.stub(expectation_program).runs(
@@ -242,7 +262,30 @@ def _register_preflight_commands(
             )
         )
 
+def _make_git_handler(
+    responses: dict[tuple[str, ...], ResponseProvider],
+    recorder: _PreflightInvocationRecorder | None,
+) -> cabc.Callable[[_CmdInvocation], tuple[str, str, int]]:
+    """Build a git handler that can serve multiple git subcommands."""
 
+    def _handler(invocation: _CmdInvocation) -> tuple[str, str, int]:
+        args = tuple(invocation.args)
+        try:
+            response = responses[args]
+        except KeyError as exc:
+            message = f"Unexpected git invocation arguments: {args!r}"
+            raise AssertionError(message) from exc
+        active_response = response(invocation) if callable(response) else response
+        if recorder is not None:
+            env_mapping = dict(getattr(invocation, "env", {}))
+            recorder.record("git", args, env_mapping)
+        return (
+            active_response.stdout,
+            active_response.stderr,
+            active_response.exit_code,
+        )
+
+    return _handler
 def _build_env_restore_dict(var_name: str) -> dict[str, str]:
     """Build a dictionary for restoring an environment variable."""
     previous = os.environ.get(var_name)

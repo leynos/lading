@@ -28,6 +28,10 @@ import tempfile
 import typing as typ
 from pathlib import Path
 
+from lading.commands.lockfile import (
+    discover_tracked_lockfiles,
+    validate_lockfile_freshness,
+)
 from lading.commands.publish_diagnostics import _append_compiletest_diagnostics
 from lading.commands.publish_errors import PublishPreflightError
 from lading.commands.publish_execution import _invoke
@@ -134,6 +138,11 @@ def _run_preflight_checks(
         runner=command_runner,
         env=base_env,
     )
+    _validate_lockfile_freshness(
+        workspace_root,
+        runner=command_runner,
+        env=base_env,
+    )
 
     with tempfile.TemporaryDirectory(prefix="lading-preflight-target-") as target:
         target_path = Path(target)
@@ -179,7 +188,48 @@ def _compose_preflight_arguments(
     arguments.append(f"--target-dir={target_dir}")
     return tuple(arguments)
 
+def _validate_lockfile_freshness(
+    workspace_root: Path,
+    *,
+    runner: _CommandRunner,
+    env: cabc.Mapping[str, str] | None = None,
+) -> None:
+    """Fail early when tracked Cargo.lock files are stale."""
+    base_env = env
 
+    def runner_with_env(
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        effective_env = base_env if env is None else env
+        return runner(command, cwd=cwd, env=effective_env)
+
+    stale_lockfiles: list[Path] = []
+    for lockfile_path in discover_tracked_lockfiles(workspace_root, runner_with_env):
+        manifest_path = lockfile_path.parent / "Cargo.toml"
+        if not validate_lockfile_freshness(manifest_path, runner_with_env):
+            stale_lockfiles.append(lockfile_path)
+
+    if not stale_lockfiles:
+        return
+
+    lines = [
+        "Tracked Cargo.lock files are stale after manifest version changes.",
+        (
+            "This commonly happens after running `lading bump`; re-run it to "
+            "refresh tracked lockfiles, or repair each stale lockfile manually:"
+        ),
+    ]
+    for lockfile_path in stale_lockfiles:
+        manifest_path = lockfile_path.parent / "Cargo.toml"
+        lines.append(f"- {lockfile_path}")
+        lines.append(f"  cargo generate-lockfile --manifest-path {manifest_path}")
+
+    message = "\n".join(lines)
+    LOGGER.error(message)
+    raise PublishPreflightError(message)
 def _preflight_argument_sets(
     target_dir: Path, *, unit_tests_only: bool
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
