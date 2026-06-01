@@ -1,4 +1,18 @@
 # serializer version: 1
+# name: test_dry_run_pipeline_info_log_snapshot
+  tuple(
+    tuple(
+      'Publication mode: dry-run (batched two-phase pipeline)',
+      tuple(
+      ),
+    ),
+    tuple(
+      'Dry-run pipeline: packaging complete; starting publish phase',
+      tuple(
+      ),
+    ),
+  )
+# ---
 # name: test_index_missing_flag_disabled_message_snapshot[message]
   '''
   cargo package failed for crate beta with exit code 1: error: failed to prepare local package for uploading
@@ -70,6 +84,51 @@
         'package',
         'beta',
         'external_crate',
+      ),
+    ),
+  )
+# ---
+# name: test_live_pipeline_info_log_snapshot
+  tuple(
+    tuple(
+      'Publication mode: live (interleaved per-crate pipeline)',
+      tuple(
+      ),
+    ),
+    tuple(
+      'Live pipeline: starting crate %s',
+      tuple(
+        'alpha',
+      ),
+    ),
+    tuple(
+      'Live pipeline: completed crate %s',
+      tuple(
+        'alpha',
+      ),
+    ),
+    tuple(
+      'Live pipeline: starting crate %s',
+      tuple(
+        'beta',
+      ),
+    ),
+    tuple(
+      'Live pipeline: completed crate %s',
+      tuple(
+        'beta',
+      ),
+    ),
+    tuple(
+      'Live pipeline: starting crate %s',
+      tuple(
+        'gamma',
+      ),
+    ),
+    tuple(
+      'Live pipeline: completed crate %s',
+      tuple(
+        'gamma',
       ),
     ),
   )

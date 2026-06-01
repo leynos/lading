@@ -287,16 +287,25 @@ def prepare_workspace(
     build_directory = _normalise_build_directory(
         plan.workspace_root, active_options.build_directory
     )
+    LOGGER.info(
+        "Preparing staged workspace for publication under %s",
+        build_directory,
+    )
     staging_root = _copy_workspace_tree(
         plan.workspace_root,
         build_directory,
         preserve_symlinks=active_options.preserve_symlinks,
     )
+    LOGGER.info("Staged workspace created at %s", staging_root)
     readme_crates = _collect_workspace_readme_targets(workspace)
     copied_readmes = _stage_workspace_readmes(
         crates=readme_crates,
         workspace_root=plan.workspace_root,
         staging_root=staging_root,
+    )
+    LOGGER.info(
+        "Workspace README staging complete: %d files copied",
+        len(copied_readmes),
     )
     preparation = PublishPreparation(
         staging_root=staging_root, copied_readmes=copied_readmes
@@ -675,6 +684,7 @@ def run(
 ) -> str:
     """Run pre-flight checks, package crates, and publish from ``workspace_root``."""
     root_path = normalise_workspace_root(workspace_root)
+    LOGGER.info("Starting publish workflow for workspace %s", root_path)
     effective_options = PublishOptions() if options is None else options
     _validate_publication_options(effective_options)
     configuration_override = configuration or effective_options.configuration
@@ -715,6 +725,7 @@ def run(
         plan, strip_patches=active_configuration.publish.strip_patches
     )
     summary_lines = _format_preparation_summary(preparation)
+    LOGGER.info("Publish workflow completed successfully for workspace %s", root_path)
     return f"{plan_message}\n\n" + "\n".join(summary_lines)
 
 

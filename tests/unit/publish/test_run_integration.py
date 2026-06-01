@@ -236,12 +236,15 @@ def test_run_logs_when_unpublished_workspace_dependency_override_is_enabled(
     )
 
 
-def test_run_keeps_dry_run_publication_batched(tmp_path: Path) -> None:
+def test_run_keeps_dry_run_publication_batched(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     """Dry-run publish still packages all crates before publish dry-runs.
 
     Assert full ``(command, cwd)`` pairs to confirm each crate operation
     runs in the correct staging directory.
     """
+    caplog.set_level(logging.INFO, logger="lading.commands.publish")
     root = tmp_path / "workspace"
     workspace = make_workspace(root, *make_dependency_chain(root))
     configuration = make_config()
@@ -274,6 +277,20 @@ def test_run_keeps_dry_run_publication_batched(tmp_path: Path) -> None:
         for crate in workspace.crates
     ]
     assert runner.calls == expected_packages + expected_dry_runs
+    assert f"Starting publish workflow for workspace {root}" in caplog.messages
+    assert any(
+        message.startswith("Preparing staged workspace for publication under ")
+        for message in caplog.messages
+    )
+    assert any(
+        message.startswith("Staged workspace created at ")
+        for message in caplog.messages
+    )
+    assert "Workspace README staging complete: 0 files copied" in caplog.messages
+    assert (
+        f"Publish workflow completed successfully for workspace {root}"
+        in caplog.messages
+    )
 
 
 def test_run_keeps_live_publication_interleaved(tmp_path: Path) -> None:

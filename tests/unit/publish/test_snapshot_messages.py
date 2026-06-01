@@ -31,11 +31,31 @@ from .conftest import (
     INDEX_MISSING_STDERR_BETA,
     INDEX_MISSING_STDERR_EXTERNAL,
     INDEX_MISSING_STDERR_UNPARSEABLE,
+    CallTrackingRunner,
     _warning_records,
     make_config,
     make_dependency_chain,
     make_workspace,
 )
+
+_PIPELINE_INFO_MESSAGES = frozenset({
+    "Publication mode: live (interleaved per-crate pipeline)",
+    "Publication mode: dry-run (batched two-phase pipeline)",
+    "Dry-run pipeline: packaging complete; starting publish phase",
+    "Live pipeline: starting crate %s",
+    "Live pipeline: completed crate %s",
+})
+
+
+def _pipeline_info_records(
+    caplog: pytest.LogCaptureFixture,
+) -> tuple[tuple[str, tuple[object, ...]], ...]:
+    """Return captured INFO records for publish pipeline operator messages."""
+    return tuple(
+        (record.msg, record.args)
+        for record in caplog.records
+        if record.levelno == logging.INFO and record.msg in _PIPELINE_INFO_MESSAGES
+    )
 
 
 def test_run_rejects_allow_unpublished_with_live(
@@ -191,3 +211,41 @@ def test_index_missing_flag_disabled_message_snapshot(
 
     assert message == snapshot(name="message")
     assert _warning_records(caplog) == snapshot(name="warning")
+
+
+def test_dry_run_pipeline_info_log_snapshot(
+    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    caplog: pytest.LogCaptureFixture,
+    snapshot: SnapshotAssertion,
+) -> None:
+    """Snapshot dry-run pipeline selector and phase-completion logs."""
+    caplog.set_level(logging.INFO, logger="lading.commands.publish")
+    plan, preparation, _staging_root = publish_plan_and_prep
+
+    publish._dispatch_publication(
+        plan,
+        preparation,
+        options=publish._PublishExecutionOptions(live=False, allow_dirty=True),
+        runner=CallTrackingRunner(),
+    )
+
+    assert _pipeline_info_records(caplog) == snapshot()
+
+
+def test_live_pipeline_info_log_snapshot(
+    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    caplog: pytest.LogCaptureFixture,
+    snapshot: SnapshotAssertion,
+) -> None:
+    """Snapshot live pipeline selector and per-crate progression logs."""
+    caplog.set_level(logging.INFO, logger="lading.commands.publish")
+    plan, preparation, _staging_root = publish_plan_and_prep
+
+    publish._dispatch_publication(
+        plan,
+        preparation,
+        options=publish._PublishExecutionOptions(live=True, allow_dirty=True),
+        runner=CallTrackingRunner(),
+    )
+
+    assert _pipeline_info_records(caplog) == snapshot()
