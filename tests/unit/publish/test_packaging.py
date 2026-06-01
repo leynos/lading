@@ -71,7 +71,7 @@ class _SnapshotCase(typ.NamedTuple):
 
 
 class _FailureCase(typ.NamedTuple):
-    fn: typ.Callable[..., None]
+    fn: cabc.Callable[..., None]
     live: bool
     exc_type: type[Exception]
     runner_kwargs: dict[str, str]
