@@ -191,7 +191,7 @@ by filtering non-publishable crates, applying `publish.exclude`, validating
 workspace preparation types and helpers that copy the workspace tree, stage
 workspace README files for crates that opt in, and apply the
 `publish.strip_patches` strategy to the staged `Cargo.toml`. These operations
-run before any `cargo package` or `cargo publish` command so the command runner
+run before any `cargo package` or `cargo publish` command, so the command runner
 works against a prepared snapshot rather than the source workspace.
 
 `publish_diagnostics.py` owns compiletest failure enrichment. When a cargo
@@ -202,7 +202,7 @@ module is deliberately read-only: missing artefacts or unreadable files produce
 diagnostic notes rather than replacing the original cargo failure.
 
 `publish_index_check.py` owns crates.io index-lookup classification. It
-contains `_CargoInvocation`, the predicates and parsers that recognise Cargo's
+contains `_CargoInvocation`, the predicates and parsers that recognize Cargo's
 "no matching package/version" diagnostics, crate-name canonicalization, and
 `_handle_index_missing_version()`. That handler decides whether an index miss
 is out-of-plan and fatal, in-plan but still fatal, or in-plan and downgraded by
