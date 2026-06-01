@@ -47,6 +47,11 @@ _PIPELINE_INFO_MESSAGES = frozenset({
 })
 
 
+class _IndexMissingCase(typ.NamedTuple):
+    stderr: str
+    allow_unpublished: bool
+
+
 def _pipeline_info_records(
     caplog: pytest.LogCaptureFixture,
 ) -> tuple[tuple[str, tuple[object, ...]], ...]:
@@ -119,18 +124,38 @@ def _handle_index_missing_version_message(
     return str(excinfo.value)
 
 
-def test_index_missing_name_extraction_failure_message_snapshot(
+@pytest.mark.parametrize(
+    "case",
+    [
+        pytest.param(
+            _IndexMissingCase(
+                stderr=INDEX_MISSING_STDERR_UNPARSEABLE,
+                allow_unpublished=True,
+            ),
+            id="name_extraction_failure",
+        ),
+        pytest.param(
+            _IndexMissingCase(
+                stderr=INDEX_MISSING_STDERR_BETA,
+                allow_unpublished=False,
+            ),
+            id="flag_disabled",
+        ),
+    ],
+)
+def test_index_missing_version_message_snapshot(
     publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
     caplog: pytest.LogCaptureFixture,
     snapshot: SnapshotAssertion,
+    case: _IndexMissingCase,
 ) -> None:
-    """Snapshot the fatal message and warning for name extraction failures."""
+    """Snapshot the fatal message and warning for index-missing-version failures."""
     plan, _preparation, _staging_root = publish_plan_and_prep
 
     message = _handle_index_missing_version_message(
         plan,
-        stderr=INDEX_MISSING_STDERR_UNPARSEABLE,
-        allow_unpublished_workspace_deps=True,
+        stderr=case.stderr,
+        allow_unpublished_workspace_deps=case.allow_unpublished,
         caplog=caplog,
     )
 
@@ -194,57 +219,33 @@ def test_index_missing_out_of_plan_message_snapshot(
     assert _warning_records(caplog) == snapshot(name="warning")
 
 
-def test_index_missing_flag_disabled_message_snapshot(
+@pytest.mark.parametrize(
+    "options",
+    [
+        pytest.param(
+            publish._PublishExecutionOptions(live=False, allow_dirty=True),
+            id="dry_run",
+        ),
+        pytest.param(
+            publish._PublishExecutionOptions(live=True, allow_dirty=True),
+            id="live",
+        ),
+    ],
+)
+def test_pipeline_info_log_snapshot(
     publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
     caplog: pytest.LogCaptureFixture,
     snapshot: SnapshotAssertion,
+    options: publish._PublishExecutionOptions,
 ) -> None:
-    """Snapshot the fatal message and warning when the override is disabled."""
-    plan, _preparation, _staging_root = publish_plan_and_prep
-
-    message = _handle_index_missing_version_message(
-        plan,
-        stderr=INDEX_MISSING_STDERR_BETA,
-        allow_unpublished_workspace_deps=False,
-        caplog=caplog,
-    )
-
-    assert message == snapshot(name="message")
-    assert _warning_records(caplog) == snapshot(name="warning")
-
-
-def test_dry_run_pipeline_info_log_snapshot(
-    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
-    caplog: pytest.LogCaptureFixture,
-    snapshot: SnapshotAssertion,
-) -> None:
-    """Snapshot dry-run pipeline selector and phase-completion logs."""
+    """Snapshot pipeline selector and progression logs for each mode."""
     caplog.set_level(logging.INFO, logger="lading.commands.publish")
     plan, preparation, _staging_root = publish_plan_and_prep
 
     publish._dispatch_publication(
         plan,
         preparation,
-        options=publish._PublishExecutionOptions(live=False, allow_dirty=True),
-        runner=CallTrackingRunner(),
-    )
-
-    assert _pipeline_info_records(caplog) == snapshot()
-
-
-def test_live_pipeline_info_log_snapshot(
-    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
-    caplog: pytest.LogCaptureFixture,
-    snapshot: SnapshotAssertion,
-) -> None:
-    """Snapshot live pipeline selector and per-crate progression logs."""
-    caplog.set_level(logging.INFO, logger="lading.commands.publish")
-    plan, preparation, _staging_root = publish_plan_and_prep
-
-    publish._dispatch_publication(
-        plan,
-        preparation,
-        options=publish._PublishExecutionOptions(live=True, allow_dirty=True),
+        options=options,
         runner=CallTrackingRunner(),
     )
 
