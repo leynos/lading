@@ -8,6 +8,7 @@ import typing as typ
 import pytest
 
 from lading.commands import publish
+from lading.testing.cmd_mox_runner import normalise_cmd_mox_command
 from lading.workspace import metadata as metadata_module
 
 from .conftest import ORIGINAL_PREFLIGHT, make_config, make_preflight_config
@@ -38,9 +39,7 @@ def test_normalise_cmd_mox_command_forwards_non_cargo_commands(
     """cmd-mox normalisation preserves non-cargo commands and arguments."""
     program, args = command[0], tuple(command[1:])
 
-    rewritten_program, rewritten_args = publish._normalise_cmd_mox_command(
-        program, args
-    )
+    rewritten_program, rewritten_args = normalise_cmd_mox_command(program, args)
 
     if program == "cargo" and args:
         expected_program = f"cargo::{args[0]}"
@@ -57,29 +56,10 @@ def test_metadata_coerce_text_decodes_bytes() -> None:
     """Binary output is decoded using UTF-8 with replacement semantics."""
     alpha = "\N{GREEK SMALL LETTER ALPHA}"
     encoded = alpha.encode()
-    assert metadata_module._coerce_text(encoded) == alpha
+    assert metadata_module.coerce_text(encoded) == alpha
 
     binary = b"foo\xff"
-    assert metadata_module._coerce_text(binary) == "foo\ufffd"
-
-
-@pytest.mark.parametrize("value", ["1", "true", "TRUE", "Yes", "on"])
-def test_should_use_cmd_mox_stub_honours_truthy_values(
-    value: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Environment values recognised as truthy enable cmd-mox stubbing."""
-    monkeypatch.setenv(publish.metadata_module.CMD_MOX_STUB_ENV_VAR, value)
-
-    assert publish._should_use_cmd_mox_stub() is True
-
-
-def test_should_use_cmd_mox_stub_returns_false_by_default(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Missing environment values disable cmd-mox stubbing."""
-    monkeypatch.delenv(publish.metadata_module.CMD_MOX_STUB_ENV_VAR, raising=False)
-
-    assert publish._should_use_cmd_mox_stub() is False
+    assert metadata_module.coerce_text(binary) == "foo\ufffd"
 
 
 def test_run_cargo_preflight_raises_on_failure(

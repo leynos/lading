@@ -12,12 +12,14 @@ import pytest
 
 from lading.commands import publish_execution
 from lading.commands.publish import PublishPreflightError
+from lading.testing import cmd_mox_runner
 
 
 class _MockCmdMoxEnv:
     """Minimal cmd-mox environment module stub."""
 
     CMOX_IPC_SOCKET_ENV = "CMOX_IPC_SOCKET"
+    CMOX_IPC_TIMEOUT_ENV = "CMOX_IPC_TIMEOUT"
     CMOX_REAL_COMMAND_ENV_PREFIX = "CMOX_REAL_"
 
 
@@ -69,7 +71,9 @@ class _MockCommandRunner:
 
 
 @pytest.fixture
-def mock_cmd_mox_modules(tmp_path: Path) -> SimpleNamespace:
+def mock_cmd_mox_modules(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> SimpleNamespace:
     """Provide complete cmd-mox module stubs for passthrough handling."""
 
     class _Env:
@@ -134,7 +138,7 @@ def test_build_cmd_mox_invocation_env_merges_overrides(
     monkeypatch.setenv("EXISTING", "keep")
     workspace_root = tmp_path / "workspace"
     value_path = workspace_root / "value"
-    env = publish_execution._build_cmd_mox_invocation_env(
+    env = cmd_mox_runner._build_cmd_mox_invocation_env(
         workspace_root,
         {"NEW": value_path},
     )
@@ -149,7 +153,7 @@ def test_build_cmd_mox_invocation_env_prefers_cwd_over_pwd_override(
 ) -> None:
     """Explicit cwd should win even when env overrides include PWD."""
     workspace_root = tmp_path / "workspace"
-    env = publish_execution._build_cmd_mox_invocation_env(
+    env = cmd_mox_runner._build_cmd_mox_invocation_env(
         workspace_root,
         {"PWD": "/root/repo", "OTHER": "ok"},
     )
@@ -172,7 +176,7 @@ def test_process_cmd_mox_response_updates_environment(
             self.stderr = "err\n"
             self.exit_code = 3
 
-    exit_code, stdout, stderr = publish_execution._process_cmd_mox_response(
+    exit_code, stdout, stderr = cmd_mox_runner._process_cmd_mox_response(
         _Response(),
         streamed=False,
     )
@@ -186,14 +190,21 @@ def test_process_cmd_mox_response_updates_environment(
     assert stderr == "err\n"
 
 
+def test_process_cmd_mox_response_rejects_missing_exit_code() -> None:
+    """Malformed cmd-mox responses should not be treated as success."""
+    response = SimpleNamespace(stdout="out", stderr="err")
+
+    with pytest.raises(ValueError, match="exit code"):
+        cmd_mox_runner._process_cmd_mox_response(response, streamed=False)
+
+
 def test_handle_cmd_mox_passthrough_returns_unmodified_response() -> None:
     """When no passthrough directive is present, the response should be returned."""
     response = SimpleNamespace()
-    modules = publish_execution.CmdMoxModules(ipc=None, env=None, command_runner=None)
     invocation = SimpleNamespace(env={}, command="", args=(), stdin="")
 
-    returned, streamed = publish_execution._handle_cmd_mox_passthrough(
-        response, invocation, timeout=1.0, modules=modules
+    returned, streamed = cmd_mox_runner._handle_cmd_mox_passthrough(
+        response, invocation, timeout=1.0
     )
 
     assert returned is response
@@ -208,6 +219,11 @@ def test_handle_cmd_mox_passthrough_reports_response(
     """Passthrough directives resolved to responses should be reported back."""
     socket_path = str(tmp_path / "cmox" / "shim" / "socket")
     monkeypatch.setenv("CMOX_IPC_SOCKET", socket_path)
+    monkeypatch.setattr(cmd_mox_runner, "env_mod", mock_cmd_mox_modules.env_module)
+    monkeypatch.setattr(cmd_mox_runner, "ipc", mock_cmd_mox_modules.ipc_module())
+    monkeypatch.setattr(
+        cmd_mox_runner, "command_runner", mock_cmd_mox_modules.command_runner()
+    )
 
     directive = SimpleNamespace(
         invocation_id="123",
@@ -220,18 +236,12 @@ def test_handle_cmd_mox_passthrough_reports_response(
         args=("test",),
         stdin="",
     )
-    modules = publish_execution.CmdMoxModules(
-        ipc=mock_cmd_mox_modules.ipc_module(),
-        env=mock_cmd_mox_modules.env_module,
-        command_runner=mock_cmd_mox_modules.command_runner(),
-    )
     response = SimpleNamespace(passthrough=directive)
 
-    returned, streamed = publish_execution._handle_cmd_mox_passthrough(
+    returned, streamed = cmd_mox_runner._handle_cmd_mox_passthrough(
         response,
         invocation,
         timeout=1.0,
-        modules=modules,
     )
 
     assert streamed is False
@@ -247,6 +257,9 @@ def test_handle_cmd_mox_passthrough_uses_pwd_for_cwd(
     shim_socket = tmp_path / "cmox" / "shim" / "socket"
     shim_socket.parent.mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("CMOX_IPC_SOCKET", str(shim_socket))
+    monkeypatch.setattr(cmd_mox_runner, "env_mod", _MockCmdMoxEnv())
+    monkeypatch.setattr(cmd_mox_runner, "ipc", _MockCmdMoxIPC())
+    monkeypatch.setattr(cmd_mox_runner, "command_runner", _MockCommandRunner())
 
     directive = SimpleNamespace(
         invocation_id="cwd-test",
@@ -260,12 +273,6 @@ def test_handle_cmd_mox_passthrough_uses_pwd_for_cwd(
         args=("status",),
         stdin="",
     )
-    modules = publish_execution.CmdMoxModules(
-        ipc=_MockCmdMoxIPC(),
-        env=_MockCmdMoxEnv(),
-        command_runner=_MockCommandRunner(),
-    )
-
     captured: dict[str, Path | None] = {"cwd": None}
 
     def _fake_invoke_via_subprocess(
@@ -278,15 +285,14 @@ def test_handle_cmd_mox_passthrough_uses_pwd_for_cwd(
         return 0, "", ""
 
     monkeypatch.setattr(
-        publish_execution, "_invoke_via_subprocess", _fake_invoke_via_subprocess
+        cmd_mox_runner, "invoke_via_subprocess", _fake_invoke_via_subprocess
     )
     response = SimpleNamespace(passthrough=directive)
 
-    returned, streamed = publish_execution._handle_cmd_mox_passthrough(
+    returned, streamed = cmd_mox_runner._handle_cmd_mox_passthrough(
         response,
         invocation,
         timeout=1.0,
-        modules=modules,
     )
 
     assert streamed is True
@@ -296,12 +302,8 @@ def test_handle_cmd_mox_passthrough_uses_pwd_for_cwd(
 
 def test_invoke_via_subprocess_surfaces_spawn_errors() -> None:
     """Failed spawns should raise PublishPreflightError with context."""
-    context = publish_execution._SubprocessContext(cwd=None, env=None, stdin_data=None)
-
     with pytest.raises(PublishPreflightError):
-        publish_execution._invoke_via_subprocess(
-            "definitely-not-a-command", (), context
-        )
+        publish_execution._invoke(("definitely-not-a-command",))
 
 
 def test_invoke_via_subprocess_writes_stdin() -> None:
@@ -336,13 +338,9 @@ def test_merge_cmd_mox_path_entries_filters_shim(
     shim_dir = tmp_path / "cmox" / "shim"
     monkeypatch.setenv("CMOX_IPC_SOCKET", f"{shim_dir}/socket")
 
-    class _Env:
-        CMOX_IPC_SOCKET_ENV = "CMOX_IPC_SOCKET"
-
-    merged = publish_execution._merge_cmd_mox_path_entries(
+    merged = cmd_mox_runner._merge_cmd_mox_path_entries(
         f"{shim_dir}{os.pathsep}/usr/bin{os.pathsep}",
         f"/opt/tools{os.pathsep}/usr/bin",
-        env_module=_Env,
     )
 
     assert shim_dir.as_posix() not in merged
@@ -380,28 +378,24 @@ def test_apply_cmd_mox_environment_and_echo(monkeypatch: pytest.MonkeyPatch) -> 
     """Environment updates and buffered echoing should be no-ops for empty input."""
     monkeypatch.delenv("NEW_CMD_ENV", raising=False)
 
-    publish_execution._apply_cmd_mox_environment({"NEW_CMD_ENV": "present"})
-    publish_execution._echo_buffered_output("", io.StringIO())
+    cmd_mox_runner._apply_cmd_mox_environment({"NEW_CMD_ENV": "present"})
+    cmd_mox_runner._echo_buffered_output("", io.StringIO())
 
     assert os.environ["NEW_CMD_ENV"] == "present"
 
 
 def test_cmd_mox_shim_directory_without_socket(monkeypatch: pytest.MonkeyPatch) -> None:
     """Shim directory helper should return None when socket is unset."""
-
-    class _Env:
-        CMOX_IPC_SOCKET_ENV = "CMOX_IPC_SOCKET"
-
     monkeypatch.delenv("CMOX_IPC_SOCKET", raising=False)
 
-    assert publish_execution._cmd_mox_shim_directory(_Env) is None
+    assert cmd_mox_runner._cmd_mox_shim_directory() is None
 
 
 def test_log_subprocess_environment_redacts_sensitive_values(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Environment logging should redact common secret tokens."""
-    caplog.set_level("DEBUG", logger="lading.commands.publish_execution")
+    caplog.set_level("DEBUG", logger="lading.runtime.subprocess_runner")
 
     publish_execution._log_subprocess_environment({
         "TOKEN": "secret",

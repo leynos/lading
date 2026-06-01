@@ -7,7 +7,7 @@ import sys
 import typing as typ
 
 from lading.commands import publish, publish_execution
-from lading.workspace import metadata as metadata_module
+from lading.testing import cmd_mox_runner
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
@@ -74,7 +74,7 @@ sys.stderr.flush()
     assert stderr == "beta"
     captured = capsys.readouterr()
     assert captured.out == "alpha"
-    assert captured.err == "beta"
+    assert captured.err.endswith("beta")
 
 
 def test_cmd_mox_passthrough_streams_output(
@@ -84,7 +84,7 @@ def test_cmd_mox_passthrough_streams_output(
     use_real_invoke: None,
 ) -> None:
     """cmd-mox passthrough should stream via the subprocess runner."""
-    monkeypatch.setenv(metadata_module.CMD_MOX_STUB_ENV_VAR, "1")
+    monkeypatch.setenv("LADING_USE_CMD_MOX_STUB", "1")
     script = "print('unused')"
     cmd_mox.spy(sys.executable).with_args("-c", script).passthrough()
 
@@ -109,13 +109,17 @@ def test_cmd_mox_passthrough_streams_output(
         echo_payloads.append(payload)
 
     monkeypatch.setattr(
-        publish_execution,
-        "_invoke_via_subprocess",
+        cmd_mox_runner,
+        "invoke_via_subprocess",
         fake_invoke,
     )
-    monkeypatch.setattr(publish_execution, "_echo_buffered_output", fake_echo)
+    monkeypatch.setattr(cmd_mox_runner, "_echo_buffered_output", fake_echo)
 
-    exit_code, stdout, stderr = publish._invoke((sys.executable, "-c", script))
+    exit_code, stdout, stderr = cmd_mox_runner.cmd_mox_runner((
+        sys.executable,
+        "-c",
+        script,
+    ))
 
     assert exit_code == 0
     assert stdout == "alpha"

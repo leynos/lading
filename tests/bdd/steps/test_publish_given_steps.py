@@ -7,8 +7,6 @@ from pathlib import Path
 
 from pytest_bdd import given, parsers
 
-from lading.workspace import metadata as metadata_module
-
 from .metadata_fixtures import given_cargo_metadata_with_dependency_chain
 from .test_publish_infrastructure import (
     CmdMox,
@@ -46,7 +44,7 @@ def given_cmd_mox_socket_unset(
 
     del cmd_mox
     monkeypatch.delenv(env_mod.CMOX_IPC_SOCKET_ENV, raising=False)
-    monkeypatch.setenv(metadata_module.CMD_MOX_STUB_ENV_VAR, "1")
+    monkeypatch.setenv("LADING_USE_CMD_MOX_STUB", "1")
 
 
 @given("cargo check fails during publish pre-flight")

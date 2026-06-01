@@ -60,8 +60,6 @@ from lading.commands.publish_errors import PublishError, PublishPreflightError
 from lading.commands.publish_execution import (
     _CommandRunner,
     _invoke,
-    normalise_cmd_mox_command,
-    should_use_cmd_mox_stub,
     split_command,
 )
 from lading.commands.publish_index_check import (
@@ -94,8 +92,6 @@ from lading.workspace import metadata as _metadata_module
 StripPatchesSetting = config_module.StripPatchesSetting
 metadata_module = _metadata_module
 PublishPlanError = _PublishPlanError
-_normalise_cmd_mox_command = normalise_cmd_mox_command
-_should_use_cmd_mox_stub = should_use_cmd_mox_stub
 _split_command = split_command
 _append_section = append_section
 _format_plan = format_plan

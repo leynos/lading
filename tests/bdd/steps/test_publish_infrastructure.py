@@ -10,8 +10,7 @@ import typing as typ
 
 import pytest
 
-from lading.commands import publish
-from lading.workspace import metadata as metadata_module
+from lading.testing.cmd_mox_runner import normalise_cmd_mox_command
 
 try:
     from cmd_mox import CmdMox
@@ -120,7 +119,7 @@ def _resolve_preflight_expectation(
     program, *args = command
     argument_tuple = tuple(args)
     if program == "cargo":
-        normalised_program, invocation_args = publish._normalise_cmd_mox_command(
+        normalised_program, invocation_args = normalise_cmd_mox_command(
             program,
             argument_tuple,
         )
@@ -254,8 +253,8 @@ def _build_env_restore_dict(var_name: str) -> dict[str, str]:
 
 @contextlib.contextmanager
 def _cmd_mox_stub_env_enabled() -> cabc.Iterator[None]:
-    """Temporarily enable CMD_MOX_STUB_ENV_VAR for cmd-mox stubs."""
-    var_name = metadata_module.CMD_MOX_STUB_ENV_VAR
+    """Temporarily enable the lading cmd-mox stub environment flag."""
+    var_name = "LADING_USE_CMD_MOX_STUB"
     restore = _build_env_restore_dict(var_name)
     os.environ[var_name] = "1"
     try:

@@ -3,34 +3,31 @@
 from __future__ import annotations
 
 import collections.abc as cabc
+import contextlib
+import contextvars
 import json
 import logging
-import os
 import typing as typ
 
-from plumbum import local
-from plumbum.commands.processes import CommandNotFound
-
+from lading.runtime import CommandRunner, CommandSpawnError, subprocess_runner
 from lading.utils import normalise_workspace_root
 from lading.utils.process import log_command_invocation
 
 if typ.TYPE_CHECKING:  # pragma: no cover - import-time typing aids only
     from pathlib import Path
 
-    from plumbum.commands.base import BoundCommand
-
 
 class CargoMetadataError(RuntimeError):
     """Raised when ``cargo metadata`` cannot be executed successfully."""
 
     @classmethod
-    def invalid_cmd_mox_timeout(cls) -> CargoMetadataError:
-        """Return an error for malformed ``CMOX_IPC_TIMEOUT`` values."""
+    def invalid_ipc_timeout(cls) -> CargoMetadataError:
+        """Return an error for malformed IPC timeout values."""
         return cls("Invalid CMOX_IPC_TIMEOUT value")
 
     @classmethod
-    def non_positive_cmd_mox_timeout(cls) -> CargoMetadataError:
-        """Return an error when ``CMOX_IPC_TIMEOUT`` is non-positive."""
+    def non_positive_ipc_timeout(cls) -> CargoMetadataError:
+        """Return an error when the IPC timeout is non-positive."""
         return cls("CMOX_IPC_TIMEOUT must be positive")
 
 
@@ -73,29 +70,39 @@ class CargoMetadataParseError(CargoMetadataError):
         return cls("cargo metadata returned a non-object JSON payload")
 
 
-_CMD_MOX_STUB_ENV = "LADING_USE_CMD_MOX_STUB"
-CMD_MOX_STUB_ENV_VAR = _CMD_MOX_STUB_ENV
-_CMD_MOX_TIMEOUT_DEFAULT = 5.0
 _CARGO_PROGRAM = "cargo"
 _CARGO_METADATA_ARGS = ("metadata", "--format-version", "1")
 _CARGO_METADATA_COMMAND = (_CARGO_PROGRAM, *_CARGO_METADATA_ARGS)
 
 
 LOGGER = logging.getLogger(__name__)
+_COMMAND_RUNNER: contextvars.ContextVar[CommandRunner | None] = contextvars.ContextVar(
+    "lading_command_runner",
+    default=None,
+)
 
 
-def _ensure_command() -> BoundCommand | _CmdMoxCommand:
-    """Return the ``cargo metadata`` command object."""
-    if os.environ.get(_CMD_MOX_STUB_ENV):
-        return _build_cmd_mox_command()
+@contextlib.contextmanager
+def use_command_runner(runner: CommandRunner) -> cabc.Iterator[None]:
+    """Temporarily route workspace metadata commands through ``runner``."""
+    token = _COMMAND_RUNNER.set(runner)
     try:
-        cargo = local[_CARGO_PROGRAM]
-    except CommandNotFound as exc:
-        raise CargoExecutableNotFoundError from exc
-    return cargo[_CARGO_METADATA_ARGS]
+        yield
+    finally:
+        _COMMAND_RUNNER.reset(token)
 
 
-def _coerce_text(value: str | bytes) -> str:
+def _active_command_runner(runner: CommandRunner | None = None) -> CommandRunner:
+    """Return the explicitly supplied or ambient command runner."""
+    if runner is not None:
+        return runner
+    active_runner = _COMMAND_RUNNER.get()
+    if active_runner is None:
+        return subprocess_runner
+    return active_runner
+
+
+def coerce_text(value: str | bytes) -> str:
     """Normalise process output to text."""
     if isinstance(value, bytes):
         return value.decode("utf-8", errors="replace")
@@ -104,15 +111,23 @@ def _coerce_text(value: str | bytes) -> str:
 
 def load_cargo_metadata(
     workspace_root: Path | str | None = None,
+    *,
+    runner: CommandRunner | None = None,
 ) -> cabc.Mapping[str, typ.Any]:
     """Execute ``cargo metadata`` and parse the resulting JSON payload."""
-    command = _ensure_command()
     root_path = normalise_workspace_root(workspace_root)
-    invocation = getattr(command, "argv", _CARGO_METADATA_COMMAND)
-    log_command_invocation(LOGGER, invocation, root_path)
-    exit_code, stdout, stderr = command.run(retcode=None, cwd=str(root_path))
-    stdout_text = _coerce_text(stdout)
-    stderr_text = _coerce_text(stderr)
+    command_runner = _active_command_runner(runner)
+    log_command_invocation(LOGGER, _CARGO_METADATA_COMMAND, root_path)
+    try:
+        exit_code, stdout, stderr = command_runner(
+            _CARGO_METADATA_COMMAND, cwd=root_path
+        )
+    except CommandSpawnError as exc:
+        if exc.program == _CARGO_PROGRAM:
+            raise CargoExecutableNotFoundError from exc
+        raise CargoMetadataError(str(exc)) from exc
+    stdout_text = coerce_text(stdout)
+    stderr_text = coerce_text(stderr)
     if exit_code != 0:
         raise CargoMetadataInvocationError(exit_code, stdout_text, stderr_text)
     try:
@@ -122,79 +137,3 @@ def load_cargo_metadata(
     if not isinstance(payload, dict):
         raise CargoMetadataParseError.non_object_payload()
     return payload
-
-
-class _CmdMoxCommand:
-    """Proxy ``cargo metadata`` through :mod:`cmd_mox`'s IPC server."""
-
-    _ARGS = _CARGO_METADATA_ARGS
-
-    @property
-    def argv(self) -> tuple[str, ...]:
-        """Return the command line routed through cmd-mox."""
-        return (_CARGO_PROGRAM, *self._ARGS)
-
-    def run(
-        self,
-        *,
-        retcode: int | tuple[int, ...] | None = None,
-        cwd: str | os.PathLike[str] | None = None,
-    ) -> tuple[int, str, str]:
-        """Invoke the cmd-mox IPC server for ``cargo metadata``."""
-        ipc, env_mod = _load_cmd_mox_modules()
-        socket_path = os.environ.get(env_mod.CMOX_IPC_SOCKET_ENV)
-        if not socket_path:
-            message = (
-                "cmd-mox stub requested for cargo metadata but CMOX_IPC_SOCKET is unset"
-            )
-            raise CargoMetadataError(message)
-        timeout = _resolve_cmd_mox_timeout(os.environ.get(env_mod.CMOX_IPC_TIMEOUT_ENV))
-        invocation = ipc.Invocation(
-            command=_CARGO_PROGRAM,
-            args=list(self._ARGS),
-            stdin="",
-            env=_build_invocation_environment(cwd),
-        )
-        response = ipc.invoke_server(invocation, timeout)
-        return response.exit_code, response.stdout, response.stderr
-
-
-def _build_invocation_environment(
-    cwd: str | os.PathLike[str] | None,
-) -> dict[str, str]:
-    """Return environment mapping for the cmd-mox invocation."""
-    env = dict(os.environ)
-    if cwd is not None:
-        env["PWD"] = str(cwd)
-    return env
-
-
-def _load_cmd_mox_modules() -> tuple[typ.Any, typ.Any]:
-    """Import cmd-mox modules on demand for the IPC stub."""
-    try:
-        from cmd_mox import environment as env_mod
-        from cmd_mox import ipc
-    except ModuleNotFoundError as exc:
-        message = (
-            "cmd-mox stub requested for cargo metadata but cmd-mox is not available"
-        )
-        raise CargoMetadataError(message) from exc
-    return ipc, env_mod
-
-
-def _resolve_cmd_mox_timeout(raw_timeout: str | None) -> float:
-    """Return the IPC timeout to use when contacting cmd-mox."""
-    if raw_timeout is None:
-        return _CMD_MOX_TIMEOUT_DEFAULT
-    try:
-        timeout = float(raw_timeout)
-    except (TypeError, ValueError) as exc:  # pragma: no cover - defensive guard
-        raise CargoMetadataError.invalid_cmd_mox_timeout() from exc
-    if timeout <= 0:
-        raise CargoMetadataError.non_positive_cmd_mox_timeout()
-    return timeout
-
-
-def _build_cmd_mox_command() -> _CmdMoxCommand:
-    """Return a command proxy that routes through cmd-mox."""
-    return _CmdMoxCommand()
