@@ -7,6 +7,8 @@ looking for project guidance, then follow the link that matches the task.
 
 - [Documentation contents](contents.md) - this index of the repository's
   documentation set.
+- [Agent instructions](../AGENTS.md) - contributor operating rules, quality
+  gates, and repository-specific development guidance.
 - [User guide](users-guide.md) - command-line usage, `lading.toml`
   configuration, and user-facing workflows.
 - [Developer guide](developers-guide.md) - maintainer workflows, internal APIs,

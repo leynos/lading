@@ -2,7 +2,8 @@
 
 This guide documents internal APIs, testing patterns, and development workflows
 for contributors to `lading`. For the end-user CLI reference and `lading.toml`
-configuration, see the [user guide](./users-guide.md).
+configuration, see the [user guide](./users-guide.md). For repository operating
+rules and required quality gates, see the [agent instructions](../AGENTS.md).
 
 ## Development invocation
 
