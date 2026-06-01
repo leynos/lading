@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import typing as typ
 
-from pytest_bdd import parsers, then, when
+from pytest_bdd import given, parsers, then, when
 
 from . import config_fixtures as _config_fixtures  # noqa: F401
 from . import manifest_fixtures as _manifest_fixtures  # noqa: F401
@@ -13,7 +13,29 @@ from . import metadata_fixtures as _metadata_fixtures  # noqa: F401
 if typ.TYPE_CHECKING:
     from pathlib import Path
 
+    import pytest
+    from cmd_mox import CmdMox
+
     from .test_common_steps import _run_cli  # noqa: F401
+
+
+@given("the workspace has tracked Cargo.lock files")
+def given_workspace_has_tracked_lockfiles(
+    cmd_mox: CmdMox,
+    monkeypatch: pytest.MonkeyPatch,
+    workspace_directory: Path,
+) -> None:
+    """Stub tracked Cargo.lock discovery and refresh commands for bump."""
+    from tests.helpers.workspace_helpers import install_cargo_stub
+
+    install_cargo_stub(cmd_mox, monkeypatch)
+    (workspace_directory / "Cargo.lock").write_text("# root lock\n", encoding="utf-8")
+    cmd_mox.stub("git").with_args(
+        "ls-files", "*/Cargo.lock", "Cargo.lock"
+    ).returns(exit_code=0, stdout="Cargo.lock\n", stderr="")
+    cmd_mox.stub("cargo::generate-lockfile").with_args(
+        "--manifest-path", str(workspace_directory / "Cargo.toml")
+    ).returns(exit_code=0, stdout="", stderr="")
 
 
 @when(
@@ -115,6 +137,28 @@ def then_cli_output_lists_documentation_path(
     assert cli_run["returncode"] == 0
     stdout_lines = [line.strip() for line in cli_run["stdout"].splitlines()]
     assert expected in stdout_lines
+
+
+@then(parsers.parse('the CLI output lists lockfile path "{expected}"'))
+def then_cli_output_lists_lockfile_path(
+    cli_run: dict[str, typ.Any], expected: str
+) -> None:
+    """Assert that the CLI output includes ``expected`` as a lockfile line."""
+    assert cli_run["returncode"] == 0
+    stdout_lines = [line.strip() for line in cli_run["stdout"].splitlines()]
+    assert expected in stdout_lines
+
+
+@then("the bump command refreshed tracked lockfiles")
+def then_bump_refreshed_lockfiles(cli_run: dict[str, typ.Any]) -> None:
+    """Assert the live bump lockfile scenario completed successfully."""
+    assert cli_run["returncode"] == 0
+
+
+@then("the bump command did not refresh tracked lockfiles")
+def then_bump_did_not_refresh_lockfiles(cli_run: dict[str, typ.Any]) -> None:
+    """Assert the dry-run lockfile scenario completed without refresh."""
+    assert cli_run["returncode"] == 0
 
 
 @then(parsers.parse('the documentation file "{relative_path}" contains "{expected}"'))

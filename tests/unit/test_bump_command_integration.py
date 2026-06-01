@@ -25,6 +25,9 @@ from tests.helpers.workspace_builders import (
 )
 
 if typ.TYPE_CHECKING:
+    import collections.abc as cabc
+    from pathlib import Path
+
     from _pytest.monkeypatch import MonkeyPatch
 
 
@@ -63,6 +66,88 @@ def test_run_updates_workspace_and_members(tmp_path: pathlib.Path) -> None:
     assert _load_version(tmp_path / "Cargo.toml", ("workspace", "package")) == "1.2.3"
     for crate in workspace.crates:
         assert _load_version(crate.manifest_path, ("package",)) == "1.2.3"
+
+
+def test_run_refreshes_tracked_lockfiles(
+    tmp_path: pathlib.Path, monkeypatch: MonkeyPatch
+) -> None:
+    """`bump.run` refreshes every tracked lockfile after manifest updates."""
+    workspace = _make_workspace(tmp_path)
+    lockfiles = (
+        tmp_path / "Cargo.lock",
+        tmp_path / "tests" / "ui_lints" / "Cargo.lock",
+    )
+    refreshed: list[pathlib.Path] = []
+
+    def discover(
+        workspace_root: pathlib.Path,
+        runner: bump._CommandRunner,
+    ) -> tuple[pathlib.Path, ...]:
+        assert workspace_root == tmp_path
+        return lockfiles
+
+    def refresh(
+        manifest_path: pathlib.Path,
+        runner: bump._CommandRunner,
+    ) -> pathlib.Path:
+        refreshed.append(manifest_path.parent / "Cargo.lock")
+        return manifest_path.parent / "Cargo.lock"
+
+    def runner(
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        return 0, "", ""
+
+    monkeypatch.setattr(bump, "discover_tracked_lockfiles", discover)
+    monkeypatch.setattr(bump, "refresh_lockfile", refresh)
+
+    message = bump.run(
+        tmp_path,
+        "1.2.3",
+        options=bump.BumpOptions(
+            configuration=_make_config(), workspace=workspace, runner=runner
+        ),
+    )
+
+    assert tuple(refreshed) == lockfiles
+    assert "- Cargo.lock (lockfile)" in message.splitlines()
+    assert "- tests/ui_lints/Cargo.lock (lockfile)" in message.splitlines()
+
+
+def test_run_dry_run_reports_lockfiles_without_refreshing(
+    tmp_path: pathlib.Path, monkeypatch: MonkeyPatch
+) -> None:
+    """Dry-run bump lists tracked lockfiles but does not regenerate them."""
+    workspace = _make_workspace(tmp_path)
+    lockfiles = (tmp_path / "Cargo.lock",)
+
+    def discover(
+        workspace_root: pathlib.Path,
+        runner: bump._CommandRunner,
+    ) -> tuple[pathlib.Path, ...]:
+        return lockfiles
+
+    def refresh(
+        manifest_path: pathlib.Path,
+        runner: bump._CommandRunner,
+    ) -> pathlib.Path:
+        pytest.fail("dry-run must not refresh lockfiles")
+
+    monkeypatch.setattr(bump, "discover_tracked_lockfiles", discover)
+    monkeypatch.setattr(bump, "refresh_lockfile", refresh)
+
+    message = bump.run(
+        tmp_path,
+        "1.2.3",
+        options=bump.BumpOptions(
+            dry_run=True, configuration=_make_config(), workspace=workspace
+        ),
+    )
+
+    assert "- Cargo.lock (lockfile)" in message.splitlines()
 
 
 def test_run_updates_root_package_section(tmp_path: pathlib.Path) -> None:

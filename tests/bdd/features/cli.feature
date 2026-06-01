@@ -17,6 +17,22 @@ Feature: Lading CLI scaffolding
     And the workspace manifest version is "0.1.0"
     And the crate "alpha" manifest version is "0.1.0"
 
+  Scenario: Bump refreshes tracked Cargo.lock files
+    Given a workspace directory with configuration
+    And cargo metadata describes a sample workspace
+    And the workspace has tracked Cargo.lock files
+    When I invoke lading bump 1.2.3 with that workspace
+    Then the CLI output lists lockfile path "- Cargo.lock (lockfile)"
+    And the bump command refreshed tracked lockfiles
+
+  Scenario: Bump dry-run does not modify lockfiles
+    Given a workspace directory with configuration
+    And cargo metadata describes a sample workspace
+    And the workspace has tracked Cargo.lock files
+    When I invoke lading bump 1.2.3 with that workspace using --dry-run
+    Then the CLI output lists lockfile path "- Cargo.lock (lockfile)"
+    And the bump command did not refresh tracked lockfiles
+
   Scenario: Bumping with an invalid version fails fast
     Given a workspace directory with configuration
     When I invoke lading bump 1.2 with that workspace
@@ -181,6 +197,22 @@ Feature: Lading CLI scaffolding
     When I invoke lading publish with that workspace
     Then the CLI exits with code 1
     And the stderr contains "Pre-flight cargo test failed with exit code 1: cargo test failed"
+
+  Scenario: Publish pre-flight aborts when lockfile is stale
+    Given a workspace directory with configuration
+    And cargo metadata describes a sample workspace
+    And publish pre-flight finds a stale tracked Cargo.lock
+    When I invoke lading publish with that workspace
+    Then the CLI exits with code 1
+    And the stderr contains "Tracked Cargo.lock files are stale after manifest version changes."
+
+  Scenario: Publish pre-flight error includes repair command
+    Given a workspace directory with configuration
+    And cargo metadata describes a sample workspace
+    And publish pre-flight finds a stale tracked Cargo.lock
+    When I invoke lading publish with that workspace
+    Then the CLI exits with code 1
+    And the stderr contains "cargo generate-lockfile --manifest-path"
 
   Scenario: Publish pre-flight skips configured cargo test crates
     Given a workspace directory with configuration

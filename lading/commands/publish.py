@@ -5,8 +5,6 @@ workspace graph, runs pre-flight checks (:mod:`~lading.commands.publish_prefligh
 plans publication order, stages the workspace, and dispatches to one of two
 **publish pipelines** depending on the ``live`` flag.
 
-**Pipeline dispatch**
-
 *Dry-run* (``live=False``) keeps the historical batched two-phase pipeline:
 package every publishable crate, then ``cargo publish --dry-run`` every crate
 in plan order.
@@ -15,8 +13,6 @@ in plan order.
 :func:`_execute_live_publication_pipeline`: package the next crate, publish it,
 then advance. This ordering lets dependent crates resolve newly uploaded
 in-plan dependencies during a single release train.
-
-**Per-crate helpers**
 
 :func:`_package_crate` and :func:`_publish_crate` each invoke ``cargo`` in the
 correct staged directory for a single crate. Both detect
@@ -32,8 +28,6 @@ pre-publication failures (packaging, pre-flight checks).
 publish failures and subclasses the preflight error so callers can handle all
 failures through one catch boundary or distinguish the publish phase when
 needed.
-
-**Related modules**
 
 * :mod:`lading.commands.publish_plan` — plan construction and formatting
 * :mod:`lading.commands.publish_preflight` — ``cargo check`` / ``cargo test`` /
@@ -107,6 +101,7 @@ _compose_preflight_arguments = _publish_preflight._compose_preflight_arguments
 _normalise_test_excludes = _publish_preflight._normalise_test_excludes
 _run_aux_build_commands = _publish_preflight._run_aux_build_commands
 _run_cargo_preflight = _publish_preflight._run_cargo_preflight
+_validate_lockfile_freshness = _publish_preflight._validate_lockfile_freshness
 _verify_clean_working_tree = _publish_preflight._verify_clean_working_tree
 
 LOGGER = logging.getLogger(__name__)
@@ -750,6 +745,11 @@ def _run_preflight_checks(
     _run_aux_build_commands(
         workspace_root,
         preflight_config.aux_build,
+        runner=command_runner,
+        env=base_env,
+    )
+    _validate_lockfile_freshness(
+        workspace_root,
         runner=command_runner,
         env=base_env,
     )
