@@ -30,7 +30,7 @@ Coverage
 --------
 - Correct ``cargo`` subcommand and ``cwd`` for each single-crate helper.
 - ``PublishPreflightError`` raised on package failure with injected stderr.
-- ``PublishError`` raised on publish failure with injected stderr.
+- ``PublishError`` raised on publish failure with injected stdout.
 - Already-published continuation: warning logged, no exception raised.
 - Live pipeline interleaving: package then publish per crate in plan order.
 - Live pipeline abort after a partial publish: earlier pairs complete first.
@@ -68,6 +68,15 @@ class _SnapshotCase(typ.NamedTuple):
     options: publish._PublishExecutionOptions
     exc_type: type[Exception]
     stderr_text: str
+
+
+class _FailureCase(typ.NamedTuple):
+    fn: typ.Callable[..., None]
+    live: bool
+    exc_type: type[Exception]
+    runner_kwargs: dict[str, str]
+    subcommand: str
+    output_fragment: str
 
 
 def _assert_packaging_failure_message_contains(
@@ -166,27 +175,55 @@ def test_single_crate_helper_invokes_correct_cargo_command(
     assert runner.calls == [(expected_cmd, expected_root)]
 
 
-def test_package_crate_raises_on_failure(
+@pytest.mark.parametrize(
+    "case",
+    [
+        pytest.param(
+            _FailureCase(
+                fn=publish._package_crate,
+                live=False,
+                exc_type=publish.PublishPreflightError,
+                runner_kwargs={"stderr": "packaging failed"},
+                subcommand="package",
+                output_fragment="packaging failed",
+            ),
+            id="package",
+        ),
+        pytest.param(
+            _FailureCase(
+                fn=publish._publish_crate,
+                live=True,
+                exc_type=publish.PublishError,
+                runner_kwargs={"stdout": "network offline"},
+                subcommand="publish",
+                output_fragment="network offline",
+            ),
+            id="publish",
+        ),
+    ],
+)
+def test_crate_helper_raises_on_failure(
     publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    case: _FailureCase,
 ) -> None:
-    """The single-crate packaging helper preserves package failure handling."""
+    """Each single-crate helper raises the correct exception type on failure."""
     plan, preparation, _staging_root = publish_plan_and_prep
-    failing_runner = make_failing_runner(stderr="packaging failed")
     state = publish._PublicationPipelineState(
         plan,
         preparation,
-        publish._PublishExecutionOptions(live=False, allow_dirty=True),
+        publish._PublishExecutionOptions(live=case.live, allow_dirty=True),
     )
 
-    with pytest.raises(publish.PublishPreflightError) as excinfo:
-        publish._package_crate(
+    with pytest.raises(case.exc_type) as excinfo:
+        case.fn(
             plan.publishable[0],
             state,
-            runner=failing_runner,
+            runner=make_failing_runner(**case.runner_kwargs),
         )
 
-    assert "cargo package failed for crate alpha" in str(excinfo.value)
-    assert "packaging failed" in str(excinfo.value)
+    message = str(excinfo.value)
+    assert f"cargo {case.subcommand} failed for crate alpha" in message
+    assert case.output_fragment in message
 
 
 def test_package_publishable_crates_stops_on_failure(
@@ -328,29 +365,6 @@ def test_publish_crate_continues_when_version_already_uploaded(
     )
 
     assert any("already published" in message for message in caplog.messages)
-
-
-def test_publish_crate_raises_on_failure(
-    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
-) -> None:
-    """The single-crate publish helper preserves publish failure handling."""
-    plan, preparation, _staging_root = publish_plan_and_prep
-    state = publish._PublicationPipelineState(
-        plan,
-        preparation,
-        publish._PublishExecutionOptions(live=True, allow_dirty=True),
-    )
-
-    with pytest.raises(publish.PublishError) as excinfo:
-        publish._publish_crate(
-            plan.publishable[0],
-            state,
-            runner=make_failing_runner(stdout="network offline"),
-        )
-
-    message = str(excinfo.value)
-    assert "cargo publish failed for crate alpha" in message
-    assert "network offline" in message
 
 
 @pytest.mark.parametrize(
