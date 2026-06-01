@@ -161,6 +161,53 @@ yet. When enabled, `lading publish` downgrades that specific index-lookup
 failure to a warning and continues. The option is rejected at runtime when
 `live=True`, so it cannot mask a real upload failure.
 
+### Exception hierarchy (`publish_errors`)
+
+`lading.commands.publish_errors` defines the public error boundary for
+publish orchestration. Both classes inherit from `RuntimeError` and carry
+their message through the standard `args` tuple.
+
+| Exception | Raised when |
+| --- | --- |
+| `PublishPreflightError` | A local check fails before publication begins — dirty working tree, auxiliary build failure, failed `cargo check`/`cargo test` preflight, or an invalid option combination (e.g. `--live` combined with `--allow-unpublished-workspace-deps`). |
+| `PublishError` | A `cargo publish` invocation fails after pre-flight checks have passed. Subclasses `PublishPreflightError`. |
+
+Callers of `lading.commands.publish.run` may catch `PublishPreflightError`
+to handle both validation and publish-phase failures through one `except`
+clause, or catch `PublishError` first when publish-phase failures require
+distinct handling.
+
+### Extracted publish modules
+
+`publish_plan.py` owns publication planning and plan rendering. Its
+`PublishPlan` dataclass is the immutable boundary between workspace analysis
+and execution: it stores the workspace root, publishable crates in the resolved
+order, crates skipped by manifest/configuration, and configured exclusions
+that did not match a workspace crate. `plan_publication()` builds that object
+by filtering non-publishable crates, applying `publish.exclude`, validating
+`publish.order` when present, or deriving a deterministic dependency order.
+
+`publish_manifest.py` owns staging-time manifest mutations. It contains the
+workspace preparation types and helpers that copy the workspace tree, stage
+workspace README files for crates that opt in, and apply the
+`publish.strip_patches` strategy to the staged `Cargo.toml`. These operations
+run before any `cargo package` or `cargo publish` command, so the command runner
+works against a prepared snapshot rather than the source workspace.
+
+`publish_diagnostics.py` owns compiletest failure enrichment. When a cargo
+pre-flight test failure mentions compiletest-style `*.stderr` artefacts, the
+diagnostic helper locates the referenced files, tails a bounded number of
+lines, and appends those snippets to the `PublishPreflightError` message. The
+module is deliberately read-only: missing artefacts or unreadable files produce
+diagnostic notes rather than replacing the original cargo failure.
+
+`publish_index_check.py` owns crates.io index-lookup classification. It
+contains `_CargoInvocation`, the predicates and parsers that recognize Cargo's
+"no matching package/version" diagnostics, crate-name canonicalization, and
+`_handle_index_missing_version()`. That handler decides whether an index miss
+is out-of-plan and fatal, in-plan but still fatal, or in-plan and downgraded by
+`allow_unpublished_workspace_deps` during dry-run publication.
+
 ### `_PublishExecutionOptions`
 
 `_PublishExecutionOptions` is a frozen dataclass that carries the runtime flags
@@ -175,6 +222,46 @@ single `lading publish` run. Its fields are:
 
 The dataclass is an internal implementation detail; callers interact with the
 public `PublishOptions` dataclass, which `run()` converts before dispatching.
+
+### Publication orchestration helpers
+
+`_validate_publication_options(options)` is the first publish-specific guard in
+`run()`. It rejects invalid option combinations before workspace loading or
+staging begins. Today that means `live=True` cannot be combined with
+`allow_unpublished_workspace_deps=True`, because the sibling-dependency
+index-lookup downgrade is only valid for dry-run workflows.
+
+`_execute_live_publication_pipeline(plan, preparation, *, options, runner)` is
+the live-mode dispatcher. It walks `PublishPlan.publishable` in order and runs
+`cargo package` followed by `cargo publish` for each crate before advancing to
+the next crate. It logs per-crate progress, records completed crates for abort
+diagnostics, and normalizes staging/preparation failures into
+`PublishPreflightError` so callers receive the same publish command error
+boundary.
+
+`_handle_publish_result(invocation, crate, plan, options)` owns the result
+classification for a completed `cargo publish` command. It logs success,
+skips already-published crate versions, delegates in-plan crates.io index
+visibility failures to `_handle_index_missing_version`, and raises
+`PublishError` for all other non-zero publish exits after formatting the cargo
+failure message.
+
+`_CargoPreflightOptions` lives in `publish_preflight.py` and carries the
+per-invocation settings for cargo pre-flight commands: extra cargo arguments,
+test exclusions, unit-test-only narrowing, environment overrides, and optional
+stderr-tail diagnostics. `_run_preflight_checks` builds these option objects
+for `cargo check` and `cargo test` so command construction stays explicit and
+testable.
+
+Publication dispatch deliberately differs by mode. Dry-run mode keeps the
+historical two-phase pipeline: package every publishable crate, then run
+`cargo publish --dry-run` for every crate. Live mode interleaves the pipeline
+per crate: package the next crate, publish it, then advance to the next entry
+in `PublishPlan.publishable`. That ordering lets dependent crates resolve newly
+uploaded in-plan dependencies during a single live release train. The live
+pipeline does not roll back earlier uploads if a later crate fails; reruns rely
+on the already-published detection path to log and skip versions already
+visible in the registry.
 
 The index-lookup handling is split across three helpers:
 
@@ -221,6 +308,66 @@ exit code, and the `(stdout, stderr)` pair, it returns a formatted message that
 includes all four values. Using a single function for message construction keeps
 the error format consistent across the packaging and publish phases and makes
 snapshot testing straightforward.
+
+### Pre-flight validation (`publish_preflight`)
+
+`lading.commands.publish_preflight` performs workspace validation before
+any crate is packaged or published. Its public entry point is:
+
+```python
+_run_preflight_checks(
+    workspace_root: Path,
+    *,
+    allow_dirty: bool,
+    configuration: LadingConfig,
+    runner: _CommandRunner | None = None,
+) -> None
+```
+
+The function verifies the git working tree is clean (unless `allow_dirty`
+is set), then executes `cargo check` and `cargo test` in a temporary
+`--target-dir` to keep preflight artefacts separate from the workspace's
+own target directory. A non-zero exit from any step raises
+`PublishPreflightError` with a descriptive message.
+
+| Helper | Purpose |
+| --- | --- |
+| `_compose_preflight_arguments` | Builds the base `cargo` argument tuple for a given target directory and `--all-targets` flag. |
+| `_preflight_argument_sets` | Returns `(check_args, test_args)` tuples adapted for unit-test-only mode. |
+| `_run_cargo_preflight` | Executes a single `cargo check` or `cargo test` invocation and raises on failure. |
+| `_verify_clean_working_tree` | Runs `git status --porcelain` and raises if the tree is dirty and `allow_dirty` is `False`. |
+
+### Per-crate publication helpers
+
+`_package_crate` and `_publish_crate` are the atomic units of the
+publication pipeline. Both accept the crate entry, publication state, and
+command runner explicitly, then execute exactly one `cargo` invocation against
+the crate's staging root:
+
+```python
+_package_crate(
+    crate: WorkspaceCrate,
+    state: _PublicationPipelineState,
+    *,
+    runner: _CommandRunner,
+) -> None
+_publish_crate(
+    crate: WorkspaceCrate,
+    state: _PublicationPipelineState,
+    *,
+    runner: _CommandRunner,
+) -> None
+```
+
+`_PublicationPipelineState` carries only publish-domain state: the resolved
+`PublishPlan`, the `PublishPreparation`, and `_PublishExecutionOptions`.
+Infrastructure stays at the call boundary: `_CommandRunner` is passed directly
+to each pipeline/helper function rather than being bundled into the state.
+
+`_dispatch_publication` selects the live or dry-run pipeline and delegates
+accordingly. It is the sole branch that decides between the interleaved
+per-crate flow and the historical two-phase batch flow, keeping `run()`
+free of that decision.
 
 `lading.commands.publish_execution` loads the optional `cmd_mox` command-runner
 module with `importlib.import_module("cmd_mox.command_runner")`. Keeping the

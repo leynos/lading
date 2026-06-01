@@ -31,11 +31,36 @@ from .conftest import (
     INDEX_MISSING_STDERR_BETA,
     INDEX_MISSING_STDERR_EXTERNAL,
     INDEX_MISSING_STDERR_UNPARSEABLE,
+    CallTrackingRunner,
     _warning_records,
     make_config,
     make_dependency_chain,
     make_workspace,
 )
+
+_PIPELINE_INFO_MESSAGES = frozenset({
+    "Publication mode: live (interleaved per-crate pipeline)",
+    "Publication mode: dry-run (batched two-phase pipeline)",
+    "Dry-run pipeline: packaging complete; starting publish phase",
+    "Live pipeline: starting crate %s",
+    "Live pipeline: completed crate %s",
+})
+
+
+class _IndexMissingCase(typ.NamedTuple):
+    stderr: str
+    allow_unpublished: bool
+
+
+def _pipeline_info_records(
+    caplog: pytest.LogCaptureFixture,
+) -> tuple[tuple[str, tuple[object, ...]], ...]:
+    """Return captured INFO records for publish pipeline operator messages."""
+    return tuple(
+        (record.msg, record.args)
+        for record in caplog.records
+        if record.levelno == logging.INFO and record.msg in _PIPELINE_INFO_MESSAGES
+    )
 
 
 def test_run_rejects_allow_unpublished_with_live(
@@ -99,18 +124,38 @@ def _handle_index_missing_version_message(
     return str(excinfo.value)
 
 
-def test_index_missing_name_extraction_failure_message_snapshot(
+@pytest.mark.parametrize(
+    "case",
+    [
+        pytest.param(
+            _IndexMissingCase(
+                stderr=INDEX_MISSING_STDERR_UNPARSEABLE,
+                allow_unpublished=True,
+            ),
+            id="name_extraction_failure",
+        ),
+        pytest.param(
+            _IndexMissingCase(
+                stderr=INDEX_MISSING_STDERR_BETA,
+                allow_unpublished=False,
+            ),
+            id="flag_disabled",
+        ),
+    ],
+)
+def test_index_missing_version_message_snapshot(
     publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
     caplog: pytest.LogCaptureFixture,
     snapshot: SnapshotAssertion,
+    case: _IndexMissingCase,
 ) -> None:
-    """Snapshot the fatal message and warning for name extraction failures."""
+    """Snapshot the fatal message and warning for index-missing-version failures."""
     plan, _preparation, _staging_root = publish_plan_and_prep
 
     message = _handle_index_missing_version_message(
         plan,
-        stderr=INDEX_MISSING_STDERR_UNPARSEABLE,
-        allow_unpublished_workspace_deps=True,
+        stderr=case.stderr,
+        allow_unpublished_workspace_deps=case.allow_unpublished,
         caplog=caplog,
     )
 
@@ -174,20 +219,34 @@ def test_index_missing_out_of_plan_message_snapshot(
     assert _warning_records(caplog) == snapshot(name="warning")
 
 
-def test_index_missing_flag_disabled_message_snapshot(
+@pytest.mark.parametrize(
+    "options",
+    [
+        pytest.param(
+            publish._PublishExecutionOptions(live=False, allow_dirty=True),
+            id="dry_run",
+        ),
+        pytest.param(
+            publish._PublishExecutionOptions(live=True, allow_dirty=True),
+            id="live",
+        ),
+    ],
+)
+def test_pipeline_info_log_snapshot(
     publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
     caplog: pytest.LogCaptureFixture,
     snapshot: SnapshotAssertion,
+    options: publish._PublishExecutionOptions,
 ) -> None:
-    """Snapshot the fatal message and warning when the override is disabled."""
-    plan, _preparation, _staging_root = publish_plan_and_prep
+    """Snapshot pipeline selector and progression logs for each mode."""
+    caplog.set_level(logging.INFO, logger="lading.commands.publish")
+    plan, preparation, _staging_root = publish_plan_and_prep
 
-    message = _handle_index_missing_version_message(
+    publish._dispatch_publication(
         plan,
-        stderr=INDEX_MISSING_STDERR_BETA,
-        allow_unpublished_workspace_deps=False,
-        caplog=caplog,
+        preparation,
+        options=options,
+        runner=CallTrackingRunner(),
     )
 
-    assert message == snapshot(name="message")
-    assert _warning_records(caplog) == snapshot(name="warning")
+    assert _pipeline_info_records(caplog) == snapshot()

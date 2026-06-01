@@ -1,4 +1,27 @@
-"""Then steps for publish BDD scenarios."""
+"""Then-step definitions for publish BDD scenarios.
+
+Implements :mod:`pytest_bdd` *then* steps that assert post-command
+outcomes for ``lading publish`` scenarios defined in
+``tests/bdd/features/cli.feature``.
+
+Step inventory
+--------------
+``then_publish_interleaves_live_package_and_publish(preflight_recorder, crate_names)``
+    Filters recorded invocations to ``cargo::package`` and
+    ``cargo::publish`` operations, derives the observed crate name from
+    each invocation's ``PWD`` directory basename, and asserts that the
+    sequence matches the expected interleaved order for the
+    comma-separated ``crate_names``.
+
+Related step modules
+--------------------
+``test_publish_given_steps``
+    *Given* steps that configure the workspace and publish plan.
+``test_publish_when_steps``
+    *When* steps that invoke the CLI command under test.
+``test_publish_helpers``
+    Shared assertion helpers used across given/when/then step modules.
+"""
 
 from __future__ import annotations
 
@@ -221,6 +244,42 @@ def then_publish_runs_live(
     _assert_invocations_lack_flag(invocations, "--dry-run", "cargo publish")
     observed = _extract_crate_names_from_invocations(invocations)
     _assert_crate_order_matches(observed, expected, "cargo publish live order")
+
+
+@then(
+    parsers.parse(
+        "the publish command interleaves live package and publish for crates "
+        '"{crate_names}"'
+    )
+)
+def then_publish_interleaves_live_package_and_publish(
+    preflight_recorder: _PreflightInvocationRecorder, crate_names: str
+) -> None:
+    """Assert live publish packages and publishes each crate before the next."""
+    expected_names = _split_names(crate_names)
+    filtered = [
+        (label, (args, env))
+        for label, args, env in preflight_recorder.records
+        if label in {"cargo::package", "cargo::publish"}
+    ]
+    labels = [label for label, _ in filtered]
+    invocations = [invocation for _, invocation in filtered]
+    crate_names_observed = _extract_crate_names_from_invocations(invocations)
+    observed_sequence = list(zip(labels, crate_names_observed, strict=True))
+
+    expected_sequence: list[tuple[str, str]] = []
+    for crate_name in expected_names:
+        expected_sequence.extend([
+            ("cargo::package", crate_name),
+            ("cargo::publish", crate_name),
+        ])
+
+    if observed_sequence != expected_sequence:
+        message = (
+            "Unexpected live package/publish order: "
+            f"observed={observed_sequence!r}, expected={expected_sequence!r}"
+        )
+        raise AssertionError(message)
 
 
 @then("the publish command reports that no crates are publishable")

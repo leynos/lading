@@ -1,13 +1,53 @@
-"""Unit tests for publish crate packaging workflow."""
+"""Unit tests for publish crate packaging workflow.
+
+Exercises the per-crate publication helpers and the interleaved live
+pipeline introduced in :mod:`lading.commands.publish`:
+
+- :func:`~lading.commands.publish._package_crate` — packages one crate
+  from the staged workspace via ``cargo package``.
+- :func:`~lading.commands.publish._publish_crate` — publishes one crate
+  via ``cargo publish``, with ``--dry-run`` injected when not in live
+  mode.
+- :func:`~lading.commands.publish._execute_live_publication_pipeline` —
+  orchestrates the interleaved per-crate package-then-publish flow.
+
+Test helpers
+------------
+``CallTrackingRunner``
+    Records ``(command, cwd)`` pairs without executing real ``cargo``
+    subprocesses, enabling post-call assertion of both the invoked
+    command and the working directory.
+``make_failing_runner``
+    Returns a runner that yields a configurable non-zero exit code with
+    injected stdout/stderr text, used to exercise failure branches.
+``_SnapshotCase``
+    Named tuple bundling the four parametrised fields for snapshot tests
+    (helper function, execution options, expected exception type, and
+    injected stderr text), keeping the test function's argument count
+    within the four-parameter threshold.
+
+Coverage
+--------
+- Correct ``cargo`` subcommand and ``cwd`` for each single-crate helper.
+- ``PublishPreflightError`` raised on package failure with injected stderr.
+- ``PublishError`` raised on publish failure with injected stdout.
+- Already-published continuation: warning logged, no exception raised.
+- Live pipeline interleaving: package then publish per crate in plan order.
+- Live pipeline abort after a partial publish: earlier pairs complete first.
+- Exact error-message formatting locked in via syrupy snapshot assertions.
+"""
 
 from __future__ import annotations
 
+import collections.abc as cabc
 import logging
+import shutil
 import typing as typ
 
 if typ.TYPE_CHECKING:
-    import collections.abc as cabc
     from pathlib import Path
+
+    from syrupy.assertion import SnapshotAssertion
 
 import pytest
 
@@ -21,6 +61,22 @@ from .conftest import (
     make_workspace,
     prepare_staging_root,
 )
+
+
+class _SnapshotCase(typ.NamedTuple):
+    fn: cabc.Callable[..., None]
+    options: publish._PublishExecutionOptions
+    exc_type: type[Exception]
+    stderr_text: str
+
+
+class _FailureCase(typ.NamedTuple):
+    fn: cabc.Callable[..., None]
+    live: bool
+    exc_type: type[Exception]
+    runner_kwargs: dict[str, str]
+    subcommand: str
+    output_fragment: str
 
 
 def _assert_packaging_failure_message_contains(
@@ -72,9 +128,107 @@ def test_package_publishable_crates_runs_in_plan_order(
     ], "cargo package should run once per publishable crate in order"
     assert caplog.messages == [
         "Running cargo package for crate alpha",
+        "Successfully packaged crate alpha",
         "Running cargo package for crate beta",
+        "Successfully packaged crate beta",
         "Running cargo package for crate gamma",
+        "Successfully packaged crate gamma",
     ]
+
+
+@pytest.mark.parametrize(
+    ("fn", "options", "expected_cmd"),
+    [
+        pytest.param(
+            publish._package_crate,
+            publish._PublishExecutionOptions(live=False, allow_dirty=True),
+            ("cargo", "package", "--allow-dirty"),
+            id="package",
+        ),
+        pytest.param(
+            publish._publish_crate,
+            publish._PublishExecutionOptions(live=True, allow_dirty=True),
+            ("cargo", "publish", "--allow-dirty"),
+            id="publish",
+        ),
+    ],
+)
+def test_single_crate_helper_invokes_correct_cargo_command(
+    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    fn: cabc.Callable[..., None],
+    options: publish._PublishExecutionOptions,
+    expected_cmd: tuple[str, ...],
+) -> None:
+    """Each single-crate helper invokes the correct cargo subcommand."""
+    plan, preparation, staging_root = publish_plan_and_prep
+    runner = CallTrackingRunner()
+    crate = plan.publishable[1]
+    state = publish._PublicationPipelineState(plan, preparation, options)
+
+    fn(
+        crate,
+        state,
+        runner=runner,
+    )
+
+    expected_root = staging_root / crate.root_path.relative_to(plan.workspace_root)
+    assert runner.calls == [(expected_cmd, expected_root)]
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        pytest.param(
+            _FailureCase(
+                fn=publish._package_crate,
+                live=False,
+                exc_type=publish.PublishPreflightError,
+                runner_kwargs={"stderr": "packaging failed"},
+                subcommand="package",
+                output_fragment="packaging failed",
+            ),
+            id="package",
+        ),
+        pytest.param(
+            _FailureCase(
+                fn=publish._publish_crate,
+                live=True,
+                exc_type=publish.PublishError,
+                runner_kwargs={"stdout": "network offline"},
+                subcommand="publish",
+                output_fragment="network offline",
+            ),
+            id="publish",
+        ),
+    ],
+)
+def test_crate_helper_raises_on_failure(
+    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    case: _FailureCase,
+) -> None:
+    """Each single-crate helper raises the correct exception type on failure."""
+    plan, preparation, _staging_root = publish_plan_and_prep
+    state = publish._PublicationPipelineState(
+        plan,
+        preparation,
+        publish._PublishExecutionOptions(live=case.live, allow_dirty=True),
+    )
+
+    with pytest.raises(case.exc_type) as excinfo:
+        case.fn(
+            plan.publishable[0],
+            state,
+            runner=make_failing_runner(**case.runner_kwargs),
+        )
+
+    message = str(excinfo.value)
+    assert f"cargo {case.subcommand} failed for crate alpha" in message, (
+        f"expected failure message to include cargo {case.subcommand} "
+        "context for crate alpha"
+    )
+    assert case.output_fragment in message, (
+        f"expected failure message to include output fragment {case.output_fragment!r}"
+    )
 
 
 def test_package_publishable_crates_stops_on_failure(
@@ -186,6 +340,38 @@ def test_publish_crates_run_live_without_dry_run(
     ]
 
 
+def test_publish_crate_continues_when_version_already_uploaded(
+    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The single-crate publish helper keeps already-published handling."""
+    caplog.set_level(logging.WARNING, logger="lading.commands.publish")
+    plan, preparation, _staging_root = publish_plan_and_prep
+
+    def already_uploaded_runner(
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        del command, cwd, env
+        return 101, "", "error: crate version `alpha v0.1.0` is already uploaded"
+
+    state = publish._PublicationPipelineState(
+        plan,
+        preparation,
+        publish._PublishExecutionOptions(live=True, allow_dirty=True),
+    )
+
+    publish._publish_crate(
+        plan.publishable[0],
+        state,
+        runner=already_uploaded_runner,
+    )
+
+    assert any("already published" in message for message in caplog.messages)
+
+
 @pytest.mark.parametrize(
     "live",
     [pytest.param(False, id="dry-run"), pytest.param(True, id="live")],
@@ -236,6 +422,113 @@ def test_publish_crates_continue_when_version_already_uploaded(
     assert any("already published" in message for message in caplog.messages)
 
 
+def test_execute_live_publication_pipeline_interleaves_package_and_publish(
+    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+) -> None:
+    """Live publication packages and publishes each crate before continuing."""
+    plan, preparation, staging_root = publish_plan_and_prep
+    runner = CallTrackingRunner()
+
+    publish._execute_live_publication_pipeline(
+        plan,
+        preparation,
+        options=publish._PublishExecutionOptions(live=True, allow_dirty=True),
+        runner=runner,
+    )
+
+    expected_calls: list[tuple[tuple[str, ...], Path]] = []
+    for crate in plan.publishable:
+        crate_root = staging_root / crate.root_path.relative_to(plan.workspace_root)
+        expected_calls.extend([
+            (("cargo", "package", "--allow-dirty"), crate_root),
+            (("cargo", "publish", "--allow-dirty"), crate_root),
+        ])
+
+    assert runner.calls == expected_calls
+
+
+def test_execute_live_publication_pipeline_stops_after_partial_publish(
+    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+) -> None:
+    """A later live failure leaves earlier publish attempts completed."""
+    plan, preparation, staging_root = publish_plan_and_prep
+    beta_root = staging_root / plan.publishable[1].root_path.relative_to(
+        plan.workspace_root
+    )
+    calls: list[tuple[tuple[str, ...], Path | None]] = []
+
+    def runner(
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        del env
+        normalised = tuple(command)
+        calls.append((normalised, cwd))
+        if normalised[:2] == ("cargo", "package") and cwd == beta_root:
+            return 1, "", "packaging failed"
+        return 0, "", ""
+
+    with pytest.raises(publish.PublishPreflightError):
+        publish._execute_live_publication_pipeline(
+            plan,
+            preparation,
+            options=publish._PublishExecutionOptions(live=True, allow_dirty=True),
+            runner=runner,
+        )
+
+    alpha_root = staging_root / plan.publishable[0].root_path.relative_to(
+        plan.workspace_root
+    )
+    assert calls == [
+        (("cargo", "package", "--allow-dirty"), alpha_root),
+        (("cargo", "publish", "--allow-dirty"), alpha_root),
+        (("cargo", "package", "--allow-dirty"), beta_root),
+    ]
+
+
+def test_execute_live_publication_pipeline_wraps_preparation_errors(
+    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Preparation failures surface as ``PublishPreflightError`` for the caller."""
+    caplog.set_level(logging.ERROR, logger="lading.commands.publish")
+    plan, preparation, staging_root = publish_plan_and_prep
+    # Remove the staged tree for the second crate so resolving its root fails
+    # mid-pipeline, after the first crate has packaged and published cleanly.
+    beta_root = staging_root / plan.publishable[1].root_path.relative_to(
+        plan.workspace_root
+    )
+    shutil.rmtree(beta_root)
+    runner = CallTrackingRunner()
+
+    with pytest.raises(publish.PublishPreflightError) as excinfo:
+        publish._execute_live_publication_pipeline(
+            plan,
+            preparation,
+            options=publish._PublishExecutionOptions(live=True, allow_dirty=True),
+            runner=runner,
+        )
+
+    assert isinstance(excinfo.value.__cause__, publish.PublishPreparationError)
+    assert str(beta_root) in str(excinfo.value)
+    alpha_root = staging_root / plan.publishable[0].root_path.relative_to(
+        plan.workspace_root
+    )
+    assert runner.calls == [
+        (("cargo", "package", "--allow-dirty"), alpha_root),
+        (("cargo", "publish", "--allow-dirty"), alpha_root),
+    ], (
+        "expected alpha to be packaged and published "
+        "(cargo package + cargo publish) in alpha_root before beta "
+        f"preparation aborted; alpha_root={alpha_root!s}, calls={runner.calls!r}"
+    )
+    assert any(
+        "Live pipeline: aborted on crate beta" in message for message in caplog.messages
+    )
+
+
 def test_publish_crates_raise_on_failure(
     publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
 ) -> None:
@@ -254,3 +547,45 @@ def test_publish_crates_raise_on_failure(
     message = str(excinfo.value)
     assert "cargo publish failed for crate" in message
     assert "network offline" in message
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        pytest.param(
+            _SnapshotCase(
+                fn=publish._package_crate,
+                options=publish._PublishExecutionOptions(live=False, allow_dirty=True),
+                exc_type=publish.PublishPreflightError,
+                stderr_text="packaging failed",
+            ),
+            id="package",
+        ),
+        pytest.param(
+            _SnapshotCase(
+                fn=publish._publish_crate,
+                options=publish._PublishExecutionOptions(live=True, allow_dirty=True),
+                exc_type=publish.PublishError,
+                stderr_text="publish failed",
+            ),
+            id="publish",
+        ),
+    ],
+)
+def test_crate_helper_error_message_snapshot(
+    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    snapshot: SnapshotAssertion,
+    case: _SnapshotCase,
+) -> None:
+    """Snapshot the error message raised by each single-crate helper on failure."""
+    plan, preparation, _staging_root = publish_plan_and_prep
+    state = publish._PublicationPipelineState(plan, preparation, case.options)
+
+    with pytest.raises(case.exc_type) as excinfo:
+        case.fn(
+            plan.publishable[0],
+            state,
+            runner=make_failing_runner(stdout="", stderr=case.stderr_text),
+        )
+
+    assert str(excinfo.value) == snapshot()

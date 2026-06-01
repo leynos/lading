@@ -205,7 +205,8 @@ interacting with the `cargo publish` command.
 - [x] **Implement `cargo publish` Execution:**
 
   - **Outcome:** The command executes `cargo publish` for each crate,
-    supporting both dry-run and live modes. The
+    supporting both batched dry-run mode and interleaved per-crate live mode
+    for internal dependency release trains (closes `#59`). The
     `--allow-unpublished-workspace-deps` dry-run-only flag (closes `#60`)
     downgrades index-lookup failures for in-plan workspace dependencies to
     warnings, enabling CI dry-run workflows on multi-crate release trains.
