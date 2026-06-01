@@ -222,8 +222,13 @@ def test_crate_helper_raises_on_failure(
         )
 
     message = str(excinfo.value)
-    assert f"cargo {case.subcommand} failed for crate alpha" in message
-    assert case.output_fragment in message
+    assert f"cargo {case.subcommand} failed for crate alpha" in message, (
+        f"expected failure message to include cargo {case.subcommand} "
+        "context for crate alpha"
+    )
+    assert case.output_fragment in message, (
+        f"expected failure message to include output fragment {case.output_fragment!r}"
+    )
 
 
 def test_package_publishable_crates_stops_on_failure(
