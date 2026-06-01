@@ -126,13 +126,12 @@ class _PublishExecutionOptions:
 
 
 @dc.dataclass(frozen=True, slots=True)
-class _PublicationPipelineContext:
-    """Shared inputs for cargo package and publish invocations."""
+class _PublicationPipelineState:
+    """Shared publish state for cargo package and publish invocations."""
 
     plan: PublishPlan
     preparation: PublishPreparation
     options: _PublishExecutionOptions
-    runner: _CommandRunner
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -379,24 +378,28 @@ def _package_publishable_crates(
     runner: _CommandRunner,
 ) -> None:
     """Package each publishable crate in order using the staged workspace."""
-    context = _PublicationPipelineContext(plan, preparation, options, runner)
+    state = _PublicationPipelineState(plan, preparation, options)
     for crate in plan.publishable:
-        _package_crate(crate, context)
+        _package_crate(
+            crate,
+            state,
+            runner=runner,
+        )
 
 
 def _package_crate(
     crate: WorkspaceCrate,
-    context: _PublicationPipelineContext,
+    state: _PublicationPipelineState,
+    *,
+    runner: _CommandRunner,
 ) -> None:
     """Package one publishable crate using the staged workspace."""
-    plan = context.plan
-    options = context.options
+    plan = state.plan
+    options = state.options
     package_args: tuple[str, ...] = ("--allow-dirty",) if options.allow_dirty else ()
-    crate_root = _resolve_staged_crate_root(
-        crate, plan, context.preparation.staging_root
-    )
+    crate_root = _resolve_staged_crate_root(crate, plan, state.preparation.staging_root)
     LOGGER.info("Running cargo package for crate %s", crate.name)
-    exit_code, stdout, stderr = context.runner(
+    exit_code, stdout, stderr = runner(
         ("cargo", "package", *package_args),
         cwd=crate_root,
         env=None,
@@ -455,33 +458,37 @@ def _publish_crates(
     options: _PublishExecutionOptions,
 ) -> None:
     """Publish each crate in order, respecting dry-run vs live mode."""
-    context = _PublicationPipelineContext(plan, preparation, options, runner)
+    state = _PublicationPipelineState(plan, preparation, options)
     for crate in plan.publishable:
-        _publish_crate(crate, context)
+        _publish_crate(
+            crate,
+            state,
+            runner=runner,
+        )
 
 
 def _publish_crate(
     crate: WorkspaceCrate,
-    context: _PublicationPipelineContext,
+    state: _PublicationPipelineState,
+    *,
+    runner: _CommandRunner,
 ) -> None:
     """Publish one crate from the staged workspace."""
-    plan = context.plan
-    options = context.options
+    plan = state.plan
+    options = state.options
     publish_args: list[str] = []
     if options.allow_dirty:
         publish_args.append("--allow-dirty")
     if not options.live:
         publish_args.append("--dry-run")
     publish_args_tuple = tuple(publish_args)
-    crate_root = _resolve_staged_crate_root(
-        crate, plan, context.preparation.staging_root
-    )
+    crate_root = _resolve_staged_crate_root(crate, plan, state.preparation.staging_root)
     LOGGER.info(
         "Running cargo publish%s for crate %s",
         "" if options.live else " --dry-run",
         crate.name,
     )
-    exit_code, stdout, stderr = context.runner(
+    exit_code, stdout, stderr = runner(
         ("cargo", "publish", *publish_args_tuple),
         cwd=crate_root,
         env=None,
@@ -543,13 +550,21 @@ def _execute_live_publication_pipeline(
     runner: _CommandRunner,
 ) -> None:
     """Package and publish each crate before moving to the next crate."""
-    context = _PublicationPipelineContext(plan, preparation, options, runner)
+    state = _PublicationPipelineState(plan, preparation, options)
     completed: list[str] = []
     for crate in plan.publishable:
         LOGGER.info("Live pipeline: starting crate %s", crate.name)
         try:
-            _package_crate(crate, context)
-            _publish_crate(crate, context)
+            _package_crate(
+                crate,
+                state,
+                runner=runner,
+            )
+            _publish_crate(
+                crate,
+                state,
+                runner=runner,
+            )
         except PublishPreparationError as exc:
             # Preparation failures escape the preflight/publish error taxonomy;
             # normalise them so the live pipeline reports a single abort class.

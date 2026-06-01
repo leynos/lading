@@ -177,6 +177,37 @@ to handle both validation and publish-phase failures through one `except`
 clause, or catch `PublishError` first when publish-phase failures require
 distinct handling.
 
+### Extracted publish modules
+
+`publish_plan.py` owns publication planning and plan rendering. Its
+`PublishPlan` dataclass is the immutable boundary between workspace analysis
+and execution: it stores the workspace root, publishable crates in the resolved
+order, crates skipped by manifest/configuration, and configured exclusions
+that did not match a workspace crate. `plan_publication()` builds that object
+by filtering non-publishable crates, applying `publish.exclude`, validating
+`publish.order` when present, or deriving a deterministic dependency order.
+
+`publish_manifest.py` owns staging-time manifest mutations. It contains the
+workspace preparation types and helpers that copy the workspace tree, stage
+workspace README files for crates that opt in, and apply the
+`publish.strip_patches` strategy to the staged `Cargo.toml`. These operations
+run before any `cargo package` or `cargo publish` command so the command runner
+works against a prepared snapshot rather than the source workspace.
+
+`publish_diagnostics.py` owns compiletest failure enrichment. When a cargo
+pre-flight test failure mentions compiletest-style `*.stderr` artefacts, the
+diagnostic helper locates the referenced files, tails a bounded number of
+lines, and appends those snippets to the `PublishPreflightError` message. The
+module is deliberately read-only: missing artefacts or unreadable files produce
+diagnostic notes rather than replacing the original cargo failure.
+
+`publish_index_check.py` owns crates.io index-lookup classification. It
+contains `_CargoInvocation`, the predicates and parsers that recognise Cargo's
+"no matching package/version" diagnostics, crate-name canonicalization, and
+`_handle_index_missing_version()`. That handler decides whether an index miss
+is out-of-plan and fatal, in-plan but still fatal, or in-plan and downgraded by
+`allow_unpublished_workspace_deps` during dry-run publication.
+
 ### `_PublishExecutionOptions`
 
 `_PublishExecutionOptions` is a frozen dataclass that carries the runtime flags
@@ -309,24 +340,29 @@ own target directory. A non-zero exit from any step raises
 ### Per-crate publication helpers
 
 `_package_crate` and `_publish_crate` are the atomic units of the
-publication pipeline. Both accept a `CrateEntry` and a
-`_PublicationPipelineContext` and execute exactly one `cargo` invocation
-against the crate's staging root:
+publication pipeline. Both accept the crate entry, publication state, and
+command runner explicitly, then execute exactly one `cargo` invocation against
+the crate's staging root:
 
 ```python
-_package_crate(crate: CrateEntry, context: _PublicationPipelineContext) -> None
-_publish_crate(crate: CrateEntry, context: _PublicationPipelineContext) -> None
+_package_crate(
+    crate: WorkspaceCrate,
+    state: _PublicationPipelineState,
+    *,
+    runner: _CommandRunner,
+) -> None
+_publish_crate(
+    crate: WorkspaceCrate,
+    state: _PublicationPipelineState,
+    *,
+    runner: _CommandRunner,
+) -> None
 ```
 
-`_PublicationPipelineContext` is a frozen dataclass that groups the four
-inputs shared across every per-crate call within a single `run()` invocation:
-
-| Field | Type | Purpose |
-| --- | --- | --- |
-| `plan` | `PublishPlan` | Resolved publication plan including the `publishable` crate list. |
-| `preparation` | `PublishPreparation` | Staging workspace metadata including `staging_root`. |
-| `options` | `_PublishExecutionOptions` | Runtime flags (`live`, `allow_dirty`, `allow_unpublished_workspace_deps`). |
-| `runner` | `_CommandRunner` | Injectable command runner; defaults to `_invoke` in production. |
+`_PublicationPipelineState` carries only publish-domain state: the resolved
+`PublishPlan`, the `PublishPreparation`, and `_PublishExecutionOptions`.
+Infrastructure stays at the call boundary: `_CommandRunner` is passed directly
+to each pipeline/helper function rather than being bundled into the state.
 
 `_dispatch_publication` selects the live or dry-run pipeline and delegates
 accordingly. It is the sole branch that decides between the interleaved
