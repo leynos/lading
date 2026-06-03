@@ -124,7 +124,16 @@
 - For Python work, use `pytest` for unit tests and `pytest-bdd` for behavioural
   tests. Cover happy paths, unhappy paths, and relevant edge cases.
 - Snapshot tests (using `syrupy`) should be provided where multivariant output
-  format consistency is relevant to the requirements.
+  format consistency is relevant to the requirements. Snapshot tests must
+  capture meaningful, reviewer-useful contracts rather than generic dumps of
+  broad objects. Keep snapshots focused on stable output boundaries, pair them
+  with semantic assertions for the behaviours they represent, and avoid
+  snapshot-only coverage for logic that can be asserted directly. Redact or
+  normalize nondeterministic fields such as timestamps, absolute paths, random
+  identifiers, ordering-dependent maps, hostnames, and environment-specific
+  values before snapshotting. Do not accept brittle snapshots that churn after
+  harmless formatting or dependency changes; narrow the captured output until a
+  snapshot failure identifies a real contract change.
 - Add end-to-end tests where a change affects externally observable workflows,
   integration contracts, persistence, command-line behaviour, network
   boundaries, user interface flows, or other system-level behaviour.
