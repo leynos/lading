@@ -121,9 +121,7 @@ def test_refresh_lockfile_raises_on_failure(tmp_path: Path) -> None:
         lockfile.refresh_lockfile(manifest, runner)
 
 
-def _validate_lockfile_freshness_for_exit_code(
-    tmp_path: Path, exit_code: int
-) -> bool:
+def _validate_lockfile_freshness_for_exit_code(tmp_path: Path, exit_code: int) -> bool:
     """Run lockfile freshness validation with a fake cargo exit code."""
     manifest = tmp_path / "Cargo.toml"
 
