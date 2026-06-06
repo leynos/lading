@@ -109,6 +109,33 @@ def coerce_text(value: str | bytes) -> str:
     return value
 
 
+def _invoke_cargo_metadata(
+    command_runner: CommandRunner,
+    root_path: Path | None,
+) -> tuple[int, str, str]:
+    """Run ``cargo metadata`` and return (exit_code, stdout, stderr) as text."""
+    try:
+        exit_code, stdout, stderr = command_runner(
+            _CARGO_METADATA_COMMAND, cwd=root_path
+        )
+    except CommandSpawnError as exc:
+        if exc.program == _CARGO_PROGRAM:
+            raise CargoExecutableNotFoundError from exc
+        raise CargoMetadataError(str(exc)) from exc
+    return exit_code, coerce_text(stdout), coerce_text(stderr)
+
+
+def _parse_cargo_metadata(stdout_text: str) -> cabc.Mapping[str, typ.Any]:
+    """Parse and validate the JSON payload produced by ``cargo metadata``."""
+    try:
+        payload = json.loads(stdout_text)
+    except json.JSONDecodeError as exc:
+        raise CargoMetadataParseError.invalid_json() from exc
+    if not isinstance(payload, dict):
+        raise CargoMetadataParseError.non_object_payload()
+    return payload
+
+
 def load_cargo_metadata(
     workspace_root: Path | str | None = None,
     *,
@@ -118,22 +145,9 @@ def load_cargo_metadata(
     root_path = normalise_workspace_root(workspace_root)
     command_runner = _active_command_runner(runner)
     log_command_invocation(LOGGER, _CARGO_METADATA_COMMAND, root_path)
-    try:
-        exit_code, stdout, stderr = command_runner(
-            _CARGO_METADATA_COMMAND, cwd=root_path
-        )
-    except CommandSpawnError as exc:
-        if exc.program == _CARGO_PROGRAM:
-            raise CargoExecutableNotFoundError from exc
-        raise CargoMetadataError(str(exc)) from exc
-    stdout_text = coerce_text(stdout)
-    stderr_text = coerce_text(stderr)
+    exit_code, stdout_text, stderr_text = _invoke_cargo_metadata(
+        command_runner, root_path
+    )
     if exit_code != 0:
         raise CargoMetadataInvocationError(exit_code, stdout_text, stderr_text)
-    try:
-        payload = json.loads(stdout_text)
-    except json.JSONDecodeError as exc:
-        raise CargoMetadataParseError.invalid_json() from exc
-    if not isinstance(payload, dict):
-        raise CargoMetadataParseError.non_object_payload()
-    return payload
+    return _parse_cargo_metadata(stdout_text)
