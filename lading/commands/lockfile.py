@@ -16,38 +16,33 @@ class LockfileRefreshError(RuntimeError):
     """Raised when Cargo cannot regenerate a lockfile."""
 
 
-def _git_ls_lockfiles(
+def _git_ls_files_error_result(
+    exit_code: int,
+    stdout: str,
+    stderr: str,
     workspace_root: Path,
-    runner: _CommandRunner,
-) -> str | None:
-    """Run ``git ls-files`` for Cargo.lock paths.
-
-    Return stdout or ``None`` on failure.
-    """
-    exit_code, stdout, stderr = runner(
-        ("git", "ls-files", "*/Cargo.lock", "Cargo.lock"),
-        cwd=workspace_root,
-    )
-    if exit_code != 0:
-        detail = (stderr or stdout).strip()
-        if "not a git repository" in detail.lower():
-            LOGGER.warning(
-                "Skipping Cargo.lock discovery because %s is not a git repository",
-                workspace_root,
-            )
-        else:
-            LOGGER.warning(
-                "Skipping Cargo.lock discovery after git ls-files failed: %s", detail
-            )
+) -> tuple[Path, ...] | None:
+    """Return an empty result for failed ``git ls-files`` invocations."""
+    if exit_code == 0:
         return None
-    return stdout
+    detail = (stderr or stdout).strip()
+    if "not a git repository" in detail.lower():
+        LOGGER.warning(
+            "Skipping Cargo.lock discovery because %s is not a git repository",
+            workspace_root,
+        )
+    else:
+        LOGGER.warning(
+            "Skipping Cargo.lock discovery after git ls-files failed: %s", detail
+        )
+    return ()
 
 
 def _lockfiles_with_manifests(
-    workspace_root: Path,
     stdout: str,
+    workspace_root: Path,
 ) -> tuple[Path, ...]:
-    """Return ``git ls-files`` lockfile paths with an adjacent ``Cargo.toml``."""
+    """Return lockfile paths from ``git ls-files`` with adjacent manifests."""
     lockfiles: list[Path] = []
     for line in stdout.splitlines():
         relative_path = line.strip()
@@ -71,10 +66,14 @@ def discover_tracked_lockfiles(
     )
     if not candidate_lockfiles:
         return ()
-    stdout = _git_ls_lockfiles(workspace_root, runner)
-    if stdout is None:
-        return ()
-    return _lockfiles_with_manifests(workspace_root, stdout)
+    exit_code, stdout, stderr = runner(
+        ("git", "ls-files", "*/Cargo.lock", "Cargo.lock"),
+        cwd=workspace_root,
+    )
+    error_result = _git_ls_files_error_result(exit_code, stdout, stderr, workspace_root)
+    if error_result is not None:
+        return error_result
+    return _lockfiles_with_manifests(stdout, workspace_root)
 
 
 def refresh_lockfile(
