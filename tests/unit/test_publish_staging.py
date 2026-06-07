@@ -186,26 +186,6 @@ def test_prepare_workspace_does_not_stage_workspace_readme(
     assert preparation.copied_readmes == ()
 
 
-def test_prepare_workspace_allows_missing_workspace_readme(
-    prepare_workspace_fixtures: PrepareWorkspaceFixtures,
-    preparation_fixtures: PreparationFixtures,
-) -> None:
-    """Publish staging no longer validates bump-time README assets."""
-    fx = prepare_workspace_fixtures
-    pf = preparation_fixtures
-    workspace_root = fx.tmp_path / "workspace"
-    workspace_root.mkdir()
-    crate = pf.make_crate(workspace_root, "alpha", _CrateSpec(readme_workspace=True))
-    workspace = pf.make_workspace(workspace_root, crate)
-    configuration = pf.make_config()
-    plan = publish.plan_publication(workspace, configuration)
-
-    preparation = publish.prepare_workspace(plan, workspace, options=fx.publish_options)
-
-    assert preparation.staging_root.exists()
-    assert preparation.copied_readmes == ()
-
-
 def test_prepare_workspace_registers_cleanup(
     monkeypatch: pytest.MonkeyPatch,
     prepare_workspace_fixtures: PrepareWorkspaceFixtures,
@@ -241,22 +221,34 @@ def test_prepare_workspace_registers_cleanup(
     assert not build_directory.exists()
 
 
+@pytest.mark.parametrize(
+    "crate_spec",
+    [
+        pytest.param(
+            _CrateSpec(readme_workspace=True),
+            id="opted_in_missing_workspace_readme",
+        ),
+        pytest.param(_CrateSpec(), id="no_readme_opt_in"),
+    ],
+)
 def test_prepare_workspace_returns_empty_copied_readmes(
     prepare_workspace_fixtures: PrepareWorkspaceFixtures,
     preparation_fixtures: PreparationFixtures,
+    crate_spec: _CrateSpec,
 ) -> None:
-    """Staging reports no copied READMEs when no crates opt in."""
+    """Staging reports no copied READMEs regardless of readme opt-in status."""
     fx = prepare_workspace_fixtures
     pf = preparation_fixtures
     workspace_root = fx.tmp_path / "workspace"
     workspace_root.mkdir()
-    crate = pf.make_crate(workspace_root, "alpha")
+    crate = pf.make_crate(workspace_root, "alpha", crate_spec)
     workspace = pf.make_workspace(workspace_root, crate)
     configuration = pf.make_config()
     plan = publish.plan_publication(workspace, configuration)
 
     preparation = publish.prepare_workspace(plan, workspace, options=fx.publish_options)
 
+    assert preparation.staging_root.exists()
     assert preparation.copied_readmes == ()
 
 
