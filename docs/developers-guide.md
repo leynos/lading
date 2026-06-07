@@ -49,8 +49,8 @@ standard-library usage, file hygiene, and design-size limits.
 The relevant Makefile variables are:
 
 - `PYLINT_PYTHON` — Python executable used by `uv tool run`; defaults to `pypy`.
-- `PYLINT_TARGETS` — directories passed to Pylint; defaults to `lading scripts
-  tests`.
+- `PYLINT_TARGETS` — directories passed to Pylint; defaults to
+  `lading scripts tests`.
 - `PYLINT_PYPY_SHIM_REF` — pinned `pylint-pypy-shim` revision.
 - `PYLINT_PYPY_SHIM` — Git URL assembled from the pinned shim revision.
 - `PYLINT` — full `uv tool run --python $(PYLINT_PYTHON)` invocation for the
@@ -204,6 +204,7 @@ yet. When enabled, `lading publish` downgrades that specific index-lookup
 failure to a warning and continues. The option is rejected at runtime when
 `live=True`, so it cannot mask a real upload failure.
 
+
 ### Exception hierarchy (`lading.exceptions`)
 
 `lading.exceptions.LadingError` is the package-level base class for domain
@@ -269,17 +270,17 @@ distinct handling.
 `publish_plan.py` owns publication planning and plan rendering. Its
 `PublishPlan` dataclass is the immutable boundary between workspace analysis
 and execution: it stores the workspace root, publishable crates in the resolved
-order, crates skipped by manifest/configuration, and configured exclusions
-that did not match a workspace crate. `plan_publication()` builds that object
-by filtering non-publishable crates, applying `publish.exclude`, validating
+order, crates skipped by manifest/configuration, and configured exclusions that
+did not match a workspace crate. `plan_publication()` builds that object by
+filtering non-publishable crates, applying `publish.exclude`, validating
 `publish.order` when present, or deriving a deterministic dependency order.
 
 `publish_manifest.py` owns staging-time manifest mutations. It contains the
 workspace preparation types and helpers that copy the workspace tree, stage
 workspace README files for crates that opt in, and apply the
 `publish.strip_patches` strategy to the staged `Cargo.toml`. These operations
-run before any `cargo package` or `cargo publish` command, so the command runner
-works against a prepared snapshot rather than the source workspace.
+run before any `cargo package` or `cargo publish` command, so the command
+runner works against a prepared snapshot rather than the source workspace.
 
 `publish_diagnostics.py` owns compiletest failure enrichment. When a cargo
 pre-flight test failure mentions compiletest-style `*.stderr` artefacts, the
@@ -288,12 +289,20 @@ lines, and appends those snippets to the `PublishPreflightError` message. The
 module is deliberately read-only: missing artefacts or unreadable files produce
 diagnostic notes rather than replacing the original cargo failure.
 
-`publish_index_check.py` owns crates.io index-lookup classification. It
-contains `_CargoInvocation`, the predicates and parsers that recognize Cargo's
-"no matching package/version" diagnostics, crate-name canonicalization, and
-`_handle_index_missing_version()`. That handler decides whether an index miss
-is out-of-plan and fatal, in-plan but still fatal, or in-plan and downgraded by
-`allow_unpublished_workspace_deps` during dry-run publication.
+`cargo_output_adapter.py` owns parsing raw cargo subprocess output into
+structured command failures. `CargoIndexLookupFailure` is the value object for
+crates.io index lookup failures, and `parse_index_lookup_failure()` is the only
+place that should inspect cargo's "no matching package/version" diagnostic
+markers or dependency-name regex. Keep additional cargo-output parsing in this
+adapter unless it becomes broad enough to justify a more general command-output
+adapter package.
+
+`publish_index_check.py` owns crates.io index-lookup downgrade decisions after
+cargo output has crossed that adapter boundary. It receives
+`CargoIndexLookupFailure` instances, applies crate-name canonicalization, and
+decides whether an index miss is out-of-plan and fatal, in-plan but still
+fatal, or in-plan and downgraded by `allow_unpublished_workspace_deps` during
+dry-run publication.
 
 ### `_PublishExecutionOptions`
 
@@ -301,10 +310,10 @@ is out-of-plan and fatal, in-plan but still fatal, or in-plan and downgraded by
 forwarded to every `cargo package` and `cargo publish` invocation within a
 single `lading publish` run. Its fields are:
 
-| Field | Type | Default | Purpose |
-| --- | --- | --- | --- |
-| `live` | `bool` | — | When `True`, omits `--dry-run` from `cargo publish`. |
-| `allow_dirty` | `bool` | — | Passes `--allow-dirty` to both cargo subcommands. |
+| Field                              | Type   | Default | Purpose                                                              |
+| ---------------------------------- | ------ | ------- | -------------------------------------------------------------------- |
+| `live`                             | `bool` | —       | When `True`, omits `--dry-run` from `cargo publish`.                 |
+| `allow_dirty`                      | `bool` | —       | Passes `--allow-dirty` to both cargo subcommands.                    |
 | `allow_unpublished_workspace_deps` | `bool` | `False` | Dry-run-only override; see `allow_unpublished_workspace_deps` above. |
 
 The dataclass is an internal implementation detail; callers interact with the
@@ -326,54 +335,55 @@ diagnostics, and normalizes staging/preparation failures into
 `PublishPreflightError` so callers receive the same publish command error
 boundary.
 
-`_handle_publish_result(invocation, crate, plan, options)` owns the result
-classification for a completed `cargo publish` command. It logs success,
-skips already-published crate versions, delegates in-plan crates.io index
-visibility failures to `_handle_index_missing_version`, and raises
-`PublishError` for all other non-zero publish exits after formatting the cargo
-failure message.
+`_handle_publish_result(crate, exit_code, stdout, stderr, plan, options)` owns
+the result classification for a completed `cargo publish` command. It logs
+success, skips already-published crate versions, adapts crates.io index lookup
+failures through `parse_index_lookup_failure()` before delegating to
+`_handle_index_missing_version`, and raises `PublishError` for all other
+non-zero publish exits after formatting the cargo failure message.
 
 `_CargoPreflightOptions` lives in `publish_preflight.py` and carries the
 per-invocation settings for cargo pre-flight commands: extra cargo arguments,
 test exclusions, unit-test-only narrowing, environment overrides, and optional
-stderr-tail diagnostics. `_run_preflight_checks` builds these option objects
-for `cargo check` and `cargo test` so command construction stays explicit and
+stderr-tail diagnostics. `_run_preflight_checks` builds these option objects for
+`cargo check` and `cargo test` so command construction stays explicit and
 testable.
 
 Publication dispatch deliberately differs by mode. Dry-run mode keeps the
 historical two-phase pipeline: package every publishable crate, then run
 `cargo publish --dry-run` for every crate. Live mode interleaves the pipeline
-per crate: package the next crate, publish it, then advance to the next entry
-in `PublishPlan.publishable`. That ordering lets dependent crates resolve newly
+per crate: package the next crate, publish it, then advance to the next entry in
+`PublishPlan.publishable`. That ordering lets dependent crates resolve newly
 uploaded in-plan dependencies during a single live release train. The live
 pipeline does not roll back earlier uploads if a later crate fails; reruns rely
 on the already-published detection path to log and skip versions already
 visible in the registry.
 
-The index-lookup handling is split across three helpers:
+The index-lookup handling is split across the adapter and decision helper:
 
-- `_is_index_missing_version_error(exit_code, stdout, stderr) -> bool` checks
-  for both Cargo's version-selection failure marker and the crates.io index
-  marker after confirming the command failed. Requiring both markers minimizes
-  false positives from unrelated resolver, registry, or command failures.
-- `_extract_missing_dependency_name(stdout, stderr) -> str | None` parses the
-  missing crate name from Cargo's requirement line. The regex accepts Cargo's
-  backtick, single-quote, and double-quote delimiters around the requirement,
-  captures the dependency name before `=`, and searches `stderr` before
-  `stdout` because Cargo normally reports this failure on the error stream.
-- `_handle_index_missing_version(_CargoInvocation, *, plan, options)` applies
-  the decision tree. If name extraction fails, the original Cargo failure stays
-  fatal. If the parsed name is not in the publish plan, the failure is fatal
-  with guidance to publish or index that dependency first. If the parsed name
-  is in the plan and `allow_unpublished_workspace_deps` is set, the helper logs
-  a warning and continues; otherwise it raises with guidance to use the flag in
-  dry-run mode or follow the staged-publish workaround.
+- `parse_index_lookup_failure(crate_name, subcommand, exit_code, stdout, stderr)`
+  checks for both Cargo's version-selection failure marker and the crates.io
+  index marker after confirming the command failed. Requiring both markers
+  minimizes false positives from unrelated resolver, registry, or command
+  failures.
+- The adapter parses the missing crate name from Cargo's requirement line. The
+  regex accepts Cargo's backtick, single-quote, and double-quote delimiters
+  around the requirement, captures the dependency name before `=`, and searches
+  `stderr` before `stdout` because Cargo normally reports this failure on the
+  error stream.
+- `_handle_index_missing_version(CargoIndexLookupFailure, *, plan, options)`
+  applies the decision tree. If name extraction fails, the original Cargo
+  failure stays fatal. If the parsed name is not in the publish plan, the
+  failure is fatal with guidance to publish or index that dependency first. If
+  the parsed name is in the plan and `allow_unpublished_workspace_deps` is set,
+  the helper logs a warning and continues; otherwise it raises with guidance to
+  use the flag in dry-run mode or follow the staged-publish workaround.
 
 #### Crate-name canonicalization
 
-`_canonical_crate_name(name)` normalizes a crate name by replacing every
-hyphen with an underscore. It is applied to both sides of the
-`publishable_names` membership check inside `_handle_index_missing_version`:
+`_canonical_crate_name(name)` normalizes a crate name by replacing every hyphen
+with an underscore. It is applied to both sides of the `publishable_names`
+membership check inside `_handle_index_missing_version`:
 
 ```python
 publishable_names = {_canonical_crate_name(entry.name) for entry in plan.publishable}
@@ -387,14 +397,14 @@ underscores (e.g. `my_crate`). Without normalization, a hyphenated cargo
 diagnostic would be incorrectly classified as an out-of-plan dependency and
 raise a fatal error instead of triggering the downgrade path.
 
-`_format_cargo_failure_message(command, crate_name, exit_code, output)` assembles
-the human-readable error string that is embedded in every `PublishPreflightError`
-or `PublishError` raised on a non-zero cargo exit. It is a pure function with no
-side effects: given the cargo subcommand string, the crate name, the numeric
-exit code, and the `(stdout, stderr)` pair, it returns a formatted message that
-includes all four values. Using a single function for message construction keeps
-the error format consistent across the packaging and publish phases and makes
-snapshot testing straightforward.
+`_format_cargo_failure_message(command, crate_name, exit_code, output)`
+assembles the human-readable error string that is embedded in every
+`PublishPreflightError` or `PublishError` raised on a non-zero cargo exit. It
+is a pure function with no side effects: given the cargo subcommand string, the
+crate name, the numeric exit code, and the `(stdout, stderr)` pair, it returns
+a formatted message that includes all four values. Using a single function for
+message construction keeps the error format consistent across the packaging and
+publish phases and makes snapshot testing straightforward.
 
 ### Command runners (`lading.runtime`)
 
@@ -410,8 +420,8 @@ surface as `PublishPreflightError`.
 
 ### Pre-flight validation (`publish_preflight`)
 
-`lading.commands.publish_preflight` performs workspace validation before
-any crate is packaged or published. Its public entry point is:
+`lading.commands.publish_preflight` performs workspace validation before any
+crate is packaged or published. Its public entry point is:
 
 ```python
 _run_preflight_checks(
@@ -423,25 +433,25 @@ _run_preflight_checks(
 ) -> None
 ```
 
-The function verifies the git working tree is clean (unless `allow_dirty`
-is set), then executes `cargo check` and `cargo test` in a temporary
-`--target-dir` to keep preflight artefacts separate from the workspace's
-own target directory. A non-zero exit from any step raises
-`PublishPreflightError` with a descriptive message.
+The function verifies the git working tree is clean (unless `allow_dirty` is
+set), then executes `cargo check` and `cargo test` in a temporary
+`--target-dir` to keep preflight artefacts separate from the workspace's own
+target directory. A non-zero exit from any step raises `PublishPreflightError`
+with a descriptive message.
 
-| Helper | Purpose |
-| --- | --- |
+| Helper                         | Purpose                                                                                       |
+| ------------------------------ | --------------------------------------------------------------------------------------------- |
 | `_compose_preflight_arguments` | Builds the base `cargo` argument tuple for a given target directory and `--all-targets` flag. |
-| `_preflight_argument_sets` | Returns `(check_args, test_args)` tuples adapted for unit-test-only mode. |
-| `_run_cargo_preflight` | Executes a single `cargo check` or `cargo test` invocation and raises on failure. |
-| `_verify_clean_working_tree` | Runs `git status --porcelain` and raises if the tree is dirty and `allow_dirty` is `False`. |
+| `_preflight_argument_sets`     | Returns `(check_args, test_args)` tuples adapted for unit-test-only mode.                     |
+| `_run_cargo_preflight`         | Executes a single `cargo check` or `cargo test` invocation and raises on failure.             |
+| `_verify_clean_working_tree`   | Runs `git status --porcelain` and raises if the tree is dirty and `allow_dirty` is `False`.   |
 
 ### Per-crate publication helpers
 
-`_package_crate` and `_publish_crate` are the atomic units of the
-publication pipeline. Both accept the crate entry, publication state, and
-command runner explicitly, then execute exactly one `cargo` invocation against
-the crate's staging root:
+`_package_crate` and `_publish_crate` are the atomic units of the publication
+pipeline. Both accept the crate entry, publication state, and command runner
+explicitly, then execute exactly one `cargo` invocation against the crate's
+staging root:
 
 ```python
 _package_crate(
@@ -465,8 +475,8 @@ to each pipeline/helper function rather than being bundled into the state.
 
 `_dispatch_publication` selects the live or dry-run pipeline and delegates
 accordingly. It is the sole branch that decides between the interleaved
-per-crate flow and the historical two-phase batch flow, keeping `run()`
-free of that decision.
+per-crate flow and the historical two-phase batch flow, keeping `run()` free of
+that decision.
 
 `lading.commands.publish_execution` loads the optional `cmd_mox` command-runner
 module with `importlib.import_module("cmd_mox.command_runner")`. Keeping the
