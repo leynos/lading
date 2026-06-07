@@ -19,9 +19,10 @@ from lading.utils import normalise_workspace_root
 
 if typ.TYPE_CHECKING:  # pragma: no cover - import-time typing aids only
     from pathlib import Path
+from lading.exceptions import LadingError
 
 
-class CargoMetadataError(RuntimeError):
+class CargoMetadataError(LadingError):
     """Raised when ``cargo metadata`` cannot be executed successfully."""
 
     @classmethod

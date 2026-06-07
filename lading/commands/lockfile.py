@@ -31,13 +31,15 @@ import logging
 import typing as typ
 from pathlib import Path
 
+from lading.exceptions import LadingError
+
 if typ.TYPE_CHECKING:
     from lading.commands.publish_execution import _CommandRunner
 
 LOGGER = logging.getLogger(__name__)
 
 
-class LockfileRefreshError(RuntimeError):
+class LockfileRefreshError(LadingError):
     """Raised when Cargo cannot regenerate a lockfile."""
 
 

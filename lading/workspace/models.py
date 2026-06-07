@@ -13,6 +13,8 @@ import msgspec
 from tomlkit import parse
 from tomlkit.exceptions import TOMLKitError
 
+from lading.exceptions import LadingError
+
 WORKSPACE_ROOT_MISSING_MSG = "cargo metadata missing 'workspace_root'"
 
 ALLOWED_DEP_KINDS: typ.Final[set[str]] = {"normal", "dev", "build"}
@@ -31,7 +33,7 @@ def _is_ordering_dependency(
     return dependency.kind in ORDER_DEPENDENCY_KINDS
 
 
-class WorkspaceModelError(RuntimeError):
+class WorkspaceModelError(LadingError):
     """Raised when the workspace model cannot be constructed."""
 
 

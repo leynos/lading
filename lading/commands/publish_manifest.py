@@ -38,6 +38,7 @@ from tomlkit.exceptions import TOMLKitError
 from tomlkit.toml_document import TOMLDocument
 
 from lading import config as config_module
+from lading.exceptions import LadingError
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers only
     from pathlib import Path
@@ -55,7 +56,7 @@ type _ManifestValidation = (
 )
 
 
-class PublishPreparationError(RuntimeError):
+class PublishPreparationError(LadingError):
     """Publish staging failed to prepare required assets.
 
     Raised when:
