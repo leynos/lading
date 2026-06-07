@@ -66,6 +66,8 @@ import logging
 from pathlib import Path
 
 import pytest
+from hypothesis import HealthCheck, given, settings
+from hypothesis import strategies as st
 
 from lading import config as config_module
 from lading.commands import publish, publish_preflight
@@ -78,6 +80,7 @@ from .conftest import (
     make_config,
     make_crate,
     make_dependency_chain,
+    make_n_crate_chain,
     make_preflight_config,
     make_workspace,
 )
@@ -259,8 +262,13 @@ def test_run_honours_explicit_unpublished_workspace_deps_opt_out(
     assert "unpublished workspace dependency override" in str(excinfo.value)
 
 
+@pytest.mark.parametrize(
+    "crate_count",
+    [2, 3, 5],
+    ids=["two_crates", "three_crates", "five_crates"],
+)
 def test_run_keeps_dry_run_publication_batched(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, crate_count: int
 ) -> None:
     """Dry-run publish still packages all crates before publish dry-runs.
 
@@ -269,7 +277,7 @@ def test_run_keeps_dry_run_publication_batched(
     """
     caplog.set_level(logging.INFO, logger="lading.commands.publish")
     root = tmp_path / "workspace"
-    workspace = make_workspace(root, *make_dependency_chain(root))
+    workspace = make_workspace(root, *make_n_crate_chain(root, crate_count))
     configuration = make_config()
     runner = CallTrackingRunner()
 
@@ -316,10 +324,17 @@ def test_run_keeps_dry_run_publication_batched(
     )
 
 
-def test_run_keeps_live_publication_interleaved(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "crate_count",
+    [2, 3, 5],
+    ids=["two_crates", "three_crates", "five_crates"],
+)
+def test_run_keeps_live_publication_interleaved(
+    tmp_path: Path, crate_count: int
+) -> None:
     """Live publish packages and publishes each crate before advancing."""
     root = tmp_path / "workspace"
-    workspace = make_workspace(root, *make_dependency_chain(root))
+    workspace = make_workspace(root, *make_n_crate_chain(root, crate_count))
     configuration = make_config()
     runner = CallTrackingRunner()
 
@@ -345,7 +360,69 @@ def test_run_keeps_live_publication_interleaved(tmp_path: Path) -> None:
     ]
     assert runner.calls == expected_pairs
 
+@given(st.integers(min_value=2, max_value=10))
+@settings(max_examples=20, suppress_health_check=[HealthCheck.function_scoped_fixture])
+def test_dry_run_batching_invariant_property(tmp_path: Path, crate_count: int) -> None:
+    """Dry-run publication packages every crate before publishing any crate."""
+    root = tmp_path / f"workspace_{crate_count}"
+    workspace = make_workspace(root, *make_n_crate_chain(root, crate_count))
+    configuration = make_config()
+    runner = CallTrackingRunner()
 
+    publish.run(
+        root,
+        configuration,
+        workspace,
+        options=publish.PublishOptions(
+            build_directory=tmp_path / f"build_{crate_count}",
+            command_runner=runner,
+            live=False,
+        ),
+    )
+
+    expected_packages = [
+        (("cargo", "package", "--allow-dirty"), call_cwd)
+        for command, call_cwd in runner.calls
+        if command == ("cargo", "package", "--allow-dirty")
+    ]
+    expected_dry_runs = [
+        (("cargo", "publish", "--allow-dirty", "--dry-run"), call_cwd)
+        for command, call_cwd in runner.calls
+        if command == ("cargo", "publish", "--allow-dirty", "--dry-run")
+    ]
+    assert len(expected_packages) == crate_count
+    assert len(expected_dry_runs) == crate_count
+    assert runner.calls == expected_packages + expected_dry_runs
+
+@given(st.integers(min_value=2, max_value=10))
+@settings(max_examples=20, suppress_health_check=[HealthCheck.function_scoped_fixture])
+def test_live_interleaving_invariant_property(tmp_path: Path, crate_count: int) -> None:
+    """Live publication packages and publishes each crate before advancing."""
+    root = tmp_path / f"workspace_{crate_count}"
+    workspace = make_workspace(root, *make_n_crate_chain(root, crate_count))
+    configuration = make_config()
+    runner = CallTrackingRunner()
+
+    publish.run(
+        root,
+        configuration,
+        workspace,
+        options=publish.PublishOptions(
+            build_directory=tmp_path / f"build_{crate_count}",
+            command_runner=runner,
+            live=True,
+        ),
+    )
+
+    assert len(runner.calls) == crate_count * 2
+    for package_call, publish_call in zip(
+        runner.calls[::2], runner.calls[1::2], strict=True
+    ):
+        package_command, package_cwd = package_call
+        publish_command, publish_cwd = publish_call
+        assert package_command == ("cargo", "package", "--allow-dirty")
+        assert publish_command == ("cargo", "publish", "--allow-dirty")
+        assert package_cwd == publish_cwd
 def _make_beta_package_index_failure_runner() -> cabc.Callable[
     [cabc.Sequence[str]], tuple[int, str, str]
 ]:
