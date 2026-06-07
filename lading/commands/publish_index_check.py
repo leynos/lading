@@ -135,6 +135,30 @@ def _raise_out_of_plan_dependency(
     raise error_cls(message)
 
 
+def _raise_out_of_order_dependency(
+    error_cls: type[Exception],
+    invocation: _CargoInvocation,
+    failure: str,
+    missing_name: str,
+) -> typ.NoReturn:
+    """Log and raise when a planned dependency is published too late."""
+    message = (
+        f"{failure}; dependency {missing_name!r} appears after crate "
+        f"{invocation.crate_name!r} in publish order, so it will not be "
+        "available when this crate is published. Adjust publish.order so the "
+        "dependency comes first, or omit publish.order and rely on "
+        "dependency-derived topological sorting."
+    )
+    LOGGER.warning(
+        "cargo %s for crate %s failed due to unindexed sibling dependency %r "
+        "which appears after the current crate in publish order; cannot continue",
+        invocation.subcommand,
+        invocation.crate_name,
+        missing_name,
+    )
+    raise error_cls(message)
+
+
 def _raise_allow_unpublished_flag_required(
     error_cls: type[Exception],
     invocation: _CargoInvocation,
@@ -185,6 +209,21 @@ def _record_index_missing_version_downgrade(
     ] += 1
 
 
+def _find_current_crate_index(invocation: _CargoInvocation, plan: PublishPlan) -> int:
+    """Return the publish-order index for the crate that just failed."""
+    current_name = _canonical_crate_name(invocation.crate_name)
+    for index, entry in enumerate(plan.publishable):
+        if _canonical_crate_name(entry.name) == current_name:
+            return index
+
+    message = (
+        f"cargo {invocation.subcommand} failed for crate "
+        f"{invocation.crate_name}, but that crate is not part of the "
+        "current publish plan."
+    )
+    raise RuntimeError(message)
+
+
 def _handle_index_missing_version(
     invocation: _CargoInvocation,
     *,
@@ -207,11 +246,18 @@ def _handle_index_missing_version(
     if missing_name is None:
         _raise_name_extraction_failure(error_cls, invocation, failure)
 
+    current_index = _find_current_crate_index(invocation, plan)
+    missing_canonical_name = _canonical_crate_name(missing_name)
+    prior_publishable_names = {
+        _canonical_crate_name(entry.name) for entry in plan.publishable[:current_index]
+    }
     publishable_names = {
         _canonical_crate_name(entry.name) for entry in plan.publishable
     }
-    if _canonical_crate_name(missing_name) not in publishable_names:
+    if missing_canonical_name not in publishable_names:
         _raise_out_of_plan_dependency(error_cls, invocation, failure, missing_name)
+    if missing_canonical_name not in prior_publishable_names:
+        _raise_out_of_order_dependency(error_cls, invocation, failure, missing_name)
 
     if not options.allow_unpublished_workspace_deps:
         _raise_allow_unpublished_flag_required(
