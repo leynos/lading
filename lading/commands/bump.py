@@ -248,10 +248,9 @@ def _refresh_lockfiles(context: _BumpContext) -> tuple[Path, ...]:
             LOGGER.info("Dry run; would refresh %s", lockfile_path)
         return lockfiles
 
-    return tuple(
+    for lockfile_path in lockfiles:
         refresh_lockfile(lockfile_path.parent / "Cargo.toml", runner)
-        for lockfile_path in lockfiles
-    )
+    return lockfiles
 
 
 def _update_crate_manifest(

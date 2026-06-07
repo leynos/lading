@@ -50,6 +50,9 @@ def test_discover_tracked_lockfiles_filters_missing_manifests(tmp_path: Path) ->
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
+        assert command == ("git", "ls-files", "*/Cargo.lock", "Cargo.lock")
+        assert cwd == tmp_path
+        assert env is None
         return (
             0,
             (
@@ -146,11 +149,13 @@ def _validate_lockfile_freshness_for_exit_code(tmp_path: Path, exit_code: int) -
     return lockfile.validate_lockfile_freshness(manifest, runner)
 
 
-def test_validate_lockfile_freshness_returns_true_for_success(tmp_path: Path) -> None:
-    """Cargo metadata success means the lockfile is fresh."""
-    assert _validate_lockfile_freshness_for_exit_code(tmp_path, 0) is True
-
-
-def test_validate_lockfile_freshness_returns_false_for_failure(tmp_path: Path) -> None:
-    """Cargo metadata failure means the lockfile is stale."""
-    assert _validate_lockfile_freshness_for_exit_code(tmp_path, 101) is False
+@pytest.mark.parametrize("case", [(0, True), (101, False)])
+def test_validate_lockfile_freshness_parametrized(
+    tmp_path: Path,
+    case: tuple[int, bool],
+) -> None:
+    """Cargo metadata exit status determines whether the lockfile is fresh."""
+    exit_code, expected_bool = case
+    assert (
+        _validate_lockfile_freshness_for_exit_code(tmp_path, exit_code) is expected_bool
+    )

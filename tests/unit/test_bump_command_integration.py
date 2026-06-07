@@ -112,9 +112,15 @@ def test_run_refreshes_tracked_lockfiles(
         ),
     )
 
-    assert tuple(refreshed) == lockfiles
-    assert "- Cargo.lock (lockfile)" in message.splitlines()
-    assert "- tests/ui_lints/Cargo.lock (lockfile)" in message.splitlines()
+    assert tuple(refreshed) == lockfiles, (
+        "refreshed lockfiles do not match expected lockfiles"
+    )
+    assert "- Cargo.lock (lockfile)" in message.splitlines(), (
+        f"expected top-level Cargo.lock entry missing from message:\n{message}"
+    )
+    assert "- tests/ui_lints/Cargo.lock (lockfile)" in message.splitlines(), (
+        f"expected tests/ui_lints/Cargo.lock entry missing from message:\n{message}"
+    )
 
 
 def test_run_dry_run_reports_lockfiles_without_refreshing(
@@ -147,7 +153,9 @@ def test_run_dry_run_reports_lockfiles_without_refreshing(
         ),
     )
 
-    assert "- Cargo.lock (lockfile)" in message.splitlines()
+    assert "- Cargo.lock (lockfile)" in message.splitlines(), (
+        f"expected '- Cargo.lock (lockfile)' in bump output:\n{message}"
+    )
 
 
 def test_run_updates_root_package_section(tmp_path: pathlib.Path) -> None:
