@@ -11,18 +11,17 @@ from pathlib import Path
 from cmd_mox import command_runner, ipc
 from cmd_mox import environment as env_mod
 
-from lading.runtime import SubprocessContext
+from lading.runtime import LadingError, SubprocessContext, coerce_text
 from lading.runtime.subprocess_runner import (
     invoke_via_subprocess,
     split_command,
     write_to_sink,
 )
-from lading.workspace.metadata import coerce_text
 
 _CMD_MOX_TIMEOUT_DEFAULT = 5.0
 
 
-class CmdMoxError(RuntimeError):
+class CmdMoxError(LadingError):
     """Raised when the cmd-mox command runner cannot complete an invocation."""
 
 
@@ -39,6 +38,7 @@ def cmd_mox_runner(
     *,
     cwd: Path | None = None,
     env: cabc.Mapping[str, str] | None = None,
+    echo_stdout: bool = True,
 ) -> tuple[int, str, str]:
     """Route ``command`` through cmd-mox's IPC server.
 
@@ -88,8 +88,9 @@ def cmd_mox_runner(
         invocation,
         timeout=timeout,
     )
-    should_echo = not _is_cargo_metadata_command(program, args)
-    return _process_cmd_mox_response(response, streamed=streamed, echo=should_echo)
+    return _process_cmd_mox_response(
+        response, streamed=streamed, echo_stdout=echo_stdout
+    )
 
 
 def _prepare_cmd_mox_context() -> float:
@@ -106,7 +107,7 @@ def _resolve_cmd_mox_timeout(raw_timeout: str | None) -> float:
         return _CMD_MOX_TIMEOUT_DEFAULT
     try:
         timeout = float(raw_timeout)
-    except (TypeError, ValueError) as exc:  # pragma: no cover - defensive guard
+    except (TypeError, ValueError) as exc:
         message = "Invalid CMOX_IPC_TIMEOUT value"
         raise CmdMoxError(message) from exc
     if timeout <= 0:
@@ -128,14 +129,15 @@ def _build_cmd_mox_invocation_env(
 
 
 def _process_cmd_mox_response(
-    response: object, *, streamed: bool, echo: bool = True
+    response: object, *, streamed: bool, echo_stdout: bool = True
 ) -> tuple[int, str, str]:
     """Apply environment updates and return decoded response payloads."""
     _apply_cmd_mox_environment(getattr(response, "env", {}))
     stdout_text = coerce_text(getattr(response, "stdout", ""))
     stderr_text = coerce_text(getattr(response, "stderr", ""))
-    if echo and not streamed:
-        _echo_buffered_output(stdout_text, sys.stdout)
+    if not streamed:
+        if echo_stdout:
+            _echo_buffered_output(stdout_text, sys.stdout)
         _echo_buffered_output(stderr_text, sys.stderr)
     exit_code = getattr(response, "exit_code", None)
     if exit_code is None:
@@ -184,11 +186,6 @@ def _should_namespace_cargo_command(program: str, args: tuple[str, ...]) -> bool
     return args[0] != "metadata"
 
 
-def _is_cargo_metadata_command(program: str, args: tuple[str, ...]) -> bool:
-    """Return True when the command is the workspace metadata probe."""
-    return program == "cargo" and bool(args) and args[0] == "metadata"
-
-
 def _handle_cmd_mox_passthrough(
     response: object,
     invocation: ipc.Invocation,
@@ -206,15 +203,14 @@ def _handle_cmd_mox_passthrough(
         passthrough_env.get("PATH", ""),
         os.environ.get(f"{env_mod.CMOX_REAL_COMMAND_ENV_PREFIX}{invocation.command}"),
     )
-    match resolved:
-        case ipc.Response():
-            passthrough_result = ipc.PassthroughResult(
-                invocation_id=directive.invocation_id,
-                stdout=resolved.stdout,
-                stderr=resolved.stderr,
-                exit_code=resolved.exit_code,
-            )
-            return ipc.report_passthrough_result(passthrough_result, timeout), False
+    if isinstance(resolved, ipc.Response):
+        passthrough_result = ipc.PassthroughResult(
+            invocation_id=directive.invocation_id,
+            stdout=resolved.stdout,
+            stderr=resolved.stderr,
+            exit_code=resolved.exit_code,
+        )
+        return ipc.report_passthrough_result(passthrough_result, timeout), False
 
     cwd_value = passthrough_env.get("PWD")
     cwd = None if not cwd_value else Path(cwd_value)

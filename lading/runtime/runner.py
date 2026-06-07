@@ -7,6 +7,13 @@ import typing as typ
 from pathlib import Path
 
 
+def coerce_text(value: str | bytes) -> str:
+    """Normalise process output to text."""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value
+
+
 class CommandRunner(typ.Protocol):
     """Protocol describing a callable used to execute shell commands."""
 
@@ -16,6 +23,7 @@ class CommandRunner(typ.Protocol):
         *,
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
         """Execute ``command`` through ``CommandRunner.__call__``.
 
@@ -29,6 +37,8 @@ class CommandRunner(typ.Protocol):
         env:
             Environment overrides for the invocation, or :data:`None` to inherit
             the current process environment.
+        echo_stdout:
+            Whether stdout should be mirrored while being captured.
 
         Returns
         -------

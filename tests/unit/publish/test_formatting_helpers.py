@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import typing as typ
 
-from lading.commands import publish
+from lading.commands import publish_plan
 
 from .conftest import make_crate
 
@@ -22,7 +22,7 @@ def test_append_section_appends_formatted_items() -> None:
     lines = []
     items = (Dummy("alpha"), Dummy("beta"))
 
-    publish._append_section(
+    publish_plan.append_section(
         lines,
         items,
         header="Header:",
@@ -36,7 +36,7 @@ def test_append_section_defaults_to_string_conversion() -> None:
     """Default formatter handles simple string values without boilerplate."""
     lines: list[str] = []
 
-    publish._append_section(lines, ("alpha", "beta"), header="Header:")
+    publish_plan.append_section(lines, ("alpha", "beta"), header="Header:")
 
     assert lines == ["Header:", "- alpha", "- beta"]
 
@@ -45,7 +45,7 @@ def test_append_section_omits_header_for_empty_sequences() -> None:
     """Helper leaves ``lines`` unchanged when there is nothing to report."""
     lines = ["prefix"]
 
-    publish._append_section(lines, (), header="Header:")
+    publish_plan.append_section(lines, (), header="Header:")
 
     assert lines == ["prefix"]
 
@@ -55,7 +55,7 @@ def test_format_plan_formats_skipped_sections(tmp_path: Path) -> None:
     root = tmp_path.resolve()
     manifest_skipped = make_crate(root, "beta", publish_flag=False)
     config_skipped = make_crate(root, "gamma")
-    plan = publish.PublishPlan(
+    plan = publish_plan.PublishPlan(
         workspace_root=root,
         publishable=(),
         skipped_manifest=(manifest_skipped,),
@@ -63,7 +63,7 @@ def test_format_plan_formats_skipped_sections(tmp_path: Path) -> None:
         missing_configuration_exclusions=("missing",),
     )
 
-    message = publish._format_plan(plan, strip_patches="all")
+    message = publish_plan.format_plan(plan, strip_patches="all")
 
     lines = message.splitlines()
     manifest_index = lines.index("Skipped (publish = false):")

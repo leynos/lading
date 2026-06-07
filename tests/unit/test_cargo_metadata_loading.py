@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import collections.abc as cabc
 import json
-import logging
 import textwrap
 import typing as typ
 
@@ -66,27 +65,25 @@ def test_load_cargo_metadata_handles_stdout_variants(
     assert result == _METADATA_PAYLOAD
 
 
-def test_load_cargo_metadata_logs_invocation(
-    tmp_path: Path,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """Ensure the command invocation is logged with resolved arguments."""
+def test_load_cargo_metadata_suppresses_stdout_echo(tmp_path: Path) -> None:
+    """Cargo metadata captures JSON without echoing it to the terminal."""
+    recorded_echo_stdout: list[bool] = []
 
     def runner(
         command: tuple[str, ...],
         *,
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
         del command, cwd, env
+        recorded_echo_stdout.append(echo_stdout)
         return 0, json.dumps(_METADATA_PAYLOAD), ""
-
-    caplog.set_level(logging.INFO, logger="lading.workspace.metadata")
 
     result = load_cargo_metadata(tmp_path, runner=runner)
 
     assert result == _METADATA_PAYLOAD
-    assert "Running external command: cargo metadata --format-version 1" in caplog.text
+    assert recorded_echo_stdout == [False]
 
 
 def test_load_cargo_metadata_missing_executable(
@@ -99,8 +96,9 @@ def test_load_cargo_metadata_missing_executable(
         *,
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
-        del command, cwd, env
+        del command, cwd, env, echo_stdout
         program = "cargo"
         raise CommandSpawnError(program, FileNotFoundError(program))
 
@@ -235,32 +233,27 @@ def test_load_workspace_invokes_metadata(
     assert graph.crates[0].name == "crate"
 
 
-def test_load_cargo_metadata_logs_command(
-    tmp_path: Path,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """``load_cargo_metadata`` should log the command it executes."""
+def test_load_cargo_metadata_passes_resolved_cwd(tmp_path: Path) -> None:
+    """``load_cargo_metadata`` should invoke the runner in the workspace root."""
     payload = {
         "packages": [],
         "workspace_root": str(tmp_path),
         "workspace_members": [],
     }
+    recorded_cwd: list[Path | None] = []
 
     def runner(
         command: tuple[str, ...],
         *,
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
-        del command, cwd, env
+        del command, env, echo_stdout
+        recorded_cwd.append(cwd)
         return 0, json.dumps(payload), ""
 
-    caplog.set_level(logging.INFO, logger="lading.workspace.metadata")
     result = load_cargo_metadata(tmp_path, runner=runner)
 
     assert result == payload
-    expected = (
-        "Running external command: cargo metadata --format-version 1 "
-        f"(cwd={tmp_path.resolve()})"
-    )
-    assert expected in caplog.messages
+    assert recorded_cwd == [tmp_path.resolve()]

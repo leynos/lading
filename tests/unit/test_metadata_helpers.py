@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from lading.runtime import coerce_text
 from lading.workspace import metadata as metadata_module
 
 
 def test_coerce_text_handles_bytes() -> None:
     """Byte streams should be decoded to strings."""
-    assert metadata_module.coerce_text(b"bytes") == "bytes"
+    assert coerce_text(b"bytes") == "bytes"
 
 
 def test_error_convenience_constructors() -> None:

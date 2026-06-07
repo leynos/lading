@@ -68,7 +68,7 @@ from pathlib import Path
 import pytest
 
 from lading import config as config_module
-from lading.commands import publish
+from lading.commands import publish, publish_preflight
 from lading.workspace import WorkspaceGraph, WorkspaceModelError
 
 from .conftest import (
@@ -488,17 +488,17 @@ def test_run_includes_preflight_test_excludes(
     )
     target_dir = Path(target_argument.split("=", 1)[1])
     base_arguments = list(
-        publish._compose_preflight_arguments(
+        publish_preflight._compose_preflight_arguments(
             target_dir,
             include_all_targets=include_all_targets,
         )
     )
-    options = publish._CargoPreflightOptions(
+    options = publish_preflight._CargoPreflightOptions(
         extra_args=tuple(base_arguments),
         test_excludes=configured_excludes,
         unit_tests_only=configuration.preflight.unit_tests_only,
     )
-    rebuilt_arguments = publish._build_test_arguments(
+    rebuilt_arguments = publish_preflight._build_test_arguments(
         list(base_arguments),
         options,
     )

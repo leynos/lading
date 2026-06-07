@@ -6,7 +6,7 @@ import logging
 import sys
 import typing as typ
 
-from lading.commands import publish, publish_execution
+from lading.commands import publish
 from lading.testing import cmd_mox_runner
 
 if typ.TYPE_CHECKING:
@@ -14,6 +14,8 @@ if typ.TYPE_CHECKING:
 
     import pytest
     from cmd_mox.controller import CmdMox
+
+    from lading.runtime import SubprocessContext
 
     LogCaptureFixture = pytest.LogCaptureFixture
     CaptureFixture = pytest.CaptureFixture
@@ -24,13 +26,14 @@ else:  # pragma: no cover - typing helpers
     CaptureFixture = typ.Any
     CmdMox = typ.Any
     MonkeyPatch = typ.Any
+    SubprocessContext = typ.Any
 
 
 def test_invoke_logs_command_with_cwd(
     tmp_path: Path, caplog: LogCaptureFixture, use_real_invoke: None
 ) -> None:
     """``_invoke`` should log the command line and working directory."""
-    caplog.set_level(logging.INFO, logger="lading.commands.publish_execution")
+    caplog.set_level(logging.INFO, logger="lading.runtime.subprocess_runner")
     exit_code, stdout, stderr = publish._invoke(("echo", "hello"), cwd=tmp_path)
 
     assert exit_code == 0
@@ -44,7 +47,7 @@ def test_invoke_logs_command_without_cwd(
     caplog: LogCaptureFixture, use_real_invoke: None
 ) -> None:
     """``_invoke`` should omit ``cwd`` details when not provided."""
-    caplog.set_level(logging.INFO, logger="lading.commands.publish_execution")
+    caplog.set_level(logging.INFO, logger="lading.runtime.subprocess_runner")
 
     exit_code, stdout, stderr = publish._invoke(("echo", "hello"))
 
@@ -93,7 +96,7 @@ def test_cmd_mox_passthrough_streams_output(
     def fake_invoke(
         program: str,
         args: tuple[str, ...],
-        context: publish_execution._SubprocessContext,
+        context: SubprocessContext,
     ) -> tuple[int, str, str]:
         calls.append((program, args, context.stdin_data))
         sys.stdout.write("alpha")

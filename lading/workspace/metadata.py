@@ -6,12 +6,16 @@ import collections.abc as cabc
 import contextlib
 import contextvars
 import json
-import logging
 import typing as typ
 
-from lading.runtime import CommandRunner, CommandSpawnError, subprocess_runner
+from lading.runtime import (
+    CommandRunner,
+    CommandSpawnError,
+    LadingError,
+    coerce_text,
+    subprocess_runner,
+)
 from lading.utils import normalise_workspace_root
-from lading.utils.process import log_command_invocation
 
 if typ.TYPE_CHECKING:  # pragma: no cover - import-time typing aids only
     from pathlib import Path
@@ -75,7 +79,6 @@ _CARGO_METADATA_ARGS = ("metadata", "--format-version", "1")
 _CARGO_METADATA_COMMAND = (_CARGO_PROGRAM, *_CARGO_METADATA_ARGS)
 
 
-LOGGER = logging.getLogger(__name__)
 _COMMAND_RUNNER: contextvars.ContextVar[CommandRunner | None] = contextvars.ContextVar(
     "lading_command_runner",
     default=None,
@@ -102,13 +105,6 @@ def _active_command_runner(runner: CommandRunner | None = None) -> CommandRunner
     return active_runner
 
 
-def coerce_text(value: str | bytes) -> str:
-    """Normalise process output to text."""
-    if isinstance(value, bytes):
-        return value.decode("utf-8", errors="replace")
-    return value
-
-
 def _invoke_cargo_metadata(
     command_runner: CommandRunner,
     root_path: Path | None,
@@ -116,11 +112,15 @@ def _invoke_cargo_metadata(
     """Run ``cargo metadata`` and return (exit_code, stdout, stderr) as text."""
     try:
         exit_code, stdout, stderr = command_runner(
-            _CARGO_METADATA_COMMAND, cwd=root_path
+            _CARGO_METADATA_COMMAND,
+            cwd=root_path,
+            echo_stdout=False,
         )
     except CommandSpawnError as exc:
         if exc.program == _CARGO_PROGRAM:
             raise CargoExecutableNotFoundError from exc
+        raise CargoMetadataError(str(exc)) from exc
+    except LadingError as exc:
         raise CargoMetadataError(str(exc)) from exc
     return exit_code, coerce_text(stdout), coerce_text(stderr)
 
@@ -144,7 +144,6 @@ def load_cargo_metadata(
     """Execute ``cargo metadata`` and parse the resulting JSON payload."""
     root_path = normalise_workspace_root(workspace_root)
     command_runner = _active_command_runner(runner)
-    log_command_invocation(LOGGER, _CARGO_METADATA_COMMAND, root_path)
     exit_code, stdout_text, stderr_text = _invoke_cargo_metadata(
         command_runner, root_path
     )

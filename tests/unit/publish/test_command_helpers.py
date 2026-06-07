@@ -1,17 +1,18 @@
 """Unit tests for publish command execution helpers."""
 
-from __future__ import annotations
-
+import importlib
 import io
 from pathlib import Path
 
-from lading.commands import publish_execution as execution
+from lading.testing import cmd_mox_runner
+
+execution = importlib.import_module("lading.runtime.subprocess_runner")
 
 
 def test_normalise_environment_handles_none_and_values() -> None:
     """Environment normalisation should coerce values to strings."""
-    assert execution._normalise_environment(None) is None
-    assert execution._normalise_environment({"ALPHA": 1}) == {"ALPHA": "1"}
+    assert execution.normalise_environment(None) is None
+    assert execution.normalise_environment({"ALPHA": 1}) == {"ALPHA": "1"}
 
 
 def test_format_thread_name_sanitises_paths() -> None:
@@ -39,7 +40,7 @@ def test_relay_stream_forwards_and_decodes_bytes() -> None:
     sink = io.StringIO()
     buffer: list[str] = []
 
-    execution._relay_stream(source, sink, buffer)
+    execution.relay_stream(source, sink, buffer)
 
     assert buffer == ["alpha"]
     assert sink.getvalue() == "alpha"
@@ -55,7 +56,7 @@ def test_write_to_sink_handles_broken_pipe() -> None:
         def flush(self) -> None:  # pragma: no cover - compatibility hook
             return None
 
-    result = execution._write_to_sink(_BrokenSink(), "data")
+    result = execution.write_to_sink(_BrokenSink(), "data")
 
     assert result is None
 
@@ -63,5 +64,5 @@ def test_write_to_sink_handles_broken_pipe() -> None:
 def test_echo_buffered_output_skips_empty_payloads() -> None:
     """The echo helper should not write anything for empty payloads."""
     sink = io.StringIO()
-    execution._echo_buffered_output("", sink)
+    cmd_mox_runner._echo_buffered_output("", sink)
     assert sink.getvalue() == ""

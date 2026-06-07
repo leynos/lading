@@ -55,12 +55,9 @@ import typing as typ
 from pathlib import Path
 
 from lading import config as config_module
-from lading.commands import publish_preflight as _publish_preflight
 from lading.commands.publish_errors import PublishError, PublishPreflightError
 from lading.commands.publish_execution import (
-    _CommandRunner,
     _invoke,
-    split_command,
 )
 from lading.commands.publish_index_check import (
     _CargoInvocation,
@@ -79,12 +76,20 @@ from lading.commands.publish_manifest import (
 )
 from lading.commands.publish_plan import (
     PublishPlan,
-    append_section,
     format_plan,
     plan_publication,
 )
 from lading.commands.publish_plan import (
     PublishPlanError as _PublishPlanError,
+)
+from lading.commands.publish_preflight import (
+    _apply_compiletest_externs,
+    _build_preflight_environment,
+    _CargoPreflightOptions,
+    _compose_preflight_arguments,
+    _run_aux_build_commands,
+    _run_cargo_preflight,
+    _verify_clean_working_tree,
 )
 from lading.utils.path import normalise_workspace_root
 from lading.workspace import metadata as _metadata_module
@@ -92,23 +97,12 @@ from lading.workspace import metadata as _metadata_module
 StripPatchesSetting = config_module.StripPatchesSetting
 metadata_module = _metadata_module
 PublishPlanError = _PublishPlanError
-_split_command = split_command
-_append_section = append_section
-_format_plan = format_plan
-_CargoPreflightOptions = _publish_preflight._CargoPreflightOptions
-_apply_compiletest_externs = _publish_preflight._apply_compiletest_externs
-_build_preflight_environment = _publish_preflight._build_preflight_environment
-_build_test_arguments = _publish_preflight._build_test_arguments
-_compose_preflight_arguments = _publish_preflight._compose_preflight_arguments
-_normalise_test_excludes = _publish_preflight._normalise_test_excludes
-_run_aux_build_commands = _publish_preflight._run_aux_build_commands
-_run_cargo_preflight = _publish_preflight._run_cargo_preflight
-_verify_clean_working_tree = _publish_preflight._verify_clean_working_tree
 
 LOGGER = logging.getLogger(__name__)
 
 if typ.TYPE_CHECKING:
     from lading.config import LadingConfig
+    from lading.runtime import CommandRunner
     from lading.workspace import WorkspaceCrate, WorkspaceGraph
 
 
@@ -175,7 +169,7 @@ class PublishOptions:
     cleanup: bool = False
     configuration: LadingConfig | None = None
     workspace: WorkspaceGraph | None = None
-    command_runner: _CommandRunner | None = None
+    command_runner: CommandRunner | None = None
     allow_unpublished_workspace_deps: bool = False
 
 
@@ -380,7 +374,7 @@ def _package_publishable_crates(
     preparation: PublishPreparation,
     *,
     options: _PublishExecutionOptions,
-    runner: _CommandRunner,
+    runner: CommandRunner,
 ) -> None:
     """Package each publishable crate in order using the staged workspace."""
     state = _PublicationPipelineState(plan, preparation, options)
@@ -396,7 +390,7 @@ def _package_crate(
     crate: WorkspaceCrate,
     state: _PublicationPipelineState,
     *,
-    runner: _CommandRunner,
+    runner: CommandRunner,
 ) -> None:
     """Package one publishable crate using the staged workspace."""
     plan = state.plan
@@ -459,7 +453,7 @@ def _publish_crates(
     plan: PublishPlan,
     preparation: PublishPreparation,
     *,
-    runner: _CommandRunner,
+    runner: CommandRunner,
     options: _PublishExecutionOptions,
 ) -> None:
     """Publish each crate in order, respecting dry-run vs live mode."""
@@ -476,7 +470,7 @@ def _publish_crate(
     crate: WorkspaceCrate,
     state: _PublicationPipelineState,
     *,
-    runner: _CommandRunner,
+    runner: CommandRunner,
 ) -> None:
     """Publish one crate from the staged workspace."""
     plan = state.plan
@@ -552,7 +546,7 @@ def _execute_live_publication_pipeline(
     preparation: PublishPreparation,
     *,
     options: _PublishExecutionOptions,
-    runner: _CommandRunner,
+    runner: CommandRunner,
 ) -> None:
     """Package and publish each crate before moving to the next crate."""
     state = _PublicationPipelineState(plan, preparation, options)
@@ -643,7 +637,7 @@ def _dispatch_publication(
     preparation: PublishPreparation,
     *,
     options: _PublishExecutionOptions,
-    runner: _CommandRunner,
+    runner: CommandRunner,
 ) -> None:
     """Route to the live or dry-run publication pipeline."""
     if options.live:
@@ -717,7 +711,7 @@ def run(
         options=execution_options,
         runner=command_runner,
     )
-    plan_message = _format_plan(
+    plan_message = format_plan(
         plan, strip_patches=active_configuration.publish.strip_patches
     )
     summary_lines = _format_preparation_summary(preparation)
@@ -730,7 +724,7 @@ def _run_preflight_checks(
     *,
     allow_dirty: bool,
     configuration: LadingConfig | None = None,
-    runner: _CommandRunner | None = None,
+    runner: CommandRunner | None = None,
 ) -> None:
     """Execute publish pre-flight checks for ``workspace_root``."""
     command_runner = runner or _invoke

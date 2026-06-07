@@ -53,6 +53,7 @@ class SubprocessContext:
     cwd: Path | None = None
     env: cabc.Mapping[str, str] | None = None
     stdin_data: str | None = None
+    echo_stdout: bool = True
 
 
 def subprocess_runner(
@@ -60,6 +61,7 @@ def subprocess_runner(
     *,
     cwd: Path | None = None,
     env: cabc.Mapping[str, str] | None = None,
+    echo_stdout: bool = True,
 ) -> tuple[int, str, str]:
     """Execute ``command`` in a subprocess.
 
@@ -71,6 +73,8 @@ def subprocess_runner(
         Optional working directory for the subprocess.
     env:
         Optional environment mapping for the subprocess.
+    echo_stdout:
+        Whether stdout should be mirrored while being captured.
 
     Returns
     -------
@@ -87,7 +91,7 @@ def subprocess_runner(
     """
     log_command_invocation(_LOGGER, command, cwd)
     program, args = split_command(command)
-    context = SubprocessContext(cwd=cwd, env=env)
+    context = SubprocessContext(cwd=cwd, env=env, echo_stdout=echo_stdout)
     return invoke_via_subprocess(program, args, context)
 
 
@@ -169,7 +173,11 @@ def invoke_via_subprocess(
     threads = [
         threading.Thread(
             target=relay_stream,
-            args=(process.stdout, sys.stdout, stdout_chunks),
+            args=(
+                process.stdout,
+                sys.stdout if context.echo_stdout else None,
+                stdout_chunks,
+            ),
             name=_format_thread_name(program, "stdout"),
             daemon=True,
         ),
@@ -275,8 +283,8 @@ def relay_stream(
         finally:
             source.close()
     except (OSError, ValueError):  # pragma: no cover - defensive logging guard
-        # Re-raise into threading.excepthook; join() may still leave a partial
-        # buffer, which is preferable to hiding stream corruption.
+        # Log first, then re-raise into threading.excepthook; join() may still
+        # leave a partial buffer, which is preferable to hiding stream corruption.
         _LOGGER.exception("Stream relay thread failed")
         raise
 

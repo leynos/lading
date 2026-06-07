@@ -21,7 +21,7 @@ modules. For example:
         raise RuntimeError("cargo could not be started") from exc
 """
 
-from lading.runtime.runner import CommandRunner
+from lading.runtime.runner import CommandRunner, coerce_text
 from lading.runtime.subprocess_runner import (
     CommandSpawnError,
     LadingError,
@@ -34,5 +34,6 @@ __all__ = [
     "CommandSpawnError",
     "LadingError",
     "SubprocessContext",
+    "coerce_text",
     "subprocess_runner",
 ]

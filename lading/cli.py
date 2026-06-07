@@ -88,8 +88,8 @@ def _select_runner() -> CommandRunner:
     """Return the command runner selected for this CLI invocation."""
     stub_value = os.environ.get(_CMD_MOX_STUB_ENV, "")
     if stub_value.lower() in _CMD_MOX_TRUTHY_VALUES:
-        module = importlib.import_module("lading.testing." + "cmd_" + "mox_runner")
-        return typ.cast("CommandRunner", getattr(module, "cmd_" + "mox_runner"))
+        module = importlib.import_module("lading.testing.cmd_mox_runner")
+        return typ.cast("CommandRunner", module.cmd_mox_runner)
     return subprocess_runner
 
 
@@ -237,12 +237,10 @@ def main(argv: cabc.Sequence[str] | None = None) -> int:
             print(f"Configuration error: {exc}", file=sys.stderr)
             return 1
         app.config = (config_loader,)
-        command_runner = _select_runner()
         try:
             with (
                 _workspace_env(workspace_root),
                 config.use_configuration(configuration),
-                metadata_module.use_command_runner(command_runner),
             ):
                 try:
                     return _dispatch_and_print(remaining)
@@ -265,24 +263,24 @@ def _run_with_context(
         [Path, config.LadingConfig | None, WorkspaceGraph | None, CommandRunner],
         str,
     ],
+    *,
+    command_runner: CommandRunner | None = None,
 ) -> str:
     """Execute ``runner`` with configuration and workspace data."""
-    command_runner = _select_runner()
+    active_runner = command_runner or _select_runner()
     try:
         configuration = config.current_configuration()
     except config.ConfigurationNotLoadedError:
         configuration = config.load_configuration(workspace_root)
         with (
             config.use_configuration(configuration),
-            metadata_module.use_command_runner(command_runner),
+            metadata_module.use_command_runner(active_runner),
         ):
             workspace_model = load_workspace(workspace_root)
-            return runner(
-                workspace_root, configuration, workspace_model, command_runner
-            )
-    with metadata_module.use_command_runner(command_runner):
+            return runner(workspace_root, configuration, workspace_model, active_runner)
+    with metadata_module.use_command_runner(active_runner):
         workspace_model = load_workspace(workspace_root)
-        return runner(workspace_root, configuration, workspace_model, command_runner)
+        return runner(workspace_root, configuration, workspace_model, active_runner)
 
 
 _VERSION_PATTERN = re.compile(

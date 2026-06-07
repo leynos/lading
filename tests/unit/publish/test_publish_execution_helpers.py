@@ -1,7 +1,6 @@
 """Focused tests for publish execution helpers."""
 
-from __future__ import annotations
-
+import importlib
 import io
 import os
 import sys
@@ -13,6 +12,8 @@ import pytest
 from lading.commands import publish_execution
 from lading.commands.publish import PublishPreflightError
 from lading.testing import cmd_mox_runner
+
+subprocess_runner = importlib.import_module("lading.runtime.subprocess_runner")
 
 
 class _MockCmdMoxEnv:
@@ -71,9 +72,7 @@ class _MockCommandRunner:
 
 
 @pytest.fixture
-def mock_cmd_mox_modules(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> SimpleNamespace:
+def mock_cmd_mox_modules(tmp_path: Path) -> SimpleNamespace:
     """Provide complete cmd-mox module stubs for passthrough handling."""
 
     class _Env:
@@ -278,7 +277,7 @@ def test_handle_cmd_mox_passthrough_uses_pwd_for_cwd(
     def _fake_invoke_via_subprocess(
         program: str,
         args: tuple[str, ...],
-        context: publish_execution._SubprocessContext,
+        context: subprocess_runner.SubprocessContext,
     ) -> tuple[int, str, str]:
         del program, args
         captured["cwd"] = context.cwd
@@ -308,12 +307,12 @@ def test_invoke_via_subprocess_surfaces_spawn_errors() -> None:
 
 def test_invoke_via_subprocess_writes_stdin() -> None:
     """Successful invocations should write provided stdin data."""
-    context = publish_execution._SubprocessContext(
+    context = subprocess_runner.SubprocessContext(
         cwd=None, env=None, stdin_data="payload"
     )
     script = "import sys; data=sys.stdin.read(); sys.stdout.write(data)"
 
-    exit_code, stdout, stderr = publish_execution._invoke_via_subprocess(
+    exit_code, stdout, stderr = subprocess_runner.invoke_via_subprocess(
         sys.executable,
         ("-c", script),
         context,
@@ -326,7 +325,7 @@ def test_invoke_via_subprocess_writes_stdin() -> None:
 
 def test_normalise_environment_stringifies_values() -> None:
     """Environment dictionaries should be coerced to string values."""
-    result = publish_execution._normalise_environment({"PATH": Path.cwd()})
+    result = subprocess_runner.normalise_environment({"PATH": Path.cwd()})
 
     assert result == {"PATH": str(Path.cwd())}
 
@@ -354,7 +353,7 @@ def test_relay_stream_decodes_and_buffers_text() -> None:
     sink = io.StringIO()
     buffer: list[str] = []
 
-    publish_execution._relay_stream(source, sink, buffer)
+    subprocess_runner.relay_stream(source, sink, buffer)
 
     assert "".join(buffer).startswith("hello\nworld")
     assert sink.getvalue().startswith("hello\nworld")
@@ -370,8 +369,8 @@ def test_write_to_sink_handles_broken_pipe() -> None:
         def flush(self) -> None:
             raise BrokenPipeError
 
-    assert publish_execution._write_to_sink(None, "payload") is None
-    assert publish_execution._write_to_sink(_Broken(), "payload") is None
+    assert subprocess_runner.write_to_sink(None, "payload") is None
+    assert subprocess_runner.write_to_sink(_Broken(), "payload") is None
 
 
 def test_apply_cmd_mox_environment_and_echo(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -397,7 +396,7 @@ def test_log_subprocess_environment_redacts_sensitive_values(
     """Environment logging should redact common secret tokens."""
     caplog.set_level("DEBUG", logger="lading.runtime.subprocess_runner")
 
-    publish_execution._log_subprocess_environment({
+    subprocess_runner._log_subprocess_environment({
         "TOKEN": "secret",
         "PATH": "/usr/bin",
     })
