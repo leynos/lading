@@ -267,7 +267,7 @@ def main(argv: cabc.Sequence[str] | None = None) -> int:
 def _run_with_context(
     workspace_root: Path,
     runner: cabc.Callable[
-        [Path, config.LadingConfig | None, WorkspaceGraph | None, CommandRunner],
+        [Path, config.LadingConfig, WorkspaceGraph, CommandRunner],
         str,
     ],
     *,
