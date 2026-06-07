@@ -40,7 +40,14 @@ class _NoChangeScenario:
     dry_run: bool
     expected_message: str
 
-
+@pytest.fixture(autouse=True)
+def stub_lockfile_regeneration(monkeypatch: MonkeyPatch) -> None:
+    """Avoid invoking Cargo from manifest-focused bump tests."""
+    monkeypatch.setattr(
+        bump.bump_lockfiles,
+        "regenerate_lockfiles",
+        lambda *_args, **_kwargs: (),
+    )
 def _extract_alpha_dependency_entries(
     manifest_path: pathlib.Path,
 ) -> tuple[str, object, object]:
@@ -291,7 +298,76 @@ def test_run_updates_documentation_snippets(tmp_path: pathlib.Path) -> None:
     updated_readme = readme_path.read_text(encoding="utf-8")
     assert 'alpha = "1.2.3"' in updated_readme
 
+def test_run_rebuilds_lockfiles_by_default(
+    tmp_path: pathlib.Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """`bump.run` regenerates lockfiles after changing manifests."""
+    workspace = _make_workspace(tmp_path)
+    configuration = _make_config()
+    nested_lockfile = tmp_path / "crates/ui/Cargo.lock"
+    captured: dict[str, object] = {}
 
+    def fake_regenerate_lockfiles(
+        workspace_root: pathlib.Path,
+        lockfile_manifests: tuple[str, ...],
+        *,
+        dry_run: bool,
+    ) -> tuple[pathlib.Path, ...]:
+        captured["workspace_root"] = workspace_root
+        captured["lockfile_manifests"] = lockfile_manifests
+        captured["dry_run"] = dry_run
+        return (tmp_path / "Cargo.lock", nested_lockfile)
+
+    monkeypatch.setattr(
+        bump.bump_lockfiles,
+        "regenerate_lockfiles",
+        fake_regenerate_lockfiles,
+    )
+
+    message = bump.run(
+        tmp_path,
+        "1.2.3",
+        options=bump.BumpOptions(configuration=configuration, workspace=workspace),
+    )
+
+    assert captured == {
+        "workspace_root": tmp_path,
+        "lockfile_manifests": (),
+        "dry_run": False,
+    }
+    assert "2 lockfile(s)" in message
+    assert "- Cargo.lock (lockfile)" in message.splitlines()
+    assert "- crates/ui/Cargo.lock (lockfile)" in message.splitlines()
+
+def test_run_skips_lockfile_rebuild_when_disabled(
+    tmp_path: pathlib.Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """`rebuild_lockfiles=False` prevents lockfile regeneration."""
+    workspace = _make_workspace(tmp_path)
+    configuration = _make_config()
+
+    def fail_regeneration(*args: object, **kwargs: object) -> typ.NoReturn:
+        pytest.fail("lockfile regeneration should be skipped")
+
+    monkeypatch.setattr(
+        bump.bump_lockfiles,
+        "regenerate_lockfiles",
+        fail_regeneration,
+    )
+
+    message = bump.run(
+        tmp_path,
+        "1.2.3",
+        options=bump.BumpOptions(
+            rebuild_lockfiles=False,
+            configuration=configuration,
+            workspace=workspace,
+        ),
+    )
+
+    assert "lockfile" not in message
 def test_run_updates_renamed_internal_dependency_versions(
     tmp_path: pathlib.Path,
 ) -> None:
@@ -426,7 +502,10 @@ def test_run_dry_run_reports_changes_without_modifying_files(
         tmp_path,
         "1.2.3",
         options=bump.BumpOptions(
-            dry_run=True, configuration=configuration, workspace=workspace
+            dry_run=True,
+            rebuild_lockfiles=False,
+            configuration=configuration,
+            workspace=workspace,
         ),
     )
 

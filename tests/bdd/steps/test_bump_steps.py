@@ -123,7 +123,11 @@ def then_cli_output_lists_manifest_paths(
     assert cli_run["returncode"] == 0
     expected_lines = [first, second]
     stdout_lines = [line.strip() for line in cli_run["stdout"].splitlines()]
-    manifest_lines = [line for line in stdout_lines if line.startswith("- ")]
+    manifest_lines = [
+        line
+        for line in stdout_lines
+        if line.startswith("- ") and not line.endswith("(lockfile)")
+    ]
     assert manifest_lines == expected_lines
 
 
