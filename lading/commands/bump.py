@@ -244,7 +244,8 @@ def _refresh_lockfiles(context: _BumpContext) -> tuple[Path, ...]:
 
     Refresh is intentionally not transactional. If one lockfile refresh fails,
     manifests already rewritten to the target version remain on disk; after
-    fixing the Cargo error, run
+    fixing the Cargo error, rerunning ``lading bump`` will not refresh
+    lockfiles because refresh only runs when manifests are rewritten. Run
     ``cargo generate-lockfile --manifest-path <path>/Cargo.toml``
     for each stale lockfile.
     """
