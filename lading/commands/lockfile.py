@@ -165,6 +165,7 @@ def refresh_lockfile(
         if detail:
             message = f"{message}: {detail}"
         raise LockfileRefreshError(message)
+    LOGGER.info("Refreshed %s", manifest_path.parent / "Cargo.lock")
     return manifest_path.parent / "Cargo.lock"
 
 

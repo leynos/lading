@@ -88,6 +88,28 @@ publish runs with stub mode enabled.
 
 ## Workspace discovery helpers
 
+
+### Lockfile helpers (`lading/commands/lockfile.py`)
+
+`discover_tracked_lockfiles(workspace_root, runner)` filters git-tracked
+`Cargo.lock` files outside `target/` with adjacent `Cargo.toml` manifests.
+Private helpers `_handle_git_ls_files_failure` and
+`_lockfiles_with_manifests` perform the error-handling and path-filtering
+passes respectively.
+
+`refresh_lockfile(manifest_path, runner)` runs
+`cargo generate-lockfile --manifest-path` for the supplied manifest and raises
+`LockfileRefreshError` on non-zero exit. `_refresh_lockfiles` in `bump.py`
+calls it after manifest rewrites.
+
+`validate_lockfile_freshness(manifest_path, runner)` runs
+`cargo metadata --locked --manifest-path ... --format-version=1`. It returns
+`True` on success and `False` otherwise. `_validate_lockfile_freshness` in
+`publish_preflight.py` calls it before the cargo check/test pre-flight.
+
+`LockfileRefreshError` inherits `LadingError`; its message includes Cargo
+stderr.
+
 ### `load_cargo_metadata`
 
 Import `lading.workspace.load_cargo_metadata` to execute `cargo metadata` with

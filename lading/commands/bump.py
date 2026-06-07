@@ -250,6 +250,11 @@ def _refresh_lockfiles(context: _BumpContext) -> tuple[Path, ...]:
 
     for lockfile_path in lockfiles:
         refresh_lockfile(lockfile_path.parent / "Cargo.toml", runner)
+    LOGGER.info(
+        "Refreshed %d tracked lockfile(s) in %s",
+        len(lockfiles),
+        context.root_path,
+    )
     return lockfiles
 
 

@@ -106,7 +106,9 @@ workspace and member crate manifests.
 - [x] **Implement `--dry-run` Mode for Bumping:**
 
   - **Outcome:** The `--dry-run` flag prevents any file modifications and
-    instead prints a summary of intended changes.
+    instead prints a summary of intended changes. Tracked `Cargo.lock` files
+    are refreshed after manifest rewrites in live mode; in dry-run mode they
+    are reported but not modified (closes `#61`).
   - **Completion Criteria:** Running `lading bump 1.2.3 --dry-run` produces a
     report of all files that would be changed, and a subsequent check confirms
     no files were actually modified.
@@ -177,6 +179,9 @@ occur.
   - **Completion Criteria:** A test confirms that the publish command fails if
     either of the pre-flight checks fails. The `--forbid-dirty` flag restores
     the cleanliness guard when operators need to enforce it.
+    - Tracked `Cargo.lock` files are validated for freshness under `--locked`
+      before the `cargo check`/`cargo test` pre-flight; stale lockfiles surface
+      an actionable `cargo generate-lockfile` repair command (closes `#61`).
 
 ______________________________________________________________________
 
