@@ -362,14 +362,9 @@ def test_validate_lockfile_freshness_passes_when_all_lockfiles_are_fresh(
         "discover_tracked_lockfiles",
         lambda _root, _runner: (root_lockfile, nested_lockfile),
     )
-    monkeypatch.setattr(
-        publish._publish_preflight,
-        "validate_lockfile_freshness",
-        lambda _manifest, runner: runner(("cargo", "metadata"), cwd=tmp_path)[0] == 0,
-    )
 
     def runner(
-        command: tuple[str, ...],
+        command: cabc.Sequence[str],
         *,
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,

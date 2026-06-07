@@ -208,16 +208,19 @@ def _validate_lockfile_freshness(
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
+        """Invoke ``runner`` with ``base_env`` applied when no env is supplied."""
         effective_env = base_env if env is None else env
         return runner(command, cwd=cwd, env=effective_env)
 
+    tracked = discover_tracked_lockfiles(workspace_root, runner_with_env)
     stale_lockfiles: list[Path] = []
-    for lockfile_path in discover_tracked_lockfiles(workspace_root, runner_with_env):
+    for lockfile_path in tracked:
         manifest_path = lockfile_path.parent / "Cargo.toml"
         if not validate_lockfile_freshness(manifest_path, runner_with_env):
             stale_lockfiles.append(lockfile_path)
 
     if not stale_lockfiles:
+        LOGGER.info("All %d tracked lockfile(s) are fresh under --locked", len(tracked))
         return
 
     lines = [
