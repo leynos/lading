@@ -33,7 +33,8 @@ The project encompasses the following key deliverables:
    registry in the correct topological order, with support for both dry-run and
    live modes.
 6. Support for the `readme.workspace = true` manifest key, ensuring the
-   workspace's `README.md` is copied to member crates before packaging.
+   workspace's `README.md` is adopted into member crates during version bumps
+   before packaging.
 
 ### 1.3. Goals
 
@@ -302,10 +303,10 @@ lading bump <new_version> [--dry-run]
    `true`:
 
     - Copy the `README.md` file from the workspace root to the crate's
-      directory, overwriting any existing file. This action will be performed
-      _before_ any packaging step in the `publish` command but is conceptually
-      part of the versioning workflow. The `bump` command will validate that
-      this is possible.
+      directory, rewriting relative Markdown links for the crate directory and
+      overwriting any existing file when content changes. This action is part
+      of the versioning workflow, so the result can be reviewed and committed
+      before publishing.
 
 5. **Update Documentation Files:** _(deferred to Step 2.2)_
 
@@ -363,14 +364,13 @@ lading bump <new_version> [--dry-run]
   inline trivia remain intact.
 - The publish workflow stages a clean workspace copy in a temporary directory
   before packaging. The staging directory must live outside the source tree to
-  avoid recursive copies. Crates that opt into `readme.workspace = true`
-  receive the root README within the staged workspace, and the CLI reports each
-  copied path so operators can confirm the assets that will be packaged.
-  Symbolic links remain links by default to avoid cloning large external trees;
-  callers can opt into dereferencing by disabling `preserve_symlinks` via
-  `PublishOptions`. Likewise, `PublishOptions(cleanup=True)` registers an
-  `atexit` hook that removes the temporary build directory after the process
-  exits.
+  avoid recursive copies. Crates that opt into `readme.workspace = true` must
+  already have adopted READMEs from the preceding `bump` workflow, so operators
+  can review the packaged assets before publishing. Symbolic links remain links
+  by default to avoid cloning large external trees; callers can opt into
+  dereferencing by disabling `preserve_symlinks` via `PublishOptions`. Likewise,
+  `PublishOptions(cleanup=True)` registers an `atexit` hook that removes the
+  temporary build directory after the process exits.
 - Documentation rewrites honour `--dry-run`; the command reports the files but
   skips writing to disk. The CLI summary now reports both manifest and
   documentation counts, and documentation entries are suffixed with
@@ -514,15 +514,16 @@ sequenceDiagram
 
 ### Publishing iteration
 
-1. **Prepare staged workspace:** Apply patch stripping and README staging in
-   the temporary workspace before invoking Cargo for individual crates.
+1. **Prepare staged workspace:** Apply patch stripping in the temporary
+   workspace before invoking Cargo for individual crates.
 
     - **Patch Handling (per-crate)**: If strip_patches is "per-crate" (or is
       unset and this is a live run), remove the specific patch entry for the
       current crate from the Cargo.toml within the working tree snapshot being
       prepared for packaging.
-    - **README Handling:** If the crate has `readme.workspace = true`, copy the
-      workspace `README.md` into the crate's directory prior to packaging.
+    - **README Handling:** If the crate has `readme.workspace = true`, rely on
+      the README adopted during `lading bump`; publish does not copy README
+      files during staging.
 
 2. **Dispatch Cargo operations:** The publishing mode determines how Cargo is
    invoked for the planned crate order.

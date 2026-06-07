@@ -128,10 +128,11 @@ crate fails, crates already uploaded to crates.io are not rolled back. Reruns
 skip versions that are already present on crates.io and continue with the
 remaining crates.
 
-`publish` stages the workspace into a temporary directory before packaging. If
-any member crate sets `readme.workspace = true`, `lading` copies the workspace
-`README.md` into that crate in the staged workspace so `cargo package` can
-include it.
+`bump` adopts the workspace `README.md` for any member crate that sets
+`readme.workspace = true`. The adopted README is written into the crate
+directory and relative Markdown links are rewritten so they still resolve from
+that directory. `publish` then stages the already-prepared workspace into a
+temporary directory before packaging.
 
 #### Dry-run limitations with unpublished workspace dependencies
 

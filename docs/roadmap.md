@@ -138,12 +138,11 @@ handling workspace READMEs.
 
 - [x] **Implement Workspace README Handling:**
 
-  - **Outcome:** The `publish` command's preparation step correctly copies the
-    workspace `README.md` to member crates that have
-    `package.readme.workspace = true` set.
-  - **Completion Criteria:** An end-to-end dry-run test of the `publish`
-    command verifies that the README file is correctly staged for a designated
-    crate in the temporary build directory.
+  - **Outcome:** The `bump` command copies the workspace `README.md` to member
+    crates that have `package.readme.workspace = true` set, rewriting relative
+    Markdown links for the crate directory.
+  - **Completion Criteria:** End-to-end tests verify that bump creates adopted
+    crate README files before publish runs.
 
 ## Phase 3: `lading publish` Subcommand Implementation
 

@@ -286,7 +286,7 @@ def test_run_keeps_dry_run_publication_batched(
         message.startswith("Staged workspace created at ")
         for message in caplog.messages
     )
-    assert "Workspace README staging complete: 0 files copied" in caplog.messages
+    assert "Workspace README staging skipped; handled by lading bump" in caplog.messages
     assert (
         f"Publish workflow completed successfully for workspace {root}"
         in caplog.messages

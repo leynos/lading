@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import collections.abc as cabc
-import dataclasses as dc
 import typing as typ
 
 import pytest
@@ -17,17 +16,6 @@ from tests.unit.conftest import (
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
-
-    from lading.workspace import WorkspaceCrate, WorkspaceGraph
-
-
-@dc.dataclass(slots=True, frozen=True)
-class _StageReadmeValidationCase:
-    """Represent expectations for README staging validation failures."""
-
-    has_readme: bool
-    crate_in_workspace: bool
-    expected_error: str
 
 
 def test_normalise_build_directory_defaults_to_tempdir(tmp_path: Path) -> None:
@@ -172,133 +160,11 @@ def test_copy_workspace_tree_symlink_handling(
     assert staged_link.read_text(encoding="utf-8") == "payload"
 
 
-def test_stage_workspace_readmes_returns_empty_list_when_unused(
-    tmp_path: Path,
-) -> None:
-    """No work is performed when no crates opt into the workspace README."""
-    workspace_root = tmp_path / "workspace"
-    workspace_root.mkdir()
-    staging_root = tmp_path / "staging"
-    staging_root.mkdir()
-
-    copied = publish._stage_workspace_readmes(
-        crates=(), workspace_root=workspace_root, staging_root=staging_root
-    )
-
-    assert copied == ()
-
-
-@pytest.mark.parametrize(
-    "scenario",
-    [
-        pytest.param({"readme_workspace": True, "expected_count": 1}, id="opted_in"),
-        pytest.param(
-            {"readme_workspace": False, "expected_count": 0}, id="not_opted_in"
-        ),
-    ],
-)
-def test_collect_workspace_readme_targets_by_opt_in(
-    tmp_path: Path,
-    make_crate: cabc.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
-    make_workspace: cabc.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    scenario: dict[str, bool | int],
-) -> None:
-    """Collection includes only crates with readme.workspace = true."""
-    readme_workspace = bool(scenario["readme_workspace"])
-    expected_count = int(scenario["expected_count"])
-    workspace_root = tmp_path / "workspace"
-    crate_alpha = make_crate(
-        workspace_root, "alpha", _CrateSpec(readme_workspace=readme_workspace)
-    )
-    crate_beta = make_crate(workspace_root, "beta")
-    workspace = make_workspace(workspace_root, crate_alpha, crate_beta)
-
-    result = publish._collect_workspace_readme_targets(workspace)
-
-    assert len(result) == expected_count
-    if expected_count > 0:
-        assert result == (crate_alpha,)
-
-
-def test_stage_workspace_readmes_copies_and_sorts_targets(
-    tmp_path: Path,
-    make_crate: cabc.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
-) -> None:
-    """Workspace README is copied into each opted-in crate in sorted order."""
-    workspace_root = tmp_path / "workspace"
-    workspace_root.mkdir()
-    readme = workspace_root / "README.md"
-    readme.write_text("workspace", encoding="utf-8")
-    crate_alpha = make_crate(workspace_root, "alpha", _CrateSpec(readme_workspace=True))
-    crate_beta = make_crate(workspace_root, "beta", _CrateSpec(readme_workspace=True))
-    staging_root = tmp_path / "staging" / "workspace"
-    staging_root.mkdir(parents=True)
-
-    copied = publish._stage_workspace_readmes(
-        crates=(crate_alpha, crate_beta),
-        workspace_root=workspace_root,
-        staging_root=staging_root,
-    )
-
-    relative = [path.relative_to(staging_root).as_posix() for path in copied]
-    assert relative == ["alpha/README.md", "beta/README.md"]
-    for path in copied:
-        assert path.read_text(encoding="utf-8") == "workspace"
-
-
-@pytest.mark.parametrize(
-    "case",
-    [
-        pytest.param(
-            _StageReadmeValidationCase(
-                has_readme=True,
-                crate_in_workspace=False,
-                expected_error="outside the workspace root",
-            ),
-            id="rejects_external_crates",
-        ),
-        pytest.param(
-            _StageReadmeValidationCase(
-                has_readme=False,
-                crate_in_workspace=True,
-                expected_error="Workspace README.md is required",
-            ),
-            id="requires_workspace_readme",
-        ),
-    ],
-)
-def test_stage_workspace_readmes_validation_errors(
-    tmp_path: Path,
-    make_crate: cabc.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
-    case: _StageReadmeValidationCase,
-) -> None:
-    """Staging readmes validates workspace README existence and crate location."""
-    workspace_root = tmp_path / "workspace"
-    workspace_root.mkdir()
-
-    if case.has_readme:
-        readme = workspace_root / "README.md"
-        readme.write_text("workspace", encoding="utf-8")
-
-    crate_root = workspace_root if case.crate_in_workspace else tmp_path / "external"
-    crate = make_crate(crate_root, "alpha", _CrateSpec(readme_workspace=True))
-
-    staging_root = tmp_path / "staging"
-    staging_root.mkdir()
-
-    with pytest.raises(publish.PublishPreparationError) as excinfo:
-        publish._stage_workspace_readmes(
-            crates=(crate,), workspace_root=workspace_root, staging_root=staging_root
-        )
-
-    assert case.expected_error in str(excinfo.value)
-
-
-def test_prepare_workspace_copies_workspace_readme(
+def test_prepare_workspace_does_not_stage_workspace_readme(
     prepare_workspace_fixtures: PrepareWorkspaceFixtures,
     preparation_fixtures: PreparationFixtures,
 ) -> None:
-    """Staging copies the workspace README into crates that opt in."""
+    """Publish staging leaves workspace README adoption to bump."""
     fx = prepare_workspace_fixtures
     pf = preparation_fixtures
     workspace_root = fx.tmp_path / "workspace"
@@ -316,18 +182,15 @@ def test_prepare_workspace_copies_workspace_readme(
     staged_readme = (
         staging_root / crate.root_path.relative_to(workspace_root) / "README.md"
     )
-    assert staged_readme.exists()
-    assert staged_readme.read_text(encoding="utf-8") == readme.read_text(
-        encoding="utf-8"
-    )
-    assert preparation.copied_readmes == (staged_readme,)
+    assert not staged_readme.exists()
+    assert preparation.copied_readmes == ()
 
 
-def test_prepare_workspace_requires_workspace_readme(
+def test_prepare_workspace_allows_missing_workspace_readme(
     prepare_workspace_fixtures: PrepareWorkspaceFixtures,
     preparation_fixtures: PreparationFixtures,
 ) -> None:
-    """Staging fails fast when crates expect the workspace README."""
+    """Publish staging no longer validates bump-time README assets."""
     fx = prepare_workspace_fixtures
     pf = preparation_fixtures
     workspace_root = fx.tmp_path / "workspace"
@@ -337,14 +200,10 @@ def test_prepare_workspace_requires_workspace_readme(
     configuration = pf.make_config()
     plan = publish.plan_publication(workspace, configuration)
 
-    with pytest.raises(publish.PublishPreparationError) as excinfo:
-        publish.prepare_workspace(
-            plan,
-            workspace,
-            options=fx.publish_options,
-        )
+    preparation = publish.prepare_workspace(plan, workspace, options=fx.publish_options)
 
-    assert "README.md" in str(excinfo.value)
+    assert preparation.staging_root.exists()
+    assert preparation.copied_readmes == ()
 
 
 def test_prepare_workspace_registers_cleanup(
@@ -401,11 +260,11 @@ def test_prepare_workspace_returns_empty_copied_readmes(
     assert preparation.copied_readmes == ()
 
 
-def test_prepare_workspace_copies_multiple_readmes_sorted(
+def test_prepare_workspace_keeps_copied_readmes_empty_for_opted_in_crates(
     prepare_workspace_fixtures: PrepareWorkspaceFixtures,
     preparation_fixtures: PreparationFixtures,
 ) -> None:
-    """Staging returns copied README paths in workspace-relative order."""
+    """Readme opt-in does not produce publish-time copied paths."""
     fx = prepare_workspace_fixtures
     pf = preparation_fixtures
     workspace_root = fx.tmp_path / "workspace"
@@ -423,13 +282,7 @@ def test_prepare_workspace_copies_multiple_readmes_sorted(
 
     preparation = publish.prepare_workspace(plan, workspace, options=fx.publish_options)
 
-    relative = [
-        path.relative_to(preparation.staging_root).as_posix()
-        for path in preparation.copied_readmes
-    ]
-    assert relative == ["alpha/README.md", "beta/README.md"]
-    for staged in preparation.copied_readmes:
-        assert staged.read_text(encoding="utf-8") == readme.read_text(encoding="utf-8")
+    assert preparation.copied_readmes == ()
 
 
 def test_prepare_workspace_does_not_register_cleanup_when_disabled(

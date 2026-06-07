@@ -14,7 +14,6 @@ from tests.e2e.helpers.e2e_steps_helpers import (
     E2EExpectationError,
     extract_dependency_requirement,
     filter_records,
-    find_staging_root,
     run_cli,
     stub_cargo_metadata,
 )
@@ -138,7 +137,12 @@ def when_run_lading_bump(
     workspace: workspace_builder.NonTrivialWorkspace = e2e_state["workspace"]
     return run_cli(repo_root, workspace.root, "bump", version)
 
-
+@when("I commit the E2E workspace changes")
+def when_commit_e2e_workspace_changes(e2e_state: dict[str, typ.Any]) -> None:
+    """Commit bump output so publish can enforce a clean working tree."""
+    repo_root: Path = e2e_state["git_repo"]
+    git_helpers.git_add_all(repo_root)
+    git_helpers.git_commit(repo_root, "Record bumped workspace")
 @when(
     "I run lading publish --forbid-dirty in the E2E workspace", target_fixture="cli_run"
 )
@@ -277,29 +281,17 @@ def then_cargo_publish_omits_allow_dirty(publish_spies: dict[str, typ.Any]) -> N
     assert seen_args == {("--dry-run",)}
     assert all("--allow-dirty" not in args for args in seen_args)
 
-
-@then("the workspace README was staged for all crates")
-def then_readme_staged(
-    cli_run: dict[str, typ.Any],
-    publish_spies: dict[str, typ.Any],
-    staging_cleanup: cabc.Callable[[Path], None],
-) -> None:
-    """Assert publish staging copied the workspace README into each crate."""
-    workspace: workspace_builder.NonTrivialWorkspace = publish_spies["workspace"]
-    staging_root = find_staging_root(cli_run["stdout"])
-    try:
-        expected_paths = [
-            staging_root / "crates" / name / "README.md"
-            for name in workspace.crate_names
-        ]
-        for path in expected_paths:
-            assert path.exists(), f"expected staged README: {path}"
-    finally:
-        staging_cleanup(staging_root)
-
-    copied_lines = [
-        line.strip()
-        for line in cli_run["stdout"].splitlines()
-        if line.strip().startswith("- crates/")
-    ]
-    assert len(copied_lines) == len(workspace.crate_names)
+@then("the workspace README was adopted for all crates")
+def then_readme_adopted_for_all_crates(e2e_state: dict[str, typ.Any]) -> None:
+    """Assert bump transposed the workspace README into each crate."""
+    workspace: workspace_builder.NonTrivialWorkspace = e2e_state["workspace"]
+    source_readme = workspace.root / "README.md"
+    source_text = source_readme.read_text(encoding="utf-8")
+    expected_text = source_text.replace(
+        "docs/v1-0-0-migration-guide.md",
+        "../../docs/v1-0-0-migration-guide.md",
+    )
+    for name in workspace.crate_names:
+        crate_readme = workspace.root / "crates" / name / "README.md"
+        assert crate_readme.exists(), f"expected adopted README: {crate_readme}"
+        assert crate_readme.read_text(encoding="utf-8") == expected_text

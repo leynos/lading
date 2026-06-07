@@ -99,23 +99,6 @@ Feature: Lading CLI scaffolding
     When I invoke lading publish with that workspace
     Then the publish command prints the publish plan for "alpha"
 
-  Scenario: Publish command stages workspace README for crates
-    Given a workspace directory with configuration
-    And cargo metadata describes a sample workspace
-    And the workspace README contains a TOML dependency snippet for "alpha"
-    When I invoke lading publish with that workspace
-    Then the publish command prints the publish plan for "alpha"
-    And the publish staging directory for crate "alpha" contains the workspace README
-    And the publish plan lists copied workspace README for crate "alpha"
-
-  Scenario: Publish command errors when workspace README is missing
-    Given a workspace directory with configuration
-    And cargo metadata describes a sample workspace
-    And the workspace README is removed
-    When I invoke lading publish with that workspace
-    Then the CLI exits with code 1
-    And the stderr contains "Workspace README.md is required by crates that set readme.workspace = true"
-
   Scenario: Publish command reports skipped crates and missing exclusions
     Given a workspace directory with configuration
     And cargo metadata describes a workspace with publish filtering cases

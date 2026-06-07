@@ -285,11 +285,12 @@ by filtering non-publishable crates, applying `publish.exclude`, validating
 `publish.order` when present, or deriving a deterministic dependency order.
 
 `publish_manifest.py` owns staging-time manifest mutations. It contains the
-workspace preparation types and helpers that copy the workspace tree, stage
-workspace README files for crates that opt in, and apply the
-`publish.strip_patches` strategy to the staged `Cargo.toml`. These operations
-run before any `cargo package` or `cargo publish` command, so the command runner
-works against a prepared snapshot rather than the source workspace.
+workspace preparation types and helpers that apply the `publish.strip_patches`
+strategy to the staged `Cargo.toml`. Workspace README adoption happens during
+`lading bump`, so publish staging only copies the source workspace after bump
+has prepared crate README files. These operations run before any
+`cargo package` or `cargo publish` command, so the command runner works against
+a prepared snapshot rather than the source workspace.
 
 `publish_diagnostics.py` owns compiletest failure enrichment. When a cargo
 pre-flight test failure mentions compiletest-style `*.stderr` artefacts, the
