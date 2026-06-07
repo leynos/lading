@@ -156,7 +156,15 @@ def given_sibling_dependency_is_not_indexed(
 def given_missing_dependency_is_in_plan() -> None:
     """Document that the dependency-chain fixture includes alpha in the plan."""
 
-
+@given("publish.order puts beta before alpha")
+def given_publish_order_puts_beta_before_alpha(workspace_directory: Path) -> None:
+    """Configure an explicit publish order where beta precedes alpha."""
+    config_path = workspace_directory / "lading.toml"
+    config_path.write_text(
+        '[bump]\n\n[publish]\nstrip_patches = "all"\n'
+        'order = ["beta", "alpha", "gamma"]\n',
+        encoding="utf-8",
+    )
 @given("the workspace has uncommitted changes")
 def given_workspace_dirty(
     preflight_overrides: dict[tuple[str, ...], ResponseProvider],

@@ -64,12 +64,13 @@ _ALLOW_UNPUBLISHED_WORKSPACE_DEPS_PARAMETER = Parameter(
     help=(
         "Dry-run only: downgrade cargo package failures caused by a sibling "
         "workspace crate version not yet on crates.io to a warning when the "
-        "missing crate is part of the planned publish set. Cannot be combined "
-        "with --live."
+        "missing crate is part of the planned publish set and appears earlier "
+        "in publish order. Defaults to enabled in dry-run mode. Cannot be "
+        "combined with --live."
     ),
 )
 AllowUnpublishedWorkspaceDepsFlag = typ.Annotated[
-    bool, _ALLOW_UNPUBLISHED_WORKSPACE_DEPS_PARAMETER
+    bool | None, _ALLOW_UNPUBLISHED_WORKSPACE_DEPS_PARAMETER
 ]
 
 LOG_LEVEL_ENV_VAR = "LADING_LOG_LEVEL"
@@ -351,7 +352,7 @@ def publish(
     *,
     forbid_dirty: ForbidDirtyFlag = False,
     live: LiveFlag = False,
-    allow_unpublished_workspace_deps: AllowUnpublishedWorkspaceDepsFlag = False,
+    allow_unpublished_workspace_deps: AllowUnpublishedWorkspaceDepsFlag = None,
 ) -> str:
     """Run pre-flight checks, package crates, and execute cargo publish.
 

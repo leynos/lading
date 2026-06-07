@@ -1,47 +1,12 @@
 """Orchestrate the ``lading publish`` workflow.
 
-``run()`` is the primary entry point. It loads configuration, discovers the
-workspace graph, runs pre-flight checks (:mod:`~lading.commands.publish_preflight`),
-plans publication order, stages the workspace, and dispatches to one of two
-**publish pipelines** depending on the ``live`` flag.
+``run()`` loads configuration, discovers the workspace graph, runs pre-flight
+checks, plans publication order, stages the workspace, and dispatches either
+the dry-run two-phase pipeline or the live per-crate pipeline.
 
-**Pipeline dispatch**
-
-*Dry-run* (``live=False``) keeps the historical batched two-phase pipeline:
-package every publishable crate, then ``cargo publish --dry-run`` every crate
-in plan order.
-
-*Live* (``live=True``) interleaves packaging and publishing per crate via
-:func:`_execute_live_publication_pipeline`: package the next crate, publish it,
-then advance. This ordering lets dependent crates resolve newly uploaded
-in-plan dependencies during a single release train.
-
-**Per-crate helpers**
-
-:func:`_package_crate` and :func:`_publish_crate` each invoke ``cargo`` in the
-correct staged directory for a single crate. Both detect
-index-missing-version failures (:func:`_is_index_missing_version_error`) and
-publish-phase already-uploaded errors (:func:`_is_already_published_error`) to
-support non-fatal downgrade paths.
-
-**Error boundary**
-
-:class:`~lading.commands.publish_errors.PublishPreflightError` signals
-pre-publication failures (packaging, pre-flight checks).
-:class:`~lading.commands.publish_errors.PublishError` signals post-pre-flight
-publish failures and subclasses the preflight error so callers can handle all
-failures through one catch boundary or distinguish the publish phase when
-needed.
-
-**Related modules**
-
-* :mod:`lading.commands.publish_plan` — plan construction and formatting
-* :mod:`lading.commands.publish_preflight` — ``cargo check`` / ``cargo test`` /
-  git-status guards
-* :mod:`lading.commands.publish_errors` — :class:`PublishPreflightError` and
-  :class:`PublishError`
-* :mod:`lading.commands.publish_execution` — subprocess invocation and cmd-mox
-  integration
+Per-crate helpers invoke ``cargo`` in the staged crate directory and detect
+index-missing-version failures plus publish-phase already-uploaded errors so
+callers get consistent downgrade and error-boundary behaviour.
 """
 
 from __future__ import annotations
@@ -128,41 +93,8 @@ class _PublicationPipelineState:
 @dc.dataclass(frozen=True, slots=True)
 class PublishOptions:
     """Runtime configuration for publish planning, staging, and checks.
-
     Parameters
     ----------
-    allow_dirty:
-        When ``True`` the git cleanliness guard is skipped.
-    live:
-        When :data:`True`, execute ``cargo publish`` without ``--dry-run``.
-        Defaults to :data:`False` so publishing remains a dry-run unless
-        explicitly enabled.
-    build_directory:
-        Optional directory used to stage workspace artifacts. When ``None``,
-        a temporary directory is created for each invocation.
-    preserve_symlinks:
-        Control whether staging preserves symbolic links in the workspace
-        clone instead of dereferencing them.
-    cleanup:
-        When :data:`True`, the staged workspace is removed automatically on
-        process exit.
-    configuration:
-        Optional :class:`~lading.config.LadingConfig` instance to reuse instead
-        of loading from disk.
-    workspace:
-        Optional pre-loaded workspace graph to reuse for planning.
-    command_runner:
-        Optional callable used to execute shell commands. Primarily intended
-        for tests and dependency injection.
-    allow_unpublished_workspace_deps:
-        When :data:`True`, downgrade ``cargo package`` failures caused by a
-        sibling workspace crate version not yet visible on the crates.io index
-        to a warning, provided the missing crate is part of the planned
-        publish set. Only valid in dry-run mode (``live=False``); combining it
-        with ``live=True`` raises :class:`PublishPreflightError`.
-
-    """
-
     allow_dirty: bool = True
     live: bool = False
     build_directory: Path | None = None
@@ -171,7 +103,8 @@ class PublishOptions:
     configuration: LadingConfig | None = None
     workspace: WorkspaceGraph | None = None
     command_runner: CommandRunner | None = None
-    allow_unpublished_workspace_deps: bool = False
+    allow_unpublished_workspace_deps: bool | None = None
+    """
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -552,17 +485,23 @@ def _ensure_workspace(
         message = f"Workspace root not found: {workspace_root}"
         raise WorkspaceModelError(message) from exc
 
-
-def _validate_publication_options(options: PublishOptions) -> None:
+def _resolve_allow_unpublished_workspace_deps(options: PublishOptions) -> bool:
+    """Return the effective dry-run dependency downgrade setting."""
+    if options.allow_unpublished_workspace_deps is None:
+        return not options.live
+    return options.allow_unpublished_workspace_deps
+def _validate_publication_options(
+    options: PublishOptions, *, allow_unpublished_workspace_deps: bool
+) -> None:
     """Raise :class:`PublishPreflightError` for invalid option combinations."""
-    if options.live and options.allow_unpublished_workspace_deps:
+    if options.live and allow_unpublished_workspace_deps:
         message = (
             "--allow-unpublished-workspace-deps is only valid in dry-run mode; "
             "re-run without --live."
         )
         LOGGER.error(message)
         raise PublishPreflightError(message)
-    if options.allow_unpublished_workspace_deps:
+    if allow_unpublished_workspace_deps:
         LOGGER.info(
             "Allowing unpublished workspace dependencies during dry-run publish"
         )
@@ -612,7 +551,13 @@ def run(
     root_path = normalise_workspace_root(workspace_root)
     LOGGER.info("Starting publish workflow for workspace %s", root_path)
     effective_options = PublishOptions() if options is None else options
-    _validate_publication_options(effective_options)
+    allow_unpublished_workspace_deps = _resolve_allow_unpublished_workspace_deps(
+        effective_options
+    )
+    _validate_publication_options(
+        effective_options,
+        allow_unpublished_workspace_deps=allow_unpublished_workspace_deps,
+    )
     configuration_override = configuration or effective_options.configuration
     workspace_override = workspace or effective_options.workspace
     command_runner = effective_options.command_runner or _invoke
@@ -637,9 +582,7 @@ def run(
     execution_options = _PublishExecutionOptions(
         live=effective_options.live,
         allow_dirty=effective_options.allow_dirty,
-        allow_unpublished_workspace_deps=(
-            effective_options.allow_unpublished_workspace_deps
-        ),
+        allow_unpublished_workspace_deps=allow_unpublished_workspace_deps,
     )
     _dispatch_publication(
         plan,

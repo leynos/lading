@@ -11,7 +11,9 @@ shared step definitions are in ``test_common_steps``.
 Feature scenarios covered:
 - ``--allow-unpublished-workspace-deps`` accepted in dry-run mode,
 - flag rejected when combined with ``--live``,
-- in-plan index-lookup failure downgraded to a warning.
+- in-plan index-lookup failure downgraded to a warning,
+- dry-run default and explicit opt-out behaviour,
+- publish-order violations that remain fatal.
 """
 
 from __future__ import annotations
