@@ -32,6 +32,7 @@ __all__ = [
     "make_dependency",
     "make_dependency_chain",
     "make_failing_runner",
+    "make_n_crate_chain",
     "make_preflight_config",
     "make_workspace",
     "plan_with_crates",
@@ -165,6 +166,16 @@ def make_dependency_chain(
     beta = make_crate(root, "beta", dependencies=(make_dependency("alpha"),))
     gamma = make_crate(root, "gamma", dependencies=(make_dependency("beta"),))
     return alpha, beta, gamma
+
+
+def make_n_crate_chain(root: Path, count: int) -> tuple[WorkspaceCrate, ...]:
+    """Return ``count`` crates wired as a linear dependency chain."""
+    crates: list[WorkspaceCrate] = []
+    for index in range(count):
+        name = f"crate_{index}"
+        dependencies = () if index == 0 else (make_dependency(f"crate_{index - 1}"),)
+        crates.append(make_crate(root, name, dependencies=dependencies))
+    return tuple(crates)
 
 
 def plan_with_crates(
