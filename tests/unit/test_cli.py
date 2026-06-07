@@ -392,7 +392,50 @@ def test_bump_cli_accepts_dry_run_flag(
     assert options.dry_run is True
     assert options.runner is cli.subprocess_runner
 
+@pytest.mark.parametrize(
+    ("extra_args", "expected"),
+    [
+        pytest.param([], False, id="configuration"),
+        pytest.param(["--rebuild-lockfiles"], True, id="explicit-enable"),
+        pytest.param(["--no-rebuild-lockfiles"], False, id="explicit-disable"),
+    ],
+)
+def test_bump_cli_resolves_rebuild_lockfiles(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    write_config: cabc.Callable[[str], Path],
+    extra_args: list[str],
+    expected: object,
+) -> None:
+    """The rebuild flag should inherit configuration unless explicitly set."""
+    write_config(
+        """
+        [bump]
+        rebuild_lockfiles = false
+        """
+    )
+    workspace_graph = _make_workspace(tmp_path.resolve())
+    captured_kwargs: dict[str, typ.Any] = {}
 
+    def fake_run(*args: object, **kwargs: object) -> str:
+        captured_kwargs.update(kwargs)
+        return "bumped"
+
+    monkeypatch.setattr(bump_command, "run", fake_run)
+    monkeypatch.setattr(cli, "load_workspace", lambda _: workspace_graph)
+
+    exit_code = cli.main([
+        "--workspace-root",
+        str(tmp_path),
+        "bump",
+        "1.2.3",
+        *extra_args,
+    ])
+
+    assert exit_code == 0
+    options = captured_kwargs["options"]
+    assert isinstance(options, bump_command.BumpOptions)
+    assert options.rebuild_lockfiles is expected
 @pytest.mark.parametrize(
     "case",
     [

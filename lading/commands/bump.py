@@ -42,6 +42,7 @@ class BumpOptions:
     """Configuration options for bump operations."""
 
     dry_run: bool = False
+    rebuild_lockfiles: bool = True
     configuration: LadingConfig | None = None
     workspace: WorkspaceGraph | None = None
     dependency_sections: cabc.Mapping[str, cabc.Collection[str]] = dc.field(

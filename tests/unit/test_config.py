@@ -26,6 +26,8 @@ def test_load_configuration_parses_values(tmp_path: Path) -> None:
         """
         [bump]
         exclude = ["internal"]
+        lockfile_manifests = ["crates/nested/Cargo.toml"]
+        rebuild_lockfiles = false
 
         [bump.documentation]
         globs = ["README.md", "docs/**/*.md"]
@@ -44,6 +46,8 @@ def test_load_configuration_parses_values(tmp_path: Path) -> None:
     configuration = config_module.load_configuration(tmp_path)
 
     assert configuration.bump.exclude == ("internal",)
+    assert configuration.bump.lockfile_manifests == ("crates/nested/Cargo.toml",)
+    assert configuration.bump.rebuild_lockfiles is False
     assert configuration.bump.documentation.globs == (
         "README.md",
         "docs/**/*.md",
@@ -71,6 +75,20 @@ def test_load_configuration_parses_values(tmp_path: Path) -> None:
             strip_patches = "unexpected"
             """,
             id="invalid_strip_patches_string",
+        ),
+        pytest.param(
+            """
+            [bump]
+            lockfile_manifests = [1]
+            """,
+            id="bump_invalid_lockfile_manifests",
+        ),
+        pytest.param(
+            """
+            [bump]
+            rebuild_lockfiles = "sometimes"
+            """,
+            id="bump_invalid_rebuild_lockfiles",
         ),
         pytest.param(
             """
@@ -136,6 +154,8 @@ def test_load_configuration_applies_defaults(tmp_path: Path) -> None:
     configuration = config_module.load_configuration(tmp_path)
 
     assert configuration.publish.strip_patches == "per-crate"
+    assert configuration.bump.lockfile_manifests == ()
+    assert configuration.bump.rebuild_lockfiles is True
     assert configuration.bump.documentation.globs == ()
     assert configuration.preflight.unit_tests_only is False
 
@@ -163,6 +183,27 @@ def test_preflight_config_from_mapping_defaults() -> None:
 
     assert configuration.test_exclude == ()
     assert configuration.unit_tests_only is False
+
+
+def test_bump_config_from_mapping_parses_lockfile_fields() -> None:
+    """BumpConfig.from_mapping normalises lockfile settings."""
+    mapping = {
+        "lockfile_manifests": ["crates/nested/Cargo.toml"],
+        "rebuild_lockfiles": True,
+    }
+
+    configuration = config_module.BumpConfig.from_mapping(mapping)
+
+    assert configuration.lockfile_manifests == ("crates/nested/Cargo.toml",)
+    assert configuration.rebuild_lockfiles is True
+
+
+def test_bump_config_from_mapping_defaults_lockfile_fields() -> None:
+    """Missing bump table falls back to lockfile rebuild defaults."""
+    configuration = config_module.BumpConfig.from_mapping(None)
+
+    assert configuration.lockfile_manifests == ()
+    assert configuration.rebuild_lockfiles is True
 
 
 def test_preflight_config_from_mapping_trims_and_deduplicates_entries() -> None:
