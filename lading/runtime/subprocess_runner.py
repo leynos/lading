@@ -122,6 +122,49 @@ def split_command(command: cabc.Sequence[str]) -> tuple[str, tuple[str, ...]]:
     return program, args
 
 
+def _spawn_process(
+    program: str,
+    command: tuple[str, ...],
+    context: SubprocessContext,
+    normalised_env: dict[str, str] | None,
+) -> subprocess.Popen[bytes]:
+    """Create a ``Popen`` instance, mapping ``OSError`` to ``CommandSpawnError``."""
+    try:
+        # This path owns `Popen` directly so relay threads can drain both pipes
+        # before the function returns. S603 is mitigated because `command` is a
+        # pre-split sequence and the default `shell=False` is used.
+        return subprocess.Popen(  # noqa: S603 # pylint: disable=consider-using-with
+            command,
+            cwd=None if context.cwd is None else str(context.cwd),
+            env=normalised_env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            stdin=subprocess.PIPE if context.stdin_data is not None else None,
+        )
+    except OSError as exc:
+        raise CommandSpawnError(program, exc) from exc
+
+
+def _drain_stdin_and_wait(
+    process: subprocess.Popen[bytes],
+    context: SubprocessContext,
+    threads: list[threading.Thread],
+) -> int:
+    """Feed ``stdin_data`` and wait for ``process`` and ``threads`` to finish."""
+    try:
+        if context.stdin_data is not None and process.stdin is not None:
+            try:
+                process.stdin.write(context.stdin_data.encode("utf-8"))
+                process.stdin.close()
+            except BrokenPipeError:
+                _LOGGER.debug("Process closed stdin before all data was written")
+    finally:
+        exit_code = process.wait()
+        for thread in threads:
+            thread.join()
+    return exit_code
+
+
 def invoke_via_subprocess(
     program: str,
     args: tuple[str, ...],
@@ -153,21 +196,7 @@ def invoke_via_subprocess(
     _log_subprocess_spawn(command, context.cwd)
     _log_subprocess_environment(context.env)
     normalised_env = normalise_environment(context.env)
-    try:
-        # This path owns `Popen` directly so relay threads can drain both pipes
-        # before the function returns. S603 is mitigated because `command` is a
-        # pre-split sequence and the default `shell=False` is used.
-        process = subprocess.Popen(  # noqa: S603 # pylint: disable=consider-using-with
-            command,
-            cwd=None if context.cwd is None else str(context.cwd),
-            env=normalised_env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            stdin=subprocess.PIPE if context.stdin_data is not None else None,
-        )
-    except OSError as exc:
-        raise CommandSpawnError(program, exc) from exc
-
+    process = _spawn_process(program, command, context, normalised_env)
     stdout_chunks: list[str] = []
     stderr_chunks: list[str] = []
     threads = [
@@ -190,17 +219,7 @@ def invoke_via_subprocess(
     ]
     for thread in threads:
         thread.start()
-    try:
-        if context.stdin_data is not None and process.stdin is not None:
-            try:
-                process.stdin.write(context.stdin_data.encode("utf-8"))
-                process.stdin.close()
-            except BrokenPipeError:
-                _LOGGER.debug("Process closed stdin before all data was written")
-    finally:
-        exit_code = process.wait()
-        for thread in threads:
-            thread.join()
+    exit_code = _drain_stdin_and_wait(process, context, threads)
     return exit_code, "".join(stdout_chunks), "".join(stderr_chunks)
 
 
