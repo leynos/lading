@@ -16,6 +16,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from lading.commands import publish
+from lading.commands.cargo_output_adapter import CargoIndexLookupFailure
 
 from .conftest import make_crate
 
@@ -51,20 +52,19 @@ def test_index_missing_dependency_requires_prior_publish_order(
         )
         current_crate = crates[current_index]
         missing_crate = crates[missing_index]
-        invocation = publish._CargoInvocation(
+        failure = CargoIndexLookupFailure(
             crate_name=current_crate.name,
             subcommand="package",
-            output=(
-                1,
-                "",
-                (
-                    "error: failed to prepare local package for uploading\n"
-                    "Caused by:\n"
-                    "  failed to select a version for the requirement "
-                    f'`{missing_crate.name} = "^0.1.0"`\n'
-                    "  location searched: crates.io index\n"
-                ),
+            exit_code=1,
+            stdout="",
+            stderr=(
+                "error: failed to prepare local package for uploading\n"
+                "Caused by:\n"
+                "  failed to select a version for the requirement "
+                f'`{missing_crate.name} = "^0.1.0"`\n'
+                "  location searched: crates.io index\n"
             ),
+            missing_dependency_name=missing_crate.name,
         )
         options = publish._PublishExecutionOptions(
             live=False,
@@ -74,7 +74,7 @@ def test_index_missing_dependency_requires_prior_publish_order(
 
         if missing_index < current_index:
             publish._handle_index_missing_version(
-                invocation,
+                failure,
                 plan=plan,
                 options=options,
             )
@@ -88,7 +88,7 @@ def test_index_missing_dependency_requires_prior_publish_order(
                 ),
             ):
                 publish._handle_index_missing_version(
-                    invocation,
+                    failure,
                     plan=plan,
                     options=options,
                 )

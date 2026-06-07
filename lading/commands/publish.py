@@ -1,11 +1,47 @@
 """Orchestrate the ``lading publish`` workflow.
 
-This module is the primary entry-point for the ``lading publish`` command.
-It is wired by ``lading.cli`` and delegates index-missing-version decisioning
-to ``lading.commands.publish_index_check``. Publication state is tracked per
-crate via ``PublishPlan`` and ``PublishPreparation`` objects produced in the
-planning and staging phase, then consumed across package and publish dispatches
-for both dry-run and live execution.
+``run()`` is the primary entry point. It loads configuration, discovers the
+workspace graph, runs pre-flight checks (:mod:`~lading.commands.publish_preflight`),
+plans publication order, stages the workspace, and dispatches to one of two
+**publish pipelines** depending on the ``live`` flag.
+
+**Pipeline dispatch**
+
+*Dry-run* (``live=False``) keeps the historical batched two-phase pipeline:
+package every publishable crate, then ``cargo publish --dry-run`` every crate
+in plan order.
+
+*Live* (``live=True``) interleaves packaging and publishing per crate via
+:func:`_execute_live_publication_pipeline`: package the next crate, publish it,
+then advance. This ordering lets dependent crates resolve newly uploaded
+in-plan dependencies during a single release train.
+
+**Per-crate helpers**
+
+:func:`_package_crate` and :func:`_publish_crate` each invoke ``cargo`` in the
+correct staged directory for a single crate. Both adapt cargo
+index-missing-version output into structured failures and detect publish-phase
+already-uploaded errors (:func:`_is_already_published_error`) to support
+non-fatal downgrade paths.
+
+**Error boundary**
+
+:class:`~lading.commands.publish_errors.PublishPreflightError` signals
+pre-publication failures (packaging, pre-flight checks).
+:class:`~lading.commands.publish_errors.PublishError` signals post-pre-flight
+publish failures and subclasses the preflight error so callers can handle all
+failures through one catch boundary or distinguish the publish phase when
+needed.
+
+**Related modules**
+
+* :mod:`lading.commands.publish_plan` — plan construction and formatting
+* :mod:`lading.commands.publish_preflight` — ``cargo check`` / ``cargo test`` /
+  git-status guards
+* :mod:`lading.commands.publish_errors` — :class:`PublishPreflightError` and
+  :class:`PublishError`
+* :mod:`lading.commands.publish_execution` — subprocess invocation and cmd-mox
+  integration
 """
 
 from __future__ import annotations
@@ -19,20 +55,21 @@ import typing as typ
 from pathlib import Path
 
 from lading import config as config_module
+from lading.commands import publish_preflight as _publish_preflight
+from lading.commands.cargo_output_adapter import (
+    CargoIndexLookupFailure,
+    parse_index_lookup_failure,
+)
 from lading.commands.publish_errors import PublishError, PublishPreflightError
 from lading.commands.publish_execution import (
     _invoke,
+    normalise_cmd_mox_command,
+    should_use_cmd_mox_stub,
+    split_command,
 )
 from lading.commands.publish_index_check import (
-    _CargoInvocation,
-    _format_cargo_failure_message,
     _IndexMissingVersionHandling,
-    _is_index_missing_version_error,
-)
-from lading.commands.publish_index_check import (
-    _extract_missing_dependency_name as _extract_missing_dependency_name,
-)
-from lading.commands.publish_index_check import (
+    _format_cargo_failure_message,
     _handle_index_missing_version as _raw_handle_index_missing_version,
 )
 from lading.commands.publish_manifest import (
@@ -41,21 +78,12 @@ from lading.commands.publish_manifest import (
 )
 from lading.commands.publish_plan import (
     PublishPlan,
+    append_section,
     format_plan,
     plan_publication,
 )
 from lading.commands.publish_plan import (
     PublishPlanError as _PublishPlanError,
-)
-from lading.commands.publish_preflight import (
-    _apply_compiletest_externs,
-    _build_preflight_environment,
-    _CargoPreflightOptions,
-    _compose_preflight_arguments,
-    _run_aux_build_commands,
-    _run_cargo_preflight,
-    _validate_lockfile_freshness,
-    _verify_clean_working_tree,
 )
 from lading.utils.path import normalise_workspace_root
 from lading.workspace import metadata as _metadata_module
@@ -63,6 +91,20 @@ from lading.workspace import metadata as _metadata_module
 StripPatchesSetting = config_module.StripPatchesSetting
 metadata_module = _metadata_module
 PublishPlanError = _PublishPlanError
+_normalise_cmd_mox_command = normalise_cmd_mox_command
+_should_use_cmd_mox_stub = should_use_cmd_mox_stub
+_split_command = split_command
+_append_section = append_section
+_format_plan = format_plan
+_CargoPreflightOptions = _publish_preflight._CargoPreflightOptions
+_apply_compiletest_externs = _publish_preflight._apply_compiletest_externs
+_build_preflight_environment = _publish_preflight._build_preflight_environment
+_build_test_arguments = _publish_preflight._build_test_arguments
+_compose_preflight_arguments = _publish_preflight._compose_preflight_arguments
+_normalise_test_excludes = _publish_preflight._normalise_test_excludes
+_run_aux_build_commands = _publish_preflight._run_aux_build_commands
+_run_cargo_preflight = _publish_preflight._run_cargo_preflight
+_verify_clean_working_tree = _publish_preflight._verify_clean_working_tree
 
 LOGGER = logging.getLogger(__name__)
 
@@ -252,7 +294,7 @@ def _resolve_staged_crate_root(
 
 
 def _handle_index_missing_version(
-    invocation: _CargoInvocation,
+    failure: CargoIndexLookupFailure,
     *,
     plan: PublishPlan,
     options: _PublishExecutionOptions,
@@ -263,10 +305,10 @@ def _handle_index_missing_version(
     through to the relocated implementation in ``publish_index_check``.
     """
     error_cls = (
-        PublishError if invocation.subcommand == "publish" else PublishPreflightError
+        PublishError if failure.subcommand == "publish" else PublishPreflightError
     )
     _raw_handle_index_missing_version(
-        invocation,
+        failure,
         handling=_IndexMissingVersionHandling(
             plan=plan,
             options=options,
@@ -313,16 +355,15 @@ def _package_crate(
     if exit_code == 0:
         LOGGER.info("Successfully packaged crate %s", crate.name)
         return
-    if _is_index_missing_version_error(exit_code, stdout, stderr):
-        _handle_index_missing_version(
-            _CargoInvocation(
-                crate_name=crate.name,
-                subcommand="package",
-                output=(exit_code, stdout, stderr),
-            ),
-            plan=plan,
-            options=options,
-        )
+    lookup_failure = parse_index_lookup_failure(
+        crate_name=crate.name,
+        subcommand="package",
+        exit_code=exit_code,
+        stdout=stdout,
+        stderr=stderr,
+    )
+    if lookup_failure is not None:
+        _handle_index_missing_version(lookup_failure, plan=plan, options=options)
         return
     message = _format_cargo_failure_message(
         "package", crate.name, exit_code, (stdout, stderr)
@@ -400,32 +441,26 @@ def _publish_crate(
         env=None,
     )
     _handle_publish_result(
-        _CargoInvocation(
-            crate_name=crate.name,
-            subcommand="publish",
-            output=(exit_code, stdout, stderr),
-        ),
-        crate,
-        plan,
-        options,
+        crate, (exit_code, stdout, stderr), plan=plan, options=options
     )
 
 
 def _handle_publish_result(
-    invocation: _CargoInvocation,
     crate: WorkspaceCrate,
+    output: tuple[int, str, str],
+    *,
     plan: PublishPlan,
     options: _PublishExecutionOptions,
 ) -> None:
     """Handle a completed ``cargo publish`` invocation."""
-    exit_code, stdout, stderr = invocation.output
+    exit_code, stdout, stderr = output
     if exit_code == 0:
         success_message = (
             "Successfully published crate %s"
             if options.live
             else "Dry-run publish succeeded for crate %s"
         )
-        LOGGER.info(success_message, invocation.crate_name)
+        LOGGER.info(success_message, crate.name)
         return
     if _is_already_published_error(exit_code, stdout, stderr):
         LOGGER.warning(
@@ -434,11 +469,18 @@ def _handle_publish_result(
             crate.version,
         )
         return
-    if _is_index_missing_version_error(exit_code, stdout, stderr):
+    lookup_failure = parse_index_lookup_failure(
+        crate_name=crate.name,
+        subcommand="publish",
+        exit_code=exit_code,
+        stdout=stdout,
+        stderr=stderr,
+    )
+    if lookup_failure is not None:
         # cargo publish --dry-run packages internally and hits the same
         # crates.io index lookup as cargo package, so honour the override
         # consistently across both phases.
-        _handle_index_missing_version(invocation, plan=plan, options=options)
+        _handle_index_missing_version(lookup_failure, plan=plan, options=options)
         return
 
     message = _format_cargo_failure_message(
