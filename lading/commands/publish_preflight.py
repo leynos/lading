@@ -13,9 +13,13 @@ required check fails.
 
 Examples
 --------
->>> from pathlib import Path
->>> from lading.commands.publish_preflight import _run_preflight_checks
->>> _run_preflight_checks(Path("."), allow_dirty=False, configuration=config)
+```python
+from pathlib import Path
+
+from lading.commands.publish_preflight import _run_preflight_checks
+
+_run_preflight_checks(Path("."), allow_dirty=False, configuration=config)
+```
 """
 
 from __future__ import annotations

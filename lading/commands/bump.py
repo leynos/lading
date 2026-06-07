@@ -240,7 +240,12 @@ def _prepare_sorted_changes(
 
 
 def _refresh_lockfiles(context: _BumpContext) -> tuple[Path, ...]:
-    """Refresh tracked lockfiles after manifest rewrites."""
+    """Refresh tracked lockfiles after manifest rewrites.
+
+    Refresh is intentionally not transactional. If one lockfile refresh fails,
+    manifests already rewritten to the target version remain on disk; after
+    fixing the Cargo error, rerun ``lading bump`` with the same version.
+    """
     runner = context.base_options.runner or _invoke
     lockfiles = discover_tracked_lockfiles(context.root_path, runner)
     if context.base_options.dry_run:

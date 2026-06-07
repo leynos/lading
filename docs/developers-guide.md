@@ -100,7 +100,10 @@ passes respectively.
 `refresh_lockfile(manifest_path, runner)` runs
 `cargo generate-lockfile --manifest-path` for the supplied manifest and raises
 `LockfileRefreshError` on non-zero exit. `_refresh_lockfiles` in `bump.py`
-calls it after manifest rewrites.
+calls it after manifest rewrites. The refresh loop is intentionally not
+transactional: if a later lockfile refresh fails, previously rewritten
+manifests and refreshed lockfiles remain on disk, and the operator should fix
+the Cargo error and rerun `lading bump` with the same version.
 
 `validate_lockfile_freshness(manifest_path, runner)` runs
 `cargo metadata --locked --manifest-path ... --format-version=1`. It returns
@@ -187,8 +190,9 @@ failure to a warning and continues. The option is rejected at runtime when
 ### Exception hierarchy (`publish_errors`)
 
 `lading.commands.publish_errors` defines the public error boundary for
-publish orchestration. Both classes inherit from `RuntimeError` and carry
-their message through the standard `args` tuple.
+publish orchestration. Both classes inherit from the package-level
+`LadingError` base, which itself extends `Exception`, and carry their message
+through the standard `args` tuple.
 
 | Exception | Raised when |
 | --- | --- |

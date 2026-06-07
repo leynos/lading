@@ -6,9 +6,9 @@ regenerates them after manifest rewrites, and validates that Cargo can read
 them under ``--locked`` before expensive publish pre-flight commands run.
 
 Discovery is intentionally conservative. :func:`discover_tracked_lockfiles`
-first checks for non-``target`` lockfile candidates in the workspace, then
-narrows the result to git-tracked ``Cargo.lock`` files that are not under a
-``target`` directory and have an adjacent ``Cargo.toml`` manifest.
+queries the git index for tracked ``Cargo.lock`` files, then narrows the
+result to paths that are not under a ``target`` directory and have an adjacent
+``Cargo.toml`` manifest.
 
 ``lading bump`` calls :func:`discover_tracked_lockfiles` followed by
 :func:`refresh_lockfile` after it updates manifest versions. ``lading publish``
@@ -18,11 +18,12 @@ stale lockfiles fail early with an actionable repair command.
 
 Typical local or CI usage follows the same sequence:
 
->>> lockfiles = discover_tracked_lockfiles(workspace_root, runner)
->>> for lockfile_path in lockfiles:
-...     refresh_lockfile(lockfile_path.parent / "Cargo.toml", runner)
-...     validate_lockfile_freshness(lockfile_path.parent / "Cargo.toml", runner)
-True
+```python
+lockfiles = discover_tracked_lockfiles(workspace_root, runner)
+for lockfile_path in lockfiles:
+    refresh_lockfile(lockfile_path.parent / "Cargo.toml", runner)
+    validate_lockfile_freshness(lockfile_path.parent / "Cargo.toml", runner)
+```
 """
 
 from __future__ import annotations
@@ -110,13 +111,6 @@ def discover_tracked_lockfiles(
     If ``workspace_root`` is not a git repository, discovery logs a warning
     through :func:`_handle_git_ls_files_failure` and returns an empty tuple.
     """
-    candidate_lockfiles = tuple(
-        path
-        for path in workspace_root.rglob("Cargo.lock")
-        if "target" not in path.relative_to(workspace_root).parts
-    )
-    if not candidate_lockfiles:
-        return ()
     exit_code, stdout, stderr = runner(
         ("git", "ls-files", "*/Cargo.lock", "Cargo.lock"),
         cwd=workspace_root,
