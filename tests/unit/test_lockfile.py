@@ -41,6 +41,7 @@ def test_discover_tracked_lockfiles_filters_missing_manifests(tmp_path: Path) ->
     (nested / "Cargo.lock").write_text("", encoding="utf-8")
     target = tmp_path / "target" / "debug"
     target.mkdir(parents=True)
+    (target / "Cargo.toml").write_text("[package]\n", encoding="utf-8")
     (target / "Cargo.lock").write_text("", encoding="utf-8")
 
     def runner(

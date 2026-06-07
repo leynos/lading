@@ -49,6 +49,8 @@ def _lockfiles_with_manifests(
         if not relative_path:
             continue
         lockfile_path = workspace_root / relative_path
+        if "target" in lockfile_path.relative_to(workspace_root).parts:
+            continue
         if (lockfile_path.parent / "Cargo.toml").exists():
             lockfiles.append(lockfile_path)
     return tuple(lockfiles)
