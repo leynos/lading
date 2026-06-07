@@ -179,6 +179,32 @@ def test_run_updates_documentation_snippets(tmp_path: pathlib.Path) -> None:
     assert 'alpha = "1.2.3"' in updated_readme
 
 
+def test_run_transposes_workspace_readme_to_crates(tmp_path: pathlib.Path) -> None:
+    """Bumping adopts the workspace README for opted-in crates."""
+    workspace, _manifests = _build_workspace_with_internal_deps(
+        tmp_path,
+        specs=(_CrateSpec(name="alpha", readme_workspace=True),),
+    )
+    (tmp_path / "README.md").write_text(
+        "# Sample\n\nSee [Guide](docs/guide.md).\n",
+        encoding="utf-8",
+    )
+    configuration = _make_config()
+
+    message = bump.run(
+        tmp_path,
+        "1.2.3",
+        options=bump.BumpOptions(configuration=configuration, workspace=workspace),
+    )
+
+    crate_readme = tmp_path / "crates" / "alpha" / "README.md"
+    assert "readme file(s)" in message
+    assert "- crates/alpha/README.md (readme)" in message.splitlines()
+    assert crate_readme.read_text(encoding="utf-8") == (
+        "# Sample\n\nSee [Guide](../../docs/guide.md).\n"
+    )
+
+
 def test_run_rebuilds_lockfiles_by_default(
     tmp_path: pathlib.Path,
     monkeypatch: MonkeyPatch,

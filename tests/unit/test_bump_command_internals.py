@@ -17,8 +17,6 @@ from tests.helpers.workspace_builders import (
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
-
-    from syrupy.assertion import SnapshotAssertion
 from lading.commands import bump, bump_output
 
 
@@ -182,23 +180,25 @@ def test_should_skip_crate_update_requires_selectors_or_dependencies() -> None:
 
 def test_build_changes_description_counts_sections(tmp_path: Path) -> None:
     """Descriptions enumerate manifest and documentation counts."""
-    changes = bump_output.BumpChanges(
+    changes = bump.BumpChanges(
         manifests=(tmp_path / "Cargo.toml", tmp_path / "member" / "Cargo.toml"),
         documents=(tmp_path / "README.md",),
+        transposed_readmes=(tmp_path / "crates" / "alpha" / "README.md",),
     )
     assert (
-        bump_output._build_changes_description(changes)
-        == "2 manifest(s) and 1 documentation file(s)"
+        bump._build_changes_description(changes)
+        == "2 manifest(s) and 1 documentation file(s) and 1 readme file(s)"
     )
 
-    changes = bump_output.BumpChanges(
+    changes = bump.BumpChanges(
         manifests=(tmp_path / "Cargo.toml",),
         documents=(tmp_path / "README.md",),
+        transposed_readmes=(tmp_path / "crates" / "alpha" / "README.md",),
         lockfiles=(tmp_path / "Cargo.lock",),
     )
-    assert (
-        bump_output._build_changes_description(changes)
-        == "1 manifest(s), 1 documentation file(s), and 1 lockfile(s)"
+    assert bump._build_changes_description(changes) == (
+        "1 manifest(s) and 1 documentation file(s) and "
+        "1 readme file(s) and 1 lockfile(s)"
     )
 
 
@@ -291,10 +291,7 @@ def test_update_crate_manifest(tmp_path: Path, params: UpdateCrateTestParams) ->
     assert alpha_version == params.expected_alpha_version
 
 
-def test_format_result_message_handles_changes(
-    tmp_path: Path,
-    snapshot: SnapshotAssertion,
-) -> None:
+def test_format_result_message_handles_changes(tmp_path: Path) -> None:
     """The formatted result message reflects manifest counts and paths."""
     workspace_root = tmp_path
     manifest_paths = [
@@ -302,52 +299,64 @@ def test_format_result_message_handles_changes(
         workspace_root / "member" / "Cargo.toml",
     ]
     documentation_paths = [workspace_root / "README.md"]
-    lockfile_paths = [workspace_root / "Cargo.lock"]
-    messages = {
-        "no_changes": bump_output._format_result_message(
-            bump_output.BumpChanges(),
+    readme_paths = [workspace_root / "crates" / "alpha" / "README.md"]
+    assert (
+        bump._format_result_message(
+            bump.BumpChanges(),
             "1.2.3",
             dry_run=False,
             workspace_root=workspace_root,
-        ),
-        "manifests": bump_output._format_result_message(
-            bump_output.BumpChanges(manifests=manifest_paths),
-            "4.5.6",
-            dry_run=False,
-            workspace_root=workspace_root,
-        ),
-        "dry_run": bump_output._format_result_message(
-            bump_output.BumpChanges(manifests=manifest_paths),
-            "4.5.6",
-            dry_run=True,
-            workspace_root=workspace_root,
-        ),
-        "documents": bump_output._format_result_message(
-            bump_output.BumpChanges(
-                manifests=manifest_paths, documents=documentation_paths
-            ),
-            "7.8.9",
-            dry_run=False,
-            workspace_root=workspace_root,
-        ),
-        "lockfiles": bump_output._format_result_message(
-            bump_output.BumpChanges(lockfiles=lockfile_paths),
-            "7.8.9",
-            dry_run=False,
-            workspace_root=workspace_root,
-        ),
-    }
-    assert messages["manifests"].startswith(
-        "Updated version to 4.5.6 in 2 manifest(s):"
+        )
+        == "No manifest changes required; all versions already 1.2.3."
     )
-    assert "- Cargo.toml" in messages["manifests"].splitlines()
-    assert "- member/Cargo.toml" in messages["manifests"].splitlines()
-    assert messages["dry_run"].startswith(
-        "Dry run; would update version to 4.5.6 in 2 manifest(s):"
-    )
-    assert "- README.md (documentation)" in messages["documents"].splitlines()
-    assert "- Cargo.lock (lockfile)" in messages["lockfiles"].splitlines()
-    assert messages == snapshot()
+    assert bump._format_result_message(
+        bump.BumpChanges(manifests=manifest_paths),
+        "4.5.6",
+        dry_run=False,
+        workspace_root=workspace_root,
+    ).splitlines() == [
+        "Updated version to 4.5.6 in 2 manifest(s):",
+        "- Cargo.toml",
+        "- member/Cargo.toml",
+    ]
+    assert bump._format_result_message(
+        bump.BumpChanges(manifests=manifest_paths),
+        "4.5.6",
+        dry_run=True,
+        workspace_root=workspace_root,
+    ).splitlines() == [
+        "Dry run; would update version to 4.5.6 in 2 manifest(s):",
+        "- Cargo.toml",
+        "- member/Cargo.toml",
+    ]
+    assert bump._format_result_message(
+        bump.BumpChanges(
+            manifests=manifest_paths,
+            documents=documentation_paths,
+            transposed_readmes=readme_paths,
+        ),
+        "7.8.9",
+        dry_run=False,
+        workspace_root=workspace_root,
+    ).splitlines() == [
+        (
+            "Updated version to 7.8.9 in 2 manifest(s) and "
+            "1 documentation file(s) and 1 readme file(s):"
+        ),
+        "- Cargo.toml",
+        "- member/Cargo.toml",
+        "- README.md (documentation)",
+        "- crates/alpha/README.md (readme)",
+    ]
+    assert bump._format_result_message(
+        bump.BumpChanges(lockfiles=[workspace_root / "Cargo.lock"]),
+        "7.8.9",
+        dry_run=False,
+        workspace_root=workspace_root,
+    ).splitlines() == [
+        "Updated version to 7.8.9 in 1 lockfile(s):",
+        "- Cargo.lock (lockfile)",
+    ]
 
 
 def test_update_manifest_writes_when_changed(tmp_path: Path) -> None:

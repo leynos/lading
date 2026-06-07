@@ -63,10 +63,33 @@ Feature: Lading CLI scaffolding
     Then the documentation file "README.md" contains "alpha = \"1.2.3\""
     And the CLI output lists documentation path "- README.md (documentation)"
 
+  Scenario: Bumping transposes workspace README to crates
+    Given a workspace directory with configuration
+    And cargo metadata describes a sample workspace
+    When I invoke lading bump 1.2.3 with that workspace
+    Then the crate "alpha" README contains "# Workspace README"
+    And the CLI output lists README path "- crates/alpha/README.md (readme)"
+
+  Scenario: Bumping rewrites relative links in transposed README
+    Given a workspace directory with configuration
+    And cargo metadata describes a sample workspace
+    And the workspace README contains a relative link to "docs/v0-6-0-migration-guide.md"
+    When I invoke lading bump 1.2.3 with that workspace
+    Then the crate "alpha" README contains "../../docs/v0-6-0-migration-guide.md"
+
+  Scenario: Bumping errors when workspace README is missing for opted-in crates
+    Given a workspace directory with configuration
+    And cargo metadata describes a sample workspace
+    And the workspace README is removed
+    When I invoke lading bump 1.2.3 with that workspace
+    Then the CLI exits with code 1
+    And the stderr contains "Workspace README.md is required by crates that set readme.workspace = true"
+
   Scenario: Bumping workspace versions when already up to date
     Given a workspace directory with configuration
     And cargo metadata describes a sample workspace
     And the workspace manifests record version "1.2.3"
+    And the crate "alpha" README already matches the workspace README
     When I invoke lading bump 1.2.3 with that workspace
     Then the bump command reports no manifest changes for "1.2.3"
 
