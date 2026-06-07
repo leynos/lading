@@ -8,27 +8,10 @@ versions change.
 from __future__ import annotations
 
 import collections.abc as cabc
-import typing as typ
 from pathlib import Path
 
 from lading.commands.publish_errors import PublishPreflightError
-from lading.commands.publish_execution import _invoke
-
-if typ.TYPE_CHECKING:
-
-    class CommandRunner(typ.Protocol):
-        """Callable protocol for command execution helpers."""
-
-        def __call__(
-            self,
-            command: cabc.Sequence[str],
-            *,
-            cwd: Path | None = None,
-        ) -> tuple[int, str, str]:
-            """Run ``command`` and return exit code, stdout, and stderr."""
-
-else:
-    CommandRunner = cabc.Callable
+from lading.commands.publish_execution import CommandRunner, _invoke
 
 
 def resolve_lockfile_paths(
@@ -36,8 +19,19 @@ def resolve_lockfile_paths(
     lockfile_manifests: cabc.Sequence[str],
 ) -> tuple[Path, ...]:
     """Return lockfile paths implied by configured manifest paths."""
-    manifests = _resolve_manifest_paths(workspace_root, lockfile_manifests)
-    return tuple(manifest.parent / "Cargo.lock" for manifest in manifests)
+    root_manifest = workspace_root / "Cargo.toml"
+    nested_manifests = tuple(
+        workspace_root / manifest for manifest in lockfile_manifests
+    )
+    seen_manifests: set[Path] = set()
+    lockfiles: list[Path] = []
+    for manifest in (root_manifest, *nested_manifests):
+        manifest_key = manifest.resolve(strict=False)
+        if manifest_key in seen_manifests:
+            continue
+        seen_manifests.add(manifest_key)
+        lockfiles.append(manifest.parent / "Cargo.lock")
+    return tuple(lockfiles)
 
 
 def regenerate_lockfiles(
@@ -52,24 +46,20 @@ def regenerate_lockfiles(
         return ()
 
     command_runner = _invoke if runner is None else runner
-    manifests = _resolve_manifest_paths(workspace_root, lockfile_manifests)
-    lockfiles: list[Path] = []
-    for manifest in manifests:
-        _run_generate_lockfile(workspace_root, manifest, command_runner)
-        lockfiles.append(manifest.parent / "Cargo.lock")
-    return tuple(lockfiles)
-
-
-def _resolve_manifest_paths(
-    workspace_root: Path,
-    lockfile_manifests: cabc.Sequence[str],
-) -> tuple[Path, ...]:
-    """Return root and configured manifest paths in execution order."""
     root_manifest = workspace_root / "Cargo.toml"
     nested_manifests = tuple(
         workspace_root / manifest for manifest in lockfile_manifests
     )
-    return (root_manifest, *nested_manifests)
+    seen_manifests: set[Path] = set()
+    lockfiles: list[Path] = []
+    for manifest in (root_manifest, *nested_manifests):
+        manifest_key = manifest.resolve(strict=False)
+        if manifest_key in seen_manifests:
+            continue
+        seen_manifests.add(manifest_key)
+        _run_generate_lockfile(workspace_root, manifest, command_runner)
+        lockfiles.append(manifest.parent / "Cargo.lock")
+    return tuple(lockfiles)
 
 
 def _run_generate_lockfile(

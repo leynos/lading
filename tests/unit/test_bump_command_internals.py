@@ -289,6 +289,7 @@ def test_format_result_message_handles_changes(tmp_path: Path) -> None:
         workspace_root / "member" / "Cargo.toml",
     ]
     documentation_paths = [workspace_root / "README.md"]
+    lockfile_paths = [workspace_root / "Cargo.lock"]
     assert (
         bump_output._format_result_message(
             bump_output.BumpChanges(),
@@ -330,6 +331,15 @@ def test_format_result_message_handles_changes(tmp_path: Path) -> None:
         "- Cargo.toml",
         "- member/Cargo.toml",
         "- README.md (documentation)",
+    ]
+    assert bump_output._format_result_message(
+        bump_output.BumpChanges(lockfiles=lockfile_paths),
+        "7.8.9",
+        dry_run=False,
+        workspace_root=workspace_root,
+    ).splitlines() == [
+        "Updated version to 7.8.9 in 1 lockfile(s):",
+        "- Cargo.lock (lockfile)",
     ]
 
 

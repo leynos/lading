@@ -56,7 +56,7 @@ def _format_result_message(
     workspace_root: Path,
 ) -> str:
     """Summarise the bump outcome for CLI presentation."""
-    if not changes.manifests and not changes.documents:
+    if not any((changes.manifests, changes.documents, changes.lockfiles)):
         return _format_no_changes_message(target_version, dry_run)
 
     description = _build_changes_description(changes)

@@ -96,6 +96,37 @@ def test_regenerate_lockfiles_uses_configured_manifests(tmp_path: Path) -> None:
     )
 
 
+def test_regenerate_lockfiles_deduplicates_root_manifest(tmp_path: Path) -> None:
+    """Explicit root manifest entries should not trigger duplicate rebuilds."""
+    runner = _RecordingRunner()
+
+    lockfiles = bump_lockfiles.regenerate_lockfiles(
+        tmp_path,
+        ("Cargo.toml", "./Cargo.toml", "crates/nested/Cargo.toml"),
+        dry_run=False,
+        runner=runner,
+    )
+
+    assert lockfiles == (
+        tmp_path / "Cargo.lock",
+        tmp_path / "crates/nested/Cargo.lock",
+    )
+    assert [invocation.command for invocation in runner.invocations] == [
+        (
+            "cargo",
+            "generate-lockfile",
+            "--manifest-path",
+            str(tmp_path / "Cargo.toml"),
+        ),
+        (
+            "cargo",
+            "generate-lockfile",
+            "--manifest-path",
+            str(tmp_path / "crates/nested/Cargo.toml"),
+        ),
+    ]
+
+
 def test_regenerate_lockfiles_skips_runner_for_dry_run(tmp_path: Path) -> None:
     """Dry runs should not invoke Cargo."""
     runner = _RecordingRunner()
@@ -115,7 +146,7 @@ def test_resolve_lockfile_paths_reports_dry_run_targets(tmp_path: Path) -> None:
     """Dry-run reporting can resolve lockfiles without invoking Cargo."""
     lockfiles = bump_lockfiles.resolve_lockfile_paths(
         tmp_path,
-        ("crates/nested/Cargo.toml",),
+        ("Cargo.toml", "crates/nested/Cargo.toml"),
     )
 
     assert lockfiles == (
