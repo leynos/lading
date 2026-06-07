@@ -114,7 +114,7 @@ def run(
     _process_workspace_manifest(context, target_version, changed_manifests)
     _process_crate_manifests(context, target_version, changed_manifests)
     changed_documents = _process_documentation_files(context, target_version)
-    refreshed_lockfiles = _refresh_lockfiles(context)
+    refreshed_lockfiles = _refresh_lockfiles(context) if changed_manifests else ()
     changes = _prepare_sorted_changes(
         context, changed_manifests, changed_documents, refreshed_lockfiles
     )

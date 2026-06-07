@@ -24,6 +24,7 @@ import collections.abc as cabc
 import dataclasses as dc
 import logging
 import os
+import shlex
 import tempfile
 import typing as typ
 from pathlib import Path
@@ -225,7 +226,10 @@ def _validate_lockfile_freshness(
     for lockfile_path in stale_lockfiles:
         manifest_path = lockfile_path.parent / "Cargo.toml"
         lines.append(f"- {lockfile_path}")
-        lines.append(f"  cargo generate-lockfile --manifest-path {manifest_path}")
+        quoted_manifest_path = shlex.quote(str(manifest_path))
+        lines.append(
+            f"  cargo generate-lockfile --manifest-path {quoted_manifest_path}"
+        )
 
     message = "\n".join(lines)
     LOGGER.error(message)

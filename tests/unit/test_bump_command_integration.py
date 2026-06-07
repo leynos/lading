@@ -342,11 +342,19 @@ def test_run_uses_loaded_configuration_and_workspace(
     ids=lambda scenario: scenario.test_id,
 )
 def test_run_reports_when_versions_already_match(
-    tmp_path: pathlib.Path, scenario: _NoChangeScenario
+    tmp_path: pathlib.Path, scenario: _NoChangeScenario, monkeypatch: MonkeyPatch
 ) -> None:
     """Report the no-op message for both live and dry-run invocations."""
     workspace = _make_workspace(tmp_path)
     configuration = _make_config()
+
+    def fail_discovery(
+        workspace_root: pathlib.Path,
+        runner: bump._CommandRunner,
+    ) -> tuple[pathlib.Path, ...]:
+        pytest.fail("no-op bumps must not discover or refresh lockfiles")
+
+    monkeypatch.setattr(bump, "discover_tracked_lockfiles", fail_discovery)
     message = bump.run(
         tmp_path,
         "0.1.0",

@@ -27,7 +27,11 @@ def test_discover_tracked_lockfiles_returns_empty_result(tmp_path: Path) -> None
         assert cwd == tmp_path
         return 0, "", ""
 
-    assert lockfile.discover_tracked_lockfiles(tmp_path, runner) == ()
+    result = lockfile.discover_tracked_lockfiles(tmp_path, runner)
+    assert result == (), (
+        "git repo with no tracked lockfiles should return an empty tuple; "
+        f"got {result!r}"
+    )
 
 
 def test_discover_tracked_lockfiles_filters_missing_manifests(tmp_path: Path) -> None:
@@ -64,9 +68,14 @@ def test_discover_tracked_lockfiles_filters_missing_manifests(tmp_path: Path) ->
             "",
         )
 
-    assert lockfile.discover_tracked_lockfiles(tmp_path, runner) == (
+    result = lockfile.discover_tracked_lockfiles(tmp_path, runner)
+    expected = (
         tmp_path / "Cargo.lock",
         nested / "Cargo.lock",
+    )
+    assert result == expected, (
+        "only manifest-adjacent, non-target lockfiles should be returned; "
+        f"expected {expected!r}, got {result!r}"
     )
 
 
@@ -84,7 +93,11 @@ def test_discover_tracked_lockfiles_handles_non_git_directory(
     ) -> tuple[int, str, str]:
         return 128, "", "fatal: not a git repository"
 
-    assert lockfile.discover_tracked_lockfiles(tmp_path, runner) == ()
+    result = lockfile.discover_tracked_lockfiles(tmp_path, runner)
+    assert result == (), (
+        "discovery should not abort on non-git errors; "
+        f"expected empty tuple, got {result!r}"
+    )
 
 
 def test_refresh_lockfile_returns_lockfile_path(tmp_path: Path) -> None:
@@ -106,7 +119,12 @@ def test_refresh_lockfile_returns_lockfile_path(tmp_path: Path) -> None:
         assert cwd == manifest.parent
         return 0, "", ""
 
-    assert lockfile.refresh_lockfile(manifest, runner) == tmp_path / "Cargo.lock"
+    expected = tmp_path / "Cargo.lock"
+    result = lockfile.refresh_lockfile(manifest, runner)
+    assert result == expected, (
+        "refresh helper returned unexpected lockfile path; "
+        f"expected {expected!r}, got {result!r}"
+    )
 
 
 def test_refresh_lockfile_raises_on_failure(tmp_path: Path) -> None:
@@ -156,6 +174,8 @@ def test_validate_lockfile_freshness_parametrized(
 ) -> None:
     """Cargo metadata exit status determines whether the lockfile is fresh."""
     exit_code, expected_bool = case
-    assert (
-        _validate_lockfile_freshness_for_exit_code(tmp_path, exit_code) is expected_bool
+    actual = _validate_lockfile_freshness_for_exit_code(tmp_path, exit_code)
+    assert actual is expected_bool, (
+        "freshness result did not match cargo metadata exit code; "
+        f"exit_code={exit_code}, expected {expected_bool}, got {actual}"
     )
