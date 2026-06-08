@@ -1,10 +1,8 @@
-"""Property tests for publish-order index-missing-version handling.
+"""Hypothesis-based property tests for ``_handle_index_missing_version``.
 
-These tests exercise the projected-availability invariant across generated
-publish plans. A missing dependency may be downgraded only when it appears
-strictly before the failing crate in `PublishPlan.publishable`; dependencies at
-the same or later positions are not yet projected to be available and must stay
-fatal.
+Verifies the order-based invariant for in-plan dependencies: a missing
+dependency is allowed only when it appears strictly before the current crate in
+``PublishPlan.publishable``.
 """
 
 from __future__ import annotations

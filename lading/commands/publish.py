@@ -1,12 +1,11 @@
 """Orchestrate the ``lading publish`` workflow.
 
-``run()`` loads configuration, discovers the workspace graph, runs pre-flight
-checks, plans publication order, stages the workspace, and dispatches either
-the dry-run two-phase pipeline or the live per-crate pipeline.
-
-Per-crate helpers invoke ``cargo`` in the staged crate directory and detect
-index-missing-version failures plus publish-phase already-uploaded errors so
-callers get consistent downgrade and error-boundary behaviour.
+This module is the primary entry-point for the ``lading publish`` command.
+It is wired by ``lading.cli`` and delegates index-missing-version decisioning
+to ``lading.commands.publish_index_check``. Publication state is tracked per
+crate via ``PublishPlan`` and ``PublishPreparation`` objects produced in the
+planning and staging phase, then consumed across package and publish dispatches
+for both dry-run and live execution.
 """
 
 from __future__ import annotations

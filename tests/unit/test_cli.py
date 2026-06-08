@@ -1,4 +1,10 @@
-"""Unit tests for the lading CLI scaffolding."""
+"""Unit tests for ``lading.cli``.
+
+Covers tri-state ``--allow-unpublished-workspace-deps`` flag resolution via
+``_resolve_allow_unpublished_workspace_deps`` and the resulting
+``PublishOptions.allow_unpublished_workspace_deps`` value passed to
+``publish.run``.
+"""
 
 from __future__ import annotations
 
