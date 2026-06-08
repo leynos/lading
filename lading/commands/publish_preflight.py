@@ -226,8 +226,8 @@ def _validate_lockfile_freshness(
     lines = [
         "Tracked Cargo.lock files are stale after manifest version changes.",
         (
-            "This commonly happens after running `lading bump`; re-run it to "
-            "refresh tracked lockfiles, or repair each stale lockfile manually:"
+            "This commonly happens after running `lading bump`; repair each "
+            "stale lockfile directly:"
         ),
     ]
     for lockfile_path in stale_lockfiles:

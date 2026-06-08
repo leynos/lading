@@ -31,7 +31,7 @@ def given_workspace_has_tracked_lockfiles(
     install_cargo_stub(cmd_mox, monkeypatch)
     (workspace_directory / "Cargo.lock").write_text("# root lock\n", encoding="utf-8")
     cmd_mox.stub("git").with_args(
-        "ls-files", "*/Cargo.lock", "Cargo.lock"
+        "ls-files", "**/Cargo.lock", "Cargo.lock"
     ).returns(exit_code=0, stdout="Cargo.lock\n", stderr="")
     cmd_mox.stub("cargo::generate-lockfile").with_args(
         "--manifest-path", str(workspace_directory / "Cargo.toml")

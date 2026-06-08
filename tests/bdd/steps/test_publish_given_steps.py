@@ -73,7 +73,7 @@ def given_publish_preflight_finds_stale_lockfile(
 ) -> None:
     """Simulate a tracked lockfile that fails locked metadata validation."""
     (workspace_directory / "Cargo.lock").write_text("# stale lock\n", encoding="utf-8")
-    preflight_overrides["git", "ls-files", "*/Cargo.lock", "Cargo.lock"] = (
+    preflight_overrides["git", "ls-files", "**/Cargo.lock", "Cargo.lock"] = (
         _CommandResponse(exit_code=0, stdout="Cargo.lock\n")
     )
     preflight_overrides[

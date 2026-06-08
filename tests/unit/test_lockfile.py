@@ -23,7 +23,7 @@ def test_discover_tracked_lockfiles_returns_empty_result(tmp_path: Path) -> None
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
-        assert command == ("git", "ls-files", "*/Cargo.lock", "Cargo.lock")
+        assert command == ("git", "ls-files", "**/Cargo.lock", "Cargo.lock")
         assert cwd == tmp_path
         return 0, "", ""
 
@@ -54,7 +54,7 @@ def test_discover_tracked_lockfiles_filters_missing_manifests(tmp_path: Path) ->
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
-        assert command == ("git", "ls-files", "*/Cargo.lock", "Cargo.lock")
+        assert command == ("git", "ls-files", "**/Cargo.lock", "Cargo.lock")
         assert cwd == tmp_path
         assert env is None
         return (

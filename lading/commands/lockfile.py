@@ -112,7 +112,7 @@ def discover_tracked_lockfiles(
     through :func:`_handle_git_ls_files_failure` and returns an empty tuple.
     """
     exit_code, stdout, stderr = runner(
-        ("git", "ls-files", "*/Cargo.lock", "Cargo.lock"),
+        ("git", "ls-files", "**/Cargo.lock", "Cargo.lock"),
         cwd=workspace_root,
     )
     error_result = _handle_git_ls_files_failure(

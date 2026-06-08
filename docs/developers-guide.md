@@ -103,7 +103,10 @@ passes respectively.
 calls it after manifest rewrites. The refresh loop is intentionally not
 transactional: if a later lockfile refresh fails, previously rewritten
 manifests and refreshed lockfiles remain on disk, and the operator should fix
-the Cargo error and rerun `lading bump` with the same version.
+the Cargo error, then run
+`cargo generate-lockfile --manifest-path <path>/Cargo.toml` for each affected
+crate manifest. Rerunning `lading bump` will not refresh lockfiles once the
+manifests are already rewritten.
 
 `validate_lockfile_freshness(manifest_path, runner)` runs
 `cargo metadata --locked --manifest-path ... --format-version=1`. It returns

@@ -96,7 +96,7 @@ def _mock_cargo_metadata(
         stdout=json.dumps(payload),
         stderr="",
     ).any_order()
-    cmd_mox.stub("git").with_args("ls-files", "*/Cargo.lock", "Cargo.lock").returns(
+    cmd_mox.stub("git").with_args("ls-files", "**/Cargo.lock", "Cargo.lock").returns(
         exit_code=0, stdout="", stderr=""
     ).any_order()
 

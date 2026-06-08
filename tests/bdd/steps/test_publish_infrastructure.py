@@ -185,7 +185,7 @@ def _register_preflight_commands(
     """
     defaults: dict[tuple[str, ...], ResponseProvider] = {
         ("git", "status", "--porcelain"): _CommandResponse(exit_code=0),
-        ("git", "ls-files", "*/Cargo.lock", "Cargo.lock"): _CommandResponse(
+        ("git", "ls-files", "**/Cargo.lock", "Cargo.lock"): _CommandResponse(
             exit_code=0
         ),
         (
