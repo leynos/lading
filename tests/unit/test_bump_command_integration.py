@@ -37,6 +37,17 @@ class _NoChangeScenario:
     expected_message: str
 
 
+@dc.dataclass(frozen=True, slots=True)
+class _LockfileSkipScenario:
+    """Parameters describing lockfile rebuild skip scenarios."""
+
+    test_id: str
+    version: str
+    rebuild_lockfiles: bool
+    fail_message: str
+    expected_message: str | None
+
+
 @pytest.fixture(autouse=True)
 def stub_lockfile_regeneration(monkeypatch: MonkeyPatch) -> None:
     """Avoid invoking Cargo from manifest-focused bump tests."""
@@ -265,36 +276,6 @@ def test_run_reports_lockfiles_in_dry_run(
     assert "2 lockfile(s)" in message
     assert "- Cargo.lock (lockfile)" in message.splitlines()
     assert "- crates/ui/Cargo.lock (lockfile)" in message.splitlines()
-
-
-def test_run_skips_lockfile_rebuild_when_disabled(
-    tmp_path: pathlib.Path,
-    monkeypatch: MonkeyPatch,
-) -> None:
-    """`rebuild_lockfiles=False` prevents lockfile regeneration."""
-    workspace = _make_workspace(tmp_path)
-    configuration = _make_config()
-
-    def fail_regeneration(*args: object, **kwargs: object) -> typ.NoReturn:
-        pytest.fail("lockfile regeneration should be skipped")
-
-    monkeypatch.setattr(
-        bump.bump_lockfiles,
-        "regenerate_lockfiles",
-        fail_regeneration,
-    )
-
-    message = bump.run(
-        tmp_path,
-        "1.2.3",
-        options=bump.BumpOptions(
-            rebuild_lockfiles=False,
-            configuration=configuration,
-            workspace=workspace,
-        ),
-    )
-
-    assert "lockfile" not in message
 def test_run_updates_renamed_internal_dependency_versions(
     tmp_path: pathlib.Path,
 ) -> None:
@@ -411,16 +392,42 @@ def test_run_reports_when_versions_already_match(
     )
     assert message == scenario.expected_message
 
-def test_run_skips_lockfile_rebuild_when_versions_already_match(
+
+@pytest.mark.parametrize(
+    "scenario",
+    [
+        _LockfileSkipScenario(
+            test_id="disabled",
+            version="1.2.3",
+            rebuild_lockfiles=False,
+            fail_message="lockfile regeneration should be skipped",
+            expected_message=None,
+        ),
+        _LockfileSkipScenario(
+            test_id="versions_already_match",
+            version="0.1.0",
+            rebuild_lockfiles=True,
+            fail_message=(
+                "lockfiles should not be regenerated without manifest changes"
+            ),
+            expected_message=(
+                "No manifest changes required; all versions already 0.1.0."
+            ),
+        ),
+    ],
+    ids=lambda scenario: scenario.test_id,
+)
+def test_run_skips_lockfile_rebuild(
     tmp_path: pathlib.Path,
     monkeypatch: MonkeyPatch,
+    scenario: _LockfileSkipScenario,
 ) -> None:
-    """Unchanged manifests should not trigger lockfile regeneration."""
+    """Lockfile regeneration is skipped when disabled or no manifests changed."""
     workspace = _make_workspace(tmp_path)
     configuration = _make_config()
 
     def fail_regeneration(*args: object, **kwargs: object) -> typ.NoReturn:
-        pytest.fail("lockfiles should not be regenerated without manifest changes")
+        pytest.fail(scenario.fail_message)
 
     monkeypatch.setattr(
         bump.bump_lockfiles,
@@ -430,15 +437,20 @@ def test_run_skips_lockfile_rebuild_when_versions_already_match(
 
     message = bump.run(
         tmp_path,
-        "0.1.0",
+        scenario.version,
         options=bump.BumpOptions(
-            rebuild_lockfiles=True,
+            rebuild_lockfiles=scenario.rebuild_lockfiles,
             configuration=configuration,
             workspace=workspace,
         ),
     )
 
-    assert message == "No manifest changes required; all versions already 0.1.0."
+    if scenario.expected_message is not None:
+        assert message == scenario.expected_message
+    else:
+        assert "lockfile" not in message
+
+
 def test_run_dry_run_reports_changes_without_modifying_files(
     tmp_path: pathlib.Path,
 ) -> None:
