@@ -360,6 +360,7 @@ def test_run_keeps_live_publication_interleaved(
     ]
     assert runner.calls == expected_pairs
 
+
 @given(st.integers(min_value=2, max_value=10))
 @settings(max_examples=20, suppress_health_check=[HealthCheck.function_scoped_fixture])
 def test_dry_run_batching_invariant_property(tmp_path: Path, crate_count: int) -> None:
@@ -393,6 +394,7 @@ def test_dry_run_batching_invariant_property(tmp_path: Path, crate_count: int) -
     assert len(expected_packages) == crate_count
     assert len(expected_dry_runs) == crate_count
     assert runner.calls == expected_packages + expected_dry_runs
+
 
 @given(st.integers(min_value=2, max_value=10))
 @settings(max_examples=20, suppress_health_check=[HealthCheck.function_scoped_fixture])
