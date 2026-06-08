@@ -36,6 +36,14 @@ class _NoChangeScenario:
     dry_run: bool
     expected_message: str
 
+@dc.dataclass(frozen=True, slots=True)
+class _ReadmeTransposeScenario:
+    """Parameters for README transposition tests."""
+
+    test_id: str
+    exclude: tuple[str, ...] = ()
+    check_version_unchanged: bool = False
+
 
 @dc.dataclass(frozen=True, slots=True)
 class _LockfileSkipScenario:
@@ -179,8 +187,24 @@ def test_run_updates_documentation_snippets(tmp_path: pathlib.Path) -> None:
     assert 'alpha = "1.2.3"' in updated_readme
 
 
-def test_run_transposes_workspace_readme_to_crates(tmp_path: pathlib.Path) -> None:
-    """Bumping adopts the workspace README for opted-in crates."""
+@pytest.mark.parametrize(
+    "scenario",
+    [
+        _ReadmeTransposeScenario(
+            test_id="included_crate",
+        ),
+        _ReadmeTransposeScenario(
+            test_id="excluded_crate",
+            exclude=("alpha",),
+            check_version_unchanged=True,
+        ),
+    ],
+    ids=lambda s: s.test_id,
+)
+def test_run_transposes_workspace_readme_to_crates(
+    tmp_path: pathlib.Path, scenario: _ReadmeTransposeScenario
+) -> None:
+    """README adoption follows crate opt-in regardless of version-bump exclusion."""
     workspace, _manifests = _build_workspace_with_internal_deps(
         tmp_path,
         specs=(_CrateSpec(name="alpha", readme_workspace=True),),
@@ -189,7 +213,7 @@ def test_run_transposes_workspace_readme_to_crates(tmp_path: pathlib.Path) -> No
         "# Sample\n\nSee [Guide](docs/guide.md).\n",
         encoding="utf-8",
     )
-    configuration = _make_config()
+    configuration = _make_config(exclude=scenario.exclude)
 
     message = bump.run(
         tmp_path,
@@ -203,35 +227,11 @@ def test_run_transposes_workspace_readme_to_crates(tmp_path: pathlib.Path) -> No
     assert crate_readme.read_text(encoding="utf-8") == (
         "# Sample\n\nSee [Guide](../../docs/guide.md).\n"
     )
-
-def test_run_transposes_workspace_readme_to_excluded_crates(
-    tmp_path: pathlib.Path,
-) -> None:
-    """README adoption follows crate opt-in even when version bumps are excluded."""
-    workspace, _manifests = _build_workspace_with_internal_deps(
-        tmp_path,
-        specs=(_CrateSpec(name="alpha", readme_workspace=True),),
-    )
-    (tmp_path / "README.md").write_text(
-        "# Sample\n\nSee [Guide](docs/guide.md).\n",
-        encoding="utf-8",
-    )
-    configuration = _make_config(exclude=("alpha",))
-
-    message = bump.run(
-        tmp_path,
-        "1.2.3",
-        options=bump.BumpOptions(configuration=configuration, workspace=workspace),
-    )
-
-    crate_readme = tmp_path / "crates" / "alpha" / "README.md"
-    assert "- crates/alpha/README.md (readme)" in message.splitlines()
-    assert crate_readme.read_text(encoding="utf-8") == (
-        "# Sample\n\nSee [Guide](../../docs/guide.md).\n"
-    )
-    assert _load_version(
-        tmp_path / "crates" / "alpha" / "Cargo.toml", ("package",)
-    ) == ("0.1.0")
+    if scenario.check_version_unchanged:
+        assert (
+            _load_version(tmp_path / "crates" / "alpha" / "Cargo.toml", ("package",))
+            == "0.1.0"
+        )
 
 
 def test_run_rebuilds_lockfiles_by_default(
