@@ -286,8 +286,15 @@ def _handle_index_missing_version(
         _raise_name_extraction_failure(context)
 
     publishable_name_indexes = _publishable_name_indexes(handling.plan)
-    current_name = _canonical_crate_name(invocation.crate_name)
-    current_index = publishable_name_indexes[current_name]
+    canonical_current = _canonical_crate_name(invocation.crate_name)
+    current_index = publishable_name_indexes.get(canonical_current)
+    if current_index is None:
+        message = (
+            f"cargo {invocation.subcommand} failed for crate "
+            f"{invocation.crate_name}, but that crate is not part of the "
+            "current publish plan."
+        )
+        raise RuntimeError(message)
     missing_canonical_name = _canonical_crate_name(missing_name)
     missing_index = publishable_name_indexes.get(missing_canonical_name)
     if missing_index is None:
