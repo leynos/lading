@@ -181,6 +181,22 @@ Examples:
 - `PublishOptions(allow_dirty=False)` — require a clean git working tree before
   proceeding with publish preparation.
 
+
+## Bump command internals
+
+`BumpOptions` carries the dependency-injection points used by
+`lading.commands.bump.run`. The `runner` field accepts an optional
+`_CommandRunner`, matching the command-runner protocol used by publish
+execution. When `runner` is `None`, bump falls back to the default subprocess
+runner. Tests pass a runner explicitly so lockfile refresh commands can be
+observed without invoking real Cargo processes.
+
+`BumpChanges` records the user-visible files touched by a bump run. Its
+`lockfiles` field contains the git-tracked `Cargo.lock` files refreshed after
+manifest rewrites. The output formatter treats these paths like manifests and
+documentation files, listing each refreshed lockfile with a `(lockfile)` suffix
+so operators can see which generated files need review and commit.
+
 ## Publish command internals
 
 `PublishOptions.allow_unpublished_workspace_deps` is a dry-run-only override
