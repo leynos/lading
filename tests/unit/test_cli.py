@@ -392,6 +392,7 @@ def test_bump_cli_accepts_dry_run_flag(
     assert options.dry_run is True
     assert options.command_runner is cli.subprocess_runner
 
+
 def test_publish_cli_logs_dry_run_default_flag_resolution(
     caplog: pytest.LogCaptureFixture,
 ) -> None:

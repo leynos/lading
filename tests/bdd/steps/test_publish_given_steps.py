@@ -180,6 +180,8 @@ def given_publish_order_puts_beta_before_alpha(workspace_directory: Path) -> Non
         'order = ["beta", "alpha", "gamma"]\n',
         encoding="utf-8",
     )
+
+
 @given("the workspace has uncommitted changes")
 def given_workspace_dirty(
     preflight_overrides: dict[tuple[str, ...], ResponseProvider],

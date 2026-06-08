@@ -146,6 +146,7 @@ def _parse_workspace_equals(argument: str, index: int) -> tuple[str, int]:
     workspace = _validate_workspace_value(candidate)
     return workspace, index + 1
 
+
 def _resolve_allow_unpublished_workspace_deps(
     *,
     live: bool,
