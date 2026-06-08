@@ -19,6 +19,7 @@ from __future__ import annotations
 import re
 import typing as typ
 from pathlib import Path
+from urllib.parse import urlparse
 
 from lading.commands import bump_toml
 from lading.commands.publish_manifest import PublishPreparationError
@@ -163,7 +164,9 @@ def transpose_readme_to_crate(
 
 def _should_rewrite_link_target(target: str) -> bool:
     """Return True when ``target`` is a non-empty relative Markdown URL."""
-    return bool(target) and not target.startswith(_ABSOLUTE_LINK_PREFIXES)
+    return bool(target) and not (
+        urlparse(target).scheme or target.startswith(_ABSOLUTE_LINK_PREFIXES)
+    )
 
 
 __all__ = [

@@ -226,7 +226,7 @@ def prepare_workspace(
     *,
     options: PublishOptions | None = None,
 ) -> PublishPreparation:
-    """Stage a workspace copy and propagate workspace READMEs."""
+    """Stage a workspace copy for publishing."""
     active_options = PublishOptions() if options is None else options
     build_directory = _normalise_build_directory(
         plan.workspace_root, active_options.build_directory

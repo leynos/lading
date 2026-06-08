@@ -226,12 +226,10 @@ def given_crate_readme_matches_workspace(
 ) -> None:
     """Write the already-transposed README expected for ``crate_name``."""
     workspace_readme = workspace_directory / "README.md"
-    crate_readme = workspace_directory / "crates" / crate_name / "README.md"
-    workspace_readme_text = workspace_readme.read_text(encoding="utf-8")
+    crate_root = workspace_directory / "crates" / crate_name
+    crate_readme = crate_root / "README.md"
     rewritten_text, _ = bump_readme.rewrite_relative_links(
-        workspace_readme_text,
-        bump_readme.compute_link_prefix(
-            (crate_readme.parent).resolve().relative_to(workspace_directory)
-        ),
+        workspace_readme.read_text(encoding="utf-8"),
+        bump_readme.compute_link_prefix(crate_root.relative_to(workspace_directory)),
     )
     crate_readme.write_text(rewritten_text, encoding="utf-8")
