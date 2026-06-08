@@ -344,6 +344,7 @@ def test_format_result_message_handles_changes(
         workspace_root=workspace_root,
     ).splitlines() == snapshot(name="all_changes")
 
+
 def test_format_result_message_handles_readme_only_changes(
     tmp_path: Path, snapshot: SnapshotAssertion
 ) -> None:

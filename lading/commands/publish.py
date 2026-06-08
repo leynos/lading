@@ -220,6 +220,8 @@ def _copy_workspace_tree(
         shutil.rmtree(staging_root)
     shutil.copytree(workspace_root, staging_root, symlinks=preserve_symlinks)
     return staging_root
+
+
 def prepare_workspace(
     plan: PublishPlan,
     workspace: WorkspaceGraph,

@@ -79,6 +79,7 @@ def test_format_plan_formats_skipped_sections(
     assert lines[configuration_index + 1] == "- gamma"
     assert lines[missing_index + 1] == "- missing"
 
+
 def test_format_preparation_summary_reports_bump_readme_handling(
     tmp_path: Path,
 ) -> None:

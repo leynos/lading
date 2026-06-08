@@ -5,12 +5,25 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from hypothesis import given, settings
 from hypothesis import strategies as st
+
 from lading.commands import bump_readme
 from lading.commands.publish_manifest import PublishPreparationError
 from lading.workspace import WorkspaceCrate
+
+_PATH_COMPONENT = st.text(
+    alphabet=st.characters(blacklist_characters="/\\\x00"),
+    min_size=1,
+)
+_URI_SCHEME = st.text(
+    alphabet=st.characters(
+        whitelist_categories=("Ll", "Lu", "Nd"),
+        whitelist_characters="+.-",
+    ),
+    min_size=1,
+    max_size=12,
+).filter(lambda value: value[0].isalpha())
 
 
 def _make_crate(
@@ -192,6 +205,7 @@ def test_transpose_readme_to_crate_rejects_external_crate_root(
     with pytest.raises(PublishPreparationError, match=r"outside the workspace root"):
         bump_readme.transpose_readme_to_crate(tmp_path, crate, dry_run=False)
 
+
 @given(parts=st.lists(_PATH_COMPONENT, min_size=1, max_size=8))
 @settings(max_examples=100)
 def test_compute_link_prefix_depth_matches_parts(parts: list[str]) -> None:
@@ -202,6 +216,7 @@ def test_compute_link_prefix_depth_matches_parts(parts: list[str]) -> None:
     assert prefix.endswith("/")
     assert not prefix.startswith("/")
 
+
 @given(text=st.text(max_size=400), prefix=st.just("../../"))
 @settings(max_examples=100)
 def test_rewrite_relative_links_changed_flag_is_consistent(
@@ -210,6 +225,7 @@ def test_rewrite_relative_links_changed_flag_is_consistent(
     """Changed is False if and only if the returned text equals the input."""
     rewritten, changed = bump_readme.rewrite_relative_links(text, prefix)
     assert changed == (rewritten != text)
+
 
 @given(
     scheme=_URI_SCHEME,

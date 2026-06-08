@@ -137,12 +137,15 @@ def when_run_lading_bump(
     workspace: workspace_builder.NonTrivialWorkspace = e2e_state["workspace"]
     return run_cli(repo_root, workspace.root, "bump", version)
 
+
 @when("I commit the E2E workspace changes")
 def when_commit_e2e_workspace_changes(e2e_state: dict[str, typ.Any]) -> None:
     """Commit bump output so publish can enforce a clean working tree."""
     repo_root: Path = e2e_state["git_repo"]
     git_helpers.git_add_all(repo_root)
     git_helpers.git_commit(repo_root, "Record bumped workspace")
+
+
 @when(
     "I run lading publish --forbid-dirty in the E2E workspace", target_fixture="cli_run"
 )
@@ -280,6 +283,7 @@ def then_cargo_publish_omits_allow_dirty(publish_spies: dict[str, typ.Any]) -> N
     seen_args = {args for _label, args, _env in publish_calls}
     assert seen_args == {("--dry-run",)}
     assert all("--allow-dirty" not in args for args in seen_args)
+
 
 @then("the workspace README was adopted for all crates")
 def then_readme_adopted_for_all_crates(e2e_state: dict[str, typ.Any]) -> None:

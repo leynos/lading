@@ -103,7 +103,6 @@ class _BumpContext:
     excluded: frozenset[str]
     updated_crate_names: frozenset[str]
 
-
 def _build_changes_description(changes: BumpChanges) -> str:
     """Build a human-readable description of changed files."""
     parts: list[str] = []

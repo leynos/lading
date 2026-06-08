@@ -139,6 +139,7 @@ def _rewrite_links_outside_code(
 
     return "".join(lines)
 
+
 def _load_source_text(source_readme: Path, _source_text: str | None) -> str:
     """Read and return the workspace README text.
 
@@ -156,6 +157,7 @@ def _load_source_text(source_readme: Path, _source_text: str | None) -> str:
         else source_readme.read_text(encoding="utf-8")
     )
 
+
 def _resolve_crate_relative_path(workspace_root: Path, crate: WorkspaceCrate) -> Path:
     """Return the crate path relative to the workspace root.
 
@@ -170,6 +172,7 @@ def _resolve_crate_relative_path(workspace_root: Path, crate: WorkspaceCrate) ->
             "cannot transpose README"
         )
         raise PublishPreparationError(message) from exc
+
 
 def _write_or_skip_readme(
     target_readme: Path,
@@ -195,6 +198,8 @@ def _write_or_skip_readme(
     else:
         _log.info("Dry run: would transpose workspace README to %s", target_readme)
     return target_readme
+
+
 def transpose_readme_to_crate(
     workspace_root: Path,
     crate: WorkspaceCrate,
@@ -249,6 +254,7 @@ def _should_rewrite_link_target(target: str) -> bool:
     return bool(target) and not (
         _has_uri_scheme(target) or target.startswith(_ABSOLUTE_LINK_PREFIXES)
     )
+
 
 def _has_uri_scheme(target: str) -> bool:
     """Return True when ``target`` starts with a URI-like scheme."""

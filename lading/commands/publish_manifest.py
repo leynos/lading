@@ -55,6 +55,7 @@ type _ManifestValidation = (
     | None
 )
 
+
 class PublishPreparationError(LadingError):
     """Publish staging failed to prepare required assets.
 
