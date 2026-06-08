@@ -139,7 +139,62 @@ def _rewrite_links_outside_code(
 
     return "".join(lines)
 
+def _load_source_text(source_readme: Path, _source_text: str | None) -> str:
+    """Read and return the workspace README text.
 
+    Raises ``PublishPreparationError`` when the file is absent and no
+    pre-loaded text was supplied.
+    """
+    if not source_readme.exists():
+        message = (
+            "Workspace README.md is required by crates that set readme.workspace = true"
+        )
+        raise PublishPreparationError(message)
+    return (
+        _source_text
+        if _source_text is not None
+        else source_readme.read_text(encoding="utf-8")
+    )
+
+def _resolve_crate_relative_path(workspace_root: Path, crate: WorkspaceCrate) -> Path:
+    """Return the crate path relative to the workspace root.
+
+    Raises ``PublishPreparationError`` when the crate lies outside the
+    workspace.
+    """
+    try:
+        return crate.root_path.relative_to(workspace_root)
+    except ValueError as exc:
+        message = (
+            f"Crate {crate.name!r} is outside the workspace root; "
+            "cannot transpose README"
+        )
+        raise PublishPreparationError(message) from exc
+
+def _write_or_skip_readme(
+    target_readme: Path,
+    rewritten_text: str,
+    *,
+    dry_run: bool,
+    crate_name: str,
+) -> Path | None:
+    """Write the rewritten README, or skip when content is already current.
+
+    Returns the target path when a write occurred or would occur; otherwise
+    ``None``.
+    """
+    if (
+        target_readme.exists()
+        and target_readme.read_text(encoding="utf-8") == rewritten_text
+    ):
+        _log.debug("README already up to date for crate %r; skipping", crate_name)
+        return None
+    if not dry_run:
+        bump_toml.write_atomic_text(target_readme, rewritten_text)
+        _log.info("Transposed workspace README to %s", target_readme)
+    else:
+        _log.info("Dry run: would transpose workspace README to %s", target_readme)
+    return target_readme
 def transpose_readme_to_crate(
     workspace_root: Path,
     crate: WorkspaceCrate,
@@ -176,43 +231,17 @@ def transpose_readme_to_crate(
     """
     _log.debug("Transposing workspace README into crate %r", crate.name)
     source_readme = workspace_root / "README.md"
-    if not source_readme.exists():
-        message = (
-            "Workspace README.md is required by crates that set readme.workspace = true"
-        )
-        raise PublishPreparationError(message)
-
-    try:
-        crate_relative_path = crate.root_path.relative_to(workspace_root)
-    except ValueError as exc:
-        message = (
-            f"Crate {crate.name!r} is outside the workspace root; "
-            "cannot transpose README"
-        )
-        raise PublishPreparationError(message) from exc
-
-    source_text = (
-        _source_text
-        if _source_text is not None
-        else source_readme.read_text(encoding="utf-8")
-    )
+    source_text = _load_source_text(source_readme, _source_text)
+    crate_relative_path = _resolve_crate_relative_path(workspace_root, crate)
     rewritten_text = rewrite_relative_links(
         source_text, compute_link_prefix(crate_relative_path)
     )[0]
-
-    target_readme = crate.root_path / "README.md"
-    if (
-        target_readme.exists()
-        and target_readme.read_text(encoding="utf-8") == rewritten_text
-    ):
-        _log.debug("README already up to date for crate %r; skipping", crate.name)
-        return None
-    if not dry_run:
-        bump_toml.write_atomic_text(target_readme, rewritten_text)
-        _log.info("Transposed workspace README to %s", target_readme)
-    else:
-        _log.info("Dry run: would transpose workspace README to %s", target_readme)
-    return target_readme
+    return _write_or_skip_readme(
+        crate.root_path / "README.md",
+        rewritten_text,
+        dry_run=dry_run,
+        crate_name=crate.name,
+    )
 
 
 def _should_rewrite_link_target(target: str) -> bool:
