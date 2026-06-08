@@ -40,6 +40,7 @@ dev = [
     "hypothesis>=6",
     "interrogate>=1.7.0",
     "syrupy>=5.1.0",
+    "hypothesis>=6",
 ]
 
 [tool.ruff]

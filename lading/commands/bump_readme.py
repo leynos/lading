@@ -218,7 +218,19 @@ def transpose_readme_to_crate(
 def _should_rewrite_link_target(target: str) -> bool:
     """Return True when ``target`` is a non-empty relative Markdown URL."""
     return bool(target) and not (
-        urlparse(target).scheme or target.startswith(_ABSOLUTE_LINK_PREFIXES)
+        _has_uri_scheme(target) or target.startswith(_ABSOLUTE_LINK_PREFIXES)
+    )
+
+def _has_uri_scheme(target: str) -> bool:
+    """Return True when ``target`` starts with a URI-like scheme."""
+    parsed_scheme = urlparse(target).scheme
+    if parsed_scheme:
+        return True
+    scheme, separator, _rest = target.partition(":")
+    return (
+        bool(separator)
+        and scheme[:1].isalpha()
+        and all(character.isalnum() or character in "+.-" for character in scheme)
     )
 
 

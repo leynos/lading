@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from hypothesis import given, settings
+from hypothesis import strategies as st
 from lading.commands import bump_readme
 from lading.commands.publish_manifest import PublishPreparationError
 from lading.workspace import WorkspaceCrate
@@ -189,3 +191,74 @@ def test_transpose_readme_to_crate_rejects_external_crate_root(
 
     with pytest.raises(PublishPreparationError, match=r"outside the workspace root"):
         bump_readme.transpose_readme_to_crate(tmp_path, crate, dry_run=False)
+
+@given(parts=st.lists(_PATH_COMPONENT, min_size=1, max_size=8))
+@settings(max_examples=100)
+def test_compute_link_prefix_depth_matches_parts(parts: list[str]) -> None:
+    """Prefix length in '../' units equals the number of path components."""
+    path = Path(*parts)
+    prefix = bump_readme.compute_link_prefix(path)
+    assert prefix == "../" * len(path.parts)
+    assert prefix.endswith("/")
+    assert not prefix.startswith("/")
+
+@given(text=st.text(max_size=400), prefix=st.just("../../"))
+@settings(max_examples=100)
+def test_rewrite_relative_links_changed_flag_is_consistent(
+    text: str, prefix: str
+) -> None:
+    """Changed is False if and only if the returned text equals the input."""
+    rewritten, changed = bump_readme.rewrite_relative_links(text, prefix)
+    assert changed == (rewritten != text)
+
+@given(
+    scheme=_URI_SCHEME,
+    rest=st.text(
+        min_size=1,
+        max_size=80,
+        alphabet=st.characters(blacklist_characters=" ()\n"),
+    ),
+    label=st.text(
+        min_size=1,
+        max_size=20,
+        alphabet=st.characters(blacklist_characters="[]\n"),
+    ),
+)
+@settings(max_examples=100)
+def test_rewrite_relative_links_preserves_uri_scheme_links(
+    scheme: str, rest: str, label: str
+) -> None:
+    """Links whose target contains a URI scheme are never rewritten."""
+    target = f"{scheme}:{rest}"
+    markdown = f"[{label}]({target})"
+    rewritten, changed = bump_readme.rewrite_relative_links(markdown, "../../")
+    assert not changed
+    assert rewritten == markdown
+
+@given(
+    body=st.text(max_size=200),
+    fence=st.sampled_from(["```", "~~~"]),
+    lang=st.text(
+        max_size=10,
+        alphabet=st.characters(whitelist_categories=("Ll",)),
+    ),
+    label=st.text(
+        min_size=1,
+        max_size=20,
+        alphabet=st.characters(blacklist_characters="[]\n"),
+    ),
+    path=st.text(
+        min_size=1,
+        max_size=40,
+        alphabet=st.characters(blacklist_characters=" ()\n"),
+    ),
+)
+@settings(max_examples=100)
+def test_rewrite_relative_links_preserves_fenced_code_blocks(
+    body: str, fence: str, lang: str, label: str, path: str
+) -> None:
+    """Relative links inside fenced code blocks are never rewritten."""
+    fenced_link = f"[{label}]({path})"
+    markdown = f"{body}\n{fence}{lang}\n{fenced_link}\n{fence}\n"
+    rewritten, _ = bump_readme.rewrite_relative_links(markdown, "../../")
+    assert fenced_link in rewritten
