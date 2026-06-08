@@ -88,26 +88,38 @@ publish runs with stub mode enabled.
 
 ## Bump command internals
 
-`lading.commands.bump` coordinates manifest updates, documentation updates, and
-lockfile reporting. Keep user-facing summary construction in
+`lading.commands.bump` coordinates manifest updates, documentation updates, README
+adoption, and lockfile reporting. Keep user-facing summary construction in
 `lading.commands.bump_output` rather than formatting messages inline in the
-workflow. The `BumpChanges` value groups changed manifests, documentation files,
-and lockfiles, so tests can snapshot the complete CLI message contract.
+workflow.
+
+`lading.commands.bump_output` renders the CLI summary from a `BumpChanges`
+record. This record includes manifests, documentation files, transposed
+readmes, and lockfiles that changed during a bump run.
+
+`lading.commands.bump_readme` owns workspace README adoption during
+`lading bump`. The module copies the workspace `README.md` into each crate that
+sets `readme.workspace = true`, rewrites relative Markdown links so they resolve
+from the crate directory, and leaves absolute URI targets unchanged. Markdown
+links in fenced code blocks, indented code blocks, and inline code spans are
+preserved verbatim.
 
 `lading.commands.bump_lockfiles` owns Cargo lockfile discovery and regeneration
-after a version bump changes manifest content. It always includes the workspace
-root `Cargo.toml`, validates configured nested manifests before invoking Cargo,
-and de-duplicates resolved manifest paths. Invalid configured manifests and
-failed `cargo update --workspace` commands raise `LockfileRegenerationError`,
-which keeps bump failures in bump domain language rather than reusing
-publish-specific errors.
+after manifest changes. It always includes the workspace root `Cargo.toml`,
+validates configured nested manifests before invoking Cargo, and de-duplicates
+resolved manifest paths.
 
-Dry-run bump output uses `bump_lockfiles.resolve_lockfile_paths()` to report
-which lockfiles would be regenerated without invoking Cargo. Live bump runs use
-`bump_lockfiles.regenerate_lockfiles()` after manifest and documentation
-processing, and only when at least one manifest changed. Programmatic callers
-can pass `BumpOptions.command_runner` to observe those cargo invocations through
-the shared `lading.runtime.CommandRunner` port.
+`BumpOptions` carries the dependency-injection points used by
+`lading.commands.bump.run`. The `command_runner` field accepts an optional
+`CommandRunner`, matching the command-runner protocol used by publish execution.
+When `command_runner` is `None`, bump falls back to the default subprocess
+runner. Tests pass a runner explicitly so lockfile commands can be observed
+without invoking real Cargo processes.
+
+`BumpChanges` records the user-visible files touched by a bump run. Its
+`lockfiles` field contains the `Cargo.lock` files regenerated after manifest
+updates. The output formatter labels these paths as `(lockfile)` so operators can
+see which generated files need review and commit.
 
 ## Workspace discovery helpers
 
@@ -202,6 +214,7 @@ Examples:
   automatically at process exit instead of leaving it for inspection.
 - `PublishOptions(allow_dirty=False)` — require a clean git working tree before
   proceeding with publish preparation.
+
 
 ## Publish command internals
 
