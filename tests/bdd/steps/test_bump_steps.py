@@ -33,9 +33,9 @@ def given_workspace_has_tracked_lockfiles(
     cmd_mox.stub("git").with_args("ls-files", "**/Cargo.lock", "Cargo.lock").returns(
         exit_code=0, stdout="Cargo.lock\n", stderr=""
     )
-    cmd_mox.stub("cargo::generate-lockfile").with_args(
-        "--manifest-path", str(workspace_directory / "Cargo.toml")
-    ).returns(exit_code=0, stdout="cargo generate-lockfile\n", stderr="")
+    cmd_mox.stub("cargo::update").with_args(
+        "--workspace", "--manifest-path", str(workspace_directory / "Cargo.toml")
+    ).returns(exit_code=0, stdout="cargo update --workspace\n", stderr="")
 
 
 @when(
@@ -156,7 +156,7 @@ def then_bump_refreshed_lockfiles(cli_run: dict[str, typ.Any]) -> None:
     """Assert the live bump lockfile scenario completed successfully."""
     assert cli_run["returncode"] == 0
     output = f"{cli_run['stdout']}\n{cli_run['stderr']}"
-    assert "cargo generate-lockfile" in output
+    assert "cargo update --workspace" in output
 
 
 @then("the bump command did not refresh tracked lockfiles")
@@ -164,8 +164,8 @@ def then_bump_did_not_refresh_lockfiles(cli_run: dict[str, typ.Any]) -> None:
     """Assert the dry-run lockfile scenario completed without refresh."""
     assert cli_run["returncode"] == 0
     output = f"{cli_run['stdout']}\n{cli_run['stderr']}"
-    assert "cargo::generate-lockfile" not in output
-    assert "cargo generate-lockfile" not in output
+    assert "cargo::update" not in output
+    assert "cargo update --workspace" not in output
 
 
 @then(parsers.parse('the documentation file "{relative_path}" contains "{expected}"'))

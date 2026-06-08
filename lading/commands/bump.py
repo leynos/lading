@@ -291,6 +291,7 @@ def _update_crate_manifest(
         crate_options,
     )
 
+
 def _validate_bump_options(options: BumpOptions) -> tuple[LadingConfig, WorkspaceGraph]:
     """Validate and extract required configuration and workspace from options.
 

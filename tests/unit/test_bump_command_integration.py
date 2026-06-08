@@ -280,6 +280,8 @@ def test_run_inherits_lockfile_rebuild_configuration(
     )
 
     assert "lockfile" not in message
+
+
 def test_run_reports_lockfiles_in_dry_run(
     tmp_path: pathlib.Path,
     monkeypatch: MonkeyPatch,
@@ -332,6 +334,8 @@ def test_run_reports_lockfiles_in_dry_run(
     assert "2 lockfile(s)" in message
     assert "- Cargo.lock (lockfile)" in message.splitlines()
     assert "- crates/ui/Cargo.lock (lockfile)" in message.splitlines()
+
+
 def test_run_updates_renamed_internal_dependency_versions(
     tmp_path: pathlib.Path,
 ) -> None:

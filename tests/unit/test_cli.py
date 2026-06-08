@@ -390,7 +390,8 @@ def test_bump_cli_accepts_dry_run_flag(
     options = captured_kwargs["options"]
     assert isinstance(options, bump_command.BumpOptions)
     assert options.dry_run is True
-    assert options.runner is cli.subprocess_runner
+    assert options.command_runner is cli.subprocess_runner
+
 
 @pytest.mark.parametrize(
     ("config_body", "extra_args", "expected"),
@@ -448,6 +449,8 @@ def test_bump_cli_resolves_rebuild_lockfiles(
     options = captured_kwargs["options"]
     assert isinstance(options, bump_command.BumpOptions)
     assert options.rebuild_lockfiles is expected
+
+
 @pytest.mark.parametrize(
     "case",
     [

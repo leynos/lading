@@ -5,8 +5,8 @@ from __future__ import annotations
 import dataclasses as dc
 import typing as typ
 
-from tomlkit import parse as parse_toml
 import pytest
+from tomlkit import parse as parse_toml
 
 from lading.workspace import WorkspaceCrate, WorkspaceDependency, WorkspaceGraph
 from tests.helpers.workspace_builders import (

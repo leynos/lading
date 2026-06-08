@@ -12,12 +12,13 @@ import logging
 import time
 from pathlib import Path
 
+from lading.exceptions import LadingError
 from lading.runtime import CommandRunner, subprocess_runner
 
 _LOGGER = logging.getLogger(__name__)
 
 
-class LockfileRegenerationError(RuntimeError):
+class LockfileRegenerationError(LadingError):
     """Raise when lockfile regeneration cannot validate or execute."""
 
 
