@@ -8,7 +8,6 @@ import typing as typ
 import pytest
 
 from lading.commands import bump_lockfiles
-from lading.commands.publish_errors import PublishPreflightError
 
 if typ.TYPE_CHECKING:
     import collections.abc as cabc
@@ -169,7 +168,9 @@ def test_resolve_lockfile_paths_rejects_invalid_targets(
     expected_message: str,
 ) -> None:
     """Configured manifests must stay in-workspace and name Cargo.toml."""
-    with pytest.raises(PublishPreflightError, match=expected_message):
+    with pytest.raises(
+        bump_lockfiles.LockfileRegenerationError, match=expected_message
+    ):
         bump_lockfiles.resolve_lockfile_paths(tmp_path, (manifest,))
 
 
@@ -189,7 +190,9 @@ def test_regenerate_lockfiles_rejects_invalid_targets_without_running_cargo(
     """Invalid configured manifests should fail before invoking Cargo."""
     runner = _RecordingRunner()
 
-    with pytest.raises(PublishPreflightError, match=expected_message):
+    with pytest.raises(
+        bump_lockfiles.LockfileRegenerationError, match=expected_message
+    ):
         bump_lockfiles.regenerate_lockfiles(
             tmp_path,
             (manifest,),
@@ -204,7 +207,9 @@ def test_regenerate_lockfiles_surfaces_cargo_failure(tmp_path: Path) -> None:
     """A failing cargo invocation should abort the bump."""
     runner = _RecordingRunner(result=(101, "", "failed to resolve"))
 
-    with pytest.raises(PublishPreflightError, match="failed to resolve"):
+    with pytest.raises(
+        bump_lockfiles.LockfileRegenerationError, match="failed to resolve"
+    ):
         bump_lockfiles.regenerate_lockfiles(
             tmp_path,
             (),

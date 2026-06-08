@@ -281,7 +281,10 @@ def test_update_crate_manifest(tmp_path: Path, params: UpdateCrateTestParams) ->
     assert alpha_version == params.expected_alpha_version
 
 
-def test_format_result_message_handles_changes(tmp_path: Path) -> None:
+def test_format_result_message_handles_changes(
+    tmp_path: Path,
+    snapshot: SnapshotAssertion,
+) -> None:
     """The formatted result message reflects manifest counts and paths."""
     workspace_root = tmp_path
     manifest_paths = [
@@ -290,83 +293,41 @@ def test_format_result_message_handles_changes(tmp_path: Path) -> None:
     ]
     documentation_paths = [workspace_root / "README.md"]
     lockfile_paths = [workspace_root / "Cargo.lock"]
-    assert (
-        bump_output._format_result_message(
+    messages = {
+        "no_changes": bump_output._format_result_message(
             bump_output.BumpChanges(),
             "1.2.3",
             dry_run=False,
             workspace_root=workspace_root,
-        )
-        == "No manifest changes required; all versions already 1.2.3."
-    )
-    assert bump_output._format_result_message(
-        bump_output.BumpChanges(manifests=manifest_paths),
-        "4.5.6",
-        dry_run=False,
-        workspace_root=workspace_root,
-    ).splitlines() == [
-        "Updated version to 4.5.6 in 2 manifest(s):",
-        "- Cargo.toml",
-        "- member/Cargo.toml",
-    ]
-    assert bump_output._format_result_message(
-        bump_output.BumpChanges(manifests=manifest_paths),
-        "4.5.6",
-        dry_run=True,
-        workspace_root=workspace_root,
-    ).splitlines() == [
-        "Dry run; would update version to 4.5.6 in 2 manifest(s):",
-        "- Cargo.toml",
-        "- member/Cargo.toml",
-    ]
-    assert bump_output._format_result_message(
-        bump_output.BumpChanges(
-            manifests=manifest_paths, documents=documentation_paths
         ),
-        "7.8.9",
-        dry_run=False,
-        workspace_root=workspace_root,
-    ).splitlines() == [
-        "Updated version to 7.8.9 in 2 manifest(s) and 1 documentation file(s):",
-        "- Cargo.toml",
-        "- member/Cargo.toml",
-        "- README.md (documentation)",
-    ]
-    assert bump_output._format_result_message(
-        bump_output.BumpChanges(lockfiles=lockfile_paths),
-        "7.8.9",
-        dry_run=False,
-        workspace_root=workspace_root,
-    ).splitlines() == [
-        "Updated version to 7.8.9 in 1 lockfile(s):",
-        "- Cargo.lock (lockfile)",
-    ]
-
-
-def test_format_result_message_snapshot(
-    tmp_path: Path, snapshot: SnapshotAssertion
-) -> None:
-    """Bump output formatting is locked for manifest, docs, and lockfiles."""
-    workspace_root = tmp_path
-
-    message = bump._format_result_message(
-        bump.BumpChanges(
-            manifests=(
-                workspace_root / "Cargo.toml",
-                workspace_root / "crates" / "alpha" / "Cargo.toml",
-            ),
-            documents=(workspace_root / "README.md",),
-            lockfiles=(
-                workspace_root / "Cargo.lock",
-                workspace_root / "tests" / "ui_lints" / "Cargo.lock",
-            ),
+        "manifests": bump_output._format_result_message(
+            bump_output.BumpChanges(manifests=manifest_paths),
+            "4.5.6",
+            dry_run=False,
+            workspace_root=workspace_root,
         ),
-        "4.5.6",
-        dry_run=True,
-        workspace_root=workspace_root,
-    )
-
-    assert message == snapshot()
+        "dry_run": bump_output._format_result_message(
+            bump_output.BumpChanges(manifests=manifest_paths),
+            "4.5.6",
+            dry_run=True,
+            workspace_root=workspace_root,
+        ),
+        "documents": bump_output._format_result_message(
+            bump_output.BumpChanges(
+                manifests=manifest_paths, documents=documentation_paths
+            ),
+            "7.8.9",
+            dry_run=False,
+            workspace_root=workspace_root,
+        ),
+        "lockfiles": bump_output._format_result_message(
+            bump_output.BumpChanges(lockfiles=lockfile_paths),
+            "7.8.9",
+            dry_run=False,
+            workspace_root=workspace_root,
+        ),
+    }
+    assert messages == snapshot()
 
 
 def test_update_manifest_writes_when_changed(tmp_path: Path) -> None:

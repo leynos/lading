@@ -86,6 +86,27 @@ The end-to-end suite in `tests/e2e/` keeps git interactions real while stubbing
 only `cargo` operations, using cmd-mox passthrough spies for `git status` when
 publish runs with stub mode enabled.
 
+## Bump command internals
+
+`lading.commands.bump` coordinates manifest updates, documentation updates, and
+lockfile reporting. Keep user-facing summary construction in
+`lading.commands.bump_output` rather than formatting messages inline in the
+workflow. The `BumpChanges` value groups changed manifests, documentation files,
+and lockfiles so tests can snapshot the complete CLI message contract.
+
+`lading.commands.bump_lockfiles` owns Cargo lockfile discovery and regeneration
+after a version bump changes manifest content. It always includes the workspace
+root `Cargo.toml`, validates configured nested manifests before invoking Cargo,
+and de-duplicates resolved manifest paths. Invalid configured manifests and
+failed `cargo generate-lockfile` commands raise `LockfileRegenerationError`,
+which keeps bump failures in bump domain language rather than reusing
+publish-specific errors.
+
+Dry-run bump output uses `bump_lockfiles.resolve_lockfile_paths()` to report
+which lockfiles would be regenerated without invoking Cargo. Live bump runs use
+`bump_lockfiles.regenerate_lockfiles()` after manifest and documentation
+processing, and only when at least one manifest changed.
+
 ## Workspace discovery helpers
 
 ### Lockfile helpers (`lading/commands/lockfile.py`)

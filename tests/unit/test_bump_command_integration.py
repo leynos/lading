@@ -411,7 +411,34 @@ def test_run_reports_when_versions_already_match(
     )
     assert message == scenario.expected_message
 
+def test_run_skips_lockfile_rebuild_when_versions_already_match(
+    tmp_path: pathlib.Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """Unchanged manifests should not trigger lockfile regeneration."""
+    workspace = _make_workspace(tmp_path)
+    configuration = _make_config()
 
+    def fail_regeneration(*args: object, **kwargs: object) -> typ.NoReturn:
+        pytest.fail("lockfiles should not be regenerated without manifest changes")
+
+    monkeypatch.setattr(
+        bump.bump_lockfiles,
+        "regenerate_lockfiles",
+        fail_regeneration,
+    )
+
+    message = bump.run(
+        tmp_path,
+        "0.1.0",
+        options=bump.BumpOptions(
+            rebuild_lockfiles=True,
+            configuration=configuration,
+            workspace=workspace,
+        ),
+    )
+
+    assert message == "No manifest changes required; all versions already 0.1.0."
 def test_run_dry_run_reports_changes_without_modifying_files(
     tmp_path: pathlib.Path,
 ) -> None:

@@ -8,10 +8,17 @@ versions change.
 from __future__ import annotations
 
 import collections.abc as cabc
+import logging
+import time
 from pathlib import Path
 
-from lading.commands.publish_errors import PublishPreflightError
 from lading.commands.publish_execution import CommandRunner, _invoke
+
+_LOGGER = logging.getLogger(__name__)
+
+
+class LockfileRegenerationError(RuntimeError):
+    """Raise when lockfile regeneration cannot validate or execute."""
 
 
 def resolve_lockfile_paths(
@@ -32,14 +39,29 @@ def regenerate_lockfiles(
 ) -> tuple[Path, ...]:
     """Regenerate Cargo lockfiles for root and configured manifests."""
     if dry_run:
+        _LOGGER.info("Skipping lockfile regeneration during dry-run")
         return ()
 
     command_runner = _invoke if runner is None else runner
     manifests = _resolve_manifest_paths(workspace_root, lockfile_manifests)
+    started_at = time.perf_counter()
+    _LOGGER.info("Regenerating %d Cargo lockfile(s)", len(manifests))
     lockfiles: list[Path] = []
     for manifest in manifests:
+        manifest_started_at = time.perf_counter()
+        _LOGGER.info("Regenerating Cargo lockfile for %s", manifest)
         _run_generate_lockfile(workspace_root, manifest, command_runner)
+        _LOGGER.info(
+            "Regenerated Cargo lockfile for %s in %.3fs",
+            manifest,
+            time.perf_counter() - manifest_started_at,
+        )
         lockfiles.append(manifest.parent / "Cargo.lock")
+    _LOGGER.info(
+        "Regenerated %d Cargo lockfile(s) in %.3fs",
+        len(lockfiles),
+        time.perf_counter() - started_at,
+    )
     return tuple(lockfiles)
 
 
@@ -60,12 +82,12 @@ def _resolve_manifest_paths(
             message = (
                 f"Lockfile manifest path must stay within the workspace: {manifest}"
             )
-            raise PublishPreflightError(message) from exc
+            raise LockfileRegenerationError(message) from exc
         if candidate.name != "Cargo.toml":
             message = (
                 f"Lockfile manifest path must point to a Cargo.toml file: {manifest}"
             )
-            raise PublishPreflightError(message)
+            raise LockfileRegenerationError(message)
         if candidate in seen_manifests:
             continue
         seen_manifests.add(candidate)
@@ -90,4 +112,4 @@ def _run_generate_lockfile(
         )
         if detail := (stderr or stdout).strip():
             message = f"{message}: {detail}"
-        raise PublishPreflightError(message)
+        raise LockfileRegenerationError(message)
