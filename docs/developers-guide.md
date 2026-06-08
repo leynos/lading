@@ -399,6 +399,19 @@ includes all four values. Using a single function for message construction keeps
 the error format consistent across the packaging and publish phases and makes
 snapshot testing straightforward.
 
+
+### Command runners (`lading/commands/_runners.py`)
+
+`lading.commands._runners` owns the shared `_CommandRunner` protocol and the
+default `_invoke` adapter used by both bump and publish command workflows.
+Keeping this small boundary module neutral prevents `lading bump` from
+depending on publish-specific infrastructure just to run
+`cargo generate-lockfile`.
+
+`lading.commands.publish_execution` still owns the concrete subprocess and
+cmd-mox implementation. The neutral `_invoke` adapter delegates there at call
+time, while command modules type against `_CommandRunner` from `_runners`.
+
 ### Pre-flight validation (`publish_preflight`)
 
 `lading.commands.publish_preflight` performs workspace validation before

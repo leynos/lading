@@ -7,10 +7,10 @@ from pathlib import Path
 
 from lading.commands.publish_errors import PublishPreflightError
 from lading.runtime import CommandSpawnError
-from lading.runtime.subprocess_runner import split_command as _runtime_split_command
 from lading.runtime.subprocess_runner import (
     subprocess_runner as _default_subprocess_runner,
 )
+from lading.runtime.subprocess_runner import split_command as _runtime_split_command
 
 
 def _publish_error(message: str) -> PublishPreflightError:

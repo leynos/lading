@@ -36,7 +36,7 @@ from pathlib import Path
 from lading.exceptions import LadingError
 
 if typ.TYPE_CHECKING:
-    from lading.commands.publish_execution import _CommandRunner
+    from lading.runtime import CommandRunner
 
 LOGGER = logging.getLogger(__name__)
 _ManifestExists = cabc.Callable[[Path], bool]
@@ -94,7 +94,7 @@ def _manifest_exists(manifest_path: Path) -> bool:
 
 def discover_tracked_lockfiles(
     workspace_root: Path,
-    runner: _CommandRunner,
+    runner: CommandRunner,
     *,
     manifest_exists: _ManifestExists = _manifest_exists,
 ) -> tuple[Path, ...]:
@@ -144,7 +144,7 @@ def discover_tracked_lockfiles(
 
 def refresh_lockfile(
     manifest_path: Path,
-    runner: _CommandRunner,
+    runner: CommandRunner,
 ) -> Path:
     """Regenerate the lockfile for ``manifest_path`` and return its path.
 
@@ -186,7 +186,7 @@ def refresh_lockfile(
 
 def validate_lockfile_freshness(
     manifest_path: Path,
-    runner: _CommandRunner,
+    runner: CommandRunner,
 ) -> bool:
     """Return whether Cargo accepts ``manifest_path`` under ``--locked``.
 

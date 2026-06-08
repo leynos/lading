@@ -11,7 +11,7 @@ import typing as typ
 from lading import config as config_module
 from lading.commands import bump_docs, bump_toml
 from lading.commands.lockfile import discover_tracked_lockfiles, refresh_lockfile
-from lading.commands.publish_execution import _CommandRunner, _invoke
+from lading.runtime import CommandRunner, subprocess_runner
 from lading.utils import normalise_workspace_root
 
 if typ.TYPE_CHECKING:
@@ -48,7 +48,7 @@ class BumpOptions:
         default_factory=lambda: types.MappingProxyType({})
     )
     include_workspace_sections: bool = False
-    runner: _CommandRunner | None = None
+    runner: CommandRunner | None = None
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -249,7 +249,7 @@ def _refresh_lockfiles(context: _BumpContext) -> tuple[Path, ...]:
     ``cargo generate-lockfile --manifest-path <path>/Cargo.toml``
     for each stale lockfile.
     """
-    runner = context.base_options.runner or _invoke
+    runner = context.base_options.runner or subprocess_runner
     lockfiles = discover_tracked_lockfiles(context.root_path, runner)
     if context.base_options.dry_run:
         for lockfile_path in lockfiles:

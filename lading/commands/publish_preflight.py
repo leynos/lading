@@ -196,7 +196,7 @@ def _compose_preflight_arguments(
 def _validate_lockfile_freshness(
     workspace_root: Path,
     *,
-    runner: _CommandRunner,
+    runner: CommandRunner,
     env: cabc.Mapping[str, str] | None = None,
 ) -> None:
     """Fail early when tracked Cargo.lock files are stale."""

@@ -55,6 +55,7 @@ import typing as typ
 from pathlib import Path
 
 from lading import config as config_module
+from lading.commands import publish_preflight as _publish_preflight
 from lading.commands.publish_errors import PublishError, PublishPreflightError
 from lading.commands.publish_execution import (
     _invoke,
