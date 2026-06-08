@@ -7,8 +7,9 @@ import typing as typ
 
 import pytest
 
-from lading.commands import publish
-from lading.workspace import metadata as metadata_module
+from lading.commands import publish, publish_execution, publish_preflight
+from lading.runtime import CommandRunner, coerce_text
+from lading.testing.cmd_mox_runner import normalise_cmd_mox_command
 
 from .conftest import ORIGINAL_PREFLIGHT, make_config, make_preflight_config
 
@@ -19,7 +20,7 @@ if typ.TYPE_CHECKING:
 def test_split_command_rejects_empty_sequence() -> None:
     """Splitting an empty command raises a descriptive error."""
     with pytest.raises(publish.PublishPreflightError) as excinfo:
-        publish._split_command(())
+        publish_execution.split_command(())
 
     assert "Command sequence must contain" in str(excinfo.value)
 
@@ -38,9 +39,7 @@ def test_normalise_cmd_mox_command_forwards_non_cargo_commands(
     """cmd-mox normalisation preserves non-cargo commands and arguments."""
     program, args = command[0], tuple(command[1:])
 
-    rewritten_program, rewritten_args = publish._normalise_cmd_mox_command(
-        program, args
-    )
+    rewritten_program, rewritten_args = normalise_cmd_mox_command(program, args)
 
     if program == "cargo" and args:
         expected_program = f"cargo::{args[0]}"
@@ -57,29 +56,10 @@ def test_metadata_coerce_text_decodes_bytes() -> None:
     """Binary output is decoded using UTF-8 with replacement semantics."""
     alpha = "\N{GREEK SMALL LETTER ALPHA}"
     encoded = alpha.encode()
-    assert metadata_module._coerce_text(encoded) == alpha
+    assert coerce_text(encoded) == alpha
 
     binary = b"foo\xff"
-    assert metadata_module._coerce_text(binary) == "foo\ufffd"
-
-
-@pytest.mark.parametrize("value", ["1", "true", "TRUE", "Yes", "on"])
-def test_should_use_cmd_mox_stub_honours_truthy_values(
-    value: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Environment values recognised as truthy enable cmd-mox stubbing."""
-    monkeypatch.setenv(publish.metadata_module.CMD_MOX_STUB_ENV_VAR, value)
-
-    assert publish._should_use_cmd_mox_stub() is True
-
-
-def test_should_use_cmd_mox_stub_returns_false_by_default(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Missing environment values disable cmd-mox stubbing."""
-    monkeypatch.delenv(publish.metadata_module.CMD_MOX_STUB_ENV_VAR, raising=False)
-
-    assert publish._should_use_cmd_mox_stub() is False
+    assert coerce_text(binary) == "foo\ufffd"
 
 
 def test_run_cargo_preflight_raises_on_failure(
@@ -98,11 +78,13 @@ def test_run_cargo_preflight_raises_on_failure(
         return 1, "", "boom"
 
     with pytest.raises(publish.PublishPreflightError) as excinfo:
-        publish._run_cargo_preflight(
+        publish_preflight._run_cargo_preflight(
             tmp_path,
             "check",
             runner=failing_runner,
-            options=publish._CargoPreflightOptions(extra_args=("--workspace",)),
+            options=publish_preflight._CargoPreflightOptions(
+                extra_args=("--workspace",)
+            ),
         )
 
     message = str(excinfo.value)
@@ -113,7 +95,7 @@ def test_run_cargo_preflight_raises_on_failure(
 def _run_and_record_cargo_preflight(
     workspace_root: Path,
     subcommand: typ.Literal["check", "test"],
-    options: publish._CargoPreflightOptions,
+    options: publish_preflight._CargoPreflightOptions,
 ) -> tuple[str, ...]:
     """Run cargo preflight with a recording runner and return the command.
 
@@ -133,7 +115,7 @@ def _run_and_record_cargo_preflight(
         recorded.append(command)
         return 0, "", ""
 
-    publish._run_cargo_preflight(
+    publish_preflight._run_cargo_preflight(
         workspace_root,
         subcommand,
         runner=recording_runner,
@@ -149,7 +131,7 @@ def test_run_cargo_preflight_honours_test_excludes(tmp_path: Path) -> None:
     command = _run_and_record_cargo_preflight(
         tmp_path,
         "test",
-        publish._CargoPreflightOptions(
+        publish_preflight._CargoPreflightOptions(
             extra_args=("--workspace", "--all-targets"),
             test_excludes=(" alpha ", "", "beta"),
         ),
@@ -164,7 +146,7 @@ def test_run_cargo_preflight_excludes_blank_entries(tmp_path: Path) -> None:
     command = _run_and_record_cargo_preflight(
         tmp_path,
         "test",
-        publish._CargoPreflightOptions(
+        publish_preflight._CargoPreflightOptions(
             extra_args=("--workspace", "--all-targets"),
             test_excludes=["", "   ", "\t", "\n"],
         ),
@@ -177,7 +159,7 @@ def test_run_cargo_preflight_honours_unit_tests_only(tmp_path: Path) -> None:
     command = _run_and_record_cargo_preflight(
         tmp_path,
         "test",
-        publish._CargoPreflightOptions(
+        publish_preflight._CargoPreflightOptions(
             extra_args=("--workspace", "--all-targets"), unit_tests_only=True
         ),
     )
@@ -193,7 +175,7 @@ def test_run_cargo_preflight_defaults_when_unit_tests_only_false(
     command = _run_and_record_cargo_preflight(
         tmp_path,
         "test",
-        publish._CargoPreflightOptions(
+        publish_preflight._CargoPreflightOptions(
             extra_args=("--workspace", "--all-targets"), unit_tests_only=False
         ),
     )
@@ -217,8 +199,8 @@ def test_preflight_checks_remove_all_targets_for_unit_only(
         workspace_root: Path,
         subcommand: str,
         *,
-        runner: publish._CommandRunner,
-        options: publish._CargoPreflightOptions,
+        runner: CommandRunner,
+        options: publish_preflight._CargoPreflightOptions,
     ) -> None:
         recorded[subcommand] = options
 
@@ -256,8 +238,8 @@ def test_preflight_checks_support_special_target_dir(
         workspace_root: Path,
         subcommand: str,
         *,
-        runner: publish._CommandRunner,
-        options: publish._CargoPreflightOptions,
+        runner: CommandRunner,
+        options: publish_preflight._CargoPreflightOptions,
     ) -> None:
         recorded[subcommand] = tuple(options.extra_args)
 
@@ -471,13 +453,13 @@ def test_compiletest_diagnostic_details(
     ) -> tuple[int, str, str]:
         return 1, f"diff at {artifact}", ""
 
-    options = publish._CargoPreflightOptions(
+    options = publish_preflight._CargoPreflightOptions(
         extra_args=("--workspace",),
         env={},
         diagnostics_tail_lines=2,
     )
     with pytest.raises(publish.PublishPreflightError) as excinfo:
-        publish._run_cargo_preflight(
+        publish_preflight._run_cargo_preflight(
             tmp_path,
             "test",
             runner=failing_runner,
@@ -506,12 +488,16 @@ def test_verify_clean_working_tree_detects_dirty_state(
         return 0, " M file\n", ""
 
     with pytest.raises(publish.PublishPreflightError) as excinfo:
-        publish._verify_clean_working_tree(root, allow_dirty=False, runner=dirty_runner)
+        publish_preflight._verify_clean_working_tree(
+            root, allow_dirty=False, runner=dirty_runner
+        )
 
     assert "uncommitted changes" in str(excinfo.value)
 
     # Allow dirty should bypass the runner entirely.
-    publish._verify_clean_working_tree(root, allow_dirty=True, runner=dirty_runner)
+    publish_preflight._verify_clean_working_tree(
+        root, allow_dirty=True, runner=dirty_runner
+    )
 
 
 def test_verify_clean_working_tree_reports_missing_repo(
@@ -530,7 +516,7 @@ def test_verify_clean_working_tree_reports_missing_repo(
         return 128, "", "fatal: Not a git repository"
 
     with pytest.raises(publish.PublishPreflightError) as excinfo:
-        publish._verify_clean_working_tree(
+        publish_preflight._verify_clean_working_tree(
             tmp_path, allow_dirty=False, runner=missing_runner
         )
 

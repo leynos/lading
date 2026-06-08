@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import collections.abc as cabc
+import importlib
 import logging
 import os
 import re
@@ -14,8 +15,10 @@ from pathlib import Path
 from cyclopts import App, Parameter
 
 from . import commands, config
+from .runtime import CommandRunner, subprocess_runner
 from .utils import normalise_workspace_root
 from .workspace import WorkspaceGraph, WorkspaceModelError, load_workspace
+from .workspace import metadata as metadata_module
 
 WORKSPACE_ROOT_ENV_VAR = "LADING_WORKSPACE_ROOT"
 WORKSPACE_ROOT_REQUIRED_MESSAGE = "--workspace-root requires a value"
@@ -66,6 +69,8 @@ LOG_LEVEL_ENV_VAR = "LADING_LOG_LEVEL"
 _DEFAULT_LOG_LEVEL = logging.INFO
 _LOG_FORMAT = "%(levelname)s: %(message)s"
 _LADING_HANDLER_NAME = "lading-cli-handler"
+_CMD_MOX_STUB_ENV = "LADING_USE_CMD_MOX_STUB"
+_CMD_MOX_TRUTHY_VALUES = frozenset({"1", "true", "yes", "on"})
 _LOG_LEVEL_ALIASES: dict[str, int] = {
     "CRITICAL": logging.CRITICAL,
     "FATAL": logging.CRITICAL,
@@ -77,6 +82,15 @@ _LOG_LEVEL_ALIASES: dict[str, int] = {
 }
 
 app = App(help="Manage Rust workspaces with the lading toolkit.")
+
+
+def _select_runner() -> CommandRunner:
+    """Return the command runner selected for this CLI invocation."""
+    stub_value = os.environ.get(_CMD_MOX_STUB_ENV, "")
+    if stub_value.lower() in _CMD_MOX_TRUTHY_VALUES:
+        module = importlib.import_module("lading.testing.cmd_mox_runner")
+        return typ.cast("CommandRunner", module.cmd_mox_runner)
+    return subprocess_runner
 
 
 def _validate_workspace_value(value: str) -> str:
@@ -246,20 +260,27 @@ def main(argv: cabc.Sequence[str] | None = None) -> int:
 def _run_with_context(
     workspace_root: Path,
     runner: cabc.Callable[
-        [Path, config.LadingConfig | None, WorkspaceGraph | None],
+        [Path, config.LadingConfig | None, WorkspaceGraph | None, CommandRunner],
         str,
     ],
+    *,
+    command_runner: CommandRunner | None = None,
 ) -> str:
     """Execute ``runner`` with configuration and workspace data."""
+    active_runner = command_runner or _select_runner()
     try:
         configuration = config.current_configuration()
     except config.ConfigurationNotLoadedError:
         configuration = config.load_configuration(workspace_root)
+        with (
+            config.use_configuration(configuration),
+            metadata_module.use_command_runner(active_runner),
+        ):
+            workspace_model = load_workspace(workspace_root)
+            return runner(workspace_root, configuration, workspace_model, active_runner)
+    with metadata_module.use_command_runner(active_runner):
         workspace_model = load_workspace(workspace_root)
-        with config.use_configuration(configuration):
-            return runner(workspace_root, configuration, workspace_model)
-    workspace_model = load_workspace(workspace_root)
-    return runner(workspace_root, configuration, workspace_model)
+        return runner(workspace_root, configuration, workspace_model, active_runner)
 
 
 _VERSION_PATTERN = re.compile(
@@ -290,7 +311,7 @@ def bump(
     resolved = normalise_workspace_root(workspace_root)
     return _run_with_context(
         resolved,
-        lambda root, configuration, workspace: commands.bump.run(
+        lambda root, configuration, workspace, command_runner: commands.bump.run(
             root,
             version,
             options=commands.bump.BumpOptions(
@@ -319,7 +340,7 @@ def publish(
     resolved = normalise_workspace_root(workspace_root)
     return _run_with_context(
         resolved,
-        lambda root, configuration, workspace: commands.publish.run(
+        lambda root, configuration, workspace, command_runner: commands.publish.run(
             root,
             configuration,
             workspace,
@@ -327,6 +348,7 @@ def publish(
                 allow_dirty=not forbid_dirty,
                 live=live,
                 allow_unpublished_workspace_deps=allow_unpublished_workspace_deps,
+                command_runner=command_runner,
             ),
         ),
     )

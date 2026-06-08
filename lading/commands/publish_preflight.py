@@ -30,10 +30,11 @@ from pathlib import Path
 
 from lading.commands.publish_diagnostics import _append_compiletest_diagnostics
 from lading.commands.publish_errors import PublishPreflightError
-from lading.commands.publish_execution import _CommandRunner, _invoke
+from lading.commands.publish_execution import _invoke
 
 if typ.TYPE_CHECKING:
     from lading.config import CompiletestExtern, LadingConfig
+    from lading.runtime import CommandRunner
 
 
 LOGGER = logging.getLogger(__name__)
@@ -63,7 +64,7 @@ def _run_aux_build_commands(
     workspace_root: Path,
     commands: tuple[tuple[str, ...], ...],
     *,
-    runner: _CommandRunner,
+    runner: CommandRunner,
     env: cabc.Mapping[str, str] | None,
 ) -> None:
     """Execute auxiliary build commands prior to cargo pre-flight runs."""
@@ -115,7 +116,7 @@ def _run_preflight_checks(
     *,
     allow_dirty: bool,
     configuration: LadingConfig,
-    runner: _CommandRunner | None = None,
+    runner: CommandRunner | None = None,
 ) -> None:
     """Execute publish pre-flight checks for ``workspace_root``."""
     command_runner = runner or _invoke
@@ -212,7 +213,7 @@ def _verify_clean_working_tree(
     workspace_root: Path,
     *,
     allow_dirty: bool,
-    runner: _CommandRunner,
+    runner: CommandRunner,
     env: cabc.Mapping[str, str] | None = None,
 ) -> None:
     """Ensure ``workspace_root`` has no uncommitted changes unless allowed."""
@@ -248,7 +249,7 @@ def _run_cargo_preflight(
     workspace_root: Path,
     subcommand: typ.Literal["check", "test"],
     *,
-    runner: _CommandRunner,
+    runner: CommandRunner,
     options: _CargoPreflightOptions,
 ) -> None:
     """Run ``cargo <subcommand>`` inside ``workspace_root``."""
