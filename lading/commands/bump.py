@@ -14,7 +14,6 @@ from lading.commands.bump_output import (
     BumpChanges,
     _format_result_message,
 )
-from lading.runtime import CommandRunner
 from lading.utils import normalise_workspace_root
 
 if typ.TYPE_CHECKING:
