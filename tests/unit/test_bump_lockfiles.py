@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import collections.abc as cabc
 import dataclasses as dc
+import pathlib
 import typing as typ
 
 import pytest
@@ -10,7 +12,6 @@ import pytest
 from lading.commands import bump_lockfiles
 
 if typ.TYPE_CHECKING:
-    import collections.abc as cabc
     from pathlib import Path
 
 
@@ -200,6 +201,47 @@ def test_regenerate_lockfiles_surfaces_cargo_failure(tmp_path: Path) -> None:
             (),
             runner=runner,
         )
+
+
+def test_regenerate_lockfiles_partial_failure_updates_earlier_lockfiles(
+    tmp_path: pathlib.Path,
+) -> None:
+    """First lockfile update commits to disk even when a later one fails.
+
+    This documents the partial-update semantics: regeneration is not atomic.
+    """
+    nested = tmp_path / "crates" / "sub"
+    nested.mkdir(parents=True)
+    (nested / "Cargo.toml").write_text('[package]\nname = "sub"\nversion = "0.1.0"\n')
+    invocations: list[str] = []
+
+    def partial_runner(
+        command: cabc.Sequence[str],
+        *,
+        cwd: pathlib.Path | None = None,
+    ) -> tuple[int, str, str]:
+        manifest = next((a for a in command if a.endswith("Cargo.toml")), None)
+        invocations.append(str(manifest))
+        # Fail only on the nested manifest invocation.
+        if manifest and "crates" in manifest:
+            return (1, "", "simulated cargo failure")
+        return (0, "", "")
+
+    with pytest.raises(
+        bump_lockfiles.LockfileRegenerationError,
+        match="simulated cargo failure",
+    ):
+        bump_lockfiles.regenerate_lockfiles(
+            tmp_path,
+            ["crates/sub/Cargo.toml"],
+            runner=partial_runner,
+        )
+
+    # Root manifest was successfully processed before the failure.
+    assert len(invocations) == 2
+    assert any("crates" not in inv for inv in invocations), (
+        "root manifest must have been invoked first"
+    )
 
 
 def test_regenerate_lockfiles_wraps_runner_exceptions(tmp_path: Path) -> None:

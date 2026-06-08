@@ -37,7 +37,39 @@ def regenerate_lockfiles(
     *,
     runner: CommandRunner | None = None,
 ) -> tuple[Path, ...]:
-    """Regenerate Cargo lockfiles for root and configured manifests."""
+    """Regenerate Cargo lockfiles for root and configured manifests.
+
+    Parameters
+    ----------
+    workspace_root : Path
+        Absolute path to the Cargo workspace root.
+    lockfile_manifests : Sequence[str]
+        Configured manifest paths relative to *workspace_root*. The workspace
+        root ``Cargo.toml`` is always prepended and de-duplicated.
+    runner : CommandRunner or None, optional
+        Callable used to invoke ``cargo``. Defaults to
+        :func:`lading.runtime.subprocess_runner` when ``None``.
+
+    Returns
+    -------
+    tuple[Path, ...]
+        Paths to every ``Cargo.lock`` file that was regenerated, in manifest
+        execution order.
+
+    Raises
+    ------
+    LockfileRegenerationError
+        If any configured manifest path is invalid (outside the workspace or
+        not named ``Cargo.toml``), or if ``cargo update --workspace`` exits
+        non-zero for any manifest.
+
+    Notes
+    -----
+    **Partial-update semantics:** regeneration is not atomic. If ``cargo``
+    fails for the *n*-th manifest, the first *n - 1* lockfiles have already
+    been updated on disk and will not be rolled back. Callers that require
+    atomic guarantees must implement their own rollback (see issue ``#84``).
+    """
     command_runner = subprocess_runner if runner is None else runner
     manifests = _resolve_manifest_paths(workspace_root, lockfile_manifests)
     started_at = time.perf_counter()
