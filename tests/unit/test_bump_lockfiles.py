@@ -155,6 +155,51 @@ def test_resolve_lockfile_paths_reports_dry_run_targets(tmp_path: Path) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("manifest", "expected_message"),
+    [
+        ("../outside/Cargo.toml", "within the workspace"),
+        ("Cargo.lock", "Cargo.toml file"),
+        ("crates/nested/foo.toml", "Cargo.toml file"),
+    ],
+)
+def test_resolve_lockfile_paths_rejects_invalid_targets(
+    tmp_path: Path,
+    manifest: str,
+    expected_message: str,
+) -> None:
+    """Configured manifests must stay in-workspace and name Cargo.toml."""
+    with pytest.raises(PublishPreflightError, match=expected_message):
+        bump_lockfiles.resolve_lockfile_paths(tmp_path, (manifest,))
+
+
+@pytest.mark.parametrize(
+    ("manifest", "expected_message"),
+    [
+        ("../outside/Cargo.toml", "within the workspace"),
+        ("Cargo.lock", "Cargo.toml file"),
+        ("crates/nested/foo.toml", "Cargo.toml file"),
+    ],
+)
+def test_regenerate_lockfiles_rejects_invalid_targets_without_running_cargo(
+    tmp_path: Path,
+    manifest: str,
+    expected_message: str,
+) -> None:
+    """Invalid configured manifests should fail before invoking Cargo."""
+    runner = _RecordingRunner()
+
+    with pytest.raises(PublishPreflightError, match=expected_message):
+        bump_lockfiles.regenerate_lockfiles(
+            tmp_path,
+            (manifest,),
+            dry_run=False,
+            runner=runner,
+        )
+
+    assert runner.invocations == []
+
+
 def test_regenerate_lockfiles_surfaces_cargo_failure(tmp_path: Path) -> None:
     """A failing cargo invocation should abort the bump."""
     runner = _RecordingRunner(result=(101, "", "failed to resolve"))

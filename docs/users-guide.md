@@ -237,7 +237,8 @@ stderr_tail_lines = 40
   included and should not be listed.
 - `rebuild_lockfiles`: boolean, default `true`. Regenerate the workspace
   lockfile and configured nested lockfiles after manifest updates. Pass
-  `--no-rebuild-lockfiles` to `lading bump` to skip this for a single run.
+  `--rebuild-lockfiles` or `--no-rebuild-lockfiles` to `lading bump` to
+  override the configured behaviour for a single run.
 
 ### `[bump.documentation]`
 

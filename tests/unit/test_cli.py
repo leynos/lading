@@ -393,27 +393,39 @@ def test_bump_cli_accepts_dry_run_flag(
     assert options.runner is cli.subprocess_runner
 
 @pytest.mark.parametrize(
-    ("extra_args", "expected"),
+    ("config_body", "extra_args", "expected"),
     [
-        pytest.param([], False, id="configuration"),
-        pytest.param(["--rebuild-lockfiles"], True, id="explicit-enable"),
-        pytest.param(["--no-rebuild-lockfiles"], False, id="explicit-disable"),
+        pytest.param("", [], True, id="default"),
+        pytest.param(
+            "[bump]\nrebuild_lockfiles = false\n",
+            [],
+            False,
+            id="configuration",
+        ),
+        pytest.param(
+            "[bump]\nrebuild_lockfiles = false\n",
+            ["--rebuild-lockfiles"],
+            True,
+            id="explicit-enable",
+        ),
+        pytest.param(
+            "[bump]\nrebuild_lockfiles = false\n",
+            ["--no-rebuild-lockfiles"],
+            False,
+            id="explicit-disable",
+        ),
     ],
 )
 def test_bump_cli_resolves_rebuild_lockfiles(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     write_config: cabc.Callable[[str], Path],
+    config_body: str,
     extra_args: list[str],
     expected: object,
 ) -> None:
     """The rebuild flag should inherit configuration unless explicitly set."""
-    write_config(
-        """
-        [bump]
-        rebuild_lockfiles = false
-        """
-    )
+    write_config(config_body)
     workspace_graph = _make_workspace(tmp_path.resolve())
     captured_kwargs: dict[str, typ.Any] = {}
 

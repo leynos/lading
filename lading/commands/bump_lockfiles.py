@@ -19,19 +19,8 @@ def resolve_lockfile_paths(
     lockfile_manifests: cabc.Sequence[str],
 ) -> tuple[Path, ...]:
     """Return lockfile paths implied by configured manifest paths."""
-    root_manifest = workspace_root / "Cargo.toml"
-    nested_manifests = tuple(
-        workspace_root / manifest for manifest in lockfile_manifests
-    )
-    seen_manifests: set[Path] = set()
-    lockfiles: list[Path] = []
-    for manifest in (root_manifest, *nested_manifests):
-        manifest_key = manifest.resolve(strict=False)
-        if manifest_key in seen_manifests:
-            continue
-        seen_manifests.add(manifest_key)
-        lockfiles.append(manifest.parent / "Cargo.lock")
-    return tuple(lockfiles)
+    manifests = _resolve_manifest_paths(workspace_root, lockfile_manifests)
+    return tuple(manifest.parent / "Cargo.lock" for manifest in manifests)
 
 
 def regenerate_lockfiles(
@@ -46,20 +35,42 @@ def regenerate_lockfiles(
         return ()
 
     command_runner = _invoke if runner is None else runner
-    root_manifest = workspace_root / "Cargo.toml"
-    nested_manifests = tuple(
-        workspace_root / manifest for manifest in lockfile_manifests
-    )
-    seen_manifests: set[Path] = set()
+    manifests = _resolve_manifest_paths(workspace_root, lockfile_manifests)
     lockfiles: list[Path] = []
-    for manifest in (root_manifest, *nested_manifests):
-        manifest_key = manifest.resolve(strict=False)
-        if manifest_key in seen_manifests:
-            continue
-        seen_manifests.add(manifest_key)
+    for manifest in manifests:
         _run_generate_lockfile(workspace_root, manifest, command_runner)
         lockfiles.append(manifest.parent / "Cargo.lock")
     return tuple(lockfiles)
+
+
+def _resolve_manifest_paths(
+    workspace_root: Path,
+    lockfile_manifests: cabc.Sequence[str],
+) -> tuple[Path, ...]:
+    """Return validated root and configured manifest paths in execution order."""
+    resolved_root = workspace_root.resolve()
+    root_manifest = (workspace_root / "Cargo.toml").resolve()
+    seen_manifests: set[Path] = {root_manifest}
+    manifests = [root_manifest]
+    for manifest in lockfile_manifests:
+        candidate = (workspace_root / manifest).resolve()
+        try:
+            candidate.relative_to(resolved_root)
+        except ValueError as exc:
+            message = (
+                f"Lockfile manifest path must stay within the workspace: {manifest}"
+            )
+            raise PublishPreflightError(message) from exc
+        if candidate.name != "Cargo.toml":
+            message = (
+                f"Lockfile manifest path must point to a Cargo.toml file: {manifest}"
+            )
+            raise PublishPreflightError(message)
+        if candidate in seen_manifests:
+            continue
+        seen_manifests.add(candidate)
+        manifests.append(candidate)
+    return tuple(manifests)
 
 
 def _run_generate_lockfile(

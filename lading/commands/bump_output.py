@@ -31,7 +31,7 @@ def _build_changes_description(changes: BumpChanges) -> str:
     return parts[0] if len(parts) == 1 else " and ".join(parts)
 
 
-def _format_no_changes_message(target_version: str, dry_run: bool) -> str:  # noqa: FBT001
+def _format_no_changes_message(target_version: str, *, dry_run: bool) -> str:
     """Format message when no changes are required."""
     if dry_run:
         return (
@@ -41,7 +41,7 @@ def _format_no_changes_message(target_version: str, dry_run: bool) -> str:  # no
     return f"No manifest changes required; all versions already {target_version}."
 
 
-def _format_header(description: str, target_version: str, dry_run: bool) -> str:  # noqa: FBT001
+def _format_header(description: str, target_version: str, *, dry_run: bool) -> str:
     """Format the summary header line."""
     if dry_run:
         return f"Dry run; would update version to {target_version} in {description}:"
@@ -57,10 +57,10 @@ def _format_result_message(
 ) -> str:
     """Summarise the bump outcome for CLI presentation."""
     if not any((changes.manifests, changes.documents, changes.lockfiles)):
-        return _format_no_changes_message(target_version, dry_run)
+        return _format_no_changes_message(target_version, dry_run=dry_run)
 
     description = _build_changes_description(changes)
-    header = _format_header(description, target_version, dry_run)
+    header = _format_header(description, target_version, dry_run=dry_run)
     formatted_paths = [
         f"- {_format_manifest_path(manifest_path, workspace_root)}"
         for manifest_path in changes.manifests
