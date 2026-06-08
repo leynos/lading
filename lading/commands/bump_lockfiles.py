@@ -12,7 +12,7 @@ import logging
 import time
 from pathlib import Path
 
-from lading.commands.publish_execution import CommandRunner, _invoke
+from lading.runtime import CommandRunner, subprocess_runner
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -34,15 +34,10 @@ def regenerate_lockfiles(
     workspace_root: Path,
     lockfile_manifests: cabc.Sequence[str],
     *,
-    dry_run: bool,
     runner: CommandRunner | None = None,
 ) -> tuple[Path, ...]:
     """Regenerate Cargo lockfiles for root and configured manifests."""
-    if dry_run:
-        _LOGGER.info("Skipping lockfile regeneration during dry-run")
-        return ()
-
-    command_runner = _invoke if runner is None else runner
+    command_runner = subprocess_runner if runner is None else runner
     manifests = _resolve_manifest_paths(workspace_root, lockfile_manifests)
     started_at = time.perf_counter()
     _LOGGER.info("Regenerating %d Cargo lockfile(s)", len(manifests))
@@ -50,7 +45,7 @@ def regenerate_lockfiles(
     for manifest in manifests:
         manifest_started_at = time.perf_counter()
         _LOGGER.info("Regenerating Cargo lockfile for %s", manifest)
-        _run_generate_lockfile(workspace_root, manifest, command_runner)
+        _run_workspace_lockfile_update(workspace_root, manifest, command_runner)
         _LOGGER.info(
             "Regenerated Cargo lockfile for %s in %.3fs",
             manifest,
@@ -95,14 +90,20 @@ def _resolve_manifest_paths(
     return tuple(manifests)
 
 
-def _run_generate_lockfile(
+def _run_workspace_lockfile_update(
     workspace_root: Path,
     manifest_path: Path,
     runner: CommandRunner,
 ) -> None:
     """Invoke cargo for one manifest and surface failures consistently."""
     exit_code, stdout, stderr = runner(
-        ("cargo", "generate-lockfile", "--manifest-path", str(manifest_path)),
+        (
+            "cargo",
+            "update",
+            "--workspace",
+            "--manifest-path",
+            str(manifest_path),
+        ),
         cwd=workspace_root,
     )
     if exit_code != 0:

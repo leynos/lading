@@ -241,6 +241,14 @@ stderr_tail_lines = 40
   single run, or `--rebuild-lockfiles` to force regeneration when
   `rebuild_lockfiles` is configured as `false`.
 
+Lockfile regeneration runs `cargo update --workspace --manifest-path <manifest>`
+for the workspace root and each configured nested manifest. This updates
+workspace package entries while avoiding a full transitive dependency refresh.
+If Cargo fails, manifest changes have already been written. Fix the underlying
+Cargo error and rerun `lading bump`, use `--no-rebuild-lockfiles` and regenerate
+lockfiles manually, or run the relevant Cargo command yourself before committing
+the bump.
+
 ### `[bump.documentation]`
 
 - `globs`: array of strings, default `[]`. Glob patterns for Markdown files

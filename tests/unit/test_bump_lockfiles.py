@@ -50,7 +50,6 @@ def test_regenerate_lockfiles_includes_workspace_manifest(tmp_path: Path) -> Non
     lockfiles = bump_lockfiles.regenerate_lockfiles(
         tmp_path,
         (),
-        dry_run=False,
         runner=runner,
     )
 
@@ -59,7 +58,8 @@ def test_regenerate_lockfiles_includes_workspace_manifest(tmp_path: Path) -> Non
         _Invocation(
             command=(
                 "cargo",
-                "generate-lockfile",
+                "update",
+                "--workspace",
                 "--manifest-path",
                 str(tmp_path / "Cargo.toml"),
             ),
@@ -75,7 +75,6 @@ def test_regenerate_lockfiles_uses_configured_manifests(tmp_path: Path) -> None:
     lockfiles = bump_lockfiles.regenerate_lockfiles(
         tmp_path,
         ("crates/nested/Cargo.toml",),
-        dry_run=False,
         runner=runner,
     )
 
@@ -87,7 +86,8 @@ def test_regenerate_lockfiles_uses_configured_manifests(tmp_path: Path) -> None:
     assert runner.invocations[-1] == _Invocation(
         command=(
             "cargo",
-            "generate-lockfile",
+            "update",
+            "--workspace",
             "--manifest-path",
             str(nested_manifest),
         ),
@@ -102,7 +102,6 @@ def test_regenerate_lockfiles_deduplicates_root_manifest(tmp_path: Path) -> None
     lockfiles = bump_lockfiles.regenerate_lockfiles(
         tmp_path,
         ("Cargo.toml", "./Cargo.toml", "crates/nested/Cargo.toml"),
-        dry_run=False,
         runner=runner,
     )
 
@@ -113,32 +112,19 @@ def test_regenerate_lockfiles_deduplicates_root_manifest(tmp_path: Path) -> None
     assert [invocation.command for invocation in runner.invocations] == [
         (
             "cargo",
-            "generate-lockfile",
+            "update",
+            "--workspace",
             "--manifest-path",
             str(tmp_path / "Cargo.toml"),
         ),
         (
             "cargo",
-            "generate-lockfile",
+            "update",
+            "--workspace",
             "--manifest-path",
             str(tmp_path / "crates/nested/Cargo.toml"),
         ),
     ]
-
-
-def test_regenerate_lockfiles_skips_runner_for_dry_run(tmp_path: Path) -> None:
-    """Dry runs should not invoke Cargo."""
-    runner = _RecordingRunner()
-
-    lockfiles = bump_lockfiles.regenerate_lockfiles(
-        tmp_path,
-        ("crates/nested/Cargo.toml",),
-        dry_run=True,
-        runner=runner,
-    )
-
-    assert lockfiles == ()
-    assert runner.invocations == []
 
 
 def test_resolve_lockfile_paths_reports_dry_run_targets(tmp_path: Path) -> None:
@@ -196,7 +182,6 @@ def test_regenerate_lockfiles_rejects_invalid_targets_without_running_cargo(
         bump_lockfiles.regenerate_lockfiles(
             tmp_path,
             (manifest,),
-            dry_run=False,
             runner=runner,
         )
 
@@ -213,6 +198,5 @@ def test_regenerate_lockfiles_surfaces_cargo_failure(tmp_path: Path) -> None:
         bump_lockfiles.regenerate_lockfiles(
             tmp_path,
             (),
-            dry_run=False,
             runner=runner,
         )

@@ -193,13 +193,11 @@ def test_run_rebuilds_lockfiles_by_default(
         workspace_root: pathlib.Path,
         lockfile_manifests: tuple[str, ...],
         *,
-        dry_run: bool,
         runner: object | None = None,
     ) -> tuple[pathlib.Path, ...]:
         assert runner is None
         captured["workspace_root"] = workspace_root
         captured["lockfile_manifests"] = lockfile_manifests
-        captured["dry_run"] = dry_run
         return (tmp_path / "Cargo.lock", nested_lockfile)
 
     monkeypatch.setattr(
@@ -217,13 +215,38 @@ def test_run_rebuilds_lockfiles_by_default(
     assert captured == {
         "workspace_root": tmp_path,
         "lockfile_manifests": (),
-        "dry_run": False,
     }
     assert "2 lockfile(s)" in message
     assert "- Cargo.lock (lockfile)" in message.splitlines()
     assert "- crates/ui/Cargo.lock (lockfile)" in message.splitlines()
 
 
+def test_run_inherits_lockfile_rebuild_configuration(
+    tmp_path: pathlib.Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """Programmatic bump calls inherit lockfile rebuild configuration by default."""
+    workspace = _make_workspace(tmp_path)
+    configuration = config_module.LadingConfig(
+        bump=config_module.BumpConfig(rebuild_lockfiles=False)
+    )
+
+    def fail_regeneration(*args: object, **kwargs: object) -> typ.NoReturn:
+        pytest.fail("lockfile regeneration should inherit configuration")
+
+    monkeypatch.setattr(
+        bump.bump_lockfiles,
+        "regenerate_lockfiles",
+        fail_regeneration,
+    )
+
+    message = bump.run(
+        tmp_path,
+        "1.2.3",
+        options=bump.BumpOptions(configuration=configuration, workspace=workspace),
+    )
+
+    assert "lockfile" not in message
 def test_run_reports_lockfiles_in_dry_run(
     tmp_path: pathlib.Path,
     monkeypatch: MonkeyPatch,

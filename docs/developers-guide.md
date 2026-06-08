@@ -98,7 +98,7 @@ and lockfiles so tests can snapshot the complete CLI message contract.
 after a version bump changes manifest content. It always includes the workspace
 root `Cargo.toml`, validates configured nested manifests before invoking Cargo,
 and de-duplicates resolved manifest paths. Invalid configured manifests and
-failed `cargo generate-lockfile` commands raise `LockfileRegenerationError`,
+failed `cargo update --workspace` commands raise `LockfileRegenerationError`,
 which keeps bump failures in bump domain language rather than reusing
 publish-specific errors.
 

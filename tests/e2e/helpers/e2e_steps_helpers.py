@@ -106,7 +106,8 @@ def stub_cargo_metadata(
         stdout=json.dumps(dict(workspace.cargo_metadata_payload)),
         stderr="",
     ).any_order()
-    cmd_mox.stub("cargo::generate-lockfile").with_args(
+    cmd_mox.stub("cargo::update").with_args(
+        "--workspace",
         "--manifest-path",
         str(workspace.root / "Cargo.toml"),
     ).returns(exit_code=0, stdout="", stderr="").any_order()

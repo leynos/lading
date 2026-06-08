@@ -37,10 +37,14 @@ LOGGER = logging.getLogger(__name__)
 
 @dc.dataclass(frozen=True, slots=True)
 class BumpOptions:
-    """Configuration options for bump operations."""
+    """Configuration options for bump operations.
+
+    ``rebuild_lockfiles=None`` inherits ``configuration.bump.rebuild_lockfiles``.
+    Pass an explicit boolean to override configuration for one run.
+    """
 
     dry_run: bool = False
-    rebuild_lockfiles: bool = True
+    rebuild_lockfiles: bool | None = None
     configuration: LadingConfig | None = None
     workspace: WorkspaceGraph | None = None
     dependency_sections: cabc.Mapping[str, cabc.Collection[str]] = dc.field(
@@ -104,9 +108,14 @@ def _initialize_bump_context(
 
         workspace = load_workspace(root_path)
 
+    rebuild_lockfiles = (
+        configuration.bump.rebuild_lockfiles
+        if resolved_options.rebuild_lockfiles is None
+        else resolved_options.rebuild_lockfiles
+    )
     base_options = BumpOptions(
         dry_run=resolved_options.dry_run,
-        rebuild_lockfiles=resolved_options.rebuild_lockfiles,
+        rebuild_lockfiles=rebuild_lockfiles,
         configuration=configuration,
         workspace=workspace,
         runner=resolved_options.runner,
@@ -182,7 +191,7 @@ def _process_lockfiles(
     changed_manifests: set[Path],
 ) -> tuple[Path, ...]:
     """Regenerate Cargo lockfiles when bump changes manifest content."""
-    if not context.base_options.rebuild_lockfiles or not changed_manifests:
+    if context.base_options.rebuild_lockfiles is not True or not changed_manifests:
         return ()
     lockfile_manifests = context.configuration.bump.lockfile_manifests
     if context.base_options.dry_run:
@@ -192,7 +201,6 @@ def _process_lockfiles(
     return bump_lockfiles.regenerate_lockfiles(
         context.root_path,
         lockfile_manifests,
-        dry_run=context.base_options.dry_run,
         runner=context.base_options.runner,
     )
 
