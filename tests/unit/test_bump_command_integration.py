@@ -183,7 +183,10 @@ def test_run_rebuilds_lockfiles_by_default(
     tmp_path: pathlib.Path,
     monkeypatch: MonkeyPatch,
 ) -> None:
-    """`bump.run` regenerates lockfiles after changing manifests."""
+    """Verify regenerate_lockfiles calls.
+
+    Lockfile regeneration is called when enabled and suppressed when disabled.
+    """
     workspace = _make_workspace(tmp_path)
     configuration = _make_config()
     nested_lockfile = tmp_path / "crates/ui/Cargo.lock"
@@ -210,7 +213,11 @@ def test_run_rebuilds_lockfiles_by_default(
     message = bump.run(
         tmp_path,
         "1.2.3",
-        options=bump.BumpOptions(configuration=configuration, workspace=workspace),
+        options=bump.BumpOptions(
+            rebuild_lockfiles=True,
+            configuration=configuration,
+            workspace=workspace,
+        ),
     )
 
     assert captured == {
@@ -221,6 +228,29 @@ def test_run_rebuilds_lockfiles_by_default(
     assert "2 lockfile(s)" in message
     assert "- Cargo.lock (lockfile)" in message.splitlines()
     assert "- crates/ui/Cargo.lock (lockfile)" in message.splitlines()
+
+    disabled_root = tmp_path / "disabled"
+    disabled_workspace = _make_workspace(disabled_root)
+    disabled_configuration = _make_config()
+    monkeypatch.setattr(
+        bump.bump_lockfiles,
+        "regenerate_lockfiles",
+        lambda *args, **kwargs: pytest.fail(
+            "regenerate_lockfiles must not be called when rebuild_lockfiles=False"
+        ),
+    )
+
+    message = bump.run(
+        disabled_root,
+        "1.2.3",
+        options=bump.BumpOptions(
+            rebuild_lockfiles=False,
+            configuration=disabled_configuration,
+            workspace=disabled_workspace,
+        ),
+    )
+
+    assert "lockfile" not in message
 
 
 def test_run_inherits_lockfile_rebuild_configuration(

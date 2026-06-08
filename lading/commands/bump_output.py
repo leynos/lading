@@ -1,4 +1,28 @@
-"""Output formatting for ``lading bump``."""
+"""Output formatting for the ``lading bump`` command.
+
+This module is responsible solely for producing human-readable CLI output
+from the result of a version-bump run. It is consumed exclusively by
+``lading.commands.bump`` and is not part of the public API.
+
+Classes
+-------
+BumpChanges
+    Immutable record of files altered by a bump run. Holds three sequences:
+    updated Cargo manifests, updated documentation files, and regenerated
+    Cargo lockfiles.
+
+Functions
+---------
+_format_result_message
+    Primary entry point. Assembles the final multi-line result string from
+    a ``BumpChanges`` instance, the target version string, a dry-run flag,
+    and the workspace root used to relativise displayed paths.
+
+Notes
+-----
+Internal helpers ``_build_changes_description``, ``_format_no_changes_message``,
+``_format_header``, and ``_format_manifest_path`` are not part of the public API.
+"""
 
 from __future__ import annotations
 
