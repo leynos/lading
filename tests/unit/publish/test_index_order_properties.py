@@ -3,16 +3,18 @@
 These tests exercise the projected-availability invariant across generated
 publish plans. A missing dependency may be downgraded only when it appears
 strictly before the failing crate in `PublishPlan.publishable`; dependencies at
-later positions are not yet projected to be available and must stay fatal.
+the same or later positions are not yet projected to be available and must stay
+fatal.
 """
 
 from __future__ import annotations
 
+import re
 import tempfile
 from pathlib import Path
 
 import pytest
-from hypothesis import assume, given, settings
+from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from lading.commands import publish
@@ -26,9 +28,8 @@ def _publish_order_cases(
 ) -> tuple[int, int, int]:
     """Generate ``(crate_count, current_index, missing_index)`` cases."""
     crate_count = draw(st.integers(min_value=2, max_value=8))
-    current_index = draw(st.integers(min_value=1, max_value=crate_count - 1))
+    current_index = draw(st.integers(min_value=0, max_value=crate_count - 1))
     missing_index = draw(st.integers(min_value=0, max_value=crate_count - 1))
-    assume(missing_index != current_index)
     return crate_count, current_index, missing_index
 
 
@@ -82,7 +83,11 @@ def test_index_missing_dependency_requires_prior_publish_order(
         else:
             with pytest.raises(
                 publish.PublishPreflightError,
-                match=r"appears after .* in publish order",
+                match=re.escape(
+                    "appears after"
+                    if missing_index > current_index
+                    else "is the same crate"
+                ),
             ):
                 publish._handle_index_missing_version(
                     invocation,

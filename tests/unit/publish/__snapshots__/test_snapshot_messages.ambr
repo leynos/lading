@@ -19,7 +19,9 @@
     failed to select a version for the requirement `alpha = "^0.1.0"`
     candidate versions found which didn't match: 0.0.1
     location searched: crates.io index
-    required by package `beta v0.1.0`; dependency 'alpha' appears after crate 'beta' in publish order, so it will not be available when this crate is published. Adjust publish.order so the dependency comes first, or omit publish.order and rely on dependency-derived topological sorting.
+    required by package `beta v0.1.0`
+  <blank>
+  dependency 'alpha' appears after crate 'beta' in publish order, so it will not be available when this crate is published. Adjust publish.order so the dependency comes first, or omit publish.order and rely on dependency-derived topological sorting.
   '''
 # ---
 # name: test_index_missing_out_of_order_message_snapshot[warning]
@@ -40,7 +42,9 @@
   cargo package failed for crate beta with exit code 1: error: failed to prepare local package for uploading
   Caused by:
     failed to select a version for the requirement `external_crate = "^1"`
-    location searched: crates.io index; dependency 'external_crate' is not part of the current publish plan, so the unpublished workspace dependency override cannot help. Publish or index the dependency first.
+    location searched: crates.io index
+  <blank>
+  dependency 'external_crate' is not part of the current publish plan, so the unpublished workspace dependency override cannot help. Publish or index the dependency first.
   '''
 # ---
 # name: test_index_missing_out_of_plan_message_snapshot[warning]
@@ -56,6 +60,32 @@
     ),
   )
 # ---
+# name: test_index_missing_self_dependency_message_snapshot[message]
+  '''
+  cargo package failed for crate beta with exit code 1: error: failed to prepare local package for uploading
+  <blank>
+  Caused by:
+    failed to select a version for the requirement `beta = "^0.1.0"`
+    candidate versions found which didn't match: 0.0.1
+    location searched: crates.io index
+    required by package `beta v0.1.0`
+  <blank>
+  dependency 'beta' is the same crate as 'beta', so the publish plan cannot make it available before itself. Remove the self-dependency from the crate manifest.
+  '''
+# ---
+# name: test_index_missing_self_dependency_message_snapshot[warning]
+  tuple(
+    tuple(
+      'cargo %s for crate %s failed due to unindexed dependency %r %s',
+      tuple(
+        'package',
+        'beta',
+        'beta',
+        'which is the current crate; cannot continue',
+      ),
+    ),
+  )
+# ---
 # name: test_index_missing_version_message_snapshot[flag_disabled][message]
   '''
   cargo package failed for crate beta with exit code 1: error: failed to prepare local package for uploading
@@ -64,7 +94,9 @@
     failed to select a version for the requirement `alpha = "^0.1.0"`
     candidate versions found which didn't match: 0.0.1
     location searched: crates.io index
-    required by package `beta v0.1.0`; dependency 'alpha' is scheduled in this publish run but is not yet on crates.io. Enable the dry-run unpublished workspace dependency override, or follow the staged-publish workaround.
+    required by package `beta v0.1.0`
+  <blank>
+  dependency 'alpha' is scheduled in this publish run but is not yet on crates.io. Enable the dry-run unpublished workspace dependency override, or follow the staged-publish workaround.
   '''
 # ---
 # name: test_index_missing_version_message_snapshot[flag_disabled][warning]

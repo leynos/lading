@@ -132,7 +132,7 @@ def _format_missing_dependency_failure(
     guidance: str,
 ) -> str:
     """Return the shared fatal message shape for dependency index misses."""
-    return f"{failure}; dependency {missing_name!r} {reason}. {guidance}"
+    return f"{failure}\n\ndependency {missing_name!r} {reason}. {guidance}"
 
 
 def _log_missing_dependency_failure(
@@ -201,6 +201,30 @@ def _raise_out_of_order_dependency(
         detail=(
             "which appears after the current crate in publish order; cannot continue"
         ),
+    )
+    raise context.error_cls(message)
+
+
+def _raise_self_dependency(
+    context: _IndexMissingVersionFailure,
+    *,
+    missing_name: str,
+) -> typ.NoReturn:
+    """Log and raise when cargo reports the current crate as its dependency."""
+    message = _format_missing_dependency_failure(
+        context.failure,
+        missing_name=missing_name,
+        reason=(
+            f"is the same crate as {context.invocation.crate_name!r}, so the "
+            "publish plan cannot make it available before itself"
+        ),
+        guidance="Remove the self-dependency from the crate manifest.",
+    )
+    _log_missing_dependency_failure(
+        context.logger,
+        context.invocation,
+        missing_name=missing_name,
+        detail="which is the current crate; cannot continue",
     )
     raise context.error_cls(message)
 
@@ -294,12 +318,14 @@ def _handle_index_missing_version(
             f"{invocation.crate_name}, but that crate is not part of the "
             "current publish plan."
         )
-        raise RuntimeError(message)
+        raise context.error_cls(message)
     missing_canonical_name = _canonical_crate_name(missing_name)
     missing_index = publishable_name_indexes.get(missing_canonical_name)
     if missing_index is None:
         _raise_out_of_plan_dependency(context, missing_name=missing_name)
-    if missing_index >= current_index:
+    if missing_index == current_index:
+        _raise_self_dependency(context, missing_name=missing_name)
+    if missing_index > current_index:
         _raise_out_of_order_dependency(context, missing_name=missing_name)
 
     if not handling.options.allow_unpublished_workspace_deps:

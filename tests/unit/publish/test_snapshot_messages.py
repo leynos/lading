@@ -246,6 +246,26 @@ def test_index_missing_out_of_order_message_snapshot(
     assert _warning_records(caplog) == snapshot(name="warning")
 
 
+def test_index_missing_self_dependency_message_snapshot(
+    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    caplog: pytest.LogCaptureFixture,
+    snapshot: SnapshotAssertion,
+) -> None:
+    """Snapshot the fatal message and warning for reported self-dependencies."""
+    plan, _preparation, _staging_root = publish_plan_and_prep
+    stderr = INDEX_MISSING_STDERR_BETA.replace("`alpha =", "`beta =")
+
+    message = _handle_index_missing_version_message(
+        plan,
+        stderr=stderr,
+        allow_unpublished_workspace_deps=True,
+        caplog=caplog,
+    )
+
+    assert _snapshot_message(message) == snapshot(name="message")
+    assert _warning_records(caplog) == snapshot(name="warning")
+
+
 @pytest.mark.parametrize(
     "options",
     [
