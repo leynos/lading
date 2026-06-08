@@ -1,12 +1,14 @@
 """Unit tests for publish command execution helpers."""
 
+from pathlib import Path
 import importlib
 import io
-from pathlib import Path
 
 from lading.testing import cmd_mox_runner
 
 execution = importlib.import_module("lading.runtime.subprocess_runner")
+from lading.commands import publish
+import pytest
 
 
 def test_normalise_environment_handles_none_and_values() -> None:
@@ -66,3 +68,55 @@ def test_echo_buffered_output_skips_empty_payloads() -> None:
     sink = io.StringIO()
     cmd_mox_runner._echo_buffered_output("", sink)
     assert sink.getvalue() == ""
+
+def test_split_command_rejects_empty_sequence() -> None:
+    """Splitting an empty command raises a descriptive error."""
+    with pytest.raises(publish.PublishPreflightError) as excinfo:
+        publish._split_command(())
+
+    assert "Command sequence must contain" in str(excinfo.value)
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        ("cargo", "check"),
+        ("cargo", "test", "--workspace"),
+        ("git", "status", "--porcelain"),
+    ],
+)
+def test_normalise_cmd_mox_command_forwards_non_cargo_commands(
+    command: tuple[str, ...],
+) -> None:
+    """cmd-mox normalisation preserves non-cargo commands and arguments."""
+    program, args = command[0], tuple(command[1:])
+
+    rewritten_program, rewritten_args = publish._normalise_cmd_mox_command(
+        program, args
+    )
+
+    if program == "cargo" and args:
+        expected_program = f"cargo::{args[0]}"
+        expected_args = list(args[1:])
+    else:
+        expected_program = program
+        expected_args = list(args)
+
+    assert rewritten_program == expected_program
+    assert rewritten_args == expected_args
+
+@pytest.mark.parametrize("value", ["1", "true", "TRUE", "Yes", "on"])
+def test_should_use_cmd_mox_stub_honours_truthy_values(
+    value: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Environment values recognised as truthy enable cmd-mox stubbing."""
+    monkeypatch.setenv(publish.metadata_module.CMD_MOX_STUB_ENV_VAR, value)
+
+    assert publish._should_use_cmd_mox_stub() is True
+
+def test_should_use_cmd_mox_stub_returns_false_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Missing environment values disable cmd-mox stubbing."""
+    monkeypatch.delenv(publish.metadata_module.CMD_MOX_STUB_ENV_VAR, raising=False)
+
+    assert publish._should_use_cmd_mox_stub() is False

@@ -124,7 +124,14 @@ def test_load_cargo_metadata_error_decodes_byte_streams(
 
     assert "manifest missing" in str(excinfo.value)
 
+def test_metadata_coerce_text_decodes_bytes() -> None:
+    """Binary output is decoded using UTF-8 with replacement semantics."""
+    alpha = "\N{GREEK SMALL LETTER ALPHA}"
+    encoded = alpha.encode()
+    assert metadata_module._coerce_text(encoded) == alpha
 
+    binary = b"foo\xff"
+    assert metadata_module._coerce_text(binary) == "foo\ufffd"
 @pytest.mark.parametrize(
     "scenario",
     [
