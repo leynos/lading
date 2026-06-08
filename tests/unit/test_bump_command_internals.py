@@ -19,6 +19,8 @@ from tests.helpers.workspace_builders import (
 if typ.TYPE_CHECKING:
     from pathlib import Path
 
+    from syrupy.assertion import SnapshotAssertion
+
 
 @dc.dataclass(frozen=True, slots=True)
 class UpdateCrateTestParams:
@@ -325,6 +327,32 @@ def test_format_result_message_handles_changes(tmp_path: Path) -> None:
         "- member/Cargo.toml",
         "- README.md (documentation)",
     ]
+
+
+def test_format_result_message_snapshot(
+    tmp_path: Path, snapshot: SnapshotAssertion
+) -> None:
+    """Bump output formatting is locked for manifest, docs, and lockfiles."""
+    workspace_root = tmp_path
+
+    message = bump._format_result_message(
+        bump.BumpChanges(
+            manifests=(
+                workspace_root / "Cargo.toml",
+                workspace_root / "crates" / "alpha" / "Cargo.toml",
+            ),
+            documents=(workspace_root / "README.md",),
+            lockfiles=(
+                workspace_root / "Cargo.lock",
+                workspace_root / "tests" / "ui_lints" / "Cargo.lock",
+            ),
+        ),
+        "4.5.6",
+        dry_run=True,
+        workspace_root=workspace_root,
+    )
+
+    assert message == snapshot()
 
 
 def test_update_manifest_writes_when_changed(tmp_path: Path) -> None:

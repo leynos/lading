@@ -79,6 +79,36 @@ def test_discover_tracked_lockfiles_filters_missing_manifests(tmp_path: Path) ->
     )
 
 
+def test_discover_tracked_lockfiles_accepts_manifest_probe(
+    tmp_path: Path,
+) -> None:
+    """Manifest filtering is delegated to the injected probe."""
+    probed: list[Path] = []
+
+    def runner(
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        return 0, "Cargo.lock\nnested/Cargo.lock\n", ""
+
+    def manifest_exists(manifest_path: Path) -> bool:
+        probed.append(manifest_path)
+        return (
+            manifest_path.name == "Cargo.toml" and manifest_path.parent.name != "nested"
+        )
+
+    result = lockfile.discover_tracked_lockfiles(
+        tmp_path,
+        runner,
+        manifest_exists=manifest_exists,
+    )
+
+    assert result == (tmp_path / "Cargo.lock",)
+    assert probed == [tmp_path / "Cargo.toml", tmp_path / "nested" / "Cargo.toml"]
+
+
 def test_discover_tracked_lockfiles_handles_non_git_directory(
     tmp_path: Path,
 ) -> None:

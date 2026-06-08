@@ -28,6 +28,7 @@ for lockfile_path in lockfiles:
 
 from __future__ import annotations
 
+import collections.abc as cabc
 import logging
 import typing as typ
 from pathlib import Path
@@ -38,6 +39,7 @@ if typ.TYPE_CHECKING:
     from lading.commands.publish_execution import _CommandRunner
 
 LOGGER = logging.getLogger(__name__)
+_ManifestExists = cabc.Callable[[Path], bool]
 
 
 class LockfileRefreshError(LadingError):
@@ -69,6 +71,7 @@ def _handle_git_ls_files_failure(
 def _lockfiles_with_manifests(
     stdout: str,
     workspace_root: Path,
+    manifest_exists: _ManifestExists,
 ) -> tuple[Path, ...]:
     """Return lockfile paths from ``git ls-files`` with adjacent manifests."""
     lockfiles: list[Path] = []
@@ -79,14 +82,21 @@ def _lockfiles_with_manifests(
         lockfile_path = workspace_root / relative_path
         if "target" in lockfile_path.relative_to(workspace_root).parts:
             continue
-        if (lockfile_path.parent / "Cargo.toml").exists():
+        if manifest_exists(lockfile_path.parent / "Cargo.toml"):
             lockfiles.append(lockfile_path)
     return tuple(lockfiles)
+
+
+def _manifest_exists(manifest_path: Path) -> bool:
+    """Return whether ``manifest_path`` exists on disk."""
+    return manifest_path.exists()
 
 
 def discover_tracked_lockfiles(
     workspace_root: Path,
     runner: _CommandRunner,
+    *,
+    manifest_exists: _ManifestExists = _manifest_exists,
 ) -> tuple[Path, ...]:
     """Return tracked Cargo.lock files with adjacent manifests.
 
@@ -97,6 +107,9 @@ def discover_tracked_lockfiles(
     runner
         Callable used to execute shell commands. It receives a command
         sequence and returns ``(exit_code, stdout, stderr)``.
+    manifest_exists
+        Callable used to decide whether a candidate lockfile has an adjacent
+        manifest. The default adapter checks the filesystem.
 
     Returns
     -------
@@ -120,7 +133,13 @@ def discover_tracked_lockfiles(
     )
     if error_result is not None:
         return error_result
-    return _lockfiles_with_manifests(stdout, workspace_root)
+    lockfiles = _lockfiles_with_manifests(stdout, workspace_root, manifest_exists)
+    LOGGER.info(
+        "Discovered %d tracked lockfile(s) with adjacent manifests in %s",
+        len(lockfiles),
+        workspace_root,
+    )
+    return lockfiles
 
 
 def refresh_lockfile(
@@ -149,18 +168,20 @@ def refresh_lockfile(
         The error message includes Cargo's stderr, or stdout when stderr is
         empty, so callers can report why regeneration failed.
     """
+    lockfile_path = manifest_path.parent / "Cargo.lock"
+    LOGGER.info("Refreshing %s", lockfile_path)
     exit_code, stdout, stderr = runner(
         ("cargo", "generate-lockfile", "--manifest-path", str(manifest_path)),
         cwd=manifest_path.parent,
     )
     if exit_code != 0:
         detail = (stderr or stdout).strip()
-        message = f"Failed to refresh {manifest_path.parent / 'Cargo.lock'}"
+        message = f"Failed to refresh {lockfile_path}"
         if detail:
             message = f"{message}: {detail}"
         raise LockfileRefreshError(message)
-    LOGGER.info("Refreshed %s", manifest_path.parent / "Cargo.lock")
-    return manifest_path.parent / "Cargo.lock"
+    LOGGER.info("Refreshed %s", lockfile_path)
+    return lockfile_path
 
 
 def validate_lockfile_freshness(
@@ -194,4 +215,10 @@ def validate_lockfile_freshness(
         ),
         cwd=manifest_path.parent,
     )
-    return exit_code == 0
+    is_fresh = exit_code == 0
+    LOGGER.info(
+        "Validated lockfile freshness for %s: %s",
+        manifest_path,
+        "fresh" if is_fresh else "stale",
+    )
+    return is_fresh

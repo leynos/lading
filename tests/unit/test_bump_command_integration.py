@@ -12,6 +12,7 @@ from tomlkit import parse as parse_toml
 
 from lading import config as config_module
 from lading.commands import bump
+from lading.commands.lockfile import LockfileRefreshError
 from lading.workspace import WorkspaceDependency, WorkspaceGraph
 from tests.helpers.workspace_builders import (
     _build_workspace_with_internal_deps,
@@ -156,6 +157,46 @@ def test_run_dry_run_reports_lockfiles_without_refreshing(
     assert "- Cargo.lock (lockfile)" in message.splitlines(), (
         f"expected '- Cargo.lock (lockfile)' in bump output:\n{message}"
     )
+
+
+def test_run_propagates_partial_lockfile_refresh_failure(
+    tmp_path: pathlib.Path, monkeypatch: MonkeyPatch
+) -> None:
+    """Refresh failures leave prior refreshes observable before propagating."""
+    workspace = _make_workspace(tmp_path)
+    first = tmp_path / "Cargo.lock"
+    second = tmp_path / "tests" / "ui_lints" / "Cargo.lock"
+    lockfiles = (first, second)
+    refreshed: list[pathlib.Path] = []
+
+    def discover(
+        workspace_root: pathlib.Path,
+        runner: bump._CommandRunner,
+    ) -> tuple[pathlib.Path, ...]:
+        return lockfiles
+
+    def refresh(
+        manifest_path: pathlib.Path,
+        runner: bump._CommandRunner,
+    ) -> pathlib.Path:
+        lockfile_path = manifest_path.parent / "Cargo.lock"
+        refreshed.append(lockfile_path)
+        if lockfile_path == second:
+            msg = "failed after first refresh"
+            raise LockfileRefreshError(msg)
+        return lockfile_path
+
+    monkeypatch.setattr(bump, "discover_tracked_lockfiles", discover)
+    monkeypatch.setattr(bump, "refresh_lockfile", refresh)
+
+    with pytest.raises(LockfileRefreshError, match="failed after first refresh"):
+        bump.run(
+            tmp_path,
+            "1.2.3",
+            options=bump.BumpOptions(configuration=_make_config(), workspace=workspace),
+        )
+
+    assert refreshed == [first, second]
 
 
 def test_run_updates_root_package_section(tmp_path: pathlib.Path) -> None:

@@ -15,6 +15,7 @@ from .conftest import ORIGINAL_PREFLIGHT, make_config, make_preflight_config
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
+from pathlib import Path
 
 
 def test_split_command_rejects_empty_sequence() -> None:
@@ -420,6 +421,39 @@ def test_validate_lockfile_freshness_reports_stale_lockfiles(
         "cargo generate-lockfile --manifest-path "
         f"{tmp_path / 'tests' / 'ui_lints' / 'Cargo.toml'}"
     ) in message
+
+def test_validate_lockfile_freshness_error_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+    snapshot: SnapshotAssertion,
+) -> None:
+    """Stale lockfile remediation output is locked by snapshot."""
+    workspace_root = Path("/workspace root")
+    root_lockfile = workspace_root / "Cargo.lock"
+    nested_lockfile = workspace_root / "tests" / "ui_lints" / "Cargo.lock"
+
+    monkeypatch.setattr(
+        publish._publish_preflight,
+        "discover_tracked_lockfiles",
+        lambda _root, _runner: (root_lockfile, nested_lockfile),
+    )
+    monkeypatch.setattr(
+        publish._publish_preflight,
+        "validate_lockfile_freshness",
+        lambda _manifest, _runner: False,
+    )
+
+    def runner(
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        return 0, "", ""
+
+    with pytest.raises(publish.PublishPreflightError) as excinfo:
+        publish._validate_lockfile_freshness(workspace_root, runner=runner, env={})
+
+    assert str(excinfo.value) == snapshot()
 def test_preflight_env_overrides_forwarded(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
