@@ -318,6 +318,7 @@ def bump(
                 dry_run=dry_run,
                 configuration=configuration,
                 workspace=workspace,
+                runner=command_runner,
             ),
         ),
     )

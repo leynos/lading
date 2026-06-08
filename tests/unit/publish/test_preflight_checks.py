@@ -9,9 +9,11 @@ from pathlib import Path
 import pytest
 
 from lading.commands import publish, publish_preflight
-from lading.runtime import CommandRunner
 
 from .conftest import ORIGINAL_PREFLIGHT, make_config, make_preflight_config
+
+if typ.TYPE_CHECKING:
+    from lading.runtime import CommandRunner
 
 
 def test_preflight_checks_remove_all_targets_for_unit_only(

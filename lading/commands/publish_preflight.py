@@ -193,6 +193,7 @@ def _compose_preflight_arguments(
     arguments.append(f"--target-dir={target_dir}")
     return tuple(arguments)
 
+
 def _validate_lockfile_freshness(
     workspace_root: Path,
     *,
@@ -207,8 +208,10 @@ def _validate_lockfile_freshness(
         *,
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
         """Invoke ``runner`` with ``base_env`` applied when no env is supplied."""
+        del echo_stdout
         effective_env = base_env if env is None else env
         return runner(command, cwd=cwd, env=effective_env)
 
@@ -241,6 +244,8 @@ def _validate_lockfile_freshness(
     message = "\n".join(lines)
     LOGGER.error(message)
     raise PublishPreflightError(message)
+
+
 def _preflight_argument_sets(
     target_dir: Path, *, unit_tests_only: bool
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:

@@ -30,12 +30,12 @@ def given_workspace_has_tracked_lockfiles(
 
     install_cargo_stub(cmd_mox, monkeypatch)
     (workspace_directory / "Cargo.lock").write_text("# root lock\n", encoding="utf-8")
-    cmd_mox.stub("git").with_args(
-        "ls-files", "**/Cargo.lock", "Cargo.lock"
-    ).returns(exit_code=0, stdout="Cargo.lock\n", stderr="")
+    cmd_mox.stub("git").with_args("ls-files", "**/Cargo.lock", "Cargo.lock").returns(
+        exit_code=0, stdout="Cargo.lock\n", stderr=""
+    )
     cmd_mox.stub("cargo::generate-lockfile").with_args(
         "--manifest-path", str(workspace_directory / "Cargo.toml")
-    ).returns(exit_code=0, stdout="", stderr="")
+    ).returns(exit_code=0, stdout="cargo generate-lockfile\n", stderr="")
 
 
 @when(
@@ -69,9 +69,7 @@ def when_invoke_lading_bump_dry_run(
 
 
 @then(parsers.parse('the bump command reports manifest updates for "{version}"'))
-def then_command_reports_workspace(
-    cli_run: dict[str, typ.Any], version: str
-) -> None:
+def then_command_reports_workspace(cli_run: dict[str, typ.Any], version: str) -> None:
     """Assert that the bump command reports the updated manifests."""
     assert cli_run["returncode"] == 0
     stdout = cli_run["stdout"]

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from lading.commands import publish
+from lading.commands import publish, publish_preflight
 
 if typ.TYPE_CHECKING:
     from syrupy.assertion import SnapshotAssertion
@@ -23,7 +23,7 @@ def test_validate_lockfile_freshness_passes_when_all_lockfiles_are_fresh(
     recorded_env: list[cabc.Mapping[str, str] | None] = []
 
     monkeypatch.setattr(
-        publish._publish_preflight,
+        publish_preflight,
         "discover_tracked_lockfiles",
         lambda _root, _runner: (root_lockfile, nested_lockfile),
     )
@@ -37,7 +37,7 @@ def test_validate_lockfile_freshness_passes_when_all_lockfiles_are_fresh(
         recorded_env.append(env)
         return 0, "", ""
 
-    publish._validate_lockfile_freshness(
+    publish_preflight._validate_lockfile_freshness(
         tmp_path,
         runner=runner,
         env={"CARGO_TERM_COLOR": "never"},
@@ -54,12 +54,12 @@ def test_validate_lockfile_freshness_reports_stale_lockfiles(
     nested_lockfile = tmp_path / "tests" / "ui_lints" / "Cargo.lock"
 
     monkeypatch.setattr(
-        publish._publish_preflight,
+        publish_preflight,
         "discover_tracked_lockfiles",
         lambda _root, _runner: (root_lockfile, nested_lockfile),
     )
     monkeypatch.setattr(
-        publish._publish_preflight,
+        publish_preflight,
         "validate_lockfile_freshness",
         lambda _manifest, _runner: False,
     )
@@ -73,7 +73,7 @@ def test_validate_lockfile_freshness_reports_stale_lockfiles(
         return 0, "", ""
 
     with pytest.raises(publish.PublishPreflightError) as excinfo:
-        publish._validate_lockfile_freshness(tmp_path, runner=runner, env={})
+        publish_preflight._validate_lockfile_freshness(tmp_path, runner=runner, env={})
 
     message = str(excinfo.value)
     assert str(root_lockfile) in message
@@ -98,12 +98,12 @@ def test_validate_lockfile_freshness_error_snapshot(
     nested_lockfile = workspace_root / "tests" / "ui_lints" / "Cargo.lock"
 
     monkeypatch.setattr(
-        publish._publish_preflight,
+        publish_preflight,
         "discover_tracked_lockfiles",
         lambda _root, _runner: (root_lockfile, nested_lockfile),
     )
     monkeypatch.setattr(
-        publish._publish_preflight,
+        publish_preflight,
         "validate_lockfile_freshness",
         lambda _manifest, _runner: False,
     )
@@ -117,6 +117,8 @@ def test_validate_lockfile_freshness_error_snapshot(
         return 0, "", ""
 
     with pytest.raises(publish.PublishPreflightError) as excinfo:
-        publish._validate_lockfile_freshness(workspace_root, runner=runner, env={})
+        publish_preflight._validate_lockfile_freshness(
+            workspace_root, runner=runner, env={}
+        )
 
     assert str(excinfo.value) == snapshot()

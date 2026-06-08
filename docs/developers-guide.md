@@ -88,7 +88,6 @@ publish runs with stub mode enabled.
 
 ## Workspace discovery helpers
 
-
 ### Lockfile helpers (`lading/commands/lockfile.py`)
 
 `discover_tracked_lockfiles(workspace_root, runner)` filters git-tracked
@@ -181,7 +180,6 @@ Examples:
 - `PublishOptions(allow_dirty=False)` — require a clean git working tree before
   proceeding with publish preparation.
 
-
 ## Bump command internals
 
 `BumpOptions` carries the dependency-injection points used by
@@ -205,7 +203,6 @@ that is part of the same publish plan but is not visible in the crates.io index
 yet. When enabled, `lading publish` downgrades that specific index-lookup
 failure to a warning and continues. The option is rejected at runtime when
 `live=True`, so it cannot mask a real upload failure.
-
 
 ### Exception hierarchy (`lading.exceptions`)
 
@@ -399,18 +396,17 @@ includes all four values. Using a single function for message construction keeps
 the error format consistent across the packaging and publish phases and makes
 snapshot testing straightforward.
 
+### Command runners (`lading.runtime`)
 
-### Command runners (`lading/commands/_runners.py`)
+`lading.runtime` owns the shared `CommandRunner` protocol and the production
+`subprocess_runner` adapter. Command modules type against this protocol so tests
+can inject cmd-mox or recording runners without depending on publish-specific
+infrastructure.
 
-`lading.commands._runners` owns the shared `_CommandRunner` protocol and the
-default `_invoke` adapter used by both bump and publish command workflows.
-Keeping this small boundary module neutral prevents `lading bump` from
-depending on publish-specific infrastructure just to run
-`cargo generate-lockfile`.
-
-`lading.commands.publish_execution` still owns the concrete subprocess and
-cmd-mox implementation. The neutral `_invoke` adapter delegates there at call
-time, while command modules type against `_CommandRunner` from `_runners`.
+`lading.commands.publish_execution` still owns publish-specific error mapping
+around command execution. `lading bump` uses the runtime runner directly for
+lockfile refreshes, while `lading publish` uses `_invoke` where failures should
+surface as `PublishPreflightError`.
 
 ### Pre-flight validation (`publish_preflight`)
 
@@ -423,7 +419,7 @@ _run_preflight_checks(
     *,
     allow_dirty: bool,
     configuration: LadingConfig,
-    runner: _CommandRunner | None = None,
+    runner: CommandRunner | None = None,
 ) -> None
 ```
 

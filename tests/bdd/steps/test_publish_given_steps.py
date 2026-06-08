@@ -66,6 +66,7 @@ def given_cargo_test_fails(
         exit_code=1, stderr="cargo test failed"
     )
 
+
 @given("publish pre-flight finds a stale tracked Cargo.lock")
 def given_publish_preflight_finds_stale_lockfile(
     workspace_directory: Path,
@@ -88,6 +89,8 @@ def given_publish_preflight_finds_stale_lockfile(
             "because --locked was passed to prevent this"
         ),
     )
+
+
 @given(parsers.parse('cargo test fails with compiletest artifact "{relative_path}"'))
 def given_cargo_test_fails_with_artifact(
     workspace_directory: Path,

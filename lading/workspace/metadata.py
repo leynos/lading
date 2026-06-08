@@ -8,10 +8,10 @@ import contextvars
 import json
 import typing as typ
 
+from lading.exceptions import LadingError
 from lading.runtime import (
     CommandRunner,
     CommandSpawnError,
-    LadingError,
     coerce_text,
     subprocess_runner,
 )
@@ -19,7 +19,6 @@ from lading.utils import normalise_workspace_root
 
 if typ.TYPE_CHECKING:  # pragma: no cover - import-time typing aids only
     from pathlib import Path
-from lading.exceptions import LadingError
 
 
 class CargoMetadataError(LadingError):
