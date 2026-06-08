@@ -211,12 +211,14 @@ Cargo's index lookup strict:
 lading publish --no-allow-unpublished-workspace-deps
 ```
 
-The flag is rejected when combined with `--live` because the failure cannot be
-bypassed during a real publish. When the missing dependency is **not** in the
-publish plan, or when it appears **after** the current crate in `publish.order`,
-the failure is still treated as an error. Fix the explicit `publish.order` so
-foundational crates come before dependants, or remove `publish.order` and rely
-on dependency-derived topological sorting.
+`--allow-unpublished-workspace-deps` is rejected when combined with `--live`
+because the failure cannot be bypassed during a real publish.
+`--no-allow-unpublished-workspace-deps` remains valid with `--live`; it
+preserves the strict behaviour that live publishes already use. When the
+missing dependency is **not** in the publish plan, or when it appears **after**
+the current crate in `publish.order`, the failure is still treated as an error.
+Fix the explicit `publish.order` so foundational crates come before dependants,
+or remove `publish.order` and rely on dependency-derived topological sorting.
 
 ## Configuration reference (`lading.toml`)
 
