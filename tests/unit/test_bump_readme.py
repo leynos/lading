@@ -87,6 +87,7 @@ def test_rewrite_relative_links_updates_markdown_targets(
         "[HTTPS](https://example.test/docs)",
         "[Mail](mailto:team@example.test)",
         "[Phone](tel:+441234567890)",
+        "![Inline](data:image/png;base64,AAAA)",
         "[Protocol](//example.test/docs)",
         "[Absolute](/docs/guide.md)",
         "[Fragment](#usage)",
