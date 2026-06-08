@@ -88,6 +88,33 @@ publish runs with stub mode enabled.
 
 ## Workspace discovery helpers
 
+### Lockfile helpers (`lading/commands/lockfile.py`)
+
+`discover_tracked_lockfiles(workspace_root, runner)` filters git-tracked
+`Cargo.lock` files outside `target/` with adjacent `Cargo.toml` manifests.
+Private helpers `_handle_git_ls_files_failure` and
+`_lockfiles_with_manifests` perform the error-handling and path-filtering
+passes respectively.
+
+`refresh_lockfile(manifest_path, runner)` runs
+`cargo generate-lockfile --manifest-path` for the supplied manifest and raises
+`LockfileRefreshError` on non-zero exit. `_refresh_lockfiles` in `bump.py`
+calls it after manifest rewrites. The refresh loop is intentionally not
+transactional: if a later lockfile refresh fails, previously rewritten
+manifests and refreshed lockfiles remain on disk, and the operator should fix
+the Cargo error, then run
+`cargo generate-lockfile --manifest-path <path>/Cargo.toml` for each affected
+crate manifest. Rerunning `lading bump` will not refresh lockfiles once the
+manifests are already rewritten.
+
+`validate_lockfile_freshness(manifest_path, runner)` runs
+`cargo metadata --locked --manifest-path ... --format-version=1`. It returns
+`True` on success and `False` otherwise. `_validate_lockfile_freshness` in
+`publish_preflight.py` calls it before the cargo check/test pre-flight.
+
+`LockfileRefreshError` inherits `LadingError`; its message includes Cargo
+stderr.
+
 ### `load_cargo_metadata`
 
 Import `lading.workspace.load_cargo_metadata` to execute `cargo metadata` with
@@ -153,6 +180,21 @@ Examples:
 - `PublishOptions(allow_dirty=False)` — require a clean git working tree before
   proceeding with publish preparation.
 
+## Bump command internals
+
+`BumpOptions` carries the dependency-injection points used by
+`lading.commands.bump.run`. The `runner` field accepts an optional
+`_CommandRunner`, matching the command-runner protocol used by publish
+execution. When `runner` is `None`, bump falls back to the default subprocess
+runner. Tests pass a runner explicitly so lockfile refresh commands can be
+observed without invoking real Cargo processes.
+
+`BumpChanges` records the user-visible files touched by a bump run. Its
+`lockfiles` field contains the git-tracked `Cargo.lock` files refreshed after
+manifest rewrites. The output formatter treats these paths like manifests and
+documentation files, listing each refreshed lockfile with a `(lockfile)` suffix
+so operators can see which generated files need review and commit.
+
 ## Publish command internals
 
 `PublishOptions.allow_unpublished_workspace_deps` is a dry-run-only override
@@ -162,11 +204,55 @@ yet. When enabled, `lading publish` downgrades that specific index-lookup
 failure to a warning and continues. The option is rejected at runtime when
 `live=True`, so it cannot mask a real upload failure.
 
-### Exception hierarchy (`publish_errors`)
+### Exception hierarchy (`lading.exceptions`)
 
-`lading.commands.publish_errors` defines the public error boundary for
-publish orchestration. Both classes inherit from `RuntimeError` and carry
-their message through the standard `args` tuple.
+`lading.exceptions.LadingError` is the package-level base class for domain
+failures raised by lading itself. It extends `Exception` directly and gives
+callers one stable type to catch when they want to handle expected lading
+failures without also catching unrelated runtime errors from Python, Cargo, git
+wrappers, or test doubles.
+
+Every root domain exception should inherit from `LadingError`. More specific
+exceptions should continue to inherit from the local root for their feature
+area so existing handling remains precise:
+
+| Root exception | Module | Notes |
+| --- | --- | --- |
+| `ConfigurationError` | `lading.config` | Base for configuration loading and validation failures. |
+| `WorkspaceModelError` | `lading.workspace.models` | Base for workspace graph/model validation failures. |
+| `CargoMetadataError` | `lading.workspace.metadata` | Base for cargo metadata execution and parsing failures. |
+| `LockfileRefreshError` | `lading.commands.lockfile` | Raised when `cargo generate-lockfile` fails. |
+| `PublishPlanError` | `lading.commands.publish_plan` | Raised when a publish plan cannot be constructed. |
+| `PublishPreparationError` | `lading.commands.publish_manifest` | Raised when staged publish manifests or workspace assets cannot be prepared. |
+| `PublishPreflightError` | `lading.commands.publish_errors` | Raised for local publish validation and pre-flight failures. |
+
+Reuse plan:
+
+- New command, workspace, and configuration modules should define exactly one
+  local root exception that subclasses `LadingError` when they introduce a new
+  failure family.
+- Subclasses should inherit from that local root, not from `LadingError`
+  directly, unless they are themselves the root of a new family.
+- Do not inherit lading domain exceptions from `RuntimeError`; reserve
+  `RuntimeError` for unexpected programming errors or third-party APIs that
+  already expose it.
+- Keep messages useful at the boundary where they are raised. Include the
+  relevant path, crate name, command, or configuration key so CLI handlers can
+  report the exception without reconstructing context.
+
+Usage guidance:
+
+- CLI and integration boundaries may catch `LadingError` to render expected
+  lading failures as user-facing diagnostics.
+- Feature code should catch the narrowest local exception it can handle, such
+  as `PublishPreflightError` or `LockfileRefreshError`, and let unrelated
+  `LadingError` subclasses propagate.
+- Tests should assert the specific exception type for the behaviour under test,
+  then use `LadingError` only when verifying common boundary handling.
+
+`lading.commands.publish_errors` defines the public error boundary for publish
+orchestration. Both publish exceptions inherit from the package-level
+`LadingError` base and carry their message through the standard `args` tuple.
 
 | Exception | Raised when |
 | --- | --- |
@@ -310,6 +396,18 @@ includes all four values. Using a single function for message construction keeps
 the error format consistent across the packaging and publish phases and makes
 snapshot testing straightforward.
 
+### Command runners (`lading.runtime`)
+
+`lading.runtime` owns the shared `CommandRunner` protocol and the production
+`subprocess_runner` adapter. Command modules type against this protocol so tests
+can inject cmd-mox or recording runners without depending on publish-specific
+infrastructure.
+
+`lading.commands.publish_execution` still owns publish-specific error mapping
+around command execution. `lading bump` uses the runtime runner directly for
+lockfile refreshes, while `lading publish` uses `_invoke` where failures should
+surface as `PublishPreflightError`.
+
 ### Pre-flight validation (`publish_preflight`)
 
 `lading.commands.publish_preflight` performs workspace validation before
@@ -321,7 +419,7 @@ _run_preflight_checks(
     *,
     allow_dirty: bool,
     configuration: LadingConfig,
-    runner: _CommandRunner | None = None,
+    runner: CommandRunner | None = None,
 ) -> None
 ```
 

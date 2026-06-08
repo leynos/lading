@@ -574,7 +574,8 @@ def test_dirty_workspace_allowed_by_default(
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
-        if command[0] == "git":
+        normalized_cmd = tuple(command)
+        if normalized_cmd == ("git", "status", "--porcelain"):
             message = "git status should be skipped by default"
             raise AssertionError(message)
         return 0, "", ""

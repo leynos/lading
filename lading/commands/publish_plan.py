@@ -6,6 +6,7 @@ import collections.abc as cabc
 import dataclasses as dc
 import typing as typ
 
+from lading.exceptions import LadingError
 from lading.workspace import WorkspaceDependencyCycleError
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing helper
@@ -15,7 +16,7 @@ if typ.TYPE_CHECKING:  # pragma: no cover - typing helper
     from lading.workspace import WorkspaceCrate, WorkspaceGraph
 
 
-class PublishPlanError(RuntimeError):
+class PublishPlanError(LadingError):
     """Raised when the publish plan cannot be constructed."""
 
 

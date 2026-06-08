@@ -4,7 +4,13 @@ import importlib
 import io
 from pathlib import Path
 
+import pytest
+
+from lading import cli
+from lading.commands import publish, publish_execution
+from lading.runtime import subprocess_runner
 from lading.testing import cmd_mox_runner
+from lading.testing.cmd_mox_runner import normalise_cmd_mox_command
 
 execution = importlib.import_module("lading.runtime.subprocess_runner")
 
@@ -66,3 +72,57 @@ def test_echo_buffered_output_skips_empty_payloads() -> None:
     sink = io.StringIO()
     cmd_mox_runner._echo_buffered_output("", sink)
     assert sink.getvalue() == ""
+
+
+def test_split_command_rejects_empty_sequence() -> None:
+    """Splitting an empty command raises a descriptive error."""
+    with pytest.raises(publish.PublishPreflightError) as excinfo:
+        publish_execution.split_command(())
+
+    assert "Command sequence must contain" in str(excinfo.value)
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        ("cargo", "check"),
+        ("cargo", "test", "--workspace"),
+        ("git", "status", "--porcelain"),
+    ],
+)
+def test_normalise_cmd_mox_command_forwards_non_cargo_commands(
+    command: tuple[str, ...],
+) -> None:
+    """cmd-mox normalisation preserves non-cargo commands and arguments."""
+    program, args = command[0], tuple(command[1:])
+
+    rewritten_program, rewritten_args = normalise_cmd_mox_command(program, args)
+
+    if program == "cargo" and args:
+        expected_program = f"cargo::{args[0]}"
+        expected_args = list(args[1:])
+    else:
+        expected_program = program
+        expected_args = list(args)
+
+    assert rewritten_program == expected_program
+    assert rewritten_args == expected_args
+
+
+@pytest.mark.parametrize("value", ["1", "true", "TRUE", "Yes", "on"])
+def test_should_use_cmd_mox_stub_honours_truthy_values(
+    value: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Environment values recognised as truthy enable cmd-mox stubbing."""
+    monkeypatch.setenv(cli._CMD_MOX_STUB_ENV, value)
+
+    assert cli._select_runner() is cmd_mox_runner.cmd_mox_runner
+
+
+def test_should_use_cmd_mox_stub_returns_false_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Missing environment values disable cmd-mox stubbing."""
+    monkeypatch.delenv(cli._CMD_MOX_STUB_ENV, raising=False)
+
+    assert cli._select_runner() is subprocess_runner

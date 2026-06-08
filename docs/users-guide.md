@@ -73,6 +73,12 @@ To preview changes without writing any files:
 lading bump 1.2.3 --dry-run
 ```
 
+After updating manifest versions, `lading bump` automatically refreshes any
+git-tracked `Cargo.lock` files (excluding those under `target/`) that have an
+adjacent `Cargo.toml`. Refreshed lockfiles are listed in the command output
+with a `(lockfile)` suffix. In dry-run mode the lockfiles are listed but not
+modified.
+
 If `bump.documentation.globs` is configured, `lading` also searches those
 Markdown files for TOML code fences and updates version values that refer to
 workspace crates.
@@ -85,6 +91,20 @@ be validated without uploading crates.
 ```bash
 lading publish
 ```
+
+Before running `cargo check` and `cargo test`, `lading publish` validates that
+all git-tracked `Cargo.lock` files are fresh under `--locked` mode. If any
+lockfile is stale — for example after a `lading bump` that regenerated a nested
+workspace lockfile — the command exits with code 1 and prints a repair command:
+
+```text
+Tracked Cargo.lock files are stale after manifest version changes.
+Run the following to repair:
+  cargo generate-lockfile --manifest-path <path>/Cargo.toml
+```
+
+Run the repair command, commit the updated lockfile, then re-run
+`lading publish`.
 
 To require a clean working tree before running the pre-flight checks, pass
 `--forbid-dirty`:

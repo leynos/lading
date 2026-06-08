@@ -9,7 +9,7 @@ import typing as typ
 
 import pytest
 
-from lading.runtime import CommandSpawnError
+from lading.runtime import CommandSpawnError, coerce_text
 from lading.workspace import (
     CargoExecutableNotFoundError,
     CargoMetadataError,
@@ -123,6 +123,16 @@ def test_load_cargo_metadata_error_decodes_byte_streams(
         load_cargo_metadata(tmp_path)
 
     assert "manifest missing" in str(excinfo.value)
+
+
+def test_metadata_coerce_text_decodes_bytes() -> None:
+    """Binary output is decoded using UTF-8 with replacement semantics."""
+    alpha = "\N{GREEK SMALL LETTER ALPHA}"
+    encoded = alpha.encode()
+    assert coerce_text(encoded) == alpha
+
+    binary = b"foo\xff"
+    assert coerce_text(binary) == "foo\ufffd"
 
 
 @pytest.mark.parametrize(

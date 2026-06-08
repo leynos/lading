@@ -1,0 +1,11 @@
+# serializer version: 1
+# name: test_validate_lockfile_freshness_error_snapshot
+  '''
+  Tracked Cargo.lock files are stale after manifest version changes.
+  This commonly happens after running `lading bump`; repair each stale lockfile directly:
+  - /workspace root/Cargo.lock
+    cargo generate-lockfile --manifest-path '/workspace root/Cargo.toml'
+  - /workspace root/tests/ui_lints/Cargo.lock
+    cargo generate-lockfile --manifest-path '/workspace root/tests/ui_lints/Cargo.toml'
+  '''
+# ---

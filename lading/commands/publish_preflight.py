@@ -13,9 +13,13 @@ required check fails.
 
 Examples
 --------
->>> from pathlib import Path
->>> from lading.commands.publish_preflight import _run_preflight_checks
->>> _run_preflight_checks(Path("."), allow_dirty=False, configuration=config)
+```python
+from pathlib import Path
+
+from lading.commands.publish_preflight import _run_preflight_checks
+
+_run_preflight_checks(Path("."), allow_dirty=False, configuration=config)
+```
 """
 
 from __future__ import annotations
@@ -24,10 +28,15 @@ import collections.abc as cabc
 import dataclasses as dc
 import logging
 import os
+import shlex
 import tempfile
 import typing as typ
 from pathlib import Path
 
+from lading.commands.lockfile import (
+    discover_tracked_lockfiles,
+    validate_lockfile_freshness,
+)
 from lading.commands.publish_diagnostics import _append_compiletest_diagnostics
 from lading.commands.publish_errors import PublishPreflightError
 from lading.commands.publish_execution import _invoke
@@ -134,6 +143,11 @@ def _run_preflight_checks(
         runner=command_runner,
         env=base_env,
     )
+    _validate_lockfile_freshness(
+        workspace_root,
+        runner=command_runner,
+        env=base_env,
+    )
 
     with tempfile.TemporaryDirectory(prefix="lading-preflight-target-") as target:
         target_path = Path(target)
@@ -178,6 +192,58 @@ def _compose_preflight_arguments(
         arguments.append("--all-targets")
     arguments.append(f"--target-dir={target_dir}")
     return tuple(arguments)
+
+
+def _validate_lockfile_freshness(
+    workspace_root: Path,
+    *,
+    runner: CommandRunner,
+    env: cabc.Mapping[str, str] | None = None,
+) -> None:
+    """Fail early when tracked Cargo.lock files are stale."""
+    base_env = env
+
+    def runner_with_env(
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
+    ) -> tuple[int, str, str]:
+        """Invoke ``runner`` with ``base_env`` applied when no env is supplied."""
+        del echo_stdout
+        effective_env = base_env if env is None else env
+        return runner(command, cwd=cwd, env=effective_env)
+
+    tracked = discover_tracked_lockfiles(workspace_root, runner_with_env)
+    stale_lockfiles: list[Path] = []
+    for lockfile_path in tracked:
+        manifest_path = lockfile_path.parent / "Cargo.toml"
+        if not validate_lockfile_freshness(manifest_path, runner_with_env):
+            stale_lockfiles.append(lockfile_path)
+
+    if not stale_lockfiles:
+        LOGGER.info("All %d tracked lockfile(s) are fresh under --locked", len(tracked))
+        return
+
+    lines = [
+        "Tracked Cargo.lock files are stale after manifest version changes.",
+        (
+            "This commonly happens after running `lading bump`; repair each "
+            "stale lockfile directly:"
+        ),
+    ]
+    for lockfile_path in stale_lockfiles:
+        manifest_path = lockfile_path.parent / "Cargo.toml"
+        lines.append(f"- {lockfile_path}")
+        quoted_manifest_path = shlex.quote(str(manifest_path))
+        lines.append(
+            f"  cargo generate-lockfile --manifest-path {quoted_manifest_path}"
+        )
+
+    message = "\n".join(lines)
+    LOGGER.error(message)
+    raise PublishPreflightError(message)
 
 
 def _preflight_argument_sets(

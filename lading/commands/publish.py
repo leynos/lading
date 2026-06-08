@@ -89,6 +89,7 @@ from lading.commands.publish_preflight import (
     _compose_preflight_arguments,
     _run_aux_build_commands,
     _run_cargo_preflight,
+    _validate_lockfile_freshness,
     _verify_clean_working_tree,
 )
 from lading.utils.path import normalise_workspace_root
@@ -740,6 +741,11 @@ def _run_preflight_checks(
     _run_aux_build_commands(
         workspace_root,
         preflight_config.aux_build,
+        runner=command_runner,
+        env=base_env,
+    )
+    _validate_lockfile_freshness(
+        workspace_root,
         runner=command_runner,
         env=base_env,
     )

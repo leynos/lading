@@ -80,6 +80,7 @@ def given_nontrivial_workspace_in_git_repo(
         raise E2EExpectationError.unsupported_fixture_version(version)
     e2e_workspace, e2e_git_repo = e2e_workspace_with_git
     monkeypatch.setenv("LADING_USE_CMD_MOX_STUB", "1")
+    cmd_mox.spy("git").passthrough()
     stub_cargo_metadata(cmd_mox, e2e_workspace)
     return {"workspace": e2e_workspace, "git_repo": e2e_git_repo}
 

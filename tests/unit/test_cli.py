@@ -390,6 +390,7 @@ def test_bump_cli_accepts_dry_run_flag(
     options = captured_kwargs["options"]
     assert isinstance(options, bump_command.BumpOptions)
     assert options.dry_run is True
+    assert options.runner is cli.subprocess_runner
 
 
 @pytest.mark.parametrize(

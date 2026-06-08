@@ -10,6 +10,7 @@ import typing as typ
 
 from cyclopts.config import Toml
 
+from lading.exceptions import LadingError
 from lading.utils import normalise_workspace_root
 
 if typ.TYPE_CHECKING:  # pragma: no cover - type checking only
@@ -41,7 +42,7 @@ PREFLIGHT_TOML_KEYS: typ.Final[frozenset[str]] = frozenset({
 })
 
 
-class ConfigurationError(RuntimeError):
+class ConfigurationError(LadingError):
     """Raised when the :mod:`lading` configuration is invalid."""
 
 

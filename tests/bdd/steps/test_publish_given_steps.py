@@ -67,6 +67,30 @@ def given_cargo_test_fails(
     )
 
 
+@given("publish pre-flight finds a stale tracked Cargo.lock")
+def given_publish_preflight_finds_stale_lockfile(
+    workspace_directory: Path,
+    preflight_overrides: dict[tuple[str, ...], ResponseProvider],
+) -> None:
+    """Simulate a tracked lockfile that fails locked metadata validation."""
+    (workspace_directory / "Cargo.lock").write_text("# stale lock\n", encoding="utf-8")
+    preflight_overrides["git", "ls-files", "**/Cargo.lock", "Cargo.lock"] = (
+        _CommandResponse(exit_code=0, stdout="Cargo.lock\n")
+    )
+    preflight_overrides[
+        "cargo",
+        "metadata",
+        "--locked",
+        "--manifest-path",
+    ] = _CommandResponse(
+        exit_code=101,
+        stderr=(
+            f"error: cannot update the lock file {workspace_directory / 'Cargo.lock'} "
+            "because --locked was passed to prevent this"
+        ),
+    )
+
+
 @given(parsers.parse('cargo test fails with compiletest artifact "{relative_path}"'))
 def given_cargo_test_fails_with_artifact(
     workspace_directory: Path,

@@ -155,6 +155,72 @@ def _make_preflight_handler(
     return _handler
 
 
+def _matches_expected_prefix(
+    expected: tuple[str, ...],
+    received: tuple[str, ...],
+) -> bool:
+    """Return whether ``received`` begins with the expected argument tuple."""
+    if len(received) < len(expected):
+        return False
+    return all(
+        expected_arg == received[index] for index, expected_arg in enumerate(expected)
+    )
+
+
+def _make_preflight_dispatch_handler(
+    entries: cabc.Sequence[tuple[tuple[str, ...], ResponseProvider]],
+    recorder: _PreflightInvocationRecorder | None,
+    label: str,
+) -> cabc.Callable[[_CmdInvocation], tuple[str, str, int]]:
+    """Build a handler that dispatches several prefixes for one command."""
+
+    def _handler(invocation: _CmdInvocation) -> tuple[str, str, int]:
+        received = tuple(invocation.args)
+        for expected_arguments, response in entries:
+            if _matches_expected_prefix(expected_arguments, received):
+                active_response = (
+                    response(invocation) if callable(response) else response
+                )
+                if recorder is not None:
+                    env_mapping = dict(getattr(invocation, "env", {}))
+                    recorder.record(label, received, env_mapping)
+                return (
+                    active_response.stdout,
+                    active_response.stderr,
+                    active_response.exit_code,
+                )
+        expected = ", ".join(str(arguments) for arguments, _response in entries)
+        message = (
+            f"Unexpected {label} invocation arguments: {received!r}; "
+            f"expected one of {expected}"
+        )
+        raise AssertionError(message)
+
+    return _handler
+
+
+def _existing_static_stub_response(
+    cmd_mox: CmdMox,
+    program: str,
+) -> tuple[tuple[str, ...], ResponseProvider] | None:
+    """Return an existing static stub response for ``program`` if present."""
+    double = getattr(cmd_mox, "_doubles", {}).get(program)
+    if double is None or getattr(double, "kind", None) != "stub":
+        return None
+    response = getattr(double, "response", None)
+    if response is None or getattr(double, "handler", None) is not None:
+        return None
+    expected_arguments = tuple(getattr(double.expectation, "args", ()))
+    return (
+        expected_arguments,
+        _CommandResponse(
+            exit_code=response.exit_code,
+            stdout=response.stdout,
+            stderr=response.stderr,
+        ),
+    )
+
+
 def _create_stub_config(
     cmd_mox: CmdMox,
     preflight_overrides: dict[tuple[str, ...], ResponseProvider],
@@ -171,10 +237,10 @@ def _create_stub_config(
     )
 
 
-def _register_preflight_commands(
+def _normalise_preflight_responses(
     config: _PreflightStubConfig,
-) -> None:
-    """Install cmd-mox doubles for publish pre-flight commands.
+) -> dict[tuple[str, ...], ResponseProvider]:
+    """Return default and override responses keyed by command tuple.
 
     Notes
     -----
@@ -185,6 +251,9 @@ def _register_preflight_commands(
     """
     defaults: dict[tuple[str, ...], ResponseProvider] = {
         ("git", "status", "--porcelain"): _CommandResponse(exit_code=0),
+        ("git", "ls-files", "**/Cargo.lock", "Cargo.lock"): _CommandResponse(
+            exit_code=0
+        ),
         (
             "cargo",
             "check",
@@ -234,13 +303,72 @@ def _register_preflight_commands(
 
     defaults |= normalized_overrides
     defaults[publish_command] = publish_response
+    return defaults
+
+
+def _register_preflight_commands(
+    config: _PreflightStubConfig,
+) -> None:
+    """Install cmd-mox doubles for publish pre-flight commands."""
+    defaults = _normalise_preflight_responses(config)
+    git_responses = {
+        command[1:]: response
+        for command, response in defaults.items()
+        if command[0] == "git"
+    }
+    defaults = {
+        command: response
+        for command, response in defaults.items()
+        if command[0] != "git"
+    }
+    if git_responses:
+        config.cmd_mox.stub("git").runs(
+            _make_git_handler(git_responses, config.recorder)
+        )
+    grouped_responses: dict[str, list[tuple[tuple[str, ...], ResponseProvider]]] = {}
     for command, response in defaults.items():
         expectation_program, expectation_args = _resolve_preflight_expectation(command)
+        grouped_responses.setdefault(expectation_program, []).append((
+            expectation_args,
+            response,
+        ))
+    for expectation_program, entries in grouped_responses.items():
+        existing = _existing_static_stub_response(config.cmd_mox, expectation_program)
+        if existing is not None:
+            entries.insert(0, existing)
         config.cmd_mox.stub(expectation_program).runs(
-            _make_preflight_handler(
-                response, expectation_args, config.recorder, expectation_program
+            _make_preflight_dispatch_handler(
+                entries,
+                config.recorder,
+                expectation_program,
             )
         )
+
+
+def _make_git_handler(
+    responses: dict[tuple[str, ...], ResponseProvider],
+    recorder: _PreflightInvocationRecorder | None,
+) -> cabc.Callable[[_CmdInvocation], tuple[str, str, int]]:
+    """Build a git handler that can serve multiple git subcommands."""
+
+    def _handler(invocation: _CmdInvocation) -> tuple[str, str, int]:
+        args = tuple(invocation.args)
+        try:
+            response = responses[args]
+        except KeyError as exc:
+            message = f"Unexpected git invocation arguments: {args!r}"
+            raise AssertionError(message) from exc
+        active_response = response(invocation) if callable(response) else response
+        if recorder is not None:
+            env_mapping = dict(getattr(invocation, "env", {}))
+            recorder.record("git", args, env_mapping)
+        return (
+            active_response.stdout,
+            active_response.stderr,
+            active_response.exit_code,
+        )
+
+    return _handler
 
 
 def _build_env_restore_dict(var_name: str) -> dict[str, str]:

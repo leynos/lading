@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import collections.abc as cabc
 import dataclasses as dc
+import logging
 import types
 import typing as typ
 
 from lading import config as config_module
 from lading.commands import bump_docs, bump_toml
+from lading.commands.lockfile import discover_tracked_lockfiles, refresh_lockfile
+from lading.runtime import CommandRunner, subprocess_runner
 from lading.utils import normalise_workspace_root
 
 if typ.TYPE_CHECKING:
@@ -31,6 +34,8 @@ _DEPENDENCY_SECTION_BY_KIND: typ.Final[dict[str | None, str]] = {
     "build": "build-dependencies",
 }
 
+LOGGER = logging.getLogger(__name__)
+
 
 @dc.dataclass(frozen=True, slots=True)
 class BumpOptions:
@@ -43,6 +48,7 @@ class BumpOptions:
         default_factory=lambda: types.MappingProxyType({})
     )
     include_workspace_sections: bool = False
+    runner: CommandRunner | None = None
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -51,6 +57,7 @@ class BumpChanges:
 
     manifests: cabc.Sequence[Path] = ()
     documents: cabc.Sequence[Path] = ()
+    lockfiles: cabc.Sequence[Path] = ()
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -73,10 +80,12 @@ def _build_changes_description(changes: BumpChanges) -> str:
         parts.append(f"{len(changes.manifests)} manifest(s)")
     if changes.documents:
         parts.append(f"{len(changes.documents)} documentation file(s)")
+    if changes.lockfiles:
+        parts.append(f"{len(changes.lockfiles)} lockfile(s)")
     return parts[0] if len(parts) == 1 else " and ".join(parts)
 
 
-def _format_no_changes_message(target_version: str, dry_run: bool) -> str:  # noqa: FBT001
+def _format_no_changes_message(target_version: str, *, dry_run: bool) -> str:
     """Format message when no changes are required."""
     if dry_run:
         return (
@@ -86,7 +95,7 @@ def _format_no_changes_message(target_version: str, dry_run: bool) -> str:  # no
     return f"No manifest changes required; all versions already {target_version}."
 
 
-def _format_header(description: str, target_version: str, dry_run: bool) -> str:  # noqa: FBT001
+def _format_header(description: str, target_version: str, *, dry_run: bool) -> str:
     """Format the summary header line."""
     if dry_run:
         return f"Dry run; would update version to {target_version} in {description}:"
@@ -105,7 +114,10 @@ def run(
     _process_workspace_manifest(context, target_version, changed_manifests)
     _process_crate_manifests(context, target_version, changed_manifests)
     changed_documents = _process_documentation_files(context, target_version)
-    changes = _prepare_sorted_changes(context, changed_manifests, changed_documents)
+    refreshed_lockfiles = _refresh_lockfiles(context) if changed_manifests else ()
+    changes = _prepare_sorted_changes(
+        context, changed_manifests, changed_documents, refreshed_lockfiles
+    )
     return _format_result_message(
         changes,
         target_version,
@@ -135,6 +147,7 @@ def _initialize_bump_context(
         dry_run=resolved_options.dry_run,
         configuration=configuration,
         workspace=workspace,
+        runner=resolved_options.runner,
     )
     excluded = frozenset(configuration.bump.exclude)
     updated_crate_names = frozenset(
@@ -204,6 +217,7 @@ def _prepare_sorted_changes(
     context: _BumpContext,
     changed_manifests: set[Path],
     changed_documents: set[Path],
+    refreshed_lockfiles: cabc.Sequence[Path] = (),
 ) -> BumpChanges:
     """Return ordered :class:`BumpChanges` suitable for result rendering."""
     ordered_manifests = tuple(
@@ -215,7 +229,41 @@ def _prepare_sorted_changes(
     ordered_documents: tuple[Path, ...] = tuple(
         sorted(changed_documents, key=lambda path: str(path))
     )
-    return BumpChanges(manifests=ordered_manifests, documents=ordered_documents)
+    ordered_lockfiles: tuple[Path, ...] = tuple(
+        sorted(refreshed_lockfiles, key=lambda path: str(path))
+    )
+    return BumpChanges(
+        manifests=ordered_manifests,
+        documents=ordered_documents,
+        lockfiles=ordered_lockfiles,
+    )
+
+
+def _refresh_lockfiles(context: _BumpContext) -> tuple[Path, ...]:
+    """Refresh tracked lockfiles after manifest rewrites.
+
+    Refresh is intentionally not transactional. If one lockfile refresh fails,
+    manifests already rewritten to the target version remain on disk; after
+    fixing the Cargo error, rerunning ``lading bump`` will not refresh
+    lockfiles because refresh only runs when manifests are rewritten. Run
+    ``cargo generate-lockfile --manifest-path <path>/Cargo.toml``
+    for each stale lockfile.
+    """
+    runner = context.base_options.runner or subprocess_runner
+    lockfiles = discover_tracked_lockfiles(context.root_path, runner)
+    if context.base_options.dry_run:
+        for lockfile_path in lockfiles:
+            LOGGER.info("Dry run; would refresh %s", lockfile_path)
+        return lockfiles
+
+    for lockfile_path in lockfiles:
+        refresh_lockfile(lockfile_path.parent / "Cargo.toml", runner)
+    LOGGER.info(
+        "Refreshed %d tracked lockfile(s) in %s",
+        len(lockfiles),
+        context.root_path,
+    )
+    return lockfiles
 
 
 def _update_crate_manifest(
@@ -257,11 +305,11 @@ def _format_result_message(
     workspace_root: Path,
 ) -> str:
     """Summarise the bump outcome for CLI presentation."""
-    if not changes.manifests and not changes.documents:
-        return _format_no_changes_message(target_version, dry_run)
+    if not any((changes.manifests, changes.documents, changes.lockfiles)):
+        return _format_no_changes_message(target_version, dry_run=dry_run)
 
     description = _build_changes_description(changes)
-    header = _format_header(description, target_version, dry_run)
+    header = _format_header(description, target_version, dry_run=dry_run)
     formatted_paths = [
         f"- {_format_manifest_path(manifest_path, workspace_root)}"
         for manifest_path in changes.manifests
@@ -269,6 +317,10 @@ def _format_result_message(
     formatted_paths.extend(
         f"- {_format_manifest_path(document_path, workspace_root)} (documentation)"
         for document_path in changes.documents
+    )
+    formatted_paths.extend(
+        f"- {_format_manifest_path(lockfile_path, workspace_root)} (lockfile)"
+        for lockfile_path in changes.lockfiles
     )
     return "\n".join([header, *formatted_paths])
 

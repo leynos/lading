@@ -4,185 +4,16 @@ from __future__ import annotations
 
 import collections.abc as cabc
 import typing as typ
+from pathlib import Path
 
 import pytest
 
-from lading.commands import publish, publish_execution, publish_preflight
-from lading.runtime import CommandRunner, coerce_text
-from lading.testing.cmd_mox_runner import normalise_cmd_mox_command
+from lading.commands import publish, publish_preflight
 
 from .conftest import ORIGINAL_PREFLIGHT, make_config, make_preflight_config
 
 if typ.TYPE_CHECKING:
-    from pathlib import Path
-
-
-def test_split_command_rejects_empty_sequence() -> None:
-    """Splitting an empty command raises a descriptive error."""
-    with pytest.raises(publish.PublishPreflightError) as excinfo:
-        publish_execution.split_command(())
-
-    assert "Command sequence must contain" in str(excinfo.value)
-
-
-@pytest.mark.parametrize(
-    "command",
-    [
-        ("cargo", "check"),
-        ("cargo", "test", "--workspace"),
-        ("git", "status", "--porcelain"),
-    ],
-)
-def test_normalise_cmd_mox_command_forwards_non_cargo_commands(
-    command: tuple[str, ...],
-) -> None:
-    """cmd-mox normalisation preserves non-cargo commands and arguments."""
-    program, args = command[0], tuple(command[1:])
-
-    rewritten_program, rewritten_args = normalise_cmd_mox_command(program, args)
-
-    if program == "cargo" and args:
-        expected_program = f"cargo::{args[0]}"
-        expected_args = list(args[1:])
-    else:
-        expected_program = program
-        expected_args = list(args)
-
-    assert rewritten_program == expected_program
-    assert rewritten_args == expected_args
-
-
-def test_metadata_coerce_text_decodes_bytes() -> None:
-    """Binary output is decoded using UTF-8 with replacement semantics."""
-    alpha = "\N{GREEK SMALL LETTER ALPHA}"
-    encoded = alpha.encode()
-    assert coerce_text(encoded) == alpha
-
-    binary = b"foo\xff"
-    assert coerce_text(binary) == "foo\ufffd"
-
-
-def test_run_cargo_preflight_raises_on_failure(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Non-zero command results are converted into preflight errors."""
-
-    def failing_runner(
-        command: tuple[str, ...],
-        *,
-        cwd: Path | None = None,
-        env: cabc.Mapping[str, str] | None = None,
-    ) -> tuple[int, str, str]:
-        assert cwd == tmp_path
-        assert command[0] == "cargo"
-        return 1, "", "boom"
-
-    with pytest.raises(publish.PublishPreflightError) as excinfo:
-        publish_preflight._run_cargo_preflight(
-            tmp_path,
-            "check",
-            runner=failing_runner,
-            options=publish_preflight._CargoPreflightOptions(
-                extra_args=("--workspace",)
-            ),
-        )
-
-    message = str(excinfo.value)
-    assert "cargo check" in message
-    assert "boom" in message
-
-
-def _run_and_record_cargo_preflight(
-    workspace_root: Path,
-    subcommand: typ.Literal["check", "test"],
-    options: publish_preflight._CargoPreflightOptions,
-) -> tuple[str, ...]:
-    """Run cargo preflight with a recording runner and return the command.
-
-    Returns
-    -------
-        The recorded cargo command as a tuple of strings.
-
-    """
-    recorded: list[tuple[str, ...]] = []
-
-    def recording_runner(
-        command: tuple[str, ...],
-        *,
-        cwd: Path | None = None,
-        env: cabc.Mapping[str, str] | None = None,
-    ) -> tuple[int, str, str]:
-        recorded.append(command)
-        return 0, "", ""
-
-    publish_preflight._run_cargo_preflight(
-        workspace_root,
-        subcommand,
-        runner=recording_runner,
-        options=options,
-    )
-
-    assert len(recorded) == 1, f"Expected 1 recorded command, got {len(recorded)}"
-    return recorded.pop()
-
-
-def test_run_cargo_preflight_honours_test_excludes(tmp_path: Path) -> None:
-    """Configured test exclusions append ``--exclude`` arguments."""
-    command = _run_and_record_cargo_preflight(
-        tmp_path,
-        "test",
-        publish_preflight._CargoPreflightOptions(
-            extra_args=("--workspace", "--all-targets"),
-            test_excludes=(" alpha ", "", "beta"),
-        ),
-    )
-    assert command[:2] == ("cargo", "test")
-    assert command[2:4] == ("--workspace", "--all-targets")
-    assert command[4:] == ("--exclude", "alpha", "--exclude", "beta")
-
-
-def test_run_cargo_preflight_excludes_blank_entries(tmp_path: Path) -> None:
-    """Blank test exclude entries do not emit ``--exclude`` arguments."""
-    command = _run_and_record_cargo_preflight(
-        tmp_path,
-        "test",
-        publish_preflight._CargoPreflightOptions(
-            extra_args=("--workspace", "--all-targets"),
-            test_excludes=["", "   ", "\t", "\n"],
-        ),
-    )
-    assert "--exclude" not in command
-
-
-def test_run_cargo_preflight_honours_unit_tests_only(tmp_path: Path) -> None:
-    """The unit test flag narrows cargo test targets to lib and bins."""
-    command = _run_and_record_cargo_preflight(
-        tmp_path,
-        "test",
-        publish_preflight._CargoPreflightOptions(
-            extra_args=("--workspace", "--all-targets"), unit_tests_only=True
-        ),
-    )
-    assert command[:2] == ("cargo", "test")
-    assert command[2:4] == ("--workspace", "--all-targets")
-    assert command[4:6] == ("--lib", "--bins")
-
-
-def test_run_cargo_preflight_defaults_when_unit_tests_only_false(
-    tmp_path: Path,
-) -> None:
-    """When unit-tests-only is disabled, no target narrowing arguments are added."""
-    command = _run_and_record_cargo_preflight(
-        tmp_path,
-        "test",
-        publish_preflight._CargoPreflightOptions(
-            extra_args=("--workspace", "--all-targets"), unit_tests_only=False
-        ),
-    )
-    assert command[:2] == ("cargo", "test")
-    assert command[2:4] == ("--workspace", "--all-targets")
-    assert "--lib" not in command
-    assert "--bins" not in command
+    from lading.runtime import CommandRunner
 
 
 def test_preflight_checks_remove_all_targets_for_unit_only(
@@ -435,41 +266,6 @@ def test_preflight_append_compiletest_externs(
     last_flags = rustflags[-1]
     assert "--extern lint_macro" in last_flags
     assert str(artifact) in last_flags
-
-
-def test_compiletest_diagnostic_details(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Failing cargo test pre-flight lists stderr artifacts with tail output."""
-    monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
-    artifact = tmp_path / "ui.stderr"
-    artifact.write_text("line1\nline2\nline3\n", encoding="utf-8")
-
-    def failing_runner(
-        command: tuple[str, ...],
-        *,
-        cwd: Path | None = None,
-        env: cabc.Mapping[str, str] | None = None,
-    ) -> tuple[int, str, str]:
-        return 1, f"diff at {artifact}", ""
-
-    options = publish_preflight._CargoPreflightOptions(
-        extra_args=("--workspace",),
-        env={},
-        diagnostics_tail_lines=2,
-    )
-    with pytest.raises(publish.PublishPreflightError) as excinfo:
-        publish_preflight._run_cargo_preflight(
-            tmp_path,
-            "test",
-            runner=failing_runner,
-            options=options,
-        )
-
-    message = str(excinfo.value)
-    assert str(artifact) in message
-    assert "line2" in message
-    assert "line3" in message
 
 
 def test_verify_clean_working_tree_detects_dirty_state(

@@ -8,10 +8,10 @@ import contextvars
 import json
 import typing as typ
 
+from lading.exceptions import LadingError
 from lading.runtime import (
     CommandRunner,
     CommandSpawnError,
-    LadingError,
     coerce_text,
     subprocess_runner,
 )
@@ -21,7 +21,7 @@ if typ.TYPE_CHECKING:  # pragma: no cover - import-time typing aids only
     from pathlib import Path
 
 
-class CargoMetadataError(RuntimeError):
+class CargoMetadataError(LadingError):
     """Raised when ``cargo metadata`` cannot be executed successfully."""
 
     @classmethod
