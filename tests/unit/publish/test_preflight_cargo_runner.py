@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import collections.abc as cabc
+import dataclasses as dc
 import typing as typ
 from pathlib import Path
 
@@ -41,6 +42,14 @@ def test_run_cargo_preflight_raises_on_failure(
     assert "boom" in message
 
 
+@dc.dataclass(frozen=True)
+class _RunCargoPreflightCase:
+    """Parameters for a single cargo-preflight argument-construction scenario."""
+
+    options: publish._CargoPreflightOptions
+    expected_tail: tuple[str, ...]
+
+
 def _run_and_record_cargo_preflight(
     workspace_root: Path,
     subcommand: typ.Literal["check", "test"],
@@ -75,63 +84,62 @@ def _run_and_record_cargo_preflight(
     return recorded.pop()
 
 
-def test_run_cargo_preflight_honours_test_excludes(tmp_path: Path) -> None:
-    """Configured test exclusions append ``--exclude`` arguments."""
-    command = _run_and_record_cargo_preflight(
-        tmp_path,
-        "test",
-        publish._CargoPreflightOptions(
-            extra_args=("--workspace", "--all-targets"),
-            test_excludes=(" alpha ", "", "beta"),
+@pytest.mark.parametrize(
+    "scenario",
+    [
+        pytest.param(
+            _RunCargoPreflightCase(
+                options=publish._CargoPreflightOptions(
+                    extra_args=("--workspace", "--all-targets"),
+                    test_excludes=(" alpha ", "", "beta"),
+                ),
+                expected_tail=("--exclude", "alpha", "--exclude", "beta"),
+            ),
+            id="test_excludes",
         ),
-    )
-    assert command[:2] == ("cargo", "test")
-    assert command[2:4] == ("--workspace", "--all-targets")
-    assert command[4:] == ("--exclude", "alpha", "--exclude", "beta")
-
-
-def test_run_cargo_preflight_excludes_blank_entries(tmp_path: Path) -> None:
-    """Blank test exclude entries do not emit ``--exclude`` arguments."""
-    command = _run_and_record_cargo_preflight(
-        tmp_path,
-        "test",
-        publish._CargoPreflightOptions(
-            extra_args=("--workspace", "--all-targets"),
-            test_excludes=["", "   ", "\t", "\n"],
+        pytest.param(
+            _RunCargoPreflightCase(
+                options=publish._CargoPreflightOptions(
+                    extra_args=("--workspace", "--all-targets"),
+                    test_excludes=["", "   ", "\t", "\n"],
+                ),
+                expected_tail=(),
+            ),
+            id="blank_test_excludes",
         ),
-    )
-    assert "--exclude" not in command
-
-
-def test_run_cargo_preflight_honours_unit_tests_only(tmp_path: Path) -> None:
-    """The unit test flag narrows cargo test targets to lib and bins."""
-    command = _run_and_record_cargo_preflight(
-        tmp_path,
-        "test",
-        publish._CargoPreflightOptions(
-            extra_args=("--workspace", "--all-targets"), unit_tests_only=True
+        pytest.param(
+            _RunCargoPreflightCase(
+                options=publish._CargoPreflightOptions(
+                    extra_args=("--workspace", "--all-targets"),
+                    unit_tests_only=True,
+                ),
+                expected_tail=("--lib", "--bins"),
+            ),
+            id="unit_tests_only",
         ),
-    )
-    assert command[:2] == ("cargo", "test")
-    assert command[2:4] == ("--workspace", "--all-targets")
-    assert command[4:6] == ("--lib", "--bins")
-
-
-def test_run_cargo_preflight_defaults_when_unit_tests_only_false(
-    tmp_path: Path,
+        pytest.param(
+            _RunCargoPreflightCase(
+                options=publish._CargoPreflightOptions(
+                    extra_args=("--workspace", "--all-targets"),
+                    unit_tests_only=False,
+                ),
+                expected_tail=(),
+            ),
+            id="unit_tests_only_false",
+        ),
+    ],
+)
+def test_run_cargo_preflight_command_arguments(
+    tmp_path: Path, scenario: _RunCargoPreflightCase
 ) -> None:
-    """When unit-tests-only is disabled, no target narrowing arguments are added."""
-    command = _run_and_record_cargo_preflight(
-        tmp_path,
-        "test",
-        publish._CargoPreflightOptions(
-            extra_args=("--workspace", "--all-targets"), unit_tests_only=False
-        ),
+    """Cargo preflight constructs correct arguments for each option combination."""
+    command = _run_and_record_cargo_preflight(tmp_path, "test", scenario.options)
+    assert command[:4] == ("cargo", "test", "--workspace", "--all-targets"), (
+        f"Unexpected command prefix: {command[:4]}"
     )
-    assert command[:2] == ("cargo", "test")
-    assert command[2:4] == ("--workspace", "--all-targets")
-    assert "--lib" not in command
-    assert "--bins" not in command
+    assert command[4:] == scenario.expected_tail, (
+        f"Unexpected command tail: {command[4:]!r}, expected {scenario.expected_tail!r}"
+    )
 
 
 def test_compiletest_diagnostic_details(
