@@ -157,6 +157,7 @@ def rewrite_markdown_toml_fences(
     changed = False
 
     def _apply(snippet: str) -> str:
+        """Apply dependency version rewrites to one TOML fence."""
         nonlocal changed
         replacement, snippet_changed = update_toml_snippet_versions(
             snippet, dependency_targets, target_version

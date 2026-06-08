@@ -70,6 +70,7 @@ check-fmt: ruff ## Verify formatting
 
 lint: ruff $(UV) ## Run linters
 	ruff check
+	$(UV) run interrogate --fail-under 100 lading
 	$(PYLINT) $(PYLINT_TARGETS)
 
 typecheck: build ty ## Run typechecking

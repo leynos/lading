@@ -463,22 +463,44 @@ def _expect_mapping(value: object, field_name: str) -> cabc.Mapping[str, typ.Any
     raise WorkspaceModelError(message)
 
 
-@typ.overload
 def _expect_sequence(
     value: object,
     field_name: str,
     *,
-    allow_none: typ.Literal[False] = False,
-) -> cabc.Sequence[object]: ...
+    allow_none: bool = False,
+) -> cabc.Sequence[object] | None:
+    """Ensure ``value`` is a sequence (optionally ``None``)."""
+    if value is None:
+        if allow_none:
+            return None
+        message = f"{field_name} must be a sequence"
+        raise WorkspaceModelError(message)
+    if isinstance(value, cabc.Sequence) and not isinstance(
+        value, str | bytes | bytearray
+    ):
+        return value
+    message = f"{field_name} must be a sequence; received {type(value).__name__}"
+    raise WorkspaceModelError(message)
 
 
-@typ.overload
 def _expect_sequence(
     value: object,
     field_name: str,
     *,
-    allow_none: typ.Literal[True],
-) -> cabc.Sequence[object] | None: ...
+    allow_none: bool = False,
+) -> cabc.Sequence[object] | None:
+    """Ensure ``value`` is a sequence (optionally ``None``)."""
+    if value is None:
+        if allow_none:
+            return None
+        message = f"{field_name} must be a sequence"
+        raise WorkspaceModelError(message)
+    if isinstance(value, cabc.Sequence) and not isinstance(
+        value, str | bytes | bytearray
+    ):
+        return value
+    message = f"{field_name} must be a sequence; received {type(value).__name__}"
+    raise WorkspaceModelError(message)
 
 
 def _expect_sequence(
