@@ -235,13 +235,18 @@ def test_rewrite_relative_links_preserves_uri_scheme_links(
     assert not changed
     assert rewritten == markdown
 
+
+_FENCE_HEADER = st.tuples(
+    st.sampled_from(["```", "~~~"]),
+    st.text(max_size=10, alphabet=st.characters(whitelist_categories=("Ll",))),
+).map(
+    "".join,
+)
+
+
 @given(
     body=st.text(max_size=200),
-    fence=st.sampled_from(["```", "~~~"]),
-    lang=st.text(
-        max_size=10,
-        alphabet=st.characters(whitelist_categories=("Ll",)),
-    ),
+    fence_header=_FENCE_HEADER,
     label=st.text(
         min_size=1,
         max_size=20,
@@ -255,10 +260,11 @@ def test_rewrite_relative_links_preserves_uri_scheme_links(
 )
 @settings(max_examples=100)
 def test_rewrite_relative_links_preserves_fenced_code_blocks(
-    body: str, fence: str, lang: str, label: str, path: str
+    body: str, fence_header: str, label: str, path: str
 ) -> None:
     """Relative links inside fenced code blocks are never rewritten."""
     fenced_link = f"[{label}]({path})"
-    markdown = f"{body}\n{fence}{lang}\n{fenced_link}\n{fence}\n"
+    fence = fence_header[:3]
+    markdown = f"{body}\n{fence_header}\n{fenced_link}\n{fence}\n"
     rewritten, _ = bump_readme.rewrite_relative_links(markdown, "../../")
     assert fenced_link in rewritten
