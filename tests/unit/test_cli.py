@@ -392,6 +392,50 @@ def test_bump_cli_accepts_dry_run_flag(
     assert options.dry_run is True
     assert options.command_runner is cli.subprocess_runner
 
+@pytest.mark.usefixtures("minimal_config")
+@pytest.mark.parametrize(
+    ("extra_args", "expected"),
+    [
+        pytest.param((), None, id="default"),
+        pytest.param(("--allow-unpublished-workspace-deps",), True, id="enabled"),
+        pytest.param(("--no-allow-unpublished-workspace-deps",), False, id="disabled"),
+    ],
+)
+def test_publish_cli_passes_unpublished_workspace_deps_flag(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    extra_args: tuple[str, ...],
+    expected: object,
+) -> None:
+    """The CLI preserves omitted, enabled, and disabled flag states."""
+    workspace_graph = _make_workspace(tmp_path.resolve())
+    captured_options: dict[str, publish_command.PublishOptions] = {}
+
+    def fake_run(
+        workspace_root: Path,
+        configuration: object,
+        workspace_model: object,
+        *,
+        options: publish_command.PublishOptions | None = None,
+    ) -> str:
+        del workspace_root, configuration, workspace_model
+        assert options is not None
+        captured_options["options"] = options
+        return "publish"
+
+    monkeypatch.setattr(publish_command, "run", fake_run)
+    monkeypatch.setattr(cli, "load_workspace", lambda _: workspace_graph)
+
+    exit_code = cli.main([
+        "--workspace-root",
+        str(tmp_path),
+        "publish",
+        *extra_args,
+    ])
+
+    assert exit_code == 0
+    assert captured_options["options"].allow_unpublished_workspace_deps is expected
+
 
 @pytest.mark.parametrize(
     ("config_body", "extra_args", "expected"),
