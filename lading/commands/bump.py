@@ -10,6 +10,7 @@ import typing as typ
 
 from lading import config as config_module
 from lading.commands import bump_docs, bump_lockfiles, bump_readme, bump_toml
+from lading.commands.publish_manifest import PublishPreparationError
 from lading.utils import normalise_workspace_root
 
 if typ.TYPE_CHECKING:
@@ -19,7 +20,10 @@ if typ.TYPE_CHECKING:
     from lading.runtime import CommandRunner
     from lading.workspace import WorkspaceCrate, WorkspaceGraph
 
-_WORKSPACE_SELECTORS = (("package",), ("workspace", "package"))
+_WORKSPACE_SELECTORS: typ.Final[tuple[tuple[str, ...], ...]] = (
+    ("package",),
+    ("workspace", "package"),
+)
 
 _DEPENDENCY_SECTION_BY_KIND: typ.Final[dict[str | None, str]] = {
     None: "dependencies",
@@ -29,6 +33,7 @@ _DEPENDENCY_SECTION_BY_KIND: typ.Final[dict[str | None, str]] = {
 }
 
 LOGGER = logging.getLogger(__name__)
+_log = LOGGER
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -275,17 +280,33 @@ def _process_documentation_files(
 
 def _process_readme_transposition(context: _BumpContext, *, dry_run: bool) -> set[Path]:
     """Transpose workspace README files into opted-in member crates."""
+    _log.debug("Starting workspace README transposition")
     changed_readmes: set[Path] = set()
+    source_readme_path = context.root_path / "README.md"
+    cached_text: str | None = (
+        source_readme_path.read_text(encoding="utf-8")
+        if source_readme_path.exists()
+        else None
+    )
     for crate in context.workspace.crates:
         if not crate.readme_is_workspace:
             continue
-        changed_path = bump_readme.transpose_readme_to_crate(
-            context.root_path,
-            crate,
-            dry_run=dry_run,
-        )
+        try:
+            changed_path = bump_readme.transpose_readme_to_crate(
+                context.root_path,
+                crate,
+                dry_run=dry_run,
+                _source_text=cached_text,
+            )
+        except PublishPreparationError:
+            _log.error("README transposition failed for crate %r", crate.name)
+            raise
         if changed_path is not None:
             changed_readmes.add(changed_path)
+    _log.debug(
+        "README transposition complete: %d file(s) changed",
+        len(changed_readmes),
+    )
     return changed_readmes
 
 

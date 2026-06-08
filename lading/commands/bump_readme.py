@@ -17,6 +17,7 @@ Examples
 from __future__ import annotations
 
 import collections.abc as cabc
+import logging
 import re
 import typing as typ
 from pathlib import Path
@@ -24,6 +25,8 @@ from urllib.parse import urlparse
 
 from lading.commands import bump_toml
 from lading.commands.publish_manifest import PublishPreparationError
+
+_log = logging.getLogger(__name__)
 
 if typ.TYPE_CHECKING:
     from lading.workspace import WorkspaceCrate
@@ -138,7 +141,11 @@ def _rewrite_links_outside_code(
 
 
 def transpose_readme_to_crate(
-    workspace_root: Path, crate: WorkspaceCrate, *, dry_run: bool
+    workspace_root: Path,
+    crate: WorkspaceCrate,
+    *,
+    dry_run: bool,
+    _source_text: str | None = None,
 ) -> Path | None:
     """Transpose the workspace README into ``crate`` when content changes.
 
@@ -150,6 +157,9 @@ def transpose_readme_to_crate(
         Workspace crate that should receive the adopted README.
     dry_run
         When True, report changes without writing the target file.
+    _source_text
+        Internal optimisation hook used by bump orchestration to avoid reading
+        the workspace README once per opted-in crate.
 
     Returns
     -------
@@ -164,6 +174,7 @@ def transpose_readme_to_crate(
         crate root is outside the workspace.
 
     """
+    _log.debug("Transposing workspace README into crate %r", crate.name)
     source_readme = workspace_root / "README.md"
     if not source_readme.exists():
         message = (
@@ -180,7 +191,11 @@ def transpose_readme_to_crate(
         )
         raise PublishPreparationError(message) from exc
 
-    source_text = source_readme.read_text(encoding="utf-8")
+    source_text = (
+        _source_text
+        if _source_text is not None
+        else source_readme.read_text(encoding="utf-8")
+    )
     rewritten_text = rewrite_relative_links(
         source_text, compute_link_prefix(crate_relative_path)
     )[0]
@@ -190,9 +205,13 @@ def transpose_readme_to_crate(
         target_readme.exists()
         and target_readme.read_text(encoding="utf-8") == rewritten_text
     ):
+        _log.debug("README already up to date for crate %r; skipping", crate.name)
         return None
     if not dry_run:
         bump_toml.write_atomic_text(target_readme, rewritten_text)
+        _log.info("Transposed workspace README to %s", target_readme)
+    else:
+        _log.info("Dry run: would transpose workspace README to %s", target_readme)
     return target_readme
 
 

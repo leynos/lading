@@ -1,26 +1,48 @@
 # serializer version: 1
-# name: test_format_result_message_handles_changes
-  dict({
-    'documents': '''
-      Updated version to 7.8.9 in 2 manifest(s) and 1 documentation file(s):
-      - Cargo.toml
-      - member/Cargo.toml
-      - README.md (documentation)
-    ''',
-    'dry_run': '''
-      Dry run; would update version to 4.5.6 in 2 manifest(s):
-      - Cargo.toml
-      - member/Cargo.toml
-    ''',
-    'lockfiles': '''
-      Updated version to 7.8.9 in 1 lockfile(s):
-      - Cargo.lock (lockfile)
-    ''',
-    'manifests': '''
-      Updated version to 4.5.6 in 2 manifest(s):
-      - Cargo.toml
-      - member/Cargo.toml
-    ''',
-    'no_changes': 'No manifest changes required; all versions already 1.2.3.',
-  })
+# name: test_format_result_message_handles_changes[all_changes]
+  list([
+    'Updated version to 7.8.9 in 2 manifest(s) and 1 documentation file(s) and 1 readme file(s):',
+    '- Cargo.toml',
+    '- member/Cargo.toml',
+    '- README.md (documentation)',
+    '- crates/alpha/README.md (readme)',
+  ])
+# ---
+# name: test_format_result_message_handles_changes[manifests_and_docs]
+  list([
+    'Updated version to 7.8.9 in 2 manifest(s) and 1 documentation file(s):',
+    '- Cargo.toml',
+    '- member/Cargo.toml',
+    '- README.md (documentation)',
+  ])
+# ---
+# name: test_format_result_message_handles_changes[manifests_dry_run]
+  list([
+    'Dry run; would update version to 4.5.6 in 2 manifest(s):',
+    '- Cargo.toml',
+    '- member/Cargo.toml',
+  ])
+# ---
+# name: test_format_result_message_handles_changes[manifests_live]
+  list([
+    'Updated version to 4.5.6 in 2 manifest(s):',
+    '- Cargo.toml',
+    '- member/Cargo.toml',
+  ])
+# ---
+# name: test_format_result_message_handles_readme_only_changes[readme_only_live]
+  list([
+    'Updated version to 1.2.3 in 1 readme file(s):',
+    '- crates/alpha/README.md (readme)',
+  ])
+# ---
+# name: test_format_result_message_snapshot
+  '''
+  Dry run; would update version to 4.5.6 in 2 manifest(s) and 1 documentation file(s) and 2 lockfile(s):
+  - Cargo.toml
+  - crates/alpha/Cargo.toml
+  - README.md (documentation)
+  - Cargo.lock (lockfile)
+  - tests/ui_lints/Cargo.lock (lockfile)
+  '''
 # ---
