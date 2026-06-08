@@ -215,9 +215,7 @@ def _collect_stale_lockfiles(
             stale.append(lockfile_path)
             continue
         detail = freshness.detail or "cargo metadata --locked failed"
-        message = (
-            f"Cargo lockfile freshness check failed for {manifest_path}: {detail}"
-        )
+        message = f"Cargo lockfile freshness check failed for {manifest_path}: {detail}"
         LOGGER.error(message)
         raise PublishPreflightError(message)
     return stale
