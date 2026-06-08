@@ -27,6 +27,7 @@ from lading.commands.publish_execution import (
 from lading.commands.publish_index_check import (
     _CargoInvocation,
     _format_cargo_failure_message,
+    _IndexMissingVersionHandling,
     _is_index_missing_version_error,
 )
 from lading.commands.publish_index_check import (
@@ -234,7 +235,13 @@ def _handle_index_missing_version(
         PublishError if invocation.subcommand == "publish" else PublishPreflightError
     )
     _raw_handle_index_missing_version(
-        invocation, plan=plan, options=options, error_cls=error_cls
+        invocation,
+        handling=_IndexMissingVersionHandling(
+            plan=plan,
+            options=options,
+            error_cls=error_cls,
+            logger=LOGGER,
+        ),
     )
 
 

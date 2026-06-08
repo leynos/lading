@@ -231,7 +231,7 @@ def test_run_logs_when_unpublished_workspace_dependency_override_is_enabled(
     assert any(
         "cargo package for crate beta could not resolve sibling dependency alpha"
         in message
-        and "continuing because --allow-unpublished-workspace-deps is set" in message
+        and "unpublished workspace dependency override is enabled" in message
         for message in caplog.messages
     )
 def test_run_honours_explicit_unpublished_workspace_deps_opt_out(
@@ -254,7 +254,7 @@ def test_run_honours_explicit_unpublished_workspace_deps_opt_out(
             ),
         )
 
-    assert "--allow-unpublished-workspace-deps" in str(excinfo.value)
+    assert "unpublished workspace dependency override" in str(excinfo.value)
 def test_run_keeps_dry_run_publication_batched(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:

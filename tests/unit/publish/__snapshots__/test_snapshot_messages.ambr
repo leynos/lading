@@ -2,7 +2,7 @@
 # name: test_index_missing_in_plan_downgrade_snapshot[warning]
   tuple(
     tuple(
-      'cargo %s for crate %s could not resolve sibling dependency %s from crates.io; continuing because --allow-unpublished-workspace-deps is set',
+      'cargo %s for crate %s could not resolve sibling dependency %s from crates.io; continuing because the unpublished workspace dependency override is enabled',
       tuple(
         'package',
         'beta',
@@ -39,7 +39,7 @@
   cargo package failed for crate beta with exit code 1: error: failed to prepare local package for uploading
   Caused by:
     failed to select a version for the requirement `external_crate = "^1"`
-    location searched: crates.io index; missing dependency 'external_crate' is not part of the current publish plan, so --allow-unpublished-workspace-deps cannot help. Publish or index the dependency first.
+    location searched: crates.io index; missing dependency 'external_crate' is not part of the current publish plan, so the unpublished workspace dependency override cannot help. Publish or index the dependency first.
   '''
 # ---
 # name: test_index_missing_out_of_plan_message_snapshot[warning]
@@ -62,13 +62,13 @@
     failed to select a version for the requirement `alpha = "^0.1.0"`
     candidate versions found which didn't match: 0.0.1
     location searched: crates.io index
-    required by package `beta v0.1.0`; dependency 'alpha' is scheduled in this publish run but is not yet on crates.io. Re-run with --allow-unpublished-workspace-deps (dry-run only) or follow the staged-publish workaround in the user guide.
+    required by package `beta v0.1.0`; dependency 'alpha' is scheduled in this publish run but is not yet on crates.io. Enable the dry-run unpublished workspace dependency override, or follow the staged-publish workaround.
   '''
 # ---
 # name: test_index_missing_version_message_snapshot[flag_disabled][warning]
   tuple(
     tuple(
-      'cargo %s for crate %s failed due to unindexed sibling dependency %r (in plan); re-run with --allow-unpublished-workspace-deps to downgrade to a warning, or follow the staged-publish workaround',
+      'cargo %s for crate %s failed due to unindexed sibling dependency %r (in plan); enable the dry-run unpublished workspace dependency override to downgrade to a warning, or follow the staged-publish workaround',
       tuple(
         'package',
         'beta',
