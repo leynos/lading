@@ -198,7 +198,7 @@ def test_run_rebuilds_lockfiles_by_default(
         *,
         runner: object | None = None,
     ) -> tuple[pathlib.Path, ...]:
-        assert runner is None
+        captured["calls"] = int(captured.get("calls", 0)) + 1
         captured["workspace_root"] = workspace_root
         captured["lockfile_manifests"] = lockfile_manifests
         captured["runner"] = runner
@@ -221,6 +221,7 @@ def test_run_rebuilds_lockfiles_by_default(
     )
 
     assert captured == {
+        "calls": 1,
         "workspace_root": tmp_path,
         "lockfile_manifests": (),
         "runner": None,

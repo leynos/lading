@@ -92,7 +92,7 @@ publish runs with stub mode enabled.
 lockfile reporting. Keep user-facing summary construction in
 `lading.commands.bump_output` rather than formatting messages inline in the
 workflow. The `BumpChanges` value groups changed manifests, documentation files,
-and lockfiles so tests can snapshot the complete CLI message contract.
+and lockfiles, so tests can snapshot the complete CLI message contract.
 
 `lading.commands.bump_lockfiles` owns Cargo lockfile discovery and regeneration
 after a version bump changes manifest content. It always includes the workspace

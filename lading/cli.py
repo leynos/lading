@@ -95,7 +95,15 @@ def _select_runner() -> CommandRunner:
     """Return the command runner selected for this CLI invocation."""
     stub_value = os.environ.get(_CMD_MOX_STUB_ENV, "")
     if stub_value.lower() in _CMD_MOX_TRUTHY_VALUES:
-        module = importlib.import_module("lading.testing.cmd_mox_runner")
+        try:
+            module = importlib.import_module("lading.testing.cmd_mox_runner")
+        except ModuleNotFoundError as exc:
+            message = (
+                f"{_CMD_MOX_STUB_ENV} is set, but the cmd-mox test runner "
+                "could not be imported. Install the test dependencies or unset "
+                f"{_CMD_MOX_STUB_ENV}."
+            )
+            raise SystemExit(message) from exc
         return typ.cast("CommandRunner", module.cmd_mox_runner)
     return subprocess_runner
 

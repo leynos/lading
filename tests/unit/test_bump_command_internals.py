@@ -337,6 +337,16 @@ def test_format_result_message_handles_changes(
             workspace_root=workspace_root,
         ),
     }
+    assert messages["manifests"].startswith(
+        "Updated version to 4.5.6 in 2 manifest(s):"
+    )
+    assert "- Cargo.toml" in messages["manifests"].splitlines()
+    assert "- member/Cargo.toml" in messages["manifests"].splitlines()
+    assert messages["dry_run"].startswith(
+        "Dry run; would update version to 4.5.6 in 2 manifest(s):"
+    )
+    assert "- README.md (documentation)" in messages["documents"].splitlines()
+    assert "- Cargo.lock (lockfile)" in messages["lockfiles"].splitlines()
     assert messages == snapshot()
 
 

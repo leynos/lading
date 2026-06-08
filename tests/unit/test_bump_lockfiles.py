@@ -200,3 +200,28 @@ def test_regenerate_lockfiles_surfaces_cargo_failure(tmp_path: Path) -> None:
             (),
             runner=runner,
         )
+
+
+def test_regenerate_lockfiles_wraps_runner_exceptions(tmp_path: Path) -> None:
+    """Runner exceptions should retain their cause for diagnostics."""
+
+    def failing_runner(
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+    ) -> tuple[int, str, str]:
+        del command, cwd
+        message = "cargo executable not found"
+        raise OSError(message)
+
+    with pytest.raises(
+        bump_lockfiles.LockfileRegenerationError,
+        match="cargo executable not found",
+    ) as exc_info:
+        bump_lockfiles.regenerate_lockfiles(
+            tmp_path,
+            (),
+            runner=failing_runner,
+        )
+
+    assert isinstance(exc_info.value.__cause__, OSError)

@@ -1,15 +1,16 @@
 """Output formatting for the ``lading bump`` command.
 
-This module is responsible solely for producing human-readable CLI output
-from the result of a version-bump run. It is consumed exclusively by
-``lading.commands.bump`` and is not part of the public API.
+This module turns bump command results into human-readable CLI messages. Callers
+provide a :class:`BumpChanges` record, the target version, dry-run state, and
+workspace root, then receive the exact multi-line string that should be printed
+to the terminal. The module is consumed by ``lading.commands.bump`` and is not a
+general-purpose formatting API.
 
 Classes
 -------
 BumpChanges
-    Immutable record of files altered by a bump run. Holds three sequences:
-    updated Cargo manifests, updated documentation files, and regenerated
-    Cargo lockfiles.
+    Public value object describing updated manifests, documentation files, and
+    lockfiles.
 
 Functions
 ---------
@@ -39,7 +40,21 @@ _PAIRED_CHANGE_CATEGORY_COUNT = 2
 
 @dc.dataclass(frozen=True, slots=True)
 class BumpChanges:
-    """Collection of files altered by a bump run."""
+    """Collection of files altered by a bump run.
+
+    The dataclass is frozen and slot-based, so callers receive an immutable,
+    compact record that can be passed safely between bump processing and output
+    formatting.
+
+    Attributes
+    ----------
+    manifests : Sequence[Path]
+        Cargo manifests updated by the bump run.
+    documents : Sequence[Path]
+        Documentation files updated by TOML snippet rewriting.
+    lockfiles : Sequence[Path]
+        Cargo lockfiles regenerated after manifest updates.
+    """
 
     manifests: cabc.Sequence[Path] = ()
     documents: cabc.Sequence[Path] = ()

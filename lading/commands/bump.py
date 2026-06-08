@@ -40,8 +40,34 @@ LOGGER = logging.getLogger(__name__)
 class BumpOptions:
     """Configuration options for bump operations.
 
-    ``rebuild_lockfiles=None`` inherits ``configuration.bump.rebuild_lockfiles``.
-    Pass an explicit boolean to override configuration for one run.
+    Attributes
+    ----------
+    dry_run : bool, default False
+        Preview manifest, documentation, and lockfile changes without writing
+        files or running state-changing lockfile rebuild commands. Dry-runs
+        report the lockfiles that would be rebuilt.
+    rebuild_lockfiles : bool | None, default None
+        Controls lockfile regeneration after manifest updates. ``None`` inherits
+        ``configuration.bump.rebuild_lockfiles``; ``True`` and ``False``
+        override configuration for this run.
+    configuration : LadingConfig | None, default None
+        Loaded lading configuration. Programmatic callers may omit it only when
+        they want ``run`` to load configuration from the workspace root.
+    workspace : WorkspaceGraph | None, default None
+        Loaded workspace graph. Programmatic callers may omit it only when they
+        want ``run`` to inspect the workspace.
+    command_runner : CommandRunner | None, default None
+        Callable with the runtime command-runner interface. It is used for
+        lockfile rebuild commands; ``None`` uses the default subprocess runner.
+    dependency_sections : Mapping[str, Collection[str]]
+        Explicit dependency sections to rewrite by crate name.
+    include_workspace_sections : bool, default False
+        Whether workspace dependency tables should be rewritten as well.
+
+    Notes
+    -----
+    Instances are frozen and slot-based. Options are immutable after creation
+    and compact, but callers should not rely on dynamic attributes or mutation.
     """
 
     dry_run: bool = False

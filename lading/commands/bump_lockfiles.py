@@ -96,16 +96,20 @@ def _run_workspace_lockfile_update(
     runner: CommandRunner,
 ) -> None:
     """Invoke cargo for one manifest and surface failures consistently."""
-    exit_code, stdout, stderr = runner(
-        (
-            "cargo",
-            "update",
-            "--workspace",
-            "--manifest-path",
-            str(manifest_path),
-        ),
-        cwd=workspace_root,
-    )
+    try:
+        exit_code, stdout, stderr = runner(
+            (
+                "cargo",
+                "update",
+                "--workspace",
+                "--manifest-path",
+                str(manifest_path),
+            ),
+            cwd=workspace_root,
+        )
+    except Exception as exc:
+        message = f"Cargo lockfile regeneration failed for {manifest_path}: {exc}"
+        raise LockfileRegenerationError(message) from exc
     if exit_code != 0:
         message = (
             "Cargo lockfile regeneration failed for "
