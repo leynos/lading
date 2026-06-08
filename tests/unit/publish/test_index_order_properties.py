@@ -12,7 +12,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
-from hypothesis import given, settings
+from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 
 from lading.commands import publish
@@ -28,8 +28,7 @@ def _publish_order_cases(
     crate_count = draw(st.integers(min_value=2, max_value=8))
     current_index = draw(st.integers(min_value=1, max_value=crate_count - 1))
     missing_index = draw(st.integers(min_value=0, max_value=crate_count - 1))
-    if missing_index == current_index:
-        missing_index = 0
+    assume(missing_index != current_index)
     return crate_count, current_index, missing_index
 
 

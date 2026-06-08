@@ -239,9 +239,9 @@ def _handle_index_missing_version(
         handling=_IndexMissingVersionHandling(
             plan=plan,
             options=options,
-            error_cls=error_cls,
             logger=LOGGER,
         ),
+        error_cls=error_cls,
     )
 
 

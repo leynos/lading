@@ -395,19 +395,20 @@ The index-lookup handling is split across three helpers:
   backtick, single-quote, and double-quote delimiters around the requirement,
   captures the dependency name before `=`, and searches `stderr` before
   `stdout` because Cargo normally reports this failure on the error stream.
-- `_handle_index_missing_version(_CargoInvocation, *, handling)` applies the
-  decision tree. The `_IndexMissingVersionHandling` context carries the publish
-  plan, execution options, phase-specific error class, and logger, making
-  warning and informational side-effects explicit at the command boundary; the
-  index checker does not own mutable metric state. If name extraction fails,
-  the original Cargo failure stays fatal. If the parsed name is not in the
-  publish plan, the failure is fatal with guidance to publish or index that
-  dependency first. The helper then checks projected availability by comparing
-  the missing dependency with the current crate's position in
-  `PublishPlan.publishable`. If the dependency is in the plan but appears later
-  than the current crate, the failure is fatal because a live run would try to
-  publish the current crate before that dependency is available. If the parsed
-  name is in the prior slice of the plan and
+- `_handle_index_missing_version(_CargoInvocation, *, handling, error_cls)`
+  applies the decision tree. The `_IndexMissingVersionHandling` context carries
+  the publish plan, execution options, and logger, making warning and
+  informational side-effects explicit at the command boundary; the index
+  checker does not own mutable metric state. The phase-specific `error_cls`
+  remains visible at the call site where the command phase is known. If name
+  extraction fails, the original Cargo failure stays fatal. If the parsed name
+  is not in the publish plan, the failure is fatal with guidance to publish or
+  index that dependency first. The helper then checks projected availability by
+  comparing the missing dependency's publish-order index with the current
+  crate's index in `PublishPlan.publishable`. If the dependency is in the plan
+  but appears later than the current crate, the failure is fatal because a live
+  run would try to publish the current crate before that dependency is
+  available. If the parsed name has an earlier index and
   `allow_unpublished_workspace_deps` is set, the helper logs a warning and
   continues; otherwise it raises with guidance to enable the dry-run
   unpublished workspace dependency override or follow the staged-publish
@@ -421,12 +422,14 @@ The index-lookup handling is split across three helpers:
 #### Crate-name canonicalization
 
 `_canonical_crate_name(name)` normalizes a crate name by replacing every hyphen
-with an underscore. It is applied to both sides of the `publishable_names`
-membership check inside `_handle_index_missing_version`:
+with an underscore. It is applied in `publish_index_check.py` when building
+`publishable_name_indexes = _publishable_name_indexes(handling.plan)` and when
+looking up both the current crate and a missing dependency name:
 
 ```python
-publishable_names = {_canonical_crate_name(entry.name) for entry in plan.publishable}
-if _canonical_crate_name(missing_name) not in publishable_names:
+current_name = _canonical_crate_name(context.invocation.crate_name)
+current_index = publishable_name_indexes[current_name]
+missing_index = publishable_name_indexes.get(_canonical_crate_name(missing_name))
 ```
 
 This is necessary because Cargo error diagnostics may report a missing

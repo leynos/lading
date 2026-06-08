@@ -25,11 +25,12 @@
 # name: test_index_missing_out_of_order_message_snapshot[warning]
   tuple(
     tuple(
-      'cargo %s for crate %s failed due to unindexed sibling dependency %r which appears after the current crate in publish order; cannot continue',
+      'cargo %s for crate %s failed due to unindexed dependency %r %s',
       tuple(
         'package',
         'beta',
         'alpha',
+        'which appears after the current crate in publish order; cannot continue',
       ),
     ),
   )
@@ -39,17 +40,18 @@
   cargo package failed for crate beta with exit code 1: error: failed to prepare local package for uploading
   Caused by:
     failed to select a version for the requirement `external_crate = "^1"`
-    location searched: crates.io index; missing dependency 'external_crate' is not part of the current publish plan, so the unpublished workspace dependency override cannot help. Publish or index the dependency first.
+    location searched: crates.io index; dependency 'external_crate' is not part of the current publish plan, so the unpublished workspace dependency override cannot help. Publish or index the dependency first.
   '''
 # ---
 # name: test_index_missing_out_of_plan_message_snapshot[warning]
   tuple(
     tuple(
-      'cargo %s for crate %s failed due to unindexed dependency %r which is not in the current publish plan; cannot continue',
+      'cargo %s for crate %s failed due to unindexed dependency %r %s',
       tuple(
         'package',
         'beta',
         'external_crate',
+        'which is not in the current publish plan; cannot continue',
       ),
     ),
   )
@@ -68,11 +70,12 @@
 # name: test_index_missing_version_message_snapshot[flag_disabled][warning]
   tuple(
     tuple(
-      'cargo %s for crate %s failed due to unindexed sibling dependency %r (in plan); enable the dry-run unpublished workspace dependency override to downgrade to a warning, or follow the staged-publish workaround',
+      'cargo %s for crate %s failed due to unindexed dependency %r %s',
       tuple(
         'package',
         'beta',
         'alpha',
+        '(in plan); enable the dry-run unpublished workspace dependency override to downgrade to a warning, or follow the staged-publish workaround',
       ),
     ),
   )
