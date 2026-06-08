@@ -198,6 +198,7 @@ def test_run_rebuilds_lockfiles_by_default(
         assert runner is None
         captured["workspace_root"] = workspace_root
         captured["lockfile_manifests"] = lockfile_manifests
+        captured["runner"] = runner
         return (tmp_path / "Cargo.lock", nested_lockfile)
 
     monkeypatch.setattr(
@@ -215,6 +216,7 @@ def test_run_rebuilds_lockfiles_by_default(
     assert captured == {
         "workspace_root": tmp_path,
         "lockfile_manifests": (),
+        "runner": None,
     }
     assert "2 lockfile(s)" in message
     assert "- Cargo.lock (lockfile)" in message.splitlines()

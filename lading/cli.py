@@ -331,7 +331,7 @@ def bump(
                 ),
                 configuration=configuration,
                 workspace=workspace,
-                runner=command_runner,
+                command_runner=command_runner,
             ),
         ),
     )

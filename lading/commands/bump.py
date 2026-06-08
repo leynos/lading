@@ -21,6 +21,7 @@ if typ.TYPE_CHECKING:
     from pathlib import Path
 
     from lading.config import LadingConfig
+    from lading.runtime import CommandRunner
     from lading.workspace import WorkspaceCrate, WorkspaceGraph
 
 _WORKSPACE_SELECTORS = (("package",), ("workspace", "package"))
@@ -47,11 +48,11 @@ class BumpOptions:
     rebuild_lockfiles: bool | None = None
     configuration: LadingConfig | None = None
     workspace: WorkspaceGraph | None = None
+    command_runner: CommandRunner | None = None
     dependency_sections: cabc.Mapping[str, cabc.Collection[str]] = dc.field(
         default_factory=lambda: types.MappingProxyType({})
     )
     include_workspace_sections: bool = False
-    runner: CommandRunner | None = None
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -118,7 +119,7 @@ def _initialize_bump_context(
         rebuild_lockfiles=rebuild_lockfiles,
         configuration=configuration,
         workspace=workspace,
-        runner=resolved_options.runner,
+        command_runner=resolved_options.command_runner,
         dependency_sections=resolved_options.dependency_sections,
         include_workspace_sections=resolved_options.include_workspace_sections,
     )
@@ -201,7 +202,7 @@ def _process_lockfiles(
     return bump_lockfiles.regenerate_lockfiles(
         context.root_path,
         lockfile_manifests,
-        runner=context.base_options.runner,
+        runner=context.base_options.command_runner,
     )
 
 
