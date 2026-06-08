@@ -23,6 +23,7 @@ def test_discover_tracked_lockfiles_returns_empty_result(tmp_path: Path) -> None
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
+        """Stub runner returning a successful git result with empty stdout."""
         assert command == ("git", "ls-files", "**/Cargo.lock", "Cargo.lock")
         assert cwd == tmp_path
         return 0, "", ""
