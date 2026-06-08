@@ -15,6 +15,7 @@ substring matching to lock in the exact format for regression detection.
 
 from __future__ import annotations
 
+import collections.abc as cabc
 import dataclasses as dc
 import logging
 import typing as typ
@@ -51,6 +52,13 @@ _PIPELINE_INFO_MESSAGES = frozenset({
 class _IndexMissingCase(typ.NamedTuple):
     stderr: str
     allow_unpublished: bool
+
+
+class _InPlanSnapshotCase(typ.NamedTuple):
+    """Variable parts for in-plan fatal-path snapshot tests."""
+
+    plan_transform: cabc.Callable[[publish.PublishPlan], publish.PublishPlan]
+    stderr_transform: cabc.Callable[[str], str]
 
 
 def _pipeline_info_records(
@@ -225,35 +233,42 @@ def test_index_missing_out_of_plan_message_snapshot(
     assert _warning_records(caplog) == snapshot(name="warning")
 
 
-def test_index_missing_out_of_order_message_snapshot(
+@pytest.mark.parametrize(
+    "case",
+    [
+        pytest.param(
+            _InPlanSnapshotCase(
+                plan_transform=lambda plan: dc.replace(
+                    plan,
+                    publishable=(
+                        plan.publishable[1],
+                        plan.publishable[0],
+                        *plan.publishable[2:],
+                    ),
+                ),
+                stderr_transform=lambda stderr: stderr,
+            ),
+            id="out_of_order",
+        ),
+        pytest.param(
+            _InPlanSnapshotCase(
+                plan_transform=lambda plan: plan,
+                stderr_transform=lambda stderr: stderr.replace("`alpha =", "`beta ="),
+            ),
+            id="self_dependency",
+        ),
+    ],
+)
+def test_index_missing_in_plan_fatal_message_snapshot(
     publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
     caplog: pytest.LogCaptureFixture,
     snapshot: SnapshotAssertion,
+    case: _InPlanSnapshotCase,
 ) -> None:
-    """Snapshot the fatal message and warning for out-of-order dependencies."""
+    """Snapshot the fatal message and warning for in-plan dependency failures."""
     original_plan, _preparation, _staging_root = publish_plan_and_prep
-    alpha, beta, gamma = original_plan.publishable
-    plan = dc.replace(original_plan, publishable=(beta, alpha, gamma))
-
-    message = _handle_index_missing_version_message(
-        plan,
-        stderr=INDEX_MISSING_STDERR_BETA,
-        allow_unpublished_workspace_deps=True,
-        caplog=caplog,
-    )
-
-    assert _snapshot_message(message) == snapshot(name="message")
-    assert _warning_records(caplog) == snapshot(name="warning")
-
-
-def test_index_missing_self_dependency_message_snapshot(
-    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
-    caplog: pytest.LogCaptureFixture,
-    snapshot: SnapshotAssertion,
-) -> None:
-    """Snapshot the fatal message and warning for reported self-dependencies."""
-    plan, _preparation, _staging_root = publish_plan_and_prep
-    stderr = INDEX_MISSING_STDERR_BETA.replace("`alpha =", "`beta =")
+    plan = case.plan_transform(original_plan)
+    stderr = case.stderr_transform(INDEX_MISSING_STDERR_BETA)
 
     message = _handle_index_missing_version_message(
         plan,

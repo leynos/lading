@@ -11,7 +11,7 @@
     ),
   )
 # ---
-# name: test_index_missing_out_of_order_message_snapshot[message]
+# name: test_index_missing_in_plan_fatal_message_snapshot[out_of_order][message]
   '''
   cargo package failed for crate beta with exit code 1: error: failed to prepare local package for uploading
   <blank>
@@ -24,7 +24,7 @@
   dependency 'alpha' appears after crate 'beta' in publish order, so it will not be available when this crate is published. Adjust publish.order so the dependency comes first, or omit publish.order and rely on dependency-derived topological sorting.
   '''
 # ---
-# name: test_index_missing_out_of_order_message_snapshot[warning]
+# name: test_index_missing_in_plan_fatal_message_snapshot[out_of_order][warning]
   tuple(
     tuple(
       'cargo %s for crate %s failed due to unindexed dependency %r %s',
@@ -33,6 +33,32 @@
         'beta',
         'alpha',
         'which appears after the current crate in publish order; cannot continue',
+      ),
+    ),
+  )
+# ---
+# name: test_index_missing_in_plan_fatal_message_snapshot[self_dependency][message]
+  '''
+  cargo package failed for crate beta with exit code 1: error: failed to prepare local package for uploading
+  <blank>
+  Caused by:
+    failed to select a version for the requirement `beta = "^0.1.0"`
+    candidate versions found which didn't match: 0.0.1
+    location searched: crates.io index
+    required by package `beta v0.1.0`
+  <blank>
+  dependency 'beta' is the same crate as 'beta', so the publish plan cannot make it available before itself. Remove the self-dependency from the crate manifest.
+  '''
+# ---
+# name: test_index_missing_in_plan_fatal_message_snapshot[self_dependency][warning]
+  tuple(
+    tuple(
+      'cargo %s for crate %s failed due to unindexed dependency %r %s',
+      tuple(
+        'package',
+        'beta',
+        'beta',
+        'which is the current crate; cannot continue',
       ),
     ),
   )
@@ -56,32 +82,6 @@
         'beta',
         'external_crate',
         'which is not in the current publish plan; cannot continue',
-      ),
-    ),
-  )
-# ---
-# name: test_index_missing_self_dependency_message_snapshot[message]
-  '''
-  cargo package failed for crate beta with exit code 1: error: failed to prepare local package for uploading
-  <blank>
-  Caused by:
-    failed to select a version for the requirement `beta = "^0.1.0"`
-    candidate versions found which didn't match: 0.0.1
-    location searched: crates.io index
-    required by package `beta v0.1.0`
-  <blank>
-  dependency 'beta' is the same crate as 'beta', so the publish plan cannot make it available before itself. Remove the self-dependency from the crate manifest.
-  '''
-# ---
-# name: test_index_missing_self_dependency_message_snapshot[warning]
-  tuple(
-    tuple(
-      'cargo %s for crate %s failed due to unindexed dependency %r %s',
-      tuple(
-        'package',
-        'beta',
-        'beta',
-        'which is the current crate; cannot continue',
       ),
     ),
   )
