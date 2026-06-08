@@ -99,6 +99,11 @@ def _mock_cargo_metadata(
     cmd_mox.stub("git").with_args("ls-files", "**/Cargo.lock", "Cargo.lock").returns(
         exit_code=0, stdout="", stderr=""
     ).any_order()
+    cmd_mox.stub("cargo::update").with_args(
+        "--workspace",
+        "--manifest-path",
+        str(workspace_directory / "Cargo.toml"),
+    ).returns(exit_code=0, stdout="", stderr="").any_order()
 
 
 @given("cargo metadata describes a sample workspace")

@@ -86,6 +86,29 @@ The end-to-end suite in `tests/e2e/` keeps git interactions real while stubbing
 only `cargo` operations, using cmd-mox passthrough spies for `git status` when
 publish runs with stub mode enabled.
 
+## Bump command internals
+
+`lading.commands.bump` coordinates manifest updates, documentation updates, and
+lockfile reporting. Keep user-facing summary construction in
+`lading.commands.bump_output` rather than formatting messages inline in the
+workflow. The `BumpChanges` value groups changed manifests, documentation files,
+and lockfiles, so tests can snapshot the complete CLI message contract.
+
+`lading.commands.bump_lockfiles` owns Cargo lockfile discovery and regeneration
+after a version bump changes manifest content. It always includes the workspace
+root `Cargo.toml`, validates configured nested manifests before invoking Cargo,
+and de-duplicates resolved manifest paths. Invalid configured manifests and
+failed `cargo update --workspace` commands raise `LockfileRegenerationError`,
+which keeps bump failures in bump domain language rather than reusing
+publish-specific errors.
+
+Dry-run bump output uses `bump_lockfiles.resolve_lockfile_paths()` to report
+which lockfiles would be regenerated without invoking Cargo. Live bump runs use
+`bump_lockfiles.regenerate_lockfiles()` after manifest and documentation
+processing, and only when at least one manifest changed. Programmatic callers
+can pass `BumpOptions.command_runner` to observe those cargo invocations through
+the shared `lading.runtime.CommandRunner` port.
+
 ## Workspace discovery helpers
 
 ### Lockfile helpers (`lading/commands/lockfile.py`)
@@ -180,21 +203,6 @@ Examples:
 - `PublishOptions(allow_dirty=False)` — require a clean git working tree before
   proceeding with publish preparation.
 
-## Bump command internals
-
-`BumpOptions` carries the dependency-injection points used by
-`lading.commands.bump.run`. The `runner` field accepts an optional
-`_CommandRunner`, matching the command-runner protocol used by publish
-execution. When `runner` is `None`, bump falls back to the default subprocess
-runner. Tests pass a runner explicitly so lockfile refresh commands can be
-observed without invoking real Cargo processes.
-
-`BumpChanges` records the user-visible files touched by a bump run. Its
-`lockfiles` field contains the git-tracked `Cargo.lock` files refreshed after
-manifest rewrites. The output formatter treats these paths like manifests and
-documentation files, listing each refreshed lockfile with a `(lockfile)` suffix
-so operators can see which generated files need review and commit.
-
 ## Publish command internals
 
 `PublishOptions.allow_unpublished_workspace_deps` is a dry-run-only override
@@ -221,7 +229,9 @@ area so existing handling remains precise:
 | `ConfigurationError` | `lading.config` | Base for configuration loading and validation failures. |
 | `WorkspaceModelError` | `lading.workspace.models` | Base for workspace graph/model validation failures. |
 | `CargoMetadataError` | `lading.workspace.metadata` | Base for cargo metadata execution and parsing failures. |
+| `CommandSpawnError` | `lading.runtime.subprocess_runner` | Raised when the subprocess runner cannot spawn an external command. |
 | `LockfileRefreshError` | `lading.commands.lockfile` | Raised when `cargo generate-lockfile` fails. |
+| `LockfileRegenerationError` | `lading.commands.bump_lockfiles` | Raised when configured bump lockfile manifests are invalid or `cargo update --workspace` fails. |
 | `PublishPlanError` | `lading.commands.publish_plan` | Raised when a publish plan cannot be constructed. |
 | `PublishPreparationError` | `lading.commands.publish_manifest` | Raised when staged publish manifests or workspace assets cannot be prepared. |
 | `PublishPreflightError` | `lading.commands.publish_errors` | Raised for local publish validation and pre-flight failures. |

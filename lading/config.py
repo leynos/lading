@@ -25,7 +25,12 @@ CONFIG_ROOT_TOML_KEYS: typ.Final[frozenset[str]] = frozenset({
     "publish",
     "preflight",
 })
-BUMP_TOML_KEYS: typ.Final[frozenset[str]] = frozenset({"exclude", "documentation"})
+BUMP_TOML_KEYS: typ.Final[frozenset[str]] = frozenset({
+    "exclude",
+    "documentation",
+    "lockfile_manifests",
+    "rebuild_lockfiles",
+})
 BUMP_DOCUMENTATION_TOML_KEYS: typ.Final[frozenset[str]] = frozenset({"globs"})
 PUBLISH_TOML_KEYS: typ.Final[frozenset[str]] = frozenset({
     "exclude",
@@ -80,6 +85,8 @@ class BumpConfig:
     """Settings for the ``bump`` command."""
 
     exclude: tuple[str, ...] = ()
+    lockfile_manifests: tuple[str, ...] = ()
+    rebuild_lockfiles: bool = True
     documentation: DocumentationConfig = dc.field(default_factory=DocumentationConfig)
 
     @classmethod
@@ -90,6 +97,14 @@ class BumpConfig:
         _validate_mapping_keys(mapping, set(BUMP_TOML_KEYS), "bump")
         return cls(
             exclude=_string_tuple(mapping.get("exclude"), "bump.exclude"),
+            lockfile_manifests=_string_tuple(
+                mapping.get("lockfile_manifests"), "bump.lockfile_manifests"
+            ),
+            rebuild_lockfiles=_boolean(
+                mapping.get("rebuild_lockfiles"),
+                "bump.rebuild_lockfiles",
+                default=True,
+            ),
             documentation=DocumentationConfig.from_mapping(
                 _optional_mapping(mapping.get("documentation"), "bump.documentation")
             ),
@@ -389,10 +404,10 @@ def _non_negative_int(value: object, field_name: str, default: int) -> int:
     return integer
 
 
-def _boolean(value: object, field_name: str) -> bool:
+def _boolean(value: object, field_name: str, *, default: bool = False) -> bool:
     """Return a boolean parsed from ``value``."""
     if value is None:
-        return False
+        return default
     if isinstance(value, bool):
         return value
     message = f"{field_name} must be a boolean; received {type(value).__name__}."

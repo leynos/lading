@@ -205,6 +205,8 @@ All paths and globs are interpreted relative to the workspace root.
 ```toml
 [bump]
 exclude = ["some-private-crate"]
+lockfile_manifests = ["crates/nested/Cargo.toml"]
+rebuild_lockfiles = true
 
 [bump.documentation]
 globs = ["README.md", "docs/**/*.md"]
@@ -229,6 +231,23 @@ stderr_tail_lines = 40
 
 - `exclude`: array of strings, default `[]`. Crate names to exclude from
   manifest updates.
+- `lockfile_manifests`: array of strings, default `[]`. Additional
+  `Cargo.toml` manifests whose adjacent `Cargo.lock` files should be
+  regenerated after `lading bump`. The workspace root `Cargo.toml` is always
+  included and should not be listed.
+- `rebuild_lockfiles`: boolean, default `true`. Controls whether `lading bump`
+  regenerates the workspace lockfile and configured nested lockfiles after
+  manifest updates. Pass `--no-rebuild-lockfiles` to skip regeneration for a
+  single run, or `--rebuild-lockfiles` to force regeneration when
+  `rebuild_lockfiles` is configured as `false`.
+
+Lockfile regeneration runs `cargo update --workspace --manifest-path <manifest>`
+for the workspace root and each configured nested manifest. This updates
+workspace package entries while avoiding a full transitive dependency refresh.
+If Cargo fails, manifest changes have already been written. Fix the underlying
+Cargo error and rerun `lading bump`, use `--no-rebuild-lockfiles` and regenerate
+lockfiles manually, or run the relevant Cargo command yourself before committing
+the bump.
 
 ### `[bump.documentation]`
 

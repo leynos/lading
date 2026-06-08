@@ -40,6 +40,13 @@ _DRY_RUN_PARAMETER = Parameter(
 )
 DryRunFlag = typ.Annotated[bool, _DRY_RUN_PARAMETER]
 
+_REBUILD_LOCKFILES_PARAMETER = Parameter(
+    name="rebuild-lockfiles",
+    negative="no-rebuild-lockfiles",
+    help="Regenerate Cargo.lock files after manifest updates.",
+)
+RebuildLockfilesFlag = typ.Annotated[bool, _REBUILD_LOCKFILES_PARAMETER]
+
 _LIVE_PARAMETER = Parameter(
     name="live",
     help="Run cargo publish without --dry-run; default behaviour is dry-run.",
@@ -88,7 +95,15 @@ def _select_runner() -> CommandRunner:
     """Return the command runner selected for this CLI invocation."""
     stub_value = os.environ.get(_CMD_MOX_STUB_ENV, "")
     if stub_value.lower() in _CMD_MOX_TRUTHY_VALUES:
-        module = importlib.import_module("lading.testing.cmd_mox_runner")
+        try:
+            module = importlib.import_module("lading.testing.cmd_mox_runner")
+        except ModuleNotFoundError as exc:
+            message = (
+                f"{_CMD_MOX_STUB_ENV} is set, but the cmd-mox test runner "
+                "could not be imported. Install the test dependencies or unset "
+                f"{_CMD_MOX_STUB_ENV}."
+            )
+            raise SystemExit(message) from exc
         return typ.cast("CommandRunner", module.cmd_mox_runner)
     return subprocess_runner
 
@@ -260,7 +275,7 @@ def main(argv: cabc.Sequence[str] | None = None) -> int:
 def _run_with_context(
     workspace_root: Path,
     runner: cabc.Callable[
-        [Path, config.LadingConfig | None, WorkspaceGraph | None, CommandRunner],
+        [Path, config.LadingConfig, WorkspaceGraph, CommandRunner],
         str,
     ],
     *,
@@ -305,6 +320,7 @@ def bump(
     workspace_root: WorkspaceRootOption | None = None,
     *,
     dry_run: DryRunFlag = False,
+    rebuild_lockfiles: RebuildLockfilesFlag | None = None,
 ) -> str:
     """Update workspace manifests to ``version``."""
     _validate_version_argument(version)
@@ -316,9 +332,14 @@ def bump(
             version,
             options=commands.bump.BumpOptions(
                 dry_run=dry_run,
+                rebuild_lockfiles=(
+                    configuration.bump.rebuild_lockfiles
+                    if rebuild_lockfiles is None
+                    else rebuild_lockfiles
+                ),
                 configuration=configuration,
                 workspace=workspace,
-                runner=command_runner,
+                command_runner=command_runner,
             ),
         ),
     )

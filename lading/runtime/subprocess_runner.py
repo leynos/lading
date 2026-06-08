@@ -13,6 +13,7 @@ import threading
 import typing as typ
 from pathlib import Path
 
+from lading.exceptions import LadingError
 from lading.utils.process import format_command, log_command_invocation
 
 _LOGGER = logging.getLogger(__name__)
@@ -29,10 +30,6 @@ _ENV_REDACTION_TOKENS = (
 )
 _THREAD_NAME_PATTERN = re.compile(r"[^A-Za-z0-9_.-]+")
 _STREAM_CHUNK_SIZE = 4096
-
-
-class LadingError(RuntimeError):
-    """Base class for lading runtime failures."""
 
 
 class CommandSpawnError(LadingError):

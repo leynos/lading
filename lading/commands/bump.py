@@ -9,23 +9,21 @@ import types
 import typing as typ
 
 from lading import config as config_module
-from lading.commands import bump_docs, bump_toml
-from lading.commands.lockfile import discover_tracked_lockfiles, refresh_lockfile
-from lading.runtime import CommandRunner, subprocess_runner
+from lading.commands import bump_docs, bump_lockfiles, bump_toml
+from lading.commands.bump_output import (
+    BumpChanges,
+    _format_result_message,
+)
 from lading.utils import normalise_workspace_root
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
 
     from lading.config import LadingConfig
+    from lading.runtime import CommandRunner
     from lading.workspace import WorkspaceCrate, WorkspaceGraph
-else:  # pragma: no cover - provide runtime placeholders for type checking imports
-    LadingConfig = WorkspaceCrate = WorkspaceGraph = typ.Any
 
-_WORKSPACE_SELECTORS: typ.Final[tuple[tuple[str, ...], ...]] = (
-    ("package",),
-    ("workspace", "package"),
-)
+_WORKSPACE_SELECTORS = (("package",), ("workspace", "package"))
 
 _DEPENDENCY_SECTION_BY_KIND: typ.Final[dict[str | None, str]] = {
     None: "dependencies",
@@ -39,25 +37,47 @@ LOGGER = logging.getLogger(__name__)
 
 @dc.dataclass(frozen=True, slots=True)
 class BumpOptions:
-    """Configuration options for bump operations."""
+    """Configuration options for bump operations.
+
+    Attributes
+    ----------
+    dry_run : bool, default False
+        Preview manifest, documentation, and lockfile changes without writing
+        files or running state-changing lockfile rebuild commands. Dry-runs
+        report the lockfiles that would be rebuilt.
+    rebuild_lockfiles : bool | None, default None
+        Controls lockfile regeneration after manifest updates. ``None`` inherits
+        ``configuration.bump.rebuild_lockfiles``; ``True`` and ``False``
+        override configuration for this run.
+    configuration : LadingConfig | None, default None
+        Loaded lading configuration. Programmatic callers may omit it only when
+        they want ``run`` to load configuration from the workspace root.
+    workspace : WorkspaceGraph | None, default None
+        Loaded workspace graph. Programmatic callers may omit it only when they
+        want ``run`` to inspect the workspace.
+    command_runner : CommandRunner | None, default None
+        Callable with the runtime command-runner interface. It is used for
+        lockfile rebuild commands; ``None`` uses the default subprocess runner.
+    dependency_sections : Mapping[str, Collection[str]]
+        Explicit dependency sections to rewrite by crate name.
+    include_workspace_sections : bool, default False
+        Whether workspace dependency tables should be rewritten as well.
+
+    Notes
+    -----
+    Instances are frozen and slot-based. Options are immutable after creation
+    and compact, but callers should not rely on dynamic attributes or mutation.
+    """
 
     dry_run: bool = False
+    rebuild_lockfiles: bool | None = None
     configuration: LadingConfig | None = None
     workspace: WorkspaceGraph | None = None
+    command_runner: CommandRunner | None = None
     dependency_sections: cabc.Mapping[str, cabc.Collection[str]] = dc.field(
         default_factory=lambda: types.MappingProxyType({})
     )
     include_workspace_sections: bool = False
-    runner: CommandRunner | None = None
-
-
-@dc.dataclass(frozen=True, slots=True)
-class BumpChanges:
-    """Collection of files altered by a bump run."""
-
-    manifests: cabc.Sequence[Path] = ()
-    documents: cabc.Sequence[Path] = ()
-    lockfiles: cabc.Sequence[Path] = ()
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -73,35 +93,6 @@ class _BumpContext:
     updated_crate_names: frozenset[str]
 
 
-def _build_changes_description(changes: BumpChanges) -> str:
-    """Build a human-readable description of changed files."""
-    parts: list[str] = []
-    if changes.manifests:
-        parts.append(f"{len(changes.manifests)} manifest(s)")
-    if changes.documents:
-        parts.append(f"{len(changes.documents)} documentation file(s)")
-    if changes.lockfiles:
-        parts.append(f"{len(changes.lockfiles)} lockfile(s)")
-    return parts[0] if len(parts) == 1 else " and ".join(parts)
-
-
-def _format_no_changes_message(target_version: str, *, dry_run: bool) -> str:
-    """Format message when no changes are required."""
-    if dry_run:
-        return (
-            "Dry run; no manifest changes required; "
-            f"all versions already {target_version}."
-        )
-    return f"No manifest changes required; all versions already {target_version}."
-
-
-def _format_header(description: str, target_version: str, *, dry_run: bool) -> str:
-    """Format the summary header line."""
-    if dry_run:
-        return f"Dry run; would update version to {target_version} in {description}:"
-    return f"Updated version to {target_version} in {description}:"
-
-
 def run(
     workspace_root: Path | str,
     target_version: str,
@@ -114,9 +105,9 @@ def run(
     _process_workspace_manifest(context, target_version, changed_manifests)
     _process_crate_manifests(context, target_version, changed_manifests)
     changed_documents = _process_documentation_files(context, target_version)
-    refreshed_lockfiles = _refresh_lockfiles(context) if changed_manifests else ()
+    changed_lockfiles = _process_lockfiles(context, changed_manifests)
     changes = _prepare_sorted_changes(
-        context, changed_manifests, changed_documents, refreshed_lockfiles
+        context, changed_manifests, changed_documents, changed_lockfiles
     )
     return _format_result_message(
         changes,
@@ -143,11 +134,19 @@ def _initialize_bump_context(
 
         workspace = load_workspace(root_path)
 
+    rebuild_lockfiles = (
+        configuration.bump.rebuild_lockfiles
+        if resolved_options.rebuild_lockfiles is None
+        else resolved_options.rebuild_lockfiles
+    )
     base_options = BumpOptions(
         dry_run=resolved_options.dry_run,
+        rebuild_lockfiles=rebuild_lockfiles,
         configuration=configuration,
         workspace=workspace,
-        runner=resolved_options.runner,
+        command_runner=resolved_options.command_runner,
+        dependency_sections=resolved_options.dependency_sections,
+        include_workspace_sections=resolved_options.include_workspace_sections,
     )
     excluded = frozenset(configuration.bump.exclude)
     updated_crate_names = frozenset(
@@ -213,11 +212,30 @@ def _process_documentation_files(
     )
 
 
+def _process_lockfiles(
+    context: _BumpContext,
+    changed_manifests: set[Path],
+) -> tuple[Path, ...]:
+    """Regenerate Cargo lockfiles when bump changes manifest content."""
+    if context.base_options.rebuild_lockfiles is not True or not changed_manifests:
+        return ()
+    lockfile_manifests = context.configuration.bump.lockfile_manifests
+    if context.base_options.dry_run:
+        return bump_lockfiles.resolve_lockfile_paths(
+            context.root_path, lockfile_manifests
+        )
+    return bump_lockfiles.regenerate_lockfiles(
+        context.root_path,
+        lockfile_manifests,
+        runner=context.base_options.command_runner,
+    )
+
+
 def _prepare_sorted_changes(
     context: _BumpContext,
     changed_manifests: set[Path],
     changed_documents: set[Path],
-    refreshed_lockfiles: cabc.Sequence[Path] = (),
+    changed_lockfiles: cabc.Sequence[Path],
 ) -> BumpChanges:
     """Return ordered :class:`BumpChanges` suitable for result rendering."""
     ordered_manifests = tuple(
@@ -230,40 +248,16 @@ def _prepare_sorted_changes(
         sorted(changed_documents, key=lambda path: str(path))
     )
     ordered_lockfiles: tuple[Path, ...] = tuple(
-        sorted(refreshed_lockfiles, key=lambda path: str(path))
+        sorted(
+            changed_lockfiles,
+            key=lambda path: (path != context.root_path / "Cargo.lock", str(path)),
+        )
     )
     return BumpChanges(
         manifests=ordered_manifests,
         documents=ordered_documents,
         lockfiles=ordered_lockfiles,
     )
-
-
-def _refresh_lockfiles(context: _BumpContext) -> tuple[Path, ...]:
-    """Refresh tracked lockfiles after manifest rewrites.
-
-    Refresh is intentionally not transactional. If one lockfile refresh fails,
-    manifests already rewritten to the target version remain on disk; after
-    fixing the Cargo error, rerunning ``lading bump`` will not refresh
-    lockfiles because refresh only runs when manifests are rewritten. Run
-    ``cargo generate-lockfile --manifest-path <path>/Cargo.toml``
-    for each stale lockfile.
-    """
-    runner = context.base_options.runner or subprocess_runner
-    lockfiles = discover_tracked_lockfiles(context.root_path, runner)
-    if context.base_options.dry_run:
-        for lockfile_path in lockfiles:
-            LOGGER.info("Dry run; would refresh %s", lockfile_path)
-        return lockfiles
-
-    for lockfile_path in lockfiles:
-        refresh_lockfile(lockfile_path.parent / "Cargo.toml", runner)
-    LOGGER.info(
-        "Refreshed %d tracked lockfile(s) in %s",
-        len(lockfiles),
-        context.root_path,
-    )
-    return lockfiles
 
 
 def _update_crate_manifest(
@@ -295,43 +289,6 @@ def _update_crate_manifest(
         target_version,
         crate_options,
     )
-
-
-def _format_result_message(
-    changes: BumpChanges,
-    target_version: str,
-    *,
-    dry_run: bool,
-    workspace_root: Path,
-) -> str:
-    """Summarise the bump outcome for CLI presentation."""
-    if not any((changes.manifests, changes.documents, changes.lockfiles)):
-        return _format_no_changes_message(target_version, dry_run=dry_run)
-
-    description = _build_changes_description(changes)
-    header = _format_header(description, target_version, dry_run=dry_run)
-    formatted_paths = [
-        f"- {_format_manifest_path(manifest_path, workspace_root)}"
-        for manifest_path in changes.manifests
-    ]
-    formatted_paths.extend(
-        f"- {_format_manifest_path(document_path, workspace_root)} (documentation)"
-        for document_path in changes.documents
-    )
-    formatted_paths.extend(
-        f"- {_format_manifest_path(lockfile_path, workspace_root)} (lockfile)"
-        for lockfile_path in changes.lockfiles
-    )
-    return "\n".join([header, *formatted_paths])
-
-
-def _format_manifest_path(manifest_path: Path, workspace_root: Path) -> str:
-    """Return ``manifest_path`` relative to ``workspace_root`` when possible."""
-    try:
-        relative = manifest_path.relative_to(workspace_root)
-    except ValueError:
-        return str(manifest_path)
-    return str(relative)
 
 
 def _validate_bump_options(options: BumpOptions) -> tuple[LadingConfig, WorkspaceGraph]:
