@@ -16,6 +16,7 @@ Examples
 
 from __future__ import annotations
 
+import collections.abc as cabc
 import re
 import typing as typ
 from pathlib import Path
@@ -91,7 +92,7 @@ def rewrite_relative_links(markdown_text: str, prefix: str) -> tuple[str, bool]:
     """
     changed = False
 
-    def _replace(match: re.Match[str]) -> str:
+    def _rewrite_relative_link_match(match: re.Match[str]) -> str:
         nonlocal changed
         opener, target, suffix = match.groups()
         if not _should_rewrite_link_target(target):
@@ -99,8 +100,41 @@ def rewrite_relative_links(markdown_text: str, prefix: str) -> tuple[str, bool]:
         changed = True
         return f"{opener}{prefix}{target}{suffix}"
 
-    rewritten = _MARKDOWN_LINK_TARGET.sub(_replace, markdown_text)
+    rewritten = _rewrite_links_outside_code(markdown_text, _rewrite_relative_link_match)
     return rewritten, changed
+
+
+def _rewrite_links_outside_code(
+    markdown_text: str, replacement: cabc.Callable[[re.Match[str]], str]
+) -> str:
+    """Rewrite Markdown links outside fenced, indented, and inline code."""
+    lines: list[str] = []
+    in_fenced_block = False
+    fenced_marker: str | None = None
+
+    for line in markdown_text.splitlines(keepends=True):
+        stripped = line.lstrip()
+        if stripped.startswith(("```", "~~~")):
+            marker = stripped[:3]
+            if not in_fenced_block:
+                in_fenced_block = True
+                fenced_marker = marker
+            elif fenced_marker == marker:
+                in_fenced_block = False
+                fenced_marker = None
+            lines.append(line)
+            continue
+
+        if in_fenced_block or line.startswith(("    ", "\t")):
+            lines.append(line)
+            continue
+
+        segments = line.split("`")
+        for index in range(0, len(segments), 2):
+            segments[index] = _MARKDOWN_LINK_TARGET.sub(replacement, segments[index])
+        lines.append("`".join(segments))
+
+    return "".join(lines)
 
 
 def transpose_readme_to_crate(

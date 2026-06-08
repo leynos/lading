@@ -102,6 +102,32 @@ def test_rewrite_relative_links_preserves_non_relative_targets(markdown: str) ->
     )
 
 
+def test_rewrite_relative_links_ignores_code_regions() -> None:
+    """Markdown examples inside code regions are preserved verbatim."""
+    markdown = (
+        "See [Guide](docs/guide.md).\n"
+        "`[Inline](docs/inline.md)`\n"
+        "```markdown\n"
+        "[Fenced](docs/fenced.md)\n"
+        "```\n"
+        "    [Indented](docs/indented.md)\n"
+        "\t[Tabbed](docs/tabbed.md)\n"
+    )
+
+    rewritten, changed = bump_readme.rewrite_relative_links(markdown, "../../")
+
+    assert rewritten == (
+        "See [Guide](../../docs/guide.md).\n"
+        "`[Inline](docs/inline.md)`\n"
+        "```markdown\n"
+        "[Fenced](docs/fenced.md)\n"
+        "```\n"
+        "    [Indented](docs/indented.md)\n"
+        "\t[Tabbed](docs/tabbed.md)\n"
+    )
+    assert changed is True
+
+
 def test_transpose_readme_to_crate_writes_rewritten_workspace_readme(
     tmp_path: Path,
 ) -> None:
@@ -147,8 +173,19 @@ def test_transpose_readme_to_crate_skips_matching_target(tmp_path: Path) -> None
 def test_transpose_readme_to_crate_requires_workspace_readme(
     tmp_path: Path,
 ) -> None:
-    """Missing workspace README is reported through the staging error type."""
+    """Missing workspace README is reported through the preparation error type."""
     crate = _make_crate(tmp_path)
 
     with pytest.raises(PublishPreparationError, match=r"Workspace README\.md"):
+        bump_readme.transpose_readme_to_crate(tmp_path, crate, dry_run=False)
+
+
+def test_transpose_readme_to_crate_rejects_external_crate_root(
+    tmp_path: Path,
+) -> None:
+    """Crate roots outside the workspace cannot receive transposed READMEs."""
+    crate = _make_crate(tmp_path.parent, f"{tmp_path.name}-external")
+    (tmp_path / "README.md").write_text("# Project\n", encoding="utf-8")
+
+    with pytest.raises(PublishPreparationError, match=r"outside the workspace root"):
         bump_readme.transpose_readme_to_crate(tmp_path, crate, dry_run=False)

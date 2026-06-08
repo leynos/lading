@@ -358,6 +358,21 @@ def test_format_result_message_handles_changes(tmp_path: Path) -> None:
         "- Cargo.lock (lockfile)",
     ]
 
+def test_format_result_message_handles_readme_only_changes(tmp_path: Path) -> None:
+    """README-only changes are reported as updates, not as no-ops."""
+    workspace_root = tmp_path
+    readme_paths = [workspace_root / "crates" / "alpha" / "README.md"]
+
+    assert bump._format_result_message(
+        bump.BumpChanges(transposed_readmes=readme_paths),
+        "1.2.3",
+        dry_run=False,
+        workspace_root=workspace_root,
+    ).splitlines() == [
+        "Updated version to 1.2.3 in 1 readme file(s):",
+        "- crates/alpha/README.md (readme)",
+    ]
+
 
 def test_update_manifest_writes_when_changed(tmp_path: Path) -> None:
     """Applying a new version persists changes to disk."""
