@@ -19,6 +19,17 @@ workspaces. It can:
 > must adopt the new per-crate ordering; no configuration knob restores
 > the prior behaviour.
 
+The 0.1.0 release also changes workspace README adoption:
+
+> **Breaking change in 0.1.0 — workspace README adoption**
+>
+> Prior to 0.1.0, `lading publish` copied the workspace `README.md` into
+> crates that set `readme.workspace = true` while preparing the staged
+> workspace. From 0.1.0 onwards, `lading bump` performs that adoption and
+> rewrites relative Markdown links before publishing. Commit the adopted
+> crate README files produced by `lading bump` before running `lading publish`;
+> publish staging no longer creates or repairs those files.
+
 ## Installation
 
 ### Install from a wheel (recommended for internal distribution)
