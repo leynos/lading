@@ -190,12 +190,56 @@ yet. When enabled, `lading publish` downgrades that specific index-lookup
 failure to a warning and continues. The option is rejected at runtime when
 `live=True`, so it cannot mask a real upload failure.
 
-### Exception hierarchy (`publish_errors`)
 
-`lading.commands.publish_errors` defines the public error boundary for
-publish orchestration. Both classes inherit from the package-level
-`LadingError` base, which itself extends `Exception`, and carry their message
-through the standard `args` tuple.
+### Exception hierarchy (`lading.exceptions`)
+
+`lading.exceptions.LadingError` is the package-level base class for domain
+failures raised by lading itself. It extends `Exception` directly and gives
+callers one stable type to catch when they want to handle expected lading
+failures without also catching unrelated runtime errors from Python, Cargo, git
+wrappers, or test doubles.
+
+Every root domain exception should inherit from `LadingError`. More specific
+exceptions should continue to inherit from the local root for their feature
+area so existing handling remains precise:
+
+| Root exception | Module | Notes |
+| --- | --- | --- |
+| `ConfigurationError` | `lading.config` | Base for configuration loading and validation failures. |
+| `WorkspaceModelError` | `lading.workspace.models` | Base for workspace graph/model validation failures. |
+| `CargoMetadataError` | `lading.workspace.metadata` | Base for cargo metadata execution and parsing failures. |
+| `LockfileRefreshError` | `lading.commands.lockfile` | Raised when `cargo generate-lockfile` fails. |
+| `PublishPlanError` | `lading.commands.publish_plan` | Raised when a publish plan cannot be constructed. |
+| `PublishPreparationError` | `lading.commands.publish_manifest` | Raised when staged publish manifests or workspace assets cannot be prepared. |
+| `PublishPreflightError` | `lading.commands.publish_errors` | Raised for local publish validation and pre-flight failures. |
+
+Reuse plan:
+
+- New command, workspace, and configuration modules should define exactly one
+  local root exception that subclasses `LadingError` when they introduce a new
+  failure family.
+- Subclasses should inherit from that local root, not from `LadingError`
+  directly, unless they are themselves the root of a new family.
+- Do not inherit lading domain exceptions from `RuntimeError`; reserve
+  `RuntimeError` for unexpected programming errors or third-party APIs that
+  already expose it.
+- Keep messages useful at the boundary where they are raised. Include the
+  relevant path, crate name, command, or configuration key so CLI handlers can
+  report the exception without reconstructing context.
+
+Usage guidance:
+
+- CLI and integration boundaries may catch `LadingError` to render expected
+  lading failures as user-facing diagnostics.
+- Feature code should catch the narrowest local exception it can handle, such
+  as `PublishPreflightError` or `LockfileRefreshError`, and let unrelated
+  `LadingError` subclasses propagate.
+- Tests should assert the specific exception type for the behaviour under test,
+  then use `LadingError` only when verifying common boundary handling.
+
+`lading.commands.publish_errors` defines the public error boundary for publish
+orchestration. Both publish exceptions inherit from the package-level
+`LadingError` base and carry their message through the standard `args` tuple.
 
 | Exception | Raised when |
 | --- | --- |
