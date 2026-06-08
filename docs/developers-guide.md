@@ -49,8 +49,8 @@ standard-library usage, file hygiene, and design-size limits.
 The relevant Makefile variables are:
 
 - `PYLINT_PYTHON` — Python executable used by `uv tool run`; defaults to `pypy`.
-- `PYLINT_TARGETS` — directories passed to Pylint; defaults to `lading scripts
-  tests`.
+- `PYLINT_TARGETS` — directories passed to Pylint; defaults to
+  `lading scripts tests`.
 - `PYLINT_PYPY_SHIM_REF` — pinned `pylint-pypy-shim` revision.
 - `PYLINT_PYPY_SHIM` — Git URL assembled from the pinned shim revision.
 - `PYLINT` — full `uv tool run --python $(PYLINT_PYTHON)` invocation for the
@@ -88,9 +88,9 @@ publish runs with stub mode enabled.
 
 ## Bump command internals
 
-`lading.commands.bump` coordinates manifest updates, documentation updates, README
-adoption, and lockfile reporting. Keep user-facing summary construction in
-`lading.commands.bump_output` rather than formatting messages inline in the
+`lading.commands.bump` coordinates manifest updates, documentation updates,
+README adoption, and lockfile reporting. Keep user-facing summary construction
+in `lading.commands.bump_output` rather than formatting messages inline in the
 workflow.
 
 `lading.commands.bump_output` renders the CLI summary from a `BumpChanges`
@@ -99,10 +99,10 @@ readmes, and lockfiles that changed during a bump run.
 
 `lading.commands.bump_readme` owns workspace README adoption during
 `lading bump`. The module copies the workspace `README.md` into each crate that
-sets `readme.workspace = true`, rewrites relative Markdown links so they resolve
-from the crate directory, and leaves absolute URI targets unchanged. Markdown
-links in fenced code blocks, indented code blocks, and inline code spans are
-preserved verbatim.
+sets `readme.workspace = true`, rewrites relative Markdown links so they
+resolve from the crate directory, and leaves absolute URI targets unchanged.
+Markdown links in fenced code blocks, indented code blocks, and inline code
+spans are preserved verbatim.
 
 `lading.commands.bump_lockfiles` owns Cargo lockfile discovery and regeneration
 after manifest changes. It always includes the workspace root `Cargo.toml`,
@@ -111,15 +111,15 @@ resolved manifest paths.
 
 `BumpOptions` carries the dependency-injection points used by
 `lading.commands.bump.run`. The `command_runner` field accepts an optional
-`CommandRunner`, matching the command-runner protocol used by publish execution.
-When `command_runner` is `None`, bump falls back to the default subprocess
-runner. Tests pass a runner explicitly so lockfile commands can be observed
-without invoking real Cargo processes.
+`CommandRunner`, matching the command-runner protocol used by publish
+execution. When `command_runner` is `None`, bump falls back to the default
+subprocess runner. Tests pass a runner explicitly so lockfile commands can be
+observed without invoking real Cargo processes.
 
 `BumpChanges` records the user-visible files touched by a bump run. Its
 `lockfiles` field contains the `Cargo.lock` files regenerated after manifest
-updates. The output formatter labels these paths as `(lockfile)` so operators can
-see which generated files need review and commit.
+updates. The output formatter labels these paths as `(lockfile)` so operators
+can see which generated files need review and commit.
 
 ## Workspace discovery helpers
 
@@ -127,9 +127,8 @@ see which generated files need review and commit.
 
 `discover_tracked_lockfiles(workspace_root, runner)` filters git-tracked
 `Cargo.lock` files outside `target/` with adjacent `Cargo.toml` manifests.
-Private helpers `_handle_git_ls_files_failure` and
-`_lockfiles_with_manifests` perform the error-handling and path-filtering
-passes respectively.
+Private helpers `_handle_git_ls_files_failure` and `_lockfiles_with_manifests`
+perform the error-handling and path-filtering passes respectively.
 
 `refresh_lockfile(manifest_path, runner)` runs
 `cargo generate-lockfile --manifest-path` for the supplied manifest and raises
@@ -217,7 +216,6 @@ Examples:
 - `PublishOptions(allow_dirty=False)` — require a clean git working tree before
   proceeding with publish preparation.
 
-
 ## Publish command internals
 
 `PublishOptions.allow_unpublished_workspace_deps` is a dry-run-only override
@@ -239,18 +237,18 @@ Every root domain exception should inherit from `LadingError`. More specific
 exceptions should continue to inherit from the local root for their feature
 area so existing handling remains precise:
 
-| Root exception | Module | Notes |
-| --- | --- | --- |
-| `ConfigurationError` | `lading.config` | Base for configuration loading and validation failures. |
-| `WorkspaceModelError` | `lading.workspace.models` | Base for workspace graph/model validation failures. |
-| `CargoMetadataError` | `lading.workspace.metadata` | Base for cargo metadata execution and parsing failures. |
-| `CommandSpawnError` | `lading.runtime.subprocess_runner` | Raised when the subprocess runner cannot spawn an external command. |
-| `LockfileDiscoveryError` | `lading.commands.lockfile` | Raised when git cannot list tracked lockfiles. |
-| `LockfileRefreshError` | `lading.commands.lockfile` | Raised when `cargo generate-lockfile` fails. |
-| `LockfileRegenerationError` | `lading.commands.bump_lockfiles` | Raised when configured bump lockfile manifests are invalid or `cargo update --workspace` fails. |
-| `PublishPlanError` | `lading.commands.publish_plan` | Raised when a publish plan cannot be constructed. |
-| `PublishPreparationError` | `lading.commands.publish_manifest` | Raised when staged publish manifests or workspace assets cannot be prepared. |
-| `PublishPreflightError` | `lading.commands.publish_errors` | Raised for local publish validation and pre-flight failures. |
+| Root exception              | Module                             | Notes                                                                                           |
+| --------------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `ConfigurationError`        | `lading.config`                    | Base for configuration loading and validation failures.                                         |
+| `WorkspaceModelError`       | `lading.workspace.models`          | Base for workspace graph/model validation failures.                                             |
+| `CargoMetadataError`        | `lading.workspace.metadata`        | Base for cargo metadata execution and parsing failures.                                         |
+| `CommandSpawnError`         | `lading.runtime.subprocess_runner` | Raised when the subprocess runner cannot spawn an external command.                             |
+| `LockfileDiscoveryError`    | `lading.commands.lockfile`         | Raised when git cannot list tracked lockfiles.                                                  |
+| `LockfileRefreshError`      | `lading.commands.lockfile`         | Raised when `cargo generate-lockfile` fails.                                                    |
+| `LockfileRegenerationError` | `lading.commands.bump_lockfiles`   | Raised when configured bump lockfile manifests are invalid or `cargo update --workspace` fails. |
+| `PublishPlanError`          | `lading.commands.publish_plan`     | Raised when a publish plan cannot be constructed.                                               |
+| `PublishPreparationError`   | `lading.commands.publish_manifest` | Raised when staged publish manifests or workspace assets cannot be prepared.                    |
+| `PublishPreflightError`     | `lading.commands.publish_errors`   | Raised for local publish validation and pre-flight failures.                                    |
 
 Reuse plan:
 
@@ -280,24 +278,24 @@ Usage guidance:
 orchestration. Both publish exceptions inherit from the package-level
 `LadingError` base and carry their message through the standard `args` tuple.
 
-| Exception | Raised when |
-| --- | --- |
+| Exception               | Raised when                                                                                                                                                                                                                                    |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `PublishPreflightError` | A local check fails before publication begins — dirty working tree, auxiliary build failure, failed `cargo check`/`cargo test` preflight, or an invalid option combination (e.g. `--live` combined with `--allow-unpublished-workspace-deps`). |
-| `PublishError` | A `cargo publish` invocation fails after pre-flight checks have passed. Subclasses `PublishPreflightError`. |
+| `PublishError`          | A `cargo publish` invocation fails after pre-flight checks have passed. Subclasses `PublishPreflightError`.                                                                                                                                    |
 
-Callers of `lading.commands.publish.run` may catch `PublishPreflightError`
-to handle both validation and publish-phase failures through one `except`
-clause, or catch `PublishError` first when publish-phase failures require
-distinct handling.
+Callers of `lading.commands.publish.run` may catch `PublishPreflightError` to
+handle both validation and publish-phase failures through one `except` clause,
+or catch `PublishError` first when publish-phase failures require distinct
+handling.
 
 ### Extracted publish modules
 
 `publish_plan.py` owns publication planning and plan rendering. Its
 `PublishPlan` dataclass is the immutable boundary between workspace analysis
 and execution: it stores the workspace root, publishable crates in the resolved
-order, crates skipped by manifest/configuration, and configured exclusions
-that did not match a workspace crate. `plan_publication()` builds that object
-by filtering non-publishable crates, applying `publish.exclude`, validating
+order, crates skipped by manifest/configuration, and configured exclusions that
+did not match a workspace crate. `plan_publication()` builds that object by
+filtering non-publishable crates, applying `publish.exclude`, validating
 `publish.order` when present, or deriving a deterministic dependency order.
 
 `publish_manifest.py` owns staging-time manifest mutations. It contains the
@@ -315,9 +313,9 @@ lines, and appends those snippets to the `PublishPreflightError` message. The
 module is deliberately read-only: missing artefacts or unreadable files produce
 diagnostic notes rather than replacing the original cargo failure.
 
-`publish_index_check.py` owns crates.io index-lookup classification. It
-contains `_CargoInvocation`, the predicates and parsers that recognize Cargo's
-"no matching package/version" diagnostics, crate-name canonicalization, and
+`publish_index_check.py` owns crates.io index-lookup classification. It contains
+`_CargoInvocation`, the predicates and parsers that recognize Cargo's "no
+matching package/version" diagnostics, crate-name canonicalization, and
 `_handle_index_missing_version()`. That handler decides whether an index miss
 is out-of-plan and fatal, in-plan but still fatal, or in-plan and downgraded by
 `allow_unpublished_workspace_deps` during dry-run publication.
@@ -328,10 +326,10 @@ is out-of-plan and fatal, in-plan but still fatal, or in-plan and downgraded by
 forwarded to every `cargo package` and `cargo publish` invocation within a
 single `lading publish` run. Its fields are:
 
-| Field | Type | Default | Purpose |
-| --- | --- | --- | --- |
-| `live` | `bool` | — | When `True`, omits `--dry-run` from `cargo publish`. |
-| `allow_dirty` | `bool` | — | Passes `--allow-dirty` to both cargo subcommands. |
+| Field                              | Type   | Default | Purpose                                                              |
+| ---------------------------------- | ------ | ------- | -------------------------------------------------------------------- |
+| `live`                             | `bool` | —       | When `True`, omits `--dry-run` from `cargo publish`.                 |
+| `allow_dirty`                      | `bool` | —       | Passes `--allow-dirty` to both cargo subcommands.                    |
 | `allow_unpublished_workspace_deps` | `bool` | `False` | Dry-run-only override; see `allow_unpublished_workspace_deps` above. |
 
 The dataclass is an internal implementation detail; callers interact with the
@@ -354,24 +352,23 @@ diagnostics, and normalizes staging/preparation failures into
 boundary.
 
 `_handle_publish_result(invocation, crate, plan, options)` owns the result
-classification for a completed `cargo publish` command. It logs success,
-skips already-published crate versions, delegates in-plan crates.io index
-visibility failures to `_handle_index_missing_version`, and raises
-`PublishError` for all other non-zero publish exits after formatting the cargo
-failure message.
+classification for a completed `cargo publish` command. It logs success, skips
+already-published crate versions, delegates in-plan crates.io index visibility
+failures to `_handle_index_missing_version`, and raises `PublishError` for all
+other non-zero publish exits after formatting the cargo failure message.
 
 `_CargoPreflightOptions` lives in `publish_preflight.py` and carries the
 per-invocation settings for cargo pre-flight commands: extra cargo arguments,
 test exclusions, unit-test-only narrowing, environment overrides, and optional
-stderr-tail diagnostics. `_run_preflight_checks` builds these option objects
-for `cargo check` and `cargo test` so command construction stays explicit and
+stderr-tail diagnostics. `_run_preflight_checks` builds these option objects for
+`cargo check` and `cargo test` so command construction stays explicit and
 testable.
 
 Publication dispatch deliberately differs by mode. Dry-run mode keeps the
 historical two-phase pipeline: package every publishable crate, then run
 `cargo publish --dry-run` for every crate. Live mode interleaves the pipeline
-per crate: package the next crate, publish it, then advance to the next entry
-in `PublishPlan.publishable`. That ordering lets dependent crates resolve newly
+per crate: package the next crate, publish it, then advance to the next entry in
+`PublishPlan.publishable`. That ordering lets dependent crates resolve newly
 uploaded in-plan dependencies during a single live release train. The live
 pipeline does not roll back earlier uploads if a later crate fails; reruns rely
 on the already-published detection path to log and skip versions already
@@ -398,9 +395,9 @@ The index-lookup handling is split across three helpers:
 
 #### Crate-name canonicalization
 
-`_canonical_crate_name(name)` normalizes a crate name by replacing every
-hyphen with an underscore. It is applied to both sides of the
-`publishable_names` membership check inside `_handle_index_missing_version`:
+`_canonical_crate_name(name)` normalizes a crate name by replacing every hyphen
+with an underscore. It is applied to both sides of the `publishable_names`
+membership check inside `_handle_index_missing_version`:
 
 ```python
 publishable_names = {_canonical_crate_name(entry.name) for entry in plan.publishable}
@@ -414,21 +411,21 @@ underscores (e.g. `my_crate`). Without normalization, a hyphenated cargo
 diagnostic would be incorrectly classified as an out-of-plan dependency and
 raise a fatal error instead of triggering the downgrade path.
 
-`_format_cargo_failure_message(command, crate_name, exit_code, output)` assembles
-the human-readable error string that is embedded in every `PublishPreflightError`
-or `PublishError` raised on a non-zero cargo exit. It is a pure function with no
-side effects: given the cargo subcommand string, the crate name, the numeric
-exit code, and the `(stdout, stderr)` pair, it returns a formatted message that
-includes all four values. Using a single function for message construction keeps
-the error format consistent across the packaging and publish phases and makes
-snapshot testing straightforward.
+`_format_cargo_failure_message(command, crate_name, exit_code, output)`
+assembles the human-readable error string that is embedded in every
+`PublishPreflightError` or `PublishError` raised on a non-zero cargo exit. It
+is a pure function with no side effects: given the cargo subcommand string, the
+crate name, the numeric exit code, and the `(stdout, stderr)` pair, it returns
+a formatted message that includes all four values. Using a single function for
+message construction keeps the error format consistent across the packaging and
+publish phases and makes snapshot testing straightforward.
 
 ### Command runners (`lading.runtime`)
 
 `lading.runtime` owns the shared `CommandRunner` protocol and the production
-`subprocess_runner` adapter. Command modules type against this protocol so tests
-can inject cmd-mox or recording runners without depending on publish-specific
-infrastructure.
+`subprocess_runner` adapter. Command modules type against this protocol so
+tests can inject cmd-mox or recording runners without depending on
+publish-specific infrastructure.
 
 `lading.commands.publish_execution` still owns publish-specific error mapping
 around command execution. `lading bump` uses the runtime runner directly for
@@ -437,8 +434,8 @@ surface as `PublishPreflightError`.
 
 ### Pre-flight validation (`publish_preflight`)
 
-`lading.commands.publish_preflight` performs workspace validation before
-any crate is packaged or published. Its public entry point is:
+`lading.commands.publish_preflight` performs workspace validation before any
+crate is packaged or published. Its public entry point is:
 
 ```python
 _run_preflight_checks(
@@ -450,25 +447,25 @@ _run_preflight_checks(
 ) -> None
 ```
 
-The function verifies the git working tree is clean (unless `allow_dirty`
-is set), then executes `cargo check` and `cargo test` in a temporary
-`--target-dir` to keep preflight artefacts separate from the workspace's
-own target directory. A non-zero exit from any step raises
-`PublishPreflightError` with a descriptive message.
+The function verifies the git working tree is clean (unless `allow_dirty` is
+set), then executes `cargo check` and `cargo test` in a temporary
+`--target-dir` to keep preflight artefacts separate from the workspace's own
+target directory. A non-zero exit from any step raises `PublishPreflightError`
+with a descriptive message.
 
-| Helper | Purpose |
-| --- | --- |
+| Helper                         | Purpose                                                                                       |
+| ------------------------------ | --------------------------------------------------------------------------------------------- |
 | `_compose_preflight_arguments` | Builds the base `cargo` argument tuple for a given target directory and `--all-targets` flag. |
-| `_preflight_argument_sets` | Returns `(check_args, test_args)` tuples adapted for unit-test-only mode. |
-| `_run_cargo_preflight` | Executes a single `cargo check` or `cargo test` invocation and raises on failure. |
-| `_verify_clean_working_tree` | Runs `git status --porcelain` and raises if the tree is dirty and `allow_dirty` is `False`. |
+| `_preflight_argument_sets`     | Returns `(check_args, test_args)` tuples adapted for unit-test-only mode.                     |
+| `_run_cargo_preflight`         | Executes a single `cargo check` or `cargo test` invocation and raises on failure.             |
+| `_verify_clean_working_tree`   | Runs `git status --porcelain` and raises if the tree is dirty and `allow_dirty` is `False`.   |
 
 ### Per-crate publication helpers
 
-`_package_crate` and `_publish_crate` are the atomic units of the
-publication pipeline. Both accept the crate entry, publication state, and
-command runner explicitly, then execute exactly one `cargo` invocation against
-the crate's staging root:
+`_package_crate` and `_publish_crate` are the atomic units of the publication
+pipeline. Both accept the crate entry, publication state, and command runner
+explicitly, then execute exactly one `cargo` invocation against the crate's
+staging root:
 
 ```python
 _package_crate(
@@ -492,8 +489,8 @@ to each pipeline/helper function rather than being bundled into the state.
 
 `_dispatch_publication` selects the live or dry-run pipeline and delegates
 accordingly. It is the sole branch that decides between the interleaved
-per-crate flow and the historical two-phase batch flow, keeping `run()`
-free of that decision.
+per-crate flow and the historical two-phase batch flow, keeping `run()` free of
+that decision.
 
 `lading.commands.publish_execution` loads the optional `cmd_mox` command-runner
 module with `importlib.import_module("cmd_mox.command_runner")`. Keeping the

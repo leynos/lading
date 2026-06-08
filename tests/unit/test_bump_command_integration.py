@@ -36,6 +36,7 @@ class _NoChangeScenario:
     dry_run: bool
     expected_message: str
 
+
 @dc.dataclass(frozen=True, slots=True)
 class _ReadmeTransposeScenario:
     """Parameters for README transposition tests."""

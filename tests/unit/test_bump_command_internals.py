@@ -17,6 +17,7 @@ from tests.helpers.workspace_builders import (
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
+
     from syrupy.assertion import SnapshotAssertion
 from lading.commands import bump, bump_output
 
