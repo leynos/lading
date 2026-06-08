@@ -526,8 +526,9 @@ def _validate_publication_options(options: PublishOptions) -> None:
     """Raise :class:`PublishPreflightError` for invalid option combinations."""
     if options.live and options.allow_unpublished_workspace_deps:
         message = (
-            "--allow-unpublished-workspace-deps is only valid in dry-run mode; "
-            "re-run without --live."
+            "Unpublished workspace dependency override is only valid in dry-run "
+            "mode. Live publish requires all dependency packages to be "
+            "available on crates.io before the dependent crate is published."
         )
         LOGGER.error(message)
         raise PublishPreflightError(message)

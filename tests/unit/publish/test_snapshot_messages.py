@@ -98,8 +98,9 @@ def test_run_rejects_allow_unpublished_with_live(
     assert str(excinfo.value) == snapshot()
     assert caplog.messages == [
         (
-            "--allow-unpublished-workspace-deps is only valid in dry-run mode; "
-            "re-run without --live."
+            "Unpublished workspace dependency override is only valid in dry-run "
+            "mode. Live publish requires all dependency packages to be "
+            "available on crates.io before the dependent crate is published."
         )
     ]
 

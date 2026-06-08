@@ -9,7 +9,7 @@ Feature: lading publish --allow-unpublished-workspace-deps flag
     Given a valid lading workspace
     When I run "lading publish --allow-unpublished-workspace-deps --live"
     Then a PublishPreflightError should be raised
-    And the error message should contain "--allow-unpublished-workspace-deps is only valid in dry-run mode"
+    And the error message should contain "Unpublished workspace dependency override is only valid in dry-run mode"
 
   Scenario: Flag downgrades an in-plan index-lookup failure to a warning
     Given a valid lading workspace
