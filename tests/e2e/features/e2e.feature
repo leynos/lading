@@ -12,6 +12,10 @@ Feature: Lading end-to-end workflows in a temporary Git repository
   Scenario: Publishing crates in dry-run mode validates the full workflow
     Given a non-trivial workspace in a Git repository at version "0.1.0"
     And cargo commands are stubbed for publish operations
+    When I run lading bump "1.0.0" in the E2E workspace
+    Then the command succeeds
+    And the workspace README was adopted for all crates
+    When I commit the E2E workspace changes
     When I run lading publish --forbid-dirty in the E2E workspace
     Then the command succeeds
     And cargo preflight was run for the workspace
@@ -19,7 +23,6 @@ Feature: Lading end-to-end workflows in a temporary Git repository
     And cargo package was invoked for each crate
     And cargo publish --dry-run was invoked for each crate
     And cargo publish omits --allow-dirty when forbid-dirty is set
-    And the workspace README was staged for all crates
 
   Scenario: Tutorial workflow bumps and publishes in dry-run mode
     Given a non-trivial workspace in a Git repository at version "0.1.0"
@@ -29,6 +32,7 @@ Feature: Lading end-to-end workflows in a temporary Git repository
     And all workspace manifests are at version "1.0.0"
     And internal dependency versions are updated to "1.0.0"
     And the workspace README contains version "1.0.0"
+    And the workspace README was adopted for all crates
     When I run lading publish in the E2E workspace
     Then the command succeeds
     And cargo preflight was run for the workspace

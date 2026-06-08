@@ -159,8 +159,8 @@ def test_spy(cmd_mox):
     assert spy.call_count == 1
 ```
 
-A spy expectation can also use `times_called(count)`—an alias of
-`times(count)`—to require a specific call count during verification.
+A spy expectation can also use `times_called(count)`—an alias of `times(count)`
+—to require a specific call count during verification.
 
 A spy can also forward to the real command while recording everything:
 
@@ -268,8 +268,9 @@ few common ones are:
 - `in_order()` – enforce strict ordering with other expectations.
 - `any_order()` – allow the expectation to be satisfied in any position.
 - `passthrough()` – for spies, run the real command while recording it.
-- `assert_called()`, `assert_not_called()`, `assert_called_with(*args,
-  stdin=None, env=None)` – spy-only helpers for post-verification assertions.
+- `assert_called()`, `assert_not_called()`,
+  `assert_called_with(*args, stdin=None, env=None)` – spy-only helpers for
+  post-verification assertions.
 
 Refer to the [design document](./python-native-command-mocking-design.md) for
 the full table of methods and examples.

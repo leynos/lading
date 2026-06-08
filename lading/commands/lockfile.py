@@ -29,6 +29,7 @@ for lockfile_path in lockfiles:
 from __future__ import annotations
 
 import collections.abc as cabc
+import dataclasses as dc
 import logging
 import typing as typ
 from pathlib import Path
@@ -46,6 +47,19 @@ class LockfileRefreshError(LadingError):
     """Raised when Cargo cannot regenerate a lockfile."""
 
 
+class LockfileDiscoveryError(LadingError):
+    """Raised when git cannot list tracked lockfiles."""
+
+
+@dc.dataclass(frozen=True, slots=True)
+class LockfileFreshness:
+    """Result from validating a lockfile under Cargo's locked mode."""
+
+    is_fresh: bool
+    is_stale: bool = False
+    detail: str = ""
+
+
 def _handle_git_ls_files_failure(
     exit_code: int,
     stdout: str,
@@ -61,11 +75,13 @@ def _handle_git_ls_files_failure(
             "Skipping Cargo.lock discovery because %s is not a git repository",
             workspace_root,
         )
+        return ()
+    message = f"Failed to discover tracked Cargo.lock files in {workspace_root}"
+    if detail:
+        message = f"{message}: {detail}"
     else:
-        LOGGER.warning(
-            "Skipping Cargo.lock discovery after git ls-files failed: %s", detail
-        )
-    return ()
+        message = f"{message}: git ls-files exited with status {exit_code}"
+    raise LockfileDiscoveryError(message)
 
 
 def _lockfiles_with_manifests(
@@ -187,8 +203,8 @@ def refresh_lockfile(
 def validate_lockfile_freshness(
     manifest_path: Path,
     runner: CommandRunner,
-) -> bool:
-    """Return whether Cargo accepts ``manifest_path`` under ``--locked``.
+) -> LockfileFreshness:
+    """Return Cargo's locked-mode freshness result for ``manifest_path``.
 
     Parameters
     ----------
@@ -200,11 +216,12 @@ def validate_lockfile_freshness(
 
     Returns
     -------
-    bool
-        ``True`` if ``cargo metadata --locked`` succeeds with exit code 0;
-        ``False`` otherwise.
+    LockfileFreshness
+        Structured result describing whether the lockfile is fresh, stale
+        because Cargo says it needs updating under ``--locked``, or failed for
+        another reason.
     """
-    exit_code, _stdout, _stderr = runner(
+    exit_code, stdout, stderr = runner(
         (
             "cargo",
             "metadata",
@@ -215,10 +232,24 @@ def validate_lockfile_freshness(
         ),
         cwd=manifest_path.parent,
     )
+    detail = (stderr or stdout).strip()
     is_fresh = exit_code == 0
+    is_stale = _is_lockfile_stale_detail(detail)
+    state = "fresh"
+    if not is_fresh:
+        state = "stale" if is_stale else "failed"
     LOGGER.info(
         "Validated lockfile freshness for %s: %s",
         manifest_path,
-        "fresh" if is_fresh else "stale",
+        state,
     )
-    return is_fresh
+    return LockfileFreshness(is_fresh=is_fresh, is_stale=is_stale, detail=detail)
+
+
+def _is_lockfile_stale_detail(detail: str) -> bool:
+    """Return whether Cargo reported a locked lockfile needing regeneration."""
+    normalized = detail.lower()
+    return "--locked" in normalized and (
+        "needs to be updated" in normalized
+        or "cannot update the lock file" in normalized
+    )

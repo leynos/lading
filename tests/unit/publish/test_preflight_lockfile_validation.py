@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from lading.commands import publish, publish_preflight
+from lading.commands import lockfile, publish, publish_preflight
 
 if typ.TYPE_CHECKING:
     from syrupy.assertion import SnapshotAssertion
@@ -61,7 +61,13 @@ def test_validate_lockfile_freshness_reports_stale_lockfiles(
     monkeypatch.setattr(
         publish_preflight,
         "validate_lockfile_freshness",
-        lambda _manifest, _runner: False,
+        lambda _manifest, _runner: lockfile.LockfileFreshness(
+            is_fresh=False,
+            is_stale=True,
+            detail=(
+                "the lock file Cargo.lock needs to be updated but --locked was passed"
+            ),
+        ),
     )
 
     def runner(
@@ -72,7 +78,10 @@ def test_validate_lockfile_freshness_reports_stale_lockfiles(
     ) -> tuple[int, str, str]:
         return 0, "", ""
 
-    with pytest.raises(publish.PublishPreflightError) as excinfo:
+    with pytest.raises(
+        publish.PublishPreflightError,
+        match="Tracked Cargo\\.lock files are stale",
+    ) as excinfo:
         publish_preflight._validate_lockfile_freshness(tmp_path, runner=runner, env={})
 
     message = str(excinfo.value)
@@ -105,7 +114,13 @@ def test_validate_lockfile_freshness_error_snapshot(
     monkeypatch.setattr(
         publish_preflight,
         "validate_lockfile_freshness",
-        lambda _manifest, _runner: False,
+        lambda _manifest, _runner: lockfile.LockfileFreshness(
+            is_fresh=False,
+            is_stale=True,
+            detail=(
+                "the lock file Cargo.lock needs to be updated but --locked was passed"
+            ),
+        ),
     )
 
     def runner(
@@ -116,9 +131,47 @@ def test_validate_lockfile_freshness_error_snapshot(
     ) -> tuple[int, str, str]:
         return 0, "", ""
 
-    with pytest.raises(publish.PublishPreflightError) as excinfo:
+    with pytest.raises(
+        publish.PublishPreflightError,
+        match="Tracked Cargo\\.lock files are stale",
+    ) as excinfo:
         publish_preflight._validate_lockfile_freshness(
             workspace_root, runner=runner, env={}
         )
 
     assert str(excinfo.value) == snapshot()
+
+
+def test_validate_lockfile_freshness_surfaces_cargo_failures(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Cargo failures unrelated to stale lockfiles abort with cargo details."""
+    root_lockfile = tmp_path / "Cargo.lock"
+
+    monkeypatch.setattr(
+        publish_preflight,
+        "discover_tracked_lockfiles",
+        lambda _root, _runner: (root_lockfile,),
+    )
+    monkeypatch.setattr(
+        publish_preflight,
+        "validate_lockfile_freshness",
+        lambda _manifest, _runner: lockfile.LockfileFreshness(
+            is_fresh=False,
+            detail="failed to download registry index",
+        ),
+    )
+
+    def runner(
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        return 0, "", ""
+
+    with pytest.raises(
+        publish.PublishPreflightError,
+        match="failed to download registry index",
+    ):
+        publish_preflight._validate_lockfile_freshness(tmp_path, runner=runner, env={})

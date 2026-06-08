@@ -83,27 +83,37 @@ def test_split_command_rejects_empty_sequence() -> None:
 
 
 @pytest.mark.parametrize(
-    "command",
+    ("command", "expected_program", "expected_args"),
     [
-        ("cargo", "check"),
-        ("cargo", "test", "--workspace"),
-        ("git", "status", "--porcelain"),
+        pytest.param(
+            ("cargo", "check"),
+            "cargo::check",
+            [],
+            id="cargo_check",
+        ),
+        pytest.param(
+            ("cargo", "test", "--workspace"),
+            "cargo::test",
+            ["--workspace"],
+            id="cargo_test_workspace",
+        ),
+        pytest.param(
+            ("git", "status", "--porcelain"),
+            "git",
+            ["status", "--porcelain"],
+            id="git_status",
+        ),
     ],
 )
 def test_normalise_cmd_mox_command_forwards_non_cargo_commands(
     command: tuple[str, ...],
+    expected_program: str,
+    expected_args: list[str],
 ) -> None:
     """cmd-mox normalisation preserves non-cargo commands and arguments."""
     program, args = command[0], tuple(command[1:])
 
     rewritten_program, rewritten_args = normalise_cmd_mox_command(program, args)
-
-    if program == "cargo" and args:
-        expected_program = f"cargo::{args[0]}"
-        expected_args = list(args[1:])
-    else:
-        expected_program = program
-        expected_args = list(args)
 
     assert rewritten_program == expected_program
     assert rewritten_args == expected_args

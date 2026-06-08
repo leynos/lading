@@ -19,6 +19,17 @@ workspaces. It can:
 > must adopt the new per-crate ordering; no configuration knob restores
 > the prior behaviour.
 
+The 0.1.0 release also changes workspace README adoption:
+
+> **Breaking change in 0.1.0 — workspace README adoption**
+>
+> Prior to 0.1.0, `lading publish` copied the workspace `README.md` into
+> crates that set `readme.workspace = true` while preparing the staged
+> workspace. From 0.1.0 onwards, `lading bump` performs that adoption and
+> rewrites relative Markdown links before publishing. Commit the adopted
+> crate README files produced by `lading bump` before running `lading publish`;
+> publish staging no longer creates or repairs those files.
+
 ## Installation
 
 ### Install from a wheel (recommended for internal distribution)
@@ -128,10 +139,11 @@ crate fails, crates already uploaded to crates.io are not rolled back. Reruns
 skip versions that are already present on crates.io and continue with the
 remaining crates.
 
-`publish` stages the workspace into a temporary directory before packaging. If
-any member crate sets `readme.workspace = true`, `lading` copies the workspace
-`README.md` into that crate in the staged workspace so `cargo package` can
-include it.
+`bump` adopts the workspace `README.md` for any member crate that sets
+`readme.workspace = true`. The adopted README is written into the crate
+directory and relative Markdown links are rewritten so they still resolve from
+that directory. `publish` then stages the already-prepared workspace into a
+temporary directory before packaging.
 
 #### Dry-run limitations with unpublished workspace dependencies
 
@@ -241,13 +253,13 @@ stderr_tail_lines = 40
   single run, or `--rebuild-lockfiles` to force regeneration when
   `rebuild_lockfiles` is configured as `false`.
 
-Lockfile regeneration runs `cargo update --workspace --manifest-path <manifest>`
-for the workspace root and each configured nested manifest. This updates
-workspace package entries while avoiding a full transitive dependency refresh.
-If Cargo fails, manifest changes have already been written. Fix the underlying
-Cargo error and rerun `lading bump`, use `--no-rebuild-lockfiles` and regenerate
-lockfiles manually, or run the relevant Cargo command yourself before committing
-the bump.
+Lockfile regeneration runs
+`cargo update --workspace --manifest-path <manifest>` for the workspace root
+and each configured nested manifest. This updates workspace package entries
+while avoiding a full transitive dependency refresh. If Cargo fails, manifest
+changes have already been written. Fix the underlying Cargo error and rerun
+`lading bump`, use `--no-rebuild-lockfiles` and regenerate lockfiles manually,
+or run the relevant Cargo command yourself before committing the bump.
 
 ### `[bump.documentation]`
 

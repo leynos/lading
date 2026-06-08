@@ -155,6 +155,21 @@ def test_discover_tracked_lockfiles_handles_non_git_directory(
     )
 
 
+def test_discover_tracked_lockfiles_raises_on_git_failure(tmp_path: Path) -> None:
+    """Git failures other than non-repositories are surfaced to callers."""
+
+    def runner(
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        return 128, "", "fatal: bad revision"
+
+    with pytest.raises(lockfile.LockfileDiscoveryError, match="bad revision"):
+        lockfile.discover_tracked_lockfiles(tmp_path, runner)
+
+
 def test_refresh_lockfile_returns_lockfile_path(tmp_path: Path) -> None:
     """Successful lockfile refresh returns the expected Cargo.lock path."""
     manifest = tmp_path / "Cargo.toml"
@@ -198,7 +213,9 @@ def test_refresh_lockfile_raises_on_failure(tmp_path: Path) -> None:
         lockfile.refresh_lockfile(manifest, runner)
 
 
-def _validate_lockfile_freshness_for_exit_code(tmp_path: Path, exit_code: int) -> bool:
+def _validate_lockfile_freshness_for_result(
+    tmp_path: Path, exit_code: int, stderr: str
+) -> lockfile.LockfileFreshness:
     """Run lockfile freshness validation with a fake cargo exit code."""
     manifest = tmp_path / "Cargo.toml"
 
@@ -217,23 +234,46 @@ def _validate_lockfile_freshness_for_exit_code(tmp_path: Path, exit_code: int) -
             "--format-version=1",
         )
         assert cwd == manifest.parent
-        return exit_code, "", "stale"
+        return exit_code, "", stderr
 
     return lockfile.validate_lockfile_freshness(manifest, runner)
 
 
-@pytest.mark.parametrize("case", [(0, True), (101, False)])
+@pytest.mark.parametrize(
+    "case",
+    [
+        (0, "", lockfile.LockfileFreshness(is_fresh=True)),
+        (
+            101,
+            "the lock file Cargo.lock needs to be updated but --locked was passed",
+            lockfile.LockfileFreshness(
+                is_fresh=False,
+                is_stale=True,
+                detail=(
+                    "the lock file Cargo.lock needs to be updated but "
+                    "--locked was passed"
+                ),
+            ),
+        ),
+        (
+            101,
+            "failed to download registry index",
+            lockfile.LockfileFreshness(
+                is_fresh=False,
+                is_stale=False,
+                detail="failed to download registry index",
+            ),
+        ),
+    ],
+)
 def test_validate_lockfile_freshness_parametrized(
     tmp_path: Path,
-    case: tuple[int, bool],
+    case: tuple[int, str, lockfile.LockfileFreshness],
 ) -> None:
-    """Cargo metadata exit status determines whether the lockfile is fresh."""
-    exit_code, expected_bool = case
-    actual = _validate_lockfile_freshness_for_exit_code(tmp_path, exit_code)
-    assert actual is expected_bool, (
-        "freshness result did not match cargo metadata exit code; "
-        f"exit_code={exit_code}, expected {expected_bool}, got {actual}"
-    )
+    """Cargo metadata output determines the lockfile freshness state."""
+    exit_code, stderr, expected = case
+    actual = _validate_lockfile_freshness_for_result(tmp_path, exit_code, stderr)
+    assert actual == expected
 
 
 @given(stdout=_hypothesis_stdout)

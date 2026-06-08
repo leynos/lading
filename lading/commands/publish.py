@@ -222,58 +222,13 @@ def _copy_workspace_tree(
     return staging_root
 
 
-def _collect_workspace_readme_targets(
-    workspace: WorkspaceGraph,
-) -> tuple[WorkspaceCrate, ...]:
-    """Return crates that opt into using the workspace README."""
-    return tuple(crate for crate in workspace.crates if crate.readme_is_workspace)
-
-
-def _stage_workspace_readmes(
-    *,
-    crates: tuple[WorkspaceCrate, ...],
-    workspace_root: Path,
-    staging_root: Path,
-) -> tuple[Path, ...]:
-    """Copy the workspace README into ``crates`` located at ``staging_root``."""
-    if not crates:
-        return ()
-
-    workspace_readme = workspace_root / "README.md"
-    if not workspace_readme.exists():
-        message = (
-            "Workspace README.md is required by crates that set readme.workspace = true"
-        )
-        raise PublishPreparationError(message)
-
-    copied: list[Path] = []
-    for crate in crates:
-        try:
-            relative_crate_root = crate.root_path.relative_to(workspace_root)
-        except ValueError as exc:
-            message = (
-                "Crate "
-                f"{crate.name!r} is outside the workspace root; "
-                "cannot stage README"
-            )
-            raise PublishPreparationError(message) from exc
-        staged_crate_root = staging_root / relative_crate_root
-        staged_crate_root.mkdir(parents=True, exist_ok=True)
-        staged_readme = staged_crate_root / "README.md"
-        shutil.copyfile(workspace_readme, staged_readme)
-        copied.append(staged_readme)
-
-    copied.sort(key=lambda path: path.relative_to(staging_root).as_posix())
-    return tuple(copied)
-
-
 def prepare_workspace(
     plan: PublishPlan,
     workspace: WorkspaceGraph,
     *,
     options: PublishOptions | None = None,
 ) -> PublishPreparation:
-    """Stage a workspace copy and propagate workspace READMEs."""
+    """Stage a workspace copy for publishing."""
     active_options = PublishOptions() if options is None else options
     build_directory = _normalise_build_directory(
         plan.workspace_root, active_options.build_directory
@@ -288,19 +243,8 @@ def prepare_workspace(
         preserve_symlinks=active_options.preserve_symlinks,
     )
     LOGGER.info("Staged workspace created at %s", staging_root)
-    readme_crates = _collect_workspace_readme_targets(workspace)
-    copied_readmes = _stage_workspace_readmes(
-        crates=readme_crates,
-        workspace_root=plan.workspace_root,
-        staging_root=staging_root,
-    )
-    LOGGER.info(
-        "Workspace README staging complete: %d files copied",
-        len(copied_readmes),
-    )
-    preparation = PublishPreparation(
-        staging_root=staging_root, copied_readmes=copied_readmes
-    )
+    LOGGER.info("Workspace README staging skipped; handled by lading bump")
+    preparation = PublishPreparation(staging_root=staging_root, copied_readmes=())
     if active_options.cleanup:
         build_root = staging_root.parent
 
@@ -315,16 +259,7 @@ def prepare_workspace(
 def _format_preparation_summary(preparation: PublishPreparation) -> tuple[str, ...]:
     """Return formatted summary lines for staging results."""
     lines = [f"Staged workspace at: {preparation.staging_root}"]
-    if preparation.copied_readmes:
-        lines.append("Copied workspace README to:")
-        for path in preparation.copied_readmes:
-            try:
-                relative_path = path.relative_to(preparation.staging_root)
-            except ValueError:
-                relative_path = path
-            lines.append(f"- {relative_path}")
-    else:
-        lines.append("Copied workspace README to: none required")
+    lines.append("Workspace READMEs are handled by lading bump.")
     return tuple(lines)
 
 

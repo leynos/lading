@@ -80,52 +80,10 @@ def test_format_plan_formats_skipped_sections(
     assert lines[missing_index + 1] == "- missing"
 
 
-def test_format_preparation_summary_lists_copied_readmes(
+def test_format_preparation_summary_reports_bump_readme_handling(
     tmp_path: Path,
 ) -> None:
-    """Summary includes relative README paths when copies exist."""
-    staging_root = tmp_path / "staging"
-    staging_root.mkdir()
-    readme_alpha = staging_root / "crates" / "alpha" / "README.md"
-    readme_beta = staging_root / "crates" / "beta" / "README.md"
-    for path in (readme_alpha, readme_beta):
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("workspace", encoding="utf-8")
-    preparation = publish.PublishPreparation(
-        staging_root=staging_root, copied_readmes=(readme_alpha, readme_beta)
-    )
-
-    lines = publish._format_preparation_summary(preparation)
-
-    assert lines[0] == f"Staged workspace at: {staging_root}"
-    assert "Copied workspace README to:" in lines[1]
-    assert "- crates/alpha/README.md" in lines
-    assert "- crates/beta/README.md" in lines
-
-
-def test_format_preparation_summary_handles_external_paths(
-    tmp_path: Path,
-) -> None:
-    """Summary falls back to absolute paths when not under the staging root."""
-    staging_root = tmp_path / "staging"
-    staging_root.mkdir()
-    external_readme = tmp_path.parent / "external-readme.md"
-    external_readme.write_text("workspace", encoding="utf-8")
-    preparation = publish.PublishPreparation(
-        staging_root=staging_root, copied_readmes=(external_readme,)
-    )
-
-    lines = publish._format_preparation_summary(preparation)
-
-    assert lines[0] == f"Staged workspace at: {staging_root}"
-    assert lines[1] == "Copied workspace README to:"
-    assert f"- {external_readme}" in lines
-
-
-def test_format_preparation_summary_reports_absence(
-    tmp_path: Path,
-) -> None:
-    """Summary highlights when no README copies were required."""
+    """Summary explains that README adoption is handled before publish."""
     staging_root = tmp_path / "staging"
     staging_root.mkdir()
     preparation = publish.PublishPreparation(
@@ -136,5 +94,5 @@ def test_format_preparation_summary_reports_absence(
 
     assert lines == (
         f"Staged workspace at: {staging_root}",
-        "Copied workspace README to: none required",
+        "Workspace READMEs are handled by lading bump.",
     )

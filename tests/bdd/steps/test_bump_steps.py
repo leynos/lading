@@ -6,6 +6,8 @@ import typing as typ
 
 from pytest_bdd import given, parsers, then, when
 
+from lading.commands import bump_readme
+
 from . import config_fixtures as _config_fixtures  # noqa: F401
 from . import manifest_fixtures as _manifest_fixtures  # noqa: F401
 from . import metadata_fixtures as _metadata_fixtures  # noqa: F401
@@ -126,7 +128,7 @@ def then_cli_output_lists_manifest_paths(
     manifest_lines = [
         line
         for line in stdout_lines
-        if line.startswith("- ") and not line.endswith("(lockfile)")
+        if line.startswith("- ") and line.endswith("Cargo.toml")
     ]
     assert manifest_lines == expected_lines
 
@@ -136,6 +138,16 @@ def then_cli_output_lists_documentation_path(
     cli_run: dict[str, typ.Any], expected: str
 ) -> None:
     """Assert that the CLI output includes ``expected`` as a documentation line."""
+    assert cli_run["returncode"] == 0
+    stdout_lines = [line.strip() for line in cli_run["stdout"].splitlines()]
+    assert expected in stdout_lines
+
+
+@then(parsers.parse('the CLI output lists README path "{expected}"'))
+def then_cli_output_lists_readme_path(
+    cli_run: dict[str, typ.Any], expected: str
+) -> None:
+    """Assert that the CLI output includes ``expected`` as a README line."""
     assert cli_run["returncode"] == 0
     stdout_lines = [line.strip() for line in cli_run["stdout"].splitlines()]
     assert expected in stdout_lines
@@ -177,3 +189,47 @@ def then_documentation_contains(
     normalised_expected = expected.replace(r"\"", '"')
     contents = doc_path.read_text(encoding="utf-8")
     assert normalised_expected in contents
+
+
+@then(parsers.parse('the crate "{crate_name}" README contains "{expected}"'))
+def then_crate_readme_contains(
+    cli_run: dict[str, typ.Any], crate_name: str, expected: str
+) -> None:
+    """Assert that the adopted crate README contains ``expected``."""
+    readme_path = cli_run["workspace"] / "crates" / crate_name / "README.md"
+    normalised_expected = expected.replace(r"\"", '"')
+    contents = readme_path.read_text(encoding="utf-8")
+    assert normalised_expected in contents
+
+
+@given(parsers.parse('the workspace README contains a relative link to "{target}"'))
+def given_workspace_readme_relative_link(
+    workspace_directory: Path,
+    target: str,
+) -> None:
+    """Write a workspace README containing a relative Markdown link."""
+    readme_path = workspace_directory / "README.md"
+    readme_path.write_text(
+        f"# Workspace README\n\nSee [migration guide]({target}).\n",
+        encoding="utf-8",
+    )
+
+
+@given(
+    parsers.parse(
+        'the crate "{crate_name}" README already matches the workspace README'
+    )
+)
+def given_crate_readme_matches_workspace(
+    workspace_directory: Path,
+    crate_name: str,
+) -> None:
+    """Write the already-transposed README expected for ``crate_name``."""
+    workspace_readme = workspace_directory / "README.md"
+    crate_root = workspace_directory / "crates" / crate_name
+    crate_readme = crate_root / "README.md"
+    rewritten_text, _ = bump_readme.rewrite_relative_links(
+        workspace_readme.read_text(encoding="utf-8"),
+        bump_readme.compute_link_prefix(crate_root.relative_to(workspace_directory)),
+    )
+    crate_readme.write_text(rewritten_text, encoding="utf-8")

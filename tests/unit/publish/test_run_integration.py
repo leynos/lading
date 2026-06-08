@@ -286,7 +286,7 @@ def test_run_keeps_dry_run_publication_batched(
         message.startswith("Staged workspace created at ")
         for message in caplog.messages
     )
-    assert "Workspace README staging complete: 0 files copied" in caplog.messages
+    assert "Workspace README staging skipped; handled by lading bump" in caplog.messages
     assert (
         f"Publish workflow completed successfully for workspace {root}"
         in caplog.messages
@@ -555,7 +555,14 @@ def test_run_unit_tests_only_with_excludes(
     assert "--all-targets" not in args
     assert "--lib" in args
     assert "--bins" in args
-    assert args[-4:] == ("--exclude", "alpha", "--exclude", "gamma")
+    assert args[-6:] == (
+        "--exclude",
+        "alpha",
+        "--exclude",
+        "gamma",
+        "--lib",
+        "--bins",
+    )
 
 
 def test_dirty_workspace_allowed_by_default(
