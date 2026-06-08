@@ -3,14 +3,38 @@
 from __future__ import annotations
 
 import collections.abc as cabc
-import typing as typ
+import string
+from pathlib import Path
 
+import hypothesis.strategies as st
 import pytest
+from hypothesis import given
 
 from lading.commands import lockfile
 
-if typ.TYPE_CHECKING:
-    from pathlib import Path
+# ---------------------------------------------------------------------------
+# Hypothesis strategies for _lockfiles_with_manifests property tests
+# ---------------------------------------------------------------------------
+
+_safe_component: st.SearchStrategy[str] = st.text(
+    alphabet=string.ascii_lowercase + string.digits + "_-",
+    min_size=1,
+    max_size=16,
+).filter(lambda s: s != "target")
+
+_path_component: st.SearchStrategy[str] = st.one_of(st.just("target"), _safe_component)
+
+_lockfile_line: st.SearchStrategy[str] = st.lists(
+    _path_component, min_size=1, max_size=4
+).map(lambda parts: "/".join(parts) + "/Cargo.lock")
+
+_hypothesis_stdout: st.SearchStrategy[str] = st.lists(
+    st.one_of(_lockfile_line, st.just(""), st.just("   ")),
+    min_size=0,
+    max_size=20,
+).map("\n".join)
+
+_HYPOTHESIS_WORKSPACE = Path("/repo")
 
 
 def test_discover_tracked_lockfiles_returns_empty_result(tmp_path: Path) -> None:
@@ -210,3 +234,61 @@ def test_validate_lockfile_freshness_parametrized(
         "freshness result did not match cargo metadata exit code; "
         f"exit_code={exit_code}, expected {expected_bool}, got {actual}"
     )
+
+
+@given(stdout=_hypothesis_stdout)
+def test_no_returned_path_contains_target_component(stdout: str) -> None:
+    """No returned lockfile path has 'target' as a relative path component."""
+    result = lockfile._lockfiles_with_manifests(
+        stdout,
+        _HYPOTHESIS_WORKSPACE,
+        manifest_exists=lambda _: True,
+    )
+    for path in result:
+        relative_parts = path.relative_to(_HYPOTHESIS_WORKSPACE).parts
+        assert "target" not in relative_parts, (
+            f"Returned path {path} contains a 'target' component; "
+            f"relative parts: {relative_parts}"
+        )
+
+
+@given(stdout=_hypothesis_stdout)
+def test_all_returned_paths_have_adjacent_manifest(stdout: str) -> None:
+    """Every returned path had manifest_exists approve its adjacent Cargo.toml."""
+    approved: set[Path] = set()
+
+    def manifest_exists(manifest_path: Path) -> bool:
+        """Approve candidates whose path hash is even."""
+        approved_result = hash(manifest_path) % 2 == 0
+        if approved_result:
+            approved.add(manifest_path)
+        return approved_result
+
+    returned = lockfile._lockfiles_with_manifests(
+        stdout,
+        _HYPOTHESIS_WORKSPACE,
+        manifest_exists=manifest_exists,
+    )
+    for path in returned:
+        expected_manifest = path.parent / "Cargo.toml"
+        assert expected_manifest in approved, (
+            f"Returned path {path} was not approved by manifest_exists; "
+            f"adjacent manifest {expected_manifest} not in approved set"
+        )
+
+
+@given(stdout=_hypothesis_stdout)
+def test_returned_paths_are_subset_of_git_stdout(stdout: str) -> None:
+    """Every returned path corresponds to a non-empty git stdout line."""
+    tracked_lines = {line.strip() for line in stdout.splitlines() if line.strip()}
+    result = lockfile._lockfiles_with_manifests(
+        stdout,
+        _HYPOTHESIS_WORKSPACE,
+        manifest_exists=lambda _: True,
+    )
+    for path in result:
+        relative = str(path.relative_to(_HYPOTHESIS_WORKSPACE))
+        assert relative in tracked_lines, (
+            f"Returned path {path} (relative: {relative!r}) "
+            f"does not appear in git stdout lines: {tracked_lines!r}"
+        )
