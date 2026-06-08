@@ -170,6 +170,7 @@ def given_sibling_dependency_is_not_indexed(
 def given_missing_dependency_is_in_plan() -> None:
     """Document that the dependency-chain fixture includes alpha in the plan."""
 
+
 @given("publish.order puts beta before alpha")
 def given_publish_order_puts_beta_before_alpha(workspace_directory: Path) -> None:
     """Configure an explicit publish order where beta precedes alpha."""

@@ -94,8 +94,41 @@ class _PublicationPipelineState:
 @dc.dataclass(frozen=True, slots=True)
 class PublishOptions:
     """Runtime configuration for publish planning, staging, and checks.
+
     Parameters
     ----------
+    allow_dirty:
+        When ``True`` the git cleanliness guard is skipped.
+    live:
+        When :data:`True`, execute ``cargo publish`` without ``--dry-run``.
+        Defaults to :data:`False` so publishing remains a dry-run unless
+        explicitly enabled.
+    build_directory:
+        Optional directory used to stage workspace artifacts. When ``None``,
+        a temporary directory is created for each invocation.
+    preserve_symlinks:
+        Control whether staging preserves symbolic links in the workspace
+        clone instead of dereferencing them.
+    cleanup:
+        When :data:`True`, the staged workspace is removed automatically on
+        process exit.
+    configuration:
+        Optional :class:`~lading.config.LadingConfig` instance to reuse instead
+        of loading from disk.
+    workspace:
+        Optional pre-loaded workspace graph to reuse for planning.
+    command_runner:
+        Optional callable used to execute shell commands. Primarily intended
+        for tests and dependency injection.
+    allow_unpublished_workspace_deps:
+        When :data:`True`, downgrade ``cargo package`` failures caused by a
+        sibling workspace crate version not yet visible on the crates.io index
+        to a warning, provided the missing crate is part of the planned
+        publish set. Only valid in dry-run mode (``live=False``); combining it
+        with ``live=True`` raises :class:`PublishPreflightError`.
+
+    """
+
     allow_dirty: bool = True
     live: bool = False
     build_directory: Path | None = None
@@ -105,7 +138,6 @@ class PublishOptions:
     workspace: WorkspaceGraph | None = None
     command_runner: CommandRunner | None = None
     allow_unpublished_workspace_deps: bool = False
-    """
 
 
 @dc.dataclass(frozen=True, slots=True)
