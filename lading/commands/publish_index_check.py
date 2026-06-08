@@ -261,6 +261,34 @@ def _publishable_name_indexes(plan: PublishPlan) -> dict[str, int]:
     }
 
 
+def _find_current_crate_index(
+    invocation: _CargoInvocation,
+    plan: PublishPlan,
+) -> int:
+    """Return the position of the failing crate in the publish plan.
+
+    Raises ``RuntimeError`` when the crate is absent from the plan, which
+    indicates a programming error rather than a user-facing condition.
+    """
+    canonical = _canonical_crate_name(invocation.crate_name)
+    index = next(
+        (
+            i
+            for i, entry in enumerate(plan.publishable)
+            if _canonical_crate_name(entry.name) == canonical
+        ),
+        None,
+    )
+    if index is None:
+        message = (
+            f"cargo {invocation.subcommand} failed for crate "
+            f"{invocation.crate_name}, but that crate is not part of the "
+            "current publish plan."
+        )
+        raise RuntimeError(message)
+    return index
+
+
 def _handle_index_missing_version(
     invocation: _CargoInvocation,
     *,
@@ -288,15 +316,7 @@ def _handle_index_missing_version(
         )
 
     publishable_name_indexes = _publishable_name_indexes(handling.plan)
-    current_name = _canonical_crate_name(invocation.crate_name)
-    current_index = publishable_name_indexes.get(current_name)
-    if current_index is None:
-        message = (
-            f"cargo {invocation.subcommand} failed for crate "
-            f"{invocation.crate_name}, but that crate is not part of the "
-            "current publish plan."
-        )
-        raise RuntimeError(message)
+    current_index = _find_current_crate_index(invocation, handling.plan)
     missing_canonical_name = _canonical_crate_name(missing_name)
     missing_index = publishable_name_indexes.get(missing_canonical_name)
     if missing_index is None:
