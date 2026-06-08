@@ -372,7 +372,7 @@ def _handle_index_missing_version(
         missing_name,
     )
     handling.logger.debug(
-        "canonicalised dependency name %r → %r",
+        "canonicalised dependency name %r -> %r",
         missing_name,
         missing_canonical_name,
     )

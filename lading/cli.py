@@ -157,7 +157,7 @@ def _resolve_allow_unpublished_workspace_deps(
         resolved_value = allow_unpublished_workspace_deps
         LOGGER.debug(
             "_resolve_allow_unpublished_workspace_deps: raw=%r live=%r "
-            "→ resolved=%r (explicit flag)",
+            "-> resolved=%r (explicit flag)",
             allow_unpublished_workspace_deps,
             live,
             resolved_value,
@@ -167,7 +167,7 @@ def _resolve_allow_unpublished_workspace_deps(
         resolved_value = False
         LOGGER.debug(
             "_resolve_allow_unpublished_workspace_deps: raw=%r live=%r "
-            "→ resolved=False (live mode suppresses default)",
+            "-> resolved=False (live mode suppresses default)",
             allow_unpublished_workspace_deps,
             live,
         )
@@ -178,7 +178,7 @@ def _resolve_allow_unpublished_workspace_deps(
     resolved_value = True
     LOGGER.debug(
         "_resolve_allow_unpublished_workspace_deps: raw=%r live=%r "
-        "→ resolved=True (dry-run default)",
+        "-> resolved=True (dry-run default)",
         allow_unpublished_workspace_deps,
         live,
     )
