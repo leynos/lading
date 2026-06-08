@@ -143,12 +143,14 @@ crate manifest. Rerunning `lading bump` will not refresh lockfiles once the
 manifests are already rewritten.
 
 `validate_lockfile_freshness(manifest_path, runner)` runs
-`cargo metadata --locked --manifest-path ... --format-version=1`. It returns
-`True` on success and `False` otherwise. `_validate_lockfile_freshness` in
-`publish_preflight.py` calls it before the cargo check/test pre-flight.
+`cargo metadata --locked --manifest-path ... --format-version=1`. It returns a
+`LockfileFreshness` result that distinguishes fresh lockfiles, lockfiles that
+Cargo says need updating under `--locked`, and unrelated Cargo failures.
+`_validate_lockfile_freshness` in `publish_preflight.py` calls it before the
+cargo check/test pre-flight.
 
-`LockfileRefreshError` inherits `LadingError`; its message includes Cargo
-stderr.
+`LockfileDiscoveryError` and `LockfileRefreshError` inherit `LadingError`;
+their messages include git or Cargo details respectively.
 
 ### `load_cargo_metadata`
 
@@ -243,6 +245,7 @@ area so existing handling remains precise:
 | `WorkspaceModelError` | `lading.workspace.models` | Base for workspace graph/model validation failures. |
 | `CargoMetadataError` | `lading.workspace.metadata` | Base for cargo metadata execution and parsing failures. |
 | `CommandSpawnError` | `lading.runtime.subprocess_runner` | Raised when the subprocess runner cannot spawn an external command. |
+| `LockfileDiscoveryError` | `lading.commands.lockfile` | Raised when git cannot list tracked lockfiles. |
 | `LockfileRefreshError` | `lading.commands.lockfile` | Raised when `cargo generate-lockfile` fails. |
 | `LockfileRegenerationError` | `lading.commands.bump_lockfiles` | Raised when configured bump lockfile manifests are invalid or `cargo update --workspace` fails. |
 | `PublishPlanError` | `lading.commands.publish_plan` | Raised when a publish plan cannot be constructed. |

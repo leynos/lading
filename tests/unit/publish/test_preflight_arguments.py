@@ -39,8 +39,8 @@ def test_build_test_arguments_with_no_unit_tests_and_no_excludes() -> None:
     assert result == ["--workspace"]
 
 
-def test_build_test_arguments_appends_unit_test_flags_before_excludes() -> None:
-    """Unit tests only mode inserts lib/bin flags ahead of exclusions."""
+def test_build_test_arguments_appends_unit_test_flags_after_excludes() -> None:
+    """Unit tests only mode inserts lib/bin flags after exclusions."""
     base = ["--workspace"]
     options = _make_options(
         unit_tests_only=True, test_excludes=("beta", " alpha ", "beta")
@@ -48,8 +48,8 @@ def test_build_test_arguments_appends_unit_test_flags_before_excludes() -> None:
 
     result = publish_preflight._build_test_arguments(base, options)
 
-    assert result[:3] == ["--workspace", "--lib", "--bins"]
-    assert result[3:] == ["--exclude", "alpha", "--exclude", "beta"]
+    assert result[1:5] == ["--exclude", "alpha", "--exclude", "beta"]
+    assert result[5:] == ["--lib", "--bins"]
 
 
 def test_build_test_arguments_ignores_blank_excludes() -> None:

@@ -7,10 +7,10 @@ callers can catch a single package-level type without also catching unrelated
 Python runtime failures.
 
 Examples include `ConfigurationError`, `PublishPreflightError`,
-`CargoMetadataError`, `WorkspaceModelError`, and `LockfileRefreshError`.
-Feature-specific subclasses should continue to inherit from their local root
-exception, preserving precise handling within each component while keeping a
-consistent package-wide exception hierarchy.
+`CargoMetadataError`, `WorkspaceModelError`, `LockfileDiscoveryError`, and
+`LockfileRefreshError`. Feature-specific subclasses should continue to inherit
+from their local root exception, preserving precise handling within each
+component while keeping a consistent package-wide exception hierarchy.
 """
 
 from __future__ import annotations

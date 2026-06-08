@@ -555,7 +555,14 @@ def test_run_unit_tests_only_with_excludes(
     assert "--all-targets" not in args
     assert "--lib" in args
     assert "--bins" in args
-    assert args[-4:] == ("--exclude", "alpha", "--exclude", "gamma")
+    assert args[-6:] == (
+        "--exclude",
+        "alpha",
+        "--exclude",
+        "gamma",
+        "--lib",
+        "--bins",
+    )
 
 
 def test_dirty_workspace_allowed_by_default(

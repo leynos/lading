@@ -219,8 +219,16 @@ def _validate_lockfile_freshness(
     stale_lockfiles: list[Path] = []
     for lockfile_path in tracked:
         manifest_path = lockfile_path.parent / "Cargo.toml"
-        if not validate_lockfile_freshness(manifest_path, runner_with_env):
+        freshness = validate_lockfile_freshness(manifest_path, runner_with_env)
+        if freshness.is_fresh:
+            continue
+        if freshness.is_stale:
             stale_lockfiles.append(lockfile_path)
+            continue
+        detail = freshness.detail or "cargo metadata --locked failed"
+        message = f"Cargo lockfile freshness check failed for {manifest_path}: {detail}"
+        LOGGER.error(message)
+        raise PublishPreflightError(message)
 
     if not stale_lockfiles:
         LOGGER.info("All %d tracked lockfile(s) are fresh under --locked", len(tracked))
@@ -267,11 +275,11 @@ def _build_test_arguments(
 ) -> list[str]:
     """Return cargo test arguments derived from ``options``."""
     arguments = list(base_arguments)
-    if options.unit_tests_only:
-        arguments.extend(("--lib", "--bins"))
     for crate_name in _normalise_test_excludes(options.test_excludes):
         # Sorted unique values keep cargo invocations deterministic for tests/logging.
         arguments.extend(("--exclude", crate_name))
+    if options.unit_tests_only:
+        arguments.extend(("--lib", "--bins"))
     return arguments
 
 

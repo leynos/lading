@@ -67,7 +67,7 @@ def test_load_cargo_metadata_handles_stdout_variants(
 
 def test_load_cargo_metadata_suppresses_stdout_echo(tmp_path: Path) -> None:
     """Cargo metadata captures JSON without echoing it to the terminal."""
-    recorded_echo_stdout: list[bool] = []
+    echo_flags: list[bool] = []
 
     def runner(
         command: tuple[str, ...],
@@ -77,13 +77,13 @@ def test_load_cargo_metadata_suppresses_stdout_echo(tmp_path: Path) -> None:
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
         del command, cwd, env
-        recorded_echo_stdout.append(echo_stdout)
+        echo_flags.append(echo_stdout)
         return 0, json.dumps(_METADATA_PAYLOAD), ""
 
     result = load_cargo_metadata(tmp_path, runner=runner)
 
     assert result == _METADATA_PAYLOAD
-    assert recorded_echo_stdout == [False]
+    assert echo_flags == [False]
 
 
 def test_load_cargo_metadata_missing_executable(
