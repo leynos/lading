@@ -63,9 +63,6 @@ from lading.commands.cargo_output_adapter import (
 from lading.commands.publish_errors import PublishError, PublishPreflightError
 from lading.commands.publish_execution import (
     _invoke,
-    normalise_cmd_mox_command,
-    should_use_cmd_mox_stub,
-    split_command,
 )
 from lading.commands.publish_index_check import (
     _format_cargo_failure_message,
@@ -92,9 +89,6 @@ from lading.workspace import metadata as _metadata_module
 StripPatchesSetting = config_module.StripPatchesSetting
 metadata_module = _metadata_module
 PublishPlanError = _PublishPlanError
-_normalise_cmd_mox_command = normalise_cmd_mox_command
-_should_use_cmd_mox_stub = should_use_cmd_mox_stub
-_split_command = split_command
 _append_section = append_section
 _format_plan = format_plan
 _CargoPreflightOptions = _publish_preflight._CargoPreflightOptions
@@ -105,6 +99,7 @@ _compose_preflight_arguments = _publish_preflight._compose_preflight_arguments
 _normalise_test_excludes = _publish_preflight._normalise_test_excludes
 _run_aux_build_commands = _publish_preflight._run_aux_build_commands
 _run_cargo_preflight = _publish_preflight._run_cargo_preflight
+_validate_lockfile_freshness = _publish_preflight._validate_lockfile_freshness
 _verify_clean_working_tree = _publish_preflight._verify_clean_working_tree
 
 LOGGER = logging.getLogger(__name__)

@@ -204,7 +204,6 @@ yet. When enabled, `lading publish` downgrades that specific index-lookup
 failure to a warning and continues. The option is rejected at runtime when
 `live=True`, so it cannot mask a real upload failure.
 
-
 ### Exception hierarchy (`lading.exceptions`)
 
 `lading.exceptions.LadingError` is the package-level base class for domain
