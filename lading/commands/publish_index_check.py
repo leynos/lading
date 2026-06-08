@@ -282,6 +282,51 @@ def _publishable_name_indexes(plan: PublishPlan) -> dict[str, int]:
     }
 
 
+def _validate_dependency_placement(
+    context: _IndexMissingVersionFailure,
+    handling: _IndexMissingVersionHandling,
+    missing_name: str,
+) -> tuple[int, int, str]:
+    """Resolve both crate indexes and raise on all fatal placement conditions.
+
+    Returns ``(current_index, missing_index, missing_canonical_name)`` when
+    the missing dependency is in the plan and is ordered before the current
+    crate. Raises the context exception class for every other case.
+    """
+    publishable_name_indexes = _publishable_name_indexes(handling.plan)
+    canonical_current = _canonical_crate_name(context.invocation.crate_name)
+    current_index = publishable_name_indexes.get(canonical_current)
+    if current_index is None:
+        message = (
+            f"cargo {context.invocation.subcommand} failed for crate "
+            f"{context.invocation.crate_name}, but that crate is not part "
+            "of the current publish plan."
+        )
+        raise context.error_cls(message)
+    missing_canonical_name = _canonical_crate_name(missing_name)
+    handling.logger.debug(
+        "index-missing-version handler: current crate %r at publish-order "
+        "index %d; missing dependency canonical name %r",
+        context.invocation.crate_name,
+        current_index,
+        missing_canonical_name,
+    )
+    missing_index = publishable_name_indexes.get(missing_canonical_name)
+    handling.logger.debug(
+        "index-missing-version handler: missing dependency %r resolved to "
+        "publish-order index %s",
+        missing_name,
+        missing_index if missing_index is not None else "<not in plan>",
+    )
+    if missing_index is None:
+        _raise_out_of_plan_dependency(context, missing_name=missing_name)
+    if missing_index == current_index:
+        _raise_self_dependency(context, missing_name=missing_name)
+    if missing_index > current_index:
+        _raise_out_of_order_dependency(context, missing_name=missing_name)
+    return current_index, missing_index, missing_canonical_name
+
+
 def _handle_index_missing_version(
     invocation: _CargoInvocation,
     *,
@@ -309,37 +354,9 @@ def _handle_index_missing_version(
     if missing_name is None:
         _raise_name_extraction_failure(context)
 
-    publishable_name_indexes = _publishable_name_indexes(handling.plan)
-    canonical_current = _canonical_crate_name(invocation.crate_name)
-    current_index = publishable_name_indexes.get(canonical_current)
-    if current_index is None:
-        message = (
-            f"cargo {invocation.subcommand} failed for crate "
-            f"{invocation.crate_name}, but that crate is not part of the "
-            "current publish plan."
-        )
-        raise context.error_cls(message)
-    missing_canonical_name = _canonical_crate_name(missing_name)
-    handling.logger.debug(
-        "index-missing-version handler: current crate %r at publish-order "
-        "index %d; missing dependency canonical name %r",
-        invocation.crate_name,
-        current_index,
-        missing_canonical_name,
+    current_index, missing_index, missing_canonical_name = (
+        _validate_dependency_placement(context, handling, missing_name)
     )
-    missing_index = publishable_name_indexes.get(missing_canonical_name)
-    handling.logger.debug(
-        "index-missing-version handler: missing dependency %r resolved to "
-        "publish-order index %s",
-        missing_name,
-        missing_index if missing_index is not None else "<not in plan>",
-    )
-    if missing_index is None:
-        _raise_out_of_plan_dependency(context, missing_name=missing_name)
-    if missing_index == current_index:
-        _raise_self_dependency(context, missing_name=missing_name)
-    if missing_index > current_index:
-        _raise_out_of_order_dependency(context, missing_name=missing_name)
 
     if not handling.options.allow_unpublished_workspace_deps:
         _raise_unpublished_dependency_override_required(
