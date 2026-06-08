@@ -9,6 +9,9 @@ import typing as typ
 if typ.TYPE_CHECKING:
     from pathlib import Path
 
+_SINGLE_CHANGE_CATEGORY_COUNT = 1
+_PAIRED_CHANGE_CATEGORY_COUNT = 2
+
 
 @dc.dataclass(frozen=True, slots=True)
 class BumpChanges:
@@ -28,7 +31,11 @@ def _build_changes_description(changes: BumpChanges) -> str:
         parts.append(f"{len(changes.documents)} documentation file(s)")
     if changes.lockfiles:
         parts.append(f"{len(changes.lockfiles)} lockfile(s)")
-    return parts[0] if len(parts) == 1 else " and ".join(parts)
+    if len(parts) == _SINGLE_CHANGE_CATEGORY_COUNT:
+        return parts[0]
+    if len(parts) == _PAIRED_CHANGE_CATEGORY_COUNT:
+        return " and ".join(parts)
+    return f"{', '.join(parts[:-1])}, and {parts[-1]}"
 
 
 def _format_no_changes_message(target_version: str, *, dry_run: bool) -> str:

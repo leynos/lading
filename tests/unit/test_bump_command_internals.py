@@ -191,6 +191,16 @@ def test_build_changes_description_counts_sections(tmp_path: Path) -> None:
         == "2 manifest(s) and 1 documentation file(s)"
     )
 
+    changes = bump_output.BumpChanges(
+        manifests=(tmp_path / "Cargo.toml",),
+        documents=(tmp_path / "README.md",),
+        lockfiles=(tmp_path / "Cargo.lock",),
+    )
+    assert (
+        bump_output._build_changes_description(changes)
+        == "1 manifest(s), 1 documentation file(s), and 1 lockfile(s)"
+    )
+
 
 def test_format_no_changes_message_mentions_dry_run() -> None:
     """No-change messaging adapts to dry-run context."""
