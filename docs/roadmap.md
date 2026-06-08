@@ -109,6 +109,11 @@ workspace and member crate manifests.
     instead prints a summary of intended changes. Tracked `Cargo.lock` files
     are refreshed after manifest rewrites in live mode; in dry-run mode they
     are reported but not modified (closes `#61`).
+    Configurable lockfile rebuild (closes `#65`): `lading bump` regenerates
+    `Cargo.lock` files for the workspace root and any `lockfile_manifests`
+    listed in `lading.toml` by default; regeneration is suppressed by setting
+    `rebuild_lockfiles = false` in configuration or passing
+    `--no-rebuild-lockfiles` on the command line.
   - **Completion Criteria:** Running `lading bump 1.2.3 --dry-run` produces a
     report of all files that would be changed, and a subsequent check confirms
     no files were actually modified.
