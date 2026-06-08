@@ -419,6 +419,51 @@ The index-lookup handling is split across three helpers:
   operators to fix `publish.order` or rely on the dependency-derived
   topological sort.
 
+
+#### Supporting types
+
+`_IndexMissingVersionFailure` (frozen dataclass) carries the four values
+needed by every fatal-path helper: `error_cls` (the exception type to raise),
+`invocation` (the failing `cargo` invocation), `failure` (the pre-formatted
+failure message), and `logger`.
+
+Constructing it once in `_handle_index_missing_version` and passing it into
+helpers eliminates argument repetition and keeps call sites to two parameters.
+
+`_IndexMissingVersionHandling` (frozen dataclass) carries the ambient context
+for the entire handler call: the active `PublishPlan`, `_PublishExecutionOptions`,
+and `logger`.
+
+
+#### Shared message helpers
+
+`_format_missing_dependency_failure(failure, *, missing_name, reason, guidance)`
+builds the human-readable fatal error string from the pre-formatted cargo
+failure, the extracted dependency name, a domain-language reason clause, and an
+operator guidance sentence.
+
+`_log_missing_dependency_failure(logger, invocation, *, missing_name, detail)`
+emits a WARNING-level log entry for fatal index-missing-version paths, providing
+consistent phrasing across all raise helpers.
+
+
+#### Fatal-path helpers
+
+Each of the following accepts an `_IndexMissingVersionFailure` context object
+and a keyword-only `missing_name` argument, then unconditionally raises:
+
+- `_raise_name_extraction_failure(context)` — raised when the dependency name
+  cannot be parsed from the cargo diagnostic output.
+- `_raise_out_of_plan_dependency(context, *, missing_name)` — raised when the
+  missing dependency is absent from the publish plan entirely.
+- `_raise_self_dependency(context, *, missing_name)` — raised when the failing
+  crate lists itself as the unresolved dependency.
+- `_raise_out_of_order_dependency(context, *, missing_name)` — raised when the
+  missing dependency is in the plan but scheduled after the current crate.
+- `_raise_unpublished_dependency_override_required(context, *, missing_name)`
+  — raised when the dependency is in the plan and ordered correctly but the
+  unpublished workspace dependency override is disabled.
+
 #### Crate-name canonicalization
 
 `_canonical_crate_name(name)` normalizes a crate name by replacing every hyphen
