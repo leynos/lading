@@ -1,4 +1,18 @@
-"""Given steps for publish BDD scenarios."""
+"""Given steps for publish BDD scenarios.
+
+This module prepares the workspace, configuration, and command-runner state
+used by publish feature scenarios. Its fixtures create representative Cargo
+metadata, inject cmd-mox command responses, and write scenario-specific
+`lading.toml` configuration so the behavioural tests can exercise the public
+`lading publish` CLI through the same process boundary as a user.
+
+The step definitions pair with `test_publish_when_steps` for command
+execution, `test_publish_then_steps` for assertions, and
+`test_publish_infrastructure` for shared command-spy plumbing. Keeping setup
+steps here makes each feature scenario read as domain behaviour while the
+implementation remains explicit about which Cargo or git command is being
+simulated.
+"""
 
 from __future__ import annotations
 

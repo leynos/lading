@@ -1,41 +1,4 @@
 # serializer version: 1
-# name: test_pipeline_info_log_snapshot[dry_run]
-  tuple(
-    tuple(
-      'Publication mode: dry-run (batched two-phase pipeline)',
-      tuple(
-      ),
-    ),
-    tuple(
-      'Dry-run pipeline: packaging complete; starting publish phase',
-      tuple(
-      ),
-    ),
-  )
-# ---
-# name: test_index_missing_version_message_snapshot[flag_disabled][message]
-  '''
-  cargo package failed for crate beta with exit code 1: error: failed to prepare local package for uploading
-  
-  Caused by:
-    failed to select a version for the requirement `alpha = "^0.1.0"`
-    candidate versions found which didn't match: 0.0.1
-    location searched: crates.io index
-    required by package `beta v0.1.0`; dependency 'alpha' is scheduled in this publish run but is not yet on crates.io. Re-run with --allow-unpublished-workspace-deps (dry-run only) or follow the staged-publish workaround in the user guide.
-  '''
-# ---
-# name: test_index_missing_version_message_snapshot[flag_disabled][warning]
-  tuple(
-    tuple(
-      'cargo %s for crate %s failed due to unindexed sibling dependency %r (in plan); re-run with --allow-unpublished-workspace-deps to downgrade to a warning, or follow the staged-publish workaround',
-      tuple(
-        'package',
-        'beta',
-        'alpha',
-      ),
-    ),
-  )
-# ---
 # name: test_index_missing_in_plan_downgrade_snapshot[warning]
   tuple(
     tuple(
@@ -48,22 +11,25 @@
     ),
   )
 # ---
-# name: test_index_missing_version_message_snapshot[name_extraction_failure][message]
+# name: test_index_missing_out_of_order_message_snapshot[message]
   '''
   cargo package failed for crate beta with exit code 1: error: failed to prepare local package for uploading
-  
+  <blank>
   Caused by:
-    failed to select a version for the requirement without a quoted name
+    failed to select a version for the requirement `alpha = "^0.1.0"`
+    candidate versions found which didn't match: 0.0.1
     location searched: crates.io index
+    required by package `beta v0.1.0`; dependency 'alpha' appears after crate 'beta' in publish order, so it will not be available when this crate is published. Adjust publish.order so the dependency comes first, or omit publish.order and rely on dependency-derived topological sorting.
   '''
 # ---
-# name: test_index_missing_version_message_snapshot[name_extraction_failure][warning]
+# name: test_index_missing_out_of_order_message_snapshot[warning]
   tuple(
     tuple(
-      'cargo %s for crate %s matched index-missing-version markers but the dependency name could not be extracted; treating as fatal',
+      'cargo %s for crate %s failed due to unindexed sibling dependency %r which appears after the current crate in publish order; cannot continue',
       tuple(
         'package',
         'beta',
+        'alpha',
       ),
     ),
   )
@@ -84,6 +50,63 @@
         'package',
         'beta',
         'external_crate',
+      ),
+    ),
+  )
+# ---
+# name: test_index_missing_version_message_snapshot[flag_disabled][message]
+  '''
+  cargo package failed for crate beta with exit code 1: error: failed to prepare local package for uploading
+  <blank>
+  Caused by:
+    failed to select a version for the requirement `alpha = "^0.1.0"`
+    candidate versions found which didn't match: 0.0.1
+    location searched: crates.io index
+    required by package `beta v0.1.0`; dependency 'alpha' is scheduled in this publish run but is not yet on crates.io. Re-run with --allow-unpublished-workspace-deps (dry-run only) or follow the staged-publish workaround in the user guide.
+  '''
+# ---
+# name: test_index_missing_version_message_snapshot[flag_disabled][warning]
+  tuple(
+    tuple(
+      'cargo %s for crate %s failed due to unindexed sibling dependency %r (in plan); re-run with --allow-unpublished-workspace-deps to downgrade to a warning, or follow the staged-publish workaround',
+      tuple(
+        'package',
+        'beta',
+        'alpha',
+      ),
+    ),
+  )
+# ---
+# name: test_index_missing_version_message_snapshot[name_extraction_failure][message]
+  '''
+  cargo package failed for crate beta with exit code 1: error: failed to prepare local package for uploading
+  <blank>
+  Caused by:
+    failed to select a version for the requirement without a quoted name
+    location searched: crates.io index
+  '''
+# ---
+# name: test_index_missing_version_message_snapshot[name_extraction_failure][warning]
+  tuple(
+    tuple(
+      'cargo %s for crate %s matched index-missing-version markers but the dependency name could not be extracted; treating as fatal',
+      tuple(
+        'package',
+        'beta',
+      ),
+    ),
+  )
+# ---
+# name: test_pipeline_info_log_snapshot[dry_run]
+  tuple(
+    tuple(
+      'Publication mode: dry-run (batched two-phase pipeline)',
+      tuple(
+      ),
+    ),
+    tuple(
+      'Dry-run pipeline: packaging complete; starting publish phase',
+      tuple(
       ),
     ),
   )

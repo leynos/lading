@@ -234,37 +234,6 @@ def test_run_logs_when_unpublished_workspace_dependency_override_is_enabled(
         and "continuing because --allow-unpublished-workspace-deps is set" in message
         for message in caplog.messages
     )
-
-def test_run_allows_unpublished_workspace_deps_by_default_in_dry_run(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
-) -> None:
-    """Dry-run mode defaults to allowing projected sibling dependency availability."""
-    caplog.set_level(logging.INFO, logger="lading.commands.publish")
-    root = tmp_path / "workspace"
-    workspace = make_workspace(root, *make_dependency_chain(root))
-    configuration = make_config()
-
-    publish.run(
-        root,
-        configuration,
-        workspace,
-        options=publish.PublishOptions(
-            build_directory=tmp_path / "build",
-            command_runner=_make_beta_package_index_failure_runner(),
-            allow_unpublished_workspace_deps=None,
-        ),
-    )
-
-    assert (
-        "Allowing unpublished workspace dependencies during dry-run publish"
-        in caplog.messages
-    )
-    assert any(
-        "cargo package for crate beta could not resolve sibling dependency alpha"
-        in message
-        for message in caplog.messages
-    )
-
 def test_run_honours_explicit_unpublished_workspace_deps_opt_out(
     tmp_path: Path,
 ) -> None:

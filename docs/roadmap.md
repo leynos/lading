@@ -219,6 +219,10 @@ interacting with the `cargo publish` command.
     `--allow-unpublished-workspace-deps` dry-run-only flag (closes `#60`)
     downgrades index-lookup failures for in-plan workspace dependencies to
     warnings, enabling CI dry-run workflows on multi-crate release trains.
+    Issue `#89` tightens this dry-run path so the downgrade applies only when
+    the missing dependency is projected to have been published earlier in the
+    current publish order, and makes that behaviour the dry-run CLI default
+    with an explicit opt-out flag.
   - **Completion Criteria:** A dry-run test verifies that
     `cargo publish --dry-run` is called correctly. The logic gracefully handles
     and logs when a crate version is already published, then continues to the

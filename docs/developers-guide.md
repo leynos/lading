@@ -225,6 +225,15 @@ yet. When enabled, `lading publish` downgrades that specific index-lookup
 failure to a warning and continues. The option is rejected at runtime when
 `live=True`, so it cannot mask a real upload failure.
 
+The CLI accepts `--allow-unpublished-workspace-deps`,
+`--no-allow-unpublished-workspace-deps`, or an omitted value. The helper
+`lading.cli._resolve_allow_unpublished_workspace_deps()` resolves that
+tri-state command-line surface to the concrete boolean stored on
+`PublishOptions`: omitted dry-run invocations resolve to `True`, omitted live
+invocations resolve to `False`, and explicit values are honoured. This keeps
+the command dataclass free of adapter-only state while preserving the dry-run
+default expected by operators.
+
 ### Exception hierarchy (`lading.exceptions`)
 
 `lading.exceptions.LadingError` is the package-level base class for domain
@@ -317,7 +326,8 @@ diagnostic notes rather than replacing the original cargo failure.
 `_CargoInvocation`, the predicates and parsers that recognize Cargo's "no
 matching package/version" diagnostics, crate-name canonicalization, and
 `_handle_index_missing_version()`. That handler decides whether an index miss
-is out-of-plan and fatal, in-plan but still fatal, or in-plan and downgraded by
+is out-of-plan and fatal, in-plan but out of publish order and fatal, in-plan
+but still fatal, or in-plan and downgraded by
 `allow_unpublished_workspace_deps` during dry-run publication.
 
 ### `_PublishExecutionOptions`
@@ -388,10 +398,25 @@ The index-lookup handling is split across three helpers:
 - `_handle_index_missing_version(_CargoInvocation, *, plan, options)` applies
   the decision tree. If name extraction fails, the original Cargo failure stays
   fatal. If the parsed name is not in the publish plan, the failure is fatal
-  with guidance to publish or index that dependency first. If the parsed name
-  is in the plan and `allow_unpublished_workspace_deps` is set, the helper logs
-  a warning and continues; otherwise it raises with guidance to use the flag in
-  dry-run mode or follow the staged-publish workaround.
+  with guidance to publish or index that dependency first. The helper then
+  checks projected availability by comparing the missing dependency with the
+  current crate's position in `PublishPlan.publishable`. If the dependency is
+  in the plan but appears later than the current crate, the failure is fatal
+  because a live run would try to publish the current crate before that
+  dependency is available. If the parsed name is in the prior slice of the
+  plan and `allow_unpublished_workspace_deps` is set, the helper logs a warning
+  and continues; otherwise it raises with guidance to use the flag in dry-run
+  mode or follow the staged-publish workaround.
+- `_find_current_crate_index(invocation, plan) -> int` returns the current
+  crate's publish-order position using canonical crate-name comparison. It is
+  intentionally internal to the index handler because cargo failures are
+  classified relative to the active crate, not relative to the whole plan in
+  isolation.
+- `_raise_out_of_order_dependency(error_cls, invocation, failure, missing_name)
+  -> NoReturn` is the dedicated fatal path for dependencies that are planned
+  but not projected to have been published yet. It bypasses the dry-run
+  downgrade flag and tells operators to fix `publish.order` or rely on the
+  dependency-derived topological sort.
 
 #### Crate-name canonicalization
 

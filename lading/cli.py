@@ -1,4 +1,17 @@
-"""Command-line interface for the :mod:`lading` toolkit."""
+"""Command-line interface for the :mod:`lading` toolkit.
+
+This module is the driving adapter between shell invocations and the command
+implementations under :mod:`lading.commands`. It owns argument declarations,
+environment-variable defaults, logging setup, workspace-root normalization,
+configuration loading, and workspace metadata loading before dispatching to the
+`bump` or `publish` command modules.
+
+The CLI intentionally resolves user-interface concerns here before crossing
+into command internals. For example, optional boolean flags accepted by
+Cyclopts are converted into concrete command options, so reusable command
+dataclasses do not need to model whether a value came from an omitted flag or
+an explicit user choice.
+"""
 
 from __future__ import annotations
 
@@ -90,6 +103,7 @@ _LOG_LEVEL_ALIASES: dict[str, int] = {
 }
 
 app = App(help="Manage Rust workspaces with the lading toolkit.")
+LOGGER = logging.getLogger(__name__)
 
 
 def _select_runner() -> CommandRunner:
@@ -132,7 +146,20 @@ def _parse_workspace_equals(argument: str, index: int) -> tuple[str, int]:
     workspace = _validate_workspace_value(candidate)
     return workspace, index + 1
 
-
+def _resolve_allow_unpublished_workspace_deps(
+    *,
+    live: bool,
+    allow_unpublished_workspace_deps: bool | None,
+) -> bool:
+    """Return the concrete publish option for the optional CLI flag."""
+    if allow_unpublished_workspace_deps is not None:
+        return allow_unpublished_workspace_deps
+    if live:
+        return False
+    LOGGER.info(
+        "Defaulting to allow unpublished workspace dependencies during dry-run publish"
+    )
+    return True
 def _extract_workspace_override(
     tokens: cabc.Sequence[str],
 ) -> tuple[str | None, list[str]]:
@@ -370,7 +397,14 @@ def publish(
             options=commands.publish.PublishOptions(
                 allow_dirty=not forbid_dirty,
                 live=live,
-                allow_unpublished_workspace_deps=allow_unpublished_workspace_deps,
+                allow_unpublished_workspace_deps=(
+                    _resolve_allow_unpublished_workspace_deps(
+                        live=live,
+                        allow_unpublished_workspace_deps=(
+                            allow_unpublished_workspace_deps
+                        ),
+                    )
+                ),
                 command_runner=command_runner,
             ),
         ),

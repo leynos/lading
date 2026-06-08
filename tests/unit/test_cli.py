@@ -392,11 +392,26 @@ def test_bump_cli_accepts_dry_run_flag(
     assert options.dry_run is True
     assert options.command_runner is cli.subprocess_runner
 
+def test_publish_cli_logs_dry_run_default_flag_resolution(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Default dry-run resolution emits an operator-facing INFO log."""
+    caplog.set_level(logging.INFO, logger="lading.cli")
+
+    resolved = cli._resolve_allow_unpublished_workspace_deps(
+        live=False,
+        allow_unpublished_workspace_deps=None,
+    )
+
+    assert resolved is True
+    assert (
+        "Defaulting to allow unpublished workspace dependencies during dry-run publish"
+    ) in caplog.messages
 @pytest.mark.usefixtures("minimal_config")
 @pytest.mark.parametrize(
     ("extra_args", "expected"),
     [
-        pytest.param((), None, id="default"),
+        pytest.param((), True, id="default"),
         pytest.param(("--allow-unpublished-workspace-deps",), True, id="enabled"),
         pytest.param(("--no-allow-unpublished-workspace-deps",), False, id="disabled"),
     ],
@@ -407,7 +422,7 @@ def test_publish_cli_passes_unpublished_workspace_deps_flag(
     extra_args: tuple[str, ...],
     expected: object,
 ) -> None:
-    """The CLI preserves omitted, enabled, and disabled flag states."""
+    """The CLI resolves omitted, enabled, and disabled flag states."""
     workspace_graph = _make_workspace(tmp_path.resolve())
     captured_options: dict[str, publish_command.PublishOptions] = {}
 

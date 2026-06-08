@@ -103,7 +103,7 @@ class PublishOptions:
     configuration: LadingConfig | None = None
     workspace: WorkspaceGraph | None = None
     command_runner: CommandRunner | None = None
-    allow_unpublished_workspace_deps: bool | None = None
+    allow_unpublished_workspace_deps: bool = False
     """
 
 
@@ -484,24 +484,16 @@ def _ensure_workspace(
     except FileNotFoundError as exc:  # pragma: no cover - defensive
         message = f"Workspace root not found: {workspace_root}"
         raise WorkspaceModelError(message) from exc
-
-def _resolve_allow_unpublished_workspace_deps(options: PublishOptions) -> bool:
-    """Return the effective dry-run dependency downgrade setting."""
-    if options.allow_unpublished_workspace_deps is None:
-        return not options.live
-    return options.allow_unpublished_workspace_deps
-def _validate_publication_options(
-    options: PublishOptions, *, allow_unpublished_workspace_deps: bool
-) -> None:
+def _validate_publication_options(options: PublishOptions) -> None:
     """Raise :class:`PublishPreflightError` for invalid option combinations."""
-    if options.live and allow_unpublished_workspace_deps:
+    if options.live and options.allow_unpublished_workspace_deps:
         message = (
             "--allow-unpublished-workspace-deps is only valid in dry-run mode; "
             "re-run without --live."
         )
         LOGGER.error(message)
         raise PublishPreflightError(message)
-    if allow_unpublished_workspace_deps:
+    if options.allow_unpublished_workspace_deps:
         LOGGER.info(
             "Allowing unpublished workspace dependencies during dry-run publish"
         )
@@ -551,13 +543,7 @@ def run(
     root_path = normalise_workspace_root(workspace_root)
     LOGGER.info("Starting publish workflow for workspace %s", root_path)
     effective_options = PublishOptions() if options is None else options
-    allow_unpublished_workspace_deps = _resolve_allow_unpublished_workspace_deps(
-        effective_options
-    )
-    _validate_publication_options(
-        effective_options,
-        allow_unpublished_workspace_deps=allow_unpublished_workspace_deps,
-    )
+    _validate_publication_options(effective_options)
     configuration_override = configuration or effective_options.configuration
     workspace_override = workspace or effective_options.workspace
     command_runner = effective_options.command_runner or _invoke
@@ -582,7 +568,9 @@ def run(
     execution_options = _PublishExecutionOptions(
         live=effective_options.live,
         allow_dirty=effective_options.allow_dirty,
-        allow_unpublished_workspace_deps=allow_unpublished_workspace_deps,
+        allow_unpublished_workspace_deps=(
+            effective_options.allow_unpublished_workspace_deps
+        ),
     )
     _dispatch_publication(
         plan,

@@ -15,6 +15,7 @@ substring matching to lock in the exact format for regression detection.
 
 from __future__ import annotations
 
+import dataclasses as dc
 import logging
 import typing as typ
 
@@ -124,6 +125,11 @@ def _handle_index_missing_version_message(
     return str(excinfo.value)
 
 
+def _snapshot_message(message: str) -> str:
+    """Make blank diagnostic lines visible in Amber snapshots."""
+    return message.replace("\n\n", "\n<blank>\n")
+
+
 @pytest.mark.parametrize(
     "case",
     [
@@ -159,7 +165,7 @@ def test_index_missing_version_message_snapshot(
         caplog=caplog,
     )
 
-    assert message == snapshot(name="message")
+    assert _snapshot_message(message) == snapshot(name="message")
     assert _warning_records(caplog) == snapshot(name="warning")
 
 
@@ -215,7 +221,28 @@ def test_index_missing_out_of_plan_message_snapshot(
         caplog=caplog,
     )
 
-    assert message == snapshot(name="message")
+    assert _snapshot_message(message) == snapshot(name="message")
+    assert _warning_records(caplog) == snapshot(name="warning")
+
+
+def test_index_missing_out_of_order_message_snapshot(
+    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    caplog: pytest.LogCaptureFixture,
+    snapshot: SnapshotAssertion,
+) -> None:
+    """Snapshot the fatal message and warning for out-of-order dependencies."""
+    original_plan, _preparation, _staging_root = publish_plan_and_prep
+    alpha, beta, gamma = original_plan.publishable
+    plan = dc.replace(original_plan, publishable=(beta, alpha, gamma))
+
+    message = _handle_index_missing_version_message(
+        plan,
+        stderr=INDEX_MISSING_STDERR_BETA,
+        allow_unpublished_workspace_deps=True,
+        caplog=caplog,
+    )
+
+    assert _snapshot_message(message) == snapshot(name="message")
     assert _warning_records(caplog) == snapshot(name="warning")
 
 
