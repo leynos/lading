@@ -154,13 +154,34 @@ def _resolve_allow_unpublished_workspace_deps(
 ) -> bool:
     """Return the concrete publish option for the optional CLI flag."""
     if allow_unpublished_workspace_deps is not None:
-        return allow_unpublished_workspace_deps
+        resolved_value = allow_unpublished_workspace_deps
+        LOGGER.debug(
+            "allow_unpublished_workspace_deps: raw=%r live=%r → resolved=%r",
+            allow_unpublished_workspace_deps,
+            live,
+            resolved_value,
+        )
+        return resolved_value
     if live:
-        return False
+        resolved_value = False
+        LOGGER.debug(
+            "allow_unpublished_workspace_deps: raw=%r live=%r → resolved=%r",
+            allow_unpublished_workspace_deps,
+            live,
+            resolved_value,
+        )
+        return resolved_value
     LOGGER.info(
         "Defaulting to allow unpublished workspace dependencies during dry-run publish"
     )
-    return True
+    resolved_value = True
+    LOGGER.debug(
+        "allow_unpublished_workspace_deps: raw=%r live=%r → resolved=%r",
+        allow_unpublished_workspace_deps,
+        live,
+        resolved_value,
+    )
+    return resolved_value
 def _extract_workspace_override(
     tokens: cabc.Sequence[str],
 ) -> tuple[str | None, list[str]]:

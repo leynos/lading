@@ -206,7 +206,7 @@ def test_index_missing_in_plan_downgrade_snapshot(
     assert _warning_records(caplog) == snapshot(name="warning")
     assert any(
         "Downgraded cargo package failure for crate beta" in message
-        and "dependency alpha is part of the publish plan" in message
+        and "dependency alpha (index 0) is part of the publish plan" in message
         for message in caplog.messages
     )
 

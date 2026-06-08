@@ -320,7 +320,20 @@ def _handle_index_missing_version(
         )
         raise context.error_cls(message)
     missing_canonical_name = _canonical_crate_name(missing_name)
+    handling.logger.debug(
+        "index-missing-version handler: current crate %r at publish-order "
+        "index %d; missing dependency canonical name %r",
+        invocation.crate_name,
+        current_index,
+        missing_canonical_name,
+    )
     missing_index = publishable_name_indexes.get(missing_canonical_name)
+    handling.logger.debug(
+        "index-missing-version handler: missing dependency %r resolved to "
+        "publish-order index %s",
+        missing_name,
+        missing_index if missing_index is not None else "<not in plan>",
+    )
     if missing_index is None:
         _raise_out_of_plan_dependency(context, missing_name=missing_name)
     if missing_index == current_index:
@@ -341,11 +354,18 @@ def _handle_index_missing_version(
         invocation.crate_name,
         missing_name,
     )
+    handling.logger.debug(
+        "canonicalised dependency name %r → %r",
+        missing_name,
+        missing_canonical_name,
+    )
     handling.logger.info(
-        "Downgraded cargo %s failure for crate %s because dependency %s is "
-        "part of the publish plan and the unpublished workspace dependency "
-        "override is enabled",
+        "Downgraded cargo %s failure for crate %s (index %d) because "
+        "dependency %s (index %d) is part of the publish plan and the "
+        "unpublished workspace dependency override is enabled",
         invocation.subcommand,
         invocation.crate_name,
+        current_index,
         missing_name,
+        missing_index,
     )
