@@ -287,11 +287,13 @@ server.
   connection waits. When unset, the default is `5.0` seconds. The value is
   validated when the runner resolves the timeout: a non-numeric value raises
   `CmdMoxError` with the message `Invalid CMOX_IPC_TIMEOUT value`, and a value
-  that is zero, negative, or `NaN` raises `CmdMoxError` with the message
-  `CMOX_IPC_TIMEOUT must be positive`. These two operator-facing messages have a
-  single canonical home: the module constants `INVALID_IPC_TIMEOUT_MESSAGE` and
-  `NON_POSITIVE_IPC_TIMEOUT_MESSAGE` in `lading/testing/cmd_mox_runner.py`. No
-  other module should duplicate them; rewording either constant is pinned by a
-  syrupy snapshot so the change is deliberate and reviewed.
+  that is not a finite positive number — zero, negative, `NaN`, or infinite
+  (including overflowing literals such as `1e400`) — raises `CmdMoxError` with
+  the message `CMOX_IPC_TIMEOUT must be positive`. These two operator-facing
+  messages have a single canonical home: the module constants
+  `INVALID_IPC_TIMEOUT_MESSAGE` and `NON_POSITIVE_IPC_TIMEOUT_MESSAGE` in
+  `lading/testing/cmd_mox_runner.py`. No other module should duplicate them;
+  rewording either constant is pinned by a syrupy snapshot so the change is
+  deliberate and reviewed.
 
 Most tests should rely on the fixture to manage these variables.

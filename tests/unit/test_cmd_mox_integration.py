@@ -26,13 +26,50 @@ def test_cmd_mox_runner_requires_socket(monkeypatch: pytest.MonkeyPatch) -> None
         cmd_mox_runner.cmd_mox_runner(("cargo", "metadata"))
 
 
-def test_resolve_cmd_mox_timeout_validates_values() -> None:
-    """Timeout parsing should reject non-positive and non-numeric values."""
-    assert cmd_mox_runner._resolve_cmd_mox_timeout(None) > 0
-    assert cmd_mox_runner._resolve_cmd_mox_timeout("2.5") == 2.5
-    for value in ("0", "-1", "abc"):
-        with pytest.raises(cmd_mox_runner.CmdMoxError):
-            cmd_mox_runner._resolve_cmd_mox_timeout(value)
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        (None, cmd_mox_runner._CMD_MOX_TIMEOUT_DEFAULT),
+        ("2.5", 2.5),
+        ("0.001", 0.001),
+        ("1000000", 1_000_000.0),
+    ],
+)
+def test_resolve_cmd_mox_timeout_accepts_valid(
+    raw: str | None, expected: float
+) -> None:
+    """A missing or finite positive value resolves to a usable timeout."""
+    assert cmd_mox_runner._resolve_cmd_mox_timeout(raw) == expected
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected_message"),
+    [
+        # Unparseable input → the invalid-value message.
+        ("abc", cmd_mox_runner.INVALID_IPC_TIMEOUT_MESSAGE),
+        ("", cmd_mox_runner.INVALID_IPC_TIMEOUT_MESSAGE),
+        ("1.2.3", cmd_mox_runner.INVALID_IPC_TIMEOUT_MESSAGE),
+        # Parses but is not a finite positive number → the non-positive message.
+        ("0", cmd_mox_runner.NON_POSITIVE_IPC_TIMEOUT_MESSAGE),
+        ("-1", cmd_mox_runner.NON_POSITIVE_IPC_TIMEOUT_MESSAGE),
+        ("nan", cmd_mox_runner.NON_POSITIVE_IPC_TIMEOUT_MESSAGE),
+        ("inf", cmd_mox_runner.NON_POSITIVE_IPC_TIMEOUT_MESSAGE),
+        ("Infinity", cmd_mox_runner.NON_POSITIVE_IPC_TIMEOUT_MESSAGE),
+        # Overflows to infinity without raising in ``float``.
+        ("1e400", cmd_mox_runner.NON_POSITIVE_IPC_TIMEOUT_MESSAGE),
+    ],
+)
+def test_resolve_cmd_mox_timeout_rejects_with_canonical_message(
+    raw: str, expected_message: str
+) -> None:
+    """Each class of invalid input raises its own canonical message.
+
+    Pinning the message per input class locks the mapping so the two strings
+    cannot be silently swapped between parse failures and out-of-range values.
+    """
+    with pytest.raises(cmd_mox_runner.CmdMoxError) as excinfo:
+        cmd_mox_runner._resolve_cmd_mox_timeout(raw)
+    assert str(excinfo.value) == expected_message
 
 
 def test_ipc_timeout_messages_are_stable(snapshot: SnapshotAssertion) -> None:
@@ -45,30 +82,35 @@ def test_ipc_timeout_messages_are_stable(snapshot: SnapshotAssertion) -> None:
 def test_resolve_cmd_mox_timeout_domain(value: float | str | None) -> None:
     """Resolution is total: default, the parsed positive value, or CmdMoxError.
 
-    ``None`` yields the default, finite positive floats round-trip, and every
-    other input raises :class:`CmdMoxError` carrying one of the two canonical
-    messages.
+    ``None`` yields the default and finite positive floats round-trip. Every
+    other input raises :class:`CmdMoxError`: unparseable strings carry
+    ``INVALID_IPC_TIMEOUT_MESSAGE``, while values that parse but are zero,
+    negative, NaN, or infinite carry ``NON_POSITIVE_IPC_TIMEOUT_MESSAGE``.
     """
     raw = value if value is None or isinstance(value, str) else repr(value)
-    try:
-        parsed: float | None = None if raw is None else float(raw)
-    except ValueError:
-        parsed = math.nan  # Marker: unparseable input.
 
     if raw is None:
         assert (
             cmd_mox_runner._resolve_cmd_mox_timeout(raw)
             == cmd_mox_runner._CMD_MOX_TIMEOUT_DEFAULT
         )
-    elif parsed is not None and parsed > 0:
-        assert cmd_mox_runner._resolve_cmd_mox_timeout(raw) == parsed
-    else:
+        return
+
+    try:
+        parsed = float(raw)
+    except ValueError:
         with pytest.raises(cmd_mox_runner.CmdMoxError) as excinfo:
             cmd_mox_runner._resolve_cmd_mox_timeout(raw)
-        assert str(excinfo.value) in {
-            cmd_mox_runner.INVALID_IPC_TIMEOUT_MESSAGE,
-            cmd_mox_runner.NON_POSITIVE_IPC_TIMEOUT_MESSAGE,
-        }
+        assert str(excinfo.value) == cmd_mox_runner.INVALID_IPC_TIMEOUT_MESSAGE
+        return
+
+    if math.isfinite(parsed) and parsed > 0:
+        assert cmd_mox_runner._resolve_cmd_mox_timeout(raw) == parsed
+        return
+
+    with pytest.raises(cmd_mox_runner.CmdMoxError) as excinfo:
+        cmd_mox_runner._resolve_cmd_mox_timeout(raw)
+    assert str(excinfo.value) == cmd_mox_runner.NON_POSITIVE_IPC_TIMEOUT_MESSAGE
 
 
 def test_cmd_mox_runner_executes_via_ipc(

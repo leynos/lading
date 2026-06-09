@@ -119,9 +119,11 @@ def _resolve_cmd_mox_timeout(raw_timeout: str | None) -> float:
         timeout = float(raw_timeout)
     except (TypeError, ValueError) as exc:
         raise CmdMoxError(INVALID_IPC_TIMEOUT_MESSAGE) from exc
-    # NaN compares false against everything, so it must be rejected
-    # explicitly alongside zero and negative values.
-    if math.isnan(timeout) or timeout <= 0:
+    # Reject every value that is not a finite positive number. NaN compares
+    # false against everything, and an infinite timeout slips past ``> 0`` yet
+    # the socket layer rejects it with OverflowError when applied, so require
+    # finiteness explicitly alongside the positivity guard.
+    if not math.isfinite(timeout) or timeout <= 0:
         raise CmdMoxError(NON_POSITIVE_IPC_TIMEOUT_MESSAGE)
     return timeout
 
