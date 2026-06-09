@@ -16,6 +16,7 @@ from lading.runtime import (
     subprocess_runner,
 )
 from lading.utils import normalise_workspace_root
+from lading.utils.process import command_detail
 
 if typ.TYPE_CHECKING:  # pragma: no cover - import-time typing aids only
     from pathlib import Path
@@ -48,10 +49,8 @@ class CargoMetadataInvocationError(CargoMetadataError):
 
     def __init__(self, exit_code: int, stdout: str, stderr: str) -> None:
         """Summarise the failing invocation for the caller."""
-        message = (
-            stderr.strip()
-            or stdout.strip()
-            or f"cargo metadata exited with status {exit_code}"
+        message = command_detail(stdout, stderr) or (
+            f"cargo metadata exited with status {exit_code}"
         )
         super().__init__(message)
 

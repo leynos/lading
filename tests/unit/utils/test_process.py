@@ -5,6 +5,9 @@ from __future__ import annotations
 import logging
 import typing as typ
 
+import hypothesis.strategies as st
+from hypothesis import given
+
 from lading.utils import process
 
 if typ.TYPE_CHECKING:
@@ -97,3 +100,46 @@ def test_log_command_invocation_flags_empty_command() -> None:
         and "empty command sequence" in record.getMessage()
         for record in warning_handler.records
     )
+
+
+# ---------------------------------------------------------------------------
+# command_detail / with_detail (issue #102)
+# ---------------------------------------------------------------------------
+
+_output_text = st.text(
+    alphabet=st.characters(blacklist_categories=("Cs",)), max_size=40
+)
+
+
+@given(stdout=_output_text, stderr=_output_text)
+def test_command_detail_prefers_stderr_then_stdout(stdout: str, stderr: str) -> None:
+    """Prefer stripped stderr; fall back to stripped stdout."""
+    detail = process.command_detail(stdout, stderr)
+
+    if stderr.strip():
+        assert detail == stderr.strip()
+    elif stdout.strip():
+        assert detail == stdout.strip()
+    else:
+        assert detail == ""
+    assert detail == detail.strip()
+
+
+@given(stdout=_output_text, stderr=_output_text)
+def test_with_detail_appends_only_when_detail_present(stdout: str, stderr: str) -> None:
+    """The suffix appears exactly when stripped output exists."""
+    message = "Build failed"
+    rendered = process.with_detail(message, stdout, stderr)
+
+    detail = process.command_detail(stdout, stderr)
+    if detail:
+        assert rendered == f"{message}: {detail}"
+    else:
+        assert rendered == message
+
+
+def test_with_detail_supports_custom_separator() -> None:
+    """A custom separator joins the message and detail."""
+    rendered = process.with_detail("Failed", "", "boom", separator="; ")
+
+    assert rendered == "Failed; boom"

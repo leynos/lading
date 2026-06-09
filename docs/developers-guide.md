@@ -433,6 +433,20 @@ argument-count threshold.
 for the entire handler call: the active `PublishPlan`, the
 `_PublishExecutionOptions`, and `logger`.
 
+### Command-failure detail helpers (`lading.utils.process`)
+
+`command_detail(stdout, stderr) -> str` returns the most informative output
+stream for a failed command: stderr stripped of whitespace when non-empty,
+otherwise stdout stripped, otherwise the empty string.
+
+`with_detail(message, stdout, stderr, *, separator=": ") -> str` appends the
+command detail to `message` using `separator` only when detail is present.
+
+These are the canonical home for the `(stderr or stdout)` failure-detail idiom.
+Modules that render command failures (`lockfile`, `bump_lockfiles`,
+`publish_preflight`, `publish_index_check`, `workspace.metadata`) must call
+these helpers rather than re-implementing the idiom inline.
+
 ### Shared message helpers
 
 `_format_missing_dependency_failure(failure, *,`

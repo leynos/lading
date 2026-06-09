@@ -41,4 +41,50 @@ def log_command_invocation(
         logger.info("Running external command: %s (cwd=%s)", rendered, cwd)
 
 
-__all__ = ["format_command", "log_command_invocation"]
+def command_detail(stdout: str, stderr: str) -> str:
+    """Return the most informative stripped output stream for a failure.
+
+    ``stderr`` is preferred; ``stdout`` is the fallback when stderr strips to
+    nothing. This is the canonical home for the idiom (issue #102) — call
+    sites must not re-implement it.
+
+    Examples
+    --------
+    >>> command_detail("out", "err")
+    'err'
+    >>> command_detail("out", "  ")
+    'out'
+    >>> command_detail("", "")
+    ''
+    """
+    return stderr.strip() or stdout.strip()
+
+
+def with_detail(
+    message: str,
+    stdout: str,
+    stderr: str,
+    *,
+    separator: str = ": ",
+) -> str:
+    """Append command output detail to ``message`` when any is present.
+
+    Examples
+    --------
+    >>> with_detail("Build failed", "", "boom")
+    'Build failed: boom'
+    >>> with_detail("Build failed", "", "")
+    'Build failed'
+    """
+    detail = command_detail(stdout, stderr)
+    if not detail:
+        return message
+    return f"{message}{separator}{detail}"
+
+
+__all__ = [
+    "command_detail",
+    "format_command",
+    "log_command_invocation",
+    "with_detail",
+]

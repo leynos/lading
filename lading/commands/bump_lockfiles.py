@@ -14,6 +14,7 @@ from pathlib import Path
 
 from lading.exceptions import LadingError
 from lading.runtime import CommandRunner, subprocess_runner
+from lading.utils.process import with_detail
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -144,10 +145,10 @@ def _run_workspace_lockfile_update(
         message = f"Cargo lockfile regeneration failed for {manifest_path}: {exc}"
         raise LockfileRegenerationError(message) from exc
     if exit_code != 0:
-        message = (
+        message = with_detail(
             "Cargo lockfile regeneration failed for "
-            f"{manifest_path} with exit code {exit_code}"
+            f"{manifest_path} with exit code {exit_code}",
+            stdout,
+            stderr,
         )
-        if detail := (stderr or stdout).strip():
-            message = f"{message}: {detail}"
         raise LockfileRegenerationError(message)
