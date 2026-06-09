@@ -1,5 +1,7 @@
 """Workspace graph models and builders for :mod:`lading`."""
 
+# pylint: disable=unnecessary-ellipsis
+
 from __future__ import annotations
 
 import collections.abc as cabc
@@ -201,15 +203,9 @@ def build_workspace_graph(
     except KeyError as exc:
         raise WorkspaceModelError(WORKSPACE_ROOT_MISSING_MSG) from exc
     workspace_root = _normalise_workspace_root(workspace_root_value)
-    packages = typ.cast(
-        "cabc.Sequence[object]",
-        _expect_sequence(metadata.get("packages"), "packages", allow_none=False),
-    )
-    workspace_members = typ.cast(
-        "cabc.Sequence[object]",
-        _expect_sequence(
-            metadata.get("workspace_members"), "workspace_members", allow_none=False
-        ),
+    packages = _expect_sequence(metadata.get("packages"), "packages", allow_none=False)
+    workspace_members = _expect_sequence(
+        metadata.get("workspace_members"), "workspace_members", allow_none=False
     )
     workspace_member_ids = tuple(
         _expect_string(member, "workspace_members[]") for member in workspace_members
@@ -476,6 +472,28 @@ def _expect_mapping(value: object, field_name: str) -> cabc.Mapping[str, typ.Any
         return typ.cast("cabc.Mapping[str, typ.Any]", value)
     message = f"{field_name} must be a mapping; received {type(value).__name__}"
     raise WorkspaceModelError(message)
+
+
+@typ.overload
+def _expect_sequence(
+    value: None,
+    field_name: str,
+    *,
+    allow_none: typ.Literal[True],
+) -> None:
+    """Allow ``None`` only when ``allow_none`` is ``True``."""
+    ...
+
+
+@typ.overload
+def _expect_sequence(
+    value: object,
+    field_name: str,
+    *,
+    allow_none: typ.Literal[False] = ...,
+) -> cabc.Sequence[object]:
+    """Require a sequence when ``allow_none`` is ``False``."""
+    ...
 
 
 def _expect_sequence(
