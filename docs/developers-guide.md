@@ -439,7 +439,7 @@ for the entire handler call: the active `PublishPlan`, the
 `missing_name, reason, guidance) -> str` Builds the human-readable fatal error
 string from the pre-formatted cargo failure text, the extracted dependency
 name, a domain-language reason clause, and an operator guidance sentence. All
-fatal-path helpers delegate message construction here, centralising the text
+fatal-path helpers delegate message construction here, centralizing the text
 format.
 
 `_log_missing_dependency_failure(logger, invocation, *, missing_name, detail)`
@@ -458,7 +458,7 @@ type `typ.NoReturn`):
 - `_raise_out_of_plan_dependency(context, *, missing_name)` — invoked when the
   missing dependency is absent from the publish plan entirely.
 - `_raise_self_dependency(context, *, missing_name)` — invoked when the failing
-  crate's unresolved dependency resolves to itself after name canonicalisation.
+  crate's unresolved dependency resolves to itself after name canonicalization.
 - `_raise_out_of_order_dependency(context, *, missing_name)` — invoked when the
   missing dependency is in the plan but at a higher publish-order index than
   the current crate.
