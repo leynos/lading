@@ -8,9 +8,6 @@
 # name: test_cargo_metadata_invocation_message[stdout_fallback]
   'out'
 # ---
-# name: test_lockfile_refresh_failure_message
-  'Failed to refresh /ws/crates/alpha/Cargo.lock: error: registry offline'
-# ---
 # name: test_lockfile_regeneration_failure_message
   'Cargo lockfile regeneration failed for /ws/Cargo.toml with exit code 101: error: dependency conflict'
 # ---

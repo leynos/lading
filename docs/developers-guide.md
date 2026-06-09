@@ -225,16 +225,12 @@ this helper for consistent path handling, including `lading.cli`,
 Private helpers `_handle_git_ls_files_failure` and `_lockfiles_with_manifests`
 perform the error-handling and path-filtering passes respectively.
 
-`refresh_lockfile(manifest_path, runner)` runs
-`cargo generate-lockfile --manifest-path` for the supplied manifest and raises
-`LockfileRefreshError` on non-zero exit. `_refresh_lockfiles` in `bump.py`
-calls it after manifest rewrites. The refresh loop is intentionally not
-transactional: if a later lockfile refresh fails, previously rewritten
-manifests and refreshed lockfiles remain on disk, and the operator should fix
-the Cargo error, then run
-`cargo generate-lockfile --manifest-path <path>/Cargo.toml` for each affected
-crate manifest. Rerunning `lading bump` will not refresh lockfiles once the
-manifests are already rewritten.
+Lockfile regeneration after `lading bump` is owned by
+`lading.commands.bump_lockfiles.regenerate_lockfiles`, which runs
+`cargo update --workspace` per configured manifest. The two cargo strategies
+differ deliberately: bump refreshes existing pinned versions in place after
+manifest rewrites, while publish only probes freshness read-only via
+`cargo metadata --locked` and never regenerates.
 
 `validate_lockfile_freshness(manifest_path, runner)` runs
 `cargo metadata --locked --manifest-path ... --format-version=1`. It returns a
@@ -243,8 +239,8 @@ Cargo says need updating under `--locked`, and unrelated Cargo failures.
 `_validate_lockfile_freshness` in `publish_preflight.py` calls it before the
 cargo check/test pre-flight.
 
-`LockfileDiscoveryError` and `LockfileRefreshError` inherit `LadingError`;
-their messages include git or Cargo details respectively.
+`LockfileDiscoveryError` inherits `LadingError`; its messages include the git
+failure detail.
 
 ### `load_cargo_metadata`
 
@@ -349,7 +345,6 @@ area so existing handling remains precise:
 | `CargoMetadataError`        | `lading.workspace.metadata`        | Base for cargo metadata execution and parsing failures.                                         |
 | `CommandSpawnError`         | `lading.runtime.subprocess_runner` | Raised when the subprocess runner cannot spawn an external command.                             |
 | `LockfileDiscoveryError`    | `lading.commands.lockfile`         | Raised when git cannot list tracked lockfiles.                                                  |
-| `LockfileRefreshError`      | `lading.commands.lockfile`         | Raised when `cargo generate-lockfile` fails.                                                    |
 | `LockfileRegenerationError` | `lading.commands.bump_lockfiles`   | Raised when configured bump lockfile manifests are invalid or `cargo update --workspace` fails. |
 | `PublishPlanError`          | `lading.commands.publish_plan`     | Raised when a publish plan cannot be constructed.                                               |
 | `ReadmeTranspositionError`  | `lading.commands.bump_readme`      | Raised when the workspace README cannot be transposed into a crate during `lading bump`.        |
@@ -380,7 +375,7 @@ Usage guidance:
 - CLI and integration boundaries may catch `LadingError` to render expected
   lading failures as user-facing diagnostics.
 - Feature code should catch the narrowest local exception it can handle, such
-  as `PublishPreflightError` or `LockfileRefreshError`, and let unrelated
+  as `PublishPreflightError` or `LockfileRegenerationError`, and let unrelated
   `LadingError` subclasses propagate.
 - Tests should assert the specific exception type for the behaviour under test,
   then use `LadingError` only when verifying common boundary handling.
@@ -637,8 +632,6 @@ Defined metrics:
 | -------------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | `publish.index_lookup_downgrade` | `subcommand`, `missing_crate` | `_handle_index_missing_version` downgrades a crates.io index-lookup failure to a warning (in-plan, override enabled). |
 | `lockfile.discovered`            | (none)                        | Incremented by the number of tracked lockfiles each `discover_tracked_lockfiles` call returns.                        |
-| `lockfile.refresh`               | `outcome`                     | One increment per `refresh_lockfile` invocation; `outcome` is `success` or `failure`.                                 |
-| `lockfile.refresh.duration`      | (none)                        | Duration observation around each `cargo generate-lockfile` invocation.                                                |
 | `lockfile.validate`              | `outcome`                     | One increment per `validate_lockfile_freshness` call; `outcome` is `fresh`, `stale`, or `failed`.                     |
 | `lockfile.validate.duration`     | (none)                        | Duration observation around each `cargo metadata --locked` probe.                                                     |
 
