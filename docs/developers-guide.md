@@ -175,6 +175,13 @@ the only resolution against `configuration.bump.rebuild_lockfiles` happens in
 flag from `lading.toml` before dispatch, but `cli.bump` itself performs no
 coalescing.)
 
+Bump-time crate-set derivation is centralised in the bump context: the
+`excluded` and `updated_crate_names` sets are computed exactly once in
+`bump._initialize_bump_context` and threaded to downstream helpers such as
+`_update_crate_manifest`. Helpers must consume the context sets rather than
+re-deriving them per crate, which would make manifest processing quadratic in
+workspace size.
+
 `BumpChanges` records the user-visible files touched by a bump run. Its
 `lockfiles` field contains the `Cargo.lock` files regenerated after manifest
 updates. The output formatter labels these paths as `(lockfile)` so operators
