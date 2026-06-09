@@ -360,7 +360,7 @@ visible in the registry.
 
 The index-lookup handling is split across the adapter and decision helper:
 
-- `parse_index_lookup_failure(crate_name, subcommand, exit_code, stdout, stderr)`
+- `parse_index_lookup_failure(crate_name, subcommand, output)`
   checks for both Cargo's version-selection failure marker and the crates.io
   index marker after confirming the command failed. Requiring both markers
   minimizes false positives from unrelated resolver, registry, or command
