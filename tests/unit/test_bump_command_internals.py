@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 import dataclasses as dc
 import typing as typ
-from pathlib import Path
 
-import hypothesis.strategies as st
-import pytest
 from hypothesis import given
 from tomlkit import parse as parse_toml
+import hypothesis.strategies as st
+import pytest
 
 from lading.workspace import WorkspaceCrate, WorkspaceDependency, WorkspaceGraph
 from tests.helpers.workspace_builders import (
@@ -21,6 +21,8 @@ from tests.helpers.workspace_builders import (
 if typ.TYPE_CHECKING:
     from syrupy.assertion import SnapshotAssertion
 from lading.commands import bump, bump_output
+import collections.abc as cabc
+import string
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -144,24 +146,6 @@ def _parse_manifest_versions(
     package_version = document["package"]["version"]
     alpha_version = document["dependencies"]["alpha"].value
     return package_version, alpha_version
-
-
-def test_validate_bump_options_requires_configuration_and_workspace() -> None:
-    """Validation raises when mandatory options are missing."""
-    with pytest.raises(ValueError, match="must supply configuration and workspace"):
-        bump._validate_bump_options(bump.BumpOptions())
-
-
-def test_validate_bump_options_returns_configuration_and_workspace(
-    tmp_path: Path,
-) -> None:
-    """Validation succeeds when both configuration and workspace are present."""
-    configuration = _make_config()
-    workspace = _make_workspace(tmp_path)
-    options = bump.BumpOptions(configuration=configuration, workspace=workspace)
-    assert bump._validate_bump_options(options) == (configuration, workspace)
-
-
 def test_determine_package_selectors_respects_exclusions() -> None:
     """Excluded crates produce no package selectors."""
     assert bump._determine_package_selectors("beta", {"beta"}) == ()
@@ -276,15 +260,18 @@ def test_update_crate_manifest(tmp_path: Path, params: UpdateCrateTestParams) ->
         tmp_path,
         dependency=params.dependency_spec,
     )
-    options = bump.BumpOptions(
-        configuration=_make_config(exclude=params.exclude_crates),
-        workspace=workspace,
+    context = bump._initialize_bump_context(
+        tmp_path,
+        bump.BumpOptions(
+            configuration=_make_config(exclude=params.exclude_crates),
+            workspace=workspace,
+        ),
     )
 
     changed = bump._update_crate_manifest(
         crate,
         "1.2.3",
-        options,
+        context,
     )
 
     assert changed is True
@@ -540,6 +527,61 @@ def test_update_dependency_sections_workspace_dev_and_build() -> None:
     assert document["workspace"]["dev-dependencies"]["alpha"].value == "~3.0.0"
     build_deps = document["workspace"]["build-dependencies"]
     assert build_deps["beta"]["version"].value == "3.0.0"
+
+def _synthetic_workspace(names: cabc.Iterable[str]) -> WorkspaceGraph:
+    """Build an in-memory workspace graph for the supplied crate names."""
+    root = Path("/ws")
+    crates = tuple(
+        WorkspaceCrate(
+            id=f"{name}-id",
+            name=name,
+            version="0.1.0",
+            manifest_path=root / name / "Cargo.toml",
+            root_path=root / name,
+            publish=True,
+            readme_is_workspace=False,
+            dependencies=(),
+        )
+        for name in names
+    )
+    return WorkspaceGraph(workspace_root=root, crates=crates)
+
+@given(
+    names=st.sets(_crate_name, min_size=0, max_size=8),
+    extra_excludes=st.sets(_crate_name, max_size=4),
+    data=st.data(),
+)
+def test_bump_context_crate_sets_match_naive_derivation(
+    names: set[str],
+    extra_excludes: set[str],
+    data: st.DataObject,
+) -> None:
+    """Context crate sets equal a reference computation for any workspace.
+
+    The sets are derived once in ``_initialize_bump_context``; this guards
+    behaviour parity through the issue #97 refactor that removed the
+    per-crate recomputation.
+    """
+    excluded_members = data.draw(
+        st.sets(st.sampled_from(sorted(names)), max_size=len(names))
+        if names
+        else st.just(set())
+    )
+    exclude = tuple(sorted(excluded_members | extra_excludes))
+    workspace = _synthetic_workspace(sorted(names))
+
+    context = bump._initialize_bump_context(
+        Path("/ws"),
+        bump.BumpOptions(
+            configuration=_make_config(exclude=exclude),
+            workspace=workspace,
+        ),
+    )
+
+    assert context.excluded == frozenset(exclude)
+    assert context.updated_crate_names == frozenset(
+        crate.name for crate in workspace.crates if crate.name not in set(exclude)
+    )
 
 
 # ---------------------------------------------------------------------------

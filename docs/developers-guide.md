@@ -171,6 +171,13 @@ execution. When `command_runner` is `None`, bump falls back to the default
 subprocess runner. Tests pass a runner explicitly so lockfile commands can be
 observed without invoking real Cargo processes.
 
+Bump-time crate-set derivation is centralised in the bump context: the
+`excluded` and `updated_crate_names` sets are computed exactly once in
+`bump._initialize_bump_context` and threaded to downstream helpers such as
+`_update_crate_manifest`. Helpers must consume the context sets rather than
+re-deriving them per crate, which would make manifest processing quadratic in
+workspace size.
+
 Option defaulting is the command layer's responsibility, not the CLI adapter's.
 `cli.bump` forwards `rebuild_lockfiles` as the raw `bool | None` it received;
 the only resolution against `configuration.bump.rebuild_lockfiles` happens in

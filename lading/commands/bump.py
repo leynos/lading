@@ -204,7 +204,7 @@ def _process_crate_manifests(
 ) -> None:
     """Update member crate manifests for the workspace."""
     for crate in context.workspace.crates:
-        if _update_crate_manifest(crate, target_version, context.base_options):
+        if _update_crate_manifest(crate, target_version, context):
             changed_manifests.add(crate.manifest_path)
 
 
@@ -311,24 +311,24 @@ def _prepare_sorted_changes(
 def _update_crate_manifest(
     crate: WorkspaceCrate,
     target_version: str,
-    options: BumpOptions,
+    context: _BumpContext,
 ) -> bool:
-    """Apply updates for ``crate`` while respecting exclusion rules."""
-    configuration, workspace = _validate_bump_options(options)
+    """Apply updates for ``crate`` while respecting exclusion rules.
 
-    excluded = set(configuration.bump.exclude)
-    updated_crate_names = {
-        member.name for member in workspace.crates if member.name not in excluded
-    }
-
-    selectors = _determine_package_selectors(crate.name, excluded)
-    dependency_sections = _dependency_sections_for_crate(crate, updated_crate_names)
+    The crate sets are read from ``context`` — they are derived exactly once
+    in :func:`_initialize_bump_context` (issue #97); helpers must not
+    recompute them per crate.
+    """
+    selectors = _determine_package_selectors(crate.name, context.excluded)
+    dependency_sections = _dependency_sections_for_crate(
+        crate, context.updated_crate_names
+    )
 
     if _should_skip_crate_update(selectors, dependency_sections):
         return False
 
     crate_options = dc.replace(
-        options,
+        context.base_options,
         dependency_sections=_freeze_dependency_sections(dependency_sections),
     )
     return _update_manifest(
@@ -337,24 +337,6 @@ def _update_crate_manifest(
         target_version,
         crate_options,
     )
-def _validate_bump_options(options: BumpOptions) -> tuple[LadingConfig, WorkspaceGraph]:
-    """Validate and extract required configuration and workspace from options.
-
-    Raises
-    ------
-        ValueError: If configuration or workspace is None.
-
-    Returns
-    -------
-        Tuple of (configuration, workspace).
-
-    """
-    if options.configuration is None or options.workspace is None:
-        message = "BumpOptions must supply configuration and workspace."
-        raise ValueError(message)
-    return options.configuration, options.workspace
-
-
 def _determine_package_selectors(
     crate_name: str,
     excluded: cabc.Collection[str],
