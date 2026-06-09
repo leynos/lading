@@ -1,0 +1,10 @@
+# serializer version: 1
+# name: test_regenerate_lockfiles_aggregates_multiple_failures
+  '''
+  Cargo lockfile regeneration failed for 2 manifest(s). Manifests already carry the new version, so the workspace is inconsistent until each lockfile below is repaired:
+  - Cargo lockfile regeneration failed for <workspace>/a/Cargo.toml with exit code 101: error: dependency conflict
+    cargo update --workspace --manifest-path <workspace>/a/Cargo.toml
+  - Cargo lockfile regeneration failed for <workspace>/b/Cargo.toml with exit code 101: error: dependency conflict
+    cargo update --workspace --manifest-path <workspace>/b/Cargo.toml
+  '''
+# ---
