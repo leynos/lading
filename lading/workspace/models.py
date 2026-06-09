@@ -201,12 +201,18 @@ def build_workspace_graph(
     except KeyError as exc:
         raise WorkspaceModelError(WORKSPACE_ROOT_MISSING_MSG) from exc
     workspace_root = _normalise_workspace_root(workspace_root_value)
-    packages = _expect_sequence(metadata.get("packages"), "packages")
+    packages = _expect_sequence(metadata.get("packages"), "packages", allow_none=False)
+    if packages is None:
+        message = "packages must be a sequence"
+        raise WorkspaceModelError(message)
+    workspace_members = _expect_sequence(
+        metadata.get("workspace_members"), "workspace_members", allow_none=False
+    )
+    if workspace_members is None:
+        message = "workspace_members must be a sequence"
+        raise WorkspaceModelError(message)
     workspace_member_ids = tuple(
-        _expect_string(member, "workspace_members[]")
-        for member in _expect_sequence(
-            metadata.get("workspace_members"), "workspace_members"
-        )
+        _expect_string(member, "workspace_members[]") for member in workspace_members
     )
     package_lookup = _index_workspace_packages(packages, workspace_member_ids)
     workspace_index = _build_workspace_index(package_lookup)
@@ -460,46 +466,6 @@ def _expect_mapping(value: object, field_name: str) -> cabc.Mapping[str, typ.Any
     if isinstance(value, cabc.Mapping):
         return typ.cast("cabc.Mapping[str, typ.Any]", value)
     message = f"{field_name} must be a mapping; received {type(value).__name__}"
-    raise WorkspaceModelError(message)
-
-
-def _expect_sequence(
-    value: object,
-    field_name: str,
-    *,
-    allow_none: bool = False,
-) -> cabc.Sequence[object] | None:
-    """Ensure ``value`` is a sequence (optionally ``None``)."""
-    if value is None:
-        if allow_none:
-            return None
-        message = f"{field_name} must be a sequence"
-        raise WorkspaceModelError(message)
-    if isinstance(value, cabc.Sequence) and not isinstance(
-        value, str | bytes | bytearray
-    ):
-        return value
-    message = f"{field_name} must be a sequence; received {type(value).__name__}"
-    raise WorkspaceModelError(message)
-
-
-def _expect_sequence(
-    value: object,
-    field_name: str,
-    *,
-    allow_none: bool = False,
-) -> cabc.Sequence[object] | None:
-    """Ensure ``value`` is a sequence (optionally ``None``)."""
-    if value is None:
-        if allow_none:
-            return None
-        message = f"{field_name} must be a sequence"
-        raise WorkspaceModelError(message)
-    if isinstance(value, cabc.Sequence) and not isinstance(
-        value, str | bytes | bytearray
-    ):
-        return value
-    message = f"{field_name} must be a sequence; received {type(value).__name__}"
     raise WorkspaceModelError(message)
 
 
