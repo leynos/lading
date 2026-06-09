@@ -38,3 +38,12 @@ Feature: Lading end-to-end workflows in a temporary Git repository
     And cargo preflight was run for the workspace
     And the publish order is "core, utils, app"
     And cargo publish uses --allow-dirty in the default publish flow
+
+  Scenario: Bump rebuilds Cargo.lock files for nested manifests
+    Given a non-trivial workspace in a Git repository at version "0.1.0"
+    And the workspace rebuilds the app crate lockfile during bump
+    When I run lading bump "1.0.0" in the E2E workspace
+    Then the command succeeds
+    And all workspace manifests are at version "1.0.0"
+    And the CLI output lists the regenerated lockfiles
+    And the workspace Cargo.lock files are updated
