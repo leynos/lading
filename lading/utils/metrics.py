@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import atexit
 import collections
+import dataclasses as dc
 import json
 import logging
 import threading
@@ -32,6 +33,17 @@ _LOCK = threading.Lock()
 type _CounterKey = tuple[str, tuple[tuple[str, str], ...]]
 _COUNTERS: collections.Counter[_CounterKey] = collections.Counter()
 _summary_hook_registered = threading.Event()
+
+
+@dc.dataclass(slots=True)
+class DurationStats:
+    """Aggregated duration observations for one metric/label set."""
+
+    count: int = 0
+    total_seconds: float = 0.0
+
+
+_DURATIONS: dict[_CounterKey, DurationStats] = {}
 
 
 def _counter_key(name: str, labels: dict[str, str]) -> _CounterKey:
@@ -56,6 +68,30 @@ def counter_value(name: str, **labels: str) -> int:
         return _COUNTERS[_counter_key(name, labels)]
 
 
+def observe_duration(name: str, seconds: float, **labels: str) -> None:
+    """Record one duration observation for ``name``.
+
+    Examples
+    --------
+    >>> observe_duration("demo.duration", 0.25, operation="refresh")
+    """
+    with _LOCK:
+        stats = _DURATIONS.setdefault(_counter_key(name, labels), DurationStats())
+        stats.count += 1
+        stats.total_seconds += seconds
+
+
+def duration_stats(name: str, **labels: str) -> DurationStats:
+    """Return the aggregated durations recorded for ``name``."""
+    with _LOCK:
+        stats = _DURATIONS.get(_counter_key(name, labels))
+        return (
+            DurationStats()
+            if stats is None
+            else DurationStats(stats.count, stats.total_seconds)
+        )
+
+
 def snapshot() -> dict[_CounterKey, int]:
     """Return a copy of the counter registry for assertions."""
     with _LOCK:
@@ -66,6 +102,7 @@ def reset() -> None:
     """Clear all recorded metrics; intended for test isolation."""
     with _LOCK:
         _COUNTERS.clear()
+        _DURATIONS.clear()
 
 
 def emit_summary() -> None:
@@ -74,12 +111,21 @@ def emit_summary() -> None:
     Emits nothing when no metrics were recorded, so quiet runs stay quiet.
     """
     with _LOCK:
-        if not _COUNTERS:
+        if not _COUNTERS and not _DURATIONS:
             return
-        rendered = [
+        rendered: list[dict[str, object]] = [
             {"metric": name, "labels": dict(labels), "value": value}
             for (name, labels), value in sorted(_COUNTERS.items())
         ]
+        rendered.extend(
+            {
+                "metric": name,
+                "labels": dict(labels),
+                "count": stats.count,
+                "total_seconds": round(stats.total_seconds, 6),
+            }
+            for (name, labels), stats in sorted(_DURATIONS.items())
+        )
     _LOGGER.info("lading metrics summary: %s", json.dumps(rendered))
 
 
@@ -99,9 +145,12 @@ def register_summary_atexit() -> None:
 
 
 __all__ = [
+    "DurationStats",
     "counter_value",
+    "duration_stats",
     "emit_summary",
     "increment_counter",
+    "observe_duration",
     "register_summary_atexit",
     "reset",
     "snapshot",
