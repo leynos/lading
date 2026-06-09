@@ -18,6 +18,9 @@ if typ.TYPE_CHECKING:
     import collections.abc as cabc
 
 __all__ = [
+    "CARGO_PACKAGE",
+    "CARGO_PUBLISH",
+    "CARGO_PUBLISH_DRY_RUN",
     "INDEX_MISSING_STDERR_BETA",
     "INDEX_MISSING_STDERR_EXTERNAL",
     "INDEX_MISSING_STDERR_UNPARSEABLE",
@@ -39,6 +42,12 @@ __all__ = [
     "prepare_staging_root",
     "publish_plan_and_prep",
 ]
+
+# Cargo command tuples shared by the publish ordering tests. Centralised here so
+# expectations track changes to the underlying invocations in one place.
+CARGO_PACKAGE = ("cargo", "package", "--allow-dirty")
+CARGO_PUBLISH = ("cargo", "publish", "--allow-dirty")
+CARGO_PUBLISH_DRY_RUN = ("cargo", "publish", "--allow-dirty", "--dry-run")
 
 INDEX_MISSING_STDERR_BETA = (
     "error: failed to prepare local package for uploading\n"
@@ -169,7 +178,28 @@ def make_dependency_chain(
 
 
 def make_n_crate_chain(root: Path, count: int) -> tuple[WorkspaceCrate, ...]:
-    """Return ``count`` crates wired as a linear dependency chain."""
+    """Return ``count`` crates wired as a linear dependency chain.
+
+    Parameters
+    ----------
+    root : Path
+        Root directory beneath which the crate directories are created.
+    count : int
+        Number of crates to create. Must be at least ``1``.
+
+    Returns
+    -------
+    tuple[WorkspaceCrate, ...]
+        Crates wired as a linear dependency chain. The first crate has no
+        dependencies, and each subsequent crate depends on the one before it.
+
+    Examples
+    --------
+    >>> crate_0, crate_1, crate_2 = make_n_crate_chain(root, 3)
+    >>> # crate_0 <- crate_1 <- crate_2: crate_1 depends on crate_0 and
+    >>> # crate_2 depends on crate_1.
+
+    """
     crates: list[WorkspaceCrate] = []
     for index in range(count):
         name = f"crate_{index}"

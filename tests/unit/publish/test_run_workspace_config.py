@@ -24,7 +24,7 @@ def test_run_normalises_workspace_root(
     configuration = make_config()
 
     def fake_load(root: Path) -> WorkspaceGraph:
-        assert root == resolved
+        assert root == resolved, "workspace should be loaded from the resolved root"
         return plan_workspace
 
     monkeypatch.setattr("lading.workspace.load_workspace", fake_load)
@@ -37,7 +37,9 @@ def test_run_normalises_workspace_root(
     )
     output = publish.run(workspace, configuration)
 
-    assert output.splitlines()[0] == f"Publish plan for {resolved}"
+    assert output.splitlines()[0] == f"Publish plan for {resolved}", (
+        "summary header should report the resolved workspace root"
+    )
 
 
 def test_run_uses_active_configuration(
@@ -52,7 +54,7 @@ def test_run_uses_active_configuration(
 
     output = publish.run(tmp_path)
 
-    assert "skip-me" in output
+    assert "skip-me" in output, "active configuration exclusions should appear"
 
 
 def test_run_loads_configuration_when_inactive(
@@ -78,8 +80,10 @@ def test_run_loads_configuration_when_inactive(
 
     output = publish.run(root)
 
-    assert "Crates to publish" in output
-    assert load_calls == [root]
+    assert "Crates to publish" in output, "summary should list crates to publish"
+    assert load_calls == [root], (
+        "configuration should be loaded once from the workspace root"
+    )
 
 
 def test_run_formats_plan_summary(tmp_path: Path) -> None:
@@ -94,15 +98,25 @@ def test_run_formats_plan_summary(tmp_path: Path) -> None:
     message = publish.run(root, configuration, workspace)
 
     lines = message.splitlines()
-    assert lines[0] == f"Publish plan for {root}"
-    assert "Strip patch strategy: all" in lines[1]
-    assert "- alpha @ 0.1.0" in lines
-    assert "Skipped (publish = false):" in lines
-    assert "- beta" in lines
-    assert "Skipped via publish.exclude:" in lines
-    assert "- gamma" in lines
-    assert "Configured exclusions not found in workspace:" in lines
-    assert "- missing" in lines
+    assert lines[0] == f"Publish plan for {root}", (
+        "summary header should report the workspace root"
+    )
+    assert "Strip patch strategy: all" in lines[1], (
+        "summary should report the configured strip-patch strategy"
+    )
+    assert "- alpha @ 0.1.0" in lines, "publishable crate should be listed with version"
+    assert "Skipped (publish = false):" in lines, (
+        "manifest-skipped section should be present"
+    )
+    assert "- beta" in lines, "manifest-skipped crate should be listed"
+    assert "Skipped via publish.exclude:" in lines, (
+        "config-excluded section should be present"
+    )
+    assert "- gamma" in lines, "config-excluded crate should be listed"
+    assert "Configured exclusions not found in workspace:" in lines, (
+        "unmatched-exclusions section should be present"
+    )
+    assert "- missing" in lines, "unmatched exclusion should be listed"
 
 
 def test_run_reports_no_publishable_crates(tmp_path: Path) -> None:
@@ -119,12 +133,18 @@ def test_run_reports_no_publishable_crates(tmp_path: Path) -> None:
     message = publish.run(root, configuration, workspace)
 
     lines = message.splitlines()
-    assert "Crates to publish: none" in lines
-    assert "Skipped (publish = false):" in lines
-    assert "- alpha" in lines
-    assert "Skipped via publish.exclude:" in lines
-    assert "- beta" in lines
-    assert "- gamma" in lines
+    assert "Crates to publish: none" in lines, (
+        "summary should report that no crates are publishable"
+    )
+    assert "Skipped (publish = false):" in lines, (
+        "manifest-skipped section should be present"
+    )
+    assert "- alpha" in lines, "manifest-skipped crate should be listed"
+    assert "Skipped via publish.exclude:" in lines, (
+        "config-excluded section should be present"
+    )
+    assert "- beta" in lines, "first config-excluded crate should be listed"
+    assert "- gamma" in lines, "second config-excluded crate should be listed"
 
 
 def test_run_surfaces_missing_workspace(
@@ -143,8 +163,12 @@ def test_run_surfaces_missing_workspace(
         publish.run(tmp_path, configuration)
 
     message = str(excinfo.value)
-    assert "Workspace root not found" in message
-    assert str(tmp_path.resolve()) in message
+    assert "Workspace root not found" in message, (
+        "missing workspace error should be explicit"
+    )
+    assert str(tmp_path.resolve()) in message, (
+        "error should name the resolved workspace root"
+    )
 
 
 def test_run_surfaces_configuration_errors(
@@ -166,4 +190,6 @@ def test_run_surfaces_configuration_errors(
     with pytest.raises(config_module.ConfigurationError) as excinfo:
         publish.run(tmp_path)
 
-    assert str(excinfo.value) == "invalid configuration"
+    assert str(excinfo.value) == "invalid configuration", (
+        "configuration error should propagate unchanged"
+    )

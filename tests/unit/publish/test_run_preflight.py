@@ -77,7 +77,7 @@ def test_run_executes_preflight_checks_in_workspace(
     assert (
         ("git", "status", "--porcelain"),
         root,
-    ) in calls
+    ) in calls, "git cleanliness check should run in the workspace root"
     check_call = next(
         command
         for command in calls
@@ -90,35 +90,58 @@ def test_run_executes_preflight_checks_in_workspace(
     )
 
     for command, cwd in (check_call, test_call):
-        assert cwd == root
-        assert command[2] == "--workspace"
-        assert command[3] == "--all-targets"
-        assert any(arg.startswith("--target-dir=") for arg in command[4:])
+        assert cwd == root, "preflight cargo command should run in the workspace root"
+        assert command[2] == "--workspace", "preflight should target the workspace"
+        assert command[3] == "--all-targets", "preflight should cover all targets"
+        assert any(arg.startswith("--target-dir=") for arg in command[4:]), (
+            "preflight should pin a dedicated target directory"
+        )
+
+
+# Run every exclude-normalisation scenario in both ``unit_tests_only`` modes so
+# the builder's exclude handling is verified to be identical regardless of the
+# target-narrowing flag.
+EXCLUDE_MODE_SCENARIOS = [
+    pytest.param(
+        *scenario.values,
+        unit_tests_only,
+        id=f"{scenario.id}-{'unit_only' if unit_tests_only else 'all_targets'}",
+    )
+    for scenario in EXCLUDE_SCENARIOS
+    for unit_tests_only in (False, True)
+]
 
 
 @pytest.mark.parametrize(
-    ("configured_excludes", "expected_excludes"),
-    EXCLUDE_SCENARIOS,
+    ("configured_excludes", "expected_excludes", "unit_tests_only"),
+    EXCLUDE_MODE_SCENARIOS,
 )
 def test_run_includes_preflight_test_excludes(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     configured_excludes: tuple[str, ...],
     expected_excludes: tuple[str, ...],
+    *,
+    unit_tests_only: bool,
 ) -> None:
     """Configured exclusions match the builder output and cargo invocation."""
     configuration = make_config(
-        preflight=make_preflight_config(test_exclude=configured_excludes)
+        preflight=make_preflight_config(
+            test_exclude=configured_excludes,
+            unit_tests_only=unit_tests_only,
+        )
     )
     root, _workspace, calls = _setup_preflight_test(
         monkeypatch, tmp_path, configuration
     )
     args, cwd = _extract_cargo_test_call(calls)
-    assert cwd == root
+    assert cwd == root, "cargo test should run in the workspace root"
     arguments = list(args[2:])
-    assert arguments[0] == "--workspace"
+    assert arguments[0] == "--workspace", "cargo test should target the workspace"
     include_all_targets = "--all-targets" in arguments
-    assert include_all_targets == (not configuration.preflight.unit_tests_only)
+    assert include_all_targets == (not configuration.preflight.unit_tests_only), (
+        "--all-targets should be present only outside unit-tests-only mode"
+    )
     target_argument = next(
         value for value in arguments if value.startswith("--target-dir=")
     )
@@ -138,15 +161,21 @@ def test_run_includes_preflight_test_excludes(
         list(base_arguments),
         options,
     )
-    assert rebuilt_arguments == arguments
+    assert rebuilt_arguments == arguments, (
+        "builder output should match the captured cargo invocation"
+    )
     exclude_values = tuple(
         arguments[index + 1]
         for index, value in enumerate(arguments[:-1])
         if value == "--exclude"
     )
-    assert exclude_values == expected_excludes
+    assert exclude_values == expected_excludes, (
+        "exclusions should be trimmed, deduplicated, and sorted"
+    )
     if not expected_excludes:
-        assert "--exclude" not in arguments
+        assert "--exclude" not in arguments, (
+            "no --exclude flag should appear when there are no exclusions"
+        )
 
 
 def test_run_honours_preflight_unit_tests_only(
@@ -158,16 +187,18 @@ def test_run_honours_preflight_unit_tests_only(
         monkeypatch, tmp_path, configuration
     )
     args, cwd = _extract_cargo_test_call(calls)
-    assert cwd == root
-    assert args[2] == "--workspace"
-    assert "--all-targets" not in args
-    assert any(part.startswith("--target-dir=") for part in args[3:])
-    assert "--lib" in args
-    assert "--bins" in args
-    assert "--exclude" not in args
+    assert cwd == root, "cargo test should run in the workspace root"
+    assert args[2] == "--workspace", "cargo test should target the workspace"
+    assert "--all-targets" not in args, "unit-tests-only mode should omit --all-targets"
+    assert any(part.startswith("--target-dir=") for part in args[3:]), (
+        "cargo test should pin a dedicated target directory"
+    )
+    assert "--lib" in args, "unit-tests-only mode should test libraries"
+    assert "--bins" in args, "unit-tests-only mode should test binaries"
+    assert "--exclude" not in args, "no exclusions were configured"
     lib_index = args.index("--lib")
     bins_index = args.index("--bins")
-    assert bins_index == lib_index + 1
+    assert bins_index == lib_index + 1, "--bins should immediately follow --lib"
 
 
 def test_run_unit_tests_only_with_excludes(
@@ -186,11 +217,11 @@ def test_run_unit_tests_only_with_excludes(
         crate_names=("alpha", "beta", "gamma"),
     )
     args, cwd = _extract_cargo_test_call(calls)
-    assert cwd == root
-    assert args[2] == "--workspace"
-    assert "--all-targets" not in args
-    assert "--lib" in args
-    assert "--bins" in args
+    assert cwd == root, "cargo test should run in the workspace root"
+    assert args[2] == "--workspace", "cargo test should target the workspace"
+    assert "--all-targets" not in args, "unit-tests-only mode should omit --all-targets"
+    assert "--lib" in args, "unit-tests-only mode should test libraries"
+    assert "--bins" in args, "unit-tests-only mode should test binaries"
     assert args[-6:] == (
         "--exclude",
         "alpha",
@@ -198,7 +229,7 @@ def test_run_unit_tests_only_with_excludes(
         "gamma",
         "--lib",
         "--bins",
-    )
+    ), "exclusions should be sorted and precede the --lib/--bins narrowing"
 
 
 def test_dirty_workspace_allowed_by_default(
@@ -227,7 +258,9 @@ def test_dirty_workspace_allowed_by_default(
 
     message = publish.run(root, configuration, workspace)
 
-    assert message.startswith(f"Publish plan for {root}")
+    assert message.startswith(f"Publish plan for {root}"), (
+        "summary should lead with the publish plan header"
+    )
 
 
 def test_forbid_dirty_flag_enforces_cleanliness(
@@ -260,7 +293,9 @@ def test_forbid_dirty_flag_enforces_cleanliness(
             options=publish.PublishOptions(allow_dirty=False),
         )
 
-    assert "uncommitted changes" in str(excinfo.value)
+    assert "uncommitted changes" in str(excinfo.value), (
+        "forbid-dirty failure should mention uncommitted changes"
+    )
 
 
 @pytest.mark.parametrize(
@@ -302,6 +337,8 @@ def test_run_raises_when_preflight_cargo_fails(
         publish.run(root, configuration, workspace)
 
     message = str(excinfo.value)
-    assert expected_message in message
-    assert f"cargo {failing_subcommand}" in message
-    assert "exit code 1" in message
+    assert expected_message in message, "error should surface the cargo stderr"
+    assert f"cargo {failing_subcommand}" in message, (
+        "error should name the failing cargo subcommand"
+    )
+    assert "exit code 1" in message, "error should report the cargo exit code"
