@@ -6,6 +6,7 @@ import pytest
 
 from lading.commands.cargo_output_adapter import (
     CargoIndexLookupFailure,
+    CargoSubprocessResult,
     parse_index_lookup_failure,
 )
 
@@ -24,9 +25,11 @@ def _parse_index_lookup_failure(
     return parse_index_lookup_failure(
         crate_name="beta",
         subcommand="publish",
-        exit_code=exit_code,
-        stdout=stdout,
-        stderr=stderr,
+        result=CargoSubprocessResult(
+            exit_code=exit_code,
+            stdout=stdout,
+            stderr=stderr,
+        ),
     )
 
 

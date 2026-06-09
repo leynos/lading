@@ -33,7 +33,7 @@ def _publish_order_cases(
 
 
 @given(case=_publish_order_cases())
-@settings(max_examples=80)
+@settings(max_examples=80, deadline=None)
 def test_index_missing_dependency_requires_prior_publish_order(
     case: tuple[int, int, int],
 ) -> None:

@@ -335,30 +335,30 @@ did not match a workspace crate. `plan_publication()` builds that object by
 filtering non-publishable crates, applying `publish.exclude`, validating
 `publish.order` when present, or deriving a deterministic dependency order.
 
-`publish_manifest.py` owns staging-time manifest mutations. It contains workspace
-preparation types and helpers that copy the workspace tree, stage workspace README
-files for crates that opt in, and apply the `publish.strip_patches` strategy to
-the staged `Cargo.toml`. These operations run before any `cargo package` or
-`cargo publish` command, so the command runner works against a prepared snapshot
-rather than the source workspace.
+`publish_manifest.py` owns staging-time manifest mutations. It contains
+workspace preparation types and helpers that copy the workspace tree, stage
+workspace README files for crates that opt in, and apply the
+`publish.strip_patches` strategy to the staged `Cargo.toml`. These operations
+run before any `cargo package` or `cargo publish` command, so the command
+runner works against a prepared snapshot rather than the source workspace.
 
 `publish_diagnostics.py` owns compiletest failure enrichment. When a cargo
 pre-flight test failure mentions compiletest-style `*.stderr` artefacts, the
-diagnostic helper locates the referenced files, tails a bounded number of lines,
-and appends those snippets to the `PublishPreflightError` message. The module is
-deliberately read-only: missing artefacts or unreadable files produce diagnostic
-notes rather than replacing the original cargo failure.
+diagnostic helper locates the referenced files, tails a bounded number of
+lines, and appends those snippets to the `PublishPreflightError` message. The
+module is deliberately read-only: missing artefacts or unreadable files produce
+diagnostic notes rather than replacing the original cargo failure.
 
-`cargo_output_adapter.py` owns parsing raw cargo subprocess output into structured
-command failures. `CargoIndexLookupFailure` is the value object for crates.io
-index lookup failures, and `parse_index_lookup_failure()` is the primary owner of
-cargo's marker-based index-miss detection.
+`cargo_output_adapter.py` owns parsing raw cargo subprocess output into
+structured command failures. `CargoIndexLookupFailure` is the value object for
+crates.io index lookup failures, and `parse_index_lookup_failure()` is the
+primary owner of cargo's marker-based index-miss detection.
 
 `publish_index_check.py` owns crates.io index-lookup downgrade decisions after
 output has crossed that adapter boundary. It receives `CargoIndexLookupFailure`
-instances, applies crate-name canonicalization, and decides whether an index miss
-is out-of-plan and fatal, in-plan but still fatal, or in-plan and downgraded by
-`allow_unpublished_workspace_deps` during dry-run publication.
+instances, applies crate-name canonicalization, and decides whether an index
+miss is out-of-plan and fatal, in-plan but still fatal, or in-plan and
+downgraded by `allow_unpublished_workspace_deps` during dry-run publication.
 
 ### `_PublishExecutionOptions`
 
@@ -431,9 +431,9 @@ The index-lookup handling is split across the adapter and decision helper:
   decision tree. If name extraction fails, the original Cargo failure stays
   fatal. If the parsed name is not in the publish plan, the failure is fatal
   with guidance to publish or index that dependency first. The helper checks
-  projected availability by comparing publish-order positions and raises for out-of-
-  plan, self, or late dependencies. If the parsed name is in the plan and
-  `allow_unpublished_workspace_deps` is set, the helper logs a warning and
+  projected availability by comparing publish-order positions and raises for
+  out-of- plan, self, or late dependencies. If the parsed name is in the plan
+  and `allow_unpublished_workspace_deps` is set, the helper logs a warning and
   continues; otherwise it raises with guidance to enable the dry-run
   unpublished workspace dependency override or follow the staged-publish
   workaround.

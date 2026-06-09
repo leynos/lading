@@ -39,6 +39,7 @@ from .conftest import (
     invoke_phase,
     make_config,
     make_crate,
+    make_dependency,
     make_dependency_chain,
     make_failing_runner,
     make_workspace,

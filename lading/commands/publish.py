@@ -58,6 +58,7 @@ from lading import config as config_module
 from lading.commands import publish_preflight as _publish_preflight
 from lading.commands.cargo_output_adapter import (
     CargoIndexLookupFailure,
+    CargoSubprocessResult,
     parse_index_lookup_failure,
 )
 from lading.commands.publish_errors import PublishError, PublishPreflightError
@@ -65,8 +66,10 @@ from lading.commands.publish_execution import (
     _invoke,
 )
 from lading.commands.publish_index_check import (
-    _IndexMissingVersionHandling,
     _format_cargo_failure_message,
+    _IndexMissingVersionHandling,
+)
+from lading.commands.publish_index_check import (
     _handle_index_missing_version as _raw_handle_index_missing_version,
 )
 from lading.commands.publish_manifest import (
@@ -353,9 +356,11 @@ def _package_crate(
     lookup_failure = parse_index_lookup_failure(
         crate_name=crate.name,
         subcommand="package",
-        exit_code=exit_code,
-        stdout=stdout,
-        stderr=stderr,
+        result=CargoSubprocessResult(
+            exit_code=exit_code,
+            stdout=stdout,
+            stderr=stderr,
+        ),
     )
     if lookup_failure is not None:
         _handle_index_missing_version(lookup_failure, plan=plan, options=options)
@@ -467,9 +472,11 @@ def _handle_publish_result(
     lookup_failure = parse_index_lookup_failure(
         crate_name=crate.name,
         subcommand="publish",
-        exit_code=exit_code,
-        stdout=stdout,
-        stderr=stderr,
+        result=CargoSubprocessResult(
+            exit_code=exit_code,
+            stdout=stdout,
+            stderr=stderr,
+        ),
     )
     if lookup_failure is not None:
         # cargo publish --dry-run packages internally and hits the same

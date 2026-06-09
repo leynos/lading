@@ -30,7 +30,7 @@ class _IndexMissingVersionFailure:
     """Shared context for reporting a fatal index-lookup failure."""
 
     error_cls: type[Exception]
-    failure: "CargoIndexLookupFailure"
+    failure: CargoIndexLookupFailure
     failure_message: str
     logger: logging.Logger
 
@@ -39,8 +39,8 @@ class _IndexMissingVersionFailure:
 class _IndexMissingVersionHandling:
     """Dependencies needed to classify and report an index-lookup failure."""
 
-    plan: "PublishPlan"
-    options: "_PublishExecutionOptions"
+    plan: PublishPlan
+    options: _PublishExecutionOptions
     logger: logging.Logger
 
 
@@ -70,7 +70,7 @@ def _format_cargo_failure_message(
 
 def _raise_name_extraction_failure(
     error_cls: type[Exception],
-    lookup_failure: "CargoIndexLookupFailure",
+    lookup_failure: CargoIndexLookupFailure,
     failure_message: str,
 ) -> typ.NoReturn:
     """Log and raise when the missing dependency name cannot be extracted."""
@@ -96,7 +96,7 @@ def _format_missing_dependency_failure(
 
 def _log_missing_dependency_failure(
     logger: logging.Logger,
-    lookup_failure: "CargoIndexLookupFailure",
+    lookup_failure: CargoIndexLookupFailure,
     *,
     missing_name: str,
     detail: str,
@@ -113,7 +113,7 @@ def _log_missing_dependency_failure(
 
 def _raise_out_of_plan_dependency(
     error_cls: type[Exception],
-    lookup_failure: "CargoIndexLookupFailure",
+    lookup_failure: CargoIndexLookupFailure,
     failure_message: str,
     missing_name: str,
 ) -> typ.NoReturn:
@@ -235,7 +235,7 @@ def _canonical_crate_name(name: str) -> str:
 
 
 def _record_index_missing_version_downgrade(
-    failure: "CargoIndexLookupFailure", missing_name: str
+    failure: CargoIndexLookupFailure, missing_name: str
 ) -> None:
     """Increment the downgrade counter for an index-missing-version failure."""
     _INDEX_MISSING_VERSION_DOWNGRADE_COUNTER[
@@ -298,7 +298,7 @@ def _validate_dependency_placement(
 
 
 def _handle_index_missing_version(
-    failure: "CargoIndexLookupFailure",
+    failure: CargoIndexLookupFailure,
     *,
     handling: _IndexMissingVersionHandling,
     error_cls: type[Exception],
@@ -324,9 +324,7 @@ def _handle_index_missing_version(
 
     missing_name = failure.missing_dependency_name
     if missing_name is None:
-        _raise_name_extraction_failure(
-            error_cls, failure, failure_message
-        )
+        _raise_name_extraction_failure(error_cls, failure, failure_message)
 
     current_index, missing_index, missing_canonical_name = (
         _validate_dependency_placement(context, handling, missing_name)

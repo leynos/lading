@@ -30,6 +30,7 @@ import pytest
 from lading.commands import publish
 from lading.commands.cargo_output_adapter import (
     CargoIndexLookupFailure,
+    CargoSubprocessResult,
     parse_index_lookup_failure,
 )
 
@@ -57,14 +58,17 @@ class _IndexMissingCase(typ.NamedTuple):
     stderr: str
     allow_unpublished: bool
 
+
 def _missing_dependency_name(stderr: str) -> str | None:
     """Return the missing dependency parsed by the cargo output adapter."""
     failure = parse_index_lookup_failure(
         crate_name="beta",
         subcommand="package",
-        exit_code=1,
-        stdout="",
-        stderr=stderr,
+        result=CargoSubprocessResult(
+            exit_code=1,
+            stdout="",
+            stderr=stderr,
+        ),
     )
     if failure is None:
         return None
