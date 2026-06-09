@@ -201,34 +201,43 @@ def build_workspace_graph(
     except KeyError as exc:
         raise WorkspaceModelError(WORKSPACE_ROOT_MISSING_MSG) from exc
     workspace_root = _normalise_workspace_root(workspace_root_value)
-    packages = _expect_sequence(metadata.get("packages"), "packages", allow_none=False)
-    if packages is None:
-        message = "packages must be a sequence"
-        raise WorkspaceModelError(message)
-    workspace_members = _expect_sequence(
-        metadata.get("workspace_members"), "workspace_members", allow_none=False
+    packages = typ.cast(
+        "cabc.Sequence[object]",
+        _expect_sequence(metadata.get("packages"), "packages", allow_none=False),
     )
-    if workspace_members is None:
-        message = "workspace_members must be a sequence"
-        raise WorkspaceModelError(message)
+    workspace_members = typ.cast(
+        "cabc.Sequence[object]",
+        _expect_sequence(
+            metadata.get("workspace_members"), "workspace_members", allow_none=False
+        ),
+    )
     workspace_member_ids = tuple(
         _expect_string(member, "workspace_members[]") for member in workspace_members
     )
     package_lookup = _index_workspace_packages(packages, workspace_member_ids)
     workspace_index = _build_workspace_index(package_lookup)
+    crates = _collect_workspace_crates(
+        package_lookup=package_lookup,
+        workspace_member_ids=workspace_member_ids,
+        workspace_index=workspace_index,
+    )
+    return WorkspaceGraph(workspace_root=workspace_root, crates=crates)
+
+
+def _collect_workspace_crates(
+    package_lookup: dict[str, cabc.Mapping[str, typ.Any]],
+    workspace_member_ids: cabc.Sequence[str],
+    workspace_index: WorkspaceIndex,
+) -> tuple[WorkspaceCrate, ...]:
+    """Return a :class:`WorkspaceCrate` tuple for each workspace member ID."""
     crates: list[WorkspaceCrate] = []
     for member_id in workspace_member_ids:
         raw_package = package_lookup.get(member_id)
         if raw_package is None:
             message = f"workspace member {member_id!r} missing from package list"
             raise WorkspaceModelError(message)
-        crates.append(
-            _build_crate(
-                raw_package,
-                workspace_index,
-            )
-        )
-    return WorkspaceGraph(workspace_root=workspace_root, crates=tuple(crates))
+        crates.append(_build_crate(raw_package, workspace_index))
+    return tuple(crates)
 
 
 def _index_workspace_packages(
