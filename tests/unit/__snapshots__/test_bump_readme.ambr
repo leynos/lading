@@ -1,0 +1,7 @@
+# serializer version: 1
+# name: test_transpose_readme_to_crate_rejects_external_crate_root
+  "Crate 'alpha' is outside the workspace root; cannot transpose README"
+# ---
+# name: test_transpose_readme_to_crate_requires_workspace_readme
+  'Workspace README.md is required by crates that set readme.workspace = true'
+# ---

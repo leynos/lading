@@ -24,7 +24,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from lading.commands import bump_toml
-from lading.commands.publish_manifest import PublishPreparationError
+from lading.exceptions import LadingError
 
 _log = logging.getLogger(__name__)
 
@@ -32,6 +32,15 @@ if typ.TYPE_CHECKING:
     from lading.workspace import WorkspaceCrate
 else:  # pragma: no cover - provide runtime placeholders for type checking imports
     WorkspaceCrate = typ.Any
+
+
+class ReadmeTranspositionError(LadingError):
+    """Raised when the workspace README cannot be transposed into a crate.
+
+    This is the bump-domain error for README adoption failures (issue #100);
+    publish staging failures use ``PublishPreparationError`` instead.
+    """
+
 
 _MARKDOWN_LINK_TARGET: typ.Final[re.Pattern[str]] = re.compile(
     r"(!?\[[^\]]*]\()([^\s)]*)([^)]*\))"
@@ -143,14 +152,14 @@ def _rewrite_links_outside_code(
 def _load_source_text(source_readme: Path, _source_text: str | None) -> str:
     """Read and return the workspace README text.
 
-    Raises ``PublishPreparationError`` when the file is absent and no
+    Raises ``ReadmeTranspositionError`` when the file is absent and no
     pre-loaded text was supplied.
     """
     if not source_readme.exists():
         message = (
             "Workspace README.md is required by crates that set readme.workspace = true"
         )
-        raise PublishPreparationError(message)
+        raise ReadmeTranspositionError(message)
     return (
         _source_text
         if _source_text is not None
@@ -161,7 +170,7 @@ def _load_source_text(source_readme: Path, _source_text: str | None) -> str:
 def _resolve_crate_relative_path(workspace_root: Path, crate: WorkspaceCrate) -> Path:
     """Return the crate path relative to the workspace root.
 
-    Raises ``PublishPreparationError`` when the crate lies outside the
+    Raises ``ReadmeTranspositionError`` when the crate lies outside the
     workspace.
     """
     try:
@@ -171,7 +180,7 @@ def _resolve_crate_relative_path(workspace_root: Path, crate: WorkspaceCrate) ->
             f"Crate {crate.name!r} is outside the workspace root; "
             "cannot transpose README"
         )
-        raise PublishPreparationError(message) from exc
+        raise ReadmeTranspositionError(message) from exc
 
 
 def _write_or_skip_readme(
@@ -229,7 +238,7 @@ def transpose_readme_to_crate(
 
     Raises
     ------
-    PublishPreparationError
+    ReadmeTranspositionError
         Raised when the workspace README is required but missing, or when the
         crate root is outside the workspace.
 

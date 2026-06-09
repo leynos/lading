@@ -256,8 +256,14 @@ area so existing handling remains precise:
 | `LockfileRefreshError`      | `lading.commands.lockfile`         | Raised when `cargo generate-lockfile` fails.                                                    |
 | `LockfileRegenerationError` | `lading.commands.bump_lockfiles`   | Raised when configured bump lockfile manifests are invalid or `cargo update --workspace` fails. |
 | `PublishPlanError`          | `lading.commands.publish_plan`     | Raised when a publish plan cannot be constructed.                                               |
+| `ReadmeTranspositionError`  | `lading.commands.bump_readme`      | Raised when the workspace README cannot be transposed into a crate during `lading bump`.        |
 | `PublishPreparationError`   | `lading.commands.publish_manifest` | Raised when staged publish manifests or workspace assets cannot be prepared.                    |
 | `PublishPreflightError`     | `lading.commands.publish_errors`   | Raised for local publish validation and pre-flight failures.                                    |
+
+Domain ownership: README transposition failures during `lading bump` are owned
+by the bump domain (`ReadmeTranspositionError`); publish staging failures are
+owned by the publish domain (`PublishPreparationError`). Bump modules must not
+import publish-domain error types for unrelated conditions, and vice versa.
 
 Reuse plan:
 

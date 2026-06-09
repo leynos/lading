@@ -10,7 +10,6 @@ import typing as typ
 
 from lading import config as config_module
 from lading.commands import bump_docs, bump_lockfiles, bump_readme, bump_toml
-from lading.commands.publish_manifest import PublishPreparationError
 from lading.utils import normalise_workspace_root
 
 if typ.TYPE_CHECKING:
@@ -298,7 +297,7 @@ def _process_readme_transposition(context: _BumpContext, *, dry_run: bool) -> se
                 dry_run=dry_run,
                 _source_text=cached_text,
             )
-        except PublishPreparationError:
+        except bump_readme.ReadmeTranspositionError:
             _log.error("README transposition failed for crate %r", crate.name)
             raise
         if changed_path is not None:
