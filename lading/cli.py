@@ -22,7 +22,7 @@ import os
 import re
 import sys
 import typing as typ
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from pathlib import Path
 
 from cyclopts import App, Parameter
@@ -336,17 +336,15 @@ def _run_with_context(
 ) -> str:
     """Execute ``runner`` with configuration and workspace data."""
     active_runner = command_runner or _select_runner()
+    configuration_scope: AbstractContextManager[object] = nullcontext()
     try:
         configuration = config.current_configuration()
     except config.ConfigurationNotLoadedError:
+        # Freshly loaded configuration must be installed for the duration of
+        # the command; an already-active configuration needs no new scope.
         configuration = config.load_configuration(workspace_root)
-        with (
-            config.use_configuration(configuration),
-            metadata_module.use_command_runner(active_runner),
-        ):
-            workspace_model = load_workspace(workspace_root)
-            return runner(workspace_root, configuration, workspace_model, active_runner)
-    with metadata_module.use_command_runner(active_runner):
+        configuration_scope = config.use_configuration(configuration)
+    with configuration_scope, metadata_module.use_command_runner(active_runner):
         workspace_model = load_workspace(workspace_root)
         return runner(workspace_root, configuration, workspace_model, active_runner)
 

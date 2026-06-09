@@ -197,32 +197,22 @@ def plan_publication(
     )
 
 
-def _format_crates_section(
-    lines: list[str],
-    crates: tuple[WorkspaceCrate, ...],
-    *,
-    header: str,
-    empty_message: str | None = None,
-) -> None:
-    """Append publishable crate details to ``lines``."""
-    if crates:
-        lines.append(header)
-        lines.extend(f"- {crate.name} @ {crate.version}" for crate in crates)
-    elif empty_message is not None:
-        lines.append(empty_message)
-
-
-def _append_section[T](
-    lines: list[str],
+def _render_section[T](
     items: cabc.Sequence[T],
     *,
     header: str,
     formatter: cabc.Callable[[T], str] = str,
-) -> None:
-    """Append formatted ``items`` to ``lines`` when a section has content."""
+    empty_message: str | None = None,
+) -> list[str]:
+    """Return the rendered lines for one plan section.
+
+    ``empty_message`` is rendered instead when the section is empty; omit it
+    to skip empty sections entirely. This is the single section renderer for
+    publish-plan output (issue #107).
+    """
     if items:
-        lines.append(header)
-        lines.extend(f"- {formatter(item)}" for item in items)
+        return [header, *(f"- {formatter(item)}" for item in items)]
+    return [] if empty_message is None else [empty_message]
 
 
 def _format_plan(plan: PublishPlan, *, strip_patches: StripPatchesSetting) -> str:
@@ -232,43 +222,47 @@ def _format_plan(plan: PublishPlan, *, strip_patches: StripPatchesSetting) -> st
         f"Strip patch strategy: {strip_patches}",
     ]
 
-    _format_crates_section(
-        lines,
-        plan.publishable,
-        header=f"Crates to publish ({len(plan.publishable)}):",
-        empty_message="Crates to publish: none",
+    lines.extend(
+        _render_section(
+            plan.publishable,
+            header=f"Crates to publish ({len(plan.publishable)}):",
+            formatter=lambda crate: f"{crate.name} @ {crate.version}",
+            empty_message="Crates to publish: none",
+        )
     )
-    _append_section(
-        lines,
-        plan.skipped_manifest,
-        header="Skipped (publish = false):",
-        formatter=lambda crate: crate.name,
+    lines.extend(
+        _render_section(
+            plan.skipped_manifest,
+            header="Skipped (publish = false):",
+            formatter=lambda crate: crate.name,
+        )
     )
-    _append_section(
-        lines,
-        plan.skipped_configuration,
-        header="Skipped via publish.exclude:",
-        formatter=lambda crate: crate.name,
+    lines.extend(
+        _render_section(
+            plan.skipped_configuration,
+            header="Skipped via publish.exclude:",
+            formatter=lambda crate: crate.name,
+        )
     )
-    _append_section(
-        lines,
-        plan.missing_configuration_exclusions,
-        header="Configured exclusions not found in workspace:",
+    lines.extend(
+        _render_section(
+            plan.missing_configuration_exclusions,
+            header="Configured exclusions not found in workspace:",
+        )
     )
 
     return "\n".join(lines)
 
 
-append_section = _append_section
+render_section = _render_section
 format_plan = _format_plan
 
 __all__ = [
     "PublishPlan",
     "PublishPlanError",
-    "_append_section",
-    "_format_crates_section",
     "_format_plan",
-    "append_section",
+    "_render_section",
     "format_plan",
     "plan_publication",
+    "render_section",
 ]

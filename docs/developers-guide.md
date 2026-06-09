@@ -507,6 +507,12 @@ around command execution. `lading bump` uses the runtime runner directly for
 lockfile refreshes, while `lading publish` uses `_invoke` where failures should
 surface as `PublishPreflightError`.
 
+`lading.utils.commands.LADING_CATALOGUE` is the staged cuprum programme
+catalogue (cargo, git). It is intentionally not yet wired into the execution
+path — the subprocess runner still spawns processes directly — and becomes live
+with the Phase 5 runner-migration steps in `docs/roadmap.md`. Treat it as a
+registration point, not as active allowlist enforcement.
+
 ### Pre-flight validation (`publish_preflight`)
 
 `lading.commands.publish_preflight` performs workspace validation before any

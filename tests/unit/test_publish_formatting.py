@@ -14,18 +14,16 @@ if typ.TYPE_CHECKING:
     from lading.workspace import WorkspaceCrate
 
 
-def test_append_section_appends_formatted_items() -> None:
+def test_render_section_renders_formatted_items() -> None:
     """Generic section helper applies the provided formatter."""
 
     class Dummy:
         def __init__(self, value: str) -> None:
             self.value = value
 
-    lines: list[str] = []
     items = (Dummy("alpha"), Dummy("beta"))
 
-    publish_plan.append_section(
-        lines,
+    lines = publish_plan.render_section(
         items,
         header="Header:",
         formatter=lambda item: item.value.upper(),
@@ -34,22 +32,16 @@ def test_append_section_appends_formatted_items() -> None:
     assert lines == ["Header:", "- ALPHA", "- BETA"]
 
 
-def test_append_section_defaults_to_string_conversion() -> None:
+def test_render_section_defaults_to_string_conversion() -> None:
     """Default formatter handles simple string values without boilerplate."""
-    lines: list[str] = []
-
-    publish_plan.append_section(lines, ("alpha", "beta"), header="Header:")
+    lines = publish_plan.render_section(("alpha", "beta"), header="Header:")
 
     assert lines == ["Header:", "- alpha", "- beta"]
 
 
-def test_append_section_omits_header_for_empty_sequences() -> None:
-    """Helper leaves ``lines`` unchanged when there is nothing to report."""
-    lines = ["prefix"]
-
-    publish_plan.append_section(lines, (), header="Header:")
-
-    assert lines == ["prefix"]
+def test_render_section_omits_header_for_empty_sequences() -> None:
+    """Helper returns no lines when there is nothing to report."""
+    assert publish_plan.render_section((), header="Header:") == []
 
 
 def test_format_plan_formats_skipped_sections(
