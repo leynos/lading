@@ -52,6 +52,15 @@ _INDEX_MISSING_VERSION_NAME_PATTERN = re.compile(
 
 
 @dc.dataclass(frozen=True, slots=True)
+class CargoSubprocessResult:
+    """Raw process output from a single cargo invocation."""
+
+    exit_code: int
+    stdout: str
+    stderr: str
+
+
+@dc.dataclass(frozen=True, slots=True)
 class CargoIndexLookupFailure:
     """Represents a cargo failure where the index could not resolve a dependency."""
 
@@ -61,15 +70,6 @@ class CargoIndexLookupFailure:
     stdout: str
     stderr: str
     missing_dependency_name: str | None
-
-
-@dc.dataclass(frozen=True, slots=True)
-class CargoSubprocessResult:
-    """Raw process output from a single cargo invocation."""
-
-    exit_code: int
-    stdout: str
-    stderr: str
 
 
 def parse_index_lookup_failure(
