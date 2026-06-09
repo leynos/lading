@@ -14,7 +14,7 @@ import typing as typ
 from pathlib import Path
 
 from lading.exceptions import LadingError
-from lading.utils.process import format_command, log_command_invocation
+from lading.utils.process import log_command_invocation
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -190,7 +190,9 @@ def invoke_via_subprocess(
 
     """
     command = (program, *args)
-    _log_subprocess_spawn(command, context.cwd)
+    # The command line itself is logged once, at INFO, by
+    # ``subprocess_runner`` via ``log_command_invocation``; only the
+    # environment overrides are worth an extra DEBUG record here.
     _log_subprocess_environment(context.env)
     normalised_env = normalise_environment(context.env)
     process = _spawn_process(program, command, context, normalised_env)
@@ -341,17 +343,6 @@ def _format_thread_name(program: str, stream: str) -> str:
     base = Path(program).name or program
     safe = _THREAD_NAME_PATTERN.sub("-", base).strip("-") or "command"
     return f"lading-cmd-{safe}-{stream}"
-
-
-def _log_subprocess_spawn(
-    command: cabc.Sequence[str], cwd: Path | None
-) -> None:  # pragma: no cover - logging only
-    """Log the rendered subprocess command and optional working directory."""
-    rendered = format_command(command)
-    if cwd is None:
-        _LOGGER.debug("Spawning subprocess: %s", rendered)
-    else:
-        _LOGGER.debug("Spawning subprocess: %s (cwd=%s)", rendered, cwd)
 
 
 def _log_subprocess_environment(env: cabc.Mapping[str, str] | None) -> None:
