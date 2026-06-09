@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import collections.abc as cabc
 import logging
+import math
 import os
 import sys
 import typing as typ
@@ -21,7 +22,13 @@ from lading.runtime.subprocess_runner import (
 from lading.utils.process import log_command_invocation
 
 _LOGGER = logging.getLogger(__name__)
+
 _CMD_MOX_TIMEOUT_DEFAULT = 5.0
+
+# Canonical operator-facing IPC-timeout messages (issue #98): these exist
+# only here; no other module may duplicate them.
+INVALID_IPC_TIMEOUT_MESSAGE = "Invalid CMOX_IPC_TIMEOUT value"
+NON_POSITIVE_IPC_TIMEOUT_MESSAGE = "CMOX_IPC_TIMEOUT must be positive"
 
 
 class CmdMoxError(LadingError):
@@ -111,11 +118,11 @@ def _resolve_cmd_mox_timeout(raw_timeout: str | None) -> float:
     try:
         timeout = float(raw_timeout)
     except (TypeError, ValueError) as exc:
-        message = "Invalid CMOX_IPC_TIMEOUT value"
-        raise CmdMoxError(message) from exc
-    if timeout <= 0:
-        message = "CMOX_IPC_TIMEOUT must be positive"
-        raise CmdMoxError(message)
+        raise CmdMoxError(INVALID_IPC_TIMEOUT_MESSAGE) from exc
+    # NaN compares false against everything, so it must be rejected
+    # explicitly alongside zero and negative values.
+    if math.isnan(timeout) or timeout <= 0:
+        raise CmdMoxError(NON_POSITIVE_IPC_TIMEOUT_MESSAGE)
     return timeout
 
 

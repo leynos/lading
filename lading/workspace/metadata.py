@@ -24,16 +24,6 @@ if typ.TYPE_CHECKING:  # pragma: no cover - import-time typing aids only
 class CargoMetadataError(LadingError):
     """Raised when ``cargo metadata`` cannot be executed successfully."""
 
-    @classmethod
-    def invalid_ipc_timeout(cls) -> CargoMetadataError:
-        """Return an error for malformed IPC timeout values."""
-        return cls("Invalid CMOX_IPC_TIMEOUT value")
-
-    @classmethod
-    def non_positive_ipc_timeout(cls) -> CargoMetadataError:
-        """Return an error when the IPC timeout is non-positive."""
-        return cls("CMOX_IPC_TIMEOUT must be positive")
-
 
 class CargoExecutableNotFoundError(CargoMetadataError):
     """Raised when the ``cargo`` executable is missing from ``PATH``."""

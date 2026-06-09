@@ -1,0 +1,7 @@
+# serializer version: 1
+# name: test_ipc_timeout_messages_are_stable
+  'Invalid CMOX_IPC_TIMEOUT value'
+# ---
+# name: test_ipc_timeout_messages_are_stable.1
+  'CMOX_IPC_TIMEOUT must be positive'
+# ---
