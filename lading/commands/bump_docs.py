@@ -348,7 +348,7 @@ def update_toml_snippet_dependencies(
         return False
 
     changed = False
-    for section in ("dependencies", "dev-dependencies", "build-dependencies"):
+    for section in bump_toml.DEPENDENCY_SECTIONS:
         if _update_single_dependency_section(
             document, section, dependency_targets, target_version
         ):
