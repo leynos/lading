@@ -1,7 +1,9 @@
 """Unit tests for the _validate_lockfile_freshness pre-flight helper.
 
-These exercise the pre-flight freshness domain step through the
-:class:`lading.commands.lockfile.LockfileInspectionRepository` port (issue
+These exercise the pre-flight freshness domain step in
+:mod:`lading.commands.publish_lockfile_preflight` through the
+:class:`lading.commands.lockfile_repository.LockfileInspectionRepository`
+port (issue
 #82): tests inject a recording repository double instead of a command runner,
 so discovery, classification, and remediation messaging are verified without
 touching git or cargo.
@@ -10,6 +12,7 @@ touching git or cargo.
 from __future__ import annotations
 
 import dataclasses as dc
+import logging
 import typing as typ
 from pathlib import Path
 
@@ -17,7 +20,7 @@ import hypothesis.strategies as st
 import pytest
 from hypothesis import HealthCheck, given, settings
 
-from lading.commands import lockfile, publish, publish_preflight
+from lading.commands import lockfile, publish, publish_lockfile_preflight
 
 if typ.TYPE_CHECKING:
     import collections.abc as cabc
@@ -117,7 +120,7 @@ def _stale_lockfiles_error_message(workspace_root: Path) -> str:
         publish.PublishPreflightError,
         match="Tracked Cargo\\.lock files are stale",
     ) as excinfo:
-        publish_preflight._validate_lockfile_freshness(
+        publish_lockfile_preflight._validate_lockfile_freshness(
             workspace_root, repository=repository
         )
 
@@ -132,7 +135,9 @@ def test_validate_lockfile_freshness_passes_when_all_lockfiles_are_fresh(
     nested_lockfile = tmp_path / "tests" / "ui_lints" / "Cargo.lock"
     repository = _RecordingLockfileRepository(tracked=(root_lockfile, nested_lockfile))
 
-    publish_preflight._validate_lockfile_freshness(tmp_path, repository=repository)
+    publish_lockfile_preflight._validate_lockfile_freshness(
+        tmp_path, repository=repository
+    )
 
     assert repository.discovered_roots == [tmp_path]
     assert repository.validated_manifests == [
@@ -184,7 +189,57 @@ def test_validate_lockfile_freshness_surfaces_cargo_failures(tmp_path: Path) -> 
         publish.PublishPreflightError,
         match="failed to download registry index",
     ):
-        publish_preflight._validate_lockfile_freshness(tmp_path, repository=repository)
+        publish_lockfile_preflight._validate_lockfile_freshness(
+            tmp_path, repository=repository
+        )
+
+
+def test_validate_lockfile_freshness_skips_non_git_workspaces(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The skip policy for non-git workspaces lives at the pre-flight caller.
+
+    Issue #79: discovery raises ``NotAGitRepositoryError`` instead of hiding
+    the condition; pre-flight catches it at the port boundary, warns, and
+    continues without probing any lockfile.
+    """
+    caplog.set_level(
+        logging.WARNING, logger="lading.commands.publish_lockfile_preflight"
+    )
+
+    @dc.dataclass
+    class _NonGitRepository:
+        """Recording repository double that reports a non-git workspace."""
+
+        discovered_roots: list[Path] = dc.field(default_factory=list)
+
+        def discover_tracked_lockfiles(self, workspace_root: Path) -> tuple[Path, ...]:
+            """Record the call and raise the typed non-git discovery error."""
+            self.discovered_roots.append(workspace_root)
+            message = f"{workspace_root} is not a git repository"
+            raise lockfile.NotAGitRepositoryError(message)
+
+        def validate_lockfile_freshness(
+            self, manifest_path: Path
+        ) -> lockfile.LockfileFreshness:
+            """Fail: no lockfile should be validated for a non-git workspace."""
+            pytest.fail(
+                f"no lockfile should be validated for a non-git workspace: "
+                f"{manifest_path}"
+            )
+
+    repository = _NonGitRepository()
+
+    publish_lockfile_preflight._validate_lockfile_freshness(
+        tmp_path, repository=repository
+    )
+
+    assert repository.discovered_roots == [tmp_path]
+    assert any(
+        "Skipping lockfile freshness validation" in message
+        for message in caplog.messages
+    )
 
 
 def test_validate_lockfile_freshness_classifies_every_lockfile(
@@ -214,7 +269,9 @@ def test_validate_lockfile_freshness_classifies_every_lockfile(
         publish.PublishPreflightError,
         match="Tracked Cargo\\.lock files are stale",
     ) as excinfo:
-        publish_preflight._validate_lockfile_freshness(tmp_path, repository=repository)
+        publish_lockfile_preflight._validate_lockfile_freshness(
+            tmp_path, repository=repository
+        )
 
     # No short-circuit: every tracked lockfile is probed despite the first
     # being stale (issue #83).
@@ -258,7 +315,7 @@ def _assert_no_error_outcomes(
             publish.PublishPreflightError,
             match="Tracked Cargo\\.lock files are stale",
         ) as excinfo:
-            publish_preflight._validate_lockfile_freshness(
+            publish_lockfile_preflight._validate_lockfile_freshness(
                 workspace_root, repository=repository
             )
         # pkg indices stay single-digit (max_size=6), so no pkgN path is a
@@ -276,7 +333,7 @@ def _assert_no_error_outcomes(
                 f"fresh lockfile {path} wrongly reported as stale: {message}"
             )
     else:
-        publish_preflight._validate_lockfile_freshness(
+        publish_lockfile_preflight._validate_lockfile_freshness(
             workspace_root, repository=repository
         )
     assert repository.validated_manifests == expected_manifests, (
@@ -298,7 +355,7 @@ def _assert_error_aborts_classification(
     the lockfiles up to and including the first error are probed.
     """
     with pytest.raises(publish.PublishPreflightError, match="boom"):
-        publish_preflight._validate_lockfile_freshness(
+        publish_lockfile_preflight._validate_lockfile_freshness(
             workspace_root, repository=repository
         )
     expected_prefix = [
