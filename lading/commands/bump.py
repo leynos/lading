@@ -10,6 +10,7 @@ import typing as typ
 
 from lading import config as config_module
 from lading.commands import bump_docs, bump_lockfiles, bump_readme, bump_toml
+from lading.commands.bump_output import BumpChanges, _format_result_message
 from lading.utils import normalise_workspace_root
 
 if typ.TYPE_CHECKING:
@@ -82,18 +83,6 @@ class BumpOptions:
         default_factory=lambda: types.MappingProxyType({})
     )
     include_workspace_sections: bool = False
-
-
-@dc.dataclass(frozen=True, slots=True)
-class BumpChanges:
-    """Collection of files altered by a bump run."""
-
-    manifests: cabc.Sequence[Path] = ()
-    documents: cabc.Sequence[Path] = ()
-    lockfiles: cabc.Sequence[Path] = ()
-    transposed_readmes: cabc.Sequence[Path] = ()
-
-
 @dc.dataclass(frozen=True, slots=True)
 class _BumpContext:
     """Initialisation context for bump operations."""
@@ -105,58 +94,6 @@ class _BumpContext:
     workspace_manifest: Path
     excluded: frozenset[str]
     updated_crate_names: frozenset[str]
-
-
-def _build_changes_description(changes: BumpChanges) -> str:
-    """Build a human-readable description of changed files."""
-    parts: list[str] = []
-    if changes.manifests:
-        parts.append(f"{len(changes.manifests)} manifest(s)")
-    if changes.documents:
-        parts.append(f"{len(changes.documents)} documentation file(s)")
-    if changes.transposed_readmes:
-        parts.append(f"{len(changes.transposed_readmes)} readme file(s)")
-    if changes.lockfiles:
-        parts.append(f"{len(changes.lockfiles)} lockfile(s)")
-    return parts[0] if len(parts) == 1 else " and ".join(parts)
-
-
-def _format_no_changes_message(target_version: str, *, dry_run: bool) -> str:
-    """Format message when no changes are required."""
-    if dry_run:
-        return (
-            "Dry run; no manifest changes required; "
-            f"all versions already {target_version}."
-        )
-    return f"No manifest changes required; all versions already {target_version}."
-
-
-def _format_header(description: str, target_version: str, *, dry_run: bool) -> str:
-    """Format the summary header line."""
-    if dry_run:
-        return f"Dry run; would update version to {target_version} in {description}:"
-    return f"Updated version to {target_version} in {description}:"
-
-
-def _format_manifest_path(manifest_path: Path, workspace_root: Path) -> str:
-    """Return ``manifest_path`` relative to ``workspace_root`` when possible."""
-    try:
-        relative = manifest_path.relative_to(workspace_root)
-    except ValueError:
-        return str(manifest_path)
-    return str(relative)
-
-
-def _has_changes(changes: BumpChanges) -> bool:
-    """Return True when a bump run changed at least one file category."""
-    return any((
-        changes.manifests,
-        changes.documents,
-        changes.transposed_readmes,
-        changes.lockfiles,
-    ))
-
-
 def run(
     workspace_root: Path | str,
     target_version: str,
@@ -400,40 +337,6 @@ def _update_crate_manifest(
         target_version,
         crate_options,
     )
-
-
-def _format_result_message(
-    changes: BumpChanges,
-    target_version: str,
-    *,
-    dry_run: bool,
-    workspace_root: Path,
-) -> str:
-    """Summarise the bump outcome for CLI presentation."""
-    if not _has_changes(changes):
-        return _format_no_changes_message(target_version, dry_run=dry_run)
-
-    description = _build_changes_description(changes)
-    header = _format_header(description, target_version, dry_run=dry_run)
-    formatted_paths = [
-        f"- {_format_manifest_path(manifest_path, workspace_root)}"
-        for manifest_path in changes.manifests
-    ]
-    formatted_paths.extend(
-        f"- {_format_manifest_path(document_path, workspace_root)} (documentation)"
-        for document_path in changes.documents
-    )
-    formatted_paths.extend(
-        f"- {_format_manifest_path(readme_path, workspace_root)} (readme)"
-        for readme_path in changes.transposed_readmes
-    )
-    formatted_paths.extend(
-        f"- {_format_manifest_path(lockfile_path, workspace_root)} (lockfile)"
-        for lockfile_path in changes.lockfiles
-    )
-    return "\n".join([header, *formatted_paths])
-
-
 def _validate_bump_options(options: BumpOptions) -> tuple[LadingConfig, WorkspaceGraph]:
     """Validate and extract required configuration and workspace from options.
 
