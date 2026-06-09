@@ -173,7 +173,10 @@ manifests are already rewritten.
 `LockfileFreshness` result that distinguishes fresh lockfiles, lockfiles that
 Cargo says need updating under `--locked`, and unrelated Cargo failures.
 `_validate_lockfile_freshness` in `publish_preflight.py` calls it before the
-cargo check/test pre-flight.
+cargo check/test pre-flight. Validation deliberately classifies every tracked
+lockfile rather than short-circuiting on the first stale result, so the raised
+error can list each stale lockfile with its repair command and the operator
+repairs the workspace in a single pass.
 
 `LockfileDiscoveryError` and `LockfileRefreshError` inherit `LadingError`;
 their messages include git or Cargo details respectively.

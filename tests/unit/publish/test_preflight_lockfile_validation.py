@@ -175,3 +175,52 @@ def test_validate_lockfile_freshness_surfaces_cargo_failures(
         match="failed to download registry index",
     ):
         publish_preflight._validate_lockfile_freshness(tmp_path, runner=runner, env={})
+
+
+def test_validate_lockfile_freshness_classifies_every_lockfile(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """All tracked lockfiles are probed even when the first is already stale.
+
+    Issue #83 evaluated short-circuiting on the first stale lockfile and
+    rejected it: the aggregated error must list every stale lockfile so the
+    operator repairs the workspace in one pass. This test pins the
+    full-classification behaviour.
+    """
+    lockfiles = (
+        tmp_path / "Cargo.lock",
+        tmp_path / "a" / "Cargo.lock",
+        tmp_path / "b" / "Cargo.lock",
+    )
+    monkeypatch.setattr(
+        publish_preflight,
+        "discover_tracked_lockfiles",
+        lambda _root, _runner: lockfiles,
+    )
+    probed: list[Path] = []
+
+    def fake_validate(manifest: Path, _runner: object) -> lockfile.LockfileFreshness:
+        probed.append(manifest)
+        return lockfile.LockfileFreshness(
+            is_fresh=False,
+            is_stale=True,
+            detail="lock file needs to be updated but --locked was passed",
+        )
+
+    monkeypatch.setattr(publish_preflight, "validate_lockfile_freshness", fake_validate)
+
+    def runner(
+        command: tuple[str, ...],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        return 0, "", ""
+
+    with pytest.raises(publish.PublishPreflightError) as excinfo:
+        publish_preflight._validate_lockfile_freshness(tmp_path, runner=runner, env={})
+
+    assert probed == [path.parent / "Cargo.toml" for path in lockfiles]
+    message = str(excinfo.value)
+    for path in lockfiles:
+        assert str(path) in message
