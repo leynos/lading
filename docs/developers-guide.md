@@ -145,9 +145,12 @@ README adoption, and lockfile reporting. Keep user-facing summary construction
 in `lading.commands.bump_output` rather than formatting messages inline in the
 workflow.
 
-`lading.commands.bump_output` renders the CLI summary from a `BumpChanges`
-record. This record includes manifests, documentation files, transposed
-readmes, and lockfiles that changed during a bump run.
+`lading.commands.bump_output` is the sole owner of `BumpChanges` and all bump
+result-message formatting; `bump.py` imports these helpers and must not
+re-declare them. The `BumpChanges` record includes manifests, documentation
+files, transposed readmes, and lockfiles that changed during a bump run.
+Changed-category descriptions join with an Oxford comma for three or more
+categories (for example, "2 manifest(s), 1 readme file(s), and 1 lockfile(s)").
 
 `lading.commands.bump_readme` owns workspace README adoption during
 `lading bump`. The module copies the workspace `README.md` into each crate that
