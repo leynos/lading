@@ -5,14 +5,15 @@ from __future__ import annotations
 import collections.abc as cabc
 import dataclasses as dc
 import pathlib
-import typing as typ
+import string
+import tempfile
+from pathlib import Path
 
+import hypothesis.strategies as st
 import pytest
+from hypothesis import assume, given, settings
 
 from lading.commands import bump_lockfiles
-
-if typ.TYPE_CHECKING:
-    from pathlib import Path
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -267,3 +268,99 @@ def test_regenerate_lockfiles_wraps_runner_exceptions(tmp_path: Path) -> None:
         )
 
     assert isinstance(exc_info.value.__cause__, OSError)
+
+
+# ---------------------------------------------------------------------------
+# Hypothesis property tests for manifest-path resolution (issue #93)
+# ---------------------------------------------------------------------------
+
+_segment = st.text(
+    alphabet=string.ascii_lowercase + string.digits + "_-",
+    min_size=1,
+    max_size=10,
+)
+
+# Relative directory paths that stay inside the workspace, optionally with
+# redundant "." segments which normalise away.
+_inside_dir = st.lists(
+    st.one_of(_segment, st.just(".")),
+    min_size=0,
+    max_size=4,
+)
+
+
+def _manifest_string(components: list[str]) -> str:
+    """Render a manifest path string from directory ``components``."""
+    return "/".join((*components, "Cargo.toml"))
+
+
+@given(dirs=st.lists(_inside_dir, max_size=6))
+@settings(max_examples=60, deadline=None)
+def test_inside_manifests_resolve_to_sibling_lockfiles(
+    dirs: list[list[str]],
+) -> None:
+    """Any in-workspace manifest string yields a sibling Cargo.lock path.
+
+    Also pins the ordering and deduplication invariants: the workspace root
+    lockfile is always first, and resolved paths are unique.
+    """
+    with tempfile.TemporaryDirectory(prefix="lading-bump-lockfiles-") as tmp:
+        workspace_root = Path(tmp)
+        manifests = [_manifest_string(components) for components in dirs]
+
+        lockfiles = bump_lockfiles.resolve_lockfile_paths(workspace_root, manifests)
+
+        resolved_root = workspace_root.resolve()
+        assert lockfiles[0] == resolved_root / "Cargo.lock"
+        assert len(set(lockfiles)) == len(lockfiles)
+        for lockfile_path in lockfiles:
+            assert lockfile_path.name == "Cargo.lock"
+            assert lockfile_path.parent == lockfile_path.parent.resolve()
+            lockfile_path.relative_to(resolved_root)
+        expected = {resolved_root / "Cargo.lock"} | {
+            (workspace_root.joinpath(*components, "Cargo.toml")).resolve().parent
+            / "Cargo.lock"
+            for components in dirs
+        }
+        assert set(lockfiles) == expected
+
+
+@given(spellings=st.lists(st.sampled_from(["Cargo.toml", "./Cargo.toml"]), max_size=4))
+@settings(max_examples=20, deadline=None)
+def test_root_manifest_spellings_deduplicate_to_one_invocation(
+    spellings: list[str],
+) -> None:
+    """Every spelling of the root manifest produces exactly one root entry."""
+    with tempfile.TemporaryDirectory(prefix="lading-bump-lockfiles-") as tmp:
+        workspace_root = Path(tmp)
+
+        lockfiles = bump_lockfiles.resolve_lockfile_paths(workspace_root, spellings)
+
+        assert lockfiles == (workspace_root.resolve() / "Cargo.lock",)
+
+
+@given(
+    escape_depth=st.integers(min_value=1, max_value=3),
+    suffix=st.lists(_segment, max_size=2),
+)
+@settings(max_examples=30, deadline=None)
+def test_escaping_manifests_are_rejected(
+    escape_depth: int,
+    suffix: list[str],
+) -> None:
+    """Any manifest path escaping the workspace root raises an error."""
+    with tempfile.TemporaryDirectory(prefix="lading-bump-lockfiles-") as tmp:
+        # Anchor inside a subdirectory so ".." segments cannot accidentally
+        # resolve back inside the temporary root.
+        workspace_root = Path(tmp) / "workspace"
+        workspace_root.mkdir()
+        # A suffix re-entering the workspace directory would resolve back
+        # inside and legitimately pass validation; exclude that case.
+        assume(suffix[:1] != ["workspace"])
+        escaping = "/".join(([".."] * escape_depth) + [*suffix, "Cargo.toml"])
+
+        with pytest.raises(
+            bump_lockfiles.LockfileRegenerationError,
+            match="must stay within the workspace",
+        ):
+            bump_lockfiles.resolve_lockfile_paths(workspace_root, (escaping,))
