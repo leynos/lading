@@ -522,6 +522,8 @@ def _ensure_workspace(
     except FileNotFoundError as exc:  # pragma: no cover - defensive
         message = f"Workspace root not found: {workspace_root}"
         raise WorkspaceModelError(message) from exc
+
+
 def _validate_publication_options(options: PublishOptions) -> None:
     """Raise :class:`PublishPreflightError` for invalid option combinations."""
     if options.live and options.allow_unpublished_workspace_deps:

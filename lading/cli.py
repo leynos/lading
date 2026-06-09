@@ -183,6 +183,8 @@ def _resolve_allow_unpublished_workspace_deps(
         live,
     )
     return resolved_value
+
+
 def _extract_workspace_override(
     tokens: cabc.Sequence[str],
 ) -> tuple[str | None, list[str]]:

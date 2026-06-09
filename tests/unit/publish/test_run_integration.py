@@ -234,6 +234,8 @@ def test_run_logs_when_unpublished_workspace_dependency_override_is_enabled(
         and "unpublished workspace dependency override is enabled" in message
         for message in caplog.messages
     )
+
+
 def test_run_honours_explicit_unpublished_workspace_deps_opt_out(
     tmp_path: Path,
 ) -> None:
@@ -255,6 +257,8 @@ def test_run_honours_explicit_unpublished_workspace_deps_opt_out(
         )
 
     assert "unpublished workspace dependency override" in str(excinfo.value)
+
+
 def test_run_keeps_dry_run_publication_batched(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:

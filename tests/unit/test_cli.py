@@ -414,6 +414,8 @@ def test_publish_cli_logs_dry_run_default_flag_resolution(
     assert (
         "Defaulting to allow unpublished workspace dependencies during dry-run publish"
     ) in caplog.messages
+
+
 @pytest.mark.usefixtures("minimal_config")
 @pytest.mark.parametrize(
     ("extra_args", "expected"),
