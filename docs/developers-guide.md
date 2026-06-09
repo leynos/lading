@@ -222,8 +222,10 @@ this helper for consistent path handling, including `lading.cli`,
 
 `discover_tracked_lockfiles(workspace_root, runner)` filters git-tracked
 `Cargo.lock` files outside `target/` with adjacent `Cargo.toml` manifests.
-Private helpers `_handle_git_ls_files_failure` and `_lockfiles_with_manifests`
-perform the error-handling and path-filtering passes respectively.
+Private helpers `_raise_git_ls_files_failure` and `_lockfiles_with_manifests`
+perform the error-handling and path-filtering passes respectively. Discovery
+raises `NotAGitRepositoryError` when the workspace is not under git control;
+callers that should skip that condition own the skip policy at their boundary.
 
 `refresh_lockfile(manifest_path, runner)` runs
 `cargo generate-lockfile --manifest-path` for the supplied manifest and raises

@@ -34,6 +34,7 @@ import typing as typ
 from pathlib import Path
 
 from lading.commands.lockfile import (
+    NotAGitRepositoryError,
     discover_tracked_lockfiles,
     validate_lockfile_freshness,
 )
@@ -263,7 +264,16 @@ def _validate_lockfile_freshness(
         effective_env = base_env if env is None else env
         return runner(command, cwd=cwd, env=effective_env)
 
-    tracked = discover_tracked_lockfiles(workspace_root, runner_with_env)
+    try:
+        tracked = discover_tracked_lockfiles(workspace_root, runner_with_env)
+    except NotAGitRepositoryError:
+        # Skip policy lives here, not in discovery: a non-git workspace has
+        # no tracked lockfiles to validate, so pre-flight continues.
+        LOGGER.warning(
+            "Skipping lockfile freshness validation: %s is not a git repository",
+            workspace_root,
+        )
+        return
     stale_lockfiles = _collect_stale_lockfiles(tracked, runner_with_env)
 
     if not stale_lockfiles:
