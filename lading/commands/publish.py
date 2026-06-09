@@ -539,7 +539,9 @@ def _execute_live_publication_pipeline(
                 ", ".join(completed) if completed else "none",
             )
             raise PublishPreflightError(str(exc)) from exc
-        except (PublishPreflightError, PublishError):
+        # PublishError subclasses PublishPreflightError, so the base class
+        # alone covers both pre-flight and publish failures here.
+        except PublishPreflightError:
             LOGGER.exception(
                 "Live pipeline: aborted on crate %s — %d/%d crates completed (%s)",
                 crate.name,

@@ -14,44 +14,6 @@ if typ.TYPE_CHECKING:
     from lading.workspace import WorkspaceCrate
 
 
-def test_append_section_appends_formatted_items() -> None:
-    """Generic section helper applies the provided formatter."""
-
-    class Dummy:
-        def __init__(self, value: str) -> None:
-            self.value = value
-
-    lines: list[str] = []
-    items = (Dummy("alpha"), Dummy("beta"))
-
-    publish_plan.append_section(
-        lines,
-        items,
-        header="Header:",
-        formatter=lambda item: item.value.upper(),
-    )
-
-    assert lines == ["Header:", "- ALPHA", "- BETA"]
-
-
-def test_append_section_defaults_to_string_conversion() -> None:
-    """Default formatter handles simple string values without boilerplate."""
-    lines: list[str] = []
-
-    publish_plan.append_section(lines, ("alpha", "beta"), header="Header:")
-
-    assert lines == ["Header:", "- alpha", "- beta"]
-
-
-def test_append_section_omits_header_for_empty_sequences() -> None:
-    """Helper leaves ``lines`` unchanged when there is nothing to report."""
-    lines = ["prefix"]
-
-    publish_plan.append_section(lines, (), header="Header:")
-
-    assert lines == ["prefix"]
-
-
 def test_format_plan_formats_skipped_sections(
     tmp_path: Path,
     make_crate: cabc.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],

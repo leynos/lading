@@ -909,6 +909,12 @@ values are pinned by a syrupy snapshot. See the
 [cmd-mox usage guide](./cmd-mox-usage-guide.md#environment-variables) for the
 operator-facing description of the variable and its failure modes.
 
+`lading.utils.commands.LADING_CATALOGUE` is the staged cuprum programme
+catalogue (cargo, git). It is intentionally not yet wired into the execution
+path — the subprocess runner still spawns processes directly — and becomes live
+with the Phase 5 runner-migration steps in `docs/roadmap.md`. Treat it as a
+registration point, not as active allowlist enforcement.
+
 #### Subprocess invocation logging
 
 `subprocess_runner` emits **exactly one** log record per external command
