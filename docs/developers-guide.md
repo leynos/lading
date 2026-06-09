@@ -38,13 +38,15 @@ Run the Python lint gate with:
 make lint
 ```
 
-The target is deliberately two-tiered. Ruff runs first because it is fast,
-handles broad style and correctness checks, and imports the stricter lint
-policy used by `leynos/episodic`. If Ruff passes, the target then runs Pylint
-through the pinned `pylint-pypy-shim` tool under PyPy. This second tier is
-focused on rule families that complement Ruff, especially logging format
-safety, pattern matching checks, selected simplification checks, deprecated
-standard-library usage, file hygiene, and design-size limits.
+The target is deliberately three-tiered. Ruff runs first because it is fast,
+handles broad style and correctness checks, and imports the stricter lint policy
+used by `leynos/episodic`. If Ruff passes, the target runs `interrogate` with
+`--fail-under 100` across `lading` to enforce **100% docstring coverage**. If
+`interrogate` passes, the final tier runs Pylint through the pinned
+`pylint-pypy-shim` tool under PyPy. The final tier is focused on rule families
+that complement Ruff, especially logging format safety, pattern matching checks,
+selected simplification checks, deprecated standard-library usage, file hygiene,
+and design-size limits.
 
 The relevant Makefile variables are:
 
