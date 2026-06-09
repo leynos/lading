@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import collections.abc as cabc
 import string
+import tempfile
 from pathlib import Path
 
 import hypothesis.strategies as st
 import pytest
-from hypothesis import given
+from hypothesis import given, settings
 
 from lading.commands import lockfile
 from lading.utils import metrics
@@ -337,6 +338,70 @@ def test_returned_paths_are_subset_of_git_stdout(stdout: str) -> None:
             f"Returned path {path} (relative: {relative!r}) "
             f"does not appear in git stdout lines: {tracked_lines!r}"
         )
+
+def _stub_git_runner(stdout: str) -> cabc.Callable[..., tuple[int, str, str]]:
+    """Return a runner producing ``stdout`` for git ls-files."""
+
+    def runner(
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        del cwd, env
+        assert command[:2] == ("git", "ls-files")
+        return 0, stdout, ""
+
+    return runner
+
+@given(entries=st.lists(_tree_entry, max_size=8))
+@settings(max_examples=40, deadline=None)
+def test_discover_tracked_lockfiles_invariants(
+    entries: list[tuple[list[str], bool, bool]],
+) -> None:
+    """Discovery output satisfies all four filtering invariants.
+
+    For generated workspace trees (random ``Cargo.lock``/``Cargo.toml``
+    placements, ``target/`` subtrees at varying depths) and synthesised
+    ``git ls-files`` output, every returned path: ends with ``Cargo.lock``,
+    has no ``target`` component, has an adjacent ``Cargo.toml`` on disk, and
+    was present in the git output. The result is also complete: every
+    tracked lockfile satisfying the invariants is returned.
+    """
+    with tempfile.TemporaryDirectory(prefix="lading-hypothesis-") as tmp:
+        workspace_root = Path(tmp)
+        seen_dirs: dict[tuple[str, ...], tuple[bool, bool]] = {}
+        for components, has_toml, tracked in entries:
+            seen_dirs.setdefault(tuple(components), (has_toml, tracked))
+
+        tracked_lines: list[str] = []
+        for components, (has_toml, tracked) in seen_dirs.items():
+            directory = workspace_root.joinpath(*components)
+            directory.mkdir(parents=True, exist_ok=True)
+            (directory / "Cargo.lock").write_text("", encoding="utf-8")
+            if has_toml:
+                (directory / "Cargo.toml").write_text("", encoding="utf-8")
+            if tracked:
+                tracked_lines.append("/".join((*components, "Cargo.lock")))
+
+        stdout = "\n".join(tracked_lines)
+        result = lockfile.discover_tracked_lockfiles(
+            workspace_root, _stub_git_runner(stdout)
+        )
+
+        for path in result:
+            relative = path.relative_to(workspace_root)
+            assert path.name == "Cargo.lock"
+            assert "target" not in relative.parts
+            assert (path.parent / "Cargo.toml").exists()
+            assert str(relative) in tracked_lines
+
+        expected = {
+            workspace_root.joinpath(*components, "Cargo.lock")
+            for components, (has_toml, tracked) in seen_dirs.items()
+            if tracked and has_toml and "target" not in components
+        }
+        assert set(result) == expected
 
 
 # ---------------------------------------------------------------------------
