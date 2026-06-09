@@ -68,7 +68,7 @@ preview rules, targets Python 3.13, imports the selected `episodic` rule set,
 and bans deprecated `typing` aliases in favour of built-in collection types,
 `collections.abc`, `collections`, `contextlib`, or `re` as appropriate. The
 Pylint configuration keeps the pass opt-in by disabling all messages first and
-then enabling only the chosen second-tier checks. Local ignores and thresholds
+then enabling only the chosen third-tier checks. Local ignores and thresholds
 document existing codebase constraints that should be addressed as focused
 cleanup work rather than incidental lint-gate churn.
 
