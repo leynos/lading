@@ -78,7 +78,7 @@ def parse_index_lookup_failure(
     subcommand: typ.Literal["package", "publish"],
     result: CargoSubprocessResult,
 ) -> CargoIndexLookupFailure | None:
-    """Return a structured index-lookup failure parsed from cargo output.
+    r"""Return a structured index-lookup failure parsed from cargo output.
 
     Parameters
     ----------
@@ -99,19 +99,23 @@ def parse_index_lookup_failure(
 
     Examples
     --------
-    ```python
-    failure = parse_index_lookup_failure(
-        crate_name="beta",
-        subcommand="package",
-        result=CargoSubprocessResult(
-            exit_code=101,
-            stdout="",
-            stderr=cargo_stderr,
-        ),
-    )
-    if failure is not None:
-        print(failure.missing_dependency_name)
-    ```
+    >>> cargo_stderr = (
+    ...     "error: failed to select a version for the requirement "
+    ...     '`inner_crate = "^0.8.0"`\n'
+    ...     "location searched: crates.io index"
+    ... )
+    >>> result = CargoSubprocessResult(
+    ...     exit_code=101,
+    ...     stdout="",
+    ...     stderr=cargo_stderr,
+    ... )
+    >>> failure = parse_index_lookup_failure(
+    ...     crate_name="beta",
+    ...     subcommand="package",
+    ...     result=result,
+    ... )
+    >>> failure.missing_dependency_name
+    'inner_crate'
     """
     if result.exit_code == 0:
         return None

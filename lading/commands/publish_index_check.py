@@ -18,8 +18,6 @@ if typ.TYPE_CHECKING:
     from lading.commands.publish import _PublishExecutionOptions
     from lading.commands.publish_plan import PublishPlan
 
-LOGGER = logging.getLogger(__name__)
-
 _INDEX_MISSING_VERSION_DOWNGRADE_COUNTER: collections.Counter[tuple[str, str, str]] = (
     collections.Counter()
 )
@@ -69,18 +67,16 @@ def _format_cargo_failure_message(
 
 
 def _raise_name_extraction_failure(
-    error_cls: type[Exception],
-    lookup_failure: CargoIndexLookupFailure,
-    failure_message: str,
+    context: _IndexMissingVersionFailure,
 ) -> typ.NoReturn:
     """Log and raise when the missing dependency name cannot be extracted."""
-    LOGGER.warning(
+    context.logger.warning(
         "cargo %s for crate %s matched index-missing-version markers "
         "but the dependency name could not be extracted; treating as fatal",
-        lookup_failure.subcommand,
-        lookup_failure.crate_name,
+        context.failure.subcommand,
+        context.failure.crate_name,
     )
-    raise error_cls(failure_message)
+    raise context.error_cls(context.failure_message)
 
 
 def _format_missing_dependency_failure(
@@ -112,14 +108,13 @@ def _log_missing_dependency_failure(
 
 
 def _raise_out_of_plan_dependency(
-    error_cls: type[Exception],
-    lookup_failure: CargoIndexLookupFailure,
-    failure_message: str,
+    context: _IndexMissingVersionFailure,
+    *,
     missing_name: str,
 ) -> typ.NoReturn:
     """Log and raise when the unindexed dependency is outside the publish plan."""
     message = _format_missing_dependency_failure(
-        failure_message,
+        context.failure_message,
         missing_name=missing_name,
         reason=(
             "is not part of the current publish plan, so the unpublished "
@@ -128,12 +123,12 @@ def _raise_out_of_plan_dependency(
         guidance="Publish or index the dependency first.",
     )
     _log_missing_dependency_failure(
-        LOGGER,
-        lookup_failure,
+        context.logger,
+        context.failure,
         missing_name=missing_name,
         detail="which is not in the current publish plan; cannot continue",
     )
-    raise error_cls(message)
+    raise context.error_cls(message)
 
 
 def _raise_out_of_order_dependency(
@@ -284,12 +279,7 @@ def _validate_dependency_placement(
         missing_index if missing_index is not None else "<not in plan>",
     )
     if missing_index is None:
-        _raise_out_of_plan_dependency(
-            context.error_cls,
-            context.failure,
-            context.failure_message,
-            missing_name=missing_name,
-        )
+        _raise_out_of_plan_dependency(context, missing_name=missing_name)
     if missing_index == current_index:
         _raise_self_dependency(context, missing_name=missing_name)
     if missing_index > current_index:
@@ -324,7 +314,7 @@ def _handle_index_missing_version(
 
     missing_name = failure.missing_dependency_name
     if missing_name is None:
-        _raise_name_extraction_failure(error_cls, failure, failure_message)
+        _raise_name_extraction_failure(context)
 
     current_index, missing_index, missing_canonical_name = (
         _validate_dependency_placement(context, handling, missing_name)
