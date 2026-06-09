@@ -166,7 +166,9 @@ This affects dry-run release trains that introduce a new shared version across
 multiple workspace crates. `lading publish --live` avoids the limitation by
 publishing each crate immediately after it is packaged, so a later crate can
 resolve a dependency that an earlier crate in `publish.order` just uploaded.
-Plain dry-runs still use Cargo's live index and may need the override below.
+Plain dry-runs still use Cargo's live index. By default, `lading` downgrades
+these index-lookup failures to warnings when the missing dependency is also in
+the publish plan and appears earlier in publish order.
 
 ##### Manual staged publishing
 
@@ -189,9 +191,10 @@ invocation only acts on the remaining crates.
 
 ##### `--allow-unpublished-workspace-deps` (dry-run only)
 
-For CI gating where a real publish is not desirable, pass
-`--allow-unpublished-workspace-deps` to downgrade the index-lookup failure to a
-warning when the missing dependency is itself part of the planned publish set:
+For CI gating where a real publish is not desirable, dry-run mode defaults to
+the same behaviour as passing `--allow-unpublished-workspace-deps`: it
+downgrades the index-lookup failure to a warning when the missing dependency is
+itself part of the planned publish set and appears earlier in publish order:
 
 ```bash
 lading publish --allow-unpublished-workspace-deps
@@ -201,9 +204,21 @@ The override applies to both the `cargo package` step and the subsequent
 `cargo publish --dry-run` step (which packages internally and hits the same
 crates.io index lookup), so the dry run completes end-to-end.
 
-The flag is rejected when combined with `--live` because the failure cannot be
-bypassed during a real publish. When the missing dependency is **not** in the
-publish plan, the failure is still treated as an error.
+Use `--no-allow-unpublished-workspace-deps` to opt out during dry-runs and keep
+Cargo's index lookup strict:
+
+```bash
+lading publish --no-allow-unpublished-workspace-deps
+```
+
+`--allow-unpublished-workspace-deps` is rejected when combined with `--live`
+because the failure cannot be bypassed during a real publish.
+`--no-allow-unpublished-workspace-deps` remains valid with `--live`; it
+preserves the strict behaviour that live publishes already use. When the
+missing dependency is **not** in the publish plan, or when it appears **after**
+the current crate in `publish.order`, the failure is still treated as an error.
+Fix the explicit `publish.order` so foundational crates come before dependants,
+or remove `publish.order` and rely on dependency-derived topological sorting.
 
 ## Configuration reference (`lading.toml`)
 

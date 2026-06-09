@@ -1,47 +1,11 @@
 """Orchestrate the ``lading publish`` workflow.
 
-``run()`` is the primary entry point. It loads configuration, discovers the
-workspace graph, runs pre-flight checks (:mod:`~lading.commands.publish_preflight`),
-plans publication order, stages the workspace, and dispatches to one of two
-**publish pipelines** depending on the ``live`` flag.
-
-**Pipeline dispatch**
-
-*Dry-run* (``live=False``) keeps the historical batched two-phase pipeline:
-package every publishable crate, then ``cargo publish --dry-run`` every crate
-in plan order.
-
-*Live* (``live=True``) interleaves packaging and publishing per crate via
-:func:`_execute_live_publication_pipeline`: package the next crate, publish it,
-then advance. This ordering lets dependent crates resolve newly uploaded
-in-plan dependencies during a single release train.
-
-**Per-crate helpers**
-
-:func:`_package_crate` and :func:`_publish_crate` each invoke ``cargo`` in the
-correct staged directory for a single crate. Both detect
-index-missing-version failures (:func:`_is_index_missing_version_error`) and
-publish-phase already-uploaded errors (:func:`_is_already_published_error`) to
-support non-fatal downgrade paths.
-
-**Error boundary**
-
-:class:`~lading.commands.publish_errors.PublishPreflightError` signals
-pre-publication failures (packaging, pre-flight checks).
-:class:`~lading.commands.publish_errors.PublishError` signals post-pre-flight
-publish failures and subclasses the preflight error so callers can handle all
-failures through one catch boundary or distinguish the publish phase when
-needed.
-
-**Related modules**
-
-* :mod:`lading.commands.publish_plan` — plan construction and formatting
-* :mod:`lading.commands.publish_preflight` — ``cargo check`` / ``cargo test`` /
-  git-status guards
-* :mod:`lading.commands.publish_errors` — :class:`PublishPreflightError` and
-  :class:`PublishError`
-* :mod:`lading.commands.publish_execution` — subprocess invocation and cmd-mox
-  integration
+This module is the primary entry-point for the ``lading publish`` command.
+It is wired by ``lading.cli`` and delegates index-missing-version decisioning
+to ``lading.commands.publish_index_check``. Publication state is tracked per
+crate via ``PublishPlan`` and ``PublishPreparation`` objects produced in the
+planning and staging phase, then consumed across package and publish dispatches
+for both dry-run and live execution.
 """
 
 from __future__ import annotations
@@ -62,6 +26,7 @@ from lading.commands.publish_execution import (
 from lading.commands.publish_index_check import (
     _CargoInvocation,
     _format_cargo_failure_message,
+    _IndexMissingVersionHandling,
     _is_index_missing_version_error,
 )
 from lading.commands.publish_index_check import (
@@ -301,7 +266,13 @@ def _handle_index_missing_version(
         PublishError if invocation.subcommand == "publish" else PublishPreflightError
     )
     _raw_handle_index_missing_version(
-        invocation, plan=plan, options=options, error_cls=error_cls
+        invocation,
+        handling=_IndexMissingVersionHandling(
+            plan=plan,
+            options=options,
+            logger=LOGGER,
+        ),
+        error_cls=error_cls,
     )
 
 
@@ -557,8 +528,9 @@ def _validate_publication_options(options: PublishOptions) -> None:
     """Raise :class:`PublishPreflightError` for invalid option combinations."""
     if options.live and options.allow_unpublished_workspace_deps:
         message = (
-            "--allow-unpublished-workspace-deps is only valid in dry-run mode; "
-            "re-run without --live."
+            "Unpublished workspace dependency override is only valid in dry-run "
+            "mode. Live publish requires all dependency packages to be "
+            "available on crates.io before the dependent crate is published."
         )
         LOGGER.error(message)
         raise PublishPreflightError(message)

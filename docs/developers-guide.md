@@ -225,6 +225,15 @@ yet. When enabled, `lading publish` downgrades that specific index-lookup
 failure to a warning and continues. The option is rejected at runtime when
 `live=True`, so it cannot mask a real upload failure.
 
+The CLI accepts `--allow-unpublished-workspace-deps`,
+`--no-allow-unpublished-workspace-deps`, or an omitted value. The helper
+`lading.cli._resolve_allow_unpublished_workspace_deps()` resolves that
+tri-state command-line surface to the concrete boolean stored on
+`PublishOptions`: omitted dry-run invocations resolve to `True`, omitted live
+invocations resolve to `False`, and explicit values are honoured. This keeps
+the command dataclass free of adapter-only state while preserving the dry-run
+default expected by operators.
+
 ### Exception hierarchy (`lading.exceptions`)
 
 `lading.exceptions.LadingError` is the package-level base class for domain
@@ -317,7 +326,8 @@ diagnostic notes rather than replacing the original cargo failure.
 `_CargoInvocation`, the predicates and parsers that recognize Cargo's "no
 matching package/version" diagnostics, crate-name canonicalization, and
 `_handle_index_missing_version()`. That handler decides whether an index miss
-is out-of-plan and fatal, in-plan but still fatal, or in-plan and downgraded by
+is out-of-plan and fatal, in-plan but out of publish order and fatal, in-plan
+but still fatal, or in-plan and downgraded by
 `allow_unpublished_workspace_deps` during dry-run publication.
 
 ### `_PublishExecutionOptions`
@@ -385,23 +395,88 @@ The index-lookup handling is split across three helpers:
   backtick, single-quote, and double-quote delimiters around the requirement,
   captures the dependency name before `=`, and searches `stderr` before
   `stdout` because Cargo normally reports this failure on the error stream.
-- `_handle_index_missing_version(_CargoInvocation, *, plan, options)` applies
-  the decision tree. If name extraction fails, the original Cargo failure stays
-  fatal. If the parsed name is not in the publish plan, the failure is fatal
-  with guidance to publish or index that dependency first. If the parsed name
-  is in the plan and `allow_unpublished_workspace_deps` is set, the helper logs
-  a warning and continues; otherwise it raises with guidance to use the flag in
-  dry-run mode or follow the staged-publish workaround.
+- `_handle_index_missing_version(_CargoInvocation, *, handling, error_cls)`
+  applies the decision tree. The `_IndexMissingVersionHandling` context carries
+  the publish plan, execution options, and logger, making warning and
+  informational side-effects explicit at the command boundary; the index
+  checker does not own mutable metric state. The phase-specific `error_cls`
+  remains visible at the call site where the command phase is known. If name
+  extraction fails, the original Cargo failure stays fatal. If the parsed name
+  is not in the publish plan, the failure is fatal with guidance to publish or
+  index that dependency first. The helper then checks projected availability by
+  comparing the missing dependency's publish-order index with the current
+  crate's index in `PublishPlan.publishable`. If the dependency is in the plan
+  but appears later than the current crate, the failure is fatal because a live
+  run would try to publish the current crate before that dependency is
+  available. If the parsed name has an earlier index and
+  `allow_unpublished_workspace_deps` is set, the helper logs a warning and
+  continues; otherwise it raises with guidance to enable the dry-run
+  unpublished workspace dependency override or follow the staged-publish
+  workaround.
+- `_raise_out_of_order_dependency(failure, missing_name) -> NoReturn` is the
+  dedicated fatal path for dependencies that are planned but not projected to
+  have been published yet. It bypasses the dry-run downgrade setting and tells
+  operators to fix `publish.order` or rely on the dependency-derived
+  topological sort.
+
+### Supporting types
+
+`_IndexMissingVersionFailure` (frozen dataclass) Carries the four values
+required by every fatal-path helper: `error_cls` (the exception type to raise),
+`invocation` (the failing `cargo` invocation), `failure` (the pre-formatted
+failure message), and `logger`. Constructing it once in
+`_handle_index_missing_version` and passing it to helpers eliminates argument
+repetition and keeps each helper to two parameters, satisfying the PLR0913
+argument-count threshold.
+
+`_IndexMissingVersionHandling` (frozen dataclass) Carries the ambient context
+for the entire handler call: the active `PublishPlan`, the
+`_PublishExecutionOptions`, and `logger`.
+
+### Shared message helpers
+
+`_format_missing_dependency_failure(failure, *,`
+`missing_name, reason, guidance) -> str` Builds the human-readable fatal error
+string from the pre-formatted cargo failure text, the extracted dependency
+name, a domain-language reason clause, and an operator guidance sentence. All
+fatal-path helpers delegate message construction here, centralizing the text
+format.
+
+`_log_missing_dependency_failure(logger, invocation, *, missing_name, detail)`
+-> `None` Emits a WARNING-level log entry for fatal index-missing-version
+paths, providing consistent phrasing across all raise helpers so log
+aggregation can match on a stable prefix.
+
+### Fatal-path helpers
+
+Each of the following accepts an `_IndexMissingVersionFailure` context object
+and a keyword-only `missing_name` argument, then raises unconditionally (return
+type `typ.NoReturn`):
+
+- `_raise_name_extraction_failure(context)` — invoked when the dependency name
+  cannot be parsed from the cargo diagnostic output.
+- `_raise_out_of_plan_dependency(context, *, missing_name)` — invoked when the
+  missing dependency is absent from the publish plan entirely.
+- `_raise_self_dependency(context, *, missing_name)` — invoked when the failing
+  crate's unresolved dependency resolves to itself after name canonicalization.
+- `_raise_out_of_order_dependency(context, *, missing_name)` — invoked when the
+  missing dependency is in the plan but at a higher publish-order index than
+  the current crate.
+- `_raise_unpublished_dependency_override_required(context, *, missing_name)`
+  — invoked when the dependency is in the plan and ordered correctly but the
+  unpublished workspace dependency override is disabled.
 
 #### Crate-name canonicalization
 
 `_canonical_crate_name(name)` normalizes a crate name by replacing every hyphen
-with an underscore. It is applied to both sides of the `publishable_names`
-membership check inside `_handle_index_missing_version`:
+with an underscore. It is applied in `publish_index_check.py` when building
+`publishable_name_indexes = _publishable_name_indexes(handling.plan)` and when
+looking up both the current crate and a missing dependency name:
 
 ```python
-publishable_names = {_canonical_crate_name(entry.name) for entry in plan.publishable}
-if _canonical_crate_name(missing_name) not in publishable_names:
+current_name = _canonical_crate_name(context.invocation.crate_name)
+current_index = publishable_name_indexes[current_name]
+missing_index = publishable_name_indexes.get(_canonical_crate_name(missing_name))
 ```
 
 This is necessary because Cargo error diagnostics may report a missing

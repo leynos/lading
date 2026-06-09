@@ -1,4 +1,10 @@
-"""Unit tests for the lading CLI scaffolding."""
+"""Unit tests for ``lading.cli``.
+
+Covers tri-state ``--allow-unpublished-workspace-deps`` flag resolution via
+``_resolve_allow_unpublished_workspace_deps`` and the resulting
+``PublishOptions.allow_unpublished_workspace_deps`` value passed to
+``publish.run``.
+"""
 
 from __future__ import annotations
 
@@ -391,6 +397,68 @@ def test_bump_cli_accepts_dry_run_flag(
     assert isinstance(options, bump_command.BumpOptions)
     assert options.dry_run is True
     assert options.command_runner is cli.subprocess_runner
+
+
+def test_publish_cli_logs_dry_run_default_flag_resolution(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Default dry-run resolution emits an operator-facing INFO log."""
+    caplog.set_level(logging.INFO, logger="lading.cli")
+
+    resolved = cli._resolve_allow_unpublished_workspace_deps(
+        live=False,
+        allow_unpublished_workspace_deps=None,
+    )
+
+    assert resolved is True
+    assert (
+        "Defaulting to allow unpublished workspace dependencies during dry-run publish"
+    ) in caplog.messages
+
+
+@pytest.mark.usefixtures("minimal_config")
+@pytest.mark.parametrize(
+    ("extra_args", "expected"),
+    [
+        pytest.param((), True, id="default"),
+        pytest.param(("--allow-unpublished-workspace-deps",), True, id="enabled"),
+        pytest.param(("--no-allow-unpublished-workspace-deps",), False, id="disabled"),
+    ],
+)
+def test_publish_cli_passes_unpublished_workspace_deps_flag(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    extra_args: tuple[str, ...],
+    expected: object,
+) -> None:
+    """The CLI resolves omitted, enabled, and disabled flag states."""
+    workspace_graph = _make_workspace(tmp_path.resolve())
+    captured_options: dict[str, publish_command.PublishOptions] = {}
+
+    def fake_run(
+        workspace_root: Path,
+        configuration: object,
+        workspace_model: object,
+        *,
+        options: publish_command.PublishOptions | None = None,
+    ) -> str:
+        del workspace_root, configuration, workspace_model
+        assert options is not None
+        captured_options["options"] = options
+        return "publish"
+
+    monkeypatch.setattr(publish_command, "run", fake_run)
+    monkeypatch.setattr(cli, "load_workspace", lambda _: workspace_graph)
+
+    exit_code = cli.main([
+        "--workspace-root",
+        str(tmp_path),
+        "publish",
+        *extra_args,
+    ])
+
+    assert exit_code == 0
+    assert captured_options["options"].allow_unpublished_workspace_deps is expected
 
 
 @pytest.mark.parametrize(

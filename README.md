@@ -40,7 +40,6 @@ Ready for a full tour?
 - [User guide](docs/users-guide.md) – installation, tutorial, and full
   `lading.toml` reference.
 - [Developer guide](docs/developers-guide.md) – implementation notes, library
-  entry
-  points, and testing hooks.
+  entry points, and testing hooks.
 
 Fair winds and following seas! ⚓

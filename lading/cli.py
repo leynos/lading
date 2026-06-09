@@ -1,4 +1,17 @@
-"""Command-line interface for the :mod:`lading` toolkit."""
+"""Command-line interface for the :mod:`lading` toolkit.
+
+This module is the driving adapter between shell invocations and the command
+implementations under :mod:`lading.commands`. It owns argument declarations,
+environment-variable defaults, logging setup, workspace-root normalization,
+configuration loading, and workspace metadata loading before dispatching to the
+`bump` or `publish` command modules.
+
+The CLI intentionally resolves user-interface concerns here before crossing
+into command internals. For example, optional boolean flags accepted by
+Cyclopts are converted into concrete command options, so reusable command
+dataclasses do not need to model whether a value came from an omitted flag or
+an explicit user choice.
+"""
 
 from __future__ import annotations
 
@@ -64,12 +77,13 @@ _ALLOW_UNPUBLISHED_WORKSPACE_DEPS_PARAMETER = Parameter(
     help=(
         "Dry-run only: downgrade cargo package failures caused by a sibling "
         "workspace crate version not yet on crates.io to a warning when the "
-        "missing crate is part of the planned publish set. Cannot be combined "
-        "with --live."
+        "missing crate is part of the planned publish set and appears earlier "
+        "in publish order. Defaults to enabled in dry-run mode. Cannot be "
+        "combined with --live."
     ),
 )
 AllowUnpublishedWorkspaceDepsFlag = typ.Annotated[
-    bool, _ALLOW_UNPUBLISHED_WORKSPACE_DEPS_PARAMETER
+    bool | None, _ALLOW_UNPUBLISHED_WORKSPACE_DEPS_PARAMETER
 ]
 
 LOG_LEVEL_ENV_VAR = "LADING_LOG_LEVEL"
@@ -89,6 +103,7 @@ _LOG_LEVEL_ALIASES: dict[str, int] = {
 }
 
 app = App(help="Manage Rust workspaces with the lading toolkit.")
+LOGGER = logging.getLogger(__name__)
 
 
 def _select_runner() -> CommandRunner:
@@ -130,6 +145,44 @@ def _parse_workspace_equals(argument: str, index: int) -> tuple[str, int]:
     candidate = argument.partition("=")[2]
     workspace = _validate_workspace_value(candidate)
     return workspace, index + 1
+
+
+def _resolve_allow_unpublished_workspace_deps(
+    *,
+    live: bool,
+    allow_unpublished_workspace_deps: bool | None,
+) -> bool:
+    """Return the concrete publish option for the optional CLI flag."""
+    if allow_unpublished_workspace_deps is not None:
+        resolved_value = allow_unpublished_workspace_deps
+        LOGGER.debug(
+            "_resolve_allow_unpublished_workspace_deps: raw=%r live=%r "
+            "-> resolved=%r (explicit flag)",
+            allow_unpublished_workspace_deps,
+            live,
+            resolved_value,
+        )
+        return resolved_value
+    if live:
+        resolved_value = False
+        LOGGER.debug(
+            "_resolve_allow_unpublished_workspace_deps: raw=%r live=%r "
+            "-> resolved=False (live mode suppresses default)",
+            allow_unpublished_workspace_deps,
+            live,
+        )
+        return resolved_value
+    LOGGER.info(
+        "Defaulting to allow unpublished workspace dependencies during dry-run publish"
+    )
+    resolved_value = True
+    LOGGER.debug(
+        "_resolve_allow_unpublished_workspace_deps: raw=%r live=%r "
+        "-> resolved=True (dry-run default)",
+        allow_unpublished_workspace_deps,
+        live,
+    )
+    return resolved_value
 
 
 def _extract_workspace_override(
@@ -351,7 +404,7 @@ def publish(
     *,
     forbid_dirty: ForbidDirtyFlag = False,
     live: LiveFlag = False,
-    allow_unpublished_workspace_deps: AllowUnpublishedWorkspaceDepsFlag = False,
+    allow_unpublished_workspace_deps: AllowUnpublishedWorkspaceDepsFlag = None,
 ) -> str:
     """Run pre-flight checks, package crates, and execute cargo publish.
 
@@ -369,7 +422,14 @@ def publish(
             options=commands.publish.PublishOptions(
                 allow_dirty=not forbid_dirty,
                 live=live,
-                allow_unpublished_workspace_deps=allow_unpublished_workspace_deps,
+                allow_unpublished_workspace_deps=(
+                    _resolve_allow_unpublished_workspace_deps(
+                        live=live,
+                        allow_unpublished_workspace_deps=(
+                            allow_unpublished_workspace_deps
+                        ),
+                    )
+                ),
                 command_runner=command_runner,
             ),
         ),

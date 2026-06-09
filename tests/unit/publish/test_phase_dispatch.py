@@ -15,6 +15,7 @@ Warning messages are verified via snapshot assertions backed by syrupy.
 
 from __future__ import annotations
 
+import dataclasses as dc
 import logging
 import re
 import typing as typ
@@ -27,7 +28,7 @@ if typ.TYPE_CHECKING:
 
 import pytest
 
-from lading.commands import publish, publish_index_check
+from lading.commands import publish
 
 from .conftest import (
     INDEX_MISSING_STDERR_BETA,
@@ -37,6 +38,7 @@ from .conftest import (
     invoke_phase,
     make_config,
     make_crate,
+    make_dependency,
     make_dependency_chain,
     make_failing_runner,
     make_workspace,
@@ -59,10 +61,6 @@ def test_missing_dep_in_plan_and_flag_continues(
     """Flag downgrades the missing-index error to a warning and proceeds."""
     caplog.set_level(logging.WARNING, logger="lading.commands.publish")
     plan, preparation, _staging_root = publish_plan_and_prep
-    metric_key = (phase_name, "beta", "alpha")
-    before_count = publish_index_check._INDEX_MISSING_VERSION_DOWNGRADE_COUNTER[
-        metric_key
-    ]
     calls: list[str] = []
 
     def runner(
@@ -94,10 +92,37 @@ def test_missing_dep_in_plan_and_flag_continues(
 
     assert calls == ["alpha", "beta", "gamma"]
     assert _warning_records(caplog) == snapshot(name=phase_name)
-    assert (
-        publish_index_check._INDEX_MISSING_VERSION_DOWNGRADE_COUNTER[metric_key]
-        == before_count + 1
+
+
+@pytest.mark.parametrize(("phase_name", "exc_type"), _PHASE_IDS)
+def test_missing_dep_later_in_publish_order_raises(
+    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    phase_name: str,
+    exc_type: type[Exception],
+) -> None:
+    """A planned dependency must precede the failing crate to be tolerated."""
+    original_plan, _preparation, staging_root = publish_plan_and_prep
+    alpha, beta, gamma = original_plan.publishable
+    plan = dc.replace(original_plan, publishable=(beta, alpha, gamma))
+    preparation = publish.PublishPreparation(
+        staging_root=prepare_staging_root(plan, staging_root.parent.parent),
+        copied_readmes=(),
     )
+
+    with pytest.raises(exc_type, match=r"appears after .* in publish order"):
+        invoke_phase(
+            phase_name,
+            PhaseContext(
+                plan=plan,
+                preparation=preparation,
+                runner=make_failing_runner(stderr=INDEX_MISSING_STDERR_BETA),
+                options=publish._PublishExecutionOptions(
+                    live=False,
+                    allow_dirty=True,
+                    allow_unpublished_workspace_deps=True,
+                ),
+            ),
+        )
 
 
 def test_missing_dep_in_plan_allows_cargo_name_normalisation(
@@ -139,7 +164,7 @@ def test_missing_dep_in_plan_allows_cargo_name_normalisation(
     )
     assert any(
         "could not resolve sibling dependency alpha_crate" in message
-        and "continuing because --allow-unpublished-workspace-deps is set" in message
+        and "unpublished workspace dependency override is enabled" in message
         for message in caplog.messages
     ), "expected canonicalised in-plan dependency to be downgraded to a warning"
 
@@ -193,7 +218,7 @@ def test_missing_dep_in_plan_without_flag_raises(
         )
 
     message = str(excinfo.value)
-    assert "--allow-unpublished-workspace-deps" in message
+    assert "unpublished workspace dependency override" in message
 
 
 @pytest.mark.parametrize(("phase_name", "exc_type"), _PHASE_IDS)
@@ -242,7 +267,11 @@ def test_hyphenated_dep_in_plan_matches_with_canonicalisation(
     caplog.set_level(logging.WARNING, logger="lading.commands.publish")
     workspace_root = tmp_path / "workspace"
     dependency = make_crate(workspace_root, "my_crate")
-    dependent = make_crate(workspace_root, "dependent")
+    dependent = make_crate(
+        workspace_root,
+        "dependent",
+        dependencies=(make_dependency("my_crate"),),
+    )
     plan = publish.plan_publication(
         make_workspace(workspace_root, dependency, dependent), make_config()
     )
@@ -257,10 +286,22 @@ def test_hyphenated_dep_in_plan_matches_with_canonicalisation(
         '  failed to select a version for the requirement `my-crate = "^0.1.0"`\n'
         "  location searched: crates.io index\n"
     )
+
+    def runner(
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        del command, env
+        if cwd is not None and cwd.name == "dependent":
+            return (1, "", hyphenated_stderr)
+        return (0, "", "")
+
     ctx = PhaseContext(
         plan=plan,
         preparation=preparation,
-        runner=make_failing_runner(stderr=hyphenated_stderr),
+        runner=runner,
         options=publish._PublishExecutionOptions(
             live=False,
             allow_dirty=True,

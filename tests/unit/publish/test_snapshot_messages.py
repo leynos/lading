@@ -15,6 +15,8 @@ substring matching to lock in the exact format for regression detection.
 
 from __future__ import annotations
 
+import collections.abc as cabc
+import dataclasses as dc
 import logging
 import typing as typ
 
@@ -50,6 +52,13 @@ _PIPELINE_INFO_MESSAGES = frozenset({
 class _IndexMissingCase(typ.NamedTuple):
     stderr: str
     allow_unpublished: bool
+
+
+class _InPlanSnapshotCase(typ.NamedTuple):
+    """Variable parts for in-plan fatal-path snapshot tests."""
+
+    plan_transform: cabc.Callable[[publish.PublishPlan], publish.PublishPlan]
+    stderr_transform: cabc.Callable[[str], str]
 
 
 def _pipeline_info_records(
@@ -89,8 +98,9 @@ def test_run_rejects_allow_unpublished_with_live(
     assert str(excinfo.value) == snapshot()
     assert caplog.messages == [
         (
-            "--allow-unpublished-workspace-deps is only valid in dry-run mode; "
-            "re-run without --live."
+            "Unpublished workspace dependency override is only valid in dry-run "
+            "mode. Live publish requires all dependency packages to be "
+            "available on crates.io before the dependent crate is published."
         )
     ]
 
@@ -122,6 +132,11 @@ def _handle_index_missing_version_message(
         )
 
     return str(excinfo.value)
+
+
+def _snapshot_message(message: str) -> str:
+    """Make blank diagnostic lines visible in Amber snapshots."""
+    return message.replace("\n\n", "\n<blank>\n")
 
 
 @pytest.mark.parametrize(
@@ -159,7 +174,7 @@ def test_index_missing_version_message_snapshot(
         caplog=caplog,
     )
 
-    assert message == snapshot(name="message")
+    assert _snapshot_message(message) == snapshot(name="message")
     assert _warning_records(caplog) == snapshot(name="warning")
 
 
@@ -191,7 +206,7 @@ def test_index_missing_in_plan_downgrade_snapshot(
     assert _warning_records(caplog) == snapshot(name="warning")
     assert any(
         "Downgraded cargo package failure for crate beta" in message
-        and "dependency alpha is part of the publish plan" in message
+        and "dependency alpha (index 0) is part of the publish plan" in message
         for message in caplog.messages
     )
 
@@ -215,7 +230,55 @@ def test_index_missing_out_of_plan_message_snapshot(
         caplog=caplog,
     )
 
-    assert message == snapshot(name="message")
+    assert _snapshot_message(message) == snapshot(name="message")
+    assert _warning_records(caplog) == snapshot(name="warning")
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        pytest.param(
+            _InPlanSnapshotCase(
+                plan_transform=lambda plan: dc.replace(
+                    plan,
+                    publishable=(
+                        plan.publishable[1],
+                        plan.publishable[0],
+                        *plan.publishable[2:],
+                    ),
+                ),
+                stderr_transform=lambda stderr: stderr,
+            ),
+            id="out_of_order",
+        ),
+        pytest.param(
+            _InPlanSnapshotCase(
+                plan_transform=lambda plan: plan,
+                stderr_transform=lambda stderr: stderr.replace("`alpha =", "`beta ="),
+            ),
+            id="self_dependency",
+        ),
+    ],
+)
+def test_index_missing_in_plan_fatal_message_snapshot(
+    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    caplog: pytest.LogCaptureFixture,
+    snapshot: SnapshotAssertion,
+    case: _InPlanSnapshotCase,
+) -> None:
+    """Snapshot the fatal message and warning for in-plan dependency failures."""
+    original_plan, _preparation, _staging_root = publish_plan_and_prep
+    plan = case.plan_transform(original_plan)
+    stderr = case.stderr_transform(INDEX_MISSING_STDERR_BETA)
+
+    message = _handle_index_missing_version_message(
+        plan,
+        stderr=stderr,
+        allow_unpublished_workspace_deps=True,
+        caplog=caplog,
+    )
+
+    assert _snapshot_message(message) == snapshot(name="message")
     assert _warning_records(caplog) == snapshot(name="warning")
 
 

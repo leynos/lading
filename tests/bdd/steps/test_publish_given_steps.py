@@ -1,4 +1,18 @@
-"""Given steps for publish BDD scenarios."""
+"""Given steps for publish BDD scenarios.
+
+This module prepares the workspace, configuration, and command-runner state
+used by publish feature scenarios. Its fixtures create representative Cargo
+metadata, inject cmd-mox command responses, and write scenario-specific
+`lading.toml` configuration so the behavioural tests can exercise the public
+`lading publish` CLI through the same process boundary as a user.
+
+The step definitions pair with `test_publish_when_steps` for command
+execution, `test_publish_then_steps` for assertions, and
+`test_publish_infrastructure` for shared command-spy plumbing. Keeping setup
+steps here makes each feature scenario read as domain behaviour while the
+implementation remains explicit about which Cargo or git command is being
+simulated.
+"""
 
 from __future__ import annotations
 
@@ -155,6 +169,17 @@ def given_sibling_dependency_is_not_indexed(
 @given("the missing dependency is part of the planned publish set")
 def given_missing_dependency_is_in_plan() -> None:
     """Document that the dependency-chain fixture includes alpha in the plan."""
+
+
+@given("publish.order puts beta before alpha")
+def given_publish_order_puts_beta_before_alpha(workspace_directory: Path) -> None:
+    """Configure an explicit publish order where beta precedes alpha."""
+    config_path = workspace_directory / "lading.toml"
+    config_path.write_text(
+        '[bump]\n\n[publish]\nstrip_patches = "all"\n'
+        'order = ["beta", "alpha", "gamma"]\n',
+        encoding="utf-8",
+    )
 
 
 @given("the workspace has uncommitted changes")
