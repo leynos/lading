@@ -106,7 +106,8 @@ lading [--workspace-root <path>] <subcommand> [options]
 - `--workspace-root` is implemented as a global flag that can be positioned
   before or after the subcommand. The bootstrapper removes the flag from the
   argument list, normalises it via the shared
-  `lading.utils.normalise_workspace_root` helper (backed by `plumbum.local`),
+  `lading.utils.normalise_workspace_root` helper (implemented with
+  `pathlib.Path` alone),
   and stores the resolved path in the `LADING_WORKSPACE_ROOT` environment
   variable so that Cyclopts can hydrate per-command options without bespoke
   parsing hooks.

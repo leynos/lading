@@ -309,7 +309,7 @@ invocation and path utilities.
   - **Completion Criteria:** All unit tests pass; cmd-mox integration preserved;
     `CargoExecutableNotFoundError` raised via cuprum's `UnknownProgramError`.
 
-- [ ] **Migrate `lading/utils/path.py`:**
+- [x] **Migrate `lading/utils/path.py`:**
 
   - **Outcome:** Path normalisation uses `pathlib.Path` directly, removing the
     `plumbum.local.path()` dependency.
