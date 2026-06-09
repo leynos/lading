@@ -61,13 +61,11 @@ def _missing_dependency_name(stderr: str) -> str | None:
     failure = parse_index_lookup_failure(
         crate_name="beta",
         subcommand="package",
-        exit_code=1,
-        stdout="",
-        stderr=stderr,
+        output=(1, "", stderr),
     )
     if failure is None:
         return None
-    return failure.missing_dependency_name
+
 
 
 def _pipeline_info_records(

@@ -5,12 +5,12 @@ publish logic should not need to know the exact stderr/stdout markers that
 identify one diagnostic shape, so this module owns that parsing boundary and
 returns typed value objects instead.
 
-Callers pass the crate name, cargo subcommand, exit code, stdout, and stderr to
-``parse_index_lookup_failure``. When the output matches Cargo's crates.io
-index-lookup diagnostic, the function returns
-``CargoIndexLookupFailure`` with the original process streams and the extracted
-missing dependency name. Non-matching or successful invocations return
-``None``.
+Callers pass the crate name, cargo subcommand, and the raw subprocess output
+tuple ``(exit_code, stdout, stderr)`` to ``parse_index_lookup_failure``. When
+the output matches Cargo's crates.io index-lookup diagnostic, the function
+returns ``CargoIndexLookupFailure`` with the original process streams and the
+extracted missing dependency name. Non-matching or successful invocations
+return ``None``.
 
 Example
 -------
@@ -20,9 +20,7 @@ from lading.commands.cargo_output_adapter import parse_index_lookup_failure
 failure = parse_index_lookup_failure(
     crate_name="beta",
     subcommand="package",
-    exit_code=101,
-    stdout="",
-    stderr=cargo_stderr,
+    output=(exit_code, stdout, stderr),
 )
 if failure is not None:
     handle_index_lookup_failure(failure)
@@ -61,30 +59,23 @@ class CargoIndexLookupFailure:
     missing_dependency_name: str | None
 
 
-def parse_index_lookup_failure(  # noqa: PLR0913 - mirrors cargo subprocess result fields.
+def parse_index_lookup_failure(
     *,
     crate_name: str,
     subcommand: typ.Literal["package", "publish"],
-    exit_code: int,
-    stdout: str,
-    stderr: str,
+    output: tuple[int, str, str],
 ) -> CargoIndexLookupFailure | None:
     """Return a structured index-lookup failure parsed from cargo output.
 
     Parameters
     ----------
     crate_name:
-        Name of the crate whose cargo invocation produced ``stdout`` and
-        ``stderr``.
+        Name of the crate whose cargo invocation produced the output streams.
     subcommand:
         Cargo subcommand that produced the output. Currently limited to the
         publish workflow's ``package`` and ``publish`` phases.
-    exit_code:
-        Numeric process exit code returned by cargo.
-    stdout:
-        Text captured from cargo's standard output stream.
-    stderr:
-        Text captured from cargo's standard error stream.
+    output:
+        Raw subprocess result as ``(exit_code, stdout, stderr)``.
 
     Returns
     -------
@@ -98,14 +89,13 @@ def parse_index_lookup_failure(  # noqa: PLR0913 - mirrors cargo subprocess resu
     failure = parse_index_lookup_failure(
         crate_name="beta",
         subcommand="package",
-        exit_code=101,
-        stdout="",
-        stderr=cargo_stderr,
+        output=(exit_code, stdout, stderr),
     )
     if failure is not None:
         print(failure.missing_dependency_name)
     ```
     """
+    exit_code, stdout, stderr = output
     if exit_code == 0:
         return None
 

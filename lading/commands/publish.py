@@ -413,9 +413,7 @@ def _package_crate(
     lookup_failure = parse_index_lookup_failure(
         crate_name=crate.name,
         subcommand="package",
-        exit_code=exit_code,
-        stdout=stdout,
-        stderr=stderr,
+        output=(exit_code, stdout, stderr),
     )
     if lookup_failure is not None:
         _handle_index_missing_version(lookup_failure, plan=plan, options=options)
@@ -527,9 +525,7 @@ def _handle_publish_result(
     lookup_failure = parse_index_lookup_failure(
         crate_name=crate.name,
         subcommand="publish",
-        exit_code=exit_code,
-        stdout=stdout,
-        stderr=stderr,
+        output=(exit_code, stdout, stderr),
     )
     if lookup_failure is not None:
         # cargo publish --dry-run packages internally and hits the same
