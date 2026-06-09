@@ -464,12 +464,14 @@ def test_publish_cli_passes_unpublished_workspace_deps_flag(
 @pytest.mark.parametrize(
     ("config_body", "extra_args", "expected"),
     [
-        pytest.param("", [], True, id="default"),
+        pytest.param("", [], None, id="default"),
+        # The False here is hydrated by the Cyclopts TOML loader
+        # (use_commands_as_keys=True), not by resolution logic in cli.bump.
         pytest.param(
             "[bump]\nrebuild_lockfiles = false\n",
             [],
             False,
-            id="configuration",
+            id="configuration-hydrated-by-cyclopts",
         ),
         pytest.param(
             "[bump]\nrebuild_lockfiles = false\n",
@@ -485,7 +487,7 @@ def test_publish_cli_passes_unpublished_workspace_deps_flag(
         ),
     ],
 )
-def test_bump_cli_resolves_rebuild_lockfiles(
+def test_bump_cli_forwards_raw_rebuild_lockfiles(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     write_config: cabc.Callable[[str], Path],
@@ -493,7 +495,7 @@ def test_bump_cli_resolves_rebuild_lockfiles(
     extra_args: list[str],
     expected: object,
 ) -> None:
-    """The rebuild flag should inherit configuration unless explicitly set."""
+    """The CLI forwards the nullable flag; resolution belongs to the command."""
     write_config(config_body)
     workspace_graph = _make_workspace(tmp_path.resolve())
     captured_kwargs: dict[str, typ.Any] = {}

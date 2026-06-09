@@ -672,3 +672,34 @@ def test_run_updates_workspace_dependency_prefixes(tmp_path: pathlib.Path) -> No
     beta_entry = document["workspace"]["dependencies"]["beta"]
     assert beta_entry["version"].value == "~1.2.3"
     assert beta_entry["path"].value == "crates/beta"
+
+
+@pytest.mark.parametrize("configured", [True, False])
+@pytest.mark.parametrize("flag", [None, True, False])
+def test_initialize_bump_context_resolves_rebuild_lockfiles(
+    tmp_path: pathlib.Path,
+    *,
+    flag: bool | None,
+    configured: bool,
+) -> None:
+    """The command layer owns the None-coalescing of ``rebuild_lockfiles``.
+
+    Issue #106: the CLI forwards the raw nullable flag; the only resolution
+    against ``configuration.bump.rebuild_lockfiles`` happens here.
+    """
+    workspace = _make_workspace(tmp_path)
+    configuration = config_module.LadingConfig(
+        bump=config_module.BumpConfig(rebuild_lockfiles=configured)
+    )
+
+    context = bump._initialize_bump_context(
+        tmp_path,
+        bump.BumpOptions(
+            rebuild_lockfiles=flag,
+            configuration=configuration,
+            workspace=workspace,
+        ),
+    )
+
+    expected = configured if flag is None else flag
+    assert context.base_options.rebuild_lockfiles is expected

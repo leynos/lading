@@ -385,11 +385,10 @@ def bump(
             version,
             options=commands.bump.BumpOptions(
                 dry_run=dry_run,
-                rebuild_lockfiles=(
-                    configuration.bump.rebuild_lockfiles
-                    if rebuild_lockfiles is None
-                    else rebuild_lockfiles
-                ),
+                # Forwarded unresolved: default-resolution against the
+                # configuration is the bump command's responsibility
+                # (_initialize_bump_context), not the CLI adapter's.
+                rebuild_lockfiles=rebuild_lockfiles,
                 configuration=configuration,
                 workspace=workspace,
                 command_runner=command_runner,

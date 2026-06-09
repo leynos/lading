@@ -116,6 +116,13 @@ execution. When `command_runner` is `None`, bump falls back to the default
 subprocess runner. Tests pass a runner explicitly so lockfile commands can be
 observed without invoking real Cargo processes.
 
+Option defaulting is the command layer's responsibility, not the CLI adapter's.
+`cli.bump` forwards `rebuild_lockfiles` as the raw `bool | None` it received;
+the only resolution against `configuration.bump.rebuild_lockfiles` happens in
+`bump._initialize_bump_context`. (The Cyclopts TOML loader may hydrate the CLI
+flag from `lading.toml` before dispatch, but `cli.bump` itself performs no
+coalescing.)
+
 `BumpChanges` records the user-visible files touched by a bump run. Its
 `lockfiles` field contains the `Cargo.lock` files regenerated after manifest
 updates. The output formatter labels these paths as `(lockfile)` so operators
