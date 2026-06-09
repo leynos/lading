@@ -425,6 +425,8 @@ def test_live_interleaving_invariant_property(tmp_path: Path, crate_count: int) 
         assert package_command == ("cargo", "package", "--allow-dirty")
         assert publish_command == ("cargo", "publish", "--allow-dirty")
         assert package_cwd == publish_cwd
+
+
 def _make_beta_package_index_failure_runner() -> cabc.Callable[
     [cabc.Sequence[str]], tuple[int, str, str]
 ]:
