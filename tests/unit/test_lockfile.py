@@ -170,49 +170,6 @@ def test_discover_tracked_lockfiles_raises_on_git_failure(tmp_path: Path) -> Non
         lockfile.discover_tracked_lockfiles(tmp_path, runner)
 
 
-def test_refresh_lockfile_returns_lockfile_path(tmp_path: Path) -> None:
-    """Successful lockfile refresh returns the expected Cargo.lock path."""
-    manifest = tmp_path / "Cargo.toml"
-
-    def runner(
-        command: cabc.Sequence[str],
-        *,
-        cwd: Path | None = None,
-        env: cabc.Mapping[str, str] | None = None,
-    ) -> tuple[int, str, str]:
-        assert command == (
-            "cargo",
-            "generate-lockfile",
-            "--manifest-path",
-            str(manifest),
-        )
-        assert cwd == manifest.parent
-        return 0, "", ""
-
-    expected = tmp_path / "Cargo.lock"
-    result = lockfile.refresh_lockfile(manifest, runner)
-    assert result == expected, (
-        "refresh helper returned unexpected lockfile path; "
-        f"expected {expected!r}, got {result!r}"
-    )
-
-
-def test_refresh_lockfile_raises_on_failure(tmp_path: Path) -> None:
-    """Refresh failures include cargo stderr in the raised error."""
-    manifest = tmp_path / "Cargo.toml"
-
-    def runner(
-        command: cabc.Sequence[str],
-        *,
-        cwd: Path | None = None,
-        env: cabc.Mapping[str, str] | None = None,
-    ) -> tuple[int, str, str]:
-        return 101, "", "failed to resolve"
-
-    with pytest.raises(lockfile.LockfileRefreshError, match="failed to resolve"):
-        lockfile.refresh_lockfile(manifest, runner)
-
-
 def _validate_lockfile_freshness_for_result(
     tmp_path: Path, exit_code: int, stderr: str
 ) -> lockfile.LockfileFreshness:

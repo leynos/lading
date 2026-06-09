@@ -8,7 +8,7 @@ Python runtime failures.
 
 Examples include `ConfigurationError`, `PublishPreflightError`,
 `CargoMetadataError`, `WorkspaceModelError`, `LockfileDiscoveryError`, and
-`LockfileRefreshError`. Feature-specific subclasses should continue to inherit
+`LockfileRegenerationError`. Feature-specific subclasses should continue to inherit
 from their local root exception, preserving precise handling within each
 component while keeping a consistent package-wide exception hierarchy.
 """
