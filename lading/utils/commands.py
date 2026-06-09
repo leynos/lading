@@ -8,6 +8,12 @@ the codebase.
 Migration context: This is Step 5.1 of the Cuprum migration. Subsequent
 steps will migrate existing plumbum and subprocess code to use this
 catalogue via ``scoped(allowlist=LADING_CATALOGUE.allowlist)``.
+
+The catalogue is staged but intentionally not yet wired into the execution
+path: the subprocess runner still spawns processes directly. The wiring
+lands with the runner migration steps in ``docs/roadmap.md`` (Phase 5,
+"Migrate `lading/runtime/subprocess_runner.py`" onwards); do not mistake
+this module for live enforcement in the meantime.
 """
 
 from __future__ import annotations
