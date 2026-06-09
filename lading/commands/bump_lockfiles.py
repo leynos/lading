@@ -7,16 +7,17 @@ versions change.
 
 from __future__ import annotations
 
+from pathlib import Path
 import collections.abc as cabc
 import logging
 import time
-from pathlib import Path
 
 from lading.exceptions import LadingError
 from lading.runtime import CommandRunner, subprocess_runner
 from lading.utils.process import with_detail
 
 _LOGGER = logging.getLogger(__name__)
+import shlex
 
 
 class LockfileRegenerationError(LadingError):
@@ -61,31 +62,51 @@ def regenerate_lockfiles(
     ------
     LockfileRegenerationError
         If any configured manifest path is invalid (outside the workspace or
-        not named ``Cargo.toml``), or if ``cargo update --workspace`` exits
-        non-zero for any manifest.
+        not named ``Cargo.toml``), or — after every manifest has been
+        attempted — if ``cargo update --workspace`` failed for one or more
+        manifests. The aggregated message lists each failed manifest with a
+        repair command.
 
     Notes
     -----
-    **Partial-update semantics:** regeneration is not atomic. If ``cargo``
-    fails for the *n*-th manifest, the first *n - 1* lockfiles have already
-    been updated on disk and will not be rolled back. Callers that require
-    atomic guarantees must implement their own rollback (see issue ``#84``).
+    **Partial-update semantics:** regeneration is not atomic and successful
+    updates are not rolled back when a later manifest fails. Every manifest
+    is attempted (issue #84), so a single cargo failure does not leave
+    unrelated lockfiles silently stale; the aggregated error tells the
+    operator exactly which lockfiles still need repair and how.
     """
     command_runner = subprocess_runner if runner is None else runner
     manifests = _resolve_manifest_paths(workspace_root, lockfile_manifests)
     started_at = time.perf_counter()
     _LOGGER.info("Regenerating %d Cargo lockfile(s)", len(manifests))
     lockfiles: list[Path] = []
+    failures: list[tuple[Path, LockfileRegenerationError]] = []
     for manifest in manifests:
         manifest_started_at = time.perf_counter()
         _LOGGER.info("Regenerating Cargo lockfile for %s", manifest)
-        _run_workspace_lockfile_update(workspace_root, manifest, command_runner)
+        try:
+            _run_workspace_lockfile_update(workspace_root, manifest, command_runner)
+        except LockfileRegenerationError as exc:
+            # Keep going: attempting the remaining manifests gives the
+            # operator one aggregated repair list instead of a re-run per
+            # failure (issue #84).
+            _LOGGER.exception("Cargo lockfile regeneration failed")
+            failures.append((manifest, exc))
+            continue
         _LOGGER.info(
             "Regenerated Cargo lockfile for %s in %.3fs",
             manifest,
             time.perf_counter() - manifest_started_at,
         )
         lockfiles.append(manifest.parent / "Cargo.lock")
+    if failures:
+        # Chain from the first underlying failure so diagnostics (for
+        # example a missing cargo executable) survive the aggregation.
+        primary = failures[0][1]
+        cause = primary.__cause__ if primary.__cause__ is not None else primary
+        raise LockfileRegenerationError(
+            _build_aggregate_failure_message(failures)
+        ) from cause
     _LOGGER.info(
         "Regenerated %d Cargo lockfile(s) in %.3fs",
         len(lockfiles),
@@ -93,7 +114,21 @@ def regenerate_lockfiles(
     )
     return tuple(lockfiles)
 
-
+def _build_aggregate_failure_message(
+    failures: cabc.Sequence[tuple[Path, LockfileRegenerationError]],
+) -> str:
+    """Return the aggregated operator-facing regeneration failure message."""
+    header = (
+        f"Cargo lockfile regeneration failed for {len(failures)} manifest(s). "
+        "Manifests already carry the new version, so the workspace is "
+        "inconsistent until each lockfile below is repaired:"
+    )
+    lines = [header]
+    for manifest, error in failures:
+        lines.append(f"- {error}")
+        quoted_manifest = shlex.quote(str(manifest))
+        lines.append(f"  cargo update --workspace --manifest-path {quoted_manifest}")
+    return "\n".join(lines)
 def _resolve_manifest_paths(
     workspace_root: Path,
     lockfile_manifests: cabc.Sequence[str],

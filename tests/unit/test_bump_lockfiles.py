@@ -6,13 +6,14 @@ import collections.abc as cabc
 import dataclasses as dc
 import pathlib
 import typing as typ
+from pathlib import Path
 
 import pytest
 
 from lading.commands import bump_lockfiles
 
 if typ.TYPE_CHECKING:
-    from pathlib import Path
+    from syrupy.assertion import SnapshotAssertion
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -267,3 +268,87 @@ def test_regenerate_lockfiles_wraps_runner_exceptions(tmp_path: Path) -> None:
         )
 
     assert isinstance(exc_info.value.__cause__, OSError)
+
+
+# ---------------------------------------------------------------------------
+# Aggregated failure handling (issue #84)
+# ---------------------------------------------------------------------------
+
+
+def _selective_failure_runner(
+    failing_manifests: set[Path],
+) -> tuple[cabc.Callable[..., tuple[int, str, str]], list[Path]]:
+    """Return a runner failing for ``failing_manifests`` and its call log."""
+    attempted: list[Path] = []
+
+    def runner(
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+    ) -> tuple[int, str, str]:
+        del cwd
+        manifest = Path(command[-1])
+        attempted.append(manifest)
+        if manifest in failing_manifests:
+            return 101, "", "error: dependency conflict"
+        return 0, "", ""
+
+    return runner, attempted
+
+
+def test_regenerate_lockfiles_attempts_all_manifests_after_failure(
+    tmp_path: Path,
+) -> None:
+    """A mid-list cargo failure does not skip the remaining manifests."""
+    for name in ("a", "b"):
+        (tmp_path / name).mkdir()
+        (tmp_path / name / "Cargo.toml").write_text("", encoding="utf-8")
+    (tmp_path / "Cargo.toml").write_text("", encoding="utf-8")
+    failing = (tmp_path / "a" / "Cargo.toml").resolve()
+    runner, attempted = _selective_failure_runner({failing})
+
+    with pytest.raises(bump_lockfiles.LockfileRegenerationError) as excinfo:
+        bump_lockfiles.regenerate_lockfiles(
+            tmp_path,
+            ("a/Cargo.toml", "b/Cargo.toml"),
+            runner=runner,
+        )
+
+    assert attempted == [
+        (tmp_path / "Cargo.toml").resolve(),
+        failing,
+        (tmp_path / "b" / "Cargo.toml").resolve(),
+    ]
+    message = str(excinfo.value)
+    assert "failed for 1 manifest(s)" in message
+    assert str(failing) in message
+    assert f"cargo update --workspace --manifest-path {failing}" in message
+    assert str((tmp_path / "b" / "Cargo.toml").resolve()) not in message
+
+
+def test_regenerate_lockfiles_aggregates_multiple_failures(
+    tmp_path: Path, snapshot: SnapshotAssertion
+) -> None:
+    """Every failed manifest is listed once with its repair command."""
+    for name in ("a", "b"):
+        (tmp_path / name).mkdir()
+        (tmp_path / name / "Cargo.toml").write_text("", encoding="utf-8")
+    (tmp_path / "Cargo.toml").write_text("", encoding="utf-8")
+    failing = {
+        (tmp_path / "a" / "Cargo.toml").resolve(),
+        (tmp_path / "b" / "Cargo.toml").resolve(),
+    }
+    runner, _ = _selective_failure_runner(failing)
+
+    with pytest.raises(bump_lockfiles.LockfileRegenerationError) as excinfo:
+        bump_lockfiles.regenerate_lockfiles(
+            tmp_path,
+            ("a/Cargo.toml", "b/Cargo.toml"),
+            runner=runner,
+        )
+
+    message = str(excinfo.value)
+    assert "failed for 2 manifest(s)" in message
+    for manifest in failing:
+        assert message.count(f"--manifest-path {manifest}") == 1
+    assert snapshot == message.replace(str(tmp_path), "<workspace>")
