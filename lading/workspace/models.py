@@ -1,7 +1,5 @@
 """Workspace graph models and builders for :mod:`lading`."""
 
-# pylint: disable=unnecessary-ellipsis
-
 from __future__ import annotations
 
 import collections.abc as cabc
@@ -482,7 +480,7 @@ def _expect_sequence(
     allow_none: typ.Literal[True],
 ) -> None:
     """Allow ``None`` only when ``allow_none`` is ``True``."""
-    ...
+    ...  # pylint: disable=unnecessary-ellipsis
 
 
 @typ.overload
@@ -493,7 +491,7 @@ def _expect_sequence(
     allow_none: typ.Literal[False] = ...,
 ) -> cabc.Sequence[object]:
     """Require a sequence when ``allow_none`` is ``False``."""
-    ...
+    ...  # pylint: disable=unnecessary-ellipsis
 
 
 def _expect_sequence(
