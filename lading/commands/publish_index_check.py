@@ -12,12 +12,17 @@ import dataclasses as dc
 import logging
 import typing as typ
 
+from lading.utils import metrics
 from lading.utils.process import with_detail
 
 if typ.TYPE_CHECKING:
     from lading.commands.cargo_output_adapter import CargoIndexLookupFailure
     from lading.commands.publish import _PublishExecutionOptions
     from lading.commands.publish_plan import PublishPlan
+
+# Counter incremented each time an index-lookup failure is downgraded to a
+# warning because the missing dependency is in the publish plan (issue #68).
+INDEX_LOOKUP_DOWNGRADE_METRIC = "publish.index_lookup_downgrade"
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -321,6 +326,11 @@ def _handle_index_missing_version(
             context, missing_name=missing_name
         )
 
+    metrics.increment_counter(
+        INDEX_LOOKUP_DOWNGRADE_METRIC,
+        subcommand=failure.subcommand,
+        missing_crate=missing_name,
+    )
     handling.logger.warning(
         "cargo %s for crate %s could not resolve sibling dependency %s "
         "from crates.io; continuing because the unpublished workspace "

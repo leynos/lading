@@ -184,6 +184,34 @@ exactly one place.
 
 ## Workspace discovery helpers
 
+
+### Workspace path normalization (`lading/utils/path.py`)
+
+`normalise_workspace_root(value)` is the shared helper that turns a
+user-supplied workspace root into a canonical `Path`. Import it from
+`lading.utils`:
+
+```python
+from lading.utils import normalise_workspace_root
+
+normalise_workspace_root("~/workspace")  # -> absolute, ~ expanded
+normalise_workspace_root(None)           # -> Path.cwd().resolve()
+```
+
+It accepts `Path`, `str`, or `None`. `None` selects the resolved current
+working directory; any other value is expanded with `Path.expanduser` and
+resolved with `Path.resolve(strict=False)`, so `~` is expanded, redundant
+separators and `.`/`..` segments collapse, and the result is always absolute.
+`strict=False` means a non-existent target is permitted rather than raising.
+
+The implementation is pure `pathlib`
+(`Path(value).expanduser().resolve(strict=False)`); it no longer round-trips
+through `plumbum`'s `local.path`. `plumbum` is therefore a dev-only dependency,
+used solely by the end-to-end test helpers. Callers across the codebase rely on
+this helper for consistent path handling, including `lading.cli`,
+`lading.config`, `lading.workspace.metadata.load_cargo_metadata`,
+`lading.commands.bump`, and `lading.commands.publish`.
+
 ### Workspace path normalization (`lading/utils/path.py`)
 
 `normalise_workspace_root(value)` is the shared helper that turns a
@@ -609,6 +637,24 @@ crate name, the numeric exit code, and the `(stdout, stderr)` pair, it returns
 a formatted message that includes all four values. Using a single function for
 message construction keeps the error format consistent across the packaging and
 publish phases and makes snapshot testing straightforward.
+
+
+### In-process metrics (`lading.utils.metrics`)
+
+`lading.utils.metrics` is a process-local metrics accumulator. Counters are
+recorded with `increment_counter(name, **labels)` and flushed as a single
+structured JSON log line at interpreter exit (`emit_summary`, registered via
+`atexit`); runs that record no metrics emit nothing. The module deliberately
+avoids exporter dependencies such as `prometheus_client` or `statsd`: a lading
+invocation is a short-lived CLI process whose logs are already aggregated, so
+the summary line is the operational boundary. Tests use `counter_value`,
+`snapshot`, and `reset` as deterministic seams.
+
+Defined metrics:
+
+| Metric                           | Labels                        | Incremented when                                                                                                      |
+| -------------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `publish.index_lookup_downgrade` | `subcommand`, `missing_crate` | `_handle_index_missing_version` downgrades a crates.io index-lookup failure to a warning (in-plan, override enabled). |
 
 ### Command runners (`lading.runtime`)
 
