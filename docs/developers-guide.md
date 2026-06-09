@@ -123,6 +123,33 @@ can see which generated files need review and commit.
 
 ## Workspace discovery helpers
 
+### Workspace path normalization (`lading/utils/path.py`)
+
+`normalise_workspace_root(value)` is the shared helper that turns a
+user-supplied workspace root into a canonical `Path`. Import it from
+`lading.utils`:
+
+```python
+from lading.utils import normalise_workspace_root
+
+normalise_workspace_root("~/workspace")  # -> absolute, ~ expanded
+normalise_workspace_root(None)           # -> Path.cwd().resolve()
+```
+
+It accepts `Path`, `str`, or `None`. `None` selects the resolved current
+working directory; any other value is expanded with `Path.expanduser` and
+resolved with `Path.resolve(strict=False)`, so `~` is expanded, redundant
+separators and `.`/`..` segments collapse, and the result is always absolute.
+`strict=False` means a non-existent target is permitted rather than raising.
+
+The implementation is pure `pathlib`
+(`Path(value).expanduser().resolve(strict=False)`); it no longer round-trips
+through `plumbum`'s `local.path`. `plumbum` is therefore a dev-only dependency,
+used solely by the end-to-end test helpers. Callers across the codebase rely on
+this helper for consistent path handling, including `lading.cli`,
+`lading.config`, `lading.workspace.metadata.load_cargo_metadata`,
+`lading.commands.bump`, and `lading.commands.publish`.
+
 ### Lockfile helpers (`lading/commands/lockfile.py`)
 
 `discover_tracked_lockfiles(workspace_root, runner)` filters git-tracked
@@ -165,10 +192,11 @@ metadata = load_cargo_metadata(Path("/path/to/workspace"))
 print(metadata["workspace_root"])
 ```
 
-The helper normalizes the workspace path, invokes
-`cargo metadata --format-version 1` using `plumbum`, and returns the parsed
-JSON mapping. Any execution errors or invalid output raise `CargoMetadataError`
-with a descriptive message, so callers can present actionable feedback to users.
+The helper normalizes the workspace path with `normalise_workspace_root`,
+invokes `cargo metadata --format-version 1` through the active `CommandRunner`,
+and returns the parsed JSON mapping. Any execution errors or invalid output
+raise `CargoMetadataError` with a descriptive message, so callers can present
+actionable feedback to users.
 
 ### Workspace graph model
 

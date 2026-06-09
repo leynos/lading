@@ -44,9 +44,10 @@ def test_tilde_is_expanded() -> None:
 def test_accepts_path_instances() -> None:
     """`Path` inputs behave identically to string inputs."""
     candidate = Path("~", "ws")
-    assert normalise_workspace_root(candidate) == normalise_workspace_root(
-        str(candidate)
-    )
+    result = normalise_workspace_root(candidate)
+
+    assert result == Path.home().resolve() / "ws"
+    assert result == normalise_workspace_root(str(candidate))
 
 
 @given(segments=_relative_segments)
