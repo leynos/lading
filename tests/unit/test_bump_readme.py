@@ -260,8 +260,16 @@ _FENCE_HEADER = st.tuples(
 )
 
 
+# Exclude the fence delimiters so the body cannot open a code block of its own,
+# which would close on ``fence_header`` and leave the link outside any fence.
+_FENCE_FREE_BODY = st.text(
+    max_size=200,
+    alphabet=st.characters(blacklist_characters="`~"),
+)
+
+
 @given(
-    body=st.text(max_size=200),
+    body=_FENCE_FREE_BODY,
     fence_header=_FENCE_HEADER,
     label=st.text(
         min_size=1,
