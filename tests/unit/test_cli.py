@@ -416,6 +416,46 @@ def test_publish_cli_logs_dry_run_default_flag_resolution(
     ) in caplog.messages
 
 
+@pytest.mark.parametrize(
+    ("flag", "live", "expected", "reason"),
+    [
+        pytest.param(None, True, False, "live mode suppresses default", id="none-live"),
+        pytest.param(None, False, True, "dry-run default", id="none-dry-run"),
+        pytest.param(True, True, True, "explicit flag", id="true-live"),
+        pytest.param(True, False, True, "explicit flag", id="true-dry-run"),
+        pytest.param(False, True, False, "explicit flag", id="false-live"),
+        pytest.param(False, False, False, "explicit flag", id="false-dry-run"),
+    ],
+)
+def test_resolve_allow_unpublished_workspace_deps_matrix(
+    caplog: pytest.LogCaptureFixture,
+    *,
+    flag: bool | None,
+    live: bool,
+    expected: bool,
+    reason: str,
+) -> None:
+    """Each input combination resolves correctly and logs exactly once at DEBUG."""
+    caplog.set_level(logging.DEBUG, logger="lading.cli")
+
+    resolved = cli._resolve_allow_unpublished_workspace_deps(
+        live=live,
+        allow_unpublished_workspace_deps=flag,
+    )
+
+    assert resolved is expected
+    debug_records = [
+        record
+        for record in caplog.records
+        if record.levelno == logging.DEBUG
+        and "_resolve_allow_unpublished_workspace_deps" in record.getMessage()
+    ]
+    assert len(debug_records) == 1
+    message = debug_records[0].getMessage()
+    assert f"resolved={expected!r}" in message
+    assert f"({reason})" in message
+
+
 @pytest.mark.usefixtures("minimal_config")
 @pytest.mark.parametrize(
     ("extra_args", "expected"),
