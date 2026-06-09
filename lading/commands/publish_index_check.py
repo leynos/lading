@@ -274,14 +274,6 @@ def _canonical_crate_name(name: str) -> str:
     return name.replace("-", "_")
 
 
-def _publishable_name_indexes(plan: PublishPlan) -> dict[str, int]:
-    """Return canonical publishable crate names keyed to publish-order indexes."""
-    return {
-        _canonical_crate_name(entry.name): index
-        for index, entry in enumerate(plan.publishable)
-    }
-
-
 def _validate_dependency_placement(
     context: _IndexMissingVersionFailure,
     handling: _IndexMissingVersionHandling,
@@ -293,7 +285,10 @@ def _validate_dependency_placement(
     the missing dependency is in the plan and is ordered before the current
     crate. Raises the context exception class for every other case.
     """
-    publishable_name_indexes = _publishable_name_indexes(handling.plan)
+    publishable_name_indexes = {
+        _canonical_crate_name(entry.name): index
+        for index, entry in enumerate(handling.plan.publishable)
+    }
     canonical_current = _canonical_crate_name(context.invocation.crate_name)
     current_index = publishable_name_indexes.get(canonical_current)
     if current_index is None:
@@ -356,6 +351,16 @@ def _handle_index_missing_version(
 
     current_index, missing_index, missing_canonical_name = (
         _validate_dependency_placement(context, handling, missing_name)
+    )
+
+    handling.logger.debug(
+        "index-missing-version handler: allow_unpublished_workspace_deps=%r "
+        "for crate %r; %s",
+        handling.options.allow_unpublished_workspace_deps,
+        invocation.crate_name,
+        "will raise"
+        if not handling.options.allow_unpublished_workspace_deps
+        else "will downgrade to warning",
     )
 
     if not handling.options.allow_unpublished_workspace_deps:
