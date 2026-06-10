@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import pathlib
 import tempfile
 from unittest import mock
@@ -50,6 +51,41 @@ def test_initialize_bump_context_resolves_rebuild_lockfiles(
         f"expected resolved rebuild_lockfiles {expected!r} for flag={flag!r}, "
         f"configured={configured!r}"
     )
+
+
+def test_initialize_bump_context_logs_resolution(
+    tmp_path: pathlib.Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Resolution emits a DEBUG record exposing the raw and resolved values.
+
+    Operators running with debug logging should be able to see how the nullable
+    flag was coalesced against the configuration default.
+    """
+    workspace = _make_workspace(tmp_path)
+    configuration = config_module.LadingConfig(
+        bump=config_module.BumpConfig(rebuild_lockfiles=True)
+    )
+
+    with caplog.at_level(logging.DEBUG, logger="lading.commands.bump"):
+        context = bump._initialize_bump_context(
+            tmp_path,
+            bump.BumpOptions(
+                rebuild_lockfiles=None,
+                configuration=configuration,
+                workspace=workspace,
+            ),
+        )
+
+    assert context.base_options.rebuild_lockfiles is True, (
+        "unset flag should resolve to the configured default"
+    )
+    assert any(
+        "rebuild_lockfiles resolution" in record.message
+        and "raw_flag=None" in record.message
+        and "resolved=True" in record.message
+        for record in caplog.records
+    ), "expected rebuild_lockfiles resolution debug log"
 
 
 def _run_bump_capturing_regeneration(
