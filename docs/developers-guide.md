@@ -121,6 +121,15 @@ observed without invoking real Cargo processes.
 updates. The output formatter labels these paths as `(lockfile)` so operators
 can see which generated files need review and commit.
 
+`lading.commands.bump_toml.DEPENDENCY_SECTIONS` is the canonical vocabulary of
+Cargo dependency-section names (`dependencies`, `dev-dependencies`, and
+`build-dependencies`). Modules that iterate dependency sections
+(`bump_docs.update_toml_snippet_dependencies`,
+`bump._workspace_dependency_sections`) or map dependency kinds to sections
+(`bump._DEPENDENCY_SECTION_BY_KIND`) must derive from this constant rather than
+re-declaring the literals, so a change to the recognized section set is made in
+exactly one place.
+
 ## Workspace discovery helpers
 
 ### Workspace path normalisation (`lading/utils/path.py`)

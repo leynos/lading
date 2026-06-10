@@ -16,10 +16,12 @@ from lading.workspace import WorkspaceCrate
 if typ.TYPE_CHECKING:
     from syrupy.assertion import SnapshotAssertion
 
+# ``.`` is excluded because pathlib collapses it, which would desynchronise
+# the generated component count from ``Path.parts``.
 _PATH_COMPONENT = st.text(
     alphabet=st.characters(blacklist_characters="/\\\x00"),
     min_size=1,
-)
+).filter(lambda component: component != ".")
 _URI_SCHEME = st.text(
     alphabet=st.characters(
         whitelist_categories=("Ll", "Lu", "Nd"),

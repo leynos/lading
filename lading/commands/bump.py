@@ -24,11 +24,15 @@ _WORKSPACE_SELECTORS: typ.Final[tuple[tuple[str, ...], ...]] = (
     ("workspace", "package"),
 )
 
+# Derived from the canonical section vocabulary so the kind mapping cannot
+# drift from ``bump_toml.DEPENDENCY_SECTIONS``.
+_NORMAL_SECTION, _DEV_SECTION, _BUILD_SECTION = bump_toml.DEPENDENCY_SECTIONS
+
 _DEPENDENCY_SECTION_BY_KIND: typ.Final[dict[str | None, str]] = {
-    None: "dependencies",
-    "normal": "dependencies",
-    "dev": "dev-dependencies",
-    "build": "build-dependencies",
+    None: _NORMAL_SECTION,
+    "normal": _NORMAL_SECTION,
+    "dev": _DEV_SECTION,
+    "build": _BUILD_SECTION,
 }
 
 LOGGER = logging.getLogger(__name__)
@@ -528,11 +532,7 @@ def _workspace_dependency_sections(
     crate_names = {name for name in updated_crates if name}
     if not crate_names:
         return {}
-    return {
-        "dependencies": set(crate_names),
-        "dev-dependencies": set(crate_names),
-        "build-dependencies": set(crate_names),
-    }
+    return {section: set(crate_names) for section in bump_toml.DEPENDENCY_SECTIONS}
 
 
 def _dependency_sections_for_crate(
@@ -549,7 +549,7 @@ def _dependency_sections_for_crate(
     for dependency in crate.dependencies:
         if dependency.name not in targets:
             continue
-        section = _DEPENDENCY_SECTION_BY_KIND.get(dependency.kind, "dependencies")
+        section = _DEPENDENCY_SECTION_BY_KIND.get(dependency.kind, _NORMAL_SECTION)
         # ``manifest_name`` preserves the dependency key used in the manifest.
         # When a crate is aliased (e.g. ``alpha-core = { package = "alpha" }``)
         # the workspace dependency name remains ``alpha`` while the manifest

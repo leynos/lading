@@ -28,6 +28,17 @@ _TABLE_LIKE_TYPES: typ.Final[tuple[type[Table], type[OutOfOrderTableProxy]]] = (
 
 NON_DIGIT_PREFIX: typ.Final[re.Pattern[str]] = re.compile(r"^([^\d]*)")
 
+# Canonical Cargo dependency-section vocabulary (issue #103). Every module
+# that iterates or maps dependency sections must reference this constant
+# rather than re-declaring the literals. Order is significant: the elements
+# are the normal, dev, and build sections respectively, and ``bump`` unpacks
+# them positionally into ``_NORMAL_SECTION``/``_DEV_SECTION``/``_BUILD_SECTION``.
+DEPENDENCY_SECTIONS: typ.Final[tuple[str, str, str]] = (
+    "dependencies",
+    "dev-dependencies",
+    "build-dependencies",
+)
+
 
 def value_as_string(value: object) -> str | None:
     """Return ``value`` as a string if possible."""
