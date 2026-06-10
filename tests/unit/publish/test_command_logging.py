@@ -20,6 +20,7 @@ if typ.TYPE_CHECKING:
     LogCaptureFixture = pytest.LogCaptureFixture
     CaptureFixture = pytest.CaptureFixture
     MonkeyPatch = pytest.MonkeyPatch
+    FixtureRequest = pytest.FixtureRequest
 else:  # pragma: no cover - typing helpers
     Path = typ.Any
     LogCaptureFixture = typ.Any
@@ -27,6 +28,7 @@ else:  # pragma: no cover - typing helpers
     CmdMox = typ.Any
     MonkeyPatch = typ.Any
     SubprocessContext = typ.Any
+    FixtureRequest = typ.Any
 
 
 def test_invoke_logs_command_with_cwd(
@@ -83,15 +85,16 @@ sys.stderr.flush()
 def test_cmd_mox_passthrough_streams_output(
     cmd_mox: CmdMox,
     capsys: CaptureFixture[str],
-    caplog: LogCaptureFixture,
     monkeypatch: MonkeyPatch,
-    use_real_invoke: None,
+    request: FixtureRequest,
 ) -> None:
     """cmd-mox passthrough should stream via the subprocess runner."""
+    caplog: LogCaptureFixture = request.getfixturevalue("caplog")
+    request.getfixturevalue("use_real_invoke")
     caplog.set_level(logging.INFO, logger="lading.testing.cmd_mox_runner")
     monkeypatch.setenv("LADING_USE_CMD_MOX_STUB", "1")
     script = "print('unused')"
-    cmd_mox.spy(sys.executable).with_args("-c", script).passthrough()
+
 
     calls: list[tuple[str, tuple[str, ...], str | None]] = []
 
