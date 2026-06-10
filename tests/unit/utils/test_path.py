@@ -24,11 +24,6 @@ _relative_segments: st.SearchStrategy[list[str]] = st.lists(
 )
 
 
-def _pathlib_reference(value: Path | str) -> Path:
-    """Compute the expected normalisation using pathlib primitives only."""
-    return Path(value).expanduser().resolve(strict=False)
-
-
 def test_none_defaults_to_cwd() -> None:
     """``None`` selects the resolved current working directory."""
     assert normalise_workspace_root(None) == Path.cwd().resolve()
@@ -52,12 +47,19 @@ def test_accepts_path_instances() -> None:
 
 @given(segments=_relative_segments)
 def test_relative_inputs_resolve_to_absolute_paths(segments: list[str]) -> None:
-    """Any relative input yields an absolute path matching the reference."""
+    """Relative inputs resolve to a fully normalised, cwd-anchored path."""
     value = str(Path(*segments))
     result = normalise_workspace_root(value)
 
+    # Independent invariants rather than a pathlib mirror of the implementation:
+    # the output is absolute, retains no unresolved ``.``/``..`` segments,
+    # anchors relative inputs at the cwd, and is a fixed point of further
+    # normalisation.
     assert result.is_absolute()
-    assert result == _pathlib_reference(value)
+    assert ".." not in result.parts
+    assert "." not in result.parts
+    assert result == normalise_workspace_root(Path.cwd() / value)
+    assert normalise_workspace_root(result) == result
 
 
 @given(segments=_relative_segments)
@@ -71,9 +73,13 @@ def test_redundant_separators_are_normalised(segments: list[str]) -> None:
 
 @given(segments=_relative_segments)
 def test_tilde_prefix_expands_for_arbitrary_suffixes(segments: list[str]) -> None:
-    """``~/suffix`` inputs are anchored beneath the home directory."""
-    value = str(Path("~", *segments))
-    result = normalise_workspace_root(value)
+    """Expanding ``~`` is equivalent to substituting the literal home path."""
+    tilde_value = str(Path("~", *segments))
+    home_value = str(Path(Path.home(), *segments))
+    result = normalise_workspace_root(tilde_value)
 
+    # Independent invariants: the output is absolute, fully resolved, and the
+    # ``~`` prefix expands to exactly the home directory.
     assert result.is_absolute()
-    assert result == _pathlib_reference(value)
+    assert ".." not in result.parts
+    assert result == normalise_workspace_root(home_value)

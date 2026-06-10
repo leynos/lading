@@ -226,9 +226,9 @@ build scripts, and complex workspace configurations.
 #### Implementation notes (Step 1.2)
 
 - Workspace discovery is anchored in `lading.workspace.metadata`. The module
-  uses `plumbum` to construct `cargo metadata --format-version 1`, normalising
-  the workspace root via `lading.utils.normalise_workspace_root` before
-  invoking the command.
+  invokes `cargo metadata --format-version 1` through the active
+  `CommandRunner`, normalising the workspace root via
+  `lading.utils.normalise_workspace_root` before invoking the command.
 - Failures to locate the `cargo` executable raise
   `CargoExecutableNotFoundError`; non-zero exit codes raise
   `CargoMetadataInvocationError`; malformed JSON payloads raise
