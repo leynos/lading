@@ -56,7 +56,17 @@ _INDEX_MISSING_VERSION_NAME_PATTERN = re.compile(
 
 @dc.dataclass(frozen=True, slots=True)
 class CargoSubprocessResult:
-    """Raw process output from a single cargo invocation."""
+    """Raw process output from a single cargo invocation.
+
+    Attributes
+    ----------
+    exit_code : int
+        Process exit code returned by the cargo subprocess.
+    stdout : str
+        Standard output stream captured from the cargo subprocess.
+    stderr : str
+        Standard error stream captured from the cargo subprocess.
+    """
 
     exit_code: int
     stdout: str
@@ -65,7 +75,24 @@ class CargoSubprocessResult:
 
 @dc.dataclass(frozen=True, slots=True)
 class CargoIndexLookupFailure:
-    """Represents a cargo failure where the index could not resolve a dependency."""
+    """Represents a cargo failure where the index could not resolve a dependency.
+
+    Attributes
+    ----------
+    crate_name : str
+        Name of the crate whose cargo invocation failed.
+    subcommand : Literal["package", "publish"]
+        Cargo subcommand that produced the failure.
+    exit_code : int
+        Non-zero process exit code from the failed cargo subprocess.
+    stdout : str
+        Standard output stream captured from the failed subprocess.
+    stderr : str
+        Standard error stream captured from the failed subprocess.
+    missing_dependency_name : str | None
+        Name of the dependency crate that could not be resolved from the
+        crates.io index, or :data:`None` if name extraction failed.
+    """
 
     crate_name: str
     subcommand: typ.Literal["package", "publish"]
