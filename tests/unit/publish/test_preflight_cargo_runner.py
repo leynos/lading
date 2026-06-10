@@ -45,19 +45,32 @@ def test_run_cargo_preflight_raises_on_failure(
     assert "boom" in message
 
 
+@dc.dataclass(frozen=True)
+class _PreflightFailureCase:
+    """Inputs for a single cargo-preflight failure-message snapshot."""
+
+    subcommand: typ.Literal["check", "test"]
+    exit_code: int
+    stderr: str
+
+
 @pytest.mark.parametrize(
-    ("subcommand", "exit_code", "stderr"),
+    "case",
     [
-        pytest.param("check", 101, "error: linker failed\n", id="check_with_detail"),
-        pytest.param("test", 7, "", id="test_without_detail"),
+        pytest.param(
+            _PreflightFailureCase("check", 101, "error: linker failed\n"),
+            id="check_with_detail",
+        ),
+        pytest.param(
+            _PreflightFailureCase("test", 7, ""),
+            id="test_without_detail",
+        ),
     ],
 )
 def test_run_cargo_preflight_failure_message_snapshot(
     tmp_path: Path,
     snapshot: SnapshotAssertion,
-    subcommand: typ.Literal["check", "test"],
-    exit_code: int,
-    stderr: str,
+    case: _PreflightFailureCase,
 ) -> None:
     """Pin the operator-facing message raised when cargo pre-flight fails.
 
@@ -72,12 +85,12 @@ def test_run_cargo_preflight_failure_message_snapshot(
         env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
         del command, cwd, env
-        return exit_code, "", stderr
+        return case.exit_code, "", case.stderr
 
     with pytest.raises(publish.PublishPreflightError) as excinfo:
         publish._run_cargo_preflight(
             tmp_path,
-            subcommand,
+            case.subcommand,
             runner=failing_runner,
             options=publish._CargoPreflightOptions(extra_args=("--workspace",)),
         )

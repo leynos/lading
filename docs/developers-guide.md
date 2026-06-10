@@ -451,8 +451,9 @@ convenience wrapper that derives the detail with `command_detail` and appends
 it with `append_detail` in one call.
 
 These are the canonical home for the `(stderr or stdout)` failure-detail idiom.
-Modules that render command failures (`lockfile`, `bump_lockfiles`,
-`publish_preflight`, `publish_index_check`, `workspace.metadata`) must call
+Modules that render command failures (`lading.commands.lockfile`,
+`lading.commands.bump_lockfiles`, `lading.commands.publish_preflight`,
+`lading.commands.publish_index_check`, `lading.workspace.metadata`) must call
 these helpers rather than re-implementing the idiom inline.
 
 ### Shared message helpers

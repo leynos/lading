@@ -77,6 +77,19 @@ def command_detail(stdout: str, stderr: str) -> str:
     nothing. This is the canonical home for the idiom (issue #102) — call
     sites must not re-implement it.
 
+    Parameters
+    ----------
+    stdout : str
+        Captured standard-output stream of the failed command.
+    stderr : str
+        Captured standard-error stream of the failed command.
+
+    Returns
+    -------
+    str
+        Stripped ``stderr`` when non-empty, otherwise stripped ``stdout``,
+        otherwise the empty string.
+
     Examples
     --------
     >>> command_detail("out", "err")
@@ -96,6 +109,21 @@ def append_detail(message: str, detail: str, *, separator: str = ": ") -> str:
     :func:`command_detail`, for example to branch on its content) and wants to
     avoid deriving it twice. :func:`with_detail` is the convenience wrapper that
     derives the detail and appends it in a single call.
+
+    Parameters
+    ----------
+    message : str
+        Base failure message to which the detail is appended.
+    detail : str
+        Pre-derived detail string; appended verbatim only when non-empty.
+    separator : str, optional
+        String joining ``message`` and ``detail``. Defaults to ``": "``.
+
+    Returns
+    -------
+    str
+        ``message`` unchanged when ``detail`` is empty, otherwise
+        ``message`` joined to ``detail`` by ``separator``.
 
     Examples
     --------
@@ -117,6 +145,27 @@ def with_detail(
     separator: str = ": ",
 ) -> str:
     """Append command output detail to ``message`` when any is present.
+
+    Derives the detail with :func:`command_detail` and appends it with
+    :func:`append_detail`.
+
+    Parameters
+    ----------
+    message : str
+        Base failure message to which the detail is appended.
+    stdout : str
+        Captured standard-output stream of the failed command.
+    stderr : str
+        Captured standard-error stream of the failed command.
+    separator : str, optional
+        String joining ``message`` and the derived detail. Defaults to
+        ``": "``.
+
+    Returns
+    -------
+    str
+        ``message`` unchanged when neither stream yields detail, otherwise
+        ``message`` joined to the derived detail by ``separator``.
 
     Examples
     --------
