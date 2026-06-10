@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+import typing as typ
 from pathlib import Path
 
 import pytest
@@ -11,6 +13,9 @@ from lading.commands import publish
 from lading.workspace import WorkspaceGraph, WorkspaceModelError
 
 from .conftest import make_config, make_crate, make_workspace
+
+if typ.TYPE_CHECKING:
+    from syrupy.assertion import SnapshotAssertion
 
 
 def test_run_normalises_workspace_root(
@@ -89,7 +94,7 @@ def test_run_loads_configuration_when_inactive(
     )
 
 
-def test_run_formats_plan_summary(tmp_path: Path) -> None:
+def test_run_formats_plan_summary(tmp_path: Path, snapshot: SnapshotAssertion) -> None:
     """``run`` returns a structured summary of the publish plan."""
     root = tmp_path.resolve()
     publishable = make_crate(root, "alpha")
@@ -100,26 +105,17 @@ def test_run_formats_plan_summary(tmp_path: Path) -> None:
 
     message = publish.run(root, configuration, workspace)
 
-    lines = message.splitlines()
-    assert lines[0] == f"Publish plan for {root}", (
-        "summary header should report the workspace root"
+    # Redact non-deterministic paths (the tmp_path workspace root and the
+    # randomly named staging directory) so the snapshot is stable across
+    # machines and pytest runs while still pinning the summary format.
+    normalised = message.replace(str(root), "<workspace-root>")
+    normalised = re.sub(
+        r"^Staged workspace at: .*$",
+        "Staged workspace at: <staging-root>",
+        normalised,
+        flags=re.MULTILINE,
     )
-    assert "Strip patch strategy: all" in lines[1], (
-        "summary should report the configured strip-patch strategy"
-    )
-    assert "- alpha @ 0.1.0" in lines, "publishable crate should be listed with version"
-    assert "Skipped (publish = false):" in lines, (
-        "manifest-skipped section should be present"
-    )
-    assert "- beta" in lines, "manifest-skipped crate should be listed"
-    assert "Skipped via publish.exclude:" in lines, (
-        "config-excluded section should be present"
-    )
-    assert "- gamma" in lines, "config-excluded crate should be listed"
-    assert "Configured exclusions not found in workspace:" in lines, (
-        "unmatched-exclusions section should be present"
-    )
-    assert "- missing" in lines, "unmatched exclusion should be listed"
+    assert normalised == snapshot
 
 
 def test_run_reports_no_publishable_crates(tmp_path: Path) -> None:
