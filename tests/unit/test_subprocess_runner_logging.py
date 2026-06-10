@@ -40,7 +40,7 @@ def _assert_no_spawn_record(caplog: LogCaptureFixture) -> None:
     """Assert the removed DEBUG spawn log is absent (regression for #104)."""
     assert all(
         "Spawning subprocess:" not in record.getMessage() for record in caplog.records
-    )
+    ), "Unexpected 'Spawning subprocess:' log emitted"
 
 
 def test_command_logged_exactly_once(caplog: LogCaptureFixture) -> None:
@@ -49,15 +49,17 @@ def test_command_logged_exactly_once(caplog: LogCaptureFixture) -> None:
 
     exit_code, stdout, stderr = subprocess_runner(("echo", "hello"), echo_stdout=False)
 
-    assert exit_code == 0
-    assert stdout.strip() == "hello"
-    assert stderr == ""
+    assert exit_code == 0, "expected exit code 0"
+    assert stdout.strip() == "hello", 'expected stdout to contain "hello"'
+    assert stderr == "", "expected empty stderr"
     records = _invocation_records(caplog)
-    assert len(records) == 1
-    assert records[0].levelno == logging.INFO
+    assert len(records) == 1, "expected exactly one invocation record"
+    assert records[0].levelno == logging.INFO, "expected invocation at INFO level"
     message = records[0].getMessage()
-    assert "Running external command" in message
-    assert "echo hello" in message
+    assert "Running external command" in message, (
+        "expected message to contain 'Running external command'"
+    )
+    assert "echo hello" in message, "expected message to contain 'echo hello'"
     _assert_no_spawn_record(caplog)
 
 
@@ -71,9 +73,11 @@ def test_command_logged_exactly_once_with_cwd(
         ("echo", "hello"), cwd=tmp_path, echo_stdout=False
     )
 
-    assert exit_code == 0
+    assert exit_code == 0, "expected exit code 0"
     records = _invocation_records(caplog)
-    assert len(records) == 1
-    assert records[0].levelno == logging.INFO
-    assert f"(cwd={tmp_path})" in records[0].getMessage()
+    assert len(records) == 1, "expected exactly one invocation record"
+    assert records[0].levelno == logging.INFO, "expected invocation at INFO level"
+    assert f"(cwd={tmp_path})" in records[0].getMessage(), (
+        "expected cwd to appear in invocation message"
+    )
     _assert_no_spawn_record(caplog)
