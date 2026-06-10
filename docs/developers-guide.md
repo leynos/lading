@@ -627,7 +627,6 @@ a formatted message that includes all four values. Using a single function for
 message construction keeps the error format consistent across the packaging and
 publish phases and makes snapshot testing straightforward.
 
-
 ### Shared TOML coercion (`lading.toml_coerce`)
 
 `lading.toml_coerce` is the canonical home for the TOML scalar, sequence, and
@@ -639,7 +638,6 @@ type once with `functools.partial` (`ConfigurationError` in `config`,
 canonical error-message shape is
 `{field} must be {expected}; received {type(value).__name__}.` and is pinned by
 property and snapshot tests in `tests/unit/test_toml_coerce.py`.
-
 
 ### Module size extractions (issue 108)
 
