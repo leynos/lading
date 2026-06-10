@@ -491,7 +491,7 @@ type `typ.NoReturn`):
 
 #### Crate-name canonicalization
 
-`_canonical_crate_name(name)` normalises a crate name by replacing every hyphen
+`_canonical_crate_name(name)` normalizes a crate name by replacing every hyphen
 with an underscore. It is applied by building a canonical publish-order index
 and looking up both the current crate and missing dependency by canonical name:
 
@@ -507,7 +507,7 @@ missing_index = publishable_name_indexes.get(_canonical_crate_name(missing_name)
 This is necessary because Cargo error diagnostics may report a missing
 dependency using hyphens (e.g. `my-crate`), while the corresponding
 `Cargo.toml` entry and the `PublishPlan` store the same package name with
-underscores (e.g. `my_crate`). Without normalisation, a hyphenated cargo
+underscores (e.g. `my_crate`). Without normalization, a hyphenated cargo
 diagnostic would be incorrectly classified as an out-of-plan dependency and
 raise a fatal error instead of triggering the downgrade path.
 
