@@ -82,12 +82,13 @@ sys.stderr.flush()
 
 def test_cmd_mox_passthrough_streams_output(
     cmd_mox: CmdMox,
-    capsys: CaptureFixture[str],
-    caplog: LogCaptureFixture,
-    monkeypatch: MonkeyPatch,
-    use_real_invoke: None,
+    request: pytest.FixtureRequest,
 ) -> None:
     """cmd-mox passthrough should stream via the subprocess runner."""
+    capsys: CaptureFixture[str] = request.getfixturevalue("capsys")
+    caplog: LogCaptureFixture = request.getfixturevalue("caplog")
+    monkeypatch: MonkeyPatch = request.getfixturevalue("monkeypatch")
+    request.getfixturevalue("use_real_invoke")
     caplog.set_level(logging.INFO, logger="lading.testing.cmd_mox_runner")
     monkeypatch.setenv("LADING_USE_CMD_MOX_STUB", "1")
     script = "print('unused')"
