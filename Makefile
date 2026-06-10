@@ -68,7 +68,7 @@ check-fmt: ruff ## Verify formatting
 	ruff format --check
 	# mdformat-all doesn't currently do checking
 
-lint: ruff $(UV) interrogate ## Run linters
+lint: ruff build $(UV) interrogate ## Run linters
 	ruff check
 	$(UV) run interrogate --fail-under 100 lading
 	$(PYLINT) $(PYLINT_TARGETS)
