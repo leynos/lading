@@ -86,7 +86,6 @@ The end-to-end suite in `tests/e2e/` keeps git interactions real while stubbing
 only `cargo` operations, using cmd-mox passthrough spies for `git status` when
 publish runs with stub mode enabled.
 
-
 ## Property-based testing
 
 [Hypothesis](https://hypothesis.readthedocs.io/) is a development dependency
@@ -102,7 +101,6 @@ Property-based tests in the publish suite use
 `@settings(max_examples=20, suppress_health_check=[HealthCheck.function_scoped_fixture])`
 to keep continuous integration (CI) fast while still exercising a range of
 inputs.
-
 
 ## Publish test infrastructure (`tests/unit/publish/conftest.py`)
 
