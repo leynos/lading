@@ -125,7 +125,7 @@ can see which generated files need review and commit.
 
 ## Workspace discovery helpers
 
-### Workspace path normalisation (`lading/utils/path.py`)
+### Workspace path normalization (`lading/utils/path.py`)
 
 `normalise_workspace_root(value)` is the shared helper that turns a
 user-supplied workspace root into a canonical `Path`. Import it from
@@ -194,7 +194,7 @@ metadata = load_cargo_metadata(Path("/path/to/workspace"))
 print(metadata["workspace_root"])
 ```
 
-The helper normalises the workspace path with `normalise_workspace_root`,
+The helper normalizes the workspace path with `normalise_workspace_root`,
 invokes `cargo metadata --format-version 1` through the active `CommandRunner`,
 and returns the parsed JSON mapping. Any execution errors or invalid output
 raise `CargoMetadataError` with a descriptive message, so callers can present
@@ -397,7 +397,7 @@ index-lookup downgrade is only valid for dry-run workflows.
 the live-mode dispatcher. It walks `PublishPlan.publishable` in order and runs
 `cargo package` followed by `cargo publish` for each crate before advancing to
 the next crate. It logs per-crate progress, records completed crates for abort
-diagnostics, and normalises staging/preparation failures into
+diagnostics, and normalizes staging/preparation failures into
 `PublishPreflightError` so callers receive the same publish command error
 boundary.
 
