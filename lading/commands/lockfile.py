@@ -35,6 +35,7 @@ import typing as typ
 from pathlib import Path
 
 from lading.exceptions import LadingError
+from lading.utils.process import append_detail, command_detail, with_detail
 
 if typ.TYPE_CHECKING:
     from lading.runtime import CommandRunner
@@ -69,18 +70,20 @@ def _handle_git_ls_files_failure(
     """Return ``None`` for git success, or an empty result for git failure."""
     if exit_code == 0:
         return None
-    detail = (stderr or stdout).strip()
+    detail = command_detail(stdout, stderr)
     if "not a git repository" in detail.lower():
         LOGGER.warning(
             "Skipping Cargo.lock discovery because %s is not a git repository",
             workspace_root,
         )
         return ()
-    message = f"Failed to discover tracked Cargo.lock files in {workspace_root}"
-    if detail:
-        message = f"{message}: {detail}"
-    else:
-        message = f"{message}: git ls-files exited with status {exit_code}"
+    # Unlike the other sites, git may exit non-zero with no output at all, so
+    # fall back to the status code before handing the detail to append_detail.
+    fallback = f"git ls-files exited with status {exit_code}"
+    message = append_detail(
+        f"Failed to discover tracked Cargo.lock files in {workspace_root}",
+        detail or fallback,
+    )
     raise LockfileDiscoveryError(message)
 
 
@@ -191,10 +194,7 @@ def refresh_lockfile(
         cwd=manifest_path.parent,
     )
     if exit_code != 0:
-        detail = (stderr or stdout).strip()
-        message = f"Failed to refresh {lockfile_path}"
-        if detail:
-            message = f"{message}: {detail}"
+        message = with_detail(f"Failed to refresh {lockfile_path}", stdout, stderr)
         raise LockfileRefreshError(message)
     LOGGER.info("Refreshed %s", lockfile_path)
     return lockfile_path
@@ -232,7 +232,7 @@ def validate_lockfile_freshness(
         ),
         cwd=manifest_path.parent,
     )
-    detail = (stderr or stdout).strip()
+    detail = command_detail(stdout, stderr)
     is_fresh = exit_code == 0
     is_stale = _is_lockfile_stale_detail(detail)
     state = "fresh"

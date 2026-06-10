@@ -40,6 +40,7 @@ from lading.commands.lockfile import (
 from lading.commands.publish_diagnostics import _append_compiletest_diagnostics
 from lading.commands.publish_errors import PublishPreflightError
 from lading.commands.publish_execution import _invoke
+from lading.utils.process import append_detail, command_detail, with_detail
 
 if typ.TYPE_CHECKING:
     from lading.config import CompiletestExtern, LadingConfig
@@ -80,13 +81,14 @@ def _run_aux_build_commands(
     for command in commands:
         exit_code, stdout, stderr = runner(command, cwd=workspace_root, env=env)
         if exit_code != 0:
-            detail = (stderr or stdout).strip()
             rendered = " ".join(command)
-            message = (
-                f"Auxiliary build command failed with exit code {exit_code}: {rendered}"
+            message = with_detail(
+                f"Auxiliary build command failed with exit code {exit_code}: "
+                f"{rendered}",
+                stdout,
+                stderr,
+                separator="; ",
             )
-            if detail:
-                message = f"{message}; {detail}"
             LOGGER.error(message)
             raise PublishPreflightError(message)
 
@@ -319,14 +321,16 @@ def _verify_clean_working_tree(
         env=env,
     )
     if exit_code != 0:
-        detail = (stderr or stdout).strip()
-        message = (
+        # Derive the detail once: it is both inspected (to choose the base
+        # message) and appended, so re-deriving via with_detail would repeat
+        # command_detail's work.
+        detail = command_detail(stdout, stderr)
+        base_message = (
             "Failed to verify workspace state; is this a git repository?"
             if "not a git repository" in detail.lower()
             else "Failed to verify workspace state with git status"
         )
-        if detail:
-            message = f"{message}: {detail}"
+        message = append_detail(base_message, detail)
         LOGGER.error(message)
         raise PublishPreflightError(message)
     if stdout.strip():
@@ -371,10 +375,11 @@ def _build_cargo_error_message(
     subcommand: str, exit_code: int, stdout: str, stderr: str
 ) -> str:
     """Return a consistent failure message for cargo pre-flight commands."""
-    message = f"Pre-flight cargo {subcommand} failed with exit code {exit_code}"
-    if detail := (stderr or stdout).strip():
-        message = f"{message}: {detail}"
-    return message
+    return with_detail(
+        f"Pre-flight cargo {subcommand} failed with exit code {exit_code}",
+        stdout,
+        stderr,
+    )
 
 
 __all__ = [

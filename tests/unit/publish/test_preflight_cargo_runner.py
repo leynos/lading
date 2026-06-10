@@ -13,6 +13,9 @@ from lading.commands import publish
 
 from .conftest import ORIGINAL_PREFLIGHT
 
+if typ.TYPE_CHECKING:
+    from syrupy.assertion import SnapshotAssertion
+
 
 def test_run_cargo_preflight_raises_on_failure(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -40,6 +43,59 @@ def test_run_cargo_preflight_raises_on_failure(
     message = str(excinfo.value)
     assert "cargo check" in message
     assert "boom" in message
+
+
+@dc.dataclass(frozen=True)
+class _PreflightFailureCase:
+    """Inputs for a single cargo-preflight failure-message snapshot."""
+
+    subcommand: typ.Literal["check", "test"]
+    exit_code: int
+    stderr: str
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        pytest.param(
+            _PreflightFailureCase("check", 101, "error: linker failed\n"),
+            id="check_with_detail",
+        ),
+        pytest.param(
+            _PreflightFailureCase("test", 7, ""),
+            id="test_without_detail",
+        ),
+    ],
+)
+def test_run_cargo_preflight_failure_message_snapshot(
+    tmp_path: Path,
+    snapshot: SnapshotAssertion,
+    case: _PreflightFailureCase,
+) -> None:
+    """Pin the operator-facing message raised when cargo pre-flight fails.
+
+    Issue #102 routed this message through ``lading.utils.process.with_detail``;
+    the snapshot guards against the extraction silently changing the text.
+    """
+
+    def failing_runner(
+        command: tuple[str, ...],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        del command, cwd, env
+        return case.exit_code, "", case.stderr
+
+    with pytest.raises(publish.PublishPreflightError) as excinfo:
+        publish._run_cargo_preflight(
+            tmp_path,
+            case.subcommand,
+            runner=failing_runner,
+            options=publish._CargoPreflightOptions(extra_args=("--workspace",)),
+        )
+
+    assert str(excinfo.value) == snapshot()
 
 
 @dc.dataclass(frozen=True)

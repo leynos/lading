@@ -462,6 +462,29 @@ parameters, satisfying the PLR0913 argument-count threshold.
 for the entire handler call: the active `PublishPlan`, the
 `_PublishExecutionOptions`, and `logger`.
 
+### Command-failure detail helpers (`lading.utils.process`)
+
+`command_detail(stdout, stderr) -> str` returns the most informative output
+stream for a failed command: stderr stripped of whitespace when non-empty,
+otherwise stdout stripped, otherwise the empty string.
+
+`append_detail(message, detail, *, separator=": ") -> str` appends an
+*already-derived* `detail` to `message` using `separator` only when `detail` is
+non-empty. Reach for it when the caller has already computed the detail (for
+example via `command_detail` to branch on its content) and must not derive it
+twice — `_verify_clean_working_tree` inspects the detail to decide whether to
+mention "is this a git repository?" before appending it.
+
+`with_detail(message, stdout, stderr, *, separator=": ") -> str` is the
+convenience wrapper that derives the detail with `command_detail` and appends
+it with `append_detail` in one call.
+
+These are the canonical home for the `(stderr or stdout)` failure-detail idiom.
+Modules that render command failures (`lading.commands.lockfile`,
+`lading.commands.bump_lockfiles`, `lading.commands.publish_preflight`,
+`lading.commands.publish_index_check`, `lading.workspace.metadata`) must call
+these helpers rather than re-implementing the idiom inline.
+
 ### Shared message helpers
 
 `_format_missing_dependency_failure(failure, *,`

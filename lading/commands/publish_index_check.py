@@ -12,6 +12,8 @@ import dataclasses as dc
 import logging
 import typing as typ
 
+from lading.utils.process import with_detail
+
 if typ.TYPE_CHECKING:
     from lading.commands.cargo_output_adapter import CargoIndexLookupFailure
     from lading.commands.publish import _PublishExecutionOptions
@@ -52,13 +54,11 @@ def _format_cargo_failure_message(
     stable.
     """
     stdout, stderr = output
-    detail = (stderr or stdout).strip()
-    message = (
-        f"cargo {command} failed for crate {crate_name} with exit code {exit_code}"
+    return with_detail(
+        f"cargo {command} failed for crate {crate_name} with exit code {exit_code}",
+        stdout,
+        stderr,
     )
-    if detail:
-        message = f"{message}: {detail}"
-    return message
 
 
 def _raise_name_extraction_failure(
