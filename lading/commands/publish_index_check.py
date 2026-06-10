@@ -278,6 +278,51 @@ def _validate_dependency_placement(
     return current_index, missing_index, missing_canonical_name
 
 
+def _emit_downgrade_success(
+    handling: _IndexMissingVersionHandling,
+    failure: CargoIndexLookupFailure,
+    *,
+    missing_name: str,
+    placement: tuple[int, int, str],
+) -> None:
+    """Increment the downgrade metric and emit the associated log messages.
+
+    Called only when the missing dependency is in the publish plan and the
+    caller has opted into the unpublished workspace dependency override.
+    ``placement`` is the ``_validate_dependency_placement`` result
+    ``(current_index, missing_index, missing_canonical_name)``.
+    """
+    current_index, missing_index, missing_canonical_name = placement
+    metrics.increment_counter(
+        INDEX_LOOKUP_DOWNGRADE_METRIC,
+        subcommand=failure.subcommand,
+        missing_crate=missing_name,
+    )
+    handling.logger.warning(
+        "cargo %s for crate %s could not resolve sibling dependency %s "
+        "from crates.io; continuing because the unpublished workspace "
+        "dependency override is enabled",
+        failure.subcommand,
+        failure.crate_name,
+        missing_name,
+    )
+    handling.logger.debug(
+        "canonicalised dependency name %r -> %r",
+        missing_name,
+        missing_canonical_name,
+    )
+    handling.logger.info(
+        "Downgraded cargo %s failure for crate %s (index %d) because "
+        "dependency %s (index %d) is part of the publish plan and the "
+        "unpublished workspace dependency override is enabled",
+        failure.subcommand,
+        failure.crate_name,
+        current_index,
+        missing_name,
+        missing_index,
+    )
+
+
 def _handle_index_missing_version(
     failure: CargoIndexLookupFailure,
     *,
@@ -307,9 +352,7 @@ def _handle_index_missing_version(
     if missing_name is None:
         _raise_name_extraction_failure(context)
 
-    current_index, missing_index, missing_canonical_name = (
-        _validate_dependency_placement(context, handling, missing_name)
-    )
+    placement = _validate_dependency_placement(context, handling, missing_name)
 
     handling.logger.debug(
         "index-missing-version handler: allow_unpublished_workspace_deps=%r "
@@ -326,31 +369,9 @@ def _handle_index_missing_version(
             context, missing_name=missing_name
         )
 
-    metrics.increment_counter(
-        INDEX_LOOKUP_DOWNGRADE_METRIC,
-        subcommand=failure.subcommand,
-        missing_crate=missing_name,
-    )
-    handling.logger.warning(
-        "cargo %s for crate %s could not resolve sibling dependency %s "
-        "from crates.io; continuing because the unpublished workspace "
-        "dependency override is enabled",
-        failure.subcommand,
-        failure.crate_name,
-        missing_name,
-    )
-    handling.logger.debug(
-        "canonicalised dependency name %r -> %r",
-        missing_name,
-        missing_canonical_name,
-    )
-    handling.logger.info(
-        "Downgraded cargo %s failure for crate %s (index %d) because "
-        "dependency %s (index %d) is part of the publish plan and the "
-        "unpublished workspace dependency override is enabled",
-        failure.subcommand,
-        failure.crate_name,
-        current_index,
-        missing_name,
-        missing_index,
+    _emit_downgrade_success(
+        handling,
+        failure,
+        missing_name=missing_name,
+        placement=placement,
     )
