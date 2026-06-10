@@ -27,14 +27,11 @@ class _LockfileSkipScenario:
     expected_message: str | None
 
 
-def test_run_rebuilds_lockfiles_by_default(
+def test_run_rebuilds_lockfiles_when_enabled(
     tmp_path: pathlib.Path,
     monkeypatch: MonkeyPatch,
 ) -> None:
-    """Verify regenerate_lockfiles calls.
-
-    Lockfile regeneration is called when enabled and suppressed when disabled.
-    """
+    """Lockfile regeneration runs and is reported when explicitly enabled."""
     workspace = _make_workspace(tmp_path)
     configuration = _make_config()
     nested_lockfile = tmp_path / "crates/ui/Cargo.lock"
@@ -78,9 +75,14 @@ def test_run_rebuilds_lockfiles_by_default(
     assert "- Cargo.lock (lockfile)" in message.splitlines()
     assert "- crates/ui/Cargo.lock (lockfile)" in message.splitlines()
 
-    disabled_root = tmp_path / "disabled"
-    disabled_workspace = _make_workspace(disabled_root)
-    disabled_configuration = _make_config()
+
+def test_run_skips_lockfiles_when_disabled(
+    tmp_path: pathlib.Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """Lockfile regeneration is suppressed when explicitly disabled."""
+    workspace = _make_workspace(tmp_path)
+    configuration = _make_config()
     monkeypatch.setattr(
         bump.bump_lockfiles,
         "regenerate_lockfiles",
@@ -90,12 +92,12 @@ def test_run_rebuilds_lockfiles_by_default(
     )
 
     message = bump.run(
-        disabled_root,
+        tmp_path,
         "1.2.3",
         options=bump.BumpOptions(
             rebuild_lockfiles=False,
-            configuration=disabled_configuration,
-            workspace=disabled_workspace,
+            configuration=configuration,
+            workspace=workspace,
         ),
     )
 
