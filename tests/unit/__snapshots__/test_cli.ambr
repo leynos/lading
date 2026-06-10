@@ -1,0 +1,19 @@
+# serializer version: 1
+# name: test_resolve_allow_unpublished_workspace_deps_matrix[false-dry-run]
+  '_resolve_allow_unpublished_workspace_deps: raw=False live=False -> resolved=False (explicit flag)'
+# ---
+# name: test_resolve_allow_unpublished_workspace_deps_matrix[false-live]
+  '_resolve_allow_unpublished_workspace_deps: raw=False live=True -> resolved=False (explicit flag)'
+# ---
+# name: test_resolve_allow_unpublished_workspace_deps_matrix[none-dry-run]
+  '_resolve_allow_unpublished_workspace_deps: raw=None live=False -> resolved=True (dry-run default)'
+# ---
+# name: test_resolve_allow_unpublished_workspace_deps_matrix[none-live]
+  '_resolve_allow_unpublished_workspace_deps: raw=None live=True -> resolved=False (live mode suppresses default)'
+# ---
+# name: test_resolve_allow_unpublished_workspace_deps_matrix[true-dry-run]
+  '_resolve_allow_unpublished_workspace_deps: raw=True live=False -> resolved=True (explicit flag)'
+# ---
+# name: test_resolve_allow_unpublished_workspace_deps_matrix[true-live]
+  '_resolve_allow_unpublished_workspace_deps: raw=True live=True -> resolved=True (explicit flag)'
+# ---

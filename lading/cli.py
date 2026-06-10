@@ -152,35 +152,38 @@ def _resolve_allow_unpublished_workspace_deps(
     live: bool,
     allow_unpublished_workspace_deps: bool | None,
 ) -> bool:
-    """Return the concrete publish option for the optional CLI flag."""
+    """Resolve the tri-state ``--allow-unpublished-workspace-deps`` flag.
+
+    An explicit flag value is honoured verbatim. When the flag is omitted the
+    default depends on the publish mode: ``False`` for live publishes and
+    ``True`` for dry runs, so unpublished workspace members do not abort a
+    rehearsal.
+
+    Logging side effects: applying the dry-run default emits an INFO record so
+    operators can see the decision, and every call emits a DEBUG record with the
+    raw input, mode, resolved value, and the reason it was chosen.
+    """
     if allow_unpublished_workspace_deps is not None:
         resolved_value = allow_unpublished_workspace_deps
-        LOGGER.debug(
-            "_resolve_allow_unpublished_workspace_deps: raw=%r live=%r "
-            "-> resolved=%r (explicit flag)",
-            allow_unpublished_workspace_deps,
-            live,
-            resolved_value,
-        )
-        return resolved_value
-    if live:
+        reason = "explicit flag"
+    elif live:
         resolved_value = False
-        LOGGER.debug(
-            "_resolve_allow_unpublished_workspace_deps: raw=%r live=%r "
-            "-> resolved=False (live mode suppresses default)",
-            allow_unpublished_workspace_deps,
-            live,
+        reason = "live mode suppresses default"
+    else:
+        # Dry runs default to permissive so unpublished workspace members do
+        # not abort a rehearsal; operators should see that decision at INFO.
+        LOGGER.info(
+            "Defaulting to allow unpublished workspace dependencies "
+            "during dry-run publish"
         )
-        return resolved_value
-    LOGGER.info(
-        "Defaulting to allow unpublished workspace dependencies during dry-run publish"
-    )
-    resolved_value = True
+        resolved_value = True
+        reason = "dry-run default"
     LOGGER.debug(
-        "_resolve_allow_unpublished_workspace_deps: raw=%r live=%r "
-        "-> resolved=True (dry-run default)",
+        "_resolve_allow_unpublished_workspace_deps: raw=%r live=%r -> resolved=%r (%s)",
         allow_unpublished_workspace_deps,
         live,
+        resolved_value,
+        reason,
     )
     return resolved_value
 

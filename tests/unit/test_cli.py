@@ -29,6 +29,8 @@ if typ.TYPE_CHECKING:
     from pathlib import Path
     from types import ModuleType
 
+    from syrupy.assertion import SnapshotAssertion
+
 
 @contextmanager
 def _preserve_root_logger() -> cabc.Iterator[logging.Logger]:
@@ -416,6 +418,51 @@ def test_publish_cli_logs_dry_run_default_flag_resolution(
     ) in caplog.messages
 
 
+@pytest.mark.parametrize(
+    ("flag", "live", "expected"),
+    [
+        pytest.param(None, True, False, id="none-live"),
+        pytest.param(None, False, True, id="none-dry-run"),
+        pytest.param(True, True, True, id="true-live"),
+        pytest.param(True, False, True, id="true-dry-run"),
+        pytest.param(False, True, False, id="false-live"),
+        pytest.param(False, False, False, id="false-dry-run"),
+    ],
+)
+def test_resolve_allow_unpublished_workspace_deps_matrix(
+    caplog: pytest.LogCaptureFixture,
+    snapshot: SnapshotAssertion,
+    *,
+    flag: bool | None,
+    live: bool,
+    expected: bool,
+) -> None:
+    """Each input combination resolves correctly and logs exactly once at DEBUG.
+
+    The resolution reason is verified through the snapshotted DEBUG message.
+    """
+    caplog.set_level(logging.DEBUG, logger="lading.cli")
+
+    resolved = cli._resolve_allow_unpublished_workspace_deps(
+        live=live,
+        allow_unpublished_workspace_deps=flag,
+    )
+
+    assert resolved is expected, (
+        f"flag={flag!r} live={live!r}: expected {expected!r}, got {resolved!r}"
+    )
+    debug_records = [
+        record
+        for record in caplog.records
+        if record.levelno == logging.DEBUG and record.name == "lading.cli"
+    ]
+    assert len(debug_records) == 1, (
+        f"flag={flag!r} live={live!r}: expected one DEBUG record, "
+        f"got {len(debug_records)}"
+    )
+    assert debug_records[0].getMessage() == snapshot
+
+
 @pytest.mark.usefixtures("minimal_config")
 @pytest.mark.parametrize(
     ("extra_args", "expected"),
@@ -423,6 +470,15 @@ def test_publish_cli_logs_dry_run_default_flag_resolution(
         pytest.param((), True, id="default"),
         pytest.param(("--allow-unpublished-workspace-deps",), True, id="enabled"),
         pytest.param(("--no-allow-unpublished-workspace-deps",), False, id="disabled"),
+        pytest.param(("--live",), False, id="live-default"),
+        pytest.param(
+            ("--live", "--allow-unpublished-workspace-deps"), True, id="live-enabled"
+        ),
+        pytest.param(
+            ("--live", "--no-allow-unpublished-workspace-deps"),
+            False,
+            id="live-disabled",
+        ),
     ],
 )
 def test_publish_cli_passes_unpublished_workspace_deps_flag(
