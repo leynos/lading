@@ -6,11 +6,14 @@ environment-variable defaults, logging setup, workspace-root normalization,
 configuration loading, and workspace metadata loading before dispatching to the
 `bump` or `publish` command modules.
 
-The CLI intentionally resolves user-interface concerns here before crossing
-into command internals. For example, optional boolean flags accepted by
-Cyclopts are converted into concrete command options, so reusable command
-dataclasses do not need to model whether a value came from an omitted flag or
-an explicit user choice.
+The CLI resolves user-interface concerns here before crossing into command
+internals, but it does not coalesce optional flags against configuration
+defaults. For example, :func:`bump` forwards its ``rebuild_lockfiles``
+parameter as ``bool | None`` exactly as received; the command layer
+(``lading.commands.bump._initialize_bump_context``) owns resolving an unset
+value against ``configuration.bump.rebuild_lockfiles``. This keeps the
+nullable-to-concrete defaulting in a single place rather than splitting it
+across the CLI adapter and the command module.
 """
 
 from __future__ import annotations

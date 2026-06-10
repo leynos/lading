@@ -474,6 +474,12 @@ def test_publish_cli_passes_unpublished_workspace_deps_flag(
             id="configuration-hydrated-by-cyclopts",
         ),
         pytest.param(
+            "[bump]\nrebuild_lockfiles = true\n",
+            [],
+            True,
+            id="configuration-hydrated-by-cyclopts-true",
+        ),
+        pytest.param(
             "[bump]\nrebuild_lockfiles = false\n",
             ["--rebuild-lockfiles"],
             True,
