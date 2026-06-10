@@ -10,10 +10,20 @@ import pytest
 import tomlkit
 
 from lading import config as config_module
-from lading.commands import publish
+from lading.commands import bump, publish
 from lading.workspace import WorkspaceCrate, WorkspaceDependency, WorkspaceGraph
 
 _ORIGINAL_PREFLIGHT = publish._run_preflight_checks
+
+# Modules whose ``bump.run`` exercises must not shell out to Cargo. The stub is
+# scoped to these by name so it never shadows ``test_bump_lockfiles``, which
+# exercises ``regenerate_lockfiles`` directly and needs the real implementation.
+_LOCKFILE_STUB_MODULES = frozenset({
+    "test_bump_manifest_updates",
+    "test_bump_documentation_updates",
+    "test_bump_lockfile_rebuild",
+    "test_bump_rebuild_lockfiles_resolution",
+})
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
@@ -52,6 +62,20 @@ def disable_publish_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
         publish,
         "_run_preflight_checks",
         lambda *_args, **_kwargs: None,
+    )
+
+
+@pytest.fixture(autouse=True)
+def stub_lockfile_regeneration(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Avoid invoking Cargo from manifest-focused bump tests."""
+    if request.module.__name__.rsplit(".", 1)[-1] not in _LOCKFILE_STUB_MODULES:
+        return
+    monkeypatch.setattr(
+        bump.bump_lockfiles,
+        "regenerate_lockfiles",
+        lambda *_args, **_kwargs: (),
     )
 
 
