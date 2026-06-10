@@ -535,6 +535,22 @@ around command execution. `lading bump` uses the runtime runner directly for
 lockfile refreshes, while `lading publish` uses `_invoke` where failures should
 surface as `PublishPreflightError`.
 
+#### Subprocess invocation logging
+
+`subprocess_runner` emits **exactly one** log record per external command
+invocation:
+
+- **INFO** — `Running external command: <cmd> [<args>]` (with an optional
+  `(cwd=<path>)` suffix when a working directory is supplied). This is the
+  operationally visible record.
+- **DEBUG** (separate, only when environment overrides are present) — a
+  redacted summary of the environment variables that differ from the ambient
+  process environment.
+
+No second invocation record is emitted at DEBUG level. Any regression that
+reintroduces a second invocation log at any level is pinned by the tests in
+`tests/unit/test_subprocess_runner_logging.py`.
+
 ### Pre-flight validation (`publish_preflight`)
 
 `lading.commands.publish_preflight` performs workspace validation before any

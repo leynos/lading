@@ -257,6 +257,14 @@ behaviours.
     one for `publish --dry-run` that validates the full sequence of operations
     on a non-trivial fixture workspace.
 
+- [x] **Stop double-logging external command invocations (`#104`):**
+
+  - **Outcome:** `subprocess_runner` emits exactly one INFO-level invocation
+    log per external command; the redundant DEBUG spawn log is removed.
+  - **Completion Criteria:** Regression tests in
+    `tests/unit/test_subprocess_runner_logging.py` assert a single INFO record
+    and the absence of any "Spawning subprocess:" record.
+
 ______________________________________________________________________
 
 ### **Step 4.2: User Documentation and Release**

@@ -1,0 +1,7 @@
+# serializer version: 1
+# name: test_command_logged_exactly_once
+  'Running external command: echo hello'
+# ---
+# name: test_command_logged_exactly_once_with_cwd
+  'Running external command: echo hello (cwd=<tmpdir>)'
+# ---

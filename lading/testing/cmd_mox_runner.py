@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import collections.abc as cabc
+import logging
 import os
 import sys
 import typing as typ
@@ -17,7 +18,9 @@ from lading.runtime.subprocess_runner import (
     split_command,
     write_to_sink,
 )
+from lading.utils.process import log_command_invocation
 
+_LOGGER = logging.getLogger(__name__)
 _CMD_MOX_TIMEOUT_DEFAULT = 5.0
 
 
@@ -219,6 +222,11 @@ def _handle_cmd_mox_passthrough(
         env=passthrough_env,
         stdin_data=invocation.stdin or None,
     )
+    passthrough_command = (str(resolved), *invocation.args)
+    # This passthrough path calls ``invoke_via_subprocess`` directly rather than
+    # going through ``subprocess_runner``, so the single INFO invocation record
+    # must be emitted here; otherwise these external commands log nothing.
+    log_command_invocation(_LOGGER, passthrough_command, cwd)
     exit_code, stdout, stderr = invoke_via_subprocess(
         str(resolved),
         tuple(invocation.args),
