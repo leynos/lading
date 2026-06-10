@@ -1,4 +1,20 @@
-"""Interfaces for invoking ``cargo metadata``."""
+"""Execute and parse ``cargo metadata`` for workspace discovery.
+
+This module is the workspace layer's gateway to ``cargo metadata``: callers use
+:func:`load_cargo_metadata` to obtain the parsed JSON payload that downstream
+:mod:`lading.workspace` code (such as :mod:`lading.workspace.models`) turns into
+the workspace and crate model. It owns the ``CargoMetadataError`` hierarchy,
+which classifies the ways the invocation can fail — a missing ``cargo``
+executable, a non-zero exit, or unparseable output — so command modules can map
+those failures onto their own domain errors.
+
+Execution is delegated to the shared ``CommandRunner`` protocol from
+:mod:`lading.runtime` rather than calling :mod:`subprocess` directly. By default
+the production :mod:`lading.runtime.subprocess_runner` adapter is used, but
+:func:`use_command_runner` installs a context-local override so tests can route
+the same calls through the cmd-mox adapter in
+:mod:`lading.testing.cmd_mox_runner` without touching the call sites.
+"""
 
 from __future__ import annotations
 

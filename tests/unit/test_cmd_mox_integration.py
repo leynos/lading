@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 import string
 import typing as typ
@@ -61,16 +62,28 @@ def test_resolve_cmd_mox_timeout_accepts_valid(
     ],
 )
 def test_resolve_cmd_mox_timeout_rejects_with_canonical_message(
-    raw: str, expected_message: str
+    raw: str, expected_message: str, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """Each class of invalid input raises its own canonical message.
+    """Each class of invalid input raises its own canonical message and logs.
 
     Pinning the message per input class locks the mapping so the two strings
     cannot be silently swapped between parse failures and out-of-range values.
+    A diagnostic warning carrying the rejected raw value is emitted so the
+    failure can be traced without reading the source.
     """
-    with pytest.raises(cmd_mox_runner.CmdMoxError) as excinfo:
+    with (
+        caplog.at_level(logging.WARNING, logger=cmd_mox_runner.__name__),
+        pytest.raises(cmd_mox_runner.CmdMoxError) as excinfo,
+    ):
         cmd_mox_runner._resolve_cmd_mox_timeout(raw)
     assert str(excinfo.value) == expected_message
+    assert [
+        record
+        for record in caplog.records
+        if record.levelno == logging.WARNING
+        and "CMOX_IPC_TIMEOUT" in record.getMessage()
+        and repr(raw) in record.getMessage()
+    ]
 
 
 def test_ipc_timeout_messages_are_stable(snapshot: SnapshotAssertion) -> None:
