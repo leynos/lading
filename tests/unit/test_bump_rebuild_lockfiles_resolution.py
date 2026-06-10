@@ -46,7 +46,10 @@ def test_initialize_bump_context_resolves_rebuild_lockfiles(
     )
 
     expected = configured if flag is None else flag
-    assert context.base_options.rebuild_lockfiles is expected
+    assert context.base_options.rebuild_lockfiles is expected, (
+        f"expected resolved rebuild_lockfiles {expected!r} for flag={flag!r}, "
+        f"configured={configured!r}"
+    )
 
 
 def _run_bump_capturing_regeneration(
@@ -105,7 +108,10 @@ def test_run_resolves_rebuild_lockfiles_through_public_api(
     )
 
     expected = configured if flag is None else flag
-    assert regenerated is expected
+    assert regenerated is expected, (
+        f"expected regeneration={expected!r} for flag={flag!r}, "
+        f"configured={configured!r}"
+    )
 
 
 @given(flag=st.sampled_from([None, True, False]), configured=st.booleans())
@@ -131,4 +137,7 @@ def test_run_rebuild_lockfiles_single_source_of_truth(
         )
 
     expected = configured if flag is None else flag
-    assert regenerated is expected
+    assert regenerated is expected, (
+        f"single-source-of-truth violated: regeneration={regenerated!r} but "
+        f"expected {expected!r} for flag={flag!r}, configured={configured!r}"
+    )

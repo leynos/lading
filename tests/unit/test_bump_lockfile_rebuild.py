@@ -70,10 +70,16 @@ def test_run_rebuilds_lockfiles_when_enabled(
         "workspace_root": tmp_path,
         "lockfile_manifests": (),
         "runner": None,
-    }
-    assert "2 lockfile(s)" in message
-    assert "- Cargo.lock (lockfile)" in message.splitlines()
-    assert "- crates/ui/Cargo.lock (lockfile)" in message.splitlines()
+    }, "expected a single regenerate_lockfiles call for the workspace root"
+    assert "2 lockfile(s)" in message, (
+        f"expected two lockfiles reported in bump output: {message!r}"
+    )
+    assert "- Cargo.lock (lockfile)" in message.splitlines(), (
+        f"expected root Cargo.lock listed in bump output: {message!r}"
+    )
+    assert "- crates/ui/Cargo.lock (lockfile)" in message.splitlines(), (
+        f"expected nested crates/ui/Cargo.lock listed in bump output: {message!r}"
+    )
 
 
 def test_run_skips_lockfiles_when_disabled(
@@ -101,7 +107,9 @@ def test_run_skips_lockfiles_when_disabled(
         ),
     )
 
-    assert "lockfile" not in message
+    assert "lockfile" not in message, (
+        f"expected no lockfile reporting when disabled: {message!r}"
+    )
 
 
 def test_run_inherits_lockfile_rebuild_configuration(
@@ -129,7 +137,9 @@ def test_run_inherits_lockfile_rebuild_configuration(
         options=bump.BumpOptions(configuration=configuration, workspace=workspace),
     )
 
-    assert "lockfile" not in message
+    assert "lockfile" not in message, (
+        f"expected configuration default to suppress lockfile reporting: {message!r}"
+    )
 
 
 def test_run_reports_lockfiles_in_dry_run(
@@ -180,10 +190,16 @@ def test_run_reports_lockfiles_in_dry_run(
     assert captured == {
         "workspace_root": tmp_path,
         "lockfile_manifests": ("crates/ui/Cargo.toml",),
-    }
-    assert "2 lockfile(s)" in message
-    assert "- Cargo.lock (lockfile)" in message.splitlines()
-    assert "- crates/ui/Cargo.lock (lockfile)" in message.splitlines()
+    }, "expected dry-run lockfile path resolution for the configured manifest"
+    assert "2 lockfile(s)" in message, (
+        f"expected two lockfiles reported in dry-run output: {message!r}"
+    )
+    assert "- Cargo.lock (lockfile)" in message.splitlines(), (
+        f"expected root Cargo.lock listed in dry-run output: {message!r}"
+    )
+    assert "- crates/ui/Cargo.lock (lockfile)" in message.splitlines(), (
+        f"expected nested crates/ui/Cargo.lock in dry-run output: {message!r}"
+    )
 
 
 @pytest.mark.parametrize(
@@ -239,6 +255,10 @@ def test_run_skips_lockfile_rebuild(
     )
 
     if scenario.expected_message is not None:
-        assert message == scenario.expected_message
+        assert message == scenario.expected_message, (
+            f"unexpected bump output for {scenario.test_id!r}"
+        )
     else:
-        assert "lockfile" not in message
+        assert "lockfile" not in message, (
+            f"expected no lockfile reporting for {scenario.test_id!r}: {message!r}"
+        )

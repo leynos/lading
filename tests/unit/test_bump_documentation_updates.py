@@ -42,10 +42,16 @@ def test_run_updates_documentation_snippets(tmp_path: pathlib.Path) -> None:
         options=bump.BumpOptions(configuration=configuration, workspace=workspace),
     )
 
-    assert "documentation file(s)" in message
-    assert "- README.md (documentation)" in message.splitlines()
+    assert "documentation file(s)" in message, (
+        f"expected documentation summary in bump output: {message!r}"
+    )
+    assert "- README.md (documentation)" in message.splitlines(), (
+        f"expected README.md listed as documentation: {message!r}"
+    )
     updated_readme = readme_path.read_text(encoding="utf-8")
-    assert 'alpha = "1.2.3"' in updated_readme
+    assert 'alpha = "1.2.3"' in updated_readme, (
+        f"expected README.md rewritten to the new version: {updated_readme!r}"
+    )
 
 
 @pytest.mark.parametrize(
@@ -83,13 +89,17 @@ def test_run_transposes_workspace_readme_to_crates(
     )
 
     crate_readme = tmp_path / "crates" / "alpha" / "README.md"
-    assert "readme file(s)" in message
-    assert "- crates/alpha/README.md (readme)" in message.splitlines()
+    assert "readme file(s)" in message, (
+        f"expected readme summary in bump output: {message!r}"
+    )
+    assert "- crates/alpha/README.md (readme)" in message.splitlines(), (
+        f"expected crate README path entry in bump output: {message!r}"
+    )
     assert crate_readme.read_text(encoding="utf-8") == (
         "# Sample\n\nSee [Guide](../../docs/guide.md).\n"
-    )
+    ), "expected crate README to rewrite relative links to the crate location"
     if scenario.check_version_unchanged:
         assert (
             _load_version(tmp_path / "crates" / "alpha" / "Cargo.toml", ("package",))
             == "0.1.0"
-        )
+        ), "expected crate version to remain 0.1.0 when bump excludes the crate"

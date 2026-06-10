@@ -59,10 +59,14 @@ def test_run_updates_workspace_and_members(tmp_path: pathlib.Path) -> None:
         "- Cargo.toml",
         "- crates/alpha/Cargo.toml",
         "- crates/beta/Cargo.toml",
-    ]
-    assert _load_version(tmp_path / "Cargo.toml", ("workspace", "package")) == "1.2.3"
+    ], f"unexpected bump output lines: {message!r}"
+    assert (
+        _load_version(tmp_path / "Cargo.toml", ("workspace", "package")) == "1.2.3"
+    ), "root workspace.package version not updated"
     for crate in workspace.crates:
-        assert _load_version(crate.manifest_path, ("package",)) == "1.2.3"
+        assert _load_version(crate.manifest_path, ("package",)) == "1.2.3", (
+            f"crate manifest version not updated: {crate.manifest_path}"
+        )
 
 
 def test_run_updates_root_package_section(tmp_path: pathlib.Path) -> None:
@@ -84,8 +88,12 @@ def test_run_updates_root_package_section(tmp_path: pathlib.Path) -> None:
         "7.8.9",
         options=bump.BumpOptions(configuration=configuration, workspace=workspace),
     )
-    assert _load_version(manifest_path, ("package",)) == "7.8.9"
-    assert _load_version(manifest_path, ("workspace", "package")) == "7.8.9"
+    assert _load_version(manifest_path, ("package",)) == "7.8.9", (
+        "root [package] version not updated"
+    )
+    assert _load_version(manifest_path, ("workspace", "package")) == "7.8.9", (
+        "root [workspace.package] version not updated"
+    )
 
 
 def test_run_skips_excluded_crates(tmp_path: pathlib.Path) -> None:
@@ -98,10 +106,16 @@ def test_run_skips_excluded_crates(tmp_path: pathlib.Path) -> None:
         "2.0.0",
         options=bump.BumpOptions(configuration=configuration, workspace=workspace),
     )
-    assert _load_version(tmp_path / "Cargo.toml", ("workspace", "package")) == "2.0.0"
-    assert _load_version(excluded.manifest_path, ("package",)) == "0.1.0"
+    assert (
+        _load_version(tmp_path / "Cargo.toml", ("workspace", "package")) == "2.0.0"
+    ), "workspace version should still bump when a crate is excluded"
+    assert _load_version(excluded.manifest_path, ("package",)) == "0.1.0", (
+        f"excluded crate version should be unchanged: {excluded.manifest_path}"
+    )
     included = workspace.crates[1]
-    assert _load_version(included.manifest_path, ("package",)) == "2.0.0"
+    assert _load_version(included.manifest_path, ("package",)) == "2.0.0", (
+        f"included crate version not updated: {included.manifest_path}"
+    )
 
 
 def test_run_updates_internal_dependency_versions(tmp_path: pathlib.Path) -> None:
@@ -129,11 +143,11 @@ def test_run_updates_internal_dependency_versions(tmp_path: pathlib.Path) -> Non
     dependency_version, dev_entry, build_entry = _extract_alpha_dependency_entries(
         beta_crate.manifest_path
     )
-    assert dependency_version == "^1.2.3"
-    assert dev_entry["version"].value == "~1.2.3"
-    assert dev_entry["path"].value == "../alpha"
-    assert build_entry["version"].value == "1.2.3"
-    assert build_entry["path"].value == "../alpha"
+    assert dependency_version == "^1.2.3", "[dependencies] version requirement"
+    assert dev_entry["version"].value == "~1.2.3", "[dev-dependencies] version"
+    assert dev_entry["path"].value == "../alpha", "[dev-dependencies] path"
+    assert build_entry["version"].value == "1.2.3", "[build-dependencies] version"
+    assert build_entry["path"].value == "../alpha", "[build-dependencies] path"
 
 
 def test_run_updates_renamed_internal_dependency_versions(
@@ -172,8 +186,12 @@ def test_run_updates_renamed_internal_dependency_versions(
     beta_manifest = manifests["beta"]
     beta_document = parse_toml(beta_manifest.read_text(encoding="utf-8"))
     dependency_entry = beta_document["dependencies"]["alpha-core"]
-    assert dependency_entry["version"].value == "^2.3.4"
-    assert dependency_entry["package"].value == "alpha"
+    assert dependency_entry["version"].value == "^2.3.4", (
+        "aliased dependency 'alpha-core' version not updated"
+    )
+    assert dependency_entry["package"].value == "alpha", (
+        "aliased dependency should retain its 'package' rename"
+    )
 
 
 def test_run_normalises_workspace_root(
@@ -191,7 +209,9 @@ def test_run_normalises_workspace_root(
         options=bump.BumpOptions(configuration=configuration, workspace=workspace),
     )
     manifest_path = workspace_root / "Cargo.toml"
-    assert _load_version(manifest_path, ("workspace", "package")) == "3.4.5"
+    assert _load_version(manifest_path, ("workspace", "package")) == "3.4.5", (
+        "workspace version not updated after root normalisation"
+    )
 
 
 def test_run_uses_loaded_configuration_and_workspace(
@@ -203,7 +223,9 @@ def test_run_uses_loaded_configuration_and_workspace(
     monkeypatch.setattr(config_module, "current_configuration", lambda: configuration)
     monkeypatch.setattr("lading.workspace.load_workspace", lambda root: workspace)
     bump.run(tmp_path, "9.9.9")
-    assert _load_version(tmp_path / "Cargo.toml", ("workspace", "package")) == "9.9.9"
+    assert (
+        _load_version(tmp_path / "Cargo.toml", ("workspace", "package")) == "9.9.9"
+    ), "workspace version not updated when config and workspace are auto-loaded"
 
 
 @pytest.mark.parametrize(
@@ -250,7 +272,9 @@ def test_run_reports_when_versions_already_match(
             workspace=workspace,
         ),
     )
-    assert message == scenario.expected_message
+    assert message == scenario.expected_message, (
+        f"unexpected no-op message for {scenario.test_id!r}"
+    )
 
 
 def test_run_dry_run_reports_changes_without_modifying_files(
@@ -283,9 +307,11 @@ def test_run_dry_run_reports_changes_without_modifying_files(
         "- Cargo.toml",
         "- crates/alpha/Cargo.toml",
         "- crates/beta/Cargo.toml",
-    ]
+    ], f"unexpected dry-run output lines: {message!r}"
     for path in manifest_paths:
-        assert path.read_text(encoding="utf-8") == original_contents[path]
+        assert path.read_text(encoding="utf-8") == original_contents[path], (
+            f"dry run must not modify manifest: {path}"
+        )
 
 
 @pytest.mark.parametrize(
@@ -329,7 +355,9 @@ def test_run_updates_workspace_dependency_sections(
         actual_version = entry["version"].value
     else:
         actual_version = entry.value
-    assert actual_version == expected_version
+    assert actual_version == expected_version, (
+        f"[workspace.{section}] alpha version not updated as expected"
+    )
 
 
 def test_run_updates_workspace_dependency_prefixes(tmp_path: pathlib.Path) -> None:
@@ -354,7 +382,11 @@ def test_run_updates_workspace_dependency_prefixes(tmp_path: pathlib.Path) -> No
     )
 
     document = parse_toml(manifest_path.read_text(encoding="utf-8"))
-    assert document["workspace"]["dependencies"]["alpha"].value == "^1.2.3"
+    assert document["workspace"]["dependencies"]["alpha"].value == "^1.2.3", (
+        "alpha caret requirement not updated"
+    )
     beta_entry = document["workspace"]["dependencies"]["beta"]
-    assert beta_entry["version"].value == "~1.2.3"
-    assert beta_entry["path"].value == "crates/beta"
+    assert beta_entry["version"].value == "~1.2.3", "beta tilde requirement not updated"
+    assert beta_entry["path"].value == "crates/beta", (
+        "beta path field should be preserved"
+    )
