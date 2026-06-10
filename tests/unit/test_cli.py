@@ -447,11 +447,12 @@ def test_resolve_allow_unpublished_workspace_deps_matrix(
     debug_records = [
         record
         for record in caplog.records
-        if record.levelno == logging.DEBUG
-        and "_resolve_allow_unpublished_workspace_deps" in record.getMessage()
+        if record.levelno == logging.DEBUG and record.name == "lading.cli"
     ]
     assert len(debug_records) == 1
     message = debug_records[0].getMessage()
+    assert f"raw={flag!r}" in message
+    assert f"live={live!r}" in message
     assert f"resolved={expected!r}" in message
     assert f"({reason})" in message
 
@@ -463,6 +464,15 @@ def test_resolve_allow_unpublished_workspace_deps_matrix(
         pytest.param((), True, id="default"),
         pytest.param(("--allow-unpublished-workspace-deps",), True, id="enabled"),
         pytest.param(("--no-allow-unpublished-workspace-deps",), False, id="disabled"),
+        pytest.param(("--live",), False, id="live-default"),
+        pytest.param(
+            ("--live", "--allow-unpublished-workspace-deps"), True, id="live-enabled"
+        ),
+        pytest.param(
+            ("--live", "--no-allow-unpublished-workspace-deps"),
+            False,
+            id="live-disabled",
+        ),
     ],
 )
 def test_publish_cli_passes_unpublished_workspace_deps_flag(

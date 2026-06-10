@@ -152,7 +152,17 @@ def _resolve_allow_unpublished_workspace_deps(
     live: bool,
     allow_unpublished_workspace_deps: bool | None,
 ) -> bool:
-    """Return the concrete publish option for the optional CLI flag."""
+    """Resolve the tri-state ``--allow-unpublished-workspace-deps`` flag.
+
+    An explicit flag value is honoured verbatim. When the flag is omitted the
+    default depends on the publish mode: ``False`` for live publishes and
+    ``True`` for dry runs, so unpublished workspace members do not abort a
+    rehearsal.
+
+    Logging side effects: applying the dry-run default emits an INFO record so
+    operators can see the decision, and every call emits a DEBUG record with the
+    raw input, mode, resolved value, and the reason it was chosen.
+    """
     if allow_unpublished_workspace_deps is not None:
         resolved_value = allow_unpublished_workspace_deps
         reason = "explicit flag"
