@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import collections.abc as cabc
+import dataclasses as dc
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,14 @@ from .conftest import (
     make_workspace,
 )
 from .preflight_test_utils import _extract_cargo_test_call, _setup_preflight_test
+
+
+@dc.dataclass(frozen=True)
+class _ExcludeScenario:
+    configured_excludes: tuple[str, ...]
+    expected_excludes: tuple[str, ...]
+    unit_tests_only: bool
+
 
 EXCLUDE_SCENARIOS = [
     pytest.param((), (), id="none"),
@@ -103,8 +112,11 @@ def test_run_executes_preflight_checks_in_workspace(
 # target-narrowing flag.
 EXCLUDE_MODE_SCENARIOS = [
     pytest.param(
-        *scenario.values,
-        unit_tests_only,
+        _ExcludeScenario(
+            configured_excludes=scenario.values[0],
+            expected_excludes=scenario.values[1],
+            unit_tests_only=unit_tests_only,
+        ),
         id=f"{scenario.id}-{'unit_only' if unit_tests_only else 'all_targets'}",
     )
     for scenario in EXCLUDE_SCENARIOS
@@ -112,19 +124,16 @@ EXCLUDE_MODE_SCENARIOS = [
 ]
 
 
-@pytest.mark.parametrize(
-    ("configured_excludes", "expected_excludes", "unit_tests_only"),
-    EXCLUDE_MODE_SCENARIOS,
-)
+@pytest.mark.parametrize("scenario", EXCLUDE_MODE_SCENARIOS)
 def test_run_includes_preflight_test_excludes(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
-    configured_excludes: tuple[str, ...],
-    expected_excludes: tuple[str, ...],
-    *,
-    unit_tests_only: bool,
+    scenario: _ExcludeScenario,
 ) -> None:
     """Configured exclusions match the builder output and cargo invocation."""
+    configured_excludes = scenario.configured_excludes
+    expected_excludes = scenario.expected_excludes
+    unit_tests_only = scenario.unit_tests_only
     configuration = make_config(
         preflight=make_preflight_config(
             test_exclude=configured_excludes,
