@@ -83,9 +83,9 @@ def test_collect_workspace_crates_builds_tuple_in_member_order(tmp_path: Path) -
         "alpha-id": alpha_package,
         "beta-id": beta_package,
     }
-    workspace_index = models._build_workspace_index(package_lookup)
+    workspace_index = graph_build._build_workspace_index(package_lookup)
 
-    crates = models._collect_workspace_crates(
+    crates = graph_build._collect_workspace_crates(
         package_lookup=package_lookup,
         workspace_member_ids=("beta-id", "alpha-id", "beta-id"),
         workspace_index=workspace_index,
@@ -132,13 +132,13 @@ def test_collect_workspace_crates_rejects_missing_members(
     package_lookup = {
         "alpha-id": build_test_package("alpha", "0.1.0", alpha_manifest),
     }
-    workspace_index = models._build_workspace_index(package_lookup)
+    workspace_index = graph_build._build_workspace_index(package_lookup)
 
     with pytest.raises(
         models.WorkspaceModelError,
         match=r"workspace member 'missing-id' missing from package list",
     ):
-        models._collect_workspace_crates(
+        graph_build._collect_workspace_crates(
             package_lookup=package_lookup,
             workspace_member_ids=workspace_member_ids,
             workspace_index=workspace_index,

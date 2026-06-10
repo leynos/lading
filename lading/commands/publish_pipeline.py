@@ -14,12 +14,15 @@ import dataclasses as dc
 import logging
 import typing as typ
 
+from lading.commands.cargo_output_adapter import (
+    CargoIndexLookupFailure,
+    CargoSubprocessResult,
+    parse_index_lookup_failure,
+)
 from lading.commands.publish_errors import PublishError, PublishPreflightError
 from lading.commands.publish_index_check import (
-    _CargoInvocation,
     _format_cargo_failure_message,
     _IndexMissingVersionHandling,
-    _is_index_missing_version_error,
 )
 from lading.commands.publish_index_check import (
     _handle_index_missing_version as _raw_handle_index_missing_version,
@@ -46,6 +49,15 @@ class _PublishExecutionOptions:
     allow_unpublished_workspace_deps: bool = False
 
 
+@dc.dataclass(frozen=True, slots=True)
+class _PublicationPipelineState:
+    """Shared publish state for cargo package and publish invocations."""
+
+    plan: PublishPlan
+    preparation: PublishPreparation
+    options: _PublishExecutionOptions
+
+
 def _resolve_staged_crate_root(
     crate: WorkspaceCrate,
     plan: PublishPlan,
@@ -69,17 +81,8 @@ def _resolve_staged_crate_root(
     return staged_root
 
 
-@dc.dataclass(frozen=True, slots=True)
-class _PublicationPipelineState:
-    """Shared publish state for cargo package and publish invocations."""
-
-    plan: PublishPlan
-    preparation: PublishPreparation
-    options: _PublishExecutionOptions
-
-
 def _handle_index_missing_version(
-    invocation: _CargoInvocation,
+    failure: CargoIndexLookupFailure,
     *,
     plan: PublishPlan,
     options: _PublishExecutionOptions,
@@ -90,10 +93,10 @@ def _handle_index_missing_version(
     through to the relocated implementation in ``publish_index_check``.
     """
     error_cls = (
-        PublishError if invocation.subcommand == "publish" else PublishPreflightError
+        PublishError if failure.subcommand == "publish" else PublishPreflightError
     )
     _raw_handle_index_missing_version(
-        invocation,
+        failure,
         handling=_IndexMissingVersionHandling(
             plan=plan,
             options=options,
@@ -140,16 +143,17 @@ def _package_crate(
     if exit_code == 0:
         LOGGER.info("Successfully packaged crate %s", crate.name)
         return
-    if _is_index_missing_version_error(exit_code, stdout, stderr):
-        _handle_index_missing_version(
-            _CargoInvocation(
-                crate_name=crate.name,
-                subcommand="package",
-                output=(exit_code, stdout, stderr),
-            ),
-            plan=plan,
-            options=options,
-        )
+    lookup_failure = parse_index_lookup_failure(
+        crate_name=crate.name,
+        subcommand="package",
+        result=CargoSubprocessResult(
+            exit_code=exit_code,
+            stdout=stdout,
+            stderr=stderr,
+        ),
+    )
+    if lookup_failure is not None:
+        _handle_index_missing_version(lookup_failure, plan=plan, options=options)
         return
     message = _format_cargo_failure_message(
         "package", crate.name, exit_code, (stdout, stderr)
@@ -227,32 +231,26 @@ def _publish_crate(
         env=None,
     )
     _handle_publish_result(
-        _CargoInvocation(
-            crate_name=crate.name,
-            subcommand="publish",
-            output=(exit_code, stdout, stderr),
-        ),
-        crate,
-        plan,
-        options,
+        crate, (exit_code, stdout, stderr), plan=plan, options=options
     )
 
 
 def _handle_publish_result(
-    invocation: _CargoInvocation,
     crate: WorkspaceCrate,
+    output: tuple[int, str, str],
+    *,
     plan: PublishPlan,
     options: _PublishExecutionOptions,
 ) -> None:
     """Handle a completed ``cargo publish`` invocation."""
-    exit_code, stdout, stderr = invocation.output
+    exit_code, stdout, stderr = output
     if exit_code == 0:
         success_message = (
             "Successfully published crate %s"
             if options.live
             else "Dry-run publish succeeded for crate %s"
         )
-        LOGGER.info(success_message, invocation.crate_name)
+        LOGGER.info(success_message, crate.name)
         return
     if _is_already_published_error(exit_code, stdout, stderr):
         LOGGER.warning(
@@ -261,11 +259,20 @@ def _handle_publish_result(
             crate.version,
         )
         return
-    if _is_index_missing_version_error(exit_code, stdout, stderr):
+    lookup_failure = parse_index_lookup_failure(
+        crate_name=crate.name,
+        subcommand="publish",
+        result=CargoSubprocessResult(
+            exit_code=exit_code,
+            stdout=stdout,
+            stderr=stderr,
+        ),
+    )
+    if lookup_failure is not None:
         # cargo publish --dry-run packages internally and hits the same
         # crates.io index lookup as cargo package, so honour the override
         # consistently across both phases.
-        _handle_index_missing_version(invocation, plan=plan, options=options)
+        _handle_index_missing_version(lookup_failure, plan=plan, options=options)
         return
 
     message = _format_cargo_failure_message(
