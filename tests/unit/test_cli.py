@@ -21,6 +21,7 @@ import pytest
 from lading import cli
 from lading import config as config_module
 from lading.commands import bump as bump_command
+from lading.commands import bump_lockfiles
 from lading.commands import publish as publish_command
 from lading.utils import normalise_workspace_root
 from lading.workspace import WorkspaceCrate, WorkspaceGraph
@@ -398,7 +399,9 @@ def test_bump_cli_accepts_dry_run_flag(
     options = captured_kwargs["options"]
     assert isinstance(options, bump_command.BumpOptions)
     assert options.dry_run is True
-    assert options.command_runner is cli.subprocess_runner
+    repository = options.lockfile_repository
+    assert isinstance(repository, bump_lockfiles.CargoLockfileRepository)
+    assert repository.runner is cli.subprocess_runner
 
 
 def test_publish_cli_logs_dry_run_default_flag_resolution(

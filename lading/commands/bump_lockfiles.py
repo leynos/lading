@@ -237,3 +237,51 @@ def _run_workspace_lockfile_update(
             stderr,
         )
         raise LockfileRegenerationError(message)
+
+
+@dc.dataclass(frozen=True, slots=True)
+class CargoLockfileRepository:
+    """Cargo-backed :class:`LockfileRepository` bound to a command runner."""
+
+    runner: CommandRunner | None = None
+
+    def resolve_lockfile_paths(
+        self,
+        workspace_root: Path,
+        lockfile_manifests: cabc.Sequence[str],
+    ) -> tuple[Path, ...]:
+        """Return the lockfile paths a regeneration run would touch."""
+        return resolve_lockfile_paths(workspace_root, lockfile_manifests)
+
+    def regenerate_lockfiles(
+        self,
+        workspace_root: Path,
+        lockfile_manifests: cabc.Sequence[str],
+    ) -> tuple[Path, ...]:
+        """Regenerate lockfiles via ``cargo update --workspace``."""
+        return regenerate_lockfiles(
+            workspace_root, lockfile_manifests, runner=self.runner
+        )
+
+
+class LockfileRepository(typ.Protocol):
+    """Port for projecting and regenerating Cargo lockfiles after a bump.
+
+    The bump domain depends on this protocol rather than on a command
+    runner, keeping execution infrastructure out of the public bump options
+    (issue #82).
+    """
+
+    def resolve_lockfile_paths(
+        self,
+        workspace_root: Path,
+        lockfile_manifests: cabc.Sequence[str],
+    ) -> tuple[Path, ...]:
+        """Return the lockfile paths a regeneration run would touch."""
+
+    def regenerate_lockfiles(
+        self,
+        workspace_root: Path,
+        lockfile_manifests: cabc.Sequence[str],
+    ) -> tuple[Path, ...]:
+        """Regenerate lockfiles and return the rewritten paths."""
