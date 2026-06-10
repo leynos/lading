@@ -492,8 +492,8 @@ type `typ.NoReturn`):
 #### Crate-name canonicalization
 
 `_canonical_crate_name(name)` normalises a crate name by replacing every hyphen
-with an underscore. It is applied by building a canonical publish-order index and
-looking up both the current crate and missing dependency by canonical name:
+with an underscore. It is applied by building a canonical publish-order index
+and looking up both the current crate and missing dependency by canonical name:
 
 ```python
 publishable_name_indexes = {

@@ -34,8 +34,11 @@ if failure is not None:
 from __future__ import annotations
 
 import dataclasses as dc
+import logging
 import re
 import typing as typ
+
+LOGGER = logging.getLogger(__name__)
 
 _INDEX_MISSING_VERSION_MARKERS: tuple[str, ...] = (
     "failed to select a version for the requirement",
@@ -125,17 +128,34 @@ def parse_index_lookup_failure(
         re.search(re.escape(marker), haystack, re.IGNORECASE)
         for marker in _INDEX_MISSING_VERSION_MARKERS
     ):
+        LOGGER.debug(
+            "cargo %s for crate %s exited %d without index-lookup markers; "
+            "not classifying as an index-miss failure",
+            subcommand,
+            crate_name,
+            result.exit_code,
+        )
         return None
 
+    missing_dependency_name = _extract_missing_dependency_name(
+        result.stdout, result.stderr
+    )
+    LOGGER.debug(
+        "cargo %s for crate %s classified as an index-lookup failure "
+        "(missing dependency: %s)",
+        subcommand,
+        crate_name,
+        missing_dependency_name
+        if missing_dependency_name is not None
+        else "<unparsed>",
+    )
     return CargoIndexLookupFailure(
         crate_name=crate_name,
         subcommand=subcommand,
         exit_code=result.exit_code,
         stdout=result.stdout,
         stderr=result.stderr,
-        missing_dependency_name=_extract_missing_dependency_name(
-            result.stdout, result.stderr
-        ),
+        missing_dependency_name=missing_dependency_name,
     )
 
 

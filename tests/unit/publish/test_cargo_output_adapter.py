@@ -50,6 +50,16 @@ def _both_markers_stderr(
     return name, stderr
 
 
+def _randomly_cased(text: str) -> st.SearchStrategy[str]:
+    """Return a strategy yielding ``text`` with each letter's case toggled."""
+    return st.lists(st.booleans(), min_size=len(text), max_size=len(text)).map(
+        lambda flags: "".join(
+            char.upper() if flag else char.lower()
+            for char, flag in zip(text, flags, strict=True)
+        )
+    )
+
+
 def _parse_index_lookup_failure(
     exit_code: int,
     stdout: str,
@@ -205,3 +215,25 @@ def test_parse_index_lookup_failure_extracted_name_matches_crate_name_pattern(
     result = _parse_index_lookup_failure(exit_code, "", stderr)
     if result is not None and result.missing_dependency_name is not None:
         assert _VALID_CRATE_NAME_RE.match(result.missing_dependency_name)
+
+
+@given(
+    version_marker=_randomly_cased(_MARKER_VERSION),
+    index_marker=_randomly_cased(_MARKER_INDEX),
+    name=_crate_names,
+    exit_code=st.integers(min_value=1, max_value=255),
+)
+@settings(max_examples=80, deadline=None)
+def test_parse_index_lookup_failure_matches_markers_case_insensitively(
+    version_marker: str, index_marker: str, name: str, exit_code: int
+) -> None:
+    """Marker matching and name extraction honour the re.IGNORECASE contract.
+
+    The production markers are matched case-insensitively, so cargo output with
+    arbitrarily cased markers must still classify as an index-lookup failure and
+    yield the parsed dependency name.
+    """
+    stderr = f'{version_marker} `{name} = "^1.0"`\n{index_marker}'
+    result = _parse_index_lookup_failure(exit_code, "", stderr)
+    assert result is not None
+    assert result.missing_dependency_name == name
