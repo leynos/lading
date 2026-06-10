@@ -86,6 +86,50 @@ The end-to-end suite in `tests/e2e/` keeps git interactions real while stubbing
 only `cargo` operations, using cmd-mox passthrough spies for `git status` when
 publish runs with stub mode enabled.
 
+
+## Property-based testing
+
+[Hypothesis](https://hypothesis.readthedocs.io/) is a development dependency
+used for property-based tests across the publish command test suite. Add
+Hypothesis to new test modules with:
+
+```python
+from hypothesis import HealthCheck, given, settings
+from hypothesis import strategies as st
+```
+
+Property-based tests in the publish suite use
+`@settings(max_examples=20, suppress_health_check=[HealthCheck.function_scoped_fixture])`
+to keep continuous integration (CI) fast while still exercising a range of
+inputs.
+
+
+## Publish test infrastructure (`tests/unit/publish/conftest.py`)
+
+The publish unit-test conftest exports the following shared helpers:
+
+| Symbol                                 | Purpose                                                                               |
+| -------------------------------------- | ------------------------------------------------------------------------------------- |
+| `CARGO_PACKAGE`                        | `("cargo", "package", "--allow-dirty")` — expected package command tuple              |
+| `CARGO_PUBLISH`                        | `("cargo", "publish", "--allow-dirty")` — expected live-publish command tuple         |
+| `CARGO_PUBLISH_DRY_RUN`                | `("cargo", "publish", "--allow-dirty", "--dry-run")` — expected dry-run command tuple |
+| `make_crate(root, name, ...)`          | Build a `WorkspaceCrate` under `root` with an on-disk `Cargo.toml`                    |
+| `make_workspace(root, *crates)`        | Build a `WorkspaceGraph` for the given crates                                         |
+| `make_config(**overrides)`             | Build a `LadingConfig` with test defaults                                             |
+| `make_preflight_config(**overrides)`   | Build a `PreflightConfig` with test defaults                                          |
+| `make_dependency_chain(root)`          | Return an alpha→beta→gamma three-crate chain                                          |
+| `make_n_crate_chain(root, count)`      | Return a linear chain of `count` crates named `crate_0`…`crate_{n-1}`                 |
+| `CallTrackingRunner`                   | Recording runner that captures `(command, cwd)` pairs without side effects            |
+| `plan_with_crates(tmp_path, crates)`   | Plan publication for crates without workspace I/O                                     |
+| `prepare_staging_root(plan, base_dir)` | Create staged crate directories matching a plan                                       |
+
+`make_n_crate_chain` raises `ValueError` when `count < 1`. Use it in
+parametrised and property-based tests that must exercise arbitrary chain sizes.
+
+`CallTrackingRunner` is a callable class. Inject it as `command_runner` in
+`PublishOptions`. After the run, inspect `.calls` for the ordered list of
+`(command_tuple, cwd)` pairs.
+
 ## Bump command internals
 
 `lading.commands.bump` coordinates manifest updates, documentation updates,
