@@ -445,7 +445,7 @@ The index-lookup handling is split across the adapter and decision helper:
   fatal. If the parsed name is not in the publish plan, the failure is fatal
   with guidance to publish or index that dependency first. The helper checks
   projected availability by comparing publish-order positions and raises for
-  out-of- plan, self, or late dependencies. If the parsed name is in the plan
+  out-of-plan, self, or late dependencies. If the parsed name is in the plan
   and `allow_unpublished_workspace_deps` is set, the helper logs a warning and
   continues; otherwise it raises with guidance to enable the dry-run
   unpublished workspace dependency override or follow the staged-publish

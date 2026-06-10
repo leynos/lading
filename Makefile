@@ -55,7 +55,7 @@ endif
 
 ifneq ($(strip $(VENV_TOOLS)),)
 .PHONY: $(VENV_TOOLS)
-$(VENV_TOOLS): ## Verify required CLI tools in venv
+$(VENV_TOOLS): build ## Verify required CLI tools in venv
 	$(call ensure_tool_venv,$@)
 endif
 
