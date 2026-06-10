@@ -118,7 +118,9 @@ def test_run_formats_plan_summary(tmp_path: Path, snapshot: SnapshotAssertion) -
     assert normalised == snapshot
 
 
-def test_run_reports_no_publishable_crates(tmp_path: Path) -> None:
+def test_run_reports_no_publishable_crates(
+    tmp_path: Path, snapshot: SnapshotAssertion
+) -> None:
     """``run`` highlights when no crates are eligible for publication."""
     root = tmp_path.resolve()
     manifest_skipped = make_crate(root, "alpha", publish_flag=False)
@@ -131,19 +133,17 @@ def test_run_reports_no_publishable_crates(tmp_path: Path) -> None:
 
     message = publish.run(root, configuration, workspace)
 
-    lines = message.splitlines()
-    assert "Crates to publish: none" in lines, (
-        "summary should report that no crates are publishable"
+    # Redact non-deterministic paths (the tmp_path workspace root and the
+    # randomly named staging directory) so the snapshot is stable across
+    # machines and pytest runs while still pinning the summary format.
+    normalised = message.replace(str(root), "<workspace-root>")
+    normalised = re.sub(
+        r"^Staged workspace at: .*$",
+        "Staged workspace at: <staging-root>",
+        normalised,
+        flags=re.MULTILINE,
     )
-    assert "Skipped (publish = false):" in lines, (
-        "manifest-skipped section should be present"
-    )
-    assert "- alpha" in lines, "manifest-skipped crate should be listed"
-    assert "Skipped via publish.exclude:" in lines, (
-        "config-excluded section should be present"
-    )
-    assert "- beta" in lines, "first config-excluded crate should be listed"
-    assert "- gamma" in lines, "second config-excluded crate should be listed"
+    assert normalised == snapshot
 
 
 def test_run_surfaces_missing_workspace(

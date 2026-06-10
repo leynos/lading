@@ -16,3 +16,18 @@
   Workspace READMEs are handled by lading bump.
   '''
 # ---
+# name: test_run_reports_no_publishable_crates
+  '''
+  Publish plan for <workspace-root>
+  Strip patch strategy: all
+  Crates to publish: none
+  Skipped (publish = false):
+  - alpha
+  Skipped via publish.exclude:
+  - beta
+  - gamma
+  
+  Staged workspace at: <staging-root>
+  Workspace READMEs are handled by lading bump.
+  '''
+# ---
