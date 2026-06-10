@@ -46,7 +46,8 @@ used by `leynos/episodic`. If Ruff passes, the target runs `interrogate` with
 `pylint-pypy-shim` tool under PyPy. The final tier is focused on rule families
 that complement Ruff, especially logging format safety, pattern matching checks,
 selected simplification checks, deprecated standard-library usage, file hygiene,
-and design-size limits.
+and design-size limits. [ADR-003](adr/003-three-tier-python-linting.md) records
+the policy decision.
 
 The relevant Makefile variables are:
 
@@ -58,10 +59,10 @@ The relevant Makefile variables are:
 - `PYLINT` — full `uv tool run --python $(PYLINT_PYTHON)` invocation for the
   shimmed Pylint command.
 
-The `lint` target depends on both `ruff` and `uv`, so it fails during tool
-checks if either command is unavailable. Keep any future lint additions wired
-through Makefile prerequisites as well as command invocations, so local
-failures remain early and clear.
+The `lint` target depends on `ruff`, `build`, `uv`, and `interrogate`, so it
+creates and syncs the virtual environment before checking virtual-environment
+tools. Keep any future lint additions wired through Makefile prerequisites as
+well as command invocations, so local failures remain early and clear.
 
 Ruff and Pylint policy live in `pyproject.toml`. The Ruff configuration enables
 preview rules, targets Python 3.13, imports the selected `episodic` rule set,
