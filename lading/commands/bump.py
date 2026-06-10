@@ -549,7 +549,7 @@ def _dependency_sections_for_crate(
     for dependency in crate.dependencies:
         if dependency.name not in targets:
             continue
-        section = _DEPENDENCY_SECTION_BY_KIND.get(dependency.kind, "dependencies")
+        section = _DEPENDENCY_SECTION_BY_KIND.get(dependency.kind, _NORMAL_SECTION)
         # ``manifest_name`` preserves the dependency key used in the manifest.
         # When a crate is aliased (e.g. ``alpha-core = { package = "alpha" }``)
         # the workspace dependency name remains ``alpha`` while the manifest

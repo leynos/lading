@@ -127,7 +127,7 @@ Cargo dependency-section names (`dependencies`, `dev-dependencies`, and
 (`bump_docs.update_toml_snippet_dependencies`,
 `bump._workspace_dependency_sections`) or map dependency kinds to sections
 (`bump._DEPENDENCY_SECTION_BY_KIND`) must derive from this constant rather than
-re-declaring the literals, so a change to the recognised section set is made in
+re-declaring the literals, so a change to the recognized section set is made in
 exactly one place.
 
 ## Workspace discovery helpers
