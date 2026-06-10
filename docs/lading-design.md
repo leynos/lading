@@ -106,10 +106,10 @@ lading [--workspace-root <path>] <subcommand> [options]
 - `--workspace-root` is implemented as a global flag that can be positioned
   before or after the subcommand. The bootstrapper removes the flag from the
   argument list, normalises it via the shared
-  `lading.utils.normalise_workspace_root` helper (backed by `plumbum.local`),
-  and stores the resolved path in the `LADING_WORKSPACE_ROOT` environment
-  variable so that Cyclopts can hydrate per-command options without bespoke
-  parsing hooks.
+  `lading.utils.normalise_workspace_root` helper (implemented with
+  `pathlib.Path` alone), and stores the resolved path in the
+  `LADING_WORKSPACE_ROOT` environment variable so that Cyclopts can hydrate
+  per-command options without bespoke parsing hooks.
 - Subcommands currently dispatch to placeholder implementations that return a
   human-readable acknowledgement. The CLI prints these messages to aid smoke
   testing while we build out real behaviours in later roadmap steps.
@@ -226,9 +226,9 @@ build scripts, and complex workspace configurations.
 #### Implementation notes (Step 1.2)
 
 - Workspace discovery is anchored in `lading.workspace.metadata`. The module
-  uses `plumbum` to construct `cargo metadata --format-version 1`, normalising
-  the workspace root via `lading.utils.normalise_workspace_root` before
-  invoking the command.
+  invokes `cargo metadata --format-version 1` through the active
+  `CommandRunner`, normalising the workspace root via
+  `lading.utils.normalise_workspace_root` before invoking the command.
 - Failures to locate the `cargo` executable raise
   `CargoExecutableNotFoundError`; non-zero exit codes raise
   `CargoMetadataInvocationError`; malformed JSON payloads raise

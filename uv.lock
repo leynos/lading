@@ -209,7 +209,6 @@ dependencies = [
     { name = "cyclopts" },
     { name = "markdown-it-py" },
     { name = "msgspec" },
-    { name = "plumbum" },
     { name = "tomlkit" },
 ]
 
@@ -219,6 +218,7 @@ dev = [
     { name = "cmd-mox" },
     { name = "hypothesis" },
     { name = "interrogate" },
+    { name = "plumbum" },
     { name = "pyright" },
     { name = "pytest" },
     { name = "pytest-bdd" },
@@ -234,7 +234,6 @@ requires-dist = [
     { name = "cyclopts", specifier = ">=2.9" },
     { name = "markdown-it-py", specifier = ">=3,<4" },
     { name = "msgspec", specifier = ">=0.18,<1.0" },
-    { name = "plumbum", specifier = ">=1.8" },
     { name = "tomlkit", specifier = "==0.13.*" },
 ]
 
@@ -244,6 +243,7 @@ dev = [
     { name = "cmd-mox", git = "https://github.com/leynos/cmd-mox?rev=f583c279a15760aba5cfd9bddf1fbbe9b1f8c429" },
     { name = "hypothesis", specifier = ">=6" },
     { name = "interrogate", specifier = ">=1.7.0" },
+    { name = "plumbum", specifier = ">=1.8" },
     { name = "pyright" },
     { name = "pytest" },
     { name = "pytest-bdd" },

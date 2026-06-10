@@ -123,6 +123,33 @@ can see which generated files need review and commit.
 
 ## Workspace discovery helpers
 
+### Workspace path normalisation (`lading/utils/path.py`)
+
+`normalise_workspace_root(value)` is the shared helper that turns a
+user-supplied workspace root into a canonical `Path`. Import it from
+`lading.utils`:
+
+```python
+from lading.utils import normalise_workspace_root
+
+normalise_workspace_root("~/workspace")  # -> absolute, ~ expanded
+normalise_workspace_root(None)           # -> Path.cwd().resolve()
+```
+
+It accepts `Path`, `str`, or `None`. `None` selects the resolved current
+working directory; any other value is expanded with `Path.expanduser` and
+resolved with `Path.resolve(strict=False)`, so `~` is expanded, redundant
+separators and `.`/`..` segments collapse, and the result is always absolute.
+`strict=False` means a non-existent target is permitted rather than raising.
+
+The implementation is pure `pathlib`
+(`Path(value).expanduser().resolve(strict=False)`); it no longer round-trips
+through `plumbum`'s `local.path`. `plumbum` is therefore a dev-only dependency,
+used solely by the end-to-end test helpers. Callers across the codebase rely on
+this helper for consistent path handling, including `lading.cli`,
+`lading.config`, `lading.workspace.metadata.load_cargo_metadata`,
+`lading.commands.bump`, and `lading.commands.publish`.
+
 ### Lockfile helpers (`lading/commands/lockfile.py`)
 
 `discover_tracked_lockfiles(workspace_root, runner)` filters git-tracked
@@ -165,10 +192,11 @@ metadata = load_cargo_metadata(Path("/path/to/workspace"))
 print(metadata["workspace_root"])
 ```
 
-The helper normalizes the workspace path, invokes
-`cargo metadata --format-version 1` using `plumbum`, and returns the parsed
-JSON mapping. Any execution errors or invalid output raise `CargoMetadataError`
-with a descriptive message, so callers can present actionable feedback to users.
+The helper normalises the workspace path with `normalise_workspace_root`,
+invokes `cargo metadata --format-version 1` through the active `CommandRunner`,
+and returns the parsed JSON mapping. Any execution errors or invalid output
+raise `CargoMetadataError` with a descriptive message, so callers can present
+actionable feedback to users.
 
 ### Workspace graph model
 
@@ -357,7 +385,7 @@ index-lookup downgrade is only valid for dry-run workflows.
 the live-mode dispatcher. It walks `PublishPlan.publishable` in order and runs
 `cargo package` followed by `cargo publish` for each crate before advancing to
 the next crate. It logs per-crate progress, records completed crates for abort
-diagnostics, and normalizes staging/preparation failures into
+diagnostics, and normalises staging/preparation failures into
 `PublishPreflightError` so callers receive the same publish command error
 boundary.
 
@@ -468,7 +496,7 @@ type `typ.NoReturn`):
 
 #### Crate-name canonicalization
 
-`_canonical_crate_name(name)` normalizes a crate name by replacing every hyphen
+`_canonical_crate_name(name)` normalises a crate name by replacing every hyphen
 with an underscore. It is applied in `publish_index_check.py` when building
 `publishable_name_indexes = _publishable_name_indexes(handling.plan)` and when
 looking up both the current crate and a missing dependency name:
@@ -482,7 +510,7 @@ missing_index = publishable_name_indexes.get(_canonical_crate_name(missing_name)
 This is necessary because Cargo error diagnostics may report a missing
 dependency using hyphens (e.g. `my-crate`), while the corresponding
 `Cargo.toml` entry and the `PublishPlan` store the same package name with
-underscores (e.g. `my_crate`). Without normalization, a hyphenated cargo
+underscores (e.g. `my_crate`). Without normalisation, a hyphenated cargo
 diagnostic would be incorrectly classified as an out-of-plan dependency and
 raise a fatal error instead of triggering the downgrade path.
 
