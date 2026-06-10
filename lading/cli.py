@@ -401,7 +401,9 @@ def bump(
                 rebuild_lockfiles=rebuild_lockfiles,
                 configuration=configuration,
                 workspace=workspace,
-                command_runner=command_runner,
+                lockfile_repository=commands.bump_lockfiles.CargoLockfileRepository(
+                    runner=command_runner
+                ),
             ),
         ),
     )
