@@ -94,6 +94,17 @@ def test_run_loads_configuration_when_inactive(
     )
 
 
+def _normalise_summary(message: str, root: Path) -> str:
+    """Redact non-deterministic paths so snapshots are stable across runs."""
+    normalised = message.replace(str(root), "<workspace-root>")
+    return re.sub(
+        r"^Staged workspace at: .*$",
+        "Staged workspace at: <staging-root>",
+        normalised,
+        flags=re.MULTILINE,
+    )
+
+
 def test_run_formats_plan_summary(tmp_path: Path, snapshot: SnapshotAssertion) -> None:
     """``run`` returns a structured summary of the publish plan."""
     root = tmp_path.resolve()
@@ -105,17 +116,7 @@ def test_run_formats_plan_summary(tmp_path: Path, snapshot: SnapshotAssertion) -
 
     message = publish.run(root, configuration, workspace)
 
-    # Redact non-deterministic paths (the tmp_path workspace root and the
-    # randomly named staging directory) so the snapshot is stable across
-    # machines and pytest runs while still pinning the summary format.
-    normalised = message.replace(str(root), "<workspace-root>")
-    normalised = re.sub(
-        r"^Staged workspace at: .*$",
-        "Staged workspace at: <staging-root>",
-        normalised,
-        flags=re.MULTILINE,
-    )
-    assert normalised == snapshot
+    assert _normalise_summary(message, root) == snapshot
 
 
 def test_run_reports_no_publishable_crates(
@@ -133,17 +134,7 @@ def test_run_reports_no_publishable_crates(
 
     message = publish.run(root, configuration, workspace)
 
-    # Redact non-deterministic paths (the tmp_path workspace root and the
-    # randomly named staging directory) so the snapshot is stable across
-    # machines and pytest runs while still pinning the summary format.
-    normalised = message.replace(str(root), "<workspace-root>")
-    normalised = re.sub(
-        r"^Staged workspace at: .*$",
-        "Staged workspace at: <staging-root>",
-        normalised,
-        flags=re.MULTILINE,
-    )
-    assert normalised == snapshot
+    assert _normalise_summary(message, root) == snapshot
 
 
 def test_run_surfaces_missing_workspace(
