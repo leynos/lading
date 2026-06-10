@@ -190,7 +190,7 @@ def test_parse_index_lookup_failure_both_markers_nonzero_returns_failure(
 
 
 @given(
-    stdout=st.text(),
+    stdout=st.text().filter(lambda s: _MARKER_INDEX.lower() not in s.lower()),
     stderr=st.text().filter(lambda s: _MARKER_INDEX.lower() not in s.lower()),
     exit_code=st.integers(min_value=1, max_value=255),
 )
@@ -199,9 +199,6 @@ def test_parse_index_lookup_failure_missing_index_marker_returns_none(
     stdout: str, stderr: str, exit_code: int
 ) -> None:
     """Absence of the crates.io index marker always produces None."""
-    combined = f"{stdout}\n{stderr}"
-    if _MARKER_INDEX.lower() in combined.lower():
-        return
     assert _parse_index_lookup_failure(exit_code, stdout, stderr) is None
 
 
