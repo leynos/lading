@@ -322,6 +322,30 @@ def _handle_index_missing_version(
     )
 
 
+class _CrateAction(typ.Protocol):
+    """Action applied to each crate in the publication pipeline."""
+
+    def __call__(
+        self,
+        crate: WorkspaceCrate,
+        state: _PublicationPipelineState,
+        *,
+        runner: CommandRunner,
+    ) -> None:
+        """Process a single staged crate from the pipeline."""
+
+
+def _for_each_publishable_crate(
+    state: _PublicationPipelineState,
+    *,
+    runner: CommandRunner,
+    action: _CrateAction,
+) -> None:
+    """Apply *action* to every publishable crate in pipeline order."""
+    for crate in state.plan.publishable:
+        action(crate, state, runner=runner)
+
+
 def _package_publishable_crates(
     plan: PublishPlan,
     preparation: PublishPreparation,
@@ -330,13 +354,11 @@ def _package_publishable_crates(
     runner: CommandRunner,
 ) -> None:
     """Package each publishable crate in order using the staged workspace."""
-    state = _PublicationPipelineState(plan, preparation, options)
-    for crate in plan.publishable:
-        _package_crate(
-            crate,
-            state,
-            runner=runner,
-        )
+    _for_each_publishable_crate(
+        _PublicationPipelineState(plan, preparation, options),
+        runner=runner,
+        action=_package_crate,
+    )
 
 
 def _package_crate(
@@ -411,13 +433,11 @@ def _publish_crates(
     options: _PublishExecutionOptions,
 ) -> None:
     """Publish each crate in order, respecting dry-run vs live mode."""
-    state = _PublicationPipelineState(plan, preparation, options)
-    for crate in plan.publishable:
-        _publish_crate(
-            crate,
-            state,
-            runner=runner,
-        )
+    _for_each_publishable_crate(
+        _PublicationPipelineState(plan, preparation, options),
+        runner=runner,
+        action=_publish_crate,
+    )
 
 
 def _publish_crate(
