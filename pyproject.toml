@@ -125,7 +125,7 @@ extend-ignore = [
     "RUF027",  # Existing template-string replacements intentionally use literals.
     "RUF069",  # Existing float comparisons are exact parser expectations.
     "S404",  # Existing subprocess wrappers are the intended process boundary.
-    "TC003",  # Type-only stdlib imports will be moved in a focused cleanup.
+"TC003",  # Type-only stdlib imports will be moved in a focused cleanup.
 ]
 [tool.ruff.lint.per-file-ignores]
 "**/test_*.py" = ["S101", "PLR0913", "PLR0917", "PLR2004", "PLR6301"]
@@ -207,7 +207,10 @@ dataclasses = "dc"
 [tool.ruff.lint.pydocstyle]
 # Enforce NumPy docstring style
 convention = "numpy"
+ignore-decorators = ["typing.overload", "typ.overload"]
 
+[tool.interrogate]
+ignore-overloaded-functions = true
 [tool.pylint.main]
 # Expand directory targets like lading and tests even when a target is not a
 # package.

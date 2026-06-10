@@ -38,13 +38,16 @@ Run the Python lint gate with:
 make lint
 ```
 
-The target is deliberately two-tiered. Ruff runs first because it is fast,
-handles broad style and correctness checks, and imports the stricter lint
-policy used by `leynos/episodic`. If Ruff passes, the target then runs Pylint
-through the pinned `pylint-pypy-shim` tool under PyPy. This second tier is
-focused on rule families that complement Ruff, especially logging format
-safety, pattern matching checks, selected simplification checks, deprecated
-standard-library usage, file hygiene, and design-size limits.
+The target is deliberately three-tiered. Ruff runs first because it is fast,
+handles broad style and correctness checks, and imports the stricter lint policy
+used by `leynos/episodic`. If Ruff passes, the target runs `interrogate` with
+`--fail-under 100` across `lading` to enforce **100% docstring coverage**. If
+`interrogate` passes, the final tier runs Pylint through the pinned
+`pylint-pypy-shim` tool under PyPy. The final tier is focused on rule families
+that complement Ruff, especially logging format safety, pattern matching checks,
+selected simplification checks, deprecated standard-library usage, file hygiene,
+and design-size limits. [ADR-003](adr/003-three-tier-python-linting.md) records
+the policy decision.
 
 The relevant Makefile variables are:
 
@@ -56,17 +59,17 @@ The relevant Makefile variables are:
 - `PYLINT` — full `uv tool run --python $(PYLINT_PYTHON)` invocation for the
   shimmed Pylint command.
 
-The `lint` target depends on both `ruff` and `uv`, so it fails during tool
-checks if either command is unavailable. Keep any future lint additions wired
-through Makefile prerequisites as well as command invocations, so local
-failures remain early and clear.
+The `lint` target depends on `ruff`, `build`, `uv`, and `interrogate`, so it
+creates and syncs the virtual environment before checking virtual-environment
+tools. Keep any future lint additions wired through Makefile prerequisites as
+well as command invocations, so local failures remain early and clear.
 
 Ruff and Pylint policy live in `pyproject.toml`. The Ruff configuration enables
 preview rules, targets Python 3.13, imports the selected `episodic` rule set,
 and bans deprecated `typing` aliases in favour of built-in collection types,
 `collections.abc`, `collections`, `contextlib`, or `re` as appropriate. The
 Pylint configuration keeps the pass opt-in by disabling all messages first and
-then enabling only the chosen second-tier checks. Local ignores and thresholds
+then enabling only the chosen third-tier checks. Local ignores and thresholds
 document existing codebase constraints that should be addressed as focused
 cleanup work rather than incidental lint-gate churn.
 
@@ -132,7 +135,7 @@ exactly one place.
 
 ## Workspace discovery helpers
 
-### Workspace path normalisation (`lading/utils/path.py`)
+### Workspace path normalization (`lading/utils/path.py`)
 
 `normalise_workspace_root(value)` is the shared helper that turns a
 user-supplied workspace root into a canonical `Path`. Import it from
@@ -201,7 +204,7 @@ metadata = load_cargo_metadata(Path("/path/to/workspace"))
 print(metadata["workspace_root"])
 ```
 
-The helper normalises the workspace path with `normalise_workspace_root`,
+The helper normalizes the workspace path with `normalise_workspace_root`,
 invokes `cargo metadata --format-version 1` through the active `CommandRunner`,
 and returns the parsed JSON mapping. Any execution errors or invalid output
 raise `CargoMetadataError` with a descriptive message, so callers can present
@@ -404,7 +407,7 @@ index-lookup downgrade is only valid for dry-run workflows.
 the live-mode dispatcher. It walks `PublishPlan.publishable` in order and runs
 `cargo package` followed by `cargo publish` for each crate before advancing to
 the next crate. It logs per-crate progress, records completed crates for abort
-diagnostics, and normalises staging/preparation failures into
+diagnostics, and normalizes staging/preparation failures into
 `PublishPreflightError` so callers receive the same publish command error
 boundary.
 
@@ -451,7 +454,7 @@ The index-lookup handling is split across the adapter and decision helper:
   fatal. If the parsed name is not in the publish plan, the failure is fatal
   with guidance to publish or index that dependency first. The helper checks
   projected availability by comparing publish-order positions and raises for
-  out-of- plan, self, or late dependencies. If the parsed name is in the plan
+  out-of-plan, self, or late dependencies. If the parsed name is in the plan
   and `allow_unpublished_workspace_deps` is set, the helper logs a warning and
   continues; otherwise it raises with guidance to enable the dry-run
   unpublished workspace dependency override or follow the staged-publish

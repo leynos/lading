@@ -20,6 +20,11 @@ looking for project guidance, then follow the link that matches the task.
 - [Roadmap](roadmap.md) - phased delivery plan and tracked implementation
   tasks.
 
+## Decision records
+
+- [ADR-003: Use three-tier Python linting][adr-003] - accepted linting policy
+  for Ruff, Interrogate, and Pylint.
+
 ## Reference documents
 
 - [Documentation style guide](documentation-style-guide.md) - writing,
@@ -28,3 +33,5 @@ looking for project guidance, then follow the link that matches the task.
   scripts, secure command execution, and command mocking.
 - [cmd-mox usage guide](cmd-mox-usage-guide.md) - testing guidance for command
   spies, fixtures, and process-boundary assertions.
+
+[adr-003]: adr/003-three-tier-python-linting.md

@@ -201,28 +201,37 @@ def build_workspace_graph(
     except KeyError as exc:
         raise WorkspaceModelError(WORKSPACE_ROOT_MISSING_MSG) from exc
     workspace_root = _normalise_workspace_root(workspace_root_value)
-    packages = _expect_sequence(metadata.get("packages"), "packages")
+    packages = _expect_sequence(metadata.get("packages"), "packages", allow_none=False)
+    workspace_members = _expect_sequence(
+        metadata.get("workspace_members"), "workspace_members", allow_none=False
+    )
     workspace_member_ids = tuple(
-        _expect_string(member, "workspace_members[]")
-        for member in _expect_sequence(
-            metadata.get("workspace_members"), "workspace_members"
-        )
+        _expect_string(member, "workspace_members[]") for member in workspace_members
     )
     package_lookup = _index_workspace_packages(packages, workspace_member_ids)
     workspace_index = _build_workspace_index(package_lookup)
+    crates = _collect_workspace_crates(
+        package_lookup=package_lookup,
+        workspace_member_ids=workspace_member_ids,
+        workspace_index=workspace_index,
+    )
+    return WorkspaceGraph(workspace_root=workspace_root, crates=crates)
+
+
+def _collect_workspace_crates(
+    package_lookup: dict[str, cabc.Mapping[str, typ.Any]],
+    workspace_member_ids: cabc.Sequence[str],
+    workspace_index: WorkspaceIndex,
+) -> tuple[WorkspaceCrate, ...]:
+    """Return a :class:`WorkspaceCrate` tuple for each workspace member ID."""
     crates: list[WorkspaceCrate] = []
     for member_id in workspace_member_ids:
         raw_package = package_lookup.get(member_id)
         if raw_package is None:
             message = f"workspace member {member_id!r} missing from package list"
             raise WorkspaceModelError(message)
-        crates.append(
-            _build_crate(
-                raw_package,
-                workspace_index,
-            )
-        )
-    return WorkspaceGraph(workspace_root=workspace_root, crates=tuple(crates))
+        crates.append(_build_crate(raw_package, workspace_index))
+    return tuple(crates)
 
 
 def _index_workspace_packages(
@@ -465,11 +474,13 @@ def _expect_mapping(value: object, field_name: str) -> cabc.Mapping[str, typ.Any
 
 @typ.overload
 def _expect_sequence(
-    value: object,
+    value: None,
     field_name: str,
     *,
-    allow_none: typ.Literal[False] = False,
-) -> cabc.Sequence[object]: ...
+    allow_none: typ.Literal[True],
+) -> None:
+    """Allow ``None`` only when ``allow_none`` is ``True``."""
+    ...  # pylint: disable=unnecessary-ellipsis
 
 
 @typ.overload
@@ -477,8 +488,10 @@ def _expect_sequence(
     value: object,
     field_name: str,
     *,
-    allow_none: typ.Literal[True],
-) -> cabc.Sequence[object] | None: ...
+    allow_none: typ.Literal[False] = ...,
+) -> cabc.Sequence[object]:
+    """Require a sequence when ``allow_none`` is ``False``."""
+    ...  # pylint: disable=unnecessary-ellipsis
 
 
 def _expect_sequence(

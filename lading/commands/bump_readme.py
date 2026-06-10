@@ -105,6 +105,7 @@ def rewrite_relative_links(markdown_text: str, prefix: str) -> tuple[str, bool]:
     changed = False
 
     def _rewrite_relative_link_match(match: re.Match[str]) -> str:
+        """Rewrite a Markdown link match when the target is relative."""
         nonlocal changed
         opener, target, suffix = match.groups()
         if not _should_rewrite_link_target(target):
