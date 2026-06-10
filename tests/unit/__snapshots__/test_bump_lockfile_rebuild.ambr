@@ -1,0 +1,45 @@
+# serializer version: 1
+# name: test_run_inherits_lockfile_rebuild_configuration
+  '''
+  Updated version to 1.2.3 in 3 manifest(s):
+  - Cargo.toml
+  - crates/alpha/Cargo.toml
+  - crates/beta/Cargo.toml
+  '''
+# ---
+# name: test_run_rebuilds_lockfiles_when_enabled
+  '''
+  Updated version to 1.2.3 in 3 manifest(s) and 2 lockfile(s):
+  - Cargo.toml
+  - crates/alpha/Cargo.toml
+  - crates/beta/Cargo.toml
+  - Cargo.lock (lockfile)
+  - crates/ui/Cargo.lock (lockfile)
+  '''
+# ---
+# name: test_run_reports_lockfiles_in_dry_run
+  '''
+  Dry run; would update version to 1.2.3 in 3 manifest(s) and 2 lockfile(s):
+  - Cargo.toml
+  - crates/alpha/Cargo.toml
+  - crates/beta/Cargo.toml
+  - Cargo.lock (lockfile)
+  - crates/ui/Cargo.lock (lockfile)
+  '''
+# ---
+# name: test_run_skips_lockfile_rebuild[disabled]
+  '''
+  Updated version to 1.2.3 in 3 manifest(s):
+  - Cargo.toml
+  - crates/alpha/Cargo.toml
+  - crates/beta/Cargo.toml
+  '''
+# ---
+# name: test_run_skips_lockfiles_when_disabled
+  '''
+  Updated version to 1.2.3 in 3 manifest(s):
+  - Cargo.toml
+  - crates/alpha/Cargo.toml
+  - crates/beta/Cargo.toml
+  '''
+# ---

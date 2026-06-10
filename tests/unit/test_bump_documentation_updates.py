@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses as dc
 import pathlib
+import typing as typ
 
 import pytest
 
@@ -16,6 +17,9 @@ from tests.helpers.workspace_builders import (
     _make_workspace,
 )
 
+if typ.TYPE_CHECKING:
+    from syrupy.assertion import SnapshotAssertion
+
 
 @dc.dataclass(frozen=True, slots=True)
 class _ReadmeTransposeScenario:
@@ -26,7 +30,9 @@ class _ReadmeTransposeScenario:
     check_version_unchanged: bool = False
 
 
-def test_run_updates_documentation_snippets(tmp_path: pathlib.Path) -> None:
+def test_run_updates_documentation_snippets(
+    tmp_path: pathlib.Path, snapshot: SnapshotAssertion
+) -> None:
     """Documentation TOML fences are rewritten to reference the new version."""
     workspace = _make_workspace(tmp_path)
     readme_path = tmp_path / "README.md"
@@ -42,12 +48,7 @@ def test_run_updates_documentation_snippets(tmp_path: pathlib.Path) -> None:
         options=bump.BumpOptions(configuration=configuration, workspace=workspace),
     )
 
-    assert "documentation file(s)" in message, (
-        f"expected documentation summary in bump output: {message!r}"
-    )
-    assert "- README.md (documentation)" in message.splitlines(), (
-        f"expected README.md listed as documentation: {message!r}"
-    )
+    assert message == snapshot
     updated_readme = readme_path.read_text(encoding="utf-8")
     assert 'alpha = "1.2.3"' in updated_readme, (
         f"expected README.md rewritten to the new version: {updated_readme!r}"
@@ -69,7 +70,9 @@ def test_run_updates_documentation_snippets(tmp_path: pathlib.Path) -> None:
     ids=lambda s: s.test_id,
 )
 def test_run_transposes_workspace_readme_to_crates(
-    tmp_path: pathlib.Path, scenario: _ReadmeTransposeScenario
+    tmp_path: pathlib.Path,
+    scenario: _ReadmeTransposeScenario,
+    snapshot: SnapshotAssertion,
 ) -> None:
     """README adoption follows crate opt-in regardless of version-bump exclusion."""
     workspace, _manifests = _build_workspace_with_internal_deps(
@@ -89,12 +92,7 @@ def test_run_transposes_workspace_readme_to_crates(
     )
 
     crate_readme = tmp_path / "crates" / "alpha" / "README.md"
-    assert "readme file(s)" in message, (
-        f"expected readme summary in bump output: {message!r}"
-    )
-    assert "- crates/alpha/README.md (readme)" in message.splitlines(), (
-        f"expected crate README path entry in bump output: {message!r}"
-    )
+    assert message == snapshot
     assert crate_readme.read_text(encoding="utf-8") == (
         "# Sample\n\nSee [Guide](../../docs/guide.md).\n"
     ), "expected crate README to rewrite relative links to the crate location"

@@ -1,0 +1,25 @@
+# serializer version: 1
+# name: test_run_transposes_workspace_readme_to_crates[excluded_crate]
+  '''
+  Updated version to 1.2.3 in 1 manifest(s) and 1 readme file(s):
+  - Cargo.toml
+  - crates/alpha/README.md (readme)
+  '''
+# ---
+# name: test_run_transposes_workspace_readme_to_crates[included_crate]
+  '''
+  Updated version to 1.2.3 in 2 manifest(s) and 1 readme file(s):
+  - Cargo.toml
+  - crates/alpha/Cargo.toml
+  - crates/alpha/README.md (readme)
+  '''
+# ---
+# name: test_run_updates_documentation_snippets
+  '''
+  Updated version to 1.2.3 in 3 manifest(s) and 1 documentation file(s):
+  - Cargo.toml
+  - crates/alpha/Cargo.toml
+  - crates/beta/Cargo.toml
+  - README.md (documentation)
+  '''
+# ---

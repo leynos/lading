@@ -26,6 +26,7 @@ from tests.helpers.workspace_builders import (
 
 if typ.TYPE_CHECKING:
     from _pytest.monkeypatch import MonkeyPatch
+    from syrupy.assertion import SnapshotAssertion
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -48,18 +49,15 @@ def _extract_alpha_dependency_entries(
     return dependency, dev_entry, build_entry
 
 
-def test_run_updates_workspace_and_members(tmp_path: pathlib.Path) -> None:
+def test_run_updates_workspace_and_members(
+    tmp_path: pathlib.Path, snapshot: SnapshotAssertion
+) -> None:
     """`bump.run` updates the workspace and member manifest versions."""
     workspace = _make_workspace(tmp_path)
     configuration = _make_config()
     options = bump.BumpOptions(configuration=configuration, workspace=workspace)
     message = bump.run(tmp_path, "1.2.3", options=options)
-    assert message.splitlines() == [
-        "Updated version to 1.2.3 in 3 manifest(s):",
-        "- Cargo.toml",
-        "- crates/alpha/Cargo.toml",
-        "- crates/beta/Cargo.toml",
-    ], f"unexpected bump output lines: {message!r}"
+    assert message == snapshot
     assert (
         _load_version(tmp_path / "Cargo.toml", ("workspace", "package")) == "1.2.3"
     ), "root workspace.package version not updated"
@@ -278,7 +276,7 @@ def test_run_reports_when_versions_already_match(
 
 
 def test_run_dry_run_reports_changes_without_modifying_files(
-    tmp_path: pathlib.Path,
+    tmp_path: pathlib.Path, snapshot: SnapshotAssertion
 ) -> None:
     """Dry-running the command reports planned changes without touching manifests."""
     workspace = _make_workspace(tmp_path)
@@ -302,12 +300,7 @@ def test_run_dry_run_reports_changes_without_modifying_files(
         ),
     )
 
-    assert message.splitlines() == [
-        "Dry run; would update version to 1.2.3 in 3 manifest(s):",
-        "- Cargo.toml",
-        "- crates/alpha/Cargo.toml",
-        "- crates/beta/Cargo.toml",
-    ], f"unexpected dry-run output lines: {message!r}"
+    assert message == snapshot
     for path in manifest_paths:
         assert path.read_text(encoding="utf-8") == original_contents[path], (
             f"dry run must not modify manifest: {path}"

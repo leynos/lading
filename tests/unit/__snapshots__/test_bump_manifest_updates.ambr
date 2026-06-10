@@ -1,0 +1,17 @@
+# serializer version: 1
+# name: test_run_dry_run_reports_changes_without_modifying_files
+  '''
+  Dry run; would update version to 1.2.3 in 3 manifest(s):
+  - Cargo.toml
+  - crates/alpha/Cargo.toml
+  - crates/beta/Cargo.toml
+  '''
+# ---
+# name: test_run_updates_workspace_and_members
+  '''
+  Updated version to 1.2.3 in 3 manifest(s):
+  - Cargo.toml
+  - crates/alpha/Cargo.toml
+  - crates/beta/Cargo.toml
+  '''
+# ---
