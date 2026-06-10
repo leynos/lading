@@ -348,6 +348,7 @@ def make_failing_runner(
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
+        """Execute the command and return a failing result."""
         del command, cwd, env
         return 1, stdout, stderr
 

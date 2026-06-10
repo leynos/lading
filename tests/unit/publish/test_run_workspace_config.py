@@ -24,6 +24,7 @@ def test_run_normalises_workspace_root(
     configuration = make_config()
 
     def fake_load(root: Path) -> WorkspaceGraph:
+        """Stub workspace loader that asserts the resolved root."""
         assert root == resolved, "workspace should be loaded from the resolved root"
         return plan_workspace
 
@@ -68,10 +69,12 @@ def test_run_loads_configuration_when_inactive(
     load_calls: list[Path] = []
 
     def raise_not_loaded() -> config_module.LadingConfig:
+        """Raise ConfigurationNotLoadedError unconditionally."""
         message = "Configuration unavailable"
         raise config_module.ConfigurationNotLoadedError(message)
 
     def capture_load(path: Path) -> config_module.LadingConfig:
+        """Record the load call and return the loaded configuration."""
         load_calls.append(path)
         return loaded_configuration
 
@@ -154,6 +157,7 @@ def test_run_surfaces_missing_workspace(
     configuration = make_config()
 
     def raise_missing(_: Path) -> WorkspaceGraph:
+        """Raise FileNotFoundError unconditionally."""
         message = "workspace missing"
         raise FileNotFoundError(message)
 
@@ -177,10 +181,12 @@ def test_run_surfaces_configuration_errors(
     """``run`` propagates configuration errors encountered while loading."""
 
     def raise_not_loaded() -> config_module.LadingConfig:
+        """Raise ConfigurationNotLoadedError unconditionally."""
         message = "Configuration inactive"
         raise config_module.ConfigurationNotLoadedError(message)
 
     def raise_config_error(_: Path) -> config_module.LadingConfig:
+        """Raise ConfigurationError unconditionally."""
         message = "invalid configuration"
         raise config_module.ConfigurationError(message)
 

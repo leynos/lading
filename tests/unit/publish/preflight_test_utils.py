@@ -42,6 +42,7 @@ def _setup_preflight_test(
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
+        """Record the invocation and return a successful result."""
         calls.append((tuple(command), cwd, env))
         return 0, "", ""
 

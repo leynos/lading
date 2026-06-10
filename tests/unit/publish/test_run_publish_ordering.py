@@ -36,6 +36,7 @@ def _make_beta_package_index_failure_runner() -> cabc.Callable[
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
+        """Fail cargo package for crate_beta; succeed otherwise."""
         del env
         is_package = tuple(command[:2]) == ("cargo", "package")
         is_beta = cwd is not None and cwd.name == "beta"

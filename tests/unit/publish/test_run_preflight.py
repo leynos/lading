@@ -22,6 +22,8 @@ from .preflight_test_utils import _extract_cargo_test_call, _setup_preflight_tes
 
 @dc.dataclass(frozen=True)
 class _ExcludeScenario:
+    """Bundled parameters for a single exclude-normalisation scenario."""
+
     configured_excludes: tuple[str, ...]
     expected_excludes: tuple[str, ...]
     unit_tests_only: bool
@@ -71,6 +73,7 @@ def test_run_executes_preflight_checks_in_workspace(
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
+        """Record the invocation and return a successful result."""
         calls.append((tuple(command), cwd))
         return 0, "", ""
 
@@ -257,6 +260,7 @@ def test_dirty_workspace_allowed_by_default(
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
+        """Fail the test if git status is invoked; succeed otherwise."""
         normalized_cmd = tuple(command)
         if normalized_cmd == ("git", "status", "--porcelain"):
             message = "git status should be skipped by default"
@@ -288,6 +292,7 @@ def test_forbid_dirty_flag_enforces_cleanliness(
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
+        """Return dirty git output; succeed for all other commands."""
         if command[0] == "git":
             return 0, " M Cargo.toml\n", ""
         return 0, "", ""
@@ -334,6 +339,7 @@ def test_run_raises_when_preflight_cargo_fails(
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
+        """Fail the configured subcommand; succeed for all others."""
         if command[0] == "git":
             return 0, "", ""
         if len(command) > 1 and command[1] == failing_subcommand:
