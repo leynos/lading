@@ -28,6 +28,11 @@ if typ.TYPE_CHECKING:
 import pytest
 
 from lading.commands import publish
+from lading.commands.cargo_output_adapter import (
+    CargoIndexLookupFailure,
+    CargoSubprocessResult,
+    parse_index_lookup_failure,
+)
 
 from .conftest import (
     INDEX_MISSING_STDERR_BETA,
@@ -52,6 +57,22 @@ _PIPELINE_INFO_MESSAGES = frozenset({
 class _IndexMissingCase(typ.NamedTuple):
     stderr: str
     allow_unpublished: bool
+
+
+def _missing_dependency_name(stderr: str) -> str | None:
+    """Return the missing dependency parsed by the cargo output adapter."""
+    failure = parse_index_lookup_failure(
+        crate_name="beta",
+        subcommand="package",
+        result=CargoSubprocessResult(
+            exit_code=1,
+            stdout="",
+            stderr=stderr,
+        ),
+    )
+    if failure is None:
+        return None
+    return failure.missing_dependency_name
 
 
 class _InPlanSnapshotCase(typ.NamedTuple):
@@ -114,15 +135,18 @@ def _handle_index_missing_version_message(
 ) -> str:
     """Return the raised index-missing-version message for snapshot tests."""
     caplog.set_level(logging.WARNING, logger="lading.commands.publish")
-    invocation = publish._CargoInvocation(
+    failure = CargoIndexLookupFailure(
         crate_name="beta",
         subcommand="package",
-        output=(1, "", stderr),
+        exit_code=1,
+        stdout="",
+        stderr=stderr,
+        missing_dependency_name=_missing_dependency_name(stderr),
     )
 
     with pytest.raises(publish.PublishPreflightError) as excinfo:
         publish._handle_index_missing_version(
-            invocation,
+            failure,
             plan=plan,
             options=publish._PublishExecutionOptions(
                 live=False,
@@ -186,15 +210,18 @@ def test_index_missing_in_plan_downgrade_snapshot(
     """Snapshot the warning emitted when the flag downgrades a failure to a warning."""
     caplog.set_level(logging.INFO)
     plan, _preparation, _staging_root = publish_plan_and_prep
-    invocation = publish._CargoInvocation(
+    failure = CargoIndexLookupFailure(
         crate_name="beta",
         subcommand="package",
-        output=(1, "", INDEX_MISSING_STDERR_BETA),
+        exit_code=1,
+        stdout="",
+        stderr=INDEX_MISSING_STDERR_BETA,
+        missing_dependency_name="alpha",
     )
 
     # Must not raise - the success/downgrade path returns without raising.
     publish._handle_index_missing_version(
-        invocation,
+        failure,
         plan=plan,
         options=publish._PublishExecutionOptions(
             live=False,

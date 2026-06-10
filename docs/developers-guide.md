@@ -335,13 +335,14 @@ did not match a workspace crate. `plan_publication()` builds that object by
 filtering non-publishable crates, applying `publish.exclude`, validating
 `publish.order` when present, or deriving a deterministic dependency order.
 
-`publish_manifest.py` owns staging-time manifest mutations. It contains the
-workspace preparation types and helpers that apply the `publish.strip_patches`
-strategy to the staged `Cargo.toml`. Workspace README adoption happens during
-`lading bump`, so publish staging only copies the source workspace after bump
-has prepared crate README files. These operations run before any
-`cargo package` or `cargo publish` command, so the command runner works against
-a prepared snapshot rather than the source workspace.
+`publish_manifest.py` owns staging-time manifest mutations. It contains
+workspace preparation types and helpers that copy the workspace tree and apply
+the `publish.strip_patches` strategy to the staged `Cargo.toml`. These
+operations run before any `cargo package` or `cargo publish` command, so the
+command runner works against a prepared snapshot rather than the source
+workspace. Workspace README adoption is not performed here; the `lading bump`
+command transposes the workspace README into each opted-in crate before
+publication.
 
 `publish_diagnostics.py` owns compiletest failure enrichment. When a cargo
 pre-flight test failure mentions compiletest-style `*.stderr` artefacts, the
@@ -350,13 +351,16 @@ lines, and appends those snippets to the `PublishPreflightError` message. The
 module is deliberately read-only: missing artefacts or unreadable files produce
 diagnostic notes rather than replacing the original cargo failure.
 
-`publish_index_check.py` owns crates.io index-lookup classification. It contains
-`_CargoInvocation`, the predicates and parsers that recognize Cargo's "no
-matching package/version" diagnostics, crate-name canonicalization, and
-`_handle_index_missing_version()`. That handler decides whether an index miss
-is out-of-plan and fatal, in-plan but out of publish order and fatal, in-plan
-but still fatal, or in-plan and downgraded by
-`allow_unpublished_workspace_deps` during dry-run publication.
+`cargo_output_adapter.py` owns parsing raw cargo subprocess output into
+structured command failures. `CargoIndexLookupFailure` is the value object for
+crates.io index lookup failures, and `parse_index_lookup_failure()` is the
+primary owner of cargo's marker-based index-miss detection.
+
+`publish_index_check.py` owns crates.io index-lookup downgrade decisions after
+output has crossed that adapter boundary. It receives `CargoIndexLookupFailure`
+instances, applies crate-name canonicalization, and decides whether an index
+miss is out-of-plan and fatal, in-plan but still fatal, or in-plan and
+downgraded by `allow_unpublished_workspace_deps` during dry-run publication.
 
 ### `_PublishExecutionOptions`
 
@@ -389,11 +393,12 @@ diagnostics, and normalises staging/preparation failures into
 `PublishPreflightError` so callers receive the same publish command error
 boundary.
 
-`_handle_publish_result(invocation, crate, plan, options)` owns the result
-classification for a completed `cargo publish` command. It logs success, skips
-already-published crate versions, delegates in-plan crates.io index visibility
-failures to `_handle_index_missing_version`, and raises `PublishError` for all
-other non-zero publish exits after formatting the cargo failure message.
+`_handle_publish_result(crate, exit_code, stdout, stderr, plan, options)` owns
+the result classification for a completed `cargo publish` command. It logs
+success, skips already-published crate versions, adapts crates.io index lookup
+failures through `parse_index_lookup_failure()` before delegating to
+`_handle_index_missing_version`, and raises `PublishError` for all other
+non-zero publish exits after formatting the cargo failure message.
 
 `_CargoPreflightOptions` lives in `publish_preflight.py` and carries the
 per-invocation settings for cargo pre-flight commands: extra cargo arguments,
@@ -412,50 +417,40 @@ pipeline does not roll back earlier uploads if a later crate fails; reruns rely
 on the already-published detection path to log and skip versions already
 visible in the registry.
 
-The index-lookup handling is split across three helpers:
+The index-lookup handling is split across the adapter and decision helper:
 
-- `_is_index_missing_version_error(exit_code, stdout, stderr) -> bool` checks
-  for both Cargo's version-selection failure marker and the crates.io index
-  marker after confirming the command failed. Requiring both markers minimizes
-  false positives from unrelated resolver, registry, or command failures.
-- `_extract_missing_dependency_name(stdout, stderr) -> str | None` parses the
-  missing crate name from Cargo's requirement line. The regex accepts Cargo's
-  backtick, single-quote, and double-quote delimiters around the requirement,
-  captures the dependency name before `=`, and searches `stderr` before
-  `stdout` because Cargo normally reports this failure on the error stream.
-- `_handle_index_missing_version(_CargoInvocation, *, handling, error_cls)`
-  applies the decision tree. The `_IndexMissingVersionHandling` context carries
-  the publish plan, execution options, and logger, making warning and
-  informational side-effects explicit at the command boundary; the index
-  checker does not own mutable metric state. The phase-specific `error_cls`
-  remains visible at the call site where the command phase is known. If name
-  extraction fails, the original Cargo failure stays fatal. If the parsed name
-  is not in the publish plan, the failure is fatal with guidance to publish or
-  index that dependency first. The helper then checks projected availability by
-  comparing the missing dependency's publish-order index with the current
-  crate's index in `PublishPlan.publishable`. If the dependency is in the plan
-  but appears later than the current crate, the failure is fatal because a live
-  run would try to publish the current crate before that dependency is
-  available. If the parsed name has an earlier index and
-  `allow_unpublished_workspace_deps` is set, the helper logs a warning and
+- `parse_index_lookup_failure(*, crate_name, subcommand, result: CargoSubprocessResult)`
+  checks for both Cargo's version-selection failure marker and the crates.io
+  index marker after confirming the command failed. It accepts a
+  `CargoSubprocessResult` value object (carrying `exit_code`, `stdout`, and
+  `stderr`) and returns a `CargoIndexLookupFailure` or `None`. Requiring both
+  markers minimizes false positives from unrelated resolver, registry, or
+  command failures.
+- The adapter parses the missing crate name from Cargo's requirement line. The
+  regex accepts Cargo's backtick, single-quote, and double-quote delimiters
+  around the requirement, captures the dependency name before `=`, and searches
+  `stderr` before `stdout` because Cargo normally reports this failure on the
+  error stream.
+- `_handle_index_missing_version(failure, *, handling, error_cls)` applies the
+  decision tree. If name extraction fails, the original Cargo failure stays
+  fatal. If the parsed name is not in the publish plan, the failure is fatal
+  with guidance to publish or index that dependency first. The helper checks
+  projected availability by comparing publish-order positions and raises for
+  out-of- plan, self, or late dependencies. If the parsed name is in the plan
+  and `allow_unpublished_workspace_deps` is set, the helper logs a warning and
   continues; otherwise it raises with guidance to enable the dry-run
   unpublished workspace dependency override or follow the staged-publish
   workaround.
-- `_raise_out_of_order_dependency(failure, missing_name) -> NoReturn` is the
-  dedicated fatal path for dependencies that are planned but not projected to
-  have been published yet. It bypasses the dry-run downgrade setting and tells
-  operators to fix `publish.order` or rely on the dependency-derived
-  topological sort.
 
 ### Supporting types
 
 `_IndexMissingVersionFailure` (frozen dataclass) Carries the four values
 required by every fatal-path helper: `error_cls` (the exception type to raise),
-`invocation` (the failing `cargo` invocation), `failure` (the pre-formatted
-failure message), and `logger`. Constructing it once in
-`_handle_index_missing_version` and passing it to helpers eliminates argument
-repetition and keeps each helper to two parameters, satisfying the PLR0913
-argument-count threshold.
+`failure` (the `CargoIndexLookupFailure` that triggered the handler),
+`failure_message` (the pre-formatted human-readable error string), and
+`logger`. Constructing it once in `_handle_index_missing_version` and passing
+it to helpers eliminates argument repetition and keeps each helper to two
+parameters, satisfying the PLR0913 argument-count threshold.
 
 `_IndexMissingVersionHandling` (frozen dataclass) Carries the ambient context
 for the entire handler call: the active `PublishPlan`, the
@@ -470,7 +465,7 @@ name, a domain-language reason clause, and an operator guidance sentence. All
 fatal-path helpers delegate message construction here, centralizing the text
 format.
 
-`_log_missing_dependency_failure(logger, invocation, *, missing_name, detail)`
+`_log_missing_dependency_failure(logger, lookup_failure, *, missing_name, detail)`
 -> `None` Emits a WARNING-level log entry for fatal index-missing-version
 paths, providing consistent phrasing across all raise helpers so log
 aggregation can match on a stable prefix.
@@ -496,21 +491,23 @@ type `typ.NoReturn`):
 
 #### Crate-name canonicalization
 
-`_canonical_crate_name(name)` normalises a crate name by replacing every hyphen
-with an underscore. It is applied in `publish_index_check.py` when building
-`publishable_name_indexes = _publishable_name_indexes(handling.plan)` and when
-looking up both the current crate and a missing dependency name:
+`_canonical_crate_name(name)` normalizes a crate name by replacing every hyphen
+with an underscore. It is applied by building a canonical publish-order index
+and looking up both the current crate and missing dependency by canonical name:
 
 ```python
-current_name = _canonical_crate_name(context.invocation.crate_name)
-current_index = publishable_name_indexes[current_name]
+publishable_name_indexes = {
+    _canonical_crate_name(entry.name): index
+    for index, entry in enumerate(handling.plan.publishable)
+}
+current_index = publishable_name_indexes.get(_canonical_crate_name(context.failure.crate_name))
 missing_index = publishable_name_indexes.get(_canonical_crate_name(missing_name))
 ```
 
 This is necessary because Cargo error diagnostics may report a missing
 dependency using hyphens (e.g. `my-crate`), while the corresponding
 `Cargo.toml` entry and the `PublishPlan` store the same package name with
-underscores (e.g. `my_crate`). Without normalisation, a hyphenated cargo
+underscores (e.g. `my_crate`). Without normalization, a hyphenated cargo
 diagnostic would be incorrectly classified as an out-of-plan dependency and
 raise a fatal error instead of triggering the downgrade path.
 

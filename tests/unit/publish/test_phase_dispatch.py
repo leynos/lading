@@ -29,6 +29,7 @@ if typ.TYPE_CHECKING:
 import pytest
 
 from lading.commands import publish
+from lading.commands.cargo_output_adapter import CargoIndexLookupFailure
 
 from .conftest import (
     INDEX_MISSING_STDERR_BETA,
@@ -137,24 +138,23 @@ def test_missing_dep_in_plan_allows_cargo_name_normalisation(
     plan = publish.plan_publication(
         make_workspace(workspace_root, alpha, beta), make_config()
     )
-    invocation = publish._CargoInvocation(
+    failure = CargoIndexLookupFailure(
         crate_name="beta",
         subcommand="package",
-        output=(
-            1,
-            "",
-            (
-                "error: failed to prepare local package for uploading\n"
-                "Caused by:\n"
-                "  failed to select a version for the requirement "
-                '`alpha_crate = "^1"`\n'
-                "  location searched: crates.io index\n"
-            ),
+        exit_code=1,
+        stdout="",
+        stderr=(
+            "error: failed to prepare local package for uploading\n"
+            "Caused by:\n"
+            "  failed to select a version for the requirement "
+            '`alpha_crate = "^1"`\n'
+            "  location searched: crates.io index\n"
         ),
+        missing_dependency_name="alpha_crate",
     )
 
     publish._handle_index_missing_version(
-        invocation,
+        failure,
         plan=plan,
         options=publish._PublishExecutionOptions(
             live=False,
