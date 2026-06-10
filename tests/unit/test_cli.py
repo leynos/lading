@@ -29,6 +29,8 @@ if typ.TYPE_CHECKING:
     from pathlib import Path
     from types import ModuleType
 
+    from syrupy.assertion import SnapshotAssertion
+
 
 @contextmanager
 def _preserve_root_logger() -> cabc.Iterator[logging.Logger]:
@@ -417,25 +419,28 @@ def test_publish_cli_logs_dry_run_default_flag_resolution(
 
 
 @pytest.mark.parametrize(
-    ("flag", "live", "expected", "reason"),
+    ("flag", "live", "expected"),
     [
-        pytest.param(None, True, False, "live mode suppresses default", id="none-live"),
-        pytest.param(None, False, True, "dry-run default", id="none-dry-run"),
-        pytest.param(True, True, True, "explicit flag", id="true-live"),
-        pytest.param(True, False, True, "explicit flag", id="true-dry-run"),
-        pytest.param(False, True, False, "explicit flag", id="false-live"),
-        pytest.param(False, False, False, "explicit flag", id="false-dry-run"),
+        pytest.param(None, True, False, id="none-live"),
+        pytest.param(None, False, True, id="none-dry-run"),
+        pytest.param(True, True, True, id="true-live"),
+        pytest.param(True, False, True, id="true-dry-run"),
+        pytest.param(False, True, False, id="false-live"),
+        pytest.param(False, False, False, id="false-dry-run"),
     ],
 )
 def test_resolve_allow_unpublished_workspace_deps_matrix(
     caplog: pytest.LogCaptureFixture,
+    snapshot: SnapshotAssertion,
     *,
     flag: bool | None,
     live: bool,
     expected: bool,
-    reason: str,
 ) -> None:
-    """Each input combination resolves correctly and logs exactly once at DEBUG."""
+    """Each input combination resolves correctly and logs exactly once at DEBUG.
+
+    The resolution reason is verified through the snapshotted DEBUG message.
+    """
     caplog.set_level(logging.DEBUG, logger="lading.cli")
 
     resolved = cli._resolve_allow_unpublished_workspace_deps(
@@ -450,11 +455,7 @@ def test_resolve_allow_unpublished_workspace_deps_matrix(
         if record.levelno == logging.DEBUG and record.name == "lading.cli"
     ]
     assert len(debug_records) == 1
-    message = debug_records[0].getMessage()
-    assert f"raw={flag!r}" in message
-    assert f"live={live!r}" in message
-    assert f"resolved={expected!r}" in message
-    assert f"({reason})" in message
+    assert debug_records[0].getMessage() == snapshot
 
 
 @pytest.mark.usefixtures("minimal_config")
