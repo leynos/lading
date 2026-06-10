@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import typing as typ
 from pathlib import Path
 
 import pytest
@@ -9,8 +10,11 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from lading.commands import bump_readme
-from lading.commands.publish_manifest import PublishPreparationError
+from lading.commands.bump_readme import ReadmeTranspositionError
 from lading.workspace import WorkspaceCrate
+
+if typ.TYPE_CHECKING:
+    from syrupy.assertion import SnapshotAssertion
 
 _PATH_COMPONENT = st.text(
     alphabet=st.characters(blacklist_characters="/\\\x00"),
@@ -187,23 +191,29 @@ def test_transpose_readme_to_crate_skips_matching_target(tmp_path: Path) -> None
 
 def test_transpose_readme_to_crate_requires_workspace_readme(
     tmp_path: Path,
+    snapshot: SnapshotAssertion,
 ) -> None:
-    """Missing workspace README is reported through the preparation error type."""
+    """Missing workspace README raises the bump-domain transposition error."""
     crate = _make_crate(tmp_path)
 
-    with pytest.raises(PublishPreparationError, match=r"Workspace README\.md"):
+    with pytest.raises(ReadmeTranspositionError) as excinfo:
         bump_readme.transpose_readme_to_crate(tmp_path, crate, dry_run=False)
+
+    assert snapshot == str(excinfo.value)
 
 
 def test_transpose_readme_to_crate_rejects_external_crate_root(
     tmp_path: Path,
+    snapshot: SnapshotAssertion,
 ) -> None:
     """Crate roots outside the workspace cannot receive transposed READMEs."""
     crate = _make_crate(tmp_path.parent, f"{tmp_path.name}-external")
     (tmp_path / "README.md").write_text("# Project\n", encoding="utf-8")
 
-    with pytest.raises(PublishPreparationError, match=r"outside the workspace root"):
+    with pytest.raises(ReadmeTranspositionError) as excinfo:
         bump_readme.transpose_readme_to_crate(tmp_path, crate, dry_run=False)
+
+    assert snapshot == str(excinfo.value)
 
 
 @given(parts=st.lists(_PATH_COMPONENT, min_size=1, max_size=8))
