@@ -16,11 +16,13 @@ if typ.TYPE_CHECKING:
     from pathlib import Path
 
     import pytest
+    from syrupy.assertion import SnapshotAssertion
 
     LogCaptureFixture = pytest.LogCaptureFixture
 else:  # pragma: no cover - typing helpers
     Path = typ.Any
     LogCaptureFixture = typ.Any
+    SnapshotAssertion = typ.Any
 
 _RUNNER_LOGGER = "lading.runtime.subprocess_runner"
 
@@ -43,7 +45,10 @@ def _assert_no_spawn_record(caplog: LogCaptureFixture) -> None:
     ), "Unexpected 'Spawning subprocess:' log emitted"
 
 
-def test_command_logged_exactly_once(caplog: LogCaptureFixture) -> None:
+def test_command_logged_exactly_once(
+    caplog: LogCaptureFixture,
+    snapshot: SnapshotAssertion,
+) -> None:
     """A command produces a single invocation log record at INFO."""
     caplog.set_level(logging.DEBUG, logger=_RUNNER_LOGGER)
 
@@ -55,16 +60,14 @@ def test_command_logged_exactly_once(caplog: LogCaptureFixture) -> None:
     records = _invocation_records(caplog)
     assert len(records) == 1, "expected exactly one invocation record"
     assert records[0].levelno == logging.INFO, "expected invocation at INFO level"
-    message = records[0].getMessage()
-    assert "Running external command" in message, (
-        "expected message to contain 'Running external command'"
-    )
-    assert "echo hello" in message, "expected message to contain 'echo hello'"
+    assert records[0].getMessage() == snapshot(), "expected message to match snapshot"
     _assert_no_spawn_record(caplog)
 
 
 def test_command_logged_exactly_once_with_cwd(
-    caplog: LogCaptureFixture, tmp_path: Path
+    caplog: LogCaptureFixture,
+    tmp_path: Path,
+    snapshot: SnapshotAssertion,
 ) -> None:
     """The single invocation record includes the working directory."""
     caplog.set_level(logging.DEBUG, logger=_RUNNER_LOGGER)
@@ -77,7 +80,6 @@ def test_command_logged_exactly_once_with_cwd(
     records = _invocation_records(caplog)
     assert len(records) == 1, "expected exactly one invocation record"
     assert records[0].levelno == logging.INFO, "expected invocation at INFO level"
-    assert f"(cwd={tmp_path})" in records[0].getMessage(), (
-        "expected cwd to appear in invocation message"
-    )
+    redacted = records[0].getMessage().replace(str(tmp_path), "<tmpdir>")
+    assert redacted == snapshot(), "expected redacted cwd message to match snapshot"
     _assert_no_spawn_record(caplog)
