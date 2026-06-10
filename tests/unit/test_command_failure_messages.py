@@ -1,8 +1,20 @@
 """Snapshot tests for operator-facing command-failure messages.
 
 Issue #102 collapsed the ``(stderr or stdout).strip()`` idiom into the shared
-``lading.utils.process`` helpers. These snapshots pin the rendered messages
-at each consuming boundary so the extraction cannot silently change text.
+``lading.utils.process`` helpers. These snapshots pin the rendered messages at
+each consuming boundary so the extraction cannot silently change operator-facing
+text.
+
+Every test drives a *public* command entry point with an injected failing
+runner, so the message flows through the real failure path rather than being
+read back from a formatting helper in isolation. The remaining two consumers of
+the shared helpers are snapshotted at their own functional boundaries:
+
+* the cargo pre-flight message in
+  ``tests/unit/publish/test_preflight_cargo_runner.py`` (driving
+  ``_run_cargo_preflight``), and
+* the package/publish message in ``tests/unit/publish/test_packaging.py``
+  (driving ``_package_crate``/``_publish_crate``).
 """
 
 from __future__ import annotations
@@ -12,9 +24,8 @@ from pathlib import Path
 
 import pytest
 
-from lading.commands import bump_lockfiles, lockfile, publish_index_check
-from lading.commands.publish_preflight import _build_cargo_error_message
-from lading.workspace.metadata import CargoMetadataInvocationError
+from lading.commands import bump_lockfiles, lockfile
+from lading.workspace import metadata
 
 if typ.TYPE_CHECKING:
     import collections.abc as cabc
@@ -40,26 +51,8 @@ def _failing_runner(
     return runner
 
 
-def test_preflight_cargo_failure_message(snapshot: SnapshotAssertion) -> None:
-    """Cargo pre-flight failures render the canonical detail suffix."""
-    assert snapshot == _build_cargo_error_message(
-        "check", 101, "", "error: linker failed\n"
-    )
-    assert snapshot == _build_cargo_error_message("test", 7, "", "")
-
-
-def test_publish_cargo_failure_message(snapshot: SnapshotAssertion) -> None:
-    """Package and publish failures render the canonical detail suffix."""
-    assert snapshot == publish_index_check._format_cargo_failure_message(
-        "package", "alpha", 101, ("stdout context", "error: missing version\n")
-    )
-    assert snapshot == publish_index_check._format_cargo_failure_message(
-        "publish", "beta", 1, ("only stdout\n", "   ")
-    )
-
-
 def test_lockfile_refresh_failure_message(snapshot: SnapshotAssertion) -> None:
-    """Lockfile refresh failures render the canonical detail suffix."""
+    """``refresh_lockfile`` renders the canonical detail suffix."""
     manifest = Path("/ws/crates/alpha/Cargo.toml")
     with pytest.raises(lockfile.LockfileRefreshError) as excinfo:
         lockfile.refresh_lockfile(
@@ -70,20 +63,32 @@ def test_lockfile_refresh_failure_message(snapshot: SnapshotAssertion) -> None:
 
 
 def test_lockfile_regeneration_failure_message(snapshot: SnapshotAssertion) -> None:
-    """Lockfile regeneration failures render the canonical detail suffix."""
-    manifest = Path("/ws/Cargo.toml")
+    """``regenerate_lockfiles`` renders the canonical detail suffix."""
     with pytest.raises(bump_lockfiles.LockfileRegenerationError) as excinfo:
-        bump_lockfiles._run_workspace_lockfile_update(
+        bump_lockfiles.regenerate_lockfiles(
             Path("/ws"),
-            manifest,
-            _failing_runner("", "error: dependency conflict\n"),
+            (),
+            runner=_failing_runner("", "error: dependency conflict\n"),
         )
 
     assert snapshot == str(excinfo.value)
 
 
-def test_cargo_metadata_invocation_message(snapshot: SnapshotAssertion) -> None:
-    """Metadata failures prefer stderr, then stdout, then the status."""
-    assert snapshot == str(CargoMetadataInvocationError(2, "out", "err"))
-    assert snapshot == str(CargoMetadataInvocationError(2, "out", "   "))
-    assert snapshot == str(CargoMetadataInvocationError(2, "", ""))
+@pytest.mark.parametrize(
+    ("stdout", "stderr"),
+    [
+        pytest.param("out", "err", id="stderr_wins"),
+        pytest.param("out", "   ", id="stdout_fallback"),
+        pytest.param("", "", id="status_fallback"),
+    ],
+)
+def test_cargo_metadata_invocation_message(
+    tmp_path: Path, snapshot: SnapshotAssertion, stdout: str, stderr: str
+) -> None:
+    """``load_cargo_metadata`` prefers stderr, then stdout, then the status."""
+    with pytest.raises(metadata.CargoMetadataInvocationError) as excinfo:
+        metadata.load_cargo_metadata(
+            tmp_path, runner=_failing_runner(stdout, stderr, exit_code=2)
+        )
+
+    assert snapshot == str(excinfo.value)

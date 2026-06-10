@@ -35,7 +35,7 @@ import typing as typ
 from pathlib import Path
 
 from lading.exceptions import LadingError
-from lading.utils.process import command_detail, with_detail
+from lading.utils.process import append_detail, command_detail, with_detail
 
 if typ.TYPE_CHECKING:
     from lading.runtime import CommandRunner
@@ -77,10 +77,12 @@ def _handle_git_ls_files_failure(
             workspace_root,
         )
         return ()
+    # Unlike the other sites, git may exit non-zero with no output at all, so
+    # fall back to the status code before handing the detail to append_detail.
     fallback = f"git ls-files exited with status {exit_code}"
-    message = (
-        f"Failed to discover tracked Cargo.lock files in {workspace_root}: "
-        f"{detail or fallback}"
+    message = append_detail(
+        f"Failed to discover tracked Cargo.lock files in {workspace_root}",
+        detail or fallback,
     )
     raise LockfileDiscoveryError(message)
 

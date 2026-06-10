@@ -439,8 +439,16 @@ for the entire handler call: the active `PublishPlan`, the
 stream for a failed command: stderr stripped of whitespace when non-empty,
 otherwise stdout stripped, otherwise the empty string.
 
-`with_detail(message, stdout, stderr, *, separator=": ") -> str` appends the
-command detail to `message` using `separator` only when detail is present.
+`append_detail(message, detail, *, separator=": ") -> str` appends an
+*already-derived* `detail` to `message` using `separator` only when `detail` is
+non-empty. Reach for it when the caller has already computed the detail (for
+example via `command_detail` to branch on its content) and must not derive it
+twice — `_verify_clean_working_tree` inspects the detail to decide whether to
+mention "is this a git repository?" before appending it.
+
+`with_detail(message, stdout, stderr, *, separator=": ") -> str` is the
+convenience wrapper that derives the detail with `command_detail` and appends
+it with `append_detail` in one call.
 
 These are the canonical home for the `(stderr or stdout)` failure-detail idiom.
 Modules that render command failures (`lockfile`, `bump_lockfiles`,

@@ -40,7 +40,7 @@ from lading.commands.lockfile import (
 from lading.commands.publish_diagnostics import _append_compiletest_diagnostics
 from lading.commands.publish_errors import PublishPreflightError
 from lading.commands.publish_execution import _invoke
-from lading.utils.process import command_detail, with_detail
+from lading.utils.process import append_detail, command_detail, with_detail
 
 if typ.TYPE_CHECKING:
     from lading.config import CompiletestExtern, LadingConfig
@@ -321,14 +321,16 @@ def _verify_clean_working_tree(
         env=env,
     )
     if exit_code != 0:
+        # Derive the detail once: it is both inspected (to choose the base
+        # message) and appended, so re-deriving via with_detail would repeat
+        # command_detail's work.
         detail = command_detail(stdout, stderr)
-        message = with_detail(
+        base_message = (
             "Failed to verify workspace state; is this a git repository?"
             if "not a git repository" in detail.lower()
-            else "Failed to verify workspace state with git status",
-            stdout,
-            stderr,
+            else "Failed to verify workspace state with git status"
         )
+        message = append_detail(base_message, detail)
         LOGGER.error(message)
         raise PublishPreflightError(message)
     if stdout.strip():

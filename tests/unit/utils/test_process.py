@@ -125,6 +125,33 @@ def test_command_detail_prefers_stderr_then_stdout(stdout: str, stderr: str) -> 
     assert detail == detail.strip()
 
 
+@given(detail=_output_text)
+def test_append_detail_appends_only_when_detail_present(detail: str) -> None:
+    """A pre-derived detail is appended verbatim only when it is non-empty."""
+    message = "Build failed"
+    rendered = process.append_detail(message, detail)
+
+    if detail:
+        assert rendered == f"{message}: {detail}"
+    else:
+        assert rendered == message
+
+
+def test_append_detail_matches_with_detail() -> None:
+    """``with_detail`` is the derive-then-append wrapper over ``append_detail``."""
+    stdout, stderr = "  ", "boom\n"
+    detail = process.command_detail(stdout, stderr)
+
+    assert process.with_detail("Failed", stdout, stderr) == process.append_detail(
+        "Failed", detail
+    )
+
+
+def test_append_detail_supports_custom_separator() -> None:
+    """A custom separator joins the message and pre-derived detail."""
+    assert process.append_detail("Failed", "boom", separator="; ") == "Failed; boom"
+
+
 @given(stdout=_output_text, stderr=_output_text)
 def test_with_detail_appends_only_when_detail_present(stdout: str, stderr: str) -> None:
     """The suffix appears exactly when stripped output exists."""

@@ -1,28 +1,16 @@
 # serializer version: 1
-# name: test_cargo_metadata_invocation_message
+# name: test_cargo_metadata_invocation_message[status_fallback]
+  'cargo metadata exited with status 2'
+# ---
+# name: test_cargo_metadata_invocation_message[stderr_wins]
   'err'
 # ---
-# name: test_cargo_metadata_invocation_message.1
+# name: test_cargo_metadata_invocation_message[stdout_fallback]
   'out'
-# ---
-# name: test_cargo_metadata_invocation_message.2
-  'cargo metadata exited with status 2'
 # ---
 # name: test_lockfile_refresh_failure_message
   'Failed to refresh /ws/crates/alpha/Cargo.lock: error: registry offline'
 # ---
 # name: test_lockfile_regeneration_failure_message
   'Cargo lockfile regeneration failed for /ws/Cargo.toml with exit code 101: error: dependency conflict'
-# ---
-# name: test_preflight_cargo_failure_message
-  'Pre-flight cargo check failed with exit code 101: error: linker failed'
-# ---
-# name: test_preflight_cargo_failure_message.1
-  'Pre-flight cargo test failed with exit code 7'
-# ---
-# name: test_publish_cargo_failure_message
-  'cargo package failed for crate alpha with exit code 101: error: missing version'
-# ---
-# name: test_publish_cargo_failure_message.1
-  'cargo publish failed for crate beta with exit code 1: only stdout'
 # ---

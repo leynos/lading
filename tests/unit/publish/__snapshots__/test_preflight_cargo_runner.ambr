@@ -1,0 +1,7 @@
+# serializer version: 1
+# name: test_run_cargo_preflight_failure_message_snapshot[check_with_detail]
+  'Pre-flight cargo check failed with exit code 101: error: linker failed'
+# ---
+# name: test_run_cargo_preflight_failure_message_snapshot[test_without_detail]
+  'Pre-flight cargo test failed with exit code 7'
+# ---
