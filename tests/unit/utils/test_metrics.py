@@ -4,12 +4,22 @@ from __future__ import annotations
 
 import collections.abc as cabc
 import logging
+import operator
 import threading
 import typing as typ
 
 import pytest
+from hypothesis import HealthCheck, given, settings
+from hypothesis import strategies as st
 
 from lading.utils import metrics
+
+# ``increment_counter(name, *, amount=1, **labels)`` reserves these keyword
+# names, so they cannot be supplied as label keys through the kwargs API.
+_RESERVED_LABEL_KEYS = frozenset({"name", "amount"})
+_PROP_LABEL_KEY = st.text(min_size=1, max_size=20).filter(
+    lambda key: key not in _RESERVED_LABEL_KEYS
+)
 
 if typ.TYPE_CHECKING:
     from syrupy.assertion import SnapshotAssertion
@@ -56,6 +66,62 @@ def test_snapshot_and_reset() -> None:
     assert metrics.snapshot() == {}
     # The snapshot is a copy, unaffected by the reset.
     assert captured == {("demo.total", ()): 1}
+
+
+@given(
+    pairs=st.lists(
+        st.tuples(_PROP_LABEL_KEY, st.text(max_size=20)),
+        min_size=1,
+        max_size=8,
+        unique_by=operator.itemgetter(0),
+    ),
+    data=st.data(),
+)
+@settings(
+    max_examples=200,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
+def test_label_order_invariance(
+    pairs: list[tuple[str, str]], data: st.DataObject
+) -> None:
+    """counter_value is invariant under any permutation of label kwargs."""
+    metrics.reset()
+    metrics.increment_counter("prop.order", **dict(pairs))
+
+    # Read back with the labels supplied in a different (drawn) order.
+    permuted = data.draw(st.permutations(pairs))
+    assert metrics.counter_value("prop.order", **dict(permuted)) == 1
+
+
+@given(
+    increments=st.lists(
+        st.integers(min_value=1, max_value=100), min_size=1, max_size=50
+    )
+)
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
+def test_accumulation_sums_increments(increments: list[int]) -> None:
+    """Counter value equals the sum of all increment amounts."""
+    metrics.reset()
+    for amount in increments:
+        metrics.increment_counter("prop.sum", amount=amount, label="x")
+    assert metrics.counter_value("prop.sum", label="x") == sum(increments)
+
+
+@given(st.integers(min_value=0, max_value=10))
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
+def test_snapshot_is_immutable_copy(n: int) -> None:
+    """Mutations after snapshot() do not affect the captured copy."""
+    metrics.reset()
+    for i in range(n):
+        metrics.increment_counter("prop.snap", i=str(i))
+    captured = metrics.snapshot()
+    before = dict(captured)
+
+    # Mutate the live registry.
+    metrics.increment_counter("prop.snap.extra")
+    metrics.reset()
+
+    assert captured == before
 
 
 def test_emit_summary_logs_structured_payload(
