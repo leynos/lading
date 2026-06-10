@@ -10,7 +10,9 @@ resolving.
 
 from __future__ import annotations
 
+import collections.abc as cabc
 import dataclasses as dc
+import functools
 import logging
 import typing as typ
 
@@ -106,6 +108,19 @@ def _handle_index_missing_version(
     )
 
 
+def _run_pipeline_phase(
+    plan: PublishPlan,
+    preparation: PublishPreparation,
+    *,
+    options: _PublishExecutionOptions,
+    per_crate_fn: cabc.Callable[[WorkspaceCrate, _PublicationPipelineState], None],
+) -> None:
+    """Iterate over every publishable crate, applying *per_crate_fn* to each."""
+    state = _PublicationPipelineState(plan, preparation, options)
+    for crate in plan.publishable:
+        per_crate_fn(crate, state)
+
+
 def _package_publishable_crates(
     plan: PublishPlan,
     preparation: PublishPreparation,
@@ -114,13 +129,12 @@ def _package_publishable_crates(
     runner: CommandRunner,
 ) -> None:
     """Package each publishable crate in order using the staged workspace."""
-    state = _PublicationPipelineState(plan, preparation, options)
-    for crate in plan.publishable:
-        _package_crate(
-            crate,
-            state,
-            runner=runner,
-        )
+    _run_pipeline_phase(
+        plan,
+        preparation,
+        options=options,
+        per_crate_fn=functools.partial(_package_crate, runner=runner),
+    )
 
 
 def _package_crate(
@@ -195,13 +209,12 @@ def _publish_crates(
     options: _PublishExecutionOptions,
 ) -> None:
     """Publish each crate in order, respecting dry-run vs live mode."""
-    state = _PublicationPipelineState(plan, preparation, options)
-    for crate in plan.publishable:
-        _publish_crate(
-            crate,
-            state,
-            runner=runner,
-        )
+    _run_pipeline_phase(
+        plan,
+        preparation,
+        options=options,
+        per_crate_fn=functools.partial(_publish_crate, runner=runner),
+    )
 
 
 def _publish_crate(
