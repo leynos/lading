@@ -538,6 +538,14 @@ around command execution. `lading bump` uses the runtime runner directly for
 lockfile refreshes, while `lading publish` uses `_invoke` where failures should
 surface as `PublishPreflightError`.
 
+The cmd-mox runner validates `CMOX_IPC_TIMEOUT` in `_resolve_cmd_mox_timeout`.
+The two operator-facing messages it raises live as a single source of truth in
+the module constants `INVALID_IPC_TIMEOUT_MESSAGE` and
+`NON_POSITIVE_IPC_TIMEOUT_MESSAGE` in `lading/testing/cmd_mox_runner.py`; their
+values are pinned by a syrupy snapshot. See the
+[cmd-mox usage guide](./cmd-mox-usage-guide.md#environment-variables) for the
+operator-facing description of the variable and its failure modes.
+
 #### Subprocess invocation logging
 
 `subprocess_runner` emits **exactly one** log record per external command

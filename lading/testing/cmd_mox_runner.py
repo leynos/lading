@@ -1,9 +1,33 @@
-"""cmd-mox-backed implementation of the command runner port."""
+"""cmd-mox-backed implementation of the command runner port.
+
+This module adapts cmd-mox's IPC server to the ``CommandRunner`` protocol
+defined in :mod:`lading.runtime`, so tests can route ``cargo`` and ``git``
+invocations through recorded cmd-mox expectations instead of spawning real
+subprocesses. :func:`cmd_mox_runner` is the adapter entry point: it validates
+the cmd-mox environment (the IPC socket path and the ``CMOX_IPC_TIMEOUT``
+timeout), normalises cargo subcommands to the namespaced names cmd-mox
+expects, sends the invocation over the IPC socket, and runs passthrough
+directives locally through :mod:`lading.runtime.subprocess_runner` so streaming
+output is preserved.
+
+It is the test-time counterpart of the production
+:mod:`lading.runtime.subprocess_runner` adapter. Command modules such as
+:mod:`lading.commands.publish_execution` and :mod:`lading.workspace.metadata`
+type against the shared ``CommandRunner`` protocol and accept either adapter,
+so swapping this runner in (typically via
+:func:`lading.workspace.metadata.use_command_runner`) requires no change at the
+call sites. The two operator-facing IPC-timeout error messages have their
+single canonical home here as the module constants
+:data:`INVALID_IPC_TIMEOUT_MESSAGE` and
+:data:`NON_POSITIVE_IPC_TIMEOUT_MESSAGE`; no other module should duplicate
+them.
+"""
 
 from __future__ import annotations
 
 import collections.abc as cabc
 import logging
+import math
 import os
 import sys
 import typing as typ
@@ -21,7 +45,13 @@ from lading.runtime.subprocess_runner import (
 from lading.utils.process import log_command_invocation
 
 _LOGGER = logging.getLogger(__name__)
+
 _CMD_MOX_TIMEOUT_DEFAULT = 5.0
+
+# Canonical operator-facing IPC-timeout messages (issue #98): these exist
+# only here; no other module may duplicate them.
+INVALID_IPC_TIMEOUT_MESSAGE = "Invalid CMOX_IPC_TIMEOUT value"
+NON_POSITIVE_IPC_TIMEOUT_MESSAGE = "CMOX_IPC_TIMEOUT must be positive"
 
 
 class CmdMoxError(LadingError):
@@ -111,11 +141,21 @@ def _resolve_cmd_mox_timeout(raw_timeout: str | None) -> float:
     try:
         timeout = float(raw_timeout)
     except (TypeError, ValueError) as exc:
-        message = "Invalid CMOX_IPC_TIMEOUT value"
-        raise CmdMoxError(message) from exc
-    if timeout <= 0:
-        message = "CMOX_IPC_TIMEOUT must be positive"
-        raise CmdMoxError(message)
+        _LOGGER.warning(
+            "Rejecting CMOX_IPC_TIMEOUT=%r: value is not a number", raw_timeout
+        )
+        raise CmdMoxError(INVALID_IPC_TIMEOUT_MESSAGE) from exc
+    # Reject every value that is not a finite positive number. NaN compares
+    # false against everything, and an infinite timeout slips past ``> 0`` yet
+    # the socket layer rejects it with OverflowError when applied, so require
+    # finiteness explicitly alongside the positivity guard.
+    if not math.isfinite(timeout) or timeout <= 0:
+        _LOGGER.warning(
+            "Rejecting CMOX_IPC_TIMEOUT=%r: %s is not a finite positive number",
+            raw_timeout,
+            timeout,
+        )
+        raise CmdMoxError(NON_POSITIVE_IPC_TIMEOUT_MESSAGE)
     return timeout
 
 

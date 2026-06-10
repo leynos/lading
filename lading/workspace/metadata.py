@@ -1,4 +1,20 @@
-"""Interfaces for invoking ``cargo metadata``."""
+"""Execute and parse ``cargo metadata`` for workspace discovery.
+
+This module is the workspace layer's gateway to ``cargo metadata``: callers use
+:func:`load_cargo_metadata` to obtain the parsed JSON payload that downstream
+:mod:`lading.workspace` code (such as :mod:`lading.workspace.models`) turns into
+the workspace and crate model. It owns the ``CargoMetadataError`` hierarchy,
+which classifies the ways the invocation can fail — a missing ``cargo``
+executable, a non-zero exit, or unparseable output — so command modules can map
+those failures onto their own domain errors.
+
+Execution is delegated to the shared ``CommandRunner`` protocol from
+:mod:`lading.runtime` rather than calling :mod:`subprocess` directly. By default
+the production :mod:`lading.runtime.subprocess_runner` adapter is used, but
+:func:`use_command_runner` installs a context-local override so tests can route
+the same calls through the cmd-mox adapter in
+:mod:`lading.testing.cmd_mox_runner` without touching the call sites.
+"""
 
 from __future__ import annotations
 
@@ -23,16 +39,6 @@ if typ.TYPE_CHECKING:  # pragma: no cover - import-time typing aids only
 
 class CargoMetadataError(LadingError):
     """Raised when ``cargo metadata`` cannot be executed successfully."""
-
-    @classmethod
-    def invalid_ipc_timeout(cls) -> CargoMetadataError:
-        """Return an error for malformed IPC timeout values."""
-        return cls("Invalid CMOX_IPC_TIMEOUT value")
-
-    @classmethod
-    def non_positive_ipc_timeout(cls) -> CargoMetadataError:
-        """Return an error when the IPC timeout is non-positive."""
-        return cls("CMOX_IPC_TIMEOUT must be positive")
 
 
 class CargoExecutableNotFoundError(CargoMetadataError):
