@@ -7,6 +7,7 @@ access through ``lading.cli`` keeps working.
 
 from __future__ import annotations
 
+import re
 import typing as typ
 from pathlib import Path
 
@@ -65,6 +66,23 @@ AllowUnpublishedWorkspaceDepsFlag = typ.Annotated[
     bool | None, _ALLOW_UNPUBLISHED_WORKSPACE_DEPS_PARAMETER
 ]
 
+
+_VERSION_PATTERN = re.compile(
+    r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$"
+)
+
+
+def _validate_version_argument(version: str) -> None:
+    """Ensure ``version`` matches the semantic version pattern."""
+    if not _VERSION_PATTERN.fullmatch(version):
+        message = (
+            "Invalid version argument "
+            f"{version!r}. Expected semantic version in the form "
+            "<major>.<minor>.<patch> with optional pre-release/build segments."
+        )
+        raise SystemExit(message)
+
+
 __all__ = [
     "WORKSPACE_ROOT_ENV_VAR",
     "WORKSPACE_ROOT_REQUIRED_MESSAGE",
@@ -75,4 +93,5 @@ __all__ = [
     "RebuildLockfilesFlag",
     "VersionArgument",
     "WorkspaceRootOption",
+    "_validate_version_argument",
 ]

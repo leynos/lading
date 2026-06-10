@@ -22,7 +22,6 @@ import collections.abc as cabc
 import importlib
 import logging
 import os
-import re
 import sys
 import typing as typ
 from contextlib import contextmanager
@@ -41,6 +40,7 @@ from .cli_options import (
     RebuildLockfilesFlag,
     VersionArgument,
     WorkspaceRootOption,
+    _validate_version_argument,
 )
 from .runtime import CommandRunner, subprocess_runner
 from .utils import metrics, normalise_workspace_root
@@ -317,24 +317,6 @@ def _run_with_context(
     with metadata_module.use_command_runner(active_runner):
         workspace_model = load_workspace(workspace_root)
         return runner(workspace_root, configuration, workspace_model, active_runner)
-
-
-_VERSION_PATTERN = re.compile(
-    r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$"
-)
-
-
-def _validate_version_argument(version: str) -> None:
-    """Ensure ``version`` matches the semantic version pattern."""
-    if not _VERSION_PATTERN.fullmatch(version):
-        message = (
-            "Invalid version argument "
-            f"{version!r}. Expected semantic version in the form "
-            "<major>.<minor>.<patch> with optional pre-release/build segments."
-        )
-        raise SystemExit(message)
-
-
 @app.command
 def bump(
     version: VersionArgument,
