@@ -33,8 +33,14 @@ def _invocation_records(
         record
         for record in caplog.records
         if "Running external command" in record.getMessage()
-        or "Spawning subprocess:" in record.getMessage()
     ]
+
+
+def _assert_no_spawn_record(caplog: LogCaptureFixture) -> None:
+    """Assert the removed DEBUG spawn log is absent (regression for #104)."""
+    assert all(
+        "Spawning subprocess:" not in record.getMessage() for record in caplog.records
+    )
 
 
 def test_command_logged_exactly_once(caplog: LogCaptureFixture) -> None:
@@ -49,7 +55,10 @@ def test_command_logged_exactly_once(caplog: LogCaptureFixture) -> None:
     records = _invocation_records(caplog)
     assert len(records) == 1
     assert records[0].levelno == logging.INFO
-    assert "Running external command: echo hello" in records[0].getMessage()
+    message = records[0].getMessage()
+    assert "Running external command" in message
+    assert "echo hello" in message
+    _assert_no_spawn_record(caplog)
 
 
 def test_command_logged_exactly_once_with_cwd(
@@ -67,3 +76,4 @@ def test_command_logged_exactly_once_with_cwd(
     assert len(records) == 1
     assert records[0].levelno == logging.INFO
     assert f"(cwd={tmp_path})" in records[0].getMessage()
+    _assert_no_spawn_record(caplog)
