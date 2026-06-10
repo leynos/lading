@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import dataclasses as dc
 import logging
-import threading
 import typing as typ
 from pathlib import Path
 
@@ -290,13 +289,11 @@ class CallTrackingRunner:
     def __init__(self) -> None:
         """Initialise the runner with an empty call log."""
         self._calls: list[tuple[tuple[str, ...], Path | None]] = []
-        self._calls_lock = threading.Lock()
 
     @property
     def calls(self) -> list[tuple[tuple[str, ...], Path | None]]:
         """Return a stable snapshot of recorded invocations."""
-        with self._calls_lock:
-            return list(self._calls)
+        return list(self._calls)
 
     def __call__(
         self,
@@ -307,8 +304,7 @@ class CallTrackingRunner:
     ) -> tuple[int, str, str]:
         """Record the invocation and return a successful result."""
         del env
-        with self._calls_lock:
-            self._calls.append((tuple(command), cwd))
+        self._calls.append((tuple(command), cwd))
         return 0, "", ""
 
 
