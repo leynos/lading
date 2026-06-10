@@ -155,16 +155,14 @@ def _load_source_text(source_readme: Path, _source_text: str | None) -> str:
     Raises ``ReadmeTranspositionError`` when the file is absent and no
     pre-loaded text was supplied.
     """
+    if _source_text is not None:
+        return _source_text
     if not source_readme.exists():
         message = (
             "Workspace README.md is required by crates that set readme.workspace = true"
         )
         raise ReadmeTranspositionError(message)
-    return (
-        _source_text
-        if _source_text is not None
-        else source_readme.read_text(encoding="utf-8")
-    )
+    return source_readme.read_text(encoding="utf-8")
 
 
 def _resolve_crate_relative_path(workspace_root: Path, crate: WorkspaceCrate) -> Path:
