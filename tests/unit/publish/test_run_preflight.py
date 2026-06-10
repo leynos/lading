@@ -27,7 +27,7 @@ class _ExcludeScenario:
     unit_tests_only: bool
 
 
-EXCLUDE_SCENARIOS = [
+EXCLUDE_SCENARIOS = (
     pytest.param((), (), id="none"),
     pytest.param(("alpha", "beta"), ("alpha", "beta"), id="ordered"),
     pytest.param(("beta", "alpha"), ("alpha", "beta"), id="sorted"),
@@ -50,7 +50,7 @@ EXCLUDE_SCENARIOS = [
         id="duplicate_whitespace",
     ),
     pytest.param(("alpha", "", "beta"), ("alpha", "beta"), id="mixed_blank"),
-]
+)
 
 
 def test_run_executes_preflight_checks_in_workspace(
@@ -110,7 +110,7 @@ def test_run_executes_preflight_checks_in_workspace(
 # Run every exclude-normalisation scenario in both ``unit_tests_only`` modes so
 # the builder's exclude handling is verified to be identical regardless of the
 # target-narrowing flag.
-EXCLUDE_MODE_SCENARIOS = [
+EXCLUDE_MODE_SCENARIOS = tuple(
     pytest.param(
         _ExcludeScenario(
             configured_excludes=scenario.values[0],
@@ -121,7 +121,7 @@ EXCLUDE_MODE_SCENARIOS = [
     )
     for scenario in EXCLUDE_SCENARIOS
     for unit_tests_only in (False, True)
-]
+)
 
 
 @pytest.mark.parametrize("scenario", EXCLUDE_MODE_SCENARIOS)

@@ -200,6 +200,9 @@ def make_n_crate_chain(root: Path, count: int) -> tuple[WorkspaceCrate, ...]:
     >>> # crate_2 depends on crate_1.
 
     """
+    if count < 1:
+        message = "count must be >= 1"
+        raise ValueError(message)
     crates: list[WorkspaceCrate] = []
     for index in range(count):
         name = f"crate_{index}"
