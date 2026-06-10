@@ -641,3 +641,44 @@ def test_workspace_env_sets_and_restores(
     with cli._workspace_env(tmp_path):
         assert os.environ[cli.WORKSPACE_ROOT_ENV_VAR] == str(tmp_path)
     assert cli.WORKSPACE_ROOT_ENV_VAR not in os.environ
+
+
+def test_run_with_context_branches_behave_identically(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    write_config: cabc.Callable[[str], Path],
+) -> None:
+    """Pre-loaded and freshly-loaded configuration take the same path.
+
+    Issue #107 (13c): `_run_with_context` previously duplicated the
+    load-workspace-and-run block across both branches; this pins identical
+    downstream behaviour for each.
+    """
+    write_config("")
+    workspace_graph = _make_workspace(tmp_path.resolve())
+    monkeypatch.setattr(cli, "load_workspace", lambda _: workspace_graph)
+    calls: list[tuple[object, ...]] = []
+
+    def runner(
+        root: Path,
+        configuration: config_module.LadingConfig,
+        workspace: WorkspaceGraph,
+        command_runner: object,
+    ) -> str:
+        calls.append((root, configuration, workspace, command_runner))
+        return "ran"
+
+    fresh_result = cli._run_with_context(tmp_path.resolve(), runner)
+
+    configuration = config_module.load_configuration(tmp_path)
+    with config_module.use_configuration(configuration):
+        preloaded_result = cli._run_with_context(tmp_path.resolve(), runner)
+
+    assert fresh_result == preloaded_result == "ran"
+    assert len(calls) == 2
+    fresh_call, preloaded_call = calls
+    assert fresh_call[0] == preloaded_call[0] == tmp_path.resolve()
+    assert isinstance(fresh_call[1], config_module.LadingConfig)
+    assert preloaded_call[1] is configuration
+    assert fresh_call[2] is workspace_graph
+    assert preloaded_call[2] is workspace_graph
