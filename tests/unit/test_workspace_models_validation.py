@@ -8,6 +8,7 @@ import typing as typ
 import pytest
 
 from lading.workspace import models
+from tests.helpers.workspace_metadata import build_test_package, create_test_manifest
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers only
     from pathlib import Path
@@ -37,6 +38,111 @@ def test_index_workspace_packages_skips_non_members() -> None:
     index = models._index_workspace_packages(packages, ["member"])
 
     assert set(index) == {"member"}
+
+
+def test_collect_workspace_crates_builds_tuple_in_member_order(tmp_path: Path) -> None:
+    """Workspace crates should be built once per requested member ID."""
+    workspace_root = tmp_path
+    alpha_manifest = create_test_manifest(
+        workspace_root,
+        "alpha",
+        """
+        [package]
+        name = "alpha"
+        version = "0.1.0"
+        readme.workspace = true
+        """,
+    )
+    beta_manifest = create_test_manifest(
+        workspace_root,
+        "beta",
+        """
+        [package]
+        name = "beta"
+        version = "0.2.0"
+
+        [dependencies]
+        alpha = { path = "../alpha", version = "0.1.0" }
+        """,
+    )
+    alpha_package = build_test_package("alpha", "0.1.0", alpha_manifest)
+    beta_package = build_test_package(
+        "beta",
+        "0.2.0",
+        beta_manifest,
+        dependencies=[
+            {
+                "name": "alpha",
+                "kind": None,
+                "path": str(workspace_root / "alpha"),
+            }
+        ],
+        publish=[],
+    )
+    package_lookup = {
+        "alpha-id": alpha_package,
+        "beta-id": beta_package,
+    }
+    workspace_index = models._build_workspace_index(package_lookup)
+
+    crates = models._collect_workspace_crates(
+        package_lookup=package_lookup,
+        workspace_member_ids=("beta-id", "alpha-id", "beta-id"),
+        workspace_index=workspace_index,
+    )
+
+    assert isinstance(crates, tuple)
+    assert [crate.name for crate in crates] == ["beta", "alpha", "beta"]
+    assert crates[0].publish is False
+    assert crates[0].dependencies == (
+        models.WorkspaceDependency(
+            package_id="alpha-id",
+            name="alpha",
+            manifest_name="alpha",
+            kind=None,
+        ),
+    )
+    assert crates[1].readme_is_workspace is True
+    assert crates[2] == crates[0]
+
+
+@pytest.mark.parametrize(
+    "workspace_member_ids",
+    [
+        pytest.param(("missing-id",), id="single_missing_member"),
+        pytest.param(
+            ("alpha-id", "missing-id", "other-missing-id"), id="later_missing_member"
+        ),
+    ],
+)
+def test_collect_workspace_crates_rejects_missing_members(
+    tmp_path: Path,
+    workspace_member_ids: tuple[str, ...],
+) -> None:
+    """Missing member IDs should raise ``WorkspaceModelError``."""
+    alpha_manifest = create_test_manifest(
+        tmp_path,
+        "alpha",
+        """
+        [package]
+        name = "alpha"
+        version = "0.1.0"
+        """,
+    )
+    package_lookup = {
+        "alpha-id": build_test_package("alpha", "0.1.0", alpha_manifest),
+    }
+    workspace_index = models._build_workspace_index(package_lookup)
+
+    with pytest.raises(
+        models.WorkspaceModelError,
+        match=r"workspace member 'missing-id' missing from package list",
+    ):
+        models._collect_workspace_crates(
+            package_lookup=package_lookup,
+            workspace_member_ids=workspace_member_ids,
+            workspace_index=workspace_index,
+        )
 
 
 def test_build_dependencies_handles_missing_entries() -> None:
