@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import collections.abc as cabc
+import json
 import logging
 import typing as typ
 
@@ -105,3 +106,69 @@ def test_raise_paths_do_not_increment_counter(tmp_path: Path) -> None:
         )
 
     assert metrics.snapshot() == {}
+
+
+def _make_beta_package_index_failure_runner() -> cabc.Callable[
+    [cabc.Sequence[str]], tuple[int, str, str]
+]:
+    """Return a runner whose ``cargo package`` for crate beta misses the index."""
+
+    def runner(
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        del env
+        is_package = tuple(command[:2]) == ("cargo", "package")
+        is_beta = cwd is not None and cwd.name == "beta"
+        if is_package and is_beta:
+            return (1, "", INDEX_MISSING_STDERR_BETA)
+        return (0, "", "")
+
+    return runner
+
+
+def test_full_publish_run_records_and_emits_downgrade_metric(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """An end-to-end downgrade is counted and surfaced in the exit summary.
+
+    Drives ``publish.run`` through the real index-failure parsing and downgrade
+    path (rather than the handler in isolation), then confirms ``emit_summary``
+    renders the counter operators see at process exit.
+    """
+    caplog.set_level(logging.INFO, logger="lading.utils.metrics")
+    root = tmp_path / "workspace"
+    workspace = make_workspace(root, *make_dependency_chain(root))
+    configuration = make_config()
+
+    publish.run(
+        root,
+        configuration,
+        workspace,
+        options=publish.PublishOptions(
+            build_directory=tmp_path / "build",
+            command_runner=_make_beta_package_index_failure_runner(),
+            allow_unpublished_workspace_deps=True,
+        ),
+    )
+
+    assert (
+        metrics.counter_value(_METRIC, subcommand="package", missing_crate="alpha") == 1
+    )
+
+    metrics.emit_summary()
+
+    summaries = [
+        record.getMessage()
+        for record in caplog.records
+        if "metrics summary" in record.getMessage()
+    ]
+    assert len(summaries) == 1
+    payload = json.loads(summaries[0].partition(": ")[2])
+    assert {
+        "metric": _METRIC,
+        "labels": {"missing_crate": "alpha", "subcommand": "package"},
+        "value": 1,
+    } in payload

@@ -220,6 +220,24 @@ the current crate in `publish.order`, the failure is still treated as an error.
 Fix the explicit `publish.order` so foundational crates come before dependants,
 or remove `publish.order` and rely on dependency-derived topological sorting.
 
+##### Metrics summary at exit
+
+When a run downgrades one or more index-lookup failures in this way, `lading`
+emits a single structured summary line just before the process exits, at `INFO`
+level, so you can confirm how often a release relied on the override:
+
+```text
+INFO: lading metrics summary: [{"metric": "publish.index_lookup_downgrade", "labels": {"missing_crate": "alpha", "subcommand": "package"}, "value": 1}]
+```
+
+The payload is a JSON array of counters; each entry records the metric name,
+its label values, and how many times it fired during the run. The
+`publish.index_lookup_downgrade` counter is labelled with the cargo `subcommand`
+(`package` or `publish`) and the `missing_crate` that was not yet on the
+index. Runs that downgrade nothing emit no summary line, so quiet runs stay
+quiet. The line is informational only — it does not change the command's exit
+status.
+
 ## Configuration reference (`lading.toml`)
 
 `lading` looks for `lading.toml` in the workspace root. The file must be a TOML

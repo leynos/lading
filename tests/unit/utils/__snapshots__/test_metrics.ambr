@@ -1,0 +1,4 @@
+# serializer version: 1
+# name: test_emit_summary_logs_structured_payload
+  'lading metrics summary: [{"metric": "demo.pair", "labels": {"a": "1", "b": "2"}, "value": 1}, {"metric": "demo.total", "labels": {"subcommand": "package"}, "value": 2}, {"metric": "demo.total", "labels": {"subcommand": "publish"}, "value": 1}]'
+# ---

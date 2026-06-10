@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import collections.abc as cabc
-import json
 import logging
+import threading
 import typing as typ
 
 import pytest
@@ -12,6 +12,8 @@ import pytest
 from lading.utils import metrics
 
 if typ.TYPE_CHECKING:
+    from syrupy.assertion import SnapshotAssertion
+
     LogCaptureFixture = pytest.LogCaptureFixture
 else:  # pragma: no cover - typing helpers
     LogCaptureFixture = typ.Any
@@ -58,21 +60,28 @@ def test_snapshot_and_reset() -> None:
 
 def test_emit_summary_logs_structured_payload(
     caplog: LogCaptureFixture,
+    snapshot: SnapshotAssertion,
 ) -> None:
-    """The summary line carries a JSON payload of every counter."""
+    """The summary line carries a JSON payload of every counter.
+
+    Snapshotting the rendered message locks the exact structured output format
+    operators see, including counter ordering and label-key normalisation.
+    """
     caplog.set_level(logging.INFO, logger="lading.utils.metrics")
     metrics.increment_counter("demo.total", subcommand="package")
+    metrics.increment_counter("demo.total", subcommand="package")
+    metrics.increment_counter("demo.total", subcommand="publish")
+    metrics.increment_counter("demo.pair", b="2", a="1")
 
     metrics.emit_summary()
 
     summaries = [
-        record for record in caplog.records if "metrics summary" in record.getMessage()
+        record.getMessage()
+        for record in caplog.records
+        if "metrics summary" in record.getMessage()
     ]
     assert len(summaries) == 1
-    payload = json.loads(summaries[0].getMessage().partition(": ")[2])
-    assert payload == [
-        {"metric": "demo.total", "labels": {"subcommand": "package"}, "value": 1}
-    ]
+    assert summaries[0] == snapshot
 
 
 def test_emit_summary_is_silent_without_metrics(
@@ -84,3 +93,22 @@ def test_emit_summary_is_silent_without_metrics(
     metrics.emit_summary()
 
     assert not caplog.records
+
+
+def test_register_summary_atexit_registers_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Bootstrap registration installs ``emit_summary`` at most once.
+
+    Registration moved out of module import into explicit bootstrap, so the
+    helper must be idempotent across repeated calls (e.g. successive in-process
+    CLI invocations during tests).
+    """
+    registered: list[cabc.Callable[[], None]] = []
+    monkeypatch.setattr(metrics, "_summary_hook_registered", threading.Event())
+    monkeypatch.setattr(metrics.atexit, "register", registered.append)
+
+    metrics.register_summary_atexit()
+    metrics.register_summary_atexit()
+
+    assert registered == [metrics.emit_summary]

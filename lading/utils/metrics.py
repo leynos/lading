@@ -29,8 +29,9 @@ import threading
 
 _LOGGER = logging.getLogger(__name__)
 _LOCK = threading.Lock()
-_CounterKey = tuple[str, tuple[tuple[str, str], ...]]
+type _CounterKey = tuple[str, tuple[tuple[str, str], ...]]
 _COUNTERS: collections.Counter[_CounterKey] = collections.Counter()
+_summary_hook_registered = threading.Event()
 
 
 def _counter_key(name: str, labels: dict[str, str]) -> _CounterKey:
@@ -82,12 +83,25 @@ def emit_summary() -> None:
     _LOGGER.info("lading metrics summary: %s", json.dumps(rendered))
 
 
-atexit.register(emit_summary)
+def register_summary_atexit() -> None:
+    """Register :func:`emit_summary` to run at interpreter exit.
+
+    Call this once from application bootstrap (the CLI entry point) so the
+    exit-time flush is an explicit lifecycle decision rather than a hidden
+    side effect of importing this module. Repeated calls register the hook at
+    most once.
+    """
+    if _summary_hook_registered.is_set():
+        return
+    _summary_hook_registered.set()
+    atexit.register(emit_summary)
+
 
 __all__ = [
     "counter_value",
     "emit_summary",
     "increment_counter",
+    "register_summary_atexit",
     "reset",
     "snapshot",
 ]
