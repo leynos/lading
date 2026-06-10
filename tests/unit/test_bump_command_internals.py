@@ -558,6 +558,41 @@ def _expected_description(categories: list[str]) -> str:
     return f"{', '.join(categories[:-1])}, and {categories[-1]}"
 
 
+def _build_expected_body(
+    root: Path,
+    manifests: tuple[Path, ...],
+    documents: tuple[Path, ...],
+    readmes: tuple[Path, ...],
+    lockfiles: tuple[Path, ...],
+) -> list[str]:
+    """Return the expected ``"- <rel_path>"`` body lines in render order."""
+    return [
+        *(f"- {path.relative_to(root)}" for path in manifests),
+        *(f"- {path.relative_to(root)} (documentation)" for path in documents),
+        *(f"- {path.relative_to(root)} (readme)" for path in readmes),
+        *(f"- {path.relative_to(root)} (lockfile)" for path in lockfiles),
+    ]
+
+
+def _build_expected_categories(
+    manifests: tuple[Path, ...],
+    documents: tuple[Path, ...],
+    readmes: tuple[Path, ...],
+    lockfiles: tuple[Path, ...],
+) -> list[str]:
+    """Return ordered category descriptions for the present change sets."""
+    categories: list[str] = []
+    if manifests:
+        categories.append(f"{len(manifests)} manifest(s)")
+    if documents:
+        categories.append(f"{len(documents)} documentation file(s)")
+    if readmes:
+        categories.append(f"{len(readmes)} readme file(s)")
+    if lockfiles:
+        categories.append(f"{len(lockfiles)} lockfile(s)")
+    return categories
+
+
 @given(
     manifest_count=_category_count,
     document_count=_category_count,
@@ -592,23 +627,11 @@ def test_result_message_grammar_and_path_rendering(
         return
 
     lines = message.splitlines()
-    expected_body = [
-        *(f"- {path.relative_to(root)}" for path in manifests),
-        *(f"- {path.relative_to(root)} (documentation)" for path in documents),
-        *(f"- {path.relative_to(root)} (readme)" for path in readmes),
-        *(f"- {path.relative_to(root)} (lockfile)" for path in lockfiles),
-    ]
-    assert lines[1:] == expected_body
+    assert lines[1:] == _build_expected_body(
+        root, manifests, documents, readmes, lockfiles
+    )
 
-    categories = []
-    if manifests:
-        categories.append(f"{len(manifests)} manifest(s)")
-    if documents:
-        categories.append(f"{len(documents)} documentation file(s)")
-    if readmes:
-        categories.append(f"{len(readmes)} readme file(s)")
-    if lockfiles:
-        categories.append(f"{len(lockfiles)} lockfile(s)")
+    categories = _build_expected_categories(manifests, documents, readmes, lockfiles)
     expected_header = (
         f"Updated version to 1.2.3 in {_expected_description(categories)}:"
     )
