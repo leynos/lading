@@ -448,13 +448,18 @@ def test_resolve_allow_unpublished_workspace_deps_matrix(
         allow_unpublished_workspace_deps=flag,
     )
 
-    assert resolved is expected
+    assert resolved is expected, (
+        f"flag={flag!r} live={live!r}: expected {expected!r}, got {resolved!r}"
+    )
     debug_records = [
         record
         for record in caplog.records
         if record.levelno == logging.DEBUG and record.name == "lading.cli"
     ]
-    assert len(debug_records) == 1
+    assert len(debug_records) == 1, (
+        f"flag={flag!r} live={live!r}: expected one DEBUG record, "
+        f"got {len(debug_records)}"
+    )
     assert debug_records[0].getMessage() == snapshot
 
 
