@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import re
+
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from lading.commands.cargo_output_adapter import (
     CargoIndexLookupFailure,
@@ -14,6 +18,36 @@ from .conftest import (
     INDEX_MISSING_STDERR_BETA,
     INDEX_MISSING_STDERR_UNPARSEABLE,
 )
+
+_MARKER_VERSION = "failed to select a version for the requirement"
+_MARKER_INDEX = "location searched: crates.io index"
+_VALID_CRATE_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
+
+_crate_names = st.from_regex(r"[A-Za-z_][A-Za-z0-9_-]*", fullmatch=True)
+_quote_pairs = st.sampled_from([
+    ("backtick", "`", "`"),
+    ("single", "'", "'"),
+    ("double", '"', '"'),
+])
+
+
+@st.composite
+def _both_markers_stderr(
+    draw: st.DrawFn,
+) -> tuple[str, str]:
+    """Generate ``(crate_name, stderr)`` with both index-miss markers present."""
+    name = draw(_crate_names)
+    _label, open_q, close_q = draw(_quote_pairs)
+    version = draw(st.from_regex(r"\^[0-9]+(\.[0-9]+){0,2}", fullmatch=True))
+    prefix = draw(st.text(max_size=40))
+    suffix = draw(st.text(max_size=40))
+    stderr = (
+        f"{prefix}"
+        f'{_MARKER_VERSION} {open_q}{name} = "{version}"{close_q}\n'
+        f"{_MARKER_INDEX}\n"
+        f"{suffix}"
+    )
+    return name, stderr
 
 
 def _parse_index_lookup_failure(
@@ -123,3 +157,51 @@ def test_parse_index_lookup_failure_returns_structured_failure(
         stderr=stderr,
         missing_dependency_name=expected_name,
     )
+
+
+@given(stdout=st.text(), stderr=st.text())
+@settings(max_examples=100, deadline=None)
+def test_parse_index_lookup_failure_success_always_returns_none(
+    stdout: str, stderr: str
+) -> None:
+    """A zero exit code always produces None regardless of output content."""
+    assert _parse_index_lookup_failure(0, stdout, stderr) is None
+
+
+@given(case=_both_markers_stderr(), exit_code=st.integers(min_value=1, max_value=255))
+@settings(max_examples=80, deadline=None)
+def test_parse_index_lookup_failure_both_markers_nonzero_returns_failure(
+    case: tuple[str, str], exit_code: int
+) -> None:
+    """Both index-miss markers with a non-zero exit code produce a failure."""
+    _name, stderr = case
+    result = _parse_index_lookup_failure(exit_code, "", stderr)
+    assert result is not None
+
+
+@given(
+    stdout=st.text(),
+    stderr=st.text().filter(lambda s: _MARKER_INDEX.lower() not in s.lower()),
+    exit_code=st.integers(min_value=1, max_value=255),
+)
+@settings(max_examples=80, deadline=None)
+def test_parse_index_lookup_failure_missing_index_marker_returns_none(
+    stdout: str, stderr: str, exit_code: int
+) -> None:
+    """Absence of the crates.io index marker always produces None."""
+    combined = f"{stdout}\n{stderr}"
+    if _MARKER_INDEX.lower() in combined.lower():
+        return
+    assert _parse_index_lookup_failure(exit_code, stdout, stderr) is None
+
+
+@given(case=_both_markers_stderr(), exit_code=st.integers(min_value=1, max_value=255))
+@settings(max_examples=80, deadline=None)
+def test_parse_index_lookup_failure_extracted_name_matches_crate_name_pattern(
+    case: tuple[str, str], exit_code: int
+) -> None:
+    """When a name is extracted it always matches the valid crate-name pattern."""
+    _name, stderr = case
+    result = _parse_index_lookup_failure(exit_code, "", stderr)
+    if result is not None and result.missing_dependency_name is not None:
+        assert _VALID_CRATE_NAME_RE.match(result.missing_dependency_name)

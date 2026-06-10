@@ -8,7 +8,6 @@ index-missing-version failure formatting and override handling.
 
 from __future__ import annotations
 
-import collections
 import dataclasses as dc
 import logging
 import typing as typ
@@ -17,10 +16,6 @@ if typ.TYPE_CHECKING:
     from lading.commands.cargo_output_adapter import CargoIndexLookupFailure
     from lading.commands.publish import _PublishExecutionOptions
     from lading.commands.publish_plan import PublishPlan
-
-_INDEX_MISSING_VERSION_DOWNGRADE_COUNTER: collections.Counter[tuple[str, str, str]] = (
-    collections.Counter()
-)
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -229,15 +224,6 @@ def _canonical_crate_name(name: str) -> str:
     return name.replace("-", "_")
 
 
-def _record_index_missing_version_downgrade(
-    failure: CargoIndexLookupFailure, missing_name: str
-) -> None:
-    """Increment the downgrade counter for an index-missing-version failure."""
-    _INDEX_MISSING_VERSION_DOWNGRADE_COUNTER[
-        failure.subcommand, failure.crate_name, missing_name
-    ] += 1
-
-
 def _validate_dependency_placement(
     context: _IndexMissingVersionFailure,
     handling: _IndexMissingVersionHandling,
@@ -335,7 +321,6 @@ def _handle_index_missing_version(
             context, missing_name=missing_name
         )
 
-    _record_index_missing_version_downgrade(failure, missing_name)
     handling.logger.warning(
         "cargo %s for crate %s could not resolve sibling dependency %s "
         "from crates.io; continuing because the unpublished workspace "

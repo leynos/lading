@@ -419,11 +419,13 @@ visible in the registry.
 
 The index-lookup handling is split across the adapter and decision helper:
 
-- `parse_index_lookup_failure(crate_name, subcommand, exit_code, stdout, stderr)`
+- `parse_index_lookup_failure(*, crate_name, subcommand, result: CargoSubprocessResult)`
   checks for both Cargo's version-selection failure marker and the crates.io
-  index marker after confirming the command failed. Requiring both markers
-  minimizes false positives from unrelated resolver, registry, or command
-  failures.
+  index marker after confirming the command failed. It accepts a
+  `CargoSubprocessResult` value object (carrying `exit_code`, `stdout`, and
+  `stderr`) and returns a `CargoIndexLookupFailure` or `None`. Requiring both
+  markers minimizes false positives from unrelated resolver, registry, or
+  command failures.
 - The adapter parses the missing crate name from Cargo's requirement line. The
   regex accepts Cargo's backtick, single-quote, and double-quote delimiters
   around the requirement, captures the dependency name before `=`, and searches
@@ -444,11 +446,11 @@ The index-lookup handling is split across the adapter and decision helper:
 
 `_IndexMissingVersionFailure` (frozen dataclass) Carries the four values
 required by every fatal-path helper: `error_cls` (the exception type to raise),
-`invocation` (the failing `cargo` invocation), `failure` (the pre-formatted
-failure message), and `logger`. Constructing it once in
-`_handle_index_missing_version` and passing it to helpers eliminates argument
-repetition and keeps each helper to two parameters, satisfying the PLR0913
-argument-count threshold.
+`failure` (the `CargoIndexLookupFailure` that triggered the handler),
+`failure_message` (the pre-formatted human-readable error string), and
+`logger`. Constructing it once in `_handle_index_missing_version` and passing
+it to helpers eliminates argument repetition and keeps each helper to two
+parameters, satisfying the PLR0913 argument-count threshold.
 
 `_IndexMissingVersionHandling` (frozen dataclass) Carries the ambient context
 for the entire handler call: the active `PublishPlan`, the
@@ -463,7 +465,7 @@ name, a domain-language reason clause, and an operator guidance sentence. All
 fatal-path helpers delegate message construction here, centralizing the text
 format.
 
-`_log_missing_dependency_failure(logger, invocation, *, missing_name, detail)`
+`_log_missing_dependency_failure(logger, lookup_failure, *, missing_name, detail)`
 -> `None` Emits a WARNING-level log entry for fatal index-missing-version
 paths, providing consistent phrasing across all raise helpers so log
 aggregation can match on a stable prefix.
