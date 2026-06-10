@@ -348,7 +348,6 @@ def _format_thread_name(program: str, stream: str) -> str:
 def _log_subprocess_environment(env: cabc.Mapping[str, str] | None) -> None:
     """Log redacted environment overrides for subprocess execution."""
     if not env:
-        _LOGGER.debug("Spawning subprocess with inherited environment")
         return
     redacted = _redact_environment(env)
     _LOGGER.debug("Subprocess environment overrides: %s", redacted)
