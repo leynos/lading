@@ -211,9 +211,7 @@ def non_negative_int(
     try:
         integer = int(typ.cast("typ.Any", value))
     except (TypeError, ValueError) as exc:  # pragma: no cover - validation guard
-        message = (
-            f"{field_name} must be an integer; received {type(value).__name__}."
-        )
+        message = f"{field_name} must be an integer; received {type(value).__name__}."
         raise error(message) from exc
     if integer < 0:
         message = f"{field_name} must be non-negative."

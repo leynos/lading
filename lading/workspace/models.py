@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 import collections.abc as cabc
-import functools
 import dataclasses as dc
+import functools
 import heapq
 import typing as typ
 from collections import defaultdict
 from pathlib import Path
 
 import msgspec
+
 from lading import toml_coerce
 from lading.exceptions import LadingError
 
@@ -41,12 +42,45 @@ class WorkspaceModelError(LadingError):
 _expect_mapping = functools.partial(
     toml_coerce.expect_mapping, error=WorkspaceModelError
 )
-_expect_sequence = functools.partial(
-    toml_coerce.expect_sequence, error=WorkspaceModelError
-)
-_expect_string = functools.partial(
-    toml_coerce.expect_string, error=WorkspaceModelError
-)
+
+
+@typ.overload
+def _expect_sequence(
+    value: object,
+    field_name: str,
+    *,
+    allow_none: typ.Literal[False] = False,
+) -> cabc.Sequence[object]: ...
+
+
+@typ.overload
+def _expect_sequence(
+    value: object,
+    field_name: str,
+    *,
+    allow_none: typ.Literal[True],
+) -> cabc.Sequence[object] | None: ...
+
+
+def _expect_sequence(
+    value: object,
+    field_name: str,
+    *,
+    allow_none: bool = False,
+) -> cabc.Sequence[object] | None:
+    """Bind :func:`toml_coerce.expect_sequence` to ``WorkspaceModelError``.
+
+    A typed wrapper (rather than ``functools.partial``) preserves the
+    overloads that narrow the return type when ``allow_none`` is false.
+    """
+    if allow_none:
+        return toml_coerce.expect_sequence(
+            value, field_name, error=WorkspaceModelError, allow_none=True
+        )
+    return toml_coerce.expect_sequence(value, field_name, error=WorkspaceModelError)
+
+
+_expect_string = functools.partial(toml_coerce.expect_string, error=WorkspaceModelError)
 _is_non_empty_sequence = toml_coerce.is_non_empty_sequence
 
 
@@ -213,4 +247,3 @@ __all__ = [
     "build_workspace_graph",
     "load_workspace",
 ]
-

@@ -627,6 +627,36 @@ a formatted message that includes all four values. Using a single function for
 message construction keeps the error format consistent across the packaging and
 publish phases and makes snapshot testing straightforward.
 
+
+### Shared TOML coercion (`lading.toml_coerce`)
+
+`lading.toml_coerce` is the canonical home for the TOML scalar, sequence, and
+mapping coercion helpers shared by `lading.config` and
+`lading.workspace.models`. Each helper takes an `error` keyword naming the
+`LadingError` subclass to raise, and both consumers bind their domain error
+type once with `functools.partial` (`ConfigurationError` in `config`,
+`WorkspaceModelError` in `models`); neither module re-declares a coercer. The
+canonical error-message shape is
+`{field} must be {expected}; received {type(value).__name__}.` and is pinned by
+property and snapshot tests in `tests/unit/test_toml_coerce.py`.
+
+
+### Module size extractions (issue 108)
+
+To keep source files within the 400-line guideline, the following
+responsibilities live in dedicated modules, each re-exported by its original
+home so existing access paths keep resolving:
+
+- `lading.commands.publish_pipeline` — per-crate cargo package/publish
+  pipeline, result classification, and live/dry-run dispatch (re-exported by
+  `publish`).
+- `lading.commands.bump_manifests` — per-manifest version and
+  dependency-section rewriting (re-exported by `bump`).
+- `lading.workspace.graph_build` — builders converting `cargo metadata`
+  output into workspace models (re-exported by `workspace.models`).
+- `lading.cli_options` — Cyclopts argument declarations (re-imported by
+  `cli`).
+
 ### In-process metrics (`lading.utils.metrics`)
 
 `lading.utils.metrics` is a process-local metrics accumulator. Counters are

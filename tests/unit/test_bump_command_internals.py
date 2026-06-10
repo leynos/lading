@@ -2,27 +2,27 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import dataclasses as dc
 import typing as typ
+from pathlib import Path
 
-from hypothesis import given
-from tomlkit import parse as parse_toml
 import hypothesis.strategies as st
 import pytest
+from hypothesis import given
+from tomlkit import parse as parse_toml
 
 from lading.workspace import WorkspaceCrate, WorkspaceDependency, WorkspaceGraph
 from tests.helpers.workspace_builders import (
     _load_version,
     _make_config,
-    _make_workspace,
 )
 
 if typ.TYPE_CHECKING:
     from syrupy.assertion import SnapshotAssertion
-from lading.commands import bump, bump_output
 import collections.abc as cabc
 import string
+
+from lading.commands import bump, bump_output
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -146,6 +146,8 @@ def _parse_manifest_versions(
     package_version = document["package"]["version"]
     alpha_version = document["dependencies"]["alpha"].value
     return package_version, alpha_version
+
+
 def test_determine_package_selectors_respects_exclusions() -> None:
     """Excluded crates produce no package selectors."""
     assert bump._determine_package_selectors("beta", {"beta"}) == ()
@@ -528,6 +530,14 @@ def test_update_dependency_sections_workspace_dev_and_build() -> None:
     build_deps = document["workspace"]["build-dependencies"]
     assert build_deps["beta"]["version"].value == "3.0.0"
 
+
+_crate_name = st.text(
+    alphabet=string.ascii_lowercase + string.digits + "-_",
+    min_size=1,
+    max_size=12,
+)
+
+
 def _synthetic_workspace(names: cabc.Iterable[str]) -> WorkspaceGraph:
     """Build an in-memory workspace graph for the supplied crate names."""
     root = Path("/ws")
@@ -545,6 +555,7 @@ def _synthetic_workspace(names: cabc.Iterable[str]) -> WorkspaceGraph:
         for name in names
     )
     return WorkspaceGraph(workspace_root=root, crates=crates)
+
 
 @given(
     names=st.sets(_crate_name, min_size=0, max_size=8),

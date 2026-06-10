@@ -30,6 +30,7 @@ from lading.workspace.models import (
     _is_non_empty_sequence,
 )
 
+
 def load_workspace(
     workspace_root: Path | str | None = None,
 ) -> WorkspaceGraph:
