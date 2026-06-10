@@ -219,24 +219,8 @@ missing dependency is **not** in the publish plan, or when it appears **after**
 the current crate in `publish.order`, the failure is still treated as an error.
 Fix the explicit `publish.order` so foundational crates come before dependants,
 or remove `publish.order` and rely on dependency-derived topological sorting.
-
-##### Metrics summary at exit
-
-When a run downgrades one or more index-lookup failures in this way, `lading`
-emits a single structured summary line just before the process exits, at `INFO`
-level, so you can confirm how often a release relied on the override:
-
-```text
-INFO: lading metrics summary: [{"metric": "publish.index_lookup_downgrade", "labels": {"missing_crate": "alpha", "subcommand": "package"}, "value": 1}]
-```
-
-The payload is a JSON array of counters; each entry records the metric name,
-its label values, and how many times it fired during the run. The
-`publish.index_lookup_downgrade` counter is labelled with the cargo `subcommand`
-(`package` or `publish`) and the `missing_crate` that was not yet on the
-index. Runs that downgrade nothing emit no summary line, so quiet runs stay
-quiet. The line is informational only — it does not change the command's exit
-status.
+Each such downgrade is counted and surfaced in the metrics summary emitted at
+exit; see [Observability](#observability).
 
 ## Configuration reference (`lading.toml`)
 
@@ -308,6 +292,28 @@ or run the relevant Cargo command yourself before committing the bump.
 - `strip_patches`: one of `"all"`, `"per-crate"`, or `false`; default
   `"per-crate"`. Controls how `[patch.crates-io]` is edited in the staged
   workspace before packaging.
+
+### Observability
+
+When `lading publish` or `lading package` runs, a structured JSON summary may
+appear in the log output at `INFO` level just before the process exits:
+
+```text
+lading metrics summary: [{"metric": "publish.index_lookup_downgrade", "labels": {"missing_crate": "...", "subcommand": "..."}, "value": 1}]
+```
+
+Each entry records a counter name, the label values that identify it, and the
+accumulated count for the current invocation. The summary line is omitted
+entirely when no metrics were recorded (quiet runs stay quiet).
+
+#### `publish.index_lookup_downgrade`
+
+Incremented once per crate each time a crates.io index-lookup failure for a
+sibling workspace dependency is downgraded to a warning because
+`allow_unpublished_workspace_deps` is enabled. Labels:
+
+- `subcommand` — the Cargo subcommand that failed (`package` or `publish`).
+- `missing_crate` — the name of the workspace dependency absent from the index.
 
 ### `[preflight]`
 
