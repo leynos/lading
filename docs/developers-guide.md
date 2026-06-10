@@ -175,7 +175,7 @@ the only resolution against `configuration.bump.rebuild_lockfiles` happens in
 flag from `lading.toml` before dispatch, but `cli.bump` itself performs no
 coalescing.)
 
-Bump-time crate-set derivation is centralised in the bump context: the
+Bump-time crate-set derivation is centralized in the bump context: the
 `excluded` and `updated_crate_names` sets are computed exactly once in
 `bump._initialize_bump_context` and threaded to downstream helpers such as
 `_update_crate_manifest`. Helpers must consume the context sets rather than
