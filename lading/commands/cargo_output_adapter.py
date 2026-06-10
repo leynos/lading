@@ -124,10 +124,7 @@ def parse_index_lookup_failure(
         return None
 
     haystack = f"{result.stdout}\n{result.stderr}"
-    if not all(
-        re.search(re.escape(marker), haystack, re.IGNORECASE)
-        for marker in _INDEX_MISSING_VERSION_MARKERS
-    ):
+    if not _output_matches_index_markers(haystack):
         LOGGER.debug(
             "cargo %s for crate %s exited %d without index-lookup markers; "
             "not classifying as an index-miss failure",
@@ -137,6 +134,28 @@ def parse_index_lookup_failure(
         )
         return None
 
+    return _build_index_lookup_failure(
+        crate_name=crate_name,
+        subcommand=subcommand,
+        result=result,
+    )
+
+
+def _output_matches_index_markers(haystack: str) -> bool:
+    """Return whether both crates.io index-miss markers appear in cargo output."""
+    return all(
+        re.search(re.escape(marker), haystack, re.IGNORECASE)
+        for marker in _INDEX_MISSING_VERSION_MARKERS
+    )
+
+
+def _build_index_lookup_failure(
+    *,
+    crate_name: str,
+    subcommand: typ.Literal["package", "publish"],
+    result: CargoSubprocessResult,
+) -> CargoIndexLookupFailure:
+    """Assemble the structured failure once cargo output matched the markers."""
     missing_dependency_name = _extract_missing_dependency_name(
         result.stdout, result.stderr
     )
