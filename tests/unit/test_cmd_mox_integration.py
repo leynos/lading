@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import string
 import typing as typ
 from types import SimpleNamespace
 
@@ -78,39 +79,85 @@ def test_ipc_timeout_messages_are_stable(snapshot: SnapshotAssertion) -> None:
     assert snapshot == cmd_mox_runner.NON_POSITIVE_IPC_TIMEOUT_MESSAGE
 
 
-@given(value=st.one_of(st.none(), st.floats(), st.text(max_size=12)))
-def test_resolve_cmd_mox_timeout_domain(value: float | str | None) -> None:
-    """Resolution is total: default, the parsed positive value, or CmdMoxError.
+class _TimeoutCase(typ.NamedTuple):
+    """A timeout input paired with the resolver outcome it should produce."""
 
-    ``None`` yields the default and finite positive floats round-trip. Every
-    other input raises :class:`CmdMoxError`: unparseable strings carry
-    ``INVALID_IPC_TIMEOUT_MESSAGE``, while values that parse but are zero,
-    negative, NaN, or infinite carry ``NON_POSITIVE_IPC_TIMEOUT_MESSAGE``.
+    raw: str | None
+    resolves_to: float | None
+    raises_message: str | None
+
+
+# Lowercase letters that can never form a float literal: this excludes the
+# characters that spell "inf"/"infinity"/"nan" and the exponent marker "e", so
+# any string built from them is guaranteed to be unparseable by ``float``.
+_NON_NUMERIC_ALPHABET = "".join(
+    ch for ch in string.ascii_lowercase if ch not in "einfaty"
+)
+
+
+def _timeout_cases() -> st.SearchStrategy[_TimeoutCase]:
+    """Generate timeout inputs grouped by the resolver behaviour they trigger.
+
+    Each input class is constructed directly, so the expected outcome travels
+    with the input instead of being re-derived from the implementation's own
+    parsing. ``None`` and finite positive floats resolve to a timeout;
+    consonant-only strings are unparseable; zero, negative, NaN, and infinite
+    values parse but fall outside the finite positive domain.
     """
-    raw = value if value is None or isinstance(value, str) else repr(value)
-
-    if raw is None:
-        assert (
-            cmd_mox_runner._resolve_cmd_mox_timeout(raw)
-            == cmd_mox_runner._CMD_MOX_TIMEOUT_DEFAULT
+    default = st.just(_TimeoutCase(None, cmd_mox_runner._CMD_MOX_TIMEOUT_DEFAULT, None))
+    finite_positive = st.floats(
+        min_value=0.0,
+        max_value=1e6,
+        exclude_min=True,
+        allow_nan=False,
+        allow_infinity=False,
+    ).map(lambda value: _TimeoutCase(repr(value), value, None))
+    unparseable = st.text(alphabet=_NON_NUMERIC_ALPHABET, min_size=1, max_size=12).map(
+        lambda raw: _TimeoutCase(raw, None, cmd_mox_runner.INVALID_IPC_TIMEOUT_MESSAGE)
+    )
+    out_of_range = st.one_of(
+        st.floats(max_value=0.0, allow_nan=False, allow_infinity=False),
+        st.sampled_from([math.nan, math.inf, -math.inf]),
+    ).map(
+        lambda value: _TimeoutCase(
+            repr(value), None, cmd_mox_runner.NON_POSITIVE_IPC_TIMEOUT_MESSAGE
         )
-        return
+    )
+    return st.one_of(default, finite_positive, unparseable, out_of_range)
 
-    try:
-        parsed = float(raw)
-    except ValueError:
-        with pytest.raises(cmd_mox_runner.CmdMoxError) as excinfo:
-            cmd_mox_runner._resolve_cmd_mox_timeout(raw)
-        assert str(excinfo.value) == cmd_mox_runner.INVALID_IPC_TIMEOUT_MESSAGE
-        return
 
-    if math.isfinite(parsed) and parsed > 0:
-        assert cmd_mox_runner._resolve_cmd_mox_timeout(raw) == parsed
+@given(case=_timeout_cases())
+def test_resolve_cmd_mox_timeout_classes(case: _TimeoutCase) -> None:
+    """Each input class resolves or raises exactly as its construction declares.
+
+    The expectation is attached to the generated input, so this test asserts
+    the contract directly without mirroring the resolver's parsing logic.
+    """
+    if case.raises_message is None:
+        resolved = cmd_mox_runner._resolve_cmd_mox_timeout(case.raw)
+        assert resolved == case.resolves_to
         return
 
     with pytest.raises(cmd_mox_runner.CmdMoxError) as excinfo:
-        cmd_mox_runner._resolve_cmd_mox_timeout(raw)
-    assert str(excinfo.value) == cmd_mox_runner.NON_POSITIVE_IPC_TIMEOUT_MESSAGE
+        cmd_mox_runner._resolve_cmd_mox_timeout(case.raw)
+    assert str(excinfo.value) == case.raises_message
+
+
+@given(value=st.one_of(st.none(), st.floats(), st.text(max_size=12)))
+def test_resolve_cmd_mox_timeout_is_total(value: float | str | None) -> None:
+    """Resolution returns a finite positive timeout or raises ``CmdMoxError``.
+
+    This postcondition holds for every input without restating the parsing
+    rules, guarding against a regression that returns an unusable timeout
+    (zero, negative, NaN, or infinite) for some unforeseen value.
+    """
+    raw = value if value is None or isinstance(value, str) else repr(value)
+    try:
+        resolved = cmd_mox_runner._resolve_cmd_mox_timeout(raw)
+    except cmd_mox_runner.CmdMoxError:
+        return
+    assert math.isfinite(resolved)
+    assert resolved > 0
 
 
 def test_cmd_mox_runner_executes_via_ipc(
