@@ -39,15 +39,15 @@ make lint
 ```
 
 The target is deliberately three-tiered. Ruff runs first because it is fast,
-handles broad style and correctness checks, and imports the stricter lint policy
-used by `leynos/episodic`. If Ruff passes, the target runs `interrogate` with
-`--fail-under 100` across `lading` to enforce **100% docstring coverage**. If
-`interrogate` passes, the final tier runs Pylint through the pinned
+handles broad style and correctness checks, and imports the stricter lint
+policy used by `leynos/episodic`. If Ruff passes, the target runs `interrogate`
+with `--fail-under 100` across `lading` to enforce **100% docstring coverage**.
+If `interrogate` passes, the final tier runs Pylint through the pinned
 `pylint-pypy-shim` tool under PyPy. The final tier is focused on rule families
-that complement Ruff, especially logging format safety, pattern matching checks,
-selected simplification checks, deprecated standard-library usage, file hygiene,
-and design-size limits. [ADR-003](adr/003-three-tier-python-linting.md) records
-the policy decision.
+that complement Ruff, especially logging format safety, pattern matching
+checks, selected simplification checks, deprecated standard-library usage, file
+hygiene, and design-size limits.
+[ADR-003](adr/003-three-tier-python-linting.md) records the policy decision.
 
 The relevant Makefile variables are:
 
@@ -183,34 +183,6 @@ re-declaring the literals, so a change to the recognized section set is made in
 exactly one place.
 
 ## Workspace discovery helpers
-
-
-### Workspace path normalization (`lading/utils/path.py`)
-
-`normalise_workspace_root(value)` is the shared helper that turns a
-user-supplied workspace root into a canonical `Path`. Import it from
-`lading.utils`:
-
-```python
-from lading.utils import normalise_workspace_root
-
-normalise_workspace_root("~/workspace")  # -> absolute, ~ expanded
-normalise_workspace_root(None)           # -> Path.cwd().resolve()
-```
-
-It accepts `Path`, `str`, or `None`. `None` selects the resolved current
-working directory; any other value is expanded with `Path.expanduser` and
-resolved with `Path.resolve(strict=False)`, so `~` is expanded, redundant
-separators and `.`/`..` segments collapse, and the result is always absolute.
-`strict=False` means a non-existent target is permitted rather than raising.
-
-The implementation is pure `pathlib`
-(`Path(value).expanduser().resolve(strict=False)`); it no longer round-trips
-through `plumbum`'s `local.path`. `plumbum` is therefore a dev-only dependency,
-used solely by the end-to-end test helpers. Callers across the codebase rely on
-this helper for consistent path handling, including `lading.cli`,
-`lading.config`, `lading.workspace.metadata.load_cargo_metadata`,
-`lading.commands.bump`, and `lading.commands.publish`.
 
 ### Workspace path normalization (`lading/utils/path.py`)
 
@@ -531,8 +503,8 @@ The index-lookup handling is split across the adapter and decision helper:
   fatal. If the parsed name is not in the publish plan, the failure is fatal
   with guidance to publish or index that dependency first. The helper checks
   projected availability by comparing publish-order positions and raises for
-  out-of-plan, self, or late dependencies. If the parsed name is in the plan
-  and `allow_unpublished_workspace_deps` is set, the helper logs a warning and
+  out-of-plan, self, or late dependencies. If the parsed name is in the plan and
+  `allow_unpublished_workspace_deps` is set, the helper logs a warning and
   continues; otherwise it raises with guidance to enable the dry-run
   unpublished workspace dependency override or follow the staged-publish
   workaround.
@@ -637,7 +609,6 @@ crate name, the numeric exit code, and the `(stdout, stderr)` pair, it returns
 a formatted message that includes all four values. Using a single function for
 message construction keeps the error format consistent across the packaging and
 publish phases and makes snapshot testing straightforward.
-
 
 ### In-process metrics (`lading.utils.metrics`)
 
