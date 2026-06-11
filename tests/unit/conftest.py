@@ -1,4 +1,10 @@
-"""Shared fixtures and helpers for publish unit tests."""
+"""Shared fixtures and helpers for publish and bump unit tests.
+
+Publish tests rely on the workspace/config factory fixtures and the
+``disable_publish_preflight`` stub. Bump tests rely on
+``stub_lockfile_regeneration``, which is scoped to the modules listed in
+``_LOCKFILE_STUB_MODULES``.
+"""
 
 from __future__ import annotations
 
@@ -10,10 +16,24 @@ import pytest
 import tomlkit
 
 from lading import config as config_module
-from lading.commands import publish
+from lading.commands import bump, publish
 from lading.workspace import WorkspaceCrate, WorkspaceDependency, WorkspaceGraph
 
 _ORIGINAL_PREFLIGHT = publish._run_preflight_checks
+
+# These modules drive ``bump.run`` to exercise manifest updates, documentation
+# rewriting, and the rebuild_lockfiles resolution logic -- none of which need
+# Cargo to actually build or regenerate lockfiles. The stub is scoped to them by
+# module name so it suppresses shelling out to Cargo for these manifest- and
+# resolution-focused tests while never shadowing ``test_bump_lockfiles``, which
+# exercises the real ``regenerate_lockfiles`` to verify lockfile-generation
+# mechanics.
+_LOCKFILE_STUB_MODULES = frozenset({
+    "test_bump_manifest_updates",
+    "test_bump_documentation_updates",
+    "test_bump_lockfile_rebuild",
+    "test_bump_rebuild_lockfiles_resolution",
+})
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
@@ -52,6 +72,20 @@ def disable_publish_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
         publish,
         "_run_preflight_checks",
         lambda *_args, **_kwargs: None,
+    )
+
+
+@pytest.fixture(autouse=True)
+def stub_lockfile_regeneration(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Avoid invoking Cargo from manifest-focused bump tests."""
+    if request.module.__name__.rsplit(".", 1)[-1] not in _LOCKFILE_STUB_MODULES:
+        return
+    monkeypatch.setattr(
+        bump.bump_lockfiles,
+        "regenerate_lockfiles",
+        lambda *_args, **_kwargs: (),
     )
 
 

@@ -208,6 +208,12 @@ def _initialize_bump_context(
         if resolved_options.rebuild_lockfiles is None
         else resolved_options.rebuild_lockfiles
     )
+    _log.debug(
+        "rebuild_lockfiles resolution: raw_flag=%r, configured_default=%r, resolved=%r",
+        resolved_options.rebuild_lockfiles,
+        configuration.bump.rebuild_lockfiles,
+        rebuild_lockfiles,
+    )
     base_options = BumpOptions(
         dry_run=resolved_options.dry_run,
         rebuild_lockfiles=rebuild_lockfiles,
