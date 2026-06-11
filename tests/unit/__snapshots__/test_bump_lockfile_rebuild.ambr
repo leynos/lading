@@ -35,6 +35,9 @@
   - crates/beta/Cargo.toml
   '''
 # ---
+# name: test_run_skips_lockfile_rebuild[versions_already_match]
+  'No manifest changes required; all versions already 0.1.0.'
+# ---
 # name: test_run_skips_lockfiles_when_disabled
   '''
   Updated version to 1.2.3 in 3 manifest(s):

@@ -247,7 +247,10 @@ def test_run_uses_loaded_configuration_and_workspace(
     ids=lambda scenario: scenario.test_id,
 )
 def test_run_reports_when_versions_already_match(
-    tmp_path: pathlib.Path, scenario: _NoChangeScenario, monkeypatch: MonkeyPatch
+    tmp_path: pathlib.Path,
+    scenario: _NoChangeScenario,
+    monkeypatch: MonkeyPatch,
+    snapshot: SnapshotAssertion,
 ) -> None:
     """Report the no-op message for both live and dry-run invocations."""
     workspace = _make_workspace(tmp_path)
@@ -270,9 +273,7 @@ def test_run_reports_when_versions_already_match(
             workspace=workspace,
         ),
     )
-    assert message == scenario.expected_message, (
-        f"unexpected no-op message for {scenario.test_id!r}"
-    )
+    assert message == snapshot
 
 
 def test_run_dry_run_reports_changes_without_modifying_files(

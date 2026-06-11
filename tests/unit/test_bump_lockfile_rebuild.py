@@ -240,9 +240,4 @@ def test_run_skips_lockfile_rebuild(
         ),
     )
 
-    if scenario.expected_message is not None:
-        assert message == scenario.expected_message, (
-            f"unexpected bump output for {scenario.test_id!r}"
-        )
-    else:
-        assert message == snapshot
+    assert message == snapshot

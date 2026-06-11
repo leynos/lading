@@ -7,6 +7,12 @@
   - crates/beta/Cargo.toml
   '''
 # ---
+# name: test_run_reports_when_versions_already_match[dry-run]
+  'Dry run; no manifest changes required; all versions already 0.1.0.'
+# ---
+# name: test_run_reports_when_versions_already_match[live]
+  'No manifest changes required; all versions already 0.1.0.'
+# ---
 # name: test_run_updates_workspace_and_members
   '''
   Updated version to 1.2.3 in 3 manifest(s):
