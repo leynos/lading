@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import dataclasses as dc
 import logging
-import threading
 import typing as typ
 from pathlib import Path
 
@@ -18,6 +17,9 @@ if typ.TYPE_CHECKING:
     import collections.abc as cabc
 
 __all__ = [
+    "CARGO_PACKAGE",
+    "CARGO_PUBLISH",
+    "CARGO_PUBLISH_DRY_RUN",
     "INDEX_MISSING_STDERR_BETA",
     "INDEX_MISSING_STDERR_EXTERNAL",
     "INDEX_MISSING_STDERR_UNPARSEABLE",
@@ -32,12 +34,19 @@ __all__ = [
     "make_dependency",
     "make_dependency_chain",
     "make_failing_runner",
+    "make_n_crate_chain",
     "make_preflight_config",
     "make_workspace",
     "plan_with_crates",
     "prepare_staging_root",
     "publish_plan_and_prep",
 ]
+
+# Cargo command tuples shared by the publish ordering tests. Centralised here so
+# expectations track changes to the underlying invocations in one place.
+CARGO_PACKAGE = ("cargo", "package", "--allow-dirty")
+CARGO_PUBLISH = ("cargo", "publish", "--allow-dirty")
+CARGO_PUBLISH_DRY_RUN = ("cargo", "publish", "--allow-dirty", "--dry-run")
 
 INDEX_MISSING_STDERR_BETA = (
     "error: failed to prepare local package for uploading\n"
@@ -167,6 +176,40 @@ def make_dependency_chain(
     return alpha, beta, gamma
 
 
+def make_n_crate_chain(root: Path, count: int) -> tuple[WorkspaceCrate, ...]:
+    """Return ``count`` crates wired as a linear dependency chain.
+
+    Parameters
+    ----------
+    root : Path
+        Root directory beneath which the crate directories are created.
+    count : int
+        Number of crates to create. Must be at least ``1``.
+
+    Returns
+    -------
+    tuple[WorkspaceCrate, ...]
+        Crates wired as a linear dependency chain. The first crate has no
+        dependencies, and each subsequent crate depends on the one before it.
+
+    Examples
+    --------
+    >>> crate_0, crate_1, crate_2 = make_n_crate_chain(root, 3)
+    >>> # crate_0 <- crate_1 <- crate_2: crate_1 depends on crate_0 and
+    >>> # crate_2 depends on crate_1.
+
+    """
+    if count < 1:
+        message = "count must be >= 1"
+        raise ValueError(message)
+    crates: list[WorkspaceCrate] = []
+    for index in range(count):
+        name = f"crate_{index}"
+        dependencies = () if index == 0 else (make_dependency(f"crate_{index - 1}"),)
+        crates.append(make_crate(root, name, dependencies=dependencies))
+    return tuple(crates)
+
+
 def plan_with_crates(
     tmp_path: Path,
     crates: tuple[WorkspaceCrate, ...],
@@ -246,13 +289,11 @@ class CallTrackingRunner:
     def __init__(self) -> None:
         """Initialise the runner with an empty call log."""
         self._calls: list[tuple[tuple[str, ...], Path | None]] = []
-        self._calls_lock = threading.Lock()
 
     @property
     def calls(self) -> list[tuple[tuple[str, ...], Path | None]]:
         """Return a stable snapshot of recorded invocations."""
-        with self._calls_lock:
-            return list(self._calls)
+        return list(self._calls)
 
     def __call__(
         self,
@@ -263,8 +304,7 @@ class CallTrackingRunner:
     ) -> tuple[int, str, str]:
         """Record the invocation and return a successful result."""
         del env
-        with self._calls_lock:
-            self._calls.append((tuple(command), cwd))
+        self._calls.append((tuple(command), cwd))
         return 0, "", ""
 
 
@@ -304,6 +344,7 @@ def make_failing_runner(
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
+        """Execute the command and return a failing result."""
         del command, cwd, env
         return 1, stdout, stderr
 
