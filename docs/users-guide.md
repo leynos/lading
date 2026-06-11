@@ -295,8 +295,8 @@ or run the relevant Cargo command yourself before committing the bump.
 
 ### Observability
 
-When `lading publish` or `lading package` runs, a structured JSON summary may
-appear in the log output at `INFO` level just before the process exits:
+When `lading publish` runs, a structured JSON summary may appear in the log
+output at `INFO` level just before the process exits:
 
 ```text
 lading metrics summary: [{"metric": "publish.index_lookup_downgrade", "labels": {"missing_crate": "...", "subcommand": "..."}, "value": 1}]

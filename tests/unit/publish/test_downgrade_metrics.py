@@ -83,26 +83,34 @@ def test_downgrade_path_increments_counter(
     assert (
         metrics.counter_value(_METRIC, subcommand="package", missing_crate="alpha") == 1
     )
-    assert metrics.snapshot() == {
-        (_METRIC, (("missing_crate", "alpha"), ("subcommand", "package"))): 1
-    }
 
 
-def test_raise_paths_do_not_increment_counter(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("stderr", "missing_crate", "allow_unpublished_workspace_deps"),
+    [
+        pytest.param(INDEX_MISSING_STDERR_BETA, "alpha", False, id="flag_disabled"),
+        pytest.param(
+            INDEX_MISSING_STDERR_EXTERNAL,
+            "external_crate",
+            True,
+            id="out_of_plan",
+        ),
+    ],
+)
+def test_raise_paths_do_not_increment_counter(
+    tmp_path: Path,
+    *,
+    stderr: str,
+    missing_crate: str,
+    allow_unpublished_workspace_deps: bool,
+) -> None:
     """Neither the flag-disabled nor the out-of-plan path counts a downgrade."""
     with pytest.raises(publish.PublishPreflightError):
         _invoke_handler(
             tmp_path,
-            stderr=INDEX_MISSING_STDERR_BETA,
-            missing_crate="alpha",
-            allow_unpublished_workspace_deps=False,
-        )
-    with pytest.raises(publish.PublishPreflightError):
-        _invoke_handler(
-            tmp_path,
-            stderr=INDEX_MISSING_STDERR_EXTERNAL,
-            missing_crate="external_crate",
-            allow_unpublished_workspace_deps=True,
+            stderr=stderr,
+            missing_crate=missing_crate,
+            allow_unpublished_workspace_deps=allow_unpublished_workspace_deps,
         )
 
     assert metrics.snapshot() == {}

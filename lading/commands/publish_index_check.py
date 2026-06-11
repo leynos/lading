@@ -229,16 +229,34 @@ def _canonical_crate_name(name: str) -> str:
     return name.replace("-", "_")
 
 
+class _DependencyPlacement(typ.NamedTuple):
+    """Resolved publish-order placement for a downgraded index-lookup failure.
+
+    Attributes
+    ----------
+    current_index:
+        Publish-order index of the crate whose cargo invocation failed.
+    missing_index:
+        Publish-order index of the missing sibling dependency.
+    missing_canonical_name:
+        Canonicalised (underscore-only) name of the missing dependency.
+    """
+
+    current_index: int
+    missing_index: int
+    missing_canonical_name: str
+
+
 def _validate_dependency_placement(
     context: _IndexMissingVersionFailure,
     handling: _IndexMissingVersionHandling,
     missing_name: str,
-) -> tuple[int, int, str]:
+) -> _DependencyPlacement:
     """Resolve both crate indexes and raise on all fatal placement conditions.
 
-    Returns ``(current_index, missing_index, missing_canonical_name)`` when
-    the missing dependency is in the plan and is ordered before the current
-    crate. Raises the context exception class for every other case.
+    Returns a :class:`_DependencyPlacement` when the missing dependency is in
+    the plan and is ordered before the current crate. Raises the context
+    exception class for every other case.
     """
     publishable_name_indexes = {
         _canonical_crate_name(entry.name): index
@@ -275,7 +293,7 @@ def _validate_dependency_placement(
         _raise_self_dependency(context, missing_name=missing_name)
     if missing_index > current_index:
         _raise_out_of_order_dependency(context, missing_name=missing_name)
-    return current_index, missing_index, missing_canonical_name
+    return _DependencyPlacement(current_index, missing_index, missing_canonical_name)
 
 
 def _emit_downgrade_success(
@@ -283,16 +301,15 @@ def _emit_downgrade_success(
     failure: CargoIndexLookupFailure,
     *,
     missing_name: str,
-    placement: tuple[int, int, str],
+    placement: _DependencyPlacement,
 ) -> None:
     """Increment the downgrade metric and emit the associated log messages.
 
     Called only when the missing dependency is in the publish plan and the
     caller has opted into the unpublished workspace dependency override.
-    ``placement`` is the ``_validate_dependency_placement`` result
-    ``(current_index, missing_index, missing_canonical_name)``.
+    ``placement`` is the :class:`_DependencyPlacement` resolved by
+    ``_validate_dependency_placement``.
     """
-    current_index, missing_index, missing_canonical_name = placement
     metrics.increment_counter(
         INDEX_LOOKUP_DOWNGRADE_METRIC,
         subcommand=failure.subcommand,
@@ -309,7 +326,7 @@ def _emit_downgrade_success(
     handling.logger.debug(
         "canonicalised dependency name %r -> %r",
         missing_name,
-        missing_canonical_name,
+        placement.missing_canonical_name,
     )
     handling.logger.info(
         "Downgraded cargo %s failure for crate %s (index %d) because "
@@ -317,9 +334,9 @@ def _emit_downgrade_success(
         "unpublished workspace dependency override is enabled",
         failure.subcommand,
         failure.crate_name,
-        current_index,
+        placement.current_index,
         missing_name,
-        missing_index,
+        placement.missing_index,
     )
 
 
