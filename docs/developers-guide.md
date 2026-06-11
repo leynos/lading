@@ -99,8 +99,9 @@ publish runs with stub mode enabled.
 ## Property-based testing
 
 [Hypothesis](https://hypothesis.readthedocs.io/) is a development dependency
-used for property-based tests across the publish command test suite. Add
-Hypothesis to new test modules with:
+used for property-based tests across the test suite, including the publish,
+bump, lockfile, and workspace-utility modules. Add Hypothesis to new test
+modules with:
 
 ```python
 from hypothesis import HealthCheck, given, settings
