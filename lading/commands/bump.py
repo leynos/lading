@@ -432,6 +432,8 @@ def _format_result_message(
         for lockfile_path in changes.lockfiles
     )
     return "\n".join([header, *formatted_paths])
+
+
 def _determine_package_selectors(
     crate_name: str,
     excluded: cabc.Collection[str],
@@ -528,12 +530,11 @@ def _dependency_sections_for_crate(
     """Return dependency names grouped by section for ``crate``."""
     if not crate.dependencies:
         return {}
-    targets = {name for name in updated_crates if name}
-    if not targets:
+    if not updated_crates:
         return {}
     sections: dict[str, set[str]] = {}
     for dependency in crate.dependencies:
-        if dependency.name not in targets:
+        if dependency.name not in updated_crates:
             continue
         section = _DEPENDENCY_SECTION_BY_KIND.get(dependency.kind, _NORMAL_SECTION)
         # ``manifest_name`` preserves the dependency key used in the manifest.
