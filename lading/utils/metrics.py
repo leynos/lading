@@ -91,9 +91,10 @@ def register_summary_atexit() -> None:
     side effect of importing this module. Repeated calls register the hook at
     most once.
     """
-    if _summary_hook_registered.is_set():
-        return
-    _summary_hook_registered.set()
+    with _LOCK:
+        if _summary_hook_registered.is_set():
+            return
+        _summary_hook_registered.set()
     atexit.register(emit_summary)
 
 
