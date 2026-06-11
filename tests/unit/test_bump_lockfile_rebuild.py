@@ -25,7 +25,6 @@ class _LockfileSkipScenario:
     version: str
     rebuild_lockfiles: bool
     fail_message: str
-    expected_message: str | None
 
 
 def test_run_rebuilds_lockfiles_when_enabled(
@@ -195,7 +194,6 @@ def test_run_reports_lockfiles_in_dry_run(
             version="1.2.3",
             rebuild_lockfiles=False,
             fail_message="lockfile regeneration should be skipped",
-            expected_message=None,
         ),
         _LockfileSkipScenario(
             test_id="versions_already_match",
@@ -203,9 +201,6 @@ def test_run_reports_lockfiles_in_dry_run(
             rebuild_lockfiles=True,
             fail_message=(
                 "lockfiles should not be regenerated without manifest changes"
-            ),
-            expected_message=(
-                "No manifest changes required; all versions already 0.1.0."
             ),
         ),
     ],
