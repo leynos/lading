@@ -132,7 +132,7 @@ The publish unit-test conftest exports the following shared helpers:
 | `prepare_staging_root(plan, base_dir)` | Create staged crate directories matching a plan                                       |
 
 `make_n_crate_chain` raises `ValueError` when `count < 1`. Use it in
-parametrised and property-based tests that must exercise arbitrary chain sizes.
+parametrized and property-based tests that must exercise arbitrary chain sizes.
 
 `CallTrackingRunner` is a callable class. Inject it as `command_runner` in
 `PublishOptions`. After the run, inspect `.calls` for the ordered list of
