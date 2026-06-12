@@ -72,6 +72,8 @@ class BumpOptions:
         default_factory=lambda: types.MappingProxyType({})
     )
     include_workspace_sections: bool = False
+
+
 @dc.dataclass(frozen=True, slots=True)
 class _BumpContext:
     """Initialisation context for bump operations."""
@@ -83,6 +85,8 @@ class _BumpContext:
     workspace_manifest: Path
     excluded: frozenset[str]
     updated_crate_names: frozenset[str]
+
+
 def run(
     workspace_root: Path | str,
     target_version: str,
