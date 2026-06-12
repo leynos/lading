@@ -18,7 +18,42 @@ from .conftest import ORIGINAL_PREFLIGHT, make_config, make_preflight_config
 if typ.TYPE_CHECKING:
     from syrupy.assertion import SnapshotAssertion
 
+    from lading.config import LadingConfig
     from lading.runtime import CommandRunner
+
+
+def test_preflight_wrapper_loads_configuration_when_omitted(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Omitting ``configuration`` resolves it before delegating to canonical."""
+    monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
+    configuration = make_config()
+    monkeypatch.setattr(
+        publish.config_module, "current_configuration", lambda: configuration
+    )
+    recorded: dict[str, typ.Any] = {}
+
+    def recording_preflight(
+        workspace_root: Path,
+        *,
+        allow_dirty: bool,
+        configuration: LadingConfig,
+        runner: CommandRunner | None = None,
+    ) -> None:
+        recorded["workspace_root"] = workspace_root
+        recorded["allow_dirty"] = allow_dirty
+        recorded["configuration"] = configuration
+
+    monkeypatch.setattr(publish_preflight, "_run_preflight_checks", recording_preflight)
+
+    root = tmp_path / "workspace"
+    root.mkdir()
+
+    publish._run_preflight_checks(root, allow_dirty=True)
+
+    assert recorded["configuration"] is configuration
+    assert recorded["workspace_root"] == root
+    assert recorded["allow_dirty"] is True
 
 
 def test_preflight_checks_remove_all_targets_for_unit_only(
