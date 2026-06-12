@@ -95,7 +95,7 @@ def register_summary_atexit() -> None:
         if _summary_hook_registered.is_set():
             return
         _summary_hook_registered.set()
-    atexit.register(emit_summary)
+        atexit.register(emit_summary)
 
 
 __all__ = [

@@ -298,7 +298,7 @@ or run the relevant Cargo command yourself before committing the bump.
 When `lading publish` runs, a structured JSON summary may appear in the log
 output at `INFO` level just before the process exits:
 
-```text
+```plaintext
 lading metrics summary: [{"metric": "publish.index_lookup_downgrade", "labels": {"missing_crate": "...", "subcommand": "..."}, "value": 1}]
 ```
 
@@ -308,7 +308,7 @@ entirely when no metrics were recorded (quiet runs stay quiet).
 
 #### `publish.index_lookup_downgrade`
 
-Incremented once per crate each time a crates.io index-lookup failure for a
+Incremented on each downgrade event when a crates.io index-lookup failure for a
 sibling workspace dependency is downgraded to a warning because
 `allow_unpublished_workspace_deps` is enabled. Labels:
 
