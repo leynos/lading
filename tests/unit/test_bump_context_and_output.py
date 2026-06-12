@@ -236,7 +236,8 @@ def test_result_message_grammar_and_path_rendering(
         changes, "1.2.3", dry_run=False, workspace_root=root
     )
 
-    if not (manifests or documents or readmes or lockfiles):
+    has_no_changes = not any((manifests, documents, readmes, lockfiles))
+    if has_no_changes:
         assert message == "No manifest changes required; all versions already 1.2.3."
         return
 
