@@ -22,6 +22,21 @@ if typ.TYPE_CHECKING:
     from lading.runtime import CommandRunner
 
 
+def test_publish_preflight_aliases_are_wired_correctly() -> None:
+    """Backwards-compatible preflight names keep resolving into publish_preflight.
+
+    ``_preflight_argument_sets`` is a bare re-export, so identity must hold.
+    ``_run_preflight_checks`` is intentionally a thin wrapper (issue #96) that
+    preserves the optional-``configuration`` contract, so it must *not* be the
+    canonical object; its delegation is pinned by
+    ``test_preflight_wrapper_loads_configuration_when_omitted``.
+    """
+    assert (
+        publish._preflight_argument_sets is publish_preflight._preflight_argument_sets
+    )
+    assert publish._run_preflight_checks is not publish_preflight._run_preflight_checks
+
+
 def test_preflight_wrapper_loads_configuration_when_omitted(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
