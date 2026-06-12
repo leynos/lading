@@ -558,38 +558,30 @@ def _expected_description(categories: list[str]) -> str:
     return f"{', '.join(categories[:-1])}, and {categories[-1]}"
 
 
-def _build_expected_body(
-    root: Path,
-    manifests: tuple[Path, ...],
-    documents: tuple[Path, ...],
-    readmes: tuple[Path, ...],
-    lockfiles: tuple[Path, ...],
-) -> list[str]:
+def _build_expected_body(root: Path, changes: bump_output.BumpChanges) -> list[str]:
     """Return the expected ``"- <rel_path>"`` body lines in render order."""
     return [
-        *(f"- {path.relative_to(root)}" for path in manifests),
-        *(f"- {path.relative_to(root)} (documentation)" for path in documents),
-        *(f"- {path.relative_to(root)} (readme)" for path in readmes),
-        *(f"- {path.relative_to(root)} (lockfile)" for path in lockfiles),
+        *(f"- {path.relative_to(root)}" for path in changes.manifests),
+        *(f"- {path.relative_to(root)} (documentation)" for path in changes.documents),
+        *(
+            f"- {path.relative_to(root)} (readme)"
+            for path in changes.transposed_readmes
+        ),
+        *(f"- {path.relative_to(root)} (lockfile)" for path in changes.lockfiles),
     ]
 
 
-def _build_expected_categories(
-    manifests: tuple[Path, ...],
-    documents: tuple[Path, ...],
-    readmes: tuple[Path, ...],
-    lockfiles: tuple[Path, ...],
-) -> list[str]:
+def _build_expected_categories(changes: bump_output.BumpChanges) -> list[str]:
     """Return ordered category descriptions for the present change sets."""
     categories: list[str] = []
-    if manifests:
-        categories.append(f"{len(manifests)} manifest(s)")
-    if documents:
-        categories.append(f"{len(documents)} documentation file(s)")
-    if readmes:
-        categories.append(f"{len(readmes)} readme file(s)")
-    if lockfiles:
-        categories.append(f"{len(lockfiles)} lockfile(s)")
+    if changes.manifests:
+        categories.append(f"{len(changes.manifests)} manifest(s)")
+    if changes.documents:
+        categories.append(f"{len(changes.documents)} documentation file(s)")
+    if changes.transposed_readmes:
+        categories.append(f"{len(changes.transposed_readmes)} readme file(s)")
+    if changes.lockfiles:
+        categories.append(f"{len(changes.lockfiles)} lockfile(s)")
     return categories
 
 
@@ -627,11 +619,9 @@ def test_result_message_grammar_and_path_rendering(
         return
 
     lines = message.splitlines()
-    assert lines[1:] == _build_expected_body(
-        root, manifests, documents, readmes, lockfiles
-    )
+    assert lines[1:] == _build_expected_body(root, changes)
 
-    categories = _build_expected_categories(manifests, documents, readmes, lockfiles)
+    categories = _build_expected_categories(changes)
     expected_header = (
         f"Updated version to 1.2.3 in {_expected_description(categories)}:"
     )
