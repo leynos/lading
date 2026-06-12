@@ -97,7 +97,8 @@ _format_plan = format_plan
 # canonical implementations; existing tests patch and call them through
 # this module, so the names must keep resolving here. Plain assignments
 # (not imports) keep the re-export intent visible to linters.
-_run_preflight_checks = _publish_preflight._run_preflight_checks
+# (``_run_preflight_checks`` is the exception: it is a thin wrapper defined
+# below that preserves the historical optional-``configuration`` contract.)
 _preflight_argument_sets = _publish_preflight._preflight_argument_sets
 _CargoPreflightOptions = _publish_preflight._CargoPreflightOptions
 _apply_compiletest_externs = _publish_preflight._apply_compiletest_externs
@@ -576,6 +577,28 @@ def _ensure_configuration(
         return config_module.current_configuration()
     except config_module.ConfigurationNotLoadedError:
         return config_module.load_configuration(workspace_root)
+
+
+def _run_preflight_checks(
+    workspace_root: Path,
+    *,
+    allow_dirty: bool,
+    configuration: LadingConfig | None = None,
+    runner: CommandRunner | None = None,
+) -> None:
+    """Run publish pre-flight checks, resolving configuration when absent.
+
+    Thin wrapper over :func:`publish_preflight._run_preflight_checks` that
+    preserves the historical optional-``configuration`` contract: callers may
+    omit ``configuration`` and have it loaded from the active context or the
+    workspace before the canonical implementation runs.
+    """
+    _publish_preflight._run_preflight_checks(
+        workspace_root,
+        allow_dirty=allow_dirty,
+        configuration=_ensure_configuration(configuration, workspace_root),
+        runner=runner,
+    )
 
 
 def _ensure_workspace(
