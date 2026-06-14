@@ -614,7 +614,7 @@ def test_result_message_grammar_and_path_rendering(
         changes, "1.2.3", dry_run=False, workspace_root=root
     )
 
-    if not bump_output._has_changes(changes):
+    if not any((manifests, documents, readmes, lockfiles)):
         assert message == "No manifest changes required; all versions already 1.2.3."
         return
 
@@ -652,3 +652,17 @@ def test_format_result_message_four_categories_snapshot(
 
     assert snapshot(name="live") == live.splitlines()
     assert snapshot(name="dry_run") == dry.splitlines()
+
+
+def test_format_result_message_lockfile_only(tmp_path: Path) -> None:
+    """A lockfile-only BumpChanges renders correctly (not 'no changes')."""
+    root = tmp_path
+    lockfile = root / "Cargo.lock"
+    changes = bump_output.BumpChanges(lockfiles=(lockfile,))
+    message = bump_output._format_result_message(
+        changes, "1.2.3", dry_run=False, workspace_root=root
+    )
+    assert message != "No manifest changes required; all versions already 1.2.3."
+    lines = message.splitlines()
+    assert lines[0] == "Updated version to 1.2.3 in 1 lockfile(s):"
+    assert lines[1] == f"- {lockfile.relative_to(root)} (lockfile)"
