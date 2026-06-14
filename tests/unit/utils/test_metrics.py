@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import collections.abc as cabc
+import json
 import logging
 import operator
 import threading
@@ -159,6 +160,35 @@ def test_emit_summary_is_silent_without_metrics(
     metrics.emit_summary()
 
     assert not caplog.records
+
+
+def test_observe_duration_aggregates() -> None:
+    """Duration observations aggregate count and total seconds."""
+    metrics.observe_duration("demo.duration", 0.25, operation="refresh")
+    metrics.observe_duration("demo.duration", 0.5, operation="refresh")
+
+    stats = metrics.duration_stats("demo.duration", operation="refresh")
+    assert stats.count == 2
+    assert stats.total_seconds == pytest.approx(0.75)
+    assert metrics.duration_stats("demo.duration", operation="other").count == 0
+
+
+def test_emit_summary_includes_durations(caplog: LogCaptureFixture) -> None:
+    """The summary payload renders duration aggregates alongside counters."""
+    caplog.set_level(logging.INFO, logger="lading.utils.metrics")
+    metrics.observe_duration("demo.duration", 0.25)
+
+    metrics.emit_summary()
+
+    payload = json.loads(caplog.records[-1].getMessage().partition(": ")[2])
+    assert payload == [
+        {
+            "metric": "demo.duration",
+            "labels": {},
+            "count": 1,
+            "total_seconds": 0.25,
+        }
+    ]
 
 
 def test_register_summary_atexit_registers_once(

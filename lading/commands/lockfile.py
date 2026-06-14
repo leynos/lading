@@ -31,10 +31,12 @@ from __future__ import annotations
 import collections.abc as cabc
 import dataclasses as dc
 import logging
+import time
 import typing as typ
 from pathlib import Path
 
 from lading.exceptions import LadingError
+from lading.utils import metrics
 from lading.utils.process import append_detail, command_detail, with_detail
 
 if typ.TYPE_CHECKING:
@@ -42,6 +44,13 @@ if typ.TYPE_CHECKING:
 
 LOGGER = logging.getLogger(__name__)
 _ManifestExists = cabc.Callable[[Path], bool]
+
+# Metric names (issue #91); documented in docs/developers-guide.md.
+DISCOVERED_LOCKFILES_METRIC = "lockfile.discovered"
+REFRESH_METRIC = "lockfile.refresh"
+REFRESH_DURATION_METRIC = "lockfile.refresh.duration"
+VALIDATE_METRIC = "lockfile.validate"
+VALIDATE_DURATION_METRIC = "lockfile.validate.duration"
 
 
 class LockfileRefreshError(LadingError):
@@ -153,6 +162,7 @@ def discover_tracked_lockfiles(
     if error_result is not None:
         return error_result
     lockfiles = _lockfiles_with_manifests(stdout, workspace_root, manifest_exists)
+    metrics.increment_counter(DISCOVERED_LOCKFILES_METRIC, amount=len(lockfiles))
     LOGGER.info(
         "Discovered %d tracked lockfile(s) with adjacent manifests in %s",
         len(lockfiles),
@@ -189,13 +199,17 @@ def refresh_lockfile(
     """
     lockfile_path = manifest_path.parent / "Cargo.lock"
     LOGGER.info("Refreshing %s", lockfile_path)
+    started_at = time.perf_counter()
     exit_code, stdout, stderr = runner(
         ("cargo", "generate-lockfile", "--manifest-path", str(manifest_path)),
         cwd=manifest_path.parent,
     )
+    metrics.observe_duration(REFRESH_DURATION_METRIC, time.perf_counter() - started_at)
     if exit_code != 0:
+        metrics.increment_counter(REFRESH_METRIC, outcome="failure")
         message = with_detail(f"Failed to refresh {lockfile_path}", stdout, stderr)
         raise LockfileRefreshError(message)
+    metrics.increment_counter(REFRESH_METRIC, outcome="success")
     LOGGER.info("Refreshed %s", lockfile_path)
     return lockfile_path
 
@@ -221,6 +235,7 @@ def validate_lockfile_freshness(
         because Cargo says it needs updating under ``--locked``, or failed for
         another reason.
     """
+    started_at = time.perf_counter()
     exit_code, stdout, stderr = runner(
         (
             "cargo",
@@ -232,12 +247,14 @@ def validate_lockfile_freshness(
         ),
         cwd=manifest_path.parent,
     )
+    metrics.observe_duration(VALIDATE_DURATION_METRIC, time.perf_counter() - started_at)
     detail = command_detail(stdout, stderr)
     is_fresh = exit_code == 0
     is_stale = _is_lockfile_stale_detail(detail)
     state = "fresh"
     if not is_fresh:
         state = "stale" if is_stale else "failed"
+    metrics.increment_counter(VALIDATE_METRIC, outcome=state)
     LOGGER.info(
         "Validated lockfile freshness for %s: %s",
         manifest_path,

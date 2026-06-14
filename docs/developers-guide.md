@@ -626,6 +626,15 @@ Defined metrics:
 | Metric                           | Labels                        | Incremented when                                                                                                      |
 | -------------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | `publish.index_lookup_downgrade` | `subcommand`, `missing_crate` | `_handle_index_missing_version` downgrades a crates.io index-lookup failure to a warning (in-plan, override enabled). |
+| `lockfile.discovered`            | (none)                        | Incremented by the number of tracked lockfiles each `discover_tracked_lockfiles` call returns.                        |
+| `lockfile.refresh`               | `outcome`                     | One increment per `refresh_lockfile` invocation; `outcome` is `success` or `failure`.                                 |
+| `lockfile.refresh.duration`      | (none)                        | Duration observation around each `cargo generate-lockfile` invocation.                                                |
+| `lockfile.validate`              | `outcome`                     | One increment per `validate_lockfile_freshness` call; `outcome` is `fresh`, `stale`, or `failed`.                     |
+| `lockfile.validate.duration`     | (none)                        | Duration observation around each `cargo metadata --locked` probe.                                                     |
+
+Duration metrics aggregate a count and total seconds per label set via
+`observe_duration` / `duration_stats` and appear in the exit summary with
+`count` and `total_seconds` fields.
 
 ### Command runners (`lading.runtime`)
 
