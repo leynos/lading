@@ -295,8 +295,10 @@ or run the relevant Cargo command yourself before committing the bump.
 
 ### Observability
 
-When `lading publish` runs, a structured JSON summary may appear in the log
-output at `INFO` level just before the process exits:
+When `lading` runs, a structured JSON summary may appear in the log output at
+`INFO` level just before the process exits. The flush is process-wide — any
+command can emit it — and reports whichever metrics that run recorded. For
+example, a `publish` run that downgraded an index-lookup failure emits:
 
 ```plaintext
 lading metrics summary: [{"metric": "publish.index_lookup_downgrade", "labels": {"missing_crate": "...", "subcommand": "..."}, "value": 1}]

@@ -86,13 +86,20 @@ def test_downgrade_path_increments_counter(
 
 
 @pytest.mark.parametrize(
-    ("stderr", "missing_crate", "allow_unpublished_workspace_deps"),
+    ("stderr", "missing_crate", "allow_unpublished_workspace_deps", "match"),
     [
-        pytest.param(INDEX_MISSING_STDERR_BETA, "alpha", False, id="flag_disabled"),
+        pytest.param(
+            INDEX_MISSING_STDERR_BETA,
+            "alpha",
+            False,
+            "scheduled in this publish run but is not yet on crates.io",
+            id="flag_disabled",
+        ),
         pytest.param(
             INDEX_MISSING_STDERR_EXTERNAL,
             "external_crate",
             True,
+            "is not part of the current publish plan",
             id="out_of_plan",
         ),
     ],
@@ -103,9 +110,10 @@ def test_raise_paths_do_not_increment_counter(
     stderr: str,
     missing_crate: str,
     allow_unpublished_workspace_deps: bool,
+    match: str,
 ) -> None:
     """Neither the flag-disabled nor the out-of-plan path counts a downgrade."""
-    with pytest.raises(publish.PublishPreflightError):
+    with pytest.raises(publish.PublishPreflightError, match=match):
         _invoke_handler(
             tmp_path,
             stderr=stderr,

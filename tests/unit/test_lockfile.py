@@ -38,8 +38,9 @@ _hypothesis_stdout: st.SearchStrategy[str] = st.lists(
 _HYPOTHESIS_WORKSPACE = Path("/repo")
 
 
+@pytest.mark.usefixtures("_metrics_registry")
 def test_discover_tracked_lockfiles_returns_empty_result(tmp_path: Path) -> None:
-    """Empty git output produces no lockfiles."""
+    """Empty git output produces no lockfiles and records no discovery metric."""
     (tmp_path / "Cargo.lock").write_text("", encoding="utf-8")
 
     def runner(
@@ -58,6 +59,9 @@ def test_discover_tracked_lockfiles_returns_empty_result(tmp_path: Path) -> None
         "git repo with no tracked lockfiles should return an empty tuple; "
         f"got {result!r}"
     )
+    # A zero-count discovery must not record a counter, so quiet runs stay quiet.
+    assert metrics.counter_value(lockfile.DISCOVERED_LOCKFILES_METRIC) == 0
+    assert metrics.snapshot() == {}
 
 
 def test_discover_tracked_lockfiles_filters_missing_manifests(tmp_path: Path) -> None:

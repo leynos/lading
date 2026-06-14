@@ -162,7 +162,10 @@ def discover_tracked_lockfiles(
     if error_result is not None:
         return error_result
     lockfiles = _lockfiles_with_manifests(stdout, workspace_root, manifest_exists)
-    metrics.increment_counter(DISCOVERED_LOCKFILES_METRIC, amount=len(lockfiles))
+    if lockfiles:
+        # Skip a zero-amount increment: it would create a 0-valued counter key
+        # and force an otherwise-silent exit summary (quiet runs stay quiet).
+        metrics.increment_counter(DISCOVERED_LOCKFILES_METRIC, amount=len(lockfiles))
     LOGGER.info(
         "Discovered %d tracked lockfile(s) with adjacent manifests in %s",
         len(lockfiles),
