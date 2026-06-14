@@ -2,6 +2,11 @@ MDLINT ?= $(shell which markdownlint)
 NIXIE ?= $(shell which nixie)
 MDFORMAT_ALL ?= $(shell which mdformat-all)
 UV ?= $(shell command -v uv 2>/dev/null || printf '%s/.local/bin/uv' "$$HOME")
+# Pin Ruff so `make` invokes the same version as the `ruff==` dev dependency
+# in pyproject.toml and the `uv tool install ruff==` step in
+# .github/workflows/ci.yml. Bump all three sites together: a version mismatch
+# causes version-skew lint failures because rule sets differ between Ruff
+# releases.
 RUFF_VERSION ?= 0.15.12
 RUFF ?= $(UV) tool run --from ruff==$(RUFF_VERSION) ruff
 TOOLS = $(MDFORMAT_ALL) ty $(MDLINT) $(NIXIE) $(UV)

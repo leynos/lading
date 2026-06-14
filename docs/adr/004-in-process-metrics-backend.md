@@ -4,7 +4,11 @@
 
 Accepted.
 
-## Context
+## Date
+
+2026-06-14
+
+## Context and problem statement
 
 `lading` needs to count operational events so maintainers can see how often a
 release relied on a particular code path — for example, how often a crates.io
