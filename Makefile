@@ -2,7 +2,9 @@ MDLINT ?= $(shell which markdownlint)
 NIXIE ?= $(shell which nixie)
 MDFORMAT_ALL ?= $(shell which mdformat-all)
 UV ?= $(shell command -v uv 2>/dev/null || printf '%s/.local/bin/uv' "$$HOME")
-TOOLS = $(MDFORMAT_ALL) ruff ty $(MDLINT) $(NIXIE) $(UV)
+RUFF_VERSION ?= 0.15.12
+RUFF ?= $(UV) tool run --from ruff==$(RUFF_VERSION) ruff
+TOOLS = $(MDFORMAT_ALL) ty $(MDLINT) $(NIXIE) $(UV)
 PY_SOURCES := $(sort $(shell find lading scripts -type f -name '*.py' -print))
 VENV_TOOLS = interrogate pytest
 PYLINT_PYTHON ?= pypy
@@ -59,17 +61,17 @@ $(VENV_TOOLS): build ## Verify required CLI tools in venv
 	$(call ensure_tool_venv,$@)
 endif
 
-fmt: ruff $(MDFORMAT_ALL) ## Format sources
-	ruff format
-	ruff check --select I --fix
+fmt: $(UV) $(MDFORMAT_ALL) ## Format sources
+	$(RUFF) format
+	$(RUFF) check --select I --fix
 	$(MDFORMAT_ALL)
 
-check-fmt: ruff ## Verify formatting
-	ruff format --check
+check-fmt: $(UV) ## Verify formatting
+	$(RUFF) format --check
 	# mdformat-all doesn't currently do checking
 
-lint: ruff build $(UV) interrogate ## Run linters
-	ruff check
+lint: build $(UV) interrogate ## Run linters
+	$(RUFF) check
 	$(UV) run interrogate --fail-under 100 lading
 	$(PYLINT) $(PYLINT_TARGETS)
 
