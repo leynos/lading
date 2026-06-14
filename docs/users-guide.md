@@ -90,6 +90,12 @@ adjacent `Cargo.toml`. Refreshed lockfiles are listed in the command output
 with a `(lockfile)` suffix. In dry-run mode the lockfiles are listed but not
 modified.
 
+Where a member crate sets `readme.workspace = true`, `lading bump` also adopts
+the workspace `README.md` into that crate's directory and rewrites relative
+Markdown links so they still resolve from the crate directory. Adopted README
+files are listed in the command output with a `(readme)` suffix. In dry-run
+mode the files are listed but not written.
+
 If `bump.documentation.globs` is configured, `lading` also searches those
 Markdown files for TOML code fences and updates version values that refer to
 workspace crates.
