@@ -620,6 +620,9 @@ avoids exporter dependencies such as `prometheus_client` or `statsd`: a lading
 invocation is a short-lived CLI process whose logs are already aggregated, so
 the summary line is the operational boundary. Tests use `counter_value`,
 `snapshot`, and `reset` as deterministic seams.
+[ADR-004](adr/004-in-process-metrics-backend.md) records this backend decision,
+including why label values such as `missing_crate` are kept verbatim rather
+than bucketed.
 
 Defined metrics:
 

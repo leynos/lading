@@ -208,3 +208,57 @@ def test_register_summary_atexit_registers_once(
     metrics.register_summary_atexit()
 
     assert registered == [metrics.emit_summary]
+
+
+def test_register_summary_atexit_leaves_flag_unset_on_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed ``atexit.register`` leaves the hook unregistered and retryable."""
+    monkeypatch.setattr(metrics, "_summary_hook_registered", threading.Event())
+
+    def boom(_func: cabc.Callable[[], None]) -> None:
+        message = "registration failed"
+        raise RuntimeError(message)
+
+    monkeypatch.setattr(metrics.atexit, "register", boom)
+    with pytest.raises(RuntimeError, match="registration failed"):
+        metrics.register_summary_atexit()
+    assert not metrics._summary_hook_registered.is_set()
+
+    # With registration working, a later call records the hook exactly once.
+    registered: list[cabc.Callable[[], None]] = []
+    monkeypatch.setattr(metrics.atexit, "register", registered.append)
+    metrics.register_summary_atexit()
+
+    assert registered == [metrics.emit_summary]
+    assert metrics._summary_hook_registered.is_set()
+
+
+def test_register_summary_atexit_registers_once_under_concurrency(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Concurrent callers register the hook exactly once.
+
+    The check-and-register is performed under ``_LOCK``, so no interleaving of
+    threads can pass the guard twice and register ``emit_summary`` more than
+    once.
+    """
+    monkeypatch.setattr(metrics, "_summary_hook_registered", threading.Event())
+    registered: list[cabc.Callable[[], None]] = []
+    monkeypatch.setattr(metrics.atexit, "register", registered.append)
+
+    worker_count = 8
+    barrier = threading.Barrier(worker_count)
+
+    def worker() -> None:
+        # Release all threads together to maximise contention on the guard.
+        barrier.wait()
+        metrics.register_summary_atexit()
+
+    threads = [threading.Thread(target=worker) for _ in range(worker_count)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert registered == [metrics.emit_summary]

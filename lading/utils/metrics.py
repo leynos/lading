@@ -136,12 +136,17 @@ def register_summary_atexit() -> None:
     exit-time flush is an explicit lifecycle decision rather than a hidden
     side effect of importing this module. Repeated calls register the hook at
     most once.
+
+    The check, registration, and flag update happen together under ``_LOCK``,
+    and the flag is set only after ``atexit.register`` returns. A failed
+    registration therefore leaves the flag unset so a later call can retry,
+    rather than recording the hook as registered when it is not.
     """
     with _LOCK:
         if _summary_hook_registered.is_set():
             return
-        _summary_hook_registered.set()
         atexit.register(emit_summary)
+        _summary_hook_registered.set()
 
 
 __all__ = [
