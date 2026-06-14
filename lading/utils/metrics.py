@@ -54,10 +54,15 @@ def _counter_key(name: str, labels: dict[str, str]) -> _CounterKey:
 def increment_counter(name: str, *, amount: int = 1, **labels: str) -> None:
     """Increment the counter ``name`` for the supplied label values.
 
+    A zero ``amount`` is a no-op and records nothing, so a counter surfaces in
+    the exit summary only when it actually changed (quiet runs stay quiet).
+
     Examples
     --------
     >>> increment_counter("demo.total", subcommand="package")
     """
+    if amount == 0:
+        return
     with _LOCK:
         _COUNTERS[_counter_key(name, labels)] += amount
 

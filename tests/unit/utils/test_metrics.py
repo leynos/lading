@@ -46,6 +46,14 @@ def test_label_order_does_not_matter() -> None:
     assert metrics.counter_value("demo.pair", b="2", a="1") == 1
 
 
+def test_increment_counter_ignores_zero_amount() -> None:
+    """A zero-amount increment records nothing, so quiet runs stay quiet."""
+    metrics.increment_counter("demo.zero", amount=0, subcommand="package")
+
+    assert metrics.counter_value("demo.zero", subcommand="package") == 0
+    assert metrics.snapshot() == {}
+
+
 def test_snapshot_and_reset() -> None:
     """Snapshots copy the registry and reset clears it."""
     metrics.increment_counter("demo.total")
