@@ -198,36 +198,33 @@ def test_bump_context_crate_sets_match_naive_derivation(
 
 def _build_test_change_body(
     root: Path,
-    manifests: tuple[Path, ...],
-    documents: tuple[Path, ...],
-    readmes: tuple[Path, ...],
-    lockfiles: tuple[Path, ...],
+    changes: bump_output.BumpChanges,
 ) -> list[str]:
     """Build the expected body lines for a result-message assertion."""
     return [
-        *(f"- {path.relative_to(root)}" for path in manifests),
-        *(f"- {path.relative_to(root)} (documentation)" for path in documents),
-        *(f"- {path.relative_to(root)} (readme)" for path in readmes),
-        *(f"- {path.relative_to(root)} (lockfile)" for path in lockfiles),
+        *(f"- {path.relative_to(root)}" for path in changes.manifests),
+        *(f"- {path.relative_to(root)} (documentation)" for path in changes.documents),
+        *(
+            f"- {path.relative_to(root)} (readme)"
+            for path in changes.transposed_readmes
+        ),
+        *(f"- {path.relative_to(root)} (lockfile)" for path in changes.lockfiles),
     ]
 
 
 def _build_test_categories(
-    manifests: tuple[Path, ...],
-    documents: tuple[Path, ...],
-    readmes: tuple[Path, ...],
-    lockfiles: tuple[Path, ...],
+    changes: bump_output.BumpChanges,
 ) -> list[str]:
     """Build the expected category descriptions for a result-message header."""
     categories: list[str] = []
-    if manifests:
-        categories.append(f"{len(manifests)} manifest(s)")
-    if documents:
-        categories.append(f"{len(documents)} documentation file(s)")
-    if readmes:
-        categories.append(f"{len(readmes)} readme file(s)")
-    if lockfiles:
-        categories.append(f"{len(lockfiles)} lockfile(s)")
+    if changes.manifests:
+        categories.append(f"{len(changes.manifests)} manifest(s)")
+    if changes.documents:
+        categories.append(f"{len(changes.documents)} documentation file(s)")
+    if changes.transposed_readmes:
+        categories.append(f"{len(changes.transposed_readmes)} readme file(s)")
+    if changes.lockfiles:
+        categories.append(f"{len(changes.lockfiles)} lockfile(s)")
     return categories
 
 
@@ -284,11 +281,9 @@ def test_result_message_grammar_and_path_rendering(
     )
     lines = message.splitlines()
 
-    assert lines[1:] == _build_test_change_body(
-        root, manifests, documents, readmes, lockfiles
-    )
+    assert lines[1:] == _build_test_change_body(root, changes)
 
-    categories = _build_test_categories(manifests, documents, readmes, lockfiles)
+    categories = _build_test_categories(changes)
     expected_header = (
         f"Updated version to 1.2.3 in {_expected_description(categories)}:"
     )
