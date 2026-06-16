@@ -296,6 +296,18 @@ def test_returned_paths_are_subset_of_git_stdout(stdout: str) -> None:
             f"does not appear in git stdout lines: {tracked_lines!r}"
         )
 
+
+# ---------------------------------------------------------------------------
+# End-to-end discovery invariants (issue #80)
+# ---------------------------------------------------------------------------
+
+_tree_entry = st.tuples(
+    st.lists(_path_component, min_size=1, max_size=3),  # directory components
+    st.booleans(),  # has adjacent Cargo.toml
+    st.booleans(),  # appears in git ls-files output
+)
+
+
 def _stub_git_runner(stdout: str) -> cabc.Callable[..., tuple[int, str, str]]:
     """Return a runner producing ``stdout`` for git ls-files."""
 
@@ -310,6 +322,7 @@ def _stub_git_runner(stdout: str) -> cabc.Callable[..., tuple[int, str, str]]:
         return 0, stdout, ""
 
     return runner
+
 
 @given(entries=st.lists(_tree_entry, max_size=8))
 @settings(max_examples=40, deadline=None)
