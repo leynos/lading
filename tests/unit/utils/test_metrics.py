@@ -39,19 +39,31 @@ def test_increment_accumulates_per_label_set() -> None:
     assert metrics.counter_value("demo.total", subcommand="check") == 0
 
 
+def test_zero_amount_increment_is_a_noop() -> None:
+    """increment_counter with amount=0 must not create a registry entry."""
+    metrics.increment_counter("noop.counter", amount=0, label="x")
+    assert metrics.counter_value("noop.counter", label="x") == 0
+    assert metrics.snapshot() == {}
+
+
+def test_zero_amount_increment_does_not_break_quiet_run(
+    caplog: LogCaptureFixture,
+) -> None:
+    """emit_summary must stay silent when only zero-amount increments occurred."""
+    metrics.increment_counter("noop.counter", amount=0)
+    with caplog.at_level(logging.INFO):
+        metrics.emit_summary()
+    summary_records = [
+        record for record in caplog.records if "metrics summary" in record.getMessage()
+    ]
+    assert summary_records == []
+
+
 def test_label_order_does_not_matter() -> None:
     """Label ordering is normalised in the registry key."""
     metrics.increment_counter("demo.pair", a="1", b="2")
 
     assert metrics.counter_value("demo.pair", b="2", a="1") == 1
-
-
-def test_increment_counter_ignores_zero_amount() -> None:
-    """A zero-amount increment records nothing, so quiet runs stay quiet."""
-    metrics.increment_counter("demo.zero", amount=0, subcommand="package")
-
-    assert metrics.counter_value("demo.zero", subcommand="package") == 0
-    assert metrics.snapshot() == {}
 
 
 def test_snapshot_and_reset() -> None:
