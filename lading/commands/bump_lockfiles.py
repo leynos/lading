@@ -78,13 +78,31 @@ def regenerate_lockfiles(
     manifests = _resolve_manifest_paths(workspace_root, lockfile_manifests)
     started_at = time.perf_counter()
     _LOGGER.info("Regenerating %d Cargo lockfile(s)", len(manifests))
+    lockfiles, failures = _collect_lockfile_results(
+        workspace_root, manifests, command_runner
+    )
+    _raise_if_failures(failures)
+    _LOGGER.info(
+        "Regenerated %d Cargo lockfile(s) in %.3fs",
+        len(lockfiles),
+        time.perf_counter() - started_at,
+    )
+    return tuple(lockfiles)
+
+
+def _collect_lockfile_results(
+    workspace_root: Path,
+    manifests: cabc.Sequence[Path],
+    runner: CommandRunner,
+) -> tuple[list[Path], list[tuple[Path, LockfileRegenerationError]]]:
+    """Attempt every manifest and return successful lockfiles and failures."""
     lockfiles: list[Path] = []
     failures: list[tuple[Path, LockfileRegenerationError]] = []
     for manifest in manifests:
         manifest_started_at = time.perf_counter()
         _LOGGER.info("Regenerating Cargo lockfile for %s", manifest)
         try:
-            _run_workspace_lockfile_update(workspace_root, manifest, command_runner)
+            _run_workspace_lockfile_update(workspace_root, manifest, runner)
         except LockfileRegenerationError as exc:
             # Keep going: attempting the remaining manifests gives the
             # operator one aggregated repair list instead of a re-run per
@@ -98,24 +116,26 @@ def regenerate_lockfiles(
             time.perf_counter() - manifest_started_at,
         )
         lockfiles.append(manifest.parent / "Cargo.lock")
-    if failures:
-        # Chain from the first underlying failure so diagnostics (for
-        # example a missing cargo executable) survive the aggregation.
-        primary = failures[0][1]
-        cause = primary.__cause__ if primary.__cause__ is not None else primary
-        raise LockfileRegenerationError(
-            _build_aggregate_failure_message(failures)
-        ) from cause
-    _LOGGER.info(
-        "Regenerated %d Cargo lockfile(s) in %.3fs",
-        len(lockfiles),
-        time.perf_counter() - started_at,
-    )
-    return tuple(lockfiles)
+    return lockfiles, failures
+
+
+def _raise_if_failures(
+    failures: list[tuple[Path, LockfileRegenerationError]],
+) -> None:
+    """Raise an aggregated error when one or more manifest updates failed."""
+    if not failures:
+        return
+    # Chain from the first underlying failure so diagnostics (for
+    # example a missing cargo executable) survive the aggregation.
+    primary = failures[0][1]
+    cause = primary.__cause__ if primary.__cause__ is not None else primary
+    raise LockfileRegenerationError(
+        _build_aggregate_failure_message(failures)
+    ) from cause
 
 
 def _build_aggregate_failure_message(
-    failures: cabc.Sequence[tuple[Path, LockfileRegenerationError]],
+
 ) -> str:
     """Return the aggregated operator-facing regeneration failure message."""
     header = (
