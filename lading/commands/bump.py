@@ -107,6 +107,14 @@ class _BumpContext:
     updated_crate_names: frozenset[str]
 
 
+@dc.dataclass(frozen=True, slots=True)
+class _CrateManifestUpdate:
+    """Outcome from processing a single crate manifest."""
+
+    was_skipped: bool
+    was_updated: bool
+
+
 def _build_changes_description(changes: BumpChanges) -> str:
     """Build a human-readable description of changed files."""
     parts: list[str] = []
@@ -143,6 +151,11 @@ def _format_manifest_path(manifest_path: Path, workspace_root: Path) -> str:
     try:
         relative = manifest_path.relative_to(workspace_root)
     except ValueError:
+        _log.warning(
+            "Manifest path relativisation failed: manifest=%s, workspace_root=%s",
+            manifest_path,
+            workspace_root,
+        )
         return str(manifest_path)
     return str(relative)
 
@@ -165,6 +178,11 @@ def run(
 ) -> str:
     """Update workspace and crate manifest versions to ``target_version``."""
     context = _initialize_bump_context(workspace_root, options)
+    _log.debug(
+        "Bump context initialised: %d excluded crate(s), %d to update",
+        len(context.excluded),
+        len(context.updated_crate_names),
+    )
     changed_manifests: set[Path] = set()
     _process_workspace_manifest(context, target_version, changed_manifests)
     _process_crate_manifests(context, target_version, changed_manifests)
@@ -266,9 +284,23 @@ def _process_crate_manifests(
     changed_manifests: set[Path],
 ) -> None:
     """Update member crate manifests for the workspace."""
+    processed_count = 0
+    skipped_count = 0
+    updated_count = 0
     for crate in context.workspace.crates:
-        if _update_crate_manifest(crate, target_version, context):
+        processed_count += 1
+        update = _apply_crate_manifest_update(crate, target_version, context)
+        if update.was_skipped:
+            skipped_count += 1
+        if update.was_updated:
             changed_manifests.add(crate.manifest_path)
+            updated_count += 1
+    _log.debug(
+        "Crate manifest processing complete: %d processed, %d skipped, %d updated",
+        processed_count,
+        skipped_count,
+        updated_count,
+    )
 
 
 def _process_documentation_files(
@@ -291,6 +323,7 @@ def _process_readme_transposition(context: _BumpContext, *, dry_run: bool) -> se
     """Transpose workspace README files into opted-in member crates."""
     _log.debug("Starting workspace README transposition")
     changed_readmes: set[Path] = set()
+    transposed_entry_count = 0
     source_readme_path = context.root_path / "README.md"
     cached_text: str | None = (
         source_readme_path.read_text(encoding="utf-8")
@@ -300,6 +333,7 @@ def _process_readme_transposition(context: _BumpContext, *, dry_run: bool) -> se
     for crate in context.workspace.crates:
         if not crate.readme_is_workspace:
             continue
+        transposed_entry_count += 1
         try:
             changed_path = bump_readme.transpose_readme_to_crate(
                 context.root_path,
@@ -313,7 +347,8 @@ def _process_readme_transposition(context: _BumpContext, *, dry_run: bool) -> se
         if changed_path is not None:
             changed_readmes.add(changed_path)
     _log.debug(
-        "README transposition complete: %d file(s) changed",
+        "README transposition complete: %d entries, %d file(s) changed",
+        transposed_entry_count,
         len(changed_readmes),
     )
     return changed_readmes
@@ -382,24 +417,53 @@ def _update_crate_manifest(
     in :func:`_initialize_bump_context` (issue #97); helpers must not
     recompute them per crate.
     """
+    return _apply_crate_manifest_update(crate, target_version, context).was_updated
+
+
+def _apply_crate_manifest_update(
+    crate: WorkspaceCrate,
+    target_version: str,
+    context: _BumpContext,
+) -> _CrateManifestUpdate:
+    """Apply updates for ``crate`` and return the bounded telemetry outcome."""
     selectors = _determine_package_selectors(crate.name, context.excluded)
     dependency_sections = _dependency_sections_for_crate(
         crate, context.updated_crate_names
     )
 
     if _should_skip_crate_update(selectors, dependency_sections):
-        return False
+        _log.debug("Skipping crate manifest update for excluded crate %r", crate.name)
+        return _CrateManifestUpdate(was_skipped=True, was_updated=False)
 
     crate_options = dc.replace(
         context.base_options,
         dependency_sections=_freeze_dependency_sections(dependency_sections),
     )
-    return _update_manifest(
+    was_updated = _update_manifest(
         crate.manifest_path,
         selectors,
         target_version,
         crate_options,
     )
+    if was_updated:
+        _log.debug(
+            "Updated crate manifest for crate %r: manifest=%s",
+            crate.name,
+            crate.manifest_path,
+        )
+        if not crate_options.dry_run:
+            _log.debug(
+                "Wrote crate manifest for crate %r: manifest=%s",
+                crate.name,
+                crate.manifest_path,
+            )
+    else:
+        _log.debug(
+            "Crate manifest already up to date for crate %r: manifest=%s",
+            crate.name,
+            crate.manifest_path,
+        )
+    return _CrateManifestUpdate(was_skipped=False, was_updated=was_updated)
 
 
 def _format_result_message(
