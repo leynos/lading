@@ -317,6 +317,8 @@ def _run_with_context(
     with metadata_module.use_command_runner(active_runner):
         workspace_model = load_workspace(workspace_root)
         return runner(workspace_root, configuration, workspace_model, active_runner)
+
+
 @app.command
 def bump(
     version: VersionArgument,
