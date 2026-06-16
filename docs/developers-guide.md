@@ -51,6 +51,13 @@ hygiene, and design-size limits.
 
 The relevant Makefile variables are:
 
+- `RUFF_VERSION` — pinned Ruff version; defaults to `0.15.12`. Keep it in sync
+  with the `ruff==` dev dependency in `pyproject.toml` and the
+  `uv tool install ruff==` step in `.github/workflows/ci.yml`, bumping all
+  three together to avoid version-skew lint failures.
+- `RUFF` — the pinned Ruff command
+  (`uv tool run --from ruff==$(RUFF_VERSION) ruff`) that the `fmt`,
+  `check-fmt`, and `lint` targets invoke.
 - `PYLINT_PYTHON` — Python executable used by `uv tool run`; defaults to `pypy`.
 - `PYLINT_TARGETS` — directories passed to Pylint; defaults to
   `lading scripts tests`.
