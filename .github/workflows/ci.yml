@@ -25,7 +25,11 @@ jobs:
 
       - name: Install CLI tools
         run: |
-          for tool in mbake ty ruff; do uv tool install ${tool}; done
+          for tool in mbake ty; do uv tool install ${tool}; done
+          # Pin ruff to the same version as the dev dependency group in
+          # pyproject.toml so the linter behaves identically across the uv tool,
+          # the synced virtualenv, and developer PATH. Bump both sites together.
+          uv tool install ruff==0.15.12
           npm install -g markdownlint-cli2
 
       - name: Validate Makefile

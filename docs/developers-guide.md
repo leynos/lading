@@ -39,18 +39,25 @@ make lint
 ```
 
 The target is deliberately three-tiered. Ruff runs first because it is fast,
-handles broad style and correctness checks, and imports the stricter lint policy
-used by `leynos/episodic`. If Ruff passes, the target runs `interrogate` with
-`--fail-under 100` across `lading` to enforce **100% docstring coverage**. If
-`interrogate` passes, the final tier runs Pylint through the pinned
+handles broad style and correctness checks, and imports the stricter lint
+policy used by `leynos/episodic`. If Ruff passes, the target runs `interrogate`
+with `--fail-under 100` across `lading` to enforce **100% docstring coverage**.
+If `interrogate` passes, the final tier runs Pylint through the pinned
 `pylint-pypy-shim` tool under PyPy. The final tier is focused on rule families
-that complement Ruff, especially logging format safety, pattern matching checks,
-selected simplification checks, deprecated standard-library usage, file hygiene,
-and design-size limits. [ADR-003](adr/003-three-tier-python-linting.md) records
-the policy decision.
+that complement Ruff, especially logging format safety, pattern matching
+checks, selected simplification checks, deprecated standard-library usage, file
+hygiene, and design-size limits.
+[ADR-003](adr/003-three-tier-python-linting.md) records the policy decision.
 
 The relevant Makefile variables are:
 
+- `RUFF_VERSION` — pinned Ruff version; defaults to `0.15.12`. Keep it in sync
+  with the `ruff==` dev dependency in `pyproject.toml` and the
+  `uv tool install ruff==` step in `.github/workflows/ci.yml`, bumping all
+  three together to avoid version-skew lint failures.
+- `RUFF` — the pinned Ruff command
+  (`uv tool run --from ruff==$(RUFF_VERSION) ruff`) that the `fmt`,
+  `check-fmt`, and `lint` targets invoke.
 - `PYLINT_PYTHON` — Python executable used by `uv tool run`; defaults to `pypy`.
 - `PYLINT_TARGETS` — directories passed to Pylint; defaults to
   `lading scripts tests`.
@@ -503,8 +510,8 @@ The index-lookup handling is split across the adapter and decision helper:
   fatal. If the parsed name is not in the publish plan, the failure is fatal
   with guidance to publish or index that dependency first. The helper checks
   projected availability by comparing publish-order positions and raises for
-  out-of-plan, self, or late dependencies. If the parsed name is in the plan
-  and `allow_unpublished_workspace_deps` is set, the helper logs a warning and
+  out-of-plan, self, or late dependencies. If the parsed name is in the plan and
+  `allow_unpublished_workspace_deps` is set, the helper logs a warning and
   continues; otherwise it raises with guidance to enable the dry-run
   unpublished workspace dependency override or follow the staged-publish
   workaround.
@@ -609,6 +616,35 @@ crate name, the numeric exit code, and the `(stdout, stderr)` pair, it returns
 a formatted message that includes all four values. Using a single function for
 message construction keeps the error format consistent across the packaging and
 publish phases and makes snapshot testing straightforward.
+
+### In-process metrics (`lading.utils.metrics`)
+
+`lading.utils.metrics` is a process-local metrics accumulator. Counters are
+recorded with `increment_counter(name, **labels)` and flushed as a single
+structured JSON log line at interpreter exit (`emit_summary`, registered via
+`atexit`); runs that record no metrics emit nothing. The module deliberately
+avoids exporter dependencies such as `prometheus_client` or `statsd`: a lading
+invocation is a short-lived CLI process whose logs are already aggregated, so
+the summary line is the operational boundary. Tests use `counter_value`,
+`duration_stats`, `snapshot`, and `reset` as deterministic seams.
+[ADR-004](adr/004-in-process-metrics-backend.md) records this backend decision,
+including why label values such as `missing_crate` are kept verbatim rather
+than bucketed.
+
+Defined metrics:
+
+| Metric                           | Labels                        | Incremented when                                                                                                      |
+| -------------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `publish.index_lookup_downgrade` | `subcommand`, `missing_crate` | `_handle_index_missing_version` downgrades a crates.io index-lookup failure to a warning (in-plan, override enabled). |
+| `lockfile.discovered`            | (none)                        | Incremented by the number of tracked lockfiles each `discover_tracked_lockfiles` call returns.                        |
+| `lockfile.refresh`               | `outcome`                     | One increment per `refresh_lockfile` invocation; `outcome` is `success` or `failure`.                                 |
+| `lockfile.refresh.duration`      | (none)                        | Duration observation around each `cargo generate-lockfile` invocation.                                                |
+| `lockfile.validate`              | `outcome`                     | One increment per `validate_lockfile_freshness` call; `outcome` is `fresh`, `stale`, or `failed`.                     |
+| `lockfile.validate.duration`     | (none)                        | Duration observation around each `cargo metadata --locked` probe.                                                     |
+
+Duration metrics aggregate a count and total seconds per label set via
+`observe_duration` / `duration_stats` and appear in the exit summary with
+`count` and `total_seconds` fields.
 
 ### Command runners (`lading.runtime`)
 

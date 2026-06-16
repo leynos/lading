@@ -11,6 +11,7 @@ import pytest
 from hypothesis import given
 
 from lading.commands import lockfile
+from lading.utils import metrics
 
 # ---------------------------------------------------------------------------
 # Hypothesis strategies for _lockfiles_with_manifests property tests
@@ -37,8 +38,9 @@ _hypothesis_stdout: st.SearchStrategy[str] = st.lists(
 _HYPOTHESIS_WORKSPACE = Path("/repo")
 
 
+@pytest.mark.usefixtures("_metrics_registry")
 def test_discover_tracked_lockfiles_returns_empty_result(tmp_path: Path) -> None:
-    """Empty git output produces no lockfiles."""
+    """Empty git output produces no lockfiles and records no discovery metric."""
     (tmp_path / "Cargo.lock").write_text("", encoding="utf-8")
 
     def runner(
@@ -57,6 +59,9 @@ def test_discover_tracked_lockfiles_returns_empty_result(tmp_path: Path) -> None
         "git repo with no tracked lockfiles should return an empty tuple; "
         f"got {result!r}"
     )
+    # A zero-count discovery must not record a counter, so quiet runs stay quiet.
+    assert metrics.counter_value(lockfile.DISCOVERED_LOCKFILES_METRIC) == 0
+    assert metrics.snapshot() == {}
 
 
 def test_discover_tracked_lockfiles_filters_missing_manifests(tmp_path: Path) -> None:
@@ -332,3 +337,91 @@ def test_returned_paths_are_subset_of_git_stdout(stdout: str) -> None:
             f"Returned path {path} (relative: {relative!r}) "
             f"does not appear in git stdout lines: {tracked_lines!r}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Metrics instrumentation (issue #91)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def _metrics_registry() -> cabc.Iterator[None]:
+    """Isolate the metric registry for instrumentation tests."""
+    metrics.reset()
+    yield
+    metrics.reset()
+
+
+def _static_runner(
+    exit_code: int, stdout: str, stderr: str
+) -> cabc.Callable[..., tuple[int, str, str]]:
+    """Return a runner producing a fixed result."""
+
+    def runner(
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        del command, cwd, env
+        return exit_code, stdout, stderr
+
+    return runner
+
+
+@pytest.mark.usefixtures("_metrics_registry")
+def test_discovery_records_lockfile_count(tmp_path: Path) -> None:
+    """Discovery increments the discovered-lockfiles counter by the count."""
+    (tmp_path / "Cargo.toml").write_text("", encoding="utf-8")
+    (tmp_path / "Cargo.lock").write_text("", encoding="utf-8")
+
+    lockfile.discover_tracked_lockfiles(tmp_path, _static_runner(0, "Cargo.lock\n", ""))
+
+    assert metrics.counter_value(lockfile.DISCOVERED_LOCKFILES_METRIC) == 1
+
+
+@pytest.mark.usefixtures("_metrics_registry")
+def test_refresh_records_success_outcome_and_duration(tmp_path: Path) -> None:
+    """A successful refresh counts a success and observes a duration."""
+    lockfile.refresh_lockfile(tmp_path / "Cargo.toml", _static_runner(0, "", ""))
+
+    assert metrics.counter_value(lockfile.REFRESH_METRIC, outcome="success") == 1
+    assert metrics.counter_value(lockfile.REFRESH_METRIC, outcome="failure") == 0
+    assert metrics.duration_stats(lockfile.REFRESH_DURATION_METRIC).count == 1
+
+
+@pytest.mark.usefixtures("_metrics_registry")
+def test_refresh_records_failure_outcome(tmp_path: Path) -> None:
+    """A failed refresh counts a failure and still observes a duration."""
+    with pytest.raises(lockfile.LockfileRefreshError):
+        lockfile.refresh_lockfile(
+            tmp_path / "Cargo.toml", _static_runner(101, "", "boom")
+        )
+
+    assert metrics.counter_value(lockfile.REFRESH_METRIC, outcome="failure") == 1
+    assert metrics.duration_stats(lockfile.REFRESH_DURATION_METRIC).count == 1
+
+
+@pytest.mark.usefixtures("_metrics_registry")
+@pytest.mark.parametrize(
+    ("exit_code", "stderr", "expected_state"),
+    [
+        (0, "", "fresh"),
+        (
+            101,
+            "the lock file needs to be updated but --locked was passed",
+            "stale",
+        ),
+        (101, "unrelated explosion", "failed"),
+    ],
+)
+def test_validation_records_outcome_and_duration(
+    tmp_path: Path, exit_code: int, stderr: str, expected_state: str
+) -> None:
+    """Validation counts each outcome state and observes a duration."""
+    lockfile.validate_lockfile_freshness(
+        tmp_path / "Cargo.toml", _static_runner(exit_code, "", stderr)
+    )
+
+    assert metrics.counter_value(lockfile.VALIDATE_METRIC, outcome=expected_state) == 1
+    assert metrics.duration_stats(lockfile.VALIDATE_DURATION_METRIC).count == 1

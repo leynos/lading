@@ -24,6 +24,8 @@ looking for project guidance, then follow the link that matches the task.
 
 - [ADR-003: Use three-tier Python linting][adr-003] - accepted linting policy
   for Ruff, Interrogate, and Pylint.
+- [ADR-004: In-process metrics accumulator flushed at exit][adr-004] - accepted
+  design for the `lading.utils.metrics` backend and metric contracts.
 
 ## Reference documents
 
@@ -35,3 +37,4 @@ looking for project guidance, then follow the link that matches the task.
   spies, fixtures, and process-boundary assertions.
 
 [adr-003]: adr/003-three-tier-python-linting.md
+[adr-004]: adr/004-in-process-metrics-backend.md

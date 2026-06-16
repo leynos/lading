@@ -32,7 +32,7 @@ from cyclopts import App, Parameter
 
 from . import commands, config
 from .runtime import CommandRunner, subprocess_runner
-from .utils import normalise_workspace_root
+from .utils import metrics, normalise_workspace_root
 from .workspace import WorkspaceGraph, WorkspaceModelError, load_workspace
 from .workspace import metadata as metadata_module
 
@@ -298,6 +298,10 @@ def main(argv: cabc.Sequence[str] | None = None) -> int:
         if argv is None:
             argv = sys.argv[1:]
         _configure_logging()
+        # Flush the accumulated metrics summary when this CLI process exits.
+        # Registered here in bootstrap so the lifecycle is explicit rather than
+        # an import-time side effect of lading.utils.metrics.
+        metrics.register_summary_atexit()
         workspace_override, remaining = _extract_workspace_override(list(argv))
         workspace_root = normalise_workspace_root(workspace_override)
         if not remaining:
