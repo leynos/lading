@@ -7,7 +7,7 @@ import typing as typ
 
 from pytest_bdd import parsers, when
 
-from lading import cli
+from lading import cli, config
 from lading.commands import publish
 from lading.testing.cmd_mox_runner import CmdMoxError
 
@@ -33,6 +33,7 @@ def when_run_publish_preflight_checks(workspace_directory: Path) -> dict[str, ty
         publish._run_preflight_checks(
             workspace_directory,
             allow_dirty=False,
+            configuration=config.load_configuration(workspace_directory),
             runner=cli._select_runner(),
         )
     except publish.PublishPreflightError as exc:

@@ -93,6 +93,13 @@ metadata_module = _metadata_module
 PublishPlanError = _PublishPlanError
 _append_section = append_section
 _format_plan = format_plan
+# Backwards-compatible aliases (issue #96): publish_preflight owns the
+# canonical implementations; existing tests patch and call them through
+# this module, so the names must keep resolving here. Plain assignments
+# (not imports) keep the re-export intent visible to linters.
+# (``_run_preflight_checks`` is the exception: it is a thin wrapper defined
+# below that preserves the historical optional-``configuration`` contract.)
+_preflight_argument_sets = _publish_preflight._preflight_argument_sets
 _CargoPreflightOptions = _publish_preflight._CargoPreflightOptions
 _apply_compiletest_externs = _publish_preflight._apply_compiletest_externs
 _build_preflight_environment = _publish_preflight._build_preflight_environment
@@ -316,6 +323,30 @@ def _handle_index_missing_version(
     )
 
 
+class _CrateAction(typ.Protocol):
+    """Action applied to each crate in the publication pipeline."""
+
+    def __call__(
+        self,
+        crate: WorkspaceCrate,
+        state: _PublicationPipelineState,
+        *,
+        runner: CommandRunner,
+    ) -> None:
+        """Process a single staged crate from the pipeline."""
+
+
+def _for_each_publishable_crate(
+    state: _PublicationPipelineState,
+    *,
+    runner: CommandRunner,
+    action: _CrateAction,
+) -> None:
+    """Apply *action* to every publishable crate in pipeline order."""
+    for crate in state.plan.publishable:
+        action(crate, state, runner=runner)
+
+
 def _package_publishable_crates(
     plan: PublishPlan,
     preparation: PublishPreparation,
@@ -324,13 +355,11 @@ def _package_publishable_crates(
     runner: CommandRunner,
 ) -> None:
     """Package each publishable crate in order using the staged workspace."""
-    state = _PublicationPipelineState(plan, preparation, options)
-    for crate in plan.publishable:
-        _package_crate(
-            crate,
-            state,
-            runner=runner,
-        )
+    _for_each_publishable_crate(
+        _PublicationPipelineState(plan, preparation, options),
+        runner=runner,
+        action=_package_crate,
+    )
 
 
 def _package_crate(
@@ -405,13 +434,11 @@ def _publish_crates(
     options: _PublishExecutionOptions,
 ) -> None:
     """Publish each crate in order, respecting dry-run vs live mode."""
-    state = _PublicationPipelineState(plan, preparation, options)
-    for crate in plan.publishable:
-        _publish_crate(
-            crate,
-            state,
-            runner=runner,
-        )
+    _for_each_publishable_crate(
+        _PublicationPipelineState(plan, preparation, options),
+        runner=runner,
+        action=_publish_crate,
+    )
 
 
 def _publish_crate(
@@ -552,6 +579,28 @@ def _ensure_configuration(
         return config_module.load_configuration(workspace_root)
 
 
+def _run_preflight_checks(
+    workspace_root: Path,
+    *,
+    allow_dirty: bool,
+    configuration: LadingConfig | None = None,
+    runner: CommandRunner | None = None,
+) -> None:
+    """Run publish pre-flight checks, resolving configuration when absent.
+
+    Thin wrapper over :func:`publish_preflight._run_preflight_checks` that
+    preserves the historical optional-``configuration`` contract: callers may
+    omit ``configuration`` and have it loaded from the active context or the
+    workspace before the canonical implementation runs.
+    """
+    _publish_preflight._run_preflight_checks(
+        workspace_root,
+        allow_dirty=allow_dirty,
+        configuration=_ensure_configuration(configuration, workspace_root),
+        runner=runner,
+    )
+
+
 def _ensure_workspace(
     workspace: WorkspaceGraph | None, workspace_root: Path
 ) -> WorkspaceGraph:
@@ -669,78 +718,3 @@ def run(
     summary_lines = _format_preparation_summary(preparation)
     LOGGER.info("Publish workflow completed successfully for workspace %s", root_path)
     return f"{plan_message}\n\n" + "\n".join(summary_lines)
-
-
-def _run_preflight_checks(
-    workspace_root: Path,
-    *,
-    allow_dirty: bool,
-    configuration: LadingConfig | None = None,
-    runner: CommandRunner | None = None,
-) -> None:
-    """Execute publish pre-flight checks for ``workspace_root``."""
-    command_runner = runner or _invoke
-    active_configuration = _ensure_configuration(configuration, workspace_root)
-    preflight_config = active_configuration.preflight
-    base_env = _build_preflight_environment(preflight_config.env_overrides)
-    _verify_clean_working_tree(
-        workspace_root,
-        allow_dirty=allow_dirty,
-        runner=command_runner,
-        env=base_env,
-    )
-    _run_aux_build_commands(
-        workspace_root,
-        preflight_config.aux_build,
-        runner=command_runner,
-        env=base_env,
-    )
-    _validate_lockfile_freshness(
-        workspace_root,
-        runner=command_runner,
-        env=base_env,
-    )
-
-    with tempfile.TemporaryDirectory(prefix="lading-preflight-target-") as target:
-        target_path = Path(target)
-        unit_tests_only = preflight_config.unit_tests_only
-        check_arguments, test_arguments = _preflight_argument_sets(
-            target_path, unit_tests_only=unit_tests_only
-        )
-        _run_cargo_preflight(
-            workspace_root,
-            "check",
-            runner=command_runner,
-            options=_CargoPreflightOptions(
-                extra_args=check_arguments,
-                env=base_env,
-            ),
-        )
-        test_env = _apply_compiletest_externs(
-            base_env,
-            preflight_config.compiletest_externs,
-            workspace_root=workspace_root,
-        )
-        _run_cargo_preflight(
-            workspace_root,
-            "test",
-            runner=command_runner,
-            options=_CargoPreflightOptions(
-                extra_args=test_arguments,
-                test_excludes=preflight_config.test_exclude,
-                unit_tests_only=unit_tests_only,
-                env=test_env,
-                diagnostics_tail_lines=preflight_config.stderr_tail_lines,
-            ),
-        )
-
-
-def _preflight_argument_sets(
-    target_dir: Path, *, unit_tests_only: bool
-) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    """Return argument tuples for cargo check and cargo test pre-flight calls."""
-    check_arguments = _compose_preflight_arguments(target_dir, include_all_targets=True)
-    test_arguments = _compose_preflight_arguments(
-        target_dir, include_all_targets=not unit_tests_only
-    )
-    return check_arguments, test_arguments

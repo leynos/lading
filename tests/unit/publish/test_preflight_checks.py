@@ -3,17 +3,72 @@
 from __future__ import annotations
 
 import collections.abc as cabc
+import string
 import typing as typ
 from pathlib import Path
 
+import hypothesis.strategies as st
 import pytest
+from hypothesis import given
 
 from lading.commands import publish, publish_preflight
 
 from .conftest import ORIGINAL_PREFLIGHT, make_config, make_preflight_config
 
 if typ.TYPE_CHECKING:
+    from syrupy.assertion import SnapshotAssertion
+
+    from lading.config import LadingConfig
     from lading.runtime import CommandRunner
+
+
+def test_publish_preflight_aliases_are_wired_correctly() -> None:
+    """Backwards-compatible preflight names keep resolving into publish_preflight.
+
+    ``_preflight_argument_sets`` is a bare re-export, so identity must hold.
+    ``_run_preflight_checks`` is intentionally a thin wrapper (issue #96) that
+    preserves the optional-``configuration`` contract, so it must *not* be the
+    canonical object; its delegation is pinned by
+    ``test_preflight_wrapper_loads_configuration_when_omitted``.
+    """
+    assert (
+        publish._preflight_argument_sets is publish_preflight._preflight_argument_sets
+    )
+    assert publish._run_preflight_checks is not publish_preflight._run_preflight_checks
+
+
+def test_preflight_wrapper_loads_configuration_when_omitted(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Omitting ``configuration`` resolves it before delegating to canonical."""
+    monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
+    configuration = make_config()
+    monkeypatch.setattr(
+        publish.config_module, "current_configuration", lambda: configuration
+    )
+    recorded: dict[str, typ.Any] = {}
+
+    def recording_preflight(
+        workspace_root: Path,
+        *,
+        allow_dirty: bool,
+        configuration: LadingConfig,
+        runner: CommandRunner | None = None,
+    ) -> None:
+        recorded["workspace_root"] = workspace_root
+        recorded["allow_dirty"] = allow_dirty
+        recorded["configuration"] = configuration
+
+    monkeypatch.setattr(publish_preflight, "_run_preflight_checks", recording_preflight)
+
+    root = tmp_path / "workspace"
+    root.mkdir()
+
+    publish._run_preflight_checks(root, allow_dirty=True)
+
+    assert recorded["configuration"] is configuration
+    assert recorded["workspace_root"] == root
+    assert recorded["allow_dirty"] is True
 
 
 def test_preflight_checks_remove_all_targets_for_unit_only(
@@ -22,7 +77,7 @@ def test_preflight_checks_remove_all_targets_for_unit_only(
     """Unit-test-only mode omits --all-targets from cargo test pre-flight."""
     monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
     monkeypatch.setattr(
-        publish, "_verify_clean_working_tree", lambda *_args, **_kwargs: None
+        publish_preflight, "_verify_clean_working_tree", lambda *_args, **_kwargs: None
     )
     recorded: dict[str, dict[str, typ.Any]] = {}
 
@@ -35,7 +90,7 @@ def test_preflight_checks_remove_all_targets_for_unit_only(
     ) -> None:
         recorded[subcommand] = options
 
-    monkeypatch.setattr(publish, "_run_cargo_preflight", recording_preflight)
+    monkeypatch.setattr(publish_preflight, "_run_cargo_preflight", recording_preflight)
 
     root = tmp_path / "workspace"
     root.mkdir()
@@ -61,7 +116,7 @@ def test_preflight_checks_support_special_target_dir(
     """Target directories with spaces/symbols propagate without quoting issues."""
     monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
     monkeypatch.setattr(
-        publish, "_verify_clean_working_tree", lambda *_args, **_kwargs: None
+        publish_preflight, "_verify_clean_working_tree", lambda *_args, **_kwargs: None
     )
     recorded: dict[str, tuple[str, ...]] = {}
 
@@ -74,7 +129,7 @@ def test_preflight_checks_support_special_target_dir(
     ) -> None:
         recorded[subcommand] = tuple(options.extra_args)
 
-    monkeypatch.setattr(publish, "_run_cargo_preflight", recording_preflight)
+    monkeypatch.setattr(publish_preflight, "_run_cargo_preflight", recording_preflight)
 
     special_dir = tmp_path / "target dir with spaces & symbols!@#"
 
@@ -87,7 +142,9 @@ def test_preflight_checks_support_special_target_dir(
             return False
 
     monkeypatch.setattr(
-        publish.tempfile, "TemporaryDirectory", lambda prefix=None: DummyTempDir()
+        publish_preflight.tempfile,
+        "TemporaryDirectory",
+        lambda prefix=None: DummyTempDir(),
     )
 
     root = tmp_path / "workspace"
@@ -122,7 +179,7 @@ def test_preflight_runs_aux_build_commands(
         return 0, "", ""
 
     monkeypatch.setattr(
-        publish, "_verify_clean_working_tree", lambda *_args, **_kwargs: None
+        publish_preflight, "_verify_clean_working_tree", lambda *_args, **_kwargs: None
     )
     configuration = make_config(
         preflight=make_preflight_config(aux_build=(("cargo", "test", "-p", "lint"),))
@@ -162,7 +219,7 @@ def test_aux_build_failure_surfaces_error(
         return 0, "", ""
 
     monkeypatch.setattr(
-        publish, "_verify_clean_working_tree", lambda *_args, **_kwargs: None
+        publish_preflight, "_verify_clean_working_tree", lambda *_args, **_kwargs: None
     )
     configuration = make_config(
         preflight=make_preflight_config(
@@ -201,7 +258,7 @@ def test_preflight_env_overrides_forwarded(
         return 0, "", ""
 
     monkeypatch.setattr(
-        publish, "_verify_clean_working_tree", lambda *_args, **_kwargs: None
+        publish_preflight, "_verify_clean_working_tree", lambda *_args, **_kwargs: None
     )
     configuration = make_config(
         preflight=make_preflight_config(env_overrides=(("DYLINT_LOCALE", "cy"),))
@@ -247,7 +304,7 @@ def test_preflight_append_compiletest_externs(
         return 0, "", ""
 
     monkeypatch.setattr(
-        publish, "_verify_clean_working_tree", lambda *_args, **_kwargs: None
+        publish_preflight, "_verify_clean_working_tree", lambda *_args, **_kwargs: None
     )
     configuration = make_config(
         preflight=make_preflight_config(
@@ -319,3 +376,55 @@ def test_verify_clean_working_tree_reports_missing_repo(
     message = str(excinfo.value)
     assert "git repository" in message
     assert "fatal" in message
+
+
+# ---------------------------------------------------------------------------
+# Canonical preflight argument composition (issue #96)
+# ---------------------------------------------------------------------------
+
+_dir_name = st.text(
+    alphabet=string.ascii_letters + string.digits + " -_!@#&",
+    min_size=1,
+    max_size=20,
+).filter(lambda name: name.strip(" ") == name)
+
+
+@given(unit_tests_only=st.booleans(), dir_name=_dir_name)
+def test_preflight_argument_set_invariants(
+    *, unit_tests_only: bool, dir_name: str
+) -> None:
+    """Composed cargo arguments satisfy the documented invariants.
+
+    ``--workspace`` always leads, ``--target-dir`` always points at the
+    supplied directory, ``--all-targets`` appears in the check set always and
+    in the test set iff full test targets are requested, and composition is
+    deterministic.
+    """
+    target_dir = Path("/preflight") / dir_name
+
+    check_args, test_args = publish_preflight._preflight_argument_sets(
+        target_dir, unit_tests_only=unit_tests_only
+    )
+
+    for arguments in (check_args, test_args):
+        assert arguments[0] == "--workspace"
+        assert arguments[-1] == f"--target-dir={target_dir}"
+    assert "--all-targets" in check_args
+    assert ("--all-targets" in test_args) == (not unit_tests_only)
+    assert (check_args, test_args) == publish_preflight._preflight_argument_sets(
+        target_dir, unit_tests_only=unit_tests_only
+    )
+
+
+@pytest.mark.parametrize("unit_tests_only", [True, False])
+def test_preflight_argument_sets_snapshot(
+    snapshot: SnapshotAssertion,
+    *,
+    unit_tests_only: bool,
+) -> None:
+    """The composed cargo argument tuples are locked by snapshot."""
+    check_args, test_args = publish_preflight._preflight_argument_sets(
+        Path("/preflight/target"), unit_tests_only=unit_tests_only
+    )
+
+    assert snapshot == {"check": check_args, "test": test_args}
