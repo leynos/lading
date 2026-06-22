@@ -16,7 +16,6 @@ if typ.TYPE_CHECKING:
     from pathlib import Path
 
     from lading.config import LadingConfig
-    from lading.runtime import CommandRunner
     from lading.workspace import WorkspaceCrate, WorkspaceGraph
 
 _WORKSPACE_SELECTORS: typ.Final[tuple[tuple[str, ...], ...]] = (
@@ -59,9 +58,11 @@ class BumpOptions:
     workspace : WorkspaceGraph | None, default None
         Loaded workspace graph. Programmatic callers may omit it only when they
         want ``run`` to inspect the workspace.
-    command_runner : CommandRunner | None, default None
-        Callable with the runtime command-runner interface. It is used for
-        lockfile rebuild commands; ``None`` uses the default subprocess runner.
+    lockfile_repository : bump_lockfiles.LockfileRepository | None, default None
+        Port used for lockfile projection and regeneration. ``None`` selects
+        the cargo-backed adapter with the default subprocess runner. Tests
+        inject a repository so lockfile behaviour can be observed without
+        invoking real Cargo processes.
     dependency_sections : Mapping[str, Collection[str]]
         Explicit dependency sections to rewrite by crate name.
     include_workspace_sections : bool, default False
@@ -77,7 +78,7 @@ class BumpOptions:
     rebuild_lockfiles: bool | None = None
     configuration: LadingConfig | None = None
     workspace: WorkspaceGraph | None = None
-    command_runner: CommandRunner | None = None
+    lockfile_repository: bump_lockfiles.LockfileRepository | None = None
     dependency_sections: cabc.Mapping[str, cabc.Collection[str]] = dc.field(
         default_factory=lambda: types.MappingProxyType({})
     )
@@ -219,7 +220,7 @@ def _initialize_bump_context(
         rebuild_lockfiles=rebuild_lockfiles,
         configuration=configuration,
         workspace=workspace,
-        command_runner=resolved_options.command_runner,
+        lockfile_repository=resolved_options.lockfile_repository,
         dependency_sections=resolved_options.dependency_sections,
         include_workspace_sections=resolved_options.include_workspace_sections,
     )
@@ -327,15 +328,13 @@ def _process_lockfiles(
     if context.base_options.rebuild_lockfiles is not True or not changed_manifests:
         return ()
     lockfile_manifests = context.configuration.bump.lockfile_manifests
-    if context.base_options.dry_run:
-        return bump_lockfiles.resolve_lockfile_paths(
-            context.root_path, lockfile_manifests
-        )
-    return bump_lockfiles.regenerate_lockfiles(
-        context.root_path,
-        lockfile_manifests,
-        runner=context.base_options.command_runner,
+    repository = (
+        context.base_options.lockfile_repository
+        or bump_lockfiles.CargoLockfileRepository()
     )
+    if context.base_options.dry_run:
+        return repository.resolve_lockfile_paths(context.root_path, lockfile_manifests)
+    return repository.regenerate_lockfiles(context.root_path, lockfile_manifests)
 
 
 def _prepare_sorted_changes(

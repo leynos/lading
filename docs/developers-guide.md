@@ -162,11 +162,16 @@ validates configured nested manifests before invoking Cargo, and de-duplicates
 resolved manifest paths.
 
 `BumpOptions` carries the dependency-injection points used by
-`lading.commands.bump.run`. The `command_runner` field accepts an optional
-`CommandRunner`, matching the command-runner protocol used by publish
-execution. When `command_runner` is `None`, bump falls back to the default
-subprocess runner. Tests pass a runner explicitly so lockfile commands can be
-observed without invoking real Cargo processes.
+`lading.commands.bump.run`. Lockfile operations are reached through the
+`lockfile_repository` field, a `bump_lockfiles.LockfileRepository` port
+introduced by issue 82: the bump domain never holds a raw command runner. When
+the field is `None`, bump uses `bump_lockfiles.CargoLockfileRepository`, the
+cargo-backed adapter bound to the default subprocess runner; the CLI binds the
+adapter to its selected runner. Tests inject a repository (or bind the adapter
+to a recording runner) so lockfile commands can be observed without invoking
+real Cargo processes. The port's scope is bump-side lockfile projection and
+regeneration only; publish-side discovery and validation continue to take a
+`CommandRunner` directly in `lockfile.py`.
 
 Option defaulting is the command layer's responsibility, not the CLI adapter's.
 `cli.bump` forwards `rebuild_lockfiles` as the raw `bool | None` it received;
