@@ -481,6 +481,16 @@ stderr-tail diagnostics. `_run_preflight_checks` builds these option objects for
 `cargo check` and `cargo test` so command construction stays explicit and
 testable.
 
+Design review (issue #72): `_dispatch_publication` and
+`_PublicationPipelineState` were assessed after contradictory static-analysis
+advice (one finding asked for the extraction; another called the bundle and the
+wrapper unnecessary). Both stay. `_dispatch_publication` owns the pipeline-mode
+logging and the dry-run two-phase sequencing, keeps `run()` linear, and is the
+seam the dispatch tests exercise directly. `_PublicationPipelineState` keeps
+the per-crate helper signatures within the four-argument lint ceiling and pins
+the invariant that plan, preparation, and options are constructed together and
+immutable for the pipeline's lifetime.
+
 Publication dispatch deliberately differs by mode. Dry-run mode keeps the
 historical two-phase pipeline: package every publishable crate, then run
 `cargo publish --dry-run` for every crate. Live mode interleaves the pipeline

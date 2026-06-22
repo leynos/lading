@@ -123,7 +123,16 @@ class _PublishExecutionOptions:
 
 @dc.dataclass(frozen=True, slots=True)
 class _PublicationPipelineState:
-    """Shared publish state for cargo package and publish invocations."""
+    """Shared publish state for cargo package and publish invocations.
+
+    Design note (issue #72): this bundle is deliberate. The per-crate
+    helpers (``_package_crate``, ``_publish_crate``) would otherwise need
+    ``plan``, ``preparation``, and ``options`` threaded individually,
+    pushing their signatures past the argument-count lint ceiling and
+    inviting positional mix-ups. The three fields are constructed together
+    in each pipeline entry point and are immutable for the pipeline's
+    lifetime, which is the invariant the dataclass enforces.
+    """
 
     plan: PublishPlan
     preparation: PublishPreparation
@@ -591,7 +600,15 @@ def _dispatch_publication(
     options: _PublishExecutionOptions,
     runner: CommandRunner,
 ) -> None:
-    """Route to the live or dry-run publication pipeline."""
+    """Route to the live or dry-run publication pipeline.
+
+    Design note (issue #72): this helper is more than a relocated branch.
+    It owns the operator-facing pipeline-mode log line, sequences the
+    dry-run two-phase pipeline (package everything, then publish
+    everything), and gives tests a single seam to exercise mode dispatch
+    without driving ``run()`` end to end. Inlining it would push ``run()``
+    back toward the complexity ceiling that prompted the extraction.
+    """
     if options.live:
         LOGGER.info("Publication mode: live (interleaved per-crate pipeline)")
         _execute_live_publication_pipeline(
