@@ -99,8 +99,8 @@ publish runs with stub mode enabled.
 ## Property-based testing
 
 [Hypothesis](https://hypothesis.readthedocs.io/) is a development dependency
-used for property-based tests across the publish command test suite. Add
-Hypothesis to new test modules with:
+used for property-based tests in the publish, bump, lockfile, and
+workspace-utility test suites. Add Hypothesis to new test modules with:
 
 ```python
 from hypothesis import HealthCheck, given, settings
@@ -132,7 +132,7 @@ The publish unit-test conftest exports the following shared helpers:
 | `prepare_staging_root(plan, base_dir)` | Create staged crate directories matching a plan                                       |
 
 `make_n_crate_chain` raises `ValueError` when `count < 1`. Use it in
-parametrised and property-based tests that must exercise arbitrary chain sizes.
+parametrized and property-based tests that must exercise arbitrary chain sizes.
 
 `CallTrackingRunner` is a callable class. Inject it as `command_runner` in
 `PublishOptions`. After the run, inspect `.calls` for the ordered list of
@@ -174,6 +174,13 @@ the only resolution against `configuration.bump.rebuild_lockfiles` happens in
 `bump._initialize_bump_context`. (The Cyclopts TOML loader may hydrate the CLI
 flag from `lading.toml` before dispatch, but `cli.bump` itself performs no
 coalescing.)
+
+Bump-time crate-set derivation is centralized in the bump context: the
+`excluded` and `updated_crate_names` sets are computed exactly once in
+`bump._initialize_bump_context` and threaded to downstream helpers such as
+`_update_crate_manifest`. Helpers must consume the context sets rather than
+re-deriving them per crate, which would make manifest processing quadratic in
+workspace size.
 
 `BumpChanges` records the user-visible files touched by a bump run. Its
 `lockfiles` field contains the `Cargo.lock` files regenerated after manifest
