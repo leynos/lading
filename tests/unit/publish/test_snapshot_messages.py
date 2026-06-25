@@ -340,3 +340,48 @@ def test_pipeline_info_log_snapshot(
     )
 
     assert _pipeline_info_records(caplog) == snapshot()
+
+
+@pytest.mark.parametrize(
+    "stderr_marker",
+    [
+        pytest.param("error: crate version `0.1.0` is already uploaded", id="uploaded"),
+        pytest.param(
+            "error: crate beta@0.1.0 already exists on crates.io index",
+            id="index-exists",
+        ),
+    ],
+)
+def test_already_published_warning_snapshot(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    snapshot: SnapshotAssertion,
+    stderr_marker: str,
+) -> None:
+    """The already-published warning format is locked by snapshot.
+
+    Issue #73: `_handle_publish_result` downgrades cargo registry exit code
+    101 with an already-published marker to a WARNING and continues; the
+    exact message was previously unconstrained.
+    """
+    caplog.set_level(logging.WARNING, logger="lading.commands.publish")
+    workspace_root = tmp_path / "workspace"
+    crates = make_dependency_chain(workspace_root)
+    plan = publish.plan_publication(
+        make_workspace(workspace_root, *crates), make_config()
+    )
+    beta = next(crate for crate in plan.publishable if crate.name == "beta")
+    invocation = publish._CargoInvocation(
+        crate_name="beta",
+        subcommand="publish",
+        output=(101, "", stderr_marker),
+    )
+
+    publish._handle_publish_result(
+        invocation,
+        beta,
+        plan,
+        publish._PublishExecutionOptions(live=False, allow_dirty=True),
+    )
+
+    assert _warning_records(caplog) == snapshot()
