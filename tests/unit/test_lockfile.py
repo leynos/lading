@@ -139,10 +139,10 @@ def test_discover_tracked_lockfiles_accepts_manifest_probe(
     assert probed == [tmp_path / "Cargo.toml", tmp_path / "nested" / "Cargo.toml"]
 
 
-def test_discover_tracked_lockfiles_handles_non_git_directory(
+def test_discover_tracked_lockfiles_raises_for_non_git_directory(
     tmp_path: Path,
 ) -> None:
-    """Non-git workspaces do not abort lockfile discovery."""
+    """Non-git workspaces surface a typed error instead of a silent skip."""
     (tmp_path / "Cargo.lock").write_text("", encoding="utf-8")
 
     def runner(
@@ -153,11 +153,10 @@ def test_discover_tracked_lockfiles_handles_non_git_directory(
     ) -> tuple[int, str, str]:
         return 128, "", "fatal: not a git repository"
 
-    result = lockfile.discover_tracked_lockfiles(tmp_path, runner)
-    assert result == (), (
-        "discovery should not abort on non-git errors; "
-        f"expected empty tuple, got {result!r}"
-    )
+    with pytest.raises(
+        lockfile.NotAGitRepositoryError, match="is not a git repository"
+    ):
+        lockfile.discover_tracked_lockfiles(tmp_path, runner)
 
 
 def test_discover_tracked_lockfiles_raises_on_git_failure(tmp_path: Path) -> None:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import collections.abc as cabc
+import logging
 import typing as typ
 from pathlib import Path
 
@@ -175,3 +176,39 @@ def test_validate_lockfile_freshness_surfaces_cargo_failures(
         match="failed to download registry index",
     ):
         publish_preflight._validate_lockfile_freshness(tmp_path, runner=runner, env={})
+
+
+def test_validate_lockfile_freshness_skips_non_git_workspaces(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The skip policy for non-git workspaces lives at the pre-flight caller.
+
+    Issue #79: discovery raises ``NotAGitRepositoryError`` instead of hiding
+    the condition; pre-flight catches it, warns, and continues.
+    """
+    caplog.set_level(logging.WARNING, logger="lading.commands.publish_preflight")
+
+    def raising_discover(_root: Path, _runner: object) -> tuple[Path, ...]:
+        message = f"{tmp_path} is not a git repository"
+        raise lockfile.NotAGitRepositoryError(message)
+
+    monkeypatch.setattr(
+        publish_preflight, "discover_tracked_lockfiles", raising_discover
+    )
+
+    def runner(
+        command: tuple[str, ...],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        pytest.fail("no cargo command should run for a non-git workspace")
+
+    publish_preflight._validate_lockfile_freshness(tmp_path, runner=runner, env={})
+
+    assert any(
+        "Skipping lockfile freshness validation" in message
+        for message in caplog.messages
+    )
