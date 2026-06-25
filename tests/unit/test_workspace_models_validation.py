@@ -7,11 +7,11 @@ import typing as typ
 
 import pytest
 
-from lading.workspace import models
 from tests.helpers.workspace_metadata import build_test_package, create_test_manifest
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers only
     from pathlib import Path
+from lading.workspace import graph_build, models
 
 
 def test_is_ordering_dependency_skips_unknown_crates() -> None:
@@ -35,7 +35,7 @@ def test_index_workspace_packages_skips_non_members() -> None:
     """Only workspace member packages should be indexed."""
     packages = [{"id": "member"}, {"id": "external"}]
 
-    index = models._index_workspace_packages(packages, ["member"])
+    index = graph_build._index_workspace_packages(packages, ["member"])
 
     assert set(index) == {"member"}
 
@@ -83,9 +83,9 @@ def test_collect_workspace_crates_builds_tuple_in_member_order(tmp_path: Path) -
         "alpha-id": alpha_package,
         "beta-id": beta_package,
     }
-    workspace_index = models._build_workspace_index(package_lookup)
+    workspace_index = graph_build._build_workspace_index(package_lookup)
 
-    crates = models._collect_workspace_crates(
+    crates = graph_build._collect_workspace_crates(
         package_lookup=package_lookup,
         workspace_member_ids=("beta-id", "alpha-id", "beta-id"),
         workspace_index=workspace_index,
@@ -132,13 +132,13 @@ def test_collect_workspace_crates_rejects_missing_members(
     package_lookup = {
         "alpha-id": build_test_package("alpha", "0.1.0", alpha_manifest),
     }
-    workspace_index = models._build_workspace_index(package_lookup)
+    workspace_index = graph_build._build_workspace_index(package_lookup)
 
     with pytest.raises(
         models.WorkspaceModelError,
         match=r"workspace member 'missing-id' missing from package list",
     ):
-        models._collect_workspace_crates(
+        graph_build._collect_workspace_crates(
             package_lookup=package_lookup,
             workspace_member_ids=workspace_member_ids,
             workspace_index=workspace_index,
@@ -150,7 +150,7 @@ def test_build_dependencies_handles_missing_entries() -> None:
     package = {"id": "crate", "dependencies": None}
     workspace_index = models.WorkspaceIndex(packages={}, members_by_name={})
 
-    dependencies = models._build_dependencies(package, workspace_index)
+    dependencies = graph_build._build_dependencies(package, workspace_index)
 
     assert dependencies == ()
 
@@ -159,17 +159,17 @@ def test_build_dependencies_handles_missing_entries() -> None:
     ("callable_obj", "args"),
     [
         pytest.param(
-            models._validate_dependency_mapping,
+            graph_build._validate_dependency_mapping,
             ("not-a-mapping",),
             id="mapping_not_dict",
         ),
         pytest.param(
-            models._validate_dependency_kind,
+            graph_build._validate_dependency_kind,
             ({"kind": 123},),
             id="kind_not_string",
         ),
         pytest.param(
-            models._validate_dependency_kind,
+            graph_build._validate_dependency_kind,
             ({"kind": "unknown"},),
             id="kind_unsupported",
         ),
@@ -186,7 +186,7 @@ def test_dependency_validation_errors(
 def test_lookup_workspace_target_handles_missing_entries() -> None:
     """Targets outside the workspace should return None."""
     workspace_index = models.WorkspaceIndex(packages={}, members_by_name={})
-    result = models._lookup_workspace_target({}, workspace_index)
+    result = graph_build._lookup_workspace_target({}, workspace_index)
 
     assert result is None
 
@@ -194,9 +194,9 @@ def test_lookup_workspace_target_handles_missing_entries() -> None:
 def test_path_normalisation_rejects_invalid_types() -> None:
     """Non-path types should be rejected for manifest and root paths."""
     with pytest.raises(models.WorkspaceModelError):
-        models._normalise_workspace_root(123)
+        graph_build._normalise_workspace_root(123)
     with pytest.raises(models.WorkspaceModelError):
-        models._normalise_manifest_path(123, "field")
+        graph_build._normalise_manifest_path(123, "field")
 
 
 def test_expect_sequence_validation() -> None:
@@ -219,11 +219,11 @@ def test_expect_string_and_non_empty_sequence_checks() -> None:
 
 def test_coerce_publish_setting_allows_sequences_and_bools() -> None:
     """Publish setting coercion should support bools, lists, and None."""
-    assert models._coerce_publish_setting(None, "crate") is True
-    assert models._coerce_publish_setting(value=False, package_id="crate") is False
-    assert models._coerce_publish_setting(["crates-io"], "crate") is True
+    assert graph_build._coerce_publish_setting(None, "crate") is True
+    assert graph_build._coerce_publish_setting(value=False, package_id="crate") is False
+    assert graph_build._coerce_publish_setting(["crates-io"], "crate") is True
     with pytest.raises(models.WorkspaceModelError):
-        models._coerce_publish_setting("invalid", "crate")
+        graph_build._coerce_publish_setting("invalid", "crate")
 
 
 def test_topological_sort_dedupes_duplicate_dependencies(tmp_path: Path) -> None:
@@ -300,15 +300,15 @@ def test_topological_sort_dedupes_duplicate_dependencies(tmp_path: Path) -> None
 
 def test_extract_readme_workspace_flag_handles_non_mappings(tmp_path: Path) -> None:
     """Non-mapping package tables should return False."""
-    assert models._extract_readme_workspace_flag("invalid") is False
-    assert models._extract_readme_workspace_flag({"readme": "README.md"}) is False
+    assert graph_build._extract_readme_workspace_flag("invalid") is False
+    assert graph_build._extract_readme_workspace_flag({"readme": "README.md"}) is False
 
 
 def test_manifest_uses_workspace_readme_detects_flag(tmp_path: Path) -> None:
     """Manifest helper should detect readme.workspace usage."""
     manifest_path = tmp_path / "Cargo.toml"
     manifest_path.write_text("[package]\nname = 'demo'\nreadme.workspace = true\n")
-    assert models._manifest_uses_workspace_readme(manifest_path) is True
+    assert graph_build._manifest_uses_workspace_readme(manifest_path) is True
 
 
 def test_manifest_uses_workspace_readme_reports_parse_errors(tmp_path: Path) -> None:
@@ -317,4 +317,4 @@ def test_manifest_uses_workspace_readme_reports_parse_errors(tmp_path: Path) -> 
     manifest_path.write_text("[package\n", encoding="utf-8")
 
     with pytest.raises(models.WorkspaceModelError):
-        models._manifest_uses_workspace_readme(manifest_path)
+        graph_build._manifest_uses_workspace_readme(manifest_path)

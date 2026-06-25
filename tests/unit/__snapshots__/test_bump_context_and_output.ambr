@@ -1,7 +1,25 @@
 # serializer version: 1
+# name: test_format_result_message_four_categories_snapshot[dry_run]
+  list([
+    'Dry run; would update version to 2.0.0 in 1 manifest(s), 1 documentation file(s), 1 readme file(s), and 1 lockfile(s):',
+    '- Cargo.toml',
+    '- README.md (documentation)',
+    '- crates/alpha/README.md (readme)',
+    '- Cargo.lock (lockfile)',
+  ])
+# ---
+# name: test_format_result_message_four_categories_snapshot[live]
+  list([
+    'Updated version to 2.0.0 in 1 manifest(s), 1 documentation file(s), 1 readme file(s), and 1 lockfile(s):',
+    '- Cargo.toml',
+    '- README.md (documentation)',
+    '- crates/alpha/README.md (readme)',
+    '- Cargo.lock (lockfile)',
+  ])
+# ---
 # name: test_format_result_message_handles_changes[all_changes]
   list([
-    'Updated version to 7.8.9 in 2 manifest(s) and 1 documentation file(s) and 1 readme file(s):',
+    'Updated version to 7.8.9 in 2 manifest(s), 1 documentation file(s), and 1 readme file(s):',
     '- Cargo.toml',
     '- member/Cargo.toml',
     '- README.md (documentation)',

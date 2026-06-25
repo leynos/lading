@@ -145,9 +145,12 @@ README adoption, and lockfile reporting. Keep user-facing summary construction
 in `lading.commands.bump_output` rather than formatting messages inline in the
 workflow.
 
-`lading.commands.bump_output` renders the CLI summary from a `BumpChanges`
-record. This record includes manifests, documentation files, transposed
-readmes, and lockfiles that changed during a bump run.
+`lading.commands.bump_output` is the sole owner of `BumpChanges` and all bump
+result-message formatting; `bump.py` imports these helpers and must not
+re-declare them. The `BumpChanges` record includes manifests, documentation
+files, transposed readmes, and lockfiles that changed during a bump run.
+Changed-category descriptions join with an Oxford comma for three or more
+categories (for example, "2 manifest(s), 1 readme file(s), and 1 lockfile(s)").
 
 `lading.commands.bump_readme` owns workspace README adoption during
 `lading bump`. The module copies the workspace `README.md` into each crate that
@@ -167,6 +170,13 @@ resolved manifest paths.
 execution. When `command_runner` is `None`, bump falls back to the default
 subprocess runner. Tests pass a runner explicitly so lockfile commands can be
 observed without invoking real Cargo processes.
+
+Bump-time crate-set derivation is centralised in the bump context: the
+`excluded` and `updated_crate_names` sets are computed exactly once in
+`bump._initialize_bump_context` and threaded to downstream helpers such as
+`_update_crate_manifest`. Helpers must consume the context sets rather than
+re-deriving them per crate, which would make manifest processing quadratic in
+workspace size.
 
 Option defaulting is the command layer's responsibility, not the CLI adapter's.
 `cli.bump` forwards `rebuild_lockfiles` as the raw `bool | None` it received;
@@ -617,6 +627,34 @@ a formatted message that includes all four values. Using a single function for
 message construction keeps the error format consistent across the packaging and
 publish phases and makes snapshot testing straightforward.
 
+### Shared TOML coercion (`lading.toml_coerce`)
+
+`lading.toml_coerce` is the canonical home for the TOML scalar, sequence, and
+mapping coercion helpers shared by `lading.config` and
+`lading.workspace.models`. Each helper takes an `error` keyword naming the
+`LadingError` subclass to raise, and both consumers bind their domain error
+type once with `functools.partial` (`ConfigurationError` in `config`,
+`WorkspaceModelError` in `models`); neither module re-declares a coercer. The
+canonical error-message shape is
+`{field} must be {expected}; received {type(value).__name__}.` and is pinned by
+property and snapshot tests in `tests/unit/test_toml_coerce.py`.
+
+### Module size extractions (issue 108)
+
+To keep source files within the 400-line guideline, the following
+responsibilities live in dedicated modules, each re-exported by its original
+home so existing access paths keep resolving:
+
+- `lading.commands.publish_pipeline` — per-crate cargo package/publish
+  pipeline, result classification, and live/dry-run dispatch (re-exported by
+  `publish`).
+- `lading.commands.bump_manifests` — per-manifest version and
+  dependency-section rewriting (re-exported by `bump`).
+- `lading.workspace.graph_build` — builders converting `cargo metadata`
+  output into workspace models (re-exported by `workspace.models`).
+- `lading.cli_options` — Cyclopts argument declarations (re-imported by
+  `cli`).
+
 ### In-process metrics (`lading.utils.metrics`)
 
 `lading.utils.metrics` is a process-local metrics accumulator. Counters are
@@ -685,7 +723,10 @@ reintroduces a second invocation log at any level is pinned by the tests in
 ### Pre-flight validation (`publish_preflight`)
 
 `lading.commands.publish_preflight` performs workspace validation before any
-crate is packaged or published. Its public entry point is:
+crate is packaged or published. It is the canonical (and only) home of
+`_run_preflight_checks` and `_preflight_argument_sets`; `publish.py` exposes
+both solely via module-level aliases for backwards compatibility with existing
+test patches and must not re-declare them. The public entry point is:
 
 ```python
 _run_preflight_checks(
