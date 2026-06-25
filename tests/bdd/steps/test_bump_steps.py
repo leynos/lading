@@ -233,3 +233,35 @@ def given_crate_readme_matches_workspace(
         bump_readme.compute_link_prefix(crate_root.relative_to(workspace_directory)),
     )
     crate_readme.write_text(rewritten_text, encoding="utf-8")
+
+
+@given(parsers.parse('a nested lockfile manifest is configured at "{manifest}"'))
+def given_nested_lockfile_manifest(
+    cmd_mox: CmdMox,
+    workspace_directory: Path,
+    manifest: str,
+) -> None:
+    """Configure ``bump.lockfile_manifests`` and stub its cargo rebuild."""
+    from pathlib import Path as _Path
+
+    from lading import config as config_module
+    from lading.testing import toml_utils
+
+    config_path = workspace_directory / config_module.CONFIG_FILENAME
+    document = toml_utils.load_or_create_document(config_path)
+    bump_table = toml_utils.ensure_table(document, "bump")
+    manifests = toml_utils.ensure_array_field(bump_table, "lockfile_manifests")
+    toml_utils.append_if_absent(manifests, manifest)
+    config_path.write_text(document.as_string(), encoding="utf-8")
+
+    nested_manifest = workspace_directory / _Path(manifest)
+    nested_manifest.parent.mkdir(parents=True, exist_ok=True)
+    nested_manifest.write_text(
+        '[package]\nname = "nested"\nversion = "0.1.0"\n', encoding="utf-8"
+    )
+    (nested_manifest.parent / "Cargo.lock").write_text(
+        "# nested lock\n", encoding="utf-8"
+    )
+    cmd_mox.stub("cargo::update").with_args(
+        "--workspace", "--manifest-path", str(nested_manifest.resolve())
+    ).returns(exit_code=0, stdout="cargo update --workspace\n", stderr="")
