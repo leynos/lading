@@ -1,6 +1,6 @@
 # Lading Tool Development Roadmap
 
-## Phase 1: Foundation and Core Abstraction
+## 1. Foundation and Core Abstraction
 
 **Objective:** Establish the foundational structure of the `lading` tool,
 including the CLI, configuration management, and workspace discovery. This
@@ -9,7 +9,7 @@ a solid base for the new, generalised functionality.
 
 ______________________________________________________________________
 
-### **Step 1.1: Project Scaffolding and CLI Structure**
+### 1.1. Project Scaffolding and CLI Structure
 
 **Description:** Create the new Python project structure for `lading` and
 implement the basic command-line interface using `cyclopts`.
@@ -42,7 +42,7 @@ implement the basic command-line interface using `cyclopts`.
 
 ______________________________________________________________________
 
-### **Step 1.2: Workspace Discovery and Modelling**
+### 1.2. Workspace Discovery and Modelling
 
 **Description:** Implement the core logic for inspecting a Rust workspace using
 `cargo metadata`.
@@ -71,7 +71,7 @@ ______________________________________________________________________
   - **Completion Criteria:** Both `bump` and `publish` commands have access to
     the complete, populated workspace model.
 
-## Phase 2: `lading bump` Subcommand Implementation
+## 2. `lading bump` Subcommand Implementation
 
 **Objective:** Deliver a fully functional, configuration-driven `bump` command
 that correctly propagates version changes across all relevant files in a
@@ -79,7 +79,7 @@ generic Rust workspace.
 
 ______________________________________________________________________
 
-### **Step 2.1: Version Propagation in `Cargo.toml`**
+### 2.1. Version Propagation in `Cargo.toml`
 
 **Description:** Implement the core logic for updating version numbers in the
 workspace and member crate manifests.
@@ -120,7 +120,7 @@ workspace and member crate manifests.
 
 ______________________________________________________________________
 
-### **Step 2.2: Documentation and README Synchronisation**
+### 2.2. Documentation and README Synchronisation
 
 **Description:** Implement the logic for updating documentation files and
 handling workspace READMEs.
@@ -144,7 +144,7 @@ handling workspace READMEs.
   - **Completion Criteria:** End-to-end tests verify that bump creates adopted
     crate README files before publish runs.
 
-## Phase 3: `lading publish` Subcommand Implementation
+## 3. `lading publish` Subcommand Implementation
 
 **Objective:** Deliver a robust `publish` command that safely and correctly
 publishes workspace crates in the right order, with comprehensive pre-flight
@@ -152,7 +152,7 @@ checks.
 
 ______________________________________________________________________
 
-### **Step 3.1: Publication Planning and Pre-flight Checks**
+### 3.1. Publication Planning and Pre-flight Checks
 
 **Description:** Implement the logic to determine which crates to publish, in
 what order, and to validate the workspace state before any publication actions
@@ -189,7 +189,7 @@ occur.
 
 ______________________________________________________________________
 
-### **Step 3.2: Crate Packaging and Publication**
+### 3.2. Crate Packaging and Publication
 
 **Description:** Implement the final steps of packaging each crate and
 interacting with the `cargo publish` command.
@@ -228,14 +228,14 @@ interacting with the `cargo publish` command.
     and logs when a crate version is already published, then continues to the
     next crate.
 
-## Phase 4: Stabilisation and Documentation
+## 4. Stabilisation and Documentation
 
 **Objective:** Ensure the `lading` tool is robust, well-tested, and has clear
 documentation for end-users.
 
 ______________________________________________________________________
 
-### **Step 4.1: Testing and Quality Assurance**
+### 4.1. Testing and Quality Assurance
 
 **Description:** Finalise the test suite, focusing on edge cases and end-to-end
 behaviours.
@@ -267,7 +267,7 @@ behaviours.
 
 ______________________________________________________________________
 
-### **Step 4.2: User Documentation and Release**
+### 4.2. User Documentation and Release
 
 **Description:** Prepare user-facing documentation and package the tool for
 distribution.
@@ -288,14 +288,14 @@ distribution.
   - **Completion Criteria:** The `pyproject.toml` is fully configured for
     building a distributable package, and a successful build can be triggered.
 
-## Phase 5: Command Execution Modernisation
+## 5. Command Execution Modernisation
 
 **Objective:** Replace plumbum and subprocess with cuprum for unified,
 security-conscious command execution with built-in observability.
 
 ______________________________________________________________________
 
-### **Step 5.1: Core Infrastructure Migration**
+### 5.1. Core Infrastructure Migration
 
 **Description:** Establish cuprum catalogue and migrate the cargo metadata
 invocation and path utilities.
@@ -326,7 +326,7 @@ invocation and path utilities.
 
 ______________________________________________________________________
 
-### **Step 5.2: Publish Execution Migration**
+### 5.2. Publish Execution Migration
 
 **Description:** Replace subprocess-based streaming with cuprum execution while
 preserving real-time output relay.
@@ -356,7 +356,7 @@ preserving real-time output relay.
 
 ______________________________________________________________________
 
-### **Step 5.3: Test Helper Migration**
+### 5.3. Test Helper Migration
 
 **Description:** Update end-to-end (e2e) test helpers to use cuprum for git
 operations.
@@ -377,7 +377,7 @@ operations.
 
 ______________________________________________________________________
 
-### **Step 5.4: Documentation and Dependency Cleanup**
+### 5.4. Documentation and Dependency Cleanup
 
 **Description:** Update scripting standards documentation and remove the
 plumbum dependency from the project.
