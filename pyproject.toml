@@ -47,6 +47,7 @@ dev = [
     # Test-only: the end-to-end helpers shell out via plumbum; production
     # code is pathlib + cuprum only (docs/roadmap.md Phase 5).
     "plumbum>=1.8",
+    "pyyaml>=6.0.3",
 ]
 
 [tool.ruff]
@@ -364,6 +365,19 @@ enable = [
 [tool.pytest.ini_options]
 # Tests automatically killed after seconds elapsed
 timeout = 30
+
+[tool.mutmut]
+source_paths = ["lading/"]
+pytest_add_cli_args_test_selection = ["tests/"]
+# mutmut copies only tests/, pyproject.toml, setup.cfg, and root test*.py
+# into its mutants/ working copy. The suite also reads docs/users-guide.md
+# and scripts/publish-check/bin/cargo relative to the repository root, so
+# copy those trees as well or the baseline run fails.
+also_copy = ["docs/", "scripts/"]
+# lading/testing/ is test scaffolding (the cmd-mox command-runner adapter
+# and TOML assertion helpers used by the suite itself); mutating it wastes
+# cycles and can poison the very helpers the tests assert with.
+do_not_mutate = ["lading/testing/*"]
 
 [tool.uv]
 package = true
