@@ -20,7 +20,7 @@ dependencies = [
     "cyclopts>=2.9",
     "markdown-it-py>=3,<5",
     "msgspec>=0.18,<1.0",
-    "tomlkit==0.13.*",
+    "tomlkit>=0.13,<0.16",
 ]
 
 [project.scripts]
