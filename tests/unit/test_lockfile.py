@@ -175,49 +175,6 @@ def test_discover_tracked_lockfiles_raises_on_git_failure(tmp_path: Path) -> Non
         lockfile.discover_tracked_lockfiles(tmp_path, runner)
 
 
-def test_refresh_lockfile_returns_lockfile_path(tmp_path: Path) -> None:
-    """Successful lockfile refresh returns the expected Cargo.lock path."""
-    manifest = tmp_path / "Cargo.toml"
-
-    def runner(
-        command: cabc.Sequence[str],
-        *,
-        cwd: Path | None = None,
-        env: cabc.Mapping[str, str] | None = None,
-    ) -> tuple[int, str, str]:
-        assert command == (
-            "cargo",
-            "generate-lockfile",
-            "--manifest-path",
-            str(manifest),
-        )
-        assert cwd == manifest.parent
-        return 0, "", ""
-
-    expected = tmp_path / "Cargo.lock"
-    result = lockfile.refresh_lockfile(manifest, runner)
-    assert result == expected, (
-        "refresh helper returned unexpected lockfile path; "
-        f"expected {expected!r}, got {result!r}"
-    )
-
-
-def test_refresh_lockfile_raises_on_failure(tmp_path: Path) -> None:
-    """Refresh failures include cargo stderr in the raised error."""
-    manifest = tmp_path / "Cargo.toml"
-
-    def runner(
-        command: cabc.Sequence[str],
-        *,
-        cwd: Path | None = None,
-        env: cabc.Mapping[str, str] | None = None,
-    ) -> tuple[int, str, str]:
-        return 101, "", "failed to resolve"
-
-    with pytest.raises(lockfile.LockfileRefreshError, match="failed to resolve"):
-        lockfile.refresh_lockfile(manifest, runner)
-
-
 def _validate_lockfile_freshness_for_result(
     tmp_path: Path, exit_code: int, stderr: str
 ) -> lockfile.LockfileFreshness:
@@ -378,28 +335,6 @@ def test_discovery_records_lockfile_count(tmp_path: Path) -> None:
     lockfile.discover_tracked_lockfiles(tmp_path, _static_runner(0, "Cargo.lock\n", ""))
 
     assert metrics.counter_value(lockfile.DISCOVERED_LOCKFILES_METRIC) == 1
-
-
-@pytest.mark.usefixtures("_metrics_registry")
-def test_refresh_records_success_outcome_and_duration(tmp_path: Path) -> None:
-    """A successful refresh counts a success and observes a duration."""
-    lockfile.refresh_lockfile(tmp_path / "Cargo.toml", _static_runner(0, "", ""))
-
-    assert metrics.counter_value(lockfile.REFRESH_METRIC, outcome="success") == 1
-    assert metrics.counter_value(lockfile.REFRESH_METRIC, outcome="failure") == 0
-    assert metrics.duration_stats(lockfile.REFRESH_DURATION_METRIC).count == 1
-
-
-@pytest.mark.usefixtures("_metrics_registry")
-def test_refresh_records_failure_outcome(tmp_path: Path) -> None:
-    """A failed refresh counts a failure and still observes a duration."""
-    with pytest.raises(lockfile.LockfileRefreshError):
-        lockfile.refresh_lockfile(
-            tmp_path / "Cargo.toml", _static_runner(101, "", "boom")
-        )
-
-    assert metrics.counter_value(lockfile.REFRESH_METRIC, outcome="failure") == 1
-    assert metrics.duration_stats(lockfile.REFRESH_DURATION_METRIC).count == 1
 
 
 @pytest.mark.usefixtures("_metrics_registry")

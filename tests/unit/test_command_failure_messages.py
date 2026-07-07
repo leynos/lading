@@ -24,7 +24,7 @@ from pathlib import Path
 
 import pytest
 
-from lading.commands import bump_lockfiles, lockfile
+from lading.commands import bump_lockfiles
 from lading.workspace import metadata
 
 if typ.TYPE_CHECKING:
@@ -49,17 +49,6 @@ def _failing_runner(
         return exit_code, stdout, stderr
 
     return runner
-
-
-def test_lockfile_refresh_failure_message(snapshot: SnapshotAssertion) -> None:
-    """``refresh_lockfile`` renders the canonical detail suffix."""
-    manifest = Path("/ws/crates/alpha/Cargo.toml")
-    with pytest.raises(lockfile.LockfileRefreshError) as excinfo:
-        lockfile.refresh_lockfile(
-            manifest, _failing_runner("", "error: registry offline\n")
-        )
-
-    assert snapshot == str(excinfo.value)
 
 
 def test_lockfile_regeneration_failure_message(snapshot: SnapshotAssertion) -> None:

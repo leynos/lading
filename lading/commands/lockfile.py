@@ -1,27 +1,29 @@
-"""Cargo lockfile discovery, refresh, and freshness validation helpers.
+"""Cargo lockfile discovery and freshness validation helpers.
 
 This module centralises the Cargo lockfile operations shared by release
-workflows. It discovers lockfiles that belong to the source workspace,
-regenerates them after manifest rewrites, and validates that Cargo can read
-them under ``--locked`` before expensive publish pre-flight commands run.
+workflows. It discovers lockfiles that belong to the source workspace and
+validates that Cargo can read them under ``--locked`` before expensive
+publish pre-flight commands run.
 
 Discovery is intentionally conservative. :func:`discover_tracked_lockfiles`
 queries the git index for tracked ``Cargo.lock`` files, then narrows the
 result to paths that are not under a ``target`` directory and have an adjacent
 ``Cargo.toml`` manifest.
 
-``lading bump`` calls :func:`discover_tracked_lockfiles` followed by
-:func:`refresh_lockfile` after it updates manifest versions. ``lading publish``
-uses :func:`discover_tracked_lockfiles` and
-:func:`validate_lockfile_freshness` before the cargo check/test pre-flight, so
-stale lockfiles fail early with an actionable repair command.
+Call graph: ``lading publish`` uses :func:`discover_tracked_lockfiles` and
+:func:`validate_lockfile_freshness` before the cargo check/test pre-flight,
+so stale lockfiles fail early with an actionable repair command.
+``lading bump`` regenerates lockfiles via
+:func:`lading.commands.bump_lockfiles.regenerate_lockfiles` instead, which
+runs ``cargo update --workspace``: bump wants existing pinned versions
+refreshed in place after manifest rewrites, whereas validation here uses
+``cargo metadata --locked`` purely as a read-only freshness probe.
 
-Typical local or CI usage follows the same sequence:
+Typical publish-side usage:
 
 ```python
 lockfiles = discover_tracked_lockfiles(workspace_root, runner)
 for lockfile_path in lockfiles:
-    refresh_lockfile(lockfile_path.parent / "Cargo.toml", runner)
     validate_lockfile_freshness(lockfile_path.parent / "Cargo.toml", runner)
 ```
 """
@@ -37,7 +39,7 @@ from pathlib import Path
 
 from lading.exceptions import LadingError
 from lading.utils import metrics
-from lading.utils.process import append_detail, command_detail, with_detail
+from lading.utils.process import append_detail, command_detail
 
 if typ.TYPE_CHECKING:
     from lading.runtime import CommandRunner
@@ -47,14 +49,8 @@ _ManifestExists = cabc.Callable[[Path], bool]
 
 # Metric names (issue #91); documented in docs/developers-guide.md.
 DISCOVERED_LOCKFILES_METRIC = "lockfile.discovered"
-REFRESH_METRIC = "lockfile.refresh"
-REFRESH_DURATION_METRIC = "lockfile.refresh.duration"
 VALIDATE_METRIC = "lockfile.validate"
 VALIDATE_DURATION_METRIC = "lockfile.validate.duration"
-
-
-class LockfileRefreshError(LadingError):
-    """Raised when Cargo cannot regenerate a lockfile."""
 
 
 class LockfileDiscoveryError(LadingError):
@@ -172,49 +168,6 @@ def discover_tracked_lockfiles(
         workspace_root,
     )
     return lockfiles
-
-
-def refresh_lockfile(
-    manifest_path: Path,
-    runner: CommandRunner,
-) -> Path:
-    """Regenerate the lockfile for ``manifest_path`` and return its path.
-
-    Parameters
-    ----------
-    manifest_path
-        Path to the ``Cargo.toml`` manifest to generate a lockfile for.
-    runner
-        Callable used to run external commands. It receives a command sequence
-        and returns ``(exit_code, stdout, stderr)``.
-
-    Returns
-    -------
-    Path
-        Path to the generated ``Cargo.lock`` in ``manifest_path.parent``.
-
-    Raises
-    ------
-    LockfileRefreshError
-        Raised when ``cargo generate-lockfile`` returns a non-zero exit code.
-        The error message includes Cargo's stderr, or stdout when stderr is
-        empty, so callers can report why regeneration failed.
-    """
-    lockfile_path = manifest_path.parent / "Cargo.lock"
-    LOGGER.info("Refreshing %s", lockfile_path)
-    started_at = time.perf_counter()
-    exit_code, stdout, stderr = runner(
-        ("cargo", "generate-lockfile", "--manifest-path", str(manifest_path)),
-        cwd=manifest_path.parent,
-    )
-    metrics.observe_duration(REFRESH_DURATION_METRIC, time.perf_counter() - started_at)
-    if exit_code != 0:
-        metrics.increment_counter(REFRESH_METRIC, outcome="failure")
-        message = with_detail(f"Failed to refresh {lockfile_path}", stdout, stderr)
-        raise LockfileRefreshError(message)
-    metrics.increment_counter(REFRESH_METRIC, outcome="success")
-    LOGGER.info("Refreshed %s", lockfile_path)
-    return lockfile_path
 
 
 def validate_lockfile_freshness(
