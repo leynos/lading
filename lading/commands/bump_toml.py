@@ -116,7 +116,7 @@ def update_dependency_table(
     for name in dependency_names:
         if name not in table:
             continue
-        entry = table[name]  # OutOfOrderTableProxy supports indexing
+        entry = table[name]  # type: ignore[index]  # OutOfOrderTableProxy supports indexing
         if update_dependency_entry(table, name, entry, target_version):
             changed = True
     return changed
