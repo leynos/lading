@@ -371,17 +371,12 @@ def test_already_published_warning_snapshot(
         make_workspace(workspace_root, *crates), make_config()
     )
     beta = next(crate for crate in plan.publishable if crate.name == "beta")
-    invocation = publish._CargoInvocation(
-        crate_name="beta",
-        subcommand="publish",
-        output=(101, "", stderr_marker),
-    )
 
     publish._handle_publish_result(
-        invocation,
         beta,
-        plan,
-        publish._PublishExecutionOptions(live=False, allow_dirty=True),
+        (101, "", stderr_marker),
+        plan=plan,
+        options=publish._PublishExecutionOptions(live=False, allow_dirty=True),
     )
 
     assert _warning_records(caplog) == snapshot()
