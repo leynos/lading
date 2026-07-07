@@ -164,6 +164,45 @@ after manifest changes. It always includes the workspace root `Cargo.toml`,
 validates configured nested manifests before invoking Cargo, and de-duplicates
 resolved manifest paths.
 
+For screen readers: the following flowchart traces `regenerate_lockfiles`. It
+resolves the manifest list, then initializes empty `lockfiles` and `failures`
+collections. It loops over every manifest, logging the start and calling
+`_run_workspace_lockfile_update`; on success it records the crate's
+`Cargo.lock` in `lockfiles`, and on `LockfileRegenerationError` it logs the
+exception and appends the manifest and error to `failures`. After the loop, if
+there were no failures it logs overall success and returns the regenerated
+lockfiles; otherwise it selects the first failure's cause, builds an aggregated
+failure message, and raises `LockfileRegenerationError` chained from that cause.
+
+```mermaid
+flowchart TD
+    A[Start regenerate_lockfiles] --> B[Resolve manifests]
+    B --> C[Init lockfiles and failures]
+    C --> D{For each manifest}
+    D -->|Next manifest| E[Log regeneration start]
+    E --> F[Call _run_workspace_lockfile_update]
+    F --> G{LockfileRegenerationError?}
+    G -->|No| H[Log success and add Cargo.lock to lockfiles]
+    H --> D
+    G -->|Yes| I[Log exception and append manifest error to failures]
+    I --> D
+    D -->|No more manifests| J{Any failures?}
+    J -->|No| K[Log overall success and return lockfiles]
+    J -->|Yes| L[Select first failure and its cause]
+    L --> M[Call _build_aggregate_failure_message]
+    M --> N[Raise LockfileRegenerationError with aggregated message chained from cause]
+    N --> O[End]
+    K --> O
+```
+
+_Figure 1: Control flow of `regenerate_lockfiles` — every manifest is
+attempted, and per-manifest failures are collected and reported together after
+the loop._
+
+The aggregate branch shown applies when several lockfiles are regenerated; when
+only the workspace-root lockfile is processed, its lone failure is re-raised as
+the original cargo error rather than wrapped in the aggregate message.
+
 `BumpOptions` carries the dependency-injection points used by
 `lading.commands.bump.run`. The `command_runner` field accepts an optional
 `CommandRunner`, matching the command-runner protocol used by publish
@@ -567,7 +606,7 @@ stream for a failed command: stderr stripped of whitespace when non-empty,
 otherwise stdout stripped, otherwise the empty string.
 
 `append_detail(message, detail, *, separator=": ") -> str` appends an
-*already-derived* `detail` to `message` using `separator` only when `detail` is
+_already-derived_ `detail` to `message` using `separator` only when `detail` is
 non-empty. Reach for it when the caller has already computed the detail (for
 example via `command_detail` to branch on its content) and must not derive it
 twice — `_verify_clean_working_tree` inspects the detail to decide whether to
