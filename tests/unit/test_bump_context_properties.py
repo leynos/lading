@@ -150,6 +150,30 @@ _DEPENDENCY_KINDS: typ.Final[tuple[_DependencyKind, ...]] = (
 )
 
 
+def _group_dependencies_by_section(
+    edges: tuple[_DependencyEdge, ...],
+) -> dict[str, list[str]]:
+    """Group dependency targets by the manifest section their ``kind`` selects."""
+    by_section: dict[str, list[str]] = {}
+    for target, kind in edges:
+        by_section.setdefault(_SECTION_BY_KIND[kind], []).append(target)
+    return by_section
+
+
+def _manifest_section_lines(
+    by_section: cabc.Mapping[str, list[str]],
+) -> list[str]:
+    """Render dependency sections as manifest lines in canonical section order."""
+    lines: list[str] = []
+    for section in _SECTION_ORDER:
+        targets = by_section.get(section)
+        if not targets:
+            continue
+        lines += ["", f"[{section}]"]
+        lines += [f'{target} = "{_INITIAL_VERSION}"' for target in sorted(targets)]
+    return lines
+
+
 def _write_synthetic_manifests(
     root: Path,
     names: cabc.Iterable[str],
@@ -167,15 +191,8 @@ def _write_synthetic_manifests(
         crate_dir = root / name
         crate_dir.mkdir(parents=True, exist_ok=True)
         lines = ["[package]", f'name = "{name}"', f'version = "{_INITIAL_VERSION}"']
-        by_section: dict[str, list[str]] = {}
-        for target, kind in dependencies.get(name, ()):
-            by_section.setdefault(_SECTION_BY_KIND[kind], []).append(target)
-        for section in _SECTION_ORDER:
-            targets = by_section.get(section)
-            if not targets:
-                continue
-            lines += ["", f"[{section}]"]
-            lines += [f'{target} = "{_INITIAL_VERSION}"' for target in sorted(targets)]
+        by_section = _group_dependencies_by_section(dependencies.get(name, ()))
+        lines += _manifest_section_lines(by_section)
         crate_dir.joinpath("Cargo.toml").write_text(
             "\n".join(lines) + "\n", encoding="utf-8"
         )
