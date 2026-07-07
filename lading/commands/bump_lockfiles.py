@@ -11,6 +11,7 @@ import collections.abc as cabc
 import logging
 import shlex
 import time
+import typing as typ
 from pathlib import Path
 
 from lading.exceptions import LadingError
@@ -83,6 +84,30 @@ def regenerate_lockfiles(
     manifests = _resolve_manifest_paths(workspace_root, lockfile_manifests)
     started_at = time.perf_counter()
     _LOGGER.info("Regenerating %d Cargo lockfile(s)", len(manifests))
+    lockfiles, failures = _collect_lockfile_results(
+        manifests, workspace_root, command_runner
+    )
+    if failures:
+        _raise_aggregated_failure(manifests, failures)
+    _LOGGER.info(
+        "Regenerated %d Cargo lockfile(s) in %.3fs",
+        len(lockfiles),
+        time.perf_counter() - started_at,
+    )
+    return tuple(lockfiles)
+
+
+def _collect_lockfile_results(
+    manifests: tuple[Path, ...],
+    workspace_root: Path,
+    command_runner: CommandRunner,
+) -> tuple[list[Path], list[tuple[Path, LockfileRegenerationError]]]:
+    """Attempt every manifest and partition the outcomes.
+
+    Returns a ``(lockfiles, failures)`` pair: *lockfiles* holds the
+    successfully regenerated ``Cargo.lock`` paths and *failures* holds
+    ``(manifest, error)`` pairs for the rest.
+    """
     lockfiles: list[Path] = []
     failures: list[tuple[Path, LockfileRegenerationError]] = []
     for manifest in manifests:
@@ -93,27 +118,25 @@ def regenerate_lockfiles(
             failures.append((manifest, error))
         elif lockfile is not None:
             lockfiles.append(lockfile)
-    if failures:
-        if len(manifests) == 1:
-            # Only the workspace-root lockfile was regenerated: surface the
-            # plain cargo error. With no sibling lockfile to disambiguate, the
-            # aggregate repair list would add noise without information.
-            raise failures[0][1]
-        # Several lockfiles were regenerated: report through the aggregate
-        # message so the operator sees which lockfiles are now inconsistent and
-        # how to repair each, even when only one failed. Chain from the first
-        # underlying failure so diagnostics (for example a missing cargo
-        # executable) survive the aggregation.
-        cause = failures[0][1].__cause__ or failures[0][1]
-        raise LockfileRegenerationError(
-            _build_aggregate_failure_message(failures)
-        ) from cause
-    _LOGGER.info(
-        "Regenerated %d Cargo lockfile(s) in %.3fs",
-        len(lockfiles),
-        time.perf_counter() - started_at,
-    )
-    return tuple(lockfiles)
+    return lockfiles, failures
+
+
+def _raise_aggregated_failure(
+    manifests: tuple[Path, ...],
+    failures: cabc.Sequence[tuple[Path, LockfileRegenerationError]],
+) -> typ.NoReturn:
+    """Raise the appropriate error for one or more failed manifests.
+
+    A lone workspace-root failure re-raises the original cargo error
+    unchanged; several regenerated lockfiles raise one aggregated error
+    listing every failed manifest and its repair command.
+    """
+    if len(manifests) == 1:
+        raise failures[0][1]
+    cause = failures[0][1].__cause__ or failures[0][1]
+    raise LockfileRegenerationError(
+        _build_aggregate_failure_message(failures)
+    ) from cause
 
 
 def _build_aggregate_failure_message(
