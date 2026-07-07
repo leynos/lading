@@ -507,7 +507,7 @@ def _update_manifest(
 
 
 def _workspace_dependency_sections(
-    updated_crates: cabc.Collection[str],
+    updated_crates: cabc.Set[str],
 ) -> dict[str, set[str]]:
     """Return dependency names to update for the workspace manifest."""
     crate_names = {name for name in updated_crates if name}
@@ -518,7 +518,7 @@ def _workspace_dependency_sections(
 
 def _dependency_sections_for_crate(
     crate: WorkspaceCrate,
-    updated_crates: cabc.Collection[str],
+    updated_crates: cabc.Set[str],
 ) -> dict[str, set[str]]:
     """Return dependency names grouped by section for ``crate``."""
     if not crate.dependencies:

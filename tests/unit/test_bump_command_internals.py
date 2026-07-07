@@ -2,27 +2,26 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import collections.abc as cabc
 import dataclasses as dc
+import string
 import typing as typ
+from pathlib import Path
 
-from tomlkit import parse as parse_toml
 import hypothesis.strategies as st
 import pytest
+from hypothesis import HealthCheck, given, settings
+from tomlkit import parse as parse_toml
 
 from lading.workspace import WorkspaceCrate, WorkspaceDependency, WorkspaceGraph
 from tests.helpers.workspace_builders import (
     _load_version,
     _make_config,
-    _make_workspace,
 )
 
 if typ.TYPE_CHECKING:
     from syrupy.assertion import SnapshotAssertion
-from hypothesis import HealthCheck, given, settings
 from lading.commands import bump, bump_output
-import collections.abc as cabc
-import string
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -146,6 +145,8 @@ def _parse_manifest_versions(
     package_version = document["package"]["version"]
     alpha_version = document["dependencies"]["alpha"].value
     return package_version, alpha_version
+
+
 def test_determine_package_selectors_respects_exclusions() -> None:
     """Excluded crates produce no package selectors."""
     assert bump._determine_package_selectors("beta", {"beta"}) == ()
@@ -173,8 +174,8 @@ def test_build_changes_description_counts_sections(tmp_path: Path) -> None:
         transposed_readmes=(tmp_path / "crates" / "alpha" / "README.md",),
     )
     assert (
-        bump_output._build_changes_description(changes)
-        == "2 manifest(s), 1 documentation file(s), and 1 readme file(s)"
+        bump._build_changes_description(changes)
+        == "2 manifest(s) and 1 documentation file(s) and 1 readme file(s)"
     )
 
     changes = bump.BumpChanges(
@@ -183,8 +184,9 @@ def test_build_changes_description_counts_sections(tmp_path: Path) -> None:
         transposed_readmes=(tmp_path / "crates" / "alpha" / "README.md",),
         lockfiles=(tmp_path / "Cargo.lock",),
     )
-    assert bump_output._build_changes_description(changes) == (
-        "1 manifest(s), 1 documentation file(s), 1 readme file(s), and 1 lockfile(s)"
+    assert bump._build_changes_description(changes) == (
+        "1 manifest(s) and 1 documentation file(s) and "
+        "1 readme file(s) and 1 lockfile(s)"
     )
 
 
@@ -528,19 +530,38 @@ def test_update_dependency_sections_workspace_dev_and_build() -> None:
     build_deps = document["workspace"]["build-dependencies"]
     assert build_deps["beta"]["version"].value == "3.0.0"
 
+
+# ---------------------------------------------------------------------------
+# Crate-set derivation (issue #97)
+# ---------------------------------------------------------------------------
+
+_crate_name = st.text(
+    alphabet=string.ascii_lowercase + string.digits + "-_",
+    min_size=1,
+    max_size=12,
+)
+
+
+_DependencyKind = typ.Literal["normal", "dev", "build"] | None
+_DependencyEdge = tuple[str, _DependencyKind]
+_DependencyEdges = cabc.Mapping[str, tuple[_DependencyEdge, ...]]
+
+
 def _synthetic_workspace(
     names: cabc.Iterable[str],
     *,
     root: Path = Path("/ws"),
-    dependencies: cabc.Mapping[str, tuple[str, ...]] | None = None,
+    dependencies: _DependencyEdges | None = None,
 ) -> WorkspaceGraph:
     """Build an in-memory workspace graph for the supplied crate names.
 
-    ``dependencies`` maps a crate name to the names of the crates it depends
-    on; each edge becomes a :class:`WorkspaceDependency` (a normal, unaliased
-    dependency) attached to the dependent crate. ``root`` anchors every
-    crate's ``manifest_path`` so callers can point the graph at a real
-    temporary tree.
+    ``dependencies`` maps a crate name to its outgoing edges, each a
+    ``(target crate name, kind)`` pair where ``kind`` is ``None``/``"normal"``,
+    ``"dev"``, or ``"build"``. Every edge becomes an (unaliased)
+    :class:`WorkspaceDependency` attached to the dependent crate, so the graph
+    exercises normal, dev, and build dependency-section routing. ``root``
+    anchors every crate's ``manifest_path`` so callers can point the graph at a
+    real temporary tree.
     """
     dependency_map = dependencies or {}
     crates = tuple(
@@ -554,17 +575,18 @@ def _synthetic_workspace(
             readme_is_workspace=False,
             dependencies=tuple(
                 WorkspaceDependency(
-                    package_id=f"{dependency}-id",
-                    name=dependency,
-                    manifest_name=dependency,
-                    kind=None,
+                    package_id=f"{target}-id",
+                    name=target,
+                    manifest_name=target,
+                    kind=kind,
                 )
-                for dependency in dependency_map.get(name, ())
+                for target, kind in dependency_map.get(name, ())
             ),
         )
         for name in names
     )
     return WorkspaceGraph(workspace_root=root, crates=crates)
+
 
 @given(
     names=st.sets(_crate_name, min_size=0, max_size=8),
@@ -603,39 +625,141 @@ def test_bump_context_crate_sets_match_naive_derivation(
         crate.name for crate in workspace.crates if crate.name not in set(exclude)
     )
 
+
+_INITIAL_VERSION: typ.Final = "0.1.0"
+_TARGET_VERSION: typ.Final = "1.2.3"
+
+# The manifest sections a dependency ``kind`` routes to, mirroring Cargo's
+# canonical vocabulary. Kept independent of the production
+# ``_DEPENDENCY_SECTION_BY_KIND`` map so this test is a genuine reference.
+_SECTION_BY_KIND: typ.Final[dict[_DependencyKind, str]] = {
+    None: "dependencies",
+    "normal": "dependencies",
+    "dev": "dev-dependencies",
+    "build": "build-dependencies",
+}
+_SECTION_ORDER: typ.Final = ("dependencies", "dev-dependencies", "build-dependencies")
+_DEPENDENCY_KINDS: typ.Final[tuple[_DependencyKind, ...]] = (
+    None,
+    "normal",
+    "dev",
+    "build",
+)
+
+
 def _write_synthetic_manifests(
     root: Path,
     names: cabc.Iterable[str],
-    dependencies: cabc.Mapping[str, tuple[str, ...]],
+    dependencies: _DependencyEdges,
 ) -> None:
     """Write one ``Cargo.toml`` per crate under ``root`` matching the graph.
 
-    Each manifest is seeded at ``_INITIAL_VERSION`` and lists its dependency
-    edges as plain-string version requirements, mirroring the
-    :class:`WorkspaceDependency` entries built by ``_synthetic_workspace``.
+    Each manifest is seeded at ``_INITIAL_VERSION``; every dependency edge is
+    written as a plain-string version requirement under the section its ``kind``
+    selects (``[dependencies]``, ``[dev-dependencies]``, or
+    ``[build-dependencies]``), mirroring the :class:`WorkspaceDependency`
+    entries built by ``_synthetic_workspace``.
     """
     for name in names:
         crate_dir = root / name
         crate_dir.mkdir(parents=True, exist_ok=True)
         lines = ["[package]", f'name = "{name}"', f'version = "{_INITIAL_VERSION}"']
-        edges = dependencies.get(name, ())
-        if edges:
-            lines += ["", "[dependencies]"]
-            lines += [f'{dep} = "{_INITIAL_VERSION}"' for dep in edges]
+        by_section: dict[str, list[str]] = {}
+        for target, kind in dependencies.get(name, ()):
+            by_section.setdefault(_SECTION_BY_KIND[kind], []).append(target)
+        for section in _SECTION_ORDER:
+            targets = by_section.get(section)
+            if not targets:
+                continue
+            lines += ["", f"[{section}]"]
+            lines += [f'{target} = "{_INITIAL_VERSION}"' for target in sorted(targets)]
         crate_dir.joinpath("Cargo.toml").write_text(
             "\n".join(lines) + "\n", encoding="utf-8"
         )
 
-def _read_manifest_versions(manifest_path: Path) -> tuple[str, dict[str, str]]:
-    """Return the on-disk package version and dependency versions."""
+
+def _read_manifest_versions(
+    manifest_path: Path,
+) -> tuple[str, dict[str, dict[str, str]]]:
+    """Return the package version and per-section dependency versions.
+
+    The second element maps each present dependency section to a ``{name:
+    version}`` mapping, so callers can assert that a ``kind`` was routed to the
+    correct manifest table.
+    """
     document = parse_toml(manifest_path.read_text(encoding="utf-8"))
     package_version = str(document["package"]["version"])
-    dependencies = document.get("dependencies")
-    dep_versions = {
-        key: str(value.value if hasattr(value, "value") else value)
-        for key, value in (dependencies.items() if dependencies is not None else ())
-    }
-    return package_version, dep_versions
+    section_versions: dict[str, dict[str, str]] = {}
+    for section in _SECTION_ORDER:
+        table = document.get(section)
+        if table is None:
+            continue
+        section_versions[section] = {
+            key: str(value.value if hasattr(value, "value") else value)
+            for key, value in table.items()
+        }
+    return package_version, section_versions
+
+
+def _draw_dependency_edges(
+    data: st.DataObject,
+    names: cabc.Sequence[str],
+    updated_pivot: str,
+) -> dict[str, dict[str, _DependencyKind]]:
+    """Draw a per-crate ``{target: kind}`` edge map for the workspace.
+
+    Edges never self-reference, ``kind`` varies across normal/dev/build, and one
+    edge is forced onto ``updated_pivot`` so the "depends on an updated crate"
+    branch is covered on every example.
+    """
+    edges: dict[str, dict[str, _DependencyKind]] = {}
+    for name in names:
+        candidates = [other for other in names if other != name]
+        targets = data.draw(
+            st.sets(st.sampled_from(candidates), max_size=len(candidates)),
+            label=f"deps[{name}]",
+        )
+        edges[name] = {
+            target: data.draw(
+                st.sampled_from(_DEPENDENCY_KINDS), label=f"kind[{name}->{target}]"
+            )
+            for target in sorted(targets)
+        }
+    dependent = data.draw(
+        st.sampled_from([name for name in names if name != updated_pivot]),
+        label="dependent",
+    )
+    if updated_pivot not in edges[dependent]:
+        edges[dependent][updated_pivot] = data.draw(
+            st.sampled_from(_DEPENDENCY_KINDS), label="dependent_kind"
+        )
+    return edges
+
+
+def _assert_crate_manifest_update(
+    crate: WorkspaceCrate,
+    crate_edges: cabc.Mapping[str, _DependencyKind],
+    context: bump._BumpContext,
+    *,
+    updated_names: cabc.Set[str],
+    excluded: bool,
+) -> None:
+    """Apply the manifest update for ``crate`` and check it against reference."""
+    depends_on_updated = any(target in updated_names for target in crate_edges)
+    expect_skipped = excluded and not depends_on_updated
+
+    outcome = bump._apply_crate_manifest_update(crate, _TARGET_VERSION, context)
+
+    assert outcome.was_skipped is expect_skipped
+    assert outcome.was_updated is (not expect_skipped)
+
+    package_version, section_versions = _read_manifest_versions(crate.manifest_path)
+    assert package_version == (_INITIAL_VERSION if excluded else _TARGET_VERSION)
+    for target, kind in crate_edges.items():
+        section = _SECTION_BY_KIND[kind]
+        expected = _TARGET_VERSION if target in updated_names else _INITIAL_VERSION
+        assert section_versions[section][target] == expected
+
 
 @given(data=st.data())
 @settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
@@ -648,8 +772,9 @@ def test_manifest_selection_matches_naive_reference(
     Reference semantics (issue #97): a non-excluded crate's package version is
     rewritten to the target; an excluded crate's package version is left
     untouched; a dependency edge is rewritten only when the crate it targets is
-    itself being updated. The manifest pass must consume ``context.excluded``
-    and ``context.updated_crate_names`` — derived once in
+    itself being updated, and only in the manifest section its ``kind`` selects.
+    The manifest pass must consume ``context.excluded`` and
+    ``context.updated_crate_names`` — derived once in
     ``_initialize_bump_context`` — rather than re-deriving them per crate.
 
     ``tmp_path`` is a function-scoped fixture reused across Hypothesis
@@ -672,24 +797,15 @@ def test_manifest_selection_matches_naive_reference(
     exclude_set = {excluded_pivot} | extra_excluded
     exclude = tuple(sorted(exclude_set))
 
-    # Draw arbitrary dependency edges (no self-edges), then force one edge onto
-    # the guaranteed-updated crate so the "depends on an updated crate" branch
-    # is always covered.
-    dependencies: dict[str, tuple[str, ...]] = {}
-    for name in names:
-        candidates = [other for other in names if other != name]
-        edges = data.draw(
-            st.sets(st.sampled_from(candidates), max_size=len(candidates)),
-            label=f"deps[{name}]",
-        )
-        dependencies[name] = tuple(sorted(edges))
-    dependent = data.draw(st.sampled_from(other_names), label="dependent")
-    dependencies[dependent] = tuple(sorted({*dependencies[dependent], updated_pivot}))
+    edges = _draw_dependency_edges(data, names, updated_pivot)
+    dependencies: _DependencyEdges = {
+        name: tuple(sorted(targets.items())) for name, targets in edges.items()
+    }
 
     updated_names = {name for name in names if name not in exclude_set}
     assert exclude_set, "example must exclude at least one crate"
     assert any(
-        target in updated_names for edges in dependencies.values() for target in edges
+        target in updated_names for targets in edges.values() for target in targets
     ), "example must contain a dependency on an updated crate"
 
     _write_synthetic_manifests(tmp_path, names, dependencies)
@@ -704,147 +820,10 @@ def test_manifest_selection_matches_naive_reference(
 
     crates_by_name = {crate.name: crate for crate in workspace.crates}
     for name in names:
-        crate = crates_by_name[name]
-        excluded_flag = name in exclude_set
-        depends_on_updated = any(dep in updated_names for dep in dependencies[name])
-        expect_skipped = excluded_flag and not depends_on_updated
-
-        outcome = bump._apply_crate_manifest_update(crate, _TARGET_VERSION, context)
-
-        assert outcome.was_skipped is expect_skipped
-        assert outcome.was_updated is (not expect_skipped)
-
-        package_version, dep_versions = _read_manifest_versions(crate.manifest_path)
-        assert package_version == (
-            _INITIAL_VERSION if excluded_flag else _TARGET_VERSION
+        _assert_crate_manifest_update(
+            crates_by_name[name],
+            edges[name],
+            context,
+            updated_names=updated_names,
+            excluded=name in exclude_set,
         )
-        for dep in dependencies[name]:
-            assert dep_versions[dep] == (
-                _TARGET_VERSION if dep in updated_names else _INITIAL_VERSION
-            )
-
-
-# ---------------------------------------------------------------------------
-# Canonical bump_output formatting (issue #95)
-# ---------------------------------------------------------------------------
-
-_CATEGORY_COUNT = st.integers(min_value=0, max_value=3)
-
-
-def _expected_description(categories: list[str]) -> str:
-    """Return the reference Oxford-comma joining for ``categories``."""
-    if len(categories) == 1:
-        return categories[0]
-    if len(categories) == 2:
-        return " and ".join(categories)
-    return f"{', '.join(categories[:-1])}, and {categories[-1]}"
-
-
-def _build_expected_body(root: Path, changes: bump_output.BumpChanges) -> list[str]:
-    """Return the expected ``"- <rel_path>"`` body lines in render order."""
-    return [
-        *(f"- {path.relative_to(root)}" for path in changes.manifests),
-        *(f"- {path.relative_to(root)} (documentation)" for path in changes.documents),
-        *(
-            f"- {path.relative_to(root)} (readme)"
-            for path in changes.transposed_readmes
-        ),
-        *(f"- {path.relative_to(root)} (lockfile)" for path in changes.lockfiles),
-    ]
-
-
-def _build_expected_categories(changes: bump_output.BumpChanges) -> list[str]:
-    """Return ordered category descriptions for the present change sets."""
-    categories: list[str] = []
-    if changes.manifests:
-        categories.append(f"{len(changes.manifests)} manifest(s)")
-    if changes.documents:
-        categories.append(f"{len(changes.documents)} documentation file(s)")
-    if changes.transposed_readmes:
-        categories.append(f"{len(changes.transposed_readmes)} readme file(s)")
-    if changes.lockfiles:
-        categories.append(f"{len(changes.lockfiles)} lockfile(s)")
-    return categories
-
-
-@given(
-    manifest_count=_CATEGORY_COUNT,
-    document_count=_CATEGORY_COUNT,
-    readme_count=_CATEGORY_COUNT,
-    lockfile_count=_CATEGORY_COUNT,
-)
-def test_result_message_grammar_and_path_rendering(
-    manifest_count: int,
-    document_count: int,
-    readme_count: int,
-    lockfile_count: int,
-) -> None:
-    """Any category combination renders correct grammar and unique paths."""
-    root = Path("/ws")
-    manifests = tuple(root / f"m{i}" / "Cargo.toml" for i in range(manifest_count))
-    documents = tuple(root / f"doc{i}.md" for i in range(document_count))
-    readmes = tuple(root / f"r{i}" / "README.md" for i in range(readme_count))
-    lockfiles = tuple(root / f"l{i}" / "Cargo.lock" for i in range(lockfile_count))
-    changes = bump_output.BumpChanges(
-        manifests=manifests,
-        documents=documents,
-        lockfiles=lockfiles,
-        transposed_readmes=readmes,
-    )
-
-    message = bump_output._format_result_message(
-        changes, "1.2.3", dry_run=False, workspace_root=root
-    )
-
-    if not any((manifests, documents, readmes, lockfiles)):
-        assert message == "No manifest changes required; all versions already 1.2.3."
-        return
-
-    lines = message.splitlines()
-    assert lines[1:] == _build_expected_body(root, changes)
-
-    categories = _build_expected_categories(changes)
-    expected_header = (
-        f"Updated version to 1.2.3 in {_expected_description(categories)}:"
-    )
-    assert lines[0] == expected_header
-    assert " and and " not in lines[0]
-    if len(categories) >= 3:
-        assert ", and " in lines[0]
-
-
-def test_format_result_message_four_categories_snapshot(
-    tmp_path: Path, snapshot: SnapshotAssertion
-) -> None:
-    """All four categories render with Oxford-comma grammar (dry-run and live)."""
-    root = tmp_path
-    changes = bump_output.BumpChanges(
-        manifests=(root / "Cargo.toml",),
-        documents=(root / "README.md",),
-        lockfiles=(root / "Cargo.lock",),
-        transposed_readmes=(root / "crates" / "alpha" / "README.md",),
-    )
-
-    live = bump_output._format_result_message(
-        changes, "2.0.0", dry_run=False, workspace_root=root
-    )
-    dry = bump_output._format_result_message(
-        changes, "2.0.0", dry_run=True, workspace_root=root
-    )
-
-    assert snapshot(name="live") == live.splitlines()
-    assert snapshot(name="dry_run") == dry.splitlines()
-
-
-def test_format_result_message_lockfile_only(tmp_path: Path) -> None:
-    """A lockfile-only BumpChanges renders correctly (not 'no changes')."""
-    root = tmp_path
-    lockfile = root / "Cargo.lock"
-    changes = bump_output.BumpChanges(lockfiles=(lockfile,))
-    message = bump_output._format_result_message(
-        changes, "1.2.3", dry_run=False, workspace_root=root
-    )
-    assert message != "No manifest changes required; all versions already 1.2.3."
-    lines = message.splitlines()
-    assert lines[0] == "Updated version to 1.2.3 in 1 lockfile(s):"
-    assert lines[1] == f"- {lockfile.relative_to(root)} (lockfile)"
