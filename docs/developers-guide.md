@@ -713,10 +713,14 @@ reintroduces a second invocation log at any level is pinned by the tests in
 ### Pre-flight validation (`publish_preflight`)
 
 `lading.commands.publish_preflight` performs workspace validation before any
-crate is packaged or published. It is the canonical (and only) home of
-`_run_preflight_checks` and `_preflight_argument_sets`; `publish.py` exposes
-both solely via module-level aliases for backwards compatibility with existing
-test patches and must not re-declare them. The public entry point is:
+crate is packaged or published. It is the canonical home of the preflight
+logic. `publish.py` re-exposes it for backwards compatibility with existing
+test patches, but the two helpers differ in how they are surfaced:
+`_preflight_argument_sets` is exposed solely via a module-level alias and must
+not be re-declared, whereas `_run_preflight_checks` is a thin wrapper function
+that resolves the optional `configuration` argument (loading it from the active
+context or the workspace when omitted) before delegating to the canonical
+implementation. The public entry point is:
 
 ```python
 _run_preflight_checks(
