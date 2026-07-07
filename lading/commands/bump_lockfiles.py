@@ -79,6 +79,31 @@ def regenerate_lockfiles(
     manifests = _resolve_manifest_paths(workspace_root, lockfile_manifests)
     started_at = time.perf_counter()
     _LOGGER.info("Regenerating %d Cargo lockfile(s)", len(manifests))
+    lockfiles, failures = _attempt_lockfile_updates(
+        workspace_root, manifests, command_runner
+    )
+    if failures:
+        # Chain from the first underlying failure so diagnostics (for
+        # example a missing cargo executable) survive the aggregation.
+        primary = failures[0][1]
+        cause = primary.__cause__ if primary.__cause__ is not None else primary
+        raise LockfileRegenerationError(
+            _build_aggregate_failure_message(failures)
+        ) from cause
+    _LOGGER.info(
+        "Regenerated %d Cargo lockfile(s) in %.3fs",
+        len(lockfiles),
+        time.perf_counter() - started_at,
+    )
+    return tuple(lockfiles)
+
+
+def _attempt_lockfile_updates(
+    workspace_root: Path,
+    manifests: tuple[Path, ...],
+    command_runner: CommandRunner,
+) -> tuple[list[Path], list[tuple[Path, LockfileRegenerationError]]]:
+    """Attempt every manifest, returning a ``(lockfiles, failures)`` pair."""
     lockfiles: list[Path] = []
     failures: list[tuple[Path, LockfileRegenerationError]] = []
     for manifest in manifests:
@@ -99,20 +124,7 @@ def regenerate_lockfiles(
             time.perf_counter() - manifest_started_at,
         )
         lockfiles.append(manifest.parent / "Cargo.lock")
-    if failures:
-        # Chain from the first underlying failure so diagnostics (for
-        # example a missing cargo executable) survive the aggregation.
-        primary = failures[0][1]
-        cause = primary.__cause__ if primary.__cause__ is not None else primary
-        raise LockfileRegenerationError(
-            _build_aggregate_failure_message(failures)
-        ) from cause
-    _LOGGER.info(
-        "Regenerated %d Cargo lockfile(s) in %.3fs",
-        len(lockfiles),
-        time.perf_counter() - started_at,
-    )
-    return tuple(lockfiles)
+    return lockfiles, failures
 
 def _build_aggregate_failure_message(
     failures: cabc.Sequence[tuple[Path, LockfileRegenerationError]],
