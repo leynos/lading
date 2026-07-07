@@ -768,6 +768,22 @@ _publish_crate(
 ) -> None
 ```
 
+`_CrateAction` is the shared `typing.Protocol` for single-crate pipeline
+steps; its `__call__` signature is `(crate, state, *, runner) -> None`,
+matching `_package_crate` and `_publish_crate` exactly.
+`_for_each_publishable_crate(state, *, runner, action: _CrateAction) -> None`
+iterates `state.plan.publishable` in pipeline order and applies `action` to
+each crate; both `_package_publishable_crates` and `_publish_crates` delegate
+to it, passing `_package_crate` or `_publish_crate` as the action
+respectively. The live pipeline (`_execute_live_publication_pipeline`)
+deliberately bypasses this helper and manages its own loop, interleaving
+`_package_crate` and `_publish_crate` per crate so that a freshly packaged
+crate is uploaded before packaging begins for the next. New per-crate steps
+intended for the batched (dry-run) pipeline should therefore be written as
+`_CrateAction`-conforming functions dispatched through
+`_for_each_publishable_crate`; steps that must interleave packaging and
+publishing belong in the live pipeline instead.
+
 `_PublicationPipelineState` carries only publish-domain state: the resolved
 `PublishPlan`, the `PublishPreparation`, and `_PublishExecutionOptions`.
 Infrastructure stays at the call boundary: `_CommandRunner` is passed directly

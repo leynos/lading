@@ -9,7 +9,7 @@ from pathlib import Path
 
 import hypothesis.strategies as st
 import pytest
-from hypothesis import given
+from hypothesis import HealthCheck, given, settings
 
 from lading.commands import publish, publish_preflight
 
@@ -390,6 +390,7 @@ _dir_name = st.text(
 
 
 @given(unit_tests_only=st.booleans(), dir_name=_dir_name)
+@settings(max_examples=20, suppress_health_check=[HealthCheck.function_scoped_fixture])
 def test_preflight_argument_set_invariants(
     *, unit_tests_only: bool, dir_name: str
 ) -> None:

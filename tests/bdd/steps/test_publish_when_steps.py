@@ -27,7 +27,17 @@ if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
     target_fixture="preflight_result",
 )
 def when_run_publish_preflight_checks(workspace_directory: Path) -> dict[str, typ.Any]:
-    """Execute publish pre-flight checks directly and capture failures."""
+    """Execute publish pre-flight checks directly and capture failures.
+
+    This step deliberately drives the ``_run_preflight_checks`` seam rather
+    than the ``lading publish`` CLI boundary. The scenarios it serves probe the
+    cmd-mox command-runner guard (e.g. a missing ``CMOX_IPC_SOCKET``) — test
+    harness infrastructure, not a user-facing publish flow — and assert on the
+    raised :class:`~lading.commands.publish.PublishPreflightError` object. A
+    subprocess CLI rewrite would exercise artificial stub misconfiguration
+    through the CLI and could only assert on formatted stderr, losing that
+    precise contract; the direct seam is the correct home for this coverage.
+    """
     error: publish.PublishPreflightError | None = None
     try:
         publish._run_preflight_checks(
