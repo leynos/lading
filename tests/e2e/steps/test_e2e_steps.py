@@ -8,6 +8,7 @@ from pathlib import Path
 
 from pytest_bdd import given, parsers, then, when
 
+from lading import config as config_module
 from lading.testing import toml_utils
 from tests.e2e.helpers import git_helpers, workspace_builder
 from tests.e2e.helpers.e2e_steps_helpers import (
@@ -308,13 +309,12 @@ def given_workspace_rebuilds_app_lockfile(
 ) -> None:
     """Configure a nested lockfile manifest and a lockfile-writing cargo stub."""
     workspace: workspace_builder.NonTrivialWorkspace = e2e_state["workspace"]
-    config_path = workspace.root / "lading.toml"
-    config_text = config_path.read_text(encoding="utf-8").replace(
-        "[bump]\n",
-        '[bump]\nlockfile_manifests = ["crates/app/Cargo.toml"]\n',
-        1,
-    )
-    config_path.write_text(config_text, encoding="utf-8")
+    config_path = workspace.root / config_module.CONFIG_FILENAME
+    document = toml_utils.load_or_create_document(config_path)
+    bump_table = toml_utils.ensure_table(document, "bump")
+    manifests = toml_utils.ensure_array_field(bump_table, "lockfile_manifests")
+    toml_utils.append_if_absent(manifests, "crates/app/Cargo.toml")
+    config_path.write_text(document.as_string(), encoding="utf-8")
 
     stale_marker = "# stale lockfile\n"
     (workspace.root / "Cargo.lock").write_text(stale_marker, encoding="utf-8")
