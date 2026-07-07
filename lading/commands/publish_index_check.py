@@ -258,7 +258,7 @@ def _validate_dependency_placement(
     the plan and is ordered before the current crate. Raises the context
     exception class for every other case.
     """
-    publishable_name_indexes = {
+    publishable_name_indexes: dict[str, int] = {
         _canonical_crate_name(entry.name): index
         for index, entry in enumerate(handling.plan.publishable)
     }
@@ -287,13 +287,19 @@ def _validate_dependency_placement(
         missing_name,
         missing_index if missing_index is not None else "<not in plan>",
     )
+    # An if/elif chain (rather than sequential guards) narrows missing_index
+    # to int in later branches: ty 0.0.8 does not narrow bindings after calls
+    # to NoReturn helpers, only via the branch conditions themselves.
     if missing_index is None:
         _raise_out_of_plan_dependency(context, missing_name=missing_name)
-    if missing_index == current_index:
+    elif missing_index == current_index:
         _raise_self_dependency(context, missing_name=missing_name)
-    if missing_index > current_index:
+    elif missing_index > current_index:
         _raise_out_of_order_dependency(context, missing_name=missing_name)
-    return _DependencyPlacement(current_index, missing_index, missing_canonical_name)
+    else:
+        return _DependencyPlacement(
+            current_index, missing_index, missing_canonical_name
+        )
 
 
 def _emit_downgrade_success(
@@ -366,9 +372,25 @@ def _handle_index_missing_version(
     )
 
     missing_name = failure.missing_dependency_name
+    # if/else (rather than a guard clause) narrows missing_name to str for
+    # the downgrade path: ty 0.0.8 does not narrow bindings after calls to
+    # NoReturn helpers, only via the branch conditions themselves.
     if missing_name is None:
         _raise_name_extraction_failure(context)
+    else:
+        _downgrade_or_raise(
+            failure, context=context, handling=handling, missing_name=missing_name
+        )
 
+
+def _downgrade_or_raise(
+    failure: CargoIndexLookupFailure,
+    *,
+    context: _IndexMissingVersionFailure,
+    handling: _IndexMissingVersionHandling,
+    missing_name: str,
+) -> None:
+    """Downgrade a planned-dependency failure or raise when overrides forbid it."""
     placement = _validate_dependency_placement(context, handling, missing_name)
 
     handling.logger.debug(
