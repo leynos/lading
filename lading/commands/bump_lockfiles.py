@@ -8,6 +8,7 @@ versions change.
 from __future__ import annotations
 
 import collections.abc as cabc
+import dataclasses as dc
 import logging
 import shlex
 import time
@@ -111,13 +112,13 @@ def _collect_lockfile_results(
     lockfiles: list[Path] = []
     failures: list[tuple[Path, LockfileRegenerationError]] = []
     for manifest in manifests:
-        lockfile, error = _attempt_single_lockfile_update(
+        result = _attempt_single_lockfile_update(
             workspace_root, manifest, command_runner
         )
-        if error is not None:
-            failures.append((manifest, error))
-        elif lockfile is not None:
-            lockfiles.append(lockfile)
+        if result.error is not None:
+            failures.append((manifest, result.error))
+        elif result.lockfile is not None:
+            lockfiles.append(result.lockfile)
     return lockfiles, failures
 
 
@@ -186,17 +187,20 @@ def _resolve_manifest_paths(
     return tuple(manifests)
 
 
+@dc.dataclass(frozen=True, slots=True)
+class _LockfileUpdateResult:
+    """Outcome of attempting one manifest's lockfile update."""
+
+    lockfile: Path | None
+    error: LockfileRegenerationError | None
+
+
 def _attempt_single_lockfile_update(
     workspace_root: Path,
     manifest: Path,
     command_runner: CommandRunner,
-) -> tuple[Path | None, LockfileRegenerationError | None]:
-    """Attempt one manifest's lockfile update.
-
-    Returns ``(lockfile, None)`` on success — where ``lockfile`` is the
-    regenerated ``Cargo.lock`` path — or ``(None, error)`` when the update
-    fails, so the caller can aggregate failures without aborting the loop.
-    """
+) -> _LockfileUpdateResult:
+    """Attempt one manifest's lockfile update and return the outcome."""
     manifest_started_at = time.perf_counter()
     _LOGGER.info("Regenerating Cargo lockfile for %s", manifest)
     try:
@@ -206,13 +210,13 @@ def _attempt_single_lockfile_update(
         # operator one aggregated repair list instead of a re-run per
         # failure (issue #84).
         _LOGGER.exception("Cargo lockfile regeneration failed")
-        return None, exc
+        return _LockfileUpdateResult(lockfile=None, error=exc)
     _LOGGER.info(
         "Regenerated Cargo lockfile for %s in %.3fs",
         manifest,
         time.perf_counter() - manifest_started_at,
     )
-    return manifest.parent / "Cargo.lock", None
+    return _LockfileUpdateResult(lockfile=manifest.parent / "Cargo.lock", error=None)
 
 
 def _run_workspace_lockfile_update(

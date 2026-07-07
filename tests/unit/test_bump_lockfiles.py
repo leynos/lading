@@ -4,11 +4,16 @@ from __future__ import annotations
 
 import collections.abc as cabc
 import dataclasses as dc
+import operator
 import pathlib
+import shlex
+import tempfile
 import typing as typ
 from pathlib import Path
 
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from lading.commands import bump_lockfiles
 
@@ -296,59 +301,142 @@ def _selective_failure_runner(
     return runner, attempted
 
 
-def test_regenerate_lockfiles_attempts_all_manifests_after_failure(
-    tmp_path: Path,
-) -> None:
-    """A mid-list cargo failure does not skip the remaining manifests."""
+@pytest.fixture
+def ab_workspace(tmp_path: Path) -> Path:
+    """Create a workspace with root and ``a``/``b`` member ``Cargo.toml`` files."""
     for name in ("a", "b"):
         (tmp_path / name).mkdir()
         (tmp_path / name / "Cargo.toml").write_text("", encoding="utf-8")
     (tmp_path / "Cargo.toml").write_text("", encoding="utf-8")
-    failing = (tmp_path / "a" / "Cargo.toml").resolve()
+    return tmp_path
+
+
+def test_regenerate_lockfiles_attempts_all_manifests_after_failure(
+    ab_workspace: Path,
+) -> None:
+    """A mid-list cargo failure does not skip the remaining manifests."""
+    failing = (ab_workspace / "a" / "Cargo.toml").resolve()
     runner, attempted = _selective_failure_runner({failing})
 
     with pytest.raises(bump_lockfiles.LockfileRegenerationError) as excinfo:
         bump_lockfiles.regenerate_lockfiles(
-            tmp_path,
+            ab_workspace,
             ("a/Cargo.toml", "b/Cargo.toml"),
             runner=runner,
         )
 
-    assert attempted == [
-        (tmp_path / "Cargo.toml").resolve(),
+    expected_order = [
+        (ab_workspace / "Cargo.toml").resolve(),
         failing,
-        (tmp_path / "b" / "Cargo.toml").resolve(),
+        (ab_workspace / "b" / "Cargo.toml").resolve(),
     ]
+    assert attempted == expected_order, (
+        f"every manifest should be attempted in order; "
+        f"expected {expected_order}, got {attempted}"
+    )
     message = str(excinfo.value)
-    assert "failed for 1 manifest(s)" in message
-    assert str(failing) in message
-    assert f"cargo update --workspace --manifest-path {failing}" in message
-    assert str((tmp_path / "b" / "Cargo.toml").resolve()) not in message
+    assert "failed for 1 manifest(s)" in message, (
+        f"aggregate header should count one failure; got: {message}"
+    )
+    assert str(failing) in message, (
+        f"the failed manifest should be named in the message; got: {message}"
+    )
+    assert f"cargo update --workspace --manifest-path {failing}" in message, (
+        f"the repair command for the failed manifest should be present; got: {message}"
+    )
+    assert str((ab_workspace / "b" / "Cargo.toml").resolve()) not in message, (
+        f"the successful manifest should not appear in the repair list; got: {message}"
+    )
 
 
 def test_regenerate_lockfiles_aggregates_multiple_failures(
-    tmp_path: Path, snapshot: SnapshotAssertion
+    ab_workspace: Path, snapshot: SnapshotAssertion
 ) -> None:
     """Every failed manifest is listed once with its repair command."""
-    for name in ("a", "b"):
-        (tmp_path / name).mkdir()
-        (tmp_path / name / "Cargo.toml").write_text("", encoding="utf-8")
-    (tmp_path / "Cargo.toml").write_text("", encoding="utf-8")
     failing = {
-        (tmp_path / "a" / "Cargo.toml").resolve(),
-        (tmp_path / "b" / "Cargo.toml").resolve(),
+        (ab_workspace / "a" / "Cargo.toml").resolve(),
+        (ab_workspace / "b" / "Cargo.toml").resolve(),
     }
     runner, _ = _selective_failure_runner(failing)
 
     with pytest.raises(bump_lockfiles.LockfileRegenerationError) as excinfo:
         bump_lockfiles.regenerate_lockfiles(
-            tmp_path,
+            ab_workspace,
             ("a/Cargo.toml", "b/Cargo.toml"),
             runner=runner,
         )
 
     message = str(excinfo.value)
-    assert "failed for 2 manifest(s)" in message
+    assert "failed for 2 manifest(s)" in message, (
+        f"aggregate header should count two failures; got: {message}"
+    )
     for manifest in failing:
-        assert message.count(f"--manifest-path {manifest}") == 1
-    assert snapshot == message.replace(str(tmp_path), "<workspace>")
+        assert message.count(f"--manifest-path {manifest}") == 1, (
+            f"each failed manifest should be listed exactly once; got: {message}"
+        )
+    assert snapshot == message.replace(str(ab_workspace), "<workspace>")
+
+
+@given(
+    spec=st.tuples(
+        st.booleans(),
+        st.lists(
+            st.tuples(
+                st.text(alphabet="abcdefghij", min_size=1, max_size=4),
+                st.booleans(),
+            ),
+            min_size=1,
+            max_size=5,
+            unique_by=operator.itemgetter(0),
+        ),
+    ),
+)
+@settings(max_examples=50, deadline=None)
+def test_regenerate_lockfiles_attempts_all_and_reports_each_failure_once(
+    spec: tuple[bool, list[tuple[str, bool]]],
+) -> None:
+    """Every manifest is attempted and each failure is reported exactly once."""
+    fail_root, crates = spec
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / "Cargo.toml").write_text("", encoding="utf-8")
+        expected_order = [(root / "Cargo.toml").resolve()]
+        failing: set[Path] = set()
+        if fail_root:
+            failing.add((root / "Cargo.toml").resolve())
+        for name, should_fail in crates:
+            (root / name).mkdir()
+            (root / name / "Cargo.toml").write_text("", encoding="utf-8")
+            manifest = (root / name / "Cargo.toml").resolve()
+            expected_order.append(manifest)
+            if should_fail:
+                failing.add(manifest)
+
+        runner, attempted = _selective_failure_runner(failing)
+        configured = tuple(f"{name}/Cargo.toml" for name, _ in crates)
+
+        if failing:
+            with pytest.raises(bump_lockfiles.LockfileRegenerationError) as excinfo:
+                bump_lockfiles.regenerate_lockfiles(root, configured, runner=runner)
+            message = str(excinfo.value)
+            repair_lines = message.count("cargo update --workspace --manifest-path")
+            assert repair_lines == len(failing), (
+                f"expected one repair line per failure; got {repair_lines} for "
+                f"{len(failing)} failure(s): {message}"
+            )
+            for manifest in failing:
+                assert shlex.quote(str(manifest)) in message, (
+                    f"failed manifest {manifest} should appear in: {message}"
+                )
+        else:
+            regenerated = bump_lockfiles.regenerate_lockfiles(
+                root, configured, runner=runner
+            )
+            assert len(regenerated) == len(expected_order), (
+                "all lockfiles should be regenerated when nothing fails"
+            )
+
+        assert attempted == expected_order, (
+            f"every manifest should be attempted once, in order; "
+            f"expected {expected_order}, got {attempted}"
+        )
