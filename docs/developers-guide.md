@@ -168,9 +168,14 @@ Markdown links in fenced code blocks, indented code blocks, and inline code
 spans are preserved verbatim.
 
 `lading.commands.bump_lockfiles` owns Cargo lockfile discovery and regeneration
-after manifest changes. It always includes the workspace root `Cargo.toml`,
-validates configured nested manifests before invoking Cargo, and de-duplicates
-resolved manifest paths.
+after manifest changes. `merge_discovered_manifests` unions the configured
+`bump.lockfile_manifests` entries with manifests implied by git-tracked
+`Cargo.lock` files (reusing
+`lading.commands.lockfile .discover_tracked_lockfiles`); configured entries
+keep their order and discovered entries follow in sorted order.
+`regenerate_lockfiles` always includes the workspace root `Cargo.toml`,
+validates nested manifests before invoking Cargo, and de-duplicates resolved
+manifest paths.
 
 For screen readers: the following flowchart traces `regenerate_lockfiles`. It
 resolves the manifest list, then initializes empty `lockfiles` and `failures`
@@ -334,10 +339,13 @@ perform the error-handling and path-filtering passes respectively.
 
 Lockfile regeneration after `lading bump` is owned by
 `lading.commands.bump_lockfiles.regenerate_lockfiles`, which runs
-`cargo update --workspace` per configured manifest. The two cargo strategies
-differ deliberately: bump refreshes existing pinned versions in place after
-manifest rewrites, while publish only probes freshness read-only via
-`cargo metadata --locked` and never regenerates.
+`cargo update --workspace` per merged manifest —
+`bump_lockfiles.merge_discovered_manifests` unions the configured
+`bump.lockfile_manifests` entries with manifests implied by
+`discover_tracked_lockfiles`. The two cargo strategies differ deliberately:
+bump refreshes existing pinned versions in place after manifest rewrites, while
+publish only probes freshness read-only via `cargo metadata --locked` and never
+regenerates.
 
 `validate_lockfile_freshness(manifest_path, runner)` runs
 `cargo metadata --locked --manifest-path ... --format-version=1`. It returns a

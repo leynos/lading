@@ -123,21 +123,30 @@ fixture lockfile and seeing that lockfile listed in the bump output with a
   `Artifacts and notes`. No fallback command needed.
 - [x] (2026-07-07 13:10Z) Stage B: red tests landed and observed failing for
   the expected reasons — three new unit tests plus the two extended wiring
-  tests failed with `AttributeError: ... has no attribute
-  'merge_discovered_manifests'`, and the new BDD scenario failed with
-  `'- fixtures/minimal/Cargo.lock (lockfile)'` absent from the CLI output.
+  tests failed with
+  `AttributeError: ... has no attribute 'merge_discovered_manifests'`, and the
+  new BDD scenario failed with `'- fixtures/minimal/Cargo.lock (lockfile)'`
+  absent from the CLI output.
 - [x] (2026-07-07 13:40Z) Stage C: implemented `merge_discovered_manifests`
   in `lading/commands/bump_lockfiles.py`, wired it into
   `bump._process_lockfiles` for both dry-run and live paths, extended the
-  autouse `stub_lockfile_regeneration` fixture, and updated the
-  `lockfile.py` call-graph docstring. Full suite green: 683 passed, 62
-  snapshots passed (no snapshot content changed).
+  autouse `stub_lockfile_regeneration` fixture, and updated the `lockfile.py`
+  call-graph docstring. Full suite green: 683 passed, 62 snapshots passed (no
+  snapshot content changed).
 - [x] (2026-07-07 13:50Z) Side quest: restored the `make typecheck` gate —
   ty 0.0.8 (unpinned, installed by CI and locally via `uv tool install ty`)
-  flagged six pre-existing diagnostics on the clean tree. Committed
-  separately as "Restore a passing typecheck gate under ty 0.0.8".
-- [ ] Stage D: documentation, pre-flight message wording, snapshot updates,
-  full quality gates, CodeRabbit review.
+  flagged six pre-existing diagnostics on the clean tree. Committed separately
+  as "Restore a passing typecheck gate under ty 0.0.8".
+- [x] (2026-07-08 00:20Z) CodeRabbit review of Stages B+C: `coderabbit
+  review --agent` completed with zero findings.
+- [x] (2026-07-08 00:40Z) Stage D: reworded the publish pre-flight stale
+  message (it no longer blames `lading bump`), regenerated the affected
+  syrupy snapshot after reviewing the diff, and updated
+  `docs/users-guide.md` (bump discovery paragraph, quoted pre-flight
+  message, `lockfile_manifests` and `rebuild_lockfiles` key descriptions,
+  regeneration paragraph) and `docs/developers-guide.md` (bump_lockfiles
+  module description, lockfile helpers section). All gates green: 683
+  tests, lint 10.00/10, formatting, typecheck, markdown, nixie.
 
 ## Surprises & discoveries
 
@@ -155,26 +164,26 @@ fixture lockfile and seeing that lockfile listed in the bump output with a
   `_mock_cargo_metadata` in `tests/bdd/steps/metadata_fixtures.py` and the
   "workspace has tracked Cargo.lock files" given step both stub
   `git ls-files "**/Cargo.lock" "Cargo.lock"` even though nothing in bump
-  invoked it. Evidence: the stubs existed before this change and cmd-mox
-  stubs are non-strict, so they sat unused. Impact: the existing lockfile
-  scenarios worked unchanged once discovery was wired in; only the new
-  nested-lockfile scenario needed a new given step.
+  invoked it. Evidence: the stubs existed before this change and cmd-mox stubs
+  are non-strict, so they sat unused. Impact: the existing lockfile scenarios
+  worked unchanged once discovery was wired in; only the new nested-lockfile
+  scenario needed a new given step.
 - Observation: cmd-mox registers one `CommandDouble` per command name and
   dispatches stubs by name alone (`controller._make_response`), so a second
   `stub("cargo::update")` re-configures the first rather than adding an
   argument-matched alternative. Evidence: `cmd_mox/controller.py::_get_double`
-  returns the existing double. Impact: the nested-lockfile given step
-  registers `cargo::update` without `with_args` so one response serves both
-  the root and nested manifest invocations.
+  returns the existing double. Impact: the nested-lockfile given step registers
+  `cargo::update` without `with_args` so one response serves both the root and
+  nested manifest invocations.
 - Observation: `uv tool install ty` now resolves to ty 0.0.8, which fails
   `make typecheck` on the clean tree with six diagnostics in
   `lading/commands/bump_toml.py` and `lading/commands/publish_index_check.py`.
   Evidence: `git stash && make typecheck` reproduced all six without this
-  branch's changes; a scratch probe confirmed ty 0.0.8 does not narrow
-  bindings after calls to `NoReturn` helpers but does honour `NoReturn` for
+  branch's changes; a scratch probe confirmed ty 0.0.8 does not narrow bindings
+  after calls to `NoReturn` helpers but does honour `NoReturn` for
   reachability. Impact: fixed ahead of the feature commit (if/elif/else
-  restructure plus one `type: ignore[index]` mirroring an existing comment)
-  so the gate is green before CodeRabbit review.
+  restructure plus one `type: ignore[index]` mirroring an existing comment) so
+  the gate is green before CodeRabbit review.
 
 ## Decision log
 
@@ -198,19 +207,18 @@ fixture lockfile and seeing that lockfile listed in the bump output with a
   bump command. Date/Author: 2026-07-07, planning session.
 
 - Decision: land the Stage B red tests without interim strict-xfail markers,
-  committing them together with the Stage C implementation.
-  Rationale: the red failures were observed and transcribed directly (the
-  plan's validation evidence), and the combined commit keeps the suite green
-  at every commit boundary as required by the repository's gating rules; a
-  strict-xfail round-trip would have added churn without extra proof.
-  Date/Author: 2026-07-07, implementation session.
+  committing them together with the Stage C implementation. Rationale: the red
+  failures were observed and transcribed directly (the plan's validation
+  evidence), and the combined commit keeps the suite green at every commit
+  boundary as required by the repository's gating rules; a strict-xfail
+  round-trip would have added churn without extra proof. Date/Author:
+  2026-07-07, implementation session.
 - Decision: fix the pre-existing ty 0.0.8 typecheck failures in a separate
-  commit on this branch rather than ignoring them or pinning ty.
-  Rationale: CI installs ty unpinned (`uv tool install ty` in
-  `.github/workflows/ci.yml`), so main's next CI run would fail regardless;
-  the gates must pass before CodeRabbit review; and the fixes are small,
-  behaviour-preserving restructures. Pinning would hide the drift rather
-  than resolve it.
+  commit on this branch rather than ignoring them or pinning ty. Rationale: CI
+  installs ty unpinned (`uv tool install ty` in `.github/workflows/ci.yml`), so
+  main's next CI run would fail regardless; the gates must pass before
+  CodeRabbit review; and the fixes are small, behaviour-preserving
+  restructures. Pinning would hide the drift rather than resolve it.
   Date/Author: 2026-07-07, implementation session.
 
 ## Outcomes & retrospective
