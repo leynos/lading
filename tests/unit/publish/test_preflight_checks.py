@@ -326,7 +326,7 @@ def test_preflight_append_compiletest_externs(
 
 
 def test_verify_clean_working_tree_detects_dirty_state(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    snapshot: SnapshotAssertion, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Dirty workspaces cause preflight to abort unless allow-dirty is set."""
     root = tmp_path.resolve()
@@ -346,6 +346,9 @@ def test_verify_clean_working_tree_detects_dirty_state(
         )
 
     assert "uncommitted changes" in str(excinfo.value)
+    # Lock the operator-facing dirty-tree message (issue #96 failure-message
+    # snapshot coverage) so its wording cannot drift silently.
+    assert str(excinfo.value) == snapshot()
 
     # Allow dirty should bypass the runner entirely.
     publish_preflight._verify_clean_working_tree(
@@ -354,6 +357,7 @@ def test_verify_clean_working_tree_detects_dirty_state(
 
 
 def test_verify_clean_working_tree_reports_missing_repo(
+    snapshot: SnapshotAssertion,
     tmp_path: Path,
 ) -> None:
     """A missing git repository surfaces a descriptive error."""
@@ -376,6 +380,9 @@ def test_verify_clean_working_tree_reports_missing_repo(
     message = str(excinfo.value)
     assert "git repository" in message
     assert "fatal" in message
+    # Lock the operator-facing missing-repository message (issue #96
+    # failure-message snapshot coverage) so its wording cannot drift silently.
+    assert message == snapshot()
 
 
 # ---------------------------------------------------------------------------

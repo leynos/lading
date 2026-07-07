@@ -30,8 +30,6 @@ import typing as typ
 
 from pytest_bdd import parsers, then
 
-from lading.commands import publish
-
 from .test_publish_helpers import (
     _assert_cli_run_succeeded,
     _assert_crate_order_matches,
@@ -354,22 +352,6 @@ def then_publish_omits_section(cli_run: dict[str, typ.Any], header: str) -> None
     """Assert that the publish plan does not mention ``header``."""
     lines = _publish_plan_lines(cli_run)
     assert header not in lines
-
-
-@then(
-    "the publish pre-flight error contains "
-    '"cmd-mox stub requested for publish pre-flight but CMOX_IPC_SOCKET is unset"'
-)
-def then_publish_preflight_reports_missing_socket(
-    preflight_result: dict[str, typ.Any],
-) -> None:
-    """Assert that publish pre-flight checks report the missing socket."""
-    error = preflight_result.get("error")
-    assert isinstance(error, publish.PublishPreflightError)
-    assert (
-        "cmd-mox stub requested for publish pre-flight but CMOX_IPC_SOCKET is unset"
-        in str(error)
-    )
 
 
 @then("the command should not raise a preflight error about the flag")

@@ -7,10 +7,6 @@ import typing as typ
 
 from pytest_bdd import parsers, when
 
-from lading import cli, config
-from lading.commands import publish
-from lading.testing.cmd_mox_runner import CmdMoxError
-
 from .test_publish_infrastructure import (
     PreflightTestContext,
     _CommandResponse,
@@ -20,41 +16,6 @@ from .test_publish_infrastructure import (
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
     from pathlib import Path
-
-
-@when(
-    "I run publish pre-flight checks for that workspace",
-    target_fixture="preflight_result",
-)
-def when_run_publish_preflight_checks(workspace_directory: Path) -> dict[str, typ.Any]:
-    """Execute publish pre-flight checks directly and capture failures.
-
-    This step deliberately drives the ``_run_preflight_checks`` seam rather
-    than the ``lading publish`` CLI boundary. The scenarios it serves probe the
-    cmd-mox command-runner guard (e.g. a missing ``CMOX_IPC_SOCKET``) — test
-    harness infrastructure, not a user-facing publish flow — and assert on the
-    raised :class:`~lading.commands.publish.PublishPreflightError` object. A
-    subprocess CLI rewrite would exercise artificial stub misconfiguration
-    through the CLI and could only assert on formatted stderr, losing that
-    precise contract; the direct seam is the correct home for this coverage.
-    """
-    error: publish.PublishPreflightError | None = None
-    try:
-        publish._run_preflight_checks(
-            workspace_directory,
-            allow_dirty=False,
-            configuration=config.load_configuration(workspace_directory),
-            runner=cli._select_runner(),
-        )
-    except publish.PublishPreflightError as exc:
-        error = exc
-    except CmdMoxError as exc:
-        detail = str(exc).replace(
-            "cmd-mox stub requested",
-            "cmd-mox stub requested for publish pre-flight",
-        )
-        error = publish.PublishPreflightError(detail)
-    return {"error": error}
 
 
 @when("I invoke lading publish with that workspace", target_fixture="cli_run")

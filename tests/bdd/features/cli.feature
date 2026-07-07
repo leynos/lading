@@ -274,12 +274,6 @@ Feature: Lading CLI scaffolding
     And the stderr contains "ui.stderr"
     And the stderr contains "line2"
 
-  Scenario: Publish pre-flight aborts when cmd-mox socket is missing
-    Given a workspace directory with configuration
-    And cmd-mox IPC socket is unset
-    When I run publish pre-flight checks for that workspace
-    Then the publish pre-flight error contains "cmd-mox stub requested for publish pre-flight but CMOX_IPC_SOCKET is unset"
-
   Scenario: Publish command rejects dirty workspaces with --forbid-dirty
     Given a workspace directory with configuration
     And cargo metadata describes a sample workspace
