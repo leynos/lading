@@ -4,7 +4,7 @@ This ExecPlan (execution plan) is a living document. The sections `Constraints`,
 `Tolerances`, `Risks`, `Progress`, `Surprises & Discoveries`, `Decision Log`,
 and `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
-Status: IN PROGRESS
+Status: COMPLETE
 
 ## Purpose / big picture
 
@@ -137,16 +137,23 @@ fixture lockfile and seeing that lockfile listed in the bump output with a
   ty 0.0.8 (unpinned, installed by CI and locally via `uv tool install ty`)
   flagged six pre-existing diagnostics on the clean tree. Committed separately
   as "Restore a passing typecheck gate under ty 0.0.8".
-- [x] (2026-07-08 00:20Z) CodeRabbit review of Stages B+C: `coderabbit
-  review --agent` completed with zero findings.
+- [x] (2026-07-08 00:20Z) CodeRabbit review of Stages B+C:
+      `coderabbit review --agent` completed with zero findings.
 - [x] (2026-07-08 00:40Z) Stage D: reworded the publish pre-flight stale
-  message (it no longer blames `lading bump`), regenerated the affected
-  syrupy snapshot after reviewing the diff, and updated
-  `docs/users-guide.md` (bump discovery paragraph, quoted pre-flight
-  message, `lockfile_manifests` and `rebuild_lockfiles` key descriptions,
-  regeneration paragraph) and `docs/developers-guide.md` (bump_lockfiles
-  module description, lockfile helpers section). All gates green: 683
-  tests, lint 10.00/10, formatting, typecheck, markdown, nixie.
+  message (it no longer blames `lading bump`), regenerated the affected syrupy
+  snapshot after reviewing the diff, and updated `docs/users-guide.md` (bump
+  discovery paragraph, quoted pre-flight message, `lockfile_manifests` and
+  `rebuild_lockfiles` key descriptions, regeneration paragraph) and
+  `docs/developers-guide.md` (bump_lockfiles module description, lockfile
+  helpers section). All gates green: 683 tests, lint 10.00/10, formatting,
+  typecheck, markdown, nixie.
+- [x] (2026-07-08 01:00Z) CodeRabbit review of Stage D: zero findings.
+- [x] (2026-07-08 01:20Z) End-to-end acceptance run against the Stage A
+  prototype with the real CLI, git, and cargo: discovery reported two tracked
+  lockfiles, bump output listed `- fixtures/minimal/Cargo.lock (lockfile)`, the
+  nested lockfile recorded the new version, and `cargo metadata --locked`
+  exited 0 afterwards. Also surfaced the versioned-path-dependency edge
+  recorded under `Surprises & discoveries`.
 
 ## Surprises & discoveries
 
@@ -175,6 +182,20 @@ fixture lockfile and seeing that lockfile listed in the bump output with a
   returns the existing double. Impact: the nested-lockfile given step registers
   `cargo::update` without `with_args` so one response serves both the root and
   nested manifest invocations.
+- Observation: a real end-to-end run surfaced an edge the mocked tests cannot:
+  `lading bump` does not rewrite manifests of non-member nested packages, so a
+  nested fixture that pins a *versioned* path dependency on a bumped crate
+  (`alpha = { path = ..., version = "0.1.0" }`) makes
+  `cargo update --workspace` fail at bump time with cargo's clear "failed to
+  select a version for the requirement" error. Evidence: prototype run of the
+  real CLI against the Stage A repository with a versioned path dependency; the
+  same repository with a path-only dependency (the common fixture pattern)
+  bumps cleanly end-to-end. Impact: acceptable — such a repository was already
+  broken at publish time (the freshness probe fails with the same cargo error),
+  and the failure now surfaces earlier with an actionable message;
+  `--no-rebuild-lockfiles` remains the escape hatch. Rewriting dependency
+  requirements in non-member manifests is a possible future enhancement, out of
+  scope here.
 - Observation: `uv tool install ty` now resolves to ty 0.0.8, which fails
   `make typecheck` on the clean tree with six diagnostics in
   `lading/commands/bump_toml.py` and `lading/commands/publish_index_check.py`.
@@ -223,7 +244,32 @@ fixture lockfile and seeing that lockfile listed in the bump output with a
 
 ## Outcomes & retrospective
 
-To be completed as milestones land.
+Delivered as planned. `lading bump` now discovers git-tracked `Cargo.lock`
+files with the same helper the publish pre-flight uses and regenerates them
+alongside the root and configured lockfiles, in both live and dry-run modes.
+The publish pre-flight's stale-lockfile message no longer blames bump. The
+acceptance behaviour was verified twice: through the new BDD scenario (mocked
+git/cargo) and through a real CLI run against the Stage A prototype repository,
+where the nested lockfile was discovered, refreshed to the new version, and
+passed `cargo metadata --locked` afterwards (exit 0).
+
+Deviations from the original plan, all recorded in the decision log: the
+strict-xfail round-trip was replaced by directly observed red failures; six
+pre-existing ty 0.0.8 typecheck diagnostics were fixed in a separate commit so
+the gates could pass; and the interim mdformat reflow of the developers' guide
+landed as its own commit.
+
+Lessons: (1) mocked BDD scenarios validated the wiring but only the real
+end-to-end run exposed the versioned-path-dependency edge — keep a live
+prototype exercise in plans that change subprocess behaviour; (2) the test
+infrastructure had anticipated this feature (unused `git ls-files` stubs),
+which suggests checking fixture stubs for "future intent" during orientation;
+(3) unpinned typecheckers (`uv tool install ty`) make gate drift a recurring
+cost — pinning with a scheduled bump would be a worthwhile follow-up for the
+repository.
+
+Follow-up candidates (not in scope): rewrite version requirements in non-member
+nested manifests that depend on bumped crates; pin `ty` in CI and the Makefile.
 
 ## Context and orientation
 
@@ -527,3 +573,11 @@ def merge_discovered_manifests(
 `lading/commands/bump.py::_process_lockfiles` calls it once and passes the
 result to the existing `resolve_lockfile_paths` (dry-run) and
 `regenerate_lockfiles` (live) helpers, whose signatures do not change.
+
+## Revision note
+
+2026-07-08: implementation complete. Progress, surprises, decisions, and the
+retrospective were updated throughout Stages A–D; the final revision records
+the end-to-end acceptance run, the versioned-path-dependency edge case, and the
+follow-up candidates (non-member manifest rewriting; pinning ty). Status moved
+to COMPLETE. No further work remains on this plan.
