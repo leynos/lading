@@ -324,6 +324,59 @@ def _stub_git_runner(stdout: str) -> cabc.Callable[..., tuple[int, str, str]]:
     return runner
 
 
+def _deduplicate_entries(
+    entries: list[tuple[list[str], bool, bool]],
+) -> dict[tuple[str, ...], tuple[bool, bool]]:
+    """Collapse duplicate directory entries, keeping the first occurrence."""
+    seen: dict[tuple[str, ...], tuple[bool, bool]] = {}
+    for components, has_toml, tracked in entries:
+        seen.setdefault(tuple(components), (has_toml, tracked))
+    return seen
+
+
+def _populate_workspace(
+    workspace_root: Path,
+    seen_dirs: dict[tuple[str, ...], tuple[bool, bool]],
+) -> list[str]:
+    """Materialise the workspace tree and return the tracked ls-files lines."""
+    tracked_lines: list[str] = []
+    for components, (has_toml, tracked) in seen_dirs.items():
+        directory = workspace_root.joinpath(*components)
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "Cargo.lock").write_text("", encoding="utf-8")
+        if has_toml:
+            (directory / "Cargo.toml").write_text("", encoding="utf-8")
+        if tracked:
+            tracked_lines.append("/".join((*components, "Cargo.lock")))
+    return tracked_lines
+
+
+def _assert_output_invariants(
+    result: cabc.Sequence[Path],
+    workspace_root: Path,
+    tracked_lines: list[str],
+) -> None:
+    """Assert every returned path satisfies the four filtering invariants."""
+    for path in result:
+        relative = path.relative_to(workspace_root)
+        assert path.name == "Cargo.lock"
+        assert "target" not in relative.parts
+        assert (path.parent / "Cargo.toml").exists()
+        assert str(relative) in tracked_lines
+
+
+def _expected_lockfiles(
+    workspace_root: Path,
+    seen_dirs: dict[tuple[str, ...], tuple[bool, bool]],
+) -> set[Path]:
+    """Return the lockfiles discovery must yield for the generated tree."""
+    return {
+        workspace_root.joinpath(*components, "Cargo.lock")
+        for components, (has_toml, tracked) in seen_dirs.items()
+        if tracked and has_toml and "target" not in components
+    }
+
+
 @given(entries=st.lists(_tree_entry, max_size=8))
 @settings(max_examples=40, deadline=None)
 def test_discover_tracked_lockfiles_invariants(
@@ -340,38 +393,13 @@ def test_discover_tracked_lockfiles_invariants(
     """
     with tempfile.TemporaryDirectory(prefix="lading-hypothesis-") as tmp:
         workspace_root = Path(tmp)
-        seen_dirs: dict[tuple[str, ...], tuple[bool, bool]] = {}
-        for components, has_toml, tracked in entries:
-            seen_dirs.setdefault(tuple(components), (has_toml, tracked))
-
-        tracked_lines: list[str] = []
-        for components, (has_toml, tracked) in seen_dirs.items():
-            directory = workspace_root.joinpath(*components)
-            directory.mkdir(parents=True, exist_ok=True)
-            (directory / "Cargo.lock").write_text("", encoding="utf-8")
-            if has_toml:
-                (directory / "Cargo.toml").write_text("", encoding="utf-8")
-            if tracked:
-                tracked_lines.append("/".join((*components, "Cargo.lock")))
-
-        stdout = "\n".join(tracked_lines)
+        seen_dirs = _deduplicate_entries(entries)
+        tracked_lines = _populate_workspace(workspace_root, seen_dirs)
         result = lockfile.discover_tracked_lockfiles(
-            workspace_root, _stub_git_runner(stdout)
+            workspace_root, _stub_git_runner("\n".join(tracked_lines))
         )
-
-        for path in result:
-            relative = path.relative_to(workspace_root)
-            assert path.name == "Cargo.lock"
-            assert "target" not in relative.parts
-            assert (path.parent / "Cargo.toml").exists()
-            assert str(relative) in tracked_lines
-
-        expected = {
-            workspace_root.joinpath(*components, "Cargo.lock")
-            for components, (has_toml, tracked) in seen_dirs.items()
-            if tracked and has_toml and "target" not in components
-        }
-        assert set(result) == expected
+        _assert_output_invariants(result, workspace_root, tracked_lines)
+        assert set(result) == _expected_lockfiles(workspace_root, seen_dirs)
 
 
 # ---------------------------------------------------------------------------
