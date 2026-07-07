@@ -145,9 +145,12 @@ README adoption, and lockfile reporting. Keep user-facing summary construction
 in `lading.commands.bump_output` rather than formatting messages inline in the
 workflow.
 
-`lading.commands.bump_output` renders the CLI summary from a `BumpChanges`
-record. This record includes manifests, documentation files, transposed
-readmes, and lockfiles that changed during a bump run.
+`lading.commands.bump_output` is the sole owner of `BumpChanges` and all bump
+result-message formatting; `bump.py` imports these helpers and must not
+re-declare them. The `BumpChanges` record includes manifests, documentation
+files, transposed readmes, and lockfiles that changed during a bump run.
+Changed-category descriptions join with an Oxford comma for three or more
+categories (for example, "2 manifest(s), 1 readme file(s), and 1 lockfile(s)").
 
 `lading.commands.bump_readme` owns workspace README adoption during
 `lading bump`. The module copies the workspace `README.md` into each crate that
@@ -188,6 +191,38 @@ Cargo dependency-section names (`dependencies`, `dev-dependencies`, and
 (`bump._DEPENDENCY_SECTION_BY_KIND`) must derive from this constant rather than
 re-declaring the literals, so a change to the recognized section set is made in
 exactly one place.
+
+### Model checking the formatting helpers
+
+Three pure helpers in `lading/commands/bump_output.py` carry PEP 316
+docstring contracts (`pre:`/`post:` lines):
+
+- `_build_changes_description` — assembles the Oxford-comma-joined
+  category description from a `BumpChanges` instance.
+- `_format_header` — formats the top-level bump result header line.
+- `_format_manifest_path` — formats a single manifest path for display
+  in the bump output.
+
+Run CrossHair symbolic-execution model checking against the first two
+helpers with:
+
+```bash
+make crosshair
+```
+
+`crosshair-tool` is a dev dependency. `[tool.crosshair]` in
+`pyproject.toml` sets per-path and per-condition timeouts to keep the
+check bounded. `make crosshair` is **not** part of `make all` or CI; it
+is an on-demand check intended for targeted verification when the
+formatting helpers change.
+
+`_format_manifest_path` keeps its `pre:`/`post:` contract but is
+intentionally excluded from the `make crosshair` run. CrossHair 0.0.107
+cannot construct a symbolic `pathlib.Path` proxy — it raises in
+`intersect_signatures` on both CPython 3.13 and 3.14. Its behaviour is
+instead covered by the Hypothesis property test in
+`tests/unit/test_bump_command_internals.py`, which exercises
+`_format_result_message` across a wide range of path inputs.
 
 ## Workspace discovery helpers
 

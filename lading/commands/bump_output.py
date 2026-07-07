@@ -9,8 +9,8 @@ general-purpose formatting API.
 Classes
 -------
 BumpChanges
-    Public value object describing updated manifests, documentation files, and
-    lockfiles.
+    Public value object describing updated manifests, documentation files,
+    transposed readmes, and lockfiles.
 
 Functions
 ---------
@@ -22,17 +22,23 @@ _format_result_message
 Notes
 -----
 Internal helpers ``_build_changes_description``, ``_format_no_changes_message``,
-``_format_header``, and ``_format_manifest_path`` are not part of the public API.
+``_format_header``, ``_format_manifest_path``, and ``_has_changes`` are not part
+of the public API.
+
+This module is the sole owner of ``BumpChanges`` and bump result-message
+formatting (issue #95); no other module may re-declare them.
 """
 
 from __future__ import annotations
 
 import collections.abc as cabc
 import dataclasses as dc
-import typing as typ
 
-if typ.TYPE_CHECKING:
-    from pathlib import Path
+# ``Path`` is imported at runtime (not under ``TYPE_CHECKING``) so CrossHair can
+# resolve the annotations on the pure helpers when model-checking their
+# contracts (issue #95). ``ruff`` TC003 is intentionally ignored for this file's
+# stdlib type-only imports.
+from pathlib import Path
 
 _SINGLE_CHANGE_CATEGORY_COUNT = 1
 _PAIRED_CHANGE_CATEGORY_COUNT = 2
@@ -54,20 +60,32 @@ class BumpChanges:
         Documentation files updated by TOML snippet rewriting.
     lockfiles : Sequence[Path]
         Cargo lockfiles regenerated after manifest updates.
+    transposed_readmes : Sequence[Path]
+        Crate README files adopted from the workspace README.
     """
 
     manifests: cabc.Sequence[Path] = ()
     documents: cabc.Sequence[Path] = ()
     lockfiles: cabc.Sequence[Path] = ()
+    transposed_readmes: cabc.Sequence[Path] = ()
 
 
 def _build_changes_description(changes: BumpChanges) -> str:
-    """Build a human-readable description of changed files."""
+    """Build a human-readable description of changed files.
+
+    CrossHair contracts (issue #95); model-check with ``make crosshair``.
+
+    pre: _has_changes(changes)
+    post: len(__return__) > 0
+    post: " and and " not in __return__
+    """
     parts: list[str] = []
     if changes.manifests:
         parts.append(f"{len(changes.manifests)} manifest(s)")
     if changes.documents:
         parts.append(f"{len(changes.documents)} documentation file(s)")
+    if changes.transposed_readmes:
+        parts.append(f"{len(changes.transposed_readmes)} readme file(s)")
     if changes.lockfiles:
         parts.append(f"{len(changes.lockfiles)} lockfile(s)")
     if len(parts) == _SINGLE_CHANGE_CATEGORY_COUNT:
@@ -88,10 +106,27 @@ def _format_no_changes_message(target_version: str, *, dry_run: bool) -> str:
 
 
 def _format_header(description: str, target_version: str, *, dry_run: bool) -> str:
-    """Format the summary header line."""
+    """Format the summary header line.
+
+    CrossHair contracts (issue #95); model-check with ``make crosshair``.
+
+    post: __return__.endswith(":")
+    post: target_version in __return__
+    post: description in __return__
+    """
     if dry_run:
         return f"Dry run; would update version to {target_version} in {description}:"
     return f"Updated version to {target_version} in {description}:"
+
+
+def _has_changes(changes: BumpChanges) -> bool:
+    """Return True when a bump run changed at least one file category."""
+    return any((
+        changes.manifests,
+        changes.documents,
+        changes.transposed_readmes,
+        changes.lockfiles,
+    ))
 
 
 def _format_result_message(
@@ -102,7 +137,7 @@ def _format_result_message(
     workspace_root: Path,
 ) -> str:
     """Summarise the bump outcome for CLI presentation."""
-    if not any((changes.manifests, changes.documents, changes.lockfiles)):
+    if not _has_changes(changes):
         return _format_no_changes_message(target_version, dry_run=dry_run)
 
     description = _build_changes_description(changes)
@@ -116,6 +151,10 @@ def _format_result_message(
         for document_path in changes.documents
     )
     formatted_paths.extend(
+        f"- {_format_manifest_path(readme_path, workspace_root)} (readme)"
+        for readme_path in changes.transposed_readmes
+    )
+    formatted_paths.extend(
         f"- {_format_manifest_path(lockfile_path, workspace_root)} (lockfile)"
         for lockfile_path in changes.lockfiles
     )
@@ -123,7 +162,12 @@ def _format_result_message(
 
 
 def _format_manifest_path(manifest_path: Path, workspace_root: Path) -> str:
-    """Return ``manifest_path`` relative to ``workspace_root`` when possible."""
+    """Return ``manifest_path`` relative to ``workspace_root`` when possible.
+
+    CrossHair contracts (issue #95); model-check with ``make crosshair``.
+
+    post: isinstance(__return__, str)
+    """
     try:
         relative = manifest_path.relative_to(workspace_root)
     except ValueError:
