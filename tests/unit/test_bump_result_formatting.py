@@ -325,13 +325,13 @@ def test_update_crate_manifest(tmp_path: Path, params: UpdateCrateTestParams) ->
         context,
     )
 
-    assert changed is True, "crate manifest update should report a change"
+    assert changed is True, f"expected manifest update for {params.test_id}"
     package_version, alpha_version = _parse_manifest_versions(crate.manifest_path)
     assert package_version == params.expected_package_version, (
-        "package version mismatch after crate manifest update"
+        f"unexpected package version for {params.test_id}"
     )
     assert alpha_version == params.expected_alpha_version, (
-        "alpha dependency version mismatch after crate manifest update"
+        f"unexpected alpha dependency version for {params.test_id}"
     )
 
 
