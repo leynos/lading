@@ -1,4 +1,31 @@
-"""Version bumping command implementation."""
+"""Version bumping command implementation.
+
+This module is the coordinator for the ``bump`` command. :func:`run` is the
+entry point invoked by the CLI command layer: given a workspace root and a
+target version, it orchestrates every manifest, documentation, README, and
+lockfile update and returns a formatted, human-readable summary of the run.
+
+:class:`BumpOptions` is the input configuration (dry-run flag, lockfile-rebuild
+override, and the resolved configuration and workspace graph), and
+:class:`BumpChanges` is the aggregated result record collecting the files a run
+altered; :func:`run` builds a ``BumpChanges`` internally and renders it into the
+returned summary message.
+
+Crate-set derivation is a single source of truth. The ``excluded`` and
+``updated_crate_names`` sets are computed exactly once in
+:func:`_initialize_bump_context` and threaded through
+:func:`_apply_crate_manifest_update` via the :class:`_BumpContext`, rather than
+being recomputed per crate (issue #97). See ``docs/developers-guide.md`` for the
+rule; do not re-derive these sets in per-crate helpers.
+
+This module coordinates rather than implementing file-format specifics, which it
+delegates to sibling modules:
+
+- :mod:`lading.commands.bump_docs` — documentation version rewrites.
+- :mod:`lading.commands.bump_lockfiles` — lockfile regeneration.
+- :mod:`lading.commands.bump_readme` — workspace README transposition.
+- :mod:`lading.commands.bump_toml` — low-level TOML manipulation.
+"""
 
 from __future__ import annotations
 

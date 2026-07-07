@@ -6,7 +6,6 @@ from pathlib import Path
 import dataclasses as dc
 import typing as typ
 
-from hypothesis import given
 from tomlkit import parse as parse_toml
 import hypothesis.strategies as st
 import pytest
@@ -20,6 +19,7 @@ from tests.helpers.workspace_builders import (
 
 if typ.TYPE_CHECKING:
     from syrupy.assertion import SnapshotAssertion
+from hypothesis import HealthCheck, given, settings
 from lading.commands import bump, bump_output
 import collections.abc as cabc
 import string
@@ -528,9 +528,21 @@ def test_update_dependency_sections_workspace_dev_and_build() -> None:
     build_deps = document["workspace"]["build-dependencies"]
     assert build_deps["beta"]["version"].value == "3.0.0"
 
-def _synthetic_workspace(names: cabc.Iterable[str]) -> WorkspaceGraph:
-    """Build an in-memory workspace graph for the supplied crate names."""
-    root = Path("/ws")
+def _synthetic_workspace(
+    names: cabc.Iterable[str],
+    *,
+    root: Path = Path("/ws"),
+    dependencies: cabc.Mapping[str, tuple[str, ...]] | None = None,
+) -> WorkspaceGraph:
+    """Build an in-memory workspace graph for the supplied crate names.
+
+    ``dependencies`` maps a crate name to the names of the crates it depends
+    on; each edge becomes a :class:`WorkspaceDependency` (a normal, unaliased
+    dependency) attached to the dependent crate. ``root`` anchors every
+    crate's ``manifest_path`` so callers can point the graph at a real
+    temporary tree.
+    """
+    dependency_map = dependencies or {}
     crates = tuple(
         WorkspaceCrate(
             id=f"{name}-id",
@@ -540,7 +552,15 @@ def _synthetic_workspace(names: cabc.Iterable[str]) -> WorkspaceGraph:
             root_path=root / name,
             publish=True,
             readme_is_workspace=False,
-            dependencies=(),
+            dependencies=tuple(
+                WorkspaceDependency(
+                    package_id=f"{dependency}-id",
+                    name=dependency,
+                    manifest_name=dependency,
+                    kind=None,
+                )
+                for dependency in dependency_map.get(name, ())
+            ),
         )
         for name in names
     )
@@ -582,6 +602,126 @@ def test_bump_context_crate_sets_match_naive_derivation(
     assert context.updated_crate_names == frozenset(
         crate.name for crate in workspace.crates if crate.name not in set(exclude)
     )
+
+def _write_synthetic_manifests(
+    root: Path,
+    names: cabc.Iterable[str],
+    dependencies: cabc.Mapping[str, tuple[str, ...]],
+) -> None:
+    """Write one ``Cargo.toml`` per crate under ``root`` matching the graph.
+
+    Each manifest is seeded at ``_INITIAL_VERSION`` and lists its dependency
+    edges as plain-string version requirements, mirroring the
+    :class:`WorkspaceDependency` entries built by ``_synthetic_workspace``.
+    """
+    for name in names:
+        crate_dir = root / name
+        crate_dir.mkdir(parents=True, exist_ok=True)
+        lines = ["[package]", f'name = "{name}"', f'version = "{_INITIAL_VERSION}"']
+        edges = dependencies.get(name, ())
+        if edges:
+            lines += ["", "[dependencies]"]
+            lines += [f'{dep} = "{_INITIAL_VERSION}"' for dep in edges]
+        crate_dir.joinpath("Cargo.toml").write_text(
+            "\n".join(lines) + "\n", encoding="utf-8"
+        )
+
+def _read_manifest_versions(manifest_path: Path) -> tuple[str, dict[str, str]]:
+    """Return the on-disk package version and dependency versions."""
+    document = parse_toml(manifest_path.read_text(encoding="utf-8"))
+    package_version = str(document["package"]["version"])
+    dependencies = document.get("dependencies")
+    dep_versions = {
+        key: str(value.value if hasattr(value, "value") else value)
+        for key, value in (dependencies.items() if dependencies is not None else ())
+    }
+    return package_version, dep_versions
+
+@given(data=st.data())
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
+def test_manifest_selection_matches_naive_reference(
+    tmp_path: Path,
+    data: st.DataObject,
+) -> None:
+    """``_apply_crate_manifest_update`` honours the context crate sets.
+
+    Reference semantics (issue #97): a non-excluded crate's package version is
+    rewritten to the target; an excluded crate's package version is left
+    untouched; a dependency edge is rewritten only when the crate it targets is
+    itself being updated. The manifest pass must consume ``context.excluded``
+    and ``context.updated_crate_names`` — derived once in
+    ``_initialize_bump_context`` — rather than re-deriving them per crate.
+
+    ``tmp_path`` is a function-scoped fixture reused across Hypothesis
+    examples; each example rewrites every manifest to its initial state before
+    processing, so the shared directory cannot leak state between examples.
+    """
+    names = sorted(
+        data.draw(st.sets(_crate_name, min_size=2, max_size=6), label="names")
+    )
+
+    # Force at least one updated (non-excluded) crate and at least one excluded
+    # crate so every example exercises both branches of the skip rule.
+    updated_pivot = data.draw(st.sampled_from(names), label="updated_pivot")
+    other_names = [name for name in names if name != updated_pivot]
+    excluded_pivot = data.draw(st.sampled_from(other_names), label="excluded_pivot")
+    extra_excluded = data.draw(
+        st.sets(st.sampled_from(other_names), max_size=len(other_names)),
+        label="extra_excluded",
+    )
+    exclude_set = {excluded_pivot} | extra_excluded
+    exclude = tuple(sorted(exclude_set))
+
+    # Draw arbitrary dependency edges (no self-edges), then force one edge onto
+    # the guaranteed-updated crate so the "depends on an updated crate" branch
+    # is always covered.
+    dependencies: dict[str, tuple[str, ...]] = {}
+    for name in names:
+        candidates = [other for other in names if other != name]
+        edges = data.draw(
+            st.sets(st.sampled_from(candidates), max_size=len(candidates)),
+            label=f"deps[{name}]",
+        )
+        dependencies[name] = tuple(sorted(edges))
+    dependent = data.draw(st.sampled_from(other_names), label="dependent")
+    dependencies[dependent] = tuple(sorted({*dependencies[dependent], updated_pivot}))
+
+    updated_names = {name for name in names if name not in exclude_set}
+    assert exclude_set, "example must exclude at least one crate"
+    assert any(
+        target in updated_names for edges in dependencies.values() for target in edges
+    ), "example must contain a dependency on an updated crate"
+
+    _write_synthetic_manifests(tmp_path, names, dependencies)
+    workspace = _synthetic_workspace(names, root=tmp_path, dependencies=dependencies)
+    context = bump._initialize_bump_context(
+        tmp_path,
+        bump.BumpOptions(
+            configuration=_make_config(exclude=exclude),
+            workspace=workspace,
+        ),
+    )
+
+    crates_by_name = {crate.name: crate for crate in workspace.crates}
+    for name in names:
+        crate = crates_by_name[name]
+        excluded_flag = name in exclude_set
+        depends_on_updated = any(dep in updated_names for dep in dependencies[name])
+        expect_skipped = excluded_flag and not depends_on_updated
+
+        outcome = bump._apply_crate_manifest_update(crate, _TARGET_VERSION, context)
+
+        assert outcome.was_skipped is expect_skipped
+        assert outcome.was_updated is (not expect_skipped)
+
+        package_version, dep_versions = _read_manifest_versions(crate.manifest_path)
+        assert package_version == (
+            _INITIAL_VERSION if excluded_flag else _TARGET_VERSION
+        )
+        for dep in dependencies[name]:
+            assert dep_versions[dep] == (
+                _TARGET_VERSION if dep in updated_names else _INITIAL_VERSION
+            )
 
 
 # ---------------------------------------------------------------------------
