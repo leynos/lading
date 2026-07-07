@@ -63,17 +63,21 @@ def regenerate_lockfiles(
     LockfileRegenerationError
         If any configured manifest path is invalid (outside the workspace or
         not named ``Cargo.toml``), or — after every manifest has been
-        attempted — if ``cargo update --workspace`` failed for one or more
-        manifests. The aggregated message lists each failed manifest with a
-        repair command.
+        attempted — if ``cargo update --workspace`` failed. When only the
+        workspace-root lockfile is regenerated, the original cargo error is
+        re-raised unchanged. When several lockfiles are regenerated, one
+        aggregated error is raised whose message lists each failed manifest
+        with a repair command.
 
     Notes
     -----
     **Partial-update semantics:** regeneration is not atomic and successful
     updates are not rolled back when a later manifest fails. Every manifest
     is attempted (issue #84), so a single cargo failure does not leave
-    unrelated lockfiles silently stale; the aggregated error tells the
-    operator exactly which lockfiles still need repair and how.
+    unrelated lockfiles silently stale. When several lockfiles are
+    regenerated, the aggregated error tells the operator exactly which
+    lockfiles still need repair and how; a lone root-lockfile failure needs no
+    such disambiguation and surfaces the plain cargo error.
     """
     command_runner = subprocess_runner if runner is None else runner
     manifests = _resolve_manifest_paths(workspace_root, lockfile_manifests)
@@ -90,8 +94,16 @@ def regenerate_lockfiles(
         elif lockfile is not None:
             lockfiles.append(lockfile)
     if failures:
-        # Chain from the first underlying failure so diagnostics (for
-        # example a missing cargo executable) survive the aggregation.
+        if len(manifests) == 1:
+            # Only the workspace-root lockfile was regenerated: surface the
+            # plain cargo error. With no sibling lockfile to disambiguate, the
+            # aggregate repair list would add noise without information.
+            raise failures[0][1]
+        # Several lockfiles were regenerated: report through the aggregate
+        # message so the operator sees which lockfiles are now inconsistent and
+        # how to repair each, even when only one failed. Chain from the first
+        # underlying failure so diagnostics (for example a missing cargo
+        # executable) survive the aggregation.
         cause = failures[0][1].__cause__ or failures[0][1]
         raise LockfileRegenerationError(
             _build_aggregate_failure_message(failures)
