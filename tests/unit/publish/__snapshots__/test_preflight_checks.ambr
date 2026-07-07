@@ -1,31 +1,4 @@
 # serializer version: 1
-# name: test_preflight_argument_sets_snapshot[False]
-  dict({
-    'check': tuple(
-      '--workspace',
-      '--all-targets',
-      '--target-dir=/preflight/target',
-    ),
-    'test': tuple(
-      '--workspace',
-      '--all-targets',
-      '--target-dir=/preflight/target',
-    ),
-  })
-# ---
-# name: test_preflight_argument_sets_snapshot[True]
-  dict({
-    'check': tuple(
-      '--workspace',
-      '--all-targets',
-      '--target-dir=/preflight/target',
-    ),
-    'test': tuple(
-      '--workspace',
-      '--target-dir=/preflight/target',
-    ),
-  })
-# ---
 # name: test_verify_clean_working_tree_detects_dirty_state
   'Workspace has uncommitted changes; commit or stash them before publishing or re-run without --forbid-dirty.'
 # ---
