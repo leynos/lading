@@ -9,6 +9,7 @@ rather than recomputing selection per crate.
 from __future__ import annotations
 
 import collections.abc as cabc
+import dataclasses as dc
 import string
 import typing as typ
 from pathlib import Path
@@ -31,6 +32,22 @@ _crate_name = st.text(
 _DependencyKind = typ.Literal["normal", "dev", "build"] | None
 _DependencyEdge = tuple[str, _DependencyKind]
 _DependencyEdges = cabc.Mapping[str, tuple[_DependencyEdge, ...]]
+
+
+@dc.dataclass(frozen=True, slots=True)
+class _ExpectedManifestOutcome:
+    """Reference expectations for a single crate's manifest update.
+
+    Attributes
+    ----------
+    updated_names : cabc.Set[str]
+        Crate names the bump is expected to update (non-excluded members).
+    excluded : bool
+        Whether the crate under assertion is itself excluded from the bump.
+    """
+
+    updated_names: cabc.Set[str]
+    excluded: bool
 
 
 def _synthetic_workspace(
@@ -226,13 +243,11 @@ def _assert_crate_manifest_update(
     crate: WorkspaceCrate,
     crate_edges: cabc.Mapping[str, _DependencyKind],
     context: bump._BumpContext,
-    *,
-    updated_names: cabc.Set[str],
-    excluded: bool,
+    expected: _ExpectedManifestOutcome,
 ) -> None:
     """Apply the manifest update for ``crate`` and check it against reference."""
-    depends_on_updated = any(target in updated_names for target in crate_edges)
-    expect_skipped = excluded and not depends_on_updated
+    depends_on_updated = any(target in expected.updated_names for target in crate_edges)
+    expect_skipped = expected.excluded and not depends_on_updated
 
     outcome = bump._apply_crate_manifest_update(crate, _TARGET_VERSION, context)
 
@@ -240,11 +255,15 @@ def _assert_crate_manifest_update(
     assert outcome.was_updated is (not expect_skipped)
 
     package_version, section_versions = _read_manifest_versions(crate.manifest_path)
-    assert package_version == (_INITIAL_VERSION if excluded else _TARGET_VERSION)
+    assert package_version == (
+        _INITIAL_VERSION if expected.excluded else _TARGET_VERSION
+    )
     for target, kind in crate_edges.items():
         section = _SECTION_BY_KIND[kind]
-        expected = _TARGET_VERSION if target in updated_names else _INITIAL_VERSION
-        assert section_versions[section][target] == expected
+        expected_version = (
+            _TARGET_VERSION if target in expected.updated_names else _INITIAL_VERSION
+        )
+        assert section_versions[section][target] == expected_version
 
 
 @given(data=st.data())
@@ -310,6 +329,8 @@ def test_manifest_selection_matches_naive_reference(
             crates_by_name[name],
             edges[name],
             context,
-            updated_names=updated_names,
-            excluded=name in exclude_set,
+            _ExpectedManifestOutcome(
+                updated_names=updated_names,
+                excluded=name in exclude_set,
+            ),
         )
