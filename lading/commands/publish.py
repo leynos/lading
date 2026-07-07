@@ -36,8 +36,12 @@ needed.
 **Related modules**
 
 * :mod:`lading.commands.publish_plan` — plan construction and formatting
-* :mod:`lading.commands.publish_preflight` — ``cargo check`` / ``cargo test`` /
-  git-status guards
+* :mod:`lading.commands.publish_preflight` — canonical home of
+  ``_run_preflight_checks`` and ``_preflight_argument_sets`` (``cargo check``
+  / ``cargo test`` / git-status guards). This module re-exports
+  ``_preflight_argument_sets`` as a bare alias and ``_run_preflight_checks``
+  as a thin configuration-resolving wrapper, both for backwards
+  compatibility with existing test patches.
 * :mod:`lading.commands.publish_errors` — :class:`PublishPreflightError` and
   :class:`PublishError`
 * :mod:`lading.commands.publish_execution` — subprocess invocation and cmd-mox
