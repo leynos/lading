@@ -156,7 +156,7 @@ def test_build_changes_description_counts_sections(tmp_path: Path) -> None:
     assert (
         bump._build_changes_description(changes)
         == "2 manifest(s) and 1 documentation file(s) and 1 readme file(s)"
-    )
+    ), "description should report 2 manifests, 1 documentation file, and 1 readme"
 
     changes = bump.BumpChanges(
         manifests=(tmp_path / "Cargo.toml",),
@@ -167,7 +167,7 @@ def test_build_changes_description_counts_sections(tmp_path: Path) -> None:
     assert bump._build_changes_description(changes) == (
         "1 manifest(s) and 1 documentation file(s) and "
         "1 readme file(s) and 1 lockfile(s)"
-    )
+    ), "description should report 1 manifest, 1 doc, 1 readme, and 1 lockfile"
 
 
 def test_format_no_changes_message_mentions_dry_run() -> None:
@@ -324,7 +324,11 @@ def test_update_crate_manifest(tmp_path: Path, params: UpdateCrateTestParams) ->
         context,
     )
 
-    assert changed is True
+    assert changed is True, "crate manifest update should report a change"
     package_version, alpha_version = _parse_manifest_versions(crate.manifest_path)
-    assert package_version == params.expected_package_version
-    assert alpha_version == params.expected_alpha_version
+    assert package_version == params.expected_package_version, (
+        "package version mismatch after crate manifest update"
+    )
+    assert alpha_version == params.expected_alpha_version, (
+        "alpha dependency version mismatch after crate manifest update"
+    )
