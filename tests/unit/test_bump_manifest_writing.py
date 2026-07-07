@@ -53,6 +53,7 @@ def test_update_manifest_skips_when_unchanged(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("include_workspace_sections", "expected_workspace_alpha"),
     [(True, "^1.0.0"), (False, "^0.1.0")],
+    ids=["with_workspace_flag", "without_workspace_flag"],
 )
 def test_update_dependency_sections_workspace_flag(
     *,

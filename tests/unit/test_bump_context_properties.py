@@ -29,9 +29,9 @@ _crate_name = st.text(
 )
 
 
-_DependencyKind = typ.Literal["normal", "dev", "build"] | None
-_DependencyEdge = tuple[str, _DependencyKind]
-_DependencyEdges = cabc.Mapping[str, tuple[_DependencyEdge, ...]]
+type _DependencyKind = typ.Literal["normal", "dev", "build"] | None
+type _DependencyEdge = tuple[str, _DependencyKind]
+type _DependencyEdges = cabc.Mapping[str, tuple[_DependencyEdge, ...]]
 
 
 @dc.dataclass(frozen=True, slots=True)
