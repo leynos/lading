@@ -28,8 +28,8 @@ jobs:
         run: |
           for tool in mbake; do uv tool install ${tool}; done
           # ty is not installed here: `make typecheck` runs it via
-          # `uv tool run ty@$(TY_VERSION)`. TY_VERSION in the Makefile is the
-          # sole ty version declaration; update it there.
+          # `uv tool run --from ty==$(TY_VERSION) ty`. TY_VERSION in the
+          # Makefile is the sole ty version declaration; update it there.
           # Pin ruff to the version the Makefile invokes (RUFF_VERSION) so the
           # linter behaves identically across the uv tool, the synced
           # virtualenv, and developer PATH; bump both sites together.

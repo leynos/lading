@@ -66,6 +66,12 @@ The relevant Makefile variables are:
 - `RUFF` — the pinned Ruff command
   (`uv tool run --from ruff==$(RUFF_VERSION) ruff`) that the `fmt`,
   `check-fmt`, and `lint` targets invoke.
+- `TY_VERSION` — pinned ty version used by `make typecheck`; defaults to
+  `0.0.56`. ty is pre-1.0 and diagnostics shift between releases, so bump it
+  deliberately and fix any new diagnostics in the same commit. CI does not
+  install ty separately; it runs whatever `TY_VERSION` pins.
+- `TY` — the pinned ty command (`uv tool run --from ty==$(TY_VERSION) ty`)
+  that the `typecheck` target invokes.
 - `PYLINT_PYTHON` — Python executable used by `uv tool run`; defaults to `pypy`.
 - `PYLINT_TARGETS` — directories passed to Pylint; defaults to
   `lading scripts tests`.

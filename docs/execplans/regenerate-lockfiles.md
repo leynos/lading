@@ -581,3 +581,9 @@ retrospective were updated throughout Stages A–D; the final revision records
 the end-to-end acceptance run, the versioned-path-dependency edge case, and the
 follow-up candidates (non-member manifest rewriting; pinning ty). Status moved
 to COMPLETE. No further work remains on this plan.
+
+2026-07-08 (later): the ty-pinning follow-up was completed on this branch at
+the user's request — `TY_VERSION ?= 0.0.56` in the Makefile (invoked via
+`uv tool run --from ty==$(TY_VERSION)`), CI no longer installs ty separately,
+and ty 0.0.56 passes with no new diagnostics. The non-member manifest rewriting
+follow-up remains open.
