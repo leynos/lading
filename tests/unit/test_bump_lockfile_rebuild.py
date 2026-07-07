@@ -37,6 +37,18 @@ def test_run_rebuilds_lockfiles_when_enabled(
     configuration = _make_config()
     nested_lockfile = tmp_path / "crates/ui/Cargo.lock"
     captured: dict[str, object] = {}
+    merged_manifests = ("crates/ui/Cargo.toml",)
+
+    def fake_merge_discovered_manifests(
+        workspace_root: pathlib.Path,
+        lockfile_manifests: tuple[str, ...],
+        *,
+        runner: object | None = None,
+    ) -> tuple[str, ...]:
+        captured["merge_workspace_root"] = workspace_root
+        captured["merge_lockfile_manifests"] = lockfile_manifests
+        captured["merge_runner"] = runner
+        return merged_manifests
 
     def fake_regenerate_lockfiles(
         workspace_root: pathlib.Path,
@@ -50,6 +62,11 @@ def test_run_rebuilds_lockfiles_when_enabled(
         captured["runner"] = runner
         return (tmp_path / "Cargo.lock", nested_lockfile)
 
+    monkeypatch.setattr(
+        bump.bump_lockfiles,
+        "merge_discovered_manifests",
+        fake_merge_discovered_manifests,
+    )
     monkeypatch.setattr(
         bump.bump_lockfiles,
         "regenerate_lockfiles",
@@ -67,11 +84,14 @@ def test_run_rebuilds_lockfiles_when_enabled(
     )
 
     assert captured == {
+        "merge_workspace_root": tmp_path,
+        "merge_lockfile_manifests": (),
+        "merge_runner": None,
         "calls": 1,
         "workspace_root": tmp_path,
-        "lockfile_manifests": (),
+        "lockfile_manifests": merged_manifests,
         "runner": None,
-    }, "expected a single regenerate_lockfiles call for the workspace root"
+    }, "expected regenerate_lockfiles to receive the merged manifest tuple"
     assert message == snapshot
 
 
@@ -145,6 +165,16 @@ def test_run_reports_lockfiles_in_dry_run(
     )
     nested_lockfile = tmp_path / "crates/ui/Cargo.lock"
     captured: dict[str, object] = {}
+    merged_manifests = ("crates/ui/Cargo.toml", "fixtures/minimal/Cargo.toml")
+
+    def fake_merge_discovered_manifests(
+        workspace_root: pathlib.Path,
+        lockfile_manifests: tuple[str, ...],
+        *,
+        runner: object | None = None,
+    ) -> tuple[str, ...]:
+        captured["merge_lockfile_manifests"] = lockfile_manifests
+        return merged_manifests
 
     def fake_resolve_lockfile_paths(
         workspace_root: pathlib.Path,
@@ -157,6 +187,11 @@ def test_run_reports_lockfiles_in_dry_run(
     def fail_regeneration(*args: object, **kwargs: object) -> typ.NoReturn:
         pytest.fail("dry-run lockfile reporting should not invoke Cargo")
 
+    monkeypatch.setattr(
+        bump.bump_lockfiles,
+        "merge_discovered_manifests",
+        fake_merge_discovered_manifests,
+    )
     monkeypatch.setattr(
         bump.bump_lockfiles,
         "resolve_lockfile_paths",
@@ -180,9 +215,10 @@ def test_run_reports_lockfiles_in_dry_run(
     )
 
     assert captured == {
+        "merge_lockfile_manifests": ("crates/ui/Cargo.toml",),
         "workspace_root": tmp_path,
-        "lockfile_manifests": ("crates/ui/Cargo.toml",),
-    }, "expected dry-run lockfile path resolution for the configured manifest"
+        "lockfile_manifests": merged_manifests,
+    }, "expected dry-run lockfile resolution for the merged manifest tuple"
     assert message == snapshot
 
 

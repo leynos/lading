@@ -35,6 +35,15 @@ Feature: Lading CLI scaffolding
     And the CLI output lists lockfile path "- nested/Cargo.lock (lockfile)"
     And the bump command refreshed tracked lockfiles
 
+  Scenario: Bump refreshes a discovered nested Cargo.lock file
+    Given a workspace directory with configuration
+    And cargo metadata describes a sample workspace
+    And the workspace has a tracked nested Cargo.lock file
+    When I invoke lading bump 1.2.3 with that workspace
+    Then the CLI output lists lockfile path "- Cargo.lock (lockfile)"
+    And the CLI output lists lockfile path "- fixtures/minimal/Cargo.lock (lockfile)"
+    And the bump command refreshed tracked lockfiles
+
   Scenario: Bump dry-run does not modify lockfiles
     Given a workspace directory with configuration
     And cargo metadata describes a sample workspace

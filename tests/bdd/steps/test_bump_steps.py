@@ -40,6 +40,40 @@ def given_workspace_has_tracked_lockfiles(
     ).returns(exit_code=0, stdout="cargo update --workspace\n", stderr="")
 
 
+@given("the workspace has a tracked nested Cargo.lock file")
+def given_workspace_has_nested_tracked_lockfile(
+    cmd_mox: CmdMox,
+    monkeypatch: pytest.MonkeyPatch,
+    workspace_directory: Path,
+) -> None:
+    """Track a nested standalone package lockfile alongside the root lockfile.
+
+    The nested package is not listed in ``bump.lockfile_manifests``; bump must
+    discover it from the git index and refresh it anyway.
+    """
+    from tests.helpers.workspace_helpers import install_cargo_stub
+
+    install_cargo_stub(cmd_mox, monkeypatch)
+    (workspace_directory / "Cargo.lock").write_text("# root lock\n", encoding="utf-8")
+    nested_dir = workspace_directory / "fixtures" / "minimal"
+    nested_dir.mkdir(parents=True)
+    (nested_dir / "Cargo.toml").write_text(
+        '[package]\nname = "minimal"\nversion = "0.1.0"\n\n[workspace]\n',
+        encoding="utf-8",
+    )
+    (nested_dir / "Cargo.lock").write_text("# nested lock\n", encoding="utf-8")
+    cmd_mox.stub("git").with_args("ls-files", "**/Cargo.lock", "Cargo.lock").returns(
+        exit_code=0,
+        stdout="Cargo.lock\nfixtures/minimal/Cargo.lock\n",
+        stderr="",
+    )
+    # Stubs dispatch by command name alone, so one argless registration covers
+    # the root and nested manifest invocations alike.
+    cmd_mox.stub("cargo::update").returns(
+        exit_code=0, stdout="cargo update --workspace\n", stderr=""
+    )
+
+
 @when(
     parsers.parse("I invoke lading bump {version} with that workspace"),
     target_fixture="cli_run",
