@@ -7,17 +7,17 @@ versions change.
 
 from __future__ import annotations
 
-from pathlib import Path
 import collections.abc as cabc
 import logging
+import shlex
 import time
+from pathlib import Path
 
 from lading.exceptions import LadingError
 from lading.runtime import CommandRunner, subprocess_runner
 from lading.utils.process import with_detail
 
 _LOGGER = logging.getLogger(__name__)
-import shlex
 
 
 class LockfileRegenerationError(LadingError):
@@ -79,14 +79,20 @@ def regenerate_lockfiles(
     manifests = _resolve_manifest_paths(workspace_root, lockfile_manifests)
     started_at = time.perf_counter()
     _LOGGER.info("Regenerating %d Cargo lockfile(s)", len(manifests))
-    lockfiles, failures = _attempt_lockfile_updates(
-        workspace_root, manifests, command_runner
-    )
+    lockfiles: list[Path] = []
+    failures: list[tuple[Path, LockfileRegenerationError]] = []
+    for manifest in manifests:
+        lockfile, error = _attempt_single_lockfile_update(
+            workspace_root, manifest, command_runner
+        )
+        if error is not None:
+            failures.append((manifest, error))
+        elif lockfile is not None:
+            lockfiles.append(lockfile)
     if failures:
         # Chain from the first underlying failure so diagnostics (for
         # example a missing cargo executable) survive the aggregation.
-        primary = failures[0][1]
-        cause = primary.__cause__ if primary.__cause__ is not None else primary
+        cause = failures[0][1].__cause__ or failures[0][1]
         raise LockfileRegenerationError(
             _build_aggregate_failure_message(failures)
         ) from cause
@@ -97,34 +103,6 @@ def regenerate_lockfiles(
     )
     return tuple(lockfiles)
 
-
-def _attempt_lockfile_updates(
-    workspace_root: Path,
-    manifests: tuple[Path, ...],
-    command_runner: CommandRunner,
-) -> tuple[list[Path], list[tuple[Path, LockfileRegenerationError]]]:
-    """Attempt every manifest, returning a ``(lockfiles, failures)`` pair."""
-    lockfiles: list[Path] = []
-    failures: list[tuple[Path, LockfileRegenerationError]] = []
-    for manifest in manifests:
-        manifest_started_at = time.perf_counter()
-        _LOGGER.info("Regenerating Cargo lockfile for %s", manifest)
-        try:
-            _run_workspace_lockfile_update(workspace_root, manifest, command_runner)
-        except LockfileRegenerationError as exc:
-            # Keep going: attempting the remaining manifests gives the
-            # operator one aggregated repair list instead of a re-run per
-            # failure (issue #84).
-            _LOGGER.exception("Cargo lockfile regeneration failed")
-            failures.append((manifest, exc))
-            continue
-        _LOGGER.info(
-            "Regenerated Cargo lockfile for %s in %.3fs",
-            manifest,
-            time.perf_counter() - manifest_started_at,
-        )
-        lockfiles.append(manifest.parent / "Cargo.lock")
-    return lockfiles, failures
 
 def _build_aggregate_failure_message(
     failures: cabc.Sequence[tuple[Path, LockfileRegenerationError]],
@@ -141,6 +119,8 @@ def _build_aggregate_failure_message(
         quoted_manifest = shlex.quote(str(manifest))
         lines.append(f"  cargo update --workspace --manifest-path {quoted_manifest}")
     return "\n".join(lines)
+
+
 def _resolve_manifest_paths(
     workspace_root: Path,
     lockfile_manifests: cabc.Sequence[str],
@@ -169,6 +149,35 @@ def _resolve_manifest_paths(
         seen_manifests.add(candidate)
         manifests.append(candidate)
     return tuple(manifests)
+
+
+def _attempt_single_lockfile_update(
+    workspace_root: Path,
+    manifest: Path,
+    command_runner: CommandRunner,
+) -> tuple[Path | None, LockfileRegenerationError | None]:
+    """Attempt one manifest's lockfile update.
+
+    Returns ``(lockfile, None)`` on success — where ``lockfile`` is the
+    regenerated ``Cargo.lock`` path — or ``(None, error)`` when the update
+    fails, so the caller can aggregate failures without aborting the loop.
+    """
+    manifest_started_at = time.perf_counter()
+    _LOGGER.info("Regenerating Cargo lockfile for %s", manifest)
+    try:
+        _run_workspace_lockfile_update(workspace_root, manifest, command_runner)
+    except LockfileRegenerationError as exc:
+        # Keep going: attempting the remaining manifests gives the
+        # operator one aggregated repair list instead of a re-run per
+        # failure (issue #84).
+        _LOGGER.exception("Cargo lockfile regeneration failed")
+        return None, exc
+    _LOGGER.info(
+        "Regenerated Cargo lockfile for %s in %.3fs",
+        manifest,
+        time.perf_counter() - manifest_started_at,
+    )
+    return manifest.parent / "Cargo.lock", None
 
 
 def _run_workspace_lockfile_update(
