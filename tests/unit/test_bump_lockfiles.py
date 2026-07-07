@@ -50,6 +50,86 @@ class _RecordingRunner:
         return self.result
 
 
+def _write_manifest(directory: Path) -> None:
+    """Create ``directory`` with a placeholder ``Cargo.toml`` inside it."""
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "Cargo.toml").write_text(
+        '[package]\nname = "placeholder"\nversion = "0.1.0"\n',
+        encoding="utf-8",
+    )
+
+
+def test_merge_discovered_manifests_appends_tracked_manifests(
+    tmp_path: Path,
+) -> None:
+    """Discovered tracked-lockfile manifests follow configured entries, sorted."""
+    _write_manifest(tmp_path)
+    _write_manifest(tmp_path / "crates/ui")
+    _write_manifest(tmp_path / "fixtures/minimal")
+    runner = _RecordingRunner(
+        result=(
+            0,
+            "fixtures/minimal/Cargo.lock\nCargo.lock\ncrates/ui/Cargo.lock\n",
+            "",
+        )
+    )
+
+    merged = bump_lockfiles.merge_discovered_manifests(
+        tmp_path,
+        ("crates/ui/Cargo.toml",),
+        runner=runner,
+    )
+
+    assert merged == (
+        "crates/ui/Cargo.toml",
+        "Cargo.toml",
+        "fixtures/minimal/Cargo.toml",
+    )
+    assert runner.invocations == [
+        _Invocation(
+            command=("git", "ls-files", "**/Cargo.lock", "Cargo.lock"),
+            cwd=tmp_path,
+        )
+    ]
+
+
+def test_merge_discovered_manifests_deduplicates_configured_forms(
+    tmp_path: Path,
+) -> None:
+    """A manifest configured under an equivalent spelling is not re-appended."""
+    _write_manifest(tmp_path / "fixtures/minimal")
+    runner = _RecordingRunner(result=(0, "fixtures/minimal/Cargo.lock\n", ""))
+
+    merged = bump_lockfiles.merge_discovered_manifests(
+        tmp_path,
+        ("./fixtures/minimal/Cargo.toml",),
+        runner=runner,
+    )
+
+    assert merged == ("./fixtures/minimal/Cargo.toml",)
+
+
+def test_merge_discovered_manifests_returns_configured_outside_git(
+    tmp_path: Path,
+) -> None:
+    """A non-git workspace degrades to the configured manifests unchanged."""
+    runner = _RecordingRunner(
+        result=(
+            128,
+            "",
+            "fatal: not a git repository (or any of the parent directories): .git",
+        )
+    )
+
+    merged = bump_lockfiles.merge_discovered_manifests(
+        tmp_path,
+        ("crates/ui/Cargo.toml",),
+        runner=runner,
+    )
+
+    assert merged == ("crates/ui/Cargo.toml",)
+
+
 def test_regenerate_lockfiles_includes_workspace_manifest(tmp_path: Path) -> None:
     """The workspace root manifest should always be regenerated."""
     runner = _RecordingRunner()
