@@ -301,6 +301,44 @@ def _selective_failure_runner(
     return runner, attempted
 
 
+def _prepare_manifest_fixture(
+    root: Path,
+    *,
+    fail_root: bool,
+    crates: list[tuple[str, bool]],
+) -> tuple[list[Path], set[Path]]:
+    """Create manifest files under root and record which should fail.
+
+    Returns an ``(expected_order, failing)`` pair.
+    """
+    (root / "Cargo.toml").write_text("", encoding="utf-8")
+    expected_order = [(root / "Cargo.toml").resolve()]
+    failing: set[Path] = set()
+    if fail_root:
+        failing.add(expected_order[0])
+    for name, should_fail in crates:
+        (root / name).mkdir()
+        (root / name / "Cargo.toml").write_text("", encoding="utf-8")
+        manifest = (root / name / "Cargo.toml").resolve()
+        expected_order.append(manifest)
+        if should_fail:
+            failing.add(manifest)
+    return expected_order, failing
+
+
+def _assert_failure_message_reports_each_once(message: str, failing: set[Path]) -> None:
+    """Assert every failing manifest has exactly one repair line."""
+    repair_lines = message.count("cargo update --workspace --manifest-path")
+    assert repair_lines == len(failing), (
+        f"expected one repair line per failure; got {repair_lines} for "
+        f"{len(failing)} failure(s): {message}"
+    )
+    for manifest in failing:
+        assert shlex.quote(str(manifest)) in message, (
+            f"failed manifest {manifest} should appear in: {message}"
+        )
+
+
 @pytest.fixture
 def ab_workspace(tmp_path: Path) -> Path:
     """Create a workspace with root and ``a``/``b`` member ``Cargo.toml`` files."""
@@ -399,35 +437,16 @@ def test_regenerate_lockfiles_attempts_all_and_reports_each_failure_once(
     fail_root, crates = spec
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
-        (root / "Cargo.toml").write_text("", encoding="utf-8")
-        expected_order = [(root / "Cargo.toml").resolve()]
-        failing: set[Path] = set()
-        if fail_root:
-            failing.add((root / "Cargo.toml").resolve())
-        for name, should_fail in crates:
-            (root / name).mkdir()
-            (root / name / "Cargo.toml").write_text("", encoding="utf-8")
-            manifest = (root / name / "Cargo.toml").resolve()
-            expected_order.append(manifest)
-            if should_fail:
-                failing.add(manifest)
-
+        expected_order, failing = _prepare_manifest_fixture(
+            root, fail_root=fail_root, crates=crates
+        )
         runner, attempted = _selective_failure_runner(failing)
         configured = tuple(f"{name}/Cargo.toml" for name, _ in crates)
 
         if failing:
             with pytest.raises(bump_lockfiles.LockfileRegenerationError) as excinfo:
                 bump_lockfiles.regenerate_lockfiles(root, configured, runner=runner)
-            message = str(excinfo.value)
-            repair_lines = message.count("cargo update --workspace --manifest-path")
-            assert repair_lines == len(failing), (
-                f"expected one repair line per failure; got {repair_lines} for "
-                f"{len(failing)} failure(s): {message}"
-            )
-            for manifest in failing:
-                assert shlex.quote(str(manifest)) in message, (
-                    f"failed manifest {manifest} should appear in: {message}"
-                )
+            _assert_failure_message_reports_each_once(str(excinfo.value), failing)
         else:
             regenerated = bump_lockfiles.regenerate_lockfiles(
                 root, configured, runner=runner
