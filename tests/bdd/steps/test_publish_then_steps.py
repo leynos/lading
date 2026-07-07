@@ -33,6 +33,7 @@ from pytest_bdd import parsers, then
 from lading.commands import publish
 
 from .test_publish_helpers import (
+    _assert_cli_run_succeeded,
     _assert_crate_order_matches,
     _assert_invocations_have_flag,
     _assert_invocations_lack_flag,
@@ -55,7 +56,7 @@ if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
 @then(parsers.parse('the publish command prints the publish plan for "{crate_name}"'))
 def then_publish_prints_plan(cli_run: dict[str, typ.Any], crate_name: str) -> None:
     """Assert that the publish command emits a publication plan summary."""
-    assert cli_run["returncode"] == 0
+    _assert_cli_run_succeeded(cli_run)
     workspace = cli_run["workspace"]
     lines = _publish_plan_lines(cli_run)
     assert lines[0] == f"Publish plan for {workspace}"
@@ -283,7 +284,7 @@ def then_publish_interleaves_live_package_and_publish(
 @then("the publish command reports that no crates are publishable")
 def then_publish_reports_none(cli_run: dict[str, typ.Any]) -> None:
     """Assert that the publish command highlights the empty publish list."""
-    assert cli_run["returncode"] == 0
+    _assert_cli_run_succeeded(cli_run)
     lines = _publish_plan_lines(cli_run)
     assert "Crates to publish: none" in lines
 
@@ -374,7 +375,7 @@ def then_publish_preflight_reports_missing_socket(
 @then("the command should not raise a preflight error about the flag")
 def then_publish_flag_is_accepted(cli_run: dict[str, typ.Any]) -> None:
     """Assert that the dry-run override flag does not fail pre-flight."""
-    assert cli_run["returncode"] == 0
+    _assert_cli_run_succeeded(cli_run)
     assert "--allow-unpublished-workspace-deps is only valid" not in cli_run["stderr"]
 
 
@@ -408,5 +409,5 @@ def then_publish_warning_log_contains(
 @then("no PublishPreflightError should be raised")
 def then_publish_preflight_error_is_not_reported(cli_run: dict[str, typ.Any]) -> None:
     """Assert that publish completed without a pre-flight failure."""
-    assert cli_run["returncode"] == 0
+    _assert_cli_run_succeeded(cli_run)
     assert "PublishPreflightError" not in cli_run["stderr"]
