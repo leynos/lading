@@ -2,7 +2,7 @@
 # name: test_validate_lockfile_freshness_error_snapshot
   '''
   Tracked Cargo.lock files are stale after manifest version changes.
-  This commonly happens after running `lading bump`; repair each stale lockfile directly:
+  This can happen after manifest edits made without `lading bump`, or after running bump with `--no-rebuild-lockfiles`; repair each stale lockfile directly:
   - /workspace root/Cargo.lock
     cargo generate-lockfile --manifest-path '/workspace root/Cargo.toml'
   - /workspace root/tests/ui_lints/Cargo.lock
