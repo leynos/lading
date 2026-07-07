@@ -33,10 +33,12 @@ from __future__ import annotations
 
 import collections.abc as cabc
 import dataclasses as dc
-import typing as typ
 
-if typ.TYPE_CHECKING:
-    from pathlib import Path
+# ``Path`` is imported at runtime (not under ``TYPE_CHECKING``) so CrossHair can
+# resolve the annotations on the pure helpers when model-checking their
+# contracts (issue #95). ``ruff`` TC003 is intentionally ignored for this file's
+# stdlib type-only imports.
+from pathlib import Path
 
 _SINGLE_CHANGE_CATEGORY_COUNT = 1
 _PAIRED_CHANGE_CATEGORY_COUNT = 2
@@ -69,7 +71,14 @@ class BumpChanges:
 
 
 def _build_changes_description(changes: BumpChanges) -> str:
-    """Build a human-readable description of changed files."""
+    """Build a human-readable description of changed files.
+
+    CrossHair contracts (issue #95); model-check with ``make crosshair``.
+
+    pre: _has_changes(changes)
+    post: len(__return__) > 0
+    post: " and and " not in __return__
+    """
     parts: list[str] = []
     if changes.manifests:
         parts.append(f"{len(changes.manifests)} manifest(s)")
@@ -97,7 +106,14 @@ def _format_no_changes_message(target_version: str, *, dry_run: bool) -> str:
 
 
 def _format_header(description: str, target_version: str, *, dry_run: bool) -> str:
-    """Format the summary header line."""
+    """Format the summary header line.
+
+    CrossHair contracts (issue #95); model-check with ``make crosshair``.
+
+    post: __return__.endswith(":")
+    post: target_version in __return__
+    post: description in __return__
+    """
     if dry_run:
         return f"Dry run; would update version to {target_version} in {description}:"
     return f"Updated version to {target_version} in {description}:"
@@ -146,7 +162,12 @@ def _format_result_message(
 
 
 def _format_manifest_path(manifest_path: Path, workspace_root: Path) -> str:
-    """Return ``manifest_path`` relative to ``workspace_root`` when possible."""
+    """Return ``manifest_path`` relative to ``workspace_root`` when possible.
+
+    CrossHair contracts (issue #95); model-check with ``make crosshair``.
+
+    post: isinstance(__return__, str)
+    """
     try:
         relative = manifest_path.relative_to(workspace_root)
     except ValueError:

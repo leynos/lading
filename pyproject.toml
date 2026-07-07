@@ -48,6 +48,7 @@ dev = [
     # code is pathlib + cuprum only (docs/roadmap.md Phase 5).
     "plumbum>=1.8",
     "pyyaml>=6.0.3",
+    "crosshair-tool>=0.0.107",
 ]
 
 [tool.ruff]
@@ -365,6 +366,12 @@ enable = [
 [tool.pytest.ini_options]
 # Tests automatically killed after seconds elapsed
 timeout = 30
+
+[tool.crosshair]
+# Bound symbolic execution so `make crosshair` cannot run unbounded when
+# model-checking the bump_output pure-helper contracts (issue #95).
+per_path_timeout = 4
+per_condition_timeout = 30
 
 [tool.mutmut]
 source_paths = ["lading/"]

@@ -546,7 +546,7 @@ def test_update_dependency_sections_workspace_dev_and_build() -> None:
 # Canonical bump_output formatting (issue #95)
 # ---------------------------------------------------------------------------
 
-_category_count = st.integers(min_value=0, max_value=3)
+_CATEGORY_COUNT = st.integers(min_value=0, max_value=3)
 
 
 def _expected_description(categories: list[str]) -> str:
@@ -586,10 +586,10 @@ def _build_expected_categories(changes: bump_output.BumpChanges) -> list[str]:
 
 
 @given(
-    manifest_count=_category_count,
-    document_count=_category_count,
-    readme_count=_category_count,
-    lockfile_count=_category_count,
+    manifest_count=_CATEGORY_COUNT,
+    document_count=_CATEGORY_COUNT,
+    readme_count=_CATEGORY_COUNT,
+    lockfile_count=_CATEGORY_COUNT,
 )
 def test_result_message_grammar_and_path_rendering(
     manifest_count: int,

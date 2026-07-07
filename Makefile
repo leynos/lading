@@ -19,7 +19,7 @@ PYLINT_PYPY_SHIM = git+https://github.com/leynos/pylint-pypy-shim.git@$(PYLINT_P
 PYLINT = $(UV) tool run --python $(PYLINT_PYTHON) --from '$(PYLINT_PYPY_SHIM)' pylint-pypy
 
 .PHONY: help all clean build build-release lint fmt check-fmt \
-	markdownlint nixie test typecheck $(TOOLS) $(VENV_TOOLS)
+	markdownlint nixie test typecheck crosshair $(TOOLS) $(VENV_TOOLS)
 
 .DEFAULT_GOAL := all
 
@@ -92,6 +92,16 @@ nixie: $(NIXIE) ## Validate Mermaid diagrams
 
 test: build $(UV) pytest ## Run tests
 	$(UV) run pytest -v
+
+# Model-check the bump_output pure-helper contracts (issue #95). Only the
+# string/count helpers are enumerated: CrossHair 0.0.107 cannot build a symbolic
+# proxy for a `pathlib.Path` parameter (it raises in intersect_signatures on
+# both 3.13 and 3.14), so `_format_manifest_path` is excluded here and covered
+# instead by the Hypothesis property test in tests/unit.
+crosshair: build $(UV) ## Model-check bump_output pure-helper contracts (issue #95)
+	$(UV) run crosshair check \
+	  lading.commands.bump_output._build_changes_description \
+	  lading.commands.bump_output._format_header
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?##' $(MAKEFILE_LIST) | \
