@@ -1,9 +1,9 @@
-"""Internal unit tests for the :mod:`lading.commands.bump` module internals.
+"""Unit tests for bump result formatting and crate-manifest updates.
 
-Covers selector/skip helpers, change-description counting, and the formatted
-result messaging. Also hosts the shared workspace-construction helpers
-(``_make_test_crate_with_dependency``, ``_make_workspace_with_alpha_dependency``)
-and ``UpdateCrateTestParams`` reused by :mod:`tests.unit.test_bump_manifest_editing`.
+Covers change-description counting, no-change/header/path formatting, the
+snapshot-backed result messages, and :func:`lading.commands.bump.
+_update_crate_manifest`. Hosts the workspace-construction fixtures those
+crate-update assertions share.
 """
 
 from __future__ import annotations
@@ -12,8 +12,12 @@ import dataclasses as dc
 import typing as typ
 from pathlib import Path
 
+import pytest
+from tomlkit import parse as parse_toml
+
 from lading.commands import bump, bump_output
 from lading.workspace import WorkspaceCrate, WorkspaceDependency, WorkspaceGraph
+from tests.helpers.workspace_builders import _make_config
 
 if typ.TYPE_CHECKING:
     from syrupy.assertion import SnapshotAssertion
@@ -123,23 +127,23 @@ def _make_workspace_with_alpha_dependency(
     return beta_crate, workspace
 
 
-def test_determine_package_selectors_respects_exclusions() -> None:
-    """Excluded crates produce no package selectors."""
-    assert bump._determine_package_selectors("beta", {"beta"}) == ()
+def _parse_manifest_versions(
+    manifest_path: Path,
+) -> tuple[str, str]:
+    """Extract package version and alpha dependency version from manifest.
 
+    Args:
+        manifest_path: Path to the Cargo.toml manifest.
 
-def test_determine_package_selectors_includes_package_for_active_crates() -> None:
-    """Active crates receive the package selector tuple."""
-    assert bump._determine_package_selectors("beta", set()) == (("package",),)
+    Returns
+    -------
+        Tuple of (package_version, alpha_dependency_version).
 
-
-def test_should_skip_crate_update_requires_selectors_or_dependencies() -> None:
-    """Skipping occurs only when both selectors and dependency sections are empty."""
-    assert bump._should_skip_crate_update((), {}) is True
-    assert (
-        bump._should_skip_crate_update((("package",),), {"dependencies": ("alpha",)})
-        is False
-    )
+    """
+    document = parse_toml(manifest_path.read_text(encoding="utf-8"))
+    package_version = document["package"]["version"]
+    alpha_version = document["dependencies"]["alpha"].value
+    return package_version, alpha_version
 
 
 def test_build_changes_description_counts_sections(tmp_path: Path) -> None:
@@ -278,3 +282,49 @@ def test_format_result_message_handles_readme_only_changes(
         dry_run=False,
         workspace_root=workspace_root,
     ).splitlines() == snapshot(name="readme_only_live")
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        UpdateCrateTestParams(
+            test_id="excluded_crate_skips_version_bump",
+            dependency_spec=("alpha", "0.1.0"),
+            exclude_crates=("beta",),
+            expected_package_version="0.1.0",
+            expected_alpha_version="1.2.3",
+        ),
+        UpdateCrateTestParams(
+            test_id="updates_version_and_dependencies",
+            dependency_spec=("alpha", "^0.1.0"),
+            exclude_crates=(),
+            expected_package_version="1.2.3",
+            expected_alpha_version="^1.2.3",
+        ),
+    ],
+    ids=lambda p: p.test_id,
+)
+def test_update_crate_manifest(tmp_path: Path, params: UpdateCrateTestParams) -> None:
+    """Crate manifest updates handle exclusions and dependency rewrites."""
+    crate, workspace = _make_workspace_with_alpha_dependency(
+        tmp_path,
+        dependency=params.dependency_spec,
+    )
+    context = bump._initialize_bump_context(
+        tmp_path,
+        bump.BumpOptions(
+            configuration=_make_config(exclude=params.exclude_crates),
+            workspace=workspace,
+        ),
+    )
+
+    changed = bump._update_crate_manifest(
+        crate,
+        "1.2.3",
+        context,
+    )
+
+    assert changed is True
+    package_version, alpha_version = _parse_manifest_versions(crate.manifest_path)
+    assert package_version == params.expected_package_version
+    assert alpha_version == params.expected_alpha_version
