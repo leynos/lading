@@ -124,6 +124,7 @@ class _BumpContext:
     excluded: frozenset[str]
     updated_crate_names: frozenset[str]
 
+
 @dc.dataclass(frozen=True, slots=True)
 class _CrateManifestUpdate:
     """Outcome from processing a single crate manifest."""
@@ -380,6 +381,7 @@ def _update_crate_manifest(
     recompute them per crate.
     """
     return _apply_crate_manifest_update(crate, target_version, context).was_updated
+
 
 def _apply_crate_manifest_update(
     crate: WorkspaceCrate,

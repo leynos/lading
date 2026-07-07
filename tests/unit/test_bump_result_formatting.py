@@ -12,7 +12,9 @@ import dataclasses as dc
 import typing as typ
 from pathlib import Path
 
+import hypothesis.strategies as st
 import pytest
+from hypothesis import given
 from tomlkit import parse as parse_toml
 
 from lading.commands import bump, bump_output
@@ -154,8 +156,8 @@ def test_build_changes_description_counts_sections(tmp_path: Path) -> None:
         transposed_readmes=(tmp_path / "crates" / "alpha" / "README.md",),
     )
     assert (
-        bump._build_changes_description(changes)
-        == "2 manifest(s) and 1 documentation file(s) and 1 readme file(s)"
+        bump_output._build_changes_description(changes)
+        == "2 manifest(s), 1 documentation file(s), and 1 readme file(s)"
     ), "description should report 2 manifests, 1 documentation file, and 1 readme"
 
     changes = bump.BumpChanges(
@@ -164,9 +166,8 @@ def test_build_changes_description_counts_sections(tmp_path: Path) -> None:
         transposed_readmes=(tmp_path / "crates" / "alpha" / "README.md",),
         lockfiles=(tmp_path / "Cargo.lock",),
     )
-    assert bump._build_changes_description(changes) == (
-        "1 manifest(s) and 1 documentation file(s) and "
-        "1 readme file(s) and 1 lockfile(s)"
+    assert bump_output._build_changes_description(changes) == (
+        "1 manifest(s), 1 documentation file(s), 1 readme file(s), and 1 lockfile(s)"
     ), "description should report 1 manifest, 1 doc, 1 readme, and 1 lockfile"
 
 
@@ -332,3 +333,129 @@ def test_update_crate_manifest(tmp_path: Path, params: UpdateCrateTestParams) ->
     assert alpha_version == params.expected_alpha_version, (
         "alpha dependency version mismatch after crate manifest update"
     )
+
+
+# ---------------------------------------------------------------------------
+# Result-message grammar and rendering (issue #95, preserved through rebase)
+# ---------------------------------------------------------------------------
+
+_CATEGORY_COUNT = st.integers(min_value=0, max_value=3)
+
+
+def _expected_description(categories: list[str]) -> str:
+    """Return the reference Oxford-comma joining for ``categories``."""
+    if len(categories) == 1:
+        return categories[0]
+    if len(categories) == 2:
+        return " and ".join(categories)
+    return f"{', '.join(categories[:-1])}, and {categories[-1]}"
+
+
+def _build_expected_body(root: Path, changes: bump_output.BumpChanges) -> list[str]:
+    """Return the expected ``"- <rel_path>"`` body lines in render order."""
+    return [
+        *(f"- {path.relative_to(root)}" for path in changes.manifests),
+        *(f"- {path.relative_to(root)} (documentation)" for path in changes.documents),
+        *(
+            f"- {path.relative_to(root)} (readme)"
+            for path in changes.transposed_readmes
+        ),
+        *(f"- {path.relative_to(root)} (lockfile)" for path in changes.lockfiles),
+    ]
+
+
+def _build_expected_categories(changes: bump_output.BumpChanges) -> list[str]:
+    """Return ordered category descriptions for the present change sets."""
+    categories: list[str] = []
+    if changes.manifests:
+        categories.append(f"{len(changes.manifests)} manifest(s)")
+    if changes.documents:
+        categories.append(f"{len(changes.documents)} documentation file(s)")
+    if changes.transposed_readmes:
+        categories.append(f"{len(changes.transposed_readmes)} readme file(s)")
+    if changes.lockfiles:
+        categories.append(f"{len(changes.lockfiles)} lockfile(s)")
+    return categories
+
+
+@given(
+    manifest_count=_CATEGORY_COUNT,
+    document_count=_CATEGORY_COUNT,
+    readme_count=_CATEGORY_COUNT,
+    lockfile_count=_CATEGORY_COUNT,
+)
+def test_result_message_grammar_and_path_rendering(
+    manifest_count: int,
+    document_count: int,
+    readme_count: int,
+    lockfile_count: int,
+) -> None:
+    """Any category combination renders correct grammar and unique paths."""
+    root = Path("/ws")
+    manifests = tuple(root / f"m{i}" / "Cargo.toml" for i in range(manifest_count))
+    documents = tuple(root / f"doc{i}.md" for i in range(document_count))
+    readmes = tuple(root / f"r{i}" / "README.md" for i in range(readme_count))
+    lockfiles = tuple(root / f"l{i}" / "Cargo.lock" for i in range(lockfile_count))
+    changes = bump_output.BumpChanges(
+        manifests=manifests,
+        documents=documents,
+        lockfiles=lockfiles,
+        transposed_readmes=readmes,
+    )
+
+    message = bump_output._format_result_message(
+        changes, "1.2.3", dry_run=False, workspace_root=root
+    )
+
+    if not any((manifests, documents, readmes, lockfiles)):
+        assert message == "No manifest changes required; all versions already 1.2.3."
+        return
+
+    lines = message.splitlines()
+    assert lines[1:] == _build_expected_body(root, changes)
+
+    categories = _build_expected_categories(changes)
+    expected_header = (
+        f"Updated version to 1.2.3 in {_expected_description(categories)}:"
+    )
+    assert lines[0] == expected_header
+    assert " and and " not in lines[0]
+    if len(categories) >= 3:
+        assert ", and " in lines[0]
+
+
+def test_format_result_message_four_categories_snapshot(
+    tmp_path: Path, snapshot: SnapshotAssertion
+) -> None:
+    """All four categories render with Oxford-comma grammar (dry-run and live)."""
+    root = tmp_path
+    changes = bump_output.BumpChanges(
+        manifests=(root / "Cargo.toml",),
+        documents=(root / "README.md",),
+        lockfiles=(root / "Cargo.lock",),
+        transposed_readmes=(root / "crates" / "alpha" / "README.md",),
+    )
+
+    live = bump_output._format_result_message(
+        changes, "2.0.0", dry_run=False, workspace_root=root
+    )
+    dry = bump_output._format_result_message(
+        changes, "2.0.0", dry_run=True, workspace_root=root
+    )
+
+    assert snapshot(name="live") == live.splitlines()
+    assert snapshot(name="dry_run") == dry.splitlines()
+
+
+def test_format_result_message_lockfile_only(tmp_path: Path) -> None:
+    """A lockfile-only BumpChanges renders correctly (not 'no changes')."""
+    root = tmp_path
+    lockfile = root / "Cargo.lock"
+    changes = bump_output.BumpChanges(lockfiles=(lockfile,))
+    message = bump_output._format_result_message(
+        changes, "1.2.3", dry_run=False, workspace_root=root
+    )
+    assert message != "No manifest changes required; all versions already 1.2.3."
+    lines = message.splitlines()
+    assert lines[0] == "Updated version to 1.2.3 in 1 lockfile(s):"
+    assert lines[1] == f"- {lockfile.relative_to(root)} (lockfile)"
