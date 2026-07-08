@@ -36,15 +36,7 @@ def _make_test_crate_with_dependency(
     crate_version: str = "0.1.0",
     dependency: tuple[str, str] = ("alpha", "0.1.0"),
 ) -> WorkspaceCrate:
-    """Create a test crate manifest with a single dependency.
-
-    Args:
-        tmp_path: Directory where the manifest will be created.
-        crate_name: Name of the crate to create.
-        crate_version: Version of the crate.
-        dependency: Tuple of (dependency_name, dependency_version).
-
-    """
+    """Create a test crate manifest with a single dependency."""
     dependency_name, dependency_version = dependency
     manifest_path = tmp_path / "Cargo.toml"
     manifest_path.write_text(
@@ -82,18 +74,7 @@ def _make_workspace_with_alpha_dependency(
     *,
     dependency: tuple[str, str] = ("alpha", "0.1.0"),
 ) -> tuple[WorkspaceCrate, WorkspaceGraph]:
-    """Create a workspace with beta crate depending on alpha crate.
-
-    Args:
-        tmp_path: Directory where manifests will be created.
-        dependency: Tuple of (dependency_name, dependency_version) for beta's
-            dependency.
-
-    Returns
-    -------
-        Tuple of (beta_crate, workspace_graph).
-
-    """
+    """Create a workspace with a beta crate depending on an alpha crate."""
     beta_crate = _make_test_crate_with_dependency(tmp_path, dependency=dependency)
 
     alpha_manifest = tmp_path / "alpha" / "Cargo.toml"
@@ -125,16 +106,7 @@ def _make_workspace_with_alpha_dependency(
 def _parse_manifest_versions(
     manifest_path: Path,
 ) -> tuple[str, str]:
-    """Extract package version and alpha dependency version from manifest.
-
-    Args:
-        manifest_path: Path to the Cargo.toml manifest.
-
-    Returns
-    -------
-        Tuple of (package_version, alpha_dependency_version).
-
-    """
+    """Return the package version and alpha dependency version from a manifest."""
     document = parse_toml(manifest_path.read_text(encoding="utf-8"))
     package_version = document["package"]["version"]
     alpha_version = document["dependencies"]["alpha"].value

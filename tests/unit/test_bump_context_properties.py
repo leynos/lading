@@ -231,12 +231,14 @@ def _draw_dependency_edges(
     data: st.DataObject,
     names: cabc.Sequence[str],
     updated_pivot: str,
+    excluded_pivot: str,
 ) -> dict[str, dict[str, _DependencyKind]]:
     """Draw a per-crate ``{target: kind}`` edge map for the workspace.
 
-    Edges never self-reference, ``kind`` varies across normal/dev/build, and one
-    edge is forced onto ``updated_pivot`` so the "depends on an updated crate"
-    branch is covered on every example.
+    Edges never self-reference and ``kind`` varies across normal/dev/build. One
+    edge is forced from ``excluded_pivot`` onto ``updated_pivot`` so the
+    excluded-crate dependency-rewrite path (an excluded crate that still depends
+    on an updated crate) is covered on every example.
     """
     edges: dict[str, dict[str, _DependencyKind]] = {}
     for name in names:
@@ -251,13 +253,9 @@ def _draw_dependency_edges(
             )
             for target in sorted(targets)
         }
-    dependent = data.draw(
-        st.sampled_from([name for name in names if name != updated_pivot]),
-        label="dependent",
-    )
-    if updated_pivot not in edges[dependent]:
-        edges[dependent][updated_pivot] = data.draw(
-            st.sampled_from(_DEPENDENCY_KINDS), label="dependent_kind"
+    if updated_pivot not in edges[excluded_pivot]:
+        edges[excluded_pivot][updated_pivot] = data.draw(
+            st.sampled_from(_DEPENDENCY_KINDS), label="excluded_pivot_kind"
         )
     return edges
 
@@ -339,7 +337,7 @@ def test_manifest_selection_matches_naive_reference(
     exclude_set = {excluded_pivot} | extra_excluded
     exclude = tuple(sorted(exclude_set))
 
-    edges = _draw_dependency_edges(data, names, updated_pivot)
+    edges = _draw_dependency_edges(data, names, updated_pivot, excluded_pivot)
     dependencies: _DependencyEdges = {
         name: tuple(sorted(targets.items())) for name, targets in edges.items()
     }

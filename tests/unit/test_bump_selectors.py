@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from lading.commands import bump
 
 
@@ -19,12 +21,28 @@ def test_determine_package_selectors_includes_package_for_active_crates() -> Non
     )
 
 
-def test_should_skip_crate_update_requires_selectors_or_dependencies() -> None:
-    """Skipping occurs only when both selectors and dependency sections are empty."""
-    assert bump._should_skip_crate_update((), {}) is True, (
-        "no selectors and no dependency sections should skip the crate"
+@pytest.mark.parametrize(
+    ("selectors", "dependency_sections", "expected_skip"),
+    [
+        pytest.param((), {}, True, id="both_empty"),
+        pytest.param((), {"dependencies": ("alpha",)}, False, id="dependencies_only"),
+        pytest.param((("package",),), {}, False, id="selectors_only"),
+        pytest.param(
+            (("package",),),
+            {"dependencies": ("alpha",)},
+            False,
+            id="both_present",
+        ),
+    ],
+)
+def test_should_skip_crate_update_requires_selectors_or_dependencies(
+    *,
+    selectors: tuple[tuple[str, ...], ...],
+    dependency_sections: dict[str, tuple[str, ...]],
+    expected_skip: bool,
+) -> None:
+    """A crate is skipped only when it has neither selectors nor dependencies."""
+    result = bump._should_skip_crate_update(selectors, dependency_sections)
+    assert result is expected_skip, (
+        "skip should be True only when selectors and dependency sections are both empty"
     )
-    assert (
-        bump._should_skip_crate_update((("package",),), {"dependencies": ("alpha",)})
-        is False
-    ), "a crate with selectors or dependency sections should not be skipped"

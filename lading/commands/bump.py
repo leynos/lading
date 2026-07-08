@@ -433,13 +433,13 @@ def _apply_crate_manifest_update(
 
 def _determine_package_selectors(
     crate_name: str,
-    excluded: cabc.Collection[str],
+    excluded: cabc.Set[str],
 ) -> tuple[tuple[str, ...], ...]:
     """Return package selectors for the crate, respecting exclusion rules.
 
     Args:
         crate_name: Name of the crate to check.
-        excluded: Collection of excluded crate names.
+        excluded: Set of excluded crate names.
 
     Returns
     -------
