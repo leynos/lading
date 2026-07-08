@@ -1,9 +1,37 @@
-"""Version bumping command implementation."""
+"""Version bumping command implementation.
+
+This module is the coordinator for the ``bump`` command. :func:`run` is the
+entry point invoked by the CLI command layer: given a workspace root and a
+target version, it orchestrates every manifest, documentation, README, and
+lockfile update and returns a formatted, human-readable summary of the run.
+
+:class:`BumpOptions` is the input configuration (dry-run flag, lockfile-rebuild
+override, and the resolved configuration and workspace graph), and
+:class:`BumpChanges` is the aggregated result record collecting the files a run
+altered; :func:`run` builds a ``BumpChanges`` internally and renders it into the
+returned summary message.
+
+Crate-set derivation is a single source of truth. The ``excluded`` and
+``updated_crate_names`` sets are computed exactly once in
+:func:`_initialize_bump_context` and threaded through
+:func:`_apply_crate_manifest_update` via the :class:`_BumpContext`, rather than
+being recomputed per crate (issue #97). See ``docs/developers-guide.md`` for the
+rule; do not re-derive these sets in per-crate helpers.
+
+This module coordinates rather than implementing file-format specifics, which it
+delegates to sibling modules:
+
+- :mod:`lading.commands.bump_docs` — documentation version rewrites.
+- :mod:`lading.commands.bump_lockfiles` — lockfile regeneration.
+- :mod:`lading.commands.bump_readme` — workspace README transposition.
+- :mod:`lading.commands.bump_toml` — low-level TOML manipulation.
+"""
 
 from __future__ import annotations
 
 import collections.abc as cabc
 import dataclasses as dc
+import enum
 import logging
 import types
 import typing as typ
@@ -98,6 +126,18 @@ class _BumpContext:
     updated_crate_names: frozenset[str]
 
 
+class _CrateManifestOutcome(enum.Enum):
+    """Closed outcome of processing a single crate manifest.
+
+    Replaces a two-boolean record so the skipped/updated/unchanged states are
+    mutually exclusive and the ``both true`` state is unrepresentable.
+    """
+
+    SKIPPED = enum.auto()
+    UPDATED = enum.auto()
+    UNCHANGED = enum.auto()
+
+
 def run(
     workspace_root: Path | str,
     target_version: str,
@@ -106,6 +146,11 @@ def run(
 ) -> str:
     """Update workspace and crate manifest versions to ``target_version``."""
     context = _initialize_bump_context(workspace_root, options)
+    _log.debug(
+        "Bump context initialised: %d excluded crate(s), %d to update",
+        len(context.excluded),
+        len(context.updated_crate_names),
+    )
     changed_manifests: set[Path] = set()
     _process_workspace_manifest(context, target_version, changed_manifests)
     _process_crate_manifests(context, target_version, changed_manifests)
@@ -207,9 +252,25 @@ def _process_crate_manifests(
     changed_manifests: set[Path],
 ) -> None:
     """Update member crate manifests for the workspace."""
+    processed_count = 0
+    skipped_count = 0
+    updated_count = 0
     for crate in context.workspace.crates:
-        if _update_crate_manifest(crate, target_version, context.base_options):
-            changed_manifests.add(crate.manifest_path)
+        processed_count += 1
+        match _apply_crate_manifest_update(crate, target_version, context):
+            case _CrateManifestOutcome.SKIPPED:
+                skipped_count += 1
+            case _CrateManifestOutcome.UPDATED:
+                changed_manifests.add(crate.manifest_path)
+                updated_count += 1
+            case _CrateManifestOutcome.UNCHANGED:
+                pass
+    _log.debug(
+        "Crate manifest processing complete: %d processed, %d skipped, %d updated",
+        processed_count,
+        skipped_count,
+        updated_count,
+    )
 
 
 def _process_documentation_files(
@@ -232,6 +293,7 @@ def _process_readme_transposition(context: _BumpContext, *, dry_run: bool) -> se
     """Transpose workspace README files into opted-in member crates."""
     _log.debug("Starting workspace README transposition")
     changed_readmes: set[Path] = set()
+    transposed_entry_count = 0
     source_readme_path = context.root_path / "README.md"
     cached_text: str | None = (
         source_readme_path.read_text(encoding="utf-8")
@@ -241,6 +303,7 @@ def _process_readme_transposition(context: _BumpContext, *, dry_run: bool) -> se
     for crate in context.workspace.crates:
         if not crate.readme_is_workspace:
             continue
+        transposed_entry_count += 1
         try:
             changed_path = bump_readme.transpose_readme_to_crate(
                 context.root_path,
@@ -254,7 +317,8 @@ def _process_readme_transposition(context: _BumpContext, *, dry_run: bool) -> se
         if changed_path is not None:
             changed_readmes.add(changed_path)
     _log.debug(
-        "README transposition complete: %d file(s) changed",
+        "README transposition complete: %d entries, %d file(s) changed",
+        transposed_entry_count,
         len(changed_readmes),
     )
     return changed_readmes
@@ -312,64 +376,70 @@ def _prepare_sorted_changes(
     )
 
 
-def _update_crate_manifest(
+def _apply_crate_manifest_update(
     crate: WorkspaceCrate,
     target_version: str,
-    options: BumpOptions,
-) -> bool:
-    """Apply updates for ``crate`` while respecting exclusion rules."""
-    configuration, workspace = _validate_bump_options(options)
+    context: _BumpContext,
+) -> _CrateManifestOutcome:
+    """Apply updates for ``crate`` and return the closed manifest outcome.
 
-    excluded = set(configuration.bump.exclude)
-    updated_crate_names = {
-        member.name for member in workspace.crates if member.name not in excluded
-    }
-
-    selectors = _determine_package_selectors(crate.name, excluded)
-    dependency_sections = _dependency_sections_for_crate(crate, updated_crate_names)
+    The crate sets are read from ``context`` — they are derived exactly once
+    in :func:`_initialize_bump_context` (issue #97); helpers must not
+    recompute them per crate.
+    """
+    selectors = _determine_package_selectors(crate.name, context.excluded)
+    dependency_sections = _dependency_sections_for_crate(
+        crate, context.updated_crate_names
+    )
 
     if _should_skip_crate_update(selectors, dependency_sections):
-        return False
+        _log.debug("Skipping crate manifest update for excluded crate %r", crate.name)
+        return _CrateManifestOutcome.SKIPPED
 
     crate_options = dc.replace(
-        options,
+        context.base_options,
         dependency_sections=_freeze_dependency_sections(dependency_sections),
     )
-    return _update_manifest(
+    was_updated = _update_manifest(
         crate.manifest_path,
         selectors,
         target_version,
         crate_options,
     )
-
-
-def _validate_bump_options(options: BumpOptions) -> tuple[LadingConfig, WorkspaceGraph]:
-    """Validate and extract required configuration and workspace from options.
-
-    Raises
-    ------
-        ValueError: If configuration or workspace is None.
-
-    Returns
-    -------
-        Tuple of (configuration, workspace).
-
-    """
-    if options.configuration is None or options.workspace is None:
-        message = "BumpOptions must supply configuration and workspace."
-        raise ValueError(message)
-    return options.configuration, options.workspace
+    if was_updated:
+        _log.debug(
+            "Updated crate manifest for crate %r: manifest=%s",
+            crate.name,
+            crate.manifest_path,
+        )
+        if not crate_options.dry_run:
+            _log.debug(
+                "Wrote crate manifest for crate %r: manifest=%s",
+                crate.name,
+                crate.manifest_path,
+            )
+    else:
+        _log.debug(
+            "Crate manifest already up to date for crate %r: manifest=%s",
+            crate.name,
+            crate.manifest_path,
+        )
+    return (
+        _CrateManifestOutcome.UPDATED
+        if was_updated
+        else _CrateManifestOutcome.UNCHANGED
+    )
 
 
 def _determine_package_selectors(
     crate_name: str,
-    excluded: cabc.Collection[str],
+    excluded: cabc.Set[str],
 ) -> tuple[tuple[str, ...], ...]:
     """Return package selectors for the crate, respecting exclusion rules.
 
     Args:
         crate_name: Name of the crate to check.
-        excluded: Collection of excluded crate names.
+        excluded: Set of excluded crate names.
 
     Returns
     -------
@@ -441,7 +511,7 @@ def _update_manifest(
 
 
 def _workspace_dependency_sections(
-    updated_crates: cabc.Collection[str],
+    updated_crates: cabc.Set[str],
 ) -> dict[str, set[str]]:
     """Return dependency names to update for the workspace manifest."""
     crate_names = {name for name in updated_crates if name}
@@ -452,17 +522,16 @@ def _workspace_dependency_sections(
 
 def _dependency_sections_for_crate(
     crate: WorkspaceCrate,
-    updated_crates: cabc.Collection[str],
+    updated_crates: cabc.Set[str],
 ) -> dict[str, set[str]]:
     """Return dependency names grouped by section for ``crate``."""
     if not crate.dependencies:
         return {}
-    targets = {name for name in updated_crates if name}
-    if not targets:
+    if not updated_crates:
         return {}
     sections: dict[str, set[str]] = {}
     for dependency in crate.dependencies:
-        if dependency.name not in targets:
+        if dependency.name not in updated_crates:
             continue
         section = _DEPENDENCY_SECTION_BY_KIND.get(dependency.kind, _NORMAL_SECTION)
         # ``manifest_name`` preserves the dependency key used in the manifest.
