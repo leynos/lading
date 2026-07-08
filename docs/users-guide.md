@@ -86,15 +86,19 @@ lading bump 1.2.3 --dry-run
 
 After updating manifest versions, `lading bump` automatically refreshes any
 git-tracked `Cargo.lock` files (excluding those under `target/`) that have an
-adjacent `Cargo.toml`. Refreshed lockfiles are listed in the command output
-with a `(lockfile)` suffix. In dry-run mode the lockfiles are listed but not
-modified.
+adjacent `Cargo.toml`. The result header counts each changed category, e.g.
+"N manifest(s)", "N documentation file(s)", "N readme file(s)", "N
+lockfile(s)", joined with Oxford-comma grammar. In the per-file body list,
+manifest paths carry no suffix; the other categories carry a parenthetical
+suffix: `(documentation)` for Markdown docs whose TOML code fences were
+updated, `(readme)` for crate READMEs adopted from the workspace README, and
+`(lockfile)` for regenerated `Cargo.lock` files. In dry-run mode, every file
+is listed, but none are modified.
 
 Where a member crate sets `readme.workspace = true`, `lading bump` also adopts
 the workspace `README.md` into that crate's directory and rewrites relative
-Markdown links so they still resolve from the crate directory. Adopted README
-files are listed in the command output with a `(readme)` suffix. In dry-run
-mode the files are listed but not written.
+Markdown links so they still resolve from the crate directory. Such adopted
+READMEs appear in the output with the `(readme)` suffix described above.
 
 If `bump.documentation.globs` is configured, `lading` also searches those
 Markdown files for TOML code fences and updates version values that refer to

@@ -632,7 +632,9 @@ def test_bump_command_validates_version(
     exit_code = cli.main(["bump", "1.2", "--workspace-root", str(tmp_path)])
     assert exit_code == 1
     captured = capsys.readouterr()
-    assert "Invalid version argument '1.2'" in captured.err
+    # Cyclopts renders argument-validation errors through its own console
+    # (stdout), consistent with other cyclopts errors such as "Unknown command".
+    assert "Invalid version argument '1.2'" in captured.out
 
 
 @pytest.mark.usefixtures("minimal_config")

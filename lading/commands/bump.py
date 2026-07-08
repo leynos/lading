@@ -37,32 +37,32 @@ import types
 import typing as typ
 
 from lading import config as config_module
-from lading.commands import bump_docs, bump_lockfiles, bump_readme, bump_toml
+from lading.commands import (
+    bump_docs,
+    bump_lockfiles,
+    bump_manifests,
+    bump_readme,
+    bump_toml,
+)
+from lading.commands.bump_manifests import (
+    _WORKSPACE_SELECTORS,
+    _dependency_sections_for_crate,
+    _determine_package_selectors,
+    _freeze_dependency_sections,
+    _should_skip_crate_update,
+    _update_manifest,
+    _workspace_dependency_sections,
+)
 from lading.commands.bump_output import BumpChanges, _format_result_message
 from lading.utils import normalise_workspace_root
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
 
+    from lading.commands.bump_manifests import _BumpContext
     from lading.config import LadingConfig
     from lading.runtime import CommandRunner
     from lading.workspace import WorkspaceCrate, WorkspaceGraph
-
-_WORKSPACE_SELECTORS: typ.Final[tuple[tuple[str, ...], ...]] = (
-    ("package",),
-    ("workspace", "package"),
-)
-
-# Derived from the canonical section vocabulary so the kind mapping cannot
-# drift from ``bump_toml.DEPENDENCY_SECTIONS``.
-_NORMAL_SECTION, _DEV_SECTION, _BUILD_SECTION = bump_toml.DEPENDENCY_SECTIONS
-
-_DEPENDENCY_SECTION_BY_KIND: typ.Final[dict[str | None, str]] = {
-    None: _NORMAL_SECTION,
-    "normal": _NORMAL_SECTION,
-    "dev": _DEV_SECTION,
-    "build": _BUILD_SECTION,
-}
 
 LOGGER = logging.getLogger(__name__)
 _log = LOGGER
@@ -111,19 +111,6 @@ class BumpOptions:
         default_factory=lambda: types.MappingProxyType({})
     )
     include_workspace_sections: bool = False
-
-
-@dc.dataclass(frozen=True, slots=True)
-class _BumpContext:
-    """Initialisation context for bump operations."""
-
-    root_path: Path
-    configuration: LadingConfig
-    workspace: WorkspaceGraph
-    base_options: BumpOptions
-    workspace_manifest: Path
-    excluded: frozenset[str]
-    updated_crate_names: frozenset[str]
 
 
 class _CrateManifestOutcome(enum.Enum):
@@ -214,7 +201,7 @@ def _initialize_bump_context(
         crate.name for crate in workspace.crates if crate.name not in excluded
     )
     workspace_manifest = root_path / "Cargo.toml"
-    return _BumpContext(
+    return bump_manifests._BumpContext(
         root_path=root_path,
         configuration=configuration,
         workspace=workspace,
@@ -431,119 +418,7 @@ def _apply_crate_manifest_update(
     )
 
 
-def _determine_package_selectors(
-    crate_name: str,
-    excluded: cabc.Set[str],
-) -> tuple[tuple[str, ...], ...]:
-    """Return package selectors for the crate, respecting exclusion rules.
-
-    Args:
-        crate_name: Name of the crate to check.
-        excluded: Set of excluded crate names.
-
-    Returns
-    -------
-        Package selectors tuple, or empty tuple if crate is excluded.
-
-    """
-    return () if crate_name in excluded else (("package",),)
-
-
-def _should_skip_crate_update(
-    selectors: tuple[tuple[str, ...], ...],
-    dependency_sections: cabc.Mapping[str, cabc.Collection[str]],
-) -> bool:
-    """Check if a crate update should be skipped due to no work required.
-
-    Returns
-    -------
-        True if both selectors and dependency_sections are empty.
-
-    """
-    return not selectors and not dependency_sections
-
-
-def _freeze_dependency_sections(
-    sections: cabc.Mapping[str, cabc.Collection[str]],
-) -> cabc.Mapping[str, cabc.Collection[str]]:
-    """Return an immutable mapping for dependency sections."""
-    if not sections:
-        return types.MappingProxyType({})
-    frozen_sections = {key: tuple(sorted(names)) for key, names in sections.items()}
-    return types.MappingProxyType(frozen_sections)
-
-
-def _update_manifest(
-    manifest_path: Path,
-    selectors: tuple[tuple[str, ...], ...],
-    target_version: str,
-    options: BumpOptions,
-) -> bool:
-    """Apply ``target_version`` to each table described by ``selectors``.
-
-    Args:
-        manifest_path: Path to the Cargo.toml manifest file.
-        selectors: Tuple of key tuples identifying version tables to update.
-        target_version: The target version to apply.
-        options: Bump options controlling dry-run, dependency sections, and
-            whether to include workspace-level dependency sections.
-
-    Returns
-    -------
-        True if any changes were made.
-
-    """
-    document = bump_toml.parse_manifest(manifest_path)
-    changed = False
-    for selector in selectors:
-        table = bump_toml.select_table(document, selector)
-        changed |= bump_toml.assign_version(table, target_version)
-    if options.dependency_sections:
-        changed |= bump_toml.update_dependency_sections(
-            document,
-            options.dependency_sections,
-            target_version,
-            include_workspace_sections=options.include_workspace_sections,
-        )
-    if changed and not options.dry_run:
-        bump_toml.write_atomic_text(manifest_path, document.as_string())
-    return changed
-
-
-def _workspace_dependency_sections(
-    updated_crates: cabc.Set[str],
-) -> dict[str, set[str]]:
-    """Return dependency names to update for the workspace manifest."""
-    crate_names = {name for name in updated_crates if name}
-    if not crate_names:
-        return {}
-    return {section: set(crate_names) for section in bump_toml.DEPENDENCY_SECTIONS}
-
-
-def _dependency_sections_for_crate(
-    crate: WorkspaceCrate,
-    updated_crates: cabc.Set[str],
-) -> dict[str, set[str]]:
-    """Return dependency names grouped by section for ``crate``."""
-    if not crate.dependencies:
-        return {}
-    if not updated_crates:
-        return {}
-    sections: dict[str, set[str]] = {}
-    for dependency in crate.dependencies:
-        if dependency.name not in updated_crates:
-            continue
-        section = _DEPENDENCY_SECTION_BY_KIND.get(dependency.kind, _NORMAL_SECTION)
-        # ``manifest_name`` preserves the dependency key used in the manifest.
-        # When a crate is aliased (e.g. ``alpha-core = { package = "alpha" }``)
-        # the workspace dependency name remains ``alpha`` while the manifest
-        # entry becomes ``alpha-core``. Recording the manifest key ensures the
-        # corresponding table entry can be located and updated.
-        sections.setdefault(section, set()).add(dependency.manifest_name)
-    return sections
-
-
-# Re-export internal functions used by tests to maintain backward compatibility
+# Re-export low-level TOML helpers used by tests for backward compatibility.
 _parse_manifest = bump_toml.parse_manifest
 _select_table = bump_toml.select_table
 _assign_version = bump_toml.assign_version

@@ -111,8 +111,10 @@ def then_bump_reports_invalid_version(
 ) -> None:
     """Assert that invalid versions cause the command to fail with details."""
     assert cli_run["returncode"] == 1
-    stderr = cli_run["stderr"]
-    assert f"Invalid version argument '{version}'" in stderr
+    # Cyclopts renders argument-validation errors through its own console
+    # (stdout), consistent with other cyclopts errors such as "Unknown command".
+    stdout = cli_run["stdout"]
+    assert f"Invalid version argument '{version}'" in stdout
 
 
 @then(parsers.parse('the CLI output lists manifest paths "{first}" and "{second}"'))
