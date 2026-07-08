@@ -553,6 +553,21 @@ handle both validation and publish-phase failures through one `except` clause,
 or catch `PublishError` first when publish-phase failures require distinct
 handling.
 
+
+### Internal APIs carry no compatibility aliases
+
+Private (underscore-prefixed) functions and modules carry no stability
+contract: `lading`'s own application code is the only consumer of its
+internals. When a helper moves to a new canonical module, update every call
+site and test patch target in the same change — do not leave a module-level
+alias or thin wrapper behind to keep old `monkeypatch.setattr` targets
+resolving. Tests must patch or invoke the module that defines the helper
+(for example, `publish_preflight._run_preflight_checks` rather than a
+re-export on `publish`). If an internal seam churns often enough that many
+call sites keep breaking, introduce an explicit port (a protocol the call
+sites depend on, as with `CommandRunner` in `lading.runtime`) rather than
+accreting ad hoc backwards-compatibility shims.
+
 ### Extracted publish modules
 
 `publish_plan.py` owns publication planning and plan rendering. Its
@@ -874,13 +889,9 @@ reintroduces a second invocation log at any level is pinned by the tests in
 
 `lading.commands.publish_preflight` performs workspace validation before any
 crate is packaged or published. It is the canonical (and only) home of
-`_run_preflight_checks` and `_preflight_argument_sets`. `publish.py`
-re-exports `_preflight_argument_sets` as a bare module-level alias for
-backwards compatibility with existing test patches, and must not re-declare
-it. `_run_preflight_checks`, however, is exposed through a thin wrapper in
-`publish.py` that preserves the historical optional-`configuration` contract
-(resolving configuration via `_ensure_configuration` when the caller omits
-it) before delegating to the canonical implementation. The public entry
+`_run_preflight_checks` and its helpers. `publish.py` calls the module
+directly and holds no aliases or wrappers for its names; tests that patch or
+invoke pre-flight helpers must target `publish_preflight` itself. The entry
 point is:
 
 ```python
