@@ -1,4 +1,26 @@
 # serializer version: 1
+# name: test_already_published_warning_snapshot[index-exists]
+  tuple(
+    tuple(
+      'Crate %s @ %s is already published; skipping',
+      tuple(
+        'beta',
+        '0.1.0',
+      ),
+    ),
+  )
+# ---
+# name: test_already_published_warning_snapshot[uploaded]
+  tuple(
+    tuple(
+      'Crate %s @ %s is already published; skipping',
+      tuple(
+        'beta',
+        '0.1.0',
+      ),
+    ),
+  )
+# ---
 # name: test_index_missing_in_plan_downgrade_snapshot[warning]
   tuple(
     tuple(
