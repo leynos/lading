@@ -212,7 +212,7 @@ def _format_crates_section(
         lines.append(empty_message)
 
 
-def _append_section[T](
+def append_section[T](
     lines: list[str],
     items: cabc.Sequence[T],
     *,
@@ -225,7 +225,7 @@ def _append_section[T](
         lines.extend(f"- {formatter(item)}" for item in items)
 
 
-def _format_plan(plan: PublishPlan, *, strip_patches: StripPatchesSetting) -> str:
+def format_plan(plan: PublishPlan, *, strip_patches: StripPatchesSetting) -> str:
     """Render ``plan`` to a human-readable summary for CLI output."""
     lines = [
         f"Publish plan for {plan.workspace_root}",
@@ -238,19 +238,19 @@ def _format_plan(plan: PublishPlan, *, strip_patches: StripPatchesSetting) -> st
         header=f"Crates to publish ({len(plan.publishable)}):",
         empty_message="Crates to publish: none",
     )
-    _append_section(
+    append_section(
         lines,
         plan.skipped_manifest,
         header="Skipped (publish = false):",
         formatter=lambda crate: crate.name,
     )
-    _append_section(
+    append_section(
         lines,
         plan.skipped_configuration,
         header="Skipped via publish.exclude:",
         formatter=lambda crate: crate.name,
     )
-    _append_section(
+    append_section(
         lines,
         plan.missing_configuration_exclusions,
         header="Configured exclusions not found in workspace:",
@@ -259,15 +259,9 @@ def _format_plan(plan: PublishPlan, *, strip_patches: StripPatchesSetting) -> st
     return "\n".join(lines)
 
 
-append_section = _append_section
-format_plan = _format_plan
-
 __all__ = [
     "PublishPlan",
     "PublishPlanError",
-    "_append_section",
-    "_format_crates_section",
-    "_format_plan",
     "append_section",
     "format_plan",
     "plan_publication",

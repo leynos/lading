@@ -207,11 +207,9 @@ graph TD
     H --> I["Updated staged manifest used for publish"]
 
     B --> J["Module: lading.commands.publish_execution (publish_execution.py)"]
-    J --> K["split_command"]
-    J --> L["should_use_cmd_mox_stub"]
-    J --> M["normalise_cmd_mox_command"]
+    J --> K["_invoke: subprocess execution with error adaptation"]
 
-    B --> N["Use re-exported publish helpers"]
+    B --> N["Module: lading.commands.publish_preflight (publish_preflight.py)"]
     N --> O["Compose final publish plan and execute commands"]
 ```
 

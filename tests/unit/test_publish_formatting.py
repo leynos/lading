@@ -56,7 +56,7 @@ def test_format_plan_formats_skipped_sections(
     tmp_path: Path,
     make_crate: cabc.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
 ) -> None:
-    """``_format_plan`` renders skipped crates using their names only."""
+    """``format_plan`` renders skipped crates using their names only."""
     root = tmp_path.resolve()
     manifest_skipped = make_crate(root, "beta", _CrateSpec(publish=False))
     config_skipped = make_crate(root, "gamma")
