@@ -1,0 +1,7 @@
+# serializer version: 1
+# name: test_verify_clean_working_tree_detects_dirty_state
+  'Workspace has uncommitted changes; commit or stash them before publishing or re-run without --forbid-dirty.'
+# ---
+# name: test_verify_clean_working_tree_reports_missing_repo
+  'Failed to verify workspace state; is this a git repository?: fatal: Not a git repository'
+# ---

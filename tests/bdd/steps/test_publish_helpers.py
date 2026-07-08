@@ -14,6 +14,27 @@ if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
     from .test_publish_infrastructure import _PreflightInvocationRecorder
 
 
+def _assert_cli_run_succeeded(cli_run: dict[str, typ.Any]) -> None:
+    """Assert the CLI subprocess exited cleanly, surfacing its output on failure.
+
+    The publish scenarios drive ``lading`` through a ``python -m`` subprocess
+    whose ``stdout``/``stderr`` are captured into ``cli_run``. A bare
+    ``assert cli_run["returncode"] == 0`` discards that captured output, so an
+    intermittent subprocess crash reports only ``assert 1 == 0`` with the real
+    traceback hidden inside the fixture repr. Embed both streams in the
+    assertion message so any future failure is immediately actionable.
+    """
+    returncode = cli_run["returncode"]
+    if returncode == 0:
+        return
+    message = (
+        f"lading CLI exited with returncode {returncode} (expected 0)\n"
+        f"--- stdout ---\n{cli_run['stdout']}\n"
+        f"--- stderr ---\n{cli_run['stderr']}"
+    )
+    raise AssertionError(message)
+
+
 def _publish_plan_lines(cli_run: dict[str, typ.Any]) -> list[str]:
     """Return trimmed publish plan output lines for ``cli_run``."""
     return [line.strip() for line in cli_run["stdout"].splitlines() if line.strip()]

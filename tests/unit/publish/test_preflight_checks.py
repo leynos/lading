@@ -13,7 +13,59 @@ from lading.commands import publish, publish_preflight
 from .conftest import ORIGINAL_PREFLIGHT, make_config, make_preflight_config
 
 if typ.TYPE_CHECKING:
+    from syrupy.assertion import SnapshotAssertion
+
+    from lading.config import LadingConfig
     from lading.runtime import CommandRunner
+
+
+def test_publish_preflight_aliases_are_wired_correctly() -> None:
+    """Backwards-compatible preflight names keep resolving into publish_preflight.
+
+    ``_preflight_argument_sets`` is a bare re-export, so identity must hold.
+    ``_run_preflight_checks`` is intentionally a thin wrapper (issue #96) that
+    preserves the optional-``configuration`` contract, so it must *not* be the
+    canonical object; its delegation is pinned by
+    ``test_preflight_wrapper_loads_configuration_when_omitted``.
+    """
+    assert (
+        publish._preflight_argument_sets is publish_preflight._preflight_argument_sets
+    )
+    assert publish._run_preflight_checks is not publish_preflight._run_preflight_checks
+
+
+def test_preflight_wrapper_loads_configuration_when_omitted(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Omitting ``configuration`` resolves it before delegating to canonical."""
+    monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
+    configuration = make_config()
+    monkeypatch.setattr(
+        publish.config_module, "current_configuration", lambda: configuration
+    )
+    recorded: dict[str, typ.Any] = {}
+
+    def recording_preflight(
+        workspace_root: Path,
+        *,
+        allow_dirty: bool,
+        configuration: LadingConfig,
+        runner: CommandRunner | None = None,
+    ) -> None:
+        recorded["workspace_root"] = workspace_root
+        recorded["allow_dirty"] = allow_dirty
+        recorded["configuration"] = configuration
+
+    monkeypatch.setattr(publish_preflight, "_run_preflight_checks", recording_preflight)
+
+    root = tmp_path / "workspace"
+    root.mkdir()
+
+    publish._run_preflight_checks(root, allow_dirty=True)
+
+    assert recorded["configuration"] is configuration
+    assert recorded["workspace_root"] == root
+    assert recorded["allow_dirty"] is True
 
 
 def test_preflight_checks_remove_all_targets_for_unit_only(
@@ -22,7 +74,7 @@ def test_preflight_checks_remove_all_targets_for_unit_only(
     """Unit-test-only mode omits --all-targets from cargo test pre-flight."""
     monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
     monkeypatch.setattr(
-        publish, "_verify_clean_working_tree", lambda *_args, **_kwargs: None
+        publish_preflight, "_verify_clean_working_tree", lambda *_args, **_kwargs: None
     )
     recorded: dict[str, dict[str, typ.Any]] = {}
 
@@ -35,7 +87,7 @@ def test_preflight_checks_remove_all_targets_for_unit_only(
     ) -> None:
         recorded[subcommand] = options
 
-    monkeypatch.setattr(publish, "_run_cargo_preflight", recording_preflight)
+    monkeypatch.setattr(publish_preflight, "_run_cargo_preflight", recording_preflight)
 
     root = tmp_path / "workspace"
     root.mkdir()
@@ -61,7 +113,7 @@ def test_preflight_checks_support_special_target_dir(
     """Target directories with spaces/symbols propagate without quoting issues."""
     monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
     monkeypatch.setattr(
-        publish, "_verify_clean_working_tree", lambda *_args, **_kwargs: None
+        publish_preflight, "_verify_clean_working_tree", lambda *_args, **_kwargs: None
     )
     recorded: dict[str, tuple[str, ...]] = {}
 
@@ -74,7 +126,7 @@ def test_preflight_checks_support_special_target_dir(
     ) -> None:
         recorded[subcommand] = tuple(options.extra_args)
 
-    monkeypatch.setattr(publish, "_run_cargo_preflight", recording_preflight)
+    monkeypatch.setattr(publish_preflight, "_run_cargo_preflight", recording_preflight)
 
     special_dir = tmp_path / "target dir with spaces & symbols!@#"
 
@@ -87,7 +139,9 @@ def test_preflight_checks_support_special_target_dir(
             return False
 
     monkeypatch.setattr(
-        publish.tempfile, "TemporaryDirectory", lambda prefix=None: DummyTempDir()
+        publish_preflight.tempfile,
+        "TemporaryDirectory",
+        lambda prefix=None: DummyTempDir(),
     )
 
     root = tmp_path / "workspace"
@@ -122,7 +176,7 @@ def test_preflight_runs_aux_build_commands(
         return 0, "", ""
 
     monkeypatch.setattr(
-        publish, "_verify_clean_working_tree", lambda *_args, **_kwargs: None
+        publish_preflight, "_verify_clean_working_tree", lambda *_args, **_kwargs: None
     )
     configuration = make_config(
         preflight=make_preflight_config(aux_build=(("cargo", "test", "-p", "lint"),))
@@ -162,7 +216,7 @@ def test_aux_build_failure_surfaces_error(
         return 0, "", ""
 
     monkeypatch.setattr(
-        publish, "_verify_clean_working_tree", lambda *_args, **_kwargs: None
+        publish_preflight, "_verify_clean_working_tree", lambda *_args, **_kwargs: None
     )
     configuration = make_config(
         preflight=make_preflight_config(
@@ -201,7 +255,7 @@ def test_preflight_env_overrides_forwarded(
         return 0, "", ""
 
     monkeypatch.setattr(
-        publish, "_verify_clean_working_tree", lambda *_args, **_kwargs: None
+        publish_preflight, "_verify_clean_working_tree", lambda *_args, **_kwargs: None
     )
     configuration = make_config(
         preflight=make_preflight_config(env_overrides=(("DYLINT_LOCALE", "cy"),))
@@ -247,7 +301,7 @@ def test_preflight_append_compiletest_externs(
         return 0, "", ""
 
     monkeypatch.setattr(
-        publish, "_verify_clean_working_tree", lambda *_args, **_kwargs: None
+        publish_preflight, "_verify_clean_working_tree", lambda *_args, **_kwargs: None
     )
     configuration = make_config(
         preflight=make_preflight_config(
@@ -269,7 +323,7 @@ def test_preflight_append_compiletest_externs(
 
 
 def test_verify_clean_working_tree_detects_dirty_state(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    snapshot: SnapshotAssertion, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Dirty workspaces cause preflight to abort unless allow-dirty is set."""
     root = tmp_path.resolve()
@@ -289,6 +343,9 @@ def test_verify_clean_working_tree_detects_dirty_state(
         )
 
     assert "uncommitted changes" in str(excinfo.value)
+    # Lock the operator-facing dirty-tree message (issue #96 failure-message
+    # snapshot coverage) so its wording cannot drift silently.
+    assert str(excinfo.value) == snapshot()
 
     # Allow dirty should bypass the runner entirely.
     publish_preflight._verify_clean_working_tree(
@@ -297,6 +354,7 @@ def test_verify_clean_working_tree_detects_dirty_state(
 
 
 def test_verify_clean_working_tree_reports_missing_repo(
+    snapshot: SnapshotAssertion,
     tmp_path: Path,
 ) -> None:
     """A missing git repository surfaces a descriptive error."""
@@ -319,3 +377,6 @@ def test_verify_clean_working_tree_reports_missing_repo(
     message = str(excinfo.value)
     assert "git repository" in message
     assert "fatal" in message
+    # Lock the operator-facing missing-repository message (issue #96
+    # failure-message snapshot coverage) so its wording cannot drift silently.
+    assert message == snapshot()

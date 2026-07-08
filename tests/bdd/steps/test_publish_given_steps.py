@@ -49,18 +49,6 @@ _INDEX_MISSING_STDERR_ALPHA = (
 )
 
 
-@given("cmd-mox IPC socket is unset")
-def given_cmd_mox_socket_unset(
-    monkeypatch: pytest.MonkeyPatch, cmd_mox: _ImportedCmdMox
-) -> None:
-    """Ensure cmd-mox stub usage fails due to a missing socket variable."""
-    from cmd_mox import environment as env_mod
-
-    del cmd_mox
-    monkeypatch.delenv(env_mod.CMOX_IPC_SOCKET_ENV, raising=False)
-    monkeypatch.setenv("LADING_USE_CMD_MOX_STUB", "1")
-
-
 @given("cargo check fails during publish pre-flight")
 def given_cargo_check_fails(
     preflight_overrides: dict[tuple[str, ...], ResponseProvider],

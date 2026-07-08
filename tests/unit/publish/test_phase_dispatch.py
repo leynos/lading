@@ -312,3 +312,37 @@ def test_hyphenated_dep_in_plan_matches_with_canonicalisation(
     invoke_phase(phase_name, ctx)
 
     assert any("my-crate" in message for message in caplog.messages)
+
+
+def test_package_and_publish_dispatch_through_shared_helper(
+    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Both crate-iteration wrappers delegate to ``_for_each_publishable_crate``."""
+    plan, preparation, _ = publish_plan_and_prep
+    calls: list[dict[str, object]] = []
+
+    def fake_for_each(
+        state: publish._PublicationPipelineState,
+        *,
+        runner: object,
+        action: publish._CrateAction,
+    ) -> None:
+        """Record each dispatch instead of iterating over crates."""
+        calls.append({"state": state, "runner": runner, "action": action})
+
+    monkeypatch.setattr(publish, "_for_each_publishable_crate", fake_for_each)
+
+    options = publish._PublishExecutionOptions(live=False, allow_dirty=True)
+    runner = object()
+
+    publish._package_publishable_crates(
+        plan, preparation, options=options, runner=runner
+    )
+    publish._publish_crates(plan, preparation, runner=runner, options=options)
+
+    assert len(calls) == 2
+    assert calls[0]["action"] is publish._package_crate
+    assert calls[1]["action"] is publish._publish_crate
+    assert calls[0]["runner"] is runner
+    assert calls[1]["runner"] is runner
