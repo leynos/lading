@@ -20,6 +20,14 @@ looking for project guidance, then follow the link that matches the task.
 - [Roadmap](roadmap.md) - phased delivery plan and tracked implementation
   tasks.
 
+## Execution plans
+
+Living delivery documents under `execplans/`, one per branch, recording the
+plan, progress, decisions, and retrospective for a change.
+
+- [Regenerate discovered nested lockfiles][execplan-regenerate-lockfiles] -
+  completed plan for discovery-driven lockfile regeneration in the bump command.
+
 ## Decision records
 
 - [ADR-003: Use three-tier Python linting][adr-003] - accepted linting policy
@@ -38,3 +46,4 @@ looking for project guidance, then follow the link that matches the task.
 
 [adr-003]: adr/003-three-tier-python-linting.md
 [adr-004]: adr/004-in-process-metrics-backend.md
+[execplan-regenerate-lockfiles]: execplans/regenerate-lockfiles.md
