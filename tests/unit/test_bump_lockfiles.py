@@ -307,10 +307,7 @@ def _prepare_manifest_fixture(
     fail_root: bool,
     crates: list[tuple[str, bool]],
 ) -> tuple[list[Path], set[Path]]:
-    """Create manifest files under root and record which should fail.
-
-    Returns an ``(expected_order, failing)`` pair.
-    """
+    """Create manifest files under root and record which should fail."""
     (root / "Cargo.toml").write_text("", encoding="utf-8")
     expected_order = [(root / "Cargo.toml").resolve()]
     failing: set[Path] = set()
@@ -413,6 +410,55 @@ def test_regenerate_lockfiles_aggregates_multiple_failures(
             f"each failed manifest should be listed exactly once; got: {message}"
         )
     assert snapshot == message.replace(str(ab_workspace), "<workspace>")
+
+
+def test_regenerate_lockfiles_aggregate_chains_first_underlying_cause(
+    ab_workspace: Path,
+) -> None:
+    """The aggregated error chains from the first failure's underlying cause."""
+    boom = OSError("cargo executable not found")
+
+    def failing_runner(
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+    ) -> tuple[int, str, str]:
+        del command, cwd
+        raise boom
+
+    with pytest.raises(bump_lockfiles.LockfileRegenerationError) as excinfo:
+        bump_lockfiles.regenerate_lockfiles(
+            ab_workspace,
+            ("a/Cargo.toml", "b/Cargo.toml"),
+            runner=failing_runner,
+        )
+
+    assert "failed for 3 manifest(s)" in str(excinfo.value), (
+        f"all three manifests should fail and aggregate; got: {excinfo.value}"
+    )
+    assert excinfo.value.__cause__ is boom, (
+        "aggregated error should chain from the first failure's underlying "
+        f"cause, not the wrapper; got __cause__={excinfo.value.__cause__!r}"
+    )
+
+
+def test_regenerate_lockfiles_single_manifest_reraises_unchanged(
+    tmp_path: Path,
+) -> None:
+    """A lone workspace-root failure re-raises the plain error, not the aggregate."""
+    runner = _RecordingRunner(result=(101, "", "boom detail"))
+
+    with pytest.raises(bump_lockfiles.LockfileRegenerationError) as excinfo:
+        bump_lockfiles.regenerate_lockfiles(tmp_path, (), runner=runner)
+
+    message = str(excinfo.value)
+    root_manifest = (tmp_path / "Cargo.toml").resolve()
+    assert str(root_manifest) in message, message
+    assert "boom detail" in message, message
+    # No aggregate wrapper: no "N manifest(s)" header and no repair list.
+    assert "manifest(s)" not in message, message
+    assert "Manifests already carry the new version" not in message, message
+    assert "cargo update --workspace --manifest-path" not in message, message
 
 
 @given(

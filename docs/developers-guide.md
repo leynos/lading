@@ -171,8 +171,11 @@ collections. It loops over every manifest, logging the start and calling
 `Cargo.lock` in `lockfiles`, and on `LockfileRegenerationError` it logs the
 exception and appends the manifest and error to `failures`. After the loop, if
 there were no failures it logs overall success and returns the regenerated
-lockfiles; otherwise it selects the first failure's cause, builds an aggregated
-failure message, and raises `LockfileRegenerationError` chained from that cause.
+lockfiles; otherwise it raises — when only the workspace-root lockfile was
+regenerated it re-raises the original cargo error unchanged, and when several
+lockfiles were regenerated it selects the first failure's cause, builds an
+aggregated failure message, and raises `LockfileRegenerationError` chained from
+that cause.
 
 ```mermaid
 flowchart TD
@@ -188,10 +191,13 @@ flowchart TD
     I --> D
     D -->|No more manifests| J{Any failures?}
     J -->|No| K[Log overall success and return lockfiles]
-    J -->|Yes| L[Select first failure and its cause]
+    J -->|Yes| P{Single workspace-root manifest?}
+    P -->|Yes| Q[Re-raise original cargo error unchanged]
+    P -->|No, multiple manifests| L[Select first failure and its cause]
     L --> M[Call _build_aggregate_failure_message]
     M --> N[Raise LockfileRegenerationError with aggregated message chained from cause]
-    N --> O[End]
+    Q --> O[End]
+    N --> O
     K --> O
 ```
 

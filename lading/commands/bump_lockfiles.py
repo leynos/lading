@@ -103,12 +103,7 @@ def _collect_lockfile_results(
     workspace_root: Path,
     command_runner: CommandRunner,
 ) -> tuple[list[Path], list[tuple[Path, LockfileRegenerationError]]]:
-    """Attempt every manifest and partition the outcomes.
-
-    Returns a ``(lockfiles, failures)`` pair: *lockfiles* holds the
-    successfully regenerated ``Cargo.lock`` paths and *failures* holds
-    ``(manifest, error)`` pairs for the rest.
-    """
+    """Attempt every manifest and partition the outcomes into a pair."""
     lockfiles: list[Path] = []
     failures: list[tuple[Path, LockfileRegenerationError]] = []
     for manifest in manifests:
@@ -126,12 +121,7 @@ def _raise_aggregated_failure(
     manifests: tuple[Path, ...],
     failures: cabc.Sequence[tuple[Path, LockfileRegenerationError]],
 ) -> typ.NoReturn:
-    """Raise the appropriate error for one or more failed manifests.
-
-    A lone workspace-root failure re-raises the original cargo error
-    unchanged; several regenerated lockfiles raise one aggregated error
-    listing every failed manifest and its repair command.
-    """
+    """Raise the appropriate error for one or more failed manifests."""
     if len(manifests) == 1:
         raise failures[0][1]
     cause = failures[0][1].__cause__ or failures[0][1]
