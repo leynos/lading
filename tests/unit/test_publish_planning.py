@@ -7,7 +7,7 @@ import typing as typ
 
 import pytest
 
-from lading.commands import publish
+from lading.commands import publish, publish_plan
 from tests.unit.conftest import PlanningFixtures, _CrateSpec
 
 if typ.TYPE_CHECKING:
@@ -314,7 +314,7 @@ def test_plan_publication_detects_dependency_cycles(
         name_b="beta",
     )
 
-    with pytest.raises(publish.PublishPlanError) as excinfo:
+    with pytest.raises(publish_plan.PublishPlanError) as excinfo:
         _plan_with_crates(
             planning_fixtures.tmp_path,
             planning_fixtures.make_workspace,
@@ -398,7 +398,7 @@ def test_plan_publication_rejects_incomplete_configured_order(
     workspace = fx.make_workspace(root, alpha, beta)
     configuration = fx.make_config(order=("alpha",))
 
-    with pytest.raises(publish.PublishPlanError) as excinfo:
+    with pytest.raises(publish_plan.PublishPlanError) as excinfo:
         publish.plan_publication(workspace, configuration)
 
     message = str(excinfo.value)
@@ -434,7 +434,7 @@ def test_plan_publication_order_validation_errors(
         make_dependency=fx.make_dependency,
     )
 
-    with pytest.raises(publish.PublishPlanError) as excinfo:
+    with pytest.raises(publish_plan.PublishPlanError) as excinfo:
         _plan_with_crates(
             fx.tmp_path,
             fx.make_workspace,

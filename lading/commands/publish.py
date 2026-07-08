@@ -36,12 +36,10 @@ needed.
 **Related modules**
 
 * :mod:`lading.commands.publish_plan` — plan construction and formatting
-* :mod:`lading.commands.publish_preflight` — canonical home of
-  ``_run_preflight_checks`` and ``_preflight_argument_sets`` (``cargo check``
-  / ``cargo test`` / git-status guards). This module re-exports
-  ``_preflight_argument_sets`` as a bare alias and ``_run_preflight_checks``
-  as a thin configuration-resolving wrapper, both for backwards
-  compatibility with existing test patches.
+* :mod:`lading.commands.publish_preflight` — canonical home of the publish
+  pre-flight checks (``cargo check`` / ``cargo test`` / git-status guards).
+  Callers and tests use that module directly; this module holds no
+  compatibility aliases for its helpers.
 * :mod:`lading.commands.publish_errors` — :class:`PublishPreflightError` and
   :class:`PublishError`
 * :mod:`lading.commands.publish_execution` — subprocess invocation and cmd-mox
@@ -59,7 +57,7 @@ import typing as typ
 from pathlib import Path
 
 from lading import config as config_module
-from lading.commands import publish_preflight as _publish_preflight
+from lading.commands import publish_preflight
 from lading.commands.cargo_output_adapter import (
     CargoIndexLookupFailure,
     CargoSubprocessResult,
@@ -82,38 +80,10 @@ from lading.commands.publish_manifest import (
 )
 from lading.commands.publish_plan import (
     PublishPlan,
-    append_section,
     format_plan,
     plan_publication,
 )
-from lading.commands.publish_plan import (
-    PublishPlanError as _PublishPlanError,
-)
 from lading.utils.path import normalise_workspace_root
-from lading.workspace import metadata as _metadata_module
-
-StripPatchesSetting = config_module.StripPatchesSetting
-metadata_module = _metadata_module
-PublishPlanError = _PublishPlanError
-_append_section = append_section
-_format_plan = format_plan
-# Backwards-compatible aliases (issue #96): publish_preflight owns the
-# canonical implementations; existing tests patch and call them through
-# this module, so the names must keep resolving here. Plain assignments
-# (not imports) keep the re-export intent visible to linters.
-# (``_run_preflight_checks`` is the exception: it is a thin wrapper defined
-# below that preserves the historical optional-``configuration`` contract.)
-_preflight_argument_sets = _publish_preflight._preflight_argument_sets
-_CargoPreflightOptions = _publish_preflight._CargoPreflightOptions
-_apply_compiletest_externs = _publish_preflight._apply_compiletest_externs
-_build_preflight_environment = _publish_preflight._build_preflight_environment
-_build_test_arguments = _publish_preflight._build_test_arguments
-_compose_preflight_arguments = _publish_preflight._compose_preflight_arguments
-_normalise_test_excludes = _publish_preflight._normalise_test_excludes
-_run_aux_build_commands = _publish_preflight._run_aux_build_commands
-_run_cargo_preflight = _publish_preflight._run_cargo_preflight
-_validate_lockfile_freshness = _publish_preflight._validate_lockfile_freshness
-_verify_clean_working_tree = _publish_preflight._verify_clean_working_tree
 
 LOGGER = logging.getLogger(__name__)
 
@@ -592,28 +562,6 @@ def _ensure_configuration(
         return config_module.load_configuration(workspace_root)
 
 
-def _run_preflight_checks(
-    workspace_root: Path,
-    *,
-    allow_dirty: bool,
-    configuration: LadingConfig | None = None,
-    runner: CommandRunner | None = None,
-) -> None:
-    """Run publish pre-flight checks, resolving configuration when absent.
-
-    Thin wrapper over :func:`publish_preflight._run_preflight_checks` that
-    preserves the historical optional-``configuration`` contract: callers may
-    omit ``configuration`` and have it loaded from the active context or the
-    workspace before the canonical implementation runs.
-    """
-    _publish_preflight._run_preflight_checks(
-        workspace_root,
-        allow_dirty=allow_dirty,
-        configuration=_ensure_configuration(configuration, workspace_root),
-        runner=runner,
-    )
-
-
 def _ensure_workspace(
     workspace: WorkspaceGraph | None, workspace_root: Path
 ) -> WorkspaceGraph:
@@ -705,7 +653,7 @@ def run(
     active_configuration = _ensure_configuration(configuration_override, root_path)
     active_workspace = _ensure_workspace(workspace_override, root_path)
 
-    _run_preflight_checks(
+    publish_preflight._run_preflight_checks(
         root_path,
         allow_dirty=effective_options.allow_dirty,
         configuration=active_configuration,

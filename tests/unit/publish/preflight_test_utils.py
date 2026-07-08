@@ -6,7 +6,7 @@ import collections.abc as cabc
 import typing as typ
 from pathlib import Path
 
-from lading.commands import publish
+from lading.commands import publish, publish_preflight
 
 from .conftest import ORIGINAL_PREFLIGHT, make_crate, make_workspace
 
@@ -27,7 +27,7 @@ def _setup_preflight_test(
     crate_names: cabc.Sequence[str] | None = None,
 ) -> tuple[Path, WorkspaceGraph, RecordedCommands]:
     """Execute ``publish.run`` with optional workspace crates and capture calls."""
-    monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
+    monkeypatch.setattr(publish_preflight, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
     root = tmp_path / "workspace"
     root.mkdir()
     selected_crates = ("alpha",) if crate_names is None else tuple(crate_names)

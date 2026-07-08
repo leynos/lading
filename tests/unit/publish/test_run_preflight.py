@@ -59,7 +59,7 @@ def test_run_executes_preflight_checks_in_workspace(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Pre-flight commands run inside the resolved workspace root."""
-    monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
+    monkeypatch.setattr(publish_preflight, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
     root = tmp_path / "workspace"
     root.mkdir()
     workspace = make_workspace(root, make_crate(root, "alpha"))
@@ -248,7 +248,7 @@ def test_dirty_workspace_allowed_by_default(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Publish skips git status when cleanliness enforcement is disabled."""
-    monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
+    monkeypatch.setattr(publish_preflight, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
     root = tmp_path / "workspace"
     root.mkdir()
     workspace = make_workspace(root, make_crate(root, "alpha"))
@@ -280,7 +280,7 @@ def test_forbid_dirty_flag_enforces_cleanliness(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Explicit forbid-dirty option requires a clean git status."""
-    monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
+    monkeypatch.setattr(publish_preflight, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
     root = tmp_path / "workspace"
     root.mkdir()
     workspace = make_workspace(root, make_crate(root, "alpha"))
@@ -327,7 +327,7 @@ def test_run_raises_when_preflight_cargo_fails(
     expected_message: str,
 ) -> None:
     """Non-zero cargo check/test aborts the publish command."""
-    monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
+    monkeypatch.setattr(publish_preflight, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
     root = tmp_path / "workspace"
     root.mkdir()
     workspace = make_workspace(root, make_crate(root, "alpha"))
