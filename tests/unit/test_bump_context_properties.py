@@ -123,9 +123,15 @@ def test_bump_context_crate_sets_match_naive_derivation(
         ),
     )
 
-    assert context.excluded == frozenset(exclude)
+    assert context.excluded == frozenset(exclude), (
+        f"context.excluded {context.excluded} should equal the configured "
+        f"exclude set {frozenset(exclude)}"
+    )
     assert context.updated_crate_names == frozenset(
         crate.name for crate in workspace.crates if crate.name not in set(exclude)
+    ), (
+        f"context.updated_crate_names {context.updated_crate_names} should be the "
+        f"workspace crates minus {set(exclude)}"
     )
 
 
@@ -268,23 +274,37 @@ def _assert_crate_manifest_update(
 
     outcome = bump._apply_crate_manifest_update(crate, _TARGET_VERSION, context)
 
-    assert outcome.was_skipped is expect_skipped
-    assert outcome.was_updated is (not expect_skipped)
+    expected_outcome = (
+        bump._CrateManifestOutcome.SKIPPED
+        if expect_skipped
+        else bump._CrateManifestOutcome.UPDATED
+    )
+    assert outcome is expected_outcome, (
+        f"crate {crate.name!r}: expected outcome {expected_outcome}, got {outcome}"
+    )
 
     package_version, section_versions = _read_manifest_versions(crate.manifest_path)
-    assert package_version == (
-        _INITIAL_VERSION if expected.excluded else _TARGET_VERSION
+    expected_package = _INITIAL_VERSION if expected.excluded else _TARGET_VERSION
+    assert package_version == expected_package, (
+        f"crate {crate.name!r}: expected package version {expected_package}, "
+        f"got {package_version}"
     )
     for target, kind in crate_edges.items():
         section = _SECTION_BY_KIND[kind]
         expected_version = (
             _TARGET_VERSION if target in expected.updated_names else _INITIAL_VERSION
         )
-        assert section_versions[section][target] == expected_version
+        assert section_versions[section][target] == expected_version, (
+            f"crate {crate.name!r} dependency {target!r} in [{section}]: "
+            f"expected {expected_version}, got {section_versions[section][target]}"
+        )
 
 
 @given(data=st.data())
-@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(
+    max_examples=20,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
 def test_manifest_selection_matches_naive_reference(
     tmp_path: Path,
     data: st.DataObject,

@@ -18,8 +18,10 @@ def test_update_manifest_writes_when_changed(tmp_path: Path) -> None:
     changed = bump._update_manifest(
         manifest_path, (("package",),), "1.0.0", bump.BumpOptions()
     )
-    assert changed is True
-    assert _load_version(manifest_path, ("package",)) == "1.0.0"
+    assert changed is True, "changing the version should report a change"
+    assert _load_version(manifest_path, ("package",)) == "1.0.0", (
+        "package version should be persisted to disk"
+    )
 
 
 def test_update_manifest_preserves_inline_comment(tmp_path: Path) -> None:
@@ -31,11 +33,13 @@ def test_update_manifest_preserves_inline_comment(tmp_path: Path) -> None:
     changed = bump._update_manifest(
         manifest_path, (("package",),), "1.2.3", bump.BumpOptions()
     )
-    assert changed is True
+    assert changed is True, "rewriting the version should report a change"
     text = manifest_path.read_text(encoding="utf-8")
-    assert "# keep me" in text
+    assert "# keep me" in text, "the inline comment should survive the rewrite"
     document = parse_toml(text)
-    assert document["package"]["version"] == "1.2.3"
+    assert document["package"]["version"] == "1.2.3", (
+        "package version should be rewritten to the target"
+    )
 
 
 def test_update_manifest_skips_when_unchanged(tmp_path: Path) -> None:
@@ -46,8 +50,10 @@ def test_update_manifest_skips_when_unchanged(tmp_path: Path) -> None:
     changed = bump._update_manifest(
         manifest_path, (("package",),), "0.1.0", bump.BumpOptions()
     )
-    assert changed is False
-    assert manifest_path.read_text() == original
+    assert changed is False, "an already-current version should report no change"
+    assert manifest_path.read_text() == original, (
+        "the manifest file should be left byte-for-byte unchanged"
+    )
 
 
 @pytest.mark.parametrize(
@@ -71,11 +77,13 @@ def test_update_dependency_sections_workspace_flag(
         "1.0.0",
         include_workspace_sections=include_workspace_sections,
     )
-    assert changed is True
-    assert document["dependencies"]["alpha"].value == "1.0.0"
+    assert changed is True, "updating [dependencies] should report a change"
+    assert document["dependencies"]["alpha"].value == "1.0.0", (
+        "[dependencies] alpha should always be rewritten"
+    )
     assert (
         document["workspace"]["dependencies"]["alpha"].value == expected_workspace_alpha
-    )
+    ), "[workspace.dependencies] alpha should update only with the workspace flag"
 
 
 def test_update_dependency_sections_workspace_only() -> None:
@@ -87,8 +95,10 @@ def test_update_dependency_sections_workspace_only() -> None:
         "2.0.0",
         include_workspace_sections=True,
     )
-    assert changed is True
-    assert document["workspace"]["dependencies"]["alpha"].value == "2.0.0"
+    assert changed is True, "updating a workspace-only section should report a change"
+    assert document["workspace"]["dependencies"]["alpha"].value == "2.0.0", (
+        "[workspace.dependencies] alpha should be rewritten to the target"
+    )
 
 
 def test_update_dependency_sections_workspace_dev_and_build() -> None:
@@ -103,7 +113,11 @@ def test_update_dependency_sections_workspace_dev_and_build() -> None:
         "3.0.0",
         include_workspace_sections=True,
     )
-    assert changed is True
-    assert document["workspace"]["dev-dependencies"]["alpha"].value == "~3.0.0"
+    assert changed is True, "updating dev/build sections should report a change"
+    assert document["workspace"]["dev-dependencies"]["alpha"].value == "~3.0.0", (
+        "[workspace.dev-dependencies] alpha should be rewritten"
+    )
     build_deps = document["workspace"]["build-dependencies"]
-    assert build_deps["beta"]["version"].value == "3.0.0"
+    assert build_deps["beta"]["version"].value == "3.0.0", (
+        "[workspace.build-dependencies] beta.version should be rewritten"
+    )

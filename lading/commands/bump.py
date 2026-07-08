@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import collections.abc as cabc
 import dataclasses as dc
+import enum
 import logging
 import types
 import typing as typ
@@ -125,12 +126,16 @@ class _BumpContext:
     updated_crate_names: frozenset[str]
 
 
-@dc.dataclass(frozen=True, slots=True)
-class _CrateManifestUpdate:
-    """Outcome from processing a single crate manifest."""
+class _CrateManifestOutcome(enum.Enum):
+    """Closed outcome of processing a single crate manifest.
 
-    was_skipped: bool
-    was_updated: bool
+    Replaces a two-boolean record so the skipped/updated/unchanged states are
+    mutually exclusive and the ``both true`` state is unrepresentable.
+    """
+
+    SKIPPED = enum.auto()
+    UPDATED = enum.auto()
+    UNCHANGED = enum.auto()
 
 
 def run(
@@ -252,12 +257,14 @@ def _process_crate_manifests(
     updated_count = 0
     for crate in context.workspace.crates:
         processed_count += 1
-        update = _apply_crate_manifest_update(crate, target_version, context)
-        if update.was_skipped:
-            skipped_count += 1
-        if update.was_updated:
-            changed_manifests.add(crate.manifest_path)
-            updated_count += 1
+        match _apply_crate_manifest_update(crate, target_version, context):
+            case _CrateManifestOutcome.SKIPPED:
+                skipped_count += 1
+            case _CrateManifestOutcome.UPDATED:
+                changed_manifests.add(crate.manifest_path)
+                updated_count += 1
+            case _CrateManifestOutcome.UNCHANGED:
+                pass
     _log.debug(
         "Crate manifest processing complete: %d processed, %d skipped, %d updated",
         processed_count,
@@ -369,26 +376,17 @@ def _prepare_sorted_changes(
     )
 
 
-def _update_crate_manifest(
+def _apply_crate_manifest_update(
     crate: WorkspaceCrate,
     target_version: str,
     context: _BumpContext,
-) -> bool:
-    """Apply updates for ``crate`` while respecting exclusion rules.
+) -> _CrateManifestOutcome:
+    """Apply updates for ``crate`` and return the closed manifest outcome.
 
     The crate sets are read from ``context`` — they are derived exactly once
     in :func:`_initialize_bump_context` (issue #97); helpers must not
     recompute them per crate.
     """
-    return _apply_crate_manifest_update(crate, target_version, context).was_updated
-
-
-def _apply_crate_manifest_update(
-    crate: WorkspaceCrate,
-    target_version: str,
-    context: _BumpContext,
-) -> _CrateManifestUpdate:
-    """Apply updates for ``crate`` and return the bounded telemetry outcome."""
     selectors = _determine_package_selectors(crate.name, context.excluded)
     dependency_sections = _dependency_sections_for_crate(
         crate, context.updated_crate_names
@@ -396,7 +394,7 @@ def _apply_crate_manifest_update(
 
     if _should_skip_crate_update(selectors, dependency_sections):
         _log.debug("Skipping crate manifest update for excluded crate %r", crate.name)
-        return _CrateManifestUpdate(was_skipped=True, was_updated=False)
+        return _CrateManifestOutcome.SKIPPED
 
     crate_options = dc.replace(
         context.base_options,
@@ -426,7 +424,11 @@ def _apply_crate_manifest_update(
             crate.name,
             crate.manifest_path,
         )
-    return _CrateManifestUpdate(was_skipped=False, was_updated=was_updated)
+    return (
+        _CrateManifestOutcome.UPDATED
+        if was_updated
+        else _CrateManifestOutcome.UNCHANGED
+    )
 
 
 def _determine_package_selectors(
