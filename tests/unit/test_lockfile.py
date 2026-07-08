@@ -432,6 +432,96 @@ def _static_runner(
     return runner
 
 
+# ---------------------------------------------------------------------------
+# CargoLockfileInspectionRepository adapter (issue #82)
+# ---------------------------------------------------------------------------
+
+
+def _recording_runner(
+    calls: list[tuple[tuple[str, ...], Path | None, cabc.Mapping[str, str] | None]],
+    *,
+    exit_code: int = 0,
+    stdout: str = "",
+    stderr: str = "",
+) -> cabc.Callable[..., tuple[int, str, str]]:
+    """Return a runner recording each invocation's command, cwd, and env."""
+
+    def runner(
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        calls.append((tuple(command), cwd, env))
+        return exit_code, stdout, stderr
+
+    return runner
+
+
+def test_adapter_discovers_lockfiles_binding_env(tmp_path: Path) -> None:
+    """The adapter discovers tracked lockfiles through its bound runner and env."""
+    (tmp_path / "Cargo.toml").write_text("[workspace]\n", encoding="utf-8")
+    (tmp_path / "Cargo.lock").write_text("", encoding="utf-8")
+    calls: list[tuple[tuple[str, ...], Path | None, cabc.Mapping[str, str] | None]] = []
+    base_env = {"CARGO_TERM_COLOR": "never"}
+    repository = lockfile.CargoLockfileInspectionRepository(
+        runner=_recording_runner(calls, stdout="Cargo.lock\n"),
+        env=base_env,
+    )
+
+    result = repository.discover_tracked_lockfiles(tmp_path)
+
+    assert result == (tmp_path / "Cargo.lock",)
+    assert calls == [
+        (("git", "ls-files", "**/Cargo.lock", "Cargo.lock"), tmp_path, base_env)
+    ]
+
+
+def test_adapter_validates_freshness_binding_env(tmp_path: Path) -> None:
+    """The adapter probes freshness through its bound runner, applying env."""
+    manifest_path = tmp_path / "Cargo.toml"
+    calls: list[tuple[tuple[str, ...], Path | None, cabc.Mapping[str, str] | None]] = []
+    base_env = {"CARGO_TERM_COLOR": "never"}
+    repository = lockfile.CargoLockfileInspectionRepository(
+        runner=_recording_runner(calls),
+        env=base_env,
+    )
+
+    result = repository.validate_lockfile_freshness(manifest_path)
+
+    assert result.is_fresh
+    assert len(calls) == 1
+    command, cwd, env = calls[0]
+    assert command[:3] == ("cargo", "metadata", "--locked")
+    assert cwd == manifest_path.parent
+    assert env == base_env
+
+
+def test_adapter_without_env_leaves_runner_env_untouched(tmp_path: Path) -> None:
+    """With no bound env the adapter forwards calls without injecting one."""
+    (tmp_path / "Cargo.toml").write_text("[workspace]\n", encoding="utf-8")
+    (tmp_path / "Cargo.lock").write_text("", encoding="utf-8")
+    calls: list[tuple[tuple[str, ...], Path | None, cabc.Mapping[str, str] | None]] = []
+    repository = lockfile.CargoLockfileInspectionRepository(
+        runner=_recording_runner(calls, stdout="Cargo.lock\n"),
+    )
+
+    repository.discover_tracked_lockfiles(tmp_path)
+
+    assert calls[0][2] is None
+
+
+def test_adapter_honours_injected_manifest_exists(tmp_path: Path) -> None:
+    """A custom ``manifest_exists`` predicate filters discovery results."""
+    calls: list[tuple[tuple[str, ...], Path | None, cabc.Mapping[str, str] | None]] = []
+    repository = lockfile.CargoLockfileInspectionRepository(
+        runner=_recording_runner(calls, stdout="Cargo.lock\n"),
+        manifest_exists=lambda _manifest: False,
+    )
+
+    assert repository.discover_tracked_lockfiles(tmp_path) == ()
+
+
 @pytest.mark.usefixtures("_metrics_registry")
 def test_discovery_records_lockfile_count(tmp_path: Path) -> None:
     """Discovery increments the discovered-lockfiles counter by the count."""

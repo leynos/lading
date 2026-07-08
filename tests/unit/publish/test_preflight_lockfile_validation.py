@@ -1,8 +1,15 @@
-"""Unit tests for _validate_lockfile_freshness pre-flight helper."""
+"""Unit tests for the _validate_lockfile_freshness pre-flight helper.
+
+These exercise the pre-flight freshness domain step through the
+:class:`lading.commands.lockfile.LockfileInspectionRepository` port (issue
+#82): tests inject a recording repository double instead of a command runner,
+so discovery, classification, and remediation messaging are verified without
+touching git or cargo.
+"""
 
 from __future__ import annotations
 
-import collections.abc as cabc
+import dataclasses as dc
 import typing as typ
 from pathlib import Path
 
@@ -11,78 +18,74 @@ import pytest
 from lading.commands import lockfile, publish, publish_preflight
 
 if typ.TYPE_CHECKING:
+    import collections.abc as cabc
+
     from syrupy.assertion import SnapshotAssertion
 
 
+@dc.dataclass
+class _RecordingLockfileRepository:
+    """In-memory ``LockfileInspectionRepository`` double for pre-flight tests."""
+
+    tracked: tuple[Path, ...]
+    freshness: cabc.Mapping[Path, lockfile.LockfileFreshness] | None = None
+    default_freshness: lockfile.LockfileFreshness = dc.field(
+        default_factory=lambda: lockfile.LockfileFreshness(is_fresh=True)
+    )
+    discovered_roots: list[Path] = dc.field(default_factory=list)
+    validated_manifests: list[Path] = dc.field(default_factory=list)
+
+    def discover_tracked_lockfiles(self, workspace_root: Path) -> tuple[Path, ...]:
+        """Record the discovery call and return the configured lockfiles."""
+        self.discovered_roots.append(workspace_root)
+        return self.tracked
+
+    def validate_lockfile_freshness(
+        self, manifest_path: Path
+    ) -> lockfile.LockfileFreshness:
+        """Record the validation call and return the configured freshness."""
+        self.validated_manifests.append(manifest_path)
+        if self.freshness is not None and manifest_path in self.freshness:
+            return self.freshness[manifest_path]
+        return self.default_freshness
+
+
+_STALE_DETAIL = "the lock file Cargo.lock needs to be updated but --locked was passed"
+
+
 def test_validate_lockfile_freshness_passes_when_all_lockfiles_are_fresh(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    tmp_path: Path,
 ) -> None:
-    """Fresh tracked lockfiles allow preflight to continue."""
+    """Fresh tracked lockfiles allow preflight to continue via the port."""
     root_lockfile = tmp_path / "Cargo.lock"
     nested_lockfile = tmp_path / "tests" / "ui_lints" / "Cargo.lock"
-    recorded_env: list[cabc.Mapping[str, str] | None] = []
+    repository = _RecordingLockfileRepository(tracked=(root_lockfile, nested_lockfile))
 
-    monkeypatch.setattr(
-        publish_preflight,
-        "discover_tracked_lockfiles",
-        lambda _root, _runner: (root_lockfile, nested_lockfile),
-    )
+    publish_preflight._validate_lockfile_freshness(tmp_path, repository=repository)
 
-    def runner(
-        command: cabc.Sequence[str],
-        *,
-        cwd: Path | None = None,
-        env: cabc.Mapping[str, str] | None = None,
-    ) -> tuple[int, str, str]:
-        recorded_env.append(env)
-        return 0, "", ""
-
-    publish_preflight._validate_lockfile_freshness(
-        tmp_path,
-        runner=runner,
-        env={"CARGO_TERM_COLOR": "never"},
-    )
-
-    assert recorded_env == [{"CARGO_TERM_COLOR": "never"}] * 2
+    assert repository.discovered_roots == [tmp_path]
+    assert repository.validated_manifests == [
+        root_lockfile.parent / "Cargo.toml",
+        nested_lockfile.parent / "Cargo.toml",
+    ]
 
 
-def test_validate_lockfile_freshness_reports_stale_lockfiles(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_validate_lockfile_freshness_reports_stale_lockfiles(tmp_path: Path) -> None:
     """Stale lockfiles are collected and reported with repair commands."""
     root_lockfile = tmp_path / "Cargo.lock"
     nested_lockfile = tmp_path / "tests" / "ui_lints" / "Cargo.lock"
-
-    monkeypatch.setattr(
-        publish_preflight,
-        "discover_tracked_lockfiles",
-        lambda _root, _runner: (root_lockfile, nested_lockfile),
-    )
-    monkeypatch.setattr(
-        publish_preflight,
-        "validate_lockfile_freshness",
-        lambda _manifest, _runner: lockfile.LockfileFreshness(
-            is_fresh=False,
-            is_stale=True,
-            detail=(
-                "the lock file Cargo.lock needs to be updated but --locked was passed"
-            ),
+    repository = _RecordingLockfileRepository(
+        tracked=(root_lockfile, nested_lockfile),
+        default_freshness=lockfile.LockfileFreshness(
+            is_fresh=False, is_stale=True, detail=_STALE_DETAIL
         ),
     )
-
-    def runner(
-        command: tuple[str, ...],
-        *,
-        cwd: Path | None = None,
-        env: cabc.Mapping[str, str] | None = None,
-    ) -> tuple[int, str, str]:
-        return 0, "", ""
 
     with pytest.raises(
         publish.PublishPreflightError,
         match="Tracked Cargo\\.lock files are stale",
     ) as excinfo:
-        publish_preflight._validate_lockfile_freshness(tmp_path, runner=runner, env={})
+        publish_preflight._validate_lockfile_freshness(tmp_path, repository=repository)
 
     message = str(excinfo.value)
     assert str(root_lockfile) in message
@@ -98,80 +101,42 @@ def test_validate_lockfile_freshness_reports_stale_lockfiles(
 
 
 def test_validate_lockfile_freshness_error_snapshot(
-    monkeypatch: pytest.MonkeyPatch,
     snapshot: SnapshotAssertion,
 ) -> None:
     """Stale lockfile remediation output is locked by snapshot."""
     workspace_root = Path("/workspace root")
     root_lockfile = workspace_root / "Cargo.lock"
     nested_lockfile = workspace_root / "tests" / "ui_lints" / "Cargo.lock"
-
-    monkeypatch.setattr(
-        publish_preflight,
-        "discover_tracked_lockfiles",
-        lambda _root, _runner: (root_lockfile, nested_lockfile),
-    )
-    monkeypatch.setattr(
-        publish_preflight,
-        "validate_lockfile_freshness",
-        lambda _manifest, _runner: lockfile.LockfileFreshness(
-            is_fresh=False,
-            is_stale=True,
-            detail=(
-                "the lock file Cargo.lock needs to be updated but --locked was passed"
-            ),
+    repository = _RecordingLockfileRepository(
+        tracked=(root_lockfile, nested_lockfile),
+        default_freshness=lockfile.LockfileFreshness(
+            is_fresh=False, is_stale=True, detail=_STALE_DETAIL
         ),
     )
-
-    def runner(
-        command: cabc.Sequence[str],
-        *,
-        cwd: Path | None = None,
-        env: cabc.Mapping[str, str] | None = None,
-    ) -> tuple[int, str, str]:
-        return 0, "", ""
 
     with pytest.raises(
         publish.PublishPreflightError,
         match="Tracked Cargo\\.lock files are stale",
     ) as excinfo:
         publish_preflight._validate_lockfile_freshness(
-            workspace_root, runner=runner, env={}
+            workspace_root, repository=repository
         )
 
     assert str(excinfo.value) == snapshot()
 
 
-def test_validate_lockfile_freshness_surfaces_cargo_failures(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_validate_lockfile_freshness_surfaces_cargo_failures(tmp_path: Path) -> None:
     """Cargo failures unrelated to stale lockfiles abort with cargo details."""
     root_lockfile = tmp_path / "Cargo.lock"
-
-    monkeypatch.setattr(
-        publish_preflight,
-        "discover_tracked_lockfiles",
-        lambda _root, _runner: (root_lockfile,),
-    )
-    monkeypatch.setattr(
-        publish_preflight,
-        "validate_lockfile_freshness",
-        lambda _manifest, _runner: lockfile.LockfileFreshness(
-            is_fresh=False,
-            detail="failed to download registry index",
+    repository = _RecordingLockfileRepository(
+        tracked=(root_lockfile,),
+        default_freshness=lockfile.LockfileFreshness(
+            is_fresh=False, detail="failed to download registry index"
         ),
     )
-
-    def runner(
-        command: cabc.Sequence[str],
-        *,
-        cwd: Path | None = None,
-        env: cabc.Mapping[str, str] | None = None,
-    ) -> tuple[int, str, str]:
-        return 0, "", ""
 
     with pytest.raises(
         publish.PublishPreflightError,
         match="failed to download registry index",
     ):
-        publish_preflight._validate_lockfile_freshness(tmp_path, runner=runner, env={})
+        publish_preflight._validate_lockfile_freshness(tmp_path, repository=repository)

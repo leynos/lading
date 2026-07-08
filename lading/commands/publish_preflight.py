@@ -33,16 +33,14 @@ import tempfile
 import typing as typ
 from pathlib import Path
 
-from lading.commands.lockfile import (
-    discover_tracked_lockfiles,
-    validate_lockfile_freshness,
-)
+from lading.commands.lockfile import CargoLockfileInspectionRepository
 from lading.commands.publish_diagnostics import _append_compiletest_diagnostics
 from lading.commands.publish_errors import PublishPreflightError
 from lading.commands.publish_execution import _invoke
 from lading.utils.process import append_detail, command_detail, with_detail
 
 if typ.TYPE_CHECKING:
+    from lading.commands.lockfile import LockfileInspectionRepository
     from lading.config import CompiletestExtern, LadingConfig
     from lading.runtime import CommandRunner
 
@@ -129,7 +127,14 @@ def _run_preflight_checks(
     configuration: LadingConfig,
     runner: CommandRunner | None = None,
 ) -> None:
-    """Execute publish pre-flight checks for ``workspace_root``."""
+    """Execute publish pre-flight checks for ``workspace_root``.
+
+    This is the composition root for lockfile inspection: it binds
+    :class:`CargoLockfileInspectionRepository` to the selected command runner
+    and the pre-flight base environment (issue #82), so the freshness domain
+    step runs through the port without holding a raw runner. Tests inject a
+    port double at the :func:`_validate_lockfile_freshness` seam instead.
+    """
     command_runner = runner or _invoke
     preflight_config = configuration.preflight
     base_env = _build_preflight_environment(preflight_config.env_overrides)
@@ -145,11 +150,11 @@ def _run_preflight_checks(
         runner=command_runner,
         env=base_env,
     )
-    _validate_lockfile_freshness(
-        workspace_root,
+    repository = CargoLockfileInspectionRepository(
         runner=command_runner,
         env=base_env,
     )
+    _validate_lockfile_freshness(workspace_root, repository=repository)
 
     with tempfile.TemporaryDirectory(prefix="lading-preflight-target-") as target:
         target_path = Path(target)
@@ -198,7 +203,7 @@ def _compose_preflight_arguments(
 
 def _collect_stale_lockfiles(
     tracked: cabc.Iterable[Path],
-    runner: CommandRunner,
+    repository: LockfileInspectionRepository,
 ) -> list[Path]:
     """Classify tracked lockfiles; raise immediately on error, return stale paths.
 
@@ -210,7 +215,7 @@ def _collect_stale_lockfiles(
     stale: list[Path] = []
     for lockfile_path in tracked:
         manifest_path = lockfile_path.parent / "Cargo.toml"
-        freshness = validate_lockfile_freshness(manifest_path, runner)
+        freshness = repository.validate_lockfile_freshness(manifest_path)
         if freshness.is_fresh:
             continue
         if freshness.is_stale:
@@ -245,26 +250,17 @@ def _build_stale_lockfile_message(stale_lockfiles: list[Path]) -> str:
 def _validate_lockfile_freshness(
     workspace_root: Path,
     *,
-    runner: CommandRunner,
-    env: cabc.Mapping[str, str] | None = None,
+    repository: LockfileInspectionRepository,
 ) -> None:
-    """Fail early when tracked Cargo.lock files are stale."""
-    base_env = env
+    """Fail early when tracked Cargo.lock files are stale.
 
-    def runner_with_env(
-        command: cabc.Sequence[str],
-        *,
-        cwd: Path | None = None,
-        env: cabc.Mapping[str, str] | None = None,
-        echo_stdout: bool = True,
-    ) -> tuple[int, str, str]:
-        """Invoke ``runner`` with ``base_env`` applied when no env is supplied."""
-        del echo_stdout
-        effective_env = base_env if env is None else env
-        return runner(command, cwd=cwd, env=effective_env)
-
-    tracked = discover_tracked_lockfiles(workspace_root, runner_with_env)
-    stale_lockfiles = _collect_stale_lockfiles(tracked, runner_with_env)
+    Discovery and freshness probing run through ``repository`` (the
+    :class:`LockfileInspectionRepository` port), so this domain step never
+    holds a command runner or knows how lockfiles are located and validated
+    (issue #82).
+    """
+    tracked = repository.discover_tracked_lockfiles(workspace_root)
+    stale_lockfiles = _collect_stale_lockfiles(tracked, repository)
 
     if not stale_lockfiles:
         LOGGER.info("All %d tracked lockfile(s) are fresh under --locked", len(tracked))
