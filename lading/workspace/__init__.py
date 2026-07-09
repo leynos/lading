@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from .graph_build import (
+    build_workspace_graph,
+    load_workspace,
+)
 from .metadata import (
     CargoExecutableNotFoundError,
     CargoMetadataError,
@@ -13,8 +17,6 @@ from .models import (
     WorkspaceDependencyCycleError,
     WorkspaceGraph,
     WorkspaceModelError,
-    build_workspace_graph,
-    load_workspace,
 )
 
 __all__ = [

@@ -6,10 +6,12 @@ import collections.abc as cabc
 import contextlib
 import contextvars
 import dataclasses as dc
+import functools
 import typing as typ
 
 from cyclopts.config import Toml
 
+from lading import toml_coerce
 from lading.exceptions import LadingError
 from lading.utils import normalise_workspace_root
 
@@ -301,119 +303,6 @@ def current_configuration() -> LadingConfig:
         raise ConfigurationNotLoadedError(message) from exc
 
 
-def _validate_string_sequence(
-    sequence: cabc.Sequence[typ.Any], field_name: str
-) -> tuple[str, ...]:
-    """Validate that ``sequence`` contains only strings and return them."""
-    items: list[str] = []
-    for index, entry in enumerate(sequence):
-        if not isinstance(entry, str):
-            message = (
-                f"{field_name}[{index}] must be a string, got {type(entry).__name__}."
-            )
-            raise ConfigurationError(message)
-        items.append(entry)
-    return tuple(items)
-
-
-def _string_tuple(value: object, field_name: str) -> tuple[str, ...]:
-    """Return a tuple of strings derived from ``value``."""
-    if value is None:
-        return ()
-    if isinstance(value, str):
-        return (value,)
-    if isinstance(value, cabc.Sequence) and not isinstance(value, str | bytes):
-        return _validate_string_sequence(value, field_name)
-    message = (
-        f"{field_name} must be a string or a sequence of strings; "
-        f"received {type(value).__name__}."
-    )
-    raise ConfigurationError(message)
-
-
-def _validate_matrix_entry(
-    entry: object,
-    field_name: str,
-    index: int,
-) -> tuple[str, ...]:
-    """Validate and convert a single matrix entry to a string tuple."""
-    if isinstance(entry, cabc.Sequence) and not isinstance(entry, str | bytes):
-        return _validate_string_sequence(entry, f"{field_name}[{index}]")
-    message = (
-        f"{field_name}[{index}] must be a sequence of strings; "
-        f"received {type(entry).__name__}."
-    )
-    raise ConfigurationError(message)
-
-
-def _validate_string_pair(
-    key: object, raw_value: object, field_name: str
-) -> tuple[str, str]:
-    """Validate and return a string key-value pair for ``field_name``."""
-    if not isinstance(key, str):
-        message = f"{field_name} keys must be strings; received {type(key).__name__}."
-        raise ConfigurationError(message)
-    if not isinstance(raw_value, str):
-        message = (
-            f"{field_name}[{key}] must be a string; "
-            f"received {type(raw_value).__name__}."
-        )
-        raise ConfigurationError(message)
-    return (key, raw_value)
-
-
-def _string_matrix(value: object, field_name: str) -> tuple[tuple[str, ...], ...]:
-    """Return a tuple-of-tuples parsed from ``value`` as nested string sequences."""
-    if value is None:
-        return ()
-    if not isinstance(value, cabc.Sequence) or isinstance(value, str | bytes):
-        message = f"{field_name} must be a sequence of string sequences."
-        raise ConfigurationError(message)
-    commands = [
-        _validate_matrix_entry(entry, field_name, index)
-        for index, entry in enumerate(value)
-    ]
-    return tuple(commands)
-
-
-def _string_mapping(value: object, field_name: str) -> tuple[tuple[str, str], ...]:
-    """Return key/value string pairs derived from mapping ``value``."""
-    if value is None:
-        return ()
-    if not isinstance(value, cabc.Mapping):
-        message = f"{field_name} must be a TOML table; received {type(value).__name__}."
-        raise ConfigurationError(message)
-    items: list[tuple[str, str]] = []
-    for key, raw_value in value.items():
-        items.append(_validate_string_pair(key, raw_value, field_name))
-    return tuple(items)
-
-
-def _non_negative_int(value: object, field_name: str, default: int) -> int:
-    """Return a non-negative integer parsed from ``value`` or ``default`` when None."""
-    if value is None:
-        return default
-    try:
-        integer = int(typ.cast("typ.Any", value))
-    except (TypeError, ValueError) as exc:  # pragma: no cover - validation guard
-        message = f"{field_name} must be an integer; received {type(value).__name__}."
-        raise ConfigurationError(message) from exc
-    if integer < 0:
-        message = f"{field_name} must be non-negative."
-        raise ConfigurationError(message)
-    return integer
-
-
-def _boolean(value: object, field_name: str, *, default: bool = False) -> bool:
-    """Return a boolean parsed from ``value``."""
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return value
-    message = f"{field_name} must be a boolean; received {type(value).__name__}."
-    raise ConfigurationError(message)
-
-
 def _strip_patches(value: object) -> StripPatchesSetting:
     """Normalise the ``publish.strip_patches`` value."""
     if value is None:
@@ -429,13 +318,17 @@ def _strip_patches(value: object) -> StripPatchesSetting:
     raise ConfigurationError(message)
 
 
-def _optional_mapping(
-    value: object, field_name: str
-) -> cabc.Mapping[str, typ.Any] | None:
-    """Ensure ``value`` is a mapping if provided."""
-    if value is None:
-        return None
-    if isinstance(value, cabc.Mapping):
-        return typ.cast("cabc.Mapping[str, typ.Any]", value)
-    message = f"{field_name} must be a TOML table; received {type(value).__name__}."
-    raise ConfigurationError(message)
+# Coercion helpers bound to the configuration error type; the shared
+# implementations live in lading.toml_coerce (issue #108).
+_string_tuple = functools.partial(toml_coerce.string_tuple, error=ConfigurationError)
+_string_matrix = functools.partial(toml_coerce.string_matrix, error=ConfigurationError)
+_string_mapping = functools.partial(
+    toml_coerce.string_mapping, error=ConfigurationError
+)
+_boolean = functools.partial(toml_coerce.boolean, error=ConfigurationError)
+_non_negative_int = functools.partial(
+    toml_coerce.non_negative_int, error=ConfigurationError
+)
+_optional_mapping = functools.partial(
+    toml_coerce.optional_mapping, error=ConfigurationError
+)

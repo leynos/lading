@@ -14,7 +14,7 @@ import hypothesis.strategies as st
 from hypothesis import given, settings
 from tomlkit import parse as parse_toml
 
-from lading.commands import bump, bump_docs, bump_toml
+from lading.commands import bump, bump_docs, bump_manifests, bump_toml
 
 if typ.TYPE_CHECKING:
     from syrupy.assertion import SnapshotAssertion
@@ -24,7 +24,7 @@ _DECOY_SECTIONS = ("decoy-dependencies", "tooling")
 
 def test_kind_mapping_agrees_with_canonical_sections() -> None:
     """Every mapped section is canonical and every canonical section is mapped."""
-    mapped = set(bump._DEPENDENCY_SECTION_BY_KIND.values())
+    mapped = set(bump_manifests._DEPENDENCY_SECTION_BY_KIND.values())
 
     assert mapped == set(bump_toml.DEPENDENCY_SECTIONS)
 

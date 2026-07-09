@@ -3,18 +3,9 @@
 This module provides utilities for updating version references within Markdown
 documentation files. It scans fenced TOML code blocks (e.g., Cargo.toml
 snippets in README files) and rewrites version entries to match the target
-workspace version.
-
-Functions
----------
-resolve_documentation_targets
-    Locate documentation files matching configured glob patterns.
-update_documentation_files
-    Rewrite TOML fences in documentation to reflect updated versions.
-rewrite_markdown_toml_fences
-    Parse Markdown and transform TOML code blocks.
-update_toml_snippet_versions
-    Update version entries within a single TOML snippet.
+workspace version. The public surface is ``resolve_documentation_targets``,
+``update_documentation_files``, ``rewrite_markdown_toml_fences``, and
+``update_toml_snippet_versions``.
 
 Examples
 --------
