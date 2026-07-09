@@ -143,8 +143,9 @@ class TestTomlCoerce:
         assert (
             toml_coerce.expect_sequence(None, "f", error=error, allow_none=True) is None
         )
-        with pytest.raises(error):
+        with pytest.raises(error) as excinfo:
             toml_coerce.expect_sequence(None, "f", error=error)
+        assert str(excinfo.value) == "f must be a sequence; received NoneType."
 
     @given(
         value=st.one_of(_strings, st.binary(max_size=6), _non_string),
@@ -192,16 +193,24 @@ class TestTomlCoerce:
         self, value: object, error: type[Exception]
     ) -> None:
         """A scalar or string top-level value raises the bound error type."""
-        with pytest.raises(error):
+        with pytest.raises(error) as excinfo:
             toml_coerce.string_matrix(value, "demo.matrix", error=error)
+        message = str(excinfo.value)
+        assert (
+            "demo.matrix must be a sequence of string sequences; received " in message
+        )
+        assert type(value).__name__ in message
 
     @given(bad=_non_string, error=_error_type)
     def test_string_matrix_rejects_non_string_rows(
         self, bad: object, error: type[Exception]
     ) -> None:
-        """A non-sequence row raises the bound error type."""
-        with pytest.raises(error):
+        """A non-sequence row is rejected, naming its index in the field."""
+        with pytest.raises(error) as excinfo:
             toml_coerce.string_matrix([["ok"], bad], "demo.matrix", error=error)
+        message = str(excinfo.value)
+        assert "demo.matrix[1] must be a sequence of strings; received " in message
+        assert type(bad).__name__ in message
 
     @given(value=st.one_of(st.none(), st.booleans()), error=_error_type)
     def test_boolean_accepts_bools_and_default(
@@ -247,8 +256,13 @@ class TestTomlCoerce:
             toml_coerce.non_negative_int(value, "f", 0, error=error)
 
     @given(error=_error_type)
-    def test_mapping_helpers_reject_non_mappings(self, error: type[Exception]) -> None:
-        """Mapping coercers raise the bound error type for non-mappings."""
+    def test_mapping_helpers_accept_and_reject_mappings(
+        self, error: type[Exception]
+    ) -> None:
+        """Mapping coercers pass valid mappings through and reject non-mappings."""
+        mapping = {"key": "value"}
+        assert toml_coerce.expect_mapping(mapping, "f", error=error) is mapping
+        assert toml_coerce.optional_mapping(mapping, "f", error=error) is mapping
         with pytest.raises(error):
             toml_coerce.expect_mapping([1], "f", error=error)
         with pytest.raises(error):
