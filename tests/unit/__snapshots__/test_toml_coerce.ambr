@@ -6,7 +6,7 @@
     'packages must be a sequence; received str.',
     'bump.exclude must be a string or a sequence of strings; received int.',
     'preflight.env must be a TOML table; received int.',
-    'preflight.aux_build must be a sequence of string sequences.',
+    'preflight.aux_build must be a sequence of string sequences; received int.',
     'bump.rebuild_lockfiles must be a boolean; received int.',
     'preflight.stderr_tail_lines must be an integer; received str.',
   ])

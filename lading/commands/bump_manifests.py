@@ -44,7 +44,7 @@ class _BumpContext:
     """Initialisation context for bump operations.
 
     Derived once by ``bump._initialize_bump_context`` and consumed by
-    :func:`_update_crate_manifest`; the manifest-mutation contract lives with
+    :func:`bump._apply_crate_manifest_update`; the manifest-mutation contract lives with
     this extracted module rather than reaching back into ``bump`` internals.
     """
 

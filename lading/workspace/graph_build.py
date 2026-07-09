@@ -2,9 +2,10 @@
 
 Extracted from :mod:`lading.workspace.models` (issue #108) so the data
 structures and topology stay separate from the metadata-parsing layer. The
-module shares the coercion bindings defined in ``models`` so all workspace
-validation failures raise :class:`WorkspaceModelError` with the canonical
-message shape from :mod:`lading.toml_coerce`.
+module shares the coercion bindings defined in
+:mod:`lading.workspace._coercion` so all workspace validation failures raise
+:class:`WorkspaceModelError` with the canonical message shape from
+:mod:`lading.toml_coerce`.
 """
 
 from __future__ import annotations

@@ -96,7 +96,6 @@ def non_negative_int(
         When ``value`` is not a real integer (``bool`` and ``float`` are
         rejected) or an integer-valued string, or when the result is negative.
     """
-    type_error = f"{field_name} must be an integer; received {type(value).__name__}."
     # ``bool`` is a subclass of ``int`` and ``float``/other types are truthy for
     # a blanket ``int(...)`` cast, so dispatch explicitly to accept only real
     # integers and integer-valued strings (the config string path).
@@ -104,16 +103,16 @@ def non_negative_int(
         case None:
             return default
         case bool():
-            raise error(type_error)
+            raise _reject(value, field_name, "an integer", error)
         case int():
             integer = value
         case str():
             try:
                 integer = int(value)
             except ValueError as exc:
-                raise error(type_error) from exc
+                raise _reject(value, field_name, "an integer", error) from exc
         case _:
-            raise error(type_error)
+            raise _reject(value, field_name, "an integer", error)
     if integer < 0:
         message = f"{field_name} must be non-negative."
         raise error(message)

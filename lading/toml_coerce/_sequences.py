@@ -44,8 +44,7 @@ def expect_sequence(
         case None:
             if allow_none:
                 return None
-            message = f"{field_name} must be a sequence"
-            raise error(message)
+            raise _reject(value, field_name, "a sequence", error)
         case str() | bytes() | bytearray():
             raise _reject(value, field_name, "a sequence", error)
         case cabc.Sequence():
@@ -125,16 +124,15 @@ def string_matrix(
     value: object, field_name: str, *, error: _ErrorType
 ) -> tuple[tuple[str, ...], ...]:
     """Return a tuple-of-tuples parsed from ``value`` as string sequences."""
-    message = f"{field_name} must be a sequence of string sequences."
     match value:
         case None:
             return ()
         case str() | bytes():
-            raise error(message)
+            raise _reject(value, field_name, "a sequence of string sequences", error)
         case cabc.Sequence():
             return tuple(
                 _validate_matrix_entry(entry, field_name, index, error)
                 for index, entry in enumerate(value)
             )
         case _:
-            raise error(message)
+            raise _reject(value, field_name, "a sequence of string sequences", error)
