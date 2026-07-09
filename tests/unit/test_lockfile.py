@@ -478,10 +478,10 @@ def test_adapter_discovers_lockfiles_binding_env(tmp_path: Path) -> None:
 
     result = repository.discover_tracked_lockfiles(tmp_path)
 
-    assert result == (tmp_path / "Cargo.lock",)
+    assert result == (tmp_path / "Cargo.lock",), "discovers the tracked lockfile"
     assert calls == [
         (("git", "ls-files", "**/Cargo.lock", "Cargo.lock"), tmp_path, base_env, True)
-    ]
+    ], "git ls-files should receive the bound env"
 
 
 def test_adapter_validates_freshness_binding_env(tmp_path: Path) -> None:
@@ -496,13 +496,13 @@ def test_adapter_validates_freshness_binding_env(tmp_path: Path) -> None:
 
     result = repository.validate_lockfile_freshness(manifest_path)
 
-    assert result.is_fresh
-    assert len(calls) == 1
+    assert result.is_fresh, "probe should report the lockfile fresh"
+    assert len(calls) == 1, "one cargo call expected"
     command, cwd, env, echo_stdout = calls[0]
-    assert command[:3] == ("cargo", "metadata", "--locked")
-    assert cwd == manifest_path.parent
-    assert env == base_env
-    assert echo_stdout is True
+    assert command[:3] == ("cargo", "metadata", "--locked"), "cargo metadata probe"
+    assert cwd == manifest_path.parent, "cargo runs in the manifest directory"
+    assert env == base_env, "cargo call should receive the bound env"
+    assert echo_stdout is True, "echo_stdout defaults to True"
 
 
 def test_adapter_without_env_leaves_runner_env_untouched(tmp_path: Path) -> None:
@@ -516,7 +516,7 @@ def test_adapter_without_env_leaves_runner_env_untouched(tmp_path: Path) -> None
 
     repository.discover_tracked_lockfiles(tmp_path)
 
-    assert calls[0][2] is None
+    assert calls[0][2] is None, "no env should be injected without a bound env"
 
 
 def test_adapter_honours_injected_manifest_exists(tmp_path: Path) -> None:
@@ -540,8 +540,8 @@ def test_adapter_honours_injected_manifest_exists(tmp_path: Path) -> None:
 
     result = repository.discover_tracked_lockfiles(tmp_path)
 
-    assert result == ()
-    assert probed == [tmp_path / "Cargo.toml"]
+    assert result == (), "injected predicate should exclude the lockfile"
+    assert probed == [tmp_path / "Cargo.toml"], "predicate probed the manifest"
 
 
 def test_adapter_bound_runner_forwards_echo_stdout(tmp_path: Path) -> None:
@@ -556,13 +556,13 @@ def test_adapter_bound_runner_forwards_echo_stdout(tmp_path: Path) -> None:
     bound_runner = repository._bound_runner()
     bound_runner(("git", "status"), cwd=tmp_path, echo_stdout=False)
 
-    assert len(calls) == 1
+    assert len(calls) == 1, "one forwarded call expected"
     command, cwd, env, echo_stdout = calls[0]
-    assert command == ("git", "status")
-    assert cwd == tmp_path
+    assert command == ("git", "status"), "command forwarded unchanged"
+    assert cwd == tmp_path, "cwd forwarded unchanged"
     # env is still defaulted from the bound base_env when the call omits it.
-    assert env == base_env
-    assert echo_stdout is False
+    assert env == base_env, "env defaulted from the bound base_env"
+    assert echo_stdout is False, "echo_stdout forwarded unchanged"
 
 
 @pytest.mark.usefixtures("_metrics_registry")

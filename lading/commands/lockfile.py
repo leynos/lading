@@ -264,7 +264,20 @@ class CargoLockfileInspectionRepository:
     manifest_exists: _ManifestExists = _manifest_exists
 
     def discover_tracked_lockfiles(self, workspace_root: Path) -> tuple[Path, ...]:
-        """Return tracked Cargo.lock files with adjacent manifests."""
+        """Return tracked Cargo.lock files with adjacent manifests.
+
+        Parameters
+        ----------
+        workspace_root
+            Path to the repository root searched for tracked lockfiles.
+
+        Returns
+        -------
+        tuple[Path, ...]
+            Git-tracked ``Cargo.lock`` files outside any ``target`` directory
+            that have an adjacent ``Cargo.toml`` manifest.
+
+        """
         return discover_tracked_lockfiles(
             workspace_root,
             self._bound_runner(),
@@ -272,7 +285,21 @@ class CargoLockfileInspectionRepository:
         )
 
     def validate_lockfile_freshness(self, manifest_path: Path) -> LockfileFreshness:
-        """Return Cargo's locked-mode freshness result for ``manifest_path``."""
+        """Return Cargo's locked-mode freshness result for ``manifest_path``.
+
+        Parameters
+        ----------
+        manifest_path
+            Path to the Cargo manifest to validate under ``--locked``.
+
+        Returns
+        -------
+        LockfileFreshness
+            Structured result describing whether the lockfile is fresh, stale
+            (Cargo says it needs updating under ``--locked``), or failed for
+            another reason.
+
+        """
         return validate_lockfile_freshness(manifest_path, self._bound_runner())
 
     def _bound_runner(self) -> CommandRunner:
@@ -312,7 +339,33 @@ class LockfileInspectionRepository(typ.Protocol):
     """
 
     def discover_tracked_lockfiles(self, workspace_root: Path) -> tuple[Path, ...]:
-        """Return tracked Cargo.lock files with adjacent manifests."""
+        """Return tracked Cargo.lock files with adjacent manifests.
+
+        Parameters
+        ----------
+        workspace_root
+            Path to the repository root searched for tracked lockfiles.
+
+        Returns
+        -------
+        tuple[Path, ...]
+            Git-tracked ``Cargo.lock`` files outside any ``target`` directory
+            that have an adjacent ``Cargo.toml`` manifest.
+
+        """
 
     def validate_lockfile_freshness(self, manifest_path: Path) -> LockfileFreshness:
-        """Return the freshness result for ``manifest_path``."""
+        """Return the freshness result for ``manifest_path``.
+
+        Parameters
+        ----------
+        manifest_path
+            Path to the Cargo manifest to validate.
+
+        Returns
+        -------
+        LockfileFreshness
+            The freshness result, distinguishing fresh, stale, and failed
+            states.
+
+        """
