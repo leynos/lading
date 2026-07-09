@@ -465,13 +465,19 @@ def _recording_runner(
     return runner
 
 
+@pytest.fixture
+def _cargo_workspace(tmp_path: Path) -> None:
+    """Write a minimal root Cargo workspace manifest and empty lockfile."""
+    (tmp_path / "Cargo.toml").write_text("[workspace]\n", encoding="utf-8")
+    (tmp_path / "Cargo.lock").write_text("", encoding="utf-8")
+
+
 class TestCargoLockfileInspectionRepositoryAdapter:
     """Tests for the CargoLockfileInspectionRepository adapter (issue #82)."""
 
+    @pytest.mark.usefixtures("_cargo_workspace")
     def test_adapter_discovers_lockfiles_binding_env(self, tmp_path: Path) -> None:
         """The adapter discovers tracked lockfiles through its bound runner and env."""
-        (tmp_path / "Cargo.toml").write_text("[workspace]\n", encoding="utf-8")
-        (tmp_path / "Cargo.lock").write_text("", encoding="utf-8")
         calls: list[_RecordedCall] = []
         base_env = {"CARGO_TERM_COLOR": "never"}
         repository = lockfile.CargoLockfileInspectionRepository(
@@ -511,12 +517,11 @@ class TestCargoLockfileInspectionRepositoryAdapter:
         assert env == base_env, "cargo call should receive the bound env"
         assert echo_stdout is True, "echo_stdout defaults to True"
 
+    @pytest.mark.usefixtures("_cargo_workspace")
     def test_adapter_without_env_leaves_runner_env_untouched(
         self, tmp_path: Path
     ) -> None:
         """With no bound env the adapter forwards calls without injecting one."""
-        (tmp_path / "Cargo.toml").write_text("[workspace]\n", encoding="utf-8")
-        (tmp_path / "Cargo.lock").write_text("", encoding="utf-8")
         calls: list[_RecordedCall] = []
         repository = lockfile.CargoLockfileInspectionRepository(
             runner=_recording_runner(calls, stdout="Cargo.lock\n"),
@@ -526,13 +531,13 @@ class TestCargoLockfileInspectionRepositoryAdapter:
 
         assert calls[0][2] is None, "no env should be injected without a bound env"
 
+    @pytest.mark.usefixtures("_cargo_workspace")
     def test_adapter_honours_injected_manifest_exists(self, tmp_path: Path) -> None:
         """A custom ``manifest_exists`` predicate overrides the filesystem probe."""
-        # Create a real manifest/lockfile pair so the *default* filesystem probe
-        # would include this lockfile. The injected predicate must be what excludes
-        # it, so the test fails if the adapter ignores ``manifest_exists``.
-        (tmp_path / "Cargo.toml").write_text("[workspace]\n", encoding="utf-8")
-        (tmp_path / "Cargo.lock").write_text("", encoding="utf-8")
+        # The _cargo_workspace fixture writes a real manifest/lockfile pair, so the
+        # default filesystem probe would include this lockfile. The injected
+        # predicate must be what excludes it, so the test fails if the adapter
+        # ignores ``manifest_exists``.
         calls: list[_RecordedCall] = []
         probed: list[Path] = []
 
