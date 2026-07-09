@@ -1,4 +1,4 @@
-"""Integration tests for the injected LockfileRepository port in :mod:`lading.commands.bump`."""  # noqa: E501
+"""Integration tests for the injected LockfileRepository port in :mod:`lading.commands.bump`."""  # noqa: E501 fixed one-line module docstring; wrapping it trips pydocstyle D205/D209
 
 from __future__ import annotations
 

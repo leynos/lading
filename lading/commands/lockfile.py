@@ -275,12 +275,16 @@ class CargoLockfileInspectionRepository:
             *,
             cwd: Path | None = None,
             env: cabc.Mapping[str, str] | None = None,
-            echo_stdout: bool = True,
+            **runner_kwargs: bool,
         ) -> tuple[int, str, str]:
-            """Invoke ``base_runner`` with ``base_env`` as the default env."""
-            del echo_stdout
+            """Invoke ``base_runner`` with ``base_env`` as the default env.
+
+            Any extra keyword (notably ``echo_stdout``) is forwarded to
+            ``base_runner`` unchanged; only ``env`` is defaulted (to the bound
+            ``base_env``) when a call omits it.
+            """
             effective_env = base_env if env is None else env
-            return base_runner(command, cwd=cwd, env=effective_env)
+            return base_runner(command, cwd=cwd, env=effective_env, **runner_kwargs)
 
         return runner_with_env
 
