@@ -438,7 +438,9 @@ def _static_runner(
 
 
 # Each recorded call captures (command, cwd, env, echo_stdout).
-_RecordedCall = tuple[tuple[str, ...], Path | None, cabc.Mapping[str, str] | None, bool]
+type _RecordedCall = tuple[
+    tuple[str, ...], Path | None, cabc.Mapping[str, str] | None, bool
+]
 
 
 def _recording_runner(
