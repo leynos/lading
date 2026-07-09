@@ -34,6 +34,24 @@ class _IndexedRejectionCase:
     error: type[Exception]
 
 
+def _assert_rejection(
+    call: cabc.Callable[[], object],
+    expected_prefix: str,
+    bad_value: object,
+    error: type[Exception],
+) -> None:
+    """Assert *call* raises *error* with the expected message shape.
+
+    The message must contain *expected_prefix* and the type name of
+    *bad_value*.
+    """
+    with pytest.raises(error) as excinfo:
+        call()
+    message = str(excinfo.value)
+    assert expected_prefix in message
+    assert type(bad_value).__name__ in message
+
+
 def _assert_rejects_indexed_non_string(
     coerce: cabc.Callable[..., object],
     field_name: str,
@@ -43,12 +61,12 @@ def _assert_rejects_indexed_non_string(
     position = min(case.bad_index, len(case.values))
     mixed: list[object] = [*case.values]
     mixed.insert(position, case.bad)
-
-    with pytest.raises(case.error) as excinfo:
-        coerce(mixed, field_name, error=case.error)
-
-    assert f"{field_name}[{position}] must be a string" in str(excinfo.value)
-    assert type(case.bad).__name__ in str(excinfo.value)
+    _assert_rejection(
+        lambda: coerce(mixed, field_name, error=case.error),
+        f"{field_name}[{position}] must be a string",
+        case.bad,
+        case.error,
+    )
 
 
 class TestTomlCoerce:
@@ -193,24 +211,26 @@ class TestTomlCoerce:
         self, value: object, error: type[Exception]
     ) -> None:
         """A scalar or string top-level value raises the bound error type."""
-        with pytest.raises(error) as excinfo:
-            toml_coerce.string_matrix(value, "demo.matrix", error=error)
-        message = str(excinfo.value)
-        assert (
-            "demo.matrix must be a sequence of string sequences; received " in message
+        _assert_rejection(
+            lambda: toml_coerce.string_matrix(value, "demo.matrix", error=error),
+            "demo.matrix must be a sequence of string sequences; received ",
+            value,
+            error,
         )
-        assert type(value).__name__ in message
 
     @given(bad=_non_string, error=_error_type)
     def test_string_matrix_rejects_non_string_rows(
         self, bad: object, error: type[Exception]
     ) -> None:
         """A non-sequence row is rejected, naming its index in the field."""
-        with pytest.raises(error) as excinfo:
-            toml_coerce.string_matrix([["ok"], bad], "demo.matrix", error=error)
-        message = str(excinfo.value)
-        assert "demo.matrix[1] must be a sequence of strings; received " in message
-        assert type(bad).__name__ in message
+        _assert_rejection(
+            lambda: toml_coerce.string_matrix(
+                [["ok"], bad], "demo.matrix", error=error
+            ),
+            "demo.matrix[1] must be a sequence of strings; received ",
+            bad,
+            error,
+        )
 
     @given(value=st.one_of(st.none(), st.booleans()), error=_error_type)
     def test_boolean_accepts_bools_and_default(
