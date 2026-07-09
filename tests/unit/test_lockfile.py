@@ -520,14 +520,28 @@ def test_adapter_without_env_leaves_runner_env_untouched(tmp_path: Path) -> None
 
 
 def test_adapter_honours_injected_manifest_exists(tmp_path: Path) -> None:
-    """A custom ``manifest_exists`` predicate filters discovery results."""
+    """A custom ``manifest_exists`` predicate overrides the filesystem probe."""
+    # Create a real manifest/lockfile pair so the *default* filesystem probe
+    # would include this lockfile. The injected predicate must be what excludes
+    # it, so the test fails if the adapter ignores ``manifest_exists``.
+    (tmp_path / "Cargo.toml").write_text("[workspace]\n", encoding="utf-8")
+    (tmp_path / "Cargo.lock").write_text("", encoding="utf-8")
     calls: list[_RecordedCall] = []
+    probed: list[Path] = []
+
+    def manifest_exists(manifest_path: Path) -> bool:
+        probed.append(manifest_path)
+        return False
+
     repository = lockfile.CargoLockfileInspectionRepository(
         runner=_recording_runner(calls, stdout="Cargo.lock\n"),
-        manifest_exists=lambda _manifest: False,
+        manifest_exists=manifest_exists,
     )
 
-    assert repository.discover_tracked_lockfiles(tmp_path) == ()
+    result = repository.discover_tracked_lockfiles(tmp_path)
+
+    assert result == ()
+    assert probed == [tmp_path / "Cargo.toml"]
 
 
 def test_adapter_bound_runner_forwards_echo_stdout(tmp_path: Path) -> None:
