@@ -34,7 +34,7 @@ pytestmark = pytest.mark.skipif(
 
 #: The pinned commit of leynos/shared-actions providing
 #: mutation-mutmut.yml. Bump the workflow and this test together.
-PINNED_SHA = "47aea18960d24f33aedc4782ec6b73e365418313"
+PINNED_SHA = "927edd45ae77be4251a8a18ca9eb5613a2e32cbd"
 
 EXPECTED_USES = (
     "leynos/shared-actions/.github/workflows/mutation-mutmut.yml@" + PINNED_SHA
