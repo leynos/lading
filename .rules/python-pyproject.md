@@ -225,7 +225,7 @@ package = true
      [^reddit-uv]
    - `description`, `readme`, `requires-python`: provide clarity about the
      project and help tools like PyPI. [^pypa-guide] [^reddit-uv]
-   - `license`, `authors`, `keywords`, `classifiers`: standardised metadata,
+   - `license`, `authors`, `keywords`, `classifiers`: standardized metadata,
      which improves discoverability. [^pypa-guide] [^reddit-uv]
    - `dependencies`: runtime requirements, expressed in PEP 508 syntax.
      [^astral-guides] [^ridgerun]

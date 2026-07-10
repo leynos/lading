@@ -30,7 +30,7 @@ uv run python -m lading.cli --help
 ```
 
 Point the tool at your workspace with `--workspace-root /path/to/project` and
-use subcommands such as `bump` to synchronise versions or `publish` to stage a
+use subcommands such as `bump` to synchronize versions or `publish` to stage a
 release plan.
 
 ## Learn more

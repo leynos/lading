@@ -5,7 +5,7 @@
 **Objective:** Establish the foundational structure of the `lading` tool,
 including the CLI, configuration management, and workspace discovery. This
 phase decouples the logic from the old repository-specific scripts and creates
-a solid base for the new, generalised functionality.
+a solid base for the new, generalized functionality.
 
 ______________________________________________________________________
 
@@ -16,7 +16,7 @@ implement the basic command-line interface using `cyclopts`.
 
 **Tasks:**
 
-- [x] **Initialise New Project:**
+- [x] **Initialize New Project:**
 
   - **Outcome:** A new Python package named `lading` is created with a
     `pyproject.toml` file.
@@ -120,7 +120,7 @@ workspace and member crate manifests.
 
 ______________________________________________________________________
 
-### 2.2. Documentation and README Synchronisation
+### 2.2. Documentation and README Synchronization
 
 **Description:** Implement the logic for updating documentation files and
 handling workspace READMEs.
@@ -228,7 +228,7 @@ interacting with the `cargo publish` command.
     and logs when a crate version is already published, then continues to the
     next crate.
 
-## 4. Stabilisation and Documentation
+## 4. Stabilization and Documentation
 
 **Objective:** Ensure the `lading` tool is robust, well-tested, and has clear
 documentation for end-users.
@@ -237,7 +237,7 @@ ______________________________________________________________________
 
 ### 4.1. Testing and Quality Assurance
 
-**Description:** Finalise the test suite, focusing on edge cases and end-to-end
+**Description:** Finalize the test suite, focusing on edge cases and end-to-end
 behaviours.
 
 **Tasks:**
@@ -288,7 +288,7 @@ distribution.
   - **Completion Criteria:** The `pyproject.toml` is fully configured for
     building a distributable package, and a successful build can be triggered.
 
-## 5. Command Execution Modernisation
+## 5. Command Execution Modernization
 
 **Objective:** Replace plumbum and subprocess with cuprum for unified,
 security-conscious command execution with built-in observability.
@@ -319,7 +319,7 @@ invocation and path utilities.
 
 - [x] **Migrate `lading/utils/path.py`:**
 
-  - **Outcome:** Path normalisation uses `pathlib.Path` directly, removing the
+  - **Outcome:** Path normalization uses `pathlib.Path` directly, removing the
     `plumbum.local.path()` dependency.
   - **Completion Criteria:** `normalise_workspace_root()` behaviour unchanged;
     plumbum import removed from the module.

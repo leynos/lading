@@ -1,6 +1,6 @@
 # Scripting standards
 
-Project scripts must prioritise clarity, reproducibility, and testability.
+Project scripts must prioritize clarity, reproducibility, and testability.
 
 Cyclopts is the default command‑line interface (CLI) framework for new and
 updated scripts. This document supersedes prior guidance that recommended Typer
@@ -145,7 +145,7 @@ preventing accidental shell access.
 ### Shared vs local catalogues
 
 For application code within `lading/`, use the shared catalogue defined in
-`lading/utils/commands.py`. This centralises the list of allowed programs and
+`lading/utils/commands.py`. This centralizes the list of allowed programs and
 ensures consistent access control across the codebase:
 
 ```python

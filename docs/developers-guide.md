@@ -5,6 +5,14 @@ for contributors to `lading`. For the end-user CLI reference and `lading.toml`
 configuration, see the [user guide](./users-guide.md). For repository operating
 rules and required quality gates, see the [agent instructions](../AGENTS.md).
 
+## Spelling policy
+
+Run `make spelling` to enforce en-GB-oxendict prose spelling. The generated
+`typos.toml` starts from the shared estate dictionary, refreshes its untracked
+local cache only when the authority is newer, and then applies the narrow
+repository policy in `typos.local.toml`. Edit the local policy and regenerate
+the configuration rather than changing generated entries by hand.
+
 ## Development invocation
 
 The console script resolves to `lading.cli.main`. During development, the

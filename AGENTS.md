@@ -65,7 +65,7 @@
   - New functionality or behaviour changes are fully validated by relevant unit
     and behavioural tests.
   - Bug fixes include a failing test before the fix and a passing test
-    afterward.
+    afterwards.
   - Code passes lint checks.
   - Formatting is correct and validated.
 - **For Python files:**
