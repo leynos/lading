@@ -2,11 +2,21 @@ name: Coverage (main)
 
 # CodeScene accepts `cs-coverage upload` only for analysed branches, so
 # main-branch coverage is uploaded here on push; pull requests run the
-# coverage generation (and, in a future fast-follow, the changed-line
-# `cs-coverage check` gate) in ci.yml instead. This workflow also
-# advances the coverage ratchet baseline: caches saved on main are
-# readable by every pull-request run, so the baseline written here is
-# the one PR ratchet checks compare against.
+# lint-test suite (and, in a future fast-follow, the changed-line
+# `cs-coverage check` gate) in ci.yml instead, without an upload.
+#
+# NOTE: coverage generation uses the pre-existing bespoke slipcover
+# invocation, not the shared generate-coverage action. lading's root
+# Cargo.toml is a committed fixture for its own workspace-release test
+# scenarios (see docs/repository-layout.md), not a buildable crate; the
+# shared action's language auto-detection has no override and always
+# treats a root Cargo.toml as Rust (or "mixed" alongside pyproject.toml),
+# so it tries `cargo llvm-cov nextest --workspace` against members that
+# do not exist on disk and fails immediately. Consequently this workflow
+# cannot use generate-coverage's with-ratchet baseline either — the
+# ratchet is implemented inside that action. The coverage ratchet is
+# skipped for lading until the shared action gains a language override
+# (see the CodeScene coverage rollout notes).
 
 on:
   push:
@@ -32,15 +42,15 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
 
-      - name: Generate coverage
-        uses: leynos/shared-actions/.github/actions/generate-coverage@927edd45ae77be4251a8a18ca9eb5613a2e32cbd
-        with:
-          output-path: coverage.xml
-          format: cobertura
-          # Keep the run serial to match the pull-request coverage job;
-          # see the note in ci.yml.
-          pytest-workers: ''
-          with-ratchet: 'true'
+      - name: Run tests with coverage
+        run: |
+          uv pip install slipcover pytest-forked
+          uv run python -m slipcover \
+            --source=./lading \
+            --omit="*/.venv/*" \
+            --branch \
+            --out coverage.xml \
+            -m pytest --forked -v
 
       - name: Upload coverage data to CodeScene
         if: env.CS_ACCESS_TOKEN
@@ -48,5 +58,6 @@ jobs:
         with:
           format: cobertura
           path: coverage.xml
+          mode: upload
           access-token: ${{ env.CS_ACCESS_TOKEN }}
           installer-checksum: ${{ env.CODESCENE_CLI_SHA256 }}

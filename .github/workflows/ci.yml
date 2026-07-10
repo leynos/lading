@@ -8,9 +8,6 @@ on:
 jobs:
   lint-test:
     runs-on: ubuntu-latest
-    env:
-      CS_ACCESS_TOKEN: ${{ secrets.CS_ACCESS_TOKEN }}
-      CODESCENE_CLI_SHA256: ${{ vars.CODESCENE_CLI_SHA256 }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -51,28 +48,41 @@ jobs:
       - name: Run typechecker
         run: make typecheck
 
-      # Coverage runs on pull requests only. Pushes to main upload their
-      # own coverage (and advance the ratchet baseline) via
-      # coverage-main.yml, so generating it here as well would duplicate
-      # the work and the CodeScene upload for the same commit.
-      - name: Generate coverage
-        if: github.event_name == 'pull_request'
-        uses: leynos/shared-actions/.github/actions/generate-coverage@927edd45ae77be4251a8a18ca9eb5613a2e32cbd
+      # NOTE: the shared generate-coverage action is not used here. Its
+      # language auto-detection treats any repository-root Cargo.toml as
+      # Rust (or "mixed" alongside pyproject.toml) with no override, and
+      # lading commits a synthetic root Cargo.toml as a fixture for its
+      # own workspace-release test scenarios (see
+      # docs/repository-layout.md) — it references crates/ directories
+      # that do not exist on disk. `cargo llvm-cov nextest --workspace`
+      # therefore fails immediately in CI trying to resolve that
+      # manifest. Coverage generation stays on the pre-existing bespoke
+      # slipcover invocation until the shared action supports a
+      # language override; the CodeScene wiring layers the shared
+      # upload-codescene-coverage action on top of this coverage.xml
+      # instead.
+      - name: Run tests with coverage
+        run: |
+          uv pip install slipcover pytest-forked
+          uv run python -m slipcover \
+            --source=./lading \
+            --omit="*/.venv/*" \
+            --branch \
+            --out coverage.xml \
+            -m pytest --forked -v
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
         with:
-          output-path: coverage.xml
-          format: cobertura
-          # The suite previously ran under slipcover with pytest-forked
-          # (serial, out-of-process fork isolation per test). The shared
-          # action's serial mode (pytest-workers: '') is in-process, not
-          # forked, so this is not perfectly behaviour-preserving if any
-          # test relies on fork isolation; watch the first CI run.
-          # Follow-up 4 removes this pin to adopt pytest-xdist once the
-          # suite is confirmed xdist-clean.
-          pytest-workers: ''
-          with-ratchet: 'true'
-      # The `mode: check` step is deliberately not wired in yet: the
-      # estate survey found CodeScene's coverage-gates configuration is
-      # enabled only for mxd's project today. Add the check step in a
-      # fast-follow PR once coverage-main.yml has uploaded to main at
-      # least once and the gate is confirmed to resolve, or once
-      # CodeScene confirms this project's coverage gate is enabled.
+          name: coverage
+          path: coverage.xml
+
+      # CodeScene accepts `cs-coverage upload` only for analysed branches
+      # (main), so no upload happens on pull requests; coverage-main.yml
+      # uploads on push to main instead. The `mode: check` changed-line
+      # gate is deliberately not wired in either: the estate survey
+      # found CodeScene's coverage-gates configuration is enabled only
+      # for mxd's project today. Add the check step in a fast-follow PR
+      # once coverage-main.yml has uploaded to main at least once and
+      # the gate is confirmed to resolve, or once CodeScene confirms
+      # this project's coverage gate is enabled.
