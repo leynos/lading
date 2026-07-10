@@ -8,7 +8,7 @@ Date: 05 October 2025
 
 ### 1.1. Purpose
 
-This document specifies the design for a generalised, configuration-driven
+This document specifies the design for a generalized, configuration-driven
 Python utility named `lading`. This tool will streamline versioning and
 publication workflows for arbitrary Rust workspaces. It is intended to
 supersede and replace the existing, repository-specific `bump_version.py` and
@@ -22,13 +22,13 @@ The project encompasses the following key deliverables:
 1. A unified command-line interface (CLI) tool, `lading`, built with
    `cyclopts`, providing `bump` and `publish` subcommands.
 2. A single, unified TOML configuration file, `lading.toml`, to define
-   workspace-specific behaviours, minimising the need for command-line
+   workspace-specific behaviours, minimizing the need for command-line
    arguments.
 3. A workspace discovery mechanism that infers the dependency graph, crate
    locations, and publication order by parsing the output of `cargo metadata`.
 4. A `bump` command to propagate version changes across the workspace,
    including `Cargo.toml` files for both the workspace and individual crates,
-   and to synchronise documentation files.
+   and to synchronize documentation files.
 5. A `publish` command to execute pre-publish checks and publish crates to a
    registry in the correct topological order, with support for both dry-run and
    live modes.
@@ -40,7 +40,7 @@ The project encompasses the following key deliverables:
 
 - **Decoupling:** Eliminate hardcoded paths, crate names, and
   repository-specific assumptions from the tooling.
-- **Generalisation:** Create a tool that can be applied to any Rust workspace
+- **Generalization:** Create a tool that can be applied to any Rust workspace
   with minimal configuration.
 - **Automation:** Reduce manual effort and the risk of human error in release
   processes.
@@ -105,7 +105,7 @@ lading [--workspace-root <path>] <subcommand> [options]
   this entry point through a `lading` console script for ergonomic execution.
 - `--workspace-root` is implemented as a global flag that can be positioned
   before or after the subcommand. The bootstrapper removes the flag from the
-  argument list, normalises it via the shared
+  argument list, normalizes it via the shared
   `lading.utils.normalise_workspace_root` helper (implemented with
   `pathlib.Path` alone), and stores the resolved path in the
   `LADING_WORKSPACE_ROOT` environment variable so that Cyclopts can hydrate
@@ -116,7 +116,7 @@ lading [--workspace-root <path>] <subcommand> [options]
 - Behavioural coverage uses `pytest-bdd` with `cmd-mox` spies to exercise the
   CLI through an actual `python -m lading.cli` invocation. This ensures the
   scaffolding works end-to-end, not just through direct function calls.
-- Configuration loading is centralised in `lading/config.py`. The module builds
+- Configuration loading is centralized in `lading/config.py`. The module builds
   a `cyclopts.config.Toml` loader anchored at the workspace root, validates the
   resulting data with frozen dataclasses, and exposes a context manager so that
   downstream code can access the active configuration without passing it
@@ -129,7 +129,7 @@ lading [--workspace-root <path>] <subcommand> [options]
 A `lading.toml` file located at the workspace root defines the tool's
 behaviour. When the file is absent the CLI treats it as an empty document and
 runs with the default configuration, so workspaces can opt in to overrides
-incrementally. The design prioritises inference to keep this file as minimal as
+incrementally. The design prioritizes inference to keep this file as minimal as
 possible.
 
 **Schema Definition:**
@@ -227,7 +227,7 @@ build scripts, and complex workspace configurations.
 
 - Workspace discovery is anchored in `lading.workspace.metadata`. The module
   invokes `cargo metadata --format-version 1` through the active
-  `CommandRunner`, normalising the workspace root via
+  `CommandRunner`, normalizing the workspace root via
   `lading.utils.normalise_workspace_root` before invoking the command.
 - Failures to locate the `cargo` executable raise
   `CargoExecutableNotFoundError`; non-zero exit codes raise
@@ -239,7 +239,7 @@ build scripts, and complex workspace configurations.
   command or reparsing JSON.
 - `lading.workspace.models` defines the `WorkspaceGraph`, `WorkspaceCrate`, and
   `WorkspaceDependency` types as `msgspec.Struct` instances so that workspace
-  data is immutable and efficiently serialised.
+  data is immutable and efficiently serialized.
 - `build_workspace_graph` reads each crate manifest with `tomlkit` to detect
   `readme.workspace = true` entries while preserving formatting for later
   round-tripping.
@@ -271,7 +271,7 @@ sorting for the `publish` command.
 
 ## 3. `bump` Subcommand Design
 
-The `bump` command will synchronise versions across the workspace.
+The `bump` command will synchronize versions across the workspace.
 
 **Command Signature:**
 
@@ -471,7 +471,7 @@ names are listed before returning the user-specified order.
       paths that Lading injects into `RUSTFLAGS` as `--extern` arguments for
       the cargo test invocation.
     - `preflight.env` – a table of environment overrides applied to every
-      pre-flight command so localisation knobs such as `DYLINT_LOCALE` stay in
+      pre-flight command so localization knobs such as `DYLINT_LOCALE` stay in
       sync with the surrounding harness.
     - `preflight.stderr_tail_lines` – the number of lines tailed from
       compiletest `*.stderr` files when cargo test fails, exposing the debug
@@ -589,14 +589,14 @@ and performs releases.
   Logic within the `bump` and `publish` commands will be unit-tested with
   mocked filesystem and subprocess calls. Where behaviour is identical across
   inputs (for example, ensuring metadata decoding handles both text and byte
-  streams) the suite will rely on parametrised tests to avoid duplication while
+  streams) the suite will rely on parametrized tests to avoid duplication while
   exercising each variant.
 - **Integration Tests:** The CLI itself (`cli.py`) will be tested using
   `cyclopts.testing.invoke`. These tests will run against mock workspaces
   defined in `tests/fixtures/` to verify command-line parsing, configuration
   loading, and the orchestration of different modules.
 - **End-to-End Tests:** A small suite of end-to-end tests will operate on
-  temporary Git repositories. These tests will initialise a Rust workspace,
+  temporary Git repositories. These tests will initialize a Rust workspace,
   commit a `lading.toml`, and then execute `lading bump` and
   `lading publish --dry-run`, asserting that the files are correctly modified
   and the `cargo` commands are executed in the right sequence.
@@ -667,7 +667,7 @@ The migration affects four code locations:
    construction and `CommandNotFound` exception handling with cuprum catalogue
    lookups and `SafeCmd` execution.
 2. **`lading/utils/path.py`**: Replace `local.path()` with direct pathlib usage.
-   Plumbum's path normalisation adds no value over the standard library for the
+   Plumbum's path normalization adds no value over the standard library for the
    current use case.
 3. **`lading/commands/publish_execution.py`**: Replace `subprocess.Popen` with
    threaded stream relay with cuprum's execution model. This is the most

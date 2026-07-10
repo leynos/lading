@@ -58,6 +58,10 @@ target-version = "py313"
 extend-exclude = [
     ".rules",
     "docs",
+    "scripts/generate_typos_config.py",
+    "scripts/typos_rollout.py",
+    "scripts/typos_rollout_cache.py",
+    "scripts/tests/test_typos_rollout.py",
 ]
 
 [tool.ruff.format]
@@ -219,6 +223,13 @@ ignore-decorators = ["typing.overload", "typ.overload"]
 [tool.interrogate]
 ignore-overloaded-functions = true
 [tool.pylint.main]
+# The shared rollout helper has its own pinned Ruff and coverage policy.
+ignore = [
+    "generate_typos_config.py",
+    "typos_rollout.py",
+    "typos_rollout_cache.py",
+    "test_typos_rollout.py",
+]
 # Expand directory targets like lading and tests even when a target is not a
 # package.
 recursive = true

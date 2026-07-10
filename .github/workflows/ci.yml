@@ -42,6 +42,9 @@ jobs:
       - name: Check formatting
         run: make check-fmt
 
+      - name: Check spelling
+        run: make spelling
+
       - name: Run ruff
         run: make lint
 
