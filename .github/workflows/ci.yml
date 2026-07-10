@@ -60,7 +60,9 @@ jobs:
       # slipcover invocation until the shared action supports a
       # language override; the CodeScene wiring layers the shared
       # upload-codescene-coverage action on top of this coverage.xml
-      # instead.
+      # instead. Adds --xml: without it slipcover's --out target is a
+      # plain-text report, not Cobertura XML, which went unnoticed
+      # while the CodeScene upload step was guarded by an unset secret.
       - name: Run tests with coverage
         run: |
           uv pip install slipcover pytest-forked
@@ -68,6 +70,7 @@ jobs:
             --source=./lading \
             --omit="*/.venv/*" \
             --branch \
+            --xml \
             --out coverage.xml \
             -m pytest --forked -v
 

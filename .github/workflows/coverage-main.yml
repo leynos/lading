@@ -45,6 +45,11 @@ jobs:
       - name: Install code
         run: make build
 
+      # --xml is required: without it slipcover's --out target is a
+      # plain-text report, not Cobertura XML, which went unnoticed
+      # while the CodeScene upload step was guarded by an unset secret
+      # (confirmed by this workflow's first live run failing to parse
+      # the uploaded coverage data).
       - name: Run tests with coverage
         run: |
           uv pip install slipcover pytest-forked
@@ -52,6 +57,7 @@ jobs:
             --source=./lading \
             --omit="*/.venv/*" \
             --branch \
+            --xml \
             --out coverage.xml \
             -m pytest --forked -v
 
