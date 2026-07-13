@@ -213,8 +213,8 @@ spans are preserved verbatim.
 after manifest changes. `merge_discovered_manifests` unions the configured
 `bump.lockfile_manifests` entries with manifests implied by git-tracked
 `Cargo.lock` files (reusing
-`lading.commands.lockfile .discover_tracked_lockfiles`); configured entries
-keep their order and discovered entries follow in sorted order.
+`lading.commands.lockfile.discover_tracked_lockfiles`); configured entries keep
+their order and discovered entries follow in sorted order.
 `regenerate_lockfiles` always includes the workspace root `Cargo.toml`,
 validates nested manifests before invoking Cargo, and de-duplicates resolved
 manifest paths.

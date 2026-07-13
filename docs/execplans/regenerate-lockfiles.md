@@ -46,7 +46,7 @@ fixture lockfile and seeing that lockfile listed in the bump output with a
 ## Constraints
 
 - Do not change the `CommandRunner` protocol
-  (`lading/runtime.py`) or the signatures of
+  (`lading/runtime/runner.py`) or the signatures of
   `lading.commands.lockfile.discover_tracked_lockfiles` and
   `lading.commands.lockfile.validate_lockfile_freshness`.
 - The existing `bump.lockfile_manifests` and `bump.rebuild_lockfiles`
@@ -245,13 +245,14 @@ fixture lockfile and seeing that lockfile listed in the bump output with a
 ## Outcomes & retrospective
 
 Delivered as planned. `lading bump` now discovers git-tracked `Cargo.lock`
-files with the same helper the publish pre-flight uses and regenerates them
-alongside the root and configured lockfiles, in both live and dry-run modes.
-The publish pre-flight's stale-lockfile message no longer blames bump. The
-acceptance behaviour was verified twice: through the new BDD scenario (mocked
-git/cargo) and through a real CLI run against the Stage A prototype repository,
-where the nested lockfile was discovered, refreshed to the new version, and
-passed `cargo metadata --locked` afterwards (exit 0).
+files with the same helper the publish pre-flight uses. Live mode regenerates
+the discovered lockfiles alongside the root and configured lockfiles; dry-run
+discovers and reports that same set without modifying files. The publish
+pre-flight's stale-lockfile message no longer blames bump. The acceptance
+behaviour was verified twice: through the new BDD scenario (mocked git/cargo)
+and through a real CLI run against the Stage A prototype repository, where the
+nested lockfile was discovered, refreshed to the new version, and passed
+`cargo metadata --locked` afterwards (exit 0).
 
 Deviations from the original plan, all recorded in the decision log: the
 strict-xfail round-trip was replaced by directly observed red failures; six
@@ -269,7 +270,7 @@ cost — pinning with a scheduled bump would be a worthwhile follow-up for the
 repository.
 
 Follow-up candidates (not in scope): rewrite version requirements in non-member
-nested manifests that depend on bumped crates; pin `ty` in CI and the Makefile.
+nested manifests that depend on bumped crates.
 
 ## Context and orientation
 

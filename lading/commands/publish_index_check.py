@@ -287,19 +287,13 @@ def _validate_dependency_placement(
         missing_name,
         missing_index if missing_index is not None else "<not in plan>",
     )
-    # An if/elif chain (rather than sequential guards) narrows missing_index
-    # to int in later branches: ty 0.0.8 does not narrow bindings after calls
-    # to NoReturn helpers, only via the branch conditions themselves.
     if missing_index is None:
         _raise_out_of_plan_dependency(context, missing_name=missing_name)
-    elif missing_index == current_index:
+    if missing_index == current_index:
         _raise_self_dependency(context, missing_name=missing_name)
-    elif missing_index > current_index:
+    if missing_index > current_index:
         _raise_out_of_order_dependency(context, missing_name=missing_name)
-    else:
-        return _DependencyPlacement(
-            current_index, missing_index, missing_canonical_name
-        )
+    return _DependencyPlacement(current_index, missing_index, missing_canonical_name)
 
 
 def _emit_downgrade_success(
@@ -372,15 +366,12 @@ def _handle_index_missing_version(
     )
 
     missing_name = failure.missing_dependency_name
-    # if/else (rather than a guard clause) narrows missing_name to str for
-    # the downgrade path: ty 0.0.8 does not narrow bindings after calls to
-    # NoReturn helpers, only via the branch conditions themselves.
-    if missing_name is None:
-        _raise_name_extraction_failure(context)
-    else:
+    if missing_name is not None:
         _downgrade_or_raise(
             failure, context=context, handling=handling, missing_name=missing_name
         )
+        return
+    _raise_name_extraction_failure(context)
 
 
 def _downgrade_or_raise(
@@ -403,14 +394,12 @@ def _downgrade_or_raise(
         else "will downgrade to warning",
     )
 
-    if not handling.options.allow_unpublished_workspace_deps:
-        _raise_unpublished_dependency_override_required(
-            context, missing_name=missing_name
+    if handling.options.allow_unpublished_workspace_deps:
+        _emit_downgrade_success(
+            handling,
+            failure,
+            missing_name=missing_name,
+            placement=placement,
         )
-
-    _emit_downgrade_success(
-        handling,
-        failure,
-        missing_name=missing_name,
-        placement=placement,
-    )
+        return
+    _raise_unpublished_dependency_override_required(context, missing_name=missing_name)
