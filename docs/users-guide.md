@@ -279,9 +279,11 @@ stderr_tail_lines = 40
 - `lockfile_manifests`: array of strings, default `[]`. Additional
   `Cargo.toml` manifests whose adjacent `Cargo.lock` files should be
   regenerated after `lading bump`. Git-tracked lockfiles are discovered and
-  regenerated automatically, so this key is only needed for lockfiles that git
-  does not track (for example, generated fixtures listed in `.gitignore`). The
-  workspace root `Cargo.toml` is always included and should not be listed.
+  regenerated automatically. Configured manifests are needed for lockfiles that
+  git does not track (for example, generated fixtures listed in `.gitignore`)
+  and for nested lockfiles when the workspace is outside a Git repository,
+  where discovery returns no tracked manifests. The workspace root `Cargo.toml`
+  is always included and should not be listed.
 - `rebuild_lockfiles`: boolean, default `true`. Controls whether `lading bump`
   regenerates the workspace lockfile, discovered tracked lockfiles, and
   configured nested lockfiles after manifest updates. Pass
@@ -299,8 +301,8 @@ Regeneration is not atomic, and `lading bump` attempts every manifest rather
 than stopping at the first Cargo failure. Manifest versions are written before
 any lockfile is refreshed, so a failure leaves the workspace inconsistent: the
 manifests carry the new version but the affected lockfiles do not. When several
-lockfiles are regenerated, `lading` raises one aggregated error that lists every
-failed manifest with the exact repair command to run:
+lockfiles are regenerated, `lading` raises one aggregated error that lists
+every failed manifest with the exact repair command to run:
 
 ```text
 Cargo lockfile regeneration failed for 2 manifest(s). Manifests already carry the new version, so the workspace is inconsistent until each lockfile below is repaired:

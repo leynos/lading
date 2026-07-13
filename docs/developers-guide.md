@@ -177,8 +177,8 @@ spans are preserved verbatim.
 after manifest changes. `merge_discovered_manifests` unions the configured
 `bump.lockfile_manifests` entries with manifests implied by git-tracked
 `Cargo.lock` files (reusing
-`lading.commands.lockfile .discover_tracked_lockfiles`); configured entries
-keep their order and discovered entries follow in sorted order.
+`lading.commands.lockfile.discover_tracked_lockfiles`); configured entries keep
+their order and discovered entries follow in sorted order.
 `regenerate_lockfiles` always includes the workspace root `Cargo.toml`,
 validates nested manifests before invoking Cargo, and de-duplicates resolved
 manifest paths.
@@ -850,14 +850,13 @@ reintroduces a second invocation log at any level is pinned by the tests in
 
 `lading.commands.publish_preflight` performs workspace validation before any
 crate is packaged or published. It is the canonical (and only) home of
-`_run_preflight_checks` and `_preflight_argument_sets`. `publish.py`
-re-exports `_preflight_argument_sets` as a bare module-level alias for
-backwards compatibility with existing test patches, and must not re-declare
-it. `_run_preflight_checks`, however, is exposed through a thin wrapper in
+`_run_preflight_checks` and `_preflight_argument_sets`. `publish.py` re-exports
+`_preflight_argument_sets` as a bare module-level alias for backwards
+compatibility with existing test patches, and must not re-declare it.
+`_run_preflight_checks`, however, is exposed through a thin wrapper in
 `publish.py` that preserves the historical optional-`configuration` contract
-(resolving configuration via `_ensure_configuration` when the caller omits
-it) before delegating to the canonical implementation. The public entry
-point is:
+(resolving configuration via `_ensure_configuration` when the caller omits it)
+before delegating to the canonical implementation. The public entry point is:
 
 ```python
 _run_preflight_checks(
@@ -904,21 +903,20 @@ _publish_crate(
 ) -> None
 ```
 
-`_CrateAction` is the shared `typing.Protocol` for single-crate pipeline
-steps; its `__call__` signature is `(crate, state, *, runner) -> None`,
-matching `_package_crate` and `_publish_crate` exactly.
+`_CrateAction` is the shared `typing.Protocol` for single-crate pipeline steps;
+its `__call__` signature is `(crate, state, *, runner) -> None`, matching
+`_package_crate` and `_publish_crate` exactly.
 `_for_each_publishable_crate(state, *, runner, action: _CrateAction) -> None`
 iterates `state.plan.publishable` in pipeline order and applies `action` to
 each crate; both `_package_publishable_crates` and `_publish_crates` delegate
-to it, passing `_package_crate` or `_publish_crate` as the action
-respectively. The live pipeline (`_execute_live_publication_pipeline`)
-deliberately bypasses this helper and manages its own loop, interleaving
-`_package_crate` and `_publish_crate` per crate so that a freshly packaged
-crate is uploaded before packaging begins for the next. New per-crate steps
-intended for the batched (dry-run) pipeline should therefore be written as
-`_CrateAction`-conforming functions dispatched through
-`_for_each_publishable_crate`; steps that must interleave packaging and
-publishing belong in the live pipeline instead.
+to it, passing `_package_crate` or `_publish_crate` as the action respectively.
+The live pipeline (`_execute_live_publication_pipeline`) deliberately bypasses
+this helper and manages its own loop, interleaving `_package_crate` and
+`_publish_crate` per crate so that a freshly packaged crate is uploaded before
+packaging begins for the next. New per-crate steps intended for the batched
+(dry-run) pipeline should therefore be written as `_CrateAction`-conforming
+functions dispatched through `_for_each_publishable_crate`; steps that must
+interleave packaging and publishing belong in the live pipeline instead.
 
 `_PublicationPipelineState` carries only publish-domain state: the resolved
 `PublishPlan`, the `PublishPreparation`, and `_PublishExecutionOptions`.
