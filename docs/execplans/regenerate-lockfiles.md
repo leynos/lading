@@ -588,3 +588,10 @@ the user's request — `TY_VERSION ?= 0.0.56` in the Makefile (invoked via
 `uv tool run --from ty==$(TY_VERSION)`), CI no longer installs ty separately,
 and ty 0.0.56 passes with no new diagnostics. The non-member manifest rewriting
 follow-up remains open.
+
+2026-07-14: rebasing onto `origin/main` incorporated issue #82's
+`LockfileRepository` port. Discovery now occurs inside the
+`CargoLockfileRepository` adapter before its dry-run projection or live
+regeneration operation; `_process_lockfiles` remains dependent only on the
+port. This preserves the discovery behaviour delivered by the plan while
+keeping Git and Cargo execution outside the bump domain.

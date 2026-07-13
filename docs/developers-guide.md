@@ -233,11 +233,14 @@ the original cargo error rather than wrapped in the aggregate message.
 `lockfile_repository` field, a `bump_lockfiles.LockfileRepository` port
 introduced by issue #82: the bump domain never holds a raw command runner. When
 the field is `None`, bump uses `bump_lockfiles.CargoLockfileRepository`, the
-cargo-backed adapter bound to the default subprocess runner; the CLI binds the
-adapter to its selected runner. Tests inject a repository (or bind the adapter
-to a recording runner) so lockfile commands can be observed without invoking
-real Cargo processes. The port's scope is bump-side lockfile projection and
-regeneration; publish-side discovery and validation go through the sibling
+cargo- and git-backed adapter bound to the default subprocess runner; the CLI
+binds the adapter to its selected runner. The adapter merges configured
+manifests with manifests discovered from tracked lockfiles before either
+projecting dry-run paths or regenerating live lockfiles. Tests inject a
+repository (or bind the adapter to a recording runner) so lockfile commands can
+be observed without invoking real processes. The port's scope is bump-side
+lockfile projection and regeneration; publish-side discovery and validation go
+through the sibling
 `lockfile.LockfileInspectionRepository` port (see the Lockfile helpers section
 below), so neither the bump nor the publish lockfile domain holds a raw
 `CommandRunner` (issue #82).
@@ -344,14 +347,14 @@ Private helpers `_handle_git_ls_files_failure` and `_lockfiles_with_manifests`
 perform the error-handling and path-filtering passes respectively.
 
 Lockfile regeneration after `lading bump` is owned by
-`lading.commands.bump_lockfiles.regenerate_lockfiles`, which runs
-`cargo update --workspace` per merged manifest —
-`bump_lockfiles.merge_discovered_manifests` unions the configured
+`lading.commands.bump_lockfiles.CargoLockfileRepository`. The adapter uses
+`bump_lockfiles.merge_discovered_manifests` to union the configured
 `bump.lockfile_manifests` entries with manifests implied by
-`discover_tracked_lockfiles`. The two cargo strategies differ deliberately:
-bump refreshes existing pinned versions in place after manifest rewrites, while
-publish only probes freshness read-only via `cargo metadata --locked` and never
-regenerates.
+`discover_tracked_lockfiles`, then delegates to `regenerate_lockfiles`, which
+runs `cargo update --workspace` per merged manifest. The two cargo strategies
+differ deliberately: bump refreshes existing pinned versions in place after
+manifest rewrites, while publish only probes freshness read-only via
+`cargo metadata --locked` and never regenerates.
 
 `validate_lockfile_freshness(manifest_path, runner)` runs
 `cargo metadata --locked --manifest-path ... --format-version=1`. It returns a
