@@ -28,6 +28,7 @@ _LOGGER = logging.getLogger(__name__)
 class LockfileRegenerationError(LadingError):
     """Raise when lockfile regeneration cannot validate or execute."""
 
+
 def merge_discovered_manifests(
     workspace_root: Path,
     lockfile_manifests: cabc.Sequence[str],
@@ -83,6 +84,8 @@ def merge_discovered_manifests(
         seen_manifests.add(resolved)
         merged.append(relative_manifest)
     return tuple(merged)
+
+
 def resolve_lockfile_paths(
     workspace_root: Path,
     lockfile_manifests: cabc.Sequence[str],
@@ -314,9 +317,9 @@ class CargoLockfileRepository:
         workspace_root :
             Absolute path to the Cargo workspace root.
         lockfile_manifests :
-            Configured manifest paths relative to *workspace_root*. The
-            workspace-root ``Cargo.toml`` is always prepended and
-            de-duplicated.
+            Configured manifest paths relative to *workspace_root*. Manifests
+            implied by git-tracked lockfiles are merged before the
+            workspace-root ``Cargo.toml`` is prepended and de-duplicated.
 
         Returns
         -------
@@ -348,9 +351,9 @@ class CargoLockfileRepository:
         workspace_root :
             Absolute path to the Cargo workspace root.
         lockfile_manifests :
-            Configured manifest paths relative to *workspace_root*. The
-            workspace-root ``Cargo.toml`` is always prepended and
-            de-duplicated.
+            Configured manifest paths relative to *workspace_root*. Manifests
+            implied by git-tracked lockfiles are merged before the
+            workspace-root ``Cargo.toml`` is prepended and de-duplicated.
 
         Returns
         -------
@@ -371,7 +374,9 @@ class CargoLockfileRepository:
         merged_manifests = merge_discovered_manifests(
             workspace_root, lockfile_manifests, runner=self.runner
         )
-        return regenerate_lockfiles(workspace_root, merged_manifests, runner=self.runner)
+        return regenerate_lockfiles(
+            workspace_root, merged_manifests, runner=self.runner
+        )
 
 
 class LockfileRepository(typ.Protocol):
