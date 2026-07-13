@@ -324,8 +324,10 @@ this helper for consistent path handling, including `lading.cli`,
 
 `discover_tracked_lockfiles(workspace_root, runner)` filters git-tracked
 `Cargo.lock` files outside `target/` with adjacent `Cargo.toml` manifests.
-Private helpers `_handle_git_ls_files_failure` and `_lockfiles_with_manifests`
-perform the error-handling and path-filtering passes respectively.
+Private helpers `_raise_git_ls_files_failure` and `_lockfiles_with_manifests`
+perform the error-handling and path-filtering passes respectively. Discovery
+raises `NotAGitRepositoryError` when the workspace is not under git control;
+callers that should skip that condition own the skip policy at their boundary.
 
 Lockfile regeneration after `lading bump` is owned by
 `lading.commands.bump_lockfiles.regenerate_lockfiles`, which runs
