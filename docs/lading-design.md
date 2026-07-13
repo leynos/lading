@@ -376,6 +376,19 @@ lading bump <new_version> [--dry-run]
   documentation counts, and documentation entries are suffixed with
   `(documentation)` for clarity.
 
+### Lockfile repository port (bump side)
+
+The bump domain reaches Cargo lockfile projection and regeneration through
+a `LockfileRepository` port defined in
+`lading.commands.bump_lockfiles`. `CargoLockfileRepository` is the
+cargo-backed adapter; it is constructed with an optional `CommandRunner`
+and delegates to the module-level helpers.
+`BumpOptions.lockfile_repository` is the injection point; when `None`,
+bump substitutes `CargoLockfileRepository` bound to the default
+subprocess runner, and the CLI binds the adapter at the composition
+root. This keeps the bump domain free of a raw `CommandRunner`
+(issue #82).
+
 ## 4. `publish` Subcommand Design
 
 The `publish` command orchestrates the publication of crates to the designated
@@ -476,6 +489,22 @@ names are listed before returning the user-specified order.
     - `preflight.stderr_tail_lines` – the number of lines tailed from
       compiletest `*.stderr` files when cargo test fails, exposing the debug
       diff directly in the CLI output.
+
+### Lockfile inspection repository port (publish side)
+
+The publish pre-flight domain reaches tracked-lockfile discovery and
+freshness validation through a `LockfileInspectionRepository` port
+defined in `lading.commands.lockfile`.
+`CargoLockfileInspectionRepository` is the git- and cargo-backed
+adapter; it binds a `CommandRunner` and the optional pre-flight base
+environment, applying that environment to invocations that do not
+supply their own. `publish_preflight._run_preflight_checks` is the
+composition root: it constructs the adapter and passes it to the
+domain helpers `_collect_stale_lockfiles` and
+`_validate_lockfile_freshness`, which depend only on the port.
+Together with the bump-side `LockfileRepository`, the two ports keep
+VCS, filesystem, and cargo execution concerns out of the lockfile
+domain logic (issue #82).
 
 ### Publish Preflight Sequence
 

@@ -237,3 +237,149 @@ def _run_workspace_lockfile_update(
             stderr,
         )
         raise LockfileRegenerationError(message)
+
+
+@dc.dataclass(frozen=True, slots=True)
+class CargoLockfileRepository:
+    """Cargo-backed :class:`LockfileRepository` bound to a command runner."""
+
+    runner: CommandRunner | None = None
+
+    def resolve_lockfile_paths(
+        self,
+        workspace_root: Path,
+        lockfile_manifests: cabc.Sequence[str],
+    ) -> tuple[Path, ...]:
+        """Return the lockfile paths a regeneration run would touch.
+
+        Parameters
+        ----------
+        workspace_root :
+            Absolute path to the Cargo workspace root.
+        lockfile_manifests :
+            Configured manifest paths relative to *workspace_root*. The
+            workspace-root ``Cargo.toml`` is always prepended and
+            de-duplicated.
+
+        Returns
+        -------
+        tuple[Path, ...]
+            The lockfile paths that a regeneration run would touch,
+            in manifest execution order.
+
+        Raises
+        ------
+        LockfileRegenerationError
+            If any configured manifest path is invalid (outside the
+            workspace or not named ``Cargo.toml``), propagated from
+            :func:`_resolve_manifest_paths`.
+        """
+        return resolve_lockfile_paths(workspace_root, lockfile_manifests)
+
+    def regenerate_lockfiles(
+        self,
+        workspace_root: Path,
+        lockfile_manifests: cabc.Sequence[str],
+    ) -> tuple[Path, ...]:
+        """Regenerate lockfiles via ``cargo update --workspace``.
+
+        Parameters
+        ----------
+        workspace_root :
+            Absolute path to the Cargo workspace root.
+        lockfile_manifests :
+            Configured manifest paths relative to *workspace_root*. The
+            workspace-root ``Cargo.toml`` is always prepended and
+            de-duplicated.
+
+        Returns
+        -------
+        tuple[Path, ...]
+            Paths to every ``Cargo.lock`` regenerated, in manifest
+            execution order.
+
+        Raises
+        ------
+        LockfileRegenerationError
+            If any configured manifest path is invalid (outside the
+            workspace or not named ``Cargo.toml``), or — after every
+            manifest has been attempted — if ``cargo update --workspace``
+            failed. A lone workspace-root failure re-raises the original
+            cargo error unchanged; multiple failures raise one aggregated
+            error listing each failed manifest with a repair command.
+        """
+        return regenerate_lockfiles(
+            workspace_root, lockfile_manifests, runner=self.runner
+        )
+
+
+class LockfileRepository(typ.Protocol):
+    """Port for projecting and regenerating Cargo lockfiles after a bump.
+
+    The bump domain depends on this protocol rather than on a command
+    runner, keeping execution infrastructure out of the public bump options
+    (issue #82).
+    """
+
+    def resolve_lockfile_paths(
+        self,
+        workspace_root: Path,
+        lockfile_manifests: cabc.Sequence[str],
+    ) -> tuple[Path, ...]:
+        """Return the lockfile paths a regeneration run would touch.
+
+        Parameters
+        ----------
+        workspace_root :
+            Absolute path to the Cargo workspace root.
+        lockfile_manifests :
+            Configured manifest paths relative to *workspace_root*. The
+            workspace-root ``Cargo.toml`` is always prepended and
+            de-duplicated.
+
+        Returns
+        -------
+        tuple[Path, ...]
+            The lockfile paths that a regeneration run would touch,
+            in manifest execution order.
+
+        Raises
+        ------
+        LockfileRegenerationError
+            If any configured manifest path is invalid (outside the
+            workspace or not named ``Cargo.toml``), propagated from
+            :func:`_resolve_manifest_paths`.
+        """
+
+    def regenerate_lockfiles(
+        self,
+        workspace_root: Path,
+        lockfile_manifests: cabc.Sequence[str],
+    ) -> tuple[Path, ...]:
+        """Regenerate lockfiles and return the rewritten paths.
+
+        Parameters
+        ----------
+        workspace_root :
+            Absolute path to the Cargo workspace root.
+        lockfile_manifests :
+            Configured manifest paths relative to *workspace_root*. The
+            workspace-root ``Cargo.toml`` is always prepended and
+            de-duplicated.
+
+        Returns
+        -------
+        tuple[Path, ...]
+            Paths to every ``Cargo.lock`` regenerated, in manifest
+            execution order.
+
+        Raises
+        ------
+        LockfileRegenerationError
+            If any configured manifest path is invalid (outside the
+            workspace or not named ``Cargo.toml``), or — after every
+            manifest has been attempted — if ``cargo update --workspace``
+            failed. A lone workspace-root failure re-raises the original
+            cargo error unchanged; multiple failures raise one aggregated
+            error listing each failed manifest with a repair command.
+        """

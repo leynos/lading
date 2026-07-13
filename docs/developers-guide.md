@@ -218,11 +218,18 @@ only the workspace-root lockfile is processed, its lone failure is re-raised as
 the original cargo error rather than wrapped in the aggregate message.
 
 `BumpOptions` carries the dependency-injection points used by
-`lading.commands.bump.run`. The `command_runner` field accepts an optional
-`CommandRunner`, matching the command-runner protocol used by publish
-execution. When `command_runner` is `None`, bump falls back to the default
-subprocess runner. Tests pass a runner explicitly so lockfile commands can be
-observed without invoking real Cargo processes.
+`lading.commands.bump.run`. Lockfile operations are reached through the
+`lockfile_repository` field, a `bump_lockfiles.LockfileRepository` port
+introduced by issue #82: the bump domain never holds a raw command runner. When
+the field is `None`, bump uses `bump_lockfiles.CargoLockfileRepository`, the
+cargo-backed adapter bound to the default subprocess runner; the CLI binds the
+adapter to its selected runner. Tests inject a repository (or bind the adapter
+to a recording runner) so lockfile commands can be observed without invoking
+real Cargo processes. The port's scope is bump-side lockfile projection and
+regeneration; publish-side discovery and validation go through the sibling
+`lockfile.LockfileInspectionRepository` port (see the Lockfile helpers section
+below), so neither the bump nor the publish lockfile domain holds a raw
+`CommandRunner` (issue #82).
 
 Bump-time crate-set derivation is centralized in the bump context: the
 `excluded` and `updated_crate_names` sets are computed exactly once in
@@ -338,8 +345,22 @@ manifest rewrites, while publish only probes freshness read-only via
 `cargo metadata --locked --manifest-path ... --format-version=1`. It returns a
 `LockfileFreshness` result that distinguishes fresh lockfiles, lockfiles that
 Cargo says need updating under `--locked`, and unrelated Cargo failures.
-`_validate_lockfile_freshness` in `publish_preflight.py` calls it before the
-cargo check/test pre-flight.
+
+The publish pre-flight domain reaches both operations through the
+`LockfileInspectionRepository` port (issue #82) rather than holding a command
+runner: `_validate_lockfile_freshness` and `_collect_stale_lockfiles` in
+`publish_preflight.py` depend only on the port, so VCS (git), filesystem, and
+cargo execution concerns stay out of the freshness-classification logic.
+`CargoLockfileInspectionRepository` is the git- and cargo-backed adapter; it
+binds a `CommandRunner` and the optional pre-flight base environment, applying
+that environment to any invocation that does not supply its own.
+`publish_preflight._run_preflight_checks` is the composition root: it binds the
+adapter to the selected command runner and pre-flight environment. Tests inject
+a port double at the `_validate_lockfile_freshness` seam, observing discovery
+and validation without invoking real git or cargo. This is the publish-side
+counterpart to the bump-side `bump_lockfiles.LockfileRepository`; together they
+complete issue #82's separation of lockfile VCS/filesystem concerns from the
+command domain.
 
 `LockfileDiscoveryError` inherits `LadingError`; its messages include the git
 failure detail.

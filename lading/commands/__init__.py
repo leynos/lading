@@ -2,6 +2,6 @@
 
 from __future__ import annotations
 
-from . import bump, publish
+from . import bump, bump_lockfiles, publish
 
-__all__ = ["bump", "publish"]
+__all__ = ["bump", "bump_lockfiles", "publish"]
