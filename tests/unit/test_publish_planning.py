@@ -325,6 +325,32 @@ def test_plan_publication_detects_dependency_cycles(
     assert "dependency cycle" in str(excinfo.value)
 
 
+def test_publish_reexports_plan_error_for_public_callers(
+    planning_fixtures: PlanningFixtures,
+) -> None:
+    """``publish.plan_publication`` failures are catchable via ``publish``.
+
+    ``plan_publication`` is public on the ``publish`` module, so the exception
+    it raises must remain catchable as ``publish.PublishPlanError``. This guards
+    the public re-export against removal alongside private compatibility shims.
+    """
+    assert publish.PublishPlanError is publish_plan.PublishPlanError
+
+    alpha, beta = _create_cycle(
+        planning_fixtures,
+        name_a="alpha",
+        name_b="beta",
+    )
+
+    with pytest.raises(publish.PublishPlanError):
+        _plan_with_crates(
+            planning_fixtures.tmp_path,
+            planning_fixtures.make_workspace,
+            planning_fixtures.make_config,
+            (alpha, beta),
+        )
+
+
 @pytest.mark.parametrize(
     ("cycle_publish_flags", "excludes", "scenario"),
     [

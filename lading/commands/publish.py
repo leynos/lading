@@ -83,6 +83,9 @@ from lading.commands.publish_plan import (
     format_plan,
     plan_publication,
 )
+from lading.commands.publish_plan import (
+    PublishPlanError as PublishPlanError,  # public re-export for plan_publication
+)
 from lading.utils.path import normalise_workspace_root
 
 LOGGER = logging.getLogger(__name__)

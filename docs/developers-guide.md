@@ -568,6 +568,13 @@ call sites keep breaking, introduce an explicit port (a protocol the call
 sites depend on, as with `CommandRunner` in `lading.runtime`) rather than
 accreting ad hoc backwards-compatibility shims.
 
+This rule applies to private, underscore-prefixed symbols only. A public
+exception type raised by a still-public entry point must remain re-exported
+on the module that exposes that entry point: for example, `publish` re-exports
+`PublishPlanError as PublishPlanError` so that callers catching
+`except publish.PublishPlanError` after a call to `publish.plan_publication()`
+continue to work.
+
 ### Extracted publish modules
 
 `publish_plan.py` owns publication planning and plan rendering. Its
