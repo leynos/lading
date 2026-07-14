@@ -118,7 +118,7 @@ all git-tracked `Cargo.lock` files are fresh under `--locked` mode. If any
 lockfile is stale — for example after a `lading bump` that regenerated a nested
 workspace lockfile — the command exits with code 1 and prints a repair command:
 
-```text
+```plaintext
 Tracked Cargo.lock files are stale after manifest version changes.
 Run the following to repair:
   cargo generate-lockfile --manifest-path <path>/Cargo.toml
@@ -162,7 +162,7 @@ even in dry-run mode. When two or more workspace crates are released together
 for the first time and one depends on another at a version that is not yet on
 crates.io, `cargo package` will fail with an error similar to:
 
-```text
+```plaintext
 error: failed to prepare local package for uploading
 
 Caused by:
@@ -292,7 +292,7 @@ inconsistent: the manifests carry the new version but the affected lockfiles do
 not. When several lockfiles are regenerated, `lading` raises one aggregated
 error that lists every failed manifest with the exact repair command to run:
 
-```text
+```plaintext
 Cargo lockfile regeneration failed for 2 manifest(s). Manifests already carry the new version, so the workspace is inconsistent until each lockfile below is repaired:
 - Cargo lockfile regeneration failed for crates/a/Cargo.toml with exit code 101: <cargo error>
   cargo update --workspace --manifest-path crates/a/Cargo.toml
