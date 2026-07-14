@@ -53,6 +53,33 @@ class _RecordingLockfileRepository:
 _STALE_DETAIL = "the lock file Cargo.lock needs to be updated but --locked was passed"
 
 
+def _stale_lockfiles_error_message(workspace_root: Path) -> str:
+    """Return the raised error for a root and nested stale lockfile pair.
+
+    Drives ``_validate_lockfile_freshness`` through a recording port double
+    whose tracked lockfiles are all stale, and returns the resulting
+    ``PublishPreflightError`` message for assertion or snapshotting.
+    """
+    root_lockfile = workspace_root / "Cargo.lock"
+    nested_lockfile = workspace_root / "tests" / "ui_lints" / "Cargo.lock"
+    repository = _RecordingLockfileRepository(
+        tracked=(root_lockfile, nested_lockfile),
+        default_freshness=lockfile.LockfileFreshness(
+            is_fresh=False, is_stale=True, detail=_STALE_DETAIL
+        ),
+    )
+
+    with pytest.raises(
+        publish.PublishPreflightError,
+        match="Tracked Cargo\\.lock files are stale",
+    ) as excinfo:
+        publish_preflight._validate_lockfile_freshness(
+            workspace_root, repository=repository
+        )
+
+    return str(excinfo.value)
+
+
 def test_validate_lockfile_freshness_passes_when_all_lockfiles_are_fresh(
     tmp_path: Path,
 ) -> None:
@@ -72,22 +99,10 @@ def test_validate_lockfile_freshness_passes_when_all_lockfiles_are_fresh(
 
 def test_validate_lockfile_freshness_reports_stale_lockfiles(tmp_path: Path) -> None:
     """Stale lockfiles are collected and reported with repair commands."""
+    message = _stale_lockfiles_error_message(tmp_path)
     root_lockfile = tmp_path / "Cargo.lock"
     nested_lockfile = tmp_path / "tests" / "ui_lints" / "Cargo.lock"
-    repository = _RecordingLockfileRepository(
-        tracked=(root_lockfile, nested_lockfile),
-        default_freshness=lockfile.LockfileFreshness(
-            is_fresh=False, is_stale=True, detail=_STALE_DETAIL
-        ),
-    )
 
-    with pytest.raises(
-        publish.PublishPreflightError,
-        match="Tracked Cargo\\.lock files are stale",
-    ) as excinfo:
-        publish_preflight._validate_lockfile_freshness(tmp_path, repository=repository)
-
-    message = str(excinfo.value)
     assert str(root_lockfile) in message
     assert str(nested_lockfile) in message
     assert "lading bump" in message
@@ -104,25 +119,9 @@ def test_validate_lockfile_freshness_error_snapshot(
     snapshot: SnapshotAssertion,
 ) -> None:
     """Stale lockfile remediation output is locked by snapshot."""
-    workspace_root = Path("/workspace root")
-    root_lockfile = workspace_root / "Cargo.lock"
-    nested_lockfile = workspace_root / "tests" / "ui_lints" / "Cargo.lock"
-    repository = _RecordingLockfileRepository(
-        tracked=(root_lockfile, nested_lockfile),
-        default_freshness=lockfile.LockfileFreshness(
-            is_fresh=False, is_stale=True, detail=_STALE_DETAIL
-        ),
-    )
+    message = _stale_lockfiles_error_message(Path("/workspace root"))
 
-    with pytest.raises(
-        publish.PublishPreflightError,
-        match="Tracked Cargo\\.lock files are stale",
-    ) as excinfo:
-        publish_preflight._validate_lockfile_freshness(
-            workspace_root, repository=repository
-        )
-
-    assert str(excinfo.value) == snapshot()
+    assert message == snapshot()
 
 
 def test_validate_lockfile_freshness_surfaces_cargo_failures(tmp_path: Path) -> None:
