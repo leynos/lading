@@ -140,3 +140,46 @@ def test_validate_lockfile_freshness_surfaces_cargo_failures(tmp_path: Path) -> 
         match="failed to download registry index",
     ):
         publish_preflight._validate_lockfile_freshness(tmp_path, repository=repository)
+
+
+def test_validate_lockfile_freshness_classifies_every_lockfile(
+    tmp_path: Path,
+) -> None:
+    """All tracked lockfiles are probed even when the first is already stale.
+
+    Issue #83 evaluated short-circuiting on the first stale lockfile and
+    rejected it: every tracked lockfile must be classified so the aggregated
+    error lists each stale path for a single-pass repair. This pins the
+    full-classification behaviour by asserting every tracked manifest is
+    probed through the port, not just that the first stale result aborts.
+    """
+    lockfiles = (
+        tmp_path / "Cargo.lock",
+        tmp_path / "a" / "Cargo.lock",
+        tmp_path / "b" / "Cargo.lock",
+    )
+    repository = _RecordingLockfileRepository(
+        tracked=lockfiles,
+        default_freshness=lockfile.LockfileFreshness(
+            is_fresh=False, is_stale=True, detail=_STALE_DETAIL
+        ),
+    )
+
+    with pytest.raises(
+        publish.PublishPreflightError,
+        match="Tracked Cargo\\.lock files are stale",
+    ) as excinfo:
+        publish_preflight._validate_lockfile_freshness(tmp_path, repository=repository)
+
+    # No short-circuit: every tracked lockfile is probed despite the first
+    # being stale (issue #83).
+    expected_manifests = [path.parent / "Cargo.toml" for path in lockfiles]
+    assert repository.validated_manifests == expected_manifests, (
+        "every tracked lockfile must be probed without short-circuiting; "
+        f"expected {expected_manifests}, got {repository.validated_manifests}"
+    )
+    message = str(excinfo.value)
+    for path in lockfiles:
+        assert str(path) in message, (
+            f"stale lockfile {path} missing from aggregated error: {message}"
+        )

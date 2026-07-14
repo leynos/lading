@@ -207,6 +207,13 @@ def _collect_stale_lockfiles(
 ) -> list[Path]:
     """Classify tracked lockfiles; raise immediately on error, return stale paths.
 
+    Every tracked lockfile is classified rather than short-circuiting on the
+    first stale result (issue #83): the aggregated error message lists each
+    stale lockfile with its repair command, so the operator fixes the whole
+    workspace in one pass instead of replaying the pre-flight per lockfile.
+    The extra ``cargo metadata --locked`` probes are cheap relative to that
+    replay loop. Unexpected (non-stale) failures still raise immediately.
+
     Raises
     ------
     PublishPreflightError
