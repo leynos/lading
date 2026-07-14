@@ -218,6 +218,8 @@ def test_validate_lockfile_freshness_classifies_every_lockfile(
 
 
 @given(outcomes=st.lists(_outcome, min_size=1, max_size=6))
+# tmp_path is used only to build Path objects (never written to), so reusing
+# the same function-scoped fixture across Hypothesis examples is safe here.
 @settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
 def test_validate_lockfile_freshness_probes_every_lockfile_until_error(
     tmp_path: Path, outcomes: list[str]
@@ -250,10 +252,18 @@ def test_validate_lockfile_freshness_probes_every_lockfile_until_error(
             publish_preflight._validate_lockfile_freshness(
                 tmp_path, repository=repository
             )
-        assert repository.validated_manifests == expected_manifests
+        assert repository.validated_manifests == expected_manifests, (
+            "every tracked lockfile must be probed in order without "
+            f"short-circuiting; expected {expected_manifests}, got "
+            f"{repository.validated_manifests}"
+        )
     else:
         with pytest.raises(publish.PublishPreflightError, match="boom"):
             publish_preflight._validate_lockfile_freshness(
                 tmp_path, repository=repository
             )
-        assert repository.validated_manifests == expected_manifests[: first_error + 1]
+        expected_prefix = expected_manifests[: first_error + 1]
+        assert repository.validated_manifests == expected_prefix, (
+            f"classification must stop at the first error (index {first_error}); "
+            f"expected {expected_prefix}, got {repository.validated_manifests}"
+        )
