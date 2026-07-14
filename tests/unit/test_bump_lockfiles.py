@@ -280,7 +280,7 @@ def test_regenerate_lockfiles_wraps_runner_exceptions(tmp_path: Path) -> None:
 # Hypothesis property tests for manifest-path resolution (issue #93)
 # ---------------------------------------------------------------------------
 
-_segment = st.text(
+_SEGMENT = st.text(
     alphabet=string.ascii_lowercase + string.digits + "_-",
     min_size=1,
     max_size=10,
@@ -288,8 +288,8 @@ _segment = st.text(
 
 # Relative directory paths that stay inside the workspace, optionally with
 # redundant "." segments which normalise away.
-_inside_dir = st.lists(
-    st.one_of(_segment, st.just(".")),
+_INSIDE_DIR = st.lists(
+    st.one_of(_SEGMENT, st.just(".")),
     min_size=0,
     max_size=4,
 )
@@ -300,7 +300,7 @@ def _manifest_string(components: list[str]) -> str:
     return "/".join((*components, "Cargo.toml"))
 
 
-@given(dirs=st.lists(_inside_dir, max_size=6))
+@given(dirs=st.lists(_INSIDE_DIR, max_size=6))
 @settings(max_examples=60, deadline=None)
 def test_inside_manifests_resolve_to_sibling_lockfiles(
     dirs: list[list[str]],
@@ -317,18 +317,39 @@ def test_inside_manifests_resolve_to_sibling_lockfiles(
         lockfiles = bump_lockfiles.resolve_lockfile_paths(workspace_root, manifests)
 
         resolved_root = workspace_root.resolve()
-        assert lockfiles[0] == resolved_root / "Cargo.lock"
-        assert len(set(lockfiles)) == len(lockfiles)
+        assert lockfiles[0] == resolved_root / "Cargo.lock", (
+            "workspace root Cargo.lock must be the first resolved lockfile"
+        )
+        assert len(set(lockfiles)) == len(lockfiles), (
+            "resolved lockfiles must be unique"
+        )
         for lockfile_path in lockfiles:
-            assert lockfile_path.name == "Cargo.lock"
-            assert lockfile_path.parent == lockfile_path.parent.resolve()
-            lockfile_path.relative_to(resolved_root)
-        expected = {resolved_root / "Cargo.lock"} | {
-            (workspace_root.joinpath(*components, "Cargo.toml")).resolve().parent
-            / "Cargo.lock"
-            for components in dirs
-        }
-        assert set(lockfiles) == expected
+            assert lockfile_path.name == "Cargo.lock", (
+                f"resolved path must be a sibling Cargo.lock: {lockfile_path}"
+            )
+            assert lockfile_path.parent == lockfile_path.parent.resolve(), (
+                f"lockfile parent must be a normalised path: {lockfile_path}"
+            )
+            assert lockfile_path.is_relative_to(resolved_root), (
+                f"lockfile must stay within the workspace root: {lockfile_path}"
+            )
+        # Build the expected ordered tuple: the workspace root Cargo.lock first,
+        # then the sibling lockfile for each manifest in execution order, with
+        # duplicates removed while preserving that order.
+        expected = tuple(
+            dict.fromkeys(
+                [resolved_root / "Cargo.lock"]
+                + [
+                    workspace_root.joinpath(*components, "Cargo.toml").resolve().parent
+                    / "Cargo.lock"
+                    for components in dirs
+                ]
+            )
+        )
+        assert lockfiles == expected, (
+            "resolved lockfiles must preserve manifest execution order "
+            "without duplicates"
+        )
 
 
 @given(spellings=st.lists(st.sampled_from(["Cargo.toml", "./Cargo.toml"]), max_size=4))
@@ -347,7 +368,7 @@ def test_root_manifest_spellings_deduplicate_to_one_invocation(
 
 @given(
     escape_depth=st.integers(min_value=1, max_value=3),
-    suffix=st.lists(_segment, max_size=2),
+    suffix=st.lists(_SEGMENT, max_size=2),
 )
 @settings(max_examples=30, deadline=None)
 def test_escaping_manifests_are_rejected(
