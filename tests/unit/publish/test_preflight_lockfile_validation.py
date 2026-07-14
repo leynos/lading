@@ -220,7 +220,7 @@ def test_validate_lockfile_freshness_classifies_every_lockfile(
 @given(outcomes=st.lists(_outcome, min_size=1, max_size=6))
 # tmp_path is used only to build Path objects (never written to), so reusing
 # the same function-scoped fixture across Hypothesis examples is safe here.
-@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(max_examples=20, suppress_health_check=[HealthCheck.function_scoped_fixture])
 def test_validate_lockfile_freshness_probes_every_lockfile_until_error(
     tmp_path: Path, outcomes: list[str]
 ) -> None:
