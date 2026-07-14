@@ -272,40 +272,44 @@ def test_package_publishable_crates_stops_on_failure(
     assert "cargo package failed for crate alpha" in str(excinfo.value)
     assert "packaging failed" in str(excinfo.value)
 
-
-def test_package_publishable_crates_reports_stdout_on_failure(
+@pytest.mark.parametrize(
+    ("stdout", "stderr", "expected_in_message", "not_expected_in_message"),
+    [
+        pytest.param(
+            "stdout failure details",
+            "",
+            "stdout failure details",
+            None,
+            id="stdout_fallback_when_stderr_empty",
+        ),
+        pytest.param(
+            "stdout detail",
+            "stderr detail",
+            "stderr detail",
+            "stdout detail",
+            id="stderr_takes_precedence_over_stdout",
+        ),
+    ],
+)
+def test_package_publishable_crates_reports_failure_detail(
     publish_plan_and_prep: tuple[
         publish_plan.PublishPlan, publish_staging.PublishPreparation, Path
     ],
+    stdout: str,
+    stderr: str,
+    expected_in_message: str,
+    not_expected_in_message: str | None,
 ) -> None:
-    """Failure details fall back to stdout when stderr is empty."""
+    """Failure details fall back to stdout or prefer populated stderr."""
     plan_and_prep = publish_plan_and_prep[:2]
-    stdout_failure = make_failing_runner(stdout="stdout failure details")
+    runner = make_failing_runner(stdout=stdout, stderr=stderr)
 
     _assert_packaging_failure_message_contains(
         plan_and_prep,
-        stdout_failure,
-        expected_in_message="stdout failure details",
+        runner,
+        expected_in_message=expected_in_message,
+        not_expected_in_message=not_expected_in_message,
     )
-
-
-def test_package_publishable_crates_prefers_stderr_over_stdout(
-    publish_plan_and_prep: tuple[
-        publish_plan.PublishPlan, publish_staging.PublishPreparation, Path
-    ],
-) -> None:
-    """Error detail prefers stderr when both streams are populated."""
-    plan_and_prep = publish_plan_and_prep[:2]
-    both_populated = make_failing_runner(stdout="stdout detail", stderr="stderr detail")
-
-    _assert_packaging_failure_message_contains(
-        plan_and_prep,
-        both_populated,
-        expected_in_message="stderr detail",
-        not_expected_in_message="stdout detail",
-    )
-
-
 def test_publish_crates_run_dry_run_in_order(
     publish_plan_and_prep: tuple[
         publish_plan.PublishPlan, publish_staging.PublishPreparation, Path
