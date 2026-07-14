@@ -10,7 +10,13 @@ from pathlib import Path
 import pytest
 
 from lading import config as config_module
-from lading.commands import publish, publish_preflight
+from lading.commands import (
+    publish,
+    publish_pipeline,
+    publish_plan,
+    publish_preflight,
+    publish_staging,
+)
 from lading.workspace import WorkspaceCrate, WorkspaceDependency, WorkspaceGraph
 
 if typ.TYPE_CHECKING:
@@ -214,7 +220,7 @@ def plan_with_crates(
     tmp_path: Path,
     crates: tuple[WorkspaceCrate, ...],
     **config_overrides: object,
-) -> publish.PublishPlan:
+) -> publish_plan.PublishPlan:
     """Plan publication for ``crates`` using ``tmp_path`` as the workspace root."""
     root = tmp_path.resolve()
     workspace = make_workspace(root, *crates)
@@ -222,7 +228,7 @@ def plan_with_crates(
     return publish.plan_publication(workspace, configuration)
 
 
-def prepare_staging_root(plan: publish.PublishPlan, base_dir: Path) -> Path:
+def prepare_staging_root(plan: publish_plan.PublishPlan, base_dir: Path) -> Path:
     """Create a staged workspace tree matching ``plan`` under ``base_dir``."""
     staging_root = base_dir / "staging" / plan.workspace_root.name
     for crate in plan.publishable:
@@ -245,7 +251,7 @@ def _warning_records(
 @pytest.fixture
 def publish_plan_and_prep(
     tmp_path: Path,
-) -> tuple[publish.PublishPlan, publish.PublishPreparation, Path]:
+) -> tuple[publish_plan.PublishPlan, publish_staging.PublishPreparation, Path]:
     """Provide a publish plan, preparation object, and staging root."""
     workspace_root = tmp_path / "workspace"
     crates = make_dependency_chain(workspace_root)
@@ -253,14 +259,13 @@ def publish_plan_and_prep(
         make_workspace(workspace_root, *crates), make_config()
     )
     staging_root = prepare_staging_root(plan, tmp_path)
-    preparation = publish.PublishPreparation(
+    preparation = publish_staging.PublishPreparation(
         staging_root=staging_root,
-        copied_readmes=(),
     )
     return plan, preparation, staging_root
 
 
-ORIGINAL_INVOKE = publish._invoke
+ORIGINAL_INVOKE = publish_pipeline._invoke
 ORIGINAL_PREFLIGHT = publish_preflight._run_preflight_checks
 
 
@@ -271,7 +276,7 @@ def disable_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
         publish_preflight, "_run_preflight_checks", lambda *_args, **_kwargs: None
     )
     monkeypatch.setattr(
-        publish,
+        publish_pipeline,
         "_invoke",
         lambda *_args, **_kwargs: (0, "", ""),
     )
@@ -280,7 +285,7 @@ def disable_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture
 def use_real_invoke(monkeypatch: pytest.MonkeyPatch) -> None:
     """Restore the original _invoke helper for tests that exercise it."""
-    monkeypatch.setattr(publish, "_invoke", ORIGINAL_INVOKE)
+    monkeypatch.setattr(publish_pipeline, "_invoke", ORIGINAL_INVOKE)
 
 
 class CallTrackingRunner:
@@ -312,20 +317,20 @@ class CallTrackingRunner:
 class PhaseContext:
     """Execution context shared across both cargo phase dispatches."""
 
-    plan: publish.PublishPlan
-    preparation: publish.PublishPreparation
+    plan: publish_plan.PublishPlan
+    preparation: publish_staging.PublishPreparation
     runner: cabc.Callable[..., tuple[int, str, str]]
-    options: publish._PublishExecutionOptions
+    options: publish_pipeline._PublishExecutionOptions
 
 
 def invoke_phase(phase_name: str, ctx: PhaseContext) -> None:
     """Dispatch to the appropriate cargo sub-command under test."""
     if phase_name == "package":
-        publish._package_publishable_crates(
+        publish_pipeline._package_publishable_crates(
             ctx.plan, ctx.preparation, options=ctx.options, runner=ctx.runner
         )
     elif phase_name == "publish":
-        publish._publish_crates(
+        publish_pipeline._publish_crates(
             ctx.plan, ctx.preparation, runner=ctx.runner, options=ctx.options
         )
     else:

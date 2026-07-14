@@ -4,21 +4,21 @@ from __future__ import annotations
 
 import pytest
 
-from lading.commands import bump
+from lading.commands import bump_manifests
 
 
 def test_determine_package_selectors_respects_exclusions() -> None:
     """Excluded crates produce no package selectors."""
-    assert bump._determine_package_selectors("beta", {"beta"}) == (), (
+    assert bump_manifests._determine_package_selectors("beta", {"beta"}) == (), (
         "an excluded crate should yield no package selectors"
     )
 
 
 def test_determine_package_selectors_includes_package_for_active_crates() -> None:
     """Active crates receive the package selector tuple."""
-    assert bump._determine_package_selectors("beta", set()) == (("package",),), (
-        "an active crate should yield the package selector"
-    )
+    assert bump_manifests._determine_package_selectors("beta", set()) == (
+        ("package",),
+    ), "an active crate should yield the package selector"
 
 
 @pytest.mark.parametrize(
@@ -42,7 +42,7 @@ def test_should_skip_crate_update_requires_selectors_or_dependencies(
     expected_skip: bool,
 ) -> None:
     """A crate is skipped only when it has neither selectors nor dependencies."""
-    result = bump._should_skip_crate_update(selectors, dependency_sections)
+    result = bump_manifests._should_skip_crate_update(selectors, dependency_sections)
     assert result is expected_skip, (
         "skip should be True only when selectors and dependency sections are both empty"
     )
