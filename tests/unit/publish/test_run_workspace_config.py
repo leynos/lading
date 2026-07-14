@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from lading import config as config_module
-from lading.commands import publish
+from lading.commands import publish, publish_staging
 from lading.workspace import WorkspaceGraph, WorkspaceModelError
 
 from .conftest import make_config, make_crate, make_workspace
@@ -35,10 +35,10 @@ def test_run_normalises_workspace_root(
 
     monkeypatch.setattr("lading.workspace.load_workspace", fake_load)
     monkeypatch.setattr(
-        publish,
+        publish_staging,
         "prepare_workspace",
-        lambda *_args, **_kwargs: publish.PublishPreparation(
-            staging_root=resolved, copied_readmes=()
+        lambda *_args, **_kwargs: publish_staging.PublishPreparation(
+            staging_root=resolved
         ),
     )
     output = publish.run(workspace, configuration)
