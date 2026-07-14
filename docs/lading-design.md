@@ -480,7 +480,7 @@ names are listed before returning the user-specified order.
 
     - `preflight.aux_build` – a list of auxiliary commands that run before the
       cargo invocations so rule crates can precompile UI helpers.
-    - `preflight.compiletest_extern` – a mapping of crate names to artifact
+    - `preflight.compiletest_extern` – a mapping of crate names to artefact
       paths that Lading injects into `RUSTFLAGS` as `--extern` arguments for
       the cargo test invocation.
     - `preflight.env` – a table of environment overrides applied to every
