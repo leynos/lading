@@ -13,7 +13,9 @@ import dataclasses as dc
 import typing as typ
 from pathlib import Path
 
+import hypothesis.strategies as st
 import pytest
+from hypothesis import HealthCheck, given, settings
 
 from lading.commands import lockfile, publish, publish_preflight
 
@@ -51,6 +53,37 @@ class _RecordingLockfileRepository:
 
 
 _STALE_DETAIL = "the lock file Cargo.lock needs to be updated but --locked was passed"
+
+_outcome = st.sampled_from(("fresh", "stale", "error"))
+
+
+def _repository_for_outcomes(
+    tmp_path: Path, outcomes: list[str]
+) -> tuple[_RecordingLockfileRepository, list[Path]]:
+    """Build a recording repository mapping each outcome to a tracked lockfile.
+
+    Each outcome at index ``i`` yields the lockfile ``tmp_path/pkgi/Cargo.lock``
+    and a ``freshness`` entry keyed on its adjacent ``Cargo.toml``: ``fresh``
+    passes, ``stale`` is flagged for repair, and ``error`` is an unexpected
+    cargo failure. Returns the repository and the ordered lockfile paths.
+    """
+    freshness_for = {
+        "fresh": lockfile.LockfileFreshness(is_fresh=True),
+        "stale": lockfile.LockfileFreshness(
+            is_fresh=False, is_stale=True, detail=_STALE_DETAIL
+        ),
+        "error": lockfile.LockfileFreshness(is_fresh=False, detail="boom"),
+    }
+    lockfiles: list[Path] = []
+    freshness: dict[Path, lockfile.LockfileFreshness] = {}
+    for i, outcome in enumerate(outcomes):
+        lockfile_path = tmp_path / f"pkg{i}" / "Cargo.lock"
+        lockfiles.append(lockfile_path)
+        freshness[lockfile_path.parent / "Cargo.toml"] = freshness_for[outcome]
+    repository = _RecordingLockfileRepository(
+        tracked=tuple(lockfiles), freshness=freshness
+    )
+    return repository, lockfiles
 
 
 def _stale_lockfiles_error_message(workspace_root: Path) -> str:
@@ -182,3 +215,45 @@ def test_validate_lockfile_freshness_classifies_every_lockfile(
         assert str(path) in message, (
             f"stale lockfile {path} missing from aggregated error: {message}"
         )
+
+
+@given(outcomes=st.lists(_outcome, min_size=1, max_size=6))
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
+def test_validate_lockfile_freshness_probes_every_lockfile_until_error(
+    tmp_path: Path, outcomes: list[str]
+) -> None:
+    """Property: every lockfile is classified in order until an error aborts.
+
+    Varies the count, order, and per-lockfile outcome (fresh/stale/error).
+    With no hard ``error``, every tracked lockfile is probed in order and no
+    stale result short-circuits classification (a purely fresh set returns
+    cleanly; any stale lockfile still aborts with the aggregated stale error,
+    but only after every lockfile is probed). A hard ``error`` aborts
+    immediately at the first such lockfile (issue #83).
+    """
+    repository, lockfiles = _repository_for_outcomes(tmp_path, outcomes)
+    expected_manifests = [path.parent / "Cargo.toml" for path in lockfiles]
+    first_error = next(
+        (i for i, outcome in enumerate(outcomes) if outcome == "error"), None
+    )
+
+    if first_error is None:
+        if "stale" in outcomes:
+            with pytest.raises(
+                publish.PublishPreflightError,
+                match="Tracked Cargo\\.lock files are stale",
+            ):
+                publish_preflight._validate_lockfile_freshness(
+                    tmp_path, repository=repository
+                )
+        else:
+            publish_preflight._validate_lockfile_freshness(
+                tmp_path, repository=repository
+            )
+        assert repository.validated_manifests == expected_manifests
+    else:
+        with pytest.raises(publish.PublishPreflightError, match="boom"):
+            publish_preflight._validate_lockfile_freshness(
+                tmp_path, repository=repository
+            )
+        assert repository.validated_manifests == expected_manifests[: first_error + 1]
