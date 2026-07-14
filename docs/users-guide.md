@@ -114,17 +114,23 @@ lading publish
 ```
 
 Before running `cargo check` and `cargo test`, `lading publish` validates that
-all git-tracked `Cargo.lock` files are fresh under `--locked` mode. If any
-lockfile is stale — for example after a `lading bump` that regenerated a nested
-workspace lockfile — the command exits with code 1 and prints a repair command:
+all git-tracked `Cargo.lock` files are fresh under `--locked` mode. It probes
+every tracked lockfile rather than stopping at the first stale one — for
+example after a `lading bump` that regenerated one or more nested workspace
+lockfiles — so a single run reports the whole workspace. If any lockfile is
+stale, the command exits with code 1 and lists each stale lockfile alongside
+its own repair command:
 
 ```text
 Tracked Cargo.lock files are stale after manifest version changes.
-Run the following to repair:
+This commonly happens after running `lading bump`; repair each stale lockfile directly:
+- <path>/Cargo.lock
   cargo generate-lockfile --manifest-path <path>/Cargo.toml
+- <nested>/Cargo.lock
+  cargo generate-lockfile --manifest-path <nested>/Cargo.toml
 ```
 
-Run the repair command, commit the updated lockfile, then re-run
+Run each repair command, commit the updated lockfiles, then re-run
 `lading publish`.
 
 To require a clean working tree before running the pre-flight checks, pass
