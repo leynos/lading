@@ -333,6 +333,25 @@ def _live_pipeline_abort_log_args(
     )
 
 
+def _run_dry_run_phase(
+    phase_name: str,
+    action: cabc.Callable[[], None],
+) -> None:
+    """Run one dry-run phase, normalising staging errors at the boundary.
+
+    The shared error handling keeps the two-phase dispatcher focused on phase
+    ordering while retaining its single public preflight-error contract.
+    """
+    try:
+        action()
+    except PublishPreparationError as exc:
+        LOGGER.exception("Dry-run pipeline: %s phase failed", phase_name)
+        raise PublishPreflightError(str(exc)) from exc
+    except PublishPreflightError:
+        LOGGER.exception("Dry-run pipeline: %s phase failed", phase_name)
+        raise
+
+
 def _dispatch_publication(
     plan: PublishPlan,
     preparation: PublishPreparation,
@@ -357,32 +376,25 @@ def _dispatch_publication(
             options=options,
             runner=runner,
         )
-    else:
-        LOGGER.info("Publication mode: dry-run (batched two-phase pipeline)")
-        try:
-            _package_publishable_crates(
-                plan,
-                preparation,
-                options=options,
-                runner=runner,
-            )
-        except PublishPreparationError as exc:
-            LOGGER.exception("Dry-run pipeline: packaging phase failed")
-            raise PublishPreflightError(str(exc)) from exc
-        except PublishPreflightError:
-            LOGGER.exception("Dry-run pipeline: packaging phase failed")
-            raise
-        LOGGER.info("Dry-run pipeline: packaging complete; starting publish phase")
-        try:
-            _publish_crates(
-                plan,
-                preparation,
-                runner=runner,
-                options=options,
-            )
-        except PublishPreparationError as exc:
-            LOGGER.exception("Dry-run pipeline: publish phase failed")
-            raise PublishPreflightError(str(exc)) from exc
-        except PublishPreflightError:
-            LOGGER.exception("Dry-run pipeline: publish phase failed")
-            raise
+        return
+
+    LOGGER.info("Publication mode: dry-run (batched two-phase pipeline)")
+    _run_dry_run_phase(
+        "packaging",
+        lambda: _package_publishable_crates(
+            plan,
+            preparation,
+            options=options,
+            runner=runner,
+        ),
+    )
+    LOGGER.info("Dry-run pipeline: packaging complete; starting publish phase")
+    _run_dry_run_phase(
+        "publish",
+        lambda: _publish_crates(
+            plan,
+            preparation,
+            runner=runner,
+            options=options,
+        ),
+    )

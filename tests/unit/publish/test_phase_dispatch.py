@@ -52,6 +52,55 @@ _PHASE_IDS: list[pytest.mark.ParameterSet] = [
 ]
 
 
+def test_run_dry_run_phase_normalises_packaging_preparation_failure(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A packaging preparation error becomes a preflight error."""
+    caplog.set_level(logging.ERROR, logger="lading.commands.publish")
+    failure = publish_pipeline.PublishPreparationError("staging failed")
+
+    with pytest.raises(
+        publish.PublishPreflightError, match="staging failed"
+    ) as excinfo:
+        publish_pipeline._run_dry_run_phase(
+            "packaging",
+            lambda: (_ for _ in ()).throw(failure),
+        )
+
+    assert excinfo.value.__cause__ is failure
+    assert caplog.messages == ["Dry-run pipeline: packaging phase failed"]
+
+
+def test_run_dry_run_phase_reraises_publish_preflight_failure(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A publish preflight error retains its type and traceback."""
+    caplog.set_level(logging.ERROR, logger="lading.commands.publish")
+    failure = publish.PublishPreflightError("publish failed")
+
+    with pytest.raises(publish.PublishPreflightError) as excinfo:
+        publish_pipeline._run_dry_run_phase(
+            "publish",
+            lambda: (_ for _ in ()).throw(failure),
+        )
+
+    assert excinfo.value is failure
+    assert caplog.messages == ["Dry-run pipeline: publish phase failed"]
+
+
+def test_run_dry_run_phase_succeeds_without_logging(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A successful phase invokes its action without emitting an error."""
+    caplog.set_level(logging.ERROR, logger="lading.commands.publish")
+    calls: list[str] = []
+
+    publish_pipeline._run_dry_run_phase("packaging", lambda: calls.append("ran"))
+
+    assert calls == ["ran"]
+    assert caplog.messages == []
+
+
 @pytest.mark.parametrize("phase_name", ["package", "publish"])
 def test_missing_dep_in_plan_and_flag_continues(
     publish_plan_and_prep: tuple[
