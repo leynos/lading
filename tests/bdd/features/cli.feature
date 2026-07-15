@@ -230,6 +230,16 @@ Feature: Lading CLI scaffolding
     Then the CLI exits with code 1
     And the stderr contains "cargo generate-lockfile --manifest-path"
 
+  Scenario: Publish pre-flight aggregates every stale Cargo.lock file
+    Given a workspace directory with configuration
+    And cargo metadata describes a sample workspace
+    And publish pre-flight finds multiple stale tracked Cargo.lock files
+    When I invoke lading publish with that workspace
+    Then the CLI exits with code 1
+    And the stderr contains "Tracked Cargo.lock files are stale after manifest version changes."
+    And the stderr contains "sub/Cargo.lock"
+    And the stderr contains "cargo generate-lockfile --manifest-path"
+
   Scenario: Publish pre-flight skips configured cargo test crates
     Given a workspace directory with configuration
     And cargo metadata describes a sample workspace
