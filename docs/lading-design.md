@@ -506,6 +506,17 @@ Together with the bump-side `LockfileRepository`, the two ports keep
 VCS, filesystem, and cargo execution concerns out of the lockfile
 domain logic (issue #82).
 
+`_collect_stale_lockfiles` deliberately classifies every tracked
+`Cargo.lock` rather than short-circuiting on the first stale one
+(issue #83). When stale lockfiles are found, `_build_stale_lockfile_message`
+composes a `PublishPreflightError` that lists each offending lockfile
+alongside its own `cargo generate-lockfile --manifest-path ...` repair
+command, so the operator can remediate the whole workspace in a single
+pass rather than re-running the pre-flight once per lockfile. Only
+unexpected failures from `cargo metadata --locked` — those not
+attributable to a stale lockfile — raise immediately on first
+occurrence, leaving the aggregation path unaffected.
+
 ### Publish Preflight Sequence
 
 The preflight sequence diagram illustrates the pre-flight checks that run
