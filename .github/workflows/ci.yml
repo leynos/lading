@@ -77,18 +77,34 @@ jobs:
             --out coverage.xml \
             -m pytest --forked -v
 
+      # Named coverage-report rather than "coverage" because the
+      # upload-codescene-coverage action below unconditionally uploads
+      # the same file as an artifact named "coverage"; sharing the name
+      # makes the second upload fail with a 409 name conflict. Keeping
+      # this standalone upload preserves the coverage artifact on runs
+      # where the gate step is skipped (secret-less fork PRs, and
+      # push-to-main where the gate is PR-only).
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4
         with:
-          name: coverage
+          name: coverage-report
           path: coverage.xml
 
       # CodeScene accepts `cs-coverage upload` only for analysed branches
       # (main), so no upload happens on pull requests; coverage-main.yml
-      # uploads on push to main instead. The `mode: check` changed-line
-      # gate is deliberately not wired in either: the estate survey
-      # found CodeScene's coverage-gates configuration is enabled only
-      # for mxd's project today. Add the check step in a fast-follow PR
-      # once coverage-main.yml has uploaded to main at least once and
-      # the gate is confirmed to resolve, or once CodeScene confirms
-      # this project's coverage gate is enabled.
+      # uploads on push to main instead. The changed-line gate below
+      # reuses the bespoke coverage.xml generated above (see the note on
+      # the "Run tests with coverage" step for why the shared
+      # generate-coverage action cannot be used here).
+      - name: Check coverage against CodeScene gates
+        env:
+          CS_ACCESS_TOKEN: ${{ secrets.CS_ACCESS_TOKEN }}
+        if: env.CS_ACCESS_TOKEN != '' && github.event_name == 'pull_request'
+        uses: leynos/shared-actions/.github/actions/upload-codescene-coverage@927edd45ae77be4251a8a18ca9eb5613a2e32cbd
+        with:
+          format: cobertura
+          path: coverage.xml
+          mode: check
+          project-url: https://api.codescene.io/v2/projects/72980
+          access-token: ${{ env.CS_ACCESS_TOKEN }}
+          installer-checksum: ${{ vars.CODESCENE_CLI_SHA256 }}
