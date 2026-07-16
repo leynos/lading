@@ -85,7 +85,7 @@ jobs:
       # where the gate step is skipped (secret-less fork PRs, and
       # push-to-main where the gate is PR-only).
       - name: Upload coverage artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-report
           path: coverage.xml
