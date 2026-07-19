@@ -121,7 +121,7 @@ lockfiles — so a single run reports the whole workspace. If any lockfile is
 stale, the command exits with code 1 and lists each stale lockfile alongside
 its own repair command:
 
-```text
+```plaintext
 Tracked Cargo.lock files are stale after manifest version changes.
 This commonly happens after running `lading bump`; repair each stale lockfile directly:
 - <path>/Cargo.lock
