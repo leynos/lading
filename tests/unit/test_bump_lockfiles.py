@@ -286,13 +286,37 @@ _SEGMENT = st.text(
     max_size=10,
 )
 
+
+@st.composite
+def _inside_dir(draw: st.DrawFn) -> list[str]:
+    """Draw a relative directory path that stays within the workspace.
+
+    Alongside real segments and redundant ``.`` segments, this emits safe
+    ``..`` parent-traversal segments that never ascend above the workspace
+    root after normalisation: a ``..`` is only produced while a prior real
+    segment remains to cancel it (the running segment balance never drops
+    below zero). Cases such as ``crate/../Cargo.toml`` are therefore
+    exercised without allowing traversal above the root.
+    """
+    length = draw(st.integers(min_value=0, max_value=4))
+    components: list[str] = []
+    depth = 0
+    for _ in range(length):
+        options = [_SEGMENT, st.just(".")]
+        if depth > 0:
+            options.append(st.just(".."))
+        segment = draw(st.one_of(*options))
+        if segment == "..":
+            depth -= 1
+        elif segment != ".":
+            depth += 1
+        components.append(segment)
+    return components
+
+
 # Relative directory paths that stay inside the workspace, optionally with
-# redundant "." segments which normalise away.
-_INSIDE_DIR = st.lists(
-    st.one_of(_SEGMENT, st.just(".")),
-    min_size=0,
-    max_size=4,
-)
+# redundant "." segments and safe ".." traversals which normalise away.
+_INSIDE_DIR = _inside_dir()
 
 
 def _manifest_string(components: list[str]) -> str:
