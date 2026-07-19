@@ -372,6 +372,7 @@ def _handle_index_missing_version(
         )
         return
     _raise_name_extraction_failure(context)
+    return
 
 
 def _downgrade_or_raise(
@@ -403,3 +404,4 @@ def _downgrade_or_raise(
         )
         return
     _raise_unpublished_dependency_override_required(context, missing_name=missing_name)
+    return
