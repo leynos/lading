@@ -154,7 +154,9 @@ def test_validate_lockfile_freshness_error_snapshot(
     """Stale lockfile remediation output is locked by snapshot."""
     message = _stale_lockfiles_error_message(Path("/workspace root"))
 
-    assert message == snapshot()
+    assert message == snapshot(), (
+        "stale lockfile remediation message drifted from its recorded snapshot"
+    )
 
 
 def test_validate_lockfile_freshness_surfaces_cargo_failures(tmp_path: Path) -> None:
@@ -240,13 +242,36 @@ def test_validate_lockfile_freshness_probes_every_lockfile_until_error(
     )
 
     if first_error is None:
-        if "stale" in outcomes:
+        stale_paths = [
+            path
+            for path, outcome in zip(lockfiles, outcomes, strict=True)
+            if outcome == "stale"
+        ]
+        fresh_paths = [
+            path
+            for path, outcome in zip(lockfiles, outcomes, strict=True)
+            if outcome == "fresh"
+        ]
+        if stale_paths:
             with pytest.raises(
                 publish.PublishPreflightError,
                 match="Tracked Cargo\\.lock files are stale",
-            ):
+            ) as excinfo:
                 publish_preflight._validate_lockfile_freshness(
                     tmp_path, repository=repository
+                )
+            # pkg indices stay single-digit (max_size=6), so no pkgN path is a
+            # substring of another and plain containment is unambiguous. Raising
+            # max_examples' list size to >=11 would reintroduce pkg1-vs-pkg10
+            # ambiguity and would need full-line assertions instead.
+            message = str(excinfo.value)
+            for path in stale_paths:
+                assert str(path) in message, (
+                    f"stale lockfile {path} missing from aggregated error: {message}"
+                )
+            for path in fresh_paths:
+                assert str(path) not in message, (
+                    f"fresh lockfile {path} wrongly reported as stale: {message}"
                 )
         else:
             publish_preflight._validate_lockfile_freshness(

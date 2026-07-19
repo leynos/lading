@@ -237,8 +237,11 @@ Feature: Lading CLI scaffolding
     When I invoke lading publish with that workspace
     Then the CLI exits with code 1
     And the stderr contains "Tracked Cargo.lock files are stale after manifest version changes."
-    And the stderr contains "sub/Cargo.lock"
+    And the stderr contains workspace path "Cargo.lock"
+    And the stderr contains workspace path "sub/Cargo.lock"
     And the stderr contains "cargo generate-lockfile --manifest-path"
+    And the stderr contains workspace path "Cargo.toml"
+    And the stderr contains workspace path "sub/Cargo.toml"
 
   Scenario: Publish pre-flight skips configured cargo test crates
     Given a workspace directory with configuration
