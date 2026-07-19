@@ -149,6 +149,32 @@ crate fails, crates already uploaded to crates.io are not rolled back. Reruns
 skip versions that are already present on crates.io and continue with the
 remaining crates.
 
+At the end of the run, `lading publish` prints a summary of the publish plan
+it computed, listing the crates to publish and any crates skipped because
+they are marked `publish = false`, excluded via `publish.exclude`, or named
+in `publish.exclude` but absent from the workspace. When no crates are
+publishable, the summary reports `Crates to publish: none` instead of a list:
+
+```text
+Publish plan for <workspace>
+Strip patch strategy: all
+Crates to publish (2):
+- alpha @ 0.1.0
+- beta @ 0.1.0
+Skipped (publish = false):
+- gamma
+Skipped via publish.exclude:
+- delta
+Configured exclusions not found in workspace:
+- missing
+```
+
+```text
+Publish plan for <workspace>
+Strip patch strategy: per-crate
+Crates to publish: none
+```
+
 `bump` adopts the workspace `README.md` for any member crate that sets
 `readme.workspace = true`. The adopted README is written into the crate
 directory and relative Markdown links are rewritten so they still resolve from
