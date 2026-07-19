@@ -751,3 +751,60 @@ def test_run_with_context_branches_behave_identically(
     assert preloaded_call[1] is configuration
     assert fresh_call[2] is workspace_graph
     assert preloaded_call[2] is workspace_graph
+
+
+def test_publish_via_app_matches_across_config_branches(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    minimal_config: Path,
+) -> None:
+    """Public ``lading publish`` behaves the same for both config branches.
+
+    Issue #107 (13c): this exercises both ``_run_with_context`` branches
+    through the public Cyclopts command boundary (``cli.app``), complementing
+    the white-box ``test_run_with_context_branches_behave_identically``.
+    ``cli.main`` always installs configuration before dispatch, so the
+    disk-loaded branch is only reachable publicly via ``cli.app`` invoked
+    without an active configuration scope.
+    """
+    assert minimal_config.exists()
+    workspace_graph = _make_workspace(tmp_path.resolve())
+    monkeypatch.setattr(cli, "load_workspace", lambda _: workspace_graph)
+    calls: list[tuple[Path, config_module.LadingConfig, WorkspaceGraph]] = []
+
+    def fake_run(
+        root: Path,
+        configuration: config_module.LadingConfig,
+        workspace: WorkspaceGraph,
+        *,
+        options: publish_command.PublishOptions,
+    ) -> str:
+        assert isinstance(options, publish_command.PublishOptions)
+        calls.append((root, configuration, workspace))
+        return "published"
+
+    monkeypatch.setattr(publish_command, "run", fake_run)
+    args = ["publish", "--workspace-root", str(tmp_path)]
+
+    # Disk-loaded branch: no configuration is active, so `_run_with_context`
+    # loads `lading.toml` from disk.
+    disk_result = cli.app(args)
+
+    # Pre-loaded branch: an active configuration scope makes the same call
+    # reuse that configuration under a nullcontext instead of reloading.
+    preloaded = config_module.load_configuration(tmp_path)
+    with config_module.use_configuration(preloaded):
+        preloaded_result = cli.app(args)
+
+    assert disk_result == preloaded_result == "published"
+    assert len(calls) == 2
+    disk_call, preloaded_call = calls
+    # Identical downstream behaviour: same workspace root, same injected
+    # workspace graph, and equal configuration content for both branches.
+    assert disk_call[0] == preloaded_call[0] == tmp_path.resolve()
+    assert disk_call[2] is preloaded_call[2] is workspace_graph
+    assert disk_call[1] == preloaded_call[1]
+    # The branches differ only in provenance: the disk branch reloads a fresh
+    # config object; the pre-loaded branch reuses the active one.
+    assert preloaded_call[1] is preloaded
+    assert disk_call[1] is not preloaded
