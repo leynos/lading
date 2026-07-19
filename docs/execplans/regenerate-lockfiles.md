@@ -102,11 +102,11 @@ fixture lockfile and seeing that lockfile listed in the bump output with a
   message from `LockfileRegenerationError` names the manifest and exit code;
   `--no-rebuild-lockfiles` remains as an escape hatch. Documented in the users'
   guide update.
-- Risk: dry-run currently makes no subprocess calls in `_process_lockfiles`;
-  after this change it runs `git ls-files` (read-only) to list what would be
-  regenerated. Severity: low. Likelihood: certain. Mitigation: `git ls-files`
-  mutates nothing. Tests pass a stub runner, so no real subprocess runs in the
-  unit suite. The behaviour is documented.
+- Risk identified during planning: dry-run made no subprocess calls in
+  `_process_lockfiles`; the delivered adapter runs `git ls-files` (read-only)
+  to list what would be regenerated. Severity: low. Likelihood: certain.
+  Mitigation: `git ls-files` mutates nothing. Tests pass a stub runner, so no
+  real subprocess runs in the unit suite. The behaviour is documented.
 - Risk: bump output snapshots (`syrupy` `.ambr` files) change because more
   lockfiles are listed. Severity: low. Likelihood: high. Mitigation: regenerate
   snapshots deliberately with `--snapshot-update` only after eyeballing the new
@@ -134,7 +134,7 @@ fixture lockfile and seeing that lockfile listed in the bump output with a
   call-graph docstring. Full suite green: 683 passed, 62 snapshots passed (no
   snapshot content changed).
 - [x] (2026-07-07 13:50Z) Side quest: restored the `make typecheck` gate —
-  ty 0.0.8 (unpinned, installed by CI and locally via `uv tool install ty`)
+  ty 0.0.8 (then installed without a version constraint by CI and locally)
   flagged six pre-existing diagnostics on the clean tree. Committed separately
   as "Restore a passing typecheck gate under ty 0.0.8".
 - [x] (2026-07-08 00:20Z) CodeRabbit review of Stages B+C:
@@ -157,15 +157,15 @@ fixture lockfile and seeing that lockfile listed in the bump output with a
 
 ## Surprises & discoveries
 
-- Observation: `docs/users-guide.md` already documents the desired behaviour
-  ("automatically refreshes any git-tracked `Cargo.lock` files") even though
-  the code only regenerates configured manifests. Evidence:
-  `docs/users-guide.md` bump section versus
-  `lading/commands/bump.py::_process_lockfiles`, which reads only
-  `context.configuration.bump.lockfile_manifests`. Impact: this change closes a
+- Historical observation from before implementation: `docs/users-guide.md`
+  already documented the desired behaviour ("automatically refreshes any
+  git-tracked `Cargo.lock` files"), but the code regenerated only configured
+  manifests. Evidence at the time: `docs/users-guide.md` bump section versus
+  the pre-change `lading/commands/bump.py::_process_lockfiles`, which read only
+  `context.configuration.bump.lockfile_manifests`. Impact: this change closed a
   documented behaviour gap rather than adding new surface; the
-  `lockfile_manifests` doc text must be re-scoped to "manifests discovery
-  cannot see" (for example, lockfiles not tracked by git).
+  `lockfile_manifests` documentation was re-scoped to manifests that discovery
+  cannot see.
 
 - Observation: the BDD infrastructure already anticipated discovery in bump —
   `_mock_cargo_metadata` in `tests/bdd/steps/metadata_fixtures.py` and the
@@ -196,15 +196,16 @@ fixture lockfile and seeing that lockfile listed in the bump output with a
   `--no-rebuild-lockfiles` remains the escape hatch. Rewriting dependency
   requirements in non-member manifests is a possible future enhancement, out of
   scope here.
-- Observation: `uv tool install ty` now resolves to ty 0.0.8, which fails
-  `make typecheck` on the clean tree with six diagnostics in
-  `lading/commands/bump_toml.py` and `lading/commands/publish_index_check.py`.
-  Evidence: `git stash && make typecheck` reproduced all six without this
-  branch's changes; a scratch probe confirmed ty 0.0.8 does not narrow bindings
-  after calls to `NoReturn` helpers but does honour `NoReturn` for
-  reachability. Impact: fixed ahead of the feature commit (if/elif/else
-  restructure plus one `type: ignore[index]` mirroring an existing comment) so
-  the gate is green before CodeRabbit review.
+- Historical observation from 2026-07-07: the then-unpinned ty installation
+  resolved to ty 0.0.8, which failed `make typecheck` on the clean tree with
+  six diagnostics in `lading/commands/bump_toml.py` and
+  `lading/commands/publish_index_check.py`. Evidence:
+  `git stash && make typecheck` reproduced all six without this branch's
+  changes; a scratch probe confirmed ty 0.0.8 does not narrow bindings after
+  calls to `NoReturn` helpers but does honour `NoReturn` for reachability.
+  Impact: fixed ahead of the feature commit (if/elif/else restructure plus one
+  `type: ignore[index]` mirroring an existing comment) so the gate is green
+  before CodeRabbit review.
 
 ## Decision log
 
@@ -216,11 +217,12 @@ fixture lockfile and seeing that lockfile listed in the bump output with a
   global escape hatches. Fewer configuration keys, and bump/publish stay
   consistent. Date/Author: 2026-07-07, planning session.
 - Decision: keep `bump.lockfile_manifests` rather than deprecating it.
-  Rationale: it remains the only way to regenerate a lockfile that git does not
-  track (for example, generated fixtures ignored by `.gitignore`), and removing
-  a configuration key is a breaking change out of scope here. Date/Author:
-  2026-07-07, planning session.
-- Decision: perform the union of configured and discovered manifests inside
+  Rationale: it remains the only way to regenerate a lockfile that discovery
+  cannot find, including untracked lockfiles and nested lockfiles in a
+  workspace outside a Git repository. Removing a configuration key is a
+  breaking change out of scope here. Date/Author: 2026-07-07, planning session.
+- Original implementation decision, later adapted during the 2026-07-14
+  rebase: perform the union of configured and discovered manifests inside
   `lading/commands/bump_lockfiles.py` via a new public helper, and keep
   `bump._process_lockfiles` a thin caller. Rationale: `bump_lockfiles` already
   owns manifest validation and de-duplication (`_resolve_manifest_paths`);
@@ -234,24 +236,24 @@ fixture lockfile and seeing that lockfile listed in the bump output with a
   boundary as required by the repository's gating rules; a strict-xfail
   round-trip would have added churn without extra proof. Date/Author:
   2026-07-07, implementation session.
-- Decision: fix the pre-existing ty 0.0.8 typecheck failures in a separate
-  commit on this branch rather than ignoring them or pinning ty. Rationale: CI
-  installs ty unpinned (`uv tool install ty` in `.github/workflows/ci.yml`), so
-  main's next CI run would fail regardless; the gates must pass before
-  CodeRabbit review; and the fixes are small, behaviour-preserving
-  restructures. Pinning would hide the drift rather than resolve it.
-  Date/Author: 2026-07-07, implementation session.
+- Historical decision from 2026-07-07: fix the pre-existing ty 0.0.8 typecheck
+  failures in a separate commit before introducing a version pin. Rationale: CI
+  then installed ty without a version constraint, so main's next CI run would
+  fail regardless; the gates had to pass before CodeRabbit review; and the
+  fixes were small, behaviour-preserving restructures. A later revision on this
+  completed branch also pinned ty as described below. Date/Author: 2026-07-07,
+  implementation session.
 
 ## Outcomes & retrospective
 
 Delivered as planned. `lading bump` now discovers git-tracked `Cargo.lock`
 files with the same helper the publish pre-flight uses. Live mode regenerates
-the discovered lockfiles alongside the root and configured lockfiles; dry-run
-discovers and reports that same set without modifying files. The publish
-pre-flight's stale-lockfile message no longer blames bump. The acceptance
-behaviour was verified twice: through the new BDD scenario (mocked git/cargo)
-and through a real CLI run against the Stage A prototype repository, where the
-nested lockfile was discovered, refreshed to the new version, and passed
+the discovered, workspace-root, and configured lockfiles; dry-run discovers and
+reports that same set without modifying files. The publish pre-flight's
+stale-lockfile message no longer blames bump. The acceptance behaviour was
+verified twice: through the new BDD scenario (mocked git/cargo) and through a
+real CLI run against the Stage A prototype repository, where the nested
+lockfile was discovered, refreshed to the new version, and passed
 `cargo metadata --locked` afterwards (exit 0).
 
 Deviations from the original plan, all recorded in the decision log: the
@@ -265,9 +267,10 @@ end-to-end run exposed the versioned-path-dependency edge — keep a live
 prototype exercise in plans that change subprocess behaviour; (2) the test
 infrastructure had anticipated this feature (unused `git ls-files` stubs),
 which suggests checking fixture stubs for "future intent" during orientation;
-(3) unpinned typecheckers (`uv tool install ty`) make gate drift a recurring
-cost — pinning with a scheduled bump would be a worthwhile follow-up for the
-repository.
+(3) unpinned typecheckers caused avoidable gate drift. The completed branch
+addresses that lesson by defining `TY_VERSION ?= 0.0.56` and invoking the
+checker through `uv tool run --from ty==$(TY_VERSION) ty`; CI calls
+`make typecheck` and does not install ty separately.
 
 Follow-up candidates (not in scope): rewrite version requirements in non-member
 nested manifests that depend on bumped crates.
@@ -281,22 +284,22 @@ pieces:
 - `lading/commands/bump.py` orchestrates `lading bump`. After rewriting
   manifest versions it calls `_process_lockfiles(context, changed_manifests)`,
   which returns the tuple of lockfile paths that were (or, in dry-run, would
-  be) regenerated. It currently passes only
-  `context.configuration.bump.lockfile_manifests` (a tuple of workspace-relative
-  `Cargo.toml` path strings) to the helpers below.
-  `context.base_options.command_runner` is an optional `CommandRunner` — a
-  callable taking a command sequence and returning
-  `(exit_code, stdout, stderr)` — used for dependency injection in tests;
-  `None` means "use the real subprocess runner".
-- `lading/commands/bump_lockfiles.py` owns regeneration.
-  `resolve_lockfile_paths(workspace_root, lockfile_manifests)` maps configured
-  manifests to lockfile paths for dry-run reporting.
+  be) regenerated. The bump domain depends on the `LockfileRepository` port and
+  passes the configured manifest tuple to that boundary. The default
+  `CargoLockfileRepository` adapter performs discovery and merges configured
+  manifests with manifests implied by tracked `Cargo.lock` files before either
+  dry-run projection or live regeneration.
+- `lading/commands/bump_lockfiles.py` defines the `LockfileRepository` port,
+  its `CargoLockfileRepository` adapter, and the regeneration helpers.
+  `resolve_lockfile_paths(workspace_root, lockfile_manifests)` maps the merged
+  manifest set to lockfile paths for dry-run reporting.
   `regenerate_lockfiles(workspace_root, lockfile_manifests, *, runner=None)`
   validates each manifest path (must stay inside the workspace and be named
   `Cargo.toml`), always prepends the workspace root manifest, de-duplicates,
   and runs `cargo update --workspace --manifest-path <manifest>` per entry.
-- `lading/commands/lockfile.py` owns discovery and freshness validation,
-  currently used only by the publish pre-flight.
+- `lading/commands/lockfile.py` owns discovery and freshness validation.
+  Publish uses discovery for freshness validation, while the bump-side
+  `CargoLockfileRepository` uses it to construct the merged manifest set.
   `discover_tracked_lockfiles(workspace_root, runner, *, manifest_exists=...)`
   runs `git ls-files "**/Cargo.lock" "Cargo.lock"`, filters out paths with a
   `target` component, keeps only lockfiles with an adjacent `Cargo.toml`, and
@@ -359,11 +362,11 @@ Stage B (red): specify the behaviour with failing tests.
    `@pytest.mark.xfail(strict=True, reason="discovery merge not implemented")`
    until red is observed, then remove the marker during Stage C.
 2. In `tests/unit/test_bump_lockfile_rebuild.py`, extend the existing
-   monkeypatch-style tests: patch discovery (not the real git) so that
-   `bump.run` passes the union of configured and discovered manifests to
-   `regenerate_lockfiles`, and assert the dry-run path lists discovered
-   lockfile paths in its output. Existing assertions such as
-   `"lockfile_manifests": ()` will need the new expected union values.
+   monkeypatch-style tests: patch the lockfile repository so that `bump.run`
+   projects or regenerates the union of configured and discovered manifests,
+   and assert the dry-run path lists discovered lockfile paths in its output.
+   Existing assertions such as `"lockfile_manifests": ()` will need the new
+   expected union values.
 3. In `tests/bdd/features/cli.feature`, extend the "Bump rebuilds tracked
    lockfiles" scenario (or add a sibling scenario "Bump refreshes discovered
    nested lockfiles") so the workspace contains a tracked nested lockfile that
@@ -387,24 +390,27 @@ Stage C (green): implement the minimal change.
    `_resolve_manifest_paths` continues to prepend the root manifest and
    de-duplicate resolved paths, so the root lockfile stays first regardless of
    what discovery returns.
-2. In `lading/commands/bump.py::_process_lockfiles`, call the merge function
-   once (passing `context.base_options.command_runner`), and feed its result to
-   both the dry-run `resolve_lockfile_paths` branch and the live
-   `regenerate_lockfiles` branch, so dry-run and live runs report the same set.
+2. In `CargoLockfileRepository`, call the merge function before delegating to
+   either the dry-run `resolve_lockfile_paths` helper or the live
+   `regenerate_lockfiles` helper. Keep
+   `lading/commands/bump.py::_process_lockfiles` dependent only on the
+   `LockfileRepository` port, so dry-run and live runs use the same set without
+   introducing Git or Cargo execution into the bump domain.
 3. Update module docstrings that describe the old contract: the header of
    `bump_lockfiles.py` ("any configured nested lockfiles") and the call-graph
-   paragraph in `lockfile.py` (which currently says discovery is publish-only).
+   paragraph in `lockfile.py` (which said before this change that discovery was
+   publish-only).
 
 Stage D (refactor, documentation, cleanup):
 
 1. Regenerate affected `syrupy` snapshots deliberately and review the diffs.
 2. `docs/users-guide.md`: the bump section's discovery claim becomes true —
    tighten it to mention that configured `lockfile_manifests` are additionally
-   regenerated; re-scope the `lockfile_manifests` key description to "manifests
-   whose lockfiles git does not track (discovery finds tracked ones
-   automatically)"; extend the "Lockfile regeneration runs…" paragraph to say
-   the command runs for the workspace root, each configured manifest, and each
-   discovered tracked lockfile's manifest.
+   regenerated; re-scope the `lockfile_manifests` key description to manifests
+   discovery cannot find, including nested manifests outside a Git repository;
+   extend the "Lockfile regeneration runs…" paragraph to say the command runs
+   for the workspace root, each configured manifest, and each discovered
+   tracked lockfile's manifest.
 3. `lading/commands/publish_preflight.py::_build_stale_lockfile_message`:
    soften "This commonly happens after running `lading bump`" to reflect that
    bump now repairs tracked lockfiles itself — for example, "This can happen
@@ -521,7 +527,7 @@ entirely in the scratchpad and is deleted afterwards. If a milestone must be
 abandoned mid-way, `git status` plus `git checkout -- <path>` restores the
 tree; committed milestones are individually revertable.
 
-## Artifacts and notes
+## Artefacts and notes
 
 Stage A prototype transcript (2026-07-07, scratchpad `proto/`): a
 git-initialized workspace with member crate `alpha` 0.1.0 and a standalone
@@ -571,23 +577,24 @@ def merge_discovered_manifests(
     """
 ```
 
-`lading/commands/bump.py::_process_lockfiles` calls it once and passes the
-result to the existing `resolve_lockfile_paths` (dry-run) and
-`regenerate_lockfiles` (live) helpers, whose signatures do not change.
+`CargoLockfileRepository` calls it before delegating the merged result to the
+existing `resolve_lockfile_paths` helper for dry-run projection or
+`regenerate_lockfiles` for live regeneration. The bump-side
+`_process_lockfiles` function depends only on the `LockfileRepository` port.
 
 ## Revision note
 
 2026-07-08: implementation complete. Progress, surprises, decisions, and the
 retrospective were updated throughout Stages A–D; the final revision records
 the end-to-end acceptance run, the versioned-path-dependency edge case, and the
-follow-up candidates (non-member manifest rewriting; pinning ty). Status moved
-to COMPLETE. No further work remains on this plan.
+then-pending follow-up candidates. Status moved to COMPLETE. No further work
+remained in the original feature scope.
 
-2026-07-08 (later): the ty-pinning follow-up was completed on this branch at
-the user's request — `TY_VERSION ?= 0.0.56` in the Makefile (invoked via
-`uv tool run --from ty==$(TY_VERSION)`), CI no longer installs ty separately,
-and ty 0.0.56 passes with no new diagnostics. The non-member manifest rewriting
-follow-up remains open.
+2026-07-08 (later): the ty version-pin follow-up was completed on this branch
+at the user's request. The Makefile defines `TY_VERSION ?= 0.0.56` and invokes
+the checker through `uv tool run --from ty==$(TY_VERSION) ty`; CI runs
+`make typecheck` and no longer installs ty separately. Ty 0.0.56 passes with no
+new diagnostics. The non-member manifest rewriting follow-up remains open.
 
 2026-07-14: rebasing onto `origin/main` incorporated issue #82's
 `LockfileRepository` port. Discovery now occurs inside the
