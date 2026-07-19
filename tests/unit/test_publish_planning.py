@@ -334,7 +334,10 @@ def test_publish_reexports_plan_error_for_public_callers(
     it raises must remain catchable as ``publish.PublishPlanError``. This guards
     the public re-export against removal alongside private compatibility shims.
     """
-    assert publish.PublishPlanError is publish_plan.PublishPlanError
+    assert publish.PublishPlanError is publish_plan.PublishPlanError, (
+        "publish must re-export the canonical PublishPlanError so callers can "
+        "catch planning failures via publish.PublishPlanError"
+    )
 
     alpha, beta = _create_cycle(
         planning_fixtures,
@@ -342,7 +345,7 @@ def test_publish_reexports_plan_error_for_public_callers(
         name_b="beta",
     )
 
-    with pytest.raises(publish.PublishPlanError):
+    with pytest.raises(publish.PublishPlanError, match="dependency cycle"):
         _plan_with_crates(
             planning_fixtures.tmp_path,
             planning_fixtures.make_workspace,

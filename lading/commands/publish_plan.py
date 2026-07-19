@@ -219,14 +219,46 @@ def append_section[T](
     header: str,
     formatter: cabc.Callable[[T], str] = str,
 ) -> None:
-    """Append formatted ``items`` to ``lines`` when a section has content."""
+    """Append a formatted section to ``lines`` when ``items`` is non-empty.
+
+    Parameters
+    ----------
+    lines:
+        Accumulator of output lines, mutated in place. When ``items`` is empty
+        the accumulator is left unchanged.
+    items:
+        Entries rendered beneath ``header``. An empty sequence appends nothing.
+    header:
+        Section heading emitted before the formatted entries.
+    formatter:
+        Callable mapping each item to its display string. Defaults to ``str``.
+
+    Returns
+    -------
+    None
+        The result is communicated by mutating ``lines`` in place.
+    """
     if items:
         lines.append(header)
         lines.extend(f"- {formatter(item)}" for item in items)
 
 
 def format_plan(plan: PublishPlan, *, strip_patches: StripPatchesSetting) -> str:
-    """Render ``plan`` to a human-readable summary for CLI output."""
+    """Render ``plan`` to a human-readable summary for CLI output.
+
+    Parameters
+    ----------
+    plan:
+        Resolved publication plan whose crate groupings are rendered.
+    strip_patches:
+        Strip-patch strategy recorded in the summary header.
+
+    Returns
+    -------
+    str
+        Multi-line summary listing crates to publish and each skipped group,
+        suitable for printing to the CLI.
+    """
     lines = [
         f"Publish plan for {plan.workspace_root}",
         f"Strip patch strategy: {strip_patches}",

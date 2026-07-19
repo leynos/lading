@@ -575,6 +575,39 @@ on the module that exposes that entry point: for example, `publish` re-exports
 `except publish.PublishPlanError` after a call to `publish.plan_publication()`
 continue to work.
 
+The issue #163 sweep removed the following shims; each row records the
+canonical replacement callers and tests now use directly:
+
+| Removed shim | Location | Canonical replacement |
+| --- | --- | --- |
+| Eleven `publish_preflight` private aliases (`_preflight_argument_sets`, `_CargoPreflightOptions`, `_apply_compiletest_externs`, `_build_preflight_environment`, `_build_test_arguments`, `_compose_preflight_arguments`, `_normalise_test_excludes`, `_run_aux_build_commands`, `_run_cargo_preflight`, `_validate_lockfile_freshness`, `_verify_clean_working_tree`) | `publish.py` | `lading.commands.publish_preflight` (patch/call the defining module directly) |
+| `_run_preflight_checks` thin wrapper | `publish.py` | `publish_preflight._run_preflight_checks` (called directly by `run()`) |
+| Re-exports `_append_section`, `_format_plan` | `publish.py` | `publish_plan.append_section`, `publish_plan.format_plan` |
+| Re-export `metadata_module` | `publish.py` | `lading.workspace.metadata` |
+| Re-export `StripPatchesSetting` | `publish.py` | `lading.config.StripPatchesSetting` |
+| Six `bump_toml` re-exports (`_parse_manifest`, `_select_table`, `_assign_version`, `_value_matches`, `_update_dependency_sections`, `_update_dependency_table`) | `bump.py` | `lading.commands.bump_toml` (`parse_manifest`, `select_table`, `assign_version`, `value_matches`, `update_dependency_sections`, `update_dependency_table`) |
+| `_log = LOGGER` alias | `bump.py` | the module-level `LOGGER` |
+| Private `_append_section` / `_format_plan` | `publish_plan.py` | renamed to public `append_section` / `format_plan` |
+| `split_command` / `_split_command` wrapper | `publish_execution.py` | `lading.runtime.subprocess_runner.split_command` |
+
+
+#### Retained boundaries
+
+Not every module-level indirection is a compatibility shim. The following
+boundaries were deliberately kept because they serve a purpose beyond masking
+a rename:
+
+- `publish._invoke` — the dependency-injection seam: it is the default
+  `CommandRunner` used by `run()`, and tests stub it to intercept subprocess
+  execution. Not a compatibility alias.
+- `publish.PublishPlanError` (re-exported as `PublishPlanError as
+  PublishPlanError`) — a public exception raised by the still-public
+  `publish.plan_publication()`; retained so `except publish.PublishPlanError`
+  keeps working. It is a public-API boundary, not a private shim.
+- The `CommandRunner` protocol in `lading.runtime` — the stable port for
+  execution concerns; the sanctioned alternative to ad hoc shims when a seam
+  churns.
+
 ### Extracted publish modules
 
 `publish_plan.py` owns publication planning and plan rendering. Its
