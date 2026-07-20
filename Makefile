@@ -11,7 +11,13 @@ RUFF_VERSION ?= 0.15.12
 RUFF ?= $(UV) tool run --from ruff==$(RUFF_VERSION) ruff
 TYPOS_VERSION ?= 1.48.0
 UV_ENV = UV_CACHE_DIR=.uv-cache UV_TOOL_DIR=.uv-tools
-TOOLS = $(MDFORMAT_ALL) ty $(MDLINT) $(NIXIE) $(UV)
+# Pin ty so `make` and CI invoke the same typechecker release. ty is
+# pre-1.0 and diagnostics shift between releases, so an unpinned install
+# breaks the typecheck gate without any code change. Bump deliberately and
+# fix new diagnostics in the same commit.
+TY_VERSION ?= 0.0.56
+TY ?= $(UV) tool run --from ty==$(TY_VERSION) ty
+TOOLS = $(MDFORMAT_ALL) $(MDLINT) $(NIXIE) $(UV)
 PY_SOURCES := $(sort $(shell find lading scripts -type f -name '*.py' -print))
 VENV_TOOLS = interrogate pytest
 PYLINT_PYTHON ?= pypy
@@ -83,8 +89,8 @@ lint: build $(UV) interrogate ## Run linters
 	$(UV) run interrogate --fail-under 100 lading
 	$(PYLINT) $(PYLINT_TARGETS)
 
-typecheck: build ty ## Run typechecking
-	ty check --python-version 3.13 $(PY_SOURCES)
+typecheck: build ## Run typechecking
+	$(TY) check --python-version 3.13 $(PY_SOURCES)
 
 markdownlint: spelling $(MDLINT) ## Lint Markdown files and enforce spelling
 	find . -type f -name '*.md' \

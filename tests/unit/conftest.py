@@ -79,9 +79,14 @@ def disable_publish_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
 def stub_lockfile_regeneration(
     request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Avoid invoking Cargo from manifest-focused bump tests."""
+    """Avoid invoking Cargo or git from manifest-focused bump tests."""
     if request.module.__name__.rsplit(".", 1)[-1] not in _LOCKFILE_STUB_MODULES:
         return
+    monkeypatch.setattr(
+        bump.bump_lockfiles,
+        "merge_discovered_manifests",
+        lambda _root, manifests, **_kwargs: tuple(manifests),
+    )
     monkeypatch.setattr(
         bump.bump_lockfiles,
         "regenerate_lockfiles",

@@ -66,6 +66,12 @@ The relevant Makefile variables are:
 - `RUFF` — the pinned Ruff command
   (`uv tool run --from ruff==$(RUFF_VERSION) ruff`) that the `fmt`,
   `check-fmt`, and `lint` targets invoke.
+- `TY_VERSION` — pinned ty version used by `make typecheck`; defaults to
+  `0.0.56`. ty is pre-1.0 and diagnostics shift between releases, so bump it
+  deliberately and fix any new diagnostics in the same commit. CI does not
+  install ty separately; it runs whatever `TY_VERSION` pins.
+- `TY` — the pinned ty command (`uv tool run --from ty==$(TY_VERSION) ty`)
+  that the `typecheck` target invokes.
 - `PYLINT_PYTHON` — Python executable used by `uv tool run`; defaults to `pypy`.
 - `PYLINT_TARGETS` — directories passed to Pylint; defaults to
   `lading scripts tests`.
@@ -204,9 +210,14 @@ Markdown links in fenced code blocks, indented code blocks, and inline code
 spans are preserved verbatim.
 
 `lading.commands.bump_lockfiles` owns Cargo lockfile discovery and regeneration
-after manifest changes. It always includes the workspace root `Cargo.toml`,
-validates configured nested manifests before invoking Cargo, and de-duplicates
-resolved manifest paths.
+after manifest changes. `merge_discovered_manifests` unions the configured
+`bump.lockfile_manifests` entries with manifests implied by git-tracked
+`Cargo.lock` files (reusing
+`lading.commands.lockfile.discover_tracked_lockfiles`); configured entries keep
+their order and discovered entries follow in sorted order.
+`regenerate_lockfiles` always includes the workspace root `Cargo.toml`,
+validates nested manifests before invoking Cargo, and de-duplicates resolved
+manifest paths.
 
 For screen readers: the following flowchart traces `regenerate_lockfiles`. It
 resolves the manifest list, then initializes empty `lockfiles` and `failures`
@@ -258,11 +269,14 @@ the original cargo error rather than wrapped in the aggregate message.
 `lockfile_repository` field, a `bump_lockfiles.LockfileRepository` port
 introduced by issue #82: the bump domain never holds a raw command runner. When
 the field is `None`, bump uses `bump_lockfiles.CargoLockfileRepository`, the
-cargo-backed adapter bound to the default subprocess runner; the CLI binds the
-adapter to its selected runner. Tests inject a repository (or bind the adapter
-to a recording runner) so lockfile commands can be observed without invoking
-real Cargo processes. The port's scope is bump-side lockfile projection and
-regeneration; publish-side discovery and validation go through the sibling
+cargo- and git-backed adapter bound to the default subprocess runner; the CLI
+binds the adapter to its selected runner. The adapter merges configured
+manifests with manifests discovered from tracked lockfiles before either
+projecting dry-run paths or regenerating live lockfiles. Tests inject a
+repository (or bind the adapter to a recording runner) so lockfile commands can
+be observed without invoking real processes. The port's scope is bump-side
+lockfile projection and regeneration; publish-side discovery and validation go
+through the sibling
 `lockfile.LockfileInspectionRepository` port (see the Lockfile helpers section
 below), so neither the bump nor the publish lockfile domain holds a raw
 `CommandRunner` (issue #82).
@@ -304,8 +318,8 @@ exactly one place.
 
 ### Model checking the formatting helpers
 
-Three pure helpers in `lading/commands/bump_output.py` carry PEP 316
-docstring contracts (`pre:`/`post:` lines):
+Three pure helpers in `lading/commands/bump_output.py` carry PEP 316 docstring
+contracts (`pre:`/`post:` lines):
 
 - `_build_changes_description` — assembles the Oxford-comma-joined
   category description from a `BumpChanges` instance.
@@ -313,25 +327,23 @@ docstring contracts (`pre:`/`post:` lines):
 - `_format_manifest_path` — formats a single manifest path for display
   in the bump output.
 
-Run CrossHair symbolic-execution model checking against the first two
-helpers with:
+Run CrossHair symbolic-execution model checking against the first two helpers
+with:
 
 ```bash
 make crosshair
 ```
 
-`crosshair-tool` is a dev dependency. `[tool.crosshair]` in
-`pyproject.toml` sets per-path and per-condition timeouts to keep the
-check bounded. `make crosshair` is **not** part of `make all` or CI; it
-is an on-demand check intended for targeted verification when the
-formatting helpers change.
+`crosshair-tool` is a dev dependency. `[tool.crosshair]` in `pyproject.toml`
+sets per-path and per-condition timeouts to keep the check bounded.
+`make crosshair` is **not** part of `make all` or CI; it is an on-demand check
+intended for targeted verification when the formatting helpers change.
 
-`_format_manifest_path` keeps its `pre:`/`post:` contract but is
-intentionally excluded from the `make crosshair` run. CrossHair 0.0.107
-cannot construct a symbolic `pathlib.Path` proxy — it raises in
-`intersect_signatures` on both CPython 3.13 and 3.14. Its behaviour is
-instead covered by the Hypothesis property test in
-`tests/unit/test_bump_command_internals.py`, which exercises
+`_format_manifest_path` keeps its `pre:`/`post:` contract but is intentionally
+excluded from the `make crosshair` run. CrossHair 0.0.107 cannot construct a
+symbolic `pathlib.Path` proxy — it raises in `intersect_signatures` on both
+CPython 3.13 and 3.14. Its behaviour is instead covered by the Hypothesis
+property test in `tests/unit/test_bump_command_internals.py`, which exercises
 `_format_result_message` across a wide range of path inputs.
 
 ## Workspace discovery helpers
@@ -371,8 +383,11 @@ Private helpers `_handle_git_ls_files_failure` and `_lockfiles_with_manifests`
 perform the error-handling and path-filtering passes respectively.
 
 Lockfile regeneration after `lading bump` is owned by
-`lading.commands.bump_lockfiles.regenerate_lockfiles`, which runs
-`cargo update --workspace` per configured manifest. The two cargo strategies
+`lading.commands.bump_lockfiles.CargoLockfileRepository`. The adapter uses
+`bump_lockfiles.merge_discovered_manifests` to union the configured
+`bump.lockfile_manifests` entries with manifests implied by
+`discover_tracked_lockfiles`, then delegates to `regenerate_lockfiles`, which
+runs `cargo update --workspace` per merged manifest. The two cargo strategies
 differ deliberately: bump refreshes existing pinned versions in place after
 manifest rewrites, while publish only probes freshness read-only via
 `cargo metadata --locked` and never regenerates.
@@ -874,14 +889,13 @@ reintroduces a second invocation log at any level is pinned by the tests in
 
 `lading.commands.publish_preflight` performs workspace validation before any
 crate is packaged or published. It is the canonical (and only) home of
-`_run_preflight_checks` and `_preflight_argument_sets`. `publish.py`
-re-exports `_preflight_argument_sets` as a bare module-level alias for
-backwards compatibility with existing test patches, and must not re-declare
-it. `_run_preflight_checks`, however, is exposed through a thin wrapper in
+`_run_preflight_checks` and `_preflight_argument_sets`. `publish.py` re-exports
+`_preflight_argument_sets` as a bare module-level alias for backwards
+compatibility with existing test patches, and must not re-declare it.
+`_run_preflight_checks`, however, is exposed through a thin wrapper in
 `publish.py` that preserves the historical optional-`configuration` contract
-(resolving configuration via `_ensure_configuration` when the caller omits
-it) before delegating to the canonical implementation. The public entry
-point is:
+(resolving configuration via `_ensure_configuration` when the caller omits it)
+before delegating to the canonical implementation. The public entry point is:
 
 ```python
 _run_preflight_checks(
@@ -928,21 +942,20 @@ _publish_crate(
 ) -> None
 ```
 
-`_CrateAction` is the shared `typing.Protocol` for single-crate pipeline
-steps; its `__call__` signature is `(crate, state, *, runner) -> None`,
-matching `_package_crate` and `_publish_crate` exactly.
+`_CrateAction` is the shared `typing.Protocol` for single-crate pipeline steps;
+its `__call__` signature is `(crate, state, *, runner) -> None`, matching
+`_package_crate` and `_publish_crate` exactly.
 `_for_each_publishable_crate(state, *, runner, action: _CrateAction) -> None`
 iterates `state.plan.publishable` in pipeline order and applies `action` to
 each crate; both `_package_publishable_crates` and `_publish_crates` delegate
-to it, passing `_package_crate` or `_publish_crate` as the action
-respectively. The live pipeline (`_execute_live_publication_pipeline`)
-deliberately bypasses this helper and manages its own loop, interleaving
-`_package_crate` and `_publish_crate` per crate so that a freshly packaged
-crate is uploaded before packaging begins for the next. New per-crate steps
-intended for the batched (dry-run) pipeline should therefore be written as
-`_CrateAction`-conforming functions dispatched through
-`_for_each_publishable_crate`; steps that must interleave packaging and
-publishing belong in the live pipeline instead.
+to it, passing `_package_crate` or `_publish_crate` as the action respectively.
+The live pipeline (`_execute_live_publication_pipeline`) deliberately bypasses
+this helper and manages its own loop, interleaving `_package_crate` and
+`_publish_crate` per crate so that a freshly packaged crate is uploaded before
+packaging begins for the next. New per-crate steps intended for the batched
+(dry-run) pipeline should therefore be written as `_CrateAction`-conforming
+functions dispatched through `_for_each_publishable_crate`; steps that must
+interleave packaging and publishing belong in the live pipeline instead.
 
 `_PublicationPipelineState` carries only publish-domain state: the resolved
 `PublishPlan`, the `PublishPreparation`, and `_PublishExecutionOptions`.
