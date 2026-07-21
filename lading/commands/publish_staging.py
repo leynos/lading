@@ -7,7 +7,7 @@ changes or invoking cargo.
 
 Examples
 --------
->>> preparation = prepare_workspace(plan, workspace, options=options)
+>>> preparation = prepare_workspace(plan, options=options)
 >>> preparation.staging_root.is_dir()
 True
 """
@@ -27,7 +27,7 @@ from lading.commands.publish_manifest import PublishPreparationError
 if typ.TYPE_CHECKING:
     from lading.commands.publish import PublishOptions
     from lading.commands.publish_plan import PublishPlan
-    from lading.workspace import WorkspaceCrate, WorkspaceGraph
+    from lading.workspace import WorkspaceCrate
 
 LOGGER = logging.getLogger(__name__)
 
@@ -95,7 +95,6 @@ def _copy_workspace_tree(
 
 def prepare_workspace(
     plan: PublishPlan,
-    workspace: WorkspaceGraph,
     *,
     options: PublishOptions | None = None,
 ) -> PublishPreparation:
@@ -105,8 +104,6 @@ def prepare_workspace(
     ----------
     plan:
         Publication plan containing the workspace root.
-    workspace:
-        Workspace graph associated with the plan.
     options:
         Staging options. Defaults to :class:`PublishOptions` values.
 
