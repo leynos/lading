@@ -130,17 +130,22 @@ def update_section(
 ) -> bool:
     """Update dependency versions in the table at ``path``.
 
-    Args:
-        document: The parsed TOML manifest document.
-        path: Tuple of keys identifying the table path (e.g., ``("workspace",
-            "dependencies")``).
-        names: Collection of dependency names to update.
-        target_version: The target version to apply.
+    Parameters
+    ----------
+    document : TOMLDocument
+        The parsed TOML manifest document.
+    path : tuple[str, ...]
+        Tuple of keys identifying the table path (e.g., ``("workspace",
+        "dependencies")``).
+    names : cabc.Collection[str]
+        Collection of dependency names to update.
+    target_version : str
+        The target version to apply.
 
     Returns
     -------
+    bool
         True if any version entries were changed.
-
     """
     table = select_table(document, path)
     if table is None:
@@ -157,17 +162,22 @@ def update_dependency_sections(
 ) -> bool:
     """Apply ``target_version`` to dependency entries for the provided sections.
 
-    Args:
-        document: The parsed TOML manifest document.
-        dependency_sections: Mapping of section names to crate names to update.
-        target_version: The target version to apply.
-        include_workspace_sections: When True, also update entries in
-            ``[workspace.<section>]`` tables (e.g., ``[workspace.dependencies]``).
+    Parameters
+    ----------
+    document : TOMLDocument
+        The parsed TOML manifest document.
+    dependency_sections : cabc.Mapping[str, cabc.Collection[str]]
+        Mapping of section names to crate names to update.
+    target_version : str
+        The target version to apply.
+    include_workspace_sections : bool, optional
+        When True, also update entries in ``[workspace.<section>]`` tables
+        (e.g., ``[workspace.dependencies]``).
 
     Returns
     -------
+    bool
         True if any version entries were changed.
-
     """
     changed = False
     for section, names in dependency_sections.items():
