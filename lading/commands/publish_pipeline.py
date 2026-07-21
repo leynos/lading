@@ -1,4 +1,10 @@
-"""Per-crate publication pipeline for lading publish."""
+"""Execute per-crate publication pipelines for :mod:`lading.commands.publish`.
+
+The coordinator prepares a plan and staged workspace, then delegates live and
+dry-run sequencing here. This module applies package/publish actions through
+an injected runner; :mod:`lading.commands.publish_execution` owns the concrete
+subprocess adapter used by the default runner.
+"""
 
 from __future__ import annotations
 
@@ -296,16 +302,8 @@ def _execute_live_publication_pipeline(
     for crate in plan.publishable:
         LOGGER.info("Live pipeline: starting crate %s", crate.name)
         try:
-            _package_crate(
-                crate,
-                state,
-                runner=runner,
-            )
-            _publish_crate(
-                crate,
-                state,
-                runner=runner,
-            )
+            _package_crate(crate, state, runner=runner)
+            _publish_crate(crate, state, runner=runner)
         except PublishPreparationError as exc:
             # Preparation failures escape the preflight/publish error taxonomy;
             # normalise them so the live pipeline reports a single abort class.
