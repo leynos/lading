@@ -8,6 +8,7 @@ import typing as typ
 import pytest
 
 from lading.commands import publish
+from tests.helpers.cwd import chdir_for_test
 from tests.unit.conftest import (
     PreparationFixtures,
     PrepareWorkspaceFixtures,
@@ -36,7 +37,7 @@ def test_normalise_build_directory_resolves_relative_paths(
     """Relative build directories are resolved against the current directory."""
     workspace_root = tmp_path / "workspace"
     workspace_root.mkdir()
-    monkeypatch.chdir(tmp_path)
+    chdir_for_test(monkeypatch, tmp_path)
 
     build_directory = publish._normalise_build_directory(workspace_root, "staging")
 
