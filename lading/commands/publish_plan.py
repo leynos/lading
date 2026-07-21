@@ -237,6 +237,16 @@ def append_section[T](
     -------
     None
         The result is communicated by mutating ``lines`` in place.
+
+    Examples
+    --------
+    >>> lines = ["Header:"]
+    >>> append_section(lines, ["alpha", "beta"], header="Members:")
+    >>> lines
+    ['Header:', 'Members:', '- alpha', '- beta']
+    >>> append_section(lines, [], header="Extras:")
+    >>> lines
+    ['Header:', 'Members:', '- alpha', '- beta']
     """
     if items:
         lines.append(header)
@@ -258,6 +268,20 @@ def format_plan(plan: PublishPlan, *, strip_patches: StripPatchesSetting) -> str
     str
         Multi-line summary listing crates to publish and each skipped group,
         suitable for printing to the CLI.
+
+    Examples
+    --------
+    >>> from pathlib import Path
+    >>> plan = PublishPlan(
+    ...     workspace_root=Path("/ws"),
+    ...     publishable=(),
+    ...     skipped_manifest=(),
+    ...     skipped_configuration=(),
+    ... )
+    >>> print(format_plan(plan, strip_patches="none"))
+    Publish plan for /ws
+    Strip patch strategy: none
+    Crates to publish: none
     """
     lines = [
         f"Publish plan for {plan.workspace_root}",
