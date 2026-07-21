@@ -206,11 +206,11 @@ def test_copy_workspace_tree_symlink_handling(
     assert staged_link.read_text(encoding="utf-8") == "payload"
 
 
-def test_prepare_workspace_does_not_stage_workspace_readme(
+def test_prepare_workspace_does_not_adopt_workspace_readme_for_crates(
     prepare_workspace_fixtures: PrepareWorkspaceFixtures,
     preparation_fixtures: PreparationFixtures,
 ) -> None:
-    """Publish staging leaves workspace README adoption to bump."""
+    """Publish staging leaves workspace README adoption for crates to bump."""
     fx = prepare_workspace_fixtures
     pf = preparation_fixtures
     workspace_root = fx.tmp_path / "workspace"
@@ -221,9 +221,7 @@ def test_prepare_workspace_does_not_stage_workspace_readme(
     workspace = pf.make_workspace(workspace_root, crate)
     configuration = pf.make_config()
     plan = publish.plan_publication(workspace, configuration)
-    preparation = publish_staging.prepare_workspace(
-        plan, workspace, options=fx.publish_options
-    )
+    preparation = publish_staging.prepare_workspace(plan, options=fx.publish_options)
 
     staging_root = preparation.staging_root
     assert staging_root.exists()
@@ -259,7 +257,7 @@ def test_prepare_workspace_registers_cleanup(
     monkeypatch.setattr(publish_staging.atexit, "register", capture)
 
     options = publish.PublishOptions(build_directory=build_directory, cleanup=True)
-    preparation = publish_staging.prepare_workspace(plan, workspace, options=options)
+    preparation = publish_staging.prepare_workspace(plan, options=options)
 
     assert len(registered) == 1
     cleanup = registered[0]
@@ -283,49 +281,35 @@ def test_prepare_workspace_registers_cleanup(
         pytest.param(_CrateSpec(), id="no_readme_opt_in"),
     ],
 )
-def test_prepare_workspace_skips_readme_staging(
+def test_prepare_workspace_copies_workspace_readme_verbatim(
     prepare_workspace_fixtures: PrepareWorkspaceFixtures,
     preparation_fixtures: PreparationFixtures,
     crate_spec: _CrateSpec,
 ) -> None:
-    """Staging reports no copied READMEs regardless of readme opt-in status."""
-    fx = prepare_workspace_fixtures
-    pf = preparation_fixtures
-    workspace_root = fx.tmp_path / "workspace"
-    workspace_root.mkdir()
-    crate = pf.make_crate(workspace_root, "alpha", crate_spec)
-    workspace = pf.make_workspace(workspace_root, crate)
-    configuration = pf.make_config()
-    plan = publish.plan_publication(workspace, configuration)
-
-    preparation = publish_staging.prepare_workspace(
-        plan, workspace, options=fx.publish_options
-    )
-
-    assert preparation.staging_root.exists()
-
-
-def test_prepare_workspace_skips_readme_staging_for_opted_in_crates(
-    prepare_workspace_fixtures: PrepareWorkspaceFixtures,
-    preparation_fixtures: PreparationFixtures,
-) -> None:
-    """Readme opt-in does not produce publish-time copied paths."""
+    """Staging copies the workspace README regardless of crate readme opt-in."""
     fx = prepare_workspace_fixtures
     pf = preparation_fixtures
     workspace_root = fx.tmp_path / "workspace"
     workspace_root.mkdir()
     readme = workspace_root / "README.md"
-    readme.write_text("Workspace", encoding="utf-8")
-    crate_alpha = pf.make_crate(
-        workspace_root, "alpha", _CrateSpec(readme_workspace=True)
-    )
-    crate_beta = pf.make_crate(
-        workspace_root, "beta", _CrateSpec(readme_workspace=True)
-    )
-    workspace = pf.make_workspace(workspace_root, crate_alpha, crate_beta)
-    plan = publish.plan_publication(workspace, pf.make_config())
+    readme.write_text("Workspace README", encoding="utf-8")
+    crate = pf.make_crate(workspace_root, "alpha", crate_spec)
+    workspace = pf.make_workspace(workspace_root, crate)
+    configuration = pf.make_config()
+    plan = publish.plan_publication(workspace, configuration)
 
-    publish_staging.prepare_workspace(plan, workspace, options=fx.publish_options)
+    preparation = publish_staging.prepare_workspace(plan, options=fx.publish_options)
+
+    assert preparation.staging_root.exists()
+    assert (preparation.staging_root / readme.name).read_text(encoding="utf-8") == (
+        "Workspace README"
+    )
+    staged_crate_readme = (
+        preparation.staging_root
+        / crate.root_path.relative_to(workspace_root)
+        / "README.md"
+    )
+    assert not staged_crate_readme.exists()
 
 
 def test_prepare_workspace_does_not_register_cleanup_when_disabled(
@@ -349,6 +333,6 @@ def test_prepare_workspace_does_not_register_cleanup_when_disabled(
 
     monkeypatch.setattr(publish_staging.atexit, "register", capture)
 
-    publish_staging.prepare_workspace(plan, workspace, options=fx.publish_options)
+    publish_staging.prepare_workspace(plan, options=fx.publish_options)
 
     assert registered == []

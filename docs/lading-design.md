@@ -186,16 +186,18 @@ available during packaging. Any parse errors or missing manifests surface as
 
 #### Publish data flow
 
-The publish data flow shows how the publish command orchestrates manifest
-preparation, crate planning, and command execution. The workflow splits
-configuration-driven patch stripping logic (all vs. per-crate) based on dry-run
-and live modes, and feeds the resulting plan to execution helpers.
+The publish data flow shows how the publish command coordinates crate planning,
+workspace staging, manifest preparation, and command execution. The coordinator
+delegates live and dry-run sequencing to `publish_pipeline`, which uses the
+`publish_execution` command adapter through an injected runner.
 
 ```mermaid
 graph TD
     A["CLI: lading publish"] --> B["Module: lading.commands.publish"]
     B --> C["Module: lading.commands.publish_plan (publish_plan.py)"]
     C --> C1["Build PublishPlan with publishable_names"]
+    B --> S["Module: lading.commands.publish_staging (publish_staging.py)"]
+    S --> S1["Copy workspace and resolve staged crate paths"]
     B --> D["Module: lading.commands.publish_manifest (publish_manifest.py)"]
     D --> D1["_apply_strip_patch_strategy(staging_root, plan, strategy)"]
     D1 --> D2{"strip_patches configuration"}
@@ -206,11 +208,10 @@ graph TD
     G --> H
     H --> I["Updated staged manifest used for publish"]
 
-    B --> J["Module: lading.commands.publish_execution (publish_execution.py)"]
-    J --> K["_invoke: subprocess execution with error adaptation"]
-
-    B --> N["Module: lading.commands.publish_preflight (publish_preflight.py)"]
-    N --> O["Compose final publish plan and execute commands"]
+    B --> P["Module: lading.commands.publish_pipeline (publish_pipeline.py)"]
+    P --> P1["Dispatch live or dry-run package/publish pipeline"]
+    P --> J["Module: lading.commands.publish_execution (publish_execution.py)"]
+    J --> K["Run cargo command through the subprocess adapter"]
 ```
 
 ### 2.3. Workspace Discovery and Model
@@ -516,25 +517,28 @@ crate-by-crate publishing.
 sequenceDiagram
     participant Caller
     participant publish.py
-    participant publish_execution
+    participant publish_preflight
     participant publish_plan
-    participant publish_diagnostics
+    participant publish_staging
+    participant publish_pipeline
+    participant publish_execution
 
     Caller->>publish.py: publish(…, forbid_dirty=…)
-    publish.py->>publish.py: _build_preflight_environment(config.preflight)
-    alt aux_build configured
-        publish.py->>publish_execution: _run_aux_build_commands(...)
-        publish_execution-->>publish.py: (rc, stdout, stderr)
-    end
-    publish.py->>publish_execution: _invoke(cargo test --lib, ...)
-    publish_execution-->>publish.py: (rc, stdout, stderr)
+    publish.py->>publish_preflight: _run_preflight_checks(...)
+    publish_preflight->>publish_execution: _invoke(cargo check/test, ...)
+    publish_execution-->>publish_preflight: (rc, stdout, stderr)
     alt rc != 0
-        publish.py->>publish_diagnostics: _append_compiletest_diagnostics(...)
-        publish_diagnostics-->>publish.py: augmented_message
-        publish.py-->>Caller: PublishPreflightError(augmented_message)
+        publish_preflight-->>publish.py: PublishPreflightError
+        publish.py-->>Caller: PublishPreflightError
     else rc == 0
         publish.py->>publish_plan: plan_publication(workspace, configuration, workspace_root)
         publish_plan-->>publish.py: PublishPlan
+        publish.py->>publish_staging: prepare_workspace(plan)
+        publish_staging-->>publish.py: PublishPreparation
+        publish.py->>publish_pipeline: _dispatch_publication(plan, preparation)
+        publish_pipeline->>publish_execution: _invoke(cargo package/publish, ...)
+        publish_execution-->>publish_pipeline: (rc, stdout, stderr)
+        publish_pipeline-->>publish.py: Success
         publish.py-->>Caller: Success
     end
 ```
