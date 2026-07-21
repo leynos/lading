@@ -273,13 +273,13 @@ def format_plan(plan: PublishPlan, *, strip_patches: StripPatchesSetting) -> str
     --------
     >>> from pathlib import Path
     >>> plan = PublishPlan(
-    ...     workspace_root=Path("/ws"),
+    ...     workspace_root=Path("ws"),
     ...     publishable=(),
     ...     skipped_manifest=(),
     ...     skipped_configuration=(),
     ... )
     >>> print(format_plan(plan, strip_patches="none"))
-    Publish plan for /ws
+    Publish plan for ws
     Strip patch strategy: none
     Crates to publish: none
     """

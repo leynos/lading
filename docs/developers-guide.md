@@ -553,7 +553,6 @@ handle both validation and publish-phase failures through one `except` clause,
 or catch `PublishError` first when publish-phase failures require distinct
 handling.
 
-
 ### Internal APIs carry no compatibility aliases
 
 Private (underscore-prefixed) functions and modules carry no stability
@@ -575,6 +574,8 @@ on the module that exposes that entry point: for example, `publish` re-exports
 `except publish.PublishPlanError` after a call to `publish.plan_publication()`
 continue to work.
 
+#### Shim inventory
+
 The issue #163 sweep removed the following shims; each row records the
 canonical replacement callers and tests now use directly:
 
@@ -589,7 +590,6 @@ canonical replacement callers and tests now use directly:
 | `_log = LOGGER` alias | `bump.py` | the module-level `LOGGER` |
 | Private `_append_section` / `_format_plan` | `publish_plan.py` | renamed to public `append_section` / `format_plan` |
 | `split_command` / `_split_command` wrapper | `publish_execution.py` | `lading.runtime.subprocess_runner.split_command` |
-
 
 #### Retained boundaries
 
