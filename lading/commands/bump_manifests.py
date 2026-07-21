@@ -61,21 +61,7 @@ def _determine_package_selectors(
     crate_name: str,
     excluded: cabc.Collection[str],
 ) -> tuple[tuple[str, ...], ...]:
-    """Return package selectors for the crate, respecting exclusion rules.
-
-    Parameters
-    ----------
-    crate_name
-        Name of the crate to check.
-    excluded
-        Collection of excluded crate names.
-
-    Returns
-    -------
-    tuple[tuple[str, ...], ...]
-        Package selectors, or an empty tuple when the crate is excluded.
-
-    """
+    """Return package selectors for the crate, respecting exclusion rules."""
     return () if crate_name in excluded else (("package",),)
 
 
@@ -117,26 +103,7 @@ def _update_manifest(
     target_version: str,
     options: BumpOptions,
 ) -> bool:
-    """Apply ``target_version`` to each table described by ``selectors``.
-
-    Parameters
-    ----------
-    manifest_path
-        Path to the Cargo.toml manifest file.
-    selectors
-        Key tuples identifying version tables to update.
-    target_version
-        The target version to apply.
-    options
-        Bump options controlling dry-run, dependency sections, and whether to
-        include workspace-level dependency sections.
-
-    Returns
-    -------
-    bool
-        ``True`` when any changes were made.
-
-    """
+    """Apply ``target_version`` to each table described by ``selectors``."""
     document = bump_toml.parse_manifest(manifest_path)
     changed = False
     for selector in selectors:
