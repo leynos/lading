@@ -128,7 +128,7 @@ def update_section(
     names: cabc.Collection[str],
     target_version: str,
 ) -> bool:
-    """Update dependency versions in the table at ``path``.
+    r"""Update dependency versions in the table at ``path``.
 
     Parameters
     ----------
@@ -146,6 +146,12 @@ def update_section(
     -------
     bool
         True if any version entries were changed.
+
+    Examples
+    --------
+    >>> document = parse_toml('[dependencies]\nalpha = "0.1.0"\n')
+    >>> update_section(document, ("dependencies",), {"alpha"}, "0.2.0")
+    True
     """
     table = select_table(document, path)
     if table is None:
@@ -160,7 +166,7 @@ def update_dependency_sections(
     *,
     include_workspace_sections: bool = False,
 ) -> bool:
-    """Apply ``target_version`` to dependency entries for the provided sections.
+    r"""Apply ``target_version`` to dependency entries for the provided sections.
 
     Parameters
     ----------
@@ -178,6 +184,13 @@ def update_dependency_sections(
     -------
     bool
         True if any version entries were changed.
+
+    Examples
+    --------
+    >>> document = parse_toml('[dev-dependencies]\nalpha = "0.1.0"\n')
+    >>> sections = {"dev-dependencies": {"alpha"}}
+    >>> update_dependency_sections(document, sections, "0.2.0")
+    True
     """
     changed = False
     for section, names in dependency_sections.items():
