@@ -26,10 +26,13 @@ jobs:
 
       - name: Install CLI tools
         run: |
-          for tool in mbake ty; do uv tool install ${tool}; done
-          # Pin ruff to the same version as the dev dependency group in
-          # pyproject.toml so the linter behaves identically across the uv tool,
-          # the synced virtualenv, and developer PATH. Bump both sites together.
+          for tool in mbake; do uv tool install ${tool}; done
+          # Pin ty and ruff to the versions the Makefile invokes (TY_VERSION and
+          # RUFF_VERSION) so the type checker and linter behave identically
+          # across the uv tool, the synced virtualenv, and developer PATH. Bump
+          # each tool's Makefile and CI pin together; leaving ty unpinned is how
+          # a newer release slipped a type error into CI.
+          uv tool install ty==0.0.32
           uv tool install ruff==0.15.12
           npm install -g markdownlint-cli2
 
