@@ -219,6 +219,85 @@ def test_validate_lockfile_freshness_classifies_every_lockfile(
         )
 
 
+def _assert_no_error_outcomes(
+    workspace_root: Path,
+    repository: _RecordingLockfileRepository,
+    lockfiles: list[Path],
+    outcomes: list[str],
+) -> None:
+    """Assert every lockfile is probed when no hard error is present.
+
+    A purely fresh set returns cleanly; any stale lockfile still aborts with
+    the aggregated stale error, but only after every lockfile is probed. The
+    raised message must list each stale path and omit every fresh path.
+    """
+    expected_manifests = [path.parent / "Cargo.toml" for path in lockfiles]
+    stale_paths = [
+        path
+        for path, outcome in zip(lockfiles, outcomes, strict=True)
+        if outcome == "stale"
+    ]
+    fresh_paths = [
+        path
+        for path, outcome in zip(lockfiles, outcomes, strict=True)
+        if outcome == "fresh"
+    ]
+    if stale_paths:
+        with pytest.raises(
+            publish.PublishPreflightError,
+            match="Tracked Cargo\\.lock files are stale",
+        ) as excinfo:
+            publish_preflight._validate_lockfile_freshness(
+                workspace_root, repository=repository
+            )
+        # pkg indices stay single-digit (max_size=6), so no pkgN path is a
+        # substring of another and plain containment is unambiguous. Raising
+        # max_examples' list size to >=11 would reintroduce pkg1-vs-pkg10
+        # ambiguity and would need full-line assertions instead.
+        message = str(excinfo.value)
+        for path in stale_paths:
+            assert str(path) in message, (
+                f"stale lockfile {path} missing from aggregated error: {message}"
+            )
+        for path in fresh_paths:
+            assert str(path) not in message, (
+                f"fresh lockfile {path} wrongly reported as stale: {message}"
+            )
+    else:
+        publish_preflight._validate_lockfile_freshness(
+            workspace_root, repository=repository
+        )
+    assert repository.validated_manifests == expected_manifests, (
+        "every tracked lockfile must be probed in order without "
+        f"short-circuiting; expected {expected_manifests}, got "
+        f"{repository.validated_manifests}"
+    )
+
+
+def _assert_error_aborts_classification(
+    workspace_root: Path,
+    repository: _RecordingLockfileRepository,
+    lockfiles: list[Path],
+    first_error: int,
+) -> None:
+    """Assert classification stops at and includes the first hard error.
+
+    An ``error`` outcome raises ``PublishPreflightError`` immediately, so only
+    the lockfiles up to and including the first error are probed.
+    """
+    with pytest.raises(publish.PublishPreflightError, match="boom"):
+        publish_preflight._validate_lockfile_freshness(
+            workspace_root, repository=repository
+        )
+    expected_prefix = [
+        path.parent / "Cargo.toml" for path in lockfiles[: first_error + 1]
+    ]
+    assert repository.validated_manifests == expected_prefix, (
+        f"classification must stop at the first error (index {first_error}); "
+        f"expected {expected_prefix}, got {repository.validated_manifests}"
+    )
+
+
 @given(outcomes=st.lists(_outcome, min_size=1, max_size=6))
 # tmp_path is used only to build Path objects (never written to), so reusing
 # the same function-scoped fixture across Hypothesis examples is safe here.
@@ -236,59 +315,13 @@ def test_validate_lockfile_freshness_probes_every_lockfile_until_error(
     immediately at the first such lockfile (issue #83).
     """
     repository, lockfiles = _repository_for_outcomes(tmp_path, outcomes)
-    expected_manifests = [path.parent / "Cargo.toml" for path in lockfiles]
     first_error = next(
         (i for i, outcome in enumerate(outcomes) if outcome == "error"), None
     )
 
     if first_error is None:
-        stale_paths = [
-            path
-            for path, outcome in zip(lockfiles, outcomes, strict=True)
-            if outcome == "stale"
-        ]
-        fresh_paths = [
-            path
-            for path, outcome in zip(lockfiles, outcomes, strict=True)
-            if outcome == "fresh"
-        ]
-        if stale_paths:
-            with pytest.raises(
-                publish.PublishPreflightError,
-                match="Tracked Cargo\\.lock files are stale",
-            ) as excinfo:
-                publish_preflight._validate_lockfile_freshness(
-                    tmp_path, repository=repository
-                )
-            # pkg indices stay single-digit (max_size=6), so no pkgN path is a
-            # substring of another and plain containment is unambiguous. Raising
-            # max_examples' list size to >=11 would reintroduce pkg1-vs-pkg10
-            # ambiguity and would need full-line assertions instead.
-            message = str(excinfo.value)
-            for path in stale_paths:
-                assert str(path) in message, (
-                    f"stale lockfile {path} missing from aggregated error: {message}"
-                )
-            for path in fresh_paths:
-                assert str(path) not in message, (
-                    f"fresh lockfile {path} wrongly reported as stale: {message}"
-                )
-        else:
-            publish_preflight._validate_lockfile_freshness(
-                tmp_path, repository=repository
-            )
-        assert repository.validated_manifests == expected_manifests, (
-            "every tracked lockfile must be probed in order without "
-            f"short-circuiting; expected {expected_manifests}, got "
-            f"{repository.validated_manifests}"
-        )
+        _assert_no_error_outcomes(tmp_path, repository, lockfiles, outcomes)
     else:
-        with pytest.raises(publish.PublishPreflightError, match="boom"):
-            publish_preflight._validate_lockfile_freshness(
-                tmp_path, repository=repository
-            )
-        expected_prefix = expected_manifests[: first_error + 1]
-        assert repository.validated_manifests == expected_prefix, (
-            f"classification must stop at the first error (index {first_error}); "
-            f"expected {expected_prefix}, got {repository.validated_manifests}"
+        _assert_error_aborts_classification(
+            tmp_path, repository, lockfiles, first_error
         )
