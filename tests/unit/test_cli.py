@@ -767,7 +767,9 @@ def test_publish_via_app_matches_across_config_branches(
     disk-loaded branch is only reachable publicly via ``cli.app`` invoked
     without an active configuration scope.
     """
-    assert minimal_config.exists()
+    assert minimal_config.exists(), (
+        "the minimal_config fixture must write lading.toml for the disk-loaded path"
+    )
     workspace_graph = _make_workspace(tmp_path.resolve())
     monkeypatch.setattr(cli, "load_workspace", lambda _: workspace_graph)
     calls: list[tuple[Path, config_module.LadingConfig, WorkspaceGraph]] = []
