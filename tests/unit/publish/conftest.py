@@ -88,6 +88,14 @@ def make_preflight_config(**overrides: object) -> config_module.PreflightConfig:
     -------
     config_module.PreflightConfig
         A PreflightConfig with defaults merged with the provided overrides.
+
+    Examples
+    --------
+    >>> config = make_preflight_config(
+    ...     compiletest_externs=(("alpha", "target/libalpha.rlib"),)
+    ... )
+    >>> config.compiletest_externs
+    (CompiletestExtern(crate='alpha', path='target/libalpha.rlib'),)
     """
     compiletest_externs_raw = overrides.pop("compiletest_externs", ())
     externs = tuple(
