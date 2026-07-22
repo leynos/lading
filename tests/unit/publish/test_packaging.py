@@ -79,6 +79,13 @@ class _FailureCase(typ.NamedTuple):
     output_fragment: str
 
 
+class _PackagingFailureDetail(typ.NamedTuple):
+    stdout: str
+    stderr: str
+    expected_in_message: str
+    not_expected_in_message: str | None
+
+
 def _assert_packaging_failure_message_contains(
     plan_and_prep: tuple[publish_plan.PublishPlan, publish_staging.PublishPreparation],
     runner: cabc.Callable[..., tuple[int, str, str]],
@@ -274,20 +281,24 @@ def test_package_publishable_crates_stops_on_failure(
 
 
 @pytest.mark.parametrize(
-    ("stdout", "stderr", "expected_in_message", "not_expected_in_message"),
+    "case",
     [
         pytest.param(
-            "stdout failure details",
-            "",
-            "stdout failure details",
-            None,
+            _PackagingFailureDetail(
+                stdout="stdout failure details",
+                stderr="",
+                expected_in_message="stdout failure details",
+                not_expected_in_message=None,
+            ),
             id="stdout_fallback_when_stderr_empty",
         ),
         pytest.param(
-            "stdout detail",
-            "stderr detail",
-            "stderr detail",
-            "stdout detail",
+            _PackagingFailureDetail(
+                stdout="stdout detail",
+                stderr="stderr detail",
+                expected_in_message="stderr detail",
+                not_expected_in_message="stdout detail",
+            ),
             id="stderr_takes_precedence_over_stdout",
         ),
     ],
@@ -296,20 +307,17 @@ def test_package_publishable_crates_reports_failure_detail(
     publish_plan_and_prep: tuple[
         publish_plan.PublishPlan, publish_staging.PublishPreparation, Path
     ],
-    stdout: str,
-    stderr: str,
-    expected_in_message: str,
-    not_expected_in_message: str | None,
+    case: _PackagingFailureDetail,
 ) -> None:
     """Failure details fall back to stdout or prefer populated stderr."""
     plan_and_prep = publish_plan_and_prep[:2]
-    runner = make_failing_runner(stdout=stdout, stderr=stderr)
+    runner = make_failing_runner(stdout=case.stdout, stderr=case.stderr)
 
     _assert_packaging_failure_message_contains(
         plan_and_prep,
         runner,
-        expected_in_message=expected_in_message,
-        not_expected_in_message=not_expected_in_message,
+        expected_in_message=case.expected_in_message,
+        not_expected_in_message=case.not_expected_in_message,
     )
 
 
