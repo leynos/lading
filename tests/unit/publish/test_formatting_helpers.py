@@ -38,12 +38,16 @@ def test_render_section_defaults_to_string_conversion() -> None:
     """Default formatter handles simple string values without boilerplate."""
     lines = publish_plan.render_section(("alpha", "beta"), header="Header:")
 
-    assert lines == ["Header:", "- alpha", "- beta"]
+    assert lines == ["Header:", "- alpha", "- beta"], (
+        "default formatter should stringify each item under the header"
+    )
 
 
 def test_render_section_omits_header_for_empty_sequences() -> None:
     """Helper returns no lines when there is nothing to report."""
-    assert publish_plan.render_section((), header="Header:") == []
+    assert publish_plan.render_section((), header="Header:") == [], (
+        "an empty sequence renders no lines when no empty_message is given"
+    )
 
 
 def test_append_section_extends_list_in_place() -> None:
@@ -111,7 +115,7 @@ def test_render_section_renders_empty_message_when_empty() -> None:
         (), header="Header:", empty_message="Nothing to report"
     )
 
-    assert lines == ["Nothing to report"]
+    assert lines == ["Nothing to report"], "empty_message replaces an absent section"
 
 
 @given(
@@ -130,12 +134,18 @@ def test_render_section_invariants(
     )
 
     if items:
-        assert lines[0] == "Header:"
-        assert lines[1:] == [f"- {item}" for item in items]
+        assert lines[0] == "Header:", "the header appears first when items exist"
+        assert lines[1:] == [f"- {item}" for item in items], (
+            "each item renders exactly once as a bullet"
+        )
     elif empty_message is not None:
-        assert lines == [empty_message]
+        assert lines == [empty_message], (
+            "only the empty_message renders for an empty section"
+        )
     else:
-        assert lines == []
+        assert lines == [], (
+            "no lines render for an empty section without an empty_message"
+        )
 
 
 def _normalise_plan_message(message: str, root: Path) -> str:
@@ -158,7 +168,9 @@ def test_format_plan_snapshot_with_publishable(
 
     message = publish_plan.format_plan(plan, strip_patches="all")
 
-    assert snapshot == _normalise_plan_message(message, root)
+    assert snapshot == _normalise_plan_message(message, root), (
+        "rendered plan with publishable and skipped crates matches the snapshot"
+    )
 
 
 def test_format_plan_snapshot_without_publishable(
@@ -176,4 +188,6 @@ def test_format_plan_snapshot_without_publishable(
 
     message = publish_plan.format_plan(plan, strip_patches="per-crate")
 
-    assert snapshot == _normalise_plan_message(message, root)
+    assert snapshot == _normalise_plan_message(message, root), (
+        "empty publish set renders the empty-state plan snapshot"
+    )
