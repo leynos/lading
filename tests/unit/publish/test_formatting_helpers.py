@@ -51,7 +51,7 @@ def test_append_section_omits_header_for_empty_sequences() -> None:
 
 
 def test_format_plan_formats_skipped_sections(tmp_path: Path) -> None:
-    """``_format_plan`` renders skipped crates using their names only."""
+    """``format_plan`` renders skipped crates using their names only."""
     root = tmp_path.resolve()
     manifest_skipped = make_crate(root, "beta", publish_flag=False)
     config_skipped = make_crate(root, "gamma")

@@ -6,7 +6,7 @@ import typing as typ
 
 import pytest
 
-from lading.commands import publish
+from lading.commands import publish, publish_plan
 
 from .conftest import (
     make_config,
@@ -29,7 +29,7 @@ def test_plan_publication_rejects_incomplete_configured_order(tmp_path: Path) ->
     workspace = make_workspace(root, alpha, beta)
     configuration = make_config(order=("alpha",))
 
-    with pytest.raises(publish.PublishPlanError) as excinfo:
+    with pytest.raises(publish_plan.PublishPlanError) as excinfo:
         publish.plan_publication(workspace, configuration)
 
     message = str(excinfo.value)
@@ -41,7 +41,7 @@ def test_plan_publication_rejects_unknown_configured_crates(tmp_path: Path) -> N
     """Names outside the publishable set trigger an informative error."""
     alpha, _, _ = make_dependency_chain(tmp_path.resolve())
 
-    with pytest.raises(publish.PublishPlanError) as excinfo:
+    with pytest.raises(publish_plan.PublishPlanError) as excinfo:
         plan_with_crates(tmp_path, (alpha,), order=("alpha", "omega"))
 
     assert "publish.order references crates outside the publishable set" in str(
@@ -57,7 +57,7 @@ def test_plan_publication_detects_dependency_cycles(tmp_path: Path) -> None:
     workspace = make_workspace(root, alpha, beta)
     configuration = make_config()
 
-    with pytest.raises(publish.PublishPlanError) as excinfo:
+    with pytest.raises(publish_plan.PublishPlanError) as excinfo:
         publish.plan_publication(workspace, configuration)
 
     assert "dependency cycle" in str(excinfo.value)

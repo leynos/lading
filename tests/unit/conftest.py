@@ -16,10 +16,8 @@ import pytest
 import tomlkit
 
 from lading import config as config_module
-from lading.commands import bump, publish
+from lading.commands import bump, publish, publish_preflight
 from lading.workspace import WorkspaceCrate, WorkspaceDependency, WorkspaceGraph
-
-_ORIGINAL_PREFLIGHT = publish._run_preflight_checks
 
 # These modules drive ``bump.run`` to exercise manifest updates, documentation
 # rewriting, and the rebuild_lockfiles resolution logic -- none of which need
@@ -69,7 +67,7 @@ type PrepareWorkspaceFixtures = PublishFixtures
 def disable_publish_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
     """Stub publish pre-flight checks for tests that do not exercise them."""
     monkeypatch.setattr(
-        publish,
+        publish_preflight,
         "_run_preflight_checks",
         lambda *_args, **_kwargs: None,
     )

@@ -7,7 +7,6 @@ from pathlib import Path
 
 from lading.commands.publish_errors import PublishPreflightError
 from lading.runtime import CommandSpawnError
-from lading.runtime.subprocess_runner import split_command as _runtime_split_command
 from lading.runtime.subprocess_runner import (
     subprocess_runner as _default_subprocess_runner,
 )
@@ -36,17 +35,6 @@ def _invoke(
         raise _publish_error(str(exc)) from exc
 
 
-def _split_command(command: cabc.Sequence[str]) -> tuple[str, tuple[str, ...]]:
-    """Return the program and argument tuple for ``command``."""
-    try:
-        return _runtime_split_command(command)
-    except ValueError as exc:
-        raise _publish_error(str(exc)) from exc
-
-
-split_command = _split_command
-
 __all__ = [
     "_invoke",
-    "split_command",
 ]

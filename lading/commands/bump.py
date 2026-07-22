@@ -24,7 +24,6 @@ delegates to sibling modules:
 - :mod:`lading.commands.bump_docs` — documentation version rewrites.
 - :mod:`lading.commands.bump_lockfiles` — lockfile regeneration.
 - :mod:`lading.commands.bump_readme` — workspace README transposition.
-- :mod:`lading.commands.bump_toml` — low-level TOML manipulation.
 """
 
 from __future__ import annotations
@@ -42,7 +41,6 @@ from lading.commands import (
     bump_lockfiles,
     bump_manifests,
     bump_readme,
-    bump_toml,
 )
 from lading.commands.bump_manifests import (
     _WORKSPACE_SELECTORS,
@@ -64,7 +62,6 @@ if typ.TYPE_CHECKING:
     from lading.workspace import WorkspaceCrate, WorkspaceGraph
 
 LOGGER = logging.getLogger(__name__)
-_log = LOGGER
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -134,7 +131,7 @@ def run(
 ) -> str:
     """Update workspace and crate manifest versions to ``target_version``."""
     context = _initialize_bump_context(workspace_root, options)
-    _log.debug(
+    LOGGER.debug(
         "Bump context initialised: %d excluded crate(s), %d to update",
         len(context.excluded),
         len(context.updated_crate_names),
@@ -182,7 +179,7 @@ def _initialize_bump_context(
         if resolved_options.rebuild_lockfiles is None
         else resolved_options.rebuild_lockfiles
     )
-    _log.debug(
+    LOGGER.debug(
         "rebuild_lockfiles resolution: raw_flag=%r, configured_default=%r, resolved=%r",
         resolved_options.rebuild_lockfiles,
         configuration.bump.rebuild_lockfiles,
@@ -253,7 +250,7 @@ def _process_crate_manifests(
                 updated_count += 1
             case _CrateManifestOutcome.UNCHANGED:
                 pass
-    _log.debug(
+    LOGGER.debug(
         "Crate manifest processing complete: %d processed, %d skipped, %d updated",
         processed_count,
         skipped_count,
@@ -279,7 +276,7 @@ def _process_documentation_files(
 
 def _process_readme_transposition(context: _BumpContext, *, dry_run: bool) -> set[Path]:
     """Transpose workspace README files into opted-in member crates."""
-    _log.debug("Starting workspace README transposition")
+    LOGGER.debug("Starting workspace README transposition")
     changed_readmes: set[Path] = set()
     transposed_entry_count = 0
     source_readme_path = context.root_path / "README.md"
@@ -300,11 +297,11 @@ def _process_readme_transposition(context: _BumpContext, *, dry_run: bool) -> se
                 _source_text=cached_text,
             )
         except bump_readme.ReadmeTranspositionError:
-            _log.error("README transposition failed for crate %r", crate.name)
+            LOGGER.exception("README transposition failed for crate %r", crate.name)
             raise
         if changed_path is not None:
             changed_readmes.add(changed_path)
-    _log.debug(
+    LOGGER.debug(
         "README transposition complete: %d entries, %d file(s) changed",
         transposed_entry_count,
         len(changed_readmes),
@@ -379,7 +376,7 @@ def _apply_crate_manifest_update(
     )
 
     if _should_skip_crate_update(selectors, dependency_sections):
-        _log.debug("Skipping crate manifest update for excluded crate %r", crate.name)
+        LOGGER.debug("Skipping crate manifest update for excluded crate %r", crate.name)
         return _CrateManifestOutcome.SKIPPED
 
     crate_options = dc.replace(
@@ -393,19 +390,19 @@ def _apply_crate_manifest_update(
         crate_options,
     )
     if was_updated:
-        _log.debug(
+        LOGGER.debug(
             "Updated crate manifest for crate %r: manifest=%s",
             crate.name,
             crate.manifest_path,
         )
         if not crate_options.dry_run:
-            _log.debug(
+            LOGGER.debug(
                 "Wrote crate manifest for crate %r: manifest=%s",
                 crate.name,
                 crate.manifest_path,
             )
     else:
-        _log.debug(
+        LOGGER.debug(
             "Crate manifest already up to date for crate %r: manifest=%s",
             crate.name,
             crate.manifest_path,
@@ -415,12 +412,3 @@ def _apply_crate_manifest_update(
         if was_updated
         else _CrateManifestOutcome.UNCHANGED
     )
-
-
-# Re-export low-level TOML helpers used by tests for backward compatibility.
-_parse_manifest = bump_toml.parse_manifest
-_select_table = bump_toml.select_table
-_assign_version = bump_toml.assign_version
-_value_matches = bump_toml.value_matches
-_update_dependency_sections = bump_toml.update_dependency_sections
-_update_dependency_table = bump_toml.update_dependency_table

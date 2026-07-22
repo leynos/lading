@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from lading import config as config_module
-from lading.commands import publish
+from lading.commands import publish, publish_preflight
 from lading.workspace import WorkspaceCrate, WorkspaceDependency, WorkspaceGraph
 
 if typ.TYPE_CHECKING:
@@ -261,14 +261,14 @@ def publish_plan_and_prep(
 
 
 ORIGINAL_INVOKE = publish._invoke
-ORIGINAL_PREFLIGHT = publish._run_preflight_checks
+ORIGINAL_PREFLIGHT = publish_preflight._run_preflight_checks
 
 
 @pytest.fixture(autouse=True)
 def disable_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
     """Stub publish pre-flight checks for tests unless explicitly restored."""
     monkeypatch.setattr(
-        publish, "_run_preflight_checks", lambda *_args, **_kwargs: None
+        publish_preflight, "_run_preflight_checks", lambda *_args, **_kwargs: None
     )
     monkeypatch.setattr(
         publish,

@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from lading.commands import publish
+from lading.commands import publish_preflight
 
 from .conftest import ORIGINAL_PREFLIGHT
 
@@ -32,12 +32,14 @@ def test_run_cargo_preflight_raises_on_failure(
         assert command[0] == "cargo"
         return 1, "", "boom"
 
-    with pytest.raises(publish.PublishPreflightError) as excinfo:
-        publish._run_cargo_preflight(
+    with pytest.raises(publish_preflight.PublishPreflightError) as excinfo:
+        publish_preflight._run_cargo_preflight(
             tmp_path,
             "check",
             runner=failing_runner,
-            options=publish._CargoPreflightOptions(extra_args=("--workspace",)),
+            options=publish_preflight._CargoPreflightOptions(
+                extra_args=("--workspace",)
+            ),
         )
 
     message = str(excinfo.value)
@@ -87,12 +89,14 @@ def test_run_cargo_preflight_failure_message_snapshot(
         del command, cwd, env
         return case.exit_code, "", case.stderr
 
-    with pytest.raises(publish.PublishPreflightError) as excinfo:
-        publish._run_cargo_preflight(
+    with pytest.raises(publish_preflight.PublishPreflightError) as excinfo:
+        publish_preflight._run_cargo_preflight(
             tmp_path,
             case.subcommand,
             runner=failing_runner,
-            options=publish._CargoPreflightOptions(extra_args=("--workspace",)),
+            options=publish_preflight._CargoPreflightOptions(
+                extra_args=("--workspace",)
+            ),
         )
 
     assert str(excinfo.value) == snapshot()
@@ -102,19 +106,19 @@ def test_run_cargo_preflight_failure_message_snapshot(
 class _RunCargoPreflightCase:
     """Parameters for a single cargo-preflight argument-construction scenario."""
 
-    options: publish._CargoPreflightOptions
+    options: publish_preflight._CargoPreflightOptions
     expected_tail: tuple[str, ...]
 
 
 def _run_and_record_cargo_preflight(
     workspace_root: Path,
     subcommand: typ.Literal["check", "test"],
-    options: publish._CargoPreflightOptions,
+    options: publish_preflight._CargoPreflightOptions,
 ) -> tuple[str, ...]:
     """Run cargo preflight through a recording runner.
 
     The helper injects a closure named ``recording_runner`` into
-    ``publish._run_cargo_preflight``. That closure captures the subprocess
+    ``publish_preflight._run_cargo_preflight``. That closure captures the subprocess
     arguments instead of executing Cargo, so tests can assert the constructed
     command returned as a tuple.
 
@@ -133,7 +137,7 @@ def _run_and_record_cargo_preflight(
         recorded.append(command)
         return 0, "", ""
 
-    publish._run_cargo_preflight(
+    publish_preflight._run_cargo_preflight(
         workspace_root,
         subcommand,
         runner=recording_runner,
@@ -149,7 +153,7 @@ def _run_and_record_cargo_preflight(
     [
         pytest.param(
             _RunCargoPreflightCase(
-                options=publish._CargoPreflightOptions(
+                options=publish_preflight._CargoPreflightOptions(
                     extra_args=("--workspace", "--all-targets"),
                     test_excludes=(" alpha ", "", "beta"),
                 ),
@@ -159,7 +163,7 @@ def _run_and_record_cargo_preflight(
         ),
         pytest.param(
             _RunCargoPreflightCase(
-                options=publish._CargoPreflightOptions(
+                options=publish_preflight._CargoPreflightOptions(
                     extra_args=("--workspace", "--all-targets"),
                     test_excludes=["", "   ", "\t", "\n"],
                 ),
@@ -169,7 +173,7 @@ def _run_and_record_cargo_preflight(
         ),
         pytest.param(
             _RunCargoPreflightCase(
-                options=publish._CargoPreflightOptions(
+                options=publish_preflight._CargoPreflightOptions(
                     extra_args=("--workspace", "--all-targets"),
                     unit_tests_only=True,
                 ),
@@ -179,7 +183,7 @@ def _run_and_record_cargo_preflight(
         ),
         pytest.param(
             _RunCargoPreflightCase(
-                options=publish._CargoPreflightOptions(
+                options=publish_preflight._CargoPreflightOptions(
                     extra_args=("--workspace", "--all-targets"),
                     test_excludes=["slow-integration"],
                     unit_tests_only=True,
@@ -195,7 +199,7 @@ def _run_and_record_cargo_preflight(
         ),
         pytest.param(
             _RunCargoPreflightCase(
-                options=publish._CargoPreflightOptions(
+                options=publish_preflight._CargoPreflightOptions(
                     extra_args=("--workspace", "--all-targets"),
                     unit_tests_only=False,
                 ),
@@ -222,7 +226,7 @@ def test_compiletest_diagnostic_details(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Failing cargo test pre-flight lists stderr artifacts with tail output."""
-    monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
+    monkeypatch.setattr(publish_preflight, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
     artifact = tmp_path / "ui.stderr"
     artifact.write_text("line1\nline2\nline3\n", encoding="utf-8")
 
@@ -234,13 +238,13 @@ def test_compiletest_diagnostic_details(
     ) -> tuple[int, str, str]:
         return 1, f"diff at {artifact}", ""
 
-    options = publish._CargoPreflightOptions(
+    options = publish_preflight._CargoPreflightOptions(
         extra_args=("--workspace",),
         env={},
         diagnostics_tail_lines=2,
     )
-    with pytest.raises(publish.PublishPreflightError) as excinfo:
-        publish._run_cargo_preflight(
+    with pytest.raises(publish_preflight.PublishPreflightError) as excinfo:
+        publish_preflight._run_cargo_preflight(
             tmp_path,
             "test",
             runner=failing_runner,

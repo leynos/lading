@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 
 from lading import cli
-from lading.commands import publish, publish_execution
 from lading.runtime import subprocess_runner
 from lading.testing import cmd_mox_runner
 from lading.testing.cmd_mox_runner import normalise_cmd_mox_command
@@ -72,14 +71,6 @@ def test_echo_buffered_output_skips_empty_payloads() -> None:
     sink = io.StringIO()
     cmd_mox_runner._echo_buffered_output("", sink)
     assert sink.getvalue() == ""
-
-
-def test_split_command_rejects_empty_sequence() -> None:
-    """Splitting an empty command raises a descriptive error."""
-    with pytest.raises(publish.PublishPreflightError) as excinfo:
-        publish_execution.split_command(())
-
-    assert "Command sequence must contain" in str(excinfo.value)
 
 
 @pytest.mark.parametrize(

@@ -8,71 +8,21 @@ from pathlib import Path
 
 import pytest
 
-from lading.commands import publish, publish_preflight
+from lading.commands import publish_preflight
 
 from .conftest import ORIGINAL_PREFLIGHT, make_config, make_preflight_config
 
 if typ.TYPE_CHECKING:
     from syrupy.assertion import SnapshotAssertion
 
-    from lading.config import LadingConfig
     from lading.runtime import CommandRunner
-
-
-def test_publish_preflight_aliases_are_wired_correctly() -> None:
-    """Backwards-compatible preflight names keep resolving into publish_preflight.
-
-    ``_preflight_argument_sets`` is a bare re-export, so identity must hold.
-    ``_run_preflight_checks`` is intentionally a thin wrapper (issue #96) that
-    preserves the optional-``configuration`` contract, so it must *not* be the
-    canonical object; its delegation is pinned by
-    ``test_preflight_wrapper_loads_configuration_when_omitted``.
-    """
-    assert (
-        publish._preflight_argument_sets is publish_preflight._preflight_argument_sets
-    )
-    assert publish._run_preflight_checks is not publish_preflight._run_preflight_checks
-
-
-def test_preflight_wrapper_loads_configuration_when_omitted(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Omitting ``configuration`` resolves it before delegating to canonical."""
-    monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
-    configuration = make_config()
-    monkeypatch.setattr(
-        publish.config_module, "current_configuration", lambda: configuration
-    )
-    recorded: dict[str, typ.Any] = {}
-
-    def recording_preflight(
-        workspace_root: Path,
-        *,
-        allow_dirty: bool,
-        configuration: LadingConfig,
-        runner: CommandRunner | None = None,
-    ) -> None:
-        recorded["workspace_root"] = workspace_root
-        recorded["allow_dirty"] = allow_dirty
-        recorded["configuration"] = configuration
-
-    monkeypatch.setattr(publish_preflight, "_run_preflight_checks", recording_preflight)
-
-    root = tmp_path / "workspace"
-    root.mkdir()
-
-    publish._run_preflight_checks(root, allow_dirty=True)
-
-    assert recorded["configuration"] is configuration
-    assert recorded["workspace_root"] == root
-    assert recorded["allow_dirty"] is True
 
 
 def test_preflight_checks_remove_all_targets_for_unit_only(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Unit-test-only mode omits --all-targets from cargo test pre-flight."""
-    monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
+    monkeypatch.setattr(publish_preflight, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
     monkeypatch.setattr(
         publish_preflight, "_verify_clean_working_tree", lambda *_args, **_kwargs: None
     )
@@ -93,7 +43,9 @@ def test_preflight_checks_remove_all_targets_for_unit_only(
     root.mkdir()
     configuration = make_config(preflight=make_preflight_config(unit_tests_only=True))
 
-    publish._run_preflight_checks(root, allow_dirty=False, configuration=configuration)
+    publish_preflight._run_preflight_checks(
+        root, allow_dirty=False, configuration=configuration
+    )
 
     assert set(recorded) == {"check", "test"}
     check_args = recorded["check"].extra_args
@@ -111,7 +63,7 @@ def test_preflight_checks_support_special_target_dir(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Target directories with spaces/symbols propagate without quoting issues."""
-    monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
+    monkeypatch.setattr(publish_preflight, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
     monkeypatch.setattr(
         publish_preflight, "_verify_clean_working_tree", lambda *_args, **_kwargs: None
     )
@@ -148,7 +100,9 @@ def test_preflight_checks_support_special_target_dir(
     root.mkdir()
     configuration = make_config()
 
-    publish._run_preflight_checks(root, allow_dirty=False, configuration=configuration)
+    publish_preflight._run_preflight_checks(
+        root, allow_dirty=False, configuration=configuration
+    )
 
     assert set(recorded) == {"check", "test"}
     for args in recorded.values():
@@ -161,7 +115,7 @@ def test_preflight_runs_aux_build_commands(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Auxiliary build commands execute before cargo pre-flight calls."""
-    monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
+    monkeypatch.setattr(publish_preflight, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
     root = tmp_path / "workspace"
     root.mkdir()
     commands: list[tuple[tuple[str, ...], Path | None]] = []
@@ -182,7 +136,7 @@ def test_preflight_runs_aux_build_commands(
         preflight=make_preflight_config(aux_build=(("cargo", "test", "-p", "lint"),))
     )
 
-    publish._run_preflight_checks(
+    publish_preflight._run_preflight_checks(
         root,
         allow_dirty=True,
         configuration=configuration,
@@ -199,7 +153,7 @@ def test_aux_build_failure_surfaces_error(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Failures in aux build commands abort pre-flight with context."""
-    monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
+    monkeypatch.setattr(publish_preflight, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
     root = tmp_path / "workspace"
     root.mkdir()
 
@@ -224,8 +178,8 @@ def test_aux_build_failure_surfaces_error(
         )
     )
 
-    with pytest.raises(publish.PublishPreflightError) as excinfo:
-        publish._run_preflight_checks(
+    with pytest.raises(publish_preflight.PublishPreflightError) as excinfo:
+        publish_preflight._run_preflight_checks(
             root,
             allow_dirty=True,
             configuration=configuration,
@@ -239,7 +193,7 @@ def test_preflight_env_overrides_forwarded(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Environment overrides propagate to cargo pre-flight invocations."""
-    monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
+    monkeypatch.setattr(publish_preflight, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
     root = tmp_path / "workspace"
     root.mkdir()
     captured_env: dict[str, str] = {}
@@ -261,7 +215,7 @@ def test_preflight_env_overrides_forwarded(
         preflight=make_preflight_config(env_overrides=(("DYLINT_LOCALE", "cy"),))
     )
 
-    publish._run_preflight_checks(
+    publish_preflight._run_preflight_checks(
         root,
         allow_dirty=True,
         configuration=configuration,
@@ -275,7 +229,7 @@ def test_preflight_append_compiletest_externs(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Compiletest externs extend RUSTFLAGS for cargo test."""
-    monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
+    monkeypatch.setattr(publish_preflight, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
     root = tmp_path / "workspace"
     root.mkdir()
     artifact = root / "target" / "lint" / "liblint_macro.so"
@@ -309,7 +263,7 @@ def test_preflight_append_compiletest_externs(
         )
     )
 
-    publish._run_preflight_checks(
+    publish_preflight._run_preflight_checks(
         root,
         allow_dirty=True,
         configuration=configuration,
@@ -337,7 +291,7 @@ def test_verify_clean_working_tree_detects_dirty_state(
         assert cwd == root
         return 0, " M file\n", ""
 
-    with pytest.raises(publish.PublishPreflightError) as excinfo:
+    with pytest.raises(publish_preflight.PublishPreflightError) as excinfo:
         publish_preflight._verify_clean_working_tree(
             root, allow_dirty=False, runner=dirty_runner
         )
@@ -369,7 +323,7 @@ def test_verify_clean_working_tree_reports_missing_repo(
         assert cwd == tmp_path
         return 128, "", "fatal: Not a git repository"
 
-    with pytest.raises(publish.PublishPreflightError) as excinfo:
+    with pytest.raises(publish_preflight.PublishPreflightError) as excinfo:
         publish_preflight._verify_clean_working_tree(
             tmp_path, allow_dirty=False, runner=missing_runner
         )

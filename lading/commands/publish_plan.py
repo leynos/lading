@@ -212,21 +212,77 @@ def _format_crates_section(
         lines.append(empty_message)
 
 
-def _append_section[T](
+def append_section[T](
     lines: list[str],
     items: cabc.Sequence[T],
     *,
     header: str,
     formatter: cabc.Callable[[T], str] = str,
 ) -> None:
-    """Append formatted ``items`` to ``lines`` when a section has content."""
+    """Append a formatted section to ``lines`` when ``items`` is non-empty.
+
+    Parameters
+    ----------
+    lines:
+        Accumulator of output lines, mutated in place. When ``items`` is empty
+        the accumulator is left unchanged.
+    items:
+        Entries rendered beneath ``header``. An empty sequence appends nothing.
+    header:
+        Section heading emitted before the formatted entries.
+    formatter:
+        Callable mapping each item to its display string. Defaults to ``str``.
+
+    Returns
+    -------
+    None
+        The result is communicated by mutating ``lines`` in place.
+
+    Examples
+    --------
+    >>> lines = ["Header:"]
+    >>> append_section(lines, ["alpha", "beta"], header="Members:")
+    >>> lines
+    ['Header:', 'Members:', '- alpha', '- beta']
+    >>> append_section(lines, [], header="Extras:")
+    >>> lines
+    ['Header:', 'Members:', '- alpha', '- beta']
+    """
     if items:
         lines.append(header)
         lines.extend(f"- {formatter(item)}" for item in items)
 
 
-def _format_plan(plan: PublishPlan, *, strip_patches: StripPatchesSetting) -> str:
-    """Render ``plan`` to a human-readable summary for CLI output."""
+def format_plan(plan: PublishPlan, *, strip_patches: StripPatchesSetting) -> str:
+    """Render ``plan`` to a human-readable summary for CLI output.
+
+    Parameters
+    ----------
+    plan:
+        Resolved publication plan whose crate groupings are rendered.
+    strip_patches:
+        Strip-patch strategy recorded in the summary header.
+
+    Returns
+    -------
+    str
+        Multi-line summary listing crates to publish and each skipped group,
+        suitable for printing to the CLI.
+
+    Examples
+    --------
+    >>> from pathlib import Path
+    >>> plan = PublishPlan(
+    ...     workspace_root=Path("ws"),
+    ...     publishable=(),
+    ...     skipped_manifest=(),
+    ...     skipped_configuration=(),
+    ... )
+    >>> print(format_plan(plan, strip_patches="none"))
+    Publish plan for ws
+    Strip patch strategy: none
+    Crates to publish: none
+    """
     lines = [
         f"Publish plan for {plan.workspace_root}",
         f"Strip patch strategy: {strip_patches}",
@@ -238,19 +294,19 @@ def _format_plan(plan: PublishPlan, *, strip_patches: StripPatchesSetting) -> st
         header=f"Crates to publish ({len(plan.publishable)}):",
         empty_message="Crates to publish: none",
     )
-    _append_section(
+    append_section(
         lines,
         plan.skipped_manifest,
         header="Skipped (publish = false):",
         formatter=lambda crate: crate.name,
     )
-    _append_section(
+    append_section(
         lines,
         plan.skipped_configuration,
         header="Skipped via publish.exclude:",
         formatter=lambda crate: crate.name,
     )
-    _append_section(
+    append_section(
         lines,
         plan.missing_configuration_exclusions,
         header="Configured exclusions not found in workspace:",
@@ -259,15 +315,9 @@ def _format_plan(plan: PublishPlan, *, strip_patches: StripPatchesSetting) -> st
     return "\n".join(lines)
 
 
-append_section = _append_section
-format_plan = _format_plan
-
 __all__ = [
     "PublishPlan",
     "PublishPlanError",
-    "_append_section",
-    "_format_crates_section",
-    "_format_plan",
     "append_section",
     "format_plan",
     "plan_publication",
