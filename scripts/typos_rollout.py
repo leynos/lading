@@ -54,7 +54,9 @@ def _string_list(table: cabc.Mapping[str, object], key: str) -> tuple[str, ...]:
     if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
         message = f"{key!r} must be a list of strings"
         raise TypeError(message)
-    strings = [item for item in value if isinstance(item, str)]
+    # The guard above has already proven every element is a str, so cast the
+    # validated list directly rather than filtering it a second time.
+    strings = typ.cast("list[str]", value)
     return tuple(sorted(set(strings)))
 
 

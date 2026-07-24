@@ -22,17 +22,17 @@ jobs:
           python-version: '3.13'
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
 
       - name: Install CLI tools
         run: |
           for tool in mbake; do uv tool install ${tool}; done
-          # Pin ty and ruff to the versions the Makefile invokes (TY_VERSION and
-          # RUFF_VERSION) so the type checker and linter behave identically
-          # across the uv tool, the synced virtualenv, and developer PATH. Bump
-          # each tool's Makefile and CI pin together; leaving ty unpinned is how
-          # a newer release slipped a type error into CI.
-          uv tool install ty==0.0.32
+          # ty needs no install here: `make typecheck` runs it via
+          # `uv tool run ty@$(TY_VERSION)`, so the Makefile's TY_VERSION is the
+          # single source of truth and cannot drift from a duplicate CI pin.
+          # Pin ruff to the version the Makefile invokes (RUFF_VERSION) so the
+          # linter behaves identically across the uv tool, the synced
+          # virtualenv, and developer PATH; bump both sites together.
           uv tool install ruff==0.15.12
           npm install -g markdownlint-cli2
 
@@ -88,7 +88,7 @@ jobs:
       # where the gate step is skipped (secret-less fork PRs, and
       # push-to-main where the gate is PR-only).
       - name: Upload coverage artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: coverage-report
           path: coverage.xml

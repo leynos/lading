@@ -251,9 +251,10 @@ def _assert_no_error_outcomes(
                 workspace_root, repository=repository
             )
         # pkg indices stay single-digit (max_size=6), so no pkgN path is a
-        # substring of another and plain containment is unambiguous. Raising
-        # max_examples' list size to >=11 would reintroduce pkg1-vs-pkg10
-        # ambiguity and would need full-line assertions instead.
+        # substring of another and plain containment is unambiguous. Raising the
+        # list strategy's max_size (st.lists(_outcome, min_size=1, max_size=6))
+        # to >=11 would reintroduce pkg1-vs-pkg10 ambiguity and would need
+        # full-line assertions instead.
         message = str(excinfo.value)
         for path in stale_paths:
             assert str(path) in message, (
