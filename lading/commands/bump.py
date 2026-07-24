@@ -52,9 +52,13 @@ def run(
         len(context.updated_crate_names),
     )
     changed_manifests: set[Path] = set()
-    bump_pipeline._process_workspace_manifest(context, target_version, changed_manifests)
+    bump_pipeline._process_workspace_manifest(
+        context, target_version, changed_manifests
+    )
     bump_pipeline._process_crate_manifests(context, target_version, changed_manifests)
-    changed_documents = bump_pipeline._process_documentation_files(context, target_version)
+    changed_documents = bump_pipeline._process_documentation_files(
+        context, target_version
+    )
     changed_readmes = bump_pipeline._process_readme_transposition(
         context, dry_run=context.base_options.dry_run
     )

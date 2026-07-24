@@ -135,16 +135,12 @@ def _process_readme_transposition(context: _BumpContext, *, dry_run: bool) -> se
         if not crate.readme_is_workspace:
             continue
         transposed_entry_count += 1
-        try:
-            changed_path = bump_readme.transpose_readme_to_crate(
-                context.root_path,
-                crate,
-                dry_run=dry_run,
-                _source_text=cached_text,
-            )
-        except bump_readme.ReadmeTranspositionError:
-            _log.exception("README transposition failed for crate %r", crate.name)
-            raise
+        changed_path = bump_readme.transpose_readme_to_crate(
+            context.root_path,
+            crate,
+            dry_run=dry_run,
+            _source_text=cached_text,
+        )
         if changed_path is not None:
             changed_readmes.add(changed_path)
     _log.debug(
