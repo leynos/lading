@@ -1,13 +1,13 @@
 """Unit tests for bump manifest writing and dependency-section rewrites."""
+
 from __future__ import annotations
 
 from pathlib import Path
 
-from tomlkit import parse as parse_toml
 import pytest
+from tomlkit import parse as parse_toml
 
-from lading.commands import bump, bump_manifests
-from lading.commands import bump, bump_toml
+from lading.commands import bump, bump_manifests, bump_toml
 from tests.helpers.workspace_builders import _load_version
 
 
