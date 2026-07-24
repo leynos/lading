@@ -230,18 +230,7 @@ def _validate_mapping_keys(
     allowed_keys: set[str],
     context: str,
 ) -> None:
-    """Validate that mapping contains only allowed keys.
-
-    Args:
-        mapping: The mapping to validate (may be None).
-        allowed_keys: Set of permitted key names.
-        context: Context for error message (e.g., "bump", "publish").
-
-    Raises
-    ------
-        ConfigurationError: If mapping contains unknown keys.
-
-    """
+    """Validate that mapping contains only allowed keys."""
     if mapping is None:
         return
     unknown = set(mapping) - allowed_keys
