@@ -10,8 +10,14 @@ UV ?= $(shell command -v uv 2>/dev/null || printf '%s/.local/bin/uv' "$$HOME")
 RUFF_VERSION ?= 0.15.12
 RUFF ?= $(UV) tool run --from ruff==$(RUFF_VERSION) ruff
 TYPOS_VERSION ?= 1.48.0
+# Pin ty so `make typecheck` invokes the same version as the
+# `uv tool install ty==` step in .github/workflows/ci.yml. Bump both sites
+# together: a version mismatch lets a newer ty flag diagnostics locally that CI
+# misses (or vice versa), which is how such a failure slips into CI.
+TY_VERSION ?= 0.0.32
+TY ?= $(UV) tool run ty@$(TY_VERSION)
 UV_ENV = UV_CACHE_DIR=.uv-cache UV_TOOL_DIR=.uv-tools
-TOOLS = $(MDFORMAT_ALL) ty $(MDLINT) $(NIXIE) $(UV)
+TOOLS = $(MDFORMAT_ALL) $(MDLINT) $(NIXIE) $(UV)
 PY_SOURCES := $(sort $(shell find lading scripts -type f -name '*.py' -print))
 VENV_TOOLS = interrogate pytest
 PYLINT_PYTHON ?= pypy
@@ -83,8 +89,8 @@ lint: build $(UV) interrogate ## Run linters
 	$(UV) run interrogate --fail-under 100 lading
 	$(PYLINT) $(PYLINT_TARGETS)
 
-typecheck: build ty ## Run typechecking
-	ty check --python-version 3.13 $(PY_SOURCES)
+typecheck: build $(UV) ## Run typechecking
+	$(UV_ENV) $(TY) check --python-version 3.13 $(PY_SOURCES)
 
 markdownlint: spelling $(MDLINT) ## Lint Markdown files and enforce spelling
 	find . -type f -name '*.md' \

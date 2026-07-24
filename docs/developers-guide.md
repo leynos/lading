@@ -381,7 +381,6 @@ manifest rewrites, while publish only probes freshness read-only via
 `cargo metadata --locked --manifest-path ... --format-version=1`. It returns a
 `LockfileFreshness` result that distinguishes fresh lockfiles, lockfiles that
 Cargo says need updating under `--locked`, and unrelated Cargo failures.
-
 The publish pre-flight domain reaches both operations through the
 `LockfileInspectionRepository` port (issue #82) rather than holding a command
 runner: `_validate_lockfile_freshness` and `_collect_stale_lockfiles` in
@@ -397,6 +396,11 @@ and validation without invoking real git or cargo. This is the publish-side
 counterpart to the bump-side `bump_lockfiles.LockfileRepository`; together they
 complete issue #82's separation of lockfile VCS/filesystem concerns from the
 command domain.
+
+`_collect_stale_lockfiles` deliberately classifies every tracked lockfile
+rather than short-circuiting on the first stale result (issue #83), so the
+raised error can list each stale lockfile with its repair command and the
+operator repairs the workspace in a single pass.
 
 `LockfileDiscoveryError` inherits `LadingError`; its messages include the git
 failure detail.
