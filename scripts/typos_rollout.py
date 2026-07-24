@@ -56,8 +56,7 @@ def _string_list(table: cabc.Mapping[str, object], key: str) -> tuple[str, ...]:
         raise TypeError(message)
     # The guard above has already proven every element is a str, so cast the
     # validated list directly rather than filtering it a second time.
-    strings = typ.cast("list[str]", value)
-    return tuple(sorted(set(strings)))
+    return tuple(sorted(set(typ.cast("list[str]", value))))
 
 
 def _table(document: cabc.Mapping[str, object], key: str) -> cabc.Mapping[str, object]:

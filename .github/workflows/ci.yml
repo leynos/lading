@@ -27,9 +27,9 @@ jobs:
       - name: Install CLI tools
         run: |
           for tool in mbake; do uv tool install ${tool}; done
-          # ty needs no install here: `make typecheck` runs it via
-          # `uv tool run ty@$(TY_VERSION)`, so the Makefile's TY_VERSION is the
-          # single source of truth and cannot drift from a duplicate CI pin.
+          # ty is not installed here: `make typecheck` runs it via
+          # `uv tool run ty@$(TY_VERSION)`. TY_VERSION in the Makefile is the
+          # sole ty version declaration; update it there.
           # Pin ruff to the version the Makefile invokes (RUFF_VERSION) so the
           # linter behaves identically across the uv tool, the synced
           # virtualenv, and developer PATH; bump both sites together.
