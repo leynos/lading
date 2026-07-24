@@ -337,7 +337,7 @@ def test_pipeline_info_log_snapshot(
     options: publish_pipeline._PublishExecutionOptions,
 ) -> None:
     """Snapshot pipeline selector and progression logs for each mode."""
-    caplog.set_level(logging.INFO, logger="lading.commands.publish")
+    caplog.set_level(logging.INFO, logger=publish_pipeline.LOGGER.name)
     plan, preparation, _staging_root = publish_plan_and_prep
 
     publish_pipeline._dispatch_publication(

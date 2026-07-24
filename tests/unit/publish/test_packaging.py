@@ -119,7 +119,7 @@ def test_package_publishable_crates_runs_in_plan_order(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Cargo package is invoked for every publishable crate in plan order."""
-    caplog.set_level(logging.INFO, logger="lading.commands.publish")
+    caplog.set_level(logging.INFO, logger=publish_pipeline.LOGGER.name)
     plan, preparation, staging_root = publish_plan_and_prep
     runner = CallTrackingRunner()
 
@@ -328,7 +328,7 @@ def test_publish_crates_run_dry_run_in_order(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Cargo publish --dry-run runs for each crate in publish order."""
-    caplog.set_level(logging.INFO, logger="lading.commands.publish")
+    caplog.set_level(logging.INFO, logger=publish_pipeline.LOGGER.name)
     plan, preparation, staging_root = publish_plan_and_prep
     runner = CallTrackingRunner()
 
@@ -382,7 +382,7 @@ def test_publish_crate_continues_when_version_already_uploaded(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """The single-crate publish helper keeps already-published handling."""
-    caplog.set_level(logging.WARNING, logger="lading.commands.publish")
+    caplog.set_level(logging.WARNING, logger=publish_pipeline.LOGGER.name)
     plan, preparation, _staging_root = publish_plan_and_prep
 
     def already_uploaded_runner(
@@ -417,7 +417,7 @@ def test_publish_crates_continue_when_version_already_uploaded(
     tmp_path: Path, caplog: pytest.LogCaptureFixture, *, live: bool
 ) -> None:
     """Already-published versions log a warning and continue."""
-    caplog.set_level(logging.WARNING, logger="lading.commands.publish")
+    caplog.set_level(logging.WARNING, logger=publish_pipeline.LOGGER.name)
     workspace_root = tmp_path / "workspace"
     alpha, beta, _gamma = make_dependency_chain(workspace_root)
     plan = publish.plan_publication(
@@ -537,7 +537,7 @@ def test_execute_live_publication_pipeline_wraps_preparation_errors(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Preparation failures surface as ``PublishPreflightError`` for the caller."""
-    caplog.set_level(logging.ERROR, logger="lading.commands.publish")
+    caplog.set_level(logging.ERROR, logger=publish_pipeline.LOGGER.name)
     plan, preparation, staging_root = publish_plan_and_prep
     # Remove the staged tree for the second crate so resolving its root fails
     # mid-pipeline, after the first crate has packaged and published cleanly.
