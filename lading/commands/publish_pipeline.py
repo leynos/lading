@@ -38,7 +38,7 @@ if typ.TYPE_CHECKING:
     from lading.runtime import CommandRunner
     from lading.workspace import WorkspaceCrate
 
-LOGGER = logging.getLogger("lading.commands.publish")
+LOGGER = logging.getLogger(__name__)
 
 
 @dc.dataclass(frozen=True, slots=True)
