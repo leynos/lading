@@ -17,7 +17,7 @@ from lading.utils.process import with_detail
 
 if typ.TYPE_CHECKING:
     from lading.commands.cargo_output_adapter import CargoIndexLookupFailure
-    from lading.commands.publish import _PublishExecutionOptions
+    from lading.commands.publish_pipeline import _PublishExecutionOptions
     from lading.commands.publish_plan import PublishPlan
 
 # Counter incremented each time an index-lookup failure is downgraded to a

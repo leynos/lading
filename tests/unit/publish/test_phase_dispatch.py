@@ -1,7 +1,7 @@
 """Unit tests for publish-phase dispatch behaviour under index-missing-version failures.
 
-Exercises ``lading.commands.publish._package_publishable_crates`` and
-``lading.commands.publish._publish_crates`` through the shared
+Exercises ``lading.commands.publish_pipeline._package_publishable_crates`` and
+``lading.commands.publish_pipeline._publish_crates`` through the shared
 ``invoke_phase`` dispatcher from ``tests.unit.publish.conftest``.
 
 Three parametrised scenarios (package phase and publish-dry-run phase) verify:
@@ -28,7 +28,7 @@ if typ.TYPE_CHECKING:
 
 import pytest
 
-from lading.commands import publish
+from lading.commands import publish, publish_pipeline, publish_plan, publish_staging
 from lading.commands.cargo_output_adapter import CargoIndexLookupFailure
 
 from .conftest import (
@@ -48,13 +48,64 @@ from .conftest import (
 
 _PHASE_IDS: list[pytest.mark.ParameterSet] = [
     pytest.param("package", publish.PublishPreflightError, id="packaging"),
-    pytest.param("publish", publish.PublishError, id="publish-dry-run"),
+    pytest.param("publish", publish_pipeline.PublishError, id="publish-dry-run"),
 ]
+
+
+def test_run_dry_run_phase_normalises_packaging_preparation_failure(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A packaging preparation error becomes a preflight error."""
+    caplog.set_level(logging.ERROR, logger="lading.commands.publish")
+    failure = publish_pipeline.PublishPreparationError("staging failed")
+
+    with pytest.raises(
+        publish.PublishPreflightError, match="staging failed"
+    ) as excinfo:
+        publish_pipeline._run_dry_run_phase(
+            "packaging",
+            lambda: (_ for _ in ()).throw(failure),
+        )
+
+    assert excinfo.value.__cause__ is failure
+    assert caplog.messages == ["Dry-run pipeline: packaging phase failed"]
+
+
+def test_run_dry_run_phase_reraises_publish_preflight_failure(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A publish preflight error retains its type and traceback."""
+    caplog.set_level(logging.ERROR, logger="lading.commands.publish")
+    failure = publish.PublishPreflightError("publish failed")
+
+    with pytest.raises(publish.PublishPreflightError) as excinfo:
+        publish_pipeline._run_dry_run_phase(
+            "publish",
+            lambda: (_ for _ in ()).throw(failure),
+        )
+
+    assert excinfo.value is failure
+    assert caplog.messages == ["Dry-run pipeline: publish phase failed"]
+
+
+def test_run_dry_run_phase_succeeds_without_logging(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A successful phase invokes its action without emitting an error."""
+    caplog.set_level(logging.ERROR, logger="lading.commands.publish")
+    calls: list[str] = []
+
+    publish_pipeline._run_dry_run_phase("packaging", lambda: calls.append("ran"))
+
+    assert calls == ["ran"]
+    assert caplog.messages == []
 
 
 @pytest.mark.parametrize("phase_name", ["package", "publish"])
 def test_missing_dep_in_plan_and_flag_continues(
-    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    publish_plan_and_prep: tuple[
+        publish_plan.PublishPlan, publish_staging.PublishPreparation, Path
+    ],
     caplog: pytest.LogCaptureFixture,
     snapshot: SnapshotAssertion,
     phase_name: str,
@@ -83,7 +134,7 @@ def test_missing_dep_in_plan_and_flag_continues(
             plan=plan,
             preparation=preparation,
             runner=runner,
-            options=publish._PublishExecutionOptions(
+            options=publish_pipeline._PublishExecutionOptions(
                 live=False,
                 allow_dirty=True,
                 allow_unpublished_workspace_deps=True,
@@ -97,7 +148,9 @@ def test_missing_dep_in_plan_and_flag_continues(
 
 @pytest.mark.parametrize(("phase_name", "exc_type"), _PHASE_IDS)
 def test_missing_dep_later_in_publish_order_raises(
-    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    publish_plan_and_prep: tuple[
+        publish_plan.PublishPlan, publish_staging.PublishPreparation, Path
+    ],
     phase_name: str,
     exc_type: type[Exception],
 ) -> None:
@@ -105,9 +158,8 @@ def test_missing_dep_later_in_publish_order_raises(
     original_plan, _preparation, staging_root = publish_plan_and_prep
     alpha, beta, gamma = original_plan.publishable
     plan = dc.replace(original_plan, publishable=(beta, alpha, gamma))
-    preparation = publish.PublishPreparation(
+    preparation = publish_staging.PublishPreparation(
         staging_root=prepare_staging_root(plan, staging_root.parent.parent),
-        copied_readmes=(),
     )
 
     with pytest.raises(exc_type, match=r"appears after .* in publish order"):
@@ -117,7 +169,7 @@ def test_missing_dep_later_in_publish_order_raises(
                 plan=plan,
                 preparation=preparation,
                 runner=make_failing_runner(stderr=INDEX_MISSING_STDERR_BETA),
-                options=publish._PublishExecutionOptions(
+                options=publish_pipeline._PublishExecutionOptions(
                     live=False,
                     allow_dirty=True,
                     allow_unpublished_workspace_deps=True,
@@ -153,10 +205,10 @@ def test_missing_dep_in_plan_allows_cargo_name_normalisation(
         missing_dependency_name="alpha_crate",
     )
 
-    publish._handle_index_missing_version(
+    publish_pipeline._handle_index_missing_version(
         failure,
         plan=plan,
-        options=publish._PublishExecutionOptions(
+        options=publish_pipeline._PublishExecutionOptions(
             live=False,
             allow_dirty=True,
             allow_unpublished_workspace_deps=True,
@@ -175,14 +227,16 @@ def test_missing_dep_in_plan_allows_cargo_name_normalisation(
         pytest.param("package", publish.PublishPreflightError, "alpha", id="packaging"),
         pytest.param(
             "publish",
-            publish.PublishError,
+            publish_pipeline.PublishError,
             "cargo publish failed for crate beta",
             id="publish-dry-run",
         ),
     ],
 )
 def test_missing_dep_in_plan_without_flag_raises(
-    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    publish_plan_and_prep: tuple[
+        publish_plan.PublishPlan, publish_staging.PublishPreparation, Path
+    ],
     phase_name: str,
     exc_type: type[Exception],
     expected_fragment: str,
@@ -209,7 +263,7 @@ def test_missing_dep_in_plan_without_flag_raises(
                 plan=plan,
                 preparation=preparation,
                 runner=runner,
-                options=publish._PublishExecutionOptions(
+                options=publish_pipeline._PublishExecutionOptions(
                     live=False,
                     allow_dirty=True,
                     allow_unpublished_workspace_deps=False,
@@ -234,9 +288,8 @@ def test_missing_dep_not_in_plan_raises(
         make_workspace(workspace_root, alpha, beta), make_config()
     )
     staging_root = prepare_staging_root(plan, tmp_path)
-    preparation = publish.PublishPreparation(
+    preparation = publish_staging.PublishPreparation(
         staging_root=staging_root,
-        copied_readmes=(),
     )
     with pytest.raises(exc_type, match=r"external_crate") as excinfo:
         invoke_phase(
@@ -245,7 +298,7 @@ def test_missing_dep_not_in_plan_raises(
                 plan=plan,
                 preparation=preparation,
                 runner=make_failing_runner(stderr=INDEX_MISSING_STDERR_EXTERNAL),
-                options=publish._PublishExecutionOptions(
+                options=publish_pipeline._PublishExecutionOptions(
                     live=False,
                     allow_dirty=True,
                     allow_unpublished_workspace_deps=True,
@@ -276,9 +329,8 @@ def test_hyphenated_dep_in_plan_matches_with_canonicalisation(
         make_workspace(workspace_root, dependency, dependent), make_config()
     )
     staging_root = prepare_staging_root(plan, tmp_path)
-    preparation = publish.PublishPreparation(
+    preparation = publish_staging.PublishPreparation(
         staging_root=staging_root,
-        copied_readmes=(),
     )
     hyphenated_stderr = (
         "error: failed to prepare local package for uploading\n"
@@ -302,7 +354,7 @@ def test_hyphenated_dep_in_plan_matches_with_canonicalisation(
         plan=plan,
         preparation=preparation,
         runner=runner,
-        options=publish._PublishExecutionOptions(
+        options=publish_pipeline._PublishExecutionOptions(
             live=False,
             allow_dirty=True,
             allow_unpublished_workspace_deps=True,
@@ -315,7 +367,9 @@ def test_hyphenated_dep_in_plan_matches_with_canonicalisation(
 
 
 def test_package_and_publish_dispatch_through_shared_helper(
-    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    publish_plan_and_prep: tuple[
+        publish_plan.PublishPlan, publish_staging.PublishPreparation, Path
+    ],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Both crate-iteration wrappers delegate to ``_for_each_publishable_crate``."""
@@ -323,26 +377,26 @@ def test_package_and_publish_dispatch_through_shared_helper(
     calls: list[dict[str, object]] = []
 
     def fake_for_each(
-        state: publish._PublicationPipelineState,
+        state: publish_pipeline._PublicationPipelineState,
         *,
         runner: object,
-        action: publish._CrateAction,
+        action: publish_pipeline._CrateAction,
     ) -> None:
         """Record each dispatch instead of iterating over crates."""
         calls.append({"state": state, "runner": runner, "action": action})
 
-    monkeypatch.setattr(publish, "_for_each_publishable_crate", fake_for_each)
+    monkeypatch.setattr(publish_pipeline, "_for_each_publishable_crate", fake_for_each)
 
-    options = publish._PublishExecutionOptions(live=False, allow_dirty=True)
+    options = publish_pipeline._PublishExecutionOptions(live=False, allow_dirty=True)
     runner = object()
 
-    publish._package_publishable_crates(
+    publish_pipeline._package_publishable_crates(
         plan, preparation, options=options, runner=runner
     )
-    publish._publish_crates(plan, preparation, runner=runner, options=options)
+    publish_pipeline._publish_crates(plan, preparation, runner=runner, options=options)
 
     assert len(calls) == 2
-    assert calls[0]["action"] is publish._package_crate
-    assert calls[1]["action"] is publish._publish_crate
+    assert calls[0]["action"] is publish_pipeline._package_crate
+    assert calls[1]["action"] is publish_pipeline._publish_crate
     assert calls[0]["runner"] is runner
     assert calls[1]["runner"] is runner

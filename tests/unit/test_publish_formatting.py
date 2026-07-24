@@ -5,7 +5,7 @@ from __future__ import annotations
 import collections.abc as cabc
 import typing as typ
 
-from lading.commands import publish, publish_plan
+from lading.commands import publish_plan, publish_staging
 from tests.unit.conftest import _CrateSpec
 
 if typ.TYPE_CHECKING:
@@ -86,11 +86,9 @@ def test_format_preparation_summary_reports_bump_readme_handling(
     """Summary explains that README adoption is handled before publish."""
     staging_root = tmp_path / "staging"
     staging_root.mkdir()
-    preparation = publish.PublishPreparation(
-        staging_root=staging_root, copied_readmes=()
-    )
+    preparation = publish_staging.PublishPreparation(staging_root=staging_root)
 
-    lines = publish._format_preparation_summary(preparation)
+    lines = publish_staging._format_preparation_summary(preparation)
 
     assert lines == (
         f"Staged workspace at: {staging_root}",
