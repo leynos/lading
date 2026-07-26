@@ -221,6 +221,14 @@ dataclasses = "dc"
 convention = "numpy"
 ignore-decorators = ["typing.overload", "typ.overload"]
 
+[tool.ruff.lint.pydoclint]
+# Private helpers carry a concise single-line summary (the project's
+# private-helper docstring convention); public interfaces carry full
+# NumPy-style contracts. Skipping single-line docstrings lets the DOC
+# rules enforce Returns/Raises/Yields completeness on the multi-line
+# public docstrings without forcing structured sections onto private
+# helpers.
+ignore-one-line-docstrings = true
 [tool.interrogate]
 ignore-overloaded-functions = true
 [tool.pylint.main]
