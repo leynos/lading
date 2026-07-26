@@ -489,6 +489,37 @@ invocations resolve to `False`, and explicit values are honoured. This keeps
 the command dataclass free of adapter-only state while preserving the dry-run
 default expected by operators.
 
+
+### CLI context loading (`_run_with_context`)
+
+```python
+_run_with_context(
+    workspace_root: Path,
+    runner: Callable[[Path, LadingConfig, WorkspaceGraph, CommandRunner], str],
+    *,
+    command_runner: CommandRunner | None = None,
+) -> str
+```
+
+`_run_with_context` is the single shared entry point that both the `bump` and
+`publish` CLI commands call to run a command with configuration and workspace
+data. It resolves configuration once: it first tries
+`config.current_configuration()`, the already-installed context-var
+configuration that `main()` sets up. If that raises
+`config.ConfigurationNotLoadedError` — for example, when a command is invoked
+programmatically via `cli.app` without a preloaded scope — it loads
+configuration from disk with `config.load_configuration(workspace_root)` and
+installs it under a fresh `config.use_configuration(...)` scope. When
+configuration is already active, a `nullcontext()` stands in for that scope,
+so the single `with` block is uniform: this was the issue #107 refactor that
+removed the duplicated load-workspace-and-run block from the two branches.
+
+Under that scope, alongside
+`metadata_module.use_command_runner(active_runner)`, `_run_with_context` loads
+the workspace graph via `load_workspace(workspace_root)` and calls the
+caller-supplied `runner(workspace_root, configuration, workspace_model,
+active_runner)`, returning its string result.
+
 ### Exception hierarchy (`lading.exceptions`)
 
 `lading.exceptions.LadingError` is the package-level base class for domain
@@ -621,6 +652,22 @@ order, crates skipped by manifest/configuration, and configured exclusions that
 did not match a workspace crate. `plan_publication()` builds that object by
 filtering non-publishable crates, applying `publish.exclude`, validating
 `publish.order` when present, or deriving a deterministic dependency order.
+
+`publish_plan.py` also owns section rendering for plan output.
+`render_section(items, *, header, formatter=str, empty_message=None) ->
+list[str]` is the single section renderer (issue #107): a query that returns
+the formatted lines rather than mutating an accumulator. Non-empty items
+render `[header, "- <formatter(item)>", ...]`; an empty sequence renders `[]`
+(the section is omitted) unless `empty_message` is supplied, in which case it
+renders `[empty_message]`. `append_section(lines, items, *, header,
+formatter=str) -> None` is a thin, backwards-compatible command wrapper that
+delegates to `render_section` and extends `lines` in place; it has no
+`empty_message` parameter and is retained as the historical public helper,
+though new code may prefer `render_section`. `format_plan(plan, *,
+strip_patches) -> str` composes the `lading publish` plan summary by calling
+`render_section` for the publishable crates (with `empty_message="Crates to
+publish: none"`) and for each skipped-crate group, then joins the resulting
+lines. All three helpers are public exports of `publish_plan`.
 
 `publish_manifest.py` owns staging-time manifest mutations. It contains
 workspace preparation types and helpers that copy the workspace tree and apply

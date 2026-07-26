@@ -158,8 +158,7 @@ remaining crates.
 At the end of the run, `lading publish` prints a summary of the publish plan
 it computed, listing the crates to publish and any crates skipped because
 they are marked `publish = false`, excluded via `publish.exclude`, or named
-in `publish.exclude` but absent from the workspace. When no crates are
-publishable, the summary reports `Crates to publish: none` instead of a list:
+in `publish.exclude` but absent from the workspace:
 
 ```text
 Publish plan for <workspace>
@@ -174,6 +173,9 @@ Skipped via publish.exclude:
 Configured exclusions not found in workspace:
 - missing
 ```
+
+When no crates are publishable, the summary reports `Crates to publish: none`
+instead of a list:
 
 ```text
 Publish plan for <workspace>

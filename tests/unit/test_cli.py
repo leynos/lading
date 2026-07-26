@@ -743,14 +743,26 @@ def test_run_with_context_branches_behave_identically(
     with config_module.use_configuration(configuration):
         preloaded_result = cli._run_with_context(tmp_path.resolve(), runner)
 
-    assert fresh_result == preloaded_result == "ran"
-    assert len(calls) == 2
+    assert fresh_result == preloaded_result == "ran", (
+        "both branches must return the runner's result"
+    )
+    assert len(calls) == 2, "the runner should execute exactly once per branch"
     fresh_call, preloaded_call = calls
-    assert fresh_call[0] == preloaded_call[0] == tmp_path.resolve()
-    assert isinstance(fresh_call[1], config_module.LadingConfig)
-    assert preloaded_call[1] is configuration
-    assert fresh_call[2] is workspace_graph
-    assert preloaded_call[2] is workspace_graph
+    assert fresh_call[0] == preloaded_call[0] == tmp_path.resolve(), (
+        "both branches must pass the resolved workspace root"
+    )
+    assert isinstance(fresh_call[1], config_module.LadingConfig), (
+        "the fresh branch must load a LadingConfig from disk"
+    )
+    assert preloaded_call[1] is configuration, (
+        "the preloaded branch must reuse the active configuration object"
+    )
+    assert fresh_call[2] is workspace_graph, (
+        "the fresh branch must pass the loaded workspace graph"
+    )
+    assert preloaded_call[2] is workspace_graph, (
+        "the preloaded branch must pass the loaded workspace graph"
+    )
 
 
 def test_publish_via_app_matches_across_config_branches(
@@ -781,7 +793,9 @@ def test_publish_via_app_matches_across_config_branches(
         *,
         options: publish_command.PublishOptions,
     ) -> str:
-        assert isinstance(options, publish_command.PublishOptions)
+        assert isinstance(options, publish_command.PublishOptions), (
+            "publish.run must receive a PublishOptions instance"
+        )
         calls.append((root, configuration, workspace))
         return "published"
 
@@ -798,15 +812,27 @@ def test_publish_via_app_matches_across_config_branches(
     with config_module.use_configuration(preloaded):
         preloaded_result = cli.app(args)
 
-    assert disk_result == preloaded_result == "published"
-    assert len(calls) == 2
+    assert disk_result == preloaded_result == "published", (
+        "both config branches must return the same command result"
+    )
+    assert len(calls) == 2, "publish.run should execute exactly once per branch"
     disk_call, preloaded_call = calls
     # Identical downstream behaviour: same workspace root, same injected
     # workspace graph, and equal configuration content for both branches.
-    assert disk_call[0] == preloaded_call[0] == tmp_path.resolve()
-    assert disk_call[2] is preloaded_call[2] is workspace_graph
-    assert disk_call[1] == preloaded_call[1]
+    assert disk_call[0] == preloaded_call[0] == tmp_path.resolve(), (
+        "both branches must pass the resolved workspace root"
+    )
+    assert disk_call[2] is preloaded_call[2] is workspace_graph, (
+        "both branches must pass the injected workspace graph"
+    )
+    assert disk_call[1] == preloaded_call[1], (
+        "both branches must resolve equal configuration content"
+    )
     # The branches differ only in provenance: the disk branch reloads a fresh
     # config object; the pre-loaded branch reuses the active one.
-    assert preloaded_call[1] is preloaded
-    assert disk_call[1] is not preloaded
+    assert preloaded_call[1] is preloaded, (
+        "the preloaded branch must reuse the active configuration object"
+    )
+    assert disk_call[1] is not preloaded, (
+        "the disk branch must reload a fresh configuration object"
+    )

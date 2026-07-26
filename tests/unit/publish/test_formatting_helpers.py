@@ -31,7 +31,9 @@ def test_render_section_renders_formatted_items() -> None:
         formatter=lambda item: item.value.upper(),
     )
 
-    assert lines == ["Header:", "- ALPHA", "- BETA"]
+    assert lines == ["Header:", "- ALPHA", "- BETA"], (
+        "the formatter should be applied to each item under the header"
+    )
 
 
 def test_render_section_defaults_to_string_conversion() -> None:
@@ -56,7 +58,9 @@ def test_append_section_extends_list_in_place() -> None:
 
     publish_plan.append_section(lines, ("alpha", "beta"), header="Header:")
 
-    assert lines == ["preamble", "Header:", "- alpha", "- beta"]
+    assert lines == ["preamble", "Header:", "- alpha", "- beta"], (
+        "append_section should append the header and formatted items in place"
+    )
 
 
 def test_append_section_appends_nothing_when_empty() -> None:
@@ -65,7 +69,9 @@ def test_append_section_appends_nothing_when_empty() -> None:
 
     publish_plan.append_section(lines, (), header="Header:")
 
-    assert lines == ["preamble"]
+    assert lines == ["preamble"], (
+        "append_section should leave lines unchanged for an empty section"
+    )
 
 
 def test_append_section_matches_render_section() -> None:
@@ -81,7 +87,7 @@ def test_append_section_matches_render_section() -> None:
 
     assert lines == publish_plan.render_section(
         ("alpha", "beta"), header="Header:", formatter=str.upper
-    )
+    ), "append_section should produce the same lines as render_section"
 
 
 def test_format_plan_formats_skipped_sections(tmp_path: Path) -> None:
