@@ -160,7 +160,7 @@ it computed, listing the crates to publish and any crates skipped because
 they are marked `publish = false`, excluded via `publish.exclude`, or named
 in `publish.exclude` but absent from the workspace:
 
-```text
+```plaintext
 Publish plan for <workspace>
 Strip patch strategy: all
 Crates to publish (2):
@@ -177,7 +177,7 @@ Configured exclusions not found in workspace:
 When no crates are publishable, the summary reports `Crates to publish: none`
 instead of a list:
 
-```text
+```plaintext
 Publish plan for <workspace>
 Strip patch strategy: per-crate
 Crates to publish: none

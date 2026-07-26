@@ -489,7 +489,6 @@ invocations resolve to `False`, and explicit values are honoured. This keeps
 the command dataclass free of adapter-only state while preserving the dry-run
 default expected by operators.
 
-
 ### CLI context loading (`_run_with_context`)
 
 ```python
