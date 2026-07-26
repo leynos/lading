@@ -101,6 +101,11 @@ def _run_bump_capturing_regeneration(
     trigger ``regenerate_lockfiles``. Bumping to ``1.2.3`` from the default
     ``0.1.0`` guarantees manifest changes so regeneration depends solely on the
     resolved flag.
+
+    Returns
+    -------
+    bool
+        ``True`` when ``bump.run`` invoked lockfile regeneration.
     """
     workspace = _make_workspace(workspace_root)
     configuration = config_module.LadingConfig(

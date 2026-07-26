@@ -41,7 +41,13 @@ DEPENDENCY_SECTIONS: typ.Final[tuple[str, str, str]] = (
 
 
 def value_as_string(value: object) -> str | None:
-    """Return ``value`` as a string if possible."""
+    """Return ``value`` as a string if possible.
+
+    Returns
+    -------
+    str | None
+        The string form of ``value``, or ``None`` when it is not a string.
+    """
     raw_value = value.value if isinstance(value, Item) else value
     if isinstance(raw_value, str):
         return raw_value
@@ -49,7 +55,14 @@ def value_as_string(value: object) -> str | None:
 
 
 def compose_requirement(existing: str, target_version: str) -> str:
-    """Prefix ``target_version`` with any non-numeric operator from ``existing``."""
+    """Prefix ``target_version`` with any non-numeric operator from ``existing``.
+
+    Returns
+    -------
+    str
+        ``target_version`` carrying the operator prefix of ``existing`` when
+        one is present.
+    """
     match = NON_DIGIT_PREFIX.match(existing)
     if not match:
         return target_version
@@ -63,7 +76,14 @@ def prepare_version_replacement(
     value: object,
     target_version: str,
 ) -> Item | None:
-    """Return an updated requirement value when ``value`` stores a string."""
+    """Return an updated requirement value when ``value`` stores a string.
+
+    Returns
+    -------
+    Item | None
+        The replacement item, or ``None`` when ``value`` is not a string or
+        already matches the target requirement.
+    """
     current = value_as_string(value)
     if current is None:
         return None
@@ -81,7 +101,13 @@ def assign_dependency_version_field(
     container: InlineTable | Table,
     target_version: str,
 ) -> bool:
-    """Update the ``version`` key of ``container`` if present."""
+    """Update the ``version`` key of ``container`` if present.
+
+    Returns
+    -------
+    bool
+        ``True`` when the ``version`` key was updated.
+    """
     current = container.get("version")
     replacement = prepare_version_replacement(current, target_version)
     if replacement is None:
@@ -96,7 +122,13 @@ def update_dependency_entry(
     entry: object,
     target_version: str,
 ) -> bool:
-    """Update a dependency entry with ``target_version`` if it records a version."""
+    """Update a dependency entry with ``target_version`` if it records a version.
+
+    Returns
+    -------
+    bool
+        ``True`` when the entry was updated.
+    """
     if isinstance(entry, InlineTable | Table):
         return assign_dependency_version_field(entry, target_version)
     replacement = prepare_version_replacement(entry, target_version)
@@ -111,7 +143,13 @@ def update_dependency_table(
     dependency_names: cabc.Collection[str],
     target_version: str,
 ) -> bool:
-    """Update dependency requirements within ``table`` for ``dependency_names``."""
+    """Update dependency requirements within ``table`` for ``dependency_names``.
+
+    Returns
+    -------
+    bool
+        ``True`` when at least one dependency requirement was updated.
+    """
     changed = False
     for name in dependency_names:
         if name not in table:
@@ -205,7 +243,13 @@ def update_dependency_sections(
 
 
 def parse_manifest(manifest_path: Path) -> TOMLDocument:
-    """Load ``manifest_path`` into a :class:`tomlkit` document."""
+    """Load ``manifest_path`` into a :class:`tomlkit` document.
+
+    Returns
+    -------
+    TOMLDocument
+        The parsed manifest document.
+    """
     content = manifest_path.read_text(encoding="utf-8")
     return parse_toml(content)
 
@@ -214,7 +258,13 @@ def select_table(
     document: TOMLDocument | _TableLike,
     keys: tuple[str, ...],
 ) -> _TableLike | None:
-    """Return the nested table located by ``keys`` if it exists."""
+    """Return the nested table located by ``keys`` if it exists.
+
+    Returns
+    -------
+    _TableLike | None
+        The nested table, or ``None`` when the path does not resolve to one.
+    """
     if not keys:
         return document if isinstance(document, _TABLE_LIKE_TYPES) else None
     current: object = document
@@ -230,7 +280,13 @@ def select_table(
 
 
 def assign_version(table: _TableLike | None, target_version: str) -> bool:
-    """Update ``table['version']`` when ``table`` is present."""
+    """Update ``table['version']`` when ``table`` is present.
+
+    Returns
+    -------
+    bool
+        ``True`` when the version field was updated.
+    """
     if table is None:
         return False
     current = table.get("version")
@@ -247,7 +303,13 @@ def assign_version(table: _TableLike | None, target_version: str) -> bool:
 
 
 def value_matches(value: object, expected: str) -> bool:
-    """Return ``True`` when ``value`` already equals ``expected``."""
+    """Return ``True`` when ``value`` already equals ``expected``.
+
+    Returns
+    -------
+    bool
+        ``True`` when ``value`` already equals ``expected``.
+    """
     if isinstance(value, Item):
         return value.value == expected
     return value == expected

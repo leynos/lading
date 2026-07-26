@@ -124,7 +124,13 @@ def stub_lockfile_regeneration(
 
 @pytest.fixture
 def make_config() -> cabc.Callable[..., config_module.LadingConfig]:
-    """Return a factory for publish-friendly configuration objects."""
+    """Return a factory for publish-friendly configuration objects.
+
+    Returns
+    -------
+    Callable[..., config_module.LadingConfig]
+        A factory that builds configuration objects for tests.
+    """
 
     def _make_config(
         *,
@@ -149,7 +155,13 @@ def make_config() -> cabc.Callable[..., config_module.LadingConfig]:
 
 @pytest.fixture
 def make_crate() -> cabc.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate]:
-    """Return a factory that materialises temporary workspace crates."""
+    """Return a factory that materialises temporary workspace crates.
+
+    Returns
+    -------
+    Callable[[Path, str, _CrateSpec | None], WorkspaceCrate]
+        A factory that writes crate manifests and returns crate records.
+    """
 
     def _make_crate(
         root: Path, name: str, spec: _CrateSpec | None = None
@@ -191,7 +203,13 @@ def make_crate() -> cabc.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate
 def make_workspace(
     make_crate: cabc.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
 ) -> cabc.Callable[[Path, WorkspaceCrate], WorkspaceGraph]:
-    """Return a factory that assembles workspace graphs for tests."""
+    """Return a factory that assembles workspace graphs for tests.
+
+    Returns
+    -------
+    Callable[[Path, WorkspaceCrate], WorkspaceGraph]
+        A factory that builds workspace graphs from crates.
+    """
 
     def _make_workspace(root: Path, *crates: WorkspaceCrate) -> WorkspaceGraph:
         if not crates:
@@ -205,7 +223,13 @@ def make_workspace(
 def publish_fixtures(
     request: pytest.FixtureRequest, publish_options: publish.PublishOptions
 ) -> PublishFixtures:
-    """Return the composite publish fixtures used across unit suites."""
+    """Return the composite publish fixtures used across unit suites.
+
+    Returns
+    -------
+    PublishFixtures
+        The assembled publish fixtures.
+    """
     tmp_path: Path = request.getfixturevalue("tmp_path")
     make_crate = request.getfixturevalue("make_crate")
     make_workspace = request.getfixturevalue("make_workspace")
@@ -223,19 +247,37 @@ def publish_fixtures(
 
 @pytest.fixture
 def planning_fixtures(publish_fixtures: PublishFixtures) -> PlanningFixtures:
-    """Expose the composite fixtures under the planning-specific alias."""
+    """Expose the composite fixtures under the planning-specific alias.
+
+    Returns
+    -------
+    PlanningFixtures
+        The composite publish fixtures.
+    """
     return publish_fixtures
 
 
 @pytest.fixture
 def preparation_fixtures(publish_fixtures: PublishFixtures) -> PreparationFixtures:
-    """Expose the composite fixtures under the staging-specific alias."""
+    """Expose the composite fixtures under the staging-specific alias.
+
+    Returns
+    -------
+    PreparationFixtures
+        The composite publish fixtures.
+    """
     return publish_fixtures
 
 
 @pytest.fixture
 def make_dependency() -> cabc.Callable[[str], WorkspaceDependency]:
-    """Return a factory for workspace dependency records."""
+    """Return a factory for workspace dependency records.
+
+    Returns
+    -------
+    Callable[[str], WorkspaceDependency]
+        A factory that builds dependency records by name.
+    """
 
     def _make_dependency(name: str) -> WorkspaceDependency:
         return WorkspaceDependency(
@@ -250,13 +292,25 @@ def make_dependency() -> cabc.Callable[[str], WorkspaceDependency]:
 
 @pytest.fixture
 def staging_root(tmp_path: Path) -> Path:
-    """Provide a staging directory that sits alongside the workspace root."""
+    """Provide a staging directory that sits alongside the workspace root.
+
+    Returns
+    -------
+    Path
+        The staging directory path.
+    """
     return tmp_path.parent / f"{tmp_path.name}-staging"
 
 
 @pytest.fixture
 def publish_options(staging_root: Path) -> publish.PublishOptions:
-    """Return publish options that stage outside the workspace root."""
+    """Return publish options that stage outside the workspace root.
+
+    Returns
+    -------
+    publish.PublishOptions
+        Publish options configured with the staging directory.
+    """
     return publish.PublishOptions(build_directory=staging_root)
 
 
@@ -264,5 +318,11 @@ def publish_options(staging_root: Path) -> publish.PublishOptions:
 def prepare_workspace_fixtures(
     publish_fixtures: PublishFixtures,
 ) -> PrepareWorkspaceFixtures:
-    """Pre-assembled fixtures for prepare_workspace integration tests."""
+    """Pre-assembled fixtures for prepare_workspace integration tests.
+
+    Returns
+    -------
+    PrepareWorkspaceFixtures
+        The composite publish fixtures.
+    """
     return publish_fixtures

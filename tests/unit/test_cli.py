@@ -35,7 +35,13 @@ if typ.TYPE_CHECKING:
 
 @contextmanager
 def _preserve_root_logger() -> cabc.Iterator[logging.Logger]:
-    """Capture and restore the root logger configuration around a test."""
+    """Capture and restore the root logger configuration around a test.
+
+    Yields
+    ------
+    logging.Logger
+        The root logger, restored to its prior configuration on exit.
+    """
     root_logger = logging.getLogger()
     prior_handlers = list(root_logger.handlers)
     prior_level = root_logger.level
@@ -171,7 +177,13 @@ def test_normalise_workspace_root_defaults_to_cwd(
 
 
 def _make_workspace(root: Path) -> WorkspaceGraph:
-    """Return a representative workspace graph for CLI tests."""
+    """Return a representative workspace graph for CLI tests.
+
+    Returns
+    -------
+    WorkspaceGraph
+        A single-crate workspace rooted at ``root`` for CLI dispatch tests.
+    """
     crate_root = root / "crate"
     crate = WorkspaceCrate(
         id="crate-id",

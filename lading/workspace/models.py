@@ -23,7 +23,14 @@ def _is_ordering_dependency(
     dependency: WorkspaceDependency,
     crates_by_name: dict[str, WorkspaceCrate],
 ) -> bool:
-    """Return ``True`` when ``dependency`` influences publish ordering."""
+    """Return ``True`` when ``dependency`` influences publish ordering.
+
+    Returns
+    -------
+    bool
+        ``True`` when the dependency targets a workspace crate and its kind
+        affects publish ordering.
+    """
     if dependency.name not in crates_by_name:
         return False
     if dependency.kind is None:
@@ -71,16 +78,17 @@ class WorkspaceCrate(msgspec.Struct, frozen=True, kw_only=True):
 
 
 class WorkspaceGraph(msgspec.Struct, frozen=True, kw_only=True):
-    """Represents the crates and relationships for a workspace."""
-
-    workspace_root: Path
-    crates: tuple[WorkspaceCrate, ...]
-
     def _build_dependency_graph(
         self,
         crates_by_name: dict[str, WorkspaceCrate],
     ) -> dict[str, tuple[str, ...]]:
-        """Build a dependency map for workspace crates."""
+        """Build a dependency map for workspace crates.
+
+        Returns
+        -------
+        dict[str, tuple[str, ...]]
+            Each crate name mapped to its ordering-relevant dependency names.
+        """
         dependency_map: dict[str, tuple[str, ...]] = {}
         for crate in crates_by_name.values():
             dependency_names = tuple(
@@ -97,7 +105,14 @@ class WorkspaceGraph(msgspec.Struct, frozen=True, kw_only=True):
         self,
         dependency_map: dict[str, tuple[str, ...]],
     ) -> tuple[dict[str, int], defaultdict[str, set[str]]]:
-        """Initialise incoming counts and dependents for topological sort."""
+        """Initialise incoming counts and dependents for topological sort.
+
+        Returns
+        -------
+        tuple[dict[str, int], defaultdict[str, set[str]]]
+            Incoming dependency counts per crate and the reverse
+            dependents mapping.
+        """
         incoming_counts: dict[str, int] = {}
         dependents: defaultdict[str, set[str]] = defaultdict(set)
         for name, dependencies in dependency_map.items():
@@ -113,7 +128,14 @@ class WorkspaceGraph(msgspec.Struct, frozen=True, kw_only=True):
         incoming_counts: dict[str, int],
         dependents: defaultdict[str, set[str]],
     ) -> list[str]:
-        """Execute Kahn's algorithm to produce topological ordering."""
+        """Execute Kahn's algorithm to produce topological ordering.
+
+        Returns
+        -------
+        list[str]
+            Crate names in dependency-first order; shorter than the input
+            when a cycle is present.
+        """
         available = [name for name, count in incoming_counts.items() if count == 0]
         heapq.heapify(available)
         ordered_names: list[str] = []
@@ -134,7 +156,13 @@ class WorkspaceGraph(msgspec.Struct, frozen=True, kw_only=True):
         ordered_names: list[str],
         incoming_counts: dict[str, int],
     ) -> list[str]:
-        """Identify nodes involved in a dependency cycle."""
+        """Identify nodes involved in a dependency cycle.
+
+        Returns
+        -------
+        list[str]
+            Names of crates left unordered because they belong to a cycle.
+        """
         cycle_nodes = [
             name
             for name, count in incoming_counts.items()
@@ -148,7 +176,18 @@ class WorkspaceGraph(msgspec.Struct, frozen=True, kw_only=True):
         return cycle_nodes
 
     def topologically_sorted_crates(self) -> tuple[WorkspaceCrate, ...]:
-        """Return ``self.crates`` ordered so dependencies precede dependents."""
+        """Return ``self.crates`` ordered so dependencies precede dependents.
+
+        Returns
+        -------
+        tuple[WorkspaceCrate, ...]
+            Crates ordered so each appears after its dependencies.
+
+        Raises
+        ------
+        WorkspaceDependencyCycleError
+            If the dependency graph contains a cycle.
+        """
         crates_by_name = {crate.name: crate for crate in self.crates}
         dependency_map = self._build_dependency_graph(crates_by_name)
         incoming_counts, dependents = self._initialize_topological_structures(

@@ -69,13 +69,25 @@ def git_commit(repo_path: Path, message: str) -> None:
 
 
 def git_status_porcelain(repo_path: Path) -> str:
-    """Return `git status --porcelain` output."""
+    """Return `git status --porcelain` output.
+
+    Returns
+    -------
+    str
+        Porcelain status output for the repository.
+    """
     stdout, _stderr = _run_git_checked(repo_path, "status", "--porcelain")
     return stdout
 
 
 def git_is_clean(repo_path: Path) -> bool:
-    """Return ``True`` when git reports no uncommitted changes."""
+    """Return ``True`` when git reports no uncommitted changes.
+
+    Returns
+    -------
+    bool
+        ``True`` when the working tree has no pending changes.
+    """
     return not git_status_porcelain(repo_path).strip()
 
 

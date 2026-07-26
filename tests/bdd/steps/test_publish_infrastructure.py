@@ -75,7 +75,13 @@ class PreflightTestContext:
     recorder: _PreflightInvocationRecorder
 
     def create_stub_config(self, *, allow_dirty: bool = True) -> _PreflightStubConfig:
-        """Create stub configuration from this context."""
+        """Create stub configuration from this context.
+
+        Returns
+        -------
+        _PreflightStubConfig
+            The stub configuration bound to this context.
+        """
         return _create_stub_config(
             self.cmd_mox, self.overrides, self.recorder, allow_dirty=allow_dirty
         )
@@ -94,7 +100,14 @@ def _validate_stub_arguments(
     expected: tuple[str, ...],
     received: tuple[str, ...],
 ) -> None:
-    """Validate that received arguments match the expected prefix."""
+    """Validate that received arguments match the expected prefix.
+
+    Raises
+    ------
+    AssertionError
+        If ``received`` is shorter than ``expected`` or any prefix argument
+        differs.
+    """
     if not expected:
         return
 
@@ -115,7 +128,13 @@ def _validate_stub_arguments(
 def _resolve_preflight_expectation(
     command: tuple[str, ...],
 ) -> tuple[str, tuple[str, ...]]:
-    """Return the cmd-mox program and argument prefix for ``command``."""
+    """Return the cmd-mox program and argument prefix for ``command``.
+
+    Returns
+    -------
+    tuple[str, tuple[str, ...]]
+        The cmd-mox program name and its argument prefix.
+    """
     program, *args = command
     argument_tuple = tuple(args)
     if program == "cargo":
@@ -128,7 +147,13 @@ def _resolve_preflight_expectation(
 
 
 def _is_cargo_publish_command(command: tuple[str, ...]) -> bool:
-    """Check whether the command tuple represents a cargo publish invocation."""
+    """Check whether the command tuple represents a cargo publish invocation.
+
+    Returns
+    -------
+    bool
+        ``True`` when ``command`` starts with ``cargo publish``.
+    """
     return len(command) >= 2 and command[0] == "cargo" and command[1] == "publish"
 
 
@@ -138,7 +163,13 @@ def _make_preflight_handler(
     recorder: _PreflightInvocationRecorder | None,
     label: str,
 ) -> cabc.Callable[[_CmdInvocation], tuple[str, str, int]]:
-    """Build a cmd-mox handler that validates argument prefixes."""
+    """Build a cmd-mox handler that validates argument prefixes.
+
+    Returns
+    -------
+    Callable[[_CmdInvocation], tuple[str, str, int]]
+        A handler returning the stubbed ``(stdout, stderr, exit_code)``.
+    """
 
     def _handler(invocation: _CmdInvocation) -> tuple[str, str, int]:
         _validate_stub_arguments(expected_arguments, tuple(invocation.args))
@@ -159,7 +190,13 @@ def _matches_expected_prefix(
     expected: tuple[str, ...],
     received: tuple[str, ...],
 ) -> bool:
-    """Return whether ``received`` begins with the expected argument tuple."""
+    """Return whether ``received`` begins with the expected argument tuple.
+
+    Returns
+    -------
+    bool
+        ``True`` when ``received`` starts with ``expected``.
+    """
     if len(received) < len(expected):
         return False
     return all(
@@ -172,7 +209,13 @@ def _make_preflight_dispatch_handler(
     recorder: _PreflightInvocationRecorder | None,
     label: str,
 ) -> cabc.Callable[[_CmdInvocation], tuple[str, str, int]]:
-    """Build a handler that dispatches several prefixes for one command."""
+    """Build a handler that dispatches several prefixes for one command.
+
+    Returns
+    -------
+    Callable[[_CmdInvocation], tuple[str, str, int]]
+        A handler returning the stubbed ``(stdout, stderr, exit_code)``.
+    """
 
     def _handler(invocation: _CmdInvocation) -> tuple[str, str, int]:
         received = tuple(invocation.args)
@@ -203,7 +246,14 @@ def _existing_static_stub_response(
     cmd_mox: CmdMox,
     program: str,
 ) -> tuple[tuple[str, ...], ResponseProvider] | None:
-    """Return an existing static stub response for ``program`` if present."""
+    """Return an existing static stub response for ``program`` if present.
+
+    Returns
+    -------
+    tuple[tuple[str, ...], ResponseProvider] | None
+        The expected arguments and response, or ``None`` when no matching
+        static stub exists.
+    """
     double = getattr(cmd_mox, "_doubles", {}).get(program)
     if double is None or getattr(double, "kind", None) != "stub":
         return None
@@ -228,7 +278,13 @@ def _create_stub_config(
     *,
     allow_dirty: bool,
 ) -> _PreflightStubConfig:
-    """Build a stub configuration that records preflight invocations."""
+    """Build a stub configuration that records preflight invocations.
+
+    Returns
+    -------
+    _PreflightStubConfig
+        The stub configuration wired to the recorder.
+    """
     return _PreflightStubConfig(
         cmd_mox,
         preflight_overrides,
@@ -241,6 +297,11 @@ def _normalise_preflight_responses(
     config: _PreflightStubConfig,
 ) -> dict[tuple[str, ...], ResponseProvider]:
     """Return default and override responses keyed by command tuple.
+
+    Returns
+    -------
+    dict[tuple[str, ...], ResponseProvider]
+        Default responses merged with configured overrides.
 
     Notes
     -----
@@ -349,7 +410,13 @@ def _make_git_handler(
     responses: dict[tuple[str, ...], ResponseProvider],
     recorder: _PreflightInvocationRecorder | None,
 ) -> cabc.Callable[[_CmdInvocation], tuple[str, str, int]]:
-    """Build a git handler that can serve multiple git subcommands."""
+    """Build a git handler that can serve multiple git subcommands.
+
+    Returns
+    -------
+    Callable[[_CmdInvocation], tuple[str, str, int]]
+        A handler returning the stubbed ``(stdout, stderr, exit_code)``.
+    """
 
     def _handler(invocation: _CmdInvocation) -> tuple[str, str, int]:
         args = tuple(invocation.args)
@@ -372,7 +439,13 @@ def _make_git_handler(
 
 
 def _build_env_restore_dict(var_name: str) -> dict[str, str]:
-    """Build a dictionary for restoring an environment variable."""
+    """Build a dictionary for restoring an environment variable.
+
+    Returns
+    -------
+    dict[str, str]
+        The prior value keyed by name, or empty when the variable was unset.
+    """
     previous = os.environ.get(var_name)
     if previous is None:
         return {}
@@ -398,7 +471,13 @@ def _invoke_publish_with_options(
     stub_config: _PreflightStubConfig,
     *extra_args: str,
 ) -> dict[str, typ.Any]:
-    """Register preflight doubles, enable stubs, and run the CLI."""
+    """Register preflight doubles, enable stubs, and run the CLI.
+
+    Returns
+    -------
+    dict[str, typ.Any]
+        The CLI invocation result payload.
+    """
     from .test_common_steps import _run_cli
 
     _register_preflight_commands(stub_config)

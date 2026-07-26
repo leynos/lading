@@ -183,7 +183,18 @@ class PublishPreparation:
 def _normalise_build_directory(
     workspace_root: Path, build_directory: Path | None
 ) -> Path:
-    """Return a directory suitable for staging workspace artifacts."""
+    """Return a directory suitable for staging workspace artifacts.
+
+    Returns
+    -------
+    Path
+        The resolved staging directory, freshly created when needed.
+
+    Raises
+    ------
+    PublishPreparationError
+        If ``build_directory`` resides within the workspace root.
+    """
     if build_directory is None:
         return Path(tempfile.mkdtemp(prefix="lading-publish-"))
 
@@ -208,6 +219,16 @@ def _copy_workspace_tree(
     links instead of dereferencing them. This avoids unexpectedly copying large
     directories outside the workspace while still allowing callers to opt into
     dereferencing if required.
+
+    Returns
+    -------
+    Path
+        The staging root containing the cloned workspace tree.
+
+    Raises
+    ------
+    PublishPreparationError
+        If the staging directory would nest inside the workspace root.
     """
     workspace_root = workspace_root.resolve(strict=True)
     staging_root = build_directory / workspace_root.name
@@ -226,7 +247,13 @@ def prepare_workspace(
     *,
     options: PublishOptions | None = None,
 ) -> PublishPreparation:
-    """Stage a workspace copy for publishing."""
+    """Stage a workspace copy for publishing.
+
+    Returns
+    -------
+    PublishPreparation
+        The staging result, including the staged workspace root.
+    """
     active_options = PublishOptions() if options is None else options
     build_directory = _normalise_build_directory(
         plan.workspace_root, active_options.build_directory
@@ -255,7 +282,13 @@ def prepare_workspace(
 
 
 def _format_preparation_summary(preparation: PublishPreparation) -> tuple[str, ...]:
-    """Return formatted summary lines for staging results."""
+    """Return formatted summary lines for staging results.
+
+    Returns
+    -------
+    tuple[str, ...]
+        The human-readable summary lines describing the staging outcome.
+    """
     lines = [f"Staged workspace at: {preparation.staging_root}"]
     lines.append("Workspace READMEs are handled by lading bump.")
     return tuple(lines)
@@ -266,7 +299,19 @@ def _resolve_staged_crate_root(
     plan: PublishPlan,
     staging_root: Path,
 ) -> Path:
-    """Return the staged crate root, ensuring it resides within the workspace."""
+    """Return the staged crate root, ensuring it resides within the workspace.
+
+    Returns
+    -------
+    Path
+        The staged crate root under ``staging_root``.
+
+    Raises
+    ------
+    PublishPreparationError
+        If the crate root lies outside the workspace or the staged root is
+        missing.
+    """
     try:
         relative_root = crate.root_path.relative_to(plan.workspace_root)
     except ValueError as exc:  # pragma: no cover - defensive guard
@@ -354,7 +399,14 @@ def _package_crate(
     *,
     runner: CommandRunner,
 ) -> None:
-    """Package one publishable crate using the staged workspace."""
+    """Package one publishable crate using the staged workspace.
+
+    Raises
+    ------
+    PublishPreflightError
+        If ``cargo package`` fails for a reason other than a missing index
+        version.
+    """
     plan = state.plan
     options = state.options
     package_args: tuple[str, ...] = ("--allow-dirty",) if options.allow_dirty else ()
@@ -403,6 +455,11 @@ def _is_already_published_error(exit_code: int, stdout: str, stderr: str) -> boo
     Cargo returns exit code 101 for registry errors including already-published
     versions. This function checks both the exit code and output to minimise
     false positives from unrelated failures.
+
+    Returns
+    -------
+    bool
+        ``True`` when the failure indicates the version already exists.
     """
     # Only consider exit code 101 (cargo registry error)
     if exit_code != _CARGO_REGISTRY_ERROR_CODE:
@@ -465,7 +522,14 @@ def _handle_publish_result(
     plan: PublishPlan,
     options: _PublishExecutionOptions,
 ) -> None:
-    """Handle a completed ``cargo publish`` invocation."""
+    """Handle a completed ``cargo publish`` invocation.
+
+    Raises
+    ------
+    PublishError
+        If ``cargo publish`` fails for a reason other than an already-published
+        version or a missing index version.
+    """
     exit_code, stdout, stderr = output
     if exit_code == 0:
         success_message = (
@@ -512,7 +576,16 @@ def _execute_live_publication_pipeline(
     options: _PublishExecutionOptions,
     runner: CommandRunner,
 ) -> None:
-    """Package and publish each crate before moving to the next crate."""
+    """Package and publish each crate before moving to the next crate.
+
+    Raises
+    ------
+    PublishPreflightError
+        If a crate fails preflight, or a preparation failure is normalised into
+        the pipeline abort taxonomy.
+    PublishError
+        If a crate fails during live publication.
+    """
     state = _PublicationPipelineState(plan, preparation, options)
     completed: list[str] = []
     for crate in plan.publishable:
@@ -557,7 +630,13 @@ def _execute_live_publication_pipeline(
 def _ensure_configuration(
     configuration: LadingConfig | None, workspace_root: Path
 ) -> LadingConfig:
-    """Return the active configuration, loading it from disk when required."""
+    """Return the active configuration, loading it from disk when required.
+
+    Returns
+    -------
+    LadingConfig
+        The supplied configuration, or one loaded for ``workspace_root``.
+    """
     if configuration is not None:
         return configuration
 
@@ -570,7 +649,18 @@ def _ensure_configuration(
 def _ensure_workspace(
     workspace: WorkspaceGraph | None, workspace_root: Path
 ) -> WorkspaceGraph:
-    """Return the workspace graph rooted at ``workspace_root``."""
+    """Return the workspace graph rooted at ``workspace_root``.
+
+    Returns
+    -------
+    WorkspaceGraph
+        The supplied workspace, or one loaded from ``workspace_root``.
+
+    Raises
+    ------
+    WorkspaceModelError
+        If ``workspace_root`` does not exist.
+    """
     if workspace is not None:
         return workspace
 
@@ -584,7 +674,13 @@ def _ensure_workspace(
 
 
 def _validate_publication_options(options: PublishOptions) -> None:
-    """Raise :class:`PublishPreflightError` for invalid option combinations."""
+    """Raise :class:`PublishPreflightError` for invalid option combinations.
+
+    Raises
+    ------
+    PublishPreflightError
+        If ``live`` is combined with ``allow_unpublished_workspace_deps``.
+    """
     if options.live and options.allow_unpublished_workspace_deps:
         message = (
             "Unpublished workspace dependency override is only valid in dry-run "
@@ -647,7 +743,13 @@ def run(
     *,
     options: PublishOptions | None = None,
 ) -> str:
-    """Run pre-flight checks, package crates, and publish from ``workspace_root``."""
+    """Run pre-flight checks, package crates, and publish from ``workspace_root``.
+
+    Returns
+    -------
+    str
+        The formatted publication plan followed by the staging summary lines.
+    """
     root_path = normalise_workspace_root(workspace_root)
     LOGGER.info("Starting publish workflow for workspace %s", root_path)
     effective_options = PublishOptions() if options is None else options

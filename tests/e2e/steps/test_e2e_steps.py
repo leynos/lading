@@ -32,7 +32,14 @@ def _validate_args_prefix(
     args: tuple[str, ...],
     expected_prefixes: tuple[tuple[str, ...], ...],
 ) -> None:
-    """Validate that ``args`` begins with one of ``expected_prefixes``."""
+    """Validate that ``args`` begins with one of ``expected_prefixes``.
+
+    Raises
+    ------
+    args_prefix_mismatch
+        An :class:`E2EExpectationError` when ``args`` matches none of
+        ``expected_prefixes``.
+    """
     if expected_prefixes and not any(
         args[: len(prefix)] == prefix for prefix in expected_prefixes
     ):
@@ -40,7 +47,14 @@ def _validate_args_prefix(
 
 
 def _validate_target_dir(label: str, args: tuple[str, ...]) -> None:
-    """Validate that ``args`` contains ``--target-dir=...``."""
+    """Validate that ``args`` contains ``--target-dir=...``.
+
+    Raises
+    ------
+    target_dir_missing
+        An :class:`E2EExpectationError` when no ``--target-dir=`` argument is
+        present.
+    """
     if not any(argument.startswith("--target-dir=") for argument in args):
         raise E2EExpectationError.target_dir_missing(label, args)
 
@@ -52,7 +66,14 @@ def _create_recording_handler(
     *,
     require_target_dir: bool = False,
 ) -> cabc.Callable[[CmdMoxInvocation], tuple[str, str, int]]:
-    """Create an invocation handler that validates and records cmd-mox calls."""
+    """Create an invocation handler that validates and records cmd-mox calls.
+
+    Returns
+    -------
+    cabc.Callable[[CmdMoxInvocation], tuple[str, str, int]]
+        Handler that validates prefixes, records the call, and returns an empty
+        successful result.
+    """
 
     def _handler(invocation: CmdMoxInvocation) -> tuple[str, str, int]:
         args = tuple(invocation.args)
@@ -75,7 +96,19 @@ def given_nontrivial_workspace_in_git_repo(
     monkeypatch: pytest.MonkeyPatch,
     e2e_workspace_with_git: tuple[workspace_builder.NonTrivialWorkspace, Path],
 ) -> dict[str, typ.Any]:
-    """Create a non-trivial workspace fixture and stub cargo metadata."""
+    """Create a non-trivial workspace fixture and stub cargo metadata.
+
+    Returns
+    -------
+    dict[str, typ.Any]
+        State mapping with the built ``workspace`` and its ``git_repo`` path.
+
+    Raises
+    ------
+    unsupported_fixture_version
+        An :class:`E2EExpectationError` when ``version`` is not the supported
+        fixture version.
+    """
     if version != "0.1.0":
         raise E2EExpectationError.unsupported_fixture_version(version)
     e2e_workspace, e2e_git_repo = e2e_workspace_with_git
@@ -92,7 +125,13 @@ def given_cargo_commands_stubbed(
     cmd_mox: CmdMox,
     e2e_state: dict[str, typ.Any],
 ) -> dict[str, typ.Any]:
-    """Stub cargo pre-flight and publish loop commands; allow real git status."""
+    """Stub cargo pre-flight and publish loop commands; allow real git status.
+
+    Returns
+    -------
+    dict[str, typ.Any]
+        State mapping with the recorded ``records`` list and the ``workspace``.
+    """
     cmd_mox.spy("git").passthrough()
     invocation_records: list[tuple[str, tuple[str, ...], dict[str, str]]] = []
 
@@ -134,7 +173,13 @@ def when_run_lading_bump(
     e2e_state: dict[str, typ.Any],
     version: str,
 ) -> dict[str, typ.Any]:
-    """Invoke `lading bump` against the E2E workspace and capture output."""
+    """Invoke `lading bump` against the E2E workspace and capture output.
+
+    Returns
+    -------
+    dict[str, typ.Any]
+        The captured CLI result (return code, stdout, and stderr).
+    """
     workspace: workspace_builder.NonTrivialWorkspace = e2e_state["workspace"]
     return run_cli(repo_root, workspace.root, "bump", version)
 
@@ -154,7 +199,13 @@ def when_run_lading_publish(
     repo_root: Path,
     e2e_state: dict[str, typ.Any],
 ) -> dict[str, typ.Any]:
-    """Invoke `lading publish` (dry-run default) with `--forbid-dirty`."""
+    """Invoke `lading publish` (dry-run default) with `--forbid-dirty`.
+
+    Returns
+    -------
+    dict[str, typ.Any]
+        The captured CLI result (return code, stdout, and stderr).
+    """
     workspace: workspace_builder.NonTrivialWorkspace = e2e_state["workspace"]
     return run_cli(repo_root, workspace.root, "publish", "--forbid-dirty")
 
@@ -164,7 +215,13 @@ def when_run_lading_publish_allow_dirty(
     repo_root: Path,
     e2e_state: dict[str, typ.Any],
 ) -> dict[str, typ.Any]:
-    """Invoke `lading publish` using the default allow-dirty behaviour."""
+    """Invoke `lading publish` using the default allow-dirty behaviour.
+
+    Returns
+    -------
+    dict[str, typ.Any]
+        The captured CLI result (return code, stdout, and stderr).
+    """
     workspace: workspace_builder.NonTrivialWorkspace = e2e_state["workspace"]
     return run_cli(repo_root, workspace.root, "publish")
 
@@ -322,7 +379,13 @@ def given_workspace_rebuilds_app_lockfile(
     app_lockfile.write_text(stale_marker, encoding="utf-8")
 
     def regenerate(invocation: object) -> tuple[str, str, int]:
-        """Mimic cargo update by rewriting the targeted Cargo.lock."""
+        """Mimic cargo update by rewriting the targeted Cargo.lock.
+
+        Returns
+        -------
+        tuple[str, str, int]
+            An empty stdout/stderr pair and a zero exit code.
+        """
         argv = list(getattr(invocation, "args", ()))
         manifest = Path(argv[argv.index("--manifest-path") + 1])
         (manifest.parent / "Cargo.lock").write_text(

@@ -9,7 +9,13 @@ if typ.TYPE_CHECKING:  # pragma: no cover - typing helper only
 
 
 def describe_crates(workspace: WorkspaceGraph) -> str:
-    """Return a human-friendly crate count summary."""
+    """Return a human-friendly crate count summary.
+
+    Returns
+    -------
+    str
+        Crate count with a singular or plural ``crate`` label.
+    """
     count = len(workspace.crates)
     label = "crate" if count == 1 else "crates"
     return f"{count} {label}"

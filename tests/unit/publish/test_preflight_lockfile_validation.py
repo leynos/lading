@@ -38,14 +38,26 @@ class _RecordingLockfileRepository:
     validated_manifests: list[Path] = dc.field(default_factory=list)
 
     def discover_tracked_lockfiles(self, workspace_root: Path) -> tuple[Path, ...]:
-        """Record the discovery call and return the configured lockfiles."""
+        """Record the discovery call and return the configured lockfiles.
+
+        Returns
+        -------
+        tuple[Path, ...]
+            The configured tracked lockfiles.
+        """
         self.discovered_roots.append(workspace_root)
         return self.tracked
 
     def validate_lockfile_freshness(
         self, manifest_path: Path
     ) -> lockfile.LockfileFreshness:
-        """Record the validation call and return the configured freshness."""
+        """Record the validation call and return the configured freshness.
+
+        Returns
+        -------
+        lockfile.LockfileFreshness
+            The configured freshness for ``manifest_path``.
+        """
         self.validated_manifests.append(manifest_path)
         if self.freshness is not None and manifest_path in self.freshness:
             return self.freshness[manifest_path]
@@ -65,7 +77,12 @@ def _repository_for_outcomes(
     Each outcome at index ``i`` yields the lockfile ``tmp_path/pkgi/Cargo.lock``
     and a ``freshness`` entry keyed on its adjacent ``Cargo.toml``: ``fresh``
     passes, ``stale`` is flagged for repair, and ``error`` is an unexpected
-    cargo failure. Returns the repository and the ordered lockfile paths.
+    cargo failure.
+
+    Returns
+    -------
+    tuple[_RecordingLockfileRepository, list[Path]]
+        The recording repository and the ordered tracked lockfile paths.
     """
     freshness_for = {
         "fresh": lockfile.LockfileFreshness(is_fresh=True),
@@ -92,6 +109,11 @@ def _stale_lockfiles_error_message(workspace_root: Path) -> str:
     Drives ``_validate_lockfile_freshness`` through a recording port double
     whose tracked lockfiles are all stale, and returns the resulting
     ``PublishPreflightError`` message for assertion or snapshotting.
+
+    Returns
+    -------
+    str
+        The ``PublishPreflightError`` message raised for the stale pair.
     """
     root_lockfile = workspace_root / "Cargo.lock"
     nested_lockfile = workspace_root / "tests" / "ui_lints" / "Cargo.lock"

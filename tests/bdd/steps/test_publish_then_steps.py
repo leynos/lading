@@ -103,7 +103,13 @@ def then_publish_excludes_preflight_crate(
     preflight_recorder: _PreflightInvocationRecorder,
     crate_name: str,
 ) -> None:
-    """Assert that cargo test pre-flight invocations skip ``crate_name``."""
+    """Assert that cargo test pre-flight invocations skip ``crate_name``.
+
+    Raises
+    ------
+    AssertionError
+        If no pre-flight invocation excludes ``crate_name``.
+    """
     test_invocations = _get_test_invocations(preflight_recorder)
     if not any(_has_ordered_args_single(args, crate_name) for args in test_invocations):
         message = (
@@ -113,7 +119,13 @@ def then_publish_excludes_preflight_crate(
 
 
 def _has_ordered_args_single(args: tuple[str, ...], crate_name: str) -> bool:
-    """Check for contiguous --exclude <crate_name> pair."""
+    """Check for contiguous --exclude <crate_name> pair.
+
+    Returns
+    -------
+    bool
+        ``True`` when ``--exclude`` is immediately followed by ``crate_name``.
+    """
     return _has_contiguous_args(args, "--exclude", crate_name)
 
 
@@ -121,7 +133,13 @@ def _has_ordered_args_single(args: tuple[str, ...], crate_name: str) -> bool:
 def then_publish_limits_preflight_targets(
     preflight_recorder: _PreflightInvocationRecorder,
 ) -> None:
-    """Assert that cargo test pre-flight invocations pass --lib and --bins."""
+    """Assert that cargo test pre-flight invocations pass --lib and --bins.
+
+    Raises
+    ------
+    AssertionError
+        If no invocation passes ``--lib`` followed by ``--bins``.
+    """
     test_invocations = _get_test_invocations(preflight_recorder)
     if not any(
         _has_contiguous_args(args, "--lib", "--bins") for args in test_invocations
@@ -136,7 +154,13 @@ def then_publish_limits_preflight_targets(
 def then_publish_has_no_preflight_excludes(
     preflight_recorder: _PreflightInvocationRecorder,
 ) -> None:
-    """Assert that cargo test pre-flight invocations omit --exclude."""
+    """Assert that cargo test pre-flight invocations omit --exclude.
+
+    Raises
+    ------
+    AssertionError
+        If any invocation passes ``--exclude``.
+    """
     test_invocations = _get_test_invocations(preflight_recorder)
     for args in test_invocations:
         if "--exclude" in args:
@@ -149,7 +173,13 @@ def then_publish_runs_aux_build(
     preflight_recorder: _PreflightInvocationRecorder,
     label: str,
 ) -> None:
-    """Assert that an auxiliary build command was executed."""
+    """Assert that an auxiliary build command was executed.
+
+    Raises
+    ------
+    AssertionError
+        If no auxiliary build invocation matches ``label``.
+    """
     if not preflight_recorder.by_label(label):
         message = f"Expected auxiliary build invocation for {label}"
         raise AssertionError(message)
@@ -161,7 +191,13 @@ def then_cargo_test_env_contains(
     name: str,
     value: str,
 ) -> None:
-    """Assert that cargo test env propagates ``name`` with ``value``."""
+    """Assert that cargo test env propagates ``name`` with ``value``.
+
+    Raises
+    ------
+    AssertionError
+        If no invocation environment maps ``name`` to ``value``.
+    """
     envs = _get_test_invocation_envs(preflight_recorder)
     if all(environment.get(name) != value for environment in envs):
         message = f"Expected cargo test env {name}={value!r}"
@@ -173,7 +209,13 @@ def then_cargo_test_env_rustflags_contains(
     preflight_recorder: _PreflightInvocationRecorder,
     snippet: str,
 ) -> None:
-    """Assert that cargo test RUSTFLAGS contains ``snippet``."""
+    """Assert that cargo test RUSTFLAGS contains ``snippet``.
+
+    Raises
+    ------
+    AssertionError
+        If no invocation's ``RUSTFLAGS`` contains ``snippet``.
+    """
     envs = _get_test_invocation_envs(preflight_recorder)
     if all(snippet not in environment.get("RUSTFLAGS", "") for environment in envs):
         message = f"Expected {snippet!r} in cargo test RUSTFLAGS"
@@ -252,7 +294,13 @@ def then_publish_runs_live(
 def then_publish_interleaves_live_package_and_publish(
     preflight_recorder: _PreflightInvocationRecorder, crate_names: str
 ) -> None:
-    """Assert live publish packages and publishes each crate before the next."""
+    """Assert live publish packages and publishes each crate before the next.
+
+    Raises
+    ------
+    AssertionError
+        If the observed package/publish order differs from the expected one.
+    """
     expected_names = _split_names(crate_names)
     filtered = [
         (label, (args, env))

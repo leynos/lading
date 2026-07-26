@@ -36,7 +36,13 @@ if typ.TYPE_CHECKING:
 def _failing_runner(
     stdout: str, stderr: str, exit_code: int = 101
 ) -> cabc.Callable[..., tuple[int, str, str]]:
-    """Return a stub runner that always fails with the supplied output."""
+    """Return a stub runner that always fails with the supplied output.
+
+    Returns
+    -------
+    cabc.Callable[..., tuple[int, str, str]]
+        A command runner yielding ``(exit_code, stdout, stderr)`` on every call.
+    """
 
     def runner(
         command: cabc.Sequence[str],

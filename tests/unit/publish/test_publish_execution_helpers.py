@@ -46,7 +46,13 @@ class _MockCmdMoxIPC:
             self.exit_code = exit_code
 
     def report_passthrough_result(self, result: object, timeout: float) -> object:
-        """Return ``result`` to emulate reporting a passthrough result."""
+        """Return ``result`` to emulate reporting a passthrough result.
+
+        Returns
+        -------
+        object
+            The ``result`` argument unchanged.
+        """
         del timeout
         return result
 
@@ -60,20 +66,39 @@ class _MockCommandRunner:
         extra_env: dict[str, str],
         invocation_env: dict[str, str],
     ) -> dict[str, str]:
-        """Merge lookup path, extra env, and invocation env."""
+        """Merge lookup path, extra env, and invocation env.
+
+        Returns
+        -------
+        dict[str, str]
+            The merged environment with later mappings taking precedence.
+        """
         return {"PATH": lookup_path} | extra_env | invocation_env
 
     def resolve_command_with_override(
         self, command: str, path: str, override: str | None
     ) -> Path:
-        """Resolve the underlying command to the current Python executable."""
+        """Resolve the underlying command to the current Python executable.
+
+        Returns
+        -------
+        Path
+            The path to the running Python interpreter.
+        """
         del command, path, override
         return Path(sys.executable)
 
 
 @pytest.fixture
 def mock_cmd_mox_modules(tmp_path: Path) -> SimpleNamespace:
-    """Provide complete cmd-mox module stubs for passthrough handling."""
+    """Provide complete cmd-mox module stubs for passthrough handling.
+
+    Returns
+    -------
+    SimpleNamespace
+        Namespace exposing the env module, IPC module, and command runner
+        stubs.
+    """
 
     class _Env:
         CMOX_IPC_SOCKET_ENV = "CMOX_IPC_SOCKET"

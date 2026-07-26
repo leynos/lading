@@ -60,7 +60,13 @@ class _IndexMissingCase(typ.NamedTuple):
 
 
 def _missing_dependency_name(stderr: str) -> str | None:
-    """Return the missing dependency parsed by the cargo output adapter."""
+    """Return the missing dependency parsed by the cargo output adapter.
+
+    Returns
+    -------
+    str | None
+        The missing dependency name, or ``None`` when parsing fails.
+    """
     failure = parse_index_lookup_failure(
         crate_name="beta",
         subcommand="package",
@@ -85,7 +91,13 @@ class _InPlanSnapshotCase(typ.NamedTuple):
 def _pipeline_info_records(
     caplog: pytest.LogCaptureFixture,
 ) -> tuple[tuple[str, tuple[object, ...]], ...]:
-    """Return captured INFO records for publish pipeline operator messages."""
+    """Return captured INFO records for publish pipeline operator messages.
+
+    Returns
+    -------
+    tuple[tuple[str, tuple[object, ...]], ...]
+        The message and args pairs for each matching INFO record.
+    """
     return tuple(
         (record.msg, record.args)
         for record in caplog.records
@@ -133,7 +145,13 @@ def _handle_index_missing_version_message(
     allow_unpublished_workspace_deps: bool,
     caplog: pytest.LogCaptureFixture,
 ) -> str:
-    """Return the raised index-missing-version message for snapshot tests."""
+    """Return the raised index-missing-version message for snapshot tests.
+
+    Returns
+    -------
+    str
+        The string form of the raised ``PublishPreflightError``.
+    """
     caplog.set_level(logging.WARNING, logger="lading.commands.publish")
     failure = CargoIndexLookupFailure(
         crate_name="beta",
@@ -159,7 +177,13 @@ def _handle_index_missing_version_message(
 
 
 def _snapshot_message(message: str) -> str:
-    """Make blank diagnostic lines visible in Amber snapshots."""
+    """Make blank diagnostic lines visible in Amber snapshots.
+
+    Returns
+    -------
+    str
+        The message with blank lines replaced by ``<blank>`` markers.
+    """
     return message.replace("\n\n", "\n<blank>\n")
 
 

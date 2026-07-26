@@ -39,7 +39,19 @@ def expect_sequence(
     error: _ErrorType,
     allow_none: bool = False,
 ) -> cabc.Sequence[object] | None:
-    """Ensure ``value`` is a non-string sequence (optionally ``None``)."""
+    """Ensure ``value`` is a non-string sequence (optionally ``None``).
+
+    Returns
+    -------
+    cabc.Sequence[object] | None
+        The sequence itself, or ``None`` when ``allow_none`` is set and
+        ``value`` is ``None``.
+
+    Raises
+    ------
+    _reject
+        If ``value`` is a string-like value or otherwise not a sequence.
+    """
     match value:
         case None:
             if allow_none:
@@ -54,7 +66,13 @@ def expect_sequence(
 
 
 def is_non_empty_sequence(value: object) -> bool:
-    """Return ``True`` when ``value`` is a non-string sequence with content."""
+    """Return ``True`` when ``value`` is a non-string sequence with content.
+
+    Returns
+    -------
+    bool
+        ``True`` for a non-empty, non-string sequence, ``False`` otherwise.
+    """
     match value:
         case str() | bytes() | bytearray():
             return False
@@ -67,7 +85,18 @@ def is_non_empty_sequence(value: object) -> bool:
 def validate_string_sequence(
     sequence: cabc.Sequence[typ.Any], field_name: str, *, error: _ErrorType
 ) -> tuple[str, ...]:
-    """Validate that ``sequence`` contains only strings and return them."""
+    """Validate that ``sequence`` contains only strings and return them.
+
+    Returns
+    -------
+    tuple[str, ...]
+        The validated entries as a tuple of strings.
+
+    Raises
+    ------
+    _reject
+        If any entry is not a string.
+    """
     items: list[str] = []
     for index, entry in enumerate(sequence):
         match entry:
@@ -81,7 +110,20 @@ def validate_string_sequence(
 def string_tuple(
     value: object, field_name: str, *, error: _ErrorType
 ) -> tuple[str, ...]:
-    """Return a tuple of strings derived from ``value``."""
+    """Return a tuple of strings derived from ``value``.
+
+    Returns
+    -------
+    tuple[str, ...]
+        The empty tuple for ``None``, a single-element tuple for a string,
+        or the validated strings of a sequence.
+
+    Raises
+    ------
+    _reject
+        If ``value`` is ``bytes`` or otherwise not a string or string
+        sequence.
+    """
     # ``bytearray`` is deliberately excluded from the string/bytes rejection so
     # it flows into ``validate_string_sequence`` (which rejects its int items),
     # preserving the pre-refactor behaviour.
@@ -104,7 +146,18 @@ def _validate_matrix_entry(
     index: int,
     error: _ErrorType,
 ) -> tuple[str, ...]:
-    """Validate and convert a single matrix entry to a string tuple."""
+    """Validate and convert a single matrix entry to a string tuple.
+
+    Returns
+    -------
+    tuple[str, ...]
+        The entry's validated strings.
+
+    Raises
+    ------
+    _reject
+        If the entry is string-like or otherwise not a sequence of strings.
+    """
     match entry:
         case str() | bytes():
             raise _reject(
@@ -123,7 +176,20 @@ def _validate_matrix_entry(
 def string_matrix(
     value: object, field_name: str, *, error: _ErrorType
 ) -> tuple[tuple[str, ...], ...]:
-    """Return a tuple-of-tuples parsed from ``value`` as string sequences."""
+    """Return a tuple-of-tuples parsed from ``value`` as string sequences.
+
+    Returns
+    -------
+    tuple[tuple[str, ...], ...]
+        The empty tuple for ``None``, otherwise each element validated as a
+        sequence of strings.
+
+    Raises
+    ------
+    _reject
+        If ``value`` is string-like or otherwise not a sequence of string
+        sequences.
+    """
     match value:
         case None:
             return ()

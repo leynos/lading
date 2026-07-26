@@ -105,7 +105,14 @@ def rewrite_relative_links(markdown_text: str, prefix: str) -> tuple[str, bool]:
     changed = False
 
     def _rewrite_relative_link_match(match: re.Match[str]) -> str:
-        """Rewrite a Markdown link match when the target is relative."""
+        """Rewrite a Markdown link match when the target is relative.
+
+        Returns
+        -------
+        str
+            The rewritten link when the target is relative, otherwise the
+            original matched text.
+        """
         nonlocal changed
         opener, target, suffix = match.groups()
         if not _should_rewrite_link_target(target):
@@ -120,7 +127,14 @@ def rewrite_relative_links(markdown_text: str, prefix: str) -> tuple[str, bool]:
 def _rewrite_links_outside_code(
     markdown_text: str, replacement: cabc.Callable[[re.Match[str]], str]
 ) -> str:
-    """Rewrite Markdown links outside fenced, indented, and inline code."""
+    """Rewrite Markdown links outside fenced, indented, and inline code.
+
+    Returns
+    -------
+    str
+        The Markdown text with ``replacement`` applied to links that lie
+        outside code spans and blocks.
+    """
     lines: list[str] = []
     in_fenced_block = False
     fenced_marker: str | None = None
@@ -153,8 +167,15 @@ def _rewrite_links_outside_code(
 def _load_source_text(source_readme: Path, _source_text: str | None) -> str:
     """Read and return the workspace README text.
 
-    Raises ``ReadmeTranspositionError`` when the file is absent and no
-    pre-loaded text was supplied.
+    Returns
+    -------
+    str
+        The pre-loaded text when supplied, otherwise the README file contents.
+
+    Raises
+    ------
+    ReadmeTranspositionError
+        If the file is absent and no pre-loaded text was supplied.
     """
     if _source_text is not None:
         return _source_text
@@ -169,8 +190,15 @@ def _load_source_text(source_readme: Path, _source_text: str | None) -> str:
 def _resolve_crate_relative_path(workspace_root: Path, crate: WorkspaceCrate) -> Path:
     """Return the crate path relative to the workspace root.
 
-    Raises ``ReadmeTranspositionError`` when the crate lies outside the
-    workspace.
+    Returns
+    -------
+    Path
+        The crate root expressed relative to the workspace root.
+
+    Raises
+    ------
+    ReadmeTranspositionError
+        If the crate lies outside the workspace.
     """
     try:
         return crate.root_path.relative_to(workspace_root)
@@ -191,8 +219,11 @@ def _write_or_skip_readme(
 ) -> Path | None:
     """Write the rewritten README, or skip when content is already current.
 
-    Returns the target path when a write occurred or would occur; otherwise
-    ``None``.
+    Returns
+    -------
+    Path | None
+        The target path when a write occurred or would occur; otherwise
+        ``None``.
     """
     if (
         target_readme.exists()
@@ -235,12 +266,6 @@ def transpose_readme_to_crate(
         The target README path when it was, or would be, created or modified;
         otherwise ``None``.
 
-    Raises
-    ------
-    ReadmeTranspositionError
-        Raised when the workspace README is required but missing, or when the
-        crate root is outside the workspace.
-
     """
     _log.debug("Transposing workspace README into crate %r", crate.name)
     source_readme = workspace_root / "README.md"
@@ -258,14 +283,26 @@ def transpose_readme_to_crate(
 
 
 def _should_rewrite_link_target(target: str) -> bool:
-    """Return True when ``target`` is a non-empty relative Markdown URL."""
+    """Return True when ``target`` is a non-empty relative Markdown URL.
+
+    Returns
+    -------
+    bool
+        True when the target is relative and should be rewritten.
+    """
     return bool(target) and not (
         _has_uri_scheme(target) or target.startswith(_ABSOLUTE_LINK_PREFIXES)
     )
 
 
 def _has_uri_scheme(target: str) -> bool:
-    """Return True when ``target`` starts with a URI-like scheme."""
+    """Return True when ``target`` starts with a URI-like scheme.
+
+    Returns
+    -------
+    bool
+        True when the target begins with a recognised URI scheme.
+    """
     parsed_scheme = urlparse(target).scheme
     if parsed_scheme:
         return True

@@ -9,12 +9,24 @@ _STDERR_PATTERN = re.compile(r"(/[^\s)]+\.stderr)")
 
 
 def _trim_artifact_token(token: str) -> str:
-    """Normalise compiletest artifact tokens by stripping punctuation."""
+    """Normalise compiletest artifact tokens by stripping punctuation.
+
+    Returns
+    -------
+    str
+        The token with trailing punctuation removed.
+    """
     return token.rstrip(")]:,.;'\"")
 
 
 def _discover_stderr_artifacts(stream: str) -> tuple[Path, ...]:
-    """Return ``Path`` objects extracted from compiletest output stream."""
+    """Return ``Path`` objects extracted from compiletest output stream.
+
+    Returns
+    -------
+    tuple[Path, ...]
+        Deduplicated stderr artifact paths in first-seen order.
+    """
     artifacts: list[Path] = []
     seen: set[str] = set()
     for match in _STDERR_PATTERN.finditer(stream):
@@ -27,7 +39,14 @@ def _discover_stderr_artifacts(stream: str) -> tuple[Path, ...]:
 
 
 def _read_tail_lines(path: Path, count: int) -> tuple[str, ...]:
-    """Return the last ``count`` lines from ``path`` when available."""
+    """Return the last ``count`` lines from ``path`` when available.
+
+    Returns
+    -------
+    tuple[str, ...]
+        The trailing lines, or an empty tuple when the file is missing,
+        unreadable, or ``count`` is not positive.
+    """
     if count <= 0:
         return ()
     try:
@@ -39,7 +58,13 @@ def _read_tail_lines(path: Path, count: int) -> tuple[str, ...]:
 
 
 def _format_artifact_diagnostics(artifact: Path, tail_lines: int) -> list[str]:
-    """Return formatted diagnostic lines for a compiletest stderr artifact."""
+    """Return formatted diagnostic lines for a compiletest stderr artifact.
+
+    Returns
+    -------
+    list[str]
+        Diagnostic lines describing the artifact and its trailing content.
+    """
     lines = [f"- {artifact}"]
     if not artifact.exists():
         lines.append("  (file not found)")
@@ -60,7 +85,14 @@ def _append_compiletest_diagnostics(
     *,
     tail_lines: int,
 ) -> str:
-    """Append compiletest stderr artifact hints to ``message`` when present."""
+    """Append compiletest stderr artifact hints to ``message`` when present.
+
+    Returns
+    -------
+    str
+        The original message, or the message extended with artifact
+        diagnostics when any stderr artifacts are discovered.
+    """
     artifacts: list[Path] = []
     seen: set[Path] = set()
     for candidate in (

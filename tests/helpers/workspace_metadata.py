@@ -44,7 +44,13 @@ class PackageKwargs(typ.TypedDict, total=False):
 
 
 def create_test_manifest(workspace_root: Path, crate_name: str, content: str) -> Path:
-    """Write a manifest for ``crate_name`` beneath ``workspace_root``."""
+    """Write a manifest for ``crate_name`` beneath ``workspace_root``.
+
+    Returns
+    -------
+    Path
+        The path to the written ``Cargo.toml``.
+    """
     manifest_dir = workspace_root / crate_name
     manifest_dir.mkdir(parents=True)
     manifest_path = manifest_dir / "Cargo.toml"
@@ -60,12 +66,21 @@ def build_test_package(
 ) -> dict[str, typ.Any]:
     """Create package metadata with predictable identifiers for tests.
 
-    Args:
-        name: Package name
-        version: Package version
-        manifest_path: Path to the manifest file
-        **kwargs: Optional fields (dependencies, publish, etc.)
+    Parameters
+    ----------
+    name : str
+        Package name.
+    version : str
+        Package version.
+    manifest_path : Path
+        Path to the manifest file.
+    **kwargs : typ.Unpack[PackageKwargs]
+        Optional fields (``dependencies``, ``publish``).
 
+    Returns
+    -------
+    dict[str, typ.Any]
+        The package metadata with a predictable ``id`` for tests.
     """
     return {
         "name": name,

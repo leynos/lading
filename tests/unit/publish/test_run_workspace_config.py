@@ -29,7 +29,13 @@ def test_run_normalises_workspace_root(
     configuration = make_config()
 
     def fake_load(root: Path) -> WorkspaceGraph:
-        """Stub workspace loader that asserts the resolved root."""
+        """Stub workspace loader that asserts the resolved root.
+
+        Returns
+        -------
+        WorkspaceGraph
+            The pre-built workspace graph.
+        """
         assert root == resolved, "workspace should be loaded from the resolved root"
         return plan_workspace
 
@@ -74,12 +80,24 @@ def test_run_loads_configuration_when_inactive(
     load_calls: list[Path] = []
 
     def raise_not_loaded() -> config_module.LadingConfig:
-        """Raise ConfigurationNotLoadedError unconditionally."""
+        """Raise ConfigurationNotLoadedError unconditionally.
+
+        Raises
+        ------
+        ConfigurationNotLoadedError
+            Always.
+        """
         message = "Configuration unavailable"
         raise config_module.ConfigurationNotLoadedError(message)
 
     def capture_load(path: Path) -> config_module.LadingConfig:
-        """Record the load call and return the loaded configuration."""
+        """Record the load call and return the loaded configuration.
+
+        Returns
+        -------
+        config_module.LadingConfig
+            The pre-built configuration.
+        """
         load_calls.append(path)
         return loaded_configuration
 
@@ -95,7 +113,13 @@ def test_run_loads_configuration_when_inactive(
 
 
 def _normalise_summary(message: str, root: Path) -> str:
-    """Redact non-deterministic paths so snapshots are stable across runs."""
+    """Redact non-deterministic paths so snapshots are stable across runs.
+
+    Returns
+    -------
+    str
+        The message with the workspace and staging roots redacted.
+    """
     normalised = message.replace(str(root), "<workspace-root>")
     return re.sub(
         r"^Staged workspace at: .*$",
@@ -144,7 +168,13 @@ def test_run_surfaces_missing_workspace(
     configuration = make_config()
 
     def raise_missing(_: Path) -> WorkspaceGraph:
-        """Raise FileNotFoundError unconditionally."""
+        """Raise FileNotFoundError unconditionally.
+
+        Raises
+        ------
+        FileNotFoundError
+            Always.
+        """
         message = "workspace missing"
         raise FileNotFoundError(message)
 
@@ -168,12 +198,24 @@ def test_run_surfaces_configuration_errors(
     """``run`` propagates configuration errors encountered while loading."""
 
     def raise_not_loaded() -> config_module.LadingConfig:
-        """Raise ConfigurationNotLoadedError unconditionally."""
+        """Raise ConfigurationNotLoadedError unconditionally.
+
+        Raises
+        ------
+        ConfigurationNotLoadedError
+            Always.
+        """
         message = "Configuration inactive"
         raise config_module.ConfigurationNotLoadedError(message)
 
     def raise_config_error(_: Path) -> config_module.LadingConfig:
-        """Raise ConfigurationError unconditionally."""
+        """Raise ConfigurationError unconditionally.
+
+        Raises
+        ------
+        ConfigurationError
+            Always.
+        """
         message = "invalid configuration"
         raise config_module.ConfigurationError(message)
 

@@ -98,7 +98,13 @@ def when_invoke_lading_bump(
     workspace_directory: Path,
     repo_root: Path,
 ) -> dict[str, typ.Any]:
-    """Execute the bump CLI via ``python -m`` and capture the result."""
+    """Execute the bump CLI via ``python -m`` and capture the result.
+
+    Returns
+    -------
+    dict[str, typ.Any]
+        The captured CLI run details (return code, stdout, stderr).
+    """
     from .test_common_steps import _run_cli
 
     return _run_cli(repo_root, workspace_directory, "bump", version)
@@ -113,7 +119,13 @@ def when_invoke_lading_bump_dry_run(
     workspace_directory: Path,
     repo_root: Path,
 ) -> dict[str, typ.Any]:
-    """Execute the bump CLI in dry-run mode via ``python -m``."""
+    """Execute the bump CLI in dry-run mode via ``python -m``.
+
+    Returns
+    -------
+    dict[str, typ.Any]
+        The captured CLI run details (return code, stdout, stderr).
+    """
     from .test_common_steps import _run_cli
 
     return _run_cli(repo_root, workspace_directory, "bump", version, "--dry-run")

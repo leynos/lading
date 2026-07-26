@@ -82,7 +82,19 @@ def _handle_git_ls_files_failure(
     stderr: str,
     workspace_root: Path,
 ) -> tuple[Path, ...] | None:
-    """Return ``None`` for git success, or an empty result for git failure."""
+    """Return ``None`` for git success, or an empty result for git failure.
+
+    Returns
+    -------
+    tuple[Path, ...] | None
+        ``None`` when git succeeded, or an empty tuple when the workspace is
+        not a git repository.
+
+    Raises
+    ------
+    LockfileDiscoveryError
+        If git failed for a reason other than a missing repository.
+    """
     if exit_code == 0:
         return None
     detail = command_detail(stdout, stderr)
@@ -107,7 +119,14 @@ def _lockfiles_with_manifests(
     workspace_root: Path,
     manifest_exists: _ManifestExists,
 ) -> tuple[Path, ...]:
-    """Return lockfile paths from ``git ls-files`` with adjacent manifests."""
+    """Return lockfile paths from ``git ls-files`` with adjacent manifests.
+
+    Returns
+    -------
+    tuple[Path, ...]
+        Tracked lockfile paths outside ``target`` that have an adjacent
+        ``Cargo.toml``.
+    """
     lockfiles: list[Path] = []
     for line in stdout.splitlines():
         relative_path = line.strip()
@@ -122,7 +141,13 @@ def _lockfiles_with_manifests(
 
 
 def _manifest_exists(manifest_path: Path) -> bool:
-    """Return whether ``manifest_path`` exists on disk."""
+    """Return whether ``manifest_path`` exists on disk.
+
+    Returns
+    -------
+    bool
+        ``True`` when ``manifest_path`` exists.
+    """
     return manifest_path.exists()
 
 
@@ -235,7 +260,13 @@ def validate_lockfile_freshness(
 
 
 def _is_lockfile_stale_detail(detail: str) -> bool:
-    """Return whether Cargo reported a locked lockfile needing regeneration."""
+    """Return whether Cargo reported a locked lockfile needing regeneration.
+
+    Returns
+    -------
+    bool
+        ``True`` when the detail indicates a stale lockfile under ``--locked``.
+    """
     normalized = detail.lower()
     return "--locked" in normalized and (
         "needs to be updated" in normalized
@@ -311,7 +342,14 @@ class CargoLockfileInspectionRepository:
         return validate_lockfile_freshness(manifest_path, self._bound_runner())
 
     def _bound_runner(self) -> CommandRunner:
-        """Return ``runner`` with ``env`` applied when a call omits its own."""
+        """Return ``runner`` with ``env`` applied when a call omits its own.
+
+        Returns
+        -------
+        CommandRunner
+            The bound runner, or the original runner when no env override is
+            configured.
+        """
         if self.env is None:
             return self.runner
         base_env = self.env
@@ -329,6 +367,11 @@ class CargoLockfileInspectionRepository:
             Any extra keyword (notably ``echo_stdout``) is forwarded to
             ``base_runner`` unchanged; only ``env`` is defaulted (to the bound
             ``base_env``) when a call omits it.
+
+            Returns
+            -------
+            tuple[int, str, str]
+                The ``(exit_code, stdout, stderr)`` result from ``base_runner``.
             """
             effective_env = base_env if env is None else env
             return base_runner(command, cwd=cwd, env=effective_env, **runner_kwargs)

@@ -28,7 +28,13 @@ _VERSION_PATTERN = re.compile(
 
 
 def _validate_version_argument(_hint: object, version: str) -> None:
-    """Reject a non-semantic-version ``version`` via cyclopts' validator hook."""
+    """Reject a non-semantic-version ``version`` via cyclopts' validator hook.
+
+    Raises
+    ------
+    ValueError
+        If ``version`` is not a valid semantic version.
+    """
     # Cyclopts calls validators as ``validator(type_hint, value)`` and converts a
     # raised ValueError into a formatted ValidationError, so a bad version is
     # reported through cyclopts' own error flow rather than a bare SystemExit.

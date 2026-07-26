@@ -18,7 +18,13 @@ def _update_manifest_version(
     version: str,
     keys: tuple[str, ...],
 ) -> None:
-    """Update version at nested ``keys`` path in the manifest at ``manifest_path``."""
+    """Update version at nested ``keys`` path in the manifest at ``manifest_path``.
+
+    Raises
+    ------
+    AssertionError
+        If the nested key path is absent from the manifest.
+    """
     document = toml_utils.load_manifest(manifest_path)
     target = document
     for key in keys[:-1]:
@@ -33,7 +39,13 @@ def _update_manifest_version(
 
 
 def _update_crate_manifests(crates_root: Path, version: str) -> None:
-    """Update version in all crate manifests under ``crates_root``."""
+    """Update version in all crate manifests under ``crates_root``.
+
+    Raises
+    ------
+    AssertionError
+        If the crates directory does not exist.
+    """
     if not crates_root.exists():
         message = f"Crates directory not found: {crates_root}"
         raise AssertionError(message)

@@ -129,7 +129,14 @@ def run(
     *,
     options: BumpOptions | None = None,
 ) -> str:
-    """Update workspace and crate manifest versions to ``target_version``."""
+    """Update workspace and crate manifest versions to ``target_version``.
+
+    Returns
+    -------
+    str
+        Human-readable summary of the manifests, documents, README files, and
+        lockfiles that were changed.
+    """
     context = _initialize_bump_context(workspace_root, options)
     LOGGER.debug(
         "Bump context initialised: %d excluded crate(s), %d to update",
@@ -161,7 +168,14 @@ def _initialize_bump_context(
     workspace_root: Path | str,
     options: BumpOptions | None,
 ) -> _BumpContext:
-    """Return initialised bump context for ``workspace_root``."""
+    """Return initialised bump context for ``workspace_root``.
+
+    Returns
+    -------
+    _BumpContext
+        Context bundling the resolved options, loaded workspace, and derived
+        crate sets shared across the bump helpers.
+    """
     resolved_options = BumpOptions() if options is None else options
     root_path = normalise_workspace_root(workspace_root)
     configuration = resolved_options.configuration
@@ -262,7 +276,13 @@ def _process_documentation_files(
     context: _BumpContext,
     target_version: str,
 ) -> set[Path]:
-    """Update configured documentation targets for the workspace."""
+    """Update configured documentation targets for the workspace.
+
+    Returns
+    -------
+    set[Path]
+        Documentation files whose contents changed.
+    """
     documentation_paths = bump_docs.resolve_documentation_targets(
         context.root_path, context.configuration.bump.documentation
     )
@@ -275,7 +295,18 @@ def _process_documentation_files(
 
 
 def _process_readme_transposition(context: _BumpContext, *, dry_run: bool) -> set[Path]:
-    """Transpose workspace README files into opted-in member crates."""
+    """Transpose workspace README files into opted-in member crates.
+
+    Returns
+    -------
+    set[Path]
+        Crate README paths that were written.
+
+    Raises
+    ------
+    ReadmeTranspositionError
+        If transposing the workspace README into a crate fails.
+    """
     LOGGER.debug("Starting workspace README transposition")
     changed_readmes: set[Path] = set()
     transposed_entry_count = 0
@@ -313,7 +344,14 @@ def _process_lockfiles(
     context: _BumpContext,
     changed_manifests: set[Path],
 ) -> tuple[Path, ...]:
-    """Regenerate Cargo lockfiles when bump changes manifest content."""
+    """Regenerate Cargo lockfiles when bump changes manifest content.
+
+    Returns
+    -------
+    tuple[Path, ...]
+        Lockfile paths that were regenerated, or would be in a dry run; empty
+        when rebuilding is disabled or no manifests changed.
+    """
     if context.base_options.rebuild_lockfiles is not True or not changed_manifests:
         return ()
     lockfile_manifests = context.configuration.bump.lockfile_manifests
@@ -331,7 +369,14 @@ def _prepare_sorted_changes(
     changed_manifests: set[Path],
     changed_aux: tuple[set[Path], set[Path], cabc.Sequence[Path]],
 ) -> BumpChanges:
-    """Return ordered :class:`BumpChanges` suitable for result rendering."""
+    """Return ordered :class:`BumpChanges` suitable for result rendering.
+
+    Returns
+    -------
+    BumpChanges
+        Sorted manifest, document, README, and lockfile paths, with the
+        workspace manifest and root lockfile ordered first.
+    """
     changed_documents, changed_readmes, changed_lockfiles = changed_aux
     ordered_manifests = tuple(
         sorted(
@@ -369,6 +414,11 @@ def _apply_crate_manifest_update(
     The crate sets are read from ``context`` — they are derived exactly once
     in :func:`_initialize_bump_context` (issue #97); helpers must not
     recompute them per crate.
+
+    Returns
+    -------
+    _CrateManifestOutcome
+        Whether the crate was skipped, updated, or left unchanged.
     """
     selectors = _determine_package_selectors(crate.name, context.excluded)
     dependency_sections = _dependency_sections_for_crate(

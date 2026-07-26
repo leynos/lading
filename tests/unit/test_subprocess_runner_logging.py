@@ -30,7 +30,13 @@ _RUNNER_LOGGER = "lading.runtime.subprocess_runner"
 def _invocation_records(
     caplog: LogCaptureFixture,
 ) -> list[logging.LogRecord]:
-    """Return records that render the external command line."""
+    """Return records that render the external command line.
+
+    Returns
+    -------
+    list[logging.LogRecord]
+        Captured records whose message reports running an external command.
+    """
     return [
         record
         for record in caplog.records

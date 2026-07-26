@@ -24,8 +24,9 @@ def expect_string(value: object, field_name: str, *, error: _ErrorType) -> str:
 
     Raises
     ------
-    LadingError
-        When ``value`` is not a :class:`str`.
+    _reject
+        The ``error`` exception, built by :func:`_reject`, when ``value`` is
+        not a :class:`str`.
     """
     match value:
         case str():
@@ -57,8 +58,9 @@ def boolean(
 
     Raises
     ------
-    LadingError
-        When ``value`` is neither ``None`` nor a :class:`bool`.
+    _reject
+        The ``error`` exception, built by :func:`_reject`, when ``value`` is
+        neither ``None`` nor a :class:`bool`.
     """
     match value:
         case None:
@@ -92,9 +94,10 @@ def non_negative_int(
 
     Raises
     ------
-    LadingError
-        When ``value`` is not a real integer (``bool`` and ``float`` are
-        rejected) or an integer-valued string, or when the result is negative.
+    _reject
+        The ``error`` exception, built by :func:`_reject`, when ``value`` is
+        not a real integer (``bool`` and ``float`` are rejected) or an
+        integer-valued string, or when the parsed result is negative.
     """
     # ``bool`` is a subclass of ``int`` and ``float``/other types are truthy for
     # a blanket ``int(...)`` cast, so dispatch explicitly to accept only real

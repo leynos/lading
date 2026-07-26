@@ -55,7 +55,13 @@ def test_discover_tracked_lockfiles_returns_empty_result(tmp_path: Path) -> None
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
-        """Stub runner returning a successful git result with empty stdout."""
+        """Stub runner returning a successful git result with empty stdout.
+
+        Returns
+        -------
+        tuple[int, str, str]
+            The exit code, stdout, and stderr of the stubbed git call.
+        """
         assert command == ("git", "ls-files", "**/Cargo.lock", "Cargo.lock")
         assert cwd == tmp_path
         return 0, "", ""
@@ -141,7 +147,13 @@ def test_discover_tracked_lockfiles_ignores_untracked_on_disk(
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
-        """Report only the git-tracked lockfile, omitting the untracked one."""
+        """Report only the git-tracked lockfile, omitting the untracked one.
+
+        Returns
+        -------
+        tuple[int, str, str]
+            The exit status, stdout listing the tracked lockfile, and stderr.
+        """
         assert command == ("git", "ls-files", "**/Cargo.lock", "Cargo.lock"), (
             f"discovery must invoke git ls-files; got {command!r}"
         )
@@ -236,7 +248,13 @@ def test_discover_tracked_lockfiles_raises_on_git_failure(tmp_path: Path) -> Non
 def _validate_lockfile_freshness_for_result(
     tmp_path: Path, exit_code: int, stderr: str
 ) -> lockfile.LockfileFreshness:
-    """Run lockfile freshness validation with a fake cargo exit code."""
+    """Run lockfile freshness validation with a fake cargo exit code.
+
+    Returns
+    -------
+    lockfile.LockfileFreshness
+        The freshness result computed from the fake cargo exit code.
+    """
     manifest = tmp_path / "Cargo.toml"
 
     def runner(
@@ -318,7 +336,13 @@ def test_all_returned_paths_have_adjacent_manifest(stdout: str) -> None:
     approved: set[Path] = set()
 
     def manifest_exists(manifest_path: Path) -> bool:
-        """Approve candidates whose path hash is even."""
+        """Approve candidates whose path hash is even.
+
+        Returns
+        -------
+        bool
+            ``True`` when the manifest path hash is even.
+        """
         approved_result = hash(manifest_path) % 2 == 0
         if approved_result:
             approved.add(manifest_path)
@@ -366,7 +390,13 @@ _tree_entry = st.tuples(
 
 
 def _stub_git_runner(stdout: str) -> cabc.Callable[..., tuple[int, str, str]]:
-    """Return a runner producing ``stdout`` for git ls-files."""
+    """Return a runner producing ``stdout`` for git ls-files.
+
+    Returns
+    -------
+    cabc.Callable[..., tuple[int, str, str]]
+        A runner yielding ``stdout`` and a zero exit code.
+    """
 
     def runner(
         command: cabc.Sequence[str],
@@ -384,7 +414,13 @@ def _stub_git_runner(stdout: str) -> cabc.Callable[..., tuple[int, str, str]]:
 def _deduplicate_entries(
     entries: list[tuple[list[str], bool, bool]],
 ) -> dict[tuple[str, ...], tuple[bool, bool]]:
-    """Collapse duplicate directory entries, keeping the first occurrence."""
+    """Collapse duplicate directory entries, keeping the first occurrence.
+
+    Returns
+    -------
+    dict[tuple[str, ...], tuple[bool, bool]]
+        Directory component tuples mapped to their first-seen flags.
+    """
     seen: dict[tuple[str, ...], tuple[bool, bool]] = {}
     for components, has_toml, tracked in entries:
         seen.setdefault(tuple(components), (has_toml, tracked))
@@ -395,7 +431,13 @@ def _populate_workspace(
     workspace_root: Path,
     seen_dirs: dict[tuple[str, ...], tuple[bool, bool]],
 ) -> list[str]:
-    """Materialise the workspace tree and return the tracked ls-files lines."""
+    """Materialise the workspace tree and return the tracked ls-files lines.
+
+    Returns
+    -------
+    list[str]
+        The git ls-files lines for the tracked lockfiles created.
+    """
     tracked_lines: list[str] = []
     for components, (has_toml, tracked) in seen_dirs.items():
         directory = workspace_root.joinpath(*components)
@@ -426,7 +468,13 @@ def _expected_lockfiles(
     workspace_root: Path,
     seen_dirs: dict[tuple[str, ...], tuple[bool, bool]],
 ) -> set[Path]:
-    """Return the lockfiles discovery must yield for the generated tree."""
+    """Return the lockfiles discovery must yield for the generated tree.
+
+    Returns
+    -------
+    set[Path]
+        The expected ``Cargo.lock`` paths for the generated workspace.
+    """
     return {
         workspace_root.joinpath(*components, "Cargo.lock")
         for components, (has_toml, tracked) in seen_dirs.items()
@@ -475,7 +523,13 @@ def _metrics_registry() -> cabc.Iterator[None]:
 def _static_runner(
     exit_code: int, stdout: str, stderr: str
 ) -> cabc.Callable[..., tuple[int, str, str]]:
-    """Return a runner producing a fixed result."""
+    """Return a runner producing a fixed result.
+
+    Returns
+    -------
+    cabc.Callable[..., tuple[int, str, str]]
+        A runner returning the fixed exit code, stdout, and stderr.
+    """
 
     def runner(
         command: cabc.Sequence[str],
@@ -507,7 +561,13 @@ def _recording_runner(
     stdout: str = "",
     stderr: str = "",
 ) -> cabc.Callable[..., tuple[int, str, str]]:
-    """Return a runner recording each invocation's command, cwd, env, echo_stdout."""
+    """Return a runner recording each invocation's command, cwd, env, echo_stdout.
+
+    Returns
+    -------
+    cabc.Callable[..., tuple[int, str, str]]
+        A runner that records each call and returns the fixed result.
+    """
 
     def runner(
         command: cabc.Sequence[str],

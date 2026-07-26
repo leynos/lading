@@ -53,19 +53,37 @@ EXPECTED_WITH = {
 
 
 def _load() -> dict[str, object]:
-    """Parse the workflow file."""
+    """Parse the workflow file.
+
+    Returns
+    -------
+    dict[str, object]
+        The parsed workflow document.
+    """
     return yaml.safe_load(WORKFLOW_PATH.read_text(encoding="utf-8"))
 
 
 def _triggers(workflow: dict[str, object]) -> dict[str, object]:
-    """Return the ``on:`` mapping (PyYAML parses the bare key as True)."""
+    """Return the ``on:`` mapping (PyYAML parses the bare key as True).
+
+    Returns
+    -------
+    dict[str, object]
+        The workflow trigger mapping.
+    """
     triggers = workflow.get("on", workflow.get(True))
     assert isinstance(triggers, dict), "the workflow must declare an on: mapping"
     return typ.cast("dict[str, object]", triggers)
 
 
 def _mutation_job(workflow: dict[str, object]) -> dict[str, object]:
-    """Return the single calling job."""
+    """Return the single calling job.
+
+    Returns
+    -------
+    dict[str, object]
+        The ``mutation`` job mapping.
+    """
     jobs = workflow.get("jobs")
     assert isinstance(jobs, dict), "the workflow must declare a jobs mapping"
     assert jobs, "the workflow must declare at least one job"

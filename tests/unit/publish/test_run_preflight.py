@@ -73,7 +73,13 @@ def test_run_executes_preflight_checks_in_workspace(
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
-        """Record the invocation and return a successful result."""
+        """Record the invocation and return a successful result.
+
+        Returns
+        -------
+        tuple[int, str, str]
+            Zero exit code with empty stdout and stderr.
+        """
         calls.append((tuple(command), cwd))
         return 0, "", ""
 
@@ -260,7 +266,18 @@ def test_dirty_workspace_allowed_by_default(
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
-        """Fail the test if git status is invoked; succeed otherwise."""
+        """Fail the test if git status is invoked; succeed otherwise.
+
+        Returns
+        -------
+        tuple[int, str, str]
+            Zero exit code with empty stdout and stderr.
+
+        Raises
+        ------
+        AssertionError
+            If ``git status --porcelain`` is invoked.
+        """
         normalized_cmd = tuple(command)
         if normalized_cmd == ("git", "status", "--porcelain"):
             message = "git status should be skipped by default"
@@ -292,7 +309,13 @@ def test_forbid_dirty_flag_enforces_cleanliness(
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
-        """Return dirty git output; succeed for all other commands."""
+        """Return dirty git output; succeed for all other commands.
+
+        Returns
+        -------
+        tuple[int, str, str]
+            Dirty git status for git commands, otherwise a clean result.
+        """
         if command[0] == "git":
             return 0, " M Cargo.toml\n", ""
         return 0, "", ""
@@ -339,7 +362,13 @@ def test_run_raises_when_preflight_cargo_fails(
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
-        """Fail the configured subcommand; succeed for all others."""
+        """Fail the configured subcommand; succeed for all others.
+
+        Returns
+        -------
+        tuple[int, str, str]
+            Non-zero result for the failing subcommand, otherwise success.
+        """
         if command[0] == "git":
             return 0, "", ""
         if len(command) > 1 and command[1] == failing_subcommand:

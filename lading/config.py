@@ -71,7 +71,14 @@ class DocumentationConfig:
     def from_mapping(
         cls, mapping: cabc.Mapping[str, typ.Any] | None
     ) -> DocumentationConfig:
-        """Create a :class:`DocumentationConfig` from a TOML table mapping."""
+        """Create a :class:`DocumentationConfig` from a TOML table mapping.
+
+        Returns
+        -------
+        DocumentationConfig
+            Documentation settings parsed from ``mapping``, or defaults when
+            ``mapping`` is ``None``.
+        """
         if mapping is None:
             return cls()
         _validate_mapping_keys(
@@ -93,7 +100,14 @@ class BumpConfig:
 
     @classmethod
     def from_mapping(cls, mapping: cabc.Mapping[str, typ.Any] | None) -> BumpConfig:
-        """Create a :class:`BumpConfig` from a TOML table mapping."""
+        """Create a :class:`BumpConfig` from a TOML table mapping.
+
+        Returns
+        -------
+        BumpConfig
+            Bump settings parsed from ``mapping``, or defaults when ``mapping``
+            is ``None``.
+        """
         if mapping is None:
             return cls()
         _validate_mapping_keys(mapping, set(BUMP_TOML_KEYS), "bump")
@@ -123,7 +137,14 @@ class PublishConfig:
 
     @classmethod
     def from_mapping(cls, mapping: cabc.Mapping[str, typ.Any] | None) -> PublishConfig:
-        """Create a :class:`PublishConfig` from a TOML table mapping."""
+        """Create a :class:`PublishConfig` from a TOML table mapping.
+
+        Returns
+        -------
+        PublishConfig
+            Publish settings parsed from ``mapping``, or defaults when
+            ``mapping`` is ``None``.
+        """
         if mapping is None:
             return cls()
         _validate_mapping_keys(mapping, set(PUBLISH_TOML_KEYS), "publish")
@@ -157,7 +178,14 @@ class PreflightConfig:
     def from_mapping(
         cls, mapping: cabc.Mapping[str, typ.Any] | None
     ) -> PreflightConfig:
-        """Create a :class:`PreflightConfig` from a TOML table mapping."""
+        """Create a :class:`PreflightConfig` from a TOML table mapping.
+
+        Returns
+        -------
+        PreflightConfig
+            Pre-flight settings parsed from ``mapping``, or defaults when
+            ``mapping`` is ``None``.
+        """
         if mapping is None:
             return cls()
         _validate_mapping_keys(mapping, set(PREFLIGHT_TOML_KEYS), "preflight")
@@ -203,7 +231,13 @@ class LadingConfig:
 
     @classmethod
     def from_mapping(cls, mapping: cabc.Mapping[str, typ.Any]) -> LadingConfig:
-        """Create a :class:`LadingConfig` from a parsed configuration mapping."""
+        """Create a :class:`LadingConfig` from a parsed configuration mapping.
+
+        Returns
+        -------
+        LadingConfig
+            Fully populated configuration with defaults for absent sections.
+        """
         _validate_mapping_keys(
             mapping, set(CONFIG_ROOT_TOML_KEYS), "configuration section"
         )
@@ -230,7 +264,13 @@ def _validate_mapping_keys(
     allowed_keys: set[str],
     context: str,
 ) -> None:
-    """Validate that mapping contains only allowed keys."""
+    """Validate that mapping contains only allowed keys.
+
+    Raises
+    ------
+    ConfigurationError
+        If ``mapping`` contains keys outside ``allowed_keys``.
+    """
     if mapping is None:
         return
     unknown = set(mapping) - allowed_keys
@@ -244,7 +284,13 @@ def _validate_mapping_keys(
 
 
 def build_loader(workspace_root: Path) -> Toml:
-    """Return a Cyclopts loader for ``lading.toml`` in ``workspace_root``."""
+    """Return a Cyclopts loader for ``lading.toml`` in ``workspace_root``.
+
+    Returns
+    -------
+    Toml
+        Loader targeting ``lading.toml`` within the resolved workspace root.
+    """
     resolved = normalise_workspace_root(workspace_root)
     return Toml(
         path=resolved / CONFIG_FILENAME,
@@ -256,7 +302,18 @@ def build_loader(workspace_root: Path) -> Toml:
 
 
 def load_from_loader(loader: Toml) -> LadingConfig:
-    """Load and validate configuration using ``loader``."""
+    """Load and validate configuration using ``loader``.
+
+    Returns
+    -------
+    LadingConfig
+        Validated configuration parsed from the loader's TOML table.
+
+    Raises
+    ------
+    ConfigurationError
+        If the loader fails or the configuration root is not a TOML table.
+    """
     try:
         raw = loader.config
     except ValueError as exc:
@@ -268,7 +325,13 @@ def load_from_loader(loader: Toml) -> LadingConfig:
 
 
 def load_configuration(workspace_root: Path) -> LadingConfig:
-    """Load configuration for ``workspace_root`` using Cyclopts."""
+    """Load configuration for ``workspace_root`` using Cyclopts.
+
+    Returns
+    -------
+    LadingConfig
+        Validated configuration for the given workspace root.
+    """
     loader = build_loader(workspace_root)
     return load_from_loader(loader)
 
@@ -284,7 +347,18 @@ def use_configuration(configuration: LadingConfig) -> cabc.Iterator[None]:
 
 
 def current_configuration() -> LadingConfig:
-    """Return the active configuration or raise if none has been set."""
+    """Return the active configuration or raise if none has been set.
+
+    Returns
+    -------
+    LadingConfig
+        The configuration set by the enclosing :func:`use_configuration`.
+
+    Raises
+    ------
+    ConfigurationNotLoadedError
+        If no configuration is active in the current context.
+    """
     try:
         return _active_config.get()
     except LookupError as exc:  # pragma: no cover - defensive guard
@@ -293,7 +367,18 @@ def current_configuration() -> LadingConfig:
 
 
 def _strip_patches(value: object) -> StripPatchesSetting:
-    """Normalise the ``publish.strip_patches`` value."""
+    """Normalise the ``publish.strip_patches`` value.
+
+    Returns
+    -------
+    StripPatchesSetting
+        The canonical ``"all"``, ``"per-crate"``, or ``False`` setting.
+
+    Raises
+    ------
+    ConfigurationError
+        If ``value`` is ``True`` or any unrecognised value.
+    """
     if value is None:
         return "per-crate"
     if value in {"all", "per-crate"}:

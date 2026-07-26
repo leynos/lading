@@ -61,7 +61,13 @@ def _determine_package_selectors(
     crate_name: str,
     excluded: cabc.Collection[str],
 ) -> tuple[tuple[str, ...], ...]:
-    """Return package selectors for the crate, respecting exclusion rules."""
+    """Return package selectors for the crate, respecting exclusion rules.
+
+    Returns
+    -------
+    tuple[tuple[str, ...], ...]
+        The ``package`` table selector, or empty when the crate is excluded.
+    """
     return () if crate_name in excluded else (("package",),)
 
 
@@ -90,7 +96,14 @@ def _should_skip_crate_update(
 def _freeze_dependency_sections(
     sections: cabc.Mapping[str, cabc.Collection[str]],
 ) -> cabc.Mapping[str, cabc.Collection[str]]:
-    """Return an immutable mapping for dependency sections."""
+    """Return an immutable mapping for dependency sections.
+
+    Returns
+    -------
+    cabc.Mapping[str, cabc.Collection[str]]
+        A read-only view with each section's names sorted; empty when
+        ``sections`` is empty.
+    """
     if not sections:
         return types.MappingProxyType({})
     frozen_sections = {key: tuple(sorted(names)) for key, names in sections.items()}
@@ -103,7 +116,14 @@ def _update_manifest(
     target_version: str,
     options: BumpOptions,
 ) -> bool:
-    """Apply ``target_version`` to each table described by ``selectors``."""
+    """Apply ``target_version`` to each table described by ``selectors``.
+
+    Returns
+    -------
+    bool
+        ``True`` if the manifest changed; the file is rewritten unless the run
+        is a dry run.
+    """
     document = bump_toml.parse_manifest(manifest_path)
     changed = False
     for selector in selectors:
@@ -124,7 +144,14 @@ def _update_manifest(
 def _workspace_dependency_sections(
     updated_crates: cabc.Collection[str],
 ) -> dict[str, set[str]]:
-    """Return dependency names to update for the workspace manifest."""
+    """Return dependency names to update for the workspace manifest.
+
+    Returns
+    -------
+    dict[str, set[str]]
+        Crate names to update keyed by dependency section; empty when no
+        crates require updating.
+    """
     crate_names = {name for name in updated_crates if name}
     if not crate_names:
         return {}
@@ -135,7 +162,14 @@ def _dependency_sections_for_crate(
     crate: WorkspaceCrate,
     updated_crates: cabc.Collection[str],
 ) -> dict[str, set[str]]:
-    """Return dependency names grouped by section for ``crate``."""
+    """Return dependency names grouped by section for ``crate``.
+
+    Returns
+    -------
+    dict[str, set[str]]
+        Manifest dependency keys keyed by section; empty when the crate has no
+        matching dependencies.
+    """
     if not crate.dependencies:
         return {}
     targets = {name for name in updated_crates if name}

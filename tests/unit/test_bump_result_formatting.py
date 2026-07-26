@@ -36,7 +36,13 @@ def _make_test_crate_with_dependency(
     crate_version: str = "0.1.0",
     dependency: tuple[str, str] = ("alpha", "0.1.0"),
 ) -> WorkspaceCrate:
-    """Create a test crate manifest with a single dependency."""
+    """Create a test crate manifest with a single dependency.
+
+    Returns
+    -------
+    WorkspaceCrate
+        The crate model backed by the written manifest.
+    """
     dependency_name, dependency_version = dependency
     manifest_path = tmp_path / "Cargo.toml"
     manifest_path.write_text(
@@ -74,7 +80,13 @@ def _make_workspace_with_alpha_dependency(
     *,
     dependency: tuple[str, str] = ("alpha", "0.1.0"),
 ) -> tuple[WorkspaceCrate, WorkspaceGraph]:
-    """Create a workspace with a beta crate depending on an alpha crate."""
+    """Create a workspace with a beta crate depending on an alpha crate.
+
+    Returns
+    -------
+    tuple[WorkspaceCrate, WorkspaceGraph]
+        The beta crate and the workspace graph containing both crates.
+    """
     beta_crate = _make_test_crate_with_dependency(tmp_path, dependency=dependency)
 
     alpha_manifest = tmp_path / "alpha" / "Cargo.toml"
@@ -106,7 +118,13 @@ def _make_workspace_with_alpha_dependency(
 def _parse_manifest_versions(
     manifest_path: Path,
 ) -> tuple[str, str]:
-    """Return the package version and alpha dependency version from a manifest."""
+    """Return the package version and alpha dependency version from a manifest.
+
+    Returns
+    -------
+    tuple[str, str]
+        The package version and the alpha dependency version.
+    """
     document = parse_toml(manifest_path.read_text(encoding="utf-8"))
     package_version = document["package"]["version"]
     alpha_version = document["dependencies"]["alpha"].value

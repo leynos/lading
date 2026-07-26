@@ -8,7 +8,14 @@ from pathlib import Path
 
 
 def coerce_text(value: str | bytes) -> str:
-    """Normalise process output to text."""
+    """Normalise process output to text.
+
+    Returns
+    -------
+    str
+        ``value`` unchanged when already ``str``, otherwise its UTF-8
+        decoding with undecodable bytes replaced.
+    """
     if isinstance(value, bytes):
         return value.decode("utf-8", errors="replace")
     return value

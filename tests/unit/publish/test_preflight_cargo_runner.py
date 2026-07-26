@@ -125,6 +125,11 @@ def _run_and_record_cargo_preflight(
     ``recorded`` is the list of intercepted commands. ``recording_runner``
     appends the command it receives and returns a dummy success tuple.
 
+    Returns
+    -------
+    tuple[str, ...]
+        The single Cargo command intercepted by the recording runner.
+
     """
     recorded: list[tuple[str, ...]] = []
 

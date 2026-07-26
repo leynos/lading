@@ -76,7 +76,18 @@ class PublishPreparationError(LadingError):
 
 
 def _load_manifest_document(manifest_path: Path) -> TOMLDocument:
-    """Parse and return the staged workspace manifest."""
+    """Parse and return the staged workspace manifest.
+
+    Returns
+    -------
+    TOMLDocument
+        The parsed manifest document.
+
+    Raises
+    ------
+    PublishPreparationError
+        If the manifest cannot be read or parsed.
+    """
     try:
         text = manifest_path.read_text(encoding="utf-8")
     except FileNotFoundError as exc:  # pragma: no cover - defensive guard
@@ -93,7 +104,13 @@ def _load_manifest_document(manifest_path: Path) -> TOMLDocument:
 
 
 def _write_manifest_document(manifest_path: Path, document: TOMLDocument) -> None:
-    """Persist ``document`` back to ``manifest_path`` preserving trivia."""
+    """Persist ``document`` back to ``manifest_path`` preserving trivia.
+
+    Raises
+    ------
+    PublishPreparationError
+        If the manifest cannot be written.
+    """
     text = document.as_string()
     if not text.endswith("\n"):
         text = f"{text}\n"
@@ -108,7 +125,13 @@ def _remove_per_crate_entries(
     crates_io: cabc.MutableMapping[str, object],
     crate_names: cabc.Iterable[str],
 ) -> bool:
-    """Remove entries for ``crate_names`` and return ``True`` when modified."""
+    """Remove entries for ``crate_names`` and return ``True`` when modified.
+
+    Returns
+    -------
+    bool
+        ``True`` when at least one entry was removed.
+    """
     removed = False
     # Deduplicate crate names while preserving order for deterministic updates
     for crate in dict.fromkeys(crate_names):
@@ -120,7 +143,14 @@ def _remove_per_crate_entries(
 def _resolve_patch_tables(
     document: TOMLDocument,
 ) -> tuple[cabc.MutableMapping[str, object], cabc.MutableMapping[str, object]] | None:
-    """Return the patch mapping and crates-io table when available."""
+    """Return the patch mapping and crates-io table when available.
+
+    Returns
+    -------
+    tuple[MutableMapping, MutableMapping] | None
+        The patch table and crates-io table, or ``None`` when either is
+        absent.
+    """
     match document:
         case {"patch": cabc.MutableMapping() as patch_table}:
             match patch_table:
@@ -137,9 +167,11 @@ def _validate_and_load_manifest(
 ) -> _ManifestValidation:
     """Load and validate the manifest for patch stripping.
 
-    Returns the document and patch tables when applicable, or None if
-    stripping should be skipped.
-
+    Returns
+    -------
+    _ManifestValidation
+        The document and patch tables when applicable, or ``None`` if
+        stripping should be skipped.
     """
     if strategy is False:
         return None
@@ -169,7 +201,18 @@ def _apply_strategy_to_patches(
     crates_io: cabc.MutableMapping[str, object],
     publishable_names: tuple[str, ...],
 ) -> bool:
-    """Apply the strip patch strategy and return True if modified."""
+    """Apply the strip patch strategy and return True if modified.
+
+    Returns
+    -------
+    bool
+        ``True`` when the strategy modified the patch tables.
+
+    Raises
+    ------
+    PublishPreparationError
+        If the strip patch strategy is unsupported.
+    """
     match strategy:
         case "all":
             return patch_table.pop("crates-io", None) is not None

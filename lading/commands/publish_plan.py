@@ -53,12 +53,17 @@ class PublishPlan:
     """Describe which crates should be published from a workspace."""
 
     workspace_root: Path
+
     publishable: tuple[WorkspaceCrate, ...]
+
     skipped_manifest: tuple[WorkspaceCrate, ...]
+
     skipped_configuration: tuple[WorkspaceCrate, ...]
+
     missing_configuration_exclusions: tuple[str, ...] = ()
 
     @property
+
     def publishable_names(self) -> tuple[str, ...]:
         """Names of crates scheduled for publication."""
         return tuple(crate.name for crate in self.publishable)
@@ -68,7 +73,14 @@ def _categorize_crates(
     workspace_crates: cabc.Sequence[WorkspaceCrate],
     exclusion_set: set[str],
 ) -> tuple[list[WorkspaceCrate], list[WorkspaceCrate], list[WorkspaceCrate]]:
-    """Split workspace crates into publishable and skipped categories."""
+    """Split workspace crates into publishable and skipped categories.
+
+    Returns
+    -------
+    tuple[list[WorkspaceCrate], list[WorkspaceCrate], list[WorkspaceCrate]]
+        The publishable crates, crates skipped because their manifest opts
+        out of publishing, and crates skipped via configured exclusions.
+    """
     publishable: list[WorkspaceCrate] = []
     skipped_manifest: list[WorkspaceCrate] = []
     skipped_configuration: list[WorkspaceCrate] = []
@@ -88,7 +100,14 @@ def _process_order_and_collect_errors(
     configured_order: cabc.Sequence[str],
     publishable_by_name: dict[str, WorkspaceCrate],
 ) -> tuple[list[WorkspaceCrate], set[str], set[str], list[str]]:
-    """Collect ordering results and validation state for ``configured_order``."""
+    """Collect ordering results and validation state for ``configured_order``.
+
+    Returns
+    -------
+    tuple[list[WorkspaceCrate], set[str], set[str], list[str]]
+        The ordered crates, the set of names seen, duplicate names, and the
+        names referenced that fall outside the publishable set.
+    """
     ordered_crates: list[WorkspaceCrate] = []
     seen: set[str] = set()
     duplicates: set[str] = set()
@@ -113,7 +132,13 @@ def _build_order_validation_messages(
     unknown: cabc.Sequence[str],
     missing: cabc.Sequence[str],
 ) -> list[str]:
-    """Render validation failure messages for publish order problems."""
+    """Render validation failure messages for publish order problems.
+
+    Returns
+    -------
+    list[str]
+        One message per detected problem; empty when the order is valid.
+    """
     messages: list[str] = []
     if duplicates:
         duplicate_list = ", ".join(sorted(duplicates))
@@ -134,7 +159,19 @@ def _resolve_configured_order(
     publishable_by_name: dict[str, WorkspaceCrate],
     configured_order: cabc.Sequence[str],
 ) -> tuple[WorkspaceCrate, ...]:
-    """Validate and return crates ordered according to configuration."""
+    """Validate and return crates ordered according to configuration.
+
+    Returns
+    -------
+    tuple[WorkspaceCrate, ...]
+        The publishable crates in the configured order.
+
+    Raises
+    ------
+    PublishPlanError
+        If the configured order duplicates, omits, or references crates
+        outside the publishable set.
+    """
     publishable_names = set(publishable_by_name)
     (
         ordered_publishable_list,
@@ -155,7 +192,18 @@ def _resolve_configured_order(
 def _resolve_topological_order(
     workspace: WorkspaceGraph, publishable_names: set[str]
 ) -> tuple[WorkspaceCrate, ...]:
-    """Return publishable crates ordered by workspace dependencies."""
+    """Return publishable crates ordered by workspace dependencies.
+
+    Returns
+    -------
+    tuple[WorkspaceCrate, ...]
+        The publishable crates in topological dependency order.
+
+    Raises
+    ------
+    PublishPlanError
+        If a dependency cycle prevents a total publish order.
+    """
     try:
         publishable_crates = tuple(
             crate for crate in workspace.crates if crate.name in publishable_names
@@ -179,7 +227,13 @@ def plan_publication(
     *,
     workspace_root: Path | None = None,
 ) -> PublishPlan:
-    """Return the :class:`PublishPlan` for ``workspace`` and ``configuration``."""
+    """Return the :class:`PublishPlan` for ``workspace`` and ``configuration``.
+
+    Returns
+    -------
+    PublishPlan
+        The resolved plan describing publishable and skipped crate groups.
+    """
     root_path = workspace.workspace_root if workspace_root is None else workspace_root
     configured_exclusions = tuple(configuration.publish.exclude)
     exclusion_set = set(configured_exclusions)
@@ -294,11 +348,6 @@ def append_section[T](
         Section heading emitted before the formatted entries.
     formatter:
         Callable mapping each item to its display string. Defaults to ``str``.
-
-    Returns
-    -------
-    None
-        The result is communicated by mutating ``lines`` in place.
 
     Examples
     --------

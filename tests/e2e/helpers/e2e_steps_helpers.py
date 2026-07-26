@@ -28,12 +28,24 @@ class E2EExpectationError(AssertionError):
 
     @classmethod
     def unsupported_fixture_version(cls, version: str) -> E2EExpectationError:
-        """Return an error for unsupported fixture versions."""
+        """Return an error for unsupported fixture versions.
+
+        Returns
+        -------
+        E2EExpectationError
+            The error describing the unsupported version.
+        """
         return cls(f"E2E fixture currently supports version 0.1.0 only (got {version})")
 
     @classmethod
     def dependency_entry_not_string(cls, entry: object) -> E2EExpectationError:
-        """Return an error when a TOML dependency entry is not a string-like version."""
+        """Return an error when a TOML dependency entry is not a string version.
+
+        Returns
+        -------
+        E2EExpectationError
+            The error describing the offending entry.
+        """
         return cls(f"Dependency entry is not a version string: {entry!r}")
 
     @classmethod
@@ -43,7 +55,13 @@ class E2EExpectationError(AssertionError):
         expected_prefixes: tuple[tuple[str, ...], ...],
         args: tuple[str, ...],
     ) -> E2EExpectationError:
-        """Return an error when recorded args do not match the expected prefix(es)."""
+        """Return an error when recorded args do not match the expected prefix(es).
+
+        Returns
+        -------
+        E2EExpectationError
+            The error describing the mismatched args.
+        """
         expected = ", ".join(repr(prefix) for prefix in expected_prefixes)
         return cls(f"{label} expected args prefix in ({expected}), got {args!r}")
 
@@ -51,17 +69,36 @@ class E2EExpectationError(AssertionError):
     def target_dir_missing(
         cls, label: str, args: tuple[str, ...]
     ) -> E2EExpectationError:
-        """Return an error when the pre-flight target dir flag is missing."""
+        """Return an error when the pre-flight target dir flag is missing.
+
+        Returns
+        -------
+        E2EExpectationError
+            The error describing the missing flag.
+        """
         return cls(f"{label} expected --target-dir=... in args, got {args!r}")
 
     @classmethod
     def staging_root_missing(cls) -> E2EExpectationError:
-        """Return an error when publish output lacks the staging root line."""
+        """Return an error when publish output lacks the staging root line.
+
+        Returns
+        -------
+        E2EExpectationError
+            The error describing the missing staging root.
+        """
         return cls("publish output did not include staging root")
 
 
 def run_cli(repo_root: Path, workspace_root: Path, *args: str) -> dict[str, typ.Any]:
-    """Execute the lading CLI module and capture the result."""
+    """Execute the lading CLI module and capture the result.
+
+    Returns
+    -------
+    dict[str, typ.Any]
+        The command line, return code, captured stdout and stderr, and the
+        workspace root.
+    """
     with local.cwd(str(repo_root)):
         exit_code, stdout, stderr = local[sys.executable].run(
             ["-m", "lading.cli", "--workspace-root", str(workspace_root), *args],
@@ -85,7 +122,18 @@ def run_cli(repo_root: Path, workspace_root: Path, *args: str) -> dict[str, typ.
 
 
 def extract_dependency_requirement(entry: object) -> str:
-    """Return a version requirement string from the manifest dependency entry."""
+    """Return a version requirement string from the manifest dependency entry.
+
+    Returns
+    -------
+    str
+        The version requirement extracted from the entry.
+
+    Raises
+    ------
+    dependency_entry_not_string
+        If the entry is not a string or a table carrying a version string.
+    """
     match entry:
         case Item() as item if isinstance(item.value, str):
             return item.value
@@ -114,7 +162,18 @@ def stub_cargo_metadata(
 
 
 def find_staging_root(stdout: str) -> Path:
-    """Parse the publish CLI output and return the staging root directory."""
+    """Parse the publish CLI output and return the staging root directory.
+
+    Returns
+    -------
+    Path
+        The staging root directory parsed from the output.
+
+    Raises
+    ------
+    staging_root_missing
+        If the output does not contain a staging root line.
+    """
     for line in stdout.splitlines():
         if line.startswith("Staged workspace at: "):
             return Path(line.partition(": ")[2].strip())
@@ -124,5 +183,11 @@ def find_staging_root(stdout: str) -> Path:
 def filter_records(
     publish_spies: dict[str, typ.Any], label: str
 ) -> list[tuple[str, tuple[str, ...], dict[str, str]]]:
-    """Return invocation records matching the given label."""
+    """Return invocation records matching the given label.
+
+    Returns
+    -------
+    list[tuple[str, tuple[str, ...], dict[str, str]]]
+        The invocation records whose label matches.
+    """
     return [record for record in publish_spies["records"] if record[0] == label]

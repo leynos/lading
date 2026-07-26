@@ -29,7 +29,13 @@ def create_nontrivial_workspace(
     *,
     version: str = "0.1.0",
 ) -> NonTrivialWorkspace:
-    """Create a non-trivial Rust workspace rooted at ``workspace_root``."""
+    """Create a non-trivial Rust workspace rooted at ``workspace_root``.
+
+    Returns
+    -------
+    NonTrivialWorkspace
+        The workspace model describing the created crates and metadata.
+    """
     crate_names = ("core", "utils", "app")
     crates_dir = workspace_root / "crates"
     crates_dir.mkdir(parents=True, exist_ok=True)
@@ -154,7 +160,13 @@ def _create_crate(
     version: str,
     manifest_extra: str,
 ) -> Path:
-    """Create a crate directory with a Cargo.toml and minimal lib source."""
+    """Create a crate directory with a Cargo.toml and minimal lib source.
+
+    Returns
+    -------
+    Path
+        The path to the crate's written ``Cargo.toml``.
+    """
     crate_root = workspace_root / "crates" / name
     crate_root.mkdir(parents=True, exist_ok=True)
     src_dir = crate_root / "src"
@@ -183,7 +195,13 @@ def _build_cargo_metadata_payload(
     version: str,
     manifests: dict[str, Path],
 ) -> cabc.Mapping[str, typ.Any]:
-    """Return a cargo metadata JSON payload describing the fixture workspace."""
+    """Return a cargo metadata JSON payload describing the fixture workspace.
+
+    Returns
+    -------
+    cabc.Mapping[str, typ.Any]
+        The metadata payload mapping for the fixture workspace.
+    """
     workspace_members = [f"{name}-id" for name in ("core", "utils", "app")]
     packages: list[dict[str, typ.Any]] = [
         {

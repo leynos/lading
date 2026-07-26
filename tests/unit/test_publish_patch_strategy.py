@@ -34,7 +34,13 @@ class _PatchStrategyTestSetup:
 def make_plan_factory(
     make_crate: cabc.Callable[[Path, str, object | None], WorkspaceCrate],
 ) -> cabc.Callable[[Path, tuple[str, ...]], publish.PublishPlan]:
-    """Return a factory for building publish plans rooted at ``workspace_root``."""
+    """Return a factory for building publish plans rooted at ``workspace_root``.
+
+    Returns
+    -------
+    cabc.Callable[[Path, tuple[str, ...]], publish.PublishPlan]
+        A callable building a plan from a root and publishable crate names.
+    """
 
     def _builder(
         workspace_root: Path, publishable_names: tuple[str, ...]
@@ -72,7 +78,13 @@ def _base_manifest(entries: str = "") -> str:
 
 
 def _apply_strategy_and_parse(setup: _PatchStrategyTestSetup) -> TOMLDocument:
-    """Set up workspace, apply patch strategy, and return parsed document."""
+    """Set up workspace, apply patch strategy, and return parsed document.
+
+    Returns
+    -------
+    TOMLDocument
+        The manifest parsed after the patch strategy is applied.
+    """
     workspace_root = setup.tmp_path / "workspace"
     workspace_root.mkdir()
     manifest_text = _base_manifest(setup.patch_entries)

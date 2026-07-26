@@ -105,6 +105,7 @@ select = [
     "TRY",
     "EM",
     "D",
+    "DOC",      # enforce docstrings document parameters, returns, and raises
     "ANN",
     "C90",
     "PLR",

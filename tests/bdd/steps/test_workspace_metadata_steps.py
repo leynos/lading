@@ -26,7 +26,13 @@ scenarios(str(_FEATURES_DIR / "workspace_metadata.feature"))
 
 @given("a workspace directory", target_fixture="workspace_directory")
 def given_workspace_directory(tmp_path: Path) -> Path:
-    """Provide a workspace root for discovery exercises."""
+    """Provide a workspace root for discovery exercises.
+
+    Returns
+    -------
+    Path
+        The temporary workspace root.
+    """
     return tmp_path
 
 
@@ -47,7 +53,13 @@ def given_cargo_metadata_response(
 
 @when("I inspect the workspace metadata", target_fixture="metadata_payload")
 def when_inspect_metadata(workspace_directory: Path) -> cabc.Mapping[str, typ.Any]:
-    """Execute the discovery helper against the stubbed command."""
+    """Execute the discovery helper against the stubbed command.
+
+    Returns
+    -------
+    collections.abc.Mapping[str, typing.Any]
+        The parsed cargo metadata payload.
+    """
     return load_cargo_metadata(workspace_directory)
 
 
@@ -64,7 +76,13 @@ def then_metadata_contains_workspace(
     target_fixture="crate_manifest",
 )
 def given_workspace_manifest(workspace_directory: Path) -> Path:
-    """Write a workspace member manifest using the workspace README."""
+    """Write a workspace member manifest using the workspace README.
+
+    Returns
+    -------
+    Path
+        The path to the written crate manifest.
+    """
     crate_dir = workspace_directory / "alpha"
     crate_dir.mkdir()
     manifest = crate_dir / "Cargo.toml"
@@ -92,7 +110,13 @@ def given_workspace_metadata_payload(
     crate_manifest: Path,
     workspace_directory: Path,
 ) -> dict[str, typ.Any]:
-    """Stub metadata for the workspace model scenario."""
+    """Stub metadata for the workspace model scenario.
+
+    Returns
+    -------
+    dict[str, typing.Any]
+        The stubbed metadata payload.
+    """
     install_cargo_stub(cmd_mox, monkeypatch)
     payload = {
         "workspace_root": str(workspace_directory),
@@ -119,7 +143,13 @@ def given_workspace_metadata_payload(
 def when_build_workspace_model(
     workspace_directory: Path,
 ) -> WorkspaceGraph:
-    """Construct the workspace graph via the discovery helpers."""
+    """Construct the workspace graph via the discovery helpers.
+
+    Returns
+    -------
+    WorkspaceGraph
+        The workspace graph built from the stubbed metadata.
+    """
     return load_workspace(workspace_directory)
 
 

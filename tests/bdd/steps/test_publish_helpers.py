@@ -23,6 +23,11 @@ def _assert_cli_run_succeeded(cli_run: dict[str, typ.Any]) -> None:
     intermittent subprocess crash reports only ``assert 1 == 0`` with the real
     traceback hidden inside the fixture repr. Embed both streams in the
     assertion message so any future failure is immediately actionable.
+
+    Raises
+    ------
+    AssertionError
+        If the subprocess exited with a non-zero return code.
     """
     returncode = cli_run["returncode"]
     if returncode == 0:
@@ -36,12 +41,29 @@ def _assert_cli_run_succeeded(cli_run: dict[str, typ.Any]) -> None:
 
 
 def _publish_plan_lines(cli_run: dict[str, typ.Any]) -> list[str]:
-    """Return trimmed publish plan output lines for ``cli_run``."""
+    """Return trimmed publish plan output lines for ``cli_run``.
+
+    Returns
+    -------
+    list[str]
+        The non-empty, stripped stdout lines.
+    """
     return [line.strip() for line in cli_run["stdout"].splitlines() if line.strip()]
 
 
 def _extract_staging_root_from_plan(lines: list[str]) -> Path:
-    """Return the staging root path parsed from publish plan ``lines``."""
+    """Return the staging root path parsed from publish plan ``lines``.
+
+    Returns
+    -------
+    Path
+        The staging root parsed from the ``Staged workspace at:`` line.
+
+    Raises
+    ------
+    AssertionError
+        If the staging line is absent or malformed.
+    """
     staging_line = next(
         (line for line in lines if line.startswith("Staged workspace at:")), None
     )
@@ -55,7 +77,13 @@ def _extract_staging_root_from_plan(lines: list[str]) -> Path:
 
 
 def _load_staged_manifest(cli_run: dict[str, typ.Any]) -> TOMLDocument:
-    """Return the staged workspace manifest for ``cli_run``."""
+    """Return the staged workspace manifest for ``cli_run``.
+
+    Returns
+    -------
+    TOMLDocument
+        The parsed ``Cargo.toml`` from the staging root.
+    """
     lines = _publish_plan_lines(cli_run)
     staging_root = _extract_staging_root_from_plan(lines)
     manifest_path = staging_root / "Cargo.toml"
@@ -63,7 +91,13 @@ def _load_staged_manifest(cli_run: dict[str, typ.Any]) -> TOMLDocument:
 
 
 def _get_patch_entries(document: cabc.Mapping[str, typ.Any]) -> dict[str, typ.Any]:
-    """Return the ``[patch.crates-io]`` mapping if it exists."""
+    """Return the ``[patch.crates-io]`` mapping if it exists.
+
+    Returns
+    -------
+    dict[str, typ.Any]
+        The patch entries, or an empty mapping when absent.
+    """
     patch_table = document.get("patch")
     if not isinstance(patch_table, cabc.Mapping):
         return {}
@@ -72,14 +106,31 @@ def _get_patch_entries(document: cabc.Mapping[str, typ.Any]) -> dict[str, typ.An
 
 
 def _split_names(crate_names: str) -> list[str]:
-    """Split and trim comma-separated crate names."""
+    """Split and trim comma-separated crate names.
+
+    Returns
+    -------
+    list[str]
+        The non-empty, stripped crate names.
+    """
     return [name.strip() for name in crate_names.split(",") if name.strip()]
 
 
 def _get_test_invocations(
     recorder: _PreflightInvocationRecorder,
 ) -> list[tuple[str, ...]]:
-    """Return recorded cargo test invocations or raise if missing."""
+    """Return recorded cargo test invocations or raise if missing.
+
+    Returns
+    -------
+    list[tuple[str, ...]]
+        The recorded argument tuples for ``cargo test``.
+
+    Raises
+    ------
+    AssertionError
+        If no ``cargo test`` invocation was recorded.
+    """
     if invocations := recorder.by_label("cargo::test"):
         return [args for args, _ in invocations]
     message = "cargo test pre-flight command was not invoked"
@@ -89,7 +140,18 @@ def _get_test_invocations(
 def _get_package_invocations(
     recorder: _PreflightInvocationRecorder,
 ) -> list[tuple[tuple[str, ...], dict[str, str]]]:
-    """Return recorded cargo package invocations or raise if missing."""
+    """Return recorded cargo package invocations or raise if missing.
+
+    Returns
+    -------
+    list[tuple[tuple[str, ...], dict[str, str]]]
+        The recorded argument tuples and environments for ``cargo package``.
+
+    Raises
+    ------
+    AssertionError
+        If no ``cargo package`` invocation was recorded.
+    """
     if invocations := recorder.by_label("cargo::package"):
         return invocations
     message = "cargo package was not invoked for publishable crates"
@@ -99,7 +161,18 @@ def _get_package_invocations(
 def _get_publish_invocations(
     recorder: _PreflightInvocationRecorder,
 ) -> list[tuple[tuple[str, ...], dict[str, str]]]:
-    """Return recorded cargo publish invocations or raise if missing."""
+    """Return recorded cargo publish invocations or raise if missing.
+
+    Returns
+    -------
+    list[tuple[tuple[str, ...], dict[str, str]]]
+        The recorded argument tuples and environments for ``cargo publish``.
+
+    Raises
+    ------
+    AssertionError
+        If no ``cargo publish`` invocation was recorded.
+    """
     if invocations := recorder.by_label("cargo::publish"):
         return invocations
     message = "cargo publish was not invoked for publishable crates"
@@ -109,7 +182,13 @@ def _get_publish_invocations(
 def _extract_crate_names_from_invocations(
     invocations: list[tuple[tuple[str, ...], dict[str, str]]],
 ) -> list[str]:
-    """Extract crate directory names from invocation environments."""
+    """Extract crate directory names from invocation environments.
+
+    Returns
+    -------
+    list[str]
+        The crate directory name from each invocation's ``PWD``.
+    """
     crate_names: list[str] = []
     for _args, env in invocations:
         cwd = env.get("PWD", "")
@@ -120,7 +199,18 @@ def _extract_crate_names_from_invocations(
 def _get_test_invocation_envs(
     recorder: _PreflightInvocationRecorder,
 ) -> list[dict[str, str]]:
-    """Return recorded cargo test environments or raise if missing."""
+    """Return recorded cargo test environments or raise if missing.
+
+    Returns
+    -------
+    list[dict[str, str]]
+        The recorded environment for each ``cargo test`` invocation.
+
+    Raises
+    ------
+    AssertionError
+        If no ``cargo test`` invocation was recorded.
+    """
     if invocations := recorder.by_label("cargo::test"):
         return [env for _, env in invocations]
     message = "cargo test pre-flight command was not invoked"
@@ -128,7 +218,13 @@ def _get_test_invocation_envs(
 
 
 def _has_contiguous_args(args: tuple[str, ...], first: str, second: str) -> bool:
-    """Return True when ``first`` is immediately followed by ``second`` in ``args``."""
+    """Return True when ``first`` is immediately followed by ``second`` in ``args``.
+
+    Returns
+    -------
+    bool
+        ``True`` if ``first`` is immediately followed by ``second``.
+    """
     return any(
         args[index] == first and args[index + 1] == second
         for index in range(len(args) - 1)
@@ -138,7 +234,13 @@ def _has_contiguous_args(args: tuple[str, ...], first: str, second: str) -> bool
 def _has_ordered_args_non_contiguous(
     args: tuple[str, ...], first: str, second: str
 ) -> bool:
-    """Return True when ``first`` appears before ``second`` in ``args``."""
+    """Return True when ``first`` appears before ``second`` in ``args``.
+
+    Returns
+    -------
+    bool
+        ``True`` if ``first`` occurs and ``second`` appears after it.
+    """
     try:
         start_index = args.index(first)
     except ValueError:
@@ -153,7 +255,13 @@ def _has_ordered_args(
     *,
     contiguous: bool = True,
 ) -> bool:
-    """Detect ``first`` followed by ``second`` in ``invocations``."""
+    """Detect ``first`` followed by ``second`` in ``invocations``.
+
+    Returns
+    -------
+    bool
+        ``True`` if any invocation orders ``first`` before ``second``.
+    """
     checker = _has_contiguous_args if contiguous else _has_ordered_args_non_contiguous
     return any(checker(args, first, second) for args in invocations)
 
@@ -165,7 +273,13 @@ def _assert_invocations_flag_presence(
     *,
     should_contain: bool,
 ) -> None:
-    """Assert that invocations contain or lack ``flag`` based on ``should_contain``."""
+    """Assert that invocations contain or lack ``flag`` based on ``should_contain``.
+
+    Raises
+    ------
+    AssertionError
+        If any invocation's flag presence does not match ``should_contain``.
+    """
     for args, _env in invocations:
         flag_present = flag in args
         if flag_present != should_contain:
@@ -201,7 +315,13 @@ def _assert_crate_order_matches(
     expected: list[str],
     context: str,
 ) -> None:
-    """Assert observed crate names match expected order."""
+    """Assert observed crate names match expected order.
+
+    Raises
+    ------
+    AssertionError
+        If ``observed`` does not equal ``expected``.
+    """
     if observed != expected:
         message = (
             f"Unexpected crate order for {context}: "

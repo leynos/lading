@@ -47,7 +47,13 @@ _DURATIONS: dict[_CounterKey, DurationStats] = {}
 
 
 def _counter_key(name: str, labels: dict[str, str]) -> _CounterKey:
-    """Return the registry key for ``name`` with sorted ``labels``."""
+    """Return the registry key for ``name`` with sorted ``labels``.
+
+    Returns
+    -------
+    _CounterKey
+        The name paired with its label items sorted for a stable key.
+    """
     return (name, tuple(sorted(labels.items())))
 
 
@@ -68,7 +74,13 @@ def increment_counter(name: str, *, amount: int = 1, **labels: str) -> None:
 
 
 def counter_value(name: str, **labels: str) -> int:
-    """Return the current value of ``name`` for the supplied labels."""
+    """Return the current value of ``name`` for the supplied labels.
+
+    Returns
+    -------
+    int
+        The counter value, or ``0`` when the counter is unset.
+    """
     with _LOCK:
         return _COUNTERS[_counter_key(name, labels)]
 
@@ -87,7 +99,13 @@ def observe_duration(name: str, seconds: float, **labels: str) -> None:
 
 
 def duration_stats(name: str, **labels: str) -> DurationStats:
-    """Return the aggregated durations recorded for ``name``."""
+    """Return the aggregated durations recorded for ``name``.
+
+    Returns
+    -------
+    DurationStats
+        The recorded statistics, or empty stats when ``name`` is unrecorded.
+    """
     with _LOCK:
         stats = _DURATIONS.get(_counter_key(name, labels))
         return (
@@ -98,7 +116,13 @@ def duration_stats(name: str, **labels: str) -> DurationStats:
 
 
 def snapshot() -> dict[_CounterKey, int]:
-    """Return a copy of the counter registry for assertions."""
+    """Return a copy of the counter registry for assertions.
+
+    Returns
+    -------
+    dict[_CounterKey, int]
+        A shallow copy of the counter registry.
+    """
     with _LOCK:
         return dict(_COUNTERS)
 

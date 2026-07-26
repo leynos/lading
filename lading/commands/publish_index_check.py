@@ -57,6 +57,12 @@ def _format_cargo_failure_message(
     single function for all cargo failure messages keeps the format identical
     across the packaging and publish phases, which makes snapshot assertions
     stable.
+
+    Returns
+    -------
+    str
+        The formatted failure message with the preferred output detail
+        appended.
     """
     stdout, stderr = output
     return with_detail(
@@ -86,7 +92,14 @@ def _format_missing_dependency_failure(
     reason: str,
     guidance: str,
 ) -> str:
-    """Return the shared fatal message shape for dependency index misses."""
+    """Return the shared fatal message shape for dependency index misses.
+
+    Returns
+    -------
+    str
+        The composed fatal message naming the missing dependency, its reason,
+        and the remediation guidance.
+    """
     return f"{failure}\n\ndependency {missing_name!r} {reason}. {guidance}"
 
 
@@ -225,6 +238,11 @@ def _canonical_crate_name(name: str) -> str:
     package under underscores (e.g. ``my_crate``). Normalising both sides of
     any membership comparison prevents false out-of-plan classifications that
     would block the downgrade override.
+
+    Returns
+    -------
+    str
+        The crate name with hyphens replaced by underscores.
     """
     return name.replace("-", "_")
 
@@ -257,6 +275,12 @@ def _validate_dependency_placement(
     Returns a :class:`_DependencyPlacement` when the missing dependency is in
     the plan and is ordered before the current crate. Raises the context
     exception class for every other case.
+
+    Returns
+    -------
+    _DependencyPlacement
+        The resolved current and missing publish-order indexes and the
+        canonicalised missing dependency name.
     """
     publishable_name_indexes: dict[str, int] = {
         _canonical_crate_name(entry.name): index

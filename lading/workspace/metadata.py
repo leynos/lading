@@ -70,12 +70,24 @@ class CargoMetadataParseError(CargoMetadataError):
 
     @classmethod
     def invalid_json(cls) -> CargoMetadataParseError:
-        """Return an error indicating malformed JSON output."""
+        """Return an error indicating malformed JSON output.
+
+        Returns
+        -------
+        CargoMetadataParseError
+            Error describing the invalid JSON output.
+        """
         return cls("cargo metadata produced invalid JSON output")
 
     @classmethod
     def non_object_payload(cls) -> CargoMetadataParseError:
-        """Return an error indicating the payload was not a JSON object."""
+        """Return an error indicating the payload was not a JSON object.
+
+        Returns
+        -------
+        CargoMetadataParseError
+            Error describing the non-object JSON payload.
+        """
         return cls("cargo metadata returned a non-object JSON payload")
 
 
@@ -101,7 +113,14 @@ def use_command_runner(runner: CommandRunner) -> cabc.Iterator[None]:
 
 
 def _active_command_runner(runner: CommandRunner | None = None) -> CommandRunner:
-    """Return the explicitly supplied or ambient command runner."""
+    """Return the explicitly supplied or ambient command runner.
+
+    Returns
+    -------
+    CommandRunner
+        The supplied runner, the context-local runner, or the default
+        subprocess runner.
+    """
     if runner is not None:
         return runner
     active_runner = _COMMAND_RUNNER.get()
@@ -114,7 +133,20 @@ def _invoke_cargo_metadata(
     command_runner: CommandRunner,
     root_path: Path | None,
 ) -> tuple[int, str, str]:
-    """Run ``cargo metadata`` and return (exit_code, stdout, stderr) as text."""
+    """Run ``cargo metadata`` and return (exit_code, stdout, stderr) as text.
+
+    Returns
+    -------
+    tuple[int, str, str]
+        Exit code with stdout and stderr decoded to text.
+
+    Raises
+    ------
+    CargoExecutableNotFoundError
+        If the ``cargo`` program cannot be found.
+    CargoMetadataError
+        If the command otherwise fails to spawn or run.
+    """
     try:
         exit_code, stdout, stderr = command_runner(
             _CARGO_METADATA_COMMAND,
@@ -131,7 +163,20 @@ def _invoke_cargo_metadata(
 
 
 def _parse_cargo_metadata(stdout_text: str) -> cabc.Mapping[str, typ.Any]:
-    """Parse and validate the JSON payload produced by ``cargo metadata``."""
+    """Parse and validate the JSON payload produced by ``cargo metadata``.
+
+    Returns
+    -------
+    cabc.Mapping[str, typ.Any]
+        Decoded top-level JSON object.
+
+    Raises
+    ------
+    CargoMetadataParseError.invalid_json
+        If the output is not valid JSON.
+    CargoMetadataParseError.non_object_payload
+        If the decoded payload is not a JSON object.
+    """
     try:
         payload = json.loads(stdout_text)
     except json.JSONDecodeError as exc:
@@ -146,7 +191,18 @@ def load_cargo_metadata(
     *,
     runner: CommandRunner | None = None,
 ) -> cabc.Mapping[str, typ.Any]:
-    """Execute ``cargo metadata`` and parse the resulting JSON payload."""
+    """Execute ``cargo metadata`` and parse the resulting JSON payload.
+
+    Returns
+    -------
+    cabc.Mapping[str, typ.Any]
+        Parsed ``cargo metadata`` document.
+
+    Raises
+    ------
+    CargoMetadataInvocationError
+        If ``cargo metadata`` exits with a non-zero status.
+    """
     root_path = normalise_workspace_root(workspace_root)
     command_runner = _active_command_runner(runner)
     exit_code, stdout_text, stderr_text = _invoke_cargo_metadata(

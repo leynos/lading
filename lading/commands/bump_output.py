@@ -78,6 +78,11 @@ def _build_changes_description(changes: BumpChanges) -> str:
     pre: _has_changes(changes)
     post: len(__return__) > 0
     post: " and and " not in __return__
+
+    Returns
+    -------
+    str
+        A comma- or ``and``-joined summary of the changed file categories.
     """
     parts: list[str] = []
     if changes.manifests:
@@ -96,7 +101,13 @@ def _build_changes_description(changes: BumpChanges) -> str:
 
 
 def _format_no_changes_message(target_version: str, *, dry_run: bool) -> str:
-    """Format message when no changes are required."""
+    """Format message when no changes are required.
+
+    Returns
+    -------
+    str
+        The no-changes message, phrased for a dry run when ``dry_run`` is set.
+    """
     if dry_run:
         return (
             "Dry run; no manifest changes required; "
@@ -113,6 +124,12 @@ def _format_header(description: str, target_version: str, *, dry_run: bool) -> s
     post: __return__.endswith(":")
     post: target_version in __return__
     post: description in __return__
+
+    Returns
+    -------
+    str
+        The header line naming ``target_version`` and ``description``, phrased
+        for a dry run when ``dry_run`` is set.
     """
     if dry_run:
         return f"Dry run; would update version to {target_version} in {description}:"
@@ -120,7 +137,13 @@ def _format_header(description: str, target_version: str, *, dry_run: bool) -> s
 
 
 def _has_changes(changes: BumpChanges) -> bool:
-    """Return True when a bump run changed at least one file category."""
+    """Return True when a bump run changed at least one file category.
+
+    Returns
+    -------
+    bool
+        ``True`` if any manifest, document, readme, or lockfile changed.
+    """
     return any((
         changes.manifests,
         changes.documents,
@@ -136,7 +159,13 @@ def _format_result_message(
     dry_run: bool,
     workspace_root: Path,
 ) -> str:
-    """Summarise the bump outcome for CLI presentation."""
+    """Summarise the bump outcome for CLI presentation.
+
+    Returns
+    -------
+    str
+        A no-changes message, or a header followed by one line per changed file.
+    """
     if not _has_changes(changes):
         return _format_no_changes_message(target_version, dry_run=dry_run)
 
@@ -167,6 +196,12 @@ def _format_manifest_path(manifest_path: Path, workspace_root: Path) -> str:
     CrossHair contracts (issue #95); model-check with ``make crosshair``.
 
     post: isinstance(__return__, str)
+
+    Returns
+    -------
+    str
+        The path relative to ``workspace_root``, or the absolute path when it
+        lies outside the workspace.
     """
     try:
         relative = manifest_path.relative_to(workspace_root)

@@ -25,7 +25,13 @@ pytest_plugins = (
 
 @pytest.fixture
 def repo_root() -> Path:
-    """Return the repository root directory."""
+    """Return the repository root directory.
+
+    Returns
+    -------
+    Path
+        Absolute path to the repository root.
+    """
     return Path(__file__).resolve().parent.parent
 
 
@@ -46,7 +52,13 @@ def _restore_workspace_env() -> cabc.Iterator[None]:
 
 @pytest.fixture
 def write_config(tmp_path: Path) -> cabc.Callable[[str], Path]:
-    """Return a helper that writes ``lading.toml`` into ``tmp_path``."""
+    """Return a helper that writes ``lading.toml`` into ``tmp_path``.
+
+    Returns
+    -------
+    cabc.Callable[[str], Path]
+        Callable that writes the given body and returns the config path.
+    """
     from lading import config as config_module
 
     def _write(body: str) -> Path:
@@ -59,7 +71,13 @@ def write_config(tmp_path: Path) -> cabc.Callable[[str], Path]:
 
 @pytest.fixture
 def minimal_config(write_config: cabc.Callable[[str], Path]) -> Path:
-    """Persist a representative configuration file for CLI exercises."""
+    """Persist a representative configuration file for CLI exercises.
+
+    Returns
+    -------
+    Path
+        Path to the written configuration file.
+    """
     return write_config(
         """
         [bump]

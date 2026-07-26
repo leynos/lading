@@ -57,7 +57,13 @@ def _write_workspace_manifest(
 def _write_workspace_readme(
     workspace_directory: Path, content: str = "# Workspace README\n"
 ) -> Path:
-    """Create or overwrite a workspace README for behavioural fixtures."""
+    """Create or overwrite a workspace README for behavioural fixtures.
+
+    Returns
+    -------
+    Path
+        The path of the written README file.
+    """
     readme_path = workspace_directory / "README.md"
     readme_path.write_text(content, encoding="utf-8")
     return readme_path

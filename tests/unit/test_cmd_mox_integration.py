@@ -116,6 +116,11 @@ def _timeout_cases() -> st.SearchStrategy[_TimeoutCase]:
     parsing. ``None`` and finite positive floats resolve to a timeout;
     consonant-only strings are unparseable; zero, negative, NaN, and infinite
     values parse but fall outside the finite positive domain.
+
+    Returns
+    -------
+    st.SearchStrategy[_TimeoutCase]
+        A strategy producing timeout cases with their expected outcomes.
     """
     default = st.just(_TimeoutCase(None, cmd_mox_runner._CMD_MOX_TIMEOUT_DEFAULT, None))
     finite_positive = st.floats(

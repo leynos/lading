@@ -28,7 +28,13 @@ from .conftest import (
 def _make_beta_package_index_failure_runner() -> cabc.Callable[
     [cabc.Sequence[str]], tuple[int, str, str]
 ]:
-    """Return a runner that simulates beta failing cargo package."""
+    """Return a runner that simulates beta failing cargo package.
+
+    Returns
+    -------
+    cabc.Callable[[cabc.Sequence[str]], tuple[int, str, str]]
+        A command runner double failing cargo package for crate beta.
+    """
 
     def runner(
         command: cabc.Sequence[str],
@@ -36,7 +42,13 @@ def _make_beta_package_index_failure_runner() -> cabc.Callable[
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
-        """Fail cargo package for crate_beta; succeed otherwise."""
+        """Fail cargo package for crate_beta; succeed otherwise.
+
+        Returns
+        -------
+        tuple[int, str, str]
+            The exit code, stdout, and stderr for the simulated command.
+        """
         del env
         is_package = tuple(command[:2]) == ("cargo", "package")
         is_beta = cwd is not None and cwd.name == "beta"

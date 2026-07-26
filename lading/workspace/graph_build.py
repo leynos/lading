@@ -48,14 +48,6 @@ def load_workspace(
     -------
     WorkspaceGraph
         The workspace graph built from the discovered cargo metadata.
-
-    Raises
-    ------
-    CargoExecutableNotFoundError, CargoMetadataError
-        When ``cargo`` cannot be located, or ``cargo metadata`` fails or emits
-        unparsable output.
-    WorkspaceModelError
-        When the metadata cannot be turned into a valid workspace graph.
     """
     from lading.workspace.metadata import load_cargo_metadata
 
@@ -113,7 +105,18 @@ def _collect_workspace_crates(
     workspace_member_ids: cabc.Sequence[str],
     workspace_index: WorkspaceIndex,
 ) -> tuple[WorkspaceCrate, ...]:
-    """Return a :class:`WorkspaceCrate` tuple for each workspace member ID."""
+    """Return a :class:`WorkspaceCrate` tuple for each workspace member ID.
+
+    Returns
+    -------
+    tuple[WorkspaceCrate, ...]
+        One crate per workspace member, in member-id order.
+
+    Raises
+    ------
+    WorkspaceModelError
+        If a workspace member has no matching entry in ``package_lookup``.
+    """
     crates: list[WorkspaceCrate] = []
     for member_id in workspace_member_ids:
         raw_package = package_lookup.get(member_id)
@@ -128,7 +131,13 @@ def _index_workspace_packages(
     packages: cabc.Sequence[object],
     workspace_member_ids: cabc.Sequence[str],
 ) -> dict[str, cabc.Mapping[str, typ.Any]]:
-    """Return mapping of workspace member IDs to package metadata."""
+    """Return mapping of workspace member IDs to package metadata.
+
+    Returns
+    -------
+    dict[str, collections.abc.Mapping[str, typing.Any]]
+        Package mappings keyed by id, restricted to workspace members.
+    """
     member_set = set(workspace_member_ids)
     index: dict[str, cabc.Mapping[str, typ.Any]] = {}
     for package in packages:
@@ -144,7 +153,13 @@ def _build_crate(
     package: cabc.Mapping[str, typ.Any],
     workspace_index: WorkspaceIndex,
 ) -> WorkspaceCrate:
-    """Construct a :class:`WorkspaceCrate` from ``cargo metadata`` package data."""
+    """Construct a :class:`WorkspaceCrate` from ``cargo metadata`` package data.
+
+    Returns
+    -------
+    WorkspaceCrate
+        The crate assembled from the package fields and workspace index.
+    """
     package_id = _expect_string(package.get("id"), "packages[].id")
     name = _expect_string(package.get("name"), f"package {package_id!r} name")
     version = _expect_string(package.get("version"), f"package {package_id!r} version")
@@ -171,7 +186,13 @@ def _build_dependencies(
     package: cabc.Mapping[str, typ.Any],
     workspace_index: WorkspaceIndex,
 ) -> tuple[WorkspaceDependency, ...]:
-    """Return dependencies that reference other workspace members."""
+    """Return dependencies that reference other workspace members.
+
+    Returns
+    -------
+    tuple[WorkspaceDependency, ...]
+        Dependencies pointing at workspace members; empty when none apply.
+    """
     raw_dependencies = _expect_sequence(
         package.get("dependencies"),
         f"package {package.get('id')!r} dependencies",
@@ -192,7 +213,18 @@ def _build_dependencies(
 def _build_workspace_index(
     package_lookup: cabc.Mapping[str, cabc.Mapping[str, typ.Any]],
 ) -> WorkspaceIndex:
-    """Return workspace package lookups keyed by id and package name."""
+    """Return workspace package lookups keyed by id and package name.
+
+    Returns
+    -------
+    WorkspaceIndex
+        Index exposing packages by id and members by name.
+
+    Raises
+    ------
+    WorkspaceModelError
+        If two distinct package ids share the same package name.
+    """
     members_by_name: dict[str, str] = {}
     for package_id, package in package_lookup.items():
         package_name = _expect_string(
@@ -212,7 +244,18 @@ def _build_workspace_index(
 def _validate_dependency_mapping(
     entry: cabc.Mapping[str, typ.Any] | object,
 ) -> cabc.Mapping[str, typ.Any]:
-    """Return ``entry`` as a mapping or raise if it is not."""
+    """Return ``entry`` as a mapping or raise if it is not.
+
+    Returns
+    -------
+    collections.abc.Mapping[str, typing.Any]
+        The validated dependency entry mapping.
+
+    Raises
+    ------
+    WorkspaceModelError
+        If ``entry`` is not a mapping.
+    """
     if not isinstance(entry, cabc.Mapping):
         message = "dependency entries must be mappings"
         raise WorkspaceModelError(message)
@@ -223,7 +266,14 @@ def _validate_workspace_dependency_path(
     entry: cabc.Mapping[str, typ.Any],
     target_package: cabc.Mapping[str, typ.Any],
 ) -> bool:
-    """Return whether an entry path matches the workspace dependency target."""
+    """Return whether an entry path matches the workspace dependency target.
+
+    Returns
+    -------
+    bool
+        ``True`` when the entry has no path or its path resolves to the
+        target crate's directory; ``False`` otherwise.
+    """
     dependency_path = entry.get("path")
     if dependency_path is None:
         return True
@@ -241,7 +291,14 @@ def _lookup_workspace_target(
     entry: cabc.Mapping[str, typ.Any],
     workspace_index: WorkspaceIndex,
 ) -> tuple[str, str] | None:
-    """Return the dependency target id and name when in the workspace."""
+    """Return the dependency target id and name when in the workspace.
+
+    Returns
+    -------
+    tuple[str, str] | None
+        The ``(target_id, target_name)`` pair when the entry resolves to a
+        workspace member; ``None`` otherwise.
+    """
     # External sources should never resolve to workspace dependencies.
     if entry.get("source") is not None:
         return None
@@ -263,7 +320,14 @@ def _lookup_workspace_target(
 
 
 def _dependency_candidate_names(entry: cabc.Mapping[str, typ.Any]) -> tuple[str, ...]:
-    """Return candidate dependency package names from metadata."""
+    """Return candidate dependency package names from metadata.
+
+    Returns
+    -------
+    tuple[str, ...]
+        Distinct candidate names drawn from the ``name`` and ``package``
+        fields, in preference order.
+    """
     names: list[str] = []
     dependency_name = entry.get("name")
     if isinstance(dependency_name, str):
@@ -278,7 +342,18 @@ def _dependency_candidate_names(entry: cabc.Mapping[str, typ.Any]) -> tuple[str,
 def _validate_dependency_kind(
     entry: cabc.Mapping[str, typ.Any],
 ) -> typ.Literal["normal", "dev", "build"] | None:
-    """Return a validated dependency kind literal when present."""
+    """Return a validated dependency kind literal when present.
+
+    Returns
+    -------
+    typing.Literal["normal", "dev", "build"] | None
+        The dependency kind, or ``None`` when the entry omits ``kind``.
+
+    Raises
+    ------
+    WorkspaceModelError
+        If ``kind`` is not a string or names an unsupported kind.
+    """
     kind_value = entry.get("kind")
     if kind_value is None:
         return None
@@ -297,7 +372,14 @@ def _as_workspace_dependency(
     entry: cabc.Mapping[str, typ.Any] | object,
     workspace_index: WorkspaceIndex,
 ) -> WorkspaceDependency | None:
-    """Convert ``entry`` into a :class:`WorkspaceDependency` when possible."""
+    """Convert ``entry`` into a :class:`WorkspaceDependency` when possible.
+
+    Returns
+    -------
+    WorkspaceDependency | None
+        The dependency when ``entry`` targets a workspace member; ``None``
+        otherwise.
+    """
     dependency = _validate_dependency_mapping(entry)
     target = _lookup_workspace_target(dependency, workspace_index)
     if target is None:
@@ -317,7 +399,13 @@ def _dependency_manifest_name(
     dependency: cabc.Mapping[str, typ.Any],
     target_id: str,
 ) -> str:
-    """Return the dependency name used in manifests."""
+    """Return the dependency name used in manifests.
+
+    Returns
+    -------
+    str
+        The rename target when set, otherwise the declared or package name.
+    """
     rename_value = dependency.get("rename")
     if isinstance(rename_value, str) and rename_value:
         return rename_value
@@ -334,7 +422,18 @@ def _dependency_manifest_name(
 
 
 def _normalise_workspace_root(value: object) -> Path:
-    """Return ``value`` as an absolute workspace root path."""
+    """Return ``value`` as an absolute workspace root path.
+
+    Returns
+    -------
+    Path
+        The normalized, absolute workspace root path.
+
+    Raises
+    ------
+    WorkspaceModelError
+        If ``value`` is neither a string nor a :class:`Path`.
+    """
     if not isinstance(value, str | Path):
         message = (
             f"workspace_root must be a path string; received {type(value).__name__}"
@@ -346,7 +445,18 @@ def _normalise_workspace_root(value: object) -> Path:
 
 
 def _normalise_manifest_path(value: object, field_name: str) -> Path:
-    """Return ``value`` as an absolute :class:`Path` to a manifest."""
+    """Return ``value`` as an absolute :class:`Path` to a manifest.
+
+    Returns
+    -------
+    Path
+        The expanded, resolved manifest path.
+
+    Raises
+    ------
+    WorkspaceModelError
+        If ``value`` is neither a string nor a :class:`Path`.
+    """
     if not isinstance(value, str | Path):
         message = f"{field_name} must be a path string; received {type(value).__name__}"
         raise WorkspaceModelError(message)
@@ -355,7 +465,19 @@ def _normalise_manifest_path(value: object, field_name: str) -> Path:
 
 
 def _coerce_publish_setting(value: object, package_id: str) -> bool:
-    """Return whether ``package_id`` should be considered publishable."""
+    """Return whether ``package_id`` should be considered publishable.
+
+    Returns
+    -------
+    bool
+        ``True`` when publishing is unrestricted or the registry list is
+        non-empty; ``False`` when publishing is disabled.
+
+    Raises
+    ------
+    WorkspaceModelError
+        If ``value`` is not ``false``, a list, or ``null``.
+    """
     if value is None:
         return True
     if isinstance(value, bool):
@@ -371,7 +493,14 @@ def _coerce_publish_setting(value: object, package_id: str) -> bool:
 
 
 def _extract_readme_workspace_flag(package_table: object) -> bool:
-    """Return ``True`` when ``package_table`` opts into workspace readme."""
+    """Return ``True`` when ``package_table`` opts into workspace readme.
+
+    Returns
+    -------
+    bool
+        ``True`` when ``package.readme.workspace`` is truthy; ``False``
+        otherwise.
+    """
     if not isinstance(package_table, cabc.Mapping):
         return False
     package_mapping = typ.cast("cabc.Mapping[str, typ.Any]", package_table)
@@ -384,7 +513,18 @@ def _extract_readme_workspace_flag(package_table: object) -> bool:
 
 
 def _manifest_uses_workspace_readme(manifest_path: Path) -> bool:
-    """Return ``True`` when ``readme.workspace`` is set in ``manifest_path``."""
+    """Return ``True`` when ``readme.workspace`` is set in ``manifest_path``.
+
+    Returns
+    -------
+    bool
+        ``True`` when the manifest's ``package.readme.workspace`` flag is set.
+
+    Raises
+    ------
+    WorkspaceModelError
+        If the manifest is missing or cannot be parsed as TOML.
+    """
     try:
         text = manifest_path.read_text(encoding="utf-8")
     except FileNotFoundError as exc:  # pragma: no cover - defensive guard

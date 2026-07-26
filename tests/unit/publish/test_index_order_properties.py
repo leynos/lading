@@ -25,7 +25,13 @@ from .conftest import make_crate
 def _publish_order_cases(
     draw: st.DrawFn,
 ) -> tuple[int, int, int]:
-    """Generate ``(crate_count, current_index, missing_index)`` cases."""
+    """Generate ``(crate_count, current_index, missing_index)`` cases.
+
+    Returns
+    -------
+    tuple[int, int, int]
+        The drawn crate count, current index, and missing index.
+    """
     crate_count = draw(st.integers(min_value=2, max_value=8))
     current_index = draw(st.integers(min_value=0, max_value=crate_count - 1))
     missing_index = draw(st.integers(min_value=0, max_value=crate_count - 1))

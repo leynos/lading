@@ -29,7 +29,7 @@ def expect_mapping(
 
     Raises
     ------
-    LadingError
+    _reject
         When ``value`` is not a :class:`collections.abc.Mapping`.
     """
     match value:
@@ -58,11 +58,6 @@ def optional_mapping(
     -------
     collections.abc.Mapping[str, typing.Any] | None
         The mapping, or ``None`` when ``value`` is ``None``.
-
-    Raises
-    ------
-    LadingError
-        When ``value`` is neither ``None`` nor a mapping.
     """
     if value is None:
         return None
@@ -72,7 +67,18 @@ def optional_mapping(
 def _validate_string_pair(
     key: object, raw_value: object, field_name: str, error: _ErrorType
 ) -> tuple[str, str]:
-    """Validate and return a string key-value pair for ``field_name``."""
+    """Validate and return a string key-value pair for ``field_name``.
+
+    Returns
+    -------
+    tuple[str, str]
+        The validated ``(key, value)`` string pair.
+
+    Raises
+    ------
+    _reject
+        When ``raw_value`` is not a string.
+    """
     match key:
         case str():
             match raw_value:
@@ -109,9 +115,8 @@ def string_mapping(
 
     Raises
     ------
-    LadingError
-        When ``value`` is not a TOML table, or when any key or value is not a
-        string.
+    _reject
+        When ``value`` is not a TOML table.
     """
     match value:
         case None:

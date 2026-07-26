@@ -24,7 +24,13 @@ def when_invoke_lading_publish(
     repo_root: Path,
     preflight_test_context: PreflightTestContext,
 ) -> dict[str, typ.Any]:
-    """Execute the publish CLI via ``python -m`` and capture the result."""
+    """Execute the publish CLI via ``python -m`` and capture the result.
+
+    Returns
+    -------
+    dict[str, typ.Any]
+        The captured CLI run result.
+    """
     stub_config = preflight_test_context.create_stub_config()
     return _invoke_publish_with_options(repo_root, workspace_directory, stub_config)
 
@@ -36,7 +42,18 @@ def when_run_lading_publish_command(
     preflight_test_context: PreflightTestContext,
     command: str,
 ) -> dict[str, typ.Any]:
-    """Execute the quoted publish command through the CLI test harness."""
+    """Execute the quoted publish command through the CLI test harness.
+
+    Returns
+    -------
+    dict[str, typ.Any]
+        The captured CLI run result.
+
+    Raises
+    ------
+    AssertionError
+        If the command is not a ``lading publish`` invocation.
+    """
     tokens = tuple(shlex.split(command))
     if tokens[:2] != ("lading", "publish"):
         message = f"Unexpected publish command: {command}"
@@ -60,7 +77,13 @@ def when_invoke_lading_publish_forbid_dirty(
     repo_root: Path,
     preflight_test_context: PreflightTestContext,
 ) -> dict[str, typ.Any]:
-    """Execute the publish CLI with ``--forbid-dirty`` enabled."""
+    """Execute the publish CLI with ``--forbid-dirty`` enabled.
+
+    Returns
+    -------
+    dict[str, typ.Any]
+        The captured CLI run result.
+    """
     stub_config = preflight_test_context.create_stub_config()
     return _invoke_publish_with_options(
         repo_root,
@@ -79,7 +102,13 @@ def when_invoke_lading_publish_live(
     repo_root: Path,
     preflight_test_context: PreflightTestContext,
 ) -> dict[str, typ.Any]:
-    """Execute the publish CLI with live publishing enabled."""
+    """Execute the publish CLI with live publishing enabled.
+
+    Returns
+    -------
+    dict[str, typ.Any]
+        The captured CLI run result.
+    """
     if not any(
         _is_cargo_publish_command(command)
         for command in preflight_test_context.overrides
