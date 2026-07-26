@@ -10,10 +10,9 @@ UV ?= $(shell command -v uv 2>/dev/null || printf '%s/.local/bin/uv' "$$HOME")
 RUFF_VERSION ?= 0.15.12
 RUFF ?= $(UV) tool run --from ruff==$(RUFF_VERSION) ruff
 TYPOS_VERSION ?= 1.48.0
-# Pin ty so `make typecheck` invokes the same version as the
-# `uv tool install ty==` step in .github/workflows/ci.yml. Bump both sites
-# together: a version mismatch lets a newer ty flag diagnostics locally that CI
-# misses (or vice versa), which is how such a failure slips into CI.
+# Pin ty. `make typecheck` invokes it via `uv tool run ty@$(TY_VERSION)`, so
+# TY_VERSION is the sole ty version declaration (CI runs `make typecheck` and
+# installs no separate ty). Bump it here to move local and CI checks together.
 TY_VERSION ?= 0.0.32
 TY ?= $(UV) tool run ty@$(TY_VERSION)
 UV_ENV = UV_CACHE_DIR=.uv-cache UV_TOOL_DIR=.uv-tools
