@@ -110,6 +110,49 @@ def test_discover_tracked_lockfiles_filters_missing_manifests(tmp_path: Path) ->
     )
 
 
+def test_discover_tracked_lockfiles_ignores_untracked_on_disk(
+    tmp_path: Path,
+) -> None:
+    """Discovery trusts ``git ls-files`` alone and never globs the filesystem.
+
+    An untracked ``Cargo.lock`` sits on disk beside a valid manifest, so the
+    only reason it must be excluded is that ``git ls-files`` does not report it.
+    This pins the simpler, git-driven discovery path after the redundant
+    ``rglob`` filesystem pass was removed (issue #83): a lockfile absent from
+    git output is never rediscovered by walking the tree.
+    """
+    tracked = tmp_path / "tracked"
+    tracked.mkdir()
+    (tracked / "Cargo.toml").write_text("[package]\n", encoding="utf-8")
+    (tracked / "Cargo.lock").write_text("", encoding="utf-8")
+    untracked = tmp_path / "untracked"
+    untracked.mkdir()
+    (untracked / "Cargo.toml").write_text("[package]\n", encoding="utf-8")
+    (untracked / "Cargo.lock").write_text("", encoding="utf-8")
+
+    def runner(
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        """Report only the git-tracked lockfile, omitting the untracked one."""
+        assert command == ("git", "ls-files", "**/Cargo.lock", "Cargo.lock"), (
+            f"discovery must invoke git ls-files; got {command!r}"
+        )
+        assert cwd == tmp_path, f"git must run in the workspace root; got {cwd!r}"
+        return 0, "tracked/Cargo.lock\n", ""
+
+    # Use the real filesystem manifest probe so both manifests genuinely exist;
+    # the untracked lockfile is excluded solely because git omitted it.
+    result = lockfile.discover_tracked_lockfiles(tmp_path, runner)
+
+    assert result == (tracked / "Cargo.lock",), (
+        "discovery must return only git-tracked lockfiles and must not glob the "
+        f"filesystem for the untracked one; got {result!r}"
+    )
+
+
 def test_discover_tracked_lockfiles_accepts_manifest_probe(
     tmp_path: Path,
 ) -> None:

@@ -58,6 +58,24 @@ def then_stderr_contains(cli_run: dict[str, typ.Any], expected: str) -> None:
     assert expected in cli_run["stderr"]
 
 
+@then(parsers.parse('the stderr contains workspace path "{relative}"'))
+def then_stderr_contains_workspace_path(
+    cli_run: dict[str, typ.Any], relative: str
+) -> None:
+    """Assert stderr contains the absolute path ``relative`` under the workspace.
+
+    The workspace root is a per-test temporary directory, so scenarios cannot
+    hard-code its absolute path. Resolving ``relative`` against
+    ``cli_run["workspace"]`` lets a scenario assert a specific lockfile or
+    manifest path — distinguishing, for example, the workspace-root
+    ``Cargo.lock`` from a nested crate's — rather than a substring both share.
+    """
+    expected = str(cli_run["workspace"] / relative)
+    assert expected in cli_run["stderr"], (
+        f"expected workspace path {expected!r} in stderr:\n{cli_run['stderr']}"
+    )
+
+
 @then(parsers.parse('the workspace manifest version is "{version}"'))
 def then_workspace_manifest_version(
     cli_run: dict[str, typ.Any],

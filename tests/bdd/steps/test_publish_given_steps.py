@@ -93,6 +93,40 @@ def given_publish_preflight_finds_stale_lockfile(
     )
 
 
+@given("publish pre-flight finds multiple stale tracked Cargo.lock files")
+def given_publish_preflight_finds_multiple_stale_lockfiles(
+    workspace_directory: Path,
+    preflight_overrides: dict[tuple[str, ...], ResponseProvider],
+) -> None:
+    """Simulate several tracked lockfiles that all fail locked validation.
+
+    Two tracked lockfiles (the workspace root and a nested ``sub`` crate) are
+    staged on disk with adjacent manifests so discovery returns both, and a
+    single prefix-matched ``cargo metadata --locked`` stub reports each as
+    stale. This exercises the aggregated, no-short-circuit stale report.
+    """
+    nested = workspace_directory / "sub"
+    nested.mkdir(parents=True, exist_ok=True)
+    (nested / "Cargo.toml").write_text("[package]\n", encoding="utf-8")
+    (workspace_directory / "Cargo.lock").write_text("# stale lock\n", encoding="utf-8")
+    (nested / "Cargo.lock").write_text("# stale lock\n", encoding="utf-8")
+    preflight_overrides["git", "ls-files", "**/Cargo.lock", "Cargo.lock"] = (
+        _CommandResponse(exit_code=0, stdout="Cargo.lock\nsub/Cargo.lock\n")
+    )
+    preflight_overrides[
+        "cargo",
+        "metadata",
+        "--locked",
+        "--manifest-path",
+    ] = _CommandResponse(
+        exit_code=101,
+        stderr=(
+            "error: cannot update the lock file because --locked was passed "
+            "to prevent this"
+        ),
+    )
+
+
 @given(parsers.parse('cargo test fails with compiletest artifact "{relative_path}"'))
 def given_cargo_test_fails_with_artifact(
     workspace_directory: Path,
