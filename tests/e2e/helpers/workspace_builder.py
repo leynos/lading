@@ -31,10 +31,25 @@ def create_nontrivial_workspace(
 ) -> NonTrivialWorkspace:
     """Create a non-trivial Rust workspace rooted at ``workspace_root``.
 
+    Parameters
+    ----------
+    workspace_root : Path
+        Directory in which the workspace manifests and crates are written.
+    version : str, optional
+        Initial version applied to every manifest, by default ``"0.1.0"``.
+
     Returns
     -------
     NonTrivialWorkspace
         The workspace model describing the created crates and metadata.
+
+    Examples
+    --------
+    >>> import tempfile
+    >>> from pathlib import Path
+    >>> workspace = create_nontrivial_workspace(Path(tempfile.mkdtemp()))
+    >>> workspace.crate_names
+    ('core', 'utils', 'app')
     """
     crate_names = ("core", "utils", "app")
     crates_dir = workspace_root / "crates"
@@ -160,13 +175,7 @@ def _create_crate(
     version: str,
     manifest_extra: str,
 ) -> Path:
-    """Create a crate directory with a Cargo.toml and minimal lib source.
-
-    Returns
-    -------
-    Path
-        The path to the crate's written ``Cargo.toml``.
-    """
+    """Create a crate directory with a Cargo.toml and minimal lib source."""
     crate_root = workspace_root / "crates" / name
     crate_root.mkdir(parents=True, exist_ok=True)
     src_dir = crate_root / "src"
@@ -195,13 +204,7 @@ def _build_cargo_metadata_payload(
     version: str,
     manifests: dict[str, Path],
 ) -> cabc.Mapping[str, typ.Any]:
-    """Return a cargo metadata JSON payload describing the fixture workspace.
-
-    Returns
-    -------
-    cabc.Mapping[str, typ.Any]
-        The metadata payload mapping for the fixture workspace.
-    """
+    """Return a cargo metadata JSON payload describing the fixture workspace."""
     workspace_members = [f"{name}-id" for name in ("core", "utils", "app")]
     packages: list[dict[str, typ.Any]] = [
         {

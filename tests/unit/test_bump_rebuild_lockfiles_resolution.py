@@ -94,19 +94,7 @@ def _run_bump_capturing_regeneration(
     flag: bool | None,
     configured: bool,
 ) -> bool:
-    """Run ``bump.run`` and report whether lockfile regeneration was invoked.
-
-    The resolved ``rebuild_lockfiles`` value is not exposed by ``bump.run``;
-    the only observable behavioural effect is whether the manifest changes
-    trigger ``regenerate_lockfiles``. Bumping to ``1.2.3`` from the default
-    ``0.1.0`` guarantees manifest changes so regeneration depends solely on the
-    resolved flag.
-
-    Returns
-    -------
-    bool
-        ``True`` when ``bump.run`` invoked lockfile regeneration.
-    """
+    """Run ``bump.run`` and report whether lockfile regeneration was invoked."""
     workspace = _make_workspace(workspace_root)
     configuration = config_module.LadingConfig(
         bump=config_module.BumpConfig(rebuild_lockfiles=configured)

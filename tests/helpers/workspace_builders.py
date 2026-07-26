@@ -27,13 +27,7 @@ class _CrateSpec:
 
 
 def _write_workspace_manifest(root: Path, members: tuple[str, ...]) -> Path:
-    """Create a minimal workspace manifest with the provided members.
-
-    Returns
-    -------
-    Path
-        The path to the written ``Cargo.toml``.
-    """
+    """Create a minimal workspace manifest with the provided members."""
     from tomlkit import array, document, dumps, table
 
     manifest = root / "Cargo.toml"
@@ -69,18 +63,7 @@ def _write_crate_manifest(manifest_path: Path, spec: _CrateSpec) -> None:
 def _build_workspace_with_internal_deps(
     root: Path, *, specs: tuple[_CrateSpec, ...]
 ) -> tuple[WorkspaceGraph, dict[str, Path]]:
-    """Create a workspace populated with crates and return manifest paths.
-
-    Returns
-    -------
-    tuple[WorkspaceGraph, dict[str, Path]]
-        The workspace graph and a mapping of crate name to manifest path.
-
-    Raises
-    ------
-    ValueError
-        If two specs share the same crate name.
-    """
+    """Create a workspace populated with crates and return manifest paths."""
     root.mkdir(parents=True, exist_ok=True)
     members = tuple(f"crates/{spec.name}" for spec in specs)
     _write_workspace_manifest(root, members)
@@ -115,13 +98,7 @@ def _build_workspace_with_internal_deps(
 
 
 def _make_workspace(tmp_path: Path) -> WorkspaceGraph:
-    """Construct a workspace graph with two member crates.
-
-    Returns
-    -------
-    WorkspaceGraph
-        The workspace graph containing the ``alpha`` and ``beta`` crates.
-    """
+    """Construct a workspace graph with two member crates."""
     alpha_spec = _CrateSpec(name="alpha")
     beta_spec = _CrateSpec(name="beta")
     return _build_workspace_with_internal_deps(tmp_path, specs=(alpha_spec, beta_spec))[
@@ -130,18 +107,7 @@ def _make_workspace(tmp_path: Path) -> WorkspaceGraph:
 
 
 def _load_version(path: Path, table: tuple[str, ...]) -> str:
-    """Return the version string stored at ``table`` within ``path``.
-
-    Returns
-    -------
-    str
-        The version string at the ``table`` key path.
-
-    Raises
-    ------
-    KeyError
-        If the ``table`` key path or its ``version`` key is absent.
-    """
+    """Return the version string stored at ``table`` within ``path``."""
     document = parse_toml(path.read_text(encoding="utf-8"))
     current = document
     try:
@@ -159,13 +125,7 @@ def _make_config(
     exclude: tuple[str, ...] = (),
     documentation_globs: tuple[str, ...] | None = None,
 ) -> config_module.LadingConfig:
-    """Construct a configuration instance for tests.
-
-    Returns
-    -------
-    config_module.LadingConfig
-        The configuration built from the supplied bump options.
-    """
+    """Construct a configuration instance for tests."""
     bump_mapping: dict[str, typ.Any] = {}
     if exclude:
         bump_mapping["exclude"] = exclude
@@ -176,13 +136,7 @@ def _make_config(
 
 
 def _create_alpha_crate(workspace_root: Path) -> WorkspaceCrate:
-    """Create the alpha crate and return its workspace representation.
-
-    Returns
-    -------
-    WorkspaceCrate
-        The workspace representation of the created alpha crate.
-    """
+    """Create the alpha crate and return its workspace representation."""
     alpha_dir = workspace_root / "crates" / "alpha"
     alpha_dir.mkdir(parents=True, exist_ok=True)
     alpha_manifest = alpha_dir / "Cargo.toml"
@@ -205,13 +159,7 @@ def _create_alpha_crate(workspace_root: Path) -> WorkspaceCrate:
 def _create_beta_crate_with_dependencies(
     workspace_root: Path, alpha_id: str
 ) -> WorkspaceCrate:
-    """Create the beta crate with dependency entries referencing alpha.
-
-    Returns
-    -------
-    WorkspaceCrate
-        The workspace representation of the created beta crate.
-    """
+    """Create the beta crate with dependency entries referencing alpha."""
     beta_dir = workspace_root / "crates" / "beta"
     beta_dir.mkdir(parents=True, exist_ok=True)
     beta_manifest = beta_dir / "Cargo.toml"

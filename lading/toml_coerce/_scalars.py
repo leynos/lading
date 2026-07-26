@@ -96,8 +96,9 @@ def non_negative_int(
     ------
     _reject
         The ``error`` exception, built by :func:`_reject`, when ``value`` is
-        not a real integer (``bool`` and ``float`` are rejected) or an
-        integer-valued string, or when the parsed result is negative.
+        neither a real integer (``bool`` and ``float`` are rejected) nor an
+        integer-valued string (which is accepted), or when the parsed result
+        is negative.
     """
     # ``bool`` is a subclass of ``int`` and ``float``/other types are truthy for
     # a blanket ``int(...)`` cast, so dispatch explicitly to accept only real

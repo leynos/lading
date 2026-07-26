@@ -100,14 +100,21 @@ def when_invoke_lading_bump(
 ) -> dict[str, typ.Any]:
     """Execute the bump CLI via ``python -m`` and capture the result.
 
+    Parameters
+    ----------
+    version : str
+        The version argument passed to the ``bump`` subcommand.
+    workspace_directory : Path
+        The workspace root supplied via ``--workspace-root``.
+    repo_root : Path
+        The repository root used as the subprocess working directory.
+
     Returns
     -------
     dict[str, typ.Any]
         The captured CLI run details (return code, stdout, stderr).
     """
-    from .test_common_steps import _run_cli
-
-    return _run_cli(repo_root, workspace_directory, "bump", version)
+    return _invoke_lading_bump(version, workspace_directory, repo_root)
 
 
 @when(
@@ -121,14 +128,21 @@ def when_invoke_lading_bump_dry_run(
 ) -> dict[str, typ.Any]:
     """Execute the bump CLI in dry-run mode via ``python -m``.
 
+    Parameters
+    ----------
+    version : str
+        The version argument passed to the ``bump`` subcommand.
+    workspace_directory : Path
+        The workspace root supplied via ``--workspace-root``.
+    repo_root : Path
+        The repository root used as the subprocess working directory.
+
     Returns
     -------
     dict[str, typ.Any]
         The captured CLI run details (return code, stdout, stderr).
     """
-    from .test_common_steps import _run_cli
-
-    return _run_cli(repo_root, workspace_directory, "bump", version, "--dry-run")
+    return _invoke_lading_bump(version, workspace_directory, repo_root, "--dry-run")
 
 
 @then(parsers.parse('the bump command reports manifest updates for "{version}"'))
@@ -376,3 +390,14 @@ def given_nested_lockfile_manifest(
     cmd_mox.stub("cargo::update").with_args(
         "--workspace", "--manifest-path", str(nested_manifest.resolve())
     ).returns(exit_code=0, stdout="cargo update --workspace\n", stderr="")
+
+def _invoke_lading_bump(
+    version: str,
+    workspace_directory: Path,
+    repo_root: Path,
+    *options: str,
+) -> dict[str, typ.Any]:
+    """Run the bump CLI for ``version`` and capture the run result."""
+    from .test_common_steps import _run_cli
+
+    return _run_cli(repo_root, workspace_directory, "bump", version, *options)

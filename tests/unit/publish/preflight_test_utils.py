@@ -26,13 +26,7 @@ def _setup_preflight_test(
     configuration: config_module.LadingConfig,
     crate_names: cabc.Sequence[str] | None = None,
 ) -> tuple[Path, WorkspaceGraph, RecordedCommands]:
-    """Execute ``publish.run`` with optional workspace crates and capture calls.
-
-    Returns
-    -------
-    tuple[Path, WorkspaceGraph, RecordedCommands]
-        The workspace root, workspace graph, and recorded command calls.
-    """
+    """Execute ``publish.run`` with optional crates and capture command calls."""
     monkeypatch.setattr(publish_preflight, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
     root = tmp_path / "workspace"
     root.mkdir()
@@ -48,13 +42,7 @@ def _setup_preflight_test(
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
-        """Record the invocation and return a successful result.
-
-        Returns
-        -------
-        tuple[int, str, str]
-            A zero exit code with empty stdout and stderr.
-        """
+        """Record the invocation and return a successful result."""
         calls.append((tuple(command), cwd, env))
         return 0, "", ""
 
@@ -66,13 +54,7 @@ def _setup_preflight_test(
 def _extract_cargo_test_call(
     calls: RecordedCommands,
 ) -> tuple[tuple[str, ...], Path | None]:
-    """Return the captured cargo test invocation from ``calls``.
-
-    Returns
-    -------
-    tuple[tuple[str, ...], Path | None]
-        The cargo test command vector and its working directory.
-    """
+    """Return the captured cargo test command and working directory."""
     command, cwd, _env = next(
         entry
         for entry in calls

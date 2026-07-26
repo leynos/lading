@@ -117,18 +117,7 @@ def cmd_mox_runner(
 
 
 def _prepare_cmd_mox_context() -> float:
-    """Return cmd-mox IPC timeout after validating environment state.
-
-    Returns
-    -------
-    float
-        The validated IPC timeout in seconds.
-
-    Raises
-    ------
-    CmdMoxError
-        If ``CMOX_IPC_SOCKET`` is unset.
-    """
+    """Return cmd-mox IPC timeout after validating environment state."""
     if not os.environ.get(env_mod.CMOX_IPC_SOCKET_ENV):
         message = "cmd-mox stub requested but CMOX_IPC_SOCKET is unset"
         raise CmdMoxError(message)

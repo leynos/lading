@@ -127,13 +127,7 @@ def test_raise_paths_do_not_increment_counter(
 def _make_beta_package_index_failure_runner() -> cabc.Callable[
     [cabc.Sequence[str]], tuple[int, str, str]
 ]:
-    """Return a runner whose ``cargo package`` for crate beta misses the index.
-
-    Returns
-    -------
-    cabc.Callable[[cabc.Sequence[str]], tuple[int, str, str]]
-        A command runner simulating the beta index-miss failure.
-    """
+    """Return a runner whose ``cargo package`` for crate beta misses the index."""
 
     def runner(
         command: cabc.Sequence[str],

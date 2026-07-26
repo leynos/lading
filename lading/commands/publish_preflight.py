@@ -62,13 +62,7 @@ class _CargoPreflightOptions:
 def _build_preflight_environment(
     overrides: tuple[tuple[str, str], ...],
 ) -> dict[str, str]:
-    """Return the base environment for publish pre-flight commands.
-
-    Returns
-    -------
-    dict[str, str]
-        A copy of the process environment updated with ``overrides``.
-    """
+    """Return the base environment for publish pre-flight commands."""
     env = dict(os.environ)
     env.update(overrides)
     return env
@@ -81,13 +75,7 @@ def _run_aux_build_commands(
     runner: CommandRunner,
     env: cabc.Mapping[str, str] | None,
 ) -> None:
-    """Execute auxiliary build commands prior to cargo pre-flight runs.
-
-    Raises
-    ------
-    PublishPreflightError
-        If any auxiliary build command exits with a non-zero status.
-    """
+    """Execute auxiliary build commands prior to cargo pre-flight runs."""
     for command in commands:
         exit_code, stdout, stderr = runner(command, cwd=workspace_root, env=env)
         if exit_code != 0:
@@ -104,14 +92,7 @@ def _run_aux_build_commands(
 
 
 def _resolve_extern_path(workspace_root: Path, raw_path: str) -> Path:
-    """Return ``raw_path`` resolved relative to ``workspace_root`` when needed.
-
-    Returns
-    -------
-    Path
-        The expanded, resolved path; relative inputs are joined to
-        ``workspace_root``.
-    """
+    """Return ``raw_path`` resolved relative to ``workspace_root`` when needed."""
     candidate = Path(raw_path)
     if not candidate.is_absolute():
         candidate = workspace_root / candidate
@@ -124,14 +105,7 @@ def _apply_compiletest_externs(
     *,
     workspace_root: Path,
 ) -> dict[str, str]:
-    """Return ``env`` with compiletest externs appended to ``RUSTFLAGS``.
-
-    Returns
-    -------
-    dict[str, str]
-        A copy of ``env`` with the ``--extern`` flags merged into
-        ``RUSTFLAGS``.
-    """
+    """Return ``env`` with compiletest externs appended to ``RUSTFLAGS``."""
     if not externs:
         return dict(env)
     updated = dict(env)
@@ -219,13 +193,7 @@ def _run_preflight_checks(
 def _compose_preflight_arguments(
     target_dir: Path, *, include_all_targets: bool
 ) -> tuple[str, ...]:
-    """Build the ordered argument tuple shared by pre-flight cargo commands.
-
-    Returns
-    -------
-    tuple[str, ...]
-        The shared cargo arguments, including the target directory flag.
-    """
+    """Build the ordered argument tuple shared by pre-flight cargo commands."""
     arguments = ["--workspace"]
     if include_all_targets:
         arguments.append("--all-targets")
@@ -237,25 +205,7 @@ def _collect_stale_lockfiles(
     tracked: cabc.Iterable[Path],
     repository: LockfileInspectionRepository,
 ) -> list[Path]:
-    """Classify tracked lockfiles; raise immediately on error, return stale paths.
-
-    Every tracked lockfile is classified rather than short-circuiting on the
-    first stale result (issue #83): the aggregated error message lists each
-    stale lockfile with its repair command, so the operator fixes the whole
-    workspace in one pass instead of replaying the pre-flight per lockfile.
-    The extra ``cargo metadata --locked`` probes are cheap relative to that
-    replay loop. Unexpected (non-stale) failures still raise immediately.
-
-    Returns
-    -------
-    list[Path]
-        The tracked lockfile paths found to be stale.
-
-    Raises
-    ------
-    PublishPreflightError
-        Raised when a lockfile freshness check fails with an unexpected error.
-    """
+    """Classify tracked lockfiles; raise on error, return the stale paths."""
     stale: list[Path] = []
     for lockfile_path in tracked:
         manifest_path = lockfile_path.parent / "Cargo.toml"
@@ -273,14 +223,7 @@ def _collect_stale_lockfiles(
 
 
 def _build_stale_lockfile_message(stale_lockfiles: list[Path]) -> str:
-    """Return a human-readable diagnostic message for stale lockfiles.
-
-    Returns
-    -------
-    str
-        A multi-line message naming each stale lockfile and the repair
-        command.
-    """
+    """Return a human-readable diagnostic message for stale lockfiles."""
     lines = [
         "Tracked Cargo.lock files are stale after manifest version changes.",
         (
@@ -304,18 +247,7 @@ def _validate_lockfile_freshness(
     *,
     repository: LockfileInspectionRepository,
 ) -> None:
-    """Fail early when tracked Cargo.lock files are stale.
-
-    Discovery and freshness probing run through ``repository`` (the
-    :class:`LockfileInspectionRepository` port), so this domain step never
-    holds a command runner or knows how lockfiles are located and validated
-    (issue #82).
-
-    Raises
-    ------
-    PublishPreflightError
-        If any tracked Cargo.lock file is stale after manifest changes.
-    """
+    """Fail early when tracked Cargo.lock files are stale."""
     tracked = repository.discover_tracked_lockfiles(workspace_root)
     stale_lockfiles = _collect_stale_lockfiles(tracked, repository)
 
@@ -331,13 +263,7 @@ def _validate_lockfile_freshness(
 def _preflight_argument_sets(
     target_dir: Path, *, unit_tests_only: bool
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    """Return argument tuples for cargo check and cargo test pre-flight calls.
-
-    Returns
-    -------
-    tuple[tuple[str, ...], tuple[str, ...]]
-        The check arguments and the test arguments, in that order.
-    """
+    """Return argument tuples for cargo check and cargo test pre-flight calls."""
     check_arguments = _compose_preflight_arguments(target_dir, include_all_targets=True)
     test_arguments = _compose_preflight_arguments(
         target_dir, include_all_targets=not unit_tests_only
@@ -346,26 +272,14 @@ def _preflight_argument_sets(
 
 
 def _normalise_test_excludes(entries: cabc.Sequence[str]) -> tuple[str, ...]:
-    """Return sorted, deduplicated, trimmed crate names for ``--exclude`` flags.
-
-    Returns
-    -------
-    tuple[str, ...]
-        The normalised crate names in sorted order.
-    """
+    """Return sorted, deduplicated, trimmed crate names for ``--exclude`` flags."""
     return tuple(sorted({crate.strip() for crate in entries if crate.strip()}))
 
 
 def _build_test_arguments(
     base_arguments: list[str], options: _CargoPreflightOptions
 ) -> list[str]:
-    """Return cargo test arguments derived from ``options``.
-
-    Returns
-    -------
-    list[str]
-        The base arguments extended with exclude and unit-test flags.
-    """
+    """Return cargo test arguments derived from ``options``."""
     arguments = list(base_arguments)
     for crate_name in _normalise_test_excludes(options.test_excludes):
         # Sorted unique values keep cargo invocations deterministic for tests/logging.
@@ -382,13 +296,7 @@ def _verify_clean_working_tree(
     runner: CommandRunner,
     env: cabc.Mapping[str, str] | None = None,
 ) -> None:
-    """Ensure ``workspace_root`` has no uncommitted changes unless allowed.
-
-    Raises
-    ------
-    PublishPreflightError
-        If git status cannot be read or the working tree is dirty.
-    """
+    """Ensure ``workspace_root`` has no uncommitted changes unless allowed."""
     if allow_dirty:
         return
 
@@ -426,13 +334,7 @@ def _run_cargo_preflight(
     runner: CommandRunner,
     options: _CargoPreflightOptions,
 ) -> None:
-    """Run ``cargo <subcommand>`` inside ``workspace_root``.
-
-    Raises
-    ------
-    PublishPreflightError
-        If the cargo command exits with a non-zero status.
-    """
+    """Run ``cargo <subcommand>`` inside ``workspace_root``."""
     arguments = list(options.extra_args)
     if subcommand == "test":
         arguments = _build_test_arguments(arguments, options)
@@ -457,13 +359,7 @@ def _run_cargo_preflight(
 def _build_cargo_error_message(
     subcommand: str, exit_code: int, stdout: str, stderr: str
 ) -> str:
-    """Return a consistent failure message for cargo pre-flight commands.
-
-    Returns
-    -------
-    str
-        The failure message with stdout and stderr detail appended.
-    """
+    """Return a consistent failure message for cargo pre-flight commands."""
     return with_detail(
         f"Pre-flight cargo {subcommand} failed with exit code {exit_code}",
         stdout,

@@ -42,6 +42,11 @@ def _set_publish_strip_patches(workspace_directory: Path, value: object) -> None
 def given_workspace_directory(tmp_path: Path) -> Path:
     """Provide a temporary workspace root for CLI exercises.
 
+    Parameters
+    ----------
+    tmp_path : Path
+        The pytest temporary directory used as the workspace root.
+
     Returns
     -------
     Path
@@ -61,6 +66,11 @@ def given_workspace_directory(tmp_path: Path) -> Path:
 def given_workspace_without_configuration(tmp_path: Path) -> Path:
     """Provide a workspace root without a configuration file.
 
+    Parameters
+    ----------
+    tmp_path : Path
+        The pytest temporary directory used as the workspace root.
+
     Returns
     -------
     Path
@@ -72,6 +82,13 @@ def given_workspace_without_configuration(tmp_path: Path) -> Path:
 @given(parsers.parse('bump.documentation.globs contains "{pattern}"'))
 def given_documentation_glob(workspace_directory: Path, pattern: str) -> None:
     """Append ``pattern`` to the documentation glob list in ``lading.toml``.
+
+    Parameters
+    ----------
+    workspace_directory : Path
+        The workspace root containing ``lading.toml``.
+    pattern : str
+        The glob pattern to append to ``bump.documentation.globs``.
 
     Raises
     ------
@@ -190,6 +207,13 @@ def given_publish_order_is(workspace_directory: Path, order: str) -> None:
 def given_preflight_aux_build_command(workspace_directory: Path, command: str) -> None:
     """Append ``command`` tokens to ``preflight.aux_build``.
 
+    Parameters
+    ----------
+    workspace_directory : Path
+        The workspace root containing ``lading.toml``.
+    command : str
+        The whitespace-separated command whose tokens are appended.
+
     Raises
     ------
     AssertionError
@@ -254,6 +278,13 @@ def given_preflight_env_override(
 @given(parsers.parse("preflight.stderr_tail_lines is {count:d}"))
 def given_preflight_stderr_tail_lines(workspace_directory: Path, count: int) -> None:
     """Set ``preflight.stderr_tail_lines`` to ``count``.
+
+    Parameters
+    ----------
+    workspace_directory : Path
+        The workspace root containing ``lading.toml``.
+    count : int
+        The non-negative number of stderr tail lines to record.
 
     Raises
     ------

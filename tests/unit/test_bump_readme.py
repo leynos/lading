@@ -35,13 +35,7 @@ _URI_SCHEME = st.text(
 def _make_crate(
     workspace_root: Path, relative_root: str = "crates/alpha"
 ) -> WorkspaceCrate:
-    """Create a workspace crate model rooted at ``relative_root``.
-
-    Returns
-    -------
-    WorkspaceCrate
-        Crate model with a manifest written under ``relative_root``.
-    """
+    """Create a workspace crate model rooted at ``relative_root``."""
     crate_root = workspace_root / relative_root
     crate_root.mkdir(parents=True, exist_ok=True)
     manifest_path = crate_root / "Cargo.toml"

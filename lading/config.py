@@ -73,6 +73,11 @@ class DocumentationConfig:
     ) -> DocumentationConfig:
         """Create a :class:`DocumentationConfig` from a TOML table mapping.
 
+        Parameters
+        ----------
+        mapping : cabc.Mapping[str, typ.Any] | None
+            The parsed ``bump.documentation`` table, or ``None`` for defaults.
+
         Returns
         -------
         DocumentationConfig
@@ -101,6 +106,11 @@ class BumpConfig:
     @classmethod
     def from_mapping(cls, mapping: cabc.Mapping[str, typ.Any] | None) -> BumpConfig:
         """Create a :class:`BumpConfig` from a TOML table mapping.
+
+        Parameters
+        ----------
+        mapping : cabc.Mapping[str, typ.Any] | None
+            The parsed ``bump`` table, or ``None`` for defaults.
 
         Returns
         -------
@@ -138,6 +148,11 @@ class PublishConfig:
     @classmethod
     def from_mapping(cls, mapping: cabc.Mapping[str, typ.Any] | None) -> PublishConfig:
         """Create a :class:`PublishConfig` from a TOML table mapping.
+
+        Parameters
+        ----------
+        mapping : cabc.Mapping[str, typ.Any] | None
+            The parsed ``publish`` table, or ``None`` for defaults.
 
         Returns
         -------
@@ -179,6 +194,11 @@ class PreflightConfig:
         cls, mapping: cabc.Mapping[str, typ.Any] | None
     ) -> PreflightConfig:
         """Create a :class:`PreflightConfig` from a TOML table mapping.
+
+        Parameters
+        ----------
+        mapping : cabc.Mapping[str, typ.Any] | None
+            The parsed ``preflight`` table, or ``None`` for defaults.
 
         Returns
         -------
@@ -233,6 +253,11 @@ class LadingConfig:
     def from_mapping(cls, mapping: cabc.Mapping[str, typ.Any]) -> LadingConfig:
         """Create a :class:`LadingConfig` from a parsed configuration mapping.
 
+        Parameters
+        ----------
+        mapping : cabc.Mapping[str, typ.Any]
+            The parsed root configuration table.
+
         Returns
         -------
         LadingConfig
@@ -264,13 +289,7 @@ def _validate_mapping_keys(
     allowed_keys: set[str],
     context: str,
 ) -> None:
-    """Validate that mapping contains only allowed keys.
-
-    Raises
-    ------
-    ConfigurationError
-        If ``mapping`` contains keys outside ``allowed_keys``.
-    """
+    """Validate that ``mapping`` contains only ``allowed_keys``."""
     if mapping is None:
         return
     unknown = set(mapping) - allowed_keys
@@ -285,6 +304,11 @@ def _validate_mapping_keys(
 
 def build_loader(workspace_root: Path) -> Toml:
     """Return a Cyclopts loader for ``lading.toml`` in ``workspace_root``.
+
+    Parameters
+    ----------
+    workspace_root : Path
+        The workspace root whose ``lading.toml`` the loader targets.
 
     Returns
     -------
@@ -303,6 +327,11 @@ def build_loader(workspace_root: Path) -> Toml:
 
 def load_from_loader(loader: Toml) -> LadingConfig:
     """Load and validate configuration using ``loader``.
+
+    Parameters
+    ----------
+    loader : Toml
+        The Cyclopts loader providing the parsed TOML table.
 
     Returns
     -------
@@ -326,6 +355,11 @@ def load_from_loader(loader: Toml) -> LadingConfig:
 
 def load_configuration(workspace_root: Path) -> LadingConfig:
     """Load configuration for ``workspace_root`` using Cyclopts.
+
+    Parameters
+    ----------
+    workspace_root : Path
+        The workspace root whose ``lading.toml`` is loaded.
 
     Returns
     -------
@@ -367,18 +401,7 @@ def current_configuration() -> LadingConfig:
 
 
 def _strip_patches(value: object) -> StripPatchesSetting:
-    """Normalise the ``publish.strip_patches`` value.
-
-    Returns
-    -------
-    StripPatchesSetting
-        The canonical ``"all"``, ``"per-crate"``, or ``False`` setting.
-
-    Raises
-    ------
-    ConfigurationError
-        If ``value`` is ``True`` or any unrecognised value.
-    """
+    """Normalise the ``publish.strip_patches`` value."""
     if value is None:
         return "per-crate"
     if value in {"all", "per-crate"}:

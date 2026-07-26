@@ -78,13 +78,7 @@ def _base_manifest(entries: str = "") -> str:
 
 
 def _apply_strategy_and_parse(setup: _PatchStrategyTestSetup) -> TOMLDocument:
-    """Set up workspace, apply patch strategy, and return parsed document.
-
-    Returns
-    -------
-    TOMLDocument
-        The manifest parsed after the patch strategy is applied.
-    """
+    """Set up workspace, apply patch strategy, and return parsed document."""
     workspace_root = setup.tmp_path / "workspace"
     workspace_root.mkdir()
     manifest_text = _base_manifest(setup.patch_entries)

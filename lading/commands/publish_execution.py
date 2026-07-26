@@ -13,13 +13,7 @@ from lading.runtime.subprocess_runner import (
 
 
 def _publish_error(message: str) -> PublishPreflightError:
-    """Return a PublishPreflightError instance.
-
-    Returns
-    -------
-    PublishPreflightError
-        The error carrying ``message``.
-    """
+    """Return a PublishPreflightError carrying ``message``."""
     return PublishPreflightError(message)
 
 
@@ -30,19 +24,7 @@ def _invoke(
     env: cabc.Mapping[str, str] | None = None,
     echo_stdout: bool = True,
 ) -> tuple[int, str, str]:
-    """Execute ``command`` and return the exit status and decoded streams.
-
-    Returns
-    -------
-    tuple[int, str, str]
-        The exit code, decoded standard output, and decoded standard error.
-
-    Raises
-    ------
-    _publish_error
-        A :class:`PublishPreflightError` when the command cannot be spawned or
-        its arguments are invalid.
-    """
+    """Execute ``command`` and return the exit status and decoded streams."""
     try:
         return _default_subprocess_runner(
             command, cwd=cwd, env=env, echo_stdout=echo_stdout

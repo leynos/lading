@@ -15,13 +15,7 @@ def _create_test_crate(
     version: str,
     dependencies_toml: str = "",
 ) -> Path:
-    """Create a crate manifest under ``workspace_dir`` for behavioural fixtures.
-
-    Returns
-    -------
-    Path
-        The path to the written ``Cargo.toml`` manifest.
-    """
+    """Create a crate manifest under ``workspace_dir`` for behavioural fixtures."""
     crate_dir = workspace_dir / "crates" / crate_name
     crate_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = crate_dir / "Cargo.toml"
@@ -48,13 +42,7 @@ def _build_package_metadata(
     version: str = "0.1.0",
     **metadata: typ.Any,  # noqa: ANN401 - fixtures accept arbitrary metadata fields
 ) -> dict[str, typ.Any]:
-    """Construct the minimal package metadata payload for ``cargo metadata``.
-
-    Returns
-    -------
-    dict[str, typ.Any]
-        The package metadata payload mirroring ``cargo metadata`` output.
-    """
+    """Construct the minimal package metadata payload for ``cargo metadata``."""
     dependencies = metadata.get("dependencies")
     publish = metadata.get("publish")
     return {

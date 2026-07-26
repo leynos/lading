@@ -122,10 +122,23 @@ def make_config(
 ) -> config_module.LadingConfig:
     """Return a configuration tailored for publish command tests.
 
+    Parameters
+    ----------
+    preflight : config_module.PreflightConfig | None
+        Preflight configuration to embed; defaults to ``make_preflight_config()``.
+    **overrides : object
+        Keyword overrides forwarded to the :class:`PublishConfig` constructor.
+
     Returns
     -------
     config_module.LadingConfig
         The assembled publish and preflight configuration.
+
+    Examples
+    --------
+    >>> config = make_config(exclude=("skip-me",))
+    >>> config.publish.strip_patches
+    'all'
     """
     publish_table = config_module.PublishConfig(strip_patches="all", **overrides)
     preflight_config = preflight if preflight is not None else make_preflight_config()
@@ -144,10 +157,27 @@ def make_crate(
 ) -> WorkspaceCrate:
     """Construct a :class:`WorkspaceCrate` rooted under ``root``.
 
+    Parameters
+    ----------
+    root : Path
+        Directory beneath which the crate directory is created.
+    name : str
+        Crate name, used for the directory and manifest package name.
+    publish_flag : bool
+        Value recorded as the crate's ``publish`` attribute.
+    dependencies : tuple[WorkspaceDependency, ...] | None
+        Workspace dependencies to attach; ``None`` means no dependencies.
+
     Returns
     -------
     WorkspaceCrate
         The crate with a written manifest under ``root/name``.
+
+    Examples
+    --------
+    >>> crate = make_crate(tmp_path, "alpha")
+    >>> crate.name
+    'alpha'
     """
     root = Path(root)
     crate_root = root / name
@@ -172,10 +202,20 @@ def make_crate(
 def make_dependency(name: str) -> WorkspaceDependency:
     """Return a workspace dependency pointing at the crate named ``name``.
 
+    Parameters
+    ----------
+    name : str
+        Crate name the dependency should reference.
+
     Returns
     -------
     WorkspaceDependency
         The dependency referencing the crate named ``name``.
+
+    Examples
+    --------
+    >>> make_dependency("alpha").name
+    'alpha'
     """
     return WorkspaceDependency(
         package_id=f"{name}-id",
@@ -188,11 +228,24 @@ def make_dependency(name: str) -> WorkspaceDependency:
 def make_workspace(root: Path, *crates: WorkspaceCrate) -> WorkspaceGraph:
     """Construct a :class:`WorkspaceGraph` for ``crates`` rooted at ``root``.
 
+    Parameters
+    ----------
+    root : Path
+        Workspace root directory; created if it does not exist.
+    *crates : WorkspaceCrate
+        Crates to include; defaults to a single ``alpha`` crate.
+
     Returns
     -------
     WorkspaceGraph
         The graph for ``crates``, defaulting to a single ``alpha`` crate when
         none are supplied.
+
+    Examples
+    --------
+    >>> workspace = make_workspace(tmp_path)
+    >>> len(workspace.crates)
+    1
     """
     root = Path(root)
     root.mkdir(parents=True, exist_ok=True)
@@ -206,10 +259,21 @@ def make_dependency_chain(
 ) -> tuple[WorkspaceCrate, WorkspaceCrate, WorkspaceCrate]:
     """Return crates that form a simple alpha→beta→gamma dependency chain.
 
+    Parameters
+    ----------
+    root : Path
+        Directory beneath which the alpha, beta, and gamma crates are created.
+
     Returns
     -------
     tuple[WorkspaceCrate, WorkspaceCrate, WorkspaceCrate]
         The alpha, beta, and gamma crates in dependency order.
+
+    Examples
+    --------
+    >>> alpha, beta, gamma = make_dependency_chain(tmp_path)
+    >>> (alpha.name, beta.name, gamma.name)
+    ('alpha', 'beta', 'gamma')
     """
     alpha = make_crate(root, "alpha")
     beta = make_crate(root, "beta", dependencies=(make_dependency("alpha"),))
@@ -263,10 +327,25 @@ def plan_with_crates(
 ) -> publish.PublishPlan:
     """Plan publication for ``crates`` using ``tmp_path`` as the workspace root.
 
+    Parameters
+    ----------
+    tmp_path : Path
+        Directory used as the workspace root for planning.
+    crates : tuple[WorkspaceCrate, ...]
+        Crates to include in the planned workspace.
+    **config_overrides : object
+        Keyword overrides forwarded to :func:`make_config`.
+
     Returns
     -------
     publish.PublishPlan
         The publication plan for ``crates``.
+
+    Examples
+    --------
+    >>> plan = plan_with_crates(tmp_path, (make_crate(tmp_path, "alpha"),))
+    >>> [crate.name for crate in plan.publishable]
+    ['alpha']
     """
     root = tmp_path.resolve()
     workspace = make_workspace(root, *crates)
@@ -277,10 +356,24 @@ def plan_with_crates(
 def prepare_staging_root(plan: publish.PublishPlan, base_dir: Path) -> Path:
     """Create a staged workspace tree matching ``plan`` under ``base_dir``.
 
+    Parameters
+    ----------
+    plan : publish.PublishPlan
+        Plan whose publishable crates determine the staged directory tree.
+    base_dir : Path
+        Directory beneath which the ``staging`` tree is created.
+
     Returns
     -------
     Path
         The staging root containing the created crate directories.
+
+    Examples
+    --------
+    >>> plan = plan_with_crates(tmp_path, (make_crate(tmp_path, "alpha"),))
+    >>> staging = prepare_staging_root(plan, tmp_path)
+    >>> staging.exists()
+    True
     """
     staging_root = base_dir / "staging" / plan.workspace_root.name
     for crate in plan.publishable:
@@ -292,13 +385,7 @@ def prepare_staging_root(plan: publish.PublishPlan, base_dir: Path) -> Path:
 def _warning_records(
     caplog: pytest.LogCaptureFixture,
 ) -> tuple[tuple[str, tuple[object, ...]], ...]:
-    """Return captured warning format strings and arguments.
-
-    Returns
-    -------
-    tuple[tuple[str, tuple[object, ...]], ...]
-        The message and args pair for each captured warning record.
-    """
+    """Return captured warning format strings and arguments."""
     return tuple(
         (record.msg, record.args)
         for record in caplog.records
@@ -312,10 +399,20 @@ def publish_plan_and_prep(
 ) -> tuple[publish.PublishPlan, publish.PublishPreparation, Path]:
     """Provide a publish plan, preparation object, and staging root.
 
+    Parameters
+    ----------
+    tmp_path : Path
+        Pytest temporary directory used for the workspace and staging roots.
+
     Returns
     -------
     tuple[publish.PublishPlan, publish.PublishPreparation, Path]
         The plan, its preparation object, and the staging root.
+
+    Examples
+    --------
+    >>> def test_uses_prep(publish_plan_and_prep):  # doctest: +SKIP
+    ...     plan, preparation, staging_root = publish_plan_and_prep
     """
     workspace_root = tmp_path / "workspace"
     crates = make_dependency_chain(workspace_root)
@@ -360,7 +457,13 @@ class CallTrackingRunner:
 
     @property
     def calls(self) -> list[tuple[tuple[str, ...], Path | None]]:
-        """Stable snapshot of recorded invocations."""
+        """A stable snapshot of the recorded invocations.
+
+        Returns
+        -------
+        list[tuple[tuple[str, ...], Path | None]]
+            A copy of the recorded ``(command, cwd)`` invocation pairs.
+        """
         return list(self._calls)
 
     def __call__(
@@ -372,10 +475,27 @@ class CallTrackingRunner:
     ) -> tuple[int, str, str]:
         """Record the invocation and return a successful result.
 
+        Parameters
+        ----------
+        command : cabc.Sequence[str]
+            The command vector being invoked.
+        cwd : Path | None
+            Working directory for the invocation, recorded with the command.
+        env : cabc.Mapping[str, str] | None
+            Environment mapping; ignored by this runner.
+
         Returns
         -------
         tuple[int, str, str]
             A successful ``(0, "", "")`` result.
+
+        Examples
+        --------
+        >>> runner = CallTrackingRunner()
+        >>> runner(("cargo", "package"))
+        (0, '', '')
+        >>> runner.calls
+        [(('cargo', 'package'), None)]
         """
         del env
         self._calls.append((tuple(command), cwd))
@@ -395,10 +515,21 @@ class PhaseContext:
 def invoke_phase(phase_name: str, ctx: PhaseContext) -> None:
     """Dispatch to the appropriate cargo sub-command under test.
 
+    Parameters
+    ----------
+    phase_name : str
+        Either ``"package"`` or ``"publish"``; selects the cargo sub-command.
+    ctx : PhaseContext
+        Execution context carrying the plan, preparation, runner, and options.
+
     Raises
     ------
     ValueError
         If ``phase_name`` is neither ``"package"`` nor ``"publish"``.
+
+    Examples
+    --------
+    >>> invoke_phase("package", ctx)  # doctest: +SKIP
     """
     if phase_name == "package":
         publish._package_publishable_crates(
@@ -418,10 +549,23 @@ def make_failing_runner(
 ) -> cabc.Callable[..., tuple[int, str, str]]:  # pragma: no cover - simple factory
     """Return a runner that always fails with exit code 1.
 
+    Parameters
+    ----------
+    stdout : str
+        Standard output text the runner returns on every call.
+    stderr : str
+        Standard error text the runner returns on every call.
+
     Returns
     -------
     cabc.Callable[..., tuple[int, str, str]]
         A runner returning ``(1, stdout, stderr)`` for any command.
+
+    Examples
+    --------
+    >>> runner = make_failing_runner(stderr="boom")
+    >>> runner(("cargo", "publish"))
+    (1, '', 'boom')
     """
 
     def _runner(
@@ -430,13 +574,7 @@ def make_failing_runner(
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
-        """Execute the command and return a failing result.
-
-        Returns
-        -------
-        tuple[int, str, str]
-            A failing ``(1, stdout, stderr)`` result.
-        """
+        """Execute the command and return a failing result."""
         del command, cwd, env
         return 1, stdout, stderr
 

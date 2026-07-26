@@ -169,13 +169,7 @@ def parse_index_lookup_failure(
 
 
 def _output_matches_index_markers(haystack: str) -> bool:
-    """Return whether both crates.io index-miss markers appear in cargo output.
-
-    Returns
-    -------
-    bool
-        ``True`` when every index-miss marker is present in ``haystack``.
-    """
+    """Return whether both crates.io index-miss markers appear in cargo output."""
     return all(
         re.search(re.escape(marker), haystack, re.IGNORECASE)
         for marker in _INDEX_MISSING_VERSION_MARKERS
@@ -188,14 +182,7 @@ def _build_index_lookup_failure(
     subcommand: typ.Literal["package", "publish"],
     result: CargoSubprocessResult,
 ) -> CargoIndexLookupFailure:
-    """Assemble the structured failure once cargo output matched the markers.
-
-    Returns
-    -------
-    CargoIndexLookupFailure
-        The classified failure carrying the crate, subcommand, and any
-        parsed missing dependency name.
-    """
+    """Assemble the structured failure once cargo output matched the markers."""
     missing_dependency_name = _extract_missing_dependency_name(
         result.stdout, result.stderr
     )
@@ -219,14 +206,7 @@ def _build_index_lookup_failure(
 
 
 def _extract_missing_dependency_name(stdout: str, stderr: str) -> str | None:
-    """Return the missing dependency crate name parsed from cargo output.
-
-    Returns
-    -------
-    str | None
-        The parsed crate name, preferring stderr, or ``None`` when neither
-        stream matches the index-miss pattern.
-    """
+    """Return the missing dependency crate name parsed from cargo output."""
     # Cargo writes primary diagnostics to stderr. If both streams happen to
     # match _INDEX_MISSING_VERSION_NAME_PATTERN, prefer the stderr name as the
     # most relevant failure detail and leave conflicting stdout as secondary.

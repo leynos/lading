@@ -36,11 +36,8 @@ from .test_publish_helpers import (
     _assert_invocations_have_flag,
     _assert_invocations_lack_flag,
     _extract_crate_names_from_invocations,
-    _get_package_invocations,
     _get_patch_entries,
-    _get_publish_invocations,
-    _get_test_invocation_envs,
-    _get_test_invocations,
+    _get_required_invocations,
     _has_contiguous_args,
     _load_staged_manifest,
     _publish_plan_lines,
@@ -105,12 +102,33 @@ def then_publish_excludes_preflight_crate(
 ) -> None:
     """Assert that cargo test pre-flight invocations skip ``crate_name``.
 
+    Parameters
+    ----------
+    preflight_recorder : _PreflightInvocationRecorder
+        Recorder holding the captured pre-flight command invocations.
+    crate_name : str
+        Crate expected to be excluded from the cargo test pre-flight.
+
     Raises
     ------
     AssertionError
         If no pre-flight invocation excludes ``crate_name``.
+
+    Examples
+    --------
+    >>> from tests.bdd.steps.test_publish_infrastructure import (
+    ...     _PreflightInvocationRecorder,
+    ... )
+    >>> recorder = _PreflightInvocationRecorder()
+    >>> recorder.record("cargo::test", ("--exclude", "gamma"), {})
+    >>> then_publish_excludes_preflight_crate(recorder, "gamma")
     """
-    test_invocations = _get_test_invocations(preflight_recorder)
+    invocations = _get_required_invocations(
+        preflight_recorder,
+        "cargo::test",
+        "cargo test pre-flight command was not invoked",
+    )
+    test_invocations = [args for args, _ in invocations]
     if not any(_has_ordered_args_single(args, crate_name) for args in test_invocations):
         message = (
             f"Expected --exclude {crate_name!r} in cargo test pre-flight invocations"
@@ -119,13 +137,7 @@ def then_publish_excludes_preflight_crate(
 
 
 def _has_ordered_args_single(args: tuple[str, ...], crate_name: str) -> bool:
-    """Check for contiguous --exclude <crate_name> pair.
-
-    Returns
-    -------
-    bool
-        ``True`` when ``--exclude`` is immediately followed by ``crate_name``.
-    """
+    """Check for a contiguous ``--exclude`` immediately followed by ``crate_name``."""
     return _has_contiguous_args(args, "--exclude", crate_name)
 
 
@@ -135,12 +147,31 @@ def then_publish_limits_preflight_targets(
 ) -> None:
     """Assert that cargo test pre-flight invocations pass --lib and --bins.
 
+    Parameters
+    ----------
+    preflight_recorder : _PreflightInvocationRecorder
+        Recorder holding the captured pre-flight command invocations.
+
     Raises
     ------
     AssertionError
         If no invocation passes ``--lib`` followed by ``--bins``.
+
+    Examples
+    --------
+    >>> from tests.bdd.steps.test_publish_infrastructure import (
+    ...     _PreflightInvocationRecorder,
+    ... )
+    >>> recorder = _PreflightInvocationRecorder()
+    >>> recorder.record("cargo::test", ("--lib", "--bins"), {})
+    >>> then_publish_limits_preflight_targets(recorder)
     """
-    test_invocations = _get_test_invocations(preflight_recorder)
+    invocations = _get_required_invocations(
+        preflight_recorder,
+        "cargo::test",
+        "cargo test pre-flight command was not invoked",
+    )
+    test_invocations = [args for args, _ in invocations]
     if not any(
         _has_contiguous_args(args, "--lib", "--bins") for args in test_invocations
     ):
@@ -156,12 +187,31 @@ def then_publish_has_no_preflight_excludes(
 ) -> None:
     """Assert that cargo test pre-flight invocations omit --exclude.
 
+    Parameters
+    ----------
+    preflight_recorder : _PreflightInvocationRecorder
+        Recorder holding the captured pre-flight command invocations.
+
     Raises
     ------
     AssertionError
         If any invocation passes ``--exclude``.
+
+    Examples
+    --------
+    >>> from tests.bdd.steps.test_publish_infrastructure import (
+    ...     _PreflightInvocationRecorder,
+    ... )
+    >>> recorder = _PreflightInvocationRecorder()
+    >>> recorder.record("cargo::test", ("--workspace",), {})
+    >>> then_publish_has_no_preflight_excludes(recorder)
     """
-    test_invocations = _get_test_invocations(preflight_recorder)
+    invocations = _get_required_invocations(
+        preflight_recorder,
+        "cargo::test",
+        "cargo test pre-flight command was not invoked",
+    )
+    test_invocations = [args for args, _ in invocations]
     for args in test_invocations:
         if "--exclude" in args:
             message = "Did not expect --exclude arguments in cargo test pre-flight"
@@ -175,10 +225,26 @@ def then_publish_runs_aux_build(
 ) -> None:
     """Assert that an auxiliary build command was executed.
 
+    Parameters
+    ----------
+    preflight_recorder : _PreflightInvocationRecorder
+        Recorder holding the captured pre-flight command invocations.
+    label : str
+        Recorder label identifying the expected auxiliary build.
+
     Raises
     ------
     AssertionError
         If no auxiliary build invocation matches ``label``.
+
+    Examples
+    --------
+    >>> from tests.bdd.steps.test_publish_infrastructure import (
+    ...     _PreflightInvocationRecorder,
+    ... )
+    >>> recorder = _PreflightInvocationRecorder()
+    >>> recorder.record("cargo::doc", ("--no-deps",), {})
+    >>> then_publish_runs_aux_build(recorder, "cargo::doc")
     """
     if not preflight_recorder.by_label(label):
         message = f"Expected auxiliary build invocation for {label}"
@@ -193,12 +259,35 @@ def then_cargo_test_env_contains(
 ) -> None:
     """Assert that cargo test env propagates ``name`` with ``value``.
 
+    Parameters
+    ----------
+    preflight_recorder : _PreflightInvocationRecorder
+        Recorder holding the captured pre-flight command invocations.
+    name : str
+        Environment variable expected on a cargo test invocation.
+    value : str
+        Value expected for ``name``.
+
     Raises
     ------
     AssertionError
         If no invocation environment maps ``name`` to ``value``.
+
+    Examples
+    --------
+    >>> from tests.bdd.steps.test_publish_infrastructure import (
+    ...     _PreflightInvocationRecorder,
+    ... )
+    >>> recorder = _PreflightInvocationRecorder()
+    >>> recorder.record("cargo::test", ("--workspace",), {"CI": "1"})
+    >>> then_cargo_test_env_contains(recorder, "CI", "1")
     """
-    envs = _get_test_invocation_envs(preflight_recorder)
+    invocations = _get_required_invocations(
+        preflight_recorder,
+        "cargo::test",
+        "cargo test pre-flight command was not invoked",
+    )
+    envs = [env for _, env in invocations]
     if all(environment.get(name) != value for environment in envs):
         message = f"Expected cargo test env {name}={value!r}"
         raise AssertionError(message)
@@ -211,12 +300,33 @@ def then_cargo_test_env_rustflags_contains(
 ) -> None:
     """Assert that cargo test RUSTFLAGS contains ``snippet``.
 
+    Parameters
+    ----------
+    preflight_recorder : _PreflightInvocationRecorder
+        Recorder holding the captured pre-flight command invocations.
+    snippet : str
+        Fragment expected within a cargo test ``RUSTFLAGS`` value.
+
     Raises
     ------
     AssertionError
         If no invocation's ``RUSTFLAGS`` contains ``snippet``.
+
+    Examples
+    --------
+    >>> from tests.bdd.steps.test_publish_infrastructure import (
+    ...     _PreflightInvocationRecorder,
+    ... )
+    >>> recorder = _PreflightInvocationRecorder()
+    >>> recorder.record("cargo::test", ("--workspace",), {"RUSTFLAGS": "--cfg foo"})
+    >>> then_cargo_test_env_rustflags_contains(recorder, "--cfg foo")
     """
-    envs = _get_test_invocation_envs(preflight_recorder)
+    invocations = _get_required_invocations(
+        preflight_recorder,
+        "cargo::test",
+        "cargo test pre-flight command was not invoked",
+    )
+    envs = [env for _, env in invocations]
     if all(snippet not in environment.get("RUSTFLAGS", "") for environment in envs):
         message = f"Expected {snippet!r} in cargo test RUSTFLAGS"
         raise AssertionError(message)
@@ -248,7 +358,11 @@ def then_publish_packages_crates_in_order(
 ) -> None:
     """Assert that cargo package ran for each crate in publish order."""
     expected = [name.strip() for name in crate_names.split(",") if name.strip()]
-    invocations = _get_package_invocations(preflight_recorder)
+    invocations = _get_required_invocations(
+        preflight_recorder,
+        "cargo::package",
+        "cargo package was not invoked for publishable crates",
+    )
     observed = _extract_crate_names_from_invocations(invocations)
     _assert_crate_order_matches(observed, expected, "cargo package")
 
@@ -263,7 +377,11 @@ def then_publish_runs_dry_run(
 ) -> None:
     """Assert that cargo publish --dry-run runs for each crate in order."""
     expected = _split_names(crate_names)
-    invocations = _get_publish_invocations(preflight_recorder)
+    invocations = _get_required_invocations(
+        preflight_recorder,
+        "cargo::publish",
+        "cargo publish was not invoked for publishable crates",
+    )
     _assert_invocations_have_flag(invocations, "--dry-run", "cargo publish")
     observed = _extract_crate_names_from_invocations(invocations)
     _assert_crate_order_matches(observed, expected, "cargo publish --dry-run order")
@@ -279,7 +397,11 @@ def then_publish_runs_live(
 ) -> None:
     """Assert that live cargo publish runs without the dry-run flag."""
     expected = _split_names(crate_names)
-    invocations = _get_publish_invocations(preflight_recorder)
+    invocations = _get_required_invocations(
+        preflight_recorder,
+        "cargo::publish",
+        "cargo publish was not invoked for publishable crates",
+    )
     _assert_invocations_lack_flag(invocations, "--dry-run", "cargo publish")
     observed = _extract_crate_names_from_invocations(invocations)
     _assert_crate_order_matches(observed, expected, "cargo publish live order")
@@ -296,10 +418,27 @@ def then_publish_interleaves_live_package_and_publish(
 ) -> None:
     """Assert live publish packages and publishes each crate before the next.
 
+    Parameters
+    ----------
+    preflight_recorder : _PreflightInvocationRecorder
+        Recorder holding the captured pre-flight command invocations.
+    crate_names : str
+        Comma-separated crate names in their expected publish order.
+
     Raises
     ------
     AssertionError
         If the observed package/publish order differs from the expected one.
+
+    Examples
+    --------
+    >>> from tests.bdd.steps.test_publish_infrastructure import (
+    ...     _PreflightInvocationRecorder,
+    ... )
+    >>> recorder = _PreflightInvocationRecorder()
+    >>> recorder.record("cargo::package", (), {"PWD": "/w/alpha"})
+    >>> recorder.record("cargo::publish", (), {"PWD": "/w/alpha"})
+    >>> then_publish_interleaves_live_package_and_publish(recorder, "alpha")
     """
     expected_names = _split_names(crate_names)
     filtered = [

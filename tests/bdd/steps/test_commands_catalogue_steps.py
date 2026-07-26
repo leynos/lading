@@ -43,13 +43,7 @@ scenarios(str(_FEATURES_DIR / "commands_catalogue.feature"))
 
 
 def _raise_unquoted_args_error(args_str: str) -> typ.NoReturn:
-    """Raise ValueError for unquoted arguments.
-
-    Raises
-    ------
-    ValueError
-        Always, reporting the offending unquoted argument text.
-    """
+    """Raise ValueError reporting the offending unquoted argument text."""
     msg = (
         f"Unquoted arguments found in step text: {args_str!r}. "
         "All arguments must be enclosed in double quotes."
@@ -67,29 +61,7 @@ def _validate_segment_whitespace_only(args_str: str, start: int, end: int) -> No
 
 
 def _parse_quoted_args(args_str: str) -> tuple[str, ...]:
-    r"""Parse a space-separated list of quoted arguments.
-
-    All non-whitespace content must be enclosed in double quotes. Raises
-    ValueError if any unexpected unquoted content is present.
-
-    Note:
-    ----
-    This implementation does not support escaped quotes (e.g., ``\"``) inside
-    quoted strings. If shell-like escaping is required, consider using
-    ``shlex.split`` instead.
-
-    Returns
-    -------
-    tuple[str, ...]
-        The parsed argument values with their surrounding quotes removed.
-
-    Examples
-    --------
-        '"foo" "bar baz"' -> ("foo", "bar baz")
-        '"" "bar"'        -> ("", "bar")
-        'foo "bar"'       -> ValueError
-
-    """
+    """Parse a space-separated list of double-quoted arguments."""
     pattern = r'"([^"]*)"'
     matches = list(re.finditer(pattern, args_str))
 
@@ -117,13 +89,7 @@ def _construct_command_with_args(
     program: Program,
     args: str,
 ) -> SafeCmd:
-    """Construct a command with the given program and arguments.
-
-    Returns
-    -------
-    SafeCmd
-        The command builder bound to the parsed arguments.
-    """
+    """Construct a command builder bound to the parsed arguments."""
     from cuprum import scoped, sh
 
     parsed_args = _parse_quoted_args(args)

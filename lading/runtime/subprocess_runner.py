@@ -118,18 +118,7 @@ def _spawn_process(
     context: SubprocessContext,
     normalised_env: dict[str, str] | None,
 ) -> subprocess.Popen[bytes]:
-    """Create a ``Popen`` instance, mapping ``OSError`` to ``CommandSpawnError``.
-
-    Returns
-    -------
-    subprocess.Popen[bytes]
-        Running process with stdout and stderr pipes attached.
-
-    Raises
-    ------
-    CommandSpawnError
-        If the program cannot be spawned.
-    """
+    """Create a ``Popen`` instance, mapping ``OSError`` to ``CommandSpawnError``."""
     try:
         # This path owns `Popen` directly so relay threads can drain both pipes
         # before the function returns. S603 is mitigated because `command` is a
@@ -151,13 +140,7 @@ def _drain_stdin_and_wait(
     context: SubprocessContext,
     threads: list[threading.Thread],
 ) -> int:
-    """Feed ``stdin_data`` and wait for ``process`` and ``threads`` to finish.
-
-    Returns
-    -------
-    int
-        Exit code reported by the finished process.
-    """
+    """Feed ``stdin_data`` and wait for ``process`` and ``threads`` to finish."""
     try:
         if context.stdin_data is not None and process.stdin is not None:
             try:
@@ -329,13 +312,7 @@ def write_to_sink(sink: typ.TextIO | None, payload: str) -> typ.TextIO | None:
 
 
 def _format_thread_name(program: str, stream: str) -> str:
-    """Return a deterministic, filesystem-safe thread name suffix.
-
-    Returns
-    -------
-    str
-        Sanitized ``lading-cmd`` thread-name suffix for the stream.
-    """
+    """Return a deterministic, filesystem-safe thread name suffix."""
     base = Path(program).name or program
     safe = _THREAD_NAME_PATTERN.sub("-", base).strip("-") or "command"
     return f"lading-cmd-{safe}-{stream}"
@@ -350,13 +327,7 @@ def _log_subprocess_environment(env: cabc.Mapping[str, str] | None) -> None:
 
 
 def _redact_environment(env: cabc.Mapping[str, str]) -> dict[str, str]:
-    """Return ``env`` with sensitive values replaced by placeholders.
-
-    Returns
-    -------
-    dict[str, str]
-        Sorted environment mapping with secret values redacted.
-    """
+    """Return ``env`` with sensitive values replaced by placeholders."""
     redacted: dict[str, str] = {}
     for key, value in env.items():
         redacted[key] = "<redacted>" if _should_redact_env_key(key) else str(value)
@@ -364,12 +335,6 @@ def _redact_environment(env: cabc.Mapping[str, str]) -> dict[str, str]:
 
 
 def _should_redact_env_key(key: str) -> bool:
-    """Return True when ``key`` likely contains secret material.
-
-    Returns
-    -------
-    bool
-        ``True`` when the key name matches a redaction token.
-    """
+    """Return True when ``key`` likely contains secret material."""
     upper_key = key.upper()
     return any(token in upper_key for token in _ENV_REDACTION_TOKENS)

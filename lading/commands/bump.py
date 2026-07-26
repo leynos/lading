@@ -131,11 +131,33 @@ def run(
 ) -> str:
     """Update workspace and crate manifest versions to ``target_version``.
 
+    Parameters
+    ----------
+    workspace_root : Path | str
+        Filesystem path to the workspace root containing the top-level
+        ``Cargo.toml``.
+    target_version : str
+        Semantic version string to apply to every updated manifest.
+    options : BumpOptions | None, optional
+        Run configuration such as the dry-run flag, lockfile-rebuild override,
+        and pre-loaded configuration and workspace graph. ``None`` loads
+        configuration and the workspace from ``workspace_root``.
+
     Returns
     -------
     str
         Human-readable summary of the manifests, documents, README files, and
         lockfiles that were changed.
+
+    Examples
+    --------
+    >>> from lading.commands.bump import BumpOptions, run
+    >>> run(  # doctest: +SKIP
+    ...     "path/to/workspace",
+    ...     "1.2.0",
+    ...     options=BumpOptions(dry_run=True),
+    ... )
+    'Would update ...'
     """
     context = _initialize_bump_context(workspace_root, options)
     LOGGER.debug(
@@ -168,14 +190,7 @@ def _initialize_bump_context(
     workspace_root: Path | str,
     options: BumpOptions | None,
 ) -> _BumpContext:
-    """Return initialised bump context for ``workspace_root``.
-
-    Returns
-    -------
-    _BumpContext
-        Context bundling the resolved options, loaded workspace, and derived
-        crate sets shared across the bump helpers.
-    """
+    """Return the initialised bump context for ``workspace_root``."""
     resolved_options = BumpOptions() if options is None else options
     root_path = normalise_workspace_root(workspace_root)
     configuration = resolved_options.configuration
@@ -276,13 +291,7 @@ def _process_documentation_files(
     context: _BumpContext,
     target_version: str,
 ) -> set[Path]:
-    """Update configured documentation targets for the workspace.
-
-    Returns
-    -------
-    set[Path]
-        Documentation files whose contents changed.
-    """
+    """Update configured documentation targets for the workspace."""
     documentation_paths = bump_docs.resolve_documentation_targets(
         context.root_path, context.configuration.bump.documentation
     )
@@ -295,18 +304,7 @@ def _process_documentation_files(
 
 
 def _process_readme_transposition(context: _BumpContext, *, dry_run: bool) -> set[Path]:
-    """Transpose workspace README files into opted-in member crates.
-
-    Returns
-    -------
-    set[Path]
-        Crate README paths that were written.
-
-    Raises
-    ------
-    ReadmeTranspositionError
-        If transposing the workspace README into a crate fails.
-    """
+    """Transpose workspace README files into opted-in member crates."""
     LOGGER.debug("Starting workspace README transposition")
     changed_readmes: set[Path] = set()
     transposed_entry_count = 0
@@ -344,14 +342,7 @@ def _process_lockfiles(
     context: _BumpContext,
     changed_manifests: set[Path],
 ) -> tuple[Path, ...]:
-    """Regenerate Cargo lockfiles when bump changes manifest content.
-
-    Returns
-    -------
-    tuple[Path, ...]
-        Lockfile paths that were regenerated, or would be in a dry run; empty
-        when rebuilding is disabled or no manifests changed.
-    """
+    """Regenerate Cargo lockfiles when bump changes manifest content."""
     if context.base_options.rebuild_lockfiles is not True or not changed_manifests:
         return ()
     lockfile_manifests = context.configuration.bump.lockfile_manifests
@@ -369,14 +360,7 @@ def _prepare_sorted_changes(
     changed_manifests: set[Path],
     changed_aux: tuple[set[Path], set[Path], cabc.Sequence[Path]],
 ) -> BumpChanges:
-    """Return ordered :class:`BumpChanges` suitable for result rendering.
-
-    Returns
-    -------
-    BumpChanges
-        Sorted manifest, document, README, and lockfile paths, with the
-        workspace manifest and root lockfile ordered first.
-    """
+    """Return ordered :class:`BumpChanges` suitable for result rendering."""
     changed_documents, changed_readmes, changed_lockfiles = changed_aux
     ordered_manifests = tuple(
         sorted(
@@ -409,17 +393,7 @@ def _apply_crate_manifest_update(
     target_version: str,
     context: _BumpContext,
 ) -> _CrateManifestOutcome:
-    """Apply updates for ``crate`` and return the closed manifest outcome.
-
-    The crate sets are read from ``context`` — they are derived exactly once
-    in :func:`_initialize_bump_context` (issue #97); helpers must not
-    recompute them per crate.
-
-    Returns
-    -------
-    _CrateManifestOutcome
-        Whether the crate was skipped, updated, or left unchanged.
-    """
+    """Apply updates for ``crate`` and return the closed manifest outcome."""
     selectors = _determine_package_selectors(crate.name, context.excluded)
     dependency_sections = _dependency_sections_for_crate(
         crate, context.updated_crate_names

@@ -67,18 +67,7 @@ def optional_mapping(
 def _validate_string_pair(
     key: object, raw_value: object, field_name: str, error: _ErrorType
 ) -> tuple[str, str]:
-    """Validate and return a string key-value pair for ``field_name``.
-
-    Returns
-    -------
-    tuple[str, str]
-        The validated ``(key, value)`` string pair.
-
-    Raises
-    ------
-    _reject
-        When ``raw_value`` is not a string.
-    """
+    """Validate and return a string key-value pair for ``field_name``."""
     match key:
         case str():
             match raw_value:

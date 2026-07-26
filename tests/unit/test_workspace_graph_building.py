@@ -35,13 +35,7 @@ def _build_two_crate_metadata(
     crate_manifest: Path,
     helper_manifest: Path,
 ) -> dict[str, typ.Any]:
-    """Return metadata for a workspace with one crate and one helper crate.
-
-    Returns
-    -------
-    dict[str, typ.Any]
-        A ``cargo metadata`` style mapping for the two-crate workspace.
-    """
+    """Return metadata for a workspace with one crate and one helper crate."""
     return {
         "workspace_root": str(workspace_root),
         "packages": [

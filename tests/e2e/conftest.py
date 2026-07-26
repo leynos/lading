@@ -17,6 +17,11 @@ if typ.TYPE_CHECKING:  # pragma: no cover
 def e2e_workspace_root(tmp_path: Path) -> Path:
     """Create an E2E workspace directory rooted under ``tmp_path``.
 
+    Parameters
+    ----------
+    tmp_path : Path
+        Per-test temporary directory provided by pytest.
+
     Returns
     -------
     Path
@@ -31,6 +36,11 @@ def e2e_workspace_root(tmp_path: Path) -> Path:
 def e2e_workspace(e2e_workspace_root: Path) -> workspace_builder.NonTrivialWorkspace:
     """Construct a non-trivial Rust workspace fixture.
 
+    Parameters
+    ----------
+    e2e_workspace_root : Path
+        Directory in which the workspace is created.
+
     Returns
     -------
     workspace_builder.NonTrivialWorkspace
@@ -42,6 +52,11 @@ def e2e_workspace(e2e_workspace_root: Path) -> workspace_builder.NonTrivialWorks
 @pytest.fixture
 def e2e_git_repo(e2e_workspace: workspace_builder.NonTrivialWorkspace) -> Path:
     """Initialise a Git repository containing ``e2e_workspace`` and commit it.
+
+    Parameters
+    ----------
+    e2e_workspace : workspace_builder.NonTrivialWorkspace
+        The workspace fixture whose root becomes the repository root.
 
     Returns
     -------
@@ -62,6 +77,13 @@ def e2e_workspace_with_git(
     e2e_git_repo: Path,
 ) -> tuple[workspace_builder.NonTrivialWorkspace, Path]:
     """Return the E2E workspace paired with its Git repository root.
+
+    Parameters
+    ----------
+    e2e_workspace : workspace_builder.NonTrivialWorkspace
+        The constructed workspace fixture.
+    e2e_git_repo : Path
+        The initialised Git repository root.
 
     Returns
     -------

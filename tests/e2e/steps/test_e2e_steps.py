@@ -32,14 +32,7 @@ def _validate_args_prefix(
     args: tuple[str, ...],
     expected_prefixes: tuple[tuple[str, ...], ...],
 ) -> None:
-    """Validate that ``args`` begins with one of ``expected_prefixes``.
-
-    Raises
-    ------
-    args_prefix_mismatch
-        An :class:`E2EExpectationError` when ``args`` matches none of
-        ``expected_prefixes``.
-    """
+    """Validate that ``args`` begins with one of ``expected_prefixes``."""
     if expected_prefixes and not any(
         args[: len(prefix)] == prefix for prefix in expected_prefixes
     ):
@@ -47,14 +40,7 @@ def _validate_args_prefix(
 
 
 def _validate_target_dir(label: str, args: tuple[str, ...]) -> None:
-    """Validate that ``args`` contains ``--target-dir=...``.
-
-    Raises
-    ------
-    target_dir_missing
-        An :class:`E2EExpectationError` when no ``--target-dir=`` argument is
-        present.
-    """
+    """Validate that ``args`` contains a ``--target-dir=...`` argument."""
     if not any(argument.startswith("--target-dir=") for argument in args):
         raise E2EExpectationError.target_dir_missing(label, args)
 
@@ -66,14 +52,7 @@ def _create_recording_handler(
     *,
     require_target_dir: bool = False,
 ) -> cabc.Callable[[CmdMoxInvocation], tuple[str, str, int]]:
-    """Create an invocation handler that validates and records cmd-mox calls.
-
-    Returns
-    -------
-    cabc.Callable[[CmdMoxInvocation], tuple[str, str, int]]
-        Handler that validates prefixes, records the call, and returns an empty
-        successful result.
-    """
+    """Create an invocation handler that validates and records cmd-mox calls."""
 
     def _handler(invocation: CmdMoxInvocation) -> tuple[str, str, int]:
         args = tuple(invocation.args)
@@ -97,6 +76,17 @@ def given_nontrivial_workspace_in_git_repo(
     e2e_workspace_with_git: tuple[workspace_builder.NonTrivialWorkspace, Path],
 ) -> dict[str, typ.Any]:
     """Create a non-trivial workspace fixture and stub cargo metadata.
+
+    Parameters
+    ----------
+    version : str
+        Fixture version parsed from the scenario step; must be ``"0.1.0"``.
+    cmd_mox : CmdMox
+        Command mocker used to stub cargo and spy on git.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to set the cmd-mox stub environment variable.
+    e2e_workspace_with_git : tuple[workspace_builder.NonTrivialWorkspace, Path]
+        The built workspace paired with its Git repository root.
 
     Returns
     -------
@@ -164,6 +154,16 @@ def given_cargo_commands_stubbed(
     }
 
 
+def _run_lading_in_e2e_workspace(
+    repo_root: Path,
+    e2e_state: dict[str, typ.Any],
+    *args: str,
+) -> dict[str, typ.Any]:
+    """Run the lading CLI against the E2E workspace and capture the result."""
+    workspace: workspace_builder.NonTrivialWorkspace = e2e_state["workspace"]
+    return run_cli(repo_root, workspace.root, *args)
+
+
 @when(
     parsers.parse('I run lading bump "{version}" in the E2E workspace'),
     target_fixture="cli_run",
@@ -175,13 +175,21 @@ def when_run_lading_bump(
 ) -> dict[str, typ.Any]:
     """Invoke `lading bump` against the E2E workspace and capture output.
 
+    Parameters
+    ----------
+    repo_root : Path
+        Repository root from which the CLI module is executed.
+    e2e_state : dict[str, typ.Any]
+        Shared step state carrying the target ``workspace``.
+    version : str
+        Version string parsed from the scenario step.
+
     Returns
     -------
     dict[str, typ.Any]
         The captured CLI result (return code, stdout, and stderr).
     """
-    workspace: workspace_builder.NonTrivialWorkspace = e2e_state["workspace"]
-    return run_cli(repo_root, workspace.root, "bump", version)
+    return _run_lading_in_e2e_workspace(repo_root, e2e_state, "bump", version)
 
 
 @when("I commit the E2E workspace changes")
@@ -201,13 +209,21 @@ def when_run_lading_publish(
 ) -> dict[str, typ.Any]:
     """Invoke `lading publish` (dry-run default) with `--forbid-dirty`.
 
+    Parameters
+    ----------
+    repo_root : Path
+        Repository root from which the CLI module is executed.
+    e2e_state : dict[str, typ.Any]
+        Shared step state carrying the target ``workspace``.
+
     Returns
     -------
     dict[str, typ.Any]
         The captured CLI result (return code, stdout, and stderr).
     """
-    workspace: workspace_builder.NonTrivialWorkspace = e2e_state["workspace"]
-    return run_cli(repo_root, workspace.root, "publish", "--forbid-dirty")
+    return _run_lading_in_e2e_workspace(
+        repo_root, e2e_state, "publish", "--forbid-dirty"
+    )
 
 
 @when("I run lading publish in the E2E workspace", target_fixture="cli_run")
@@ -217,13 +233,19 @@ def when_run_lading_publish_allow_dirty(
 ) -> dict[str, typ.Any]:
     """Invoke `lading publish` using the default allow-dirty behaviour.
 
+    Parameters
+    ----------
+    repo_root : Path
+        Repository root from which the CLI module is executed.
+    e2e_state : dict[str, typ.Any]
+        Shared step state carrying the target ``workspace``.
+
     Returns
     -------
     dict[str, typ.Any]
         The captured CLI result (return code, stdout, and stderr).
     """
-    workspace: workspace_builder.NonTrivialWorkspace = e2e_state["workspace"]
-    return run_cli(repo_root, workspace.root, "publish")
+    return _run_lading_in_e2e_workspace(repo_root, e2e_state, "publish")
 
 
 @then("the command succeeds")
@@ -294,7 +316,15 @@ def then_cargo_preflight_ran(publish_spies: dict[str, typ.Any]) -> None:
 
 @then(parsers.parse('the publish order is "{expected}"'))
 def then_publish_order(publish_spies: dict[str, typ.Any], expected: str) -> None:
-    """Assert cargo package calls occur in the expected crate order."""
+    """Assert cargo package calls occur in the expected crate order.
+
+    Parameters
+    ----------
+    publish_spies : dict[str, typ.Any]
+        Recorded publish invocation state produced by the stub handlers.
+    expected : str
+        Comma-separated crate names parsed from the scenario step.
+    """
     expected_names = [name.strip() for name in expected.split(",") if name.strip()]
     package_calls = filter_records(publish_spies, "cargo::package")
     seen = []
@@ -379,13 +409,7 @@ def given_workspace_rebuilds_app_lockfile(
     app_lockfile.write_text(stale_marker, encoding="utf-8")
 
     def regenerate(invocation: object) -> tuple[str, str, int]:
-        """Mimic cargo update by rewriting the targeted Cargo.lock.
-
-        Returns
-        -------
-        tuple[str, str, int]
-            An empty stdout/stderr pair and a zero exit code.
-        """
+        """Mimic cargo update by rewriting the targeted Cargo.lock."""
         argv = list(getattr(invocation, "args", ()))
         manifest = Path(argv[argv.index("--manifest-path") + 1])
         (manifest.parent / "Cargo.lock").write_text(

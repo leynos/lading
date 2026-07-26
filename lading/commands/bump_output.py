@@ -101,13 +101,7 @@ def _build_changes_description(changes: BumpChanges) -> str:
 
 
 def _format_no_changes_message(target_version: str, *, dry_run: bool) -> str:
-    """Format message when no changes are required.
-
-    Returns
-    -------
-    str
-        The no-changes message, phrased for a dry run when ``dry_run`` is set.
-    """
+    """Format message when no changes are required."""
     if dry_run:
         return (
             "Dry run; no manifest changes required; "
@@ -137,13 +131,7 @@ def _format_header(description: str, target_version: str, *, dry_run: bool) -> s
 
 
 def _has_changes(changes: BumpChanges) -> bool:
-    """Return True when a bump run changed at least one file category.
-
-    Returns
-    -------
-    bool
-        ``True`` if any manifest, document, readme, or lockfile changed.
-    """
+    """Return True when a bump run changed at least one file category."""
     return any((
         changes.manifests,
         changes.documents,
@@ -159,13 +147,7 @@ def _format_result_message(
     dry_run: bool,
     workspace_root: Path,
 ) -> str:
-    """Summarise the bump outcome for CLI presentation.
-
-    Returns
-    -------
-    str
-        A no-changes message, or a header followed by one line per changed file.
-    """
+    """Summarise the bump outcome for CLI presentation."""
     if not _has_changes(changes):
         return _format_no_changes_message(target_version, dry_run=dry_run)
 

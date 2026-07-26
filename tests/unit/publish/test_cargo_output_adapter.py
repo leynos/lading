@@ -36,13 +36,7 @@ _quote_pairs = st.sampled_from([
 def _both_markers_stderr(
     draw: st.DrawFn,
 ) -> tuple[str, str]:
-    """Generate ``(crate_name, stderr)`` with both index-miss markers present.
-
-    Returns
-    -------
-    tuple[str, str]
-        The crate name and generated stderr text.
-    """
+    """Generate ``(crate_name, stderr)`` with both index-miss markers present."""
     name = draw(_crate_names)
     _label, open_q, close_q = draw(_quote_pairs)
     version = draw(st.from_regex(r"\^[0-9]+(\.[0-9]+){0,2}", fullmatch=True))
@@ -58,13 +52,7 @@ def _both_markers_stderr(
 
 
 def _randomly_cased(text: str) -> st.SearchStrategy[str]:
-    """Return a strategy yielding ``text`` with each letter's case toggled.
-
-    Returns
-    -------
-    st.SearchStrategy[str]
-        Strategy producing case-toggled variants of ``text``.
-    """
+    """Return a strategy selecting each character's case independently."""
     return st.lists(st.booleans(), min_size=len(text), max_size=len(text)).map(
         lambda flags: "".join(
             char.upper() if flag else char.lower()
@@ -78,13 +66,7 @@ def _parse_index_lookup_failure(
     stdout: str,
     stderr: str,
 ) -> CargoIndexLookupFailure | None:
-    """Parse a fixed publish failure fixture through the adapter.
-
-    Returns
-    -------
-    CargoIndexLookupFailure | None
-        The parsed failure, or ``None`` when the output does not match.
-    """
+    """Parse a fixed publish failure fixture through the adapter."""
     return parse_index_lookup_failure(
         crate_name="beta",
         subcommand="publish",

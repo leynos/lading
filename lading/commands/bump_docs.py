@@ -148,13 +148,7 @@ def rewrite_markdown_toml_fences(
     changed = False
 
     def _apply(snippet: str) -> str:
-        """Apply dependency version rewrites to one TOML fence.
-
-        Returns
-        -------
-        str
-            The fence content with matching dependency versions rewritten.
-        """
+        """Apply dependency version rewrites to one TOML fence."""
         nonlocal changed
         replacement, snippet_changed = update_toml_snippet_versions(
             snippet, dependency_targets, target_version
@@ -301,13 +295,7 @@ def _try_assign_version_at_path(
     path: tuple[str, ...],
     target_version: str,
 ) -> bool:
-    """Attempt to assign version at the specified table path.
-
-    Returns
-    -------
-    bool
-        ``True`` if a version was assigned, ``False`` if the path was absent.
-    """
+    """Attempt to assign version at the specified table path."""
     return bump_toml.assign_version(
         bump_toml.select_table(document, path), target_version
     )
@@ -319,13 +307,7 @@ def _update_single_dependency_section(
     dependency_targets: cabc.Collection[str],
     target_version: str,
 ) -> bool:
-    """Update a single dependency section if it exists.
-
-    Returns
-    -------
-    bool
-        ``True`` if the section existed and any versions changed.
-    """
+    """Update a single dependency section if it exists."""
     table = bump_toml.select_table(document, (section,))
     if table is None:
         return False

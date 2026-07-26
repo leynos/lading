@@ -61,13 +61,7 @@ def _determine_package_selectors(
     crate_name: str,
     excluded: cabc.Collection[str],
 ) -> tuple[tuple[str, ...], ...]:
-    """Return package selectors for the crate, respecting exclusion rules.
-
-    Returns
-    -------
-    tuple[tuple[str, ...], ...]
-        The ``package`` table selector, or empty when the crate is excluded.
-    """
+    """Return package selectors for the crate, respecting exclusion rules."""
     return () if crate_name in excluded else (("package",),)
 
 
@@ -75,35 +69,14 @@ def _should_skip_crate_update(
     selectors: tuple[tuple[str, ...], ...],
     dependency_sections: cabc.Mapping[str, cabc.Collection[str]],
 ) -> bool:
-    """Return whether a crate update can be skipped for lack of work.
-
-    Parameters
-    ----------
-    selectors
-        Package selectors identified for the crate.
-    dependency_sections
-        Dependency sections to update for the crate.
-
-    Returns
-    -------
-    bool
-        ``True`` when both ``selectors`` and ``dependency_sections`` are empty.
-
-    """
+    """Return whether a crate update can be skipped for lack of work."""
     return not selectors and not dependency_sections
 
 
 def _freeze_dependency_sections(
     sections: cabc.Mapping[str, cabc.Collection[str]],
 ) -> cabc.Mapping[str, cabc.Collection[str]]:
-    """Return an immutable mapping for dependency sections.
-
-    Returns
-    -------
-    cabc.Mapping[str, cabc.Collection[str]]
-        A read-only view with each section's names sorted; empty when
-        ``sections`` is empty.
-    """
+    """Return an immutable mapping for dependency sections."""
     if not sections:
         return types.MappingProxyType({})
     frozen_sections = {key: tuple(sorted(names)) for key, names in sections.items()}
@@ -116,14 +89,7 @@ def _update_manifest(
     target_version: str,
     options: BumpOptions,
 ) -> bool:
-    """Apply ``target_version`` to each table described by ``selectors``.
-
-    Returns
-    -------
-    bool
-        ``True`` if the manifest changed; the file is rewritten unless the run
-        is a dry run.
-    """
+    """Apply ``target_version`` to each table described by ``selectors``."""
     document = bump_toml.parse_manifest(manifest_path)
     changed = False
     for selector in selectors:
@@ -144,14 +110,7 @@ def _update_manifest(
 def _workspace_dependency_sections(
     updated_crates: cabc.Collection[str],
 ) -> dict[str, set[str]]:
-    """Return dependency names to update for the workspace manifest.
-
-    Returns
-    -------
-    dict[str, set[str]]
-        Crate names to update keyed by dependency section; empty when no
-        crates require updating.
-    """
+    """Return dependency names to update for the workspace manifest."""
     crate_names = {name for name in updated_crates if name}
     if not crate_names:
         return {}
@@ -162,14 +121,7 @@ def _dependency_sections_for_crate(
     crate: WorkspaceCrate,
     updated_crates: cabc.Collection[str],
 ) -> dict[str, set[str]]:
-    """Return dependency names grouped by section for ``crate``.
-
-    Returns
-    -------
-    dict[str, set[str]]
-        Manifest dependency keys keyed by section; empty when the crate has no
-        matching dependencies.
-    """
+    """Return dependency names grouped by section for ``crate``."""
     if not crate.dependencies:
         return {}
     targets = {name for name in updated_crates if name}

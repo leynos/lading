@@ -26,6 +26,15 @@ def when_invoke_lading_publish(
 ) -> dict[str, typ.Any]:
     """Execute the publish CLI via ``python -m`` and capture the result.
 
+    Parameters
+    ----------
+    workspace_directory : Path
+        Root of the staged workspace under test.
+    repo_root : Path
+        Repository root from which the CLI module is launched.
+    preflight_test_context : PreflightTestContext
+        Context bundling the cmd-mox double, overrides, and recorder.
+
     Returns
     -------
     dict[str, typ.Any]
@@ -44,6 +53,17 @@ def when_run_lading_publish_command(
 ) -> dict[str, typ.Any]:
     """Execute the quoted publish command through the CLI test harness.
 
+    Parameters
+    ----------
+    workspace_directory : Path
+        Root of the staged workspace under test.
+    repo_root : Path
+        Repository root from which the CLI module is launched.
+    preflight_test_context : PreflightTestContext
+        Context bundling the cmd-mox double, overrides, and recorder.
+    command : str
+        Quoted CLI command; must begin with ``lading publish``.
+
     Returns
     -------
     dict[str, typ.Any]
@@ -53,6 +73,13 @@ def when_run_lading_publish_command(
     ------
     AssertionError
         If the command is not a ``lading publish`` invocation.
+
+    Examples
+    --------
+    >>> when_run_lading_publish_command(None, None, None, "git status")
+    Traceback (most recent call last):
+        ...
+    AssertionError: Unexpected publish command: git status
     """
     tokens = tuple(shlex.split(command))
     if tokens[:2] != ("lading", "publish"):
@@ -79,6 +106,15 @@ def when_invoke_lading_publish_forbid_dirty(
 ) -> dict[str, typ.Any]:
     """Execute the publish CLI with ``--forbid-dirty`` enabled.
 
+    Parameters
+    ----------
+    workspace_directory : Path
+        Root of the staged workspace under test.
+    repo_root : Path
+        Repository root from which the CLI module is launched.
+    preflight_test_context : PreflightTestContext
+        Context bundling the cmd-mox double, overrides, and recorder.
+
     Returns
     -------
     dict[str, typ.Any]
@@ -103,6 +139,15 @@ def when_invoke_lading_publish_live(
     preflight_test_context: PreflightTestContext,
 ) -> dict[str, typ.Any]:
     """Execute the publish CLI with live publishing enabled.
+
+    Parameters
+    ----------
+    workspace_directory : Path
+        Root of the staged workspace under test.
+    repo_root : Path
+        Repository root from which the CLI module is launched.
+    preflight_test_context : PreflightTestContext
+        Context bundling the cmd-mox double, overrides, and recorder.
 
     Returns
     -------

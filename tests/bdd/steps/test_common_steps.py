@@ -101,18 +101,7 @@ def then_crate_manifest_version(
 
 
 def _extract_dependency_requirement(entry: object) -> str:
-    """Return the version requirement string recorded in a dependency entry.
-
-    Returns
-    -------
-    str
-        The extracted version requirement string.
-
-    Raises
-    ------
-    AssertionError
-        If the entry does not carry a string version requirement.
-    """
+    """Return the version requirement string recorded in a dependency entry."""
     if isinstance(entry, Item):
         value = entry.value
         if isinstance(value, str):
@@ -141,6 +130,13 @@ def then_dependency_requirement(
     check: DependencyCheck,
 ) -> None:
     """Assert that an internal dependency requirement reflects the new version.
+
+    Parameters
+    ----------
+    cli_run : dict[str, typ.Any]
+        The captured CLI run details from a preceding step.
+    check : DependencyCheck
+        The dependency requirement specification to verify.
 
     Raises
     ------
@@ -175,16 +171,7 @@ def _then_dependency_requirement_step(
     dependency_spec: str,
     expected: str,
 ) -> None:
-    """Assert that an internal dependency requirement reflects the new version.
-
-    The dependency_spec should be in the format: "crate_name:dependency_name@section"
-    Example: "beta:alpha@dependencies"
-
-    Raises
-    ------
-    AssertionError
-        If ``dependency_spec`` is malformed or the requirement does not match.
-    """
+    """Assert an internal dependency requirement from a ``crate:dep@section`` spec."""
     parts = dependency_spec.split(":", maxsplit=1)
     if len(parts) != 2:
         message = (

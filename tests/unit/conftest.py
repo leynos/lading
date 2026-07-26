@@ -205,6 +205,11 @@ def make_workspace(
 ) -> cabc.Callable[[Path, WorkspaceCrate], WorkspaceGraph]:
     """Return a factory that assembles workspace graphs for tests.
 
+    Parameters
+    ----------
+    make_crate : Callable[[Path, str, _CrateSpec | None], WorkspaceCrate]
+        Factory fixture used to materialise the crates within each graph.
+
     Returns
     -------
     Callable[[Path, WorkspaceCrate], WorkspaceGraph]
@@ -224,6 +229,13 @@ def publish_fixtures(
     request: pytest.FixtureRequest, publish_options: publish.PublishOptions
 ) -> PublishFixtures:
     """Return the composite publish fixtures used across unit suites.
+
+    Parameters
+    ----------
+    request : pytest.FixtureRequest
+        Fixture request used to resolve the component fixtures lazily.
+    publish_options : publish.PublishOptions
+        Publish options bundled into the composite fixtures.
 
     Returns
     -------
@@ -249,6 +261,11 @@ def publish_fixtures(
 def planning_fixtures(publish_fixtures: PublishFixtures) -> PlanningFixtures:
     """Expose the composite fixtures under the planning-specific alias.
 
+    Parameters
+    ----------
+    publish_fixtures : PublishFixtures
+        The composite publish fixtures to re-expose under this alias.
+
     Returns
     -------
     PlanningFixtures
@@ -260,6 +277,11 @@ def planning_fixtures(publish_fixtures: PublishFixtures) -> PlanningFixtures:
 @pytest.fixture
 def preparation_fixtures(publish_fixtures: PublishFixtures) -> PreparationFixtures:
     """Expose the composite fixtures under the staging-specific alias.
+
+    Parameters
+    ----------
+    publish_fixtures : PublishFixtures
+        The composite publish fixtures to re-expose under this alias.
 
     Returns
     -------
@@ -294,6 +316,11 @@ def make_dependency() -> cabc.Callable[[str], WorkspaceDependency]:
 def staging_root(tmp_path: Path) -> Path:
     """Provide a staging directory that sits alongside the workspace root.
 
+    Parameters
+    ----------
+    tmp_path : Path
+        Pytest temporary directory whose sibling is used for staging.
+
     Returns
     -------
     Path
@@ -305,6 +332,11 @@ def staging_root(tmp_path: Path) -> Path:
 @pytest.fixture
 def publish_options(staging_root: Path) -> publish.PublishOptions:
     """Return publish options that stage outside the workspace root.
+
+    Parameters
+    ----------
+    staging_root : Path
+        Directory outside the workspace root used as the build directory.
 
     Returns
     -------
@@ -319,6 +351,11 @@ def prepare_workspace_fixtures(
     publish_fixtures: PublishFixtures,
 ) -> PrepareWorkspaceFixtures:
     """Pre-assembled fixtures for prepare_workspace integration tests.
+
+    Parameters
+    ----------
+    publish_fixtures : PublishFixtures
+        The composite publish fixtures to re-expose under this alias.
 
     Returns
     -------

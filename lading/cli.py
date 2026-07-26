@@ -67,19 +67,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 def _select_runner() -> CommandRunner:
-    """Return the command runner selected for this CLI invocation.
-
-    Returns
-    -------
-    CommandRunner
-        The cmd-mox stub runner when the stub environment variable is truthy,
-        otherwise the default subprocess runner.
-
-    Raises
-    ------
-    SystemExit
-        If the stub runner is requested but its module cannot be imported.
-    """
+    """Return the command runner selected for this CLI invocation."""
     stub_value = os.environ.get(_CMD_MOX_STUB_ENV, "")
     if stub_value.lower() in _CMD_MOX_TRUTHY_VALUES:
         try:
@@ -96,36 +84,14 @@ def _select_runner() -> CommandRunner:
 
 
 def _validate_workspace_value(value: str) -> str:
-    """Ensure ``value`` is usable as a workspace path.
-
-    Returns
-    -------
-    str
-        The validated candidate path, returned unchanged.
-
-    Raises
-    ------
-    SystemExit
-        If the value is empty or looks like another option flag.
-    """
+    """Ensure ``value`` is usable as a workspace path."""
     if not value or value.startswith("-"):
         raise SystemExit(WORKSPACE_ROOT_REQUIRED_MESSAGE)
     return value
 
 
 def _parse_workspace_flag(tokens: cabc.Sequence[str], index: int) -> tuple[str, int]:
-    """Parse ``--workspace-root <path>`` form starting at ``index``.
-
-    Returns
-    -------
-    tuple[str, int]
-        The parsed workspace path and the index of the next unconsumed token.
-
-    Raises
-    ------
-    SystemExit
-        If no path token follows the flag.
-    """
+    """Parse ``--workspace-root <path>`` form starting at ``index``."""
     try:
         candidate = tokens[index + 1]
     except IndexError as err:
@@ -135,13 +101,7 @@ def _parse_workspace_flag(tokens: cabc.Sequence[str], index: int) -> tuple[str, 
 
 
 def _parse_workspace_equals(argument: str, index: int) -> tuple[str, int]:
-    """Parse ``--workspace-root=<path>`` form for ``argument``.
-
-    Returns
-    -------
-    tuple[str, int]
-        The parsed workspace path and the index of the next unconsumed token.
-    """
+    """Parse ``--workspace-root=<path>`` form for ``argument``."""
     candidate = argument.partition("=")[2]
     workspace = _validate_workspace_value(candidate)
     return workspace, index + 1
@@ -152,22 +112,7 @@ def _resolve_allow_unpublished_workspace_deps(
     live: bool,
     allow_unpublished_workspace_deps: bool | None,
 ) -> bool:
-    """Resolve the tri-state ``--allow-unpublished-workspace-deps`` flag.
-
-    An explicit flag value is honoured verbatim. When the flag is omitted the
-    default depends on the publish mode: ``False`` for live publishes and
-    ``True`` for dry runs, so unpublished workspace members do not abort a
-    rehearsal.
-
-    Logging side effects: applying the dry-run default emits an INFO record so
-    operators can see the decision, and every call emits a DEBUG record with the
-    raw input, mode, resolved value, and the reason it was chosen.
-
-    Returns
-    -------
-    bool
-        The resolved flag value.
-    """
+    """Resolve the tri-state ``--allow-unpublished-workspace-deps`` flag."""
     if allow_unpublished_workspace_deps is not None:
         resolved_value = allow_unpublished_workspace_deps
         reason = "explicit flag"
@@ -196,19 +141,7 @@ def _resolve_allow_unpublished_workspace_deps(
 def _extract_workspace_override(
     tokens: cabc.Sequence[str],
 ) -> tuple[str | None, list[str]]:
-    """Split ``--workspace-root`` from CLI tokens.
-
-    The flag can appear in either ``--workspace-root <path>`` or
-    ``--workspace-root=<path>`` form. The last occurrence wins, matching
-    common CLI conventions. The returned token list can be passed directly
-    to :func:`cyclopts.App.__call__`.
-
-    Returns
-    -------
-    tuple[str | None, list[str]]
-        The extracted workspace override (``None`` when absent) and the
-        remaining tokens with the flag removed.
-    """
+    """Split ``--workspace-root`` from CLI tokens."""
     workspace: str | None = None
     remainder: list[str] = []
     index = 0
@@ -226,18 +159,7 @@ def _extract_workspace_override(
 
 
 def _resolve_log_level(value: str | None) -> int:
-    """Return the configured log level or :data:`_DEFAULT_LOG_LEVEL`.
-
-    Returns
-    -------
-    int
-        The resolved :mod:`logging` level integer.
-
-    Raises
-    ------
-    SystemExit
-        If the value does not name a known log level.
-    """
+    """Return the configured log level or :data:`_DEFAULT_LOG_LEVEL`."""
     if value is None:
         return _DEFAULT_LOG_LEVEL
     candidate = value.strip()
@@ -293,14 +215,7 @@ def _workspace_env(value: Path) -> cabc.Iterator[None]:
 
 
 def _dispatch_and_print(tokens: cabc.Sequence[str]) -> int:
-    """Execute the Cyclopts app and print command results.
-
-    Returns
-    -------
-    int
-        The process exit code derived from the command result or a raised
-        :class:`SystemExit`.
-    """
+    """Execute the Cyclopts app and print command results."""
     try:
         result = app(tokens)
     except SystemExit as err:
@@ -320,6 +235,12 @@ def _dispatch_and_print(tokens: cabc.Sequence[str]) -> int:
 
 def main(argv: cabc.Sequence[str] | None = None) -> int:
     """Entry point for ``python -m lading.cli``.
+
+    Parameters
+    ----------
+    argv : cabc.Sequence[str] | None
+        Command-line arguments to parse; defaults to :data:`sys.argv`
+        without the program name when :data:`None`.
 
     Returns
     -------
@@ -376,13 +297,7 @@ def _run_with_context(
     *,
     command_runner: CommandRunner | None = None,
 ) -> str:
-    """Execute ``runner`` with configuration and workspace data.
-
-    Returns
-    -------
-    str
-        The rendered command result produced by ``runner``.
-    """
+    """Execute ``runner`` with configuration and workspace data."""
     active_runner = command_runner or _select_runner()
     configuration_scope: AbstractContextManager[object] = nullcontext()
     try:
@@ -406,6 +321,19 @@ def bump(
     rebuild_lockfiles: RebuildLockfilesFlag | None = None,
 ) -> str:
     """Update workspace manifests to ``version``.
+
+    Parameters
+    ----------
+    version : VersionArgument
+        Target semantic version to write across workspace manifests.
+    workspace_root : WorkspaceRootOption | None
+        Optional path to the workspace root; resolved to the current
+        directory when :data:`None`.
+    dry_run : DryRunFlag
+        When ``True``, preview manifest changes without writing files.
+    rebuild_lockfiles : RebuildLockfilesFlag | None
+        Tri-state flag forwarded unresolved to the bump command, which owns
+        defaulting an unset value against the configuration.
 
     Returns
     -------
@@ -447,6 +375,19 @@ def publish(
     The command performs pre-flight validation, stages the workspace, runs
     ``cargo package`` for each publishable crate, and then executes ``cargo
     publish`` (dry-run by default, live when ``--live`` is supplied).
+
+    Parameters
+    ----------
+    workspace_root : WorkspaceRootOption | None
+        Optional path to the workspace root; resolved to the current
+        directory when :data:`None`.
+    forbid_dirty : ForbidDirtyFlag
+        When ``True``, require a clean working tree before pre-flight checks.
+    live : LiveFlag
+        When ``True``, run ``cargo publish`` without ``--dry-run``.
+    allow_unpublished_workspace_deps : AllowUnpublishedWorkspaceDepsFlag
+        Tri-state override for unpublished sibling workspace dependencies;
+        resolved against the publish mode when omitted.
 
     Returns
     -------

@@ -23,14 +23,7 @@ def _is_ordering_dependency(
     dependency: WorkspaceDependency,
     crates_by_name: dict[str, WorkspaceCrate],
 ) -> bool:
-    """Return ``True`` when ``dependency`` influences publish ordering.
-
-    Returns
-    -------
-    bool
-        ``True`` when the dependency targets a workspace crate and its kind
-        affects publish ordering.
-    """
+    """Return ``True`` when ``dependency`` influences publish ordering."""
     if dependency.name not in crates_by_name:
         return False
     if dependency.kind is None:
@@ -82,13 +75,7 @@ class WorkspaceGraph(msgspec.Struct, frozen=True, kw_only=True):
         self,
         crates_by_name: dict[str, WorkspaceCrate],
     ) -> dict[str, tuple[str, ...]]:
-        """Build a dependency map for workspace crates.
-
-        Returns
-        -------
-        dict[str, tuple[str, ...]]
-            Each crate name mapped to its ordering-relevant dependency names.
-        """
+        """Build a dependency map for workspace crates."""
         dependency_map: dict[str, tuple[str, ...]] = {}
         for crate in crates_by_name.values():
             dependency_names = tuple(
@@ -105,14 +92,7 @@ class WorkspaceGraph(msgspec.Struct, frozen=True, kw_only=True):
         self,
         dependency_map: dict[str, tuple[str, ...]],
     ) -> tuple[dict[str, int], defaultdict[str, set[str]]]:
-        """Initialise incoming counts and dependents for topological sort.
-
-        Returns
-        -------
-        tuple[dict[str, int], defaultdict[str, set[str]]]
-            Incoming dependency counts per crate and the reverse
-            dependents mapping.
-        """
+        """Initialise incoming counts and dependents for topological sort."""
         incoming_counts: dict[str, int] = {}
         dependents: defaultdict[str, set[str]] = defaultdict(set)
         for name, dependencies in dependency_map.items():
@@ -128,14 +108,7 @@ class WorkspaceGraph(msgspec.Struct, frozen=True, kw_only=True):
         incoming_counts: dict[str, int],
         dependents: defaultdict[str, set[str]],
     ) -> list[str]:
-        """Execute Kahn's algorithm to produce topological ordering.
-
-        Returns
-        -------
-        list[str]
-            Crate names in dependency-first order; shorter than the input
-            when a cycle is present.
-        """
+        """Execute Kahn's algorithm to produce topological ordering."""
         available = [name for name, count in incoming_counts.items() if count == 0]
         heapq.heapify(available)
         ordered_names: list[str] = []
@@ -156,13 +129,7 @@ class WorkspaceGraph(msgspec.Struct, frozen=True, kw_only=True):
         ordered_names: list[str],
         incoming_counts: dict[str, int],
     ) -> list[str]:
-        """Identify nodes involved in a dependency cycle.
-
-        Returns
-        -------
-        list[str]
-            Names of crates left unordered because they belong to a cycle.
-        """
+        """Return crates left unordered by a dependency cycle, dependants included."""
         cycle_nodes = [
             name
             for name, count in incoming_counts.items()
@@ -187,6 +154,23 @@ class WorkspaceGraph(msgspec.Struct, frozen=True, kw_only=True):
         ------
         WorkspaceDependencyCycleError
             If the dependency graph contains a cycle.
+
+        Examples
+        --------
+        >>> from pathlib import Path
+        >>> crate = WorkspaceCrate(
+        ...     id="a 0.1.0",
+        ...     name="a",
+        ...     version="0.1.0",
+        ...     manifest_path=Path("a/Cargo.toml"),
+        ...     root_path=Path("a"),
+        ...     publish=True,
+        ...     readme_is_workspace=False,
+        ...     dependencies=(),
+        ... )
+        >>> graph = WorkspaceGraph(workspace_root=Path("ws"), crates=(crate,))
+        >>> [c.name for c in graph.topologically_sorted_crates()]
+        ['a']
         """
         crates_by_name = {crate.name: crate for crate in self.crates}
         dependency_map = self._build_dependency_graph(crates_by_name)
@@ -207,7 +191,30 @@ class WorkspaceGraph(msgspec.Struct, frozen=True, kw_only=True):
 
     @property
     def crates_by_name(self) -> dict[str, WorkspaceCrate]:
-        """Name-indexed mapping of workspace crates."""
+        """The name-indexed mapping of workspace crates.
+
+        Returns
+        -------
+        dict[str, WorkspaceCrate]
+            Each crate keyed by its name.
+
+        Examples
+        --------
+        >>> from pathlib import Path
+        >>> crate = WorkspaceCrate(
+        ...     id="a 0.1.0",
+        ...     name="a",
+        ...     version="0.1.0",
+        ...     manifest_path=Path("a/Cargo.toml"),
+        ...     root_path=Path("a"),
+        ...     publish=True,
+        ...     readme_is_workspace=False,
+        ...     dependencies=(),
+        ... )
+        >>> graph = WorkspaceGraph(workspace_root=Path("ws"), crates=(crate,))
+        >>> sorted(graph.crates_by_name)
+        ['a']
+        """
         return {crate.name: crate for crate in self.crates}
 
 

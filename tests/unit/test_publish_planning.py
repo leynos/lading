@@ -24,13 +24,7 @@ def _plan_with_crates(
     crates: tuple[WorkspaceCrate, ...],
     **config_overrides: object,
 ) -> publish.PublishPlan:
-    """Plan publication for ``crates`` using ``tmp_path`` as the workspace root.
-
-    Returns
-    -------
-    publish.PublishPlan
-        The plan produced for ``crates`` under the resolved workspace root.
-    """
+    """Plan publication for ``crates`` using ``tmp_path`` as the workspace root."""
     root = tmp_path.resolve()
     workspace = make_workspace(root, *crates)
     configuration = make_config(**config_overrides)
@@ -43,13 +37,7 @@ def _make_dependency_chain(
     make_crate: cabc.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
     make_dependency: cabc.Callable[[str], WorkspaceDependency],
 ) -> tuple[WorkspaceCrate, WorkspaceCrate, WorkspaceCrate]:
-    """Return crates that form a simple alpha→beta→gamma dependency chain.
-
-    Returns
-    -------
-    tuple[WorkspaceCrate, WorkspaceCrate, WorkspaceCrate]
-        The ``alpha``, ``beta``, and ``gamma`` crates in dependency order.
-    """
+    """Return crates that form a simple alpha→beta→gamma dependency chain."""
     alpha = make_crate(root, "alpha")
     beta = make_crate(
         root,
@@ -72,13 +60,7 @@ def _create_cycle(
     publish_a: bool = True,
     publish_b: bool = True,
 ) -> tuple[WorkspaceCrate, WorkspaceCrate]:
-    """Return two crates with mutual dependencies forming a cycle.
-
-    Returns
-    -------
-    tuple[WorkspaceCrate, WorkspaceCrate]
-        The two crates that depend on each other.
-    """
+    """Return two crates with mutual dependencies forming a cycle."""
     root = fixtures.tmp_path.resolve()
     crate_a = fixtures.make_crate(
         root,

@@ -82,19 +82,7 @@ def _handle_git_ls_files_failure(
     stderr: str,
     workspace_root: Path,
 ) -> tuple[Path, ...] | None:
-    """Return ``None`` for git success, or an empty result for git failure.
-
-    Returns
-    -------
-    tuple[Path, ...] | None
-        ``None`` when git succeeded, or an empty tuple when the workspace is
-        not a git repository.
-
-    Raises
-    ------
-    LockfileDiscoveryError
-        If git failed for a reason other than a missing repository.
-    """
+    """Return ``None`` on git success or an empty tuple when not a git repo."""
     if exit_code == 0:
         return None
     detail = command_detail(stdout, stderr)
@@ -119,14 +107,7 @@ def _lockfiles_with_manifests(
     workspace_root: Path,
     manifest_exists: _ManifestExists,
 ) -> tuple[Path, ...]:
-    """Return lockfile paths from ``git ls-files`` with adjacent manifests.
-
-    Returns
-    -------
-    tuple[Path, ...]
-        Tracked lockfile paths outside ``target`` that have an adjacent
-        ``Cargo.toml``.
-    """
+    """Return tracked lockfiles outside ``target`` with adjacent manifests."""
     lockfiles: list[Path] = []
     for line in stdout.splitlines():
         relative_path = line.strip()
@@ -141,13 +122,7 @@ def _lockfiles_with_manifests(
 
 
 def _manifest_exists(manifest_path: Path) -> bool:
-    """Return whether ``manifest_path`` exists on disk.
-
-    Returns
-    -------
-    bool
-        ``True`` when ``manifest_path`` exists.
-    """
+    """Return whether ``manifest_path`` exists on disk."""
     return manifest_path.exists()
 
 
@@ -184,8 +159,12 @@ def discover_tracked_lockfiles(
 
     Notes
     -----
-    If ``workspace_root`` is not a git repository, discovery logs a warning
-    through :func:`_handle_git_ls_files_failure` and returns an empty tuple.
+    An empty tuple is returned only when ``workspace_root`` is not a git
+    repository: discovery logs a warning through
+    :func:`_handle_git_ls_files_failure` and returns empty. When ``git
+    ls-files`` exits non-zero for any other reason,
+    :func:`_handle_git_ls_files_failure` raises
+    :class:`LockfileDiscoveryError`.
     """
     exit_code, stdout, stderr = runner(
         ("git", "ls-files", "**/Cargo.lock", "Cargo.lock"),
@@ -260,13 +239,7 @@ def validate_lockfile_freshness(
 
 
 def _is_lockfile_stale_detail(detail: str) -> bool:
-    """Return whether Cargo reported a locked lockfile needing regeneration.
-
-    Returns
-    -------
-    bool
-        ``True`` when the detail indicates a stale lockfile under ``--locked``.
-    """
+    """Return whether Cargo reported a locked lockfile needing regeneration."""
     normalized = detail.lower()
     return "--locked" in normalized and (
         "needs to be updated" in normalized
@@ -342,14 +315,7 @@ class CargoLockfileInspectionRepository:
         return validate_lockfile_freshness(manifest_path, self._bound_runner())
 
     def _bound_runner(self) -> CommandRunner:
-        """Return ``runner`` with ``env`` applied when a call omits its own.
-
-        Returns
-        -------
-        CommandRunner
-            The bound runner, or the original runner when no env override is
-            configured.
-        """
+        """Return ``runner`` with ``env`` applied when a call omits its own."""
         if self.env is None:
             return self.runner
         base_env = self.env
@@ -362,17 +328,7 @@ class CargoLockfileInspectionRepository:
             env: cabc.Mapping[str, str] | None = None,
             **runner_kwargs: bool,
         ) -> tuple[int, str, str]:
-            """Invoke ``base_runner`` with ``base_env`` as the default env.
-
-            Any extra keyword (notably ``echo_stdout``) is forwarded to
-            ``base_runner`` unchanged; only ``env`` is defaulted (to the bound
-            ``base_env``) when a call omits it.
-
-            Returns
-            -------
-            tuple[int, str, str]
-                The ``(exit_code, stdout, stderr)`` result from ``base_runner``.
-            """
+            """Invoke ``base_runner`` with ``base_env`` as the default env."""
             effective_env = base_env if env is None else env
             return base_runner(command, cwd=cwd, env=effective_env, **runner_kwargs)
 

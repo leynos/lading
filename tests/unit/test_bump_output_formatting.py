@@ -165,13 +165,7 @@ _CATEGORY_COUNT = st.integers(min_value=0, max_value=3)
 
 
 def _expected_description(categories: list[str]) -> str:
-    """Return the reference Oxford-comma joining for ``categories``.
-
-    Returns
-    -------
-    str
-        The categories joined with Oxford-comma grammar.
-    """
+    """Return the reference Oxford-comma joining for ``categories``."""
     if len(categories) == 1:
         return categories[0]
     if len(categories) == 2:
@@ -180,13 +174,7 @@ def _expected_description(categories: list[str]) -> str:
 
 
 def _build_expected_body(root: Path, changes: bump_output.BumpChanges) -> list[str]:
-    """Return the expected ``"- <rel_path>"`` body lines in render order.
-
-    Returns
-    -------
-    list[str]
-        The expected body lines for each changed path.
-    """
+    """Return the expected ``"- <rel_path>"`` body lines in render order."""
     return [
         *(f"- {path.relative_to(root)}" for path in changes.manifests),
         *(f"- {path.relative_to(root)} (documentation)" for path in changes.documents),
@@ -199,13 +187,7 @@ def _build_expected_body(root: Path, changes: bump_output.BumpChanges) -> list[s
 
 
 def _build_expected_categories(changes: bump_output.BumpChanges) -> list[str]:
-    """Return ordered category descriptions for the present change sets.
-
-    Returns
-    -------
-    list[str]
-        Category descriptions for each non-empty change set.
-    """
+    """Return ordered category descriptions for the present change sets."""
     categories: list[str] = []
     if changes.manifests:
         categories.append(f"{len(changes.manifests)} manifest(s)")

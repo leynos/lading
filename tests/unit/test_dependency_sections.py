@@ -38,13 +38,7 @@ def test_workspace_dependency_sections_use_canonical_vocabulary() -> None:
 
 
 def _render_manifest(sections: tuple[str, ...]) -> str:
-    """Render a manifest with one pinned dependency per requested section.
-
-    Returns
-    -------
-    str
-        The rendered manifest text.
-    """
+    """Render a manifest with one pinned dependency per requested section."""
     blocks = [
         f'[{section}]\nalpha = "1.0.0"\nother = "0.9.0"\n' for section in sections
     ]

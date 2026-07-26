@@ -41,13 +41,7 @@ class _NoChangeScenario:
 def _extract_alpha_dependency_entries(
     manifest_path: pathlib.Path,
 ) -> tuple[str, object, object]:
-    """Return the alpha dependency entries across manifest sections.
-
-    Returns
-    -------
-    tuple[str, object, object]
-        The runtime, dev, and build dependency entries for ``alpha``.
-    """
+    """Return the alpha dependency entries across manifest sections."""
     document = parse_toml(manifest_path.read_text(encoding="utf-8"))
     dependency = document["dependencies"]["alpha"].value
     dev_entry = document["dev-dependencies"]["alpha"]

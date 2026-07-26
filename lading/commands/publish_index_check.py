@@ -50,20 +50,7 @@ def _format_cargo_failure_message(
     exit_code: int,
     output: tuple[str, str],
 ) -> str:
-    """Format a human-readable error string for a failed cargo invocation.
-
-    ``output`` is a ``(stdout, stderr)`` pair; ``stderr`` is preferred as the
-    detail source and falls back to ``stdout`` when stderr is empty. Using a
-    single function for all cargo failure messages keeps the format identical
-    across the packaging and publish phases, which makes snapshot assertions
-    stable.
-
-    Returns
-    -------
-    str
-        The formatted failure message with the preferred output detail
-        appended.
-    """
+    """Format a human-readable error string for a failed cargo invocation."""
     stdout, stderr = output
     return with_detail(
         f"cargo {command} failed for crate {crate_name} with exit code {exit_code}",
@@ -92,14 +79,7 @@ def _format_missing_dependency_failure(
     reason: str,
     guidance: str,
 ) -> str:
-    """Return the shared fatal message shape for dependency index misses.
-
-    Returns
-    -------
-    str
-        The composed fatal message naming the missing dependency, its reason,
-        and the remediation guidance.
-    """
+    """Return the shared fatal message shape for dependency index misses."""
     return f"{failure}\n\ndependency {missing_name!r} {reason}. {guidance}"
 
 
@@ -231,19 +211,7 @@ def _raise_unpublished_dependency_override_required(
 
 
 def _canonical_crate_name(name: str) -> str:
-    """Return the canonical crate name by normalising hyphens to underscores.
-
-    Cargo error diagnostics report crate names using hyphens (e.g.
-    ``my-crate``), whereas ``Cargo.toml`` manifests typically record the same
-    package under underscores (e.g. ``my_crate``). Normalising both sides of
-    any membership comparison prevents false out-of-plan classifications that
-    would block the downgrade override.
-
-    Returns
-    -------
-    str
-        The crate name with hyphens replaced by underscores.
-    """
+    """Return the canonical crate name by normalising hyphens to underscores."""
     return name.replace("-", "_")
 
 
@@ -270,18 +238,7 @@ def _validate_dependency_placement(
     handling: _IndexMissingVersionHandling,
     missing_name: str,
 ) -> _DependencyPlacement:
-    """Resolve both crate indexes and raise on all fatal placement conditions.
-
-    Returns a :class:`_DependencyPlacement` when the missing dependency is in
-    the plan and is ordered before the current crate. Raises the context
-    exception class for every other case.
-
-    Returns
-    -------
-    _DependencyPlacement
-        The resolved current and missing publish-order indexes and the
-        canonicalised missing dependency name.
-    """
+    """Resolve both crate indexes and raise on all fatal placement conditions."""
     publishable_name_indexes: dict[str, int] = {
         _canonical_crate_name(entry.name): index
         for index, entry in enumerate(handling.plan.publishable)
