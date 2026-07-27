@@ -77,7 +77,22 @@ def disable_publish_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
 def stub_lockfile_regeneration(
     request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Avoid invoking Cargo or git from manifest-focused bump tests."""
+    """Stub lockfile operations for manifest-focused bump test modules.
+
+    Parameters
+    ----------
+    request : pytest.FixtureRequest
+        Active test request used to identify the containing test module.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to replace lockfile discovery and regeneration helpers.
+
+    Returns
+    -------
+    None
+        Modules outside ``_LOCKFILE_STUB_MODULES`` are left unchanged; selected
+        modules receive deterministic helpers that avoid invoking Git or Cargo.
+
+    """
     if request.module.__name__.rsplit(".", 1)[-1] not in _LOCKFILE_STUB_MODULES:
         return
     monkeypatch.setattr(

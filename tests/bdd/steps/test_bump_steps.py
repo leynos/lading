@@ -50,6 +50,21 @@ def given_workspace_has_nested_tracked_lockfile(
 
     The nested package is not listed in ``bump.lockfile_manifests``; bump must
     discover it from the git index and refresh it anyway.
+
+    Parameters
+    ----------
+    cmd_mox : CmdMox
+        Command-double fixture used to stub Git, Cargo, and metadata commands.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to install the Cargo command shim for the scenario.
+    workspace_directory : Path
+        Temporary workspace containing the root and nested lockfiles.
+
+    Returns
+    -------
+    None
+        This step configures the workspace and command doubles in place.
+
     """
     from tests.helpers.workspace_helpers import install_cargo_stub
 
@@ -68,7 +83,7 @@ def given_workspace_has_nested_tracked_lockfile(
         stderr="",
     )
     # Stubs dispatch by command name alone, so one argless registration covers
-    # the root and nested manifest invocations alike.
+    # both invocations. The scenario's Then step verifies their exact arguments.
     cmd_mox.stub("cargo::update").returns(
         exit_code=0, stdout="cargo update --workspace\n", stderr=""
     )
@@ -205,6 +220,52 @@ def then_bump_refreshed_lockfiles(cli_run: dict[str, typ.Any]) -> None:
     assert cli_run["returncode"] == 0
     output = f"{cli_run['stdout']}\n{cli_run['stderr']}"
     assert "cargo update --workspace" in output
+
+
+@then("the bump command refreshed workspace and nested tracked lockfiles")
+def then_bump_refreshed_workspace_and_nested_lockfiles(
+    cli_run: dict[str, typ.Any],
+    cmd_mox: CmdMox,
+    workspace_directory: Path,
+) -> None:
+    """Assert Cargo refreshed the root and discovered nested lockfiles.
+
+    Parameters
+    ----------
+    cli_run : dict[str, Any]
+        Captured result of the completed ``lading bump`` invocation.
+    cmd_mox : CmdMox
+        Command-double fixture whose journal records Cargo update calls.
+    workspace_directory : Path
+        Temporary workspace used to derive the expected manifest paths.
+
+    Returns
+    -------
+    None
+        This step only asserts the recorded command invocations.
+
+    """
+    assert cli_run["returncode"] == 0
+    update_args = [
+        tuple(invocation.args)
+        for invocation in cmd_mox.journal
+        if invocation.command == "cargo::update"
+    ]
+    expected_args = [
+        (
+            "--workspace",
+            "--manifest-path",
+            str(workspace_directory / "Cargo.toml"),
+        ),
+        (
+            "--workspace",
+            "--manifest-path",
+            str(workspace_directory / "fixtures/minimal/Cargo.toml"),
+        ),
+    ]
+    assert update_args == expected_args, (
+        f"expected distinct root and nested Cargo updates; got {update_args!r}"
+    )
 
 
 @then("the bump command did not refresh tracked lockfiles")

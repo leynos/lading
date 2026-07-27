@@ -42,7 +42,7 @@ Feature: Lading CLI scaffolding
     When I invoke lading bump 1.2.3 with that workspace
     Then the CLI output lists lockfile path "- Cargo.lock (lockfile)"
     And the CLI output lists lockfile path "- fixtures/minimal/Cargo.lock (lockfile)"
-    And the bump command refreshed tracked lockfiles
+    And the bump command refreshed workspace and nested tracked lockfiles
 
   Scenario: Bump dry-run does not modify lockfiles
     Given a workspace directory with configuration
