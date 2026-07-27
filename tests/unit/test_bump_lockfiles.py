@@ -50,6 +50,7 @@ class _RecordingRunner:
         self.invocations.append(_Invocation(command=tuple(command), cwd=cwd))
         return self.result
 
+
 def _write_manifest(directory: Path) -> None:
     """Create ``directory`` with a placeholder ``Cargo.toml`` inside it."""
     directory.mkdir(parents=True, exist_ok=True)
@@ -57,6 +58,7 @@ def _write_manifest(directory: Path) -> None:
         '[package]\nname = "placeholder"\nversion = "0.1.0"\n',
         encoding="utf-8",
     )
+
 
 @st.composite
 def _manifest_merge_cases(
@@ -91,6 +93,8 @@ def _manifest_merge_cases(
         f"{directory}/Cargo.lock" for directory in discovered_directories
     )
     return configured, discovered
+
+
 def test_merge_discovered_manifests_appends_tracked_manifests(
     tmp_path: Path,
 ) -> None:
@@ -124,6 +128,7 @@ def test_merge_discovered_manifests_appends_tracked_manifests(
         )
     ], f"unexpected git invocations: {runner.invocations!r}"
 
+
 def test_merge_discovered_manifests_deduplicates_configured_forms(
     tmp_path: Path,
 ) -> None:
@@ -140,6 +145,7 @@ def test_merge_discovered_manifests_deduplicates_configured_forms(
     assert merged == ("./fixtures/minimal/Cargo.toml",), (
         f"equivalent configured manifest was re-appended: {merged!r}"
     )
+
 
 def test_merge_discovered_manifests_returns_configured_outside_git(
     tmp_path: Path,
@@ -162,6 +168,7 @@ def test_merge_discovered_manifests_returns_configured_outside_git(
     assert merged == ("crates/ui/Cargo.toml",), (
         f"non-git fallback changed configured manifests: {merged!r}"
     )
+
 
 @given(case=_manifest_merge_cases())
 @settings(max_examples=80, deadline=None)
@@ -200,6 +207,7 @@ def test_merge_discovered_manifests_preserves_order_and_deduplicates(
             (workspace_root / manifest).resolve() for manifest in merged
         }) == len(merged), f"merge retained equivalent manifest paths: {merged!r}"
 
+
 @given(
     configured=st.lists(
         st.from_regex(r"(?:\./)?[a-z][a-z0-9]{0,7}/Cargo\.toml", fullmatch=True),
@@ -223,6 +231,8 @@ def test_merge_discovered_manifests_non_git_fallback_is_identity(
     assert len(runner.invocations) == 1, (
         f"non-git discovery should invoke git once: {runner.invocations!r}"
     )
+
+
 def test_regenerate_lockfiles_includes_workspace_manifest(tmp_path: Path) -> None:
     """The workspace root manifest should always be regenerated."""
     runner = _RecordingRunner()
