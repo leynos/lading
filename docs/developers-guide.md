@@ -961,9 +961,13 @@ operator-facing description of the variable and its failure modes.
 
 `lading.utils.commands.LADING_CATALOGUE` is the staged cuprum programme
 catalogue (cargo, git). It is intentionally not yet wired into the execution
-path — the subprocess runner still spawns processes directly — and becomes live
-with the [Phase 5 runner-migration steps](./roadmap.md). Treat it as a
-registration point, not as active allowlist enforcement.
+path — `publish_execution._invoke` still delegates to the subprocess runner,
+which spawns processes directly. It becomes live with the [Phase 5.2
+publish-execution migration](./roadmap.md), which rewires
+`publish_execution.py` command execution (the roadmap's
+`_invoke_via_subprocess()` step) onto the catalogue's
+`scoped(allowlist=…)` model. Treat it as a registration point, not as
+active allowlist enforcement.
 
 #### Subprocess invocation logging
 
