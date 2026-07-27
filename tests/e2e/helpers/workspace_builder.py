@@ -51,6 +51,24 @@ def create_nontrivial_workspace(
     _write_lading_config(workspace_root)
     _write_workspace_readme(workspace_root, crate_names, version=version)
 
+    manifests = _create_fixture_crates(workspace_root, version=version)
+
+    metadata_payload = _build_cargo_metadata_payload(
+        workspace_root,
+        version=version,
+        manifests=manifests,
+    )
+
+    return NonTrivialWorkspace(
+        root=workspace_root,
+        version=version,
+        crate_names=crate_names,
+        cargo_metadata_payload=metadata_payload,
+    )
+
+
+def _create_fixture_crates(workspace_root: Path, *, version: str) -> dict[str, Path]:
+    """Create the fixture crates and return their manifest paths."""
     core_manifest = _create_crate(
         workspace_root,
         "core",
@@ -86,23 +104,11 @@ def create_nontrivial_workspace(
             """
         ).strip(),
     )
-
-    metadata_payload = _build_cargo_metadata_payload(
-        workspace_root,
-        version=version,
-        manifests={
-            "core": core_manifest,
-            "utils": utils_manifest,
-            "app": app_manifest,
-        },
-    )
-
-    return NonTrivialWorkspace(
-        root=workspace_root,
-        version=version,
-        crate_names=crate_names,
-        cargo_metadata_payload=metadata_payload,
-    )
+    return {
+        "core": core_manifest,
+        "utils": utils_manifest,
+        "app": app_manifest,
+    }
 
 
 def _write_workspace_manifest(
