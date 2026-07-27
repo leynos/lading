@@ -158,6 +158,14 @@ extend-ignore = [
 # off here so the docstrings can document the true exception type.
 "tests/e2e/helpers/e2e_steps_helpers.py" = ["DOC501", "DOC502"]
 "tests/e2e/steps/test_e2e_steps.py" = ["DOC501", "DOC502"]
+# These functions propagate exceptions from delegated helpers rather than
+# raising directly (e.g. subprocess_runner via split_command/_spawn_process,
+# transpose_readme_to_crate via _load_source_text). pydoclint (DOC501/DOC502)
+# only tracks direct raises, so it cannot express the accurate propagated
+# contract. Scope those two rules off so the docstrings can document the
+# exceptions a caller must still handle.
+"lading/runtime/subprocess_runner.py" = ["DOC501", "DOC502"]
+"lading/commands/bump_readme.py" = ["DOC501", "DOC502"]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 8

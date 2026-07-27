@@ -78,6 +78,12 @@ def subprocess_runner(
     tuple[int, str, str]
         Exit code, captured stdout, and captured stderr.
 
+    Raises
+    ------
+    ValueError
+        If ``command`` is empty.
+    CommandSpawnError
+        If the program cannot be spawned.
     """
     log_command_invocation(_LOGGER, command, cwd)
     program, args = split_command(command)
@@ -176,6 +182,10 @@ def invoke_via_subprocess(
     tuple[int, str, str]
         Exit code, captured stdout, and captured stderr.
 
+    Raises
+    ------
+    CommandSpawnError
+        If ``program`` cannot be spawned.
     """
     command = (program, *args)
     # The command line itself is logged once, at INFO, by
@@ -300,6 +310,13 @@ def write_to_sink(sink: typ.TextIO | None, payload: str) -> typ.TextIO | None:
     TextIO | None
         The original sink when it remains usable, otherwise :data:`None`.
 
+    Raises
+    ------
+    OSError
+        If writing to or flushing ``sink`` fails for a reason other than a
+        broken pipe.
+    ValueError
+        If writing to or flushing a closed ``sink`` fails.
     """
     if sink is None or not payload:
         return sink

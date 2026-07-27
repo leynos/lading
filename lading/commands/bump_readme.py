@@ -223,6 +223,11 @@ def transpose_readme_to_crate(
         The target README path when it was, or would be, created or modified;
         otherwise ``None``.
 
+    Raises
+    ------
+    ReadmeTranspositionError
+        If the workspace README is unavailable or the crate lies outside
+        ``workspace_root``.
     """
     _log.debug("Transposing workspace README into crate %r", crate.name)
     source_readme = workspace_root / "README.md"

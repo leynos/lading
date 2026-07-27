@@ -60,6 +60,12 @@ def optional_mapping(
     -------
     collections.abc.Mapping[str, typing.Any] | None
         The mapping, or ``None`` when ``value`` is ``None``.
+
+    Raises
+    ------
+    _reject
+        If a non-``None`` value is not a mapping; the supplied ``error``
+        factory constructs the raised exception.
     """
     if value is None:
         return None
