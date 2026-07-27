@@ -304,7 +304,20 @@ def _process_documentation_files(
 
 
 def _process_readme_transposition(context: _BumpContext, *, dry_run: bool) -> set[Path]:
-    """Transpose workspace README files into opted-in member crates."""
+    """Transpose workspace README files into opted-in member crates.
+
+    Returns
+    -------
+    set[Path]
+        The crate README paths that were written, or that were reported as
+        would be written during a dry run.
+
+    Raises
+    ------
+    ReadmeTranspositionError
+        Propagated from :func:`bump_readme.transpose_readme_to_crate` when a
+        crate's README transposition fails; re-raised here after logging.
+    """
     LOGGER.debug("Starting workspace README transposition")
     changed_readmes: set[Path] = set()
     transposed_entry_count = 0
