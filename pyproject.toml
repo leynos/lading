@@ -142,6 +142,14 @@ extend-ignore = [
 [tool.ruff.lint.per-file-ignores]
 "**/test_*.py" = ["S101", "PLR0913", "PLR0917", "PLR2004", "PLR6301"]
 "tests/bdd/steps/*.py" = ["S101", "PLR0913", "PLR0917", "PLR2004", "PLR6301"]
+# The TOML-coercion helpers raise through the ``_reject`` factory, which
+# returns the caller-injected ``error`` (a ``LadingError`` subclass) for the
+# caller to raise. pydoclint (DOC501/DOC502) keys the ``Raises`` type token on
+# the syntactic raise-callable (``_reject``) and cannot resolve it to the real
+# exception, so it cannot express the accurate ``LadingError`` contract. Scope
+# those two rules off here so the docstrings can document the true exception.
+"lading/toml_coerce/_mappings.py" = ["DOC501", "DOC502"]
+"lading/toml_coerce/_scalars.py" = ["DOC501", "DOC502"]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 8

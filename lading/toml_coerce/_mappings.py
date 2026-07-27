@@ -29,8 +29,10 @@ def expect_mapping(
 
     Raises
     ------
-    _reject
-        When ``value`` is not a :class:`collections.abc.Mapping`.
+    LadingError
+        The configured ``error`` subclass, constructed by the injected
+        ``error`` factory, when ``value`` is not a
+        :class:`collections.abc.Mapping`.
     """
     match value:
         case cabc.Mapping():
@@ -104,8 +106,9 @@ def string_mapping(
 
     Raises
     ------
-    _reject
-        When ``value`` is not a TOML table.
+    LadingError
+        The configured ``error`` subclass, constructed by the injected
+        ``error`` factory, when ``value`` is not a TOML table.
     """
     match value:
         case None:
