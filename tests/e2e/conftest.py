@@ -26,6 +26,13 @@ def e2e_workspace_root(tmp_path: Path) -> Path:
     -------
     Path
         The created workspace directory.
+
+    Examples
+    --------
+    Requested by tests needing an empty workspace directory::
+
+        >>> def test_root_exists(e2e_workspace_root):  # doctest: +SKIP
+        ...     assert e2e_workspace_root.is_dir()
     """
     workspace_root = tmp_path / "workspace"
     workspace_root.mkdir(parents=True, exist_ok=True)
@@ -45,6 +52,13 @@ def e2e_workspace(e2e_workspace_root: Path) -> workspace_builder.NonTrivialWorks
     -------
     workspace_builder.NonTrivialWorkspace
         The constructed workspace fixture.
+
+    Examples
+    --------
+    Requested by tests needing a populated Cargo workspace::
+
+        >>> def test_has_crates(e2e_workspace):  # doctest: +SKIP
+        ...     assert e2e_workspace.crate_names
     """
     return workspace_builder.create_nontrivial_workspace(e2e_workspace_root)
 
@@ -62,6 +76,13 @@ def e2e_git_repo(e2e_workspace: workspace_builder.NonTrivialWorkspace) -> Path:
     -------
     Path
         The repository root.
+
+    Examples
+    --------
+    Requested by tests needing a committed Git repository::
+
+        >>> def test_repo_initialised(e2e_git_repo):  # doctest: +SKIP
+        ...     assert (e2e_git_repo / ".git").is_dir()
     """
     repo_root = e2e_workspace.root
     git_helpers.git_init(repo_root)
@@ -89,6 +110,14 @@ def e2e_workspace_with_git(
     -------
     tuple[workspace_builder.NonTrivialWorkspace, Path]
         The workspace fixture and its repository root.
+
+    Examples
+    --------
+    Requested by steps needing both the workspace and its repository root::
+
+        >>> def test_pairs(e2e_workspace_with_git):  # doctest: +SKIP
+        ...     workspace, repo_root = e2e_workspace_with_git
+        ...     assert workspace.root == repo_root
     """
     return e2e_workspace, e2e_git_repo
 

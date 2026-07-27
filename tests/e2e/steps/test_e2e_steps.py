@@ -98,6 +98,17 @@ def given_nontrivial_workspace_in_git_repo(
     unsupported_fixture_version
         An :class:`E2EExpectationError` when ``version`` is not the supported
         fixture version.
+
+    Examples
+    --------
+    Bound to the Gherkin ``given`` step and invoked by pytest-bdd; the
+    returned mapping seeds later steps as the ``e2e_state`` fixture::
+
+        >>> state = given_nontrivial_workspace_in_git_repo(  # doctest: +SKIP
+        ...     "0.1.0", cmd_mox, monkeypatch, e2e_workspace_with_git
+        ... )
+        >>> sorted(state)  # doctest: +SKIP
+        ['git_repo', 'workspace']
     """
     if version != "0.1.0":
         raise E2EExpectationError.unsupported_fixture_version(version)
@@ -187,7 +198,19 @@ def when_run_lading_bump(
     Returns
     -------
     dict[str, typ.Any]
-        The captured CLI result (return code, stdout, and stderr).
+        The captured CLI result mapping with the executed ``command``,
+        ``returncode``, ``stdout``, ``stderr``, and ``workspace_root``.
+
+    Examples
+    --------
+    Bound to the Gherkin ``when`` step and invoked by pytest-bdd; the
+    returned mapping is exposed as the ``cli_run`` fixture::
+
+        >>> result = when_run_lading_bump(  # doctest: +SKIP
+        ...     repo_root, e2e_state, "1.0.0"
+        ... )
+        >>> result["returncode"]  # doctest: +SKIP
+        0
     """
     return _run_lading_in_e2e_workspace(repo_root, e2e_state, "bump", version)
 
@@ -219,7 +242,17 @@ def when_run_lading_publish(
     Returns
     -------
     dict[str, typ.Any]
-        The captured CLI result (return code, stdout, and stderr).
+        The captured CLI result mapping with the executed ``command``,
+        ``returncode``, ``stdout``, ``stderr``, and ``workspace_root``.
+
+    Examples
+    --------
+    Bound to the Gherkin ``when`` step and invoked by pytest-bdd; the
+    returned mapping is exposed as the ``cli_run`` fixture::
+
+        >>> result = when_run_lading_publish(repo_root, e2e_state)  # doctest: +SKIP
+        >>> result["returncode"]  # doctest: +SKIP
+        0
     """
     return _run_lading_in_e2e_workspace(
         repo_root, e2e_state, "publish", "--forbid-dirty"
@@ -243,7 +276,19 @@ def when_run_lading_publish_allow_dirty(
     Returns
     -------
     dict[str, typ.Any]
-        The captured CLI result (return code, stdout, and stderr).
+        The captured CLI result mapping with the executed ``command``,
+        ``returncode``, ``stdout``, ``stderr``, and ``workspace_root``.
+
+    Examples
+    --------
+    Bound to the Gherkin ``when`` step and invoked by pytest-bdd; the
+    returned mapping is exposed as the ``cli_run`` fixture::
+
+        >>> result = when_run_lading_publish_allow_dirty(  # doctest: +SKIP
+        ...     repo_root, e2e_state
+        ... )
+        >>> result["returncode"]  # doctest: +SKIP
+        0
     """
     return _run_lading_in_e2e_workspace(repo_root, e2e_state, "publish")
 
@@ -324,6 +369,13 @@ def then_publish_order(publish_spies: dict[str, typ.Any], expected: str) -> None
         Recorded publish invocation state produced by the stub handlers.
     expected : str
         Comma-separated crate names parsed from the scenario step.
+
+    Examples
+    --------
+    Bound to the Gherkin ``then`` step and invoked by pytest-bdd against the
+    recorded ``publish_spies`` state::
+
+        >>> then_publish_order(publish_spies, "core, utils, app")  # doctest: +SKIP
     """
     expected_names = [name.strip() for name in expected.split(",") if name.strip()]
     package_calls = filter_records(publish_spies, "cargo::package")

@@ -89,7 +89,7 @@ def _construct_command_with_args(
     program: Program,
     args: str,
 ) -> SafeCmd:
-    """Construct a command builder bound to the parsed arguments."""
+    """Construct and return a ``SafeCmd`` from the parsed arguments."""
     from cuprum import scoped, sh
 
     parsed_args = _parse_quoted_args(args)

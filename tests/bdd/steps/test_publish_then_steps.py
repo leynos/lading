@@ -356,7 +356,24 @@ def then_publish_packages_crates_in_order(
     preflight_recorder: _PreflightInvocationRecorder,
     crate_names: str,
 ) -> None:
-    """Assert that cargo package ran for each crate in publish order."""
+    """Assert that cargo package ran for each crate in publish order.
+
+    Parameters
+    ----------
+    preflight_recorder : _PreflightInvocationRecorder
+        Recorder holding the captured pre-flight command invocations.
+    crate_names : str
+        Comma-separated crate names in their expected package order.
+
+    Examples
+    --------
+    >>> from tests.bdd.steps.test_publish_infrastructure import (
+    ...     _PreflightInvocationRecorder,
+    ... )
+    >>> recorder = _PreflightInvocationRecorder()
+    >>> recorder.record("cargo::package", (), {"PWD": "/w/alpha"})
+    >>> then_publish_packages_crates_in_order(recorder, "alpha")
+    """
     expected = [name.strip() for name in crate_names.split(",") if name.strip()]
     invocations = _get_required_invocations(
         preflight_recorder,
@@ -375,7 +392,24 @@ def then_publish_packages_crates_in_order(
 def then_publish_runs_dry_run(
     preflight_recorder: _PreflightInvocationRecorder, crate_names: str
 ) -> None:
-    """Assert that cargo publish --dry-run runs for each crate in order."""
+    """Assert that cargo publish --dry-run runs for each crate in order.
+
+    Parameters
+    ----------
+    preflight_recorder : _PreflightInvocationRecorder
+        Recorder holding the captured pre-flight command invocations.
+    crate_names : str
+        Comma-separated crate names in their expected publish order.
+
+    Examples
+    --------
+    >>> from tests.bdd.steps.test_publish_infrastructure import (
+    ...     _PreflightInvocationRecorder,
+    ... )
+    >>> recorder = _PreflightInvocationRecorder()
+    >>> recorder.record("cargo::publish", ("--dry-run",), {"PWD": "/w/alpha"})
+    >>> then_publish_runs_dry_run(recorder, "alpha")
+    """
     expected = _split_names(crate_names)
     invocations = _get_required_invocations(
         preflight_recorder,
@@ -395,7 +429,24 @@ def then_publish_runs_dry_run(
 def then_publish_runs_live(
     preflight_recorder: _PreflightInvocationRecorder, crate_names: str
 ) -> None:
-    """Assert that live cargo publish runs without the dry-run flag."""
+    """Assert that live cargo publish runs without the dry-run flag.
+
+    Parameters
+    ----------
+    preflight_recorder : _PreflightInvocationRecorder
+        Recorder holding the captured pre-flight command invocations.
+    crate_names : str
+        Comma-separated crate names in their expected publish order.
+
+    Examples
+    --------
+    >>> from tests.bdd.steps.test_publish_infrastructure import (
+    ...     _PreflightInvocationRecorder,
+    ... )
+    >>> recorder = _PreflightInvocationRecorder()
+    >>> recorder.record("cargo::publish", (), {"PWD": "/w/alpha"})
+    >>> then_publish_runs_live(recorder, "alpha")
+    """
     expected = _split_names(crate_names)
     invocations = _get_required_invocations(
         preflight_recorder,

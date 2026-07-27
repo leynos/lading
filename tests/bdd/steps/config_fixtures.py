@@ -51,6 +51,13 @@ def given_workspace_directory(tmp_path: Path) -> Path:
     -------
     Path
         The workspace root containing a minimal configuration file.
+
+    Examples
+    --------
+    >>> import pathlib, tempfile
+    >>> root = given_workspace_directory(pathlib.Path(tempfile.mkdtemp()))
+    >>> (root / "lading.toml").exists()
+    True
     """
     config_path = tmp_path / config_module.CONFIG_FILENAME
     config_path.write_text(
@@ -75,6 +82,15 @@ def given_workspace_without_configuration(tmp_path: Path) -> Path:
     -------
     Path
         The bare workspace root directory.
+
+    Examples
+    --------
+    >>> import pathlib, tempfile
+    >>> root = given_workspace_without_configuration(
+    ...     pathlib.Path(tempfile.mkdtemp())
+    ... )
+    >>> (root / "lading.toml").exists()
+    False
     """
     return tmp_path
 
@@ -94,6 +110,14 @@ def given_documentation_glob(workspace_directory: Path, pattern: str) -> None:
     ------
     AssertionError
         If the existing ``globs`` value is not an array.
+
+    Examples
+    --------
+    >>> import pathlib, tempfile
+    >>> ws = pathlib.Path(tempfile.mkdtemp())
+    >>> given_documentation_glob(ws, "docs/*.md")
+    >>> "docs/*.md" in (ws / "lading.toml").read_text()
+    True
     """
     config_path = workspace_directory / config_module.CONFIG_FILENAME
     document = toml_utils.load_or_create_document(config_path)
@@ -218,6 +242,14 @@ def given_preflight_aux_build_command(workspace_directory: Path, command: str) -
     ------
     AssertionError
         If the command contains no tokens.
+
+    Examples
+    --------
+    >>> import pathlib, tempfile
+    >>> ws = pathlib.Path(tempfile.mkdtemp())
+    >>> given_preflight_aux_build_command(ws, "cargo build --tests")
+    >>> "aux_build" in (ws / "lading.toml").read_text()
+    True
     """
     tokens = [segment for segment in command.split() if segment]
     if not tokens:
@@ -290,6 +322,14 @@ def given_preflight_stderr_tail_lines(workspace_directory: Path, count: int) -> 
     ------
     AssertionError
         If ``count`` is negative.
+
+    Examples
+    --------
+    >>> import pathlib, tempfile
+    >>> ws = pathlib.Path(tempfile.mkdtemp())
+    >>> given_preflight_stderr_tail_lines(ws, 20)
+    >>> "stderr_tail_lines = 20" in (ws / "lading.toml").read_text()
+    True
     """
     if count < 0:
         message = "stderr tail lines must be non-negative"

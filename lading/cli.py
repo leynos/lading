@@ -246,6 +246,12 @@ def main(argv: cabc.Sequence[str] | None = None) -> int:
     -------
     int
         The process exit code.
+
+    Examples
+    --------
+    >>> from lading.cli import main
+    >>> main(["bump", "1.2.3", "--dry-run"])  # doctest: +SKIP
+    0
     """
     try:
         if argv is None:
@@ -339,6 +345,12 @@ def bump(
     -------
     str
         The rendered summary of the bump operation.
+
+    Examples
+    --------
+    >>> from lading.cli import bump
+    >>> print(bump("1.2.3", dry_run=True))  # doctest: +SKIP
+    Bumped workspace manifests to 1.2.3 (dry run)
     """
     resolved = normalise_workspace_root(workspace_root)
     return _run_with_context(
@@ -393,6 +405,12 @@ def publish(
     -------
     str
         The rendered summary of the publish operation.
+
+    Examples
+    --------
+    >>> from lading.cli import publish
+    >>> print(publish(live=False))  # doctest: +SKIP
+    Publish dry run complete
     """
     resolved = normalise_workspace_root(workspace_root)
     return _run_with_context(

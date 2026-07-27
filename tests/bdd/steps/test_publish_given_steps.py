@@ -244,6 +244,13 @@ def given_preflight_command_override(
     ------
     AssertionError
         If ``command`` yields no tokens once split.
+
+    Examples
+    --------
+    >>> overrides: dict[tuple[str, ...], object] = {}
+    >>> given_preflight_command_override(overrides, "cargo check", "1", "boom")
+    >>> overrides["cargo", "check"].exit_code
+    1
     """
     if tokens := tuple(segment for segment in command.split() if segment):
         preflight_overrides[tokens] = _CommandResponse(
@@ -276,6 +283,14 @@ def given_valid_lading_workspace(
     -------
     Path
         The workspace root directory.
+
+    Examples
+    --------
+    >>> workspace = given_valid_lading_workspace(  # doctest: +SKIP
+    ...     tmp_path, cmd_mox, monkeypatch
+    ... )
+    >>> (workspace / "lading.toml").exists()  # doctest: +SKIP
+    True
     """
     from lading import config as config_module
 

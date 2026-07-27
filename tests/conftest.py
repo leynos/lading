@@ -31,6 +31,11 @@ def repo_root() -> Path:
     -------
     Path
         Absolute path to the repository root.
+
+    Examples
+    --------
+    >>> def test_reads_project(repo_root):  # doctest: +SKIP
+    ...     assert (repo_root / "pyproject.toml").exists()
     """
     return Path(__file__).resolve().parent.parent
 
@@ -63,6 +68,12 @@ def write_config(tmp_path: Path) -> cabc.Callable[[str], Path]:
     -------
     cabc.Callable[[str], Path]
         Callable that writes the given body and returns the config path.
+
+    Examples
+    --------
+    >>> def test_writes_config(write_config):  # doctest: +SKIP
+    ...     path = write_config("[bump]")
+    ...     assert path.read_text().startswith("[bump]")
     """
     from lading import config as config_module
 
@@ -87,6 +98,11 @@ def minimal_config(write_config: cabc.Callable[[str], Path]) -> Path:
     -------
     Path
         Path to the written configuration file.
+
+    Examples
+    --------
+    >>> def test_loads_minimal(minimal_config):  # doctest: +SKIP
+    ...     assert minimal_config.name == "lading.toml"
     """
     return write_config(
         """

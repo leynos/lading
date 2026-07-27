@@ -9,8 +9,7 @@ import pytest
 
 from lading.commands import publish
 from tests.unit.conftest import (
-    PreparationFixtures,
-    PrepareWorkspaceFixtures,
+    PublishFixtures,
     _CrateSpec,
 )
 
@@ -161,21 +160,22 @@ def test_copy_workspace_tree_symlink_handling(
 
 
 def test_prepare_workspace_does_not_stage_workspace_readme(
-    prepare_workspace_fixtures: PrepareWorkspaceFixtures,
-    preparation_fixtures: PreparationFixtures,
+    publish_fixtures: PublishFixtures,
 ) -> None:
     """Publish staging leaves workspace README adoption to bump."""
-    fx = prepare_workspace_fixtures
-    pf = preparation_fixtures
-    workspace_root = fx.tmp_path / "workspace"
+    workspace_root = publish_fixtures.tmp_path / "workspace"
     workspace_root.mkdir()
     readme = workspace_root / "README.md"
     readme.write_text("Workspace README", encoding="utf-8")
-    crate = pf.make_crate(workspace_root, "alpha", _CrateSpec(readme_workspace=True))
-    workspace = pf.make_workspace(workspace_root, crate)
-    configuration = pf.make_config()
+    crate = publish_fixtures.make_crate(
+        workspace_root, "alpha", _CrateSpec(readme_workspace=True)
+    )
+    workspace = publish_fixtures.make_workspace(workspace_root, crate)
+    configuration = publish_fixtures.make_config()
     plan = publish.plan_publication(workspace, configuration)
-    preparation = publish.prepare_workspace(plan, workspace, options=fx.publish_options)
+    preparation = publish.prepare_workspace(
+        plan, workspace, options=publish_fixtures.publish_options
+    )
 
     staging_root = preparation.staging_root
     assert staging_root.exists()
@@ -188,19 +188,16 @@ def test_prepare_workspace_does_not_stage_workspace_readme(
 
 def test_prepare_workspace_registers_cleanup(
     monkeypatch: pytest.MonkeyPatch,
-    prepare_workspace_fixtures: PrepareWorkspaceFixtures,
-    preparation_fixtures: PreparationFixtures,
+    publish_fixtures: PublishFixtures,
 ) -> None:
     """Cleanup-enabled staging registers an atexit handler."""
-    fx = prepare_workspace_fixtures
-    pf = preparation_fixtures
-    workspace_root = fx.tmp_path / "workspace"
+    workspace_root = publish_fixtures.tmp_path / "workspace"
     workspace_root.mkdir()
-    crate = pf.make_crate(workspace_root, "alpha")
-    workspace = pf.make_workspace(workspace_root, crate)
-    plan = publish.plan_publication(workspace, pf.make_config())
+    crate = publish_fixtures.make_crate(workspace_root, "alpha")
+    workspace = publish_fixtures.make_workspace(workspace_root, crate)
+    plan = publish.plan_publication(workspace, publish_fixtures.make_config())
 
-    build_directory = fx.publish_options.build_directory
+    build_directory = publish_fixtures.publish_options.build_directory
     registered: list[cabc.Callable[[], None]] = []
 
     def capture(callback: cabc.Callable[[], None]) -> None:
@@ -232,64 +229,59 @@ def test_prepare_workspace_registers_cleanup(
     ],
 )
 def test_prepare_workspace_returns_empty_copied_readmes(
-    prepare_workspace_fixtures: PrepareWorkspaceFixtures,
-    preparation_fixtures: PreparationFixtures,
+    publish_fixtures: PublishFixtures,
     crate_spec: _CrateSpec,
 ) -> None:
     """Staging reports no copied READMEs regardless of readme opt-in status."""
-    fx = prepare_workspace_fixtures
-    pf = preparation_fixtures
-    workspace_root = fx.tmp_path / "workspace"
+    workspace_root = publish_fixtures.tmp_path / "workspace"
     workspace_root.mkdir()
-    crate = pf.make_crate(workspace_root, "alpha", crate_spec)
-    workspace = pf.make_workspace(workspace_root, crate)
-    configuration = pf.make_config()
+    crate = publish_fixtures.make_crate(workspace_root, "alpha", crate_spec)
+    workspace = publish_fixtures.make_workspace(workspace_root, crate)
+    configuration = publish_fixtures.make_config()
     plan = publish.plan_publication(workspace, configuration)
 
-    preparation = publish.prepare_workspace(plan, workspace, options=fx.publish_options)
+    preparation = publish.prepare_workspace(
+        plan, workspace, options=publish_fixtures.publish_options
+    )
 
     assert preparation.staging_root.exists()
     assert preparation.copied_readmes == ()
 
 
 def test_prepare_workspace_keeps_copied_readmes_empty_for_opted_in_crates(
-    prepare_workspace_fixtures: PrepareWorkspaceFixtures,
-    preparation_fixtures: PreparationFixtures,
+    publish_fixtures: PublishFixtures,
 ) -> None:
     """Readme opt-in does not produce publish-time copied paths."""
-    fx = prepare_workspace_fixtures
-    pf = preparation_fixtures
-    workspace_root = fx.tmp_path / "workspace"
+    workspace_root = publish_fixtures.tmp_path / "workspace"
     workspace_root.mkdir()
     readme = workspace_root / "README.md"
     readme.write_text("Workspace", encoding="utf-8")
-    crate_alpha = pf.make_crate(
+    crate_alpha = publish_fixtures.make_crate(
         workspace_root, "alpha", _CrateSpec(readme_workspace=True)
     )
-    crate_beta = pf.make_crate(
+    crate_beta = publish_fixtures.make_crate(
         workspace_root, "beta", _CrateSpec(readme_workspace=True)
     )
-    workspace = pf.make_workspace(workspace_root, crate_alpha, crate_beta)
-    plan = publish.plan_publication(workspace, pf.make_config())
+    workspace = publish_fixtures.make_workspace(workspace_root, crate_alpha, crate_beta)
+    plan = publish.plan_publication(workspace, publish_fixtures.make_config())
 
-    preparation = publish.prepare_workspace(plan, workspace, options=fx.publish_options)
+    preparation = publish.prepare_workspace(
+        plan, workspace, options=publish_fixtures.publish_options
+    )
 
     assert preparation.copied_readmes == ()
 
 
 def test_prepare_workspace_does_not_register_cleanup_when_disabled(
     monkeypatch: pytest.MonkeyPatch,
-    prepare_workspace_fixtures: PrepareWorkspaceFixtures,
-    preparation_fixtures: PreparationFixtures,
+    publish_fixtures: PublishFixtures,
 ) -> None:
     """Cleanup hook is not registered when the option remains disabled."""
-    fx = prepare_workspace_fixtures
-    pf = preparation_fixtures
-    workspace_root = fx.tmp_path / "workspace"
+    workspace_root = publish_fixtures.tmp_path / "workspace"
     workspace_root.mkdir()
-    crate = pf.make_crate(workspace_root, "alpha")
-    workspace = pf.make_workspace(workspace_root, crate)
-    plan = publish.plan_publication(workspace, pf.make_config())
+    crate = publish_fixtures.make_crate(workspace_root, "alpha")
+    workspace = publish_fixtures.make_workspace(workspace_root, crate)
+    plan = publish.plan_publication(workspace, publish_fixtures.make_config())
 
     registered: list[cabc.Callable[[], None]] = []
 
@@ -298,6 +290,6 @@ def test_prepare_workspace_does_not_register_cleanup_when_disabled(
 
     monkeypatch.setattr(publish.atexit, "register", capture)
 
-    publish.prepare_workspace(plan, workspace, options=fx.publish_options)
+    publish.prepare_workspace(plan, workspace, options=publish_fixtures.publish_options)
 
     assert registered == []

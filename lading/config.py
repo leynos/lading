@@ -83,6 +83,13 @@ class DocumentationConfig:
         DocumentationConfig
             Documentation settings parsed from ``mapping``, or defaults when
             ``mapping`` is ``None``.
+
+        Examples
+        --------
+        >>> DocumentationConfig.from_mapping({"globs": ["docs/*.md"]})
+        DocumentationConfig(globs=('docs/*.md',))
+        >>> DocumentationConfig.from_mapping(None)
+        DocumentationConfig(globs=())
         """
         if mapping is None:
             return cls()
@@ -117,6 +124,13 @@ class BumpConfig:
         BumpConfig
             Bump settings parsed from ``mapping``, or defaults when ``mapping``
             is ``None``.
+
+        Examples
+        --------
+        >>> BumpConfig.from_mapping({"exclude": ["crate-a"]}).exclude
+        ('crate-a',)
+        >>> BumpConfig.from_mapping(None).rebuild_lockfiles
+        True
         """
         if mapping is None:
             return cls()
@@ -159,6 +173,13 @@ class PublishConfig:
         PublishConfig
             Publish settings parsed from ``mapping``, or defaults when
             ``mapping`` is ``None``.
+
+        Examples
+        --------
+        >>> PublishConfig.from_mapping({"order": ["a", "b"]}).order
+        ('a', 'b')
+        >>> PublishConfig.from_mapping(None).strip_patches
+        'per-crate'
         """
         if mapping is None:
             return cls()
@@ -205,6 +226,13 @@ class PreflightConfig:
         PreflightConfig
             Pre-flight settings parsed from ``mapping``, or defaults when
             ``mapping`` is ``None``.
+
+        Examples
+        --------
+        >>> PreflightConfig.from_mapping({"unit_tests_only": True}).unit_tests_only
+        True
+        >>> PreflightConfig.from_mapping(None).stderr_tail_lines
+        40
         """
         if mapping is None:
             return cls()
@@ -262,6 +290,12 @@ class LadingConfig:
         -------
         LadingConfig
             Fully populated configuration with defaults for absent sections.
+
+        Examples
+        --------
+        >>> config = LadingConfig.from_mapping({"bump": {"exclude": ["crate-a"]}})
+        >>> config.bump.exclude
+        ('crate-a',)
         """
         _validate_mapping_keys(
             mapping, set(CONFIG_ROOT_TOML_KEYS), "configuration section"
@@ -314,6 +348,12 @@ def build_loader(workspace_root: Path) -> Toml:
     -------
     Toml
         Loader targeting ``lading.toml`` within the resolved workspace root.
+
+    Examples
+    --------
+    >>> from pathlib import Path
+    >>> build_loader(Path("workspace")).path.name
+    'lading.toml'
     """
     resolved = normalise_workspace_root(workspace_root)
     return Toml(
@@ -341,7 +381,14 @@ def load_from_loader(loader: Toml) -> LadingConfig:
     Raises
     ------
     ConfigurationError
-        If the loader fails or the configuration root is not a TOML table.
+        If reading ``loader.config`` raises :class:`ValueError`, or the parsed
+        configuration root is not a TOML table.
+
+    Examples
+    --------
+    >>> from pathlib import Path
+    >>> load_from_loader(build_loader(Path("workspace")))  # doctest: +SKIP
+    LadingConfig(...)
     """
     try:
         raw = loader.config
@@ -365,6 +412,12 @@ def load_configuration(workspace_root: Path) -> LadingConfig:
     -------
     LadingConfig
         Validated configuration for the given workspace root.
+
+    Examples
+    --------
+    >>> from pathlib import Path
+    >>> load_configuration(Path("workspace"))  # doctest: +SKIP
+    LadingConfig(...)
     """
     loader = build_loader(workspace_root)
     return load_from_loader(loader)

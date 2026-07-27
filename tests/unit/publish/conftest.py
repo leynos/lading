@@ -175,7 +175,9 @@ def make_crate(
 
     Examples
     --------
-    >>> crate = make_crate(tmp_path, "alpha")
+    >>> import tempfile
+    >>> from pathlib import Path
+    >>> crate = make_crate(Path(tempfile.mkdtemp()), "alpha")
     >>> crate.name
     'alpha'
     """
@@ -243,7 +245,9 @@ def make_workspace(root: Path, *crates: WorkspaceCrate) -> WorkspaceGraph:
 
     Examples
     --------
-    >>> workspace = make_workspace(tmp_path)
+    >>> import tempfile
+    >>> from pathlib import Path
+    >>> workspace = make_workspace(Path(tempfile.mkdtemp()))
     >>> len(workspace.crates)
     1
     """
@@ -271,7 +275,9 @@ def make_dependency_chain(
 
     Examples
     --------
-    >>> alpha, beta, gamma = make_dependency_chain(tmp_path)
+    >>> import tempfile
+    >>> from pathlib import Path
+    >>> alpha, beta, gamma = make_dependency_chain(Path(tempfile.mkdtemp()))
     >>> (alpha.name, beta.name, gamma.name)
     ('alpha', 'beta', 'gamma')
     """
@@ -304,7 +310,9 @@ def make_n_crate_chain(root: Path, count: int) -> tuple[WorkspaceCrate, ...]:
 
     Examples
     --------
-    >>> crate_0, crate_1, crate_2 = make_n_crate_chain(root, 3)
+    >>> import tempfile
+    >>> from pathlib import Path
+    >>> crate_0, crate_1, crate_2 = make_n_crate_chain(Path(tempfile.mkdtemp()), 3)
     >>> # crate_0 <- crate_1 <- crate_2: crate_1 depends on crate_0 and
     >>> # crate_2 depends on crate_1.
 
@@ -343,7 +351,10 @@ def plan_with_crates(
 
     Examples
     --------
-    >>> plan = plan_with_crates(tmp_path, (make_crate(tmp_path, "alpha"),))
+    >>> import tempfile
+    >>> from pathlib import Path
+    >>> root = Path(tempfile.mkdtemp())
+    >>> plan = plan_with_crates(root, (make_crate(root, "alpha"),))
     >>> [crate.name for crate in plan.publishable]
     ['alpha']
     """
@@ -370,8 +381,11 @@ def prepare_staging_root(plan: publish.PublishPlan, base_dir: Path) -> Path:
 
     Examples
     --------
-    >>> plan = plan_with_crates(tmp_path, (make_crate(tmp_path, "alpha"),))
-    >>> staging = prepare_staging_root(plan, tmp_path)
+    >>> import tempfile
+    >>> from pathlib import Path
+    >>> root = Path(tempfile.mkdtemp())
+    >>> plan = plan_with_crates(root, (make_crate(root, "alpha"),))
+    >>> staging = prepare_staging_root(plan, root)
     >>> staging.exists()
     True
     """

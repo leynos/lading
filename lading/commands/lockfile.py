@@ -159,10 +159,12 @@ def discover_tracked_lockfiles(
 
     Notes
     -----
-    An empty tuple is returned only when ``workspace_root`` is not a git
-    repository: discovery logs a warning through
-    :func:`_handle_git_ls_files_failure` and returns empty. When ``git
-    ls-files`` exits non-zero for any other reason,
+    An empty tuple arises from two distinct paths. First, when
+    ``workspace_root`` is not a git repository, discovery logs a warning
+    through :func:`_handle_git_ls_files_failure` and returns empty. Second,
+    when ``git ls-files`` succeeds but no tracked lockfile qualifies (none
+    outside ``target`` with an adjacent manifest), the filtered result is
+    empty. When ``git ls-files`` exits non-zero for any other reason,
     :func:`_handle_git_ls_files_failure` raises
     :class:`LockfileDiscoveryError`.
     """
