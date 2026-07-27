@@ -36,10 +36,35 @@ def make_plan_factory(
 ) -> cabc.Callable[[Path, tuple[str, ...]], publish.PublishPlan]:
     """Return a factory for building publish plans rooted at ``workspace_root``.
 
+    Parameters
+    ----------
+    make_crate : cabc.Callable[[Path, str, object | None], WorkspaceCrate]
+        Crate-construction fixture. The returned factory calls it as
+        ``make_crate(workspace_root / "crates", name)`` to build each
+        publishable :class:`WorkspaceCrate` from the crates directory and name.
+
     Returns
     -------
     cabc.Callable[[Path, tuple[str, ...]], publish.PublishPlan]
-        A callable building a plan from a root and publishable crate names.
+        A callable that builds a :class:`publish.PublishPlan` from a workspace
+        root and a tuple of publishable crate names, wrapping the constructed
+        crates as the plan's ``publishable`` members with no skipped or
+        missing-configuration entries.
+
+    Examples
+    --------
+    Build the factory directly with a lightweight ``make_crate`` stand-in (the
+    fixture's ``__wrapped__`` bypasses pytest injection) and inspect the
+    resulting plan's publishable crate names:
+
+    >>> from pathlib import Path
+    >>> from types import SimpleNamespace
+    >>> def make_crate(crates_dir, name, spec=None):
+    ...     return SimpleNamespace(name=name, root_path=crates_dir / name)
+    >>> build_plan = make_plan_factory.__wrapped__(make_crate)
+    >>> plan = build_plan(Path("/workspace"), ("alpha", "beta"))
+    >>> tuple(crate.name for crate in plan.publishable)
+    ('alpha', 'beta')
     """
 
     def _builder(
