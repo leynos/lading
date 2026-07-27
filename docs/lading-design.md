@@ -376,16 +376,14 @@ lading bump <new_version> [--dry-run]
 
 ### Lockfile repository port (bump side)
 
-The bump domain reaches Cargo lockfile projection and regeneration through
-a `LockfileRepository` port defined in
-`lading.commands.bump_lockfiles`. `CargoLockfileRepository` is the
-cargo-backed adapter; it is constructed with an optional `CommandRunner`
-and delegates to the module-level helpers.
-`BumpOptions.lockfile_repository` is the injection point; when `None`,
-bump substitutes `CargoLockfileRepository` bound to the default
-subprocess runner, and the CLI binds the adapter at the composition
-root. This keeps the bump domain free of a raw `CommandRunner`
-(issue #82).
+The bump domain reaches Cargo lockfile projection and regeneration through a
+`LockfileRepository` port defined in `lading.commands.bump_lockfiles`.
+`CargoLockfileRepository` is the cargo-backed adapter; it is constructed with
+an optional `CommandRunner` and delegates to the module-level helpers.
+`BumpOptions.lockfile_repository` is the injection point; when `None`, bump
+substitutes `CargoLockfileRepository` bound to the default subprocess runner,
+and the CLI binds the adapter at the composition root. This keeps the bump
+domain free of a raw `CommandRunner` (issue #82).
 
 ## 4. `publish` Subcommand Design
 
@@ -490,31 +488,28 @@ names are listed before returning the user-specified order.
 
 ### Lockfile inspection repository port (publish side)
 
-The publish pre-flight domain reaches tracked-lockfile discovery and
-freshness validation through a `LockfileInspectionRepository` port
-defined in `lading.commands.lockfile`.
-`CargoLockfileInspectionRepository` is the git- and cargo-backed
-adapter; it binds a `CommandRunner` and the optional pre-flight base
-environment, applying that environment to invocations that do not
-supply their own. `publish_preflight._run_preflight_checks` is the
-composition root: it constructs the adapter and passes it to the
-domain helpers `_collect_stale_lockfiles` and
-`_validate_lockfile_freshness`, which depend only on the port.
-Together with the bump-side `LockfileRepository`, the two ports keep
-VCS, filesystem, and cargo execution concerns out of the lockfile
+The publish pre-flight domain reaches tracked-lockfile discovery and freshness
+validation through a `LockfileInspectionRepository` port defined in
+`lading.commands.lockfile`. `CargoLockfileInspectionRepository` is the git- and
+cargo-backed adapter; it binds a `CommandRunner` and the optional pre-flight
+base environment, applying that environment to invocations that do not supply
+their own. `publish_preflight._run_preflight_checks` is the composition root:
+it constructs the adapter and passes it to the domain helpers
+`_collect_stale_lockfiles` and `_validate_lockfile_freshness`, which depend
+only on the port. Together with the bump-side `LockfileRepository`, the two
+ports keep VCS, filesystem, and cargo execution concerns out of the lockfile
 domain logic (issue #82).
 
-`_collect_stale_lockfiles` deliberately classifies every tracked
-`Cargo.lock` rather than short-circuiting on the first stale one
-(issue #83). When stale lockfiles are found, `_build_stale_lockfile_message`
-composes a diagnostic message that lists each offending lockfile
-alongside its own `cargo generate-lockfile --manifest-path ...` repair
-command; `_validate_lockfile_freshness` then raises it as a
-`PublishPreflightError`, so the operator can remediate the whole
-workspace in a single pass rather than re-running the pre-flight once
-per lockfile. Only unexpected failures from `cargo metadata --locked` —
-those not attributable to a stale lockfile — raise immediately on
-first occurrence, leaving the aggregation path unaffected.
+`_collect_stale_lockfiles` deliberately classifies every tracked `Cargo.lock`
+rather than short-circuiting on the first stale one (issue #83). When stale
+lockfiles are found, `_build_stale_lockfile_message` composes a diagnostic
+message that lists each offending lockfile alongside its own
+`cargo generate-lockfile --manifest-path ...` repair command;
+`_validate_lockfile_freshness` then raises it as a `PublishPreflightError`, so
+the operator can remediate the whole workspace in a single pass rather than
+re-running the pre-flight once per lockfile. Only unexpected failures from
+`cargo metadata --locked` — those not attributable to a stale lockfile — raise
+immediately on first occurrence, leaving the aggregation path unaffected.
 
 ### Publish Preflight Sequence
 

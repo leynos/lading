@@ -106,15 +106,15 @@ publish runs with stub mode enabled.
 
 ## Workflow pins and Dependabot
 
-Dependabot owns the upgrade of GitHub Actions and reusable workflows,
-including calls into `leynos/shared-actions`. Contract tests that assert a
-caller's exact commit SHA create a lockstep dependency: every time Dependabot
-opens a bump PR, the test fails until a human edits the pinned constant to
-match. That defeats the purpose of automated dependency updates and turns a
-routine bump into a manual chore.
+Dependabot owns the upgrade of GitHub Actions and reusable workflows, including
+calls into `leynos/shared-actions`. Contract tests that assert a caller's exact
+commit SHA create a lockstep dependency: every time Dependabot opens a bump PR,
+the test fails until a human edits the pinned constant to match. That defeats
+the purpose of automated dependency updates and turns a routine bump into a
+manual chore.
 
-Contract tests may still verify the _shape_ of a reusable-workflow caller.
-They must not verify the specific SHA value.
+Contract tests may still verify the _shape_ of a reusable-workflow caller. They
+must not verify the specific SHA value.
 
 - Do assert the workflow references the correct reusable workflow path.
 - Do assert the ref is pinned to a full 40-character commit SHA, not a
@@ -304,8 +304,8 @@ exactly one place.
 
 ### Model checking the formatting helpers
 
-Three pure helpers in `lading/commands/bump_output.py` carry PEP 316
-docstring contracts (`pre:`/`post:` lines):
+Three pure helpers in `lading/commands/bump_output.py` carry PEP 316 docstring
+contracts (`pre:`/`post:` lines):
 
 - `_build_changes_description` — assembles the Oxford-comma-joined
   category description from a `BumpChanges` instance.
@@ -313,25 +313,23 @@ docstring contracts (`pre:`/`post:` lines):
 - `_format_manifest_path` — formats a single manifest path for display
   in the bump output.
 
-Run CrossHair symbolic-execution model checking against the first two
-helpers with:
+Run CrossHair symbolic-execution model checking against the first two helpers
+with:
 
 ```bash
 make crosshair
 ```
 
-`crosshair-tool` is a dev dependency. `[tool.crosshair]` in
-`pyproject.toml` sets per-path and per-condition timeouts to keep the
-check bounded. `make crosshair` is **not** part of `make all` or CI; it
-is an on-demand check intended for targeted verification when the
-formatting helpers change.
+`crosshair-tool` is a dev dependency. `[tool.crosshair]` in `pyproject.toml`
+sets per-path and per-condition timeouts to keep the check bounded.
+`make crosshair` is **not** part of `make all` or CI; it is an on-demand check
+intended for targeted verification when the formatting helpers change.
 
-`_format_manifest_path` keeps its `pre:`/`post:` contract but is
-intentionally excluded from the `make crosshair` run. CrossHair 0.0.107
-cannot construct a symbolic `pathlib.Path` proxy — it raises in
-`intersect_signatures` on both CPython 3.13 and 3.14. Its behaviour is
-instead covered by the Hypothesis property test in
-`tests/unit/test_bump_command_internals.py`, which exercises
+`_format_manifest_path` keeps its `pre:`/`post:` contract but is intentionally
+excluded from the `make crosshair` run. CrossHair 0.0.107 cannot construct a
+symbolic `pathlib.Path` proxy — it raises in `intersect_signatures` on both
+CPython 3.13 and 3.14. Its behaviour is instead covered by the Hypothesis
+property test in `tests/unit/test_bump_command_internals.py`, which exercises
 `_format_result_message` across a wide range of path inputs.
 
 ## Workspace discovery helpers
@@ -380,8 +378,8 @@ manifest rewrites, while publish only probes freshness read-only via
 `validate_lockfile_freshness(manifest_path, runner)` runs
 `cargo metadata --locked --manifest-path ... --format-version=1`. It returns a
 `LockfileFreshness` result that distinguishes fresh lockfiles, lockfiles that
-Cargo says need updating under `--locked`, and unrelated Cargo failures.
-The publish pre-flight domain reaches both operations through the
+Cargo says need updating under `--locked`, and unrelated Cargo failures. The
+publish pre-flight domain reaches both operations through the
 `LockfileInspectionRepository` port (issue #82) rather than holding a command
 runner: `_validate_lockfile_freshness` and `_collect_stale_lockfiles` in
 `publish_preflight.py` depend only on the port, so VCS (git), filesystem, and
@@ -559,21 +557,21 @@ handling.
 
 ### Internal APIs carry no compatibility aliases
 
-Private (underscore-prefixed) functions and modules carry no stability
-contract: `lading`'s own application code is the only consumer of its
-internals. When a helper moves to a new canonical module, update every call
-site and test patch target in the same change — do not leave a module-level
-alias or thin wrapper behind to keep old `monkeypatch.setattr` targets
-resolving. Tests must patch or invoke the module that defines the helper
-(for example, `publish_preflight._run_preflight_checks` rather than a
-re-export on `publish`). If an internal seam churns often enough that many
-call sites keep breaking, introduce an explicit port (a protocol the call
-sites depend on, as with `CommandRunner` in `lading.runtime`) rather than
-accreting ad hoc backwards-compatibility shims.
+Private (underscore-prefixed) functions and modules carry no stability contract:
+`lading`'s own application code is the only consumer of its internals. When a
+helper moves to a new canonical module, update every call site and test patch
+target in the same change — do not leave a module-level alias or thin wrapper
+behind to keep old `monkeypatch.setattr` targets resolving. Tests must patch or
+invoke the module that defines the helper (for example,
+`publish_preflight._run_preflight_checks` rather than a re-export on
+`publish`). If an internal seam churns often enough that many call sites keep
+breaking, introduce an explicit port (a protocol the call sites depend on, as
+with `CommandRunner` in `lading.runtime`) rather than accreting ad hoc
+backwards-compatibility shims.
 
 This rule applies to private, underscore-prefixed symbols only. A public
-exception type raised by a still-public entry point must remain re-exported
-on the module that exposes that entry point: for example, `publish` re-exports
+exception type raised by a still-public entry point must remain re-exported on
+the module that exposes that entry point: for example, `publish` re-exports
 `PublishPlanError as PublishPlanError` so that callers catching
 `except publish.PublishPlanError` after a call to `publish.plan_publication()`
 continue to work.
@@ -583,31 +581,32 @@ continue to work.
 The issue #163 sweep removed the following shims; each row records the
 canonical replacement callers and tests now use directly:
 
-| Removed shim | Location | Canonical replacement |
-| --- | --- | --- |
-| Eleven `publish_preflight` private aliases (`_preflight_argument_sets`, `_CargoPreflightOptions`, `_apply_compiletest_externs`, `_build_preflight_environment`, `_build_test_arguments`, `_compose_preflight_arguments`, `_normalise_test_excludes`, `_run_aux_build_commands`, `_run_cargo_preflight`, `_validate_lockfile_freshness`, `_verify_clean_working_tree`) | `publish.py` | `lading.commands.publish_preflight` (patch/call the defining module directly) |
-| `_run_preflight_checks` thin wrapper | `publish.py` | `publish_preflight._run_preflight_checks` (called directly by `run()`) |
-| Re-exports `_append_section`, `_format_plan` | `publish.py` | `publish_plan.append_section`, `publish_plan.format_plan` |
-| Re-export `metadata_module` | `publish.py` | `lading.workspace.metadata` |
-| Re-export `StripPatchesSetting` | `publish.py` | `lading.config.StripPatchesSetting` |
-| Six `bump_toml` re-exports (`_parse_manifest`, `_select_table`, `_assign_version`, `_value_matches`, `_update_dependency_sections`, `_update_dependency_table`) | `bump.py` | `lading.commands.bump_toml` (`parse_manifest`, `select_table`, `assign_version`, `value_matches`, `update_dependency_sections`, `update_dependency_table`) |
-| `_log = LOGGER` alias | `bump.py` | the module-level `LOGGER` |
-| Private `_append_section` / `_format_plan` | `publish_plan.py` | renamed to public `append_section` / `format_plan` |
-| `split_command` / `_split_command` wrapper | `publish_execution.py` | `lading.runtime.subprocess_runner.split_command` |
+| Removed shim                                                                                                                                                                                                                                                                                                                                                          | Location               | Canonical replacement                                                                                                                                      |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Eleven `publish_preflight` private aliases (`_preflight_argument_sets`, `_CargoPreflightOptions`, `_apply_compiletest_externs`, `_build_preflight_environment`, `_build_test_arguments`, `_compose_preflight_arguments`, `_normalise_test_excludes`, `_run_aux_build_commands`, `_run_cargo_preflight`, `_validate_lockfile_freshness`, `_verify_clean_working_tree`) | `publish.py`           | `lading.commands.publish_preflight` (patch/call the defining module directly)                                                                              |
+| `_run_preflight_checks` thin wrapper                                                                                                                                                                                                                                                                                                                                  | `publish.py`           | `publish_preflight._run_preflight_checks` (called directly by `run()`)                                                                                     |
+| Re-exports `_append_section`, `_format_plan`                                                                                                                                                                                                                                                                                                                          | `publish.py`           | `publish_plan.append_section`, `publish_plan.format_plan`                                                                                                  |
+| Re-export `metadata_module`                                                                                                                                                                                                                                                                                                                                           | `publish.py`           | `lading.workspace.metadata`                                                                                                                                |
+| Re-export `StripPatchesSetting`                                                                                                                                                                                                                                                                                                                                       | `publish.py`           | `lading.config.StripPatchesSetting`                                                                                                                        |
+| Six `bump_toml` re-exports (`_parse_manifest`, `_select_table`, `_assign_version`, `_value_matches`, `_update_dependency_sections`, `_update_dependency_table`)                                                                                                                                                                                                       | `bump.py`              | `lading.commands.bump_toml` (`parse_manifest`, `select_table`, `assign_version`, `value_matches`, `update_dependency_sections`, `update_dependency_table`) |
+| `_log = LOGGER` alias                                                                                                                                                                                                                                                                                                                                                 | `bump.py`              | the module-level `LOGGER`                                                                                                                                  |
+| Private `_append_section` / `_format_plan`                                                                                                                                                                                                                                                                                                                            | `publish_plan.py`      | renamed to public `append_section` / `format_plan`                                                                                                         |
+| `split_command` / `_split_command` wrapper                                                                                                                                                                                                                                                                                                                            | `publish_execution.py` | `lading.runtime.subprocess_runner.split_command`                                                                                                           |
 
 #### Retained boundaries
 
 Not every module-level indirection is a compatibility shim. The following
-boundaries were deliberately kept because they serve a purpose beyond masking
-a rename:
+boundaries were deliberately kept because they serve a purpose beyond masking a
+rename:
 
 - `publish._invoke` — the dependency-injection seam: it is the default
   `CommandRunner` used by `run()`, and tests stub it to intercept subprocess
   execution. Not a compatibility alias.
-- `publish.PublishPlanError` (re-exported as `PublishPlanError as
-  PublishPlanError`) — a public exception raised by the still-public
-  `publish.plan_publication()`; retained so `except publish.PublishPlanError`
-  keeps working. It is a public-API boundary, not a private shim.
+- `publish.PublishPlanError` (re-exported as
+  `PublishPlanError as PublishPlanError`) — a public exception raised by the
+  still-public `publish.plan_publication()`; retained so
+  `except publish.PublishPlanError` keeps working. It is a public-API boundary,
+  not a private shim.
 - The `CommandRunner` protocol in `lading.runtime` — the stable port for
   execution concerns; the sanctioned alternative to ad hoc shims when a seam
   churns.
@@ -933,10 +932,9 @@ reintroduces a second invocation log at any level is pinned by the tests in
 
 `lading.commands.publish_preflight` performs workspace validation before any
 crate is packaged or published. It is the canonical (and only) home of
-`_run_preflight_checks` and its helpers. `publish.py` calls the module
-directly and holds no aliases or wrappers for its names; tests that patch or
-invoke pre-flight helpers must target `publish_preflight` itself. The entry
-point is:
+`_run_preflight_checks` and its helpers. `publish.py` calls the module directly
+and holds no aliases or wrappers for its names; tests that patch or invoke
+pre-flight helpers must target `publish_preflight` itself. The entry point is:
 
 ```python
 _run_preflight_checks(
@@ -983,21 +981,20 @@ _publish_crate(
 ) -> None
 ```
 
-`_CrateAction` is the shared `typing.Protocol` for single-crate pipeline
-steps; its `__call__` signature is `(crate, state, *, runner) -> None`,
-matching `_package_crate` and `_publish_crate` exactly.
+`_CrateAction` is the shared `typing.Protocol` for single-crate pipeline steps;
+its `__call__` signature is `(crate, state, *, runner) -> None`, matching
+`_package_crate` and `_publish_crate` exactly.
 `_for_each_publishable_crate(state, *, runner, action: _CrateAction) -> None`
 iterates `state.plan.publishable` in pipeline order and applies `action` to
 each crate; both `_package_publishable_crates` and `_publish_crates` delegate
-to it, passing `_package_crate` or `_publish_crate` as the action
-respectively. The live pipeline (`_execute_live_publication_pipeline`)
-deliberately bypasses this helper and manages its own loop, interleaving
-`_package_crate` and `_publish_crate` per crate so that a freshly packaged
-crate is uploaded before packaging begins for the next. New per-crate steps
-intended for the batched (dry-run) pipeline should therefore be written as
-`_CrateAction`-conforming functions dispatched through
-`_for_each_publishable_crate`; steps that must interleave packaging and
-publishing belong in the live pipeline instead.
+to it, passing `_package_crate` or `_publish_crate` as the action respectively.
+The live pipeline (`_execute_live_publication_pipeline`) deliberately bypasses
+this helper and manages its own loop, interleaving `_package_crate` and
+`_publish_crate` per crate so that a freshly packaged crate is uploaded before
+packaging begins for the next. New per-crate steps intended for the batched
+(dry-run) pipeline should therefore be written as `_CrateAction`-conforming
+functions dispatched through `_for_each_publishable_crate`; steps that must
+interleave packaging and publishing belong in the live pipeline instead.
 
 `_PublicationPipelineState` carries only publish-domain state: the resolved
 `PublishPlan`, the `PublishPreparation`, and `_PublishExecutionOptions`.
