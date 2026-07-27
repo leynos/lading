@@ -30,6 +30,11 @@ class E2EExpectationError(AssertionError):
     def unsupported_fixture_version(cls, version: str) -> E2EExpectationError:
         """Return an error for unsupported fixture versions.
 
+        Parameters
+        ----------
+        version : str
+            The unsupported fixture version that was requested.
+
         Returns
         -------
         E2EExpectationError
@@ -40,6 +45,11 @@ class E2EExpectationError(AssertionError):
     @classmethod
     def dependency_entry_not_string(cls, entry: object) -> E2EExpectationError:
         """Return an error when a TOML dependency entry is not a string version.
+
+        Parameters
+        ----------
+        entry : object
+            The TOML dependency entry that was not a version string.
 
         Returns
         -------
@@ -56,6 +66,15 @@ class E2EExpectationError(AssertionError):
         args: tuple[str, ...],
     ) -> E2EExpectationError:
         """Return an error when recorded args do not match the expected prefix(es).
+
+        Parameters
+        ----------
+        label : str
+            The command label whose recorded arguments were checked.
+        expected_prefixes : tuple[tuple[str, ...], ...]
+            The accepted argument prefixes.
+        args : tuple[str, ...]
+            The recorded arguments that failed to match a prefix.
 
         Returns
         -------
@@ -93,6 +112,15 @@ class E2EExpectationError(AssertionError):
 def run_cli(repo_root: Path, workspace_root: Path, *args: str) -> dict[str, typ.Any]:
     """Execute the lading CLI module and capture the result.
 
+    Parameters
+    ----------
+    repo_root : Path
+        Repository root used as the subprocess working directory.
+    workspace_root : Path
+        Workspace root passed to the CLI via ``--workspace-root``.
+    *args : str
+        Additional command-line arguments forwarded to ``lading.cli``.
+
     Returns
     -------
     dict[str, typ.Any]
@@ -124,6 +152,11 @@ def run_cli(repo_root: Path, workspace_root: Path, *args: str) -> dict[str, typ.
 def extract_dependency_requirement(entry: object) -> str:
     """Return a version requirement string from the manifest dependency entry.
 
+    Parameters
+    ----------
+    entry : object
+        The manifest dependency entry (string, item, or table) to inspect.
+
     Returns
     -------
     str
@@ -131,8 +164,10 @@ def extract_dependency_requirement(entry: object) -> str:
 
     Raises
     ------
-    dependency_entry_not_string
-        If the entry is not a string or a table carrying a version string.
+    E2EExpectationError
+        Constructed by
+        ``E2EExpectationError.dependency_entry_not_string(entry)`` when the
+        entry is neither a version string nor a table containing one.
     """
     match entry:
         case Item() as item if isinstance(item.value, str):
@@ -164,6 +199,11 @@ def stub_cargo_metadata(
 def find_staging_root(stdout: str) -> Path:
     """Parse the publish CLI output and return the staging root directory.
 
+    Parameters
+    ----------
+    stdout : str
+        The captured publish CLI standard output to parse.
+
     Returns
     -------
     Path
@@ -171,8 +211,9 @@ def find_staging_root(stdout: str) -> Path:
 
     Raises
     ------
-    staging_root_missing
-        If the output does not contain a staging root line.
+    E2EExpectationError
+        Constructed by ``E2EExpectationError.staging_root_missing()`` when the
+        output contains no staging-root line.
     """
     for line in stdout.splitlines():
         if line.startswith("Staged workspace at: "):
@@ -184,6 +225,13 @@ def filter_records(
     publish_spies: dict[str, typ.Any], label: str
 ) -> list[tuple[str, tuple[str, ...], dict[str, str]]]:
     """Return invocation records matching the given label.
+
+    Parameters
+    ----------
+    publish_spies : dict[str, typ.Any]
+        The recorded cargo invocation spies keyed by command name.
+    label : str
+        The command label to filter invocation records by.
 
     Returns
     -------

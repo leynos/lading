@@ -95,9 +95,10 @@ def given_nontrivial_workspace_in_git_repo(
 
     Raises
     ------
-    unsupported_fixture_version
-        An :class:`E2EExpectationError` when ``version`` is not the supported
-        fixture version.
+    E2EExpectationError
+        Constructed by
+        ``E2EExpectationError.unsupported_fixture_version(version)`` when the
+        fixture version is unsupported.
 
     Examples
     --------
@@ -127,6 +128,13 @@ def given_cargo_commands_stubbed(
     e2e_state: dict[str, typ.Any],
 ) -> dict[str, typ.Any]:
     """Stub cargo pre-flight and publish loop commands; allow real git status.
+
+    Parameters
+    ----------
+    cmd_mox : CmdMox
+        Command mocker used to stub cargo commands and allow real git status.
+    e2e_state : dict[str, typ.Any]
+        Shared step state carrying the target ``workspace``.
 
     Returns
     -------

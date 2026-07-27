@@ -150,6 +150,14 @@ extend-ignore = [
 # those two rules off here so the docstrings can document the true exception.
 "lading/toml_coerce/_mappings.py" = ["DOC501", "DOC502"]
 "lading/toml_coerce/_scalars.py" = ["DOC501", "DOC502"]
+# The E2E helpers raise through ``E2EExpectationError`` factory classmethods
+# (e.g. ``raise E2EExpectationError.dependency_entry_not_string(entry)``).
+# pydoclint keys DOC501/DOC502 on the syntactic raise-callable (the factory
+# method name) and cannot resolve it to the real exception class, so it cannot
+# express the accurate ``E2EExpectationError`` contract. Scope those two rules
+# off here so the docstrings can document the true exception type.
+"tests/e2e/helpers/e2e_steps_helpers.py" = ["DOC501", "DOC502"]
+"tests/e2e/steps/test_e2e_steps.py" = ["DOC501", "DOC502"]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 8
