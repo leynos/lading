@@ -680,16 +680,6 @@ def run(
     -------
     str
         The formatted publication plan followed by the staging summary lines.
-
-    Examples
-    --------
-    >>> from pathlib import Path
-    >>> summary = run(Path("/path/to/workspace"))  # doctest: +SKIP
-    >>> print(summary)  # doctest: +SKIP
-    Publication plan:
-    ...
-    Staged workspace at: /tmp/lading-publish-abcd1234/workspace
-    Workspace READMEs are handled by lading bump.
     """
     root_path = normalise_workspace_root(workspace_root)
     LOGGER.info("Starting publish workflow for workspace %s", root_path)
