@@ -48,5 +48,10 @@ def test_normalise_build_directory_accepts_workspace_siblings(
         workspace_root, sibling
     )
 
-    assert build_directory == sibling.resolve()
-    assert not build_directory.is_relative_to(workspace_root)
+    assert build_directory == sibling.resolve(), (
+        f"Expected build directory {build_directory} to resolve to {sibling.resolve()}"
+    )
+    assert not build_directory.is_relative_to(workspace_root), (
+        f"Expected build directory {build_directory} to be outside workspace root "
+        f"{workspace_root.resolve()}"
+    )
