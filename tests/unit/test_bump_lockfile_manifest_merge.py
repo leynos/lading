@@ -185,7 +185,7 @@ def test_merge_discovered_manifests_preserves_order_and_deduplicates(
         }
         expected_discovered = tuple(
             sorted(
-                str(Path(lockfile).with_name("Cargo.toml"))
+                Path(lockfile).with_name("Cargo.toml").as_posix()
                 for lockfile in discovered
                 if (workspace_root / Path(lockfile).with_name("Cargo.toml")).resolve()
                 not in configured_paths

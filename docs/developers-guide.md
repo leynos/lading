@@ -209,10 +209,10 @@ resolve from the crate directory, and leaves absolute URI targets unchanged.
 Markdown links in fenced code blocks, indented code blocks, and inline code
 spans are preserved verbatim.
 
-`lading.commands.bump_lockfiles` owns Cargo lockfile discovery and regeneration
-after manifest changes. `merge_discovered_manifests` unions the configured
-`bump.lockfile_manifests` entries with manifests implied by git-tracked
-`Cargo.lock` files (reusing
+`lading.commands.bump_lockfiles` owns bump-side manifest merging and Cargo
+lockfile regeneration after manifest changes. `merge_discovered_manifests`
+unions the configured `bump.lockfile_manifests` entries with manifests implied
+by git-tracked `Cargo.lock` files (reusing
 `lading.commands.lockfile.discover_tracked_lockfiles`); configured entries keep
 their order and discovered entries follow in sorted order.
 `regenerate_lockfiles` always includes the workspace root `Cargo.toml`,
@@ -276,10 +276,9 @@ projecting dry-run paths or regenerating live lockfiles. Tests inject a
 repository (or bind the adapter to a recording runner) so lockfile commands can
 be observed without invoking real processes. The port's scope is bump-side
 lockfile projection and regeneration; publish-side discovery and validation go
-through the sibling
-`lockfile.LockfileInspectionRepository` port (see the Lockfile helpers section
-below), so neither the bump nor the publish lockfile domain holds a raw
-`CommandRunner` (issue #82).
+through the sibling `lockfile.LockfileInspectionRepository` port (see the
+Lockfile helpers section below), so neither the bump nor the publish lockfile
+domain holds a raw `CommandRunner` (issue #82).
 
 Bump-time crate-set derivation is centralized in the bump context: the
 `excluded` and `updated_crate_names` sets are computed exactly once in
@@ -639,6 +638,8 @@ canonical replacement callers and tests now use directly:
 | `_log = LOGGER` alias                                                                                                                                                                                                                                                                                                                                                 | `bump.py`              | the module-level `LOGGER`                                                                                                                                  |
 | Private `_append_section` / `_format_plan`                                                                                                                                                                                                                                                                                                                            | `publish_plan.py`      | renamed to public `append_section` / `format_plan`                                                                                                         |
 | `split_command` / `_split_command` wrapper                                                                                                                                                                                                                                                                                                                            | `publish_execution.py` | `lading.runtime.subprocess_runner.split_command`                                                                                                           |
+
+_Table 1: Compatibility shims removed by the issue #163 sweep._
 
 #### Retained boundaries
 

@@ -15,7 +15,8 @@ Call graph: ``lading publish`` uses :func:`discover_tracked_lockfiles` and
 so stale lockfiles fail early with an actionable repair command.
 ``lading bump`` uses :func:`discover_tracked_lockfiles` too — via
 :func:`lading.commands.bump_lockfiles.merge_discovered_manifests` — but then
-regenerates the discovered and configured lockfiles through
+regenerates the workspace-root lockfile from ``Cargo.toml``, together with the
+discovered and configured lockfiles, through
 :func:`lading.commands.bump_lockfiles.regenerate_lockfiles`, which runs
 ``cargo update --workspace``: bump wants existing pinned versions refreshed
 in place after manifest rewrites, whereas validation here uses

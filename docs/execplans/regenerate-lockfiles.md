@@ -59,9 +59,9 @@ fixture lockfile and seeing that lockfile listed in the bump output with a
   pre-flight degrades today.
 - All code comments and documentation use en-GB-oxendict spelling.
 - No new external dependencies.
-- No single code file may exceed 400 lines (repository rule); adding to
-  `lading/commands/bump_lockfiles.py` (155 lines) and `lading/commands/bump.py`
-  must respect this.
+- No single code file may exceed 400 lines (repository rule); at planning time,
+  `lading/commands/bump_lockfiles.py` was 155 lines, and additions to it and
+  `lading/commands/bump.py` had to respect this.
 
 ## Tolerances (exception triggers)
 

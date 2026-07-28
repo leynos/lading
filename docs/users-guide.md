@@ -87,15 +87,16 @@ lading bump 1.2.3 --dry-run
 After updating manifest versions, `lading bump` automatically refreshes any
 git-tracked `Cargo.lock` files (excluding those under `target/`) that have an
 adjacent `Cargo.toml`, plus any additional manifests listed in
-`bump.lockfile_manifests` for lockfiles that git does not track. The result
-header counts each changed category, e.g. "N manifest(s)", "N documentation
-file(s)", "N readme file(s)", "N lockfile(s)", joined with Oxford-comma
-grammar. In the per-file body list, manifest paths carry no suffix; the other
-categories carry a parenthetical suffix: `(documentation)` for Markdown docs
-whose TOML code fences were updated, `(readme)` for crate READMEs adopted from
-the workspace README, and `(lockfile)` for regenerated `Cargo.lock` files. In
-dry-run mode, every file is listed, but none are modified (lockfile discovery
-still runs `git ls-files`, which is read-only).
+`bump.lockfile_manifests` for lockfiles that git does not track or for nested
+lockfiles when the workspace is outside a Git repository. The result header
+counts each changed category, e.g. "N manifest(s)", "N documentation file(s)",
+"N readme file(s)", "N lockfile(s)", joined with Oxford-comma grammar. In the
+per-file body list, manifest paths carry no suffix; the other categories carry
+a parenthetical suffix: `(documentation)` for Markdown docs whose TOML code
+fences were updated, `(readme)` for crate READMEs adopted from the workspace
+README, and `(lockfile)` for regenerated `Cargo.lock` files. In dry-run mode,
+every file is listed, but none are modified (lockfile discovery still runs
+`git ls-files`, which is read-only).
 
 Where a member crate sets `readme.workspace = true`, `lading bump` also adopts
 the workspace `README.md` into that crate's directory and rewrites relative
