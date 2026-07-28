@@ -49,8 +49,10 @@ def expect_sequence(
 
     Raises
     ------
-    _reject
-        If ``value`` is a string-like value or otherwise not a sequence.
+    LadingError
+        The configured ``error`` subclass (built by the ``error`` factory) is
+        raised if ``value`` is a string-like value or otherwise not a
+        sequence.
     """
     match value:
         case None:
@@ -94,8 +96,9 @@ def validate_string_sequence(
 
     Raises
     ------
-    _reject
-        If any entry is not a string.
+    LadingError
+        The configured ``error`` subclass (built by the ``error`` factory) is
+        raised if any entry is not a string.
     """
     items: list[str] = []
     for index, entry in enumerate(sequence):
@@ -120,9 +123,10 @@ def string_tuple(
 
     Raises
     ------
-    _reject
-        If ``value`` is ``bytes`` or otherwise not a string or string
-        sequence.
+    LadingError
+        The configured ``error`` subclass (built by the ``error`` factory) is
+        raised if ``value`` is ``bytes`` or otherwise not a string or
+        string sequence.
     """
     # ``bytearray`` is deliberately excluded from the string/bytes rejection so
     # it flows into ``validate_string_sequence`` (which rejects its int items),
@@ -155,8 +159,10 @@ def _validate_matrix_entry(
 
     Raises
     ------
-    _reject
-        If the entry is string-like or otherwise not a sequence of strings.
+    LadingError
+        The configured ``error`` subclass (built by the ``error`` factory) is
+        raised if the entry is string-like or otherwise not a sequence of
+        strings.
     """
     match entry:
         case str() | bytes():
@@ -186,9 +192,10 @@ def string_matrix(
 
     Raises
     ------
-    _reject
-        If ``value`` is string-like or otherwise not a sequence of string
-        sequences.
+    LadingError
+        The configured ``error`` subclass (built by the ``error`` factory) is
+        raised if ``value`` is string-like or otherwise not a sequence of
+        string sequences.
     """
     match value:
         case None:

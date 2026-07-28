@@ -166,6 +166,14 @@ extend-ignore = [
 # exceptions a caller must still handle.
 "lading/runtime/subprocess_runner.py" = ["DOC501", "DOC502"]
 "lading/commands/bump_readme.py" = ["DOC501", "DOC502"]
+# ``_sequences.py`` raises through the ``_reject`` factory (returns the
+# injected ``error`` LadingError subclass) and ``metadata.py`` raises via the
+# ``CargoMetadataParseError`` factory classmethods. pydoclint keys
+# DOC501/DOC502 on the syntactic raise-callable and cannot resolve those to
+# the real exception classes, so scope the two rules off to document the true
+# ``LadingError`` / ``CargoMetadataParseError`` contracts.
+"lading/toml_coerce/_sequences.py" = ["DOC501", "DOC502"]
+"lading/workspace/metadata.py" = ["DOC501", "DOC502"]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 8

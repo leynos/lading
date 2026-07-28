@@ -172,10 +172,9 @@ def _parse_cargo_metadata(stdout_text: str) -> cabc.Mapping[str, typ.Any]:
 
     Raises
     ------
-    CargoMetadataParseError.invalid_json
-        If the output is not valid JSON.
-    CargoMetadataParseError.non_object_payload
-        If the decoded payload is not a JSON object.
+    CargoMetadataParseError
+        If the output is not valid JSON, or if the decoded payload is not a
+        JSON object.
     """
     try:
         payload = json.loads(stdout_text)
