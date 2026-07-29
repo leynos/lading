@@ -174,6 +174,21 @@ extend-ignore = [
 # ``LadingError`` / ``CargoMetadataParseError`` contracts.
 "lading/toml_coerce/_sequences.py" = ["DOC501", "DOC502"]
 "lading/workspace/metadata.py" = ["DOC501", "DOC502"]
+# ``publish.py`` and ``publish_plan.py`` surface exceptions raised by delegated
+# helpers (PublishPreflightError, PublishPlanError, PublishPreparationError,
+# PublishError). pydoclint only tracks direct raises, so document the contract
+# callers must handle without DOC502 flagging the propagated entries.
+"lading/commands/publish.py" = ["DOC501", "DOC502"]
+"lading/commands/publish_plan.py" = ["DOC501", "DOC502"]
+"lading/testing/cmd_mox_runner.py" = ["DOC501", "DOC502"]
+"lading/commands/lockfile.py" = ["DOC501", "DOC502"]
+"lading/commands/bump_lockfiles.py" = ["DOC501", "DOC502"]
+# ``bump_output.py`` is entirely private helpers whose docstrings carry
+# load-bearing CrossHair ``pre:``/``post:`` contracts (model-checked by
+# ``make crosshair``). Those contracts keep the docstrings multi-line, so
+# DOC201 would demand a Returns section that the private-helper convention
+# (AGENTS.md) says to omit; scope DOC201 off rather than choose between them.
+"lading/commands/bump_output.py" = ["DOC201"]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 8

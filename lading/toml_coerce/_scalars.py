@@ -27,6 +27,16 @@ def expect_string(value: object, field_name: str, *, error: _ErrorType) -> str:
     LadingError
         The configured ``error`` subclass, constructed by the injected
         ``error`` factory, when ``value`` is not a :class:`str`.
+
+    Examples
+    --------
+    >>> expect_string("hello", "field", error=ValueError)
+    'hello'
+    >>> try:
+    ...     expect_string(1, "field", error=ValueError)
+    ... except ValueError as exc:
+    ...     print("rejected")
+    rejected
     """
     match value:
         case str():
@@ -62,6 +72,13 @@ def boolean(
         The configured ``error`` subclass, constructed by the injected
         ``error`` factory, when ``value`` is neither ``None`` nor a
         :class:`bool`.
+
+    Examples
+    --------
+    >>> boolean(None, "field", error=ValueError, default=True)
+    True
+    >>> boolean(False, "field", error=ValueError)
+    False
     """
     match value:
         case None:
@@ -100,6 +117,18 @@ def non_negative_int(
         ``error`` factory, when ``value`` is neither a real integer (``bool``
         and ``float`` are rejected) nor an integer-valued string (which is
         accepted), or when the parsed result is negative.
+
+    Examples
+    --------
+    >>> non_negative_int(None, "field", 5, error=ValueError)
+    5
+    >>> non_negative_int("3", "field", 5, error=ValueError)
+    3
+    >>> try:
+    ...     non_negative_int(-1, "field", 5, error=ValueError)
+    ... except ValueError as exc:
+    ...     print("rejected")
+    rejected
     """
     # ``bool`` is a subclass of ``int`` and ``float``/other types are truthy for
     # a blanket ``int(...)`` cast, so dispatch explicitly to accept only real

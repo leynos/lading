@@ -140,6 +140,17 @@ def given_cargo_commands_stubbed(
     -------
     dict[str, typ.Any]
         State mapping with the recorded ``records`` list and the ``workspace``.
+
+    Examples
+    --------
+    Bound to the Gherkin ``given`` step and invoked by pytest-bdd; the
+    returned mapping is exposed as the ``publish_spies`` fixture::
+
+        >>> state = given_cargo_commands_stubbed(  # doctest: +SKIP
+        ...     cmd_mox, e2e_state
+        ... )
+        >>> sorted(state)  # doctest: +SKIP
+        ['records', 'workspace']
     """
     cmd_mox.spy("git").passthrough()
     invocation_records: list[tuple[str, tuple[str, ...], dict[str, str]]] = []

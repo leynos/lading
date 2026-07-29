@@ -349,8 +349,9 @@ def bump(
     Examples
     --------
     >>> from lading.cli import bump
-    >>> print(bump("1.2.3", dry_run=True))  # doctest: +SKIP
-    Bumped workspace manifests to 1.2.3 (dry run)
+    >>> summary = bump("1.2.3", dry_run=True)  # doctest: +SKIP
+    >>> "Dry run; would update version to 1.2.3 in" in summary  # doctest: +SKIP
+    True
     """
     resolved = normalise_workspace_root(workspace_root)
     return _run_with_context(
@@ -408,9 +409,16 @@ def publish(
 
     Examples
     --------
+    The rendered summary is a formatted publication plan followed by a
+    blank line and staging-summary lines.
+
     >>> from lading.cli import publish
-    >>> print(publish(live=False))  # doctest: +SKIP
-    Publish dry run complete
+    >>> summary = publish(live=False)  # doctest: +SKIP
+    >>> "Staged workspace at:" in summary  # doctest: +SKIP
+    True
+    >>> readmes = "Workspace READMEs are handled by lading bump."
+    >>> readmes in summary  # doctest: +SKIP
+    True
     """
     resolved = normalise_workspace_root(workspace_root)
     return _run_with_context(

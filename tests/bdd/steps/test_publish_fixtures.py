@@ -19,14 +19,6 @@ def preflight_overrides() -> dict[tuple[str, ...], ResponseProvider]:
     -------
     dict[tuple[str, ...], ResponseProvider]
         An empty mapping for tests to populate with overrides.
-
-    Examples
-    --------
-    >>> from tests.bdd.steps.test_publish_infrastructure import _CommandResponse
-    >>> overrides: dict[tuple[str, ...], object] = {}
-    >>> overrides["cargo", "test", "--workspace"] = _CommandResponse(exit_code=1)
-    >>> overrides["cargo", "test", "--workspace"].exit_code
-    1
     """
     return {}
 
@@ -39,16 +31,6 @@ def preflight_recorder() -> _PreflightInvocationRecorder:
     -------
     _PreflightInvocationRecorder
         A fresh recorder for capturing pre-flight command invocations.
-
-    Examples
-    --------
-    >>> from tests.bdd.steps.test_publish_infrastructure import (
-    ...     _PreflightInvocationRecorder,
-    ... )
-    >>> recorder = _PreflightInvocationRecorder()
-    >>> recorder.record("cargo::test", ("--workspace",), {})
-    >>> recorder.by_label("cargo::test")
-    [(('--workspace',), {})]
     """
     return _PreflightInvocationRecorder()
 
@@ -74,20 +56,6 @@ def preflight_test_context(
     -------
     PreflightTestContext
         The bundled mock, overrides, and recorder for a scenario.
-
-    Examples
-    --------
-    >>> from tests.bdd.steps.test_publish_infrastructure import (
-    ...     PreflightTestContext,
-    ...     _PreflightInvocationRecorder,
-    ... )
-    >>> context = PreflightTestContext(
-    ...     cmd_mox=object(),
-    ...     overrides={},
-    ...     recorder=_PreflightInvocationRecorder(),
-    ... )
-    >>> context.overrides
-    {}
     """
     return PreflightTestContext(
         cmd_mox=cmd_mox,

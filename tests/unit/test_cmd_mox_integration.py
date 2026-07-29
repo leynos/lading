@@ -109,19 +109,7 @@ _NON_NUMERIC_ALPHABET = "".join(
 
 
 def _timeout_cases() -> st.SearchStrategy[_TimeoutCase]:
-    """Generate timeout inputs grouped by the resolver behaviour they trigger.
-
-    Each input class is constructed directly, so the expected outcome travels
-    with the input instead of being re-derived from the implementation's own
-    parsing. ``None`` and finite positive floats resolve to a timeout;
-    consonant-only strings are unparseable; zero, negative, NaN, and infinite
-    values parse but fall outside the finite positive domain.
-
-    Returns
-    -------
-    st.SearchStrategy[_TimeoutCase]
-        A strategy producing timeout cases with their expected outcomes.
-    """
+    """Generate timeout inputs grouped by the resolver behaviour they trigger."""
     default = st.just(_TimeoutCase(None, cmd_mox_runner._CMD_MOX_TIMEOUT_DEFAULT, None))
     finite_positive = st.floats(
         min_value=0.0,

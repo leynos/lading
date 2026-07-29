@@ -130,6 +130,19 @@ def staging_cleanup() -> cabc.Callable[[Path], None]:
     -------
     cabc.Callable[[Path], None]
         A callable that deletes the staging root's parent build directory.
+
+    Examples
+    --------
+    >>> import tempfile
+    >>> from pathlib import Path
+    >>> with tempfile.TemporaryDirectory() as tmp:
+    ...     build_root = Path(tmp) / "build"
+    ...     staging_root = build_root / "staging"
+    ...     staging_root.mkdir(parents=True)
+    ...     cleanup = staging_cleanup.__wrapped__()
+    ...     cleanup(staging_root)
+    ...     print(build_root.exists())
+    False
     """
 
     def _cleanup(staging_root: Path) -> None:

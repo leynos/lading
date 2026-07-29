@@ -334,7 +334,24 @@ def _assert_failure_message_reports_each_once(message: str, failing: set[Path]) 
 
 @pytest.fixture
 def ab_workspace(tmp_path: Path) -> Path:
-    """Create a workspace with root and ``a``/``b`` member ``Cargo.toml`` files."""
+    """Create a workspace with root and ``a``/``b`` member ``Cargo.toml`` files.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        Pytest temporary directory used as the workspace root.
+
+    Returns
+    -------
+    Path
+        The workspace root directory.
+
+    Examples
+    --------
+    >>> def test_manifests_exist(ab_workspace):  # doctest: +SKIP
+    ...     sorted(p.name for p in ab_workspace.iterdir())
+    ['Cargo.toml', 'a', 'b']
+    """
     for name in ("a", "b"):
         (tmp_path / name).mkdir()
         (tmp_path / name / "Cargo.toml").write_text("", encoding="utf-8")

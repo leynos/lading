@@ -87,21 +87,6 @@ class PreflightTestContext:
         -------
         _PreflightStubConfig
             The stub configuration bound to this context.
-
-        Examples
-        --------
-        >>> from tests.bdd.steps.test_publish_infrastructure import (
-        ...     PreflightTestContext,
-        ...     _PreflightInvocationRecorder,
-        ... )
-        >>> context = PreflightTestContext(
-        ...     cmd_mox=object(),
-        ...     overrides={},
-        ...     recorder=_PreflightInvocationRecorder(),
-        ... )
-        >>> config = context.create_stub_config(allow_dirty=False)
-        >>> config.allow_dirty
-        False
         """
         return _create_stub_config(
             self.cmd_mox, self.overrides, self.recorder, allow_dirty=allow_dirty

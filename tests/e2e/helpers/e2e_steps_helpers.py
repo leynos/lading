@@ -39,6 +39,12 @@ class E2EExpectationError(AssertionError):
         -------
         E2EExpectationError
             The error describing the unsupported version.
+
+        Examples
+        --------
+        >>> err = E2EExpectationError.unsupported_fixture_version("9.9.9")
+        >>> "9.9.9" in str(err)
+        True
         """
         return cls(f"E2E fixture currently supports version 0.1.0 only (got {version})")
 
@@ -55,6 +61,12 @@ class E2EExpectationError(AssertionError):
         -------
         E2EExpectationError
             The error describing the offending entry.
+
+        Examples
+        --------
+        >>> err = E2EExpectationError.dependency_entry_not_string(None)
+        >>> "not a version string" in str(err)
+        True
         """
         return cls(f"Dependency entry is not a version string: {entry!r}")
 
@@ -80,6 +92,14 @@ class E2EExpectationError(AssertionError):
         -------
         E2EExpectationError
             The error describing the mismatched args.
+
+        Examples
+        --------
+        >>> err = E2EExpectationError.args_prefix_mismatch(
+        ...     "cargo::check", (("--workspace",),), ("--all",)
+        ... )
+        >>> "cargo::check" in str(err)
+        True
         """
         expected = ", ".join(repr(prefix) for prefix in expected_prefixes)
         return cls(f"{label} expected args prefix in ({expected}), got {args!r}")
@@ -90,10 +110,25 @@ class E2EExpectationError(AssertionError):
     ) -> E2EExpectationError:
         """Return an error when the pre-flight target dir flag is missing.
 
+        Parameters
+        ----------
+        label : str
+            The command label whose recorded arguments were checked.
+        args : tuple[str, ...]
+            The recorded arguments lacking the flag.
+
         Returns
         -------
         E2EExpectationError
             The error describing the missing flag.
+
+        Examples
+        --------
+        >>> err = E2EExpectationError.target_dir_missing(
+        ...     "cargo::check", ("--workspace",)
+        ... )
+        >>> "--target-dir=" in str(err)
+        True
         """
         return cls(f"{label} expected --target-dir=... in args, got {args!r}")
 
@@ -105,6 +140,12 @@ class E2EExpectationError(AssertionError):
         -------
         E2EExpectationError
             The error describing the missing staging root.
+
+        Examples
+        --------
+        >>> err = E2EExpectationError.staging_root_missing()
+        >>> "staging root" in str(err)
+        True
         """
         return cls("publish output did not include staging root")
 
@@ -126,6 +167,14 @@ def run_cli(repo_root: Path, workspace_root: Path, *args: str) -> dict[str, typ.
     dict[str, typ.Any]
         The command line, return code, captured stdout and stderr, and the
         workspace root.
+
+    Examples
+    --------
+    >>> result = run_cli(  # doctest: +SKIP
+    ...     repo_root, workspace_root, "bump", "1.0.0"
+    ... )
+    >>> result["returncode"]  # doctest: +SKIP
+    0
     """
     with local.cwd(str(repo_root)):
         exit_code, stdout, stderr = local[sys.executable].run(
@@ -168,6 +217,20 @@ def extract_dependency_requirement(entry: object) -> str:
         Constructed by
         ``E2EExpectationError.dependency_entry_not_string(entry)`` when the
         entry is neither a version string nor a table containing one.
+
+    Examples
+    --------
+    A plain version string entry::
+
+        >>> extract_dependency_requirement("1.2.3")
+        '1.2.3'
+
+    A table entry carrying a version key::
+
+        >>> import tomlkit
+        >>> doc = tomlkit.parse('dep = { version = "2.0.0" }')
+        >>> extract_dependency_requirement(doc["dep"])
+        '2.0.0'
     """
     match entry:
         case Item() as item if isinstance(item.value, str):
@@ -197,7 +260,7 @@ def stub_cargo_metadata(
 
 
 def find_staging_root(stdout: str) -> Path:
-    """Parse the publish CLI output and return the staging root directory.
+    r"""Parse the publish CLI output and return the staging root directory.
 
     Parameters
     ----------
@@ -214,6 +277,11 @@ def find_staging_root(stdout: str) -> Path:
     E2EExpectationError
         Constructed by ``E2EExpectationError.staging_root_missing()`` when the
         output contains no staging-root line.
+
+    Examples
+    --------
+    >>> str(find_staging_root("Staged workspace at: /tmp/x\n"))
+    '/tmp/x'
     """
     for line in stdout.splitlines():
         if line.startswith("Staged workspace at: "):
@@ -237,5 +305,16 @@ def filter_records(
     -------
     list[tuple[str, tuple[str, ...], dict[str, str]]]
         The invocation records whose label matches.
+
+    Examples
+    --------
+    >>> spies = {
+    ...     "records": [
+    ...         ("cargo::check", ("--workspace",), {}),
+    ...         ("cargo::publish", ("--dry-run",), {}),
+    ...     ]
+    ... }
+    >>> filter_records(spies, "cargo::publish")
+    [('cargo::publish', ('--dry-run',), {})]
     """
     return [record for record in publish_spies["records"] if record[0] == label]

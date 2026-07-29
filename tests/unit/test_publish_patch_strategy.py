@@ -50,21 +50,6 @@ def make_plan_factory(
         root and a tuple of publishable crate names, wrapping the constructed
         crates as the plan's ``publishable`` members with no skipped or
         missing-configuration entries.
-
-    Examples
-    --------
-    Build the factory directly with a lightweight ``make_crate`` stand-in (the
-    fixture's ``__wrapped__`` bypasses pytest injection) and inspect the
-    resulting plan's publishable crate names:
-
-    >>> from pathlib import Path
-    >>> from types import SimpleNamespace
-    >>> def make_crate(crates_dir, name, spec=None):
-    ...     return SimpleNamespace(name=name, root_path=crates_dir / name)
-    >>> build_plan = make_plan_factory.__wrapped__(make_crate)
-    >>> plan = build_plan(Path("/workspace"), ("alpha", "beta"))
-    >>> tuple(crate.name for crate in plan.publishable)
-    ('alpha', 'beta')
     """
 
     def _builder(

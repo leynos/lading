@@ -39,14 +39,6 @@ def when_invoke_lading_publish(
     -------
     dict[str, typ.Any]
         The captured CLI run result.
-
-    Examples
-    --------
-    >>> result = when_invoke_lading_publish(  # doctest: +SKIP
-    ...     workspace_directory, repo_root, preflight_test_context
-    ... )
-    >>> result["returncode"]  # doctest: +SKIP
-    0
     """
     stub_config = preflight_test_context.create_stub_config()
     return _invoke_publish_with_options(repo_root, workspace_directory, stub_config)
@@ -81,13 +73,6 @@ def when_run_lading_publish_command(
     ------
     AssertionError
         If the command is not a ``lading publish`` invocation.
-
-    Examples
-    --------
-    >>> when_run_lading_publish_command(None, None, None, "git status")
-    Traceback (most recent call last):
-        ...
-    AssertionError: Unexpected publish command: git status
     """
     tokens = tuple(shlex.split(command))
     if tokens[:2] != ("lading", "publish"):
@@ -127,14 +112,6 @@ def when_invoke_lading_publish_forbid_dirty(
     -------
     dict[str, typ.Any]
         The captured CLI run result.
-
-    Examples
-    --------
-    >>> result = when_invoke_lading_publish_forbid_dirty(  # doctest: +SKIP
-    ...     workspace_directory, repo_root, preflight_test_context
-    ... )
-    >>> result["returncode"]  # doctest: +SKIP
-    1
     """
     stub_config = preflight_test_context.create_stub_config()
     return _invoke_publish_with_options(
@@ -169,14 +146,6 @@ def when_invoke_lading_publish_live(
     -------
     dict[str, typ.Any]
         The captured CLI run result.
-
-    Examples
-    --------
-    >>> result = when_invoke_lading_publish_live(  # doctest: +SKIP
-    ...     workspace_directory, repo_root, preflight_test_context
-    ... )
-    >>> result["returncode"]  # doctest: +SKIP
-    0
     """
     if not any(
         _is_cargo_publish_command(command)

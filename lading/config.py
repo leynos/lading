@@ -425,7 +425,20 @@ def load_configuration(workspace_root: Path) -> LadingConfig:
 
 @contextlib.contextmanager
 def use_configuration(configuration: LadingConfig) -> cabc.Iterator[None]:
-    """Set ``configuration`` as the active configuration for the current context."""
+    """Set ``configuration`` as the active configuration for the current context.
+
+    Yields
+    ------
+    None
+        Control, with ``configuration`` active until the ``with`` block exits.
+
+    Examples
+    --------
+    >>> config = LadingConfig()
+    >>> with use_configuration(config):
+    ...     current_configuration() is config
+    True
+    """
     token = _active_config.set(configuration)
     try:
         yield

@@ -207,6 +207,14 @@ def plan_publication(
     PublishPlan
         The resolved plan describing publishable and skipped crate groups.
 
+    Raises
+    ------
+    PublishPlanError
+        If ``configuration.publish.order`` is invalid (duplicate, unknown, or
+        missing entries) or the workspace dependency graph contains a cycle;
+        propagated from :func:`_resolve_configured_order` and
+        :func:`_resolve_topological_order`.
+
     Examples
     --------
     >>> from pathlib import Path

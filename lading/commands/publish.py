@@ -239,6 +239,13 @@ def prepare_workspace(
     PublishPreparation
         The staging result, including the staged workspace root.
 
+    Raises
+    ------
+    PublishPreparationError
+        If the staging build directory or copied workspace path is unsafe or
+        invalid (for example nested within the workspace root); propagated
+        from :func:`_normalise_build_directory` and :func:`_copy_workspace_tree`.
+
     Examples
     --------
     >>> preparation = prepare_workspace(plan, workspace)  # doctest: +SKIP
@@ -680,6 +687,27 @@ def run(
     -------
     str
         The formatted publication plan followed by the staging summary lines.
+
+    Raises
+    ------
+    PublishPreflightError
+        If ``options`` combines invalid flags (see
+        :func:`_validate_publication_options`) or a pre-flight check fails.
+    PublishPlanError
+        If a valid publication plan cannot be constructed.
+    PublishPreparationError
+        If staging the workspace copy fails.
+    PublishError
+        If a crate fails to package or publish.
+
+    Examples
+    --------
+    >>> from lading.commands.publish import run
+    >>> summary = run(workspace_root)  # doctest: +SKIP
+    >>> summary.startswith("Publish plan for")  # doctest: +SKIP
+    True
+    >>> "Staged workspace at:" in summary  # doctest: +SKIP
+    True
     """
     root_path = normalise_workspace_root(workspace_root)
     LOGGER.info("Starting publish workflow for workspace %s", root_path)

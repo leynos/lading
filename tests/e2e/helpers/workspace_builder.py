@@ -42,6 +42,15 @@ def create_nontrivial_workspace(
     -------
     NonTrivialWorkspace
         The workspace model describing the created crates and metadata.
+
+    Examples
+    --------
+    >>> import tempfile
+    >>> from pathlib import Path
+    >>> with tempfile.TemporaryDirectory() as tmp:  # doctest: +SKIP
+    ...     workspace = create_nontrivial_workspace(Path(tmp))
+    ...     workspace.crate_names
+    ('core', 'utils', 'app')
     """
     crate_names = ("core", "utils", "app")
     crates_dir = workspace_root / "crates"

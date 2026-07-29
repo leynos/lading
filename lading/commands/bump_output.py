@@ -78,11 +78,6 @@ def _build_changes_description(changes: BumpChanges) -> str:
     pre: _has_changes(changes)
     post: len(__return__) > 0
     post: " and and " not in __return__
-
-    Returns
-    -------
-    str
-        A comma- or ``and``-joined summary of the changed file categories.
     """
     parts: list[str] = []
     if changes.manifests:
@@ -118,12 +113,6 @@ def _format_header(description: str, target_version: str, *, dry_run: bool) -> s
     post: __return__.endswith(":")
     post: target_version in __return__
     post: description in __return__
-
-    Returns
-    -------
-    str
-        The header line naming ``target_version`` and ``description``, phrased
-        for a dry run when ``dry_run`` is set.
     """
     if dry_run:
         return f"Dry run; would update version to {target_version} in {description}:"
@@ -179,11 +168,8 @@ def _format_manifest_path(manifest_path: Path, workspace_root: Path) -> str:
 
     post: isinstance(__return__, str)
 
-    Returns
-    -------
-    str
-        The path relative to ``workspace_root``, or the absolute path when it
-        lies outside the workspace.
+    Falls back to returning ``manifest_path`` exactly as given, unmodified,
+    when it cannot be made relative to ``workspace_root``.
     """
     try:
         relative = manifest_path.relative_to(workspace_root)

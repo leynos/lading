@@ -85,6 +85,13 @@ def mock_cmd_mox_modules(tmp_path: Path) -> SimpleNamespace:
     SimpleNamespace
         Namespace exposing the env module, IPC module, and command runner
         stubs.
+
+    Examples
+    --------
+    >>> def test_uses_stubs(mock_cmd_mox_modules):  # doctest: +SKIP
+    ...     mock_cmd_mox_modules.env_module.CMOX_IPC_SOCKET_ENV
+    ...     mock_cmd_mox_modules.ipc_module.Response
+    ...     mock_cmd_mox_modules.command_runner
     """
 
     class _Env:

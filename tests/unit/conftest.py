@@ -221,6 +221,12 @@ def make_workspace(
     -------
     Callable[[Path, WorkspaceCrate], WorkspaceGraph]
         A factory that builds workspace graphs from crates.
+
+    Examples
+    --------
+    >>> def test_workspace_has_crate(make_workspace, tmp_path):  # doctest: +SKIP
+    ...     workspace = make_workspace(tmp_path)
+    ...     assert workspace.crates
     """
 
     def _make_workspace(root: Path, *crates: WorkspaceCrate) -> WorkspaceGraph:
@@ -248,6 +254,12 @@ def publish_fixtures(
     -------
     PublishFixtures
         The assembled publish fixtures.
+
+    Examples
+    --------
+    >>> def test_uses_composite(publish_fixtures):  # doctest: +SKIP
+    ...     crate = publish_fixtures.make_crate(publish_fixtures.tmp_path, "alpha")
+    ...     assert crate.name == "alpha"
     """
     tmp_path: Path = request.getfixturevalue("tmp_path")
     make_crate = request.getfixturevalue("make_crate")
@@ -270,6 +282,12 @@ def make_dependency() -> cabc.Callable[[str], WorkspaceDependency]:
     -------
     Callable[[str], WorkspaceDependency]
         A factory that builds dependency records by name.
+
+    Examples
+    --------
+    >>> def test_dependency_name_roundtrips(make_dependency):  # doctest: +SKIP
+    ...     dependency = make_dependency("core")
+    ...     assert dependency.name == "core"
     """
 
     def _make_dependency(name: str) -> WorkspaceDependency:
@@ -296,6 +314,11 @@ def staging_root(tmp_path: Path) -> Path:
     -------
     Path
         The staging directory path.
+
+    Examples
+    --------
+    >>> def test_staging_is_sibling(staging_root, tmp_path):  # doctest: +SKIP
+    ...     assert staging_root.parent == tmp_path.parent
     """
     return tmp_path.parent / f"{tmp_path.name}-staging"
 
@@ -313,5 +336,12 @@ def publish_options(staging_root: Path) -> publish.PublishOptions:
     -------
     publish.PublishOptions
         Publish options configured with the staging directory.
+
+    Examples
+    --------
+    >>> def test_build_dir_is_staging_root(  # doctest: +SKIP
+    ...     publish_options, staging_root
+    ... ):
+    ...     assert publish_options.build_directory == staging_root
     """
     return publish.PublishOptions(build_directory=staging_root)

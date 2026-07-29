@@ -10,11 +10,23 @@ from pathlib import Path
 def coerce_text(value: str | bytes) -> str:
     """Normalise process output to text.
 
+    Parameters
+    ----------
+    value : str | bytes
+        Process output to normalise, as returned by a subprocess call.
+
     Returns
     -------
     str
         ``value`` unchanged when already ``str``, otherwise its UTF-8
         decoding with undecodable bytes replaced.
+
+    Examples
+    --------
+    >>> coerce_text("already text")
+    'already text'
+    >>> coerce_text("café".encode())
+    'café'
     """
     if isinstance(value, bytes):
         return value.decode("utf-8", errors="replace")

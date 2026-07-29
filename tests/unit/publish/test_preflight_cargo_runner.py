@@ -115,22 +115,7 @@ def _run_and_record_cargo_preflight(
     subcommand: typ.Literal["check", "test"],
     options: publish_preflight._CargoPreflightOptions,
 ) -> tuple[str, ...]:
-    """Run cargo preflight through a recording runner.
-
-    The helper injects a closure named ``recording_runner`` into
-    ``publish_preflight._run_cargo_preflight``. That closure captures the subprocess
-    arguments instead of executing Cargo, so tests can assert the constructed
-    command returned as a tuple.
-
-    ``recorded`` is the list of intercepted commands. ``recording_runner``
-    appends the command it receives and returns a dummy success tuple.
-
-    Returns
-    -------
-    tuple[str, ...]
-        The single Cargo command intercepted by the recording runner.
-
-    """
+    """Run cargo preflight and return the command it invoked for the workspace."""
     recorded: list[tuple[str, ...]] = []
 
     def recording_runner(

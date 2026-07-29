@@ -33,6 +33,11 @@ def expect_mapping(
         The configured ``error`` subclass, constructed by the injected
         ``error`` factory, when ``value`` is not a
         :class:`collections.abc.Mapping`.
+
+    Examples
+    --------
+    >>> expect_mapping({"a": 1}, "field", error=ValueError)
+    {'a': 1}
     """
     match value:
         case cabc.Mapping():
@@ -66,6 +71,13 @@ def optional_mapping(
     _reject
         If a non-``None`` value is not a mapping; the supplied ``error``
         factory constructs the raised exception.
+
+    Examples
+    --------
+    >>> optional_mapping(None, "field", error=ValueError) is None
+    True
+    >>> optional_mapping({"a": 1}, "field", error=ValueError)
+    {'a': 1}
     """
     if value is None:
         return None
@@ -115,6 +127,13 @@ def string_mapping(
     LadingError
         The configured ``error`` subclass, constructed by the injected
         ``error`` factory, when ``value`` is not a TOML table.
+
+    Examples
+    --------
+    >>> string_mapping(None, "field", error=ValueError)
+    ()
+    >>> string_mapping({"a": "1"}, "field", error=ValueError)
+    (('a', '1'),)
     """
     match value:
         case None:

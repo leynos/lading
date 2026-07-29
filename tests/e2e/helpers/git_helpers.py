@@ -85,9 +85,10 @@ def git_status_porcelain(repo_path: Path) -> str:
     --------
     >>> import tempfile
     >>> from pathlib import Path
-    >>> repo = Path(tempfile.mkdtemp())
-    >>> git_init(repo)
-    >>> git_status_porcelain(repo)
+    >>> with tempfile.TemporaryDirectory() as tmp:
+    ...     repo = Path(tmp)
+    ...     git_init(repo)
+    ...     git_status_porcelain(repo)
     ''
     """
     stdout, _stderr = _run_git_checked(repo_path, "status", "--porcelain")
@@ -111,9 +112,10 @@ def git_is_clean(repo_path: Path) -> bool:
     --------
     >>> import tempfile
     >>> from pathlib import Path
-    >>> repo = Path(tempfile.mkdtemp())
-    >>> git_init(repo)
-    >>> git_is_clean(repo)
+    >>> with tempfile.TemporaryDirectory() as tmp:
+    ...     repo = Path(tmp)
+    ...     git_init(repo)
+    ...     git_is_clean(repo)
     True
     """
     return not git_status_porcelain(repo_path).strip()

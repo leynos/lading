@@ -113,15 +113,6 @@ def then_publish_excludes_preflight_crate(
     ------
     AssertionError
         If no pre-flight invocation excludes ``crate_name``.
-
-    Examples
-    --------
-    >>> from tests.bdd.steps.test_publish_infrastructure import (
-    ...     _PreflightInvocationRecorder,
-    ... )
-    >>> recorder = _PreflightInvocationRecorder()
-    >>> recorder.record("cargo::test", ("--exclude", "gamma"), {})
-    >>> then_publish_excludes_preflight_crate(recorder, "gamma")
     """
     invocations = _get_required_invocations(
         preflight_recorder,
@@ -156,15 +147,6 @@ def then_publish_limits_preflight_targets(
     ------
     AssertionError
         If no invocation passes ``--lib`` followed by ``--bins``.
-
-    Examples
-    --------
-    >>> from tests.bdd.steps.test_publish_infrastructure import (
-    ...     _PreflightInvocationRecorder,
-    ... )
-    >>> recorder = _PreflightInvocationRecorder()
-    >>> recorder.record("cargo::test", ("--lib", "--bins"), {})
-    >>> then_publish_limits_preflight_targets(recorder)
     """
     invocations = _get_required_invocations(
         preflight_recorder,
@@ -196,15 +178,6 @@ def then_publish_has_no_preflight_excludes(
     ------
     AssertionError
         If any invocation passes ``--exclude``.
-
-    Examples
-    --------
-    >>> from tests.bdd.steps.test_publish_infrastructure import (
-    ...     _PreflightInvocationRecorder,
-    ... )
-    >>> recorder = _PreflightInvocationRecorder()
-    >>> recorder.record("cargo::test", ("--workspace",), {})
-    >>> then_publish_has_no_preflight_excludes(recorder)
     """
     invocations = _get_required_invocations(
         preflight_recorder,
@@ -236,15 +209,6 @@ def then_publish_runs_aux_build(
     ------
     AssertionError
         If no auxiliary build invocation matches ``label``.
-
-    Examples
-    --------
-    >>> from tests.bdd.steps.test_publish_infrastructure import (
-    ...     _PreflightInvocationRecorder,
-    ... )
-    >>> recorder = _PreflightInvocationRecorder()
-    >>> recorder.record("cargo::doc", ("--no-deps",), {})
-    >>> then_publish_runs_aux_build(recorder, "cargo::doc")
     """
     if not preflight_recorder.by_label(label):
         message = f"Expected auxiliary build invocation for {label}"
@@ -272,15 +236,6 @@ def then_cargo_test_env_contains(
     ------
     AssertionError
         If no invocation environment maps ``name`` to ``value``.
-
-    Examples
-    --------
-    >>> from tests.bdd.steps.test_publish_infrastructure import (
-    ...     _PreflightInvocationRecorder,
-    ... )
-    >>> recorder = _PreflightInvocationRecorder()
-    >>> recorder.record("cargo::test", ("--workspace",), {"CI": "1"})
-    >>> then_cargo_test_env_contains(recorder, "CI", "1")
     """
     invocations = _get_required_invocations(
         preflight_recorder,
@@ -311,15 +266,6 @@ def then_cargo_test_env_rustflags_contains(
     ------
     AssertionError
         If no invocation's ``RUSTFLAGS`` contains ``snippet``.
-
-    Examples
-    --------
-    >>> from tests.bdd.steps.test_publish_infrastructure import (
-    ...     _PreflightInvocationRecorder,
-    ... )
-    >>> recorder = _PreflightInvocationRecorder()
-    >>> recorder.record("cargo::test", ("--workspace",), {"RUSTFLAGS": "--cfg foo"})
-    >>> then_cargo_test_env_rustflags_contains(recorder, "--cfg foo")
     """
     invocations = _get_required_invocations(
         preflight_recorder,
@@ -364,15 +310,6 @@ def then_publish_packages_crates_in_order(
         Recorder holding the captured pre-flight command invocations.
     crate_names : str
         Comma-separated crate names in their expected package order.
-
-    Examples
-    --------
-    >>> from tests.bdd.steps.test_publish_infrastructure import (
-    ...     _PreflightInvocationRecorder,
-    ... )
-    >>> recorder = _PreflightInvocationRecorder()
-    >>> recorder.record("cargo::package", (), {"PWD": "/w/alpha"})
-    >>> then_publish_packages_crates_in_order(recorder, "alpha")
     """
     expected = [name.strip() for name in crate_names.split(",") if name.strip()]
     invocations = _get_required_invocations(
@@ -400,15 +337,6 @@ def then_publish_runs_dry_run(
         Recorder holding the captured pre-flight command invocations.
     crate_names : str
         Comma-separated crate names in their expected publish order.
-
-    Examples
-    --------
-    >>> from tests.bdd.steps.test_publish_infrastructure import (
-    ...     _PreflightInvocationRecorder,
-    ... )
-    >>> recorder = _PreflightInvocationRecorder()
-    >>> recorder.record("cargo::publish", ("--dry-run",), {"PWD": "/w/alpha"})
-    >>> then_publish_runs_dry_run(recorder, "alpha")
     """
     expected = _split_names(crate_names)
     invocations = _get_required_invocations(
@@ -437,15 +365,6 @@ def then_publish_runs_live(
         Recorder holding the captured pre-flight command invocations.
     crate_names : str
         Comma-separated crate names in their expected publish order.
-
-    Examples
-    --------
-    >>> from tests.bdd.steps.test_publish_infrastructure import (
-    ...     _PreflightInvocationRecorder,
-    ... )
-    >>> recorder = _PreflightInvocationRecorder()
-    >>> recorder.record("cargo::publish", (), {"PWD": "/w/alpha"})
-    >>> then_publish_runs_live(recorder, "alpha")
     """
     expected = _split_names(crate_names)
     invocations = _get_required_invocations(
@@ -480,16 +399,6 @@ def then_publish_interleaves_live_package_and_publish(
     ------
     AssertionError
         If the observed package/publish order differs from the expected one.
-
-    Examples
-    --------
-    >>> from tests.bdd.steps.test_publish_infrastructure import (
-    ...     _PreflightInvocationRecorder,
-    ... )
-    >>> recorder = _PreflightInvocationRecorder()
-    >>> recorder.record("cargo::package", (), {"PWD": "/w/alpha"})
-    >>> recorder.record("cargo::publish", (), {"PWD": "/w/alpha"})
-    >>> then_publish_interleaves_live_package_and_publish(recorder, "alpha")
     """
     expected_names = _split_names(crate_names)
     filtered = [

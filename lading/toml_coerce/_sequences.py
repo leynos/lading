@@ -41,6 +41,18 @@ def expect_sequence(
 ) -> cabc.Sequence[object] | None:
     """Ensure ``value`` is a non-string sequence (optionally ``None``).
 
+    Parameters
+    ----------
+    value : object
+        The value to coerce.
+    field_name : str
+        Name of the field, used in error messages.
+    error : _ErrorType
+        Exception factory called when ``value`` is not an accepted sequence.
+    allow_none : bool, optional
+        When ``True``, a ``None`` value is returned as ``None`` instead of
+        being rejected (default ``False``).
+
     Returns
     -------
     cabc.Sequence[object] | None
@@ -53,6 +65,16 @@ def expect_sequence(
         The configured ``error`` subclass (built by the ``error`` factory) is
         raised if ``value`` is a string-like value or otherwise not a
         sequence.
+
+    Examples
+    --------
+    >>> expect_sequence(None, "field", error=ValueError, allow_none=True) is None
+    True
+    >>> try:
+    ...     expect_sequence(None, "field", error=ValueError)
+    ... except ValueError as exc:
+    ...     print("rejected")
+    rejected
     """
     match value:
         case None:
@@ -89,6 +111,15 @@ def validate_string_sequence(
 ) -> tuple[str, ...]:
     """Validate that ``sequence`` contains only strings and return them.
 
+    Parameters
+    ----------
+    sequence : cabc.Sequence[typ.Any]
+        The sequence whose entries are validated.
+    field_name : str
+        Name of the field, used in error messages.
+    error : _ErrorType
+        Exception factory called when an entry is not a string.
+
     Returns
     -------
     tuple[str, ...]
@@ -99,6 +130,16 @@ def validate_string_sequence(
     LadingError
         The configured ``error`` subclass (built by the ``error`` factory) is
         raised if any entry is not a string.
+
+    Examples
+    --------
+    >>> validate_string_sequence(["a", "b"], "field", error=ValueError)
+    ('a', 'b')
+    >>> try:
+    ...     validate_string_sequence(["a", 1], "field", error=ValueError)
+    ... except ValueError as exc:
+    ...     print("rejected")
+    rejected
     """
     items: list[str] = []
     for index, entry in enumerate(sequence):
@@ -115,6 +156,17 @@ def string_tuple(
 ) -> tuple[str, ...]:
     """Return a tuple of strings derived from ``value``.
 
+    Parameters
+    ----------
+    value : object
+        The value to coerce. Accepts ``None``, a bare string, or a sequence
+        of strings.
+    field_name : str
+        Name of the field, used in error messages.
+    error : _ErrorType
+        Exception factory called when ``value`` is not one of the accepted
+        forms.
+
     Returns
     -------
     tuple[str, ...]
@@ -127,6 +179,13 @@ def string_tuple(
         The configured ``error`` subclass (built by the ``error`` factory) is
         raised if ``value`` is ``bytes`` or otherwise not a string or
         string sequence.
+
+    Examples
+    --------
+    >>> string_tuple("a", "field", error=ValueError)
+    ('a',)
+    >>> string_tuple(["a", "b"], "field", error=ValueError)
+    ('a', 'b')
     """
     # ``bytearray`` is deliberately excluded from the string/bytes rejection so
     # it flows into ``validate_string_sequence`` (which rejects its int items),
@@ -184,6 +243,17 @@ def string_matrix(
 ) -> tuple[tuple[str, ...], ...]:
     """Return a tuple-of-tuples parsed from ``value`` as string sequences.
 
+    Parameters
+    ----------
+    value : object
+        The value to coerce. Accepts ``None`` or a sequence of string
+        sequences.
+    field_name : str
+        Name of the field, used in error messages.
+    error : _ErrorType
+        Exception factory called when ``value`` is not one of the accepted
+        forms.
+
     Returns
     -------
     tuple[tuple[str, ...], ...]
@@ -196,6 +266,11 @@ def string_matrix(
         The configured ``error`` subclass (built by the ``error`` factory) is
         raised if ``value`` is string-like or otherwise not a sequence of
         string sequences.
+
+    Examples
+    --------
+    >>> string_matrix([["a", "b"], ["c"]], "field", error=ValueError)
+    (('a', 'b'), ('c',))
     """
     match value:
         case None:

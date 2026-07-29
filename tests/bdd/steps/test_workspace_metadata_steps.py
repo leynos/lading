@@ -28,6 +28,11 @@ scenarios(str(_FEATURES_DIR / "workspace_metadata.feature"))
 def given_workspace_directory(tmp_path: Path) -> Path:
     """Provide a workspace root for discovery exercises.
 
+    Parameters
+    ----------
+    tmp_path : Path
+        Pytest temporary directory used as the workspace root.
+
     Returns
     -------
     Path
@@ -55,10 +60,20 @@ def given_cargo_metadata_response(
 def when_inspect_metadata(workspace_directory: Path) -> cabc.Mapping[str, typ.Any]:
     """Execute the discovery helper against the stubbed command.
 
+    Parameters
+    ----------
+    workspace_directory : Path
+        The workspace root to query.
+
     Returns
     -------
     collections.abc.Mapping[str, typing.Any]
         The parsed cargo metadata payload.
+
+    Examples
+    --------
+    >>> load_cargo_metadata(workspace_directory)  # doctest: +SKIP
+    {'workspace_root': '...', 'packages': [...]}
     """
     return load_cargo_metadata(workspace_directory)
 
@@ -78,10 +93,25 @@ def then_metadata_contains_workspace(
 def given_workspace_manifest(workspace_directory: Path) -> Path:
     """Write a workspace member manifest using the workspace README.
 
+    Parameters
+    ----------
+    workspace_directory : Path
+        The workspace root under which the crate is created.
+
     Returns
     -------
     Path
         The path to the written crate manifest.
+
+    Examples
+    --------
+    >>> import tempfile
+    >>> from pathlib import Path
+    >>> tmp = tempfile.TemporaryDirectory()
+    >>> manifest = given_workspace_manifest(Path(tmp.name))
+    >>> manifest.name
+    'Cargo.toml'
+    >>> tmp.cleanup()
     """
     crate_dir = workspace_directory / "alpha"
     crate_dir.mkdir()
@@ -112,10 +142,28 @@ def given_workspace_metadata_payload(
 ) -> dict[str, typ.Any]:
     """Stub metadata for the workspace model scenario.
 
+    Parameters
+    ----------
+    cmd_mox : CmdMox
+        The command double used to stub ``cargo metadata``.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to patch the ``cargo`` executable lookup.
+    crate_manifest : Path
+        The path to the previously written crate manifest.
+    workspace_directory : Path
+        The workspace root reported in the stubbed payload.
+
     Returns
     -------
     dict[str, typing.Any]
         The stubbed metadata payload.
+
+    Examples
+    --------
+    >>> given_workspace_metadata_payload(  # doctest: +SKIP
+    ...     cmd_mox, monkeypatch, crate_manifest, workspace_directory
+    ... )
+    {'workspace_root': '...', 'packages': [...], 'workspace_members': [...]}
     """
     install_cargo_stub(cmd_mox, monkeypatch)
     payload = {
@@ -145,10 +193,20 @@ def when_build_workspace_model(
 ) -> WorkspaceGraph:
     """Construct the workspace graph via the discovery helpers.
 
+    Parameters
+    ----------
+    workspace_directory : Path
+        The workspace root to build the graph from.
+
     Returns
     -------
     WorkspaceGraph
         The workspace graph built from the stubbed metadata.
+
+    Examples
+    --------
+    >>> when_build_workspace_model(workspace_directory)  # doctest: +SKIP
+    WorkspaceGraph(...)
     """
     return load_workspace(workspace_directory)
 
