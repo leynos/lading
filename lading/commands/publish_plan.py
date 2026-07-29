@@ -1,4 +1,32 @@
-"""Publication planning and formatting helpers."""
+"""Publication planning and formatting helpers.
+
+Summary
+-------
+Backs ``lading publish`` with two responsibilities: deciding *what* to publish
+and rendering *that decision* for operators. :func:`plan_publication` resolves
+a workspace graph and the ``publish`` configuration into an immutable
+:class:`PublishPlan` — the publication order plus each skipped-crate group —
+raising :class:`PublishPlanError` when no valid plan exists.
+:func:`format_plan` renders that plan as the plain-text summary operators
+read, composing every section through :func:`render_section`.
+
+Functions / Call sites
+----------------------
+* :func:`plan_publication` — called by ``publish.run`` before staging, to fix
+  the publication order and the skipped-crate groups.
+* :func:`format_plan` — called at the end of ``publish.run``; ``lading.cli``
+  prints that return value verbatim, so this text is user-facing output.
+  ``cli.py`` never imports this module directly.
+* :func:`render_section` / :func:`append_section` — the single section
+  renderer (a query returning lines) and its in-place wrapper.
+* :class:`PublishPlan` — a typing-only dependency of ``publish_manifest``
+  and ``publish_index_check``.
+
+The rendered summary is pinned by syrupy snapshots in
+``tests/unit/publish/__snapshots__/test_formatting_helpers.ambr``, so changing
+a header, a bullet, or the ``Crates to publish: none`` empty state updates
+those snapshots and the publish-plan section of the users' guide.
+"""
 
 from __future__ import annotations
 
@@ -197,19 +225,49 @@ def plan_publication(
     )
 
 
-def _format_crates_section(
-    lines: list[str],
-    crates: tuple[WorkspaceCrate, ...],
+def render_section[T](
+    items: cabc.Sequence[T],
     *,
     header: str,
+    formatter: cabc.Callable[[T], str] = str,
     empty_message: str | None = None,
-) -> None:
-    """Append publishable crate details to ``lines``."""
-    if crates:
-        lines.append(header)
-        lines.extend(f"- {crate.name} @ {crate.version}" for crate in crates)
-    elif empty_message is not None:
-        lines.append(empty_message)
+) -> list[str]:
+    """Return the rendered lines for one plan section.
+
+    This is the single section renderer for publish-plan output (issue #107):
+    a query returning the formatted lines rather than mutating an accumulator,
+    so callers compose sections with ``list.extend``.
+
+    Parameters
+    ----------
+    items:
+        Entries rendered beneath ``header``. An empty sequence renders no
+        header and no bullets unless ``empty_message`` is supplied.
+    header:
+        Section heading emitted before the formatted entries.
+    formatter:
+        Callable mapping each item to its display string. Defaults to ``str``.
+    empty_message:
+        Rendered in place of the section when ``items`` is empty; omit it to
+        skip empty sections entirely.
+
+    Returns
+    -------
+    list[str]
+        The rendered lines for the section.
+
+    Examples
+    --------
+    >>> render_section(["alpha", "beta"], header="Members:")
+    ['Members:', '- alpha', '- beta']
+    >>> render_section([], header="Members:")
+    []
+    >>> render_section([], header="Members:", empty_message="Members: none")
+    ['Members: none']
+    """
+    if items:
+        return [header, *(f"- {formatter(item)}" for item in items)]
+    return [] if empty_message is None else [empty_message]
 
 
 def append_section[T](
@@ -220,6 +278,10 @@ def append_section[T](
     formatter: cabc.Callable[[T], str] = str,
 ) -> None:
     """Append a formatted section to ``lines`` when ``items`` is non-empty.
+
+    Thin command wrapper over :func:`render_section` (issue #107), retained as
+    the historical public helper. New code may prefer ``render_section``, which
+    returns the lines as a query rather than mutating ``lines``.
 
     Parameters
     ----------
@@ -248,9 +310,7 @@ def append_section[T](
     >>> lines
     ['Header:', 'Members:', '- alpha', '- beta']
     """
-    if items:
-        lines.append(header)
-        lines.extend(f"- {formatter(item)}" for item in items)
+    lines.extend(render_section(items, header=header, formatter=formatter))
 
 
 def format_plan(plan: PublishPlan, *, strip_patches: StripPatchesSetting) -> str:
@@ -288,28 +348,33 @@ def format_plan(plan: PublishPlan, *, strip_patches: StripPatchesSetting) -> str
         f"Strip patch strategy: {strip_patches}",
     ]
 
-    _format_crates_section(
-        lines,
-        plan.publishable,
-        header=f"Crates to publish ({len(plan.publishable)}):",
-        empty_message="Crates to publish: none",
+    lines.extend(
+        render_section(
+            plan.publishable,
+            header=f"Crates to publish ({len(plan.publishable)}):",
+            formatter=lambda crate: f"{crate.name} @ {crate.version}",
+            empty_message="Crates to publish: none",
+        )
     )
-    append_section(
-        lines,
-        plan.skipped_manifest,
-        header="Skipped (publish = false):",
-        formatter=lambda crate: crate.name,
+    lines.extend(
+        render_section(
+            plan.skipped_manifest,
+            header="Skipped (publish = false):",
+            formatter=lambda crate: crate.name,
+        )
     )
-    append_section(
-        lines,
-        plan.skipped_configuration,
-        header="Skipped via publish.exclude:",
-        formatter=lambda crate: crate.name,
+    lines.extend(
+        render_section(
+            plan.skipped_configuration,
+            header="Skipped via publish.exclude:",
+            formatter=lambda crate: crate.name,
+        )
     )
-    append_section(
-        lines,
-        plan.missing_configuration_exclusions,
-        header="Configured exclusions not found in workspace:",
+    lines.extend(
+        render_section(
+            plan.missing_configuration_exclusions,
+            header="Configured exclusions not found in workspace:",
+        )
     )
 
     return "\n".join(lines)
@@ -321,4 +386,5 @@ __all__ = [
     "append_section",
     "format_plan",
     "plan_publication",
+    "render_section",
 ]

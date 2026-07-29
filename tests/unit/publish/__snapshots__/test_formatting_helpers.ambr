@@ -1,0 +1,23 @@
+# serializer version: 1
+# name: test_format_plan_snapshot_with_publishable
+  '''
+  Publish plan for <workspace>
+  Strip patch strategy: all
+  Crates to publish (2):
+  - alpha @ 0.1.0
+  - beta @ 0.1.0
+  Skipped (publish = false):
+  - gamma
+  Skipped via publish.exclude:
+  - delta
+  Configured exclusions not found in workspace:
+  - missing
+  '''
+# ---
+# name: test_format_plan_snapshot_without_publishable
+  '''
+  Publish plan for <workspace>
+  Strip patch strategy: per-crate
+  Crates to publish: none
+  '''
+# ---

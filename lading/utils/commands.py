@@ -8,6 +8,14 @@ the codebase.
 Migration context: This is Step 5.1 of the Cuprum migration. Subsequent
 steps will migrate existing plumbum and subprocess code to use this
 catalogue via ``scoped(allowlist=LADING_CATALOGUE.allowlist)``.
+
+The catalogue is staged but intentionally not yet wired into the execution
+path: ``publish_execution._invoke`` still delegates to the subprocess runner,
+which spawns processes directly. The wiring lands with the Phase 5.2
+publish-execution migration in ``docs/roadmap.md`` -- the
+``_invoke_via_subprocess()`` step that rewires ``publish_execution.py``
+command execution onto ``scoped(allowlist=LADING_CATALOGUE.allowlist)``; do
+not mistake this module for live enforcement in the meantime.
 """
 
 from __future__ import annotations
