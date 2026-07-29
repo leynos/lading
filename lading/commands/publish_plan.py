@@ -1,4 +1,32 @@
-"""Publication planning and formatting helpers."""
+"""Publication planning and formatting helpers.
+
+Summary
+-------
+Backs ``lading publish`` with two responsibilities: deciding *what* to publish
+and rendering *that decision* for operators. :func:`plan_publication` resolves
+a workspace graph and the ``publish`` configuration into an immutable
+:class:`PublishPlan` — the publication order plus each skipped-crate group —
+raising :class:`PublishPlanError` when no valid plan exists.
+:func:`format_plan` renders that plan as the plain-text summary operators
+read, composing every section through :func:`render_section`.
+
+Functions / Call sites
+----------------------
+* :func:`plan_publication` — called by ``publish.run`` before staging, to fix
+  the publication order and the skipped-crate groups.
+* :func:`format_plan` — called at the end of ``publish.run``; ``lading.cli``
+  prints that return value verbatim, so this text is user-facing output.
+  ``cli.py`` never imports this module directly.
+* :func:`render_section` / :func:`append_section` — the single section
+  renderer (a query returning lines) and its in-place wrapper.
+* :class:`PublishPlan` — a typing-only dependency of ``publish_manifest``
+  and ``publish_index_check``.
+
+The rendered summary is pinned by syrupy snapshots in
+``tests/unit/publish/__snapshots__/test_formatting_helpers.ambr``, so changing
+a header, a bullet, or the ``Crates to publish: none`` empty state updates
+those snapshots and the publish-plan section of the users' guide.
+"""
 
 from __future__ import annotations
 
