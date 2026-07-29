@@ -23,14 +23,43 @@ from lading.exceptions import LadingError
 
 
 class LockfileRegenerationError(LadingError):
-    """Raise when lockfile regeneration cannot validate or execute."""
+    """Report that Cargo lockfile regeneration cannot be prepared or completed.
+
+    Notes
+    -----
+    This exception derives from :class:`lading.exceptions.LadingError`. It is
+    raised when configured lockfile-regeneration manifests cannot be validated
+    or when regeneration cannot proceed.
+
+    """
 
 
 def resolve_lockfile_paths(
     workspace_root: Path,
     lockfile_manifests: cabc.Sequence[str],
 ) -> tuple[Path, ...]:
-    """Return lockfile paths implied by configured manifest paths."""
+    """Return lockfile paths implied by configured manifest paths.
+
+    Parameters
+    ----------
+    workspace_root : Path
+        Absolute path to the Cargo workspace root.
+    lockfile_manifests : Sequence[str]
+        Configured manifest paths relative to *workspace_root*.
+
+    Returns
+    -------
+    tuple[Path, ...]
+        Execution-ordered, de-duplicated paths to the implied ``Cargo.lock``
+        files, with the workspace-root lockfile first.
+
+    Raises
+    ------
+    LockfileRegenerationError
+        If a configured manifest escapes the workspace or is not named
+        ``Cargo.toml``.
+
+    """
     manifests = _resolve_manifest_paths(workspace_root, lockfile_manifests)
     return tuple(manifest.parent / "Cargo.lock" for manifest in manifests)
 
