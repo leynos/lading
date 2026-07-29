@@ -59,9 +59,10 @@ fixture lockfile and seeing that lockfile listed in the bump output with a
   pre-flight degrades today.
 - All code comments and documentation use en-GB-oxendict spelling.
 - No new external dependencies.
-- No single code file may exceed 400 lines (repository rule); at planning time,
-  `lading/commands/bump_lockfiles.py` was 155 lines, and additions to it and
-  `lading/commands/bump.py` had to respect this.
+- No single code file may exceed 400 lines (repository rule). The final
+  lockfile implementation is split into the 176-line compatibility façade
+  `bump_lockfiles.py`, the 66-line `bump_lockfile_manifests.py`, the 51-line
+  `bump_lockfile_paths.py`, and the 194-line `bump_lockfile_regeneration.py`.
 
 ## Tolerances (exception triggers)
 
@@ -154,6 +155,10 @@ fixture lockfile and seeing that lockfile listed in the bump output with a
   nested lockfile recorded the new version, and `cargo metadata --locked`
   exited 0 afterwards. Also surfaced the versioned-path-dependency edge
   recorded under `Surprises & discoveries`.
+- [x] (2026-07-29 10:07Z) Split the 451-line `bump_lockfiles.py` by
+  responsibility while retaining it as a 176-line compatibility façade. The
+  focused lockfile suite passed with 34 tests and 7 snapshots; all four
+  affected production modules measure at most 194 lines.
 
 ## Surprises & discoveries
 
@@ -243,6 +248,15 @@ fixture lockfile and seeing that lockfile listed in the bump output with a
   fixes were small, behaviour-preserving restructures. A later revision on this
   completed branch also pinned ty as described below. Date/Author: 2026-07-07,
   implementation session.
+- Decision: split manifest merging, path validation, and Cargo regeneration
+  into `bump_lockfile_manifests.py`, `bump_lockfile_paths.py`, and
+  `bump_lockfile_regeneration.py`, while retaining `bump_lockfiles.py` as the
+  public compatibility façade and home of the repository port and adapter.
+  Rationale: the combined module reached 451 lines and mixed four distinct
+  responsibilities. Re-exporting the established functions and exception
+  preserves public imports, while resolving those façade names from
+  `CargoLockfileRepository` preserves the monkeypatch seam used by bump tests.
+  Date/Author: 2026-07-29, implementation session.
 
 ## Outcomes & retrospective
 
@@ -272,6 +286,12 @@ addresses that lesson by defining `TY_VERSION ?= 0.0.56` and invoking the
 checker through `uv tool run --from ty==$(TY_VERSION) ty`; CI calls
 `make typecheck` and does not install ty separately.
 
+The later size refactor preserved that behaviour while making each production
+module cohesive and compliant with the 400-line limit. The compatibility façade
+retains the public function and exception imports and the `LockfileRepository`
+port, while three implementation modules now separate manifest merging, path
+projection, and Cargo execution.
+
 Follow-up candidates (not in scope): rewrite version requirements in non-member
 nested manifests that depend on bumped crates.
 
@@ -289,14 +309,22 @@ pieces:
   `CargoLockfileRepository` adapter performs discovery and merges configured
   manifests with manifests implied by tracked `Cargo.lock` files before either
   dry-run projection or live regeneration.
-- `lading/commands/bump_lockfiles.py` defines the `LockfileRepository` port,
-  its `CargoLockfileRepository` adapter, and the regeneration helpers.
-  `resolve_lockfile_paths(workspace_root, lockfile_manifests)` maps the merged
-  manifest set to lockfile paths for dry-run reporting.
-  `regenerate_lockfiles(workspace_root, lockfile_manifests, *, runner=None)`
-  validates each manifest path (must stay inside the workspace and be named
-  `Cargo.toml`), always prepends the workspace root manifest, de-duplicates,
-  and runs `cargo update --workspace --manifest-path <manifest>` per entry.
+- `lading/commands/bump_lockfiles.py` is the public compatibility façade. It
+  re-exports the established lockfile functions and exception, defines the
+  `LockfileRepository` port, and implements its `CargoLockfileRepository`
+  adapter. The adapter calls the façade-level names so tests and callers can
+  continue to replace them at that established seam.
+- `lading/commands/bump_lockfile_manifests.py` implements
+  `merge_discovered_manifests`, preserving configured order before sorted,
+  de-duplicated discovery results.
+- `lading/commands/bump_lockfile_paths.py` defines
+  `LockfileRegenerationError`, validates manifest paths, prepends the workspace
+  root, de-duplicates resolved paths, and projects them to lockfile paths for
+  dry-run reporting.
+- `lading/commands/bump_lockfile_regeneration.py` implements
+  `regenerate_lockfiles` and its Cargo execution and failure-aggregation
+  helpers. It uses the path module's shared validation and error type, then runs
+  `cargo update --workspace --manifest-path <manifest>` per entry.
 - `lading/commands/lockfile.py` owns discovery and freshness validation.
   Publish uses discovery for freshness validation, while the bump-side
   `CargoLockfileRepository` uses it to construct the merged manifest set.
@@ -378,28 +406,30 @@ Stage B (red): specify the behaviour with failing tests.
 Run the focused tests and confirm each fails for the expected reason before
 Stage C.
 
-Stage C (green): implement the minimal change.
+Stage C (green, historical delivery): implement the minimal feature change.
 
-1. In `lading/commands/bump_lockfiles.py`, add the discovery merge function.
-   It imports `discover_tracked_lockfiles` from `lading.commands.lockfile`,
-   defaults its runner to `lading.runtime.subprocess_runner` when `None`
-   (matching `regenerate_lockfiles`), converts each discovered lockfile path to
+1. Add the discovery merge function at the public
+   `lading.commands.bump_lockfiles` import path. The completed size refactor
+   implements it in `bump_lockfile_manifests.py` and re-exports it from the
+   façade. It imports `discover_tracked_lockfiles` from
+   `lading.commands.lockfile`, defaults its runner to
+   `lading.runtime.subprocess_runner` when `None` (matching
+   `regenerate_lockfiles`), converts each discovered lockfile path to
    `(lockfile.parent / "Cargo.toml").relative_to(workspace_root)` rendered as a
    POSIX string, sorts the discovered entries for determinism, and returns
    configured entries first followed by unseen discovered entries. The existing
-   `_resolve_manifest_paths` continues to prepend the root manifest and
-   de-duplicate resolved paths, so the root lockfile stays first regardless of
-   what discovery returns.
+   The path implementation in `bump_lockfile_paths.py` continues to prepend the
+   root manifest and de-duplicate resolved paths, so the root lockfile stays
+   first regardless of what discovery returns.
 2. In `CargoLockfileRepository`, call the merge function before delegating to
    either the dry-run `resolve_lockfile_paths` helper or the live
    `regenerate_lockfiles` helper. Keep
    `lading/commands/bump.py::_process_lockfiles` dependent only on the
    `LockfileRepository` port, so dry-run and live runs use the same set without
    introducing Git or Cargo execution into the bump domain.
-3. Update module docstrings that describe the old contract: the header of
-   `bump_lockfiles.py` ("any configured nested lockfiles") and the call-graph
-   paragraph in `lockfile.py` (which said before this change that discovery was
-   publish-only).
+3. Update module docstrings that describe the old contract: the public façade
+   header and the call-graph paragraph in `lockfile.py` (which said before this
+   change that discovery was publish-only).
 
 Stage D (refactor, documentation, cleanup):
 
@@ -429,6 +459,14 @@ Commit after each stage that leaves the tree green (AGENTS.md requires small,
 gated commits): Stage B red tests are committed together with Stage C so the
 suite never lands red; Stage D lands as one or two focused commits (behaviour
 message + docs may be separate).
+
+Stage E (completed size refactor): extract manifest merging into
+`bump_lockfile_manifests.py`, path validation and projection into
+`bump_lockfile_paths.py`, and Cargo execution into
+`bump_lockfile_regeneration.py`. Keep `bump_lockfiles.py` as the compatibility
+façade and repository boundary. Re-export the public functions and exception
+without changing signatures, and keep the adapter calling façade-level names to
+preserve runner injection and monkeypatch behaviour.
 
 ## Concrete steps
 
@@ -556,9 +594,11 @@ real fixture packages with their own lockfiles already have this.
 
 ## Interfaces and dependencies
 
-No new dependencies. At the end of Stage C the following must exist:
+No new dependencies. The final public interface remains available from
+`lading/commands/bump_lockfiles.py`, whose implementation imports the following
+definition from `bump_lockfile_manifests.py`:
 
-In `lading/commands/bump_lockfiles.py`:
+Publicly re-exported from `lading/commands/bump_lockfiles.py`:
 
 ```python
 def merge_discovered_manifests(
@@ -577,10 +617,14 @@ def merge_discovered_manifests(
     """
 ```
 
-`CargoLockfileRepository` calls it before delegating the merged result to the
-existing `resolve_lockfile_paths` helper for dry-run projection or
-`regenerate_lockfiles` for live regeneration. The bump-side
-`_process_lockfiles` function depends only on the `LockfileRepository` port.
+`bump_lockfile_paths.py` defines and the façade re-exports
+`LockfileRegenerationError` and `resolve_lockfile_paths`.
+`bump_lockfile_regeneration.py` defines and the façade re-exports
+`regenerate_lockfiles`; it imports the shared exception and private manifest
+resolver from the path module. `CargoLockfileRepository` calls the façade-level
+merge function before delegating the merged result through the façade-level
+projection or regeneration function. The bump-side `_process_lockfiles`
+function depends only on the `LockfileRepository` port.
 
 ## Revision note
 
@@ -602,3 +646,9 @@ new diagnostics. The non-member manifest rewriting follow-up remains open.
 regeneration operation; `_process_lockfiles` remains dependent only on the
 port. This preserves the discovery behaviour delivered by the plan while
 keeping Git and Cargo execution outside the bump domain.
+
+2026-07-29: split the oversized lockfile implementation into cohesive manifest,
+path, and regeneration modules. `bump_lockfiles.py` remains the compatibility
+façade and repository boundary, so public imports and monkeypatch seams remain
+stable. The refactor changes no behaviour and leaves no production module over
+400 lines.
