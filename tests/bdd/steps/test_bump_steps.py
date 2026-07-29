@@ -245,7 +245,9 @@ def then_bump_refreshed_workspace_and_nested_lockfiles(
         This step only asserts the recorded command invocations.
 
     """
-    assert cli_run["returncode"] == 0
+    assert cli_run["returncode"] == 0, (
+        f"stdout:\n{cli_run['stdout']}\nstderr:\n{cli_run['stderr']}"
+    )
     update_args = [
         tuple(invocation.args)
         for invocation in cmd_mox.journal

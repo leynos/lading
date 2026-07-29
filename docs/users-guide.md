@@ -124,7 +124,7 @@ manifest edits made without `lading bump`, or after a bump run with
 `--no-rebuild-lockfiles` — the command exits with code 1 and lists each stale
 lockfile alongside its own repair command:
 
-```text
+```plaintext
 Tracked Cargo.lock files are stale after manifest version changes.
 This can happen after manifest edits made without `lading bump`, or after
 running bump with `--no-rebuild-lockfiles`; repair each stale lockfile

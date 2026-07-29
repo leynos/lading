@@ -1,4 +1,22 @@
-"""Cargo invocation and failure handling for lockfile regeneration."""
+"""Regenerate Cargo lockfiles and report failures across all manifests.
+
+This module invokes ``cargo update --workspace`` for each validated manifest,
+records partial successes, and aggregates multiple failures after every target
+has been attempted. It reuses path validation and the shared regeneration error
+from :mod:`lading.commands.bump_lockfile_paths`.
+
+Examples
+--------
+Regenerate the root and one configured nested lockfile with an injected runner:
+
+```python
+regenerate_lockfiles(
+    workspace_root,
+    ("fixtures/example/Cargo.toml",),
+    runner=runner,
+)
+```
+"""
 
 from __future__ import annotations
 

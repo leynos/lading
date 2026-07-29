@@ -1,4 +1,18 @@
-"""Path validation and projection for Cargo lockfile regeneration."""
+"""Validate Cargo manifest paths and project their lockfile targets.
+
+This module keeps workspace-boundary and ``Cargo.toml`` validation shared
+between dry-run projection and live regeneration. Dry runs use
+:func:`resolve_lockfile_paths` to report the root and configured lockfiles
+without invoking Cargo.
+
+Examples
+--------
+Project the lockfiles that a configured nested manifest would update:
+
+```python
+resolve_lockfile_paths(workspace_root, ("fixtures/example/Cargo.toml",))
+```
+"""
 
 from __future__ import annotations
 
