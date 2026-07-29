@@ -92,6 +92,21 @@ def stub_lockfile_regeneration(
         Modules outside ``_LOCKFILE_STUB_MODULES`` are left unchanged; selected
         modules receive deterministic helpers that avoid invoking Git or Cargo.
 
+    Examples
+    --------
+    For a test module listed in ``_LOCKFILE_STUB_MODULES``, pytest applies this
+    fixture automatically:
+
+    ```python
+    manifests = ("crates/example/Cargo.toml",)
+    merged = bump.bump_lockfiles.merge_discovered_manifests(tmp_path, manifests)
+    assert merged == manifests
+    assert bump.bump_lockfiles.regenerate_lockfiles(tmp_path, merged) == ()
+    ```
+
+    The scoped replacements mean neither Git discovery nor Cargo regeneration
+    runs in those manifest-focused test modules.
+
     """
     if request.module.__name__.rsplit(".", 1)[-1] not in _LOCKFILE_STUB_MODULES:
         return
