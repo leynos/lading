@@ -16,6 +16,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from lading.commands import bump_lockfiles
+from lading.runtime import CommandSpawnError
 
 if typ.TYPE_CHECKING:
     from syrupy.assertion import SnapshotAssertion
@@ -217,8 +218,9 @@ def test_regenerate_lockfiles_partial_failure_updates_earlier_lockfiles(
     )
 
 
-def test_regenerate_lockfiles_wraps_runner_exceptions(tmp_path: Path) -> None:
-    """Runner exceptions should retain their cause for diagnostics."""
+def test_regenerate_lockfiles_wraps_command_spawn_errors(tmp_path: Path) -> None:
+    """Command spawn failures should retain context and their cause."""
+    spawn_error = CommandSpawnError("cargo", FileNotFoundError("cargo"))
 
     def failing_runner(
         command: cabc.Sequence[str],
@@ -226,20 +228,41 @@ def test_regenerate_lockfiles_wraps_runner_exceptions(tmp_path: Path) -> None:
         cwd: Path | None = None,
     ) -> tuple[int, str, str]:
         del command, cwd
-        message = "cargo executable not found"
-        raise OSError(message)
+        raise spawn_error
 
-    with pytest.raises(
-        bump_lockfiles.LockfileRegenerationError,
-        match="cargo executable not found",
-    ) as exc_info:
+    with pytest.raises(bump_lockfiles.LockfileRegenerationError) as exc_info:
         bump_lockfiles.regenerate_lockfiles(
             tmp_path,
             (),
             runner=failing_runner,
         )
 
-    assert isinstance(exc_info.value.__cause__, OSError)
+    root_manifest = (tmp_path / "Cargo.toml").resolve()
+    expected_message = (
+        f"Cargo lockfile regeneration failed for {root_manifest}: {spawn_error}"
+    )
+    assert str(exc_info.value) == expected_message
+    assert exc_info.value.__cause__ is spawn_error
+
+
+def test_regenerate_lockfiles_propagates_unexpected_runner_defects(
+    tmp_path: Path,
+) -> None:
+    """Unexpected injected-runner defects should escape unchanged."""
+    defect = RuntimeError("runner invariant violated")
+
+    def defective_runner(
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+    ) -> tuple[int, str, str]:
+        del command, cwd
+        raise defect
+
+    with pytest.raises(RuntimeError) as exc_info:
+        bump_lockfiles.regenerate_lockfiles(tmp_path, (), runner=defective_runner)
+
+    assert exc_info.value is defect
 
 
 # ---------------------------------------------------------------------------
@@ -383,7 +406,7 @@ def test_regenerate_lockfiles_aggregate_chains_first_underlying_cause(
     ab_workspace: Path,
 ) -> None:
     """The aggregated error chains from the first failure's underlying cause."""
-    boom = OSError("cargo executable not found")
+    boom = CommandSpawnError("cargo", FileNotFoundError("cargo"))
 
     def failing_runner(
         command: cabc.Sequence[str],

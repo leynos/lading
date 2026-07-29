@@ -32,7 +32,7 @@ from lading.commands.bump_lockfile_paths import (
     LockfileRegenerationError,
     _resolve_manifest_paths,
 )
-from lading.runtime import CommandRunner, subprocess_runner
+from lading.runtime import CommandRunner, CommandSpawnError, subprocess_runner
 from lading.utils.process import with_detail
 
 _LOGGER = logging.getLogger(__name__)
@@ -199,7 +199,7 @@ def _run_workspace_lockfile_update(
             ),
             cwd=workspace_root,
         )
-    except Exception as exc:
+    except (CommandSpawnError, ValueError) as exc:
         message = f"Cargo lockfile regeneration failed for {manifest_path}: {exc}"
         raise LockfileRegenerationError(message) from exc
     if exit_code != 0:
