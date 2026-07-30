@@ -214,16 +214,6 @@ def plan_publication(
         missing entries) or the workspace dependency graph contains a cycle;
         propagated from :func:`_resolve_configured_order` and
         :func:`_resolve_topological_order`.
-
-    Examples
-    --------
-    >>> from pathlib import Path
-    >>> from lading.config import LadingConfig
-    >>> from lading.workspace import WorkspaceGraph
-    >>> workspace = WorkspaceGraph(workspace_root=Path("ws"), crates=())
-    >>> plan = plan_publication(workspace, LadingConfig())
-    >>> plan.publishable_names
-    ()
     """
     root_path = workspace.workspace_root if workspace_root is None else workspace_root
     configured_exclusions = tuple(configuration.publish.exclude)
