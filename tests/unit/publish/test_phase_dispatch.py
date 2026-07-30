@@ -356,7 +356,7 @@ def test_run_dry_run_phase_normalises_packaging_preparation_failure(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """A packaging preparation error becomes a preflight error."""
-    caplog.set_level(logging.ERROR, logger="lading.commands.publish")
+    caplog.set_level(logging.ERROR, logger=publish_pipeline.LOGGER.name)
     failure = publish_pipeline.PublishPreparationError("staging failed")
 
     with pytest.raises(
@@ -374,7 +374,7 @@ def test_run_dry_run_phase_succeeds_without_logging(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """A successful phase invokes its action without emitting an error."""
-    caplog.set_level(logging.ERROR, logger="lading.commands.publish")
+    caplog.set_level(logging.ERROR, logger=publish_pipeline.LOGGER.name)
     calls: list[str] = []
 
     publish_pipeline._run_dry_run_phase("packaging", lambda: calls.append("ran"))
@@ -386,7 +386,7 @@ def test_run_dry_run_phase_reraises_publish_preflight_failure(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """A publish preflight error retains its type and traceback."""
-    caplog.set_level(logging.ERROR, logger="lading.commands.publish")
+    caplog.set_level(logging.ERROR, logger=publish_pipeline.LOGGER.name)
     failure = publish.PublishPreflightError("publish failed")
 
     with pytest.raises(publish.PublishPreflightError) as excinfo:
