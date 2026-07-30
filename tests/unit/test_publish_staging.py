@@ -246,6 +246,35 @@ def test_prepare_workspace_registers_cleanup(
     assert not preparation.staging_root.exists()
 
 
+def test_prepare_workspace_cleanup_removes_auto_created_build_directory(
+    monkeypatch: pytest.MonkeyPatch,
+    prepare_workspace_fixtures: PrepareWorkspaceFixtures,
+    preparation_fixtures: PreparationFixtures,
+) -> None:
+    """Cleanup removes the full temporary build directory that staging creates."""
+    fx = prepare_workspace_fixtures
+    pf = preparation_fixtures
+    workspace_root = fx.tmp_path / "workspace"
+    workspace_root.mkdir()
+    crate = pf.make_crate(workspace_root, "alpha")
+    plan = publish.plan_publication(
+        pf.make_workspace(workspace_root, crate), pf.make_config()
+    )
+    registered: list[cabc.Callable[[], None]] = []
+
+    monkeypatch.setattr(publish_staging.atexit, "register", registered.append)
+
+    preparation = publish_staging.prepare_workspace(
+        plan, options=publish.PublishOptions(cleanup=True)
+    )
+    build_directory = preparation.staging_root.parent
+
+    assert len(registered) == 1
+    registered[0]()
+
+    assert not build_directory.exists()
+
+
 @pytest.mark.parametrize(
     "crate_spec",
     [

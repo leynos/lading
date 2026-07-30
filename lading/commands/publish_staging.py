@@ -38,7 +38,7 @@ class PublishPreparation:
 
     Attributes
     ----------
-    staging_root:
+    staging_root : Path
         Root of the copied workspace used by publication commands.
     """
 
@@ -118,6 +118,7 @@ def prepare_workspace(
         active_options = PublishOptions()
     else:
         active_options = options
+    auto_created_build_directory = active_options.build_directory is None
     build_directory = _normalise_build_directory(
         plan.workspace_root, active_options.build_directory
     )
@@ -134,10 +135,12 @@ def prepare_workspace(
     LOGGER.info("Workspace README staging skipped; handled by lading bump")
     preparation = PublishPreparation(staging_root=staging_root)
     if active_options.cleanup:
-        cleanup_target = staging_root
+        cleanup_target = (
+            build_directory if auto_created_build_directory else staging_root
+        )
 
         def _cleanup() -> None:
-            """Remove the staged workspace tree on process exit."""
+            """Remove staging artifacts on process exit."""
             shutil.rmtree(cleanup_target, ignore_errors=True)
 
         atexit.register(_cleanup)
@@ -146,9 +149,10 @@ def prepare_workspace(
 
 def _format_preparation_summary(preparation: PublishPreparation) -> tuple[str, ...]:
     """Return formatted summary lines for staging results."""
-    lines = [f"Staged workspace at: {preparation.staging_root}"]
-    lines.append("Workspace READMEs are handled by lading bump.")
-    return tuple(lines)
+    return (
+        f"Staged workspace at: {preparation.staging_root}",
+        "Workspace READMEs are handled by lading bump.",
+    )
 
 
 def _resolve_staged_crate_root(
@@ -167,7 +171,7 @@ def _resolve_staged_crate_root(
         raise PublishPreparationError(message) from exc
 
     staged_root = staging_root / relative_root
-    if not staged_root.exists():  # pragma: no cover - defensive guard
+    if not staged_root.exists():
         message = f"Staged crate root not found for {crate.name!r}: {staged_root}"
         raise PublishPreparationError(message)
 
