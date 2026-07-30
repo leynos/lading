@@ -1,5 +1,5 @@
 # serializer version: 1
-# name: test_bump_message_with_nested_lockfile
+# name: TestBumpLockfileMessages.test_message[nested]
   '''
   Updated version to 1.2.3 in 1 manifest(s) and 2 lockfile(s):
   - Cargo.toml
@@ -7,14 +7,14 @@
   - tests/ui_lints/Cargo.lock (lockfile)
   '''
 # ---
-# name: test_bump_message_with_root_lockfile
+# name: TestBumpLockfileMessages.test_message[root]
   '''
   Updated version to 1.2.3 in 1 manifest(s) and 1 lockfile(s):
   - Cargo.toml
   - Cargo.lock (lockfile)
   '''
 # ---
-# name: test_stale_lockfile_error_multiple
+# name: TestStaleLockfileMessages.test_message[multiple]
   '''
   Tracked Cargo.lock files are stale after manifest version changes.
   This commonly happens after running `lading bump`; repair each stale lockfile directly:
@@ -24,7 +24,7 @@
     cargo generate-lockfile --manifest-path /ws/tests/ui_lints/Cargo.toml
   '''
 # ---
-# name: test_stale_lockfile_error_single
+# name: TestStaleLockfileMessages.test_message[single]
   '''
   Tracked Cargo.lock files are stale after manifest version changes.
   This commonly happens after running `lading bump`; repair each stale lockfile directly:

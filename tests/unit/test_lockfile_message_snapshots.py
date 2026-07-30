@@ -11,6 +11,8 @@ from __future__ import annotations
 import typing as typ
 from pathlib import Path
 
+import pytest
+
 from lading.commands import bump
 from lading.commands.publish_preflight import _build_stale_lockfile_message
 
@@ -30,41 +32,72 @@ def _result_message(changes: bump.BumpChanges) -> str:
     )
 
 
-def test_bump_message_with_root_lockfile(snapshot: SnapshotAssertion) -> None:
-    """A workspace-root Cargo.lock is listed with the (lockfile) suffix."""
-    changes = bump.BumpChanges(
-        manifests=(_WORKSPACE_ROOT / "Cargo.toml",),
-        lockfiles=(_WORKSPACE_ROOT / "Cargo.lock",),
+class TestBumpLockfileMessages:
+    """Snapshot bump messages for root and nested lockfiles."""
+
+    @pytest.mark.parametrize(
+        ("lockfiles", "scenario"),
+        [
+            pytest.param(
+                (_WORKSPACE_ROOT / "Cargo.lock",),
+                "root",
+                id="root",
+            ),
+            pytest.param(
+                (
+                    _WORKSPACE_ROOT / "Cargo.lock",
+                    _WORKSPACE_ROOT / "tests" / "ui_lints" / "Cargo.lock",
+                ),
+                "nested",
+                id="nested",
+            ),
+        ],
     )
+    def test_message(
+        self,
+        snapshot: SnapshotAssertion,
+        lockfiles: tuple[Path, ...],
+        scenario: str,
+    ) -> None:
+        """Lockfiles render relative to the workspace root."""
+        changes = bump.BumpChanges(
+            manifests=(_WORKSPACE_ROOT / "Cargo.toml",),
+            lockfiles=lockfiles,
+        )
 
-    assert snapshot == _result_message(changes)
+        assert snapshot == _result_message(changes), (
+            f"{scenario} lockfile bump message changed"
+        )
 
 
-def test_bump_message_with_nested_lockfile(snapshot: SnapshotAssertion) -> None:
-    """A nested Cargo.lock renders relative to the workspace root."""
-    changes = bump.BumpChanges(
-        manifests=(_WORKSPACE_ROOT / "Cargo.toml",),
-        lockfiles=(
-            _WORKSPACE_ROOT / "Cargo.lock",
-            _WORKSPACE_ROOT / "tests" / "ui_lints" / "Cargo.lock",
-        ),
+class TestStaleLockfileMessages:
+    """Snapshot stale-lockfile errors for one and multiple lockfiles."""
+
+    @pytest.mark.parametrize(
+        ("lockfiles", "scenario"),
+        [
+            pytest.param(
+                [_WORKSPACE_ROOT / "Cargo.lock"],
+                "single",
+                id="single",
+            ),
+            pytest.param(
+                [
+                    _WORKSPACE_ROOT / "Cargo.lock",
+                    _WORKSPACE_ROOT / "tests" / "ui_lints" / "Cargo.lock",
+                ],
+                "multiple",
+                id="multiple",
+            ),
+        ],
     )
+    def test_message(
+        self,
+        snapshot: SnapshotAssertion,
+        lockfiles: list[Path],
+        scenario: str,
+    ) -> None:
+        """Stale lockfiles each list their own repair command."""
+        message = _build_stale_lockfile_message(lockfiles)
 
-    assert snapshot == _result_message(changes)
-
-
-def test_stale_lockfile_error_single(snapshot: SnapshotAssertion) -> None:
-    """A single stale lockfile lists one repair command."""
-    message = _build_stale_lockfile_message([_WORKSPACE_ROOT / "Cargo.lock"])
-
-    assert snapshot == message
-
-
-def test_stale_lockfile_error_multiple(snapshot: SnapshotAssertion) -> None:
-    """Multiple stale lockfiles each list their own repair command."""
-    message = _build_stale_lockfile_message([
-        _WORKSPACE_ROOT / "Cargo.lock",
-        _WORKSPACE_ROOT / "tests" / "ui_lints" / "Cargo.lock",
-    ])
-
-    assert snapshot == message
+        assert snapshot == message, f"{scenario} stale-lockfile message changed"
