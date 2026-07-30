@@ -34,14 +34,15 @@ def func(x):
 def func(x):
     if x > 0:
         return x
-    return 0
+    return
 ```
 
-Ensure all branches explicitly return a value if any branch does.
+Ensure all branches return explicitly if any branch returns a value. Use a bare
+`return` when the other result is `None`, as required by R501.
 
 ______________________________________________________________________
 
-## R503 — Add an Explicit Return at the End
+## R503 — Add a Terminal Return When Another Path Returns a Value
 
 ```python
 # BAD:
@@ -54,10 +55,13 @@ def func(x):
 def func(x):
     if x > 0:
         return x
-    return -1
+    return
 ```
 
-Don't rely on implicit `None`—always return something at the end.
+Don't rely on implicit `None` if the function may return a value
+elsewhere—always return something at the end. This requirement does not apply
+to functions whose only possible result is `None`; they do not need a
+redundant bare `return` at the end.
 
 ______________________________________________________________________
 
