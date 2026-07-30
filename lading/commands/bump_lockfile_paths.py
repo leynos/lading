@@ -57,18 +57,39 @@ def resolve_lockfile_paths(
     ------
     LockfileRegenerationError
         If a configured manifest escapes the workspace or is not named
-        ``Cargo.toml``.
+        ``Cargo.toml``, as enforced by :func:`resolve_manifest_paths`.
 
     """
-    manifests = _resolve_manifest_paths(workspace_root, lockfile_manifests)
+    manifests = resolve_manifest_paths(workspace_root, lockfile_manifests)
     return tuple(manifest.parent / "Cargo.lock" for manifest in manifests)
 
 
-def _resolve_manifest_paths(
+def resolve_manifest_paths(
     workspace_root: Path,
     lockfile_manifests: cabc.Sequence[str],
 ) -> tuple[Path, ...]:
-    """Return validated root and configured manifest paths in execution order."""
+    """Return validated manifest paths in lockfile execution order.
+
+    Parameters
+    ----------
+    workspace_root : Path
+        Absolute path to the Cargo workspace root.
+    lockfile_manifests : Sequence[str]
+        Configured manifest paths relative to *workspace_root*.
+
+    Returns
+    -------
+    tuple[Path, ...]
+        Execution-ordered, de-duplicated manifest paths, with the workspace-root
+        ``Cargo.toml`` first.
+
+    Raises
+    ------
+    LockfileRegenerationError
+        If a configured manifest escapes the workspace or is not named
+        ``Cargo.toml``.
+
+    """
     resolved_root = workspace_root.resolve()
     root_manifest = (workspace_root / "Cargo.toml").resolve()
     seen_manifests: set[Path] = {root_manifest}

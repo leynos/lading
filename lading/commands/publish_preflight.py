@@ -240,8 +240,8 @@ def _build_stale_lockfile_message(stale_lockfiles: list[Path]) -> str:
     lines = [
         "Tracked Cargo.lock files are stale after manifest version changes.",
         (
-            "This can happen after manifest edits made without `lading bump`, "
-            "or after running bump with `--no-rebuild-lockfiles`; repair each "
+            "This can happen after manifest changes made without `lading bump`, "
+            "or after running `lading bump --no-rebuild-lockfiles`; repair each "
             "stale lockfile directly:"
         ),
     ]

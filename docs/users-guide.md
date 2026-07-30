@@ -126,8 +126,8 @@ lockfile alongside its own repair command:
 
 ```plaintext
 Tracked Cargo.lock files are stale after manifest version changes.
-This can happen after manifest edits made without `lading bump`, or after
-running bump with `--no-rebuild-lockfiles`; repair each stale lockfile
+This can happen after manifest changes made without `lading bump`, or after
+running `lading bump --no-rebuild-lockfiles`; repair each stale lockfile
 directly:
 - <path>/Cargo.lock
   cargo generate-lockfile --manifest-path <path>/Cargo.toml

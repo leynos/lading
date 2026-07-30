@@ -30,7 +30,7 @@ from pathlib import Path
 
 from lading.commands.bump_lockfile_paths import (
     LockfileRegenerationError,
-    _resolve_manifest_paths,
+    resolve_manifest_paths,
 )
 from lading.runtime import CommandRunner, CommandSpawnError, subprocess_runner
 from lading.utils.process import with_detail
@@ -85,7 +85,7 @@ def regenerate_lockfiles(
     such disambiguation and surfaces the plain cargo error.
     """
     command_runner = subprocess_runner if runner is None else runner
-    manifests = _resolve_manifest_paths(workspace_root, lockfile_manifests)
+    manifests = resolve_manifest_paths(workspace_root, lockfile_manifests)
     started_at = time.perf_counter()
     _LOGGER.info("Regenerating %d Cargo lockfile(s)", len(manifests))
     lockfiles, failures = _collect_lockfile_results(

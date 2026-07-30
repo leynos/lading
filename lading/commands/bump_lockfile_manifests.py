@@ -1,4 +1,18 @@
-"""Manifest discovery and merging for Cargo lockfile regeneration."""
+"""Merge configured and git-discovered manifests for lockfile regeneration.
+
+This module combines configured manifest paths with manifests implied by
+git-tracked ``Cargo.lock`` files. Configured entries stay first, discovered
+entries follow deterministically, equivalent resolved paths are de-duplicated,
+and non-git workspaces retain the configured entries.
+
+Examples
+--------
+Merge a configured nested manifest with manifests discovered in the workspace:
+
+```python
+merge_discovered_manifests(workspace_root, ("fixtures/example/Cargo.toml",))
+```
+"""
 
 from __future__ import annotations
 

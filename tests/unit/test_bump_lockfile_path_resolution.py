@@ -55,20 +55,14 @@ _SEGMENT = st.text(
 
 @st.composite
 def _inside_dir(draw: st.DrawFn) -> list[str]:
-    """Draw a relative directory path that stays within the workspace.
-
-    Alongside real segments and redundant ``.`` segments, this emits safe
-    ``..`` parent-traversal segments that never ascend above the workspace
-    root after normalisation: a ``..`` is only produced while a prior real
-    segment remains to cancel it (the running segment balance never drops
-    below zero). Cases such as ``crate/../Cargo.toml`` are therefore
-    exercised without allowing traversal above the root.
-    """
+    """Draw a relative directory path that stays within the workspace."""
     length = draw(st.integers(min_value=0, max_value=4))
     components: list[str] = []
     depth = 0
     for _ in range(length):
         options = [_SEGMENT, st.just(".")]
+        # Emit ".." only while a real segment remains to cancel it. This
+        # exercises safe traversal without allowing normalisation above root.
         if depth > 0:
             options.append(st.just(".."))
         segment = draw(st.one_of(*options))

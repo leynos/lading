@@ -241,8 +241,12 @@ def test_regenerate_lockfiles_wraps_command_spawn_errors(tmp_path: Path) -> None
     expected_message = (
         f"Cargo lockfile regeneration failed for {root_manifest}: {spawn_error}"
     )
-    assert str(exc_info.value) == expected_message
-    assert exc_info.value.__cause__ is spawn_error
+    assert str(exc_info.value) == expected_message, (
+        "wrapped spawn failure must retain the contextual exception message"
+    )
+    assert exc_info.value.__cause__ is spawn_error, (
+        "wrapped spawn failure must retain CommandSpawnError as __cause__"
+    )
 
 
 def test_regenerate_lockfiles_propagates_unexpected_runner_defects(
@@ -262,7 +266,9 @@ def test_regenerate_lockfiles_propagates_unexpected_runner_defects(
     with pytest.raises(RuntimeError) as exc_info:
         bump_lockfiles.regenerate_lockfiles(tmp_path, (), runner=defective_runner)
 
-    assert exc_info.value is defect
+    assert exc_info.value is defect, (
+        "unexpected runner defect must propagate as the original exception"
+    )
 
 
 # ---------------------------------------------------------------------------

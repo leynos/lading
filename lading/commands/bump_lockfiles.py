@@ -55,9 +55,8 @@ class CargoLockfileRepository:
         Raises
         ------
         LockfileRegenerationError
-            If any configured manifest path is invalid (outside the
-            workspace or not named ``Cargo.toml``), propagated from
-            :func:`_resolve_manifest_paths`.
+            If a configured manifest is outside the workspace or is not named
+            ``Cargo.toml``.
         """
         merged_manifests = merge_discovered_manifests(
             workspace_root, lockfile_manifests, runner=self.runner
@@ -137,9 +136,8 @@ class LockfileRepository(typ.Protocol):
         Raises
         ------
         LockfileRegenerationError
-            If any configured manifest path is invalid (outside the
-            workspace or not named ``Cargo.toml``), propagated from
-            :func:`_resolve_manifest_paths`.
+            If a configured manifest is outside the workspace or is not named
+            ``Cargo.toml``.
         """
 
     def regenerate_lockfiles(

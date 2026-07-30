@@ -22,8 +22,8 @@ looking for project guidance, then follow the link that matches the task.
 
 ## Execution plans
 
-Living delivery documents under `execplans/`, one per branch, recording the
-plan, progress, decisions, and retrospective for a change.
+Execution plans are living delivery documents under `execplans/`, one per
+branch, recording the plan, progress, decisions, and retrospective for a change.
 
 - [Regenerate discovered nested lockfiles][execplan-regenerate-lockfiles] -
   completed plan for discovery-driven lockfile regeneration in the bump command.
