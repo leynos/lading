@@ -36,6 +36,8 @@ class PublishOptions:
     workspace: WorkspaceGraph | None = None
     command_runner: CommandRunner | None = None
     allow_unpublished_workspace_deps: bool = False
+
+
 def _ensure_configuration(
     configuration: LadingConfig | None, workspace_root: Path
 ) -> LadingConfig:
@@ -77,6 +79,8 @@ def _validate_publication_options(options: PublishOptions) -> None:
         LOGGER.info(
             "Allowing unpublished workspace dependencies during dry-run publish"
         )
+
+
 def run(
     workspace_root: Path,
     configuration: LadingConfig | None = None,
