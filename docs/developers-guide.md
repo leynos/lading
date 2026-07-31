@@ -209,15 +209,28 @@ resolve from the crate directory, and leaves absolute URI targets unchanged.
 Markdown links in fenced code blocks, indented code blocks, and inline code
 spans are preserved verbatim.
 
-`lading.commands.bump_lockfiles` owns bump-side manifest merging and Cargo
-lockfile regeneration after manifest changes. `merge_discovered_manifests`
-unions the configured `bump.lockfile_manifests` entries with manifests implied
-by git-tracked `Cargo.lock` files (reusing
-`lading.commands.lockfile.discover_tracked_lockfiles`); configured entries keep
-their order and discovered entries follow in sorted order.
-`regenerate_lockfiles` always includes the workspace root `Cargo.toml`,
-validates nested manifests before invoking Cargo, and de-duplicates resolved
-manifest paths.
+### Lockfile regeneration modules
+
+`lading.commands.bump_lockfiles` is the public compatibility façade. It owns
+the bump-side `LockfileRepository` port and `CargoLockfileRepository` adapter
+and re-exports the public lockfile helpers from three cohesive modules:
+
+- `lading.commands.bump_lockfile_manifests` owns
+  `merge_discovered_manifests`. It unions configured `bump.lockfile_manifests`
+  entries with manifests implied by git-tracked `Cargo.lock` files (reusing
+  `lading.commands.lockfile.discover_tracked_lockfiles`); configured entries
+  keep their order and discovered entries follow in sorted order.
+- `lading.commands.bump_lockfile_paths` owns `LockfileRegenerationError`,
+  `resolve_manifest_paths`, and `resolve_lockfile_paths`.
+  `resolve_manifest_paths` validates that configured entries stay inside the
+  workspace and are named `Cargo.toml`, inserts the workspace-root manifest,
+  and de-duplicates resolved paths. `resolve_lockfile_paths` projects that
+  execution-ordered manifest tuple to the corresponding `Cargo.lock` paths
+  without invoking Cargo.
+- `lading.commands.bump_lockfile_regeneration` owns `regenerate_lockfiles` and
+  its Cargo-execution helpers. `regenerate_lockfiles` uses the same validated,
+  root-first manifest order, attempts every Cargo update, returns successful
+  lockfile paths in execution order, and aggregates multi-manifest failures.
 
 For screen readers: the following flowchart traces `regenerate_lockfiles`. It
 resolves the manifest list, then initializes empty `lockfiles` and `failures`
