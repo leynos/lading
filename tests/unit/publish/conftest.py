@@ -177,8 +177,9 @@ def make_crate(
     --------
     >>> import tempfile
     >>> from pathlib import Path
-    >>> crate = make_crate(Path(tempfile.mkdtemp()), "alpha")
-    >>> crate.name
+    >>> with tempfile.TemporaryDirectory() as tmp:
+    ...     crate = make_crate(Path(tmp), "alpha")
+    ...     crate.name
     'alpha'
     """
     root = Path(root)
@@ -247,8 +248,9 @@ def make_workspace(root: Path, *crates: WorkspaceCrate) -> WorkspaceGraph:
     --------
     >>> import tempfile
     >>> from pathlib import Path
-    >>> workspace = make_workspace(Path(tempfile.mkdtemp()))
-    >>> len(workspace.crates)
+    >>> with tempfile.TemporaryDirectory() as tmp:
+    ...     workspace = make_workspace(Path(tmp))
+    ...     len(workspace.crates)
     1
     """
     root = Path(root)
@@ -277,8 +279,9 @@ def make_dependency_chain(
     --------
     >>> import tempfile
     >>> from pathlib import Path
-    >>> alpha, beta, gamma = make_dependency_chain(Path(tempfile.mkdtemp()))
-    >>> (alpha.name, beta.name, gamma.name)
+    >>> with tempfile.TemporaryDirectory() as tmp:
+    ...     alpha, beta, gamma = make_dependency_chain(Path(tmp))
+    ...     (alpha.name, beta.name, gamma.name)
     ('alpha', 'beta', 'gamma')
     """
     alpha = make_crate(root, "alpha")
@@ -312,9 +315,10 @@ def make_n_crate_chain(root: Path, count: int) -> tuple[WorkspaceCrate, ...]:
     --------
     >>> import tempfile
     >>> from pathlib import Path
-    >>> crate_0, crate_1, crate_2 = make_n_crate_chain(Path(tempfile.mkdtemp()), 3)
-    >>> # crate_0 <- crate_1 <- crate_2: crate_1 depends on crate_0 and
-    >>> # crate_2 depends on crate_1.
+    >>> with tempfile.TemporaryDirectory() as tmp:
+    ...     crate_0, crate_1, crate_2 = make_n_crate_chain(Path(tmp), 3)
+    ...     # crate_0 <- crate_1 <- crate_2: crate_1 depends on crate_0 and
+    ...     # crate_2 depends on crate_1.
 
     """
     if count < 1:
@@ -353,9 +357,10 @@ def plan_with_crates(
     --------
     >>> import tempfile
     >>> from pathlib import Path
-    >>> root = Path(tempfile.mkdtemp())
-    >>> plan = plan_with_crates(root, (make_crate(root, "alpha"),))
-    >>> [crate.name for crate in plan.publishable]
+    >>> with tempfile.TemporaryDirectory() as tmp:
+    ...     root = Path(tmp)
+    ...     plan = plan_with_crates(root, (make_crate(root, "alpha"),))
+    ...     [crate.name for crate in plan.publishable]
     ['alpha']
     """
     root = tmp_path.resolve()
@@ -383,10 +388,11 @@ def prepare_staging_root(plan: publish.PublishPlan, base_dir: Path) -> Path:
     --------
     >>> import tempfile
     >>> from pathlib import Path
-    >>> root = Path(tempfile.mkdtemp())
-    >>> plan = plan_with_crates(root, (make_crate(root, "alpha"),))
-    >>> staging = prepare_staging_root(plan, root)
-    >>> staging.exists()
+    >>> with tempfile.TemporaryDirectory() as tmp:
+    ...     root = Path(tmp)
+    ...     plan = plan_with_crates(root, (make_crate(root, "alpha"),))
+    ...     staging = prepare_staging_root(plan, root)
+    ...     staging.exists()
     True
     """
     staging_root = base_dir / "staging" / plan.workspace_root.name

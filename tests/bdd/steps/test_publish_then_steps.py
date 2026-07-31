@@ -112,7 +112,8 @@ def then_publish_excludes_preflight_crate(
     Raises
     ------
     AssertionError
-        If no pre-flight invocation excludes ``crate_name``.
+        If no cargo test pre-flight invocation was recorded at all, or
+        if no pre-flight invocation excludes ``crate_name``.
     """
     invocations = _get_required_invocations(
         preflight_recorder,
@@ -146,7 +147,8 @@ def then_publish_limits_preflight_targets(
     Raises
     ------
     AssertionError
-        If no invocation passes ``--lib`` followed by ``--bins``.
+        If no cargo test pre-flight invocation was recorded at all, or
+        if no invocation passes ``--lib`` followed by ``--bins``.
     """
     invocations = _get_required_invocations(
         preflight_recorder,
@@ -177,7 +179,8 @@ def then_publish_has_no_preflight_excludes(
     Raises
     ------
     AssertionError
-        If any invocation passes ``--exclude``.
+        If no cargo test pre-flight invocation was recorded at all, or
+        if any invocation passes ``--exclude``.
     """
     invocations = _get_required_invocations(
         preflight_recorder,
@@ -235,7 +238,8 @@ def then_cargo_test_env_contains(
     Raises
     ------
     AssertionError
-        If no invocation environment maps ``name`` to ``value``.
+        If no cargo test pre-flight invocation was recorded at all, or
+        if no invocation environment maps ``name`` to ``value``.
     """
     invocations = _get_required_invocations(
         preflight_recorder,
@@ -265,7 +269,8 @@ def then_cargo_test_env_rustflags_contains(
     Raises
     ------
     AssertionError
-        If no invocation's ``RUSTFLAGS`` contains ``snippet``.
+        If no cargo test pre-flight invocation was recorded at all, or
+        if no invocation's ``RUSTFLAGS`` contains ``snippet``.
     """
     invocations = _get_required_invocations(
         preflight_recorder,
@@ -310,7 +315,13 @@ def then_publish_packages_crates_in_order(
         Recorder holding the captured pre-flight command invocations.
     crate_names : str
         Comma-separated crate names in their expected package order.
-    """
+
+    Raises
+    ------
+    AssertionError
+        If no ``cargo::package`` invocations were recorded, or the
+        packaged crate order does not match the expected publish order.
+    """  # noqa: DOC502
     expected = [name.strip() for name in crate_names.split(",") if name.strip()]
     invocations = _get_required_invocations(
         preflight_recorder,
@@ -337,7 +348,14 @@ def then_publish_runs_dry_run(
         Recorder holding the captured pre-flight command invocations.
     crate_names : str
         Comma-separated crate names in their expected publish order.
-    """
+
+    Raises
+    ------
+    AssertionError
+        If no ``cargo::publish`` invocations were recorded, an invocation
+        is missing the ``--dry-run`` flag, or the crate order does not
+        match.
+    """  # noqa: DOC502
     expected = _split_names(crate_names)
     invocations = _get_required_invocations(
         preflight_recorder,
@@ -365,7 +383,14 @@ def then_publish_runs_live(
         Recorder holding the captured pre-flight command invocations.
     crate_names : str
         Comma-separated crate names in their expected publish order.
-    """
+
+    Raises
+    ------
+    AssertionError
+        If no ``cargo::publish`` invocations were recorded, an invocation
+        unexpectedly carries the ``--dry-run`` flag, or the crate order
+        does not match.
+    """  # noqa: DOC502
     expected = _split_names(crate_names)
     invocations = _get_required_invocations(
         preflight_recorder,
