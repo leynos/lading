@@ -37,6 +37,11 @@ def given_workspace_directory(tmp_path: Path) -> Path:
     -------
     Path
         The temporary workspace root.
+
+    Examples
+    --------
+    >>> given_workspace_directory(tmp_path)  # doctest: +SKIP
+    PosixPath('/tmp/.../workspace')
     """
     return tmp_path
 
@@ -72,7 +77,9 @@ def when_inspect_metadata(workspace_directory: Path) -> cabc.Mapping[str, typ.An
 
     Examples
     --------
-    >>> load_cargo_metadata(workspace_directory)  # doctest: +SKIP
+    >>> # workspace_directory is established by the "given" step's fixture.
+    >>> workspace_directory = Path("/tmp/example-workspace")
+    >>> when_inspect_metadata(workspace_directory)  # doctest: +SKIP
     {'workspace_root': '...', 'packages': [...]}
     """
     return load_cargo_metadata(workspace_directory)

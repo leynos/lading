@@ -696,9 +696,12 @@ def run(
     PublishPlanError
         If a valid publication plan cannot be constructed.
     PublishPreparationError
-        If staging the workspace copy fails.
+        If staging the workspace copy fails, or if the staged manifest cannot
+        be patched according to ``publish.strip_patches`` (propagated from
+        :func:`_apply_strip_patch_strategy`).
     PublishError
-        If a crate fails to package or publish.
+        If a crate fails to publish. Packaging failures raise
+        :class:`PublishPreflightError` instead.
 
     Examples
     --------

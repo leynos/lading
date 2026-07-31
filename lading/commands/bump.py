@@ -158,7 +158,7 @@ def run(
     ...     "1.2.0",
     ...     options=BumpOptions(dry_run=True),
     ... )
-    'Would update ...'
+    'Dry run; would update version to 1.2.0 in ...'
     """
     context = _initialize_bump_context(workspace_root, options)
     LOGGER.debug(

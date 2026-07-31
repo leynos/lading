@@ -92,10 +92,24 @@ def expect_sequence(
 def is_non_empty_sequence(value: object) -> bool:
     """Return ``True`` when ``value`` is a non-string sequence with content.
 
+    Parameters
+    ----------
+    value : object
+        The candidate to test.
+
     Returns
     -------
     bool
         ``True`` for a non-empty, non-string sequence, ``False`` otherwise.
+
+    Examples
+    --------
+    >>> is_non_empty_sequence(["a"])
+    True
+    >>> is_non_empty_sequence([])
+    False
+    >>> is_non_empty_sequence("abc")
+    False
     """
     match value:
         case str() | bytes() | bytearray():
@@ -209,20 +223,7 @@ def _validate_matrix_entry(
     index: int,
     error: _ErrorType,
 ) -> tuple[str, ...]:
-    """Validate and convert a single matrix entry to a string tuple.
-
-    Returns
-    -------
-    tuple[str, ...]
-        The entry's validated strings.
-
-    Raises
-    ------
-    LadingError
-        The configured ``error`` subclass (built by the ``error`` factory) is
-        raised if the entry is string-like or otherwise not a sequence of
-        strings.
-    """
+    """Validate and convert a single matrix entry to a string tuple."""
     match entry:
         case str() | bytes():
             raise _reject(

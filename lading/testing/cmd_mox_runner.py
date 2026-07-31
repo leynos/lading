@@ -92,13 +92,20 @@ def cmd_mox_runner(
         Exit code, stdout text, and stderr text returned by cmd-mox or a
         passthrough subprocess.
 
+    Raises
+    ------
+    CmdMoxError
+        If the cmd-mox IPC socket is not configured, or if the IPC timeout is
+        unparseable, non-finite, or non-positive.
+    ValueError
+        If ``command`` is empty, or if the cmd-mox response does not include an
+        exit code.
+
     Notes
     -----
     Timeout validation, command splitting, command normalisation, environment
     construction, IPC invocation, passthrough handling, and response processing
-    are delegated to the focused helpers in this module. ``CmdMoxError`` may
-    propagate from those helpers when the cmd-mox environment is missing or the
-    IPC timeout is invalid, but it is not raised directly here.
+    are delegated to the focused helpers in this module.
 
     Examples
     --------
@@ -127,21 +134,7 @@ def cmd_mox_runner(
 
 
 def _prepare_cmd_mox_context() -> float:
-    """Return cmd-mox IPC timeout after validating environment state.
-
-    Returns
-    -------
-    float
-        The validated IPC timeout in seconds.
-
-    Raises
-    ------
-    CmdMoxError
-        If ``CMOX_IPC_SOCKET`` is unset, or if ``CMOX_IPC_TIMEOUT`` is
-        unparseable, non-finite, or non-positive. The socket case is raised
-        here directly; the timeout cases propagate from the reachable
-        :func:`_resolve_cmd_mox_timeout` call.
-    """
+    """Return cmd-mox IPC timeout after validating environment state."""
     if not os.environ.get(env_mod.CMOX_IPC_SOCKET_ENV):
         message = "cmd-mox stub requested but CMOX_IPC_SOCKET is unset"
         raise CmdMoxError(message)

@@ -126,7 +126,9 @@ def string_mapping(
     ------
     LadingError
         The configured ``error`` subclass, constructed by the injected
-        ``error`` factory, when ``value`` is not a TOML table.
+        ``error`` factory, when ``value`` is not a TOML table, or when
+        ``_validate_string_pair`` rejects a non-string key or a non-string
+        value within the table.
 
     Examples
     --------

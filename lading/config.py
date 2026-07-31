@@ -427,6 +427,11 @@ def load_configuration(workspace_root: Path) -> LadingConfig:
 def use_configuration(configuration: LadingConfig) -> cabc.Iterator[None]:
     """Set ``configuration`` as the active configuration for the current context.
 
+    Parameters
+    ----------
+    configuration : LadingConfig
+        Configuration to make active for the duration of the ``with`` block.
+
     Yields
     ------
     None
@@ -458,6 +463,13 @@ def current_configuration() -> LadingConfig:
     ------
     ConfigurationNotLoadedError
         If no configuration is active in the current context.
+
+    Examples
+    --------
+    >>> config = LadingConfig()
+    >>> with use_configuration(config):
+    ...     current_configuration() is config
+    True
     """
     try:
         return _active_config.get()

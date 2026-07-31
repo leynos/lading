@@ -60,17 +60,17 @@ def subprocess_runner(
     env: cabc.Mapping[str, str] | None = None,
     echo_stdout: bool = True,
 ) -> tuple[int, str, str]:
-    """Execute ``command`` in a subprocess.
+    r"""Execute ``command`` in a subprocess.
 
     Parameters
     ----------
-    command:
+    command : cabc.Sequence[str]
         Program and arguments to execute.
-    cwd:
+    cwd : Path | None
         Optional working directory for the subprocess.
-    env:
+    env : cabc.Mapping[str, str] | None
         Optional environment mapping for the subprocess.
-    echo_stdout:
+    echo_stdout : bool
         Whether stdout should be mirrored while being captured.
 
     Returns
@@ -84,6 +84,11 @@ def subprocess_runner(
         If ``command`` is empty.
     CommandSpawnError
         If the program cannot be spawned.
+
+    Examples
+    --------
+    >>> subprocess_runner(["echo", "hello"])  # doctest: +SKIP
+    (0, 'hello\n', '')
     """
     log_command_invocation(_LOGGER, command, cwd)
     program, args = split_command(command)
@@ -96,7 +101,7 @@ def split_command(command: cabc.Sequence[str]) -> tuple[str, tuple[str, ...]]:
 
     Parameters
     ----------
-    command:
+    command : cabc.Sequence[str]
         Program and arguments to split.
 
     Returns
@@ -109,6 +114,10 @@ def split_command(command: cabc.Sequence[str]) -> tuple[str, tuple[str, ...]]:
     ValueError
         If ``command`` is empty.
 
+    Examples
+    --------
+    >>> split_command(["git", "status", "--short"])
+    ('git', ('status', '--short'))
     """
     if not command:
         message = "Command sequence must contain at least one entry"
@@ -166,15 +175,15 @@ def invoke_via_subprocess(
     args: tuple[str, ...],
     context: SubprocessContext,
 ) -> tuple[int, str, str]:
-    """Spawn ``program`` with ``args`` while proxying its output streams.
+    r"""Spawn ``program`` with ``args`` while proxying its output streams.
 
     Parameters
     ----------
-    program:
+    program : str
         Program to execute.
-    args:
+    args : tuple[str, ...]
         Arguments to pass to ``program``.
-    context:
+    context : SubprocessContext
         Working directory, environment, and optional stdin payload.
 
     Returns
@@ -186,6 +195,12 @@ def invoke_via_subprocess(
     ------
     CommandSpawnError
         If ``program`` cannot be spawned.
+
+    Examples
+    --------
+    >>> context = SubprocessContext()
+    >>> invoke_via_subprocess("echo", ("hello",), context)  # doctest: +SKIP
+    (0, 'hello\n', '')
     """
     command = (program, *args)
     # The command line itself is logged once, at INFO, by
@@ -227,7 +242,7 @@ def normalise_environment(
 
     Parameters
     ----------
-    env:
+    env : cabc.Mapping[str, str] | None
         Environment overrides supplied by the caller.
 
     Returns
@@ -236,6 +251,12 @@ def normalise_environment(
         String-only environment mapping, or :data:`None` to inherit the
         process environment.
 
+    Examples
+    --------
+    >>> normalise_environment({"PATH": "/usr/bin", "PORT": 8080})
+    {'PATH': '/usr/bin', 'PORT': '8080'}
+    >>> normalise_environment(None) is None
+    True
     """
     if env is None:
         return None
@@ -251,13 +272,15 @@ def relay_stream(
 ) -> None:
     """Forward ``source`` into ``sink`` while preserving captured output.
 
+    Returns ``None``; decoded chunks are appended to ``buffer`` in place.
+
     Parameters
     ----------
-    source:
+    source : typ.IO[bytes] | None
         Byte stream to read from.
-    sink:
+    sink : typ.TextIO | None
         Text stream to mirror decoded output to.
-    buffer:
+    buffer : list[str]
         Mutable list receiving decoded chunks.
 
     Raises
@@ -267,6 +290,17 @@ def relay_stream(
     ValueError
         If a stream operation occurs on a closed stream.
 
+    Examples
+    --------
+    >>> import io
+    >>> source = io.BytesIO(b"hello")
+    >>> sink = io.StringIO()
+    >>> buffer: list[str] = []
+    >>> relay_stream(source, sink, buffer)
+    >>> buffer
+    ['hello']
+    >>> sink.getvalue()
+    'hello'
     """
     if source is None:
         return
@@ -300,9 +334,9 @@ def write_to_sink(sink: typ.TextIO | None, payload: str) -> typ.TextIO | None:
 
     Parameters
     ----------
-    sink:
+    sink : typ.TextIO | None
         Text stream to write to, or :data:`None`.
-    payload:
+    payload : str
         Text to write.
 
     Returns
@@ -317,6 +351,15 @@ def write_to_sink(sink: typ.TextIO | None, payload: str) -> typ.TextIO | None:
         broken pipe.
     ValueError
         If writing to or flushing a closed ``sink`` fails.
+
+    Examples
+    --------
+    >>> import io
+    >>> sink = io.StringIO()
+    >>> write_to_sink(sink, "hello") is sink
+    True
+    >>> sink.getvalue()
+    'hello'
     """
     if sink is None or not payload:
         return sink

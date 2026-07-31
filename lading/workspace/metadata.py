@@ -76,6 +76,11 @@ class CargoMetadataParseError(CargoMetadataError):
         -------
         CargoMetadataParseError
             Error describing the invalid JSON output.
+
+        Examples
+        --------
+        >>> str(CargoMetadataParseError.invalid_json())
+        'cargo metadata produced invalid JSON output'
         """
         return cls("cargo metadata produced invalid JSON output")
 
@@ -87,6 +92,11 @@ class CargoMetadataParseError(CargoMetadataError):
         -------
         CargoMetadataParseError
             Error describing the non-object JSON payload.
+
+        Examples
+        --------
+        >>> str(CargoMetadataParseError.non_object_payload())
+        'cargo metadata returned a non-object JSON payload'
         """
         return cls("cargo metadata returned a non-object JSON payload")
 
@@ -113,14 +123,7 @@ def use_command_runner(runner: CommandRunner) -> cabc.Iterator[None]:
 
 
 def _active_command_runner(runner: CommandRunner | None = None) -> CommandRunner:
-    """Return the explicitly supplied or ambient command runner.
-
-    Returns
-    -------
-    CommandRunner
-        The supplied runner, the context-local runner, or the default
-        subprocess runner.
-    """
+    """Return the explicitly supplied or ambient command runner."""
     if runner is not None:
         return runner
     active_runner = _COMMAND_RUNNER.get()
@@ -133,20 +136,7 @@ def _invoke_cargo_metadata(
     command_runner: CommandRunner,
     root_path: Path | None,
 ) -> tuple[int, str, str]:
-    """Run ``cargo metadata`` and return (exit_code, stdout, stderr) as text.
-
-    Returns
-    -------
-    tuple[int, str, str]
-        Exit code with stdout and stderr decoded to text.
-
-    Raises
-    ------
-    CargoExecutableNotFoundError
-        If the ``cargo`` program cannot be found.
-    CargoMetadataError
-        If the command otherwise fails to spawn or run.
-    """
+    """Run ``cargo metadata`` and return (exit_code, stdout, stderr) as text."""
     try:
         exit_code, stdout, stderr = command_runner(
             _CARGO_METADATA_COMMAND,
@@ -163,19 +153,7 @@ def _invoke_cargo_metadata(
 
 
 def _parse_cargo_metadata(stdout_text: str) -> cabc.Mapping[str, typ.Any]:
-    """Parse and validate the JSON payload produced by ``cargo metadata``.
-
-    Returns
-    -------
-    cabc.Mapping[str, typ.Any]
-        Decoded top-level JSON object.
-
-    Raises
-    ------
-    CargoMetadataParseError
-        If the output is not valid JSON, or if the decoded payload is not a
-        JSON object.
-    """
+    """Parse and validate the JSON payload produced by ``cargo metadata``."""
     try:
         payload = json.loads(stdout_text)
     except json.JSONDecodeError as exc:
@@ -192,6 +170,13 @@ def load_cargo_metadata(
 ) -> cabc.Mapping[str, typ.Any]:
     """Execute ``cargo metadata`` and parse the resulting JSON payload.
 
+    Parameters
+    ----------
+    workspace_root : Path | str | None
+        Directory to run ``cargo metadata`` in; ``None`` uses cargo's default.
+    runner : CommandRunner | None
+        Explicit command runner to use instead of the ambient/default runner.
+
     Returns
     -------
     cabc.Mapping[str, typ.Any]
@@ -201,6 +186,19 @@ def load_cargo_metadata(
     ------
     CargoMetadataInvocationError
         If ``cargo metadata`` exits with a non-zero status.
+    CargoExecutableNotFoundError
+        If the ``cargo`` program cannot be found.
+    CargoMetadataError
+        If the command otherwise fails to spawn or run.
+    CargoMetadataParseError
+        If the output is not valid JSON, or the payload is not a JSON object.
+
+    Examples
+    --------
+    >>> from lading.workspace.metadata import load_cargo_metadata
+    >>> metadata = load_cargo_metadata()  # doctest: +SKIP
+    >>> metadata["workspace_root"]  # doctest: +SKIP
+    '...'
     """
     root_path = normalise_workspace_root(workspace_root)
     command_runner = _active_command_runner(runner)
