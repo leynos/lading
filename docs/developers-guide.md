@@ -642,6 +642,8 @@ canonical replacement callers and tests now use directly:
 _Table 1: Compatibility shims removed by the issue `#163` sweep and their
 canonical replacements._
 
+Triage: [type:docstyle]
+
 #### Retained boundaries
 
 Not every module-level indirection is a compatibility shim. The following
