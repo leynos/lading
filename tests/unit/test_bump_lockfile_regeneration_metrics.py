@@ -80,23 +80,17 @@ def test_regenerate_lockfiles_records_success_count_and_duration(
     assert duration.total_seconds == pytest.approx(0.5)
 
 
-@pytest.mark.parametrize(
-    ("runner", "expected_cause"),
-    [
-        (_cargo_failure_runner, "cargo_exit"),
-        (_spawn_failure_runner, "command_spawn"),
-    ],
-)
-def test_regenerate_lockfiles_records_failure_cause(
-    tmp_path: Path,
+def _assert_failed_regeneration_records_cause(
+    workspace_root: Path,
+    lockfile_manifests: cabc.Sequence[str],
     runner: cabc.Callable[..., tuple[int, str, str]],
     expected_cause: str,
 ) -> None:
-    """Expected operational failures increment their bounded cause counter."""
+    """Assert regeneration fails and records the expected bounded cause."""
     with pytest.raises(bump_lockfiles.LockfileRegenerationError):
         bump_lockfile_regeneration.regenerate_lockfiles(
-            tmp_path,
-            (),
+            workspace_root,
+            lockfile_manifests,
             runner=runner,
         )
 
@@ -111,6 +105,27 @@ def test_regenerate_lockfiles_records_failure_cause(
 
 
 @pytest.mark.parametrize(
+    ("runner", "expected_cause"),
+    [
+        (_cargo_failure_runner, "cargo_exit"),
+        (_spawn_failure_runner, "command_spawn"),
+    ],
+)
+def test_regenerate_lockfiles_records_failure_cause(
+    tmp_path: Path,
+    runner: cabc.Callable[..., tuple[int, str, str]],
+    expected_cause: str,
+) -> None:
+    """Expected operational failures increment their bounded cause counter."""
+    _assert_failed_regeneration_records_cause(
+        tmp_path,
+        (),
+        runner,
+        expected_cause,
+    )
+
+
+@pytest.mark.parametrize(
     "manifest",
     ["../outside/Cargo.toml", "Cargo.lock", "crates/nested/foo.toml"],
 )
@@ -119,20 +134,11 @@ def test_regenerate_lockfiles_records_validation_failure(
     manifest: str,
 ) -> None:
     """Invalid configured manifests increment the validation-failure counter."""
-    with pytest.raises(bump_lockfiles.LockfileRegenerationError):
-        bump_lockfile_regeneration.regenerate_lockfiles(
-            tmp_path,
-            (manifest,),
-            runner=_successful_runner,
-        )
-
-    assert (
-        metrics.counter_value(
-            bump_lockfile_regeneration.REGENERATE_METRIC,
-            outcome="failed",
-            cause="validation",
-        )
-        == 1
+    _assert_failed_regeneration_records_cause(
+        tmp_path,
+        (manifest,),
+        _successful_runner,
+        "validation",
     )
 
 
