@@ -83,6 +83,24 @@ def regenerate_lockfiles(
     regenerated, the aggregated error tells the operator exactly which
     lockfiles still need repair and how; a lone root-lockfile failure needs no
     such disambiguation and surfaces the plain cargo error.
+
+    Examples
+    --------
+    A successful stub runner returns the root and configured lockfile paths:
+
+    ```python
+    def runner(command, **kwargs):
+        return 0, "", ""
+
+    root = Path("/workspace")
+    paths = regenerate_lockfiles(
+        root,
+        ("fixtures/minimal/Cargo.toml",),
+        runner=runner,
+    )
+    [path.as_posix() for path in paths]
+    # ["/workspace/Cargo.lock", "/workspace/fixtures/minimal/Cargo.lock"]
+    ```
     """
     command_runner = subprocess_runner if runner is None else runner
     manifests = resolve_manifest_paths(workspace_root, lockfile_manifests)

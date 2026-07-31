@@ -57,6 +57,28 @@ class CargoLockfileRepository:
         LockfileRegenerationError
             If a configured manifest is outside the workspace or is not named
             ``Cargo.toml``.
+
+        Examples
+        --------
+        Given ``fixtures/minimal/Cargo.toml`` beside the discovered lockfile,
+        configured paths remain ahead of discovered paths:
+
+        ```python
+        def git_runner(command, **kwargs):
+            return 0, "fixtures/minimal/Cargo.lock", ""
+
+        repository = CargoLockfileRepository(runner=git_runner)
+        paths = repository.resolve_lockfile_paths(
+            Path("/workspace"),
+            ("crates/ui/Cargo.toml",),
+        )
+        [path.as_posix() for path in paths]
+        # [
+        #     "/workspace/Cargo.lock",
+        #     "/workspace/crates/ui/Cargo.lock",
+        #     "/workspace/fixtures/minimal/Cargo.lock",
+        # ]
+        ```
         """
         merged_manifests = merge_discovered_manifests(
             workspace_root, lockfile_manifests, runner=self.runner
@@ -94,6 +116,24 @@ class CargoLockfileRepository:
             failed. A lone workspace-root failure re-raises the original
             cargo error unchanged; multiple failures raise one aggregated
             error listing each failed manifest with a repair command.
+
+        Examples
+        --------
+        A runner with no discovered lockfiles and successful Cargo updates
+        returns the root and configured lockfile paths:
+
+        ```python
+        def runner(command, **kwargs):
+            return 0, "", ""
+
+        repository = CargoLockfileRepository(runner=runner)
+        paths = repository.regenerate_lockfiles(
+            Path("/workspace"),
+            ("fixtures/minimal/Cargo.toml",),
+        )
+        [path.as_posix() for path in paths]
+        # ["/workspace/Cargo.lock", "/workspace/fixtures/minimal/Cargo.lock"]
+        ```
         """
         merged_manifests = merge_discovered_manifests(
             workspace_root, lockfile_manifests, runner=self.runner

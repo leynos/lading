@@ -59,6 +59,17 @@ def resolve_lockfile_paths(
         If a configured manifest escapes the workspace or is not named
         ``Cargo.toml``, as enforced by :func:`resolve_manifest_paths`.
 
+    Examples
+    --------
+    The workspace-root lockfile is returned before configured lockfiles:
+
+    ```python
+    root = Path("/workspace")
+    paths = resolve_lockfile_paths(root, ("fixtures/minimal/Cargo.toml",))
+    [path.as_posix() for path in paths]
+    # ["/workspace/Cargo.lock", "/workspace/fixtures/minimal/Cargo.lock"]
+    ```
+
     """
     manifests = resolve_manifest_paths(workspace_root, lockfile_manifests)
     return tuple(manifest.parent / "Cargo.lock" for manifest in manifests)
@@ -88,6 +99,20 @@ def resolve_manifest_paths(
     LockfileRegenerationError
         If a configured manifest escapes the workspace or is not named
         ``Cargo.toml``.
+
+    Examples
+    --------
+    Equivalent spellings normalize to one manifest after the workspace root:
+
+    ```python
+    root = Path("/workspace")
+    manifests = resolve_manifest_paths(
+        root,
+        ("fixtures/../fixtures/minimal/Cargo.toml", "fixtures/minimal/Cargo.toml"),
+    )
+    [manifest.as_posix() for manifest in manifests]
+    # ["/workspace/Cargo.toml", "/workspace/fixtures/minimal/Cargo.toml"]
+    ```
 
     """
     resolved_root = workspace_root.resolve()
