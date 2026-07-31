@@ -46,9 +46,9 @@ fixture lockfile and seeing that lockfile listed in the bump output with a
 ## Constraints
 
 - Do not change the `CommandRunner` protocol
-  (`lading/runtime/runner.py`) or the signatures of
-  `lading.commands.lockfile.discover_tracked_lockfiles` and
-  `lading.commands.lockfile.validate_lockfile_freshness`.
+  (`lading/runtime/runner.py`). Preserve compatibility for the public lockfile
+  APIs; optional keyword-only clock and observability injection must retain
+  defaults for existing callers.
 - The existing `bump.lockfile_manifests` and `bump.rebuild_lockfiles`
   configuration keys must keep working with their current meanings.
   `--no-rebuild-lockfiles` must continue to skip all regeneration.
@@ -60,9 +60,9 @@ fixture lockfile and seeing that lockfile listed in the bump output with a
 - All code comments and documentation use en-GB-oxendict spelling.
 - No new external dependencies.
 - No single code file may exceed 400 lines (repository rule). The final
-  lockfile implementation is split into the 176-line compatibility façade
-  `bump_lockfiles.py`, the 66-line `bump_lockfile_manifests.py`, the 51-line
-  `bump_lockfile_paths.py`, and the 194-line `bump_lockfile_regeneration.py`.
+  lockfile implementation is split into the 217-line compatibility façade
+  `bump_lockfiles.py`, the 88-line `bump_lockfile_manifests.py`, the 140-line
+  `bump_lockfile_paths.py`, and the 284-line `bump_lockfile_regeneration.py`.
 
 ## Tolerances (exception triggers)
 
@@ -156,9 +156,13 @@ fixture lockfile and seeing that lockfile listed in the bump output with a
   exited 0 afterwards. Also surfaced the versioned-path-dependency edge
   recorded under `Surprises & discoveries`.
 - [x] (2026-07-29 10:07Z) Split the 451-line `bump_lockfiles.py` by
-  responsibility while retaining it as a 176-line compatibility façade. The
-  focused lockfile suite passed with 34 tests and 7 snapshots; all four
-  affected production modules measure at most 194 lines.
+  responsibility while retaining it as a compatibility façade. The focused
+  lockfile suite passed with 34 tests and 7 snapshots.
+- [x] (2026-08-01 12:00Z) Added bounded regeneration outcome, cause, and
+  duration metrics; injected the monotonic clock used for duration; and kept
+  dry-run projection free of successful discovery telemetry while retaining
+  discovery warnings and failures. The final modules measure 217, 88, 140, and
+  284 lines respectively, all below the 400-line limit.
 
 ## Surprises & discoveries
 
@@ -257,6 +261,12 @@ fixture lockfile and seeing that lockfile listed in the bump output with a
   preserves public imports, while resolving those façade names from
   `CargoLockfileRepository` preserves the monkeypatch seam used by bump tests.
   Date/Author: 2026-07-29, implementation session.
+- Decision: inject the regeneration clock and make successful discovery
+  observability selectable at the adapter boundary. Rationale: injected time
+  keeps duration metric tests deterministic, regeneration remains the command
+  that owns outcome metrics, and dry-run remains a query without successful
+  discovery telemetry while still surfacing Git warnings and failures.
+  Date/Author: 2026-08-01, review session.
 
 ## Outcomes & retrospective
 
@@ -291,6 +301,11 @@ module cohesive and compliant with the 400-line limit. The compatibility façade
 retains the public function and exception imports and the `LockfileRepository`
 port, while three implementation modules now separate manifest merging, path
 projection, and Cargo execution.
+
+Regeneration now records bounded success and failure counters plus total
+duration through an injected monotonic clock. Dry-run performs the Git query
+needed to project the same manifest set, but suppresses successful discovery
+telemetry; non-Git warnings and discovery failures remain observable.
 
 Follow-up candidates (not in scope): rewrite version requirements in non-member
 nested manifests that depend on bumped crates.
@@ -328,11 +343,12 @@ pieces:
 - `lading/commands/lockfile.py` owns discovery and freshness validation.
   Publish uses discovery for freshness validation, while the bump-side
   `CargoLockfileRepository` uses it to construct the merged manifest set.
-  `discover_tracked_lockfiles(workspace_root, runner, *, manifest_exists=...)`
-  runs `git ls-files "**/Cargo.lock" "Cargo.lock"`, filters out paths with a
-  `target` component, keeps only lockfiles with an adjacent `Cargo.toml`, and
-  returns absolute lockfile paths. In a non-git directory it logs a warning and
-  returns an empty tuple.
+  `discover_tracked_lockfiles(workspace_root, runner, *, manifest_exists=...,
+  emit_observability=True)` runs
+  `git ls-files "**/Cargo.lock" "Cargo.lock"`, filters out paths with a `target`
+  component, keeps only lockfiles with an adjacent `Cargo.toml`, and returns
+  absolute lockfile paths. In a non-git directory it logs a warning and returns
+  an empty tuple.
 - `lading/commands/publish_preflight.py` contains
   `_validate_lockfile_freshness`, which discovers tracked lockfiles, probes
   each with `cargo metadata --locked`, and raises `PublishPreflightError` with
@@ -470,9 +486,8 @@ preserve runner injection and monkeypatch behaviour.
 
 ## Concrete steps
 
-All commands run from the repository root
-(`/data/leynos/Projects/lading.worktrees/regenerate-lockfiles`), except the
-Stage A prototype, which runs in the session scratchpad directory.
+All commands run from the repository root (`<repo>`), except the Stage A
+prototype, which runs in the session scratchpad directory.
 
 Stage A prototype sketch (scratchpad):
 
@@ -606,6 +621,7 @@ def merge_discovered_manifests(
     lockfile_manifests: cabc.Sequence[str],
     *,
     runner: CommandRunner | None = None,
+    emit_discovery_observability: bool = True,
 ) -> tuple[str, ...]:
     """Return configured manifests plus discovered tracked-lockfile manifests.
 
@@ -618,10 +634,39 @@ def merge_discovered_manifests(
 ```
 
 `bump_lockfile_paths.py` defines and the façade re-exports
-`LockfileRegenerationError` and `resolve_lockfile_paths`.
+`LockfileRegenerationError`, `resolve_manifest_paths`, and
+`resolve_lockfile_paths`:
+
+```python
+def resolve_manifest_paths(
+    workspace_root: Path,
+    lockfile_manifests: cabc.Sequence[str],
+) -> tuple[Path, ...]: ...
+
+def resolve_lockfile_paths(
+    workspace_root: Path,
+    lockfile_manifests: cabc.Sequence[str],
+) -> tuple[Path, ...]: ...
+```
+
 `bump_lockfile_regeneration.py` defines and the façade re-exports
-`regenerate_lockfiles`; it imports the shared exception and private manifest
-resolver from the path module. `CargoLockfileRepository` calls the façade-level
+`regenerate_lockfiles`; it imports the shared exception and public manifest
+resolver from the path module:
+
+```python
+def regenerate_lockfiles(
+    workspace_root: Path,
+    lockfile_manifests: cabc.Sequence[str],
+    *,
+    runner: CommandRunner | None = None,
+    clock: cabc.Callable[[], float] = time.perf_counter,
+) -> tuple[Path, ...]: ...
+```
+
+Regeneration records `lockfile.regenerate` counters labelled by outcome and
+bounded cause, and observes `lockfile.regenerate.duration`. The adapter
+disables successful discovery observability for dry-run projection and uses the
+default for live regeneration. `CargoLockfileRepository` calls the façade-level
 merge function before delegating the merged result through the façade-level
 projection or regeneration function. The bump-side `_process_lockfiles`
 function depends only on the `LockfileRepository` port.
@@ -652,3 +697,8 @@ path, and regeneration modules. `bump_lockfiles.py` remains the compatibility
 façade and repository boundary, so public imports and monkeypatch seams remain
 stable. The refactor changes no behaviour and leaves no production module over
 400 lines.
+
+2026-08-01: synchronized the completed plan with the final 217/88/140/284-line
+module layout, public path resolver, optional discovery-observability control,
+injected regeneration clock, and bounded regeneration metrics. Also replaced a
+developer-local checkout path with the repository-relative `<repo>` placeholder.

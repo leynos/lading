@@ -182,11 +182,13 @@ def _record_regeneration_results(
 
 def _regeneration_failure_cause(error: LockfileRegenerationError) -> str:
     """Return the bounded operational cause label for a regeneration error."""
-    if isinstance(error.__cause__, CommandSpawnError):
-        return "command_spawn"
-    if isinstance(error.__cause__, ValueError):
-        return "runner_value"
-    return "cargo_exit"
+    match error.__cause__:
+        case CommandSpawnError():
+            return "command_spawn"
+        case ValueError():
+            return "runner_value"
+        case _:
+            return "cargo_exit"
 
 
 def _raise_aggregated_failure(

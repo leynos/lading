@@ -43,6 +43,17 @@ def _spawn_failure_runner(
     raise CommandSpawnError(command_name, FileNotFoundError(command_name))
 
 
+def _runner_value_failure(
+    command: cabc.Sequence[str],
+    *,
+    cwd: Path | None = None,
+) -> tuple[int, str, str]:
+    """Raise an expected runner value error."""
+    del command, cwd
+    message = "invalid command value"
+    raise ValueError(message)
+
+
 @pytest.fixture(autouse=True)
 def _metrics_registry() -> cabc.Iterator[None]:
     """Reset the in-process metrics registry around each test."""
@@ -109,6 +120,7 @@ def _assert_failed_regeneration_records_cause(
     [
         (_cargo_failure_runner, "cargo_exit"),
         (_spawn_failure_runner, "command_spawn"),
+        (_runner_value_failure, "runner_value"),
     ],
 )
 def test_regenerate_lockfiles_records_failure_cause(
