@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import collections.abc as cabc
+import logging
 import string
 import tempfile
+import typing as typ
 from pathlib import Path
 
 import hypothesis.strategies as st
@@ -13,6 +15,9 @@ from hypothesis import given, settings
 
 from lading.commands import lockfile
 from lading.utils import metrics
+
+if typ.TYPE_CHECKING:
+    from _pytest.logging import LogCaptureFixture
 
 # ---------------------------------------------------------------------------
 # Hypothesis strategies for _lockfiles_with_manifests property tests
@@ -185,9 +190,11 @@ def test_discover_tracked_lockfiles_accepts_manifest_probe(
 
 def test_discover_tracked_lockfiles_handles_non_git_directory(
     tmp_path: Path,
+    caplog: LogCaptureFixture,
 ) -> None:
     """Non-git workspaces do not abort lockfile discovery."""
     (tmp_path / "Cargo.lock").write_text("", encoding="utf-8")
+    caplog.set_level(logging.WARNING, logger=lockfile.__name__)
 
     def runner(
         command: cabc.Sequence[str],
@@ -197,10 +204,17 @@ def test_discover_tracked_lockfiles_handles_non_git_directory(
     ) -> tuple[int, str, str]:
         return 128, "", "fatal: not a git repository"
 
-    result = lockfile.discover_tracked_lockfiles(tmp_path, runner)
+    result = lockfile.discover_tracked_lockfiles(
+        tmp_path,
+        runner,
+        emit_observability=False,
+    )
     assert result == (), (
         "discovery should not abort on non-git errors; "
         f"expected empty tuple, got {result!r}"
+    )
+    assert any("not a git repository" in record.message for record in caplog.records), (
+        "non-git warning must remain active when success telemetry is suppressed"
     )
 
 
@@ -628,6 +642,27 @@ def test_discovery_records_lockfile_count(tmp_path: Path) -> None:
     lockfile.discover_tracked_lockfiles(tmp_path, _static_runner(0, "Cargo.lock\n", ""))
 
     assert metrics.counter_value(lockfile.DISCOVERED_LOCKFILES_METRIC) == 1
+
+
+@pytest.mark.usefixtures("_metrics_registry")
+def test_discovery_observability_can_be_suppressed(
+    tmp_path: Path,
+    caplog: LogCaptureFixture,
+) -> None:
+    """Dry-run discovery returns paths without success telemetry."""
+    (tmp_path / "Cargo.toml").write_text("", encoding="utf-8")
+    (tmp_path / "Cargo.lock").write_text("", encoding="utf-8")
+    caplog.set_level(logging.INFO, logger=lockfile.__name__)
+
+    discovered = lockfile.discover_tracked_lockfiles(
+        tmp_path,
+        _static_runner(0, "Cargo.lock\n", ""),
+        emit_observability=False,
+    )
+
+    assert discovered == (tmp_path / "Cargo.lock",)
+    assert metrics.counter_value(lockfile.DISCOVERED_LOCKFILES_METRIC) == 0
+    assert not any(record.message.startswith("Discovered") for record in caplog.records)
 
 
 @pytest.mark.usefixtures("_metrics_registry")

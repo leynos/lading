@@ -33,9 +33,14 @@ from lading.commands.bump_lockfile_paths import (
     resolve_manifest_paths,
 )
 from lading.runtime import CommandRunner, CommandSpawnError, subprocess_runner
+from lading.utils import metrics
 from lading.utils.process import with_detail
 
 _LOGGER = logging.getLogger(__name__)
+
+# Metric names (issue #91); documented in docs/developers-guide.md.
+REGENERATE_METRIC = "lockfile.regenerate"
+REGENERATE_DURATION_METRIC = "lockfile.regenerate.duration"
 
 
 def regenerate_lockfiles(
@@ -43,6 +48,7 @@ def regenerate_lockfiles(
     lockfile_manifests: cabc.Sequence[str],
     *,
     runner: CommandRunner | None = None,
+    clock: cabc.Callable[[], float] = time.perf_counter,
 ) -> tuple[Path, ...]:
     """Regenerate Cargo lockfiles for root and configured manifests.
 
@@ -56,6 +62,9 @@ def regenerate_lockfiles(
     runner : CommandRunner or None, optional
         Callable used to invoke ``cargo``. Defaults to
         :func:`lading.runtime.subprocess_runner` when ``None``.
+    clock : Callable[[], float], optional
+        Monotonic clock used for logging and duration metrics. Defaults to
+        :func:`time.perf_counter`; tests may inject a deterministic clock.
 
     Returns
     -------
@@ -103,18 +112,31 @@ def regenerate_lockfiles(
     ```
     """
     command_runner = subprocess_runner if runner is None else runner
-    manifests = resolve_manifest_paths(workspace_root, lockfile_manifests)
-    started_at = time.perf_counter()
-    _LOGGER.info("Regenerating %d Cargo lockfile(s)", len(manifests))
-    lockfiles, failures = _collect_lockfile_results(
-        manifests, workspace_root, command_runner
-    )
-    if failures:
-        _raise_aggregated_failure(manifests, failures)
+    started_at = clock()
+    try:
+        try:
+            manifests = resolve_manifest_paths(workspace_root, lockfile_manifests)
+        except LockfileRegenerationError:
+            metrics.increment_counter(
+                REGENERATE_METRIC,
+                outcome="failed",
+                cause="validation",
+            )
+            raise
+        _LOGGER.info("Regenerating %d Cargo lockfile(s)", len(manifests))
+        lockfiles, failures = _collect_lockfile_results(
+            manifests, workspace_root, command_runner, clock
+        )
+        _record_regeneration_results(lockfiles, failures)
+        if failures:
+            _raise_aggregated_failure(manifests, failures)
+    finally:
+        elapsed = clock() - started_at
+        metrics.observe_duration(REGENERATE_DURATION_METRIC, elapsed)
     _LOGGER.info(
         "Regenerated %d Cargo lockfile(s) in %.3fs",
         len(lockfiles),
-        time.perf_counter() - started_at,
+        elapsed,
     )
     return tuple(lockfiles)
 
@@ -123,19 +145,48 @@ def _collect_lockfile_results(
     manifests: tuple[Path, ...],
     workspace_root: Path,
     command_runner: CommandRunner,
+    clock: cabc.Callable[[], float],
 ) -> tuple[list[Path], list[tuple[Path, LockfileRegenerationError]]]:
     """Attempt every manifest and partition the outcomes into a pair."""
     lockfiles: list[Path] = []
     failures: list[tuple[Path, LockfileRegenerationError]] = []
     for manifest in manifests:
         result = _attempt_single_lockfile_update(
-            workspace_root, manifest, command_runner
+            workspace_root, manifest, command_runner, clock
         )
         if result.error is not None:
             failures.append((manifest, result.error))
         elif result.lockfile is not None:
             lockfiles.append(result.lockfile)
     return lockfiles, failures
+
+
+def _record_regeneration_results(
+    lockfiles: cabc.Sequence[Path],
+    failures: cabc.Sequence[tuple[Path, LockfileRegenerationError]],
+) -> None:
+    """Record bounded success and failure counters for one regeneration run."""
+    metrics.increment_counter(
+        REGENERATE_METRIC,
+        amount=len(lockfiles),
+        outcome="success",
+        cause="none",
+    )
+    for _, error in failures:
+        metrics.increment_counter(
+            REGENERATE_METRIC,
+            outcome="failed",
+            cause=_regeneration_failure_cause(error),
+        )
+
+
+def _regeneration_failure_cause(error: LockfileRegenerationError) -> str:
+    """Return the bounded operational cause label for a regeneration error."""
+    if isinstance(error.__cause__, CommandSpawnError):
+        return "command_spawn"
+    if isinstance(error.__cause__, ValueError):
+        return "runner_value"
+    return "cargo_exit"
 
 
 def _raise_aggregated_failure(
@@ -180,9 +231,10 @@ def _attempt_single_lockfile_update(
     workspace_root: Path,
     manifest: Path,
     command_runner: CommandRunner,
+    clock: cabc.Callable[[], float],
 ) -> _LockfileUpdateResult:
     """Attempt one manifest's lockfile update and return the outcome."""
-    manifest_started_at = time.perf_counter()
+    manifest_started_at = clock()
     _LOGGER.info("Regenerating Cargo lockfile for %s", manifest)
     try:
         _run_workspace_lockfile_update(workspace_root, manifest, command_runner)
@@ -195,7 +247,7 @@ def _attempt_single_lockfile_update(
     _LOGGER.info(
         "Regenerated Cargo lockfile for %s in %.3fs",
         manifest,
-        time.perf_counter() - manifest_started_at,
+        clock() - manifest_started_at,
     )
     return _LockfileUpdateResult(lockfile=manifest.parent / "Cargo.lock", error=None)
 

@@ -287,9 +287,11 @@ binds the adapter to its selected runner. The adapter merges configured
 manifests with manifests discovered from tracked lockfiles before either
 projecting dry-run paths or regenerating live lockfiles. In a non-Git
 workspace, discovery emits a warning and the adapter falls back to the
-configured manifests. Tests inject a repository (or bind the adapter to a
-recording runner) so lockfile commands can be observed without invoking real
-processes. The port's scope is bump-side lockfile projection and regeneration;
+configured manifests. Dry-run projection suppresses successful-discovery
+metrics and informational logging while retaining that warning and all
+discovery errors. Tests inject a repository (or bind the adapter to a recording
+runner) so lockfile commands can be observed without invoking real processes.
+The port's scope is bump-side lockfile projection and regeneration;
 publish-side discovery and validation go through the sibling
 `lockfile.LockfileInspectionRepository` port (see the Lockfile helpers section
 below), so neither the bump nor the publish lockfile domain holds a raw
@@ -962,12 +964,14 @@ than bucketed.
 
 Defined metrics:
 
-| Metric                           | Labels                        | Incremented when                                                                                                      |
-| -------------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `publish.index_lookup_downgrade` | `subcommand`, `missing_crate` | `_handle_index_missing_version` downgrades a crates.io index-lookup failure to a warning (in-plan, override enabled). |
-| `lockfile.discovered`            | (none)                        | Incremented by the number of tracked lockfiles each `discover_tracked_lockfiles` call returns.                        |
-| `lockfile.validate`              | `outcome`                     | One increment per `validate_lockfile_freshness` call; `outcome` is `fresh`, `stale`, or `failed`.                     |
-| `lockfile.validate.duration`     | (none)                        | Duration observation around each `cargo metadata --locked` probe.                                                     |
+| Metric                           | Labels                        | Incremented when                                                                                                                               |
+| -------------------------------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `publish.index_lookup_downgrade` | `subcommand`, `missing_crate` | `_handle_index_missing_version` downgrades a crates.io index-lookup failure to a warning (in-plan, override enabled).                          |
+| `lockfile.discovered`            | (none)                        | Incremented by tracked-lockfile count when discovery observability is enabled; dry-run bump projection suppresses it.                          |
+| `lockfile.regenerate`            | `outcome`, `cause`            | Incremented per successful or failed lockfile regeneration; `cause` is `none`, `validation`, `command_spawn`, `runner_value`, or `cargo_exit`. |
+| `lockfile.regenerate.duration`   | (none)                        | Total duration observation around each lockfile-regeneration run.                                                                              |
+| `lockfile.validate`              | `outcome`                     | One increment per `validate_lockfile_freshness` call; `outcome` is `fresh`, `stale`, or `failed`.                                              |
+| `lockfile.validate.duration`     | (none)                        | Duration observation around each `cargo metadata --locked` probe.                                                                              |
 
 Duration metrics aggregate a count and total seconds per label set via
 `observe_duration` / `duration_stats` and appear in the exit summary with

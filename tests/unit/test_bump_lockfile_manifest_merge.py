@@ -136,6 +136,12 @@ def test_merge_discovered_manifests_deduplicates_configured_forms(
     assert merged == ("./fixtures/minimal/Cargo.toml",), (
         f"equivalent configured manifest was re-appended: {merged!r}"
     )
+    assert runner.invocations == [
+        _Invocation(
+            command=("git", "ls-files", "**/Cargo.lock", "Cargo.lock"),
+            cwd=tmp_path,
+        )
+    ], f"configured-form de-duplication bypassed discovery: {runner.invocations!r}"
 
 
 def test_merge_discovered_manifests_returns_configured_outside_git(

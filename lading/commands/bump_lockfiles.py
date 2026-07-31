@@ -81,7 +81,10 @@ class CargoLockfileRepository:
         ```
         """
         merged_manifests = merge_discovered_manifests(
-            workspace_root, lockfile_manifests, runner=self.runner
+            workspace_root,
+            lockfile_manifests,
+            runner=self.runner,
+            emit_discovery_observability=False,
         )
         return resolve_lockfile_paths(workspace_root, merged_manifests)
 

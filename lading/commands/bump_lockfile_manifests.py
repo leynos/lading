@@ -28,6 +28,7 @@ def merge_discovered_manifests(
     lockfile_manifests: cabc.Sequence[str],
     *,
     runner: CommandRunner | None = None,
+    emit_discovery_observability: bool = True,
 ) -> tuple[str, ...]:
     """Return configured manifests plus discovered tracked-lockfile manifests.
 
@@ -40,6 +41,9 @@ def merge_discovered_manifests(
     runner : CommandRunner or None, optional
         Callable used to invoke ``git``. Defaults to
         :func:`lading.runtime.subprocess_runner` when ``None``.
+    emit_discovery_observability : bool, optional
+        Whether successful Git discovery records its count and informational
+        log. Non-Git warnings and discovery errors are always retained.
 
     Returns
     -------
@@ -62,7 +66,11 @@ def merge_discovered_manifests(
     ```
     """
     command_runner = subprocess_runner if runner is None else runner
-    discovered = discover_tracked_lockfiles(workspace_root, command_runner)
+    discovered = discover_tracked_lockfiles(
+        workspace_root,
+        command_runner,
+        emit_observability=emit_discovery_observability,
+    )
     seen_manifests = {
         (workspace_root / manifest).resolve() for manifest in lockfile_manifests
     }

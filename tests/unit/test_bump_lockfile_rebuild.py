@@ -172,8 +172,10 @@ def test_run_reports_lockfiles_in_dry_run(
         lockfile_manifests: tuple[str, ...],
         *,
         runner: object | None = None,
+        emit_discovery_observability: bool = True,
     ) -> tuple[str, ...]:
         captured["merge_lockfile_manifests"] = lockfile_manifests
+        captured["emit_discovery_observability"] = emit_discovery_observability
         return merged_manifests
 
     def fake_resolve_lockfile_paths(
@@ -216,6 +218,7 @@ def test_run_reports_lockfiles_in_dry_run(
 
     assert captured == {
         "merge_lockfile_manifests": ("crates/ui/Cargo.toml",),
+        "emit_discovery_observability": False,
         "workspace_root": tmp_path,
         "lockfile_manifests": merged_manifests,
     }, "expected dry-run lockfile resolution for the merged manifest tuple"
