@@ -72,6 +72,11 @@ def disable_publish_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
         lambda *_args, **_kwargs: None,
     )
 
+@pytest.fixture
+def enable_publish_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Restore publish pre-flight checks for public command integration tests."""
+    monkeypatch.setattr(publish, "_run_preflight_checks", _ORIGINAL_PREFLIGHT)
+
 
 @pytest.fixture(autouse=True)
 def stub_lockfile_regeneration(
