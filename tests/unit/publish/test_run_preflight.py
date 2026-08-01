@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from lading.commands import publish, publish_preflight
+from lading.commands import publish, publish_pipeline, publish_preflight
 
 from .conftest import (
     ORIGINAL_PREFLIGHT,
@@ -77,7 +77,7 @@ def test_run_executes_preflight_checks_in_workspace(
         calls.append((tuple(command), cwd))
         return 0, "", ""
 
-    monkeypatch.setattr(publish, "_invoke", fake_invoke)
+    monkeypatch.setattr(publish_pipeline, "_invoke", fake_invoke)
 
     publish.run(
         root,
@@ -267,7 +267,7 @@ def test_dirty_workspace_allowed_by_default(
             raise AssertionError(message)
         return 0, "", ""
 
-    monkeypatch.setattr(publish, "_invoke", skip_git_invoke)
+    monkeypatch.setattr(publish_pipeline, "_invoke", skip_git_invoke)
 
     message = publish.run(root, configuration, workspace)
 
@@ -297,7 +297,7 @@ def test_forbid_dirty_flag_enforces_cleanliness(
             return 0, " M Cargo.toml\n", ""
         return 0, "", ""
 
-    monkeypatch.setattr(publish, "_invoke", dirty_invoke)
+    monkeypatch.setattr(publish_pipeline, "_invoke", dirty_invoke)
 
     with pytest.raises(publish.PublishPreflightError) as excinfo:
         publish.run(
@@ -346,7 +346,7 @@ def test_run_raises_when_preflight_cargo_fails(
             return 1, "", expected_message
         return 0, "", ""
 
-    monkeypatch.setattr(publish, "_invoke", failing_invoke)
+    monkeypatch.setattr(publish_pipeline, "_invoke", failing_invoke)
 
     with pytest.raises(publish.PublishPreflightError) as excinfo:
         publish.run(root, configuration, workspace)
