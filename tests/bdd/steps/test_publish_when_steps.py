@@ -24,22 +24,7 @@ def when_invoke_lading_publish(
     repo_root: Path,
     preflight_test_context: PreflightTestContext,
 ) -> dict[str, typ.Any]:
-    """Execute the publish CLI via ``python -m`` and capture the result.
-
-    Parameters
-    ----------
-    workspace_directory : Path
-        Root of the staged workspace under test.
-    repo_root : Path
-        Repository root from which the CLI module is launched.
-    preflight_test_context : PreflightTestContext
-        Context bundling the cmd-mox double, overrides, and recorder.
-
-    Returns
-    -------
-    dict[str, typ.Any]
-        The captured CLI run result.
-    """
+    """Run the publish CLI against the staged workspace and capture the result."""
     stub_config = preflight_test_context.create_stub_config()
     return _invoke_publish_with_options(repo_root, workspace_directory, stub_config)
 

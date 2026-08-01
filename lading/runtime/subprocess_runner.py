@@ -48,7 +48,7 @@ class SubprocessContext:
     """Execution context for subprocess invocations."""
 
     cwd: Path | None = None
-    env: cabc.Mapping[str, str] | None = None
+    env: cabc.Mapping[str, object] | None = None
     stdin_data: str | None = None
     echo_stdout: bool = True
 
@@ -261,8 +261,8 @@ def normalise_environment(
     """
     if env is None:
         return None
-    # Defensive: callers sometimes provide ``Path``/custom types despite the
-    # annotated signature; ``subprocess`` insists on ``str`` values.
+    # Values may be any object (callers pass ``Path``/``int`` freely);
+    # ``subprocess`` insists on ``str``, so every value is stringified here.
     return {key: str(value) for key, value in env.items()}
 
 
@@ -379,7 +379,7 @@ def _format_thread_name(program: str, stream: str) -> str:
     return f"lading-cmd-{safe}-{stream}"
 
 
-def _log_subprocess_environment(env: cabc.Mapping[str, str] | None) -> None:
+def _log_subprocess_environment(env: cabc.Mapping[str, object] | None) -> None:
     """Log redacted environment overrides for subprocess execution."""
     if not env:
         return
@@ -387,7 +387,7 @@ def _log_subprocess_environment(env: cabc.Mapping[str, str] | None) -> None:
     _LOGGER.debug("Subprocess environment overrides: %s", redacted)
 
 
-def _redact_environment(env: cabc.Mapping[str, str]) -> dict[str, str]:
+def _redact_environment(env: cabc.Mapping[str, object]) -> dict[str, str]:
     """Return ``env`` with sensitive values replaced by placeholders."""
     redacted: dict[str, str] = {}
     for key, value in env.items():

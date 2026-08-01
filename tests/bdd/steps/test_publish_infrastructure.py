@@ -252,21 +252,7 @@ def _create_stub_config(
 def _normalise_preflight_responses(
     config: _PreflightStubConfig,
 ) -> dict[tuple[str, ...], ResponseProvider]:
-    """Return default and override responses keyed by command tuple.
-
-    Returns
-    -------
-    dict[tuple[str, ...], ResponseProvider]
-        Default and override responses keyed by command tuple.
-
-    Notes
-    -----
-    Only the first ``cargo publish`` override found in ``config.overrides``
-    is honoured; any later ``cargo publish`` overrides are ignored. Both
-    ``cargo package`` and ``cargo publish`` command overrides have their
-    ``--allow-dirty`` flag normalised to match ``config.allow_dirty``,
-    replacing any caller-supplied flag.
-    """
+    """First publish override wins; package/publish --allow-dirty follows config."""
     defaults: dict[tuple[str, ...], ResponseProvider] = {
         ("git", "status", "--porcelain"): _CommandResponse(exit_code=0),
         ("git", "ls-files", "**/Cargo.lock", "Cargo.lock"): _CommandResponse(
@@ -296,8 +282,10 @@ def _normalise_preflight_responses(
     publish_command_found = False
     for command, response in config.overrides.items():
         if _is_cargo_publish_command(command):
+            # Only the first cargo publish override wins; later ones are ignored.
             if publish_command_found:
                 continue
+            # Replace any caller-supplied --allow-dirty to match config.allow_dirty.
             base_args = tuple(arg for arg in command[2:] if arg != "--allow-dirty")
             publish_args = ("--allow-dirty",) if config.allow_dirty else ()
             publish_command = ("cargo", "publish", *publish_args, *base_args)
@@ -305,6 +293,7 @@ def _normalise_preflight_responses(
             publish_command_found = True
         else:
             if command[:2] == ("cargo", "package"):
+                # Replace any caller-supplied --allow-dirty to match config.allow_dirty.
                 base_args = tuple(arg for arg in command[2:] if arg != "--allow-dirty")
                 package_args = ("--allow-dirty",) if config.allow_dirty else ()
                 command = ("cargo", "package", *package_args, *base_args)
