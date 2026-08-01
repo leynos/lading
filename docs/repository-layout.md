@@ -97,6 +97,8 @@ Documentation belongs in `docs/` unless it is a short entry point such as
 - Use `docs/lading-design.md` for architecture, constraints, and design
   rationale.
 - Use `docs/roadmap.md` for delivery planning and task tracking.
+- Use `docs/execplans/` for per-branch execution plans (living
+  design-and-delivery documents), named after the branch they guide.
 - Use `docs/documentation-style-guide.md` as the formatting and document-type
   authority.
 

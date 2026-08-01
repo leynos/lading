@@ -378,8 +378,15 @@ lading bump <new_version> [--dry-run]
 
 The bump domain reaches Cargo lockfile projection and regeneration through a
 `LockfileRepository` port defined in `lading.commands.bump_lockfiles`.
-`CargoLockfileRepository` is the cargo-backed adapter; it is constructed with
-an optional `CommandRunner` and delegates to the module-level helpers.
+`CargoLockfileRepository` is the cargo- and git-backed adapter; it is
+constructed with an optional `CommandRunner`, merges configured manifests with
+manifests discovered from tracked lockfiles, and delegates projection and
+regeneration through the `lading.commands.bump_lockfiles` compatibility façade.
+The façade keeps the port, adapter, and established public imports in one
+boundary while cohesive helper modules hold the implementation:
+`bump_lockfile_manifests` merges configured and discovered manifests,
+`bump_lockfile_paths` validates manifests and projects lockfile paths, and
+`bump_lockfile_regeneration` invokes Cargo and aggregates failures.
 `BumpOptions.lockfile_repository` is the injection point; when `None`, bump
 substitutes `CargoLockfileRepository` bound to the default subprocess runner,
 and the CLI binds the adapter at the composition root. This keeps the bump

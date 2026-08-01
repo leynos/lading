@@ -258,7 +258,7 @@ def _validate_dependency_placement(
     the plan and is ordered before the current crate. Raises the context
     exception class for every other case.
     """
-    publishable_name_indexes = {
+    publishable_name_indexes: dict[str, int] = {
         _canonical_crate_name(entry.name): index
         for index, entry in enumerate(handling.plan.publishable)
     }
@@ -366,9 +366,23 @@ def _handle_index_missing_version(
     )
 
     missing_name = failure.missing_dependency_name
-    if missing_name is None:
-        _raise_name_extraction_failure(context)
+    if missing_name is not None:
+        _downgrade_or_raise(
+            failure, context=context, handling=handling, missing_name=missing_name
+        )
+        return
+    _raise_name_extraction_failure(context)
+    return
 
+
+def _downgrade_or_raise(
+    failure: CargoIndexLookupFailure,
+    *,
+    context: _IndexMissingVersionFailure,
+    handling: _IndexMissingVersionHandling,
+    missing_name: str,
+) -> None:
+    """Downgrade a planned-dependency failure or raise when overrides forbid it."""
     placement = _validate_dependency_placement(context, handling, missing_name)
 
     handling.logger.debug(
@@ -381,14 +395,13 @@ def _handle_index_missing_version(
         else "will downgrade to warning",
     )
 
-    if not handling.options.allow_unpublished_workspace_deps:
-        _raise_unpublished_dependency_override_required(
-            context, missing_name=missing_name
+    if handling.options.allow_unpublished_workspace_deps:
+        _emit_downgrade_success(
+            handling,
+            failure,
+            missing_name=missing_name,
+            placement=placement,
         )
-
-    _emit_downgrade_success(
-        handling,
-        failure,
-        missing_name=missing_name,
-        placement=placement,
-    )
+        return
+    _raise_unpublished_dependency_override_required(context, missing_name=missing_name)
+    return

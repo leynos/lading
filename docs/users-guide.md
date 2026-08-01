@@ -86,14 +86,17 @@ lading bump 1.2.3 --dry-run
 
 After updating manifest versions, `lading bump` automatically refreshes any
 git-tracked `Cargo.lock` files (excluding those under `target/`) that have an
-adjacent `Cargo.toml`. The result header counts each changed category, e.g. "N
-manifest(s)", "N documentation file(s)", "N readme file(s)", "N lockfile(s)",
-joined with Oxford-comma grammar. In the per-file body list, manifest paths
-carry no suffix; the other categories carry a parenthetical suffix:
-`(documentation)` for Markdown docs whose TOML code fences were updated,
-`(readme)` for crate READMEs adopted from the workspace README, and
-`(lockfile)` for regenerated `Cargo.lock` files. In dry-run mode, every file is
-listed, but none are modified.
+adjacent `Cargo.toml`, plus any additional manifests listed in
+`bump.lockfile_manifests` for lockfiles that git does not track or for nested
+lockfiles when the workspace is outside a Git repository. The result header
+counts each changed category, e.g. "N manifest(s)", "N documentation file(s)",
+"N readme file(s)", "N lockfile(s)", joined with Oxford-comma grammar. In the
+per-file body list, manifest paths carry no suffix; the other categories carry
+a parenthetical suffix: `(documentation)` for Markdown docs whose TOML code
+fences were updated, `(readme)` for crate READMEs adopted from the workspace
+README, and `(lockfile)` for regenerated `Cargo.lock` files. In dry-run mode,
+every file is listed, but none are modified (lockfile discovery still runs
+`git ls-files`, which is read-only).
 
 Where a member crate sets `readme.workspace = true`, `lading bump` also adopts
 the workspace `README.md` into that crate's directory and rewrites relative
@@ -115,15 +118,17 @@ lading publish
 
 Before running `cargo check` and `cargo test`, `lading publish` validates that
 all git-tracked `Cargo.lock` files are fresh under `--locked` mode. It probes
-every tracked lockfile rather than stopping at the first stale one — for
-example after a `lading bump` that regenerated one or more nested workspace
-lockfiles — so a single run reports the whole workspace. If any lockfile is
-stale, the command exits with code 1 and lists each stale lockfile alongside
-its own repair command:
+every tracked lockfile rather than stopping at the first stale one, so a single
+run reports the whole workspace. If any lockfile is stale — for example after
+manifest edits made without `lading bump`, or after a bump run with
+`--no-rebuild-lockfiles` — the command exits with code 1 and lists each stale
+lockfile alongside its own repair command:
 
 ```plaintext
 Tracked Cargo.lock files are stale after manifest version changes.
-This commonly happens after running `lading bump`; repair each stale lockfile directly:
+This can happen after manifest changes made without `lading bump`, or after
+running `lading bump --no-rebuild-lockfiles`; repair each stale lockfile
+directly:
 - <path>/Cargo.lock
   cargo generate-lockfile --manifest-path <path>/Cargo.toml
 - <nested>/Cargo.lock
@@ -306,25 +311,31 @@ stderr_tail_lines = 40
   manifest updates.
 - `lockfile_manifests`: array of strings, default `[]`. Additional
   `Cargo.toml` manifests whose adjacent `Cargo.lock` files should be
-  regenerated after `lading bump`. The workspace root `Cargo.toml` is always
-  included and should not be listed.
+  regenerated after `lading bump`. Git-tracked lockfiles are discovered and
+  regenerated automatically. Configured manifests are needed for lockfiles that
+  git does not track (for example, generated fixtures listed in `.gitignore`)
+  and for nested lockfiles when the workspace is outside a Git repository,
+  where discovery returns no tracked manifests. The workspace root `Cargo.toml`
+  is always included and should not be listed.
 - `rebuild_lockfiles`: boolean, default `true`. Controls whether `lading bump`
-  regenerates the workspace lockfile and configured nested lockfiles after
-  manifest updates. Pass `--no-rebuild-lockfiles` to skip regeneration for a
-  single run, or `--rebuild-lockfiles` to force regeneration when
-  `rebuild_lockfiles` is configured as `false`.
+  regenerates the workspace lockfile, discovered tracked lockfiles, and
+  configured nested lockfiles after manifest updates. Pass
+  `--no-rebuild-lockfiles` to skip regeneration for a single run, or
+  `--rebuild-lockfiles` to force regeneration when `rebuild_lockfiles` is
+  configured as `false`.
 
 Lockfile regeneration runs
-`cargo update --workspace --manifest-path <manifest>` for the workspace root
-and each configured nested manifest. This updates workspace package entries
-while avoiding a full transitive dependency refresh.
+`cargo update --workspace --manifest-path <manifest>` for the workspace root,
+each configured nested manifest, and each manifest adjacent to a discovered
+git-tracked lockfile. This updates workspace package entries while avoiding a
+full transitive dependency refresh.
 
-Regeneration is not atomic, and `lading bump` attempts every configured
-manifest rather than stopping at the first Cargo failure. Manifest versions are
-written before any lockfile is refreshed, so a failure leaves the workspace
-inconsistent: the manifests carry the new version but the affected lockfiles do
-not. When several lockfiles are regenerated, `lading` raises one aggregated
-error that lists every failed manifest with the exact repair command to run:
+Regeneration is not atomic, and `lading bump` attempts every manifest rather
+than stopping at the first Cargo failure. Manifest versions are written before
+any lockfile is refreshed, so a failure leaves the workspace inconsistent: the
+manifests carry the new version but the affected lockfiles do not. When several
+lockfiles are regenerated, `lading` raises one aggregated error that lists
+every failed manifest with the exact repair command to run:
 
 ```plaintext
 Cargo lockfile regeneration failed for 2 manifest(s). Manifests already carry the new version, so the workspace is inconsistent until each lockfile below is repaired:

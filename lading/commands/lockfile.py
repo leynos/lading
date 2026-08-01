@@ -13,10 +13,13 @@ result to paths that are not under a ``target`` directory and have an adjacent
 Call graph: ``lading publish`` uses :func:`discover_tracked_lockfiles` and
 :func:`validate_lockfile_freshness` before the cargo check/test pre-flight,
 so stale lockfiles fail early with an actionable repair command.
-``lading bump`` regenerates lockfiles via
-:func:`lading.commands.bump_lockfiles.regenerate_lockfiles` instead, which
-runs ``cargo update --workspace``: bump wants existing pinned versions
-refreshed in place after manifest rewrites, whereas validation here uses
+``lading bump`` uses :func:`discover_tracked_lockfiles` too — via
+:func:`lading.commands.bump_lockfiles.merge_discovered_manifests` — but then
+regenerates the workspace-root lockfile from ``Cargo.toml``, together with the
+discovered and configured lockfiles, through
+:func:`lading.commands.bump_lockfiles.regenerate_lockfiles`, which runs
+``cargo update --workspace``: bump wants existing pinned versions refreshed
+in place after manifest rewrites, whereas validation here uses
 ``cargo metadata --locked`` purely as a read-only freshness probe.
 
 The publish pre-flight domain reaches these operations through the
@@ -128,6 +131,7 @@ def discover_tracked_lockfiles(
     runner: CommandRunner,
     *,
     manifest_exists: _ManifestExists = _manifest_exists,
+    emit_observability: bool = True,
 ) -> tuple[Path, ...]:
     """Return tracked Cargo.lock files with adjacent manifests.
 
@@ -141,6 +145,9 @@ def discover_tracked_lockfiles(
     manifest_exists
         Callable used to decide whether a candidate lockfile has an adjacent
         manifest. The default adapter checks the filesystem.
+    emit_observability
+        Whether successful discovery records metrics and an informational log.
+        Error handling and the non-Git warning remain active when false.
 
     Returns
     -------
@@ -165,15 +172,16 @@ def discover_tracked_lockfiles(
     if error_result is not None:
         return error_result
     lockfiles = _lockfiles_with_manifests(stdout, workspace_root, manifest_exists)
-    if lockfiles:
+    if emit_observability and lockfiles:
         # Skip a zero-amount increment: it would create a 0-valued counter key
         # and force an otherwise-silent exit summary (quiet runs stay quiet).
         metrics.increment_counter(DISCOVERED_LOCKFILES_METRIC, amount=len(lockfiles))
-    LOGGER.info(
-        "Discovered %d tracked lockfile(s) with adjacent manifests in %s",
-        len(lockfiles),
-        workspace_root,
-    )
+    if emit_observability:
+        LOGGER.info(
+            "Discovered %d tracked lockfile(s) with adjacent manifests in %s",
+            len(lockfiles),
+            workspace_root,
+        )
     return lockfiles
 
 

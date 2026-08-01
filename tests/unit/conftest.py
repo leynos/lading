@@ -77,9 +77,44 @@ def disable_publish_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
 def stub_lockfile_regeneration(
     request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Avoid invoking Cargo from manifest-focused bump tests."""
+    """Stub lockfile operations for manifest-focused bump test modules.
+
+    Parameters
+    ----------
+    request : pytest.FixtureRequest
+        Active test request used to identify the containing test module.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to replace lockfile discovery and regeneration helpers.
+
+    Returns
+    -------
+    None
+        Modules outside ``_LOCKFILE_STUB_MODULES`` are left unchanged; selected
+        modules receive deterministic helpers that avoid invoking Git or Cargo.
+
+    Examples
+    --------
+    For a test module listed in ``_LOCKFILE_STUB_MODULES``, pytest applies this
+    fixture automatically:
+
+    ```python
+    manifests = ("crates/example/Cargo.toml",)
+    merged = bump.bump_lockfiles.merge_discovered_manifests(tmp_path, manifests)
+    assert merged == manifests
+    assert bump.bump_lockfiles.regenerate_lockfiles(tmp_path, merged) == ()
+    ```
+
+    The scoped replacements mean neither Git discovery nor Cargo regeneration
+    runs in those manifest-focused test modules.
+
+    """
     if request.module.__name__.rsplit(".", 1)[-1] not in _LOCKFILE_STUB_MODULES:
         return
+    monkeypatch.setattr(
+        bump.bump_lockfiles,
+        "merge_discovered_manifests",
+        lambda _root, manifests, **_kwargs: tuple(manifests),
+    )
     monkeypatch.setattr(
         bump.bump_lockfiles,
         "regenerate_lockfiles",

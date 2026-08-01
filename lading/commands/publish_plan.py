@@ -60,7 +60,7 @@ class PublishPlan:
 
     @property
     def publishable_names(self) -> tuple[str, ...]:
-        """Return the names of crates scheduled for publication."""
+        """Names of crates scheduled for publication."""
         return tuple(crate.name for crate in self.publishable)
 
 

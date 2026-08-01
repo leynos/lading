@@ -59,13 +59,19 @@ hygiene, and design-size limits.
 
 The relevant Makefile variables are:
 
-- `RUFF_VERSION` — pinned Ruff version; defaults to `0.15.12`. Keep it in sync
+- `RUFF_VERSION` — pinned Ruff version; defaults to `0.15.21`. Keep it in sync
   with the `ruff==` dev dependency in `pyproject.toml` and the
   `uv tool install ruff==` step in `.github/workflows/ci.yml`, bumping all
   three together to avoid version-skew lint failures.
 - `RUFF` — the pinned Ruff command
   (`uv tool run --from ruff==$(RUFF_VERSION) ruff`) that the `fmt`,
   `check-fmt`, and `lint` targets invoke.
+- `TY_VERSION` — pinned ty version used by `make typecheck`; defaults to
+  `0.0.56`. ty is pre-1.0 and diagnostics shift between releases, so bump it
+  deliberately and fix any new diagnostics in the same commit. CI does not
+  install ty separately; it runs whatever `TY_VERSION` pins.
+- `TY` — the pinned ty command (`uv tool run --from ty==$(TY_VERSION) ty`)
+  that the `typecheck` target invokes.
 - `PYLINT_PYTHON` — Python executable used by `uv tool run`; defaults to `pypy`.
 - `PYLINT_TARGETS` — directories passed to Pylint; defaults to
   `lading scripts tests`.
@@ -203,10 +209,28 @@ resolve from the crate directory, and leaves absolute URI targets unchanged.
 Markdown links in fenced code blocks, indented code blocks, and inline code
 spans are preserved verbatim.
 
-`lading.commands.bump_lockfiles` owns Cargo lockfile discovery and regeneration
-after manifest changes. It always includes the workspace root `Cargo.toml`,
-validates configured nested manifests before invoking Cargo, and de-duplicates
-resolved manifest paths.
+### Lockfile regeneration modules
+
+`lading.commands.bump_lockfiles` is the public compatibility façade. It owns
+the bump-side `LockfileRepository` port and `CargoLockfileRepository` adapter
+and re-exports the public lockfile helpers from three cohesive modules:
+
+- `lading.commands.bump_lockfile_manifests` owns
+  `merge_discovered_manifests`. It unions configured `bump.lockfile_manifests`
+  entries with manifests implied by git-tracked `Cargo.lock` files (reusing
+  `lading.commands.lockfile.discover_tracked_lockfiles`); configured entries
+  keep their order and discovered entries follow in sorted order.
+- `lading.commands.bump_lockfile_paths` owns `LockfileRegenerationError`,
+  `resolve_manifest_paths`, and `resolve_lockfile_paths`.
+  `resolve_manifest_paths` validates that configured entries stay inside the
+  workspace and are named `Cargo.toml`, inserts the workspace-root manifest,
+  and de-duplicates resolved paths. `resolve_lockfile_paths` projects that
+  execution-ordered manifest tuple to the corresponding `Cargo.lock` paths
+  without invoking Cargo.
+- `lading.commands.bump_lockfile_regeneration` owns `regenerate_lockfiles` and
+  its Cargo-execution helpers. `regenerate_lockfiles` uses the same validated,
+  root-first manifest order, attempts every Cargo update, returns successful
+  lockfile paths in execution order, and aggregates multi-manifest failures.
 
 For screen readers: the following flowchart traces `regenerate_lockfiles`. It
 resolves the manifest list, then initializes empty `lockfiles` and `failures`
@@ -258,11 +282,17 @@ the original cargo error rather than wrapped in the aggregate message.
 `lockfile_repository` field, a `bump_lockfiles.LockfileRepository` port
 introduced by issue #82: the bump domain never holds a raw command runner. When
 the field is `None`, bump uses `bump_lockfiles.CargoLockfileRepository`, the
-cargo-backed adapter bound to the default subprocess runner; the CLI binds the
-adapter to its selected runner. Tests inject a repository (or bind the adapter
-to a recording runner) so lockfile commands can be observed without invoking
-real Cargo processes. The port's scope is bump-side lockfile projection and
-regeneration; publish-side discovery and validation go through the sibling
+cargo- and git-backed adapter bound to the default subprocess runner; the CLI
+binds the adapter to its selected runner. The adapter merges configured
+manifests with manifests discovered from tracked lockfiles before either
+projecting dry-run paths or regenerating live lockfiles. In a non-Git
+workspace, discovery emits a warning and the adapter falls back to the
+configured manifests. Dry-run projection suppresses successful-discovery
+metrics and informational logging while retaining that warning and all
+discovery errors. Tests inject a repository (or bind the adapter to a recording
+runner) so lockfile commands can be observed without invoking real processes.
+The port's scope is bump-side lockfile projection and regeneration;
+publish-side discovery and validation go through the sibling
 `lockfile.LockfileInspectionRepository` port (see the Lockfile helpers section
 below), so neither the bump nor the publish lockfile domain holds a raw
 `CommandRunner` (issue #82).
@@ -369,11 +399,15 @@ Private helpers `_handle_git_ls_files_failure` and `_lockfiles_with_manifests`
 perform the error-handling and path-filtering passes respectively.
 
 Lockfile regeneration after `lading bump` is owned by
-`lading.commands.bump_lockfiles.regenerate_lockfiles`, which runs
-`cargo update --workspace` per configured manifest. The two cargo strategies
-differ deliberately: bump refreshes existing pinned versions in place after
-manifest rewrites, while publish only probes freshness read-only via
-`cargo metadata --locked` and never regenerates.
+`lading.commands.bump_lockfiles.CargoLockfileRepository`. The adapter uses
+`bump_lockfiles.merge_discovered_manifests` to union the configured
+`bump.lockfile_manifests` entries with manifests implied by
+`discover_tracked_lockfiles`, then delegates to `regenerate_lockfiles`, which
+runs `cargo update --workspace` per merged manifest. In a non-Git workspace,
+discovery emits a warning and the merge uses only the configured entries. The
+two cargo strategies differ deliberately: bump refreshes existing pinned
+versions in place after manifest rewrites, while publish only probes freshness
+read-only via `cargo metadata --locked` and never regenerates.
 
 `validate_lockfile_freshness(manifest_path, runner)` runs
 `cargo metadata --locked --manifest-path ... --format-version=1`. It returns a
@@ -622,6 +656,9 @@ canonical replacement callers and tests now use directly:
 | `_log = LOGGER` alias                                                                                                                                                                                                                                                                                                                                                 | `bump.py`              | the module-level `LOGGER`                                                                                                                                  |
 | Private `_append_section` / `_format_plan`                                                                                                                                                                                                                                                                                                                            | `publish_plan.py`      | renamed to public `append_section` / `format_plan`                                                                                                         |
 | `split_command` / `_split_command` wrapper                                                                                                                                                                                                                                                                                                                            | `publish_execution.py` | `lading.runtime.subprocess_runner.split_command`                                                                                                           |
+
+_Table 1: Compatibility shims removed by the issue `#163` sweep and their
+canonical replacements._
 
 #### Retained boundaries
 
@@ -927,12 +964,14 @@ than bucketed.
 
 Defined metrics:
 
-| Metric                           | Labels                        | Incremented when                                                                                                      |
-| -------------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `publish.index_lookup_downgrade` | `subcommand`, `missing_crate` | `_handle_index_missing_version` downgrades a crates.io index-lookup failure to a warning (in-plan, override enabled). |
-| `lockfile.discovered`            | (none)                        | Incremented by the number of tracked lockfiles each `discover_tracked_lockfiles` call returns.                        |
-| `lockfile.validate`              | `outcome`                     | One increment per `validate_lockfile_freshness` call; `outcome` is `fresh`, `stale`, or `failed`.                     |
-| `lockfile.validate.duration`     | (none)                        | Duration observation around each `cargo metadata --locked` probe.                                                     |
+| Metric                           | Labels                        | Incremented when                                                                                                                               |
+| -------------------------------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `publish.index_lookup_downgrade` | `subcommand`, `missing_crate` | `_handle_index_missing_version` downgrades a crates.io index-lookup failure to a warning (in-plan, override enabled).                          |
+| `lockfile.discovered`            | (none)                        | Incremented by tracked-lockfile count when discovery observability is enabled; dry-run bump projection suppresses it.                          |
+| `lockfile.regenerate`            | `outcome`, `cause`            | Incremented per successful or failed lockfile regeneration; `cause` is `none`, `validation`, `command_spawn`, `runner_value`, or `cargo_exit`. |
+| `lockfile.regenerate.duration`   | (none)                        | Total duration observation around each lockfile-regeneration run.                                                                              |
+| `lockfile.validate`              | `outcome`                     | One increment per `validate_lockfile_freshness` call; `outcome` is `fresh`, `stale`, or `failed`.                                              |
+| `lockfile.validate.duration`     | (none)                        | Duration observation around each `cargo metadata --locked` probe.                                                                              |
 
 Duration metrics aggregate a count and total seconds per label set via
 `observe_duration` / `duration_stats` and appear in the exit summary with
