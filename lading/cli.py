@@ -25,21 +25,22 @@ import os
 import sys
 import typing as typ
 from contextlib import AbstractContextManager, contextmanager, nullcontext
+from logging import INFO as _DEFAULT_LOG_LEVEL
 from pathlib import Path
 
 from cyclopts import App
 
 from . import commands, config
 from .cli_options import (
+    ALLOW_UNPUBLISHED_WORKSPACE_DEPS_PARAMETER,
+    DRY_RUN_PARAMETER,
+    FORBID_DIRTY_PARAMETER,
+    LIVE_PARAMETER,
+    REBUILD_LOCKFILES_PARAMETER,
+    VERSION_PARAMETER,
+    WORKSPACE_PARAMETER,
     WORKSPACE_ROOT_ENV_VAR,
     WORKSPACE_ROOT_REQUIRED_MESSAGE,
-    AllowUnpublishedWorkspaceDepsFlag,
-    DryRunFlag,
-    ForbidDirtyFlag,
-    LiveFlag,
-    RebuildLockfilesFlag,
-    VersionArgument,
-    WorkspaceRootOption,
 )
 from .runtime import CommandRunner, subprocess_runner
 from .utils import metrics, normalise_workspace_root
@@ -47,7 +48,6 @@ from .workspace import WorkspaceGraph, WorkspaceModelError, load_workspace
 from .workspace import metadata as metadata_module
 
 LOG_LEVEL_ENV_VAR = "LADING_LOG_LEVEL"
-_DEFAULT_LOG_LEVEL = logging.INFO
 _LOG_FORMAT = "%(levelname)s: %(message)s"
 _LADING_HANDLER_NAME = "lading-cli-handler"
 _CMD_MOX_STUB_ENV = "LADING_USE_CMD_MOX_STUB"
@@ -289,7 +289,7 @@ def main(argv: cabc.Sequence[str] | None = None) -> int:
     except KeyboardInterrupt:
         print("\nOperation cancelled by user.", file=sys.stderr)
         return 130
-    except Exception as exc:  # noqa: BLE001 - fallback guard for CLI entry point
+    except Exception as exc:  # ruff: ignore[blind-except] - fallback guard for CLI entry point
         print(f"Unexpected error: {exc}", file=sys.stderr)
         return 1
 
@@ -320,11 +320,11 @@ def _run_with_context(
 
 @app.command
 def bump(
-    version: VersionArgument,
-    workspace_root: WorkspaceRootOption | None = None,
+    version: typ.Annotated[str, VERSION_PARAMETER],
+    workspace_root: typ.Annotated[Path | None, WORKSPACE_PARAMETER] = None,
     *,
-    dry_run: DryRunFlag = False,
-    rebuild_lockfiles: RebuildLockfilesFlag | None = None,
+    dry_run: typ.Annotated[bool, DRY_RUN_PARAMETER] = False,
+    rebuild_lockfiles: typ.Annotated[bool | None, REBUILD_LOCKFILES_PARAMETER] = None,
 ) -> str:
     """Update workspace manifests to ``version``.
 
@@ -377,11 +377,13 @@ def bump(
 
 @app.command
 def publish(
-    workspace_root: WorkspaceRootOption | None = None,
+    workspace_root: typ.Annotated[Path | None, WORKSPACE_PARAMETER] = None,
     *,
-    forbid_dirty: ForbidDirtyFlag = False,
-    live: LiveFlag = False,
-    allow_unpublished_workspace_deps: AllowUnpublishedWorkspaceDepsFlag = None,
+    forbid_dirty: typ.Annotated[bool, FORBID_DIRTY_PARAMETER] = False,
+    live: typ.Annotated[bool, LIVE_PARAMETER] = False,
+    allow_unpublished_workspace_deps: typ.Annotated[
+        bool | None, ALLOW_UNPUBLISHED_WORKSPACE_DEPS_PARAMETER
+    ] = None,
 ) -> str:
     """Run pre-flight checks, package crates, and execute cargo publish.
 

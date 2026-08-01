@@ -34,7 +34,7 @@ def _run_cli(
         str(workspace_directory),
         *command_args,
     ]
-    completed = subprocess.run(  # noqa: S603
+    completed = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]
         command,
         check=False,
         cwd=str(repo_root),
@@ -203,7 +203,7 @@ def _then_dependency_requirement_step(
 
 
 # Import subcommand-specific steps so their definitions register with pytest-bdd.
-from . import test_bump_steps as _bump_steps  # noqa: E402,F401  # isort: skip
-from . import test_publish_given_steps as _publish_given  # noqa: E402,F401  # isort: skip
-from . import test_publish_when_steps as _publish_when  # noqa: E402,F401  # isort: skip
-from . import test_publish_then_steps as _publish_then  # noqa: E402,F401  # isort: skip
+from . import test_bump_steps as _bump_steps  # ruff: ignore[module-import-not-at-top-of-file, unused-import]  # isort: skip
+from . import test_publish_given_steps as _publish_given  # ruff: ignore[module-import-not-at-top-of-file, unused-import]  # isort: skip
+from . import test_publish_when_steps as _publish_when  # ruff: ignore[module-import-not-at-top-of-file, unused-import]  # isort: skip
+from . import test_publish_then_steps as _publish_then  # ruff: ignore[module-import-not-at-top-of-file, unused-import]  # isort: skip

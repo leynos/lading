@@ -325,12 +325,12 @@ def then_manifests_at_version(e2e_state: dict[str, typ.Any]) -> None:
     """Assert the workspace and member crate versions match the expected value."""
     workspace: workspace_builder.NonTrivialWorkspace = e2e_state["workspace"]
     root_doc = toml_utils.load_manifest(workspace.root / "Cargo.toml")
-    assert root_doc["workspace"]["package"]["version"] == "1.0.0"
+    assert root_doc["workspace"]["package"]["version"] == "1.0.0", root_doc
     for name in workspace.crate_names:
         crate_doc = toml_utils.load_manifest(
             workspace.root / "crates" / name / "Cargo.toml"
         )
-        assert crate_doc["package"]["version"] == "1.0.0"
+        assert crate_doc["package"]["version"] == "1.0.0", crate_doc
 
 
 @then('internal dependency versions are updated to "1.0.0"')
@@ -340,17 +340,23 @@ def then_internal_dependencies_updated(e2e_state: dict[str, typ.Any]) -> None:
     utils_doc = toml_utils.load_manifest(
         workspace.root / "crates" / "utils" / "Cargo.toml"
     )
-    assert extract_dependency_requirement(utils_doc["dependencies"]["core"]) == "^1.0.0"
+    assert (
+        extract_dependency_requirement(utils_doc["dependencies"]["core"]) == "^1.0.0"
+    ), utils_doc
     assert (
         extract_dependency_requirement(utils_doc["dev-dependencies"]["core"])
         == "~1.0.0"
-    )
+    ), utils_doc
     app_doc = toml_utils.load_manifest(workspace.root / "crates" / "app" / "Cargo.toml")
-    assert extract_dependency_requirement(app_doc["dependencies"]["core"]) == "1.0.0"
-    assert extract_dependency_requirement(app_doc["dependencies"]["utils"]) == "~1.0.0"
+    assert extract_dependency_requirement(app_doc["dependencies"]["core"]) == "1.0.0", (
+        app_doc
+    )
+    assert (
+        extract_dependency_requirement(app_doc["dependencies"]["utils"]) == "~1.0.0"
+    ), app_doc
     assert (
         extract_dependency_requirement(app_doc["build-dependencies"]["core"]) == "1.0.0"
-    )
+    ), app_doc
 
 
 @then('the workspace README contains version "1.0.0"')
@@ -358,9 +364,9 @@ def then_readme_contains_version(e2e_state: dict[str, typ.Any]) -> None:
     """Assert the workspace README TOML snippet reflects the bumped version."""
     workspace: workspace_builder.NonTrivialWorkspace = e2e_state["workspace"]
     readme = (workspace.root / "README.md").read_text(encoding="utf-8")
-    assert 'core = "1.0.0"' in readme
-    assert 'utils = "1.0.0"' in readme
-    assert 'app = "1.0.0"' in readme
+    assert 'core = "1.0.0"' in readme, readme
+    assert 'utils = "1.0.0"' in readme, readme
+    assert 'app = "1.0.0"' in readme, readme
 
 
 @then("the Git working tree has uncommitted changes")
@@ -404,7 +410,7 @@ def then_publish_order(publish_spies: dict[str, typ.Any], expected: str) -> None
     for _label, _args, env in package_calls:
         cwd = Path(env["PWD"])
         seen.append(cwd.name)
-    assert seen == expected_names
+    assert seen == expected_names, f"expected {expected_names!r}, got {seen!r}"
 
 
 @then("cargo package was invoked for each crate")
@@ -412,9 +418,9 @@ def then_cargo_package_invoked(publish_spies: dict[str, typ.Any]) -> None:
     """Assert cargo package was invoked once per crate."""
     workspace: workspace_builder.NonTrivialWorkspace = publish_spies["workspace"]
     package_calls = filter_records(publish_spies, "cargo::package")
-    assert len(package_calls) == len(workspace.crate_names)
+    assert len(package_calls) == len(workspace.crate_names), package_calls
     called = {Path(env["PWD"]).name for _label, _args, env in package_calls}
-    assert called == set(workspace.crate_names)
+    assert called == set(workspace.crate_names), called
 
 
 @then("cargo publish --dry-run was invoked for each crate")
@@ -422,9 +428,9 @@ def then_cargo_publish_invoked(publish_spies: dict[str, typ.Any]) -> None:
     """Assert cargo publish --dry-run was invoked once per crate."""
     workspace: workspace_builder.NonTrivialWorkspace = publish_spies["workspace"]
     publish_calls = filter_records(publish_spies, "cargo::publish")
-    assert len(publish_calls) == len(workspace.crate_names)
+    assert len(publish_calls) == len(workspace.crate_names), publish_calls
     called = {Path(env["PWD"]).name for _label, _args, env in publish_calls}
-    assert called == set(workspace.crate_names)
+    assert called == set(workspace.crate_names), called
 
 
 @then("cargo publish uses --allow-dirty in the default publish flow")
@@ -433,7 +439,7 @@ def then_cargo_publish_uses_allow_dirty(publish_spies: dict[str, typ.Any]) -> No
     publish_calls = filter_records(publish_spies, "cargo::publish")
     assert publish_calls, "expected at least one cargo::publish invocation"
     seen_args = {args for _label, args, _env in publish_calls}
-    assert seen_args == {("--allow-dirty", "--dry-run")}
+    assert seen_args == {("--allow-dirty", "--dry-run")}, seen_args
 
 
 @then("cargo publish omits --allow-dirty when forbid-dirty is set")
@@ -442,8 +448,8 @@ def then_cargo_publish_omits_allow_dirty(publish_spies: dict[str, typ.Any]) -> N
     publish_calls = filter_records(publish_spies, "cargo::publish")
     assert publish_calls, "expected at least one cargo::publish invocation"
     seen_args = {args for _label, args, _env in publish_calls}
-    assert seen_args == {("--dry-run",)}
-    assert all("--allow-dirty" not in args for args in seen_args)
+    assert seen_args == {("--dry-run",)}, seen_args
+    assert all("--allow-dirty" not in args for args in seen_args), seen_args
 
 
 @then("the workspace README was adopted for all crates")
@@ -459,7 +465,7 @@ def then_readme_adopted_for_all_crates(e2e_state: dict[str, typ.Any]) -> None:
     for name in workspace.crate_names:
         crate_readme = workspace.root / "crates" / name / "README.md"
         assert crate_readme.exists(), f"expected adopted README: {crate_readme}"
-        assert crate_readme.read_text(encoding="utf-8") == expected_text
+        assert crate_readme.read_text(encoding="utf-8") == expected_text, crate_readme
 
 
 @given("the workspace rebuilds the app crate lockfile during bump")
@@ -500,8 +506,8 @@ def given_workspace_rebuilds_app_lockfile(
 def then_cli_lists_regenerated_lockfiles(cli_run: _CliRunResult) -> None:
     """Assert the bump output reports the root and nested lockfiles."""
     stdout_lines = [line.strip() for line in cli_run["stdout"].splitlines()]
-    assert "- Cargo.lock (lockfile)" in stdout_lines
-    assert "- crates/app/Cargo.lock (lockfile)" in stdout_lines
+    assert "- Cargo.lock (lockfile)" in stdout_lines, stdout_lines
+    assert "- crates/app/Cargo.lock (lockfile)" in stdout_lines, stdout_lines
 
 
 @then("the workspace Cargo.lock files are updated")
