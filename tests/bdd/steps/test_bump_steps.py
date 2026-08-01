@@ -60,11 +60,6 @@ def given_workspace_has_nested_tracked_lockfile(
     workspace_directory : Path
         Temporary workspace containing the root and nested lockfiles.
 
-    Returns
-    -------
-    None
-        This step configures the workspace and command doubles in place.
-
     """
     from tests.helpers.workspace_helpers import install_cargo_stub
 
@@ -267,11 +262,6 @@ def then_bump_refreshed_workspace_and_nested_lockfiles(
     workspace_directory : Path
         Temporary workspace used to derive the expected manifest paths.
 
-    Returns
-    -------
-    None
-        This step only asserts the recorded command invocations.
-
     """
     assert cli_run["returncode"] == 0, (
         f"stdout:\n{cli_run['stdout']}\nstderr:\n{cli_run['stderr']}"
@@ -393,6 +383,7 @@ def given_nested_lockfile_manifest(
         "--workspace", "--manifest-path", str(nested_manifest.resolve())
     ).returns(exit_code=0, stdout="cargo update --workspace\n", stderr="")
 
+
 def _invoke_lading_bump(
     version: str,
     workspace_directory: Path,
@@ -406,6 +397,7 @@ def _invoke_lading_bump(
         "_BumpCliRun",
         _run_cli(repo_root, workspace_directory, "bump", version, *options),
     )
+
 
 class _BumpCliRun(typ.TypedDict):
     """Captured result of a bump CLI invocation."""

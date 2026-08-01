@@ -71,6 +71,8 @@ class WorkspaceCrate(msgspec.Struct, frozen=True, kw_only=True):
 
 
 class WorkspaceGraph(msgspec.Struct, frozen=True, kw_only=True):
+    """Represents the crates and relationships for a workspace."""
+
     def _build_dependency_graph(
         self,
         crates_by_name: dict[str, WorkspaceCrate],

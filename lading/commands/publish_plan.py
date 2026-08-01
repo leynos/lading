@@ -63,7 +63,6 @@ class PublishPlan:
     missing_configuration_exclusions: tuple[str, ...] = ()
 
     @property
-
     def publishable_names(self) -> tuple[str, ...]:
         """The names of crates scheduled for publication.
 

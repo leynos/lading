@@ -81,11 +81,10 @@ def stub_lockfile_regeneration(
     monkeypatch : pytest.MonkeyPatch
         Fixture used to replace lockfile discovery and regeneration helpers.
 
-    Returns
-    -------
-    None
-        Modules outside ``_LOCKFILE_STUB_MODULES`` are left unchanged; selected
-        modules receive deterministic helpers that avoid invoking Git or Cargo.
+    Notes
+    -----
+    Modules outside ``_LOCKFILE_STUB_MODULES`` are left unchanged; selected
+    modules receive deterministic helpers that avoid invoking Git or Cargo.
 
     Examples
     --------
@@ -274,6 +273,8 @@ def publish_fixtures(
         make_dependency=make_dependency,
         publish_options=publish_options,
     )
+
+
 @pytest.fixture
 def make_dependency() -> cabc.Callable[[str], WorkspaceDependency]:
     """Return a factory for workspace dependency records.

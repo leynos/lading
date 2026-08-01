@@ -471,6 +471,8 @@ def use_real_invoke(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 class CallTrackingRunner:
+    """Track command invocations while returning successful results."""
+
     def __init__(self) -> None:
         """Initialise the runner with an empty call log."""
         self._calls: list[tuple[tuple[str, ...], Path | None]] = []

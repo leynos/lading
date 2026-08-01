@@ -70,7 +70,7 @@ def resolve_lockfile_paths(
     # ["/workspace/Cargo.lock", "/workspace/fixtures/minimal/Cargo.lock"]
     ```
 
-    """
+    """  # noqa: DOC502
     manifests = resolve_manifest_paths(workspace_root, lockfile_manifests)
     return tuple(manifest.parent / "Cargo.lock" for manifest in manifests)
 
