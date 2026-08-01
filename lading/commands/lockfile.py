@@ -55,7 +55,7 @@ if typ.TYPE_CHECKING:
     from lading.runtime import CommandRunner
 
 LOGGER = logging.getLogger(__name__)
-_ManifestExists = cabc.Callable[[Path], bool]
+type _ManifestExists = cabc.Callable[[Path], bool]
 
 # Metric names (issue #91); documented in docs/developers-guide.md.
 DISCOVERED_LOCKFILES_METRIC = "lockfile.discovered"
@@ -119,18 +119,11 @@ def _lockfiles_with_manifests(
         if manifest_exists(lockfile_path.parent / "Cargo.toml"):
             lockfiles.append(lockfile_path)
     return tuple(lockfiles)
-
-
-def _manifest_exists(manifest_path: Path) -> bool:
-    """Return whether ``manifest_path`` exists on disk."""
-    return manifest_path.exists()
-
-
 def discover_tracked_lockfiles(
     workspace_root: Path,
     runner: CommandRunner,
     *,
-    manifest_exists: _ManifestExists = _manifest_exists,
+    manifest_exists: _ManifestExists = Path.exists,
     emit_observability: bool = True,
 ) -> tuple[Path, ...]:
     """Return tracked Cargo.lock files with adjacent manifests.
@@ -275,7 +268,7 @@ class CargoLockfileInspectionRepository:
 
     runner: CommandRunner
     env: cabc.Mapping[str, str] | None = None
-    manifest_exists: _ManifestExists = _manifest_exists
+    manifest_exists: _ManifestExists = Path.exists
 
     def discover_tracked_lockfiles(self, workspace_root: Path) -> tuple[Path, ...]:
         """Return tracked Cargo.lock files with adjacent manifests.

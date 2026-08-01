@@ -17,7 +17,7 @@ def expect_sequence(
     allow_none: typ.Literal[False] = False,
 ) -> cabc.Sequence[object]:
     """Require a sequence when ``allow_none`` is ``False``."""
-    ...  # pylint: disable=unnecessary-ellipsis
+    ...  # pylint: disable=unnecessary-ellipsis  # overload stub has no body
 
 
 @typ.overload
@@ -29,7 +29,7 @@ def expect_sequence(
     allow_none: typ.Literal[True],
 ) -> cabc.Sequence[object] | None:
     """Allow ``None`` when ``allow_none`` is ``True``."""
-    ...  # pylint: disable=unnecessary-ellipsis
+    ...  # pylint: disable=unnecessary-ellipsis  # overload stub has no body
 
 
 def expect_sequence(

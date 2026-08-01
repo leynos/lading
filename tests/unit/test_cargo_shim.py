@@ -1,6 +1,6 @@
 """Unit tests for the publish-check cargo shim."""
 
-# ruff: noqa: D103
+# ruff: file-ignore[undocumented-public-function]
 
 from __future__ import annotations
 

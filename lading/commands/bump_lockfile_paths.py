@@ -70,7 +70,7 @@ def resolve_lockfile_paths(
     # ["/workspace/Cargo.lock", "/workspace/fixtures/minimal/Cargo.lock"]
     ```
 
-    """  # noqa: DOC502 -- propagated from resolve_manifest_paths, not raised here
+    """  # ruff: ignore[docstring-extraneous-exception]  # delegated validator raises this documented error
     manifests = resolve_manifest_paths(workspace_root, lockfile_manifests)
     return tuple(manifest.parent / "Cargo.lock" for manifest in manifests)
 

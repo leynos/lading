@@ -46,20 +46,23 @@ Run the Python lint gate with:
 make lint
 ```
 
-The target is deliberately three-tiered. Ruff runs first because it is fast,
+The target is deliberately five-stage. Ruff runs first because it is fast,
 handles broad style and correctness checks, and imports the stricter lint
 policy used by `leynos/episodic`. If Ruff passes, the target runs `interrogate`
 with `--fail-under 100` across `lading` to enforce **100% docstring coverage**.
-If `interrogate` passes, the final tier runs Pylint through the pinned
-`pylint-pypy-shim` tool under PyPy. The final tier is focused on rule families
+If `interrogate` passes, the third stage runs Pylint through the pinned
+`pylint-pypy-shim` tool under PyPy. That stage is focused on rule families
 that complement Ruff, especially logging format safety, pattern matching
 checks, selected simplification checks, deprecated standard-library usage, file
-hygiene, and design-size limits.
+hygiene, and design-size limits. The fourth stage runs all
+`df12-python-lints` checks under CPython 3.14, while retaining Lading's Python
+3.13 semantic baseline for version-gated diagnostics. Finally, `ambrleaks`
+scans Syrupy snapshots under `tests` for values that should have been redacted.
 [ADR-003](adr/003-three-tier-python-linting.md) records the policy decision.
 
 The relevant Makefile variables are:
 
-- `RUFF_VERSION` — pinned Ruff version; defaults to `0.15.21`. Keep it in sync
+- `RUFF_VERSION` — pinned Ruff version; defaults to `0.16.0`. Keep it in sync
   with the `ruff==` dev dependency in `pyproject.toml` and the
   `uv tool install ruff==` step in `.github/workflows/ci.yml`, bumping all
   three together to avoid version-skew lint failures.
@@ -79,6 +82,18 @@ The relevant Makefile variables are:
 - `PYLINT_PYPY_SHIM` — Git URL assembled from the pinned shim revision.
 - `PYLINT` — full `uv tool run --python $(PYLINT_PYTHON)` invocation for the
   shimmed Pylint command.
+- `DF12_PYTHON_LINTS_REF` — pinned `df12-python-lints` release used by the
+  separately provisioned `ambrleaks` command; defaults to `v0.1.0` and must
+  remain aligned with the development dependency in `pyproject.toml`.
+- `DF12_PYTHON` — CPython interpreter used by the df12 Pylint and `ambrleaks`
+  stages; defaults to `3.14`.
+- `DF12_PYLINT_MESSAGES` — explicit allow-list of enabled df12 Pylint message
+  IDs.
+- `DF12_PYLINT` — project-environment Pylint invocation that loads the df12
+  plug-in under CPython 3.14 and evaluates version-gated checks against
+  Lading's Python 3.13 baseline.
+- `AMBRLEAKS` — isolated `df12-python-lints` tool invocation used to scan
+  Syrupy snapshots under `tests`.
 
 The `lint` target depends on `ruff`, `build`, `uv`, and `interrogate`, so it
 creates and syncs the virtual environment before checking virtual-environment
@@ -89,10 +104,11 @@ Ruff and Pylint policy live in `pyproject.toml`. The Ruff configuration enables
 preview rules, targets Python 3.13, imports the selected `episodic` rule set,
 and bans deprecated `typing` aliases in favour of built-in collection types,
 `collections.abc`, `collections`, `contextlib`, or `re` as appropriate. The
-Pylint configuration keeps the pass opt-in by disabling all messages first and
-then enabling only the chosen third-tier checks. Local ignores and thresholds
-document existing codebase constraints that should be addressed as focused
-cleanup work rather than incidental lint-gate churn.
+Pylint configuration keeps both passes opt-in. The existing PyPy pass uses the
+chosen built-in checks, while the CPython 3.14 pass disables built-in messages
+and enables every diagnostic shipped by `df12-python-lints` v0.1.0. Local
+ignores and thresholds document existing codebase constraints that should be
+addressed as focused cleanup work rather than incidental lint-gate churn.
 
 ## Testing hooks
 

@@ -17,8 +17,6 @@ from tomlkit.items import InlineTable, Item, Table
 
 if typ.TYPE_CHECKING:
     from tomlkit.toml_document import TOMLDocument
-else:  # pragma: no cover - provide runtime placeholders for type checking imports
-    TOMLDocument = typ.Any
 
 type _TableLike = Table | OutOfOrderTableProxy
 _TABLE_LIKE_TYPES: typ.Final[tuple[type[Table], type[OutOfOrderTableProxy]]] = (
