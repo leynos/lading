@@ -660,9 +660,15 @@ def test_discovery_observability_can_be_suppressed(
         emit_observability=False,
     )
 
-    assert discovered == (tmp_path / "Cargo.lock",)
-    assert metrics.counter_value(lockfile.DISCOVERED_LOCKFILES_METRIC) == 0
-    assert not any(record.message.startswith("Discovered") for record in caplog.records)
+    assert discovered == (tmp_path / "Cargo.lock",), (
+        "discovery should return the tracked root lockfile"
+    )
+    assert metrics.counter_value(lockfile.DISCOVERED_LOCKFILES_METRIC) == 0, (
+        "suppressed observability should not increment the discovery counter"
+    )
+    assert not any(
+        record.message.startswith("Discovered") for record in caplog.records
+    ), "suppressed observability should not emit the discovery info log"
 
 
 @pytest.mark.usefixtures("_metrics_registry")

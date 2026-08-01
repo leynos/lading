@@ -7,7 +7,7 @@ UV ?= $(shell command -v uv 2>/dev/null || printf '%s/.local/bin/uv' "$$HOME")
 # .github/workflows/ci.yml. Bump all three sites together: a version mismatch
 # causes version-skew lint failures because rule sets differ between Ruff
 # releases.
-RUFF_VERSION ?= 0.15.12
+RUFF_VERSION ?= 0.15.21
 RUFF ?= $(UV) tool run --from ruff==$(RUFF_VERSION) ruff
 TYPOS_VERSION ?= 1.48.0
 # Pin ty so `make` and CI invoke the same typechecker release. ty is

@@ -343,12 +343,12 @@ pieces:
 - `lading/commands/lockfile.py` owns discovery and freshness validation.
   Publish uses discovery for freshness validation, while the bump-side
   `CargoLockfileRepository` uses it to construct the merged manifest set.
-  `discover_tracked_lockfiles(workspace_root, runner, *, manifest_exists=...,
-  emit_observability=True)` runs
-  `git ls-files "**/Cargo.lock" "Cargo.lock"`, filters out paths with a `target`
-  component, keeps only lockfiles with an adjacent `Cargo.toml`, and returns
-  absolute lockfile paths. In a non-git directory it logs a warning and returns
-  an empty tuple.
+  `discover_tracked_lockfiles(workspace_root, runner, *, manifest_exists=…,
+  emit_observability=True)`
+  runs `git ls-files "**/Cargo.lock" "Cargo.lock"`, filters out paths with a
+  `target` component, keeps only lockfiles with an adjacent `Cargo.toml`, and
+  returns absolute lockfile paths. In a non-Git directory, it logs a warning
+  and returns an empty tuple.
 - `lading/commands/publish_preflight.py` contains
   `_validate_lockfile_freshness`, which discovers tracked lockfiles, probes
   each with `cargo metadata --locked`, and raises `PublishPreflightError` with

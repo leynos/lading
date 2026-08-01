@@ -75,7 +75,9 @@ def test_regenerate_lockfiles_records_success_count_and_duration(
         clock=lambda: next(timestamps),
     )
 
-    assert lockfiles == (tmp_path / "Cargo.lock",)
+    assert lockfiles == (tmp_path / "Cargo.lock",), (
+        "regeneration should return the root lockfile"
+    )
     assert (
         metrics.counter_value(
             bump_lockfile_regeneration.REGENERATE_METRIC,
@@ -83,12 +85,14 @@ def test_regenerate_lockfiles_records_success_count_and_duration(
             cause="none",
         )
         == 1
-    )
+    ), "successful regeneration should increment the success counter"
     duration = metrics.duration_stats(
         bump_lockfile_regeneration.REGENERATE_DURATION_METRIC
     )
-    assert duration.count == 1
-    assert duration.total_seconds == pytest.approx(0.5)
+    assert duration.count == 1, "successful regeneration should record one duration"
+    assert duration.total_seconds == pytest.approx(0.5), (
+        "recorded duration should span the complete regeneration"
+    )
 
 
 def _assert_failed_regeneration_records_cause(
@@ -112,7 +116,7 @@ def _assert_failed_regeneration_records_cause(
             cause=expected_cause,
         )
         == 1
-    )
+    ), "failed regeneration should increment the expected cause counter"
 
 
 @pytest.mark.parametrize(
@@ -183,7 +187,7 @@ def test_regenerate_lockfiles_records_partial_success_and_failure(
             cause="none",
         )
         == 1
-    )
+    ), "partial regeneration should count the successful root lockfile"
     assert (
         metrics.counter_value(
             bump_lockfile_regeneration.REGENERATE_METRIC,
@@ -191,4 +195,4 @@ def test_regenerate_lockfiles_records_partial_success_and_failure(
             cause="cargo_exit",
         )
         == 1
-    )
+    ), "partial regeneration should count the Cargo-exit failure"

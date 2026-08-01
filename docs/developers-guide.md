@@ -59,7 +59,7 @@ hygiene, and design-size limits.
 
 The relevant Makefile variables are:
 
-- `RUFF_VERSION` — pinned Ruff version; defaults to `0.15.12`. Keep it in sync
+- `RUFF_VERSION` — pinned Ruff version; defaults to `0.15.21`. Keep it in sync
   with the `ruff==` dev dependency in `pyproject.toml` and the
   `uv tool install ruff==` step in `.github/workflows/ci.yml`, bumping all
   three together to avoid version-skew lint failures.

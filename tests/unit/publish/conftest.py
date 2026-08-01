@@ -292,7 +292,7 @@ class CallTrackingRunner:
 
     @property
     def calls(self) -> list[tuple[tuple[str, ...], Path | None]]:
-        """Return a stable snapshot of recorded invocations."""
+        """Stable snapshot of recorded invocations."""
         return list(self._calls)
 
     def __call__(

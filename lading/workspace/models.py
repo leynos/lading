@@ -168,7 +168,7 @@ class WorkspaceGraph(msgspec.Struct, frozen=True, kw_only=True):
 
     @property
     def crates_by_name(self) -> dict[str, WorkspaceCrate]:
-        """Return a name-indexed mapping of workspace crates."""
+        """Name-indexed mapping of workspace crates."""
         return {crate.name: crate for crate in self.crates}
 
 
