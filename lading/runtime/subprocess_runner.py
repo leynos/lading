@@ -139,7 +139,7 @@ def _spawn_process(
         # This path owns `Popen` directly so relay threads can drain both pipes
         # before the function returns. S603 is mitigated because `command` is a
         # pre-split sequence and the default `shell=False` is used.
-        return subprocess.Popen(  # noqa: S603 # pylint: disable=consider-using-with
+        return subprocess.Popen(  # ruff: ignore[subprocess-without-shell-equals-true] # pylint: disable=consider-using-with
             command,
             cwd=None if context.cwd is None else str(context.cwd),
             env=normalised_env,

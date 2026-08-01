@@ -320,7 +320,7 @@ def then_publish_packages_crates_in_order(
     AssertionError
         If no ``cargo::package`` invocations were recorded, or the
         packaged crate order does not match the expected publish order.
-    """  # noqa: DOC502 -- AssertionError propagates from assert helpers
+    """  # ruff: ignore[docstring-extraneous-exception]
     expected = [name.strip() for name in crate_names.split(",") if name.strip()]
     invocations = _get_required_invocations(
         preflight_recorder,
@@ -354,7 +354,7 @@ def then_publish_runs_dry_run(
         If no ``cargo::publish`` invocations were recorded, an invocation
         is missing the ``--dry-run`` flag, or the crate order does not
         match.
-    """  # noqa: DOC502 -- AssertionError propagates from assert helpers
+    """  # ruff: ignore[docstring-extraneous-exception]
     expected = _split_names(crate_names)
     invocations = _get_required_invocations(
         preflight_recorder,
@@ -389,7 +389,7 @@ def then_publish_runs_live(
         If no ``cargo::publish`` invocations were recorded, an invocation
         unexpectedly carries the ``--dry-run`` flag, or the crate order
         does not match.
-    """  # noqa: DOC502 -- AssertionError propagates from assert helpers
+    """  # ruff: ignore[docstring-extraneous-exception]
     expected = _split_names(crate_names)
     invocations = _get_required_invocations(
         preflight_recorder,

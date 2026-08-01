@@ -14,7 +14,10 @@ import functools
 import typing as typ
 
 from lading import toml_coerce
+from lading.toml_coerce import is_non_empty_sequence as _is_non_empty_sequence
 from lading.workspace.models import WorkspaceModelError
+
+__all__ = ["_is_non_empty_sequence"]
 
 _expect_mapping = functools.partial(
     toml_coerce.expect_mapping, error=WorkspaceModelError
@@ -29,7 +32,7 @@ def _expect_sequence(
     allow_none: typ.Literal[False] = False,
 ) -> cabc.Sequence[object]:
     """Require a sequence when ``allow_none`` is ``False``."""
-    ...  # pylint: disable=unnecessary-ellipsis
+    ...  # pylint: disable=unnecessary-ellipsis  # overload stub has no body
 
 
 @typ.overload
@@ -40,7 +43,7 @@ def _expect_sequence(
     allow_none: typ.Literal[True],
 ) -> cabc.Sequence[object] | None:
     """Allow ``None`` when ``allow_none`` is ``True``."""
-    ...  # pylint: disable=unnecessary-ellipsis
+    ...  # pylint: disable=unnecessary-ellipsis  # overload stub has no body
 
 
 def _expect_sequence(
@@ -58,4 +61,3 @@ def _expect_sequence(
 
 
 _expect_string = functools.partial(toml_coerce.expect_string, error=WorkspaceModelError)
-_is_non_empty_sequence = toml_coerce.is_non_empty_sequence

@@ -30,8 +30,6 @@ _log = logging.getLogger(__name__)
 
 if typ.TYPE_CHECKING:
     from lading.workspace import WorkspaceCrate
-else:  # pragma: no cover - provide runtime placeholders for type checking imports
-    WorkspaceCrate = typ.Any
 
 
 class ReadmeTranspositionError(LadingError):

@@ -130,7 +130,7 @@ def test_render_section_renders_empty_message_when_empty() -> None:
 )
 def test_render_section_invariants(
     items: list[str],
-    use_empty_message: bool,  # noqa: FBT001 - hypothesis-driven keyword
+    use_empty_message: bool,  # ruff: ignore[boolean-type-hint-positional-argument] - hypothesis-driven keyword
 ) -> None:
     """Header appears iff items exist; each item renders exactly once."""
     empty_message = "Nothing to report" if use_empty_message else None
