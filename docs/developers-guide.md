@@ -178,6 +178,20 @@ Property-based tests in the publish suite use
 to keep continuous integration (CI) fast while still exercising a range of
 inputs.
 
+
+## Working-directory test helper (`tests/helpers/cwd.py`)
+
+Tests that change the process working directory must call
+`chdir_for_test(monkeypatch, path)` instead of `monkeypatch.chdir(path)`
+directly. The helper creates the placeholder source directory required by
+mutmut's instrumentation before changing directory, while preserving pytest's
+automatic restoration of the original working directory.
+
+Reuse this helper for every unit, integration, behavioural, or end-to-end test
+that changes the process working directory. This keeps
+current-working-directory behaviour covered without causing mutmut's baseline
+run to fail before it can generate mutants.
+
 ## Publish test infrastructure (`tests/unit/publish/conftest.py`)
 
 The publish unit-test conftest exports the following shared helpers:
