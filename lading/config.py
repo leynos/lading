@@ -84,13 +84,19 @@ class DocumentationConfig:
             Documentation settings parsed from ``mapping``, or defaults when
             ``mapping`` is ``None``.
 
+        Raises
+        ------
+        ConfigurationError
+            If ``mapping`` contains an unknown key or an invalid setting
+            value, propagated from the shared mapping validators/coercers.
+
         Examples
         --------
         >>> DocumentationConfig.from_mapping({"globs": ["docs/*.md"]})
         DocumentationConfig(globs=('docs/*.md',))
         >>> DocumentationConfig.from_mapping(None)
         DocumentationConfig(globs=())
-        """
+        """  # noqa: DOC502
         if mapping is None:
             return cls()
         _validate_mapping_keys(
@@ -125,13 +131,19 @@ class BumpConfig:
             Bump settings parsed from ``mapping``, or defaults when ``mapping``
             is ``None``.
 
+        Raises
+        ------
+        ConfigurationError
+            If ``mapping`` contains an unknown key or an invalid setting
+            value, propagated from the shared mapping validators/coercers.
+
         Examples
         --------
         >>> BumpConfig.from_mapping({"exclude": ["crate-a"]}).exclude
         ('crate-a',)
         >>> BumpConfig.from_mapping(None).rebuild_lockfiles
         True
-        """
+        """  # noqa: DOC502
         if mapping is None:
             return cls()
         _validate_mapping_keys(mapping, set(BUMP_TOML_KEYS), "bump")
@@ -174,13 +186,19 @@ class PublishConfig:
             Publish settings parsed from ``mapping``, or defaults when
             ``mapping`` is ``None``.
 
+        Raises
+        ------
+        ConfigurationError
+            If ``mapping`` contains an unknown key or an invalid setting
+            value, propagated from the shared mapping validators/coercers.
+
         Examples
         --------
         >>> PublishConfig.from_mapping({"order": ["a", "b"]}).order
         ('a', 'b')
         >>> PublishConfig.from_mapping(None).strip_patches
         'per-crate'
-        """
+        """  # noqa: DOC502
         if mapping is None:
             return cls()
         _validate_mapping_keys(mapping, set(PUBLISH_TOML_KEYS), "publish")
@@ -227,13 +245,19 @@ class PreflightConfig:
             Pre-flight settings parsed from ``mapping``, or defaults when
             ``mapping`` is ``None``.
 
+        Raises
+        ------
+        ConfigurationError
+            If ``mapping`` contains an unknown key or an invalid setting
+            value, propagated from the shared mapping validators/coercers.
+
         Examples
         --------
         >>> PreflightConfig.from_mapping({"unit_tests_only": True}).unit_tests_only
         True
         >>> PreflightConfig.from_mapping(None).stderr_tail_lines
         40
-        """
+        """  # noqa: DOC502
         if mapping is None:
             return cls()
         _validate_mapping_keys(mapping, set(PREFLIGHT_TOML_KEYS), "preflight")
@@ -291,12 +315,18 @@ class LadingConfig:
         LadingConfig
             Fully populated configuration with defaults for absent sections.
 
+        Raises
+        ------
+        ConfigurationError
+            If ``mapping`` contains an unknown key or an invalid setting
+            value, propagated from the shared mapping validators/coercers.
+
         Examples
         --------
         >>> config = LadingConfig.from_mapping({"bump": {"exclude": ["crate-a"]}})
         >>> config.bump.exclude
         ('crate-a',)
-        """
+        """  # noqa: DOC502
         _validate_mapping_keys(
             mapping, set(CONFIG_ROOT_TOML_KEYS), "configuration section"
         )
@@ -381,8 +411,10 @@ def load_from_loader(loader: Toml) -> LadingConfig:
     Raises
     ------
     ConfigurationError
-        If reading ``loader.config`` raises :class:`ValueError`, or the parsed
-        configuration root is not a TOML table.
+        If reading ``loader.config`` raises :class:`ValueError`, the parsed
+        configuration root is not a TOML table, or validation fails while
+        propagating from :meth:`LadingConfig.from_mapping` (unknown keys or
+        invalid setting values).
 
     Examples
     --------
@@ -413,14 +445,19 @@ def load_configuration(workspace_root: Path) -> LadingConfig:
     LadingConfig
         Validated configuration for the given workspace root.
 
+    Raises
+    ------
+    ConfigurationError
+        If loading or validation fails, propagated from
+        :func:`load_from_loader` (parse failures or validation failures).
+
     Examples
     --------
     >>> from pathlib import Path
     >>> load_configuration(Path("workspace"))  # doctest: +SKIP
     LadingConfig(...)
-    """
-    loader = build_loader(workspace_root)
-    return load_from_loader(loader)
+    """  # noqa: DOC502
+    return load_from_loader(build_loader(workspace_root))
 
 
 @contextlib.contextmanager

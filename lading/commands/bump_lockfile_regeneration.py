@@ -77,11 +77,11 @@ def regenerate_lockfiles(
     LockfileRegenerationError
         If any configured manifest path is invalid (outside the workspace or
         not named ``Cargo.toml``), or — after every manifest has been
-        attempted — if ``cargo update --workspace`` failed. When only the
-        workspace-root lockfile is regenerated, the original cargo error is
-        re-raised unchanged. When several lockfiles are regenerated, one
-        aggregated error is raised whose message lists each failed manifest
-        with a repair command.
+        attempted — if ``cargo update --workspace`` failed. When only one
+        manifest was attempted, the original cargo error is re-raised
+        unchanged. When more than one manifest was attempted, one aggregated
+        error is raised whose message lists each failed manifest with a
+        repair command.
 
     Notes
     -----

@@ -73,7 +73,10 @@ def when_run_lading_publish_command(
     ------
     AssertionError
         If the command is not a ``lading publish`` invocation.
-    """
+    ValueError
+        If ``command`` contains unterminated quoting that ``shlex.split``
+        cannot parse.
+    """  # noqa: DOC502 -- ValueError comes from shlex.split, not a raise
     tokens = tuple(shlex.split(command))
     if tokens[:2] != ("lading", "publish"):
         message = f"Unexpected publish command: {command}"

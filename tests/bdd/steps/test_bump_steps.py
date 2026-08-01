@@ -247,7 +247,7 @@ def then_bump_refreshed_lockfiles(cli_run: dict[str, typ.Any]) -> None:
 
 @then("the bump command refreshed workspace and nested tracked lockfiles")
 def then_bump_refreshed_workspace_and_nested_lockfiles(
-    cli_run: dict[str, typ.Any],
+    cli_run: _BumpCliRun,
     cmd_mox: CmdMox,
     workspace_directory: Path,
 ) -> None:
@@ -255,7 +255,7 @@ def then_bump_refreshed_workspace_and_nested_lockfiles(
 
     Parameters
     ----------
-    cli_run : dict[str, Any]
+    cli_run : _BumpCliRun
         Captured result of the completed ``lading bump`` invocation.
     cmd_mox : CmdMox
         Command-double fixture whose journal records Cargo update calls.

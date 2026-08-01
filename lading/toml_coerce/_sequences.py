@@ -68,11 +68,12 @@ def expect_sequence(
 
     Examples
     --------
-    >>> expect_sequence(None, "field", error=ValueError, allow_none=True) is None
+    >>> from lading.exceptions import LadingError
+    >>> expect_sequence(None, "field", error=LadingError, allow_none=True) is None
     True
     >>> try:
-    ...     expect_sequence(None, "field", error=ValueError)
-    ... except ValueError as exc:
+    ...     expect_sequence(None, "field", error=LadingError)
+    ... except LadingError as exc:
     ...     print("rejected")
     rejected
     """
@@ -147,11 +148,12 @@ def validate_string_sequence(
 
     Examples
     --------
-    >>> validate_string_sequence(["a", "b"], "field", error=ValueError)
+    >>> from lading.exceptions import LadingError
+    >>> validate_string_sequence(["a", "b"], "field", error=LadingError)
     ('a', 'b')
     >>> try:
-    ...     validate_string_sequence(["a", 1], "field", error=ValueError)
-    ... except ValueError as exc:
+    ...     validate_string_sequence(["a", 1], "field", error=LadingError)
+    ... except LadingError as exc:
     ...     print("rejected")
     rejected
     """
@@ -196,9 +198,10 @@ def string_tuple(
 
     Examples
     --------
-    >>> string_tuple("a", "field", error=ValueError)
+    >>> from lading.exceptions import LadingError
+    >>> string_tuple("a", "field", error=LadingError)
     ('a',)
-    >>> string_tuple(["a", "b"], "field", error=ValueError)
+    >>> string_tuple(["a", "b"], "field", error=LadingError)
     ('a', 'b')
     """
     # ``bytearray`` is deliberately excluded from the string/bytes rejection so
@@ -270,7 +273,8 @@ def string_matrix(
 
     Examples
     --------
-    >>> string_matrix([["a", "b"], ["c"]], "field", error=ValueError)
+    >>> from lading.exceptions import LadingError
+    >>> string_matrix([["a", "b"], ["c"]], "field", error=LadingError)
     (('a', 'b'), ('c',))
     """
     match value:

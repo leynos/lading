@@ -36,7 +36,8 @@ def expect_mapping(
 
     Examples
     --------
-    >>> expect_mapping({"a": 1}, "field", error=ValueError)
+    >>> from lading.exceptions import LadingError
+    >>> expect_mapping({"a": 1}, "field", error=LadingError)
     {'a': 1}
     """
     match value:
@@ -74,9 +75,10 @@ def optional_mapping(
 
     Examples
     --------
-    >>> optional_mapping(None, "field", error=ValueError) is None
+    >>> from lading.exceptions import LadingError
+    >>> optional_mapping(None, "field", error=LadingError) is None
     True
-    >>> optional_mapping({"a": 1}, "field", error=ValueError)
+    >>> optional_mapping({"a": 1}, "field", error=LadingError)
     {'a': 1}
     """
     if value is None:
@@ -132,9 +134,10 @@ def string_mapping(
 
     Examples
     --------
-    >>> string_mapping(None, "field", error=ValueError)
+    >>> from lading.exceptions import LadingError
+    >>> string_mapping(None, "field", error=LadingError)
     ()
-    >>> string_mapping({"a": "1"}, "field", error=ValueError)
+    >>> string_mapping({"a": "1"}, "field", error=LadingError)
     (('a', '1'),)
     """
     match value:

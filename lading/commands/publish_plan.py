@@ -274,14 +274,14 @@ def render_section[T](
 
     Parameters
     ----------
-    items:
+    items : cabc.Sequence[T]
         Entries rendered beneath ``header``. An empty sequence renders no
         header and no bullets unless ``empty_message`` is supplied.
-    header:
+    header : str
         Section heading emitted before the formatted entries.
-    formatter:
+    formatter : cabc.Callable[[T], str]
         Callable mapping each item to its display string. Defaults to ``str``.
-    empty_message:
+    empty_message : str | None
         Rendered in place of the section when ``items`` is empty; omit it to
         skip empty sections entirely.
 

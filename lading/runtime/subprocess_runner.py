@@ -236,14 +236,15 @@ def invoke_via_subprocess(
 
 
 def normalise_environment(
-    env: cabc.Mapping[str, str] | None,
+    env: cabc.Mapping[str, object] | None,
 ) -> dict[str, str] | None:
     """Return ``env`` with stringified values to satisfy ``subprocess``.
 
     Parameters
     ----------
-    env : cabc.Mapping[str, str] | None
-        Environment overrides supplied by the caller.
+    env : cabc.Mapping[str, object] | None
+        Environment overrides supplied by the caller. Non-string values
+        (for example ``int`` or ``Path``) are converted with ``str()``.
 
     Returns
     -------

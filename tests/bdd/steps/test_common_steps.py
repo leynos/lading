@@ -142,16 +142,6 @@ def then_dependency_requirement(
     ------
     AssertionError
         If the section, dependency, or requirement does not match.
-
-    Examples
-    --------
-    >>> check = DependencyCheck(  # doctest: +SKIP
-    ...     "beta", "alpha", "dependencies", "1.2.3"
-    ... )
-    >>> workspace_path = Path("/tmp/example-workspace")  # doctest: +SKIP
-    >>> cli_run = {"workspace": workspace_path}  # doctest: +SKIP
-    >>> then_dependency_requirement(cli_run, check)  # doctest: +SKIP
-    >>> # Returns None without raising when the requirement matches.
     """
     crate_name = check.crate_name
     dependency_name = check.dependency_name

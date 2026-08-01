@@ -145,7 +145,7 @@ def discover_tracked_lockfiles(
     manifest_exists
         Callable used to decide whether a candidate lockfile has an adjacent
         manifest. The default adapter checks the filesystem.
-    emit_observability
+    emit_observability : bool, optional
         Whether successful discovery records metrics and an informational log.
         Error handling and the non-Git warning remain active when false.
 

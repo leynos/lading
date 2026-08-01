@@ -89,7 +89,7 @@ def _update_manifest(
     target_version: str,
     options: BumpOptions,
 ) -> bool:
-    """Apply ``target_version`` to each table described by ``selectors``."""
+    """Apply ``target_version`` to each selected table and dependency section."""
     document = bump_toml.parse_manifest(manifest_path)
     changed = False
     for selector in selectors:

@@ -30,11 +30,12 @@ def expect_string(value: object, field_name: str, *, error: _ErrorType) -> str:
 
     Examples
     --------
-    >>> expect_string("hello", "field", error=ValueError)
+    >>> from lading.exceptions import LadingError
+    >>> expect_string("hello", "field", error=LadingError)
     'hello'
     >>> try:
-    ...     expect_string(1, "field", error=ValueError)
-    ... except ValueError as exc:
+    ...     expect_string(1, "field", error=LadingError)
+    ... except LadingError as exc:
     ...     print("rejected")
     rejected
     """
@@ -75,9 +76,10 @@ def boolean(
 
     Examples
     --------
-    >>> boolean(None, "field", error=ValueError, default=True)
+    >>> from lading.exceptions import LadingError
+    >>> boolean(None, "field", error=LadingError, default=True)
     True
-    >>> boolean(False, "field", error=ValueError)
+    >>> boolean(False, "field", error=LadingError)
     False
     """
     match value:
@@ -120,13 +122,14 @@ def non_negative_int(
 
     Examples
     --------
-    >>> non_negative_int(None, "field", 5, error=ValueError)
+    >>> from lading.exceptions import LadingError
+    >>> non_negative_int(None, "field", 5, error=LadingError)
     5
-    >>> non_negative_int("3", "field", 5, error=ValueError)
+    >>> non_negative_int("3", "field", 5, error=LadingError)
     3
     >>> try:
-    ...     non_negative_int(-1, "field", 5, error=ValueError)
-    ... except ValueError as exc:
+    ...     non_negative_int(-1, "field", 5, error=LadingError)
+    ... except LadingError as exc:
     ...     print("rejected")
     rejected
     """

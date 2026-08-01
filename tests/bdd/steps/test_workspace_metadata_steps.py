@@ -40,8 +40,8 @@ def given_workspace_directory(tmp_path: Path) -> Path:
 
     Examples
     --------
-    >>> given_workspace_directory(tmp_path)  # doctest: +SKIP
-    PosixPath('/tmp/.../workspace')
+    >>> given_workspace_directory(tmp_path) == tmp_path  # doctest: +SKIP
+    True
     """
     return tmp_path
 

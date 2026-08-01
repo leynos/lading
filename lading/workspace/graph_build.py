@@ -49,13 +49,31 @@ def load_workspace(
     WorkspaceGraph
         The workspace graph built from the discovered cargo metadata.
 
+    Raises
+    ------
+    CargoMetadataInvocationError
+        Propagated from ``load_cargo_metadata`` when ``cargo metadata``
+        exits with a non-zero status.
+    CargoExecutableNotFoundError
+        Propagated from ``load_cargo_metadata`` when the ``cargo``
+        executable cannot be found.
+    CargoMetadataError
+        Propagated from ``load_cargo_metadata`` when the command otherwise
+        fails to spawn or run.
+    CargoMetadataParseError
+        Propagated from ``load_cargo_metadata`` when the output is not
+        valid JSON or not a JSON object.
+    WorkspaceModelError
+        Propagated from ``build_workspace_graph`` when workspace
+        construction fails.
+
     Examples
     --------
     >>> from lading.workspace.graph_build import load_workspace
     >>> graph = load_workspace()  # doctest: +SKIP
     >>> graph.crates  # doctest: +SKIP
     (...)
-    """
+    """  # noqa: DOC502 -- propagated from load_cargo_metadata/build_workspace_graph
     from lading.workspace.metadata import load_cargo_metadata
 
     metadata = load_cargo_metadata(workspace_root)

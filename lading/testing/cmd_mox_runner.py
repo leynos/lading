@@ -100,6 +100,8 @@ def cmd_mox_runner(
     ValueError
         If ``command`` is empty, or if the cmd-mox response does not include an
         exit code.
+    CommandSpawnError
+        If a passthrough command cannot be spawned.
 
     Notes
     -----

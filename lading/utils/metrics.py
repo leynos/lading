@@ -118,7 +118,8 @@ def duration_stats(name: str, **labels: str) -> DurationStats:
     Returns
     -------
     DurationStats
-        The recorded statistics, or empty stats when ``name`` is unrecorded.
+        The recorded statistics, or empty stats when the ``(name, labels)``
+        series is unrecorded.
 
     Examples
     --------
