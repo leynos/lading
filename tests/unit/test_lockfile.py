@@ -188,13 +188,20 @@ def test_discover_tracked_lockfiles_accepts_manifest_probe(
     assert probed == [tmp_path / "Cargo.toml", tmp_path / "nested" / "Cargo.toml"]
 
 
-def test_discover_tracked_lockfiles_handles_non_git_directory(
+@pytest.mark.parametrize("emit_observability", [True, False])
+def test_discover_tracked_lockfiles_raises_for_non_git_directory(
     tmp_path: Path,
-    caplog: LogCaptureFixture,
+    *,
+    emit_observability: bool,
 ) -> None:
-    """Non-git workspaces do not abort lockfile discovery."""
+    """Non-git workspaces surface a typed error instead of a silent skip.
+
+    Parametrized over ``emit_observability`` because that flag suppresses only
+    success telemetry: the error path stays active either way, so a caller that
+    silences discovery logging still cannot mistake a non-git workspace for an
+    empty one.
+    """
     (tmp_path / "Cargo.lock").write_text("", encoding="utf-8")
-    caplog.set_level(logging.WARNING, logger=lockfile.__name__)
 
     def runner(
         command: cabc.Sequence[str],
@@ -204,18 +211,12 @@ def test_discover_tracked_lockfiles_handles_non_git_directory(
     ) -> tuple[int, str, str]:
         return 128, "", "fatal: not a git repository"
 
-    result = lockfile.discover_tracked_lockfiles(
-        tmp_path,
-        runner,
-        emit_observability=False,
-    )
-    assert result == (), (
-        "discovery should not abort on non-git errors; "
-        f"expected empty tuple, got {result!r}"
-    )
-    assert any("not a git repository" in record.message for record in caplog.records), (
-        "non-git warning must remain active when success telemetry is suppressed"
-    )
+    with pytest.raises(
+        lockfile.NotAGitRepositoryError, match="is not a git repository"
+    ):
+        lockfile.discover_tracked_lockfiles(
+            tmp_path, runner, emit_observability=emit_observability
+        )
 
 
 def test_discover_tracked_lockfiles_raises_on_git_failure(tmp_path: Path) -> None:

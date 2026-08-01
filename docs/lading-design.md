@@ -502,10 +502,10 @@ cargo-backed adapter; it binds a `CommandRunner` and the optional pre-flight
 base environment, applying that environment to invocations that do not supply
 their own. `publish_preflight._run_preflight_checks` is the composition root:
 it constructs the adapter and passes it to the domain helpers
-`_collect_stale_lockfiles` and `_validate_lockfile_freshness`, which depend
-only on the port. Together with the bump-side `LockfileRepository`, the two
-ports keep VCS, filesystem, and cargo execution concerns out of the lockfile
-domain logic (issue #82).
+`_collect_stale_lockfiles` and `_validate_lockfile_freshness` in
+`publish_lockfile_preflight.py`, which depend only on the port. Together with
+the bump-side `LockfileRepository`, the two ports keep VCS, filesystem, and
+cargo execution concerns out of the lockfile domain logic (issue #82).
 
 `_collect_stale_lockfiles` deliberately classifies every tracked `Cargo.lock`
 rather than short-circuiting on the first stale one (issue #83). When stale
