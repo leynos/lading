@@ -68,9 +68,28 @@ def increment_counter(name: str, *, amount: int = 1, **labels: str) -> None:
 
 
 def counter_value(name: str, **labels: str) -> int:
-    """Return the current value of ``name`` for the supplied labels."""
+    """Return the current value of ``name`` for the supplied labels.
+
+    Parameters
+    ----------
+    name : str
+        Metric name whose counter value is returned.
+    **labels : str
+        Label values identifying the counter series.
+
+    Returns
+    -------
+    int
+        The counter value, or ``0`` when the counter is unset.
+
+    Examples
+    --------
+    >>> reset()
+    >>> counter_value("demo.absent")
+    0
+    """
     with _LOCK:
-        return _COUNTERS[_counter_key(name, labels)]
+        return _COUNTERS.get(_counter_key(name, labels), 0)
 
 
 def observe_duration(name: str, seconds: float, **labels: str) -> None:
@@ -87,7 +106,27 @@ def observe_duration(name: str, seconds: float, **labels: str) -> None:
 
 
 def duration_stats(name: str, **labels: str) -> DurationStats:
-    """Return the aggregated durations recorded for ``name``."""
+    """Return the aggregated durations recorded for ``name``.
+
+    Parameters
+    ----------
+    name : str
+        Metric name whose duration statistics are returned.
+    **labels : str
+        Label values identifying the duration series.
+
+    Returns
+    -------
+    DurationStats
+        The recorded statistics, or empty stats when the ``(name, labels)``
+        series is unrecorded.
+
+    Examples
+    --------
+    >>> reset()
+    >>> duration_stats("demo.absent")
+    DurationStats(count=0, total_seconds=0.0)
+    """
     with _LOCK:
         stats = _DURATIONS.get(_counter_key(name, labels))
         return (
@@ -98,7 +137,20 @@ def duration_stats(name: str, **labels: str) -> DurationStats:
 
 
 def snapshot() -> dict[_CounterKey, int]:
-    """Return a copy of the counter registry for assertions."""
+    """Return a copy of the counter registry for assertions.
+
+    Returns
+    -------
+    dict[_CounterKey, int]
+        A shallow copy of the counter registry.
+
+    Examples
+    --------
+    >>> reset()
+    >>> increment_counter("demo.events", kind="example")
+    >>> snapshot()
+    {('demo.events', (('kind', 'example'),)): 1}
+    """
     with _LOCK:
         return dict(_COUNTERS)
 

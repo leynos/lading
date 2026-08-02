@@ -23,17 +23,61 @@ class _CmdMoxInvocation(typ.Protocol):
     env: cabc.Mapping[str, str]
 
 
+class _CliRunResult(typ.TypedDict):
+    """Captured result of an end-to-end ``lading`` CLI invocation."""
+
+    command: list[str]
+    returncode: int
+    stdout: str
+    stderr: str
+    workspace_root: Path
+
+
 class E2EExpectationError(AssertionError):
     """Raised when an end-to-end test expectation is violated."""
 
     @classmethod
     def unsupported_fixture_version(cls, version: str) -> E2EExpectationError:
-        """Return an error for unsupported fixture versions."""
+        """Return an error for unsupported fixture versions.
+
+        Parameters
+        ----------
+        version : str
+            The unsupported fixture version that was requested.
+
+        Returns
+        -------
+        E2EExpectationError
+            The error describing the unsupported version.
+
+        Examples
+        --------
+        >>> err = E2EExpectationError.unsupported_fixture_version("9.9.9")
+        >>> "9.9.9" in str(err)
+        True
+        """
         return cls(f"E2E fixture currently supports version 0.1.0 only (got {version})")
 
     @classmethod
     def dependency_entry_not_string(cls, entry: object) -> E2EExpectationError:
-        """Return an error when a TOML dependency entry is not a string-like version."""
+        """Return an error when a TOML dependency entry is not a string version.
+
+        Parameters
+        ----------
+        entry : object
+            The TOML dependency entry that was not a version string.
+
+        Returns
+        -------
+        E2EExpectationError
+            The error describing the offending entry.
+
+        Examples
+        --------
+        >>> err = E2EExpectationError.dependency_entry_not_string(None)
+        >>> "not a version string" in str(err)
+        True
+        """
         return cls(f"Dependency entry is not a version string: {entry!r}")
 
     @classmethod
@@ -43,7 +87,30 @@ class E2EExpectationError(AssertionError):
         expected_prefixes: tuple[tuple[str, ...], ...],
         args: tuple[str, ...],
     ) -> E2EExpectationError:
-        """Return an error when recorded args do not match the expected prefix(es)."""
+        """Return an error when recorded args do not match the expected prefix(es).
+
+        Parameters
+        ----------
+        label : str
+            The command label whose recorded arguments were checked.
+        expected_prefixes : tuple[tuple[str, ...], ...]
+            The accepted argument prefixes.
+        args : tuple[str, ...]
+            The recorded arguments that failed to match a prefix.
+
+        Returns
+        -------
+        E2EExpectationError
+            The error describing the mismatched args.
+
+        Examples
+        --------
+        >>> err = E2EExpectationError.args_prefix_mismatch(
+        ...     "cargo::check", (("--workspace",),), ("--all",)
+        ... )
+        >>> "cargo::check" in str(err)
+        True
+        """
         expected = ", ".join(repr(prefix) for prefix in expected_prefixes)
         return cls(f"{label} expected args prefix in ({expected}), got {args!r}")
 
@@ -51,17 +118,74 @@ class E2EExpectationError(AssertionError):
     def target_dir_missing(
         cls, label: str, args: tuple[str, ...]
     ) -> E2EExpectationError:
-        """Return an error when the pre-flight target dir flag is missing."""
+        """Return an error when the pre-flight target dir flag is missing.
+
+        Parameters
+        ----------
+        label : str
+            The command label whose recorded arguments were checked.
+        args : tuple[str, ...]
+            The recorded arguments lacking the flag.
+
+        Returns
+        -------
+        E2EExpectationError
+            The error describing the missing flag.
+
+        Examples
+        --------
+        >>> err = E2EExpectationError.target_dir_missing(
+        ...     "cargo::check", ("--workspace",)
+        ... )
+        >>> "--target-dir=" in str(err)
+        True
+        """
         return cls(f"{label} expected --target-dir=... in args, got {args!r}")
 
     @classmethod
     def staging_root_missing(cls) -> E2EExpectationError:
-        """Return an error when publish output lacks the staging root line."""
+        """Return an error when publish output lacks the staging root line.
+
+        Returns
+        -------
+        E2EExpectationError
+            The error describing the missing staging root.
+
+        Examples
+        --------
+        >>> err = E2EExpectationError.staging_root_missing()
+        >>> "staging root" in str(err)
+        True
+        """
         return cls("publish output did not include staging root")
 
 
-def run_cli(repo_root: Path, workspace_root: Path, *args: str) -> dict[str, typ.Any]:
-    """Execute the lading CLI module and capture the result."""
+def run_cli(repo_root: Path, workspace_root: Path, *args: str) -> _CliRunResult:
+    """Execute the lading CLI module and capture the result.
+
+    Parameters
+    ----------
+    repo_root : Path
+        Repository root used as the subprocess working directory.
+    workspace_root : Path
+        Workspace root passed to the CLI via ``--workspace-root``.
+    *args : str
+        Additional command-line arguments forwarded to ``lading.cli``.
+
+    Returns
+    -------
+    _CliRunResult
+        The command line, return code, captured stdout and stderr, and the
+        workspace root.
+
+    Examples
+    --------
+    >>> result = run_cli(  # doctest: +SKIP
+    ...     repo_root, workspace_root, "bump", "1.0.0"
+    ... )
+    >>> result["returncode"]  # doctest: +SKIP
+    0
+    """
     with local.cwd(str(repo_root)):
         exit_code, stdout, stderr = local[sys.executable].run(
             ["-m", "lading.cli", "--workspace-root", str(workspace_root), *args],
@@ -85,7 +209,39 @@ def run_cli(repo_root: Path, workspace_root: Path, *args: str) -> dict[str, typ.
 
 
 def extract_dependency_requirement(entry: object) -> str:
-    """Return a version requirement string from the manifest dependency entry."""
+    """Return a version requirement string from the manifest dependency entry.
+
+    Parameters
+    ----------
+    entry : object
+        The manifest dependency entry (string, item, or table) to inspect.
+
+    Returns
+    -------
+    str
+        The version requirement extracted from the entry.
+
+    Raises
+    ------
+    E2EExpectationError
+        Constructed by
+        ``E2EExpectationError.dependency_entry_not_string(entry)`` when the
+        entry is neither a version string nor a table containing one.
+
+    Examples
+    --------
+    A plain version string entry::
+
+        >>> extract_dependency_requirement("1.2.3")
+        '1.2.3'
+
+    A table entry carrying a version key::
+
+        >>> import tomlkit
+        >>> doc = tomlkit.parse('dep = { version = "2.0.0" }')
+        >>> extract_dependency_requirement(doc["dep"])
+        '2.0.0'
+    """
     match entry:
         case Item() as item if isinstance(item.value, str):
             return item.value
@@ -114,7 +270,29 @@ def stub_cargo_metadata(
 
 
 def find_staging_root(stdout: str) -> Path:
-    """Parse the publish CLI output and return the staging root directory."""
+    r"""Parse the publish CLI output and return the staging root directory.
+
+    Parameters
+    ----------
+    stdout : str
+        The captured publish CLI standard output to parse.
+
+    Returns
+    -------
+    Path
+        The staging root directory parsed from the output.
+
+    Raises
+    ------
+    E2EExpectationError
+        Constructed by ``E2EExpectationError.staging_root_missing()`` when the
+        output contains no staging-root line.
+
+    Examples
+    --------
+    >>> str(find_staging_root("Staged workspace at: /tmp/x\n"))
+    '/tmp/x'
+    """
     for line in stdout.splitlines():
         if line.startswith("Staged workspace at: "):
             return Path(line.partition(": ")[2].strip())
@@ -124,5 +302,29 @@ def find_staging_root(stdout: str) -> Path:
 def filter_records(
     publish_spies: dict[str, typ.Any], label: str
 ) -> list[tuple[str, tuple[str, ...], dict[str, str]]]:
-    """Return invocation records matching the given label."""
+    """Return invocation records matching the given label.
+
+    Parameters
+    ----------
+    publish_spies : dict[str, typ.Any]
+        The recorded cargo invocation spies keyed by command name.
+    label : str
+        The command label to filter invocation records by.
+
+    Returns
+    -------
+    list[tuple[str, tuple[str, ...], dict[str, str]]]
+        The invocation records whose label matches.
+
+    Examples
+    --------
+    >>> spies = {
+    ...     "records": [
+    ...         ("cargo::check", ("--workspace",), {}),
+    ...         ("cargo::publish", ("--dry-run",), {}),
+    ...     ]
+    ... }
+    >>> filter_records(spies, "cargo::publish")
+    [('cargo::publish', ('--dry-run',), {})]
+    """
     return [record for record in publish_spies["records"] if record[0] == label]

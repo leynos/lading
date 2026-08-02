@@ -11,19 +11,12 @@ from lading.testing import toml_utils
 if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
     from tomlkit.toml_document import TOMLDocument
 
+    from .cli_run_types import CliRunResult
     from .test_publish_infrastructure import _PreflightInvocationRecorder
 
 
-def _assert_cli_run_succeeded(cli_run: dict[str, typ.Any]) -> None:
-    """Assert the CLI subprocess exited cleanly, surfacing its output on failure.
-
-    The publish scenarios drive ``lading`` through a ``python -m`` subprocess
-    whose ``stdout``/``stderr`` are captured into ``cli_run``. A bare
-    ``assert cli_run["returncode"] == 0`` discards that captured output, so an
-    intermittent subprocess crash reports only ``assert 1 == 0`` with the real
-    traceback hidden inside the fixture repr. Embed both streams in the
-    assertion message so any future failure is immediately actionable.
-    """
+def _assert_cli_run_succeeded(cli_run: CliRunResult) -> None:
+    """Assert the CLI subprocess exited cleanly, surfacing its output on failure."""
     returncode = cli_run["returncode"]
     if returncode == 0:
         return
@@ -35,7 +28,7 @@ def _assert_cli_run_succeeded(cli_run: dict[str, typ.Any]) -> None:
     raise AssertionError(message)
 
 
-def _publish_plan_lines(cli_run: dict[str, typ.Any]) -> list[str]:
+def _publish_plan_lines(cli_run: CliRunResult) -> list[str]:
     """Return trimmed publish plan output lines for ``cli_run``."""
     return [line.strip() for line in cli_run["stdout"].splitlines() if line.strip()]
 
@@ -54,7 +47,7 @@ def _extract_staging_root_from_plan(lines: list[str]) -> Path:
     return Path(root_str)
 
 
-def _load_staged_manifest(cli_run: dict[str, typ.Any]) -> TOMLDocument:
+def _load_staged_manifest(cli_run: CliRunResult) -> TOMLDocument:
     """Return the staged workspace manifest for ``cli_run``."""
     lines = _publish_plan_lines(cli_run)
     staging_root = _extract_staging_root_from_plan(lines)
@@ -76,33 +69,14 @@ def _split_names(crate_names: str) -> list[str]:
     return [name.strip() for name in crate_names.split(",") if name.strip()]
 
 
-def _get_test_invocations(
+def _get_required_invocations(
     recorder: _PreflightInvocationRecorder,
-) -> list[tuple[str, ...]]:
-    """Return recorded cargo test invocations or raise if missing."""
-    if invocations := recorder.by_label("cargo::test"):
-        return [args for args, _ in invocations]
-    message = "cargo test pre-flight command was not invoked"
-    raise AssertionError(message)
-
-
-def _get_package_invocations(
-    recorder: _PreflightInvocationRecorder,
+    label: str,
+    message: str,
 ) -> list[tuple[tuple[str, ...], dict[str, str]]]:
-    """Return recorded cargo package invocations or raise if missing."""
-    if invocations := recorder.by_label("cargo::package"):
+    """Return recorder invocations for ``label`` or raise ``message`` when empty."""
+    if invocations := recorder.by_label(label):
         return invocations
-    message = "cargo package was not invoked for publishable crates"
-    raise AssertionError(message)
-
-
-def _get_publish_invocations(
-    recorder: _PreflightInvocationRecorder,
-) -> list[tuple[tuple[str, ...], dict[str, str]]]:
-    """Return recorded cargo publish invocations or raise if missing."""
-    if invocations := recorder.by_label("cargo::publish"):
-        return invocations
-    message = "cargo publish was not invoked for publishable crates"
     raise AssertionError(message)
 
 
@@ -117,18 +91,8 @@ def _extract_crate_names_from_invocations(
     return crate_names
 
 
-def _get_test_invocation_envs(
-    recorder: _PreflightInvocationRecorder,
-) -> list[dict[str, str]]:
-    """Return recorded cargo test environments or raise if missing."""
-    if invocations := recorder.by_label("cargo::test"):
-        return [env for _, env in invocations]
-    message = "cargo test pre-flight command was not invoked"
-    raise AssertionError(message)
-
-
 def _has_contiguous_args(args: tuple[str, ...], first: str, second: str) -> bool:
-    """Return True when ``first`` is immediately followed by ``second`` in ``args``."""
+    """Return True when ``first`` is immediately followed by ``second``."""
     return any(
         args[index] == first and args[index + 1] == second
         for index in range(len(args) - 1)
@@ -165,7 +129,7 @@ def _assert_invocations_flag_presence(
     *,
     should_contain: bool,
 ) -> None:
-    """Assert that invocations contain or lack ``flag`` based on ``should_contain``."""
+    """Assert invocations contain or lack ``flag`` per ``should_contain``."""
     for args, _env in invocations:
         flag_present = flag in args
         if flag_present != should_contain:

@@ -205,20 +205,7 @@ def _collect_stale_lockfiles(
     tracked: cabc.Iterable[Path],
     repository: LockfileInspectionRepository,
 ) -> list[Path]:
-    """Classify tracked lockfiles; raise immediately on error, return stale paths.
-
-    Every tracked lockfile is classified rather than short-circuiting on the
-    first stale result (issue #83): the aggregated error message lists each
-    stale lockfile with its repair command, so the operator fixes the whole
-    workspace in one pass instead of replaying the pre-flight per lockfile.
-    The extra ``cargo metadata --locked`` probes are cheap relative to that
-    replay loop. Unexpected (non-stale) failures still raise immediately.
-
-    Raises
-    ------
-    PublishPreflightError
-        Raised when a lockfile freshness check fails with an unexpected error.
-    """
+    """Classify tracked lockfiles; raise on error, return the stale paths."""
     stale: list[Path] = []
     for lockfile_path in tracked:
         manifest_path = lockfile_path.parent / "Cargo.toml"
@@ -260,13 +247,7 @@ def _validate_lockfile_freshness(
     *,
     repository: LockfileInspectionRepository,
 ) -> None:
-    """Fail early when tracked Cargo.lock files are stale.
-
-    Discovery and freshness probing run through ``repository`` (the
-    :class:`LockfileInspectionRepository` port), so this domain step never
-    holds a command runner or knows how lockfiles are located and validated
-    (issue #82).
-    """
+    """Fail early when tracked Cargo.lock files are stale."""
     tracked = repository.discover_tracked_lockfiles(workspace_root)
     stale_lockfiles = _collect_stale_lockfiles(tracked, repository)
 

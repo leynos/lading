@@ -26,7 +26,7 @@ def _setup_preflight_test(
     configuration: config_module.LadingConfig,
     crate_names: cabc.Sequence[str] | None = None,
 ) -> tuple[Path, WorkspaceGraph, RecordedCommands]:
-    """Execute ``publish.run`` with optional workspace crates and capture calls."""
+    """Execute ``publish.run`` with optional crates and capture command calls."""
     monkeypatch.setattr(publish_preflight, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
     root = tmp_path / "workspace"
     root.mkdir()
@@ -54,7 +54,7 @@ def _setup_preflight_test(
 def _extract_cargo_test_call(
     calls: RecordedCommands,
 ) -> tuple[tuple[str, ...], Path | None]:
-    """Return the captured cargo test invocation from ``calls``."""
+    """Return the captured cargo test command and working directory."""
     command, cwd, _env = next(
         entry
         for entry in calls

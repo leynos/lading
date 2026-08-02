@@ -17,14 +17,16 @@ from .test_publish_infrastructure import (
 if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
     from pathlib import Path
 
+    from .cli_run_types import CliRunResult
+
 
 @when("I invoke lading publish with that workspace", target_fixture="cli_run")
 def when_invoke_lading_publish(
     workspace_directory: Path,
     repo_root: Path,
     preflight_test_context: PreflightTestContext,
-) -> dict[str, typ.Any]:
-    """Execute the publish CLI via ``python -m`` and capture the result."""
+) -> CliRunResult:
+    """Run the publish CLI against the staged workspace and capture the result."""
     stub_config = preflight_test_context.create_stub_config()
     return _invoke_publish_with_options(repo_root, workspace_directory, stub_config)
 
@@ -35,8 +37,33 @@ def when_run_lading_publish_command(
     repo_root: Path,
     preflight_test_context: PreflightTestContext,
     command: str,
-) -> dict[str, typ.Any]:
-    """Execute the quoted publish command through the CLI test harness."""
+) -> CliRunResult:
+    """Execute the quoted publish command through the CLI test harness.
+
+    Parameters
+    ----------
+    workspace_directory : Path
+        Root of the staged workspace under test.
+    repo_root : Path
+        Repository root from which the CLI module is launched.
+    preflight_test_context : PreflightTestContext
+        Context bundling the cmd-mox double, overrides, and recorder.
+    command : str
+        Quoted CLI command; must begin with ``lading publish``.
+
+    Returns
+    -------
+    CliRunResult
+        The captured CLI run result.
+
+    Raises
+    ------
+    AssertionError
+        If the command is not a ``lading publish`` invocation.
+    ValueError
+        If ``command`` contains unterminated quoting that ``shlex.split``
+        cannot parse.
+    """  # noqa: DOC502 -- ValueError comes from shlex.split, not a raise
     tokens = tuple(shlex.split(command))
     if tokens[:2] != ("lading", "publish"):
         message = f"Unexpected publish command: {command}"
@@ -59,8 +86,23 @@ def when_invoke_lading_publish_forbid_dirty(
     workspace_directory: Path,
     repo_root: Path,
     preflight_test_context: PreflightTestContext,
-) -> dict[str, typ.Any]:
-    """Execute the publish CLI with ``--forbid-dirty`` enabled."""
+) -> CliRunResult:
+    """Execute the publish CLI with ``--forbid-dirty`` enabled.
+
+    Parameters
+    ----------
+    workspace_directory : Path
+        Root of the staged workspace under test.
+    repo_root : Path
+        Repository root from which the CLI module is launched.
+    preflight_test_context : PreflightTestContext
+        Context bundling the cmd-mox double, overrides, and recorder.
+
+    Returns
+    -------
+    CliRunResult
+        The captured CLI run result.
+    """
     stub_config = preflight_test_context.create_stub_config()
     return _invoke_publish_with_options(
         repo_root,
@@ -78,8 +120,23 @@ def when_invoke_lading_publish_live(
     workspace_directory: Path,
     repo_root: Path,
     preflight_test_context: PreflightTestContext,
-) -> dict[str, typ.Any]:
-    """Execute the publish CLI with live publishing enabled."""
+) -> CliRunResult:
+    """Execute the publish CLI with live publishing enabled.
+
+    Parameters
+    ----------
+    workspace_directory : Path
+        Root of the staged workspace under test.
+    repo_root : Path
+        Repository root from which the CLI module is launched.
+    preflight_test_context : PreflightTestContext
+        Context bundling the cmd-mox double, overrides, and recorder.
+
+    Returns
+    -------
+    CliRunResult
+        The captured CLI run result.
+    """
     if not any(
         _is_cargo_publish_command(command)
         for command in preflight_test_context.overrides

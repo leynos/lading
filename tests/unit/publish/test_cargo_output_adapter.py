@@ -52,7 +52,7 @@ def _both_markers_stderr(
 
 
 def _randomly_cased(text: str) -> st.SearchStrategy[str]:
-    """Return a strategy yielding ``text`` with each letter's case toggled."""
+    """Return a strategy selecting each character's case independently."""
     return st.lists(st.booleans(), min_size=len(text), max_size=len(text)).map(
         lambda flags: "".join(
             char.upper() if flag else char.lower()

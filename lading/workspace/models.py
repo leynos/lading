@@ -134,7 +134,7 @@ class WorkspaceGraph(msgspec.Struct, frozen=True, kw_only=True):
         ordered_names: list[str],
         incoming_counts: dict[str, int],
     ) -> list[str]:
-        """Identify nodes involved in a dependency cycle."""
+        """Return crates left unordered by a dependency cycle, dependants included."""
         cycle_nodes = [
             name
             for name, count in incoming_counts.items()
@@ -148,7 +148,35 @@ class WorkspaceGraph(msgspec.Struct, frozen=True, kw_only=True):
         return cycle_nodes
 
     def topologically_sorted_crates(self) -> tuple[WorkspaceCrate, ...]:
-        """Return ``self.crates`` ordered so dependencies precede dependents."""
+        """Return ``self.crates`` ordered so dependencies precede dependents.
+
+        Returns
+        -------
+        tuple[WorkspaceCrate, ...]
+            Crates ordered so each appears after its dependencies.
+
+        Raises
+        ------
+        WorkspaceDependencyCycleError
+            If the dependency graph contains a cycle.
+
+        Examples
+        --------
+        >>> from pathlib import Path
+        >>> crate = WorkspaceCrate(
+        ...     id="a 0.1.0",
+        ...     name="a",
+        ...     version="0.1.0",
+        ...     manifest_path=Path("a/Cargo.toml"),
+        ...     root_path=Path("a"),
+        ...     publish=True,
+        ...     readme_is_workspace=False,
+        ...     dependencies=(),
+        ... )
+        >>> graph = WorkspaceGraph(workspace_root=Path("ws"), crates=(crate,))
+        >>> [c.name for c in graph.topologically_sorted_crates()]
+        ['a']
+        """
         crates_by_name = {crate.name: crate for crate in self.crates}
         dependency_map = self._build_dependency_graph(crates_by_name)
         incoming_counts, dependents = self._initialize_topological_structures(
@@ -168,7 +196,30 @@ class WorkspaceGraph(msgspec.Struct, frozen=True, kw_only=True):
 
     @property
     def crates_by_name(self) -> dict[str, WorkspaceCrate]:
-        """Name-indexed mapping of workspace crates."""
+        """The name-indexed mapping of workspace crates.
+
+        Returns
+        -------
+        dict[str, WorkspaceCrate]
+            Each crate keyed by its name.
+
+        Examples
+        --------
+        >>> from pathlib import Path
+        >>> crate = WorkspaceCrate(
+        ...     id="a 0.1.0",
+        ...     name="a",
+        ...     version="0.1.0",
+        ...     manifest_path=Path("a/Cargo.toml"),
+        ...     root_path=Path("a"),
+        ...     publish=True,
+        ...     readme_is_workspace=False,
+        ...     dependencies=(),
+        ... )
+        >>> graph = WorkspaceGraph(workspace_root=Path("ws"), crates=(crate,))
+        >>> sorted(graph.crates_by_name)
+        ['a']
+        """
         return {crate.name: crate for crate in self.crates}
 
 

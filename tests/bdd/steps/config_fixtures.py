@@ -40,7 +40,25 @@ def _set_publish_strip_patches(workspace_directory: Path, value: object) -> None
 
 @given("a workspace directory with configuration", target_fixture="workspace_directory")
 def given_workspace_directory(tmp_path: Path) -> Path:
-    """Provide a temporary workspace root for CLI exercises."""
+    """Provide a temporary workspace root for CLI exercises.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        The pytest temporary directory used as the workspace root.
+
+    Returns
+    -------
+    Path
+        The workspace root containing a minimal configuration file.
+
+    Examples
+    --------
+    >>> import pathlib, tempfile
+    >>> root = given_workspace_directory(pathlib.Path(tempfile.mkdtemp()))
+    >>> (root / "lading.toml").exists()
+    True
+    """
     config_path = tmp_path / config_module.CONFIG_FILENAME
     config_path.write_text(
         '[bump]\n\n[publish]\nstrip_patches = "all"\n', encoding="utf-8"
@@ -53,13 +71,54 @@ def given_workspace_directory(tmp_path: Path) -> Path:
     target_fixture="workspace_directory",
 )
 def given_workspace_without_configuration(tmp_path: Path) -> Path:
-    """Provide a workspace root without a configuration file."""
+    """Provide a workspace root without a configuration file.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        The pytest temporary directory used as the workspace root.
+
+    Returns
+    -------
+    Path
+        The bare workspace root directory.
+
+    Examples
+    --------
+    >>> import pathlib, tempfile
+    >>> root = given_workspace_without_configuration(
+    ...     pathlib.Path(tempfile.mkdtemp())
+    ... )
+    >>> (root / "lading.toml").exists()
+    False
+    """
     return tmp_path
 
 
 @given(parsers.parse('bump.documentation.globs contains "{pattern}"'))
 def given_documentation_glob(workspace_directory: Path, pattern: str) -> None:
-    """Append ``pattern`` to the documentation glob list in ``lading.toml``."""
+    """Append ``pattern`` to the documentation glob list in ``lading.toml``.
+
+    Parameters
+    ----------
+    workspace_directory : Path
+        The workspace root containing ``lading.toml``.
+    pattern : str
+        The glob pattern to append to ``bump.documentation.globs``.
+
+    Raises
+    ------
+    AssertionError
+        If the existing ``globs`` value is not an array.
+
+    Examples
+    --------
+    >>> import pathlib, tempfile
+    >>> ws = pathlib.Path(tempfile.mkdtemp())
+    >>> given_documentation_glob(ws, "docs/*.md")
+    >>> "docs/*.md" in (ws / "lading.toml").read_text()
+    True
+    """
     config_path = workspace_directory / config_module.CONFIG_FILENAME
     document = toml_utils.load_or_create_document(config_path)
     bump_table = document.get("bump")
@@ -170,7 +229,28 @@ def given_publish_order_is(workspace_directory: Path, order: str) -> None:
 
 @given(parsers.parse('preflight.aux_build contains command "{command}"'))
 def given_preflight_aux_build_command(workspace_directory: Path, command: str) -> None:
-    """Append ``command`` tokens to ``preflight.aux_build``."""
+    """Append ``command`` tokens to ``preflight.aux_build``.
+
+    Parameters
+    ----------
+    workspace_directory : Path
+        The workspace root containing ``lading.toml``.
+    command : str
+        The whitespace-separated command whose tokens are appended.
+
+    Raises
+    ------
+    AssertionError
+        If the command contains no tokens.
+
+    Examples
+    --------
+    >>> import pathlib, tempfile
+    >>> ws = pathlib.Path(tempfile.mkdtemp())
+    >>> given_preflight_aux_build_command(ws, "cargo build --tests")
+    >>> "aux_build" in (ws / "lading.toml").read_text()
+    True
+    """
     tokens = [segment for segment in command.split() if segment]
     if not tokens:
         message = "preflight.aux_build command must contain tokens"
@@ -229,7 +309,28 @@ def given_preflight_env_override(
 
 @given(parsers.parse("preflight.stderr_tail_lines is {count:d}"))
 def given_preflight_stderr_tail_lines(workspace_directory: Path, count: int) -> None:
-    """Set ``preflight.stderr_tail_lines`` to ``count``."""
+    """Set ``preflight.stderr_tail_lines`` to ``count``.
+
+    Parameters
+    ----------
+    workspace_directory : Path
+        The workspace root containing ``lading.toml``.
+    count : int
+        The non-negative number of stderr tail lines to record.
+
+    Raises
+    ------
+    AssertionError
+        If ``count`` is negative.
+
+    Examples
+    --------
+    >>> import pathlib, tempfile
+    >>> ws = pathlib.Path(tempfile.mkdtemp())
+    >>> given_preflight_stderr_tail_lines(ws, 20)
+    >>> "stderr_tail_lines = 20" in (ws / "lading.toml").read_text()
+    True
+    """
     if count < 0:
         message = "stderr tail lines must be non-negative"
         raise AssertionError(message)

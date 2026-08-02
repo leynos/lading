@@ -77,12 +77,14 @@ def cmd_mox_runner(
 
     Parameters
     ----------
-    command:
+    command : cabc.Sequence[str]
         Command vector to invoke through cmd-mox.
-    cwd:
+    cwd : Path | None
         Working directory to expose to the invocation via ``PWD``.
-    env:
+    env : cabc.Mapping[str, str] | None
         Environment overrides to merge into the invocation environment.
+    echo_stdout : bool
+        Whether captured stdout should be mirrored to the parent stdout.
 
     Returns
     -------
@@ -93,18 +95,25 @@ def cmd_mox_runner(
     Raises
     ------
     CmdMoxError
-        If the cmd-mox environment is invalid or a passthrough command cannot
-        be resolved.
+        If the cmd-mox IPC socket is not configured, or if the IPC timeout is
+        unparseable, non-finite, or non-positive.
     ValueError
-        If the command vector is empty or the cmd-mox response is malformed.
-    OSError
-        If a passthrough subprocess cannot complete its local invocation.
+        If ``command`` is empty, or if the cmd-mox response does not include an
+        exit code.
+    CommandSpawnError
+        If a passthrough command cannot be spawned.
 
     Notes
     -----
     Timeout validation, command splitting, command normalisation, environment
     construction, IPC invocation, passthrough handling, and response processing
     are delegated to the focused helpers in this module.
+
+    Examples
+    --------
+    >>> exit_code, stdout, stderr = cmd_mox_runner(  # doctest: +SKIP
+    ...     ["cargo", "metadata"], echo_stdout=False
+    ... )
     """
     timeout = _prepare_cmd_mox_context()
     program, args = split_command(command)
@@ -135,7 +144,7 @@ def _prepare_cmd_mox_context() -> float:
 
 
 def _resolve_cmd_mox_timeout(raw_timeout: str | None) -> float:
-    """Return the IPC timeout to use when contacting cmd-mox."""
+    """Return the validated IPC timeout, defaulting when ``raw_timeout`` is None."""
     if raw_timeout is None:
         return _CMD_MOX_TIMEOUT_DEFAULT
     try:
@@ -162,7 +171,7 @@ def _resolve_cmd_mox_timeout(raw_timeout: str | None) -> float:
 def _build_cmd_mox_invocation_env(
     cwd: Path | None, env: cabc.Mapping[str, str] | None
 ) -> dict[str, str]:
-    """Return the environment mapping for cmd-mox invocations."""
+    """Return the process environment merged with ``env`` and a ``PWD`` override."""
     invocation_env = dict(os.environ)
     if env is not None:
         invocation_env.update({key: str(value) for key, value in env.items()})
@@ -174,7 +183,7 @@ def _build_cmd_mox_invocation_env(
 def _process_cmd_mox_response(
     response: object, *, streamed: bool, echo_stdout: bool = True
 ) -> tuple[int, str, str]:
-    """Apply environment updates and return decoded response payloads."""
+    """Apply environment updates and return the decoded response payloads."""
     _apply_cmd_mox_environment(getattr(response, "env", {}))
     stdout_text = coerce_text(getattr(response, "stdout", ""))
     stderr_text = coerce_text(getattr(response, "stderr", ""))
@@ -223,7 +232,7 @@ def normalise_cmd_mox_command(
 
 
 def _should_namespace_cargo_command(program: str, args: tuple[str, ...]) -> bool:
-    """Return True when cmd-mox expectations use cargo subcommand names."""
+    """Return True for cargo subcommands other than ``metadata``."""
     if program != "cargo" or not args:
         return False
     return args[0] != "metadata"
@@ -286,7 +295,7 @@ def _build_cmd_mox_passthrough_env(
     directive: _PassthroughDirective,
     invocation: ipc.Invocation,
 ) -> dict[str, str]:
-    """Return the merged environment for cmd-mox passthrough executions."""
+    """Return the merged environment with a filtered ``PATH`` for passthrough."""
     env = command_runner.prepare_environment(
         directive.lookup_path,
         dict(directive.extra_env or {}),
@@ -303,7 +312,7 @@ def _merge_cmd_mox_path_entries(
     current_path: str | None,
     lookup_path: str,
 ) -> str:
-    """Combine PATH entries while filtering the cmd-mox shim directory."""
+    """Combine PATH entries, dropping duplicates and the cmd-mox shim directory."""
     shim_dir = _cmd_mox_shim_directory()
     merged: list[str] = []
     seen: set[str] = set()
@@ -329,7 +338,7 @@ def _merge_cmd_mox_path_entries(
 
 
 def _cmd_mox_shim_directory() -> Path | None:
-    """Return the shim directory recorded in cmd-mox environment variables."""
+    """Return the cmd-mox shim directory, or None when the IPC socket is unset."""
     socket_path = os.environ.get(env_mod.CMOX_IPC_SOCKET_ENV)
     if not socket_path:
         return None

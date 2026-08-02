@@ -13,6 +13,9 @@ from tomlkit.items import InlineTable, Item, Table
 
 from lading.testing import toml_utils
 
+if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
+    from .cli_run_types import CliRunResult
+
 _FEATURES_DIR = Path(__file__).resolve().parent.parent / "features"
 
 scenarios(str(_FEATURES_DIR / "cli.feature"))
@@ -22,7 +25,7 @@ def _run_cli(
     repo_root: Path,
     workspace_directory: Path,
     *command_args: str,
-) -> dict[str, typ.Any]:
+) -> CliRunResult:
     command = [
         sys.executable,
         "-m",
@@ -129,7 +132,20 @@ def then_dependency_requirement(
     cli_run: dict[str, typ.Any],
     check: DependencyCheck,
 ) -> None:
-    """Assert that an internal dependency requirement reflects the new version."""
+    """Assert that an internal dependency requirement reflects the new version.
+
+    Parameters
+    ----------
+    cli_run : dict[str, typ.Any]
+        The captured CLI run details from a preceding step.
+    check : DependencyCheck
+        The dependency requirement specification to verify.
+
+    Raises
+    ------
+    AssertionError
+        If the section, dependency, or requirement does not match.
+    """
     crate_name = check.crate_name
     dependency_name = check.dependency_name
     section = check.section
@@ -158,11 +174,7 @@ def _then_dependency_requirement_step(
     dependency_spec: str,
     expected: str,
 ) -> None:
-    """Assert that an internal dependency requirement reflects the new version.
-
-    The dependency_spec should be in the format: "crate_name:dependency_name@section"
-    Example: "beta:alpha@dependencies"
-    """
+    """Assert an internal dependency requirement from a ``crate:dep@section`` spec."""
     parts = dependency_spec.split(":", maxsplit=1)
     if len(parts) != 2:
         message = (

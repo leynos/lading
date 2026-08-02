@@ -25,7 +25,19 @@ def expect_string(value: object, field_name: str, *, error: _ErrorType) -> str:
     Raises
     ------
     LadingError
-        When ``value`` is not a :class:`str`.
+        The configured ``error`` subclass, constructed by the injected
+        ``error`` factory, when ``value`` is not a :class:`str`.
+
+    Examples
+    --------
+    >>> from lading.exceptions import LadingError
+    >>> expect_string("hello", "field", error=LadingError)
+    'hello'
+    >>> try:
+    ...     expect_string(1, "field", error=LadingError)
+    ... except LadingError as exc:
+    ...     print("rejected")
+    rejected
     """
     match value:
         case str():
@@ -58,7 +70,17 @@ def boolean(
     Raises
     ------
     LadingError
-        When ``value`` is neither ``None`` nor a :class:`bool`.
+        The configured ``error`` subclass, constructed by the injected
+        ``error`` factory, when ``value`` is neither ``None`` nor a
+        :class:`bool`.
+
+    Examples
+    --------
+    >>> from lading.exceptions import LadingError
+    >>> boolean(None, "field", error=LadingError, default=True)
+    True
+    >>> boolean(False, "field", error=LadingError)
+    False
     """
     match value:
         case None:
@@ -93,8 +115,23 @@ def non_negative_int(
     Raises
     ------
     LadingError
-        When ``value`` is not a real integer (``bool`` and ``float`` are
-        rejected) or an integer-valued string, or when the result is negative.
+        The configured ``error`` subclass, constructed by the injected
+        ``error`` factory, when ``value`` is neither a real integer (``bool``
+        and ``float`` are rejected) nor an integer-valued string (which is
+        accepted), or when the parsed result is negative.
+
+    Examples
+    --------
+    >>> from lading.exceptions import LadingError
+    >>> non_negative_int(None, "field", 5, error=LadingError)
+    5
+    >>> non_negative_int("3", "field", 5, error=LadingError)
+    3
+    >>> try:
+    ...     non_negative_int(-1, "field", 5, error=LadingError)
+    ... except LadingError as exc:
+    ...     print("rejected")
+    rejected
     """
     # ``bool`` is a subclass of ``int`` and ``float``/other types are truthy for
     # a blanket ``int(...)`` cast, so dispatch explicitly to accept only real

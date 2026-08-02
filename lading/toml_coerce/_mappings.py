@@ -30,7 +30,15 @@ def expect_mapping(
     Raises
     ------
     LadingError
-        When ``value`` is not a :class:`collections.abc.Mapping`.
+        The configured ``error`` subclass, constructed by the injected
+        ``error`` factory, when ``value`` is not a
+        :class:`collections.abc.Mapping`.
+
+    Examples
+    --------
+    >>> from lading.exceptions import LadingError
+    >>> expect_mapping({"a": 1}, "field", error=LadingError)
+    {'a': 1}
     """
     match value:
         case cabc.Mapping():
@@ -61,8 +69,17 @@ def optional_mapping(
 
     Raises
     ------
-    LadingError
-        When ``value`` is neither ``None`` nor a mapping.
+    _reject
+        If a non-``None`` value is not a mapping; the supplied ``error``
+        factory constructs the raised exception.
+
+    Examples
+    --------
+    >>> from lading.exceptions import LadingError
+    >>> optional_mapping(None, "field", error=LadingError) is None
+    True
+    >>> optional_mapping({"a": 1}, "field", error=LadingError)
+    {'a': 1}
     """
     if value is None:
         return None
@@ -110,8 +127,18 @@ def string_mapping(
     Raises
     ------
     LadingError
-        When ``value`` is not a TOML table, or when any key or value is not a
-        string.
+        The configured ``error`` subclass, constructed by the injected
+        ``error`` factory, when ``value`` is not a TOML table, or when
+        ``_validate_string_pair`` rejects a non-string key or a non-string
+        value within the table.
+
+    Examples
+    --------
+    >>> from lading.exceptions import LadingError
+    >>> string_mapping(None, "field", error=LadingError)
+    ()
+    >>> string_mapping({"a": "1"}, "field", error=LadingError)
+    (('a', '1'),)
     """
     match value:
         case None:

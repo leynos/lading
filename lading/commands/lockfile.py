@@ -82,7 +82,7 @@ def _handle_git_ls_files_failure(
     stderr: str,
     workspace_root: Path,
 ) -> tuple[Path, ...] | None:
-    """Return ``None`` for git success, or an empty result for git failure."""
+    """Return ``None`` on git success or an empty tuple when not a git repo."""
     if exit_code == 0:
         return None
     detail = command_detail(stdout, stderr)
@@ -107,7 +107,7 @@ def _lockfiles_with_manifests(
     workspace_root: Path,
     manifest_exists: _ManifestExists,
 ) -> tuple[Path, ...]:
-    """Return lockfile paths from ``git ls-files`` with adjacent manifests."""
+    """Return tracked lockfiles outside ``target`` with adjacent manifests."""
     lockfiles: list[Path] = []
     for line in stdout.splitlines():
         relative_path = line.strip()
@@ -145,7 +145,7 @@ def discover_tracked_lockfiles(
     manifest_exists
         Callable used to decide whether a candidate lockfile has an adjacent
         manifest. The default adapter checks the filesystem.
-    emit_observability
+    emit_observability : bool, optional
         Whether successful discovery records metrics and an informational log.
         Error handling and the non-Git warning remain active when false.
 
@@ -159,8 +159,14 @@ def discover_tracked_lockfiles(
 
     Notes
     -----
-    If ``workspace_root`` is not a git repository, discovery logs a warning
-    through :func:`_handle_git_ls_files_failure` and returns an empty tuple.
+    An empty tuple arises from two distinct paths. First, when
+    ``workspace_root`` is not a git repository, discovery logs a warning
+    through :func:`_handle_git_ls_files_failure` and returns empty. Second,
+    when ``git ls-files`` succeeds but no tracked lockfile qualifies (none
+    outside ``target`` with an adjacent manifest), the filtered result is
+    empty. When ``git ls-files`` exits non-zero for any other reason,
+    :func:`_handle_git_ls_files_failure` raises
+    :class:`LockfileDiscoveryError`.
     """
     exit_code, stdout, stderr = runner(
         ("git", "ls-files", "**/Cargo.lock", "Cargo.lock"),
@@ -324,12 +330,7 @@ class CargoLockfileInspectionRepository:
             env: cabc.Mapping[str, str] | None = None,
             **runner_kwargs: bool,
         ) -> tuple[int, str, str]:
-            """Invoke ``base_runner`` with ``base_env`` as the default env.
-
-            Any extra keyword (notably ``echo_stdout``) is forwarded to
-            ``base_runner`` unchanged; only ``env`` is defaulted (to the bound
-            ``base_env``) when a call omits it.
-            """
+            """Invoke ``base_runner`` with ``base_env`` as the default env."""
             effective_env = base_env if env is None else env
             return base_runner(command, cwd=cwd, env=effective_env, **runner_kwargs)
 

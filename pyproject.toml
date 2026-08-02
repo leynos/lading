@@ -105,6 +105,7 @@ select = [
     "TRY",
     "EM",
     "D",
+    "DOC",      # enforce docstrings document parameters, returns, and raises
     "ANN",
     "C90",
     "PLR",
@@ -141,6 +142,51 @@ extend-ignore = [
 [tool.ruff.lint.per-file-ignores]
 "**/test_*.py" = ["S101", "PLR0913", "PLR0917", "PLR2004", "PLR6301"]
 "tests/bdd/steps/*.py" = ["S101", "PLR0913", "PLR0917", "PLR2004", "PLR6301"]
+# The TOML-coercion helpers raise through the ``_reject`` factory, which
+# returns the caller-injected ``error`` (a ``LadingError`` subclass) for the
+# caller to raise. pydoclint (DOC501/DOC502) keys the ``Raises`` type token on
+# the syntactic raise-callable (``_reject``) and cannot resolve it to the real
+# exception, so it cannot express the accurate ``LadingError`` contract. Scope
+# those two rules off here so the docstrings can document the true exception.
+"lading/toml_coerce/_mappings.py" = ["DOC501", "DOC502"]
+"lading/toml_coerce/_scalars.py" = ["DOC501", "DOC502"]
+# The E2E helpers raise through ``E2EExpectationError`` factory classmethods
+# (e.g. ``raise E2EExpectationError.dependency_entry_not_string(entry)``).
+# pydoclint keys DOC501/DOC502 on the syntactic raise-callable (the factory
+# method name) and cannot resolve it to the real exception class, so it cannot
+# express the accurate ``E2EExpectationError`` contract. Scope those two rules
+# off here so the docstrings can document the true exception type.
+"tests/e2e/helpers/e2e_steps_helpers.py" = ["DOC501", "DOC502"]
+"tests/e2e/steps/test_e2e_steps.py" = ["DOC501", "DOC502"]
+# These functions propagate exceptions from delegated helpers rather than
+# raising directly (e.g. subprocess_runner via split_command/_spawn_process,
+# transpose_readme_to_crate via _load_source_text). pydoclint (DOC501/DOC502)
+# only tracks direct raises, so it cannot express the accurate propagated
+# contract. Scope those two rules off so the docstrings can document the
+# exceptions a caller must still handle.
+"lading/runtime/subprocess_runner.py" = ["DOC501", "DOC502"]
+"lading/commands/bump_readme.py" = ["DOC501", "DOC502"]
+# ``_sequences.py`` raises through the ``_reject`` factory, which returns the
+# injected ``error`` (a ``LadingError`` subclass) for the caller to raise.
+# pydoclint keys DOC501/DOC502 on the syntactic raise-callable (``_reject``)
+# and cannot resolve it to the real exception, so scope the two rules off here
+# to document the true ``LadingError`` contract.
+"lading/toml_coerce/_sequences.py" = ["DOC501", "DOC502"]
+# ``publish.py`` and ``publish_plan.py`` surface exceptions raised by delegated
+# helpers (PublishPreflightError, PublishPlanError, PublishPreparationError,
+# PublishError). pydoclint only tracks direct raises, so document the contract
+# callers must handle without DOC502 flagging the propagated entries.
+"lading/commands/publish.py" = ["DOC501", "DOC502"]
+"lading/commands/publish_plan.py" = ["DOC501", "DOC502"]
+"lading/testing/cmd_mox_runner.py" = ["DOC501", "DOC502"]
+"lading/commands/lockfile.py" = ["DOC501", "DOC502"]
+"lading/commands/bump_lockfiles.py" = ["DOC501", "DOC502"]
+# ``bump_output.py`` is entirely private helpers whose docstrings carry
+# load-bearing CrossHair ``pre:``/``post:`` contracts (model-checked by
+# ``make crosshair``). Those contracts keep the docstrings multi-line, so
+# DOC201 would demand a Returns section that the private-helper convention
+# (AGENTS.md) says to omit; scope DOC201 off rather than choose between them.
+"lading/commands/bump_output.py" = ["DOC201"]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 8
@@ -220,6 +266,14 @@ dataclasses = "dc"
 convention = "numpy"
 ignore-decorators = ["typing.overload", "typ.overload"]
 
+[tool.ruff.lint.pydoclint]
+# Private helpers carry a concise single-line summary (the project's
+# private-helper docstring convention); public interfaces carry full
+# NumPy-style contracts. Skipping single-line docstrings lets the DOC
+# rules enforce Returns/Raises/Yields completeness on the multi-line
+# public docstrings without forcing structured sections onto private
+# helpers.
+ignore-one-line-docstrings = true
 [tool.interrogate]
 ignore-overloaded-functions = true
 [tool.pylint.main]

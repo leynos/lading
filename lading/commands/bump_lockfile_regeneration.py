@@ -77,21 +77,23 @@ def regenerate_lockfiles(
     LockfileRegenerationError
         If any configured manifest path is invalid (outside the workspace or
         not named ``Cargo.toml``), or — after every manifest has been
-        attempted — if ``cargo update --workspace`` failed. When only the
-        workspace-root lockfile is regenerated, the original cargo error is
-        re-raised unchanged. When several lockfiles are regenerated, one
-        aggregated error is raised whose message lists each failed manifest
-        with a repair command.
+        attempted — if ``cargo update --workspace`` failed. When only one
+        manifest was attempted, the original cargo error is re-raised
+        unchanged. When more than one manifest was attempted, one aggregated
+        error is raised whose message lists each failed manifest with a
+        repair command.
 
     Notes
     -----
     **Partial-update semantics:** regeneration is not atomic and successful
     updates are not rolled back when a later manifest fails. Every manifest
     is attempted (issue #84), so a single cargo failure does not leave
-    unrelated lockfiles silently stale. When several lockfiles are
-    regenerated, the aggregated error tells the operator exactly which
-    lockfiles still need repair and how; a lone root-lockfile failure needs no
-    such disambiguation and surfaces the plain cargo error.
+    unrelated lockfiles silently stale. How the failure surfaces depends on
+    how many manifests were *attempted*, not on how many lockfiles were
+    regenerated: when one manifest was attempted, its original cargo error is
+    re-raised unchanged, needing no disambiguation; when multiple manifests
+    were attempted, the aggregated error tells the operator exactly which
+    lockfiles still need repair and how.
 
     Examples
     --------

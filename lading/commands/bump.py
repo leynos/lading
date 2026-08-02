@@ -129,7 +129,37 @@ def run(
     *,
     options: BumpOptions | None = None,
 ) -> str:
-    """Update workspace and crate manifest versions to ``target_version``."""
+    """Update workspace and crate manifest versions to ``target_version``.
+
+    Parameters
+    ----------
+    workspace_root : Path | str
+        Filesystem path to the workspace root containing the top-level
+        ``Cargo.toml``.
+    target_version : str
+        Semantic version string to apply to every updated manifest.
+    options : BumpOptions | None, optional
+        Run configuration such as the dry-run flag, lockfile-rebuild override,
+        and pre-loaded configuration and workspace graph. ``None`` loads
+        configuration and the workspace from ``workspace_root``.
+
+    Returns
+    -------
+    str
+        Human-readable summary of the manifests, documents, README files, and
+        lockfiles that were changed, or reported as would be changed during
+        a dry run.
+
+    Examples
+    --------
+    >>> from lading.commands.bump import BumpOptions, run
+    >>> run(  # doctest: +SKIP
+    ...     "path/to/workspace",
+    ...     "1.2.0",
+    ...     options=BumpOptions(dry_run=True),
+    ... )
+    'Dry run; would update version to 1.2.0 in ...'
+    """
     context = _initialize_bump_context(workspace_root, options)
     LOGGER.debug(
         "Bump context initialised: %d excluded crate(s), %d to update",
@@ -161,7 +191,7 @@ def _initialize_bump_context(
     workspace_root: Path | str,
     options: BumpOptions | None,
 ) -> _BumpContext:
-    """Return initialised bump context for ``workspace_root``."""
+    """Return the initialised bump context for ``workspace_root``."""
     resolved_options = BumpOptions() if options is None else options
     root_path = normalise_workspace_root(workspace_root)
     configuration = resolved_options.configuration
@@ -364,12 +394,7 @@ def _apply_crate_manifest_update(
     target_version: str,
     context: _BumpContext,
 ) -> _CrateManifestOutcome:
-    """Apply updates for ``crate`` and return the closed manifest outcome.
-
-    The crate sets are read from ``context`` — they are derived exactly once
-    in :func:`_initialize_bump_context` (issue #97); helpers must not
-    recompute them per crate.
-    """
+    """Apply updates for ``crate`` and return the closed manifest outcome."""
     selectors = _determine_package_selectors(crate.name, context.excluded)
     dependency_sections = _dependency_sections_for_crate(
         crate, context.updated_crate_names

@@ -13,7 +13,7 @@ from lading.runtime.subprocess_runner import (
 
 
 def _publish_error(message: str) -> PublishPreflightError:
-    """Return a PublishPreflightError instance."""
+    """Return a PublishPreflightError carrying ``message``."""
     return PublishPreflightError(message)
 
 

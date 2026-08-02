@@ -167,6 +167,9 @@ def _format_manifest_path(manifest_path: Path, workspace_root: Path) -> str:
     CrossHair contracts (issue #95); model-check with ``make crosshair``.
 
     post: isinstance(__return__, str)
+
+    Falls back to returning ``manifest_path`` exactly as given, unmodified,
+    when it cannot be made relative to ``workspace_root``.
     """
     try:
         relative = manifest_path.relative_to(workspace_root)

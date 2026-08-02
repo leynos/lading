@@ -69,13 +69,55 @@ def git_commit(repo_path: Path, message: str) -> None:
 
 
 def git_status_porcelain(repo_path: Path) -> str:
-    """Return `git status --porcelain` output."""
+    """Return `git status --porcelain` output.
+
+    Parameters
+    ----------
+    repo_path : Path
+        Path to the Git repository to inspect.
+
+    Returns
+    -------
+    str
+        Porcelain status output for the repository.
+
+    Examples
+    --------
+    >>> import tempfile
+    >>> from pathlib import Path
+    >>> with tempfile.TemporaryDirectory() as tmp:
+    ...     repo = Path(tmp)
+    ...     git_init(repo)
+    ...     git_status_porcelain(repo)
+    ''
+    """
     stdout, _stderr = _run_git_checked(repo_path, "status", "--porcelain")
     return stdout
 
 
 def git_is_clean(repo_path: Path) -> bool:
-    """Return ``True`` when git reports no uncommitted changes."""
+    """Return ``True`` when git reports no uncommitted changes.
+
+    Parameters
+    ----------
+    repo_path : Path
+        Path to the Git repository to inspect.
+
+    Returns
+    -------
+    bool
+        ``True`` when the working tree has no pending changes.
+
+    Examples
+    --------
+    >>> import tempfile
+    >>> from pathlib import Path
+    >>> with tempfile.TemporaryDirectory() as tmp:
+    ...     repo = Path(tmp)
+    ...     git_init(repo)
+    ...     git_is_clean(repo)
+    True
+    """
     return not git_status_porcelain(repo_path).strip()
 
 

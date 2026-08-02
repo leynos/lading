@@ -71,7 +71,32 @@ class DocumentationConfig:
     def from_mapping(
         cls, mapping: cabc.Mapping[str, typ.Any] | None
     ) -> DocumentationConfig:
-        """Create a :class:`DocumentationConfig` from a TOML table mapping."""
+        """Create a :class:`DocumentationConfig` from a TOML table mapping.
+
+        Parameters
+        ----------
+        mapping : cabc.Mapping[str, typ.Any] | None
+            The parsed ``bump.documentation`` table, or ``None`` for defaults.
+
+        Returns
+        -------
+        DocumentationConfig
+            Documentation settings parsed from ``mapping``, or defaults when
+            ``mapping`` is ``None``.
+
+        Raises
+        ------
+        ConfigurationError
+            If ``mapping`` contains an unknown key or an invalid setting
+            value, propagated from the shared mapping validators/coercers.
+
+        Examples
+        --------
+        >>> DocumentationConfig.from_mapping({"globs": ["docs/*.md"]})
+        DocumentationConfig(globs=('docs/*.md',))
+        >>> DocumentationConfig.from_mapping(None)
+        DocumentationConfig(globs=())
+        """  # noqa: DOC502 -- propagated from the shared mapping validators
         if mapping is None:
             return cls()
         _validate_mapping_keys(
@@ -93,7 +118,32 @@ class BumpConfig:
 
     @classmethod
     def from_mapping(cls, mapping: cabc.Mapping[str, typ.Any] | None) -> BumpConfig:
-        """Create a :class:`BumpConfig` from a TOML table mapping."""
+        """Create a :class:`BumpConfig` from a TOML table mapping.
+
+        Parameters
+        ----------
+        mapping : cabc.Mapping[str, typ.Any] | None
+            The parsed ``bump`` table, or ``None`` for defaults.
+
+        Returns
+        -------
+        BumpConfig
+            Bump settings parsed from ``mapping``, or defaults when ``mapping``
+            is ``None``.
+
+        Raises
+        ------
+        ConfigurationError
+            If ``mapping`` contains an unknown key or an invalid setting
+            value, propagated from the shared mapping validators/coercers.
+
+        Examples
+        --------
+        >>> BumpConfig.from_mapping({"exclude": ["crate-a"]}).exclude
+        ('crate-a',)
+        >>> BumpConfig.from_mapping(None).rebuild_lockfiles
+        True
+        """  # noqa: DOC502 -- propagated from the shared mapping validators
         if mapping is None:
             return cls()
         _validate_mapping_keys(mapping, set(BUMP_TOML_KEYS), "bump")
@@ -123,7 +173,32 @@ class PublishConfig:
 
     @classmethod
     def from_mapping(cls, mapping: cabc.Mapping[str, typ.Any] | None) -> PublishConfig:
-        """Create a :class:`PublishConfig` from a TOML table mapping."""
+        """Create a :class:`PublishConfig` from a TOML table mapping.
+
+        Parameters
+        ----------
+        mapping : cabc.Mapping[str, typ.Any] | None
+            The parsed ``publish`` table, or ``None`` for defaults.
+
+        Returns
+        -------
+        PublishConfig
+            Publish settings parsed from ``mapping``, or defaults when
+            ``mapping`` is ``None``.
+
+        Raises
+        ------
+        ConfigurationError
+            If ``mapping`` contains an unknown key or an invalid setting
+            value, propagated from the shared mapping validators/coercers.
+
+        Examples
+        --------
+        >>> PublishConfig.from_mapping({"order": ["a", "b"]}).order
+        ('a', 'b')
+        >>> PublishConfig.from_mapping(None).strip_patches
+        'per-crate'
+        """  # noqa: DOC502 -- propagated from the shared mapping validators
         if mapping is None:
             return cls()
         _validate_mapping_keys(mapping, set(PUBLISH_TOML_KEYS), "publish")
@@ -157,7 +232,32 @@ class PreflightConfig:
     def from_mapping(
         cls, mapping: cabc.Mapping[str, typ.Any] | None
     ) -> PreflightConfig:
-        """Create a :class:`PreflightConfig` from a TOML table mapping."""
+        """Create a :class:`PreflightConfig` from a TOML table mapping.
+
+        Parameters
+        ----------
+        mapping : cabc.Mapping[str, typ.Any] | None
+            The parsed ``preflight`` table, or ``None`` for defaults.
+
+        Returns
+        -------
+        PreflightConfig
+            Pre-flight settings parsed from ``mapping``, or defaults when
+            ``mapping`` is ``None``.
+
+        Raises
+        ------
+        ConfigurationError
+            If ``mapping`` contains an unknown key or an invalid setting
+            value, propagated from the shared mapping validators/coercers.
+
+        Examples
+        --------
+        >>> PreflightConfig.from_mapping({"unit_tests_only": True}).unit_tests_only
+        True
+        >>> PreflightConfig.from_mapping(None).stderr_tail_lines
+        40
+        """  # noqa: DOC502 -- propagated from the shared mapping validators
         if mapping is None:
             return cls()
         _validate_mapping_keys(mapping, set(PREFLIGHT_TOML_KEYS), "preflight")
@@ -203,7 +303,30 @@ class LadingConfig:
 
     @classmethod
     def from_mapping(cls, mapping: cabc.Mapping[str, typ.Any]) -> LadingConfig:
-        """Create a :class:`LadingConfig` from a parsed configuration mapping."""
+        """Create a :class:`LadingConfig` from a parsed configuration mapping.
+
+        Parameters
+        ----------
+        mapping : cabc.Mapping[str, typ.Any]
+            The parsed root configuration table.
+
+        Returns
+        -------
+        LadingConfig
+            Fully populated configuration with defaults for absent sections.
+
+        Raises
+        ------
+        ConfigurationError
+            If ``mapping`` contains an unknown key or an invalid setting
+            value, propagated from the shared mapping validators/coercers.
+
+        Examples
+        --------
+        >>> config = LadingConfig.from_mapping({"bump": {"exclude": ["crate-a"]}})
+        >>> config.bump.exclude
+        ('crate-a',)
+        """  # noqa: DOC502 -- propagated from the shared mapping validators
         _validate_mapping_keys(
             mapping, set(CONFIG_ROOT_TOML_KEYS), "configuration section"
         )
@@ -230,18 +353,7 @@ def _validate_mapping_keys(
     allowed_keys: set[str],
     context: str,
 ) -> None:
-    """Validate that mapping contains only allowed keys.
-
-    Args:
-        mapping: The mapping to validate (may be None).
-        allowed_keys: Set of permitted key names.
-        context: Context for error message (e.g., "bump", "publish").
-
-    Raises
-    ------
-        ConfigurationError: If mapping contains unknown keys.
-
-    """
+    """Validate that ``mapping`` contains only ``allowed_keys``."""
     if mapping is None:
         return
     unknown = set(mapping) - allowed_keys
@@ -255,7 +367,24 @@ def _validate_mapping_keys(
 
 
 def build_loader(workspace_root: Path) -> Toml:
-    """Return a Cyclopts loader for ``lading.toml`` in ``workspace_root``."""
+    """Return a Cyclopts loader for ``lading.toml`` in ``workspace_root``.
+
+    Parameters
+    ----------
+    workspace_root : Path
+        The workspace root whose ``lading.toml`` the loader targets.
+
+    Returns
+    -------
+    Toml
+        Loader targeting ``lading.toml`` within the resolved workspace root.
+
+    Examples
+    --------
+    >>> from pathlib import Path
+    >>> build_loader(Path("workspace")).path.name
+    'lading.toml'
+    """
     resolved = normalise_workspace_root(workspace_root)
     return Toml(
         path=resolved / CONFIG_FILENAME,
@@ -267,7 +396,32 @@ def build_loader(workspace_root: Path) -> Toml:
 
 
 def load_from_loader(loader: Toml) -> LadingConfig:
-    """Load and validate configuration using ``loader``."""
+    """Load and validate configuration using ``loader``.
+
+    Parameters
+    ----------
+    loader : Toml
+        The Cyclopts loader providing the parsed TOML table.
+
+    Returns
+    -------
+    LadingConfig
+        Validated configuration parsed from the loader's TOML table.
+
+    Raises
+    ------
+    ConfigurationError
+        If reading ``loader.config`` raises :class:`ValueError`, the parsed
+        configuration root is not a TOML table, or validation fails while
+        propagating from :meth:`LadingConfig.from_mapping` (unknown keys or
+        invalid setting values).
+
+    Examples
+    --------
+    >>> from pathlib import Path
+    >>> load_from_loader(build_loader(Path("workspace")))  # doctest: +SKIP
+    LadingConfig(...)
+    """
     try:
         raw = loader.config
     except ValueError as exc:
@@ -279,14 +433,54 @@ def load_from_loader(loader: Toml) -> LadingConfig:
 
 
 def load_configuration(workspace_root: Path) -> LadingConfig:
-    """Load configuration for ``workspace_root`` using Cyclopts."""
-    loader = build_loader(workspace_root)
-    return load_from_loader(loader)
+    """Load configuration for ``workspace_root`` using Cyclopts.
+
+    Parameters
+    ----------
+    workspace_root : Path
+        The workspace root whose ``lading.toml`` is loaded.
+
+    Returns
+    -------
+    LadingConfig
+        Validated configuration for the given workspace root.
+
+    Raises
+    ------
+    ConfigurationError
+        If loading or validation fails, propagated from
+        :func:`load_from_loader` (parse failures or validation failures).
+
+    Examples
+    --------
+    >>> from pathlib import Path
+    >>> load_configuration(Path("workspace"))  # doctest: +SKIP
+    LadingConfig(...)
+    """  # noqa: DOC502 -- propagated from load_from_loader, not raised here
+    return load_from_loader(build_loader(workspace_root))
 
 
 @contextlib.contextmanager
 def use_configuration(configuration: LadingConfig) -> cabc.Iterator[None]:
-    """Set ``configuration`` as the active configuration for the current context."""
+    """Set ``configuration`` as the active configuration for the current context.
+
+    Parameters
+    ----------
+    configuration : LadingConfig
+        Configuration to make active for the duration of the ``with`` block.
+
+    Yields
+    ------
+    None
+        Control, with ``configuration`` active until the ``with`` block exits.
+
+    Examples
+    --------
+    >>> config = LadingConfig()
+    >>> with use_configuration(config):
+    ...     current_configuration() is config
+    True
+    """
     token = _active_config.set(configuration)
     try:
         yield
@@ -295,7 +489,25 @@ def use_configuration(configuration: LadingConfig) -> cabc.Iterator[None]:
 
 
 def current_configuration() -> LadingConfig:
-    """Return the active configuration or raise if none has been set."""
+    """Return the active configuration or raise if none has been set.
+
+    Returns
+    -------
+    LadingConfig
+        The configuration set by the enclosing :func:`use_configuration`.
+
+    Raises
+    ------
+    ConfigurationNotLoadedError
+        If no configuration is active in the current context.
+
+    Examples
+    --------
+    >>> config = LadingConfig()
+    >>> with use_configuration(config):
+    ...     current_configuration() is config
+    True
+    """
     try:
         return _active_config.get()
     except LookupError as exc:  # pragma: no cover - defensive guard

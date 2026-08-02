@@ -56,16 +56,7 @@ def _synthetic_workspace(
     root: Path = Path("/ws"),
     dependencies: _DependencyEdges | None = None,
 ) -> WorkspaceGraph:
-    """Build an in-memory workspace graph for the supplied crate names.
-
-    ``dependencies`` maps a crate name to its outgoing edges, each a
-    ``(target crate name, kind)`` pair where ``kind`` is ``None``/``"normal"``,
-    ``"dev"``, or ``"build"``. Every edge becomes an (unaliased)
-    :class:`WorkspaceDependency` attached to the dependent crate, so the graph
-    exercises normal, dev, and build dependency-section routing. ``root``
-    anchors every crate's ``manifest_path`` so callers can point the graph at a
-    real temporary tree.
-    """
+    """Build an in-memory workspace graph for the supplied crate names."""
     dependency_map = dependencies or {}
     crates = tuple(
         WorkspaceCrate(
@@ -207,12 +198,7 @@ def _write_synthetic_manifests(
 def _read_manifest_versions(
     manifest_path: Path,
 ) -> tuple[str, dict[str, dict[str, str]]]:
-    """Return the package version and per-section dependency versions.
-
-    The second element maps each present dependency section to a ``{name:
-    version}`` mapping, so callers can assert that a ``kind`` was routed to the
-    correct manifest table.
-    """
+    """Return the package version and per-section dependency versions."""
     document = parse_toml(manifest_path.read_text(encoding="utf-8"))
     package_version = str(document["package"]["version"])
     section_versions: dict[str, dict[str, str]] = {}
@@ -233,13 +219,7 @@ def _draw_dependency_edges(
     updated_pivot: str,
     excluded_pivot: str,
 ) -> dict[str, dict[str, _DependencyKind]]:
-    """Draw a per-crate ``{target: kind}`` edge map for the workspace.
-
-    Edges never self-reference and ``kind`` varies across normal/dev/build. One
-    edge is forced from ``excluded_pivot`` onto ``updated_pivot`` so the
-    excluded-crate dependency-rewrite path (an excluded crate that still depends
-    on an updated crate) is covered on every example.
-    """
+    """Draw a per-crate ``{target: kind}`` edge map for the workspace."""
     edges: dict[str, dict[str, _DependencyKind]] = {}
     for name in names:
         candidates = [other for other in names if other != name]

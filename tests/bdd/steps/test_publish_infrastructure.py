@@ -22,6 +22,7 @@ if typ.TYPE_CHECKING:
 
     from tomlkit.toml_document import TOMLDocument  # pragma: no cover
 
+    from .cli_run_types import CliRunResult
     from .test_common_steps import _run_cli  # noqa: F401
 else:  # pragma: no cover - runtime fallback for typing helpers
     Path = typ.Any  # type: ignore[assignment]
@@ -75,7 +76,19 @@ class PreflightTestContext:
     recorder: _PreflightInvocationRecorder
 
     def create_stub_config(self, *, allow_dirty: bool = True) -> _PreflightStubConfig:
-        """Create stub configuration from this context."""
+        """Create stub configuration from this context.
+
+        Parameters
+        ----------
+        allow_dirty : bool
+            When ``True``, register cargo package/publish doubles that expect
+            the ``--allow-dirty`` flag; otherwise omit it.
+
+        Returns
+        -------
+        _PreflightStubConfig
+            The stub configuration bound to this context.
+        """
         return _create_stub_config(
             self.cmd_mox, self.overrides, self.recorder, allow_dirty=allow_dirty
         )
@@ -240,15 +253,7 @@ def _create_stub_config(
 def _normalise_preflight_responses(
     config: _PreflightStubConfig,
 ) -> dict[tuple[str, ...], ResponseProvider]:
-    """Return default and override responses keyed by command tuple.
-
-    Notes
-    -----
-    Only a single cargo publish override is honoured. If multiple cargo publish
-    entries are present in ``config.overrides``, the first inserted entry
-    determines the stubbed behaviour.
-
-    """
+    """First publish override wins; package/publish --allow-dirty follows config."""
     defaults: dict[tuple[str, ...], ResponseProvider] = {
         ("git", "status", "--porcelain"): _CommandResponse(exit_code=0),
         ("git", "ls-files", "**/Cargo.lock", "Cargo.lock"): _CommandResponse(
@@ -278,8 +283,10 @@ def _normalise_preflight_responses(
     publish_command_found = False
     for command, response in config.overrides.items():
         if _is_cargo_publish_command(command):
+            # Only the first cargo publish override wins; later ones are ignored.
             if publish_command_found:
                 continue
+            # Replace any caller-supplied --allow-dirty to match config.allow_dirty.
             base_args = tuple(arg for arg in command[2:] if arg != "--allow-dirty")
             publish_args = ("--allow-dirty",) if config.allow_dirty else ()
             publish_command = ("cargo", "publish", *publish_args, *base_args)
@@ -287,6 +294,7 @@ def _normalise_preflight_responses(
             publish_command_found = True
         else:
             if command[:2] == ("cargo", "package"):
+                # Replace any caller-supplied --allow-dirty to match config.allow_dirty.
                 base_args = tuple(arg for arg in command[2:] if arg != "--allow-dirty")
                 package_args = ("--allow-dirty",) if config.allow_dirty else ()
                 command = ("cargo", "package", *package_args, *base_args)
@@ -397,7 +405,7 @@ def _invoke_publish_with_options(
     workspace_directory: Path,
     stub_config: _PreflightStubConfig,
     *extra_args: str,
-) -> dict[str, typ.Any]:
+) -> CliRunResult:
     """Register preflight doubles, enable stubs, and run the CLI."""
     from .test_common_steps import _run_cli
 

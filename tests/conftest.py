@@ -25,7 +25,18 @@ pytest_plugins = (
 
 @pytest.fixture
 def repo_root() -> Path:
-    """Return the repository root directory."""
+    """Return the repository root directory.
+
+    Returns
+    -------
+    Path
+        Absolute path to the repository root.
+
+    Examples
+    --------
+    >>> def test_reads_project(repo_root):  # doctest: +SKIP
+    ...     assert (repo_root / "pyproject.toml").exists()
+    """
     return Path(__file__).resolve().parent.parent
 
 
@@ -46,7 +57,24 @@ def _restore_workspace_env() -> cabc.Iterator[None]:
 
 @pytest.fixture
 def write_config(tmp_path: Path) -> cabc.Callable[[str], Path]:
-    """Return a helper that writes ``lading.toml`` into ``tmp_path``."""
+    """Return a helper that writes ``lading.toml`` into ``tmp_path``.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        Per-test temporary directory provided by pytest.
+
+    Returns
+    -------
+    cabc.Callable[[str], Path]
+        Callable that writes the given body and returns the config path.
+
+    Examples
+    --------
+    >>> def test_writes_config(write_config):  # doctest: +SKIP
+    ...     path = write_config("[bump]")
+    ...     assert path.read_text().startswith("[bump]")
+    """
     from lading import config as config_module
 
     def _write(body: str) -> Path:
@@ -59,7 +87,23 @@ def write_config(tmp_path: Path) -> cabc.Callable[[str], Path]:
 
 @pytest.fixture
 def minimal_config(write_config: cabc.Callable[[str], Path]) -> Path:
-    """Persist a representative configuration file for CLI exercises."""
+    """Persist a representative configuration file for CLI exercises.
+
+    Parameters
+    ----------
+    write_config : cabc.Callable[[str], Path]
+        Helper fixture that writes a config body and returns its path.
+
+    Returns
+    -------
+    Path
+        Path to the written configuration file.
+
+    Examples
+    --------
+    >>> def test_loads_minimal(minimal_config):  # doctest: +SKIP
+    ...     assert minimal_config.name == "lading.toml"
+    """
     return write_config(
         """
         [bump]

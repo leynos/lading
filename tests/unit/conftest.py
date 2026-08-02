@@ -58,11 +58,6 @@ class PublishFixtures:
     publish_options: publish.PublishOptions
 
 
-type PlanningFixtures = PublishFixtures
-type PreparationFixtures = PublishFixtures
-type PrepareWorkspaceFixtures = PublishFixtures
-
-
 @pytest.fixture(autouse=True)
 def disable_publish_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
     """Stub publish pre-flight checks for tests that do not exercise them."""
@@ -86,11 +81,10 @@ def stub_lockfile_regeneration(
     monkeypatch : pytest.MonkeyPatch
         Fixture used to replace lockfile discovery and regeneration helpers.
 
-    Returns
-    -------
-    None
-        Modules outside ``_LOCKFILE_STUB_MODULES`` are left unchanged; selected
-        modules receive deterministic helpers that avoid invoking Git or Cargo.
+    Notes
+    -----
+    Modules outside ``_LOCKFILE_STUB_MODULES`` are left unchanged; selected
+    modules receive deterministic helpers that avoid invoking Git or Cargo.
 
     Examples
     --------
@@ -124,7 +118,19 @@ def stub_lockfile_regeneration(
 
 @pytest.fixture
 def make_config() -> cabc.Callable[..., config_module.LadingConfig]:
-    """Return a factory for publish-friendly configuration objects."""
+    """Return a factory for publish-friendly configuration objects.
+
+    Returns
+    -------
+    Callable[..., config_module.LadingConfig]
+        A factory that builds configuration objects for tests.
+
+    Examples
+    --------
+    >>> def test_excludes_are_forwarded(make_config):  # doctest: +SKIP
+    ...     config = make_config(preflight_test_exclude=("skip-me",))
+    ...     assert config.preflight.test_exclude == ("skip-me",)
+    """
 
     def _make_config(
         *,
@@ -149,7 +155,19 @@ def make_config() -> cabc.Callable[..., config_module.LadingConfig]:
 
 @pytest.fixture
 def make_crate() -> cabc.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate]:
-    """Return a factory that materialises temporary workspace crates."""
+    """Return a factory that materialises temporary workspace crates.
+
+    Returns
+    -------
+    Callable[[Path, str, _CrateSpec | None], WorkspaceCrate]
+        A factory that writes crate manifests and returns crate records.
+
+    Examples
+    --------
+    >>> def test_crate_is_named(make_crate, tmp_path):  # doctest: +SKIP
+    ...     crate = make_crate(tmp_path, "alpha")
+    ...     assert crate.name == "alpha"
+    """
 
     def _make_crate(
         root: Path, name: str, spec: _CrateSpec | None = None
@@ -191,7 +209,24 @@ def make_crate() -> cabc.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate
 def make_workspace(
     make_crate: cabc.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
 ) -> cabc.Callable[[Path, WorkspaceCrate], WorkspaceGraph]:
-    """Return a factory that assembles workspace graphs for tests."""
+    """Return a factory that assembles workspace graphs for tests.
+
+    Parameters
+    ----------
+    make_crate : Callable[[Path, str, _CrateSpec | None], WorkspaceCrate]
+        Factory fixture used to materialise the crates within each graph.
+
+    Returns
+    -------
+    Callable[[Path, WorkspaceCrate], WorkspaceGraph]
+        A factory that builds workspace graphs from crates.
+
+    Examples
+    --------
+    >>> def test_workspace_has_crate(make_workspace, tmp_path):  # doctest: +SKIP
+    ...     workspace = make_workspace(tmp_path)
+    ...     assert workspace.crates
+    """
 
     def _make_workspace(root: Path, *crates: WorkspaceCrate) -> WorkspaceGraph:
         if not crates:
@@ -205,7 +240,26 @@ def make_workspace(
 def publish_fixtures(
     request: pytest.FixtureRequest, publish_options: publish.PublishOptions
 ) -> PublishFixtures:
-    """Return the composite publish fixtures used across unit suites."""
+    """Return the composite publish fixtures used across unit suites.
+
+    Parameters
+    ----------
+    request : pytest.FixtureRequest
+        Fixture request used to resolve the component fixtures lazily.
+    publish_options : publish.PublishOptions
+        Publish options bundled into the composite fixtures.
+
+    Returns
+    -------
+    PublishFixtures
+        The assembled publish fixtures.
+
+    Examples
+    --------
+    >>> def test_uses_composite(publish_fixtures):  # doctest: +SKIP
+    ...     crate = publish_fixtures.make_crate(publish_fixtures.tmp_path, "alpha")
+    ...     assert crate.name == "alpha"
+    """
     tmp_path: Path = request.getfixturevalue("tmp_path")
     make_crate = request.getfixturevalue("make_crate")
     make_workspace = request.getfixturevalue("make_workspace")
@@ -222,20 +276,20 @@ def publish_fixtures(
 
 
 @pytest.fixture
-def planning_fixtures(publish_fixtures: PublishFixtures) -> PlanningFixtures:
-    """Expose the composite fixtures under the planning-specific alias."""
-    return publish_fixtures
-
-
-@pytest.fixture
-def preparation_fixtures(publish_fixtures: PublishFixtures) -> PreparationFixtures:
-    """Expose the composite fixtures under the staging-specific alias."""
-    return publish_fixtures
-
-
-@pytest.fixture
 def make_dependency() -> cabc.Callable[[str], WorkspaceDependency]:
-    """Return a factory for workspace dependency records."""
+    """Return a factory for workspace dependency records.
+
+    Returns
+    -------
+    Callable[[str], WorkspaceDependency]
+        A factory that builds dependency records by name.
+
+    Examples
+    --------
+    >>> def test_dependency_name_roundtrips(make_dependency):  # doctest: +SKIP
+    ...     dependency = make_dependency("core")
+    ...     assert dependency.name == "core"
+    """
 
     def _make_dependency(name: str) -> WorkspaceDependency:
         return WorkspaceDependency(
@@ -250,19 +304,45 @@ def make_dependency() -> cabc.Callable[[str], WorkspaceDependency]:
 
 @pytest.fixture
 def staging_root(tmp_path: Path) -> Path:
-    """Provide a staging directory that sits alongside the workspace root."""
+    """Provide a staging directory that sits alongside the workspace root.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        Pytest temporary directory whose sibling is used for staging.
+
+    Returns
+    -------
+    Path
+        The staging directory path.
+
+    Examples
+    --------
+    >>> def test_staging_is_sibling(staging_root, tmp_path):  # doctest: +SKIP
+    ...     assert staging_root.parent == tmp_path.parent
+    """
     return tmp_path.parent / f"{tmp_path.name}-staging"
 
 
 @pytest.fixture
 def publish_options(staging_root: Path) -> publish.PublishOptions:
-    """Return publish options that stage outside the workspace root."""
+    """Return publish options that stage outside the workspace root.
+
+    Parameters
+    ----------
+    staging_root : Path
+        Directory outside the workspace root used as the build directory.
+
+    Returns
+    -------
+    publish.PublishOptions
+        Publish options configured with the staging directory.
+
+    Examples
+    --------
+    >>> def test_build_dir_is_staging_root(  # doctest: +SKIP
+    ...     publish_options, staging_root
+    ... ):
+    ...     assert publish_options.build_directory == staging_root
+    """
     return publish.PublishOptions(build_directory=staging_root)
-
-
-@pytest.fixture
-def prepare_workspace_fixtures(
-    publish_fixtures: PublishFixtures,
-) -> PrepareWorkspaceFixtures:
-    """Pre-assembled fixtures for prepare_workspace integration tests."""
-    return publish_fixtures

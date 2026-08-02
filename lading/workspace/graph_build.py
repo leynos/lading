@@ -51,12 +51,29 @@ def load_workspace(
 
     Raises
     ------
-    CargoExecutableNotFoundError, CargoMetadataError
-        When ``cargo`` cannot be located, or ``cargo metadata`` fails or emits
-        unparsable output.
+    CargoMetadataInvocationError
+        Propagated from ``load_cargo_metadata`` when ``cargo metadata``
+        exits with a non-zero status.
+    CargoExecutableNotFoundError
+        Propagated from ``load_cargo_metadata`` when the ``cargo``
+        executable cannot be found.
+    CargoMetadataError
+        Propagated from ``load_cargo_metadata`` when the command otherwise
+        fails to spawn or run.
+    CargoMetadataParseError
+        Propagated from ``load_cargo_metadata`` when the output is not
+        valid JSON or not a JSON object.
     WorkspaceModelError
-        When the metadata cannot be turned into a valid workspace graph.
-    """
+        Propagated from ``build_workspace_graph`` when workspace
+        construction fails.
+
+    Examples
+    --------
+    >>> from lading.workspace.graph_build import load_workspace
+    >>> graph = load_workspace()  # doctest: +SKIP
+    >>> graph.crates  # doctest: +SKIP
+    (...)
+    """  # noqa: DOC502 -- propagated from load_cargo_metadata/build_workspace_graph
     from lading.workspace.metadata import load_cargo_metadata
 
     metadata = load_cargo_metadata(workspace_root)
@@ -223,7 +240,7 @@ def _validate_workspace_dependency_path(
     entry: cabc.Mapping[str, typ.Any],
     target_package: cabc.Mapping[str, typ.Any],
 ) -> bool:
-    """Return whether an entry path matches the workspace dependency target."""
+    """Return whether the entry has no path or its path resolves to the target."""
     dependency_path = entry.get("path")
     if dependency_path is None:
         return True
@@ -241,7 +258,7 @@ def _lookup_workspace_target(
     entry: cabc.Mapping[str, typ.Any],
     workspace_index: WorkspaceIndex,
 ) -> tuple[str, str] | None:
-    """Return the dependency target id and name when in the workspace."""
+    """Return workspace target id/name for the first matching candidate name."""
     # External sources should never resolve to workspace dependencies.
     if entry.get("source") is not None:
         return None
@@ -263,7 +280,7 @@ def _lookup_workspace_target(
 
 
 def _dependency_candidate_names(entry: cabc.Mapping[str, typ.Any]) -> tuple[str, ...]:
-    """Return candidate dependency package names from metadata."""
+    """Return distinct candidate dependency names from ``name``/``package`` fields."""
     names: list[str] = []
     dependency_name = entry.get("name")
     if isinstance(dependency_name, str):
@@ -278,7 +295,7 @@ def _dependency_candidate_names(entry: cabc.Mapping[str, typ.Any]) -> tuple[str,
 def _validate_dependency_kind(
     entry: cabc.Mapping[str, typ.Any],
 ) -> typ.Literal["normal", "dev", "build"] | None:
-    """Return a validated dependency kind literal when present."""
+    """Return a validated dependency kind literal, or ``None`` when unset."""
     kind_value = entry.get("kind")
     if kind_value is None:
         return None
@@ -317,7 +334,7 @@ def _dependency_manifest_name(
     dependency: cabc.Mapping[str, typ.Any],
     target_id: str,
 ) -> str:
-    """Return the dependency name used in manifests."""
+    """Return the rename, declared, or package name for a dependency, in that order."""
     rename_value = dependency.get("rename")
     if isinstance(rename_value, str) and rename_value:
         return rename_value
@@ -355,7 +372,7 @@ def _normalise_manifest_path(value: object, field_name: str) -> Path:
 
 
 def _coerce_publish_setting(value: object, package_id: str) -> bool:
-    """Return whether ``package_id`` should be considered publishable."""
+    """Return whether publishing is allowed: ``false`` or an empty list disable it."""
     if value is None:
         return True
     if isinstance(value, bool):

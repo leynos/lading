@@ -73,7 +73,26 @@ class _MockCommandRunner:
 
 @pytest.fixture
 def mock_cmd_mox_modules(tmp_path: Path) -> SimpleNamespace:
-    """Provide complete cmd-mox module stubs for passthrough handling."""
+    """Provide complete cmd-mox module stubs for passthrough handling.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        Pytest temporary directory used to build the stubbed shim paths.
+
+    Returns
+    -------
+    SimpleNamespace
+        Namespace exposing the env module, IPC module, and command runner
+        stubs.
+
+    Examples
+    --------
+    >>> def test_uses_stubs(mock_cmd_mox_modules):  # doctest: +SKIP
+    ...     mock_cmd_mox_modules.env_module.CMOX_IPC_SOCKET_ENV
+    ...     mock_cmd_mox_modules.ipc_module.Response
+    ...     mock_cmd_mox_modules.command_runner
+    """
 
     class _Env:
         CMOX_IPC_SOCKET_ENV = "CMOX_IPC_SOCKET"

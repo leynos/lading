@@ -53,14 +53,24 @@ class PublishPlan:
     """Describe which crates should be published from a workspace."""
 
     workspace_root: Path
+
     publishable: tuple[WorkspaceCrate, ...]
+
     skipped_manifest: tuple[WorkspaceCrate, ...]
+
     skipped_configuration: tuple[WorkspaceCrate, ...]
+
     missing_configuration_exclusions: tuple[str, ...] = ()
 
     @property
     def publishable_names(self) -> tuple[str, ...]:
-        """Names of crates scheduled for publication."""
+        """The names of crates scheduled for publication.
+
+        Returns
+        -------
+        tuple[str, ...]
+            The names of the publishable crates, in plan order.
+        """
         return tuple(crate.name for crate in self.publishable)
 
 
@@ -179,7 +189,31 @@ def plan_publication(
     *,
     workspace_root: Path | None = None,
 ) -> PublishPlan:
-    """Return the :class:`PublishPlan` for ``workspace`` and ``configuration``."""
+    """Return the :class:`PublishPlan` for ``workspace`` and ``configuration``.
+
+    Parameters
+    ----------
+    workspace:
+        The resolved workspace graph whose crates are categorised.
+    configuration:
+        The loaded lading configuration supplying publish exclusions and order.
+    workspace_root:
+        Optional override for the plan's recorded workspace root. Defaults to
+        ``workspace.workspace_root`` when ``None``.
+
+    Returns
+    -------
+    PublishPlan
+        The resolved plan describing publishable and skipped crate groups.
+
+    Raises
+    ------
+    PublishPlanError
+        If ``configuration.publish.order`` is invalid (duplicate, unknown, or
+        missing entries) or the workspace dependency graph contains a cycle;
+        propagated from :func:`_resolve_configured_order` and
+        :func:`_resolve_topological_order`.
+    """
     root_path = workspace.workspace_root if workspace_root is None else workspace_root
     configured_exclusions = tuple(configuration.publish.exclude)
     exclusion_set = set(configured_exclusions)
@@ -240,14 +274,14 @@ def render_section[T](
 
     Parameters
     ----------
-    items:
+    items : cabc.Sequence[T]
         Entries rendered beneath ``header``. An empty sequence renders no
         header and no bullets unless ``empty_message`` is supplied.
-    header:
+    header : str
         Section heading emitted before the formatted entries.
-    formatter:
+    formatter : cabc.Callable[[T], str]
         Callable mapping each item to its display string. Defaults to ``str``.
-    empty_message:
+    empty_message : str | None
         Rendered in place of the section when ``items`` is empty; omit it to
         skip empty sections entirely.
 
@@ -294,11 +328,6 @@ def append_section[T](
         Section heading emitted before the formatted entries.
     formatter:
         Callable mapping each item to its display string. Defaults to ``str``.
-
-    Returns
-    -------
-    None
-        The result is communicated by mutating ``lines`` in place.
 
     Examples
     --------

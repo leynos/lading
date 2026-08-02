@@ -227,7 +227,24 @@ def given_preflight_command_override(
     exit_code: str,
     stderr: str,
 ) -> None:
-    """Override an arbitrary pre-flight command with a custom result."""
+    """Override an arbitrary pre-flight command with a custom result.
+
+    Parameters
+    ----------
+    preflight_overrides : dict[tuple[str, ...], ResponseProvider]
+        Mapping of command tuples to stubbed responses, mutated in place.
+    command : str
+        Whitespace-separated command whose tokens key the override.
+    exit_code : str
+        Decimal exit code the stubbed command should return.
+    stderr : str
+        Standard-error text the stubbed command should emit.
+
+    Raises
+    ------
+    AssertionError
+        If ``command`` yields no tokens once split.
+    """
     if tokens := tuple(segment for segment in command.split() if segment):
         preflight_overrides[tokens] = _CommandResponse(
             exit_code=int(exit_code),
@@ -244,7 +261,22 @@ def given_valid_lading_workspace(
     cmd_mox: _ImportedCmdMox,
     monkeypatch: pytest.MonkeyPatch,
 ) -> Path:
-    """Create a configured workspace with a publish dependency chain."""
+    """Create a configured workspace with a publish dependency chain.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        Pytest-provided temporary directory used as the workspace root.
+    cmd_mox : CmdMox
+        The cmd-mox controller that stubs cargo metadata queries.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to install the stubbed metadata behaviour.
+
+    Returns
+    -------
+    Path
+        The workspace root directory.
+    """
     from lading import config as config_module
 
     config_path = tmp_path / config_module.CONFIG_FILENAME

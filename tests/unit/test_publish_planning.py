@@ -8,7 +8,7 @@ import typing as typ
 import pytest
 
 from lading.commands import publish, publish_plan
-from tests.unit.conftest import PlanningFixtures, _CrateSpec
+from tests.unit.conftest import PublishFixtures, _CrateSpec
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
@@ -53,7 +53,7 @@ def _make_dependency_chain(
 
 
 def _create_cycle(
-    fixtures: PlanningFixtures,
+    fixtures: PublishFixtures,
     *,
     name_a: str = "cycle-a",
     name_b: str = "cycle-b",
@@ -111,13 +111,13 @@ def _create_cycle(
     ],
 )
 def test_plan_publication_filtering(
-    planning_fixtures: PlanningFixtures,
+    publish_fixtures: PublishFixtures,
     crate_specs: list[tuple[str, bool]],
     exclude: list[str],
     expected: dict[str, tuple[str, ...]],
 ) -> None:
     """Planner splits crates into publishable and skipped groups."""
-    fx = planning_fixtures
+    fx = publish_fixtures
     root = fx.tmp_path.resolve()
     crates = [
         fx.make_crate(root, name, _CrateSpec(publish=publish_flag))
@@ -158,10 +158,10 @@ def test_plan_publication_empty_workspace(
 
 
 def test_plan_publication_empty_exclude_list(
-    planning_fixtures: PlanningFixtures,
+    publish_fixtures: PublishFixtures,
 ) -> None:
     """Configuration exclusions default to publishing all eligible crates."""
-    fx = planning_fixtures
+    fx = publish_fixtures
     root = fx.tmp_path.resolve()
     publishable = fx.make_crate(root, "alpha")
     manifest_skipped = fx.make_crate(root, "beta", _CrateSpec(publish=False))
@@ -187,12 +187,12 @@ def test_plan_publication_empty_exclude_list(
     ],
 )
 def test_plan_publication_records_missing_exclusions(
-    planning_fixtures: PlanningFixtures,
+    publish_fixtures: PublishFixtures,
     exclusions: tuple[str, ...],
     expected: tuple[str, ...],
 ) -> None:
     """Unknown entries in publish.exclude are reported in the plan."""
-    fx = planning_fixtures
+    fx = publish_fixtures
     root = fx.tmp_path.resolve()
     workspace = fx.make_workspace(root)
     configuration = fx.make_config(exclude=exclusions)
@@ -203,10 +203,10 @@ def test_plan_publication_records_missing_exclusions(
 
 
 def test_plan_publication_sorts_crates_by_name(
-    planning_fixtures: PlanningFixtures,
+    publish_fixtures: PublishFixtures,
 ) -> None:
     """Publishable and skipped crates appear in deterministic alphabetical order."""
-    fx = planning_fixtures
+    fx = publish_fixtures
     root = fx.tmp_path.resolve()
     publishable_second = fx.make_crate(root, "beta")
     publishable_first = fx.make_crate(root, "alpha")
@@ -233,10 +233,10 @@ def test_plan_publication_sorts_crates_by_name(
 
 
 def test_plan_publication_multiple_configuration_skips(
-    planning_fixtures: PlanningFixtures,
+    publish_fixtures: PublishFixtures,
 ) -> None:
     """All configuration exclusions appear in the skipped configuration list."""
-    fx = planning_fixtures
+    fx = publish_fixtures
     root = fx.tmp_path.resolve()
     gamma = fx.make_crate(root, "gamma")
     delta = fx.make_crate(root, "delta")
@@ -250,10 +250,10 @@ def test_plan_publication_multiple_configuration_skips(
 
 
 def test_plan_publication_topologically_orders_dependencies(
-    planning_fixtures: PlanningFixtures,
+    publish_fixtures: PublishFixtures,
 ) -> None:
     """Crates are sorted so that dependencies publish before their dependents."""
-    fx = planning_fixtures
+    fx = publish_fixtures
     root = fx.tmp_path.resolve()
     alpha, beta, gamma = _make_dependency_chain(
         root, make_crate=fx.make_crate, make_dependency=fx.make_dependency
@@ -270,12 +270,12 @@ def test_plan_publication_topologically_orders_dependencies(
 
 
 def test_plan_publication_ignores_dev_dependency_cycles(
-    planning_fixtures: PlanningFixtures,
+    publish_fixtures: PublishFixtures,
 ) -> None:
     """Dev-only dependency edges do not create publish-order cycles."""
     from lading.workspace import WorkspaceDependency
 
-    fx = planning_fixtures
+    fx = publish_fixtures
     root = fx.tmp_path.resolve()
     alpha = fx.make_crate(
         root,
@@ -305,20 +305,20 @@ def test_plan_publication_ignores_dev_dependency_cycles(
 
 
 def test_plan_publication_detects_dependency_cycles(
-    planning_fixtures: PlanningFixtures,
+    publish_fixtures: PublishFixtures,
 ) -> None:
     """A dependency cycle raises an explicit planning error."""
     alpha, beta = _create_cycle(
-        planning_fixtures,
+        publish_fixtures,
         name_a="alpha",
         name_b="beta",
     )
 
     with pytest.raises(publish_plan.PublishPlanError) as excinfo:
         _plan_with_crates(
-            planning_fixtures.tmp_path,
-            planning_fixtures.make_workspace,
-            planning_fixtures.make_config,
+            publish_fixtures.tmp_path,
+            publish_fixtures.make_workspace,
+            publish_fixtures.make_config,
             (alpha, beta),
         )
 
@@ -326,7 +326,7 @@ def test_plan_publication_detects_dependency_cycles(
 
 
 def test_publish_reexports_plan_error_for_public_callers(
-    planning_fixtures: PlanningFixtures,
+    publish_fixtures: PublishFixtures,
 ) -> None:
     """``publish.plan_publication`` failures are catchable via ``publish``.
 
@@ -340,16 +340,16 @@ def test_publish_reexports_plan_error_for_public_callers(
     )
 
     alpha, beta = _create_cycle(
-        planning_fixtures,
+        publish_fixtures,
         name_a="alpha",
         name_b="beta",
     )
 
     with pytest.raises(publish.PublishPlanError, match="dependency cycle"):
         _plan_with_crates(
-            planning_fixtures.tmp_path,
-            planning_fixtures.make_workspace,
-            planning_fixtures.make_config,
+            publish_fixtures.tmp_path,
+            publish_fixtures.make_workspace,
+            publish_fixtures.make_config,
             (alpha, beta),
         )
 
@@ -372,13 +372,13 @@ def test_publish_reexports_plan_error_for_public_callers(
     ],
 )
 def test_plan_publication_ignores_cycles_in_skipped_crates(
-    planning_fixtures: PlanningFixtures,
+    publish_fixtures: PublishFixtures,
     cycle_publish_flags: dict[str, bool],
     excludes: tuple[str, ...],
     scenario: str,
 ) -> None:
     """Cycles skipped via manifest or configuration do not block publishable crates."""
-    fx = planning_fixtures
+    fx = publish_fixtures
     root = fx.tmp_path.resolve()
     alpha = fx.make_crate(root, "alpha")
     cycle_a, cycle_b = _create_cycle(fx, **cycle_publish_flags)
@@ -395,10 +395,10 @@ def test_plan_publication_ignores_cycles_in_skipped_crates(
 
 
 def test_plan_publication_honours_configured_order(
-    planning_fixtures: PlanningFixtures,
+    publish_fixtures: PublishFixtures,
 ) -> None:
     """Explicit publish.order values override the automatic dependency sort."""
-    fx = planning_fixtures
+    fx = publish_fixtures
     alpha, beta, gamma = _make_dependency_chain(
         fx.tmp_path.resolve(),
         make_crate=fx.make_crate,
@@ -417,10 +417,10 @@ def test_plan_publication_honours_configured_order(
 
 
 def test_plan_publication_rejects_incomplete_configured_order(
-    planning_fixtures: PlanningFixtures,
+    publish_fixtures: PublishFixtures,
 ) -> None:
     """Missing crates in publish.order surface a descriptive validation error."""
-    fx = planning_fixtures
+    fx = publish_fixtures
     root = fx.tmp_path.resolve()
     alpha = fx.make_crate(root, "alpha")
     beta = fx.make_crate(root, "beta")
@@ -451,12 +451,12 @@ def test_plan_publication_rejects_incomplete_configured_order(
     ],
 )
 def test_plan_publication_order_validation_errors(
-    planning_fixtures: PlanningFixtures,
+    publish_fixtures: PublishFixtures,
     order: tuple[str, ...],
     expected_error: str,
 ) -> None:
     """Invalid publish.order configurations trigger informative errors."""
-    fx = planning_fixtures
+    fx = publish_fixtures
     alpha, _, _ = _make_dependency_chain(
         fx.tmp_path.resolve(),
         make_crate=fx.make_crate,

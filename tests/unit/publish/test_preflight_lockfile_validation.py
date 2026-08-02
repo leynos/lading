@@ -38,14 +38,36 @@ class _RecordingLockfileRepository:
     validated_manifests: list[Path] = dc.field(default_factory=list)
 
     def discover_tracked_lockfiles(self, workspace_root: Path) -> tuple[Path, ...]:
-        """Record the discovery call and return the configured lockfiles."""
+        """Record the discovery call and return the configured lockfiles.
+
+        Parameters
+        ----------
+        workspace_root : Path
+            Workspace root passed to the discovery call.
+
+        Returns
+        -------
+        tuple[Path, ...]
+            The configured tracked lockfiles.
+        """
         self.discovered_roots.append(workspace_root)
         return self.tracked
 
     def validate_lockfile_freshness(
         self, manifest_path: Path
     ) -> lockfile.LockfileFreshness:
-        """Record the validation call and return the configured freshness."""
+        """Record the validation call and return the configured freshness.
+
+        Parameters
+        ----------
+        manifest_path : Path
+            Manifest whose freshness is being validated.
+
+        Returns
+        -------
+        lockfile.LockfileFreshness
+            The configured freshness for ``manifest_path``.
+        """
         self.validated_manifests.append(manifest_path)
         if self.freshness is not None and manifest_path in self.freshness:
             return self.freshness[manifest_path]
@@ -60,13 +82,7 @@ _outcome = st.sampled_from(("fresh", "stale", "error"))
 def _repository_for_outcomes(
     tmp_path: Path, outcomes: list[str]
 ) -> tuple[_RecordingLockfileRepository, list[Path]]:
-    """Build a recording repository mapping each outcome to a tracked lockfile.
-
-    Each outcome at index ``i`` yields the lockfile ``tmp_path/pkgi/Cargo.lock``
-    and a ``freshness`` entry keyed on its adjacent ``Cargo.toml``: ``fresh``
-    passes, ``stale`` is flagged for repair, and ``error`` is an unexpected
-    cargo failure. Returns the repository and the ordered lockfile paths.
-    """
+    """Build a recording repository mapping each outcome to a tracked lockfile."""
     freshness_for = {
         "fresh": lockfile.LockfileFreshness(is_fresh=True),
         "stale": lockfile.LockfileFreshness(
@@ -87,12 +103,7 @@ def _repository_for_outcomes(
 
 
 def _stale_lockfiles_error_message(workspace_root: Path) -> str:
-    """Return the raised error for a root and nested stale lockfile pair.
-
-    Drives ``_validate_lockfile_freshness`` through a recording port double
-    whose tracked lockfiles are all stale, and returns the resulting
-    ``PublishPreflightError`` message for assertion or snapshotting.
-    """
+    """Return the ``PublishPreflightError`` message for an all-stale workspace."""
     root_lockfile = workspace_root / "Cargo.lock"
     nested_lockfile = workspace_root / "tests" / "ui_lints" / "Cargo.lock"
     repository = _RecordingLockfileRepository(

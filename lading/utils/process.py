@@ -48,7 +48,24 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def format_command(command: cabc.Sequence[str]) -> str:
-    """Return a shell-style representation of ``command`` for logging."""
+    """Return a shell-style representation of ``command`` for logging.
+
+    Parameters
+    ----------
+    command : Sequence[str]
+        Command and arguments to render.
+
+    Returns
+    -------
+    str
+        The shell-quoted command, or an empty string when ``command`` is
+        empty.
+
+    Examples
+    --------
+    >>> format_command(["cargo", "build", "--offline"])
+    'cargo build --offline'
+    """
     if not command:
         _LOGGER.warning(
             "format_command received an empty command sequence; this is likely a bug."

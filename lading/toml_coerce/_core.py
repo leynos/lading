@@ -20,7 +20,7 @@ type _ErrorType = type[LadingError]
 def _reject(
     value: object, field_name: str, expected: str, error: _ErrorType
 ) -> LadingError:
-    """Build ``error`` with the canonical coercion message shape."""
+    """Build the configured error with the canonical coercion message to raise."""
     # Callers raise the returned exception so each coercion helper terminates
     # explicitly on the failure path; keeping this primitive in its own module
     # preserves legibility for linters and type checkers.

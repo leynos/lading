@@ -61,11 +61,6 @@ def load_or_create_document(config_path: Path) -> TOMLDocument:
         Parsed TOML document when the file exists; otherwise a new empty
         document.
 
-    Raises
-    ------
-    TOMLKitError
-        If the existing file cannot be parsed as TOML.
-
     """
     if config_path.exists():
         return parse_toml(config_path.read_text(encoding="utf-8"))
@@ -153,11 +148,6 @@ def append_if_absent(target_array: Array, value: str) -> None:
     value : str
         Value to append when missing.
 
-    Returns
-    -------
-    None
-        The function mutates ``target_array`` in place.
-
     """
     if value not in target_array:
         target_array.append(value)
@@ -201,11 +191,6 @@ def load_workspace_manifest(workspace_root: Path) -> TOMLDocument:
     TOMLDocument
         Parsed workspace manifest document.
 
-    Raises
-    ------
-    AssertionError
-        If the workspace Cargo.toml does not exist.
-
     """
     return load_manifest(workspace_root / "Cargo.toml")
 
@@ -228,11 +213,6 @@ def load_crate_manifest(
     -------
     TOMLDocument
         Parsed crate manifest document.
-
-    Raises
-    ------
-    AssertionError
-        If the crate manifest does not exist at the expected path.
 
     """
     manifest_path = workspace_root / crates_dir / crate_name / "Cargo.toml"

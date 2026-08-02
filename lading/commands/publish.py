@@ -202,13 +202,7 @@ def _normalise_build_directory(
 def _copy_workspace_tree(
     workspace_root: Path, build_directory: Path, *, preserve_symlinks: bool
 ) -> Path:
-    """Copy ``workspace_root`` into ``build_directory`` and return the clone.
-
-    When ``preserve_symlinks`` is :data:`True`, the cloned tree keeps symbolic
-    links instead of dereferencing them. This avoids unexpectedly copying large
-    directories outside the workspace while still allowing callers to opt into
-    dereferencing if required.
-    """
+    """Copy ``workspace_root`` into ``build_directory`` and return the clone."""
     workspace_root = workspace_root.resolve(strict=True)
     staging_root = build_directory / workspace_root.name
     if staging_root.resolve(strict=False).is_relative_to(workspace_root):
@@ -226,7 +220,38 @@ def prepare_workspace(
     *,
     options: PublishOptions | None = None,
 ) -> PublishPreparation:
-    """Stage a workspace copy for publishing."""
+    """Stage a workspace copy for publishing.
+
+    Parameters
+    ----------
+    plan : PublishPlan
+        The publication plan describing the workspace root and the publishable
+        crates to be staged.
+    workspace : WorkspaceGraph
+        The resolved workspace graph being staged for publication.
+    options : PublishOptions | None, optional
+        Staging options controlling the build directory, symlink handling, and
+        automatic cleanup. When :data:`None`, default :class:`PublishOptions`
+        are used.
+
+    Returns
+    -------
+    PublishPreparation
+        The staging result, including the staged workspace root.
+
+    Raises
+    ------
+    PublishPreparationError
+        If the staging build directory or copied workspace path is unsafe or
+        invalid (for example nested within the workspace root); propagated
+        from :func:`_normalise_build_directory` and :func:`_copy_workspace_tree`.
+
+    Examples
+    --------
+    >>> preparation = prepare_workspace(plan, workspace)  # doctest: +SKIP
+    >>> preparation.staging_root  # doctest: +SKIP
+    PosixPath('/tmp/lading-publish-abcd1234/my-workspace')
+    """
     active_options = PublishOptions() if options is None else options
     build_directory = _normalise_build_directory(
         plan.workspace_root, active_options.build_directory
@@ -398,12 +423,7 @@ _CARGO_REGISTRY_ERROR_CODE = 101
 
 
 def _is_already_published_error(exit_code: int, stdout: str, stderr: str) -> bool:
-    """Return True when ``cargo publish`` failed because the version exists.
-
-    Cargo returns exit code 101 for registry errors including already-published
-    versions. This function checks both the exit code and output to minimise
-    false positives from unrelated failures.
-    """
+    """Return True when ``cargo publish`` failed because the version exists."""
     # Only consider exit code 101 (cargo registry error)
     if exit_code != _CARGO_REGISTRY_ERROR_CODE:
         return False
@@ -647,7 +667,51 @@ def run(
     *,
     options: PublishOptions | None = None,
 ) -> str:
-    """Run pre-flight checks, package crates, and publish from ``workspace_root``."""
+    """Run pre-flight checks, package crates, and publish from ``workspace_root``.
+
+    Parameters
+    ----------
+    workspace_root : Path
+        Filesystem path to the workspace whose crates are published.
+    configuration : LadingConfig | None, optional
+        Pre-loaded configuration to reuse. When :data:`None`, configuration is
+        taken from ``options`` or loaded from ``workspace_root``.
+    workspace : WorkspaceGraph | None, optional
+        Pre-loaded workspace graph to reuse. When :data:`None`, the graph is
+        taken from ``options`` or loaded from ``workspace_root``.
+    options : PublishOptions | None, optional
+        Runtime configuration for planning, staging, and publish behaviour.
+        When :data:`None`, default :class:`PublishOptions` are used.
+
+    Returns
+    -------
+    str
+        The formatted publication plan followed by the staging summary lines.
+
+    Raises
+    ------
+    PublishPreflightError
+        If ``options`` combines invalid flags (see
+        :func:`_validate_publication_options`) or a pre-flight check fails.
+    PublishPlanError
+        If a valid publication plan cannot be constructed.
+    PublishPreparationError
+        If staging the workspace copy fails, or if the staged manifest cannot
+        be patched according to ``publish.strip_patches`` (propagated from
+        :func:`_apply_strip_patch_strategy`).
+    PublishError
+        If a crate fails to publish. Packaging failures raise
+        :class:`PublishPreflightError` instead.
+
+    Examples
+    --------
+    >>> from lading.commands.publish import run
+    >>> summary = run(workspace_root)  # doctest: +SKIP
+    >>> summary.startswith("Publish plan for")  # doctest: +SKIP
+    True
+    >>> "Staged workspace at:" in summary  # doctest: +SKIP
+    True
+    """
     root_path = normalise_workspace_root(workspace_root)
     LOGGER.info("Starting publish workflow for workspace %s", root_path)
     effective_options = PublishOptions() if options is None else options

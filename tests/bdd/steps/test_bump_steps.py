@@ -18,6 +18,7 @@ if typ.TYPE_CHECKING:
     import pytest
     from cmd_mox import CmdMox
 
+    from .cli_run_types import CliRunResult
     from .test_common_steps import _run_cli  # noqa: F401
 
 
@@ -60,11 +61,6 @@ def given_workspace_has_nested_tracked_lockfile(
     workspace_directory : Path
         Temporary workspace containing the root and nested lockfiles.
 
-    Returns
-    -------
-    None
-        This step configures the workspace and command doubles in place.
-
     """
     from tests.helpers.workspace_helpers import install_cargo_stub
 
@@ -97,11 +93,25 @@ def when_invoke_lading_bump(
     version: str,
     workspace_directory: Path,
     repo_root: Path,
-) -> dict[str, typ.Any]:
-    """Execute the bump CLI via ``python -m`` and capture the result."""
-    from .test_common_steps import _run_cli
+) -> CliRunResult:
+    """Execute the bump CLI via ``python -m`` and capture the result.
 
-    return _run_cli(repo_root, workspace_directory, "bump", version)
+    Parameters
+    ----------
+    version : str
+        The version argument passed to the ``bump`` subcommand.
+    workspace_directory : Path
+        The workspace root supplied via ``--workspace-root``.
+    repo_root : Path
+        The repository root used as the subprocess working directory.
+
+    Returns
+    -------
+    CliRunResult
+        The captured CLI run details (return code, stdout, stderr, and the
+        resolved workspace path).
+    """
+    return _invoke_lading_bump(version, workspace_directory, repo_root)
 
 
 @when(
@@ -112,11 +122,25 @@ def when_invoke_lading_bump_dry_run(
     version: str,
     workspace_directory: Path,
     repo_root: Path,
-) -> dict[str, typ.Any]:
-    """Execute the bump CLI in dry-run mode via ``python -m``."""
-    from .test_common_steps import _run_cli
+) -> CliRunResult:
+    """Execute the bump CLI in dry-run mode via ``python -m``.
 
-    return _run_cli(repo_root, workspace_directory, "bump", version, "--dry-run")
+    Parameters
+    ----------
+    version : str
+        The version argument passed to the ``bump`` subcommand.
+    workspace_directory : Path
+        The workspace root supplied via ``--workspace-root``.
+    repo_root : Path
+        The repository root used as the subprocess working directory.
+
+    Returns
+    -------
+    CliRunResult
+        The captured CLI run details (return code, stdout, stderr, and the
+        resolved workspace path).
+    """
+    return _invoke_lading_bump(version, workspace_directory, repo_root, "--dry-run")
 
 
 @then(parsers.parse('the bump command reports manifest updates for "{version}"'))
@@ -224,7 +248,7 @@ def then_bump_refreshed_lockfiles(cli_run: dict[str, typ.Any]) -> None:
 
 @then("the bump command refreshed workspace and nested tracked lockfiles")
 def then_bump_refreshed_workspace_and_nested_lockfiles(
-    cli_run: dict[str, typ.Any],
+    cli_run: CliRunResult,
     cmd_mox: CmdMox,
     workspace_directory: Path,
 ) -> None:
@@ -232,17 +256,12 @@ def then_bump_refreshed_workspace_and_nested_lockfiles(
 
     Parameters
     ----------
-    cli_run : dict[str, Any]
+    cli_run : CliRunResult
         Captured result of the completed ``lading bump`` invocation.
     cmd_mox : CmdMox
         Command-double fixture whose journal records Cargo update calls.
     workspace_directory : Path
         Temporary workspace used to derive the expected manifest paths.
-
-    Returns
-    -------
-    None
-        This step only asserts the recorded command invocations.
 
     """
     assert cli_run["returncode"] == 0, (
@@ -364,3 +383,15 @@ def given_nested_lockfile_manifest(
     cmd_mox.stub("cargo::update").with_args(
         "--workspace", "--manifest-path", str(nested_manifest.resolve())
     ).returns(exit_code=0, stdout="cargo update --workspace\n", stderr="")
+
+
+def _invoke_lading_bump(
+    version: str,
+    workspace_directory: Path,
+    repo_root: Path,
+    *options: str,
+) -> CliRunResult:
+    """Run the bump CLI for ``version`` and capture the run result."""
+    from .test_common_steps import _run_cli
+
+    return _run_cli(repo_root, workspace_directory, "bump", version, *options)

@@ -151,11 +151,7 @@ def _rewrite_links_outside_code(
 
 
 def _load_source_text(source_readme: Path, _source_text: str | None) -> str:
-    """Read and return the workspace README text.
-
-    Raises ``ReadmeTranspositionError`` when the file is absent and no
-    pre-loaded text was supplied.
-    """
+    """Read and return the workspace README text."""
     if _source_text is not None:
         return _source_text
     if not source_readme.exists():
@@ -167,11 +163,7 @@ def _load_source_text(source_readme: Path, _source_text: str | None) -> str:
 
 
 def _resolve_crate_relative_path(workspace_root: Path, crate: WorkspaceCrate) -> Path:
-    """Return the crate path relative to the workspace root.
-
-    Raises ``ReadmeTranspositionError`` when the crate lies outside the
-    workspace.
-    """
+    """Return the crate path relative to the workspace root."""
     try:
         return crate.root_path.relative_to(workspace_root)
     except ValueError as exc:
@@ -189,11 +181,7 @@ def _write_or_skip_readme(
     dry_run: bool,
     crate_name: str,
 ) -> Path | None:
-    """Write the rewritten README, or skip when content is already current.
-
-    Returns the target path when a write occurred or would occur; otherwise
-    ``None``.
-    """
+    """Write the rewritten README, or skip when content is already current."""
     if (
         target_readme.exists()
         and target_readme.read_text(encoding="utf-8") == rewritten_text
@@ -238,9 +226,8 @@ def transpose_readme_to_crate(
     Raises
     ------
     ReadmeTranspositionError
-        Raised when the workspace README is required but missing, or when the
-        crate root is outside the workspace.
-
+        If the workspace README is unavailable or the crate lies outside
+        ``workspace_root``.
     """
     _log.debug("Transposing workspace README into crate %r", crate.name)
     source_readme = workspace_root / "README.md"

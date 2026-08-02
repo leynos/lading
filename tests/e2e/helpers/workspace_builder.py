@@ -29,7 +29,29 @@ def create_nontrivial_workspace(
     *,
     version: str = "0.1.0",
 ) -> NonTrivialWorkspace:
-    """Create a non-trivial Rust workspace rooted at ``workspace_root``."""
+    """Create a non-trivial Rust workspace rooted at ``workspace_root``.
+
+    Parameters
+    ----------
+    workspace_root : Path
+        Directory in which the workspace manifests and crates are written.
+    version : str, optional
+        Initial version applied to every manifest, by default ``"0.1.0"``.
+
+    Returns
+    -------
+    NonTrivialWorkspace
+        The workspace model describing the created crates and metadata.
+
+    Examples
+    --------
+    >>> import tempfile
+    >>> from pathlib import Path
+    >>> with tempfile.TemporaryDirectory() as tmp:  # doctest: +SKIP
+    ...     workspace = create_nontrivial_workspace(Path(tmp))
+    ...     workspace.crate_names
+    ('core', 'utils', 'app')
+    """
     crate_names = ("core", "utils", "app")
     crates_dir = workspace_root / "crates"
     crates_dir.mkdir(parents=True, exist_ok=True)
@@ -38,6 +60,24 @@ def create_nontrivial_workspace(
     _write_lading_config(workspace_root)
     _write_workspace_readme(workspace_root, crate_names, version=version)
 
+    manifests = _create_fixture_crates(workspace_root, version=version)
+
+    metadata_payload = _build_cargo_metadata_payload(
+        workspace_root,
+        version=version,
+        manifests=manifests,
+    )
+
+    return NonTrivialWorkspace(
+        root=workspace_root,
+        version=version,
+        crate_names=crate_names,
+        cargo_metadata_payload=metadata_payload,
+    )
+
+
+def _create_fixture_crates(workspace_root: Path, *, version: str) -> dict[str, Path]:
+    """Create the fixture crates and return their manifest paths."""
     core_manifest = _create_crate(
         workspace_root,
         "core",
@@ -73,23 +113,11 @@ def create_nontrivial_workspace(
             """
         ).strip(),
     )
-
-    metadata_payload = _build_cargo_metadata_payload(
-        workspace_root,
-        version=version,
-        manifests={
-            "core": core_manifest,
-            "utils": utils_manifest,
-            "app": app_manifest,
-        },
-    )
-
-    return NonTrivialWorkspace(
-        root=workspace_root,
-        version=version,
-        crate_names=crate_names,
-        cargo_metadata_payload=metadata_payload,
-    )
+    return {
+        "core": core_manifest,
+        "utils": utils_manifest,
+        "app": app_manifest,
+    }
 
 
 def _write_workspace_manifest(

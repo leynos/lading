@@ -26,6 +26,8 @@ if typ.TYPE_CHECKING:  # pragma: no cover
     import pytest
     from cmd_mox import CmdMox
 
+    from tests.e2e.helpers.e2e_steps_helpers import _CliRunResult
+
 
 def _validate_args_prefix(
     label: str,
@@ -40,7 +42,7 @@ def _validate_args_prefix(
 
 
 def _validate_target_dir(label: str, args: tuple[str, ...]) -> None:
-    """Validate that ``args`` contains ``--target-dir=...``."""
+    """Validate that ``args`` contains a ``--target-dir=...`` argument."""
     if not any(argument.startswith("--target-dir=") for argument in args):
         raise E2EExpectationError.target_dir_missing(label, args)
 
@@ -75,7 +77,42 @@ def given_nontrivial_workspace_in_git_repo(
     monkeypatch: pytest.MonkeyPatch,
     e2e_workspace_with_git: tuple[workspace_builder.NonTrivialWorkspace, Path],
 ) -> dict[str, typ.Any]:
-    """Create a non-trivial workspace fixture and stub cargo metadata."""
+    """Create a non-trivial workspace fixture and stub cargo metadata.
+
+    Parameters
+    ----------
+    version : str
+        Fixture version parsed from the scenario step; must be ``"0.1.0"``.
+    cmd_mox : CmdMox
+        Command mocker used to stub cargo and spy on git.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture used to set the cmd-mox stub environment variable.
+    e2e_workspace_with_git : tuple[workspace_builder.NonTrivialWorkspace, Path]
+        The built workspace paired with its Git repository root.
+
+    Returns
+    -------
+    dict[str, typ.Any]
+        State mapping with the built ``workspace`` and its ``git_repo`` path.
+
+    Raises
+    ------
+    E2EExpectationError
+        Constructed by
+        ``E2EExpectationError.unsupported_fixture_version(version)`` when the
+        fixture version is unsupported.
+
+    Examples
+    --------
+    Bound to the Gherkin ``given`` step and invoked by pytest-bdd; the
+    returned mapping seeds later steps as the ``e2e_state`` fixture::
+
+        >>> state = given_nontrivial_workspace_in_git_repo(  # doctest: +SKIP
+        ...     "0.1.0", cmd_mox, monkeypatch, e2e_workspace_with_git
+        ... )
+        >>> sorted(state)  # doctest: +SKIP
+        ['git_repo', 'workspace']
+    """
     if version != "0.1.0":
         raise E2EExpectationError.unsupported_fixture_version(version)
     e2e_workspace, e2e_git_repo = e2e_workspace_with_git
@@ -92,7 +129,31 @@ def given_cargo_commands_stubbed(
     cmd_mox: CmdMox,
     e2e_state: dict[str, typ.Any],
 ) -> dict[str, typ.Any]:
-    """Stub cargo pre-flight and publish loop commands; allow real git status."""
+    """Stub cargo pre-flight and publish loop commands; allow real git status.
+
+    Parameters
+    ----------
+    cmd_mox : CmdMox
+        Command mocker used to stub cargo commands and allow real git status.
+    e2e_state : dict[str, typ.Any]
+        Shared step state carrying the target ``workspace``.
+
+    Returns
+    -------
+    dict[str, typ.Any]
+        State mapping with the recorded ``records`` list and the ``workspace``.
+
+    Examples
+    --------
+    Bound to the Gherkin ``given`` step and invoked by pytest-bdd; the
+    returned mapping is exposed as the ``publish_spies`` fixture::
+
+        >>> state = given_cargo_commands_stubbed(  # doctest: +SKIP
+        ...     cmd_mox, e2e_state
+        ... )
+        >>> sorted(state)  # doctest: +SKIP
+        ['records', 'workspace']
+    """
     cmd_mox.spy("git").passthrough()
     invocation_records: list[tuple[str, tuple[str, ...], dict[str, str]]] = []
 
@@ -125,6 +186,16 @@ def given_cargo_commands_stubbed(
     }
 
 
+def _run_lading_in_e2e_workspace(
+    repo_root: Path,
+    e2e_state: dict[str, typ.Any],
+    *args: str,
+) -> _CliRunResult:
+    """Run the lading CLI against the E2E workspace and capture the result."""
+    workspace: workspace_builder.NonTrivialWorkspace = e2e_state["workspace"]
+    return run_cli(repo_root, workspace.root, *args)
+
+
 @when(
     parsers.parse('I run lading bump "{version}" in the E2E workspace'),
     target_fixture="cli_run",
@@ -133,10 +204,36 @@ def when_run_lading_bump(
     repo_root: Path,
     e2e_state: dict[str, typ.Any],
     version: str,
-) -> dict[str, typ.Any]:
-    """Invoke `lading bump` against the E2E workspace and capture output."""
-    workspace: workspace_builder.NonTrivialWorkspace = e2e_state["workspace"]
-    return run_cli(repo_root, workspace.root, "bump", version)
+) -> _CliRunResult:
+    """Invoke `lading bump` against the E2E workspace and capture output.
+
+    Parameters
+    ----------
+    repo_root : Path
+        Repository root from which the CLI module is executed.
+    e2e_state : dict[str, typ.Any]
+        Shared step state carrying the target ``workspace``.
+    version : str
+        Version string parsed from the scenario step.
+
+    Returns
+    -------
+    _CliRunResult
+        The captured CLI result mapping with the executed ``command``,
+        ``returncode``, ``stdout``, ``stderr``, and ``workspace_root``.
+
+    Examples
+    --------
+    Bound to the Gherkin ``when`` step and invoked by pytest-bdd; the
+    returned mapping is exposed as the ``cli_run`` fixture::
+
+        >>> result = when_run_lading_bump(  # doctest: +SKIP
+        ...     repo_root, e2e_state, "1.0.0"
+        ... )
+        >>> result["returncode"]  # doctest: +SKIP
+        0
+    """
+    return _run_lading_in_e2e_workspace(repo_root, e2e_state, "bump", version)
 
 
 @when("I commit the E2E workspace changes")
@@ -153,24 +250,72 @@ def when_commit_e2e_workspace_changes(e2e_state: dict[str, typ.Any]) -> None:
 def when_run_lading_publish(
     repo_root: Path,
     e2e_state: dict[str, typ.Any],
-) -> dict[str, typ.Any]:
-    """Invoke `lading publish` (dry-run default) with `--forbid-dirty`."""
-    workspace: workspace_builder.NonTrivialWorkspace = e2e_state["workspace"]
-    return run_cli(repo_root, workspace.root, "publish", "--forbid-dirty")
+) -> _CliRunResult:
+    """Invoke `lading publish` (dry-run default) with `--forbid-dirty`.
+
+    Parameters
+    ----------
+    repo_root : Path
+        Repository root from which the CLI module is executed.
+    e2e_state : dict[str, typ.Any]
+        Shared step state carrying the target ``workspace``.
+
+    Returns
+    -------
+    _CliRunResult
+        The captured CLI result mapping with the executed ``command``,
+        ``returncode``, ``stdout``, ``stderr``, and ``workspace_root``.
+
+    Examples
+    --------
+    Bound to the Gherkin ``when`` step and invoked by pytest-bdd; the
+    returned mapping is exposed as the ``cli_run`` fixture::
+
+        >>> result = when_run_lading_publish(repo_root, e2e_state)  # doctest: +SKIP
+        >>> result["returncode"]  # doctest: +SKIP
+        0
+    """
+    return _run_lading_in_e2e_workspace(
+        repo_root, e2e_state, "publish", "--forbid-dirty"
+    )
 
 
 @when("I run lading publish in the E2E workspace", target_fixture="cli_run")
 def when_run_lading_publish_allow_dirty(
     repo_root: Path,
     e2e_state: dict[str, typ.Any],
-) -> dict[str, typ.Any]:
-    """Invoke `lading publish` using the default allow-dirty behaviour."""
-    workspace: workspace_builder.NonTrivialWorkspace = e2e_state["workspace"]
-    return run_cli(repo_root, workspace.root, "publish")
+) -> _CliRunResult:
+    """Invoke `lading publish` using the default allow-dirty behaviour.
+
+    Parameters
+    ----------
+    repo_root : Path
+        Repository root from which the CLI module is executed.
+    e2e_state : dict[str, typ.Any]
+        Shared step state carrying the target ``workspace``.
+
+    Returns
+    -------
+    _CliRunResult
+        The captured CLI result mapping with the executed ``command``,
+        ``returncode``, ``stdout``, ``stderr``, and ``workspace_root``.
+
+    Examples
+    --------
+    Bound to the Gherkin ``when`` step and invoked by pytest-bdd; the
+    returned mapping is exposed as the ``cli_run`` fixture::
+
+        >>> result = when_run_lading_publish_allow_dirty(  # doctest: +SKIP
+        ...     repo_root, e2e_state
+        ... )
+        >>> result["returncode"]  # doctest: +SKIP
+        0
+    """
+    return _run_lading_in_e2e_workspace(repo_root, e2e_state, "publish")
 
 
 @then("the command succeeds")
-def then_command_succeeds(cli_run: dict[str, typ.Any]) -> None:
+def then_command_succeeds(cli_run: _CliRunResult) -> None:
     """Assert the CLI exited successfully."""
     assert cli_run["returncode"] == 0, cli_run["stderr"]
 
@@ -237,7 +382,22 @@ def then_cargo_preflight_ran(publish_spies: dict[str, typ.Any]) -> None:
 
 @then(parsers.parse('the publish order is "{expected}"'))
 def then_publish_order(publish_spies: dict[str, typ.Any], expected: str) -> None:
-    """Assert cargo package calls occur in the expected crate order."""
+    """Assert cargo package calls occur in the expected crate order.
+
+    Parameters
+    ----------
+    publish_spies : dict[str, typ.Any]
+        Recorded publish invocation state produced by the stub handlers.
+    expected : str
+        Comma-separated crate names parsed from the scenario step.
+
+    Examples
+    --------
+    Bound to the Gherkin ``then`` step and invoked by pytest-bdd against the
+    recorded ``publish_spies`` state::
+
+        >>> then_publish_order(publish_spies, "core, utils, app")  # doctest: +SKIP
+    """
     expected_names = [name.strip() for name in expected.split(",") if name.strip()]
     package_calls = filter_records(publish_spies, "cargo::package")
     seen = []
@@ -337,7 +497,7 @@ def given_workspace_rebuilds_app_lockfile(
 
 
 @then("the CLI output lists the regenerated lockfiles")
-def then_cli_lists_regenerated_lockfiles(cli_run: dict[str, typ.Any]) -> None:
+def then_cli_lists_regenerated_lockfiles(cli_run: _CliRunResult) -> None:
     """Assert the bump output reports the root and nested lockfiles."""
     stdout_lines = [line.strip() for line in cli_run["stdout"].splitlines()]
     assert "- Cargo.lock (lockfile)" in stdout_lines

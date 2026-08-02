@@ -135,12 +135,7 @@ def _resolve_patch_tables(
 def _validate_and_load_manifest(
     staging_root: Path, strategy: StripPatchesSetting
 ) -> _ManifestValidation:
-    """Load and validate the manifest for patch stripping.
-
-    Returns the document and patch tables when applicable, or None if
-    stripping should be skipped.
-
-    """
+    """Load and validate the manifest for patch stripping."""
     if strategy is False:
         return None
     manifest_path = staging_root / "Cargo.toml"

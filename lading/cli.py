@@ -112,17 +112,7 @@ def _resolve_allow_unpublished_workspace_deps(
     live: bool,
     allow_unpublished_workspace_deps: bool | None,
 ) -> bool:
-    """Resolve the tri-state ``--allow-unpublished-workspace-deps`` flag.
-
-    An explicit flag value is honoured verbatim. When the flag is omitted the
-    default depends on the publish mode: ``False`` for live publishes and
-    ``True`` for dry runs, so unpublished workspace members do not abort a
-    rehearsal.
-
-    Logging side effects: applying the dry-run default emits an INFO record so
-    operators can see the decision, and every call emits a DEBUG record with the
-    raw input, mode, resolved value, and the reason it was chosen.
-    """
+    """Resolve the tri-state ``--allow-unpublished-workspace-deps`` flag."""
     if allow_unpublished_workspace_deps is not None:
         resolved_value = allow_unpublished_workspace_deps
         reason = "explicit flag"
@@ -151,13 +141,7 @@ def _resolve_allow_unpublished_workspace_deps(
 def _extract_workspace_override(
     tokens: cabc.Sequence[str],
 ) -> tuple[str | None, list[str]]:
-    """Split ``--workspace-root`` from CLI tokens.
-
-    The flag can appear in either ``--workspace-root <path>`` or
-    ``--workspace-root=<path>`` form. The last occurrence wins, matching
-    common CLI conventions. The returned token list can be passed directly
-    to :func:`cyclopts.App.__call__`.
-    """
+    """Split ``--workspace-root`` from CLI tokens."""
     workspace: str | None = None
     remainder: list[str] = []
     index = 0
@@ -250,7 +234,25 @@ def _dispatch_and_print(tokens: cabc.Sequence[str]) -> int:
 
 
 def main(argv: cabc.Sequence[str] | None = None) -> int:
-    """Entry point for ``python -m lading.cli``."""
+    """Entry point for ``python -m lading.cli``.
+
+    Parameters
+    ----------
+    argv : cabc.Sequence[str] | None
+        Command-line arguments to parse; defaults to :data:`sys.argv`
+        without the program name when :data:`None`.
+
+    Returns
+    -------
+    int
+        The process exit code.
+
+    Examples
+    --------
+    >>> from lading.cli import main
+    >>> main(["bump", "1.2.3", "--dry-run"])  # doctest: +SKIP
+    0
+    """
     try:
         if argv is None:
             argv = sys.argv[1:]
@@ -324,7 +326,33 @@ def bump(
     dry_run: DryRunFlag = False,
     rebuild_lockfiles: RebuildLockfilesFlag | None = None,
 ) -> str:
-    """Update workspace manifests to ``version``."""
+    """Update workspace manifests to ``version``.
+
+    Parameters
+    ----------
+    version : VersionArgument
+        Target semantic version to write across workspace manifests.
+    workspace_root : WorkspaceRootOption | None
+        Optional path to the workspace root; resolved to the current
+        directory when :data:`None`.
+    dry_run : DryRunFlag
+        When ``True``, preview manifest changes without writing files.
+    rebuild_lockfiles : RebuildLockfilesFlag | None
+        Tri-state flag forwarded unresolved to the bump command, which owns
+        defaulting an unset value against the configuration.
+
+    Returns
+    -------
+    str
+        The rendered summary of the bump operation.
+
+    Examples
+    --------
+    >>> from lading.cli import bump
+    >>> summary = bump("1.2.3", dry_run=True)  # doctest: +SKIP
+    >>> "Dry run; would update version to 1.2.3 in" in summary  # doctest: +SKIP
+    True
+    """
     resolved = normalise_workspace_root(workspace_root)
     return _run_with_context(
         resolved,
@@ -360,6 +388,37 @@ def publish(
     The command performs pre-flight validation, stages the workspace, runs
     ``cargo package`` for each publishable crate, and then executes ``cargo
     publish`` (dry-run by default, live when ``--live`` is supplied).
+
+    Parameters
+    ----------
+    workspace_root : WorkspaceRootOption | None
+        Optional path to the workspace root; resolved to the current
+        directory when :data:`None`.
+    forbid_dirty : ForbidDirtyFlag
+        When ``True``, require a clean working tree before pre-flight checks.
+    live : LiveFlag
+        When ``True``, run ``cargo publish`` without ``--dry-run``.
+    allow_unpublished_workspace_deps : AllowUnpublishedWorkspaceDepsFlag
+        Tri-state override for unpublished sibling workspace dependencies;
+        resolved against the publish mode when omitted.
+
+    Returns
+    -------
+    str
+        The rendered summary of the publish operation.
+
+    Examples
+    --------
+    The rendered summary is a formatted publication plan followed by a
+    blank line and staging-summary lines.
+
+    >>> from lading.cli import publish
+    >>> summary = publish(live=False)  # doctest: +SKIP
+    >>> "Staged workspace at:" in summary  # doctest: +SKIP
+    True
+    >>> readmes = "Workspace READMEs are handled by lading bump."
+    >>> readmes in summary  # doctest: +SKIP
+    True
     """
     resolved = normalise_workspace_root(workspace_root)
     return _run_with_context(
