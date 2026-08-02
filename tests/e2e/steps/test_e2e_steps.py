@@ -26,6 +26,8 @@ if typ.TYPE_CHECKING:  # pragma: no cover
     import pytest
     from cmd_mox import CmdMox
 
+    from tests.e2e.helpers.e2e_steps_helpers import _CliRunResult
+
 
 def _validate_args_prefix(
     label: str,
@@ -188,7 +190,7 @@ def _run_lading_in_e2e_workspace(
     repo_root: Path,
     e2e_state: dict[str, typ.Any],
     *args: str,
-) -> dict[str, typ.Any]:
+) -> _CliRunResult:
     """Run the lading CLI against the E2E workspace and capture the result."""
     workspace: workspace_builder.NonTrivialWorkspace = e2e_state["workspace"]
     return run_cli(repo_root, workspace.root, *args)
@@ -202,7 +204,7 @@ def when_run_lading_bump(
     repo_root: Path,
     e2e_state: dict[str, typ.Any],
     version: str,
-) -> dict[str, typ.Any]:
+) -> _CliRunResult:
     """Invoke `lading bump` against the E2E workspace and capture output.
 
     Parameters
@@ -216,7 +218,7 @@ def when_run_lading_bump(
 
     Returns
     -------
-    dict[str, typ.Any]
+    _CliRunResult
         The captured CLI result mapping with the executed ``command``,
         ``returncode``, ``stdout``, ``stderr``, and ``workspace_root``.
 
@@ -248,7 +250,7 @@ def when_commit_e2e_workspace_changes(e2e_state: dict[str, typ.Any]) -> None:
 def when_run_lading_publish(
     repo_root: Path,
     e2e_state: dict[str, typ.Any],
-) -> dict[str, typ.Any]:
+) -> _CliRunResult:
     """Invoke `lading publish` (dry-run default) with `--forbid-dirty`.
 
     Parameters
@@ -260,7 +262,7 @@ def when_run_lading_publish(
 
     Returns
     -------
-    dict[str, typ.Any]
+    _CliRunResult
         The captured CLI result mapping with the executed ``command``,
         ``returncode``, ``stdout``, ``stderr``, and ``workspace_root``.
 
@@ -282,7 +284,7 @@ def when_run_lading_publish(
 def when_run_lading_publish_allow_dirty(
     repo_root: Path,
     e2e_state: dict[str, typ.Any],
-) -> dict[str, typ.Any]:
+) -> _CliRunResult:
     """Invoke `lading publish` using the default allow-dirty behaviour.
 
     Parameters
@@ -294,7 +296,7 @@ def when_run_lading_publish_allow_dirty(
 
     Returns
     -------
-    dict[str, typ.Any]
+    _CliRunResult
         The captured CLI result mapping with the executed ``command``,
         ``returncode``, ``stdout``, ``stderr``, and ``workspace_root``.
 
@@ -313,7 +315,7 @@ def when_run_lading_publish_allow_dirty(
 
 
 @then("the command succeeds")
-def then_command_succeeds(cli_run: dict[str, typ.Any]) -> None:
+def then_command_succeeds(cli_run: _CliRunResult) -> None:
     """Assert the CLI exited successfully."""
     assert cli_run["returncode"] == 0, cli_run["stderr"]
 
@@ -495,7 +497,7 @@ def given_workspace_rebuilds_app_lockfile(
 
 
 @then("the CLI output lists the regenerated lockfiles")
-def then_cli_lists_regenerated_lockfiles(cli_run: dict[str, typ.Any]) -> None:
+def then_cli_lists_regenerated_lockfiles(cli_run: _CliRunResult) -> None:
     """Assert the bump output reports the root and nested lockfiles."""
     stdout_lines = [line.strip() for line in cli_run["stdout"].splitlines()]
     assert "- Cargo.lock (lockfile)" in stdout_lines

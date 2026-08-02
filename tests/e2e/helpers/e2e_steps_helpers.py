@@ -23,6 +23,16 @@ class _CmdMoxInvocation(typ.Protocol):
     env: cabc.Mapping[str, str]
 
 
+class _CliRunResult(typ.TypedDict):
+    """Captured result of an end-to-end ``lading`` CLI invocation."""
+
+    command: list[str]
+    returncode: int
+    stdout: str
+    stderr: str
+    workspace_root: Path
+
+
 class E2EExpectationError(AssertionError):
     """Raised when an end-to-end test expectation is violated."""
 
@@ -150,7 +160,7 @@ class E2EExpectationError(AssertionError):
         return cls("publish output did not include staging root")
 
 
-def run_cli(repo_root: Path, workspace_root: Path, *args: str) -> dict[str, typ.Any]:
+def run_cli(repo_root: Path, workspace_root: Path, *args: str) -> _CliRunResult:
     """Execute the lading CLI module and capture the result.
 
     Parameters
@@ -164,7 +174,7 @@ def run_cli(repo_root: Path, workspace_root: Path, *args: str) -> dict[str, typ.
 
     Returns
     -------
-    dict[str, typ.Any]
+    _CliRunResult
         The command line, return code, captured stdout and stderr, and the
         workspace root.
 
