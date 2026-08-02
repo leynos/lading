@@ -96,7 +96,7 @@ class DocumentationConfig:
         DocumentationConfig(globs=('docs/*.md',))
         >>> DocumentationConfig.from_mapping(None)
         DocumentationConfig(globs=())
-        """  # noqa: DOC502 -- propagated from the shared mapping validators
+        """  # ruff: ignore[docstring-extraneous-exception]  # propagated from the shared mapping validators
         if mapping is None:
             return cls()
         _validate_mapping_keys(
@@ -143,7 +143,7 @@ class BumpConfig:
         ('crate-a',)
         >>> BumpConfig.from_mapping(None).rebuild_lockfiles
         True
-        """  # noqa: DOC502 -- propagated from the shared mapping validators
+        """  # ruff: ignore[docstring-extraneous-exception]  # propagated from the shared mapping validators
         if mapping is None:
             return cls()
         _validate_mapping_keys(mapping, set(BUMP_TOML_KEYS), "bump")
@@ -198,7 +198,7 @@ class PublishConfig:
         ('a', 'b')
         >>> PublishConfig.from_mapping(None).strip_patches
         'per-crate'
-        """  # noqa: DOC502 -- propagated from the shared mapping validators
+        """  # ruff: ignore[docstring-extraneous-exception]  # propagated from the shared mapping validators
         if mapping is None:
             return cls()
         _validate_mapping_keys(mapping, set(PUBLISH_TOML_KEYS), "publish")
@@ -257,7 +257,7 @@ class PreflightConfig:
         True
         >>> PreflightConfig.from_mapping(None).stderr_tail_lines
         40
-        """  # noqa: DOC502 -- propagated from the shared mapping validators
+        """  # ruff: ignore[docstring-extraneous-exception]  # propagated from the shared mapping validators
         if mapping is None:
             return cls()
         _validate_mapping_keys(mapping, set(PREFLIGHT_TOML_KEYS), "preflight")
@@ -326,7 +326,7 @@ class LadingConfig:
         >>> config = LadingConfig.from_mapping({"bump": {"exclude": ["crate-a"]}})
         >>> config.bump.exclude
         ('crate-a',)
-        """  # noqa: DOC502 -- propagated from the shared mapping validators
+        """  # ruff: ignore[docstring-extraneous-exception]  # propagated from the shared mapping validators
         _validate_mapping_keys(
             mapping, set(CONFIG_ROOT_TOML_KEYS), "configuration section"
         )
@@ -456,7 +456,7 @@ def load_configuration(workspace_root: Path) -> LadingConfig:
     >>> from pathlib import Path
     >>> load_configuration(Path("workspace"))  # doctest: +SKIP
     LadingConfig(...)
-    """  # noqa: DOC502 -- propagated from load_from_loader, not raised here
+    """  # ruff: ignore[docstring-extraneous-exception]  # propagated from load_from_loader, not raised here
     return load_from_loader(build_loader(workspace_root))
 
 

@@ -73,7 +73,7 @@ def load_workspace(
     >>> graph = load_workspace()  # doctest: +SKIP
     >>> graph.crates  # doctest: +SKIP
     (...)
-    """  # noqa: DOC502 -- propagated from load_cargo_metadata/build_workspace_graph
+    """  # ruff: ignore[docstring-extraneous-exception]  # propagated from load_cargo_metadata/build_workspace_graph
     from lading.workspace.metadata import load_cargo_metadata
 
     metadata = load_cargo_metadata(workspace_root)
@@ -373,14 +373,13 @@ def _normalize_manifest_path(value: object, field_name: str) -> Path:
 
 def _coerce_publish_setting(value: object, package_id: str) -> bool:
     """Return whether publishing is allowed: ``false`` or an empty list disable it."""
-    if value is None:
-        return True
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, cabc.Sequence) and not isinstance(
-        value, str | bytes | bytearray
-    ):
-        return _is_non_empty_sequence(value)
+    match value:
+        case None:
+            return True
+        case bool():
+            return value
+        case cabc.Sequence() if not isinstance(value, str | bytes | bytearray):
+            return _is_non_empty_sequence(value)
     message = (
         f"publish setting for package {package_id!r} must be false, a list, or null"
     )
