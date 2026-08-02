@@ -345,8 +345,8 @@ Cargo lockfile regeneration failed for 2 manifest(s). Manifests already carry th
   cargo update --workspace --manifest-path crates/b/Cargo.toml
 ```
 
-When only the workspace-root lockfile is regenerated, its lone failure surfaces
-the plain Cargo error instead. To recover, fix the underlying Cargo error and
+When one manifest was attempted, its lone failure surfaces the plain Cargo
+error instead. To recover, fix the underlying Cargo error and
 rerun `lading bump`, run the printed repair command for each listed manifest,
 or use `--no-rebuild-lockfiles` and regenerate the lockfiles manually before
 committing the bump.

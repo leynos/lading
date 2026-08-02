@@ -239,9 +239,9 @@ collections. It loops over every manifest, logging the start and calling
 `Cargo.lock` in `lockfiles`, and on `LockfileRegenerationError` it logs the
 exception and appends the manifest and error to `failures`. After the loop, if
 there were no failures it logs overall success and returns the regenerated
-lockfiles; otherwise it raises — when only the workspace-root lockfile was
-regenerated it re-raises the original cargo error unchanged, and when several
-lockfiles were regenerated it selects the first failure's cause, builds an
+lockfiles; otherwise it raises — when one manifest was attempted it re-raises
+the original cargo error unchanged, and when more than one manifest was
+attempted it selects the first failure's cause, builds an
 aggregated failure message, and raises `LockfileRegenerationError` chained from
 that cause.
 
@@ -273,9 +273,9 @@ _Figure 1: Control flow of `regenerate_lockfiles` — every manifest is
 attempted, and per-manifest failures are collected and reported together after
 the loop._
 
-The aggregate branch shown applies when several lockfiles are regenerated; when
-only the workspace-root lockfile is processed, its lone failure is re-raised as
-the original cargo error rather than wrapped in the aggregate message.
+The aggregate branch shown applies when more than one manifest was attempted;
+when one manifest was attempted, its lone failure is re-raised as the original
+cargo error rather than wrapped in the aggregate message.
 
 `BumpOptions` carries the dependency-injection points used by
 `lading.commands.bump.run`. Lockfile operations are reached through the
