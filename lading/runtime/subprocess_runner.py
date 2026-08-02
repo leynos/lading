@@ -57,7 +57,7 @@ def subprocess_runner(
     command: cabc.Sequence[str],
     *,
     cwd: Path | None = None,
-    env: cabc.Mapping[str, str] | None = None,
+    env: cabc.Mapping[str, object] | None = None,
     echo_stdout: bool = True,
 ) -> tuple[int, str, str]:
     r"""Execute ``command`` in a subprocess.
@@ -68,8 +68,9 @@ def subprocess_runner(
         Program and arguments to execute.
     cwd : Path | None
         Optional working directory for the subprocess.
-    env : cabc.Mapping[str, str] | None
-        Optional environment mapping for the subprocess.
+    env : cabc.Mapping[str, object] | None
+        Optional environment mapping for the subprocess. Non-string values
+        (for example ``int`` or ``Path``) are converted with ``str()``.
     echo_stdout : bool
         Whether stdout should be mirrored while being captured.
 
