@@ -372,22 +372,7 @@ def _normalise_manifest_path(value: object, field_name: str) -> Path:
 
 
 def _coerce_publish_setting(value: object, package_id: str) -> bool:
-    """Return whether ``package_id`` should be considered publishable.
-
-    ``None`` and non-empty registry lists mean publishable; ``false`` or an
-    empty list means unpublishable; any other value is invalid.
-
-    Returns
-    -------
-    bool
-        ``True`` when publishing is unrestricted or the registry list is
-        non-empty; ``False`` when publishing is disabled.
-
-    Raises
-    ------
-    WorkspaceModelError
-        If ``value`` is not ``false``, a list, or ``null``.
-    """
+    """Return whether publishing is allowed: ``false`` or an empty list disable it."""
     if value is None:
         return True
     if isinstance(value, bool):

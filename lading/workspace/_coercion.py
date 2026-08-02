@@ -49,17 +49,7 @@ def _expect_sequence(
     *,
     allow_none: bool = False,
 ) -> cabc.Sequence[object] | None:
-    """Bind :func:`toml_coerce.expect_sequence` to ``WorkspaceModelError``.
-
-    A typed wrapper (rather than ``functools.partial``) preserves the
-    overloads that narrow the return type when ``allow_none`` is false.
-
-    Returns
-    -------
-    cabc.Sequence[object] | None
-        The coerced sequence, or ``None`` when ``allow_none`` is true and the
-        value is ``None``.
-    """
+    """Bind :func:`toml_coerce.expect_sequence` to ``WorkspaceModelError``."""
     if allow_none:
         return toml_coerce.expect_sequence(
             value, field_name, error=WorkspaceModelError, allow_none=True
