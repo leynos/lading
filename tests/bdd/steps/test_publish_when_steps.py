@@ -17,13 +17,15 @@ from .test_publish_infrastructure import (
 if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
     from pathlib import Path
 
+    from .cli_run_types import CliRunResult
+
 
 @when("I invoke lading publish with that workspace", target_fixture="cli_run")
 def when_invoke_lading_publish(
     workspace_directory: Path,
     repo_root: Path,
     preflight_test_context: PreflightTestContext,
-) -> dict[str, typ.Any]:
+) -> CliRunResult:
     """Run the publish CLI against the staged workspace and capture the result."""
     stub_config = preflight_test_context.create_stub_config()
     return _invoke_publish_with_options(repo_root, workspace_directory, stub_config)
@@ -35,7 +37,7 @@ def when_run_lading_publish_command(
     repo_root: Path,
     preflight_test_context: PreflightTestContext,
     command: str,
-) -> dict[str, typ.Any]:
+) -> CliRunResult:
     """Execute the quoted publish command through the CLI test harness.
 
     Parameters
@@ -51,7 +53,7 @@ def when_run_lading_publish_command(
 
     Returns
     -------
-    dict[str, typ.Any]
+    CliRunResult
         The captured CLI run result.
 
     Raises
@@ -84,7 +86,7 @@ def when_invoke_lading_publish_forbid_dirty(
     workspace_directory: Path,
     repo_root: Path,
     preflight_test_context: PreflightTestContext,
-) -> dict[str, typ.Any]:
+) -> CliRunResult:
     """Execute the publish CLI with ``--forbid-dirty`` enabled.
 
     Parameters
@@ -98,7 +100,7 @@ def when_invoke_lading_publish_forbid_dirty(
 
     Returns
     -------
-    dict[str, typ.Any]
+    CliRunResult
         The captured CLI run result.
     """
     stub_config = preflight_test_context.create_stub_config()
@@ -118,7 +120,7 @@ def when_invoke_lading_publish_live(
     workspace_directory: Path,
     repo_root: Path,
     preflight_test_context: PreflightTestContext,
-) -> dict[str, typ.Any]:
+) -> CliRunResult:
     """Execute the publish CLI with live publishing enabled.
 
     Parameters
@@ -132,7 +134,7 @@ def when_invoke_lading_publish_live(
 
     Returns
     -------
-    dict[str, typ.Any]
+    CliRunResult
         The captured CLI run result.
     """
     if not any(

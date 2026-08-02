@@ -22,6 +22,7 @@ if typ.TYPE_CHECKING:
 
     from tomlkit.toml_document import TOMLDocument  # pragma: no cover
 
+    from .cli_run_types import CliRunResult
     from .test_common_steps import _run_cli  # noqa: F401
 else:  # pragma: no cover - runtime fallback for typing helpers
     Path = typ.Any  # type: ignore[assignment]
@@ -404,7 +405,7 @@ def _invoke_publish_with_options(
     workspace_directory: Path,
     stub_config: _PreflightStubConfig,
     *extra_args: str,
-) -> dict[str, typ.Any]:
+) -> CliRunResult:
     """Register preflight doubles, enable stubs, and run the CLI."""
     from .test_common_steps import _run_cli
 

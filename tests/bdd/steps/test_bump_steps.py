@@ -18,6 +18,7 @@ if typ.TYPE_CHECKING:
     import pytest
     from cmd_mox import CmdMox
 
+    from .cli_run_types import CliRunResult
     from .test_common_steps import _run_cli  # noqa: F401
 
 
@@ -92,7 +93,7 @@ def when_invoke_lading_bump(
     version: str,
     workspace_directory: Path,
     repo_root: Path,
-) -> _BumpCliRun:
+) -> CliRunResult:
     """Execute the bump CLI via ``python -m`` and capture the result.
 
     Parameters
@@ -106,7 +107,7 @@ def when_invoke_lading_bump(
 
     Returns
     -------
-    _BumpCliRun
+    CliRunResult
         The captured CLI run details (return code, stdout, stderr, and the
         resolved workspace path).
     """
@@ -121,7 +122,7 @@ def when_invoke_lading_bump_dry_run(
     version: str,
     workspace_directory: Path,
     repo_root: Path,
-) -> _BumpCliRun:
+) -> CliRunResult:
     """Execute the bump CLI in dry-run mode via ``python -m``.
 
     Parameters
@@ -135,7 +136,7 @@ def when_invoke_lading_bump_dry_run(
 
     Returns
     -------
-    _BumpCliRun
+    CliRunResult
         The captured CLI run details (return code, stdout, stderr, and the
         resolved workspace path).
     """
@@ -247,7 +248,7 @@ def then_bump_refreshed_lockfiles(cli_run: dict[str, typ.Any]) -> None:
 
 @then("the bump command refreshed workspace and nested tracked lockfiles")
 def then_bump_refreshed_workspace_and_nested_lockfiles(
-    cli_run: _BumpCliRun,
+    cli_run: CliRunResult,
     cmd_mox: CmdMox,
     workspace_directory: Path,
 ) -> None:
@@ -255,7 +256,7 @@ def then_bump_refreshed_workspace_and_nested_lockfiles(
 
     Parameters
     ----------
-    cli_run : _BumpCliRun
+    cli_run : CliRunResult
         Captured result of the completed ``lading bump`` invocation.
     cmd_mox : CmdMox
         Command-double fixture whose journal records Cargo update calls.
@@ -389,20 +390,8 @@ def _invoke_lading_bump(
     workspace_directory: Path,
     repo_root: Path,
     *options: str,
-) -> _BumpCliRun:
+) -> CliRunResult:
     """Run the bump CLI for ``version`` and capture the run result."""
     from .test_common_steps import _run_cli
 
-    return typ.cast(
-        "_BumpCliRun",
-        _run_cli(repo_root, workspace_directory, "bump", version, *options),
-    )
-
-
-class _BumpCliRun(typ.TypedDict):
-    """Captured result of a bump CLI invocation."""
-
-    returncode: int
-    stdout: str
-    stderr: str
-    workspace: Path
+    return _run_cli(repo_root, workspace_directory, "bump", version, *options)

@@ -11,10 +11,11 @@ from lading.testing import toml_utils
 if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
     from tomlkit.toml_document import TOMLDocument
 
+    from .cli_run_types import CliRunResult
     from .test_publish_infrastructure import _PreflightInvocationRecorder
 
 
-def _assert_cli_run_succeeded(cli_run: dict[str, typ.Any]) -> None:
+def _assert_cli_run_succeeded(cli_run: CliRunResult) -> None:
     """Assert the CLI subprocess exited cleanly, surfacing its output on failure."""
     returncode = cli_run["returncode"]
     if returncode == 0:
@@ -27,7 +28,7 @@ def _assert_cli_run_succeeded(cli_run: dict[str, typ.Any]) -> None:
     raise AssertionError(message)
 
 
-def _publish_plan_lines(cli_run: dict[str, typ.Any]) -> list[str]:
+def _publish_plan_lines(cli_run: CliRunResult) -> list[str]:
     """Return trimmed publish plan output lines for ``cli_run``."""
     return [line.strip() for line in cli_run["stdout"].splitlines() if line.strip()]
 
@@ -46,7 +47,7 @@ def _extract_staging_root_from_plan(lines: list[str]) -> Path:
     return Path(root_str)
 
 
-def _load_staged_manifest(cli_run: dict[str, typ.Any]) -> TOMLDocument:
+def _load_staged_manifest(cli_run: CliRunResult) -> TOMLDocument:
     """Return the staged workspace manifest for ``cli_run``."""
     lines = _publish_plan_lines(cli_run)
     staging_root = _extract_staging_root_from_plan(lines)

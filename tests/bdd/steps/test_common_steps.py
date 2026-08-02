@@ -13,6 +13,9 @@ from tomlkit.items import InlineTable, Item, Table
 
 from lading.testing import toml_utils
 
+if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
+    from .cli_run_types import CliRunResult
+
 _FEATURES_DIR = Path(__file__).resolve().parent.parent / "features"
 
 scenarios(str(_FEATURES_DIR / "cli.feature"))
@@ -22,7 +25,7 @@ def _run_cli(
     repo_root: Path,
     workspace_directory: Path,
     *command_args: str,
-) -> dict[str, typ.Any]:
+) -> CliRunResult:
     command = [
         sys.executable,
         "-m",
