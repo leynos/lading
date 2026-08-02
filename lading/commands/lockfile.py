@@ -119,6 +119,8 @@ def _lockfiles_with_manifests(
         if manifest_exists(lockfile_path.parent / "Cargo.toml"):
             lockfiles.append(lockfile_path)
     return tuple(lockfiles)
+
+
 def discover_tracked_lockfiles(
     workspace_root: Path,
     runner: CommandRunner,
