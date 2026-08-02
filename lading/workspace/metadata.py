@@ -68,38 +68,6 @@ class CargoMetadataParseError(CargoMetadataError):
         """Store the underlying parse failure description."""
         super().__init__(detail)
 
-    @classmethod
-    def invalid_json(cls) -> CargoMetadataParseError:
-        """Return an error indicating malformed JSON output.
-
-        Returns
-        -------
-        CargoMetadataParseError
-            Error describing the invalid JSON output.
-
-        Examples
-        --------
-        >>> str(CargoMetadataParseError.invalid_json())
-        'cargo metadata produced invalid JSON output'
-        """
-        return cls("cargo metadata produced invalid JSON output")
-
-    @classmethod
-    def non_object_payload(cls) -> CargoMetadataParseError:
-        """Return an error indicating the payload was not a JSON object.
-
-        Returns
-        -------
-        CargoMetadataParseError
-            Error describing the non-object JSON payload.
-
-        Examples
-        --------
-        >>> str(CargoMetadataParseError.non_object_payload())
-        'cargo metadata returned a non-object JSON payload'
-        """
-        return cls("cargo metadata returned a non-object JSON payload")
-
 
 _CARGO_PROGRAM = "cargo"
 _CARGO_METADATA_ARGS = ("metadata", "--format-version", "1")
@@ -157,9 +125,11 @@ def _parse_cargo_metadata(stdout_text: str) -> cabc.Mapping[str, typ.Any]:
     try:
         payload = json.loads(stdout_text)
     except json.JSONDecodeError as exc:
-        raise CargoMetadataParseError.invalid_json() from exc
+        message = "cargo metadata produced invalid JSON output"
+        raise CargoMetadataParseError(message) from exc
     if not isinstance(payload, dict):
-        raise CargoMetadataParseError.non_object_payload()
+        message = "cargo metadata returned a non-object JSON payload"
+        raise CargoMetadataParseError(message)
     return payload
 
 
@@ -199,7 +169,7 @@ def load_cargo_metadata(
     >>> metadata = load_cargo_metadata()  # doctest: +SKIP
     >>> metadata["workspace_root"]  # doctest: +SKIP
     '...'
-    """
+    """  # noqa: DOC502 -- propagated from the two _*_cargo_metadata helpers
     root_path = normalise_workspace_root(workspace_root)
     command_runner = _active_command_runner(runner)
     exit_code, stdout_text, stderr_text = _invoke_cargo_metadata(
