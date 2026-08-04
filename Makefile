@@ -29,7 +29,7 @@ DF12_PYTHON_LINTS_REF ?= v0.1.0
 DF12_PYTHON_LINTS = git+https://github.com/leynos/df12-python-lints.git@$(DF12_PYTHON_LINTS_REF)
 DF12_PYTHON ?= 3.14
 DF12_PYLINT_MESSAGES = R9101,C9102,R9103,R9104,C9105,C9106,C9107,R9108,R9109,R9110,R9111,C9112
-DF12_PYLINT = $(UV_ENV) $(UV) run --python $(DF12_PYTHON) pylint \
+DF12_PYLINT = $(UV_ENV) $(UV) run --isolated --python $(DF12_PYTHON) pylint \
 	--disable=all --load-plugins=df12_python_lints \
 	--py-version=3.13 --enable=$(DF12_PYLINT_MESSAGES)
 AMBRLEAKS = $(UV_ENV) $(UV) tool run --python $(DF12_PYTHON) \
@@ -105,6 +105,8 @@ typecheck: build $(UV) ## Run typechecking
 
 markdownlint: spelling $(MDLINT) ## Lint Markdown files and enforce spelling
 	find . -type f -name '*.md' \
+	  -not -path './.uv-cache/*' \
+	  -not -path './.uv-tools/*' \
 	  -not -path './.venv/*' -print0 | xargs -0 $(MDLINT)
 
 spelling: spelling-helper-test ## Enforce en-GB-oxendict spelling in Markdown prose

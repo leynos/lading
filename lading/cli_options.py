@@ -8,6 +8,8 @@ access through ``lading.cli`` keeps working.
 from __future__ import annotations
 
 import re
+import typing as typ
+from pathlib import Path
 
 from cyclopts import Parameter
 
@@ -75,6 +77,20 @@ ALLOW_UNPUBLISHED_WORKSPACE_DEPS_PARAMETER = Parameter(
     ),
 )
 
+# These aliases remain public for integrations that import CLI annotations.
+# The CLI signatures deliberately spell out Annotated metadata inline because
+# Cyclopts evaluates those annotations at runtime and does not unwrap PEP 695
+# aliases when constructing its option parser.
+type WorkspaceRootOption = typ.Annotated[Path, WORKSPACE_PARAMETER]
+type VersionArgument = typ.Annotated[str, VERSION_PARAMETER]
+type DryRunFlag = typ.Annotated[bool, DRY_RUN_PARAMETER]
+type RebuildLockfilesFlag = typ.Annotated[bool, REBUILD_LOCKFILES_PARAMETER]
+type LiveFlag = typ.Annotated[bool, LIVE_PARAMETER]
+type ForbidDirtyFlag = typ.Annotated[bool, FORBID_DIRTY_PARAMETER]
+type AllowUnpublishedWorkspaceDepsFlag = typ.Annotated[
+    bool | None, ALLOW_UNPUBLISHED_WORKSPACE_DEPS_PARAMETER
+]
+
 
 __all__ = [
     "ALLOW_UNPUBLISHED_WORKSPACE_DEPS_PARAMETER",
@@ -86,4 +102,11 @@ __all__ = [
     "WORKSPACE_PARAMETER",
     "WORKSPACE_ROOT_ENV_VAR",
     "WORKSPACE_ROOT_REQUIRED_MESSAGE",
+    "AllowUnpublishedWorkspaceDepsFlag",
+    "DryRunFlag",
+    "ForbidDirtyFlag",
+    "LiveFlag",
+    "RebuildLockfilesFlag",
+    "VersionArgument",
+    "WorkspaceRootOption",
 ]
