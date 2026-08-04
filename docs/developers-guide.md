@@ -89,9 +89,9 @@ The relevant Makefile variables are:
   stages; defaults to `3.14`.
 - `DF12_PYLINT_MESSAGES` — explicit allow-list of enabled df12 Pylint message
   IDs.
-- `DF12_PYLINT` — project-environment Pylint invocation that loads the df12
-  plug-in under CPython 3.14 and evaluates version-gated checks against
-  Lading's Python 3.13 baseline.
+- `DF12_PYLINT` — isolated Pylint invocation that loads the df12 plug-in under
+  CPython 3.14 and evaluates version-gated checks against Lading's Python 3.13
+  baseline without replacing the project's `.venv` interpreter.
 - `AMBRLEAKS` — isolated `df12-python-lints` tool invocation used to scan
   Syrupy snapshots under `tests`.
 
@@ -961,8 +961,10 @@ responsibilities live in dedicated modules, imported by their original homes:
 - `lading.workspace.graph_build` — builders converting `cargo metadata`
   output into workspace models; the error-bound coercion helpers live in
   `lading.workspace._coercion` (both imported by `workspace`).
-- `lading.cli_options` — Cyclopts argument declarations and version-argument
-  validation (imported by `cli`).
+- `lading.cli_options` — Cyclopts argument declarations, version-argument
+  validation, and public compatibility aliases for CLI annotations (re-exported
+  by `cli`). Runtime CLI signatures keep their `Annotated` metadata inline
+  because Cyclopts does not unwrap PEP 695 aliases while constructing options.
 
 ### In-process metrics (`lading.utils.metrics`)
 

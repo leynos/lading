@@ -41,6 +41,13 @@ from .cli_options import (
     WORKSPACE_PARAMETER,
     WORKSPACE_ROOT_ENV_VAR,
     WORKSPACE_ROOT_REQUIRED_MESSAGE,
+    LiveFlag as LiveFlag,
+    WorkspaceRootOption as WorkspaceRootOption,
+    ForbidDirtyFlag as ForbidDirtyFlag,
+    AllowUnpublishedWorkspaceDepsFlag as AllowUnpublishedWorkspaceDepsFlag,
+    VersionArgument as VersionArgument,
+    DryRunFlag as DryRunFlag,
+    RebuildLockfilesFlag as RebuildLockfilesFlag,
 )
 from .runtime import CommandRunner, subprocess_runner
 from .utils import metrics, normalize_workspace_root
