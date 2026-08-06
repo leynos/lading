@@ -11,6 +11,7 @@ import pytest
 from lading import config as config_module
 from lading.commands import publish
 from lading.workspace import WorkspaceGraph, WorkspaceModelError
+from tests.helpers.cwd import chdir_for_test
 
 from .conftest import make_config, make_crate, make_workspace
 
@@ -23,7 +24,7 @@ def test_run_normalises_workspace_root(
 ) -> None:
     """The run helper resolves the workspace root before planning."""
     workspace = Path("workspace")
-    monkeypatch.chdir(tmp_path)
+    chdir_for_test(monkeypatch, tmp_path)
     resolved = tmp_path / "workspace"
     plan_workspace = make_workspace(resolved)
     configuration = make_config()
