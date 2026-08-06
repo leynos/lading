@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import collections.abc as cabc
 import typing as typ
-from dataclasses import dataclass  # noqa: ICN003
+from dataclasses import dataclass  # ruff: ignore[banned-import-from]
 
 import pytest
 import tomlkit

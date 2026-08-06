@@ -1,6 +1,6 @@
 """Integration tests for the publish-check cargo shim CLI."""
 
-# ruff: noqa: D103, S603
+# ruff: file-ignore[undocumented-public-function, subprocess-without-shell-equals-true]  # integration tests exercise the executable directly
 
 from __future__ import annotations
 
@@ -38,11 +38,11 @@ def test_cli_inserts_flag_before_separator(tmp_path: Path) -> None:
         env=env,
     )
 
-    assert process.returncode == 0
+    assert process.returncode == 0, process.stderr
     stdout = process.stdout.strip()
-    assert stdout
+    assert stdout, "cargo shim produced no output"
     args = json.loads(stdout)
-    assert args == ["test", "--all-features", "--", "--test-threads", "1"]
+    assert args == ["test", "--all-features", "--", "--test-threads", "1"], args
 
 
 def test_cli_forwards_additional_arguments(tmp_path: Path) -> None:
@@ -57,9 +57,9 @@ def test_cli_forwards_additional_arguments(tmp_path: Path) -> None:
         env=env,
     )
 
-    assert process.returncode == 0
+    assert process.returncode == 0, process.stderr
     args = json.loads(process.stdout.strip())
-    assert args == ["+nightly", "bench", "--all-features", "--", "foo"]
+    assert args == ["+nightly", "bench", "--all-features", "--", "foo"], args
 
 
 def test_cli_preserves_global_option_values(tmp_path: Path) -> None:
@@ -74,8 +74,8 @@ def test_cli_preserves_global_option_values(tmp_path: Path) -> None:
         env=env,
     )
 
-    assert process.returncode == 0
+    assert process.returncode == 0, process.stderr
     stdout = process.stdout.strip()
-    assert stdout
+    assert stdout, "cargo shim produced no output"
     args = json.loads(stdout)
-    assert args == ["--target-dir", "ci-target", "test", "--all-features"]
+    assert args == ["--target-dir", "ci-target", "test", "--all-features"], args

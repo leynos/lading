@@ -7,7 +7,7 @@ UV ?= $(shell command -v uv 2>/dev/null || printf '%s/.local/bin/uv' "$$HOME")
 # .github/workflows/ci.yml. Bump all three sites together: a version mismatch
 # causes version-skew lint failures because rule sets differ between Ruff
 # releases.
-RUFF_VERSION ?= 0.15.21
+RUFF_VERSION ?= 0.16.0
 RUFF ?= $(UV) tool run --from ruff==$(RUFF_VERSION) ruff
 TYPOS_VERSION ?= 1.48.0
 # Pin ty so `make` and CI invoke the same typechecker release. ty is
@@ -25,6 +25,15 @@ PYLINT_TARGETS ?= lading scripts tests
 PYLINT_PYPY_SHIM_REF ?= 726d09f968b4d729ee4b29c71fc732e744854f3b
 PYLINT_PYPY_SHIM = git+https://github.com/leynos/pylint-pypy-shim.git@$(PYLINT_PYPY_SHIM_REF)
 PYLINT = $(UV) tool run --python $(PYLINT_PYTHON) --from '$(PYLINT_PYPY_SHIM)' pylint-pypy
+DF12_PYTHON_LINTS_REF ?= v0.1.0
+DF12_PYTHON_LINTS = git+https://github.com/leynos/df12-python-lints.git@$(DF12_PYTHON_LINTS_REF)
+DF12_PYTHON ?= 3.14
+DF12_PYLINT_MESSAGES = R9101,C9102,R9103,R9104,C9105,C9106,C9107,R9108,R9109,R9110,R9111,C9112
+DF12_PYLINT = $(UV_ENV) $(UV) run --isolated --python $(DF12_PYTHON) pylint \
+	--disable=all --load-plugins=df12_python_lints \
+	--py-version=3.13 --enable=$(DF12_PYLINT_MESSAGES)
+AMBRLEAKS = $(UV_ENV) $(UV) tool run --python $(DF12_PYTHON) \
+	--from '$(DF12_PYTHON_LINTS)' ambrleaks
 
 .PHONY: help all clean build build-release lint fmt check-fmt \
 	markdownlint nixie spelling spelling-helper-test test typecheck crosshair \
@@ -88,12 +97,16 @@ lint: build $(UV) interrogate ## Run linters
 	$(RUFF) check
 	$(UV) run interrogate --fail-under 100 lading
 	$(PYLINT) $(PYLINT_TARGETS)
+	$(DF12_PYLINT) $(PYLINT_TARGETS)
+	$(AMBRLEAKS) tests
 
 typecheck: build $(UV) ## Run typechecking
 	$(UV_ENV) $(TY) check --python-version 3.13 $(PY_SOURCES)
 
 markdownlint: spelling $(MDLINT) ## Lint Markdown files and enforce spelling
 	find . -type f -name '*.md' \
+	  -not -path './.uv-cache/*' \
+	  -not -path './.uv-tools/*' \
 	  -not -path './.venv/*' -print0 | xargs -0 $(MDLINT)
 
 spelling: spelling-helper-test ## Enforce en-GB-oxendict spelling in Markdown prose
@@ -108,7 +121,8 @@ spelling-helper-test: ## Validate the shared spelling-policy integration
 		scripts/typos_rollout.py scripts/typos_rollout_cache.py \
 		scripts/tests/test_typos_rollout.py
 	@$(UV_ENV) $(UV) tool run ruff@$(RUFF_VERSION) check --isolated \
-		--target-version py313 scripts/generate_typos_config.py \
+		--target-version py313 --extend-select S310 \
+		scripts/generate_typos_config.py \
 		scripts/typos_rollout.py scripts/typos_rollout_cache.py \
 		scripts/tests/test_typos_rollout.py
 	@PYTHONPATH=scripts $(UV_ENV) $(UV) run --no-project --python 3.13 \

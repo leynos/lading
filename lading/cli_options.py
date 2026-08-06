@@ -15,12 +15,11 @@ from cyclopts import Parameter
 
 WORKSPACE_ROOT_ENV_VAR = "LADING_WORKSPACE_ROOT"
 WORKSPACE_ROOT_REQUIRED_MESSAGE = "--workspace-root requires a value"
-_WORKSPACE_PARAMETER = Parameter(
+WORKSPACE_PARAMETER = Parameter(
     name="workspace-root",
     env_var=WORKSPACE_ROOT_ENV_VAR,
     help="Path to the Rust workspace root.",
 )
-WorkspaceRootOption = typ.Annotated[Path, _WORKSPACE_PARAMETER]
 
 _VERSION_PATTERN = re.compile(
     r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$"
@@ -41,38 +40,33 @@ def _validate_version_argument(_hint: object, version: str) -> None:
         raise ValueError(message)
 
 
-_VERSION_PARAMETER = Parameter(
+VERSION_PARAMETER = Parameter(
     validator=_validate_version_argument,
     help="Target semantic version (e.g., 1.2.3) to set across workspace manifests.",
 )
-VersionArgument = typ.Annotated[str, _VERSION_PARAMETER]
 
-_DRY_RUN_PARAMETER = Parameter(
+DRY_RUN_PARAMETER = Parameter(
     name="dry-run",
     help="Preview manifest changes without writing files.",
 )
-DryRunFlag = typ.Annotated[bool, _DRY_RUN_PARAMETER]
 
-_REBUILD_LOCKFILES_PARAMETER = Parameter(
+REBUILD_LOCKFILES_PARAMETER = Parameter(
     name="rebuild-lockfiles",
     negative="no-rebuild-lockfiles",
     help="Regenerate Cargo.lock files after manifest updates.",
 )
-RebuildLockfilesFlag = typ.Annotated[bool, _REBUILD_LOCKFILES_PARAMETER]
 
-_LIVE_PARAMETER = Parameter(
+LIVE_PARAMETER = Parameter(
     name="live",
     help="Run cargo publish without --dry-run; default behaviour is dry-run.",
 )
-LiveFlag = typ.Annotated[bool, _LIVE_PARAMETER]
 
-_FORBID_DIRTY_PARAMETER = Parameter(
+FORBID_DIRTY_PARAMETER = Parameter(
     name="forbid-dirty",
     help=("Require a clean working tree before running publish pre-flight checks."),
 )
-ForbidDirtyFlag = typ.Annotated[bool, _FORBID_DIRTY_PARAMETER]
 
-_ALLOW_UNPUBLISHED_WORKSPACE_DEPS_PARAMETER = Parameter(
+ALLOW_UNPUBLISHED_WORKSPACE_DEPS_PARAMETER = Parameter(
     name="allow-unpublished-workspace-deps",
     help=(
         "Dry-run only: downgrade cargo package failures caused by a sibling "
@@ -82,12 +76,30 @@ _ALLOW_UNPUBLISHED_WORKSPACE_DEPS_PARAMETER = Parameter(
         "combined with --live."
     ),
 )
-AllowUnpublishedWorkspaceDepsFlag = typ.Annotated[
-    bool | None, _ALLOW_UNPUBLISHED_WORKSPACE_DEPS_PARAMETER
+
+# These aliases remain public for integrations that import CLI annotations.
+# The CLI signatures deliberately spell out Annotated metadata inline because
+# Cyclopts evaluates those annotations at runtime and does not unwrap PEP 695
+# aliases when constructing its option parser.
+type WorkspaceRootOption = typ.Annotated[Path, WORKSPACE_PARAMETER]
+type VersionArgument = typ.Annotated[str, VERSION_PARAMETER]
+type DryRunFlag = typ.Annotated[bool, DRY_RUN_PARAMETER]
+type RebuildLockfilesFlag = typ.Annotated[bool, REBUILD_LOCKFILES_PARAMETER]
+type LiveFlag = typ.Annotated[bool, LIVE_PARAMETER]
+type ForbidDirtyFlag = typ.Annotated[bool, FORBID_DIRTY_PARAMETER]
+type AllowUnpublishedWorkspaceDepsFlag = typ.Annotated[
+    bool | None, ALLOW_UNPUBLISHED_WORKSPACE_DEPS_PARAMETER
 ]
 
 
 __all__ = [
+    "ALLOW_UNPUBLISHED_WORKSPACE_DEPS_PARAMETER",
+    "DRY_RUN_PARAMETER",
+    "FORBID_DIRTY_PARAMETER",
+    "LIVE_PARAMETER",
+    "REBUILD_LOCKFILES_PARAMETER",
+    "VERSION_PARAMETER",
+    "WORKSPACE_PARAMETER",
     "WORKSPACE_ROOT_ENV_VAR",
     "WORKSPACE_ROOT_REQUIRED_MESSAGE",
     "AllowUnpublishedWorkspaceDepsFlag",
