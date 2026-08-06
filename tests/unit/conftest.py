@@ -19,6 +19,8 @@ from lading import config as config_module
 from lading.commands import bump, publish, publish_preflight
 from lading.workspace import WorkspaceCrate, WorkspaceDependency, WorkspaceGraph
 
+_ORIGINAL_PREFLIGHT = publish_preflight._run_preflight_checks
+
 # These modules drive ``bump.run`` to exercise manifest updates, documentation
 # rewriting, and the rebuild_lockfiles resolution logic -- none of which need
 # Cargo to actually build or regenerate lockfiles. The stub is scoped to them by
@@ -65,6 +67,16 @@ def disable_publish_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
         publish_preflight,
         "_run_preflight_checks",
         lambda *_args, **_kwargs: None,
+    )
+
+
+@pytest.fixture
+def enable_publish_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Restore publish pre-flight checks for public command integration tests."""
+    monkeypatch.setattr(
+        publish_preflight,
+        "_run_preflight_checks",
+        _ORIGINAL_PREFLIGHT,
     )
 
 
