@@ -207,3 +207,9 @@ target/
 
 # memtrace daemon local state (agent tooling)
 .memdb/
+.vtcode/
+.claude/
+.grepai/
+*.swp
+*.swo
+*~
