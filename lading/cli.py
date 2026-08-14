@@ -337,16 +337,16 @@ def bump(
 
     Parameters
     ----------
-    version : VersionArgument
+    version : str
         Target semantic version to write across workspace manifests.
-    workspace_root : WorkspaceRootOption | None
+    workspace_root : Path | None
         Optional path to the workspace root; resolved to the current
         directory when :data:`None`.
-    dry_run : DryRunFlag
+    dry_run : bool
         When ``True``, preview manifest changes without writing files.
-    rebuild_lockfiles : RebuildLockfilesFlag | None
-        Tri-state flag forwarded unresolved to the bump command, which owns
-        defaulting an unset value against the configuration.
+    rebuild_lockfiles : bool | None
+        Tri-state flag where ``None`` is distinct from ``True`` and ``False``;
+        the bump command resolves ``None`` against the configuration.
 
     Returns
     -------
@@ -400,14 +400,14 @@ def publish(
 
     Parameters
     ----------
-    workspace_root : WorkspaceRootOption | None
+    workspace_root : Path | None
         Optional path to the workspace root; resolved to the current
         directory when :data:`None`.
-    forbid_dirty : ForbidDirtyFlag
+    forbid_dirty : bool
         When ``True``, require a clean working tree before pre-flight checks.
-    live : LiveFlag
+    live : bool
         When ``True``, run ``cargo publish`` without ``--dry-run``.
-    allow_unpublished_workspace_deps : AllowUnpublishedWorkspaceDepsFlag
+    allow_unpublished_workspace_deps : bool | None
         Tri-state override for unpublished sibling workspace dependencies;
         resolved against the publish mode when omitted.
 
