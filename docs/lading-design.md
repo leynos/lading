@@ -415,41 +415,7 @@ lading publish [--live] [--forbid-dirty]
 
 **Execution Flow:**
 
-1. **Discover Workspace:** Build the internal workspace model.
-2. **Determine Publishable Crates:**
-
-    - Filter the crate list to include only those where `publish` is not
-      `false`.
-    - Remove any crates listed in `publish.exclude` from `lading.toml`.
-    - Record crates skipped by manifest settings and configuration so the CLI
-      can explain how the plan was derived. Report any configuration exclusions
-      that do not match workspace crates to help users prune stale entries.
-
-3. **Determine Publish Order:**
-
-    - If `publish.order` is defined in `lading.toml`, validate that it contains
-      all publishable crates and use this order.
-    - If `publish.order` is not defined, perform a topological sort on the
-      dependency graph of publishable crates to generate the correct
-      publication sequence. If the graph contains cycles, the command will
-      abort with an error.
-
-Implementation note: the planner now performs a deterministic topological sort
-using Kahn's algorithm with a lexicographically ordered queue so that parallel
-branches remain stable across runs. The resulting `PublishPlan` raises a
-`PublishPlanError` when a cycle prevents ordering, surfacing the crates
-involved to the operator. When `publish.order` is configured the planner
-validates that every publishable crate appears exactly once and that no unknown
-names are listed before returning the user-specified order.
-
-1. **Prepare workspace manifest**: Within the workspace root, determine the
-   patch stripping strategy based on the `publish.strip_patches` configuration
-   value and the execution mode (`--dry-run` flag).
-
-    - If strip_patches is "all" (or is unset and this is a dry run), remove the
-      entire [patch.crates-io] section from the Cargo.toml.
-
-2. **Execute pre-flight checks:** Before publishing, run a series of checks in
+1. **Execute pre-flight checks:** Before publishing, run a series of checks in
    the workspace itself to ensure integrity:
 
     - Run `cargo check --all-targets` for the entire workspace.
@@ -493,6 +459,46 @@ names are listed before returning the user-specified order.
     - `preflight.stderr_tail_lines` – the number of lines tailed from
       compiletest `*.stderr` files when cargo test fails, exposing the debug
       diff directly in the CLI output.
+
+    Any `PublishPreflightError` aborts execution before workspace discovery,
+    `plan_publication`, `publish_staging.prepare_workspace`, or
+    `publish_pipeline._dispatch_publication` run.
+
+2. **Discover Workspace:** Build the internal workspace model.
+3. **Determine Publishable Crates:**
+
+    - Filter the crate list to include only those where `publish` is not
+      `false`.
+    - Remove any crates listed in `publish.exclude` from `lading.toml`.
+    - Record crates skipped by manifest settings and configuration so the CLI
+      can explain how the plan was derived. Report any configuration exclusions
+      that do not match workspace crates to help users prune stale entries.
+
+4. **Determine Publish Order:**
+
+    - If `publish.order` is defined in `lading.toml`, validate that it contains
+      all publishable crates and use this order.
+    - If `publish.order` is not defined, perform a topological sort on the
+      dependency graph of publishable crates to generate the correct
+      publication sequence. If the graph contains cycles, the command will
+      abort with an error.
+
+Implementation note: the planner now performs a deterministic topological sort
+using Kahn's algorithm with a lexicographically ordered queue so that parallel
+branches remain stable across runs. The resulting `PublishPlan` raises a
+`PublishPlanError` when a cycle prevents ordering, surfacing the crates
+involved to the operator. When `publish.order` is configured the planner
+validates that every publishable crate appears exactly once and that no unknown
+names are listed before returning the user-specified order.
+
+1. **Stage the workspace and prepare its manifest:**
+   `publish_staging.prepare_workspace` creates an isolated workspace copy.
+   Within that staged workspace, determine the patch stripping strategy based
+   on the `publish.strip_patches` configuration value and the execution mode
+   (`--dry-run` flag).
+
+    - If strip_patches is "all" (or is unset and this is a dry run), remove the
+      entire [patch.crates-io] section from the Cargo.toml.
 
 ### Lockfile inspection repository port (publish side)
 

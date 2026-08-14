@@ -1,4 +1,11 @@
-"""Command execution helpers for publish operations."""
+"""Execute publish commands through the project's subprocess boundary.
+
+This module owns the concrete command-runner adapter and translates process
+spawn failures into publish preflight errors. Per-crate publication sequencing
+lives in :mod:`lading.commands.publish_pipeline`, which imports ``_invoke`` as
+its default runner; :mod:`lading.commands.publish` remains the workflow
+coordinator.
+"""
 
 from __future__ import annotations
 

@@ -14,8 +14,10 @@ import logging
 import typing as typ
 
 from lading.commands.cargo_output_adapter import (
+    CargoAlreadyPublishedFailure,
     CargoIndexLookupFailure,
     CargoSubprocessResult,
+    parse_already_published_failure,
     parse_index_lookup_failure,
 )
 from lading.commands.publish_errors import PublishError, PublishPreflightError
@@ -171,31 +173,6 @@ def _package_crate(
     raise PublishPreflightError(message)
 
 
-_ALREADY_PUBLISHED_MARKERS: tuple[str, ...] = (
-    "already uploaded",
-    "already published",
-    "already exists on crates.io",
-    "already exists on crates.io index",
-)
-
-_CARGO_REGISTRY_ERROR_CODE = 101
-
-
-def _is_already_published_error(exit_code: int, stdout: str, stderr: str) -> bool:
-    """Return True when ``cargo publish`` failed because the version exists.
-
-    Cargo returns exit code 101 for registry errors including already-published
-    versions. This function checks both the exit code and output to minimise
-    false positives from unrelated failures.
-    """
-    # Only consider exit code 101 (cargo registry error)
-    if exit_code != _CARGO_REGISTRY_ERROR_CODE:
-        return False
-
-    haystack = f"{stdout}\n{stderr}".lower()
-    return any(marker in haystack for marker in _ALREADY_PUBLISHED_MARKERS)
-
-
 def _publish_crates(
     plan: PublishPlan,
     preparation: PublishPreparation,
@@ -259,7 +236,15 @@ def _handle_publish_result(
         )
         LOGGER.info(success_message, crate.name)
         return
-    if _is_already_published_error(exit_code, stdout, stderr):
+    cargo_result = CargoSubprocessResult(
+        exit_code=exit_code,
+        stdout=stdout,
+        stderr=stderr,
+    )
+    already_published_failure: CargoAlreadyPublishedFailure | None = (
+        parse_already_published_failure(cargo_result)
+    )
+    if already_published_failure is not None:
         LOGGER.warning(
             "Crate %s @ %s is already published; skipping",
             crate.name,
@@ -269,11 +254,7 @@ def _handle_publish_result(
     lookup_failure = parse_index_lookup_failure(
         crate_name=crate.name,
         subcommand="publish",
-        result=CargoSubprocessResult(
-            exit_code=exit_code,
-            stdout=stdout,
-            stderr=stderr,
-        ),
+        result=cargo_result,
     )
     if lookup_failure is not None:
         # cargo publish --dry-run packages internally and hits the same
@@ -339,6 +320,11 @@ def _run_dry_run_phase(
 
     The shared error handling keeps the two-phase dispatcher focused on phase
     ordering while retaining its single public preflight-error contract.
+
+    Raises
+    ------
+    PublishPreflightError
+        If the action raises a preparation or preflight error.
     """
     try:
         action()

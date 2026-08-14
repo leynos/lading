@@ -134,7 +134,7 @@ def _handle_index_missing_version_message(
     caplog: pytest.LogCaptureFixture,
 ) -> str:
     """Return the raised index-missing-version message for snapshot tests."""
-    caplog.set_level(logging.WARNING, logger="lading.commands.publish")
+    caplog.set_level(logging.WARNING, logger=publish_pipeline.LOGGER.name)
     failure = CargoIndexLookupFailure(
         crate_name="beta",
         subcommand="package",
@@ -372,7 +372,7 @@ def test_already_published_warning_snapshot(
     101 with an already-published marker to a WARNING and continues; the
     exact message was previously unconstrained.
     """
-    caplog.set_level(logging.WARNING, logger="lading.commands.publish")
+    caplog.set_level(logging.WARNING, logger=publish_pipeline.LOGGER.name)
     workspace_root = tmp_path / "workspace"
     crates = make_dependency_chain(workspace_root)
     plan = publish.plan_publication(
