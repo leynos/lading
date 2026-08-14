@@ -1,10 +1,19 @@
-"""Coordinate planning, preflight checks, staging, and publication."""
+"""Coordinate the ``lading publish`` workflow.
+
+``run()`` is the command entry point used by the CLI. It loads configuration
+and the workspace graph, performs preflight checks, creates a publication plan,
+stages that plan, and dispatches package and publish operations. The coordinator
+delegates workspace copies to :mod:`lading.commands.publish_staging` and
+per-crate execution to :mod:`lading.commands.publish_pipeline`; the latter uses
+:mod:`lading.commands.publish_execution` for its default subprocess runner.
+"""
+
 from __future__ import annotations
 
-from pathlib import Path
 import dataclasses as dc
 import logging
 import typing as typ
+from pathlib import Path
 
 from lading import config as config_module
 from lading.commands import publish_pipeline, publish_preflight, publish_staging
@@ -18,12 +27,36 @@ if typ.TYPE_CHECKING:
     from lading.config import LadingConfig
     from lading.runtime import CommandRunner
     from lading.workspace import WorkspaceGraph
+
 LOGGER = logging.getLogger(__name__)
 
 
 @dc.dataclass(frozen=True, slots=True)
 class PublishOptions:
-    """Runtime configuration for publish planning, staging, and checks."""
+    """Runtime configuration for publish planning, staging, and checks.
+
+    Attributes
+    ----------
+    allow_dirty : bool
+        Whether preflight checks permit a workspace with uncommitted changes.
+    live : bool
+        Whether to invoke ``cargo publish`` without ``--dry-run``.
+    build_directory : Path | None
+        Optional parent directory for the staged workspace.
+    preserve_symlinks : bool
+        Whether staging copies symbolic links as links rather than targets.
+    cleanup : bool
+        Whether process-exit cleanup removes the staged workspace.
+    configuration : LadingConfig | None
+        Optional loaded configuration used instead of loading it from disk.
+    workspace : WorkspaceGraph | None
+        Optional discovered workspace graph used instead of rediscovery.
+    command_runner : CommandRunner | None
+        Optional command runner, primarily for dependency injection and tests.
+    allow_unpublished_workspace_deps : bool
+        Whether dry-run index failures for planned workspace dependencies become
+        warnings rather than preflight failures.
+    """
 
     allow_dirty: bool = True
     live: bool = False
@@ -34,6 +67,8 @@ class PublishOptions:
     workspace: WorkspaceGraph | None = None
     command_runner: CommandRunner | None = None
     allow_unpublished_workspace_deps: bool = False
+
+
 def _ensure_configuration(
     configuration: LadingConfig | None, workspace_root: Path
 ) -> LadingConfig:
@@ -75,6 +110,8 @@ def _validate_publication_options(options: PublishOptions) -> None:
         LOGGER.info(
             "Allowing unpublished workspace dependencies during dry-run publish"
         )
+
+
 def run(
     workspace_root: Path,
     configuration: LadingConfig | None = None,
@@ -82,7 +119,26 @@ def run(
     *,
     options: PublishOptions | None = None,
 ) -> str:
-    """Run preflight checks, package crates, and publish from ``workspace_root``."""
+    """Plan, stage, and execute publication from a workspace root.
+
+    Parameters
+    ----------
+    workspace_root : Path
+        Root directory of the Cargo workspace to publish.
+    configuration : LadingConfig | None
+        Optional configuration that overrides configuration loaded from the
+        workspace.
+    workspace : WorkspaceGraph | None
+        Optional pre-discovered workspace graph for publication planning.
+    options : PublishOptions | None, optional
+        Runtime flags controlling preflight, staging, cleanup, and publication.
+        When omitted, the default dry-run configuration is used.
+
+    Returns
+    -------
+    str
+        Human-readable publication plan and staged-workspace summary.
+    """
     root_path = normalize_workspace_root(workspace_root)
     LOGGER.info("Starting publish workflow for workspace %s", root_path)
     effective_options = PublishOptions() if options is None else options
@@ -90,15 +146,15 @@ def run(
     active_configuration = _ensure_configuration(
         configuration or effective_options.configuration, root_path
     )
-    active_workspace = _ensure_workspace(
-        workspace or effective_options.workspace, root_path
-    )
     command_runner = effective_options.command_runner or publish_pipeline._invoke
     publish_preflight._run_preflight_checks(
         root_path,
         allow_dirty=effective_options.allow_dirty,
         configuration=active_configuration,
         runner=command_runner,
+    )
+    active_workspace = _ensure_workspace(
+        workspace or effective_options.workspace, root_path
     )
     plan = plan_publication(
         active_workspace, active_configuration, workspace_root=root_path

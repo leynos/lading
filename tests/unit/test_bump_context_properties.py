@@ -22,6 +22,9 @@ from lading.commands import bump, bump_pipeline
 from lading.workspace import WorkspaceCrate, WorkspaceDependency, WorkspaceGraph
 from tests.helpers.workspace_builders import _make_config
 
+if typ.TYPE_CHECKING:
+    from lading.commands.bump_manifests import _BumpContext
+
 _crate_name = st.text(
     alphabet=string.ascii_lowercase + string.digits + "-_",
     min_size=1,
@@ -243,7 +246,7 @@ def _draw_dependency_edges(
 def _assert_crate_manifest_update(
     crate: WorkspaceCrate,
     crate_edges: cabc.Mapping[str, _DependencyKind],
-    context: bump._BumpContext,
+    context: _BumpContext,
     expected: _ExpectedManifestOutcome,
 ) -> None:
     """Apply the manifest update for ``crate`` and check it against reference."""

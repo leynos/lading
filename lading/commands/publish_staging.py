@@ -77,6 +77,16 @@ def _copy_workspace_tree(
     links instead of dereferencing them. This avoids unexpectedly copying large
     directories outside the workspace while still allowing callers to opt into
     dereferencing if required.
+
+    Returns
+    -------
+    Path
+        Root directory of the copied staged workspace.
+
+    Raises
+    ------
+    PublishPreparationError
+        If the staging directory is unsafe or the workspace cannot be copied.
     """
     workspace_root = workspace_root.resolve(strict=True)
     staging_root = build_directory / workspace_root.name

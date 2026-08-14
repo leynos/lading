@@ -62,7 +62,7 @@ def test_missing_dep_in_plan_and_flag_continues(
     phase_name: str,
 ) -> None:
     """Flag downgrades the missing-index error to a warning and proceeds."""
-    caplog.set_level(logging.WARNING, logger="lading.commands.publish")
+    caplog.set_level(logging.WARNING, logger=publish_pipeline.LOGGER.name)
     plan, preparation, _staging_root = publish_plan_and_prep
     calls: list[str] = []
 
@@ -268,7 +268,7 @@ def test_hyphenated_dep_in_plan_matches_with_canonicalisation(
     phase_name: str,
 ) -> None:
     """Hyphenated cargo output name matches underscore manifest name."""
-    caplog.set_level(logging.WARNING, logger="lading.commands.publish")
+    caplog.set_level(logging.WARNING, logger=publish_pipeline.LOGGER.name)
     workspace_root = tmp_path / "workspace"
     dependency = make_crate(workspace_root, "my_crate")
     dependent = make_crate(

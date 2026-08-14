@@ -9,8 +9,9 @@ Callers pass the crate name, cargo subcommand, and raw subprocess result to
 ``parse_index_lookup_failure``. When the output matches Cargo's crates.io
 index-lookup diagnostic, the function returns
 ``CargoIndexLookupFailure`` with the original process streams and the extracted
-missing dependency name. Non-matching or successful invocations return
-``None``.
+missing dependency name. The adapter likewise recognises Cargo's
+already-published registry diagnostic as ``CargoAlreadyPublishedFailure``.
+Non-matching or successful invocations return ``None``.
 
 Example
 -------
@@ -44,6 +45,14 @@ _INDEX_MISSING_VERSION_MARKERS: tuple[str, ...] = (
     "failed to select a version for the requirement",
     "location searched: crates.io index",
 )
+
+_ALREADY_PUBLISHED_MARKERS: tuple[str, ...] = (
+    "already uploaded",
+    "already published",
+    "already exists on crates.io",
+    "already exists on crates.io index",
+)
+_CARGO_REGISTRY_ERROR_CODE = 101
 
 # Capture the dependency crate name from cargo's index-lookup error, e.g.
 #   failed to select a version for the requirement `inner_crate = "^0.8.0"`
@@ -101,7 +110,23 @@ class CargoIndexLookupFailure:
     stderr: str
     missing_dependency_name: str | None
 
+@dc.dataclass(frozen=True, slots=True)
+class CargoAlreadyPublishedFailure:
+    """Represents Cargo reporting an already-published crate version.
 
+    Attributes
+    ----------
+    exit_code : int
+        Non-zero process exit code from Cargo's registry failure.
+    stdout : str
+        Standard output stream captured from the failed subprocess.
+    stderr : str
+        Standard error stream captured from the failed subprocess.
+    """
+
+    exit_code: int
+    stdout: str
+    stderr: str
 def parse_index_lookup_failure(
     *,
     crate_name: str,
@@ -167,7 +192,22 @@ def parse_index_lookup_failure(
         result=result,
     )
 
+def parse_already_published_failure(
+    result: CargoSubprocessResult,
+) -> CargoAlreadyPublishedFailure | None:
+    """Return a typed Cargo registry failure for an existing crate version."""
+    if result.exit_code != _CARGO_REGISTRY_ERROR_CODE:
+        return None
 
+    haystack = f"{result.stdout}\n{result.stderr}".lower()
+    if not any(marker in haystack for marker in _ALREADY_PUBLISHED_MARKERS):
+        return None
+
+    return CargoAlreadyPublishedFailure(
+        exit_code=result.exit_code,
+        stdout=result.stdout,
+        stderr=result.stderr,
+    )
 def _output_matches_index_markers(haystack: str) -> bool:
     """Return whether both crates.io index-miss markers appear in cargo output."""
     return all(

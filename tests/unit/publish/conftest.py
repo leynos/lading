@@ -198,6 +198,11 @@ def make_n_crate_chain(root: Path, count: int) -> tuple[WorkspaceCrate, ...]:
         Crates wired as a linear dependency chain. The first crate has no
         dependencies, and each subsequent crate depends on the one before it.
 
+    Raises
+    ------
+    ValueError
+        If ``count`` is less than one.
+
     Examples
     --------
     >>> crate_0, crate_1, crate_2 = make_n_crate_chain(root, 3)
