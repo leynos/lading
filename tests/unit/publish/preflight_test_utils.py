@@ -6,7 +6,7 @@ import collections.abc as cabc
 import typing as typ
 from pathlib import Path
 
-from lading.commands import publish, publish_preflight
+from lading.commands import publish, publish_pipeline, publish_preflight
 
 from .conftest import ORIGINAL_PREFLIGHT, make_crate, make_workspace
 
@@ -46,7 +46,7 @@ def _setup_preflight_test(
         calls.append((tuple(command), cwd, env))
         return 0, "", ""
 
-    monkeypatch.setattr(publish, "_invoke", recording_invoke)
+    monkeypatch.setattr(publish_pipeline, "_invoke", recording_invoke)
     publish.run(root, configuration, workspace)
     return root, workspace, calls
 

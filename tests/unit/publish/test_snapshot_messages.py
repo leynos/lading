@@ -27,7 +27,7 @@ if typ.TYPE_CHECKING:
 
 import pytest
 
-from lading.commands import publish
+from lading.commands import publish, publish_pipeline, publish_plan, publish_staging
 from lading.commands.cargo_output_adapter import (
     CargoIndexLookupFailure,
     CargoSubprocessResult,
@@ -78,7 +78,7 @@ def _missing_dependency_name(stderr: str) -> str | None:
 class _InPlanSnapshotCase(typ.NamedTuple):
     """Variable parts for in-plan fatal-path snapshot tests."""
 
-    plan_transform: cabc.Callable[[publish.PublishPlan], publish.PublishPlan]
+    plan_transform: cabc.Callable[[publish_plan.PublishPlan], publish_plan.PublishPlan]
     stderr_transform: cabc.Callable[[str], str]
 
 
@@ -127,7 +127,7 @@ def test_run_rejects_allow_unpublished_with_live(
 
 
 def _handle_index_missing_version_message(
-    plan: publish.PublishPlan,
+    plan: publish_plan.PublishPlan,
     *,
     stderr: str,
     allow_unpublished_workspace_deps: bool,
@@ -145,10 +145,10 @@ def _handle_index_missing_version_message(
     )
 
     with pytest.raises(publish.PublishPreflightError) as excinfo:
-        publish._handle_index_missing_version(
+        publish_pipeline._handle_index_missing_version(
             failure,
             plan=plan,
-            options=publish._PublishExecutionOptions(
+            options=publish_pipeline._PublishExecutionOptions(
                 live=False,
                 allow_dirty=True,
                 allow_unpublished_workspace_deps=allow_unpublished_workspace_deps,
@@ -183,7 +183,9 @@ def _snapshot_message(message: str) -> str:
     ],
 )
 def test_index_missing_version_message_snapshot(
-    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    publish_plan_and_prep: tuple[
+        publish_plan.PublishPlan, publish_staging.PublishPreparation, Path
+    ],
     caplog: pytest.LogCaptureFixture,
     snapshot: SnapshotAssertion,
     case: _IndexMissingCase,
@@ -203,7 +205,9 @@ def test_index_missing_version_message_snapshot(
 
 
 def test_index_missing_in_plan_downgrade_snapshot(
-    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    publish_plan_and_prep: tuple[
+        publish_plan.PublishPlan, publish_staging.PublishPreparation, Path
+    ],
     caplog: pytest.LogCaptureFixture,
     snapshot: SnapshotAssertion,
 ) -> None:
@@ -220,10 +224,10 @@ def test_index_missing_in_plan_downgrade_snapshot(
     )
 
     # Must not raise - the success/downgrade path returns without raising.
-    publish._handle_index_missing_version(
+    publish_pipeline._handle_index_missing_version(
         failure,
         plan=plan,
-        options=publish._PublishExecutionOptions(
+        options=publish_pipeline._PublishExecutionOptions(
             live=False,
             allow_dirty=True,
             allow_unpublished_workspace_deps=True,
@@ -288,7 +292,9 @@ def test_index_missing_out_of_plan_message_snapshot(
     ],
 )
 def test_index_missing_in_plan_fatal_message_snapshot(
-    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    publish_plan_and_prep: tuple[
+        publish_plan.PublishPlan, publish_staging.PublishPreparation, Path
+    ],
     caplog: pytest.LogCaptureFixture,
     snapshot: SnapshotAssertion,
     case: _InPlanSnapshotCase,
@@ -313,26 +319,28 @@ def test_index_missing_in_plan_fatal_message_snapshot(
     "options",
     [
         pytest.param(
-            publish._PublishExecutionOptions(live=False, allow_dirty=True),
+            publish_pipeline._PublishExecutionOptions(live=False, allow_dirty=True),
             id="dry_run",
         ),
         pytest.param(
-            publish._PublishExecutionOptions(live=True, allow_dirty=True),
+            publish_pipeline._PublishExecutionOptions(live=True, allow_dirty=True),
             id="live",
         ),
     ],
 )
 def test_pipeline_info_log_snapshot(
-    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    publish_plan_and_prep: tuple[
+        publish_plan.PublishPlan, publish_staging.PublishPreparation, Path
+    ],
     caplog: pytest.LogCaptureFixture,
     snapshot: SnapshotAssertion,
-    options: publish._PublishExecutionOptions,
+    options: publish_pipeline._PublishExecutionOptions,
 ) -> None:
     """Snapshot pipeline selector and progression logs for each mode."""
     caplog.set_level(logging.INFO, logger="lading.commands.publish")
     plan, preparation, _staging_root = publish_plan_and_prep
 
-    publish._dispatch_publication(
+    publish_pipeline._dispatch_publication(
         plan,
         preparation,
         options=options,
@@ -372,11 +380,11 @@ def test_already_published_warning_snapshot(
     )
     beta = next(crate for crate in plan.publishable if crate.name == "beta")
 
-    publish._handle_publish_result(
+    publish_pipeline._handle_publish_result(
         beta,
         (101, "", stderr_marker),
         plan=plan,
-        options=publish._PublishExecutionOptions(live=False, allow_dirty=True),
+        options=publish_pipeline._PublishExecutionOptions(live=False, allow_dirty=True),
     )
 
     assert _warning_records(caplog) == snapshot()

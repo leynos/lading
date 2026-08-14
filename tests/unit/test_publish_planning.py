@@ -23,7 +23,7 @@ def _plan_with_crates(
     make_config: cabc.Callable[..., config_module.LadingConfig],
     crates: tuple[WorkspaceCrate, ...],
     **config_overrides: object,
-) -> publish.PublishPlan:
+) -> publish_plan.PublishPlan:
     """Plan publication for ``crates`` using ``tmp_path`` as the workspace root."""
     root = tmp_path.resolve()
     workspace = make_workspace(root, *crates)
