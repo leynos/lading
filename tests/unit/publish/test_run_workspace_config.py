@@ -1,19 +1,18 @@
 """Publish run workspace-root and configuration test coverage."""
-
 from __future__ import annotations
 
+from pathlib import Path
 import re
 import typing as typ
-from pathlib import Path
 
 import pytest
 
 from lading import config as config_module
-from lading.commands import publish
 from lading.workspace import WorkspaceGraph, WorkspaceModelError
 from tests.helpers.cwd import chdir_for_test
 
 from .conftest import make_config, make_crate, make_workspace
+from lading.commands import publish, publish_staging
 
 if typ.TYPE_CHECKING:
     from syrupy.assertion import SnapshotAssertion
@@ -36,10 +35,10 @@ def test_run_normalizes_workspace_root(
 
     monkeypatch.setattr("lading.workspace.load_workspace", fake_load)
     monkeypatch.setattr(
-        publish,
+        publish_staging,
         "prepare_workspace",
-        lambda *_args, **_kwargs: publish.PublishPreparation(
-            staging_root=resolved, copied_readmes=()
+        lambda *_args, **_kwargs: publish_staging.PublishPreparation(
+            staging_root=resolved
         ),
     )
     output = publish.run(workspace, configuration)

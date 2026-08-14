@@ -9,7 +9,7 @@ import typing as typ
 
 import pytest
 
-from lading.commands import publish, publish_index_check
+from lading.commands import publish, publish_index_check, publish_pipeline
 from lading.commands.cargo_output_adapter import CargoIndexLookupFailure
 from lading.utils import metrics
 
@@ -56,10 +56,10 @@ def _invoke_handler(
         stderr=stderr,
         missing_dependency_name=missing_crate,
     )
-    publish._handle_index_missing_version(
+    publish_pipeline._handle_index_missing_version(
         failure,
         plan=plan,
-        options=publish._PublishExecutionOptions(
+        options=publish_pipeline._PublishExecutionOptions(
             live=False,
             allow_dirty=True,
             allow_unpublished_workspace_deps=allow_unpublished_workspace_deps,

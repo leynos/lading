@@ -1,10 +1,10 @@
 """Unit tests for publish output formatting helpers."""
-
 from __future__ import annotations
 
 import typing as typ
 
 from lading.commands import publish
+from lading.commands import publish_plan, publish_staging
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
@@ -16,11 +16,9 @@ def test_format_preparation_summary_reports_bump_readme_handling(
     """Summary explains that README adoption is handled before publish."""
     staging_root = tmp_path / "staging"
     staging_root.mkdir()
-    preparation = publish.PublishPreparation(
-        staging_root=staging_root, copied_readmes=()
-    )
+    preparation = publish_staging.PublishPreparation(staging_root=staging_root)
 
-    lines = publish._format_preparation_summary(preparation)
+    lines = publish_staging._format_preparation_summary(preparation)
 
     assert lines == (
         f"Staged workspace at: {staging_root}",

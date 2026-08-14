@@ -15,7 +15,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from lading.commands import publish
+from lading.commands import publish, publish_pipeline, publish_plan
 from lading.commands.cargo_output_adapter import CargoIndexLookupFailure
 
 from .conftest import make_crate
@@ -44,7 +44,7 @@ def test_index_missing_dependency_requires_prior_publish_order(
         crates = tuple(
             make_crate(workspace_root, f"crate_{index}") for index in range(crate_count)
         )
-        plan = publish.PublishPlan(
+        plan = publish_plan.PublishPlan(
             workspace_root=workspace_root,
             publishable=crates,
             skipped_manifest=(),
@@ -66,14 +66,14 @@ def test_index_missing_dependency_requires_prior_publish_order(
             ),
             missing_dependency_name=missing_crate.name,
         )
-        options = publish._PublishExecutionOptions(
+        options = publish_pipeline._PublishExecutionOptions(
             live=False,
             allow_dirty=True,
             allow_unpublished_workspace_deps=True,
         )
 
         if missing_index < current_index:
-            publish._handle_index_missing_version(
+            publish_pipeline._handle_index_missing_version(
                 failure,
                 plan=plan,
                 options=options,
@@ -87,7 +87,7 @@ def test_index_missing_dependency_requires_prior_publish_order(
                     else "is the same crate"
                 ),
             ):
-                publish._handle_index_missing_version(
+                publish_pipeline._handle_index_missing_version(
                     failure,
                     plan=plan,
                     options=options,
