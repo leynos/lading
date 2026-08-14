@@ -13,6 +13,7 @@ from tomlkit import parse as parse_toml
 from lading import config as config_module
 from lading.commands import bump
 from lading.workspace import WorkspaceDependency, WorkspaceGraph
+from tests.helpers.cwd import chdir_for_test
 from tests.helpers.workspace_builders import (
     _build_workspace_with_internal_deps,
     _CrateSpec,
@@ -200,7 +201,7 @@ def test_run_normalises_workspace_root(
     workspace = _make_workspace(workspace_root)
     configuration = _make_config()
     relative = pathlib.Path("workspace-root")
-    monkeypatch.chdir(tmp_path)
+    chdir_for_test(monkeypatch, tmp_path)
     bump.run(
         relative,
         "3.4.5",
