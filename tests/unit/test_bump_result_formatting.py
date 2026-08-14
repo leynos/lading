@@ -1,4 +1,4 @@
-"""Unit tests for ``lading.commands.bump._apply_crate_manifest_update``.
+"""Unit tests for ``lading.commands.bump_pipeline._apply_crate_manifest_update``.
 
 Exercises single-crate manifest updates (exclusion handling and dependency
 rewrites) and hosts the workspace-construction fixtures those assertions share.
@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 from tomlkit import parse as parse_toml
 
-from lading.commands import bump
+from lading.commands import bump, bump_pipeline
 from lading.workspace import WorkspaceCrate, WorkspaceDependency, WorkspaceGraph
 from tests.helpers.workspace_builders import _make_config
 
@@ -147,9 +147,9 @@ def test_update_crate_manifest(tmp_path: Path, params: UpdateCrateTestParams) ->
         ),
     )
 
-    outcome = bump._apply_crate_manifest_update(crate, "1.2.3", context)
+    outcome = bump_pipeline._apply_crate_manifest_update(crate, "1.2.3", context)
 
-    assert outcome is bump._CrateManifestOutcome.UPDATED, (
+    assert outcome is bump_pipeline._CrateManifestOutcome.UPDATED, (
         f"expected manifest update for {params.test_id}"
     )
     package_version, alpha_version = _parse_manifest_versions(crate.manifest_path)
