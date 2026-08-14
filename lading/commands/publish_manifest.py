@@ -60,6 +60,9 @@ class PublishPreparationError(LadingError):
     """Publish staging failed to prepare required assets.
 
     Raised when:
+        * the build or staging directory is nested unsafely.
+        * the build directory or staged workspace cannot be created or copied.
+        * a staged crate root is missing.
         * the staged workspace manifest cannot be read or parsed.
         * manifest writes fail while applying patch stripping.
 

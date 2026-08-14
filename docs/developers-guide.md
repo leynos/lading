@@ -479,7 +479,7 @@ future round-tripping.
 
 ## Programmatic publish options
 
-When invoking `lading.commands.publish.prepare_workspace` programmatically,
+When invoking `lading.commands.publish_staging.prepare_workspace` programmatically,
 callers can customize behaviour via `PublishOptions`. The defaults are:
 
 - `allow_dirty=True` — skip the git cleanliness guard. **Security note:** this
@@ -666,9 +666,10 @@ Not every module-level indirection is a compatibility shim. The following
 boundaries were deliberately kept because they serve a purpose beyond masking a
 rename:
 
-- `publish._invoke` — the dependency-injection seam: it is the default
+- `publish_pipeline._invoke` — the dependency-injection seam: it is the default
   `CommandRunner` used by `run()`, and tests stub it to intercept subprocess
-  execution. Not a compatibility alias.
+  execution. `publish_pipeline` imports the implementation from
+  `publish_execution`; this is not a compatibility alias.
 - `publish.PublishPlanError` (re-exported as
   `PublishPlanError as PublishPlanError`) — a public exception raised by the
   still-public `publish.plan_publication()`; retained so
@@ -704,14 +705,13 @@ strip_patches) -> str` composes the `lading publish` plan summary by calling
 publish: none"`) and for each skipped-crate group, then joins the resulting
 lines. All three helpers are public exports of `publish_plan`.
 
-`publish_manifest.py` owns staging-time manifest mutations. It contains
-workspace preparation types and helpers that copy the workspace tree and apply
-the `publish.strip_patches` strategy to the staged `Cargo.toml`. These
-operations run before any `cargo package` or `cargo publish` command, so the
-command runner works against a prepared snapshot rather than the source
-workspace. Workspace README adoption is not performed here; the `lading bump`
-command transposes the workspace README into each opted-in crate before
-publication.
+`publish_staging.py` owns workspace preparation types and helpers that copy the
+workspace tree. `publish_manifest.py` owns the `publish.strip_patches`
+staging-time manifest mutation. These operations run before any `cargo package`
+or `cargo publish` command, so the command runner works against a prepared
+snapshot rather than the source workspace. Workspace README adoption is not
+performed here; the `lading bump` command transposes the workspace README into
+each opted-in crate before publication.
 
 `publish_diagnostics.py` owns compiletest failure enrichment. When a cargo
 pre-flight test failure mentions compiletest-style `*.stderr` artefacts, the
@@ -942,6 +942,12 @@ responsibilities live in dedicated modules, imported by their original homes:
 - `lading.commands.bump_manifests` — per-manifest version and
   dependency-section rewriting plus the `_BumpContext` construction contract
   (imported by `bump`).
+- `lading.commands.bump_pipeline` — bump run-sequence orchestration across
+  manifests, documentation, readmes, and lockfiles (imported by `bump`).
+- `lading.commands.publish_pipeline` — per-crate package and publish execution,
+  result handling, and live/dry-run dispatch (imported by `publish`).
+- `lading.commands.publish_staging` — workspace copy preparation, cleanup, and
+  staged crate path resolution (imported by `publish`).
 - `lading.workspace.graph_build` — builders converting `cargo metadata`
   output into workspace models; the error-bound coercion helpers live in
   `lading.workspace._coercion` (both imported by `workspace`).
@@ -1056,6 +1062,11 @@ with a descriptive message.
 
 ### Per-crate publication helpers
 
+`lading.commands.publish_pipeline` owns `_package_crate`, `_publish_crate`,
+`_CrateAction`, `_for_each_publishable_crate`, `_PublicationPipelineState`, and
+`_dispatch_publication`. Tests patch these symbols at their canonical module;
+`publish.py` does not provide compatibility aliases.
+
 `_package_crate` and `_publish_crate` are the atomic units of the publication
 pipeline. Both accept the crate entry, publication state, and command runner
 explicitly, then execute exactly one `cargo` invocation against the crate's
@@ -1101,9 +1112,9 @@ accordingly. It is the sole branch that decides between the interleaved
 per-crate flow and the historical two-phase batch flow, keeping `run()` free of
 that decision.
 
-`lading.commands.publish_execution` loads the optional `cmd_mox` command-runner
-module with `importlib.import_module("cmd_mox.command_runner")`. Keeping the
-module in an `object | None` variable avoids relying on
+`lading.cli` loads the optional `cmd_mox` command-runner module with
+`importlib.import_module("cmd_mox.command_runner")`. Keeping the module in an
+`object | None` variable avoids relying on
 `from cmd_mox import ...  # type: ignore` when the package is absent, and it
 prevents conflicting type declarations when `cmd_mox` is present in the type
 checker environment.
