@@ -494,7 +494,7 @@ future round-tripping.
 
 ## Programmatic publish options
 
-When invoking `lading.commands.publish.prepare_workspace` programmatically,
+When invoking `lading.commands.publish_staging.prepare_workspace` programmatically,
 callers can customize behaviour via `PublishOptions`. The defaults are:
 
 - `allow_dirty=True` — skip the git cleanliness guard. **Security note:** this
@@ -685,9 +685,10 @@ Not every module-level indirection is a compatibility shim. The following
 boundaries were deliberately kept because they serve a purpose beyond masking a
 rename:
 
-- `publish._invoke` — the dependency-injection seam: it is the default
+- `publish_pipeline._invoke` — the dependency-injection seam: it is the default
   `CommandRunner` used by `run()`, and tests stub it to intercept subprocess
-  execution. Not a compatibility alias.
+  execution. `publish_pipeline` imports the implementation from
+  `publish_execution`; this is not a compatibility alias.
 - `publish.PublishPlanError` (re-exported as
   `PublishPlanError as PublishPlanError`) — a public exception raised by the
   still-public `publish.plan_publication()`; retained so

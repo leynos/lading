@@ -19,7 +19,7 @@ _SAFE_PATH_COMPONENT = st.text(
 
 @given(parts=st.lists(_SAFE_PATH_COMPONENT, min_size=1, max_size=3))
 @settings(max_examples=20, suppress_health_check=[HealthCheck.function_scoped_fixture])
-def test_normalise_build_directory_rejects_workspace_descendants(
+def test_normalize_build_directory_rejects_workspace_descendants(
     tmp_path: Path, parts: list[str]
 ) -> None:
     """Every generated workspace descendant is rejected as a build directory."""
@@ -31,12 +31,12 @@ def test_normalise_build_directory_rejects_workspace_descendants(
         publish_staging.PublishPreparationError,
         match="cannot reside within the workspace root",
     ):
-        publish_staging._normalise_build_directory(workspace_root, descendant)
+        publish_staging._normalize_build_directory(workspace_root, descendant)
 
 
 @given(name=_SAFE_PATH_COMPONENT)
 @settings(max_examples=20, suppress_health_check=[HealthCheck.function_scoped_fixture])
-def test_normalise_build_directory_accepts_workspace_siblings(
+def test_normalize_build_directory_accepts_workspace_siblings(
     tmp_path: Path, name: str
 ) -> None:
     """Every generated sibling build directory remains outside the workspace."""
@@ -44,7 +44,7 @@ def test_normalise_build_directory_accepts_workspace_siblings(
     workspace_root.mkdir(exist_ok=True)
     sibling = tmp_path / "build" / name
 
-    build_directory = publish_staging._normalise_build_directory(
+    build_directory = publish_staging._normalize_build_directory(
         workspace_root, sibling
     )
 

@@ -52,4 +52,7 @@ def test_run_never_stages_or_dispatches_after_preflight_failure(
     with pytest.raises(PublishPreflightError, match=detail):
         publish.run(root, configuration, workspace)
 
-    assert reached_phases == []
+    assert reached_phases == [], (
+        "preflight failure must prevent staging and publication dispatch; "
+        f"reached {reached_phases}"
+    )
