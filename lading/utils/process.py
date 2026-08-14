@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import collections.abc as cabc
 import logging
+import os
 import shlex
 import typing as typ
 
@@ -194,8 +195,46 @@ def with_detail(
     return append_detail(message, command_detail(stdout, stderr), separator=separator)
 
 
+def c_locale_env(
+    base_env: cabc.Mapping[str, str] | None = None,
+) -> dict[str, str]:
+    """Return ``base_env`` with the C locale forced for message stability.
+
+    Parameters
+    ----------
+    base_env : Mapping[str, str] or None, optional
+        Environment to extend. ``None`` starts from the current process
+        environment, matching what an unset ``env`` would give the subprocess.
+
+    Returns
+    -------
+    dict[str, str]
+        A copy of the environment with ``LC_ALL``, ``LANG``, and ``LANGUAGE``
+        pinned so tools emit their untranslated diagnostics.
+
+    Notes
+    -----
+    ``git`` and ``cargo`` translate their diagnostics through gettext, so any
+    caller that classifies a failure by matching the English text must pin the
+    locale first; otherwise a localized machine silently misclassifies the
+    failure. ``LANGUAGE`` is cleared rather than set because it overrides
+    ``LC_ALL`` for message translation when non-empty.
+
+    Examples
+    --------
+    ```python
+    env = c_locale_env({"CARGO_TERM_COLOR": "never"})
+    # {"CARGO_TERM_COLOR": "never", "LC_ALL": "C", "LANG": "C", "LANGUAGE": ""}
+    ```
+    """
+    merged = dict(os.environ if base_env is None else base_env)
+    merged.update({"LC_ALL": "C", "LANG": "C", "LANGUAGE": ""})
+    return merged
+
+
 __all__ = [
     "append_detail",
+    "c_locale_env",
     "command_detail",
     "format_command",
     "log_command_invocation",
