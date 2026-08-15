@@ -29,11 +29,10 @@ class TestBumpLockfileMessages:
     """Snapshot bump messages for root and nested lockfiles."""
 
     @pytest.mark.parametrize(
-        ("lockfile_paths", "scenario"),
+        "lockfile_paths",
         [
             pytest.param(
                 (Path("Cargo.lock"),),
-                "root",
                 id="root",
             ),
             pytest.param(
@@ -41,7 +40,6 @@ class TestBumpLockfileMessages:
                     Path("Cargo.lock"),
                     Path("tests/ui_lints/Cargo.lock"),
                 ),
-                "nested",
                 id="nested",
             ),
         ],
@@ -52,7 +50,6 @@ class TestBumpLockfileMessages:
         snapshot: SnapshotAssertion,
         tmp_path: Path,
         lockfile_paths: tuple[Path, ...],
-        scenario: str,
     ) -> None:
         """The public bump command renders lockfiles relative to the workspace."""
         (tmp_path / "Cargo.toml").write_text(
@@ -86,7 +83,7 @@ class TestBumpLockfileMessages:
             ),
         )
 
-        assert snapshot == message, f"{scenario} lockfile bump message changed"
+        assert snapshot == message
 
 
 @pytest.mark.usefixtures("enable_publish_preflight")
@@ -94,11 +91,10 @@ class TestStaleLockfileMessages:
     """Snapshot stale-lockfile errors for one and multiple lockfiles."""
 
     @pytest.mark.parametrize(
-        ("lockfiles", "scenario"),
+        "lockfiles",
         [
             pytest.param(
                 [_SNAPSHOT_WORKSPACE_ROOT / "Cargo.lock"],
-                "single",
                 id="single",
             ),
             pytest.param(
@@ -106,7 +102,6 @@ class TestStaleLockfileMessages:
                     _SNAPSHOT_WORKSPACE_ROOT / "Cargo.lock",
                     _SNAPSHOT_WORKSPACE_ROOT / "tests" / "ui_lints" / "Cargo.lock",
                 ],
-                "multiple",
                 id="multiple",
             ),
         ],
@@ -117,7 +112,6 @@ class TestStaleLockfileMessages:
         snapshot: SnapshotAssertion,
         tmp_path: Path,
         lockfiles: list[Path],
-        scenario: str,
     ) -> None:
         """The public publish command reports every stale lockfile repair."""
         monkeypatch.setattr(
@@ -153,6 +147,4 @@ class TestStaleLockfileMessages:
                 options=publish.PublishOptions(command_runner=runner),
             )
 
-        assert snapshot == str(excinfo.value), (
-            f"{scenario} stale-lockfile message changed"
-        )
+        assert snapshot == str(excinfo.value)
