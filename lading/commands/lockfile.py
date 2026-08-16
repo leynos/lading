@@ -263,7 +263,7 @@ class CargoLockfileInspectionRepository:
     env : Mapping[str, str] | None, default None
         Environment overrides applied to any invocation that does not supply
         its own; ``None`` leaves each call's environment untouched.
-    manifest_exists : Callable[[Path], bool], default _manifest_exists
+    manifest_exists : Callable[[Path], bool], default Path.exists
         Predicate deciding whether a discovered lockfile has an adjacent
         ``Cargo.toml`` manifest; the default checks the filesystem.
     """

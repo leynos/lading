@@ -34,8 +34,11 @@ from __future__ import annotations
 import collections.abc as cabc
 import logging
 import shlex
-from logging import Logger as LoggerType
-from pathlib import Path as PathType
+import typing as typ
+
+if typ.TYPE_CHECKING:
+    from logging import Logger as LoggerType
+    from pathlib import Path as PathType
 
 _LOGGER = logging.getLogger(__name__)
 
