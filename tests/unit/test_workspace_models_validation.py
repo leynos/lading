@@ -222,8 +222,9 @@ def test_coerce_publish_setting_allows_sequences_and_bools() -> None:
     assert graph_build._coerce_publish_setting(None, "crate") is True
     assert graph_build._coerce_publish_setting(value=False, package_id="crate") is False
     assert graph_build._coerce_publish_setting(["crates-io"], "crate") is True
-    with pytest.raises(models.WorkspaceModelError):
-        graph_build._coerce_publish_setting("invalid", "crate")
+    for string_like_value in ("invalid", b"invalid", bytearray(b"invalid")):
+        with pytest.raises(models.WorkspaceModelError):
+            graph_build._coerce_publish_setting(string_like_value, "crate")
 
 
 def test_topological_sort_dedupes_duplicate_dependencies(tmp_path: Path) -> None:

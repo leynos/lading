@@ -23,7 +23,7 @@ if typ.TYPE_CHECKING:
     from tomlkit.toml_document import TOMLDocument  # pragma: no cover
 
     from .cli_run_types import CliRunResult
-    from .test_common_steps import _run_cli  # noqa: F401
+    from .test_common_steps import _run_cli  # ruff: ignore[unused-import]
 else:  # pragma: no cover - runtime fallback for typing helpers
     Path = typ.Any  # type: ignore[assignment]
     TOMLDocument = typ.Any  # type: ignore[assignment]

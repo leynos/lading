@@ -9,8 +9,8 @@ Publish tests rely on the workspace/config factory fixtures and the
 from __future__ import annotations
 
 import collections.abc as cabc
+import dataclasses as dc
 import typing as typ
-from dataclasses import dataclass  # noqa: ICN003
 
 import pytest
 import tomlkit
@@ -37,7 +37,7 @@ if typ.TYPE_CHECKING:
     from pathlib import Path
 
 
-@dataclass(frozen=True, slots=True)
+@dc.dataclass(frozen=True, slots=True)
 class _CrateSpec:
     """Describe how a temporary workspace crate should be created."""
 
@@ -46,7 +46,7 @@ class _CrateSpec:
     readme_workspace: bool = False
 
 
-@dataclass(frozen=True, slots=True)
+@dc.dataclass(frozen=True, slots=True)
 class PublishFixtures:
     """Bundle reusable publish helpers to trim fixture fan-out."""
 
