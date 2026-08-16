@@ -43,7 +43,7 @@ build: $(UV) .venv ## Build virtual-env and install deps
 build-release: build ## Build artefacts (sdist & wheel)
 	$(UV) run python -m build --sdist --wheel
 
-clean: ## Remove build artifacts
+clean: ## Remove build artefacts
 	rm -rf build dist *.egg-info \
 	  .mypy_cache .pytest_cache .coverage coverage.* \
 	  lcov.info htmlcov .venv

@@ -83,22 +83,22 @@ def test_build_test_arguments_skips_blank_entries_with_valid_names() -> None:
     assert result[-4:] == ["--exclude", "alpha", "--exclude", "beta"]
 
 
-def test_normalise_test_excludes_sorts_and_deduplicates() -> None:
+def test_normalize_test_excludes_sorts_and_deduplicates() -> None:
     """The normalization helper returns trimmed, sorted unique names."""
     entries = (" beta", "alpha ", "alpha", "gamma")
 
-    assert publish_preflight._normalise_test_excludes(entries) == (
+    assert publish_preflight._normalize_test_excludes(entries) == (
         "alpha",
         "beta",
         "gamma",
     )
 
 
-def test_normalise_test_excludes_handles_empty_values() -> None:
+def test_normalize_test_excludes_handles_empty_values() -> None:
     """Blank strings are ignored when normalizing test excludes."""
     entries = ("", " \t", "alpha", "", "beta")
 
-    assert publish_preflight._normalise_test_excludes(entries) == ("alpha", "beta")
+    assert publish_preflight._normalize_test_excludes(entries) == ("alpha", "beta")
 
 
 # ---------------------------------------------------------------------------

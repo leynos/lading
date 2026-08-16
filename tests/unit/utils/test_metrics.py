@@ -60,7 +60,7 @@ def test_zero_amount_increment_does_not_break_quiet_run(
 
 
 def test_label_order_does_not_matter() -> None:
-    """Label ordering is normalised in the registry key."""
+    """Label ordering is normalized in the registry key."""
     metrics.increment_counter("demo.pair", a="1", b="2")
 
     assert metrics.counter_value("demo.pair", b="2", a="1") == 1
@@ -86,7 +86,7 @@ def test_emit_summary_logs_structured_payload(
     """The summary line carries a JSON payload of every counter.
 
     Snapshotting the rendered message locks the exact structured output format
-    operators see, including counter ordering and label-key normalisation.
+    operators see, including counter ordering and label-key normalization.
     """
     caplog.set_level(logging.INFO, logger="lading.utils.metrics")
     metrics.increment_counter("demo.total", subcommand="package")

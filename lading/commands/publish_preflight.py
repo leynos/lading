@@ -271,7 +271,7 @@ def _preflight_argument_sets(
     return check_arguments, test_arguments
 
 
-def _normalise_test_excludes(entries: cabc.Sequence[str]) -> tuple[str, ...]:
+def _normalize_test_excludes(entries: cabc.Sequence[str]) -> tuple[str, ...]:
     """Return sorted, deduplicated, trimmed crate names for ``--exclude`` flags."""
     return tuple(sorted({crate.strip() for crate in entries if crate.strip()}))
 
@@ -281,7 +281,7 @@ def _build_test_arguments(
 ) -> list[str]:
     """Return cargo test arguments derived from ``options``."""
     arguments = list(base_arguments)
-    for crate_name in _normalise_test_excludes(options.test_excludes):
+    for crate_name in _normalize_test_excludes(options.test_excludes):
         # Sorted unique values keep cargo invocations deterministic for tests/logging.
         arguments.extend(("--exclude", crate_name))
     if options.unit_tests_only:

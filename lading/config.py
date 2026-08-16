@@ -13,7 +13,7 @@ from cyclopts.config import Toml
 
 from lading import toml_coerce
 from lading.exceptions import LadingError
-from lading.utils import normalise_workspace_root
+from lading.utils import normalize_workspace_root
 
 if typ.TYPE_CHECKING:  # pragma: no cover - type checking only
     from pathlib import Path
@@ -385,7 +385,7 @@ def build_loader(workspace_root: Path) -> Toml:
     >>> build_loader(Path("workspace")).path.name
     'lading.toml'
     """
-    resolved = normalise_workspace_root(workspace_root)
+    resolved = normalize_workspace_root(workspace_root)
     return Toml(
         path=resolved / CONFIG_FILENAME,
         must_exist=False,
@@ -516,7 +516,7 @@ def current_configuration() -> LadingConfig:
 
 
 def _strip_patches(value: object) -> StripPatchesSetting:
-    """Normalise the ``publish.strip_patches`` value."""
+    """Normalize the ``publish.strip_patches`` value."""
     if value is None:
         return "per-crate"
     if value in {"all", "per-crate"}:

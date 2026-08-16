@@ -191,12 +191,12 @@ def test_lookup_workspace_target_handles_missing_entries() -> None:
     assert result is None
 
 
-def test_path_normalisation_rejects_invalid_types() -> None:
+def test_path_normalization_rejects_invalid_types() -> None:
     """Non-path types should be rejected for manifest and root paths."""
     with pytest.raises(models.WorkspaceModelError):
-        graph_build._normalise_workspace_root(123)
+        graph_build._normalize_workspace_root(123)
     with pytest.raises(models.WorkspaceModelError):
-        graph_build._normalise_manifest_path(123, "field")
+        graph_build._normalize_manifest_path(123, "field")
 
 
 def test_expect_sequence_validation() -> None:

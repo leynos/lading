@@ -232,9 +232,9 @@ def test_preflight_append_compiletest_externs(
     monkeypatch.setattr(publish_preflight, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
     root = tmp_path / "workspace"
     root.mkdir()
-    artifact = root / "target" / "lint" / "liblint_macro.so"
-    artifact.parent.mkdir(parents=True, exist_ok=True)
-    artifact.touch()
+    artefact = root / "target" / "lint" / "liblint_macro.so"
+    artefact.parent.mkdir(parents=True, exist_ok=True)
+    artefact.touch()
     rustflags: list[str] = []
 
     def recording_runner(
@@ -259,7 +259,7 @@ def test_preflight_append_compiletest_externs(
     )
     configuration = make_config(
         preflight=make_preflight_config(
-            compiletest_externs=(("lint_macro", artifact.relative_to(root).as_posix()),)
+            compiletest_externs=(("lint_macro", artefact.relative_to(root).as_posix()),)
         )
     )
 
@@ -273,7 +273,7 @@ def test_preflight_append_compiletest_externs(
     assert rustflags, "Expected cargo test env to include RUSTFLAGS"
     last_flags = rustflags[-1]
     assert "--extern lint_macro" in last_flags
-    assert str(artifact) in last_flags
+    assert str(artefact) in last_flags
 
 
 def test_verify_clean_working_tree_detects_dirty_state(

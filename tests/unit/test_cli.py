@@ -23,7 +23,7 @@ from lading import config as config_module
 from lading.commands import bump as bump_command
 from lading.commands import bump_lockfiles
 from lading.commands import publish as publish_command
-from lading.utils import normalise_workspace_root
+from lading.utils import normalize_workspace_root
 from lading.workspace import WorkspaceCrate, WorkspaceGraph
 
 if typ.TYPE_CHECKING:
@@ -82,7 +82,7 @@ class ExceptionHandlingCase:
     ],
 )
 def test_resolve_log_level_parsing(value: str | None, expected: int) -> None:
-    """``_resolve_log_level`` should normalise supported variants."""
+    """``_resolve_log_level`` should normalize supported variants."""
     assert cli._resolve_log_level(value) == expected
 
 
@@ -160,13 +160,13 @@ def test_extract_workspace_override_requires_value_equals() -> None:
         cli._extract_workspace_override(["--workspace-root="])
 
 
-def test_normalise_workspace_root_defaults_to_cwd(
+def test_normalize_workspace_root_defaults_to_cwd(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     """Default workspace resolution uses the current working directory."""
     monkeypatch.chdir(tmp_path)
-    resolved = normalise_workspace_root(None)
+    resolved = normalize_workspace_root(None)
     assert resolved == tmp_path.resolve()
 
 

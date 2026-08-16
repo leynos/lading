@@ -62,7 +62,7 @@ def _inside_dir(draw: st.DrawFn) -> list[str]:
     for _ in range(length):
         options = [_SEGMENT, st.just(".")]
         # Emit ".." only while a real segment remains to cancel it. This
-        # exercises safe traversal without allowing normalisation above root.
+        # exercises safe traversal without allowing normalization above root.
         if depth > 0:
             options.append(st.just(".."))
         segment = draw(st.one_of(*options))
@@ -75,7 +75,7 @@ def _inside_dir(draw: st.DrawFn) -> list[str]:
 
 
 # Relative directory paths that stay inside the workspace, optionally with
-# redundant "." segments and safe ".." traversals which normalise away.
+# redundant "." segments and safe ".." traversals which normalize away.
 _INSIDE_DIR = _inside_dir()
 
 
@@ -112,7 +112,7 @@ def test_inside_manifests_resolve_to_sibling_lockfiles(
                 f"resolved path must be a sibling Cargo.lock: {lockfile_path}"
             )
             assert lockfile_path.parent == lockfile_path.parent.resolve(), (
-                f"lockfile parent must be a normalised path: {lockfile_path}"
+                f"lockfile parent must be a normalized path: {lockfile_path}"
             )
             assert lockfile_path.is_relative_to(resolved_root), (
                 f"lockfile must stay within the workspace root: {lockfile_path}"

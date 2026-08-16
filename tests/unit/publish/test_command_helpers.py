@@ -9,15 +9,15 @@ import pytest
 from lading import cli
 from lading.runtime import subprocess_runner
 from lading.testing import cmd_mox_runner
-from lading.testing.cmd_mox_runner import normalise_cmd_mox_command
+from lading.testing.cmd_mox_runner import normalize_cmd_mox_command
 
 execution = importlib.import_module("lading.runtime.subprocess_runner")
 
 
-def test_normalise_environment_handles_none_and_values() -> None:
-    """Environment normalisation should coerce values to strings."""
-    assert execution.normalise_environment(None) is None
-    assert execution.normalise_environment({"ALPHA": 1}) == {"ALPHA": "1"}
+def test_normalize_environment_handles_none_and_values() -> None:
+    """Environment normalization should coerce values to strings."""
+    assert execution.normalize_environment(None) is None
+    assert execution.normalize_environment({"ALPHA": 1}) == {"ALPHA": "1"}
 
 
 def test_format_thread_name_sanitises_paths() -> None:
@@ -96,15 +96,15 @@ def test_echo_buffered_output_skips_empty_payloads() -> None:
         ),
     ],
 )
-def test_normalise_cmd_mox_command_forwards_non_cargo_commands(
+def test_normalize_cmd_mox_command_forwards_non_cargo_commands(
     command: tuple[str, ...],
     expected_program: str,
     expected_args: list[str],
 ) -> None:
-    """cmd-mox normalisation preserves non-cargo commands and arguments."""
+    """cmd-mox normalization preserves non-cargo commands and arguments."""
     program, args = command[0], tuple(command[1:])
 
-    rewritten_program, rewritten_args = normalise_cmd_mox_command(program, args)
+    rewritten_program, rewritten_args = normalize_cmd_mox_command(program, args)
 
     assert rewritten_program == expected_program
     assert rewritten_args == expected_args

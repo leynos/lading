@@ -211,7 +211,7 @@ def _raise_unpublished_dependency_override_required(
 
 
 def _canonical_crate_name(name: str) -> str:
-    """Return the canonical crate name by normalising hyphens to underscores."""
+    """Return the canonical crate name by normalizing hyphens to underscores."""
     return name.replace("-", "_")
 
 

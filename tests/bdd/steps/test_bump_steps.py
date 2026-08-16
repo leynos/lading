@@ -304,9 +304,9 @@ def then_documentation_contains(
 ) -> None:
     """Assert that ``expected`` appears in the specified documentation file."""
     doc_path = cli_run["workspace"] / relative_path
-    normalised_expected = expected.replace(r"\"", '"')
+    normalized_expected = expected.replace(r"\"", '"')
     contents = doc_path.read_text(encoding="utf-8")
-    assert normalised_expected in contents
+    assert normalized_expected in contents
 
 
 @then(parsers.parse('the crate "{crate_name}" README contains "{expected}"'))
@@ -315,9 +315,9 @@ def then_crate_readme_contains(
 ) -> None:
     """Assert that the adopted crate README contains ``expected``."""
     readme_path = cli_run["workspace"] / "crates" / crate_name / "README.md"
-    normalised_expected = expected.replace(r"\"", '"')
+    normalized_expected = expected.replace(r"\"", '"')
     contents = readme_path.read_text(encoding="utf-8")
-    assert normalised_expected in contents
+    assert normalized_expected in contents
 
 
 @given(parsers.parse('the workspace README contains a relative link to "{target}"'))
