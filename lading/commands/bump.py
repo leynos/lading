@@ -52,7 +52,7 @@ from lading.commands.bump_manifests import (
     _workspace_dependency_sections,
 )
 from lading.commands.bump_output import BumpChanges, _format_result_message
-from lading.utils import normalise_workspace_root
+from lading.utils import normalize_workspace_root
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
@@ -193,7 +193,7 @@ def _initialize_bump_context(
 ) -> _BumpContext:
     """Return the initialised bump context for ``workspace_root``."""
     resolved_options = BumpOptions() if options is None else options
-    root_path = normalise_workspace_root(workspace_root)
+    root_path = normalize_workspace_root(workspace_root)
     configuration = resolved_options.configuration
     if configuration is None:
         configuration = config_module.current_configuration()

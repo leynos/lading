@@ -215,10 +215,10 @@ def test_run_cargo_preflight_command_arguments(
 def test_compiletest_diagnostic_details(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Failing cargo test pre-flight lists stderr artifacts with tail output."""
+    """Failing cargo test pre-flight lists stderr artefacts with tail output."""
     monkeypatch.setattr(publish_preflight, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
-    artifact = tmp_path / "ui.stderr"
-    artifact.write_text("line1\nline2\nline3\n", encoding="utf-8")
+    artefact = tmp_path / "ui.stderr"
+    artefact.write_text("line1\nline2\nline3\n", encoding="utf-8")
 
     def failing_runner(
         command: tuple[str, ...],
@@ -226,7 +226,7 @@ def test_compiletest_diagnostic_details(
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
-        return 1, f"diff at {artifact}", ""
+        return 1, f"diff at {artefact}", ""
 
     options = publish_preflight._CargoPreflightOptions(
         extra_args=("--workspace",),
@@ -242,6 +242,6 @@ def test_compiletest_diagnostic_details(
         )
 
     message = str(excinfo.value)
-    assert str(artifact) in message
+    assert str(artefact) in message
     assert "line2" in message
     assert "line3" in message

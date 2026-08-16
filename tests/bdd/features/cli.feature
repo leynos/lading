@@ -295,14 +295,14 @@ Feature: Lading CLI scaffolding
     When I invoke lading publish with that workspace
     Then the cargo test pre-flight env includes "--extern lint_macro" in RUSTFLAGS
 
-  Scenario: Publish surfaces compiletest stderr artifacts
+  Scenario: Publish surfaces compiletest stderr artefacts
     Given a workspace directory with configuration
     And cargo metadata describes a sample workspace
     And preflight.stderr_tail_lines is 1
-    And cargo test fails with compiletest artifact "ui.stderr"
+    And cargo test fails with compiletest artefact "ui.stderr"
     When I invoke lading publish with that workspace
     Then the CLI exits with code 1
-    And the stderr contains "Compiletest stderr artifacts"
+    And the stderr contains "Compiletest stderr artefacts"
     And the stderr contains "ui.stderr"
     And the stderr contains "line2"
 

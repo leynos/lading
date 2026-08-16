@@ -31,7 +31,7 @@ from lading.runtime import (
     coerce_text,
     subprocess_runner,
 )
-from lading.utils import normalise_workspace_root
+from lading.utils import normalize_workspace_root
 from lading.utils.process import command_detail
 
 if typ.TYPE_CHECKING:  # pragma: no cover - import-time typing aids only
@@ -170,7 +170,7 @@ def load_cargo_metadata(
     >>> metadata["workspace_root"]  # doctest: +SKIP
     '...'
     """  # noqa: DOC502 -- propagated from the two _*_cargo_metadata helpers
-    root_path = normalise_workspace_root(workspace_root)
+    root_path = normalize_workspace_root(workspace_root)
     command_runner = _active_command_runner(runner)
     exit_code, stdout_text, stderr_text = _invoke_cargo_metadata(
         command_runner, root_path

@@ -186,7 +186,7 @@ def test_preflight_config_from_mapping_defaults() -> None:
 
 
 def test_bump_config_from_mapping_parses_lockfile_fields() -> None:
-    """BumpConfig.from_mapping normalises lockfile settings."""
+    """BumpConfig.from_mapping normalizes lockfile settings."""
     mapping = {
         "lockfile_manifests": ["crates/nested/Cargo.toml"],
         "rebuild_lockfiles": True,
@@ -241,7 +241,7 @@ def test_use_configuration_sets_context(tmp_path: Path) -> None:
 
 
 def test_preflight_config_parses_extended_fields() -> None:
-    """Aux build commands, externs, and env overrides should be normalised."""
+    """Aux build commands, externs, and env overrides should be normalized."""
     mapping = {
         "test_exclude": ["alpha", "alpha", "beta"],
         "unit_tests_only": False,
@@ -292,7 +292,7 @@ def test_string_tuple_and_matrix_validation() -> None:
 
 
 def test_string_mapping_and_optional_mapping_validation() -> None:
-    """Mapping helpers should normalise values and reject invalid structures."""
+    """Mapping helpers should normalize values and reject invalid structures."""
     mapping = {"alpha": "one"}
     assert config_module._string_mapping(mapping, "table") == (("alpha", "one"),)
     with pytest.raises(config_module.ConfigurationError):
@@ -301,7 +301,7 @@ def test_string_mapping_and_optional_mapping_validation() -> None:
         config_module._optional_mapping(["not", "mapping"], "table")
 
 
-def test_integer_and_boolean_normalisation() -> None:
+def test_integer_and_boolean_normalization() -> None:
     """Numeric and boolean helpers should enforce allowed shapes."""
     assert config_module._non_negative_int(None, "lines", 3) == 3
     assert config_module._non_negative_int("7", "lines", 0) == 7

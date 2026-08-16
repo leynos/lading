@@ -366,15 +366,15 @@ property test in `tests/unit/test_bump_command_internals.py`, which exercises
 
 ### Workspace path normalization (`lading/utils/path.py`)
 
-`normalise_workspace_root(value)` is the shared helper that turns a
+`normalize_workspace_root(value)` is the shared helper that turns a
 user-supplied workspace root into a canonical `Path`. Import it from
 `lading.utils`:
 
 ```python
-from lading.utils import normalise_workspace_root
+from lading.utils import normalize_workspace_root
 
-normalise_workspace_root("~/workspace")  # -> absolute, ~ expanded
-normalise_workspace_root(None)           # -> Path.cwd().resolve()
+normalize_workspace_root("~/workspace")  # -> absolute, ~ expanded
+normalize_workspace_root(None)           # -> Path.cwd().resolve()
 ```
 
 It accepts `Path`, `str`, or `None`. `None` selects the resolved current
@@ -451,7 +451,7 @@ metadata = load_cargo_metadata(Path("/path/to/workspace"))
 print(metadata["workspace_root"])
 ```
 
-The helper normalizes the workspace path with `normalise_workspace_root`,
+The helper normalizes the workspace path with `normalize_workspace_root`,
 invokes `cargo metadata --format-version 1` through the active `CommandRunner`,
 and returns the parsed JSON mapping. Any execution errors or invalid output
 raise `CargoMetadataError` with a descriptive message, so callers can present
@@ -647,7 +647,7 @@ canonical replacement callers and tests now use directly:
 
 | Removed shim                                                                                                                                                                                                                                                                                                                                                          | Location               | Canonical replacement                                                                                                                                      |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Eleven `publish_preflight` private aliases (`_preflight_argument_sets`, `_CargoPreflightOptions`, `_apply_compiletest_externs`, `_build_preflight_environment`, `_build_test_arguments`, `_compose_preflight_arguments`, `_normalise_test_excludes`, `_run_aux_build_commands`, `_run_cargo_preflight`, `_validate_lockfile_freshness`, `_verify_clean_working_tree`) | `publish.py`           | `lading.commands.publish_preflight` (patch/call the defining module directly)                                                                              |
+| Eleven `publish_preflight` private aliases (`_preflight_argument_sets`, `_CargoPreflightOptions`, `_apply_compiletest_externs`, `_build_preflight_environment`, `_build_test_arguments`, `_compose_preflight_arguments`, `_normalize_test_excludes`, `_run_aux_build_commands`, `_run_cargo_preflight`, `_validate_lockfile_freshness`, `_verify_clean_working_tree`) | `publish.py`           | `lading.commands.publish_preflight` (patch/call the defining module directly)                                                                              |
 | `_run_preflight_checks` thin wrapper                                                                                                                                                                                                                                                                                                                                  | `publish.py`           | `publish_preflight._run_preflight_checks` (called directly by `run()`)                                                                                     |
 | Re-exports `_append_section`, `_format_plan`                                                                                                                                                                                                                                                                                                                          | `publish.py`           | `publish_plan.append_section`, `publish_plan.format_plan`                                                                                                  |
 | Re-export `metadata_module`                                                                                                                                                                                                                                                                                                                                           | `publish.py`           | `lading.workspace.metadata`                                                                                                                                |

@@ -342,9 +342,9 @@ def test_invoke_via_subprocess_writes_stdin() -> None:
     assert stderr == ""
 
 
-def test_normalise_environment_stringifies_values() -> None:
+def test_normalize_environment_stringifies_values() -> None:
     """Environment dictionaries should be coerced to string values."""
-    result = subprocess_runner.normalise_environment({"PATH": Path.cwd()})
+    result = subprocess_runner.normalize_environment({"PATH": Path.cwd()})
 
     assert result == {"PATH": str(Path.cwd())}
 

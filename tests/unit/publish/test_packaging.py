@@ -464,9 +464,9 @@ def test_execute_live_publication_pipeline_stops_after_partial_publish(
         env: cabc.Mapping[str, str] | None = None,
     ) -> tuple[int, str, str]:
         del env
-        normalised = tuple(command)
-        calls.append((normalised, cwd))
-        if normalised[:2] == ("cargo", "package") and cwd == beta_root:
+        normalized = tuple(command)
+        calls.append((normalized, cwd))
+        if normalized[:2] == ("cargo", "package") and cwd == beta_root:
             return 1, "", "packaging failed"
         return 0, "", ""
 

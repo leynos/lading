@@ -10,7 +10,7 @@ import typing as typ
 
 import pytest
 
-from lading.testing.cmd_mox_runner import normalise_cmd_mox_command
+from lading.testing.cmd_mox_runner import normalize_cmd_mox_command
 
 try:
     from cmd_mox import CmdMox
@@ -132,11 +132,11 @@ def _resolve_preflight_expectation(
     program, *args = command
     argument_tuple = tuple(args)
     if program == "cargo":
-        normalised_program, invocation_args = normalise_cmd_mox_command(
+        normalized_program, invocation_args = normalize_cmd_mox_command(
             program,
             argument_tuple,
         )
-        return normalised_program, tuple(invocation_args)
+        return normalized_program, tuple(invocation_args)
     return program, argument_tuple
 
 
@@ -250,7 +250,7 @@ def _create_stub_config(
     )
 
 
-def _normalise_preflight_responses(
+def _normalize_preflight_responses(
     config: _PreflightStubConfig,
 ) -> dict[tuple[str, ...], ResponseProvider]:
     """First publish override wins; package/publish --allow-dirty follows config."""
@@ -318,7 +318,7 @@ def _register_preflight_commands(
     config: _PreflightStubConfig,
 ) -> None:
     """Install cmd-mox doubles for publish pre-flight commands."""
-    defaults = _normalise_preflight_responses(config)
+    defaults = _normalize_preflight_responses(config)
     git_responses = {
         command[1:]: response
         for command, response in defaults.items()
@@ -435,12 +435,12 @@ def _invoke_publish_with_options(
         ),
     ],
 )
-def test_resolve_preflight_expectation_normalises_cargo_commands(
+def test_resolve_preflight_expectation_normalizes_cargo_commands(
     command: tuple[str, ...],
     expected_program: str,
     expected_args_prefix: tuple[str, ...],
 ) -> None:
-    """Ensure cmd-mox expectations follow publish command normalisation."""
+    """Ensure cmd-mox expectations follow publish command normalization."""
     program, args_prefix = _resolve_preflight_expectation(command)
 
     assert program == expected_program

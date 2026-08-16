@@ -127,19 +127,19 @@ def given_publish_preflight_finds_multiple_stale_lockfiles(
     )
 
 
-@given(parsers.parse('cargo test fails with compiletest artifact "{relative_path}"'))
-def given_cargo_test_fails_with_artifact(
+@given(parsers.parse('cargo test fails with compiletest artefact "{relative_path}"'))
+def given_cargo_test_fails_with_artefact(
     workspace_directory: Path,
     preflight_overrides: dict[tuple[str, ...], ResponseProvider],
     relative_path: str,
 ) -> None:
     """Create ``relative_path`` and configure cargo test to reference it."""
-    artifact = workspace_directory / relative_path
-    artifact.parent.mkdir(parents=True, exist_ok=True)
-    artifact.write_text("line1\nline2\n", encoding="utf-8")
+    artefact = workspace_directory / relative_path
+    artefact.parent.mkdir(parents=True, exist_ok=True)
+    artefact.write_text("line1\nline2\n", encoding="utf-8")
     preflight_overrides["cargo", "test", "--workspace"] = _CommandResponse(
         exit_code=1,
-        stderr=f"diff at {artifact}",
+        stderr=f"diff at {artefact}",
     )
 
 

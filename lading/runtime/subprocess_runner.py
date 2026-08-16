@@ -132,7 +132,7 @@ def _spawn_process(
     program: str,
     command: tuple[str, ...],
     context: SubprocessContext,
-    normalised_env: dict[str, str] | None,
+    normalized_env: dict[str, str] | None,
 ) -> subprocess.Popen[bytes]:
     """Create a ``Popen`` instance, mapping ``OSError`` to ``CommandSpawnError``."""
     try:
@@ -142,7 +142,7 @@ def _spawn_process(
         return subprocess.Popen(  # noqa: S603 # pylint: disable=consider-using-with
             command,
             cwd=None if context.cwd is None else str(context.cwd),
-            env=normalised_env,
+            env=normalized_env,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             stdin=subprocess.PIPE if context.stdin_data is not None else None,
@@ -208,8 +208,8 @@ def invoke_via_subprocess(
     # ``subprocess_runner`` via ``log_command_invocation``; only the
     # environment overrides are worth an extra DEBUG record here.
     _log_subprocess_environment(context.env)
-    normalised_env = normalise_environment(context.env)
-    process = _spawn_process(program, command, context, normalised_env)
+    normalized_env = normalize_environment(context.env)
+    process = _spawn_process(program, command, context, normalized_env)
     stdout_chunks: list[str] = []
     stderr_chunks: list[str] = []
     threads = [
@@ -236,7 +236,7 @@ def invoke_via_subprocess(
     return exit_code, "".join(stdout_chunks), "".join(stderr_chunks)
 
 
-def normalise_environment(
+def normalize_environment(
     env: cabc.Mapping[str, object] | None,
 ) -> dict[str, str] | None:
     """Return ``env`` with stringified values to satisfy ``subprocess``.
@@ -255,9 +255,9 @@ def normalise_environment(
 
     Examples
     --------
-    >>> normalise_environment({"PATH": "/usr/bin", "PORT": 8080})
+    >>> normalize_environment({"PATH": "/usr/bin", "PORT": 8080})
     {'PATH': '/usr/bin', 'PORT': '8080'}
-    >>> normalise_environment(None) is None
+    >>> normalize_environment(None) is None
     True
     """
     if env is None:

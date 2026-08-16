@@ -154,7 +154,7 @@ def test_render_section_invariants(
         )
 
 
-def _normalise_plan_message(message: str, root: Path) -> str:
+def _normalize_plan_message(message: str, root: Path) -> str:
     """Replace the absolute workspace root so snapshots stay deterministic."""
     return message.replace(str(root), "<workspace>")
 
@@ -174,7 +174,7 @@ def test_format_plan_snapshot_with_publishable(
 
     message = publish_plan.format_plan(plan, strip_patches="all")
 
-    assert snapshot == _normalise_plan_message(message, root), (
+    assert snapshot == _normalize_plan_message(message, root), (
         "rendered plan with publishable and skipped crates matches the snapshot"
     )
 
@@ -194,6 +194,6 @@ def test_format_plan_snapshot_without_publishable(
 
     message = publish_plan.format_plan(plan, strip_patches="per-crate")
 
-    assert snapshot == _normalise_plan_message(message, root), (
+    assert snapshot == _normalize_plan_message(message, root), (
         "empty publish set renders the empty-state plan snapshot"
     )

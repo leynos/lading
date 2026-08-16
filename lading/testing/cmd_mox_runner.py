@@ -5,7 +5,7 @@ defined in :mod:`lading.runtime`, so tests can route ``cargo`` and ``git``
 invocations through recorded cmd-mox expectations instead of spawning real
 subprocesses. :func:`cmd_mox_runner` is the adapter entry point: it validates
 the cmd-mox environment (the IPC socket path and the ``CMOX_IPC_TIMEOUT``
-timeout), normalises cargo subcommands to the namespaced names cmd-mox
+timeout), normalizes cargo subcommands to the namespaced names cmd-mox
 expects, sends the invocation over the IPC socket, and runs passthrough
 directives locally through :mod:`lading.runtime.subprocess_runner` so streaming
 output is preserved.
@@ -105,7 +105,7 @@ def cmd_mox_runner(
 
     Notes
     -----
-    Timeout validation, command splitting, command normalisation, environment
+    Timeout validation, command splitting, command normalization, environment
     construction, IPC invocation, passthrough handling, and response processing
     are delegated to the focused helpers in this module.
 
@@ -117,7 +117,7 @@ def cmd_mox_runner(
     """
     timeout = _prepare_cmd_mox_context()
     program, args = split_command(command)
-    invocation_program, invocation_args = normalise_cmd_mox_command(program, args)
+    invocation_program, invocation_args = normalize_cmd_mox_command(program, args)
     invocation = ipc.Invocation(
         command=invocation_program,
         args=invocation_args,
@@ -198,7 +198,7 @@ def _process_cmd_mox_response(
     return exit_code, stdout_text, stderr_text
 
 
-def normalise_cmd_mox_command(
+def normalize_cmd_mox_command(
     program: str,
     args: tuple[str, ...],
 ) -> tuple[str, list[str]]:

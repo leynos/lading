@@ -17,19 +17,19 @@ if typ.TYPE_CHECKING:
     from pathlib import Path
 
 
-def test_normalise_build_directory_defaults_to_tempdir(tmp_path: Path) -> None:
-    """Normalisation creates a temporary directory when none is provided."""
+def test_normalize_build_directory_defaults_to_tempdir(tmp_path: Path) -> None:
+    """Normalization creates a temporary directory when none is provided."""
     workspace_root = tmp_path / "workspace"
     workspace_root.mkdir()
 
-    build_directory = publish._normalise_build_directory(workspace_root, None)
+    build_directory = publish._normalize_build_directory(workspace_root, None)
 
     assert build_directory.exists()
     assert build_directory.is_absolute()
     assert not build_directory.is_relative_to(workspace_root)
 
 
-def test_normalise_build_directory_resolves_relative_paths(
+def test_normalize_build_directory_resolves_relative_paths(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Relative build directories are resolved against the current directory."""
@@ -37,24 +37,24 @@ def test_normalise_build_directory_resolves_relative_paths(
     workspace_root.mkdir()
     monkeypatch.chdir(tmp_path)
 
-    build_directory = publish._normalise_build_directory(workspace_root, "staging")
+    build_directory = publish._normalize_build_directory(workspace_root, "staging")
 
     expected = (tmp_path / "staging").resolve()
     assert build_directory == expected
     assert build_directory.exists()
 
 
-def test_normalise_build_directory_rejects_workspace_descendants(
+def test_normalize_build_directory_rejects_workspace_descendants(
     tmp_path: Path,
 ) -> None:
-    """Normalisation rejects build directories nested under the workspace."""
+    """Normalization rejects build directories nested under the workspace."""
     workspace_root = tmp_path / "workspace"
     workspace_root.mkdir()
 
     build_directory = workspace_root / "target"
 
     with pytest.raises(publish.PublishPreparationError) as excinfo:
-        publish._normalise_build_directory(workspace_root, build_directory)
+        publish._normalize_build_directory(workspace_root, build_directory)
 
     assert "cannot reside within the workspace root" in str(excinfo.value)
 

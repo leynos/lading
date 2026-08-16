@@ -106,7 +106,7 @@ lading [--workspace-root <path>] <subcommand> [options]
 - `--workspace-root` is implemented as a global flag that can be positioned
   before or after the subcommand. The bootstrapper removes the flag from the
   argument list, normalizes it via the shared
-  `lading.utils.normalise_workspace_root` helper (implemented with
+  `lading.utils.normalize_workspace_root` helper (implemented with
   `pathlib.Path` alone), and stores the resolved path in the
   `LADING_WORKSPACE_ROOT` environment variable so that Cyclopts can hydrate
   per-command options without bespoke parsing hooks.
@@ -226,7 +226,7 @@ build scripts, and complex workspace configurations.
 - Workspace discovery is anchored in `lading.workspace.metadata`. The module
   invokes `cargo metadata --format-version 1` through the active
   `CommandRunner`, normalizing the workspace root via
-  `lading.utils.normalise_workspace_root` before invoking the command.
+  `lading.utils.normalize_workspace_root` before invoking the command.
 - Failures to locate the `cargo` executable raise
   `CargoExecutableNotFoundError`; non-zero exit codes raise
   `CargoMetadataInvocationError`; malformed JSON payloads raise
@@ -602,7 +602,7 @@ lading/
   ├── config.py  # Frozen dataclasses for `lading.toml`
   ├── utils/
   │   ├── __init__.py
-  │   └── path.py  # Filesystem helpers such as `normalise_workspace_root`
+  │   └── path.py  # Filesystem helpers such as `normalize_workspace_root`
   └── workspace/
       ├── __init__.py
       ├── metadata.py  # `cargo metadata` invocation and parsing

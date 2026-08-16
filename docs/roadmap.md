@@ -321,7 +321,7 @@ invocation and path utilities.
 
   - **Outcome:** Path normalization uses `pathlib.Path` directly, removing the
     `plumbum.local.path()` dependency.
-  - **Completion Criteria:** `normalise_workspace_root()` behaviour unchanged;
+  - **Completion Criteria:** `normalize_workspace_root()` behaviour unchanged;
     plumbum import removed from the module.
 
 ______________________________________________________________________
