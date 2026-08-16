@@ -378,7 +378,9 @@ def _coerce_publish_setting(value: object, package_id: str) -> bool:
             return True
         case bool():
             return value
-        case cabc.Sequence() if not isinstance(value, str | bytes | bytearray):
+        case str() | bytes() | bytearray():
+            pass
+        case cabc.Sequence():
             return _is_non_empty_sequence(value)
     message = (
         f"publish setting for package {package_id!r} must be false, a list, or null"
