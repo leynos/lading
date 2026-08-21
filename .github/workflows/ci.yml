@@ -48,7 +48,7 @@ jobs:
       - name: Check spelling
         run: make spelling
 
-      - name: Run ruff
+      - name: Run linters, including Skylos dead-code detection
         run: make lint
 
       - name: Run typechecker

@@ -233,7 +233,6 @@ def test_topological_sort_dedupes_duplicate_dependencies(tmp_path: Path) -> None
     app_manifest = tmp_path / "crates" / "app" / "Cargo.toml"
 
     core = models.WorkspaceCrate(
-        id="core-id",
         name="core",
         version="0.1.0",
         manifest_path=core_manifest,
@@ -243,7 +242,6 @@ def test_topological_sort_dedupes_duplicate_dependencies(tmp_path: Path) -> None
         dependencies=(),
     )
     utils = models.WorkspaceCrate(
-        id="utils-id",
         name="utils",
         version="0.1.0",
         manifest_path=utils_manifest,
@@ -260,7 +258,6 @@ def test_topological_sort_dedupes_duplicate_dependencies(tmp_path: Path) -> None
         ),
     )
     app = models.WorkspaceCrate(
-        id="app-id",
         name="app",
         version="0.1.0",
         manifest_path=app_manifest,

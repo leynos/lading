@@ -139,12 +139,3 @@ def _dependency_sections_for_crate(
         # corresponding table entry can be located and updated.
         sections.setdefault(section, set()).add(dependency.manifest_name)
     return sections
-
-
-# Re-export internal functions used by tests to maintain backward compatibility
-_parse_manifest = bump_toml.parse_manifest
-_select_table = bump_toml.select_table
-_assign_version = bump_toml.assign_version
-_value_matches = bump_toml.value_matches
-_update_dependency_sections = bump_toml.update_dependency_sections
-_update_dependency_table = bump_toml.update_dependency_table

@@ -1,4 +1,4 @@
-# ADR-003: Use three-tier Python linting
+# ADR-003: Use layered Python linting
 
 ## Status
 
@@ -14,17 +14,22 @@ package code so internal APIs stay discoverable as modules are refactored.
 That documentation requirement needs to be part of the normal lint gate rather
 than an optional local check. It also needs to run after the virtual
 environment has been created and synchronized, because Interrogate is installed
-as a development dependency.
+as a development dependency. Cross-module dead-code detection also needs a
+blocking, deterministic production scan, without treating test-only references
+as application liveness.
 
 ## Decision
 
-`make lint` is the canonical Python lint gate and runs three tiers in order:
+`make lint` is the canonical Python lint gate and runs four tiers in order:
 
 1. Ruff checks formatting-adjacent style and broad correctness rules.
 2. Interrogate runs with `--fail-under 100` against `lading` and requires 100%
    docstring coverage.
 3. Pylint runs through the pinned `pylint-pypy-shim` command and applies the
    selected complementary checks.
+4. Skylos runs separately through a pinned `uv tool run` environment against
+   `lading`, with dead-code analysis only, no uploads or provenance collection,
+   and no repository-wide grep verification.
 
 The Makefile keeps lint tooling wired as prerequisites as well as recipe
 commands. `lint` depends on `build` before checking `interrogate`, so
@@ -35,7 +40,9 @@ the virtual-environment tool.
 
 New package modules, helper functions, and refactors must include docstrings at
 the time they are introduced. Missing documentation fails `make lint` before
-the Pylint tier runs.
+the Pylint tier runs. Genuine dead code must be removed. A verified static
+analysis false positive requires a precise, reasoned Skylos entry point or
+named allow-list exception in `pyproject.toml`.
 
 Contributors can still use Ruff and targeted tests during inner-loop work, but
 changes are not ready until the full `make lint` target succeeds.

@@ -86,7 +86,14 @@
   - Formatting is correct and validated.
 - **For Python files:**
   - **Testing:** Passes all relevant unit and behavioural tests (`make test`).
-  - **Linting:** Passes lint checks (`make lint`).
+  - **Linting:** Passes the complete `make lint` pipeline: Ruff, Interrogate,
+    Pylint, and the blocking Skylos dead-code scan. Investigate every Skylos
+    finding and remove genuine dead code. After verifying a false positive,
+    prefer a precise, typed entry-point rule in `[tool.skylos.dead_code]` with
+    its fully qualified symbol and a reason that names the verified caller.
+    Use `type = "method"` for methods. Use
+    `make skylos-allow NAME=handler REASON="Loaded by plugin registry"` only
+    when an entry-point rule cannot describe the boundary.
   - **Formatting:** Adheres to formatting standards (`make check-fmt`; use
     `make fmt` to apply fixes).
   - **Typechecking:** Passes type checking (`make typecheck`).

@@ -25,10 +25,14 @@ PYLINT_TARGETS ?= lading scripts tests
 PYLINT_PYPY_SHIM_REF ?= 726d09f968b4d729ee4b29c71fc732e744854f3b
 PYLINT_PYPY_SHIM = git+https://github.com/leynos/pylint-pypy-shim.git@$(PYLINT_PYPY_SHIM_REF)
 PYLINT = $(UV) tool run --python $(PYLINT_PYTHON) --from '$(PYLINT_PYPY_SHIM)' pylint-pypy
+SKYLOS_VERSION ?= 4.33.2
+SKYLOS ?= $(UV_ENV) $(UV) tool run --from 'skylos==$(SKYLOS_VERSION)' skylos \
+	--config-file pyproject.toml
+SKYLOS_PRODUCTION_TARGETS ?= lading
 
 .PHONY: help all clean build build-release lint fmt check-fmt \
 	markdownlint nixie spelling spelling-helper-test test typecheck crosshair \
-	$(TOOLS) $(VENV_TOOLS)
+	skylos-allow $(TOOLS) $(VENV_TOOLS)
 
 .DEFAULT_GOAL := all
 
@@ -88,12 +92,22 @@ lint: build $(UV) interrogate ## Run linters
 	$(RUFF) check
 	$(UV) run interrogate --fail-under 100 lading
 	$(PYLINT) $(PYLINT_TARGETS)
+	$(SKYLOS) $(SKYLOS_PRODUCTION_TARGETS) --category dead_code --gate \
+		--format concise --no-upload --no-provenance --no-grep-verify
+
+skylos-allow: export SKYLOS_NAME = $(value NAME)
+skylos-allow: export SKYLOS_REASON = $(value REASON)
+skylos-allow: ## Document one named Skylos exception, not an entry point
+	@test -n "$${SKYLOS_NAME}" || { printf "Error: NAME is required for a named whitelist exception\\n" >&2; exit 2; }
+	@test -n "$${SKYLOS_REASON}" || { printf "Error: REASON is required for a named whitelist exception\\n" >&2; exit 2; }
+	$(SKYLOS) whitelist "$${SKYLOS_NAME}" --reason "$${SKYLOS_REASON}"
 
 typecheck: build $(UV) ## Run typechecking
 	$(UV_ENV) $(TY) check --python-version 3.13 $(PY_SOURCES)
 
 markdownlint: spelling $(MDLINT) ## Lint Markdown files and enforce spelling
 	find . -type f -name '*.md' \
+	  -not -path './.uv-cache/*' -not -path './.uv-tools/*' \
 	  -not -path './.venv/*' -print0 | xargs -0 $(MDLINT)
 
 spelling: spelling-helper-test ## Enforce en-GB-oxendict spelling in Markdown prose

@@ -46,16 +46,17 @@ Run the Python lint gate with:
 make lint
 ```
 
-The target is deliberately three-tiered. Ruff runs first because it is fast,
+The target is deliberately four-tiered. Ruff runs first because it is fast,
 handles broad style and correctness checks, and imports the stricter lint
 policy used by `leynos/episodic`. If Ruff passes, the target runs `interrogate`
 with `--fail-under 100` across `lading` to enforce **100% docstring coverage**.
-If `interrogate` passes, the final tier runs Pylint through the pinned
+If `interrogate` passes, the third tier runs Pylint through the pinned
 `pylint-pypy-shim` tool under PyPy. The final tier is focused on rule families
 that complement Ruff, especially logging format safety, pattern matching
 checks, selected simplification checks, deprecated standard-library usage, file
-hygiene, and design-size limits.
-[ADR-003](adr/003-three-tier-python-linting.md) records the policy decision.
+hygiene, and design-size limits. Skylos then runs a blocking production-only
+dead-code scan across `lading`. [ADR-003](adr/003-three-tier-python-linting.md)
+records the policy decision.
 
 The relevant Makefile variables are:
 
@@ -79,20 +80,48 @@ The relevant Makefile variables are:
 - `PYLINT_PYPY_SHIM` — Git URL assembled from the pinned shim revision.
 - `PYLINT` — full `uv tool run --python $(PYLINT_PYTHON)` invocation for the
   shimmed Pylint command.
+- `SKYLOS_VERSION` — pinned Skylos release; defaults to `4.33.2`.
+- `SKYLOS` — separately provisioned Skylos command, configured from
+  `pyproject.toml` so local and Continuous Integration (CI) runs share the
+  reviewed allow-list policy.
+- `SKYLOS_PRODUCTION_TARGETS` — source directories checked for dead code;
+  defaults to `lading` so test-only references do not keep application symbols
+  live.
 
 The `lint` target depends on `ruff`, `build`, `uv`, and `interrogate`, so it
 creates and syncs the virtual environment before checking virtual-environment
-tools. Keep any future lint additions wired through Makefile prerequisites as
-well as command invocations, so local failures remain early and clear.
+tools. Skylos is separately provisioned by `uv tool run`. Keep any future lint
+additions wired through Makefile prerequisites and command invocations, so
+local failures remain early and clear.
 
-Ruff and Pylint policy live in `pyproject.toml`. The Ruff configuration enables
-preview rules, targets Python 3.13, imports the selected `episodic` rule set,
-and bans deprecated `typing` aliases in favour of built-in collection types,
-`collections.abc`, `collections`, `contextlib`, or `re` as appropriate. The
-Pylint configuration keeps the pass opt-in by disabling all messages first and
-then enabling only the chosen third-tier checks. Local ignores and thresholds
-document existing codebase constraints that should be addressed as focused
-cleanup work rather than incidental lint-gate churn.
+Ruff, Pylint, and Skylos policy live in `pyproject.toml`. The Ruff
+configuration enables preview rules, targets Python 3.13, imports the selected
+`episodic` rule set, and bans deprecated `typing` aliases in favour of built-in
+collection types, `collections.abc`, `collections`, `contextlib`, or `re` as
+appropriate. The Pylint configuration keeps the pass opt-in by disabling all
+messages first and then enabling only the chosen third-tier checks. Local
+ignores and thresholds document existing codebase constraints that should be
+addressed as focused cleanup work rather than incidental lint-gate churn.
+
+Skylos runs with concise, non-interactive output, dead-code analysis only, no
+uploads or provenance collection, and no repository-wide grep verification. The
+latter two constraints keep the local and CI gate deterministic and prevent
+test references from distorting production liveness. It never modifies source
+files.
+
+Treat every Skylos finding as dead code until its caller is verified. Remove
+genuine dead code. When a protocol-dispatched method, framework callback, or
+other runtime boundary cannot be inferred statically, add a precise, typed
+entry-point rule under `[tool.skylos.dead_code]`, using the fully qualified
+symbol and a reason that identifies the verified caller. Use `type = "method"`
+for methods. The configured entry points and the named whitelist are the
+version-controlled Skylos allow-list; do not add unexplained broad exceptions.
+
+Use `make skylos-allow NAME=... REASON=...` only when no typed entry-point rule
+can model the boundary. The target rejects blank values and records named
+exceptions under `[tool.skylos.whitelist.documented]`; each reason must explain
+who calls the symbol and how that was verified. Remove allow-list entries when
+the runtime boundary disappears.
 
 ## Testing hooks
 
