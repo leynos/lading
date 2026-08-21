@@ -191,7 +191,6 @@ def make_crate(
         encoding="utf-8",
     )
     return WorkspaceCrate(
-        id=f"{name}-id",
         name=name,
         version="0.1.0",
         manifest_path=manifest,

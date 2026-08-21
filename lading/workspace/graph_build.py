@@ -173,7 +173,6 @@ def _build_crate(
     readme_is_workspace = _manifest_uses_workspace_readme(manifest_path)
     root_path = manifest_path.parent
     return WorkspaceCrate(
-        id=package_id,
         name=name,
         version=version,
         manifest_path=manifest_path,

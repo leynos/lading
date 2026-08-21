@@ -60,7 +60,6 @@ def _synthetic_workspace(
     dependency_map = dependencies or {}
     crates = tuple(
         WorkspaceCrate(
-            id=f"{name}-id",
             name=name,
             version="0.1.0",
             manifest_path=root / name / "Cargo.toml",

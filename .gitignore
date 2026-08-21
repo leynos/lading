@@ -184,8 +184,11 @@ cython_debug/
 #  you could uncomment the following to ignore the enitre vscode folder
 # .vscode/
 
-# Ruff stuff:
+# Ruff and Skylos caches:
 .ruff_cache/
+.skylos/cache/
+.skylos/runs/
+.skylos/contribution/
 
 # PyPI configuration file
 .pypirc

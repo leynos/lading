@@ -216,7 +216,6 @@ def _copy_workspace_tree(
 
 def prepare_workspace(
     plan: PublishPlan,
-    workspace: WorkspaceGraph,
     *,
     options: PublishOptions | None = None,
 ) -> PublishPreparation:
@@ -227,8 +226,6 @@ def prepare_workspace(
     plan : PublishPlan
         The publication plan describing the workspace root and the publishable
         crates to be staged.
-    workspace : WorkspaceGraph
-        The resolved workspace graph being staged for publication.
     options : PublishOptions | None, optional
         Staging options controlling the build directory, symlink handling, and
         automatic cleanup. When :data:`None`, default :class:`PublishOptions`
@@ -248,7 +245,7 @@ def prepare_workspace(
 
     Examples
     --------
-    >>> preparation = prepare_workspace(plan, workspace)  # doctest: +SKIP
+    >>> preparation = prepare_workspace(plan)  # doctest: +SKIP
     >>> preparation.staging_root  # doctest: +SKIP
     PosixPath('/tmp/lading-publish-abcd1234/my-workspace')
     """
@@ -731,7 +728,7 @@ def run(
     plan = plan_publication(
         active_workspace, active_configuration, workspace_root=root_path
     )
-    preparation = prepare_workspace(plan, active_workspace, options=options)
+    preparation = prepare_workspace(plan, options=options)
     _apply_strip_patch_strategy(
         preparation.staging_root,
         plan,

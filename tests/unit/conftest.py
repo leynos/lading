@@ -192,7 +192,6 @@ def make_crate() -> cabc.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate
         manifest.write_text(tomlkit.dumps(document), encoding="utf-8")
 
         return WorkspaceCrate(
-            id=f"{name}-id",
             name=name,
             version="0.1.0",
             manifest_path=manifest,

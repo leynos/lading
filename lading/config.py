@@ -57,10 +57,6 @@ class ConfigurationNotLoadedError(ConfigurationError):
     """Raised when code accesses the configuration before it is loaded."""
 
 
-class MissingConfigurationError(ConfigurationError):
-    """Raised when the configuration file cannot be located."""
-
-
 @dc.dataclass(frozen=True, slots=True)
 class DocumentationConfig:
     """Configuration for documentation updates triggered by ``bump``."""
