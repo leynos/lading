@@ -25,8 +25,7 @@ PYLINT_TARGETS ?= lading scripts tests
 PYLINT_PYPY_SHIM_REF ?= 726d09f968b4d729ee4b29c71fc732e744854f3b
 PYLINT_PYPY_SHIM = git+https://github.com/leynos/pylint-pypy-shim.git@$(PYLINT_PYPY_SHIM_REF)
 PYLINT = $(UV) tool run --python $(PYLINT_PYTHON) --from '$(PYLINT_PYPY_SHIM)' pylint-pypy
-SKYLOS_VERSION ?= 4.33.2
-SKYLOS_COMMAND ?= $(UV_ENV) $(UV) tool run --from 'skylos==$(SKYLOS_VERSION)' skylos
+SKYLOS_COMMAND ?= $(UV_ENV) $(UV) run --locked skylos
 SKYLOS ?= $(SKYLOS_COMMAND) --config-file pyproject.toml
 SKYLOS_WHITELIST ?= $(SKYLOS_COMMAND) whitelist
 SKYLOS_PRODUCTION_TARGETS ?= lading
@@ -97,8 +96,9 @@ lint: build $(UV) interrogate ## Run linters
 		--format concise --no-upload --no-provenance --no-grep-verify
 
 skylos-allow: export SKYLOS_NAME = $(value NAME)
-skylos-allow: ## Document one named Skylos exception, not an entry point
+skylos-allow: build $(UV) ## Document one named Skylos exception, not an entry point
 	@test -n "$${SKYLOS_NAME}" || { printf "Error: NAME is required for a named whitelist exception\\n" >&2; exit 2; }
+	@case "$${SKYLOS_NAME}" in *[?*[]*) printf "Error: NAME must be a literal Skylos exception name\\n" >&2; exit 2;; esac
 	$(SKYLOS_WHITELIST) "$${SKYLOS_NAME}"
 
 typecheck: build $(UV) ## Run typechecking

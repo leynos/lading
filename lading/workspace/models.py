@@ -163,7 +163,6 @@ class WorkspaceGraph(msgspec.Struct, frozen=True, kw_only=True):
         --------
         >>> from pathlib import Path
         >>> crate = WorkspaceCrate(
-        ...     id="a 0.1.0",
         ...     name="a",
         ...     version="0.1.0",
         ...     manifest_path=Path("a/Cargo.toml"),
@@ -206,7 +205,6 @@ class WorkspaceGraph(msgspec.Struct, frozen=True, kw_only=True):
         --------
         >>> from pathlib import Path
         >>> crate = WorkspaceCrate(
-        ...     id="a 0.1.0",
         ...     name="a",
         ...     version="0.1.0",
         ...     manifest_path=Path("a/Cargo.toml"),

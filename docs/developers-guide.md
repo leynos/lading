@@ -51,12 +51,9 @@ handles broad style and correctness checks, and imports the stricter lint
 policy used by `leynos/episodic`. If Ruff passes, the target runs `interrogate`
 with `--fail-under 100` across `lading` to enforce **100% docstring coverage**.
 If `interrogate` passes, the third tier runs Pylint through the pinned
-`pylint-pypy-shim` tool under PyPy. The final tier is focused on rule families
-that complement Ruff, especially logging format safety, pattern matching
-checks, selected simplification checks, deprecated standard-library usage, file
-hygiene, and design-size limits. Skylos then runs a blocking production-only
-dead-code scan across `lading`. [ADR-003](adr/003-three-tier-python-linting.md)
-records the policy decision.
+`pylint-pypy-shim` tool under PyPy. The fourth tier runs Skylos as a blocking
+production-only dead-code scan across `lading`. The policy is recorded in
+[ADR-003](adr/003-three-tier-python-linting.md).
 
 The relevant Makefile variables are:
 
@@ -80,8 +77,8 @@ The relevant Makefile variables are:
 - `PYLINT_PYPY_SHIM` — Git URL assembled from the pinned shim revision.
 - `PYLINT` — full `uv tool run --python $(PYLINT_PYTHON)` invocation for the
   shimmed Pylint command.
-- `SKYLOS_VERSION` — pinned Skylos release; defaults to `4.33.2`.
-- `SKYLOS_COMMAND` — separately provisioned base Skylos command.
+- `SKYLOS_COMMAND` — locked Skylos command used by `make lint`; its version is
+  pinned by the lockfile's development dependency.
 - `SKYLOS` — the configured Skylos scan command used by `make lint`.
 - `SKYLOS_WHITELIST` — the standalone Skylos whitelist subcommand used by
   `make skylos-allow`.
@@ -89,11 +86,12 @@ The relevant Makefile variables are:
   defaults to `lading` so test-only references do not keep application symbols
   live.
 
-The `lint` target depends on `ruff`, `build`, `uv`, and `interrogate`, so it
-creates and syncs the virtual environment before checking virtual-environment
-tools. Skylos is separately provisioned by `uv tool run`. Keep any future lint
-additions wired through Makefile prerequisites and command invocations, so
-local failures remain early and clear.
+The `lint` target depends on `build`, `uv`, and `interrogate`, so it creates and
+syncs the virtual environment before checking virtual-environment tools. Ruff
+and Skylos are provisioned in the recipe commands, not as Makefile
+prerequisites. Keep any future lint additions wired through Makefile
+prerequisites and command invocations, so local failures remain early and
+clear.
 
 Ruff, Pylint, and Skylos policy live in `pyproject.toml`. The Ruff
 configuration enables preview rules, targets Python 3.13, imports the selected
