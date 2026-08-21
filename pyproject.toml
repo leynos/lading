@@ -480,11 +480,6 @@ full_name = [
 ]
 reason = "Publish pre-flight dispatches this adapter method through the LockfileInspectionRepository port."
 
-[tool.skylos.whitelist]
-names = []
-
-[tool.skylos.whitelist.documented]
-
 [tool.setuptools.packages.find]
 include = [
     "lading",

@@ -8,8 +8,6 @@ import subprocess
 import tomllib
 from pathlib import Path
 
-import pytest
-
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -74,22 +72,13 @@ def test_make_lint_runs_production_only_skylos_scan() -> None:
     assert "--no-upload --no-provenance --no-grep-verify" in command
 
 
-@pytest.mark.parametrize(
-    ("assignment", "expected_error"),
-    [
-        ("REASON=Loaded by plugin registry", "NAME is required"),
-        ("NAME=handler", "REASON is required"),
-    ],
-)
-def test_skylos_allow_requires_a_name_and_reason(
-    assignment: str, expected_error: str
-) -> None:
-    """Reject incomplete named Skylos allow-list exceptions."""
+def test_skylos_allow_requires_a_name() -> None:
+    """Reject unnamed Skylos allow-list exceptions."""
     make_executable = shutil.which("make")
     assert make_executable is not None, "Expected make to be available."
 
     result = subprocess.run(  # noqa: S603 - test invokes make without a shell
-        [make_executable, "--no-print-directory", "skylos-allow", assignment],
+        [make_executable, "--no-print-directory", "skylos-allow"],
         cwd=REPOSITORY_ROOT,
         check=False,
         capture_output=True,
@@ -97,13 +86,13 @@ def test_skylos_allow_requires_a_name_and_reason(
     )
 
     assert result.returncode == 2
-    assert expected_error in result.stderr
+    assert "NAME is required" in result.stderr
 
 
-def test_skylos_allow_passes_the_name_and_reason_as_separate_arguments(
+def test_skylos_allow_invokes_the_whitelist_subcommand_before_its_name(
     tmp_path: Path,
 ) -> None:
-    """Preserve the reason verbatim when invoking Skylos's whitelist command."""
+    """Keep Skylos's standalone whitelist subcommand free of scan options."""
     make_executable = shutil.which("make")
     assert make_executable is not None, "Expected make to be available."
     log_file = tmp_path / "skylos-arguments"
@@ -120,8 +109,7 @@ def test_skylos_allow_passes_the_name_and_reason_as_separate_arguments(
             "--no-print-directory",
             "skylos-allow",
             "NAME=handler; touch must-not-exist",
-            "REASON=Loaded by plugin registry; preserve this text",
-            f"SKYLOS={recorder}",
+            f"SKYLOS_COMMAND={recorder}",
         ],
         cwd=REPOSITORY_ROOT,
         check=False,
@@ -134,7 +122,5 @@ def test_skylos_allow_passes_the_name_and_reason_as_separate_arguments(
     assert log_file.read_text(encoding="utf-8").splitlines() == [
         "whitelist",
         "handler; touch must-not-exist",
-        "--reason",
-        "Loaded by plugin registry; preserve this text",
     ]
     assert not (REPOSITORY_ROOT / "must-not-exist").exists()

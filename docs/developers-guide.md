@@ -81,9 +81,10 @@ The relevant Makefile variables are:
 - `PYLINT` — full `uv tool run --python $(PYLINT_PYTHON)` invocation for the
   shimmed Pylint command.
 - `SKYLOS_VERSION` — pinned Skylos release; defaults to `4.33.2`.
-- `SKYLOS` — separately provisioned Skylos command, configured from
-  `pyproject.toml` so local and Continuous Integration (CI) runs share the
-  reviewed allow-list policy.
+- `SKYLOS_COMMAND` — separately provisioned base Skylos command.
+- `SKYLOS` — the configured Skylos scan command used by `make lint`.
+- `SKYLOS_WHITELIST` — the standalone Skylos whitelist subcommand used by
+  `make skylos-allow`.
 - `SKYLOS_PRODUCTION_TARGETS` — source directories checked for dead code;
   defaults to `lading` so test-only references do not keep application symbols
   live.
@@ -114,14 +115,14 @@ genuine dead code. When a protocol-dispatched method, framework callback, or
 other runtime boundary cannot be inferred statically, add a precise, typed
 entry-point rule under `[tool.skylos.dead_code]`, using the fully qualified
 symbol and a reason that identifies the verified caller. Use `type = "method"`
-for methods. The configured entry points and the named whitelist are the
-version-controlled Skylos allow-list; do not add unexplained broad exceptions.
+for methods. The configured entry points are the version-controlled Skylos
+allow-list; do not add unexplained broad exceptions.
 
-Use `make skylos-allow NAME=... REASON=...` only when no typed entry-point rule
-can model the boundary. The target rejects blank values and records named
-exceptions under `[tool.skylos.whitelist.documented]`; each reason must explain
-who calls the symbol and how that was verified. Remove allow-list entries when
-the runtime boundary disappears.
+Use `make skylos-allow NAME=...` only when no typed entry-point rule can model
+the boundary. Skylos's `whitelist` subcommand accepts the name only, so record
+the caller-specific rationale in the reviewing change. The target rejects blank
+names. Never use a broad or unreasoned exception, and remove allow-list entries
+when the runtime boundary disappears.
 
 ## Testing hooks
 

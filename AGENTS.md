@@ -91,9 +91,10 @@
     finding and remove genuine dead code. After verifying a false positive,
     prefer a precise, typed entry-point rule in `[tool.skylos.dead_code]` with
     its fully qualified symbol and a reason that names the verified caller.
-    Use `type = "method"` for methods. Use
-    `make skylos-allow NAME=handler REASON="Loaded by plugin registry"` only
-    when an entry-point rule cannot describe the boundary.
+    Use `type = "method"` for methods. Use `make skylos-allow NAME=handler`
+    only when an entry-point rule cannot describe the boundary. Skylos records
+    the name only, so retain the caller-specific rationale with the reviewing
+    change.
   - **Formatting:** Adheres to formatting standards (`make check-fmt`; use
     `make fmt` to apply fixes).
   - **Typechecking:** Passes type checking (`make typecheck`).
