@@ -121,8 +121,9 @@ lint: build $(UV) interrogate ## Run linters
 		--format concise --no-upload --no-provenance --no-grep-verify
 
 skylos-allow: export SKYLOS_NAME = $(value NAME)
-skylos-allow: ## Document one named Skylos exception, not an entry point
+skylos-allow: build $(UV) ## Document one named Skylos exception, not an entry point
 	@test -n "$${SKYLOS_NAME}" || { printf "Error: NAME is required for a named whitelist exception\\n" >&2; exit 2; }
+	@case "$${SKYLOS_NAME}" in *[?*[]*) printf "Error: NAME must be a literal Skylos exception name\\n" >&2; exit 2;; esac
 	$(SKYLOS_WHITELIST) "$${SKYLOS_NAME}"
 
 typecheck: build $(UV) ## Run typechecking

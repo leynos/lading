@@ -1,4 +1,10 @@
-"""Contract tests for the blocking Skylos dead-code lint gate."""
+"""Enforce the blocking Skylos dead-code lint contract.
+
+These tests validate the strict Skylos settings in `pyproject.toml` and the
+production-only `make lint` command. Run this suite with:
+
+    uv run pytest tests/workflow_contracts/test_skylos_lint_contract.py
+"""
 
 from __future__ import annotations
 
@@ -7,6 +13,8 @@ import shutil
 import subprocess
 import tomllib
 from pathlib import Path
+
+import pytest
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
@@ -38,6 +46,9 @@ def test_skylos_configuration_is_strict_and_reasoned() -> None:
         and entrypoint.get("type") in {"function", "method"}
         and isinstance(entrypoint.get("full_name"), list)
         and entrypoint["full_name"]
+        and all(
+            isinstance(name, str) and name.strip() for name in entrypoint["full_name"]
+        )
         and isinstance(entrypoint.get("reason"), str)
         and entrypoint["reason"].strip()
         for entrypoint in entrypoints
@@ -67,6 +78,7 @@ def test_make_lint_runs_production_only_skylos_scan() -> None:
     assert len(skylos_indexes) == 1, "Expected exactly one Skylos lint command."
     skylos_index = skylos_indexes[0]
     command = " ".join(commands[skylos_index : skylos_index + 2])
+    assert "uv run --locked skylos --config-file pyproject.toml" in command
     assert " lading --category dead_code --gate " in command
     assert " tests" not in command
     assert "--no-upload --no-provenance --no-grep-verify" in command
@@ -87,6 +99,24 @@ def test_skylos_allow_requires_a_name() -> None:
 
     assert result.returncode == 2
     assert "NAME is required" in result.stderr
+
+
+@pytest.mark.parametrize("name", ["*", "handler?", "handler[0]"])
+def test_skylos_allow_rejects_glob_patterns(name: str) -> None:
+    """Keep named Skylos exceptions from matching multiple symbols."""
+    make_executable = shutil.which("make")
+    assert make_executable is not None, "Expected make to be available."
+
+    result = subprocess.run(  # noqa: S603 - test invokes make without a shell
+        [make_executable, "--no-print-directory", "skylos-allow", f"NAME={name}"],
+        cwd=REPOSITORY_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 2
+    assert "must be a literal" in result.stderr
 
 
 def test_skylos_allow_invokes_the_whitelist_subcommand_before_its_name(

@@ -162,7 +162,8 @@ The relevant Makefile variables are:
   baseline without replacing the project's `.venv` interpreter.
 - `AMBRLEAKS` — isolated `df12-python-lints` tool invocation used to scan
   Syrupy snapshots under `tests`.
-- `SKYLOS_VERSION` — pinned Skylos release; defaults to `4.33.2`.
+- `SKYLOS_VERSION` — pinned Skylos release; defaults to `4.33.2`. It is also a
+  development dependency, so the locked environment resolves the same release.
 - `SKYLOS_COMMAND` — separately provisioned base Skylos command.
 - `SKYLOS` — the configured Skylos scan command used by `make lint`.
 - `SKYLOS_WHITELIST` — the standalone Skylos whitelist subcommand used by
@@ -171,11 +172,12 @@ The relevant Makefile variables are:
   defaults to `lading` so test-only references do not keep application symbols
   live.
 
-The `lint` target depends on `ruff`, `build`, `uv`, and `interrogate`, so it
-creates and syncs the virtual environment before checking virtual-environment
-tools. Skylos is separately provisioned by `uv tool run`. Keep any future lint
-additions wired through Makefile prerequisites and command invocations, so
-local failures remain early and clear.
+The `lint` target depends on `build`, `uv`, and `interrogate`, so it creates and
+syncs the virtual environment before checking virtual-environment tools. Ruff
+and Skylos are provisioned in the recipe commands, not as Makefile
+prerequisites. Keep any future lint additions wired through Makefile
+prerequisites and command invocations, so local failures remain early and
+clear.
 
 Ruff, Pylint, and Skylos policy live in `pyproject.toml`. The Ruff
 configuration enables preview rules, targets Python 3.13, imports the selected
