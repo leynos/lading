@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import tomllib
 from pathlib import Path
+
+import pytest
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
@@ -69,3 +72,69 @@ def test_make_lint_runs_production_only_skylos_scan() -> None:
     assert " lading --category dead_code --gate " in command
     assert " tests" not in command
     assert "--no-upload --no-provenance --no-grep-verify" in command
+
+
+@pytest.mark.parametrize(
+    ("assignment", "expected_error"),
+    [
+        ("REASON=Loaded by plugin registry", "NAME is required"),
+        ("NAME=handler", "REASON is required"),
+    ],
+)
+def test_skylos_allow_requires_a_name_and_reason(
+    assignment: str, expected_error: str
+) -> None:
+    """Reject incomplete named Skylos allow-list exceptions."""
+    make_executable = shutil.which("make")
+    assert make_executable is not None, "Expected make to be available."
+
+    result = subprocess.run(  # noqa: S603 - test invokes make without a shell
+        [make_executable, "--no-print-directory", "skylos-allow", assignment],
+        cwd=REPOSITORY_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 2
+    assert expected_error in result.stderr
+
+
+def test_skylos_allow_passes_the_name_and_reason_as_separate_arguments(
+    tmp_path: Path,
+) -> None:
+    """Preserve the reason verbatim when invoking Skylos's whitelist command."""
+    make_executable = shutil.which("make")
+    assert make_executable is not None, "Expected make to be available."
+    log_file = tmp_path / "skylos-arguments"
+    recorder = tmp_path / "record-skylos-arguments"
+    recorder.write_text(
+        '#!/bin/sh\nprintf \'%s\\n\' "$@" > "$SKYLOS_ALLOW_LOG"\n',
+        encoding="utf-8",
+    )
+    recorder.chmod(0o755)
+
+    result = subprocess.run(  # noqa: S603 - test invokes make without a shell
+        [
+            make_executable,
+            "--no-print-directory",
+            "skylos-allow",
+            "NAME=handler; touch must-not-exist",
+            "REASON=Loaded by plugin registry; preserve this text",
+            f"SKYLOS={recorder}",
+        ],
+        cwd=REPOSITORY_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "SKYLOS_ALLOW_LOG": str(log_file)},
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert log_file.read_text(encoding="utf-8").splitlines() == [
+        "whitelist",
+        "handler; touch must-not-exist",
+        "--reason",
+        "Loaded by plugin registry; preserve this text",
+    ]
+    assert not (REPOSITORY_ROOT / "must-not-exist").exists()
