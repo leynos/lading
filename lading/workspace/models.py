@@ -60,7 +60,6 @@ class WorkspaceDependency(msgspec.Struct, frozen=True, kw_only=True):
 class WorkspaceCrate(msgspec.Struct, frozen=True, kw_only=True):
     """Represents a single crate discovered in the workspace."""
 
-    id: str
     name: str
     version: str
     manifest_path: Path
