@@ -109,19 +109,14 @@ def test_skylos_allow_forwards_generated_argument_boundaries(
         encoding="utf-8",
     )
     recorder.chmod(0o755)
-    configuration_path = REPOSITORY_ROOT / "pyproject.toml"
+    configuration_path = tmp_path / "pyproject.toml"
+    configuration_path.write_text("[tool.skylos]\n", encoding="utf-8")
     before = configuration_path.read_bytes()
     completed = subprocess.run(  # noqa: S603 - fixed Make target and recorder.
-        (
-            _make_executable(),
-            "--no-print-directory",
-            f"SKYLOS_CLI={recorder}",
-            f"SKYLOS_WHITELIST_LOCK={tmp_path / '.skylos-whitelist.lock'}",
-            "skylos-allow",
-        ),
+        _whitelist_command(tmp_path, cli=str(recorder)),
         capture_output=True,
         check=False,
-        cwd=REPOSITORY_ROOT,
+        cwd=tmp_path,
         env={
             **os.environ,
             "NAME": "wsl-hostname",
@@ -141,7 +136,8 @@ def test_skylos_allow_forwards_generated_argument_boundaries(
         reason,
     ], "Skylos must receive each generated value as exactly one ordered argument."
     assert configuration_path.read_bytes() == before, (
-        "Recorder-backed whitelist forwarding must not modify pyproject.toml."
+        "Recorder-backed whitelist forwarding must not modify its isolated "
+        "pyproject.toml."
     )
 
 

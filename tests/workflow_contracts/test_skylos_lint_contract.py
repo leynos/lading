@@ -21,6 +21,62 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 _MAKEUTIL_COMMAND: typ.Final = ("makeutil", "parse", "Makefile")
 _MAKEUTIL_REVISION: typ.Final = "29fc5a1634ffbaa18a773eed9dff1b2838a45d9c"
 _MAKEUTIL_TOOLCHAIN: typ.Final = "nightly-2026-05-28"
+_SKYLOS_VERSION_TOKENS: typ.Final = ("4.33.2",)
+_SKYLOS_CLI_TOKENS: typ.Final = (
+    "$(UV_ENV)",
+    "$(UV)",
+    "tool",
+    "run",
+    "--python",
+    "3.14",
+    "--from",
+    "skylos==$(SKYLOS_VERSION)",
+    "skylos",
+)
+_SKYLOS_SCAN_TOKENS: typ.Final = (
+    "$(SKYLOS_CLI)",
+    "--config-file",
+    "pyproject.toml",
+)
+_SKYLOS_COMMAND_PREFIX: typ.Final = ("$(SKYLOS)",)
+_SKYLOS_PRODUCTION_TARGET_TOKENS: typ.Final = ("lading",)
+_SKYLOS_EXCLUSION_TOKENS: typ.Final = ("tests",)
+_SKYLOS_WHITELIST_LOCK_TOKENS: typ.Final = (".skylos-whitelist.lock",)
+_SKYLOS_LINT_RECIPE_TOKENS: typ.Final = (
+    "$(SKYLOS)",
+    "$(SKYLOS_PRODUCTION_TARGETS)",
+    "--exclude",
+    "$(SKYLOS_EXCLUDE_FOLDERS)",
+    "--category",
+    "dead_code",
+    "--gate",
+    "--format",
+    "concise",
+    "--no-upload",
+    "--no-provenance",
+    "--no-grep-verify",
+)
+_SKYLOS_WHITELIST_COMMAND_PREFIX: typ.Final = (
+    "flock",
+    "$(SKYLOS_WHITELIST_LOCK)",
+    "env",
+    "$(SKYLOS_CLI)",
+)
+_SKYLOS_WHITELIST_RECIPE_TOKENS: typ.Final = (
+    *_SKYLOS_WHITELIST_COMMAND_PREFIX,
+    "whitelist",
+    "$${SKYLOS_SYMBOL}",
+    "--reason",
+    "$${SKYLOS_REASON}",
+)
+_DOCUMENTED_WHITELIST_NAMES: typ.Final = frozenset[str]()
+_ENTRYPOINT_NAMES: typ.Final = frozenset({
+    "lading.commands.lockfile.validate_lockfile_freshness",
+    "lading.commands.lockfile._is_lockfile_stale_detail",
+    "lading.commands.bump_lockfiles.CargoLockfileRepository.resolve_lockfile_paths",
+    "lading.commands.bump_lockfiles.CargoLockfileRepository.regenerate_lockfiles",
+    "lading.commands.lockfile.CargoLockfileInspectionRepository.validate_lockfile_freshness",
+})
 _MAKEUTIL_INSTALL_TOKENS: typ.Final = (
     "rustup",
     "toolchain",
@@ -168,74 +224,46 @@ def test_makefile_defines_the_strict_production_skylos_gate() -> None:
     assert "makeutil" in test_prerequisites, (
         "Make test must require Makeutil for the Skylos contract suite."
     )
-    assert _variable_tokens("SKYLOS_VERSION") == ("4.33.2",), (
+    assert _variable_tokens("SKYLOS_VERSION") == _SKYLOS_VERSION_TOKENS, (
         "Skylos version must pin 4.33.2."
     )
-    assert _variable_tokens("SKYLOS_CLI") == (
-        "$(UV_ENV)",
-        "$(UV)",
-        "tool",
-        "run",
-        "--python",
-        "3.14",
-        "--from",
-        "skylos==$(SKYLOS_VERSION)",
-        "skylos",
-    ), "Skylos CLI must run the pinned tool through Python 3.14."
-    assert _variable_tokens("SKYLOS") == (
-        "$(SKYLOS_CLI)",
-        "--config-file",
-        "pyproject.toml",
-    ), "Skylos scan macro must add only the configuration file."
-    assert _variable_tokens("SKYLOS_PRODUCTION_TARGETS") == ("lading",), (
-        "Skylos production target must scan the lading package."
+    assert _variable_tokens("SKYLOS_CLI") == _SKYLOS_CLI_TOKENS, (
+        "Skylos CLI must run the pinned tool through Python 3.14."
     )
-    assert _variable_tokens("SKYLOS_EXCLUDE_FOLDERS") == ("tests",), (
+    assert _variable_tokens("SKYLOS") == _SKYLOS_SCAN_TOKENS, (
+        "Skylos scan macro must add only the configuration file."
+    )
+    assert (
+        _variable_tokens("SKYLOS_PRODUCTION_TARGETS")
+        == _SKYLOS_PRODUCTION_TARGET_TOKENS
+    ), "Skylos production target must scan the lading package."
+    assert _variable_tokens("SKYLOS_EXCLUDE_FOLDERS") == _SKYLOS_EXCLUSION_TOKENS, (
         "Skylos exclusion must omit the tests directory."
     )
     skylos_commands = [
-        command for command in _recipe_tokens("lint") if command[:1] == ("$(SKYLOS)",)
+        command
+        for command in _recipe_tokens("lint")
+        if command[: len(_SKYLOS_COMMAND_PREFIX)] == _SKYLOS_COMMAND_PREFIX
     ]
-    assert skylos_commands == [
-        (
-            "$(SKYLOS)",
-            "$(SKYLOS_PRODUCTION_TARGETS)",
-            "--exclude",
-            "$(SKYLOS_EXCLUDE_FOLDERS)",
-            "--category",
-            "dead_code",
-            "--gate",
-            "--format",
-            "concise",
-            "--no-upload",
-            "--no-provenance",
-            "--no-grep-verify",
-        )
-    ], "Skylos lint recipe must be the strict production-only dead-code scan."
+    assert skylos_commands == [_SKYLOS_LINT_RECIPE_TOKENS], (
+        "Skylos lint recipe must be the strict production-only dead-code scan."
+    )
 
 
 def test_whitelist_recipe_dispatches_before_reason() -> None:
     """Keep whitelist subcommand arguments separate from scan-only options."""
-    assert _variable_tokens("SKYLOS_WHITELIST_LOCK") == (".skylos-whitelist.lock",), (
+    assert _variable_tokens("SKYLOS_WHITELIST_LOCK") == _SKYLOS_WHITELIST_LOCK_TOKENS, (
         "Skylos whitelist writes must use the repository-local lock."
     )
     whitelist_commands = [
         command
         for command in _recipe_tokens("skylos-allow")
-        if command[:4] == ("flock", "$(SKYLOS_WHITELIST_LOCK)", "env", "$(SKYLOS_CLI)")
+        if command[: len(_SKYLOS_WHITELIST_COMMAND_PREFIX)]
+        == _SKYLOS_WHITELIST_COMMAND_PREFIX
     ]
-    assert whitelist_commands == [
-        (
-            "flock",
-            "$(SKYLOS_WHITELIST_LOCK)",
-            "env",
-            "$(SKYLOS_CLI)",
-            "whitelist",
-            "$${SKYLOS_SYMBOL}",
-            "--reason",
-            "$${SKYLOS_REASON}",
-        )
-    ], "Skylos whitelist must dispatch before its symbol and --reason arguments."
+    assert whitelist_commands == [_SKYLOS_WHITELIST_RECIPE_TOKENS], (
+        "Skylos whitelist must dispatch before its symbol and --reason arguments."
+    )
 
 
 def test_skylos_configuration_is_strict_and_reasoned() -> None:
@@ -247,11 +275,35 @@ def test_skylos_configuration_is_strict_and_reasoned() -> None:
     skylos = _mapping(tool.get("skylos"), subject="Skylos configuration")
     gate = _mapping(skylos.get("gate"), subject="Skylos gate configuration")
     assert gate.get("strict") is True, "Skylos strict gate mode must remain enabled."
+    whitelist = _mapping(
+        skylos.get("whitelist", {}), subject="Skylos whitelist configuration"
+    )
+    documented = _mapping(
+        whitelist.get("documented", {}), subject="Skylos documented whitelist"
+    )
+    assert frozenset(documented) == _DOCUMENTED_WHITELIST_NAMES, (
+        "Skylos documented whitelist names changed; verify each exception and update "
+        "the explicit contract set."
+    )
+    for symbol, reason in documented.items():
+        assert isinstance(symbol, str), (
+            "Every documented Skylos whitelist symbol must be a string."
+        )
+        assert symbol.strip(), (
+            "Every documented Skylos whitelist symbol must be non-whitespace."
+        )
+        assert isinstance(reason, str), (
+            "Every documented Skylos whitelist reason must be a string."
+        )
+        assert reason.strip(), (
+            "Every documented Skylos whitelist reason must be non-whitespace."
+        )
     dead_code = _mapping(
         skylos.get("dead_code"), subject="Skylos dead-code configuration"
     )
     entrypoints = _objects(dead_code.get("entrypoints"), subject="Skylos entrypoints")
     assert entrypoints, "Skylos dead-code configuration must retain entrypoints."
+    entrypoint_names: set[str] = set()
     for entrypoint in entrypoints:
         assert entrypoint.get("type") in {"function", "method"}, (
             "Every Skylos entrypoint must name a supported symbol type."
@@ -264,9 +316,14 @@ def test_skylos_configuration_is_strict_and_reasoned() -> None:
             assert full_name.strip(), (
                 "Every Skylos entrypoint symbol must be a non-whitespace string."
             )
+            entrypoint_names.add(full_name)
         reason = entrypoint.get("reason")
         assert isinstance(reason, str), "Every Skylos entrypoint must record a reason."
         assert reason.strip(), "Every Skylos entrypoint reason must be non-whitespace."
+    assert frozenset(entrypoint_names) == _ENTRYPOINT_NAMES, (
+        "Skylos entrypoint names changed; verify each implicit caller and update "
+        "the explicit contract set."
+    )
 
 
 def test_full_suite_workflows_provision_pinned_makeutil() -> None:
