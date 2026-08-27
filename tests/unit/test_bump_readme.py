@@ -44,7 +44,6 @@ def _make_crate(
         encoding="utf-8",
     )
     return WorkspaceCrate(
-        id="alpha-id",
         name="alpha",
         version="0.1.0",
         manifest_path=manifest_path,

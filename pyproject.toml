@@ -43,7 +43,7 @@ dev = [
     "cmd-mox@git+https://github.com/leynos/cmd-mox@f583c279a15760aba5cfd9bddf1fbbe9b1f8c429",
     "interrogate>=1.7.0",
     "syrupy>=5.1.0",
-    "hypothesis>=6",
+    "hypothesis>=6,<7",
     # Test-only: the end-to-end helpers shell out via plumbum; production
     # code is pathlib + cuprum only (docs/roadmap.md Phase 5).
     "plumbum>=1.8",
@@ -453,6 +453,38 @@ do_not_mutate = ["lading/testing/*"]
 
 [tool.uv]
 package = true
+
+[tool.skylos.gate]
+strict = true
+
+[[tool.skylos.dead_code.entrypoints]]
+type = "function"
+full_name = [
+    "lading.commands.lockfile.validate_lockfile_freshness",
+]
+reason = "The cargo inspection adapter delegates to this lockfile freshness classifier."
+
+[[tool.skylos.dead_code.entrypoints]]
+type = "function"
+full_name = [
+    "lading.commands.lockfile._is_lockfile_stale_detail",
+]
+reason = "validate_lockfile_freshness calls this private Cargo diagnostic classifier to distinguish stale lockfiles from other failures."
+
+[[tool.skylos.dead_code.entrypoints]]
+type = "method"
+full_name = [
+    "lading.commands.bump_lockfiles.CargoLockfileRepository.resolve_lockfile_paths",
+    "lading.commands.bump_lockfiles.CargoLockfileRepository.regenerate_lockfiles",
+]
+reason = "BumpOptions dispatches these adapter methods through the LockfileRepository port."
+
+[[tool.skylos.dead_code.entrypoints]]
+type = "method"
+full_name = [
+    "lading.commands.lockfile.CargoLockfileInspectionRepository.validate_lockfile_freshness",
+]
+reason = "Publish pre-flight dispatches this adapter method through the LockfileInspectionRepository port."
 
 [tool.setuptools.packages.find]
 include = [

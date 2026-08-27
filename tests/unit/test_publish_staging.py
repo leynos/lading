@@ -174,7 +174,7 @@ def test_prepare_workspace_does_not_stage_workspace_readme(
     configuration = publish_fixtures.make_config()
     plan = publish.plan_publication(workspace, configuration)
     preparation = publish.prepare_workspace(
-        plan, workspace, options=publish_fixtures.publish_options
+        plan, options=publish_fixtures.publish_options
     )
 
     staging_root = preparation.staging_root
@@ -206,7 +206,7 @@ def test_prepare_workspace_registers_cleanup(
     monkeypatch.setattr(publish.atexit, "register", capture)
 
     options = publish.PublishOptions(build_directory=build_directory, cleanup=True)
-    preparation = publish.prepare_workspace(plan, workspace, options=options)
+    preparation = publish.prepare_workspace(plan, options=options)
 
     assert len(registered) == 1
     cleanup = registered[0]
@@ -241,7 +241,7 @@ def test_prepare_workspace_returns_empty_copied_readmes(
     plan = publish.plan_publication(workspace, configuration)
 
     preparation = publish.prepare_workspace(
-        plan, workspace, options=publish_fixtures.publish_options
+        plan, options=publish_fixtures.publish_options
     )
 
     assert preparation.staging_root.exists()
@@ -266,7 +266,7 @@ def test_prepare_workspace_keeps_copied_readmes_empty_for_opted_in_crates(
     plan = publish.plan_publication(workspace, publish_fixtures.make_config())
 
     preparation = publish.prepare_workspace(
-        plan, workspace, options=publish_fixtures.publish_options
+        plan, options=publish_fixtures.publish_options
     )
 
     assert preparation.copied_readmes == ()
@@ -290,6 +290,6 @@ def test_prepare_workspace_does_not_register_cleanup_when_disabled(
 
     monkeypatch.setattr(publish.atexit, "register", capture)
 
-    publish.prepare_workspace(plan, workspace, options=publish_fixtures.publish_options)
+    publish.prepare_workspace(plan, options=publish_fixtures.publish_options)
 
     assert registered == []

@@ -174,7 +174,6 @@ def _make_workspace(root: Path) -> WorkspaceGraph:
     """Return a representative workspace graph for CLI tests."""
     crate_root = root / "crate"
     crate = WorkspaceCrate(
-        id="crate-id",
         name="crate",
         version="0.1.0",
         manifest_path=crate_root / "Cargo.toml",

@@ -83,7 +83,6 @@ def _build_workspace_with_internal_deps(
         manifests[spec.name] = manifest_path
         crates.append(
             WorkspaceCrate(
-                id=f"{spec.name}-id",
                 name=spec.name,
                 version=spec.version,
                 manifest_path=manifest_path,
@@ -145,7 +144,6 @@ def _create_alpha_crate(workspace_root: Path) -> WorkspaceCrate:
         encoding="utf-8",
     )
     return WorkspaceCrate(
-        id="alpha-id",
         name="alpha",
         version="0.1.0",
         manifest_path=alpha_manifest,
@@ -184,7 +182,6 @@ def _create_beta_crate_with_dependencies(
         encoding="utf-8",
     )
     return WorkspaceCrate(
-        id="beta-id",
         name="beta",
         version="0.1.0",
         manifest_path=beta_manifest,

@@ -7,6 +7,7 @@ import email.message
 import importlib
 import json
 import os
+import shutil
 import tomllib
 import typing as typ
 import urllib.error
@@ -19,6 +20,7 @@ if typ.TYPE_CHECKING:
     import types
 
 SCRIPT_DIRECTORY = Path(__file__).resolve().parents[1]
+REPOSITORY_ROOT = SCRIPT_DIRECTORY.parent
 
 
 def test_rollout_scripts_support_python_313() -> None:
@@ -109,6 +111,26 @@ def test_https_failure_reuses_valid_tracked_config(
 
     assert result.status == "tracked-config"
     assert result.cache == tracked_config
+
+
+def test_committed_local_policy_preserves_inline_code_exemptions(
+    rollout_modules: tuple[types.ModuleType, types.ModuleType, types.ModuleType],
+    tmp_path: Path,
+) -> None:
+    """The rendered policy retains the reviewed repository-local exemptions."""
+    _, _, generator = rollout_modules
+    committed_policy = REPOSITORY_ROOT / "typos.local.toml"
+    shutil.copyfile(committed_policy, tmp_path / committed_policy.name)
+    (tmp_path / ".typos-oxendict-base.toml").write_text(
+        _dictionary_text(), encoding="utf-8"
+    )
+
+    rendered = tomllib.loads(generator.render_config(tmp_path))
+    committed = tomllib.loads(committed_policy.read_text(encoding="utf-8"))
+
+    assert sorted(rendered["default"]["extend-ignore-re"]) == sorted(
+        committed["patterns"]["ignore"]
+    ), "Rendering must preserve the committed local spelling-policy exemptions."
 
 
 def test_dictionary_validation_rejects_invalid_documents(

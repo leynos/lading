@@ -60,7 +60,6 @@ class WorkspaceDependency(msgspec.Struct, frozen=True, kw_only=True):
 class WorkspaceCrate(msgspec.Struct, frozen=True, kw_only=True):
     """Represents a single crate discovered in the workspace."""
 
-    id: str
     name: str
     version: str
     manifest_path: Path
@@ -164,7 +163,6 @@ class WorkspaceGraph(msgspec.Struct, frozen=True, kw_only=True):
         --------
         >>> from pathlib import Path
         >>> crate = WorkspaceCrate(
-        ...     id="a 0.1.0",
         ...     name="a",
         ...     version="0.1.0",
         ...     manifest_path=Path("a/Cargo.toml"),
@@ -207,7 +205,6 @@ class WorkspaceGraph(msgspec.Struct, frozen=True, kw_only=True):
         --------
         >>> from pathlib import Path
         >>> crate = WorkspaceCrate(
-        ...     id="a 0.1.0",
         ...     name="a",
         ...     version="0.1.0",
         ...     manifest_path=Path("a/Cargo.toml"),

@@ -118,8 +118,9 @@ def test_run_skips_excluded_crates(tmp_path: pathlib.Path) -> None:
 
 def test_run_updates_internal_dependency_versions(tmp_path: pathlib.Path) -> None:
     """Internal dependency requirements are updated across dependency sections."""
+    alpha_package_id = "alpha-id"
     alpha_crate = _create_alpha_crate(tmp_path)
-    beta_crate = _create_beta_crate_with_dependencies(tmp_path, alpha_crate.id)
+    beta_crate = _create_beta_crate_with_dependencies(tmp_path, alpha_package_id)
     _write_workspace_manifest(
         tmp_path,
         [

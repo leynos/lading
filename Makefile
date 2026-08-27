@@ -25,10 +25,18 @@ PYLINT_TARGETS ?= lading scripts tests
 PYLINT_PYPY_SHIM_REF ?= 726d09f968b4d729ee4b29c71fc732e744854f3b
 PYLINT_PYPY_SHIM = git+https://github.com/leynos/pylint-pypy-shim.git@$(PYLINT_PYPY_SHIM_REF)
 PYLINT = $(UV) tool run --python $(PYLINT_PYTHON) --from '$(PYLINT_PYPY_SHIM)' pylint-pypy
+SKYLOS_VERSION ?= 4.33.2
+# Skylos parses source using its own Python AST, so Python 3.14 prevents
+# phantom dead-code findings from syntax older tool runtimes cannot parse.
+SKYLOS_CLI ?= $(UV_ENV) $(UV) tool run --python 3.14 --from 'skylos==$(SKYLOS_VERSION)' skylos
+SKYLOS ?= $(SKYLOS_CLI) --config-file pyproject.toml
+SKYLOS_PRODUCTION_TARGETS ?= lading
+SKYLOS_EXCLUDE_FOLDERS ?= tests
+SKYLOS_WHITELIST_LOCK ?= .skylos-whitelist.lock
 
 .PHONY: help all clean build build-release lint fmt check-fmt \
 	markdownlint nixie spelling spelling-helper-test test typecheck crosshair \
-	$(TOOLS) $(VENV_TOOLS)
+	makeutil skylos-allow $(TOOLS) $(VENV_TOOLS)
 
 .DEFAULT_GOAL := all
 
@@ -88,12 +96,22 @@ lint: build $(UV) interrogate ## Run linters
 	$(RUFF) check
 	$(UV) run interrogate --fail-under 100 lading
 	$(PYLINT) $(PYLINT_TARGETS)
+	$(SKYLOS) $(SKYLOS_PRODUCTION_TARGETS) --exclude $(SKYLOS_EXCLUDE_FOLDERS) --category dead_code --gate \
+		--format concise --no-upload --no-provenance --no-grep-verify
+
+skylos-allow: export SKYLOS_SYMBOL = $(value SYMBOL)
+skylos-allow: export SKYLOS_REASON = $(value REASON)
+skylos-allow: ## Document one named Skylos exception, not an entry point
+	@case "$${SKYLOS_SYMBOL}" in *[![:space:]]*) ;; *) printf "Error: SYMBOL is required for a named whitelist exception\\n" >&2; exit 2;; esac
+	@case "$${SKYLOS_REASON}" in *[![:space:]]*) ;; *) printf "Error: REASON is required for a named whitelist exception\\n" >&2; exit 2;; esac
+	flock "$(SKYLOS_WHITELIST_LOCK)" env $(SKYLOS_CLI) whitelist "$${SKYLOS_SYMBOL}" --reason "$${SKYLOS_REASON}"
 
 typecheck: build $(UV) ## Run typechecking
 	$(UV_ENV) $(TY) check --python-version 3.13 $(PY_SOURCES)
 
 markdownlint: spelling $(MDLINT) ## Lint Markdown files and enforce spelling
 	find . -type f -name '*.md' \
+	  -not -path './.uv-cache/*' -not -path './.uv-tools/*' \
 	  -not -path './.venv/*' -print0 | xargs -0 $(MDLINT)
 
 spelling: spelling-helper-test ## Enforce en-GB-oxendict spelling in Markdown prose
@@ -121,7 +139,10 @@ spelling-helper-test: ## Validate the shared spelling-policy integration
 nixie: $(NIXIE) ## Validate Mermaid diagrams
 	nixie --no-sandbox
 
-test: build $(UV) pytest ## Run tests
+makeutil: ## Verify the Makefile parser used by contract tests
+	$(call ensure_tool,$@)
+
+test: build $(UV) pytest makeutil ## Run tests
 	$(UV) run pytest -v
 
 # Model-check the bump_output pure-helper contracts (issue #95). Only the
