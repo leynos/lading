@@ -46,3 +46,18 @@ named allow-list exception in `pyproject.toml`.
 
 Contributors can still use Ruff and targeted tests during inner-loop work, but
 changes are not ready until the full `make lint` target succeeds.
+
+## Addendum — 2026-08-27
+
+The lint architecture now treats Skylos as the fourth Python lint tier and the
+final blocking check. It scans production modules only, excludes tests, and
+runs in strict gate mode. Skylos is invoked through a command-only macro with
+Python 3.14 and a pinned release because it parses source using its own runtime
+AST; fixing the interpreter version prevents phantom findings for syntax added
+by newer Python releases.
+
+Every finding remains subject to caller verification. Genuine dead code is
+removed. For a verified false positive, contributors must first use a typed
+entry-point rule. A named whitelist exception is appropriate only when that
+rule cannot model the runtime boundary, and it must include a caller-specific
+reason through `make skylos-allow SYMBOL=... REASON=...`.

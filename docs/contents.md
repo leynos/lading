@@ -30,8 +30,8 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
 
 ## Decision records
 
-- [ADR-003: Use layered Python linting][adr-003] - accepted linting policy for
-  Ruff, Interrogate, Pylint, and Skylos.
+- [ADR-003: Use layered Python linting][adr-003] - accepted four-tier linting
+  policy for Ruff, Interrogate, Pylint, and Skylos.
 - [ADR-004: In-process metrics accumulator flushed at exit][adr-004] - accepted
   design for the `lading.utils.metrics` backend and metric contracts.
 
