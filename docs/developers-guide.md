@@ -122,7 +122,7 @@ usage, file hygiene, and design-size limits. The fourth stage runs all
 3.13 semantic baseline for version-gated diagnostics. The fifth stage runs
 `ambrleaks`, which scans Syrupy snapshots under `tests` for values that should
 have been redacted. Finally, Skylos runs a blocking, strict, production-only
-dead-code scan across `lading`.
+dead-code scan across `lading`, after which the lint gate is complete.
 [ADR-003](adr/003-three-tier-python-linting.md)
 records the policy decision, including the
 [2026-09-07 addendum](adr/003-three-tier-python-linting.md#addendum-docstring-coverage-for-tests-and-scripts-2026-09-07)
@@ -162,12 +162,17 @@ The relevant Makefile variables are:
   baseline without replacing the project's `.venv` interpreter.
 - `AMBRLEAKS` — isolated `df12-python-lints` tool invocation used to scan
   Syrupy snapshots under `tests`.
-- `SKYLOS_VERSION` — pinned Skylos release; defaults to `4.33.2`. It is also a
-  development dependency, so the locked environment resolves the same release.
-- `SKYLOS_COMMAND` — separately provisioned base Skylos command.
-- `SKYLOS` — the configured Skylos scan command used by `make lint`.
-- `SKYLOS_WHITELIST` — the standalone Skylos whitelist subcommand used by
-  `make skylos-allow`.
+- `SKYLOS_VERSION` — the pinned Skylos release used by the command-only CLI
+  macro; defaults to `4.33.2`.
+- `SKYLOS_CLI` — the Python 3.14 Skylos CLI invocation. Skylos parses source
+  using its own runtime AST; pinning Python 3.14 prevents phantom findings when
+  newer Python syntax is present.
+- `SKYLOS` — the configured Skylos scan command used by `make lint`; global
+  scan options such as `--config-file` are kept separate from the CLI macro.
+- `SKYLOS_EXCLUDE_FOLDERS` — folders excluded from the production Skylos scan;
+  this keeps test modules out of the blocking dead-code gate.
+- `SKYLOS_WHITELIST_LOCK` — lock file used to serialize concurrent
+  `make skylos-allow` updates.
 - `SKYLOS_PRODUCTION_TARGETS` — source directories checked for dead code;
   defaults to `lading` so test-only references do not keep application symbols
   live.
@@ -178,6 +183,16 @@ and Skylos are provisioned in the recipe commands, not as Makefile
 prerequisites. Keep any future lint additions wired through Makefile
 prerequisites and command invocations, so local failures remain early and
 clear.
+
+The workflow-contract tests parse the Makefile with Makeutil. Bootstrap the
+pinned parser locally with:
+
+```bash
+rustup toolchain install nightly-2026-05-28
+RUSTFLAGS="-Zpolonius=next" cargo +nightly-2026-05-28 install \
+  --git https://github.com/leynos/makeutil \
+  --rev 29fc5a1634ffbaa18a773eed9dff1b2838a45d9c --locked --force makeutil
+```
 
 Ruff, Pylint, and Skylos policy live in `pyproject.toml`. The Ruff
 configuration enables preview rules, targets Python 3.13, imports the selected
@@ -204,11 +219,13 @@ symbol and a reason that identifies the verified caller. Use `type = "method"`
 for methods. The configured entry points are the version-controlled Skylos
 allow-list; do not add unexplained broad exceptions.
 
-Use `make skylos-allow NAME=...` only when no typed entry-point rule can model
-the boundary. Skylos's `whitelist` subcommand accepts the name only, so record
-the caller-specific rationale in the reviewing change. The target rejects blank
-names. Never use a broad or unreasoned exception, and remove allow-list entries
-when the runtime boundary disappears.
+Use `make skylos-allow SYMBOL=... REASON=...` only when no typed entry-point
+rule can model the boundary. Both values must contain non-whitespace content;
+the target rejects missing or whitespace-only values. `NAME` must not be used:
+WSL injects it with the hostname. The target invokes Skylos as
+`skylos whitelist <symbol> --reason <reason>` and serializes documented
+whitelist writes. Never use a broad or unreasoned exception, and remove
+allow-list entries when the runtime boundary disappears.
 
 ## Testing hooks
 

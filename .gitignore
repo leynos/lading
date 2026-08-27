@@ -189,6 +189,7 @@ cython_debug/
 .skylos/cache/
 .skylos/runs/
 .skylos/contribution/
+.skylos-whitelist.lock
 
 # PyPI configuration file
 .pypirc

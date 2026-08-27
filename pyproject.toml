@@ -38,15 +38,12 @@ dev = [
     # preview-only rules firing in one environment but not another. Bump both
     # sites together.
     "ruff==0.16.0",
-    # Lock Skylos with its transitive dependencies so local dead-code results
-    # match CI and do not depend on an external tool cache.
-    "skylos==4.33.2",
     "pyright",
     "pytest-timeout",
     "cmd-mox@git+https://github.com/leynos/cmd-mox@f583c279a15760aba5cfd9bddf1fbbe9b1f8c429",
     "interrogate>=1.7.0",
     "syrupy>=5.1.0",
-    "hypothesis>=6",
+    "hypothesis>=6,<7",
     # Test-only: the end-to-end helpers shell out via plumbum; production
     # code is pathlib + cuprum only (docs/roadmap.md Phase 5).
     "plumbum>=1.8",
