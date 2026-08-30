@@ -47,6 +47,42 @@ def test_run_cargo_preflight_raises_on_failure(
     assert "boom" in message
 
 
+def test_run_cargo_preflight_preserves_test_stdout_and_cargo_stderr(
+    tmp_path: Path,
+) -> None:
+    """A failing test reports both test results and Cargo warnings."""
+
+    def failing_runner(
+        command: tuple[str, ...],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        del command, cwd, env
+        return (
+            101,
+            "test smoke_lsp::windows_path FAILED\ntest result: FAILED",
+            "warning: unused manifest key: package.lints",
+        )
+
+    with pytest.raises(publish_preflight.PublishPreflightError) as excinfo:
+        publish_preflight._run_cargo_preflight(
+            tmp_path,
+            "test",
+            runner=failing_runner,
+            options=publish_preflight._CargoPreflightOptions(
+                extra_args=("--workspace",)
+            ),
+        )
+
+    message = str(excinfo.value)
+    assert message.count("stdout:") == 1
+    assert message.count("test smoke_lsp::windows_path FAILED") == 1
+    assert message.count("test result: FAILED") == 1
+    assert message.count("stderr:") == 1
+    assert message.count("warning: unused manifest key: package.lints") == 1
+
+
 @dc.dataclass(frozen=True)
 class _PreflightFailureCase:
     """Inputs for a single cargo-preflight failure-message snapshot."""

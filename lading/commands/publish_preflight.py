@@ -46,6 +46,7 @@ if typ.TYPE_CHECKING:
 
 
 LOGGER = logging.getLogger(__name__)
+_MAX_CARGO_FAILURE_STREAM_CHARS = 8_192
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -360,10 +361,30 @@ def _build_cargo_error_message(
     subcommand: str, exit_code: int, stdout: str, stderr: str
 ) -> str:
     """Return a consistent failure message for cargo pre-flight commands."""
-    return with_detail(
-        f"Pre-flight cargo {subcommand} failed with exit code {exit_code}",
-        stdout,
-        stderr,
+    stdout_detail = _bounded_cargo_failure_stream(stdout)
+    stderr_detail = _bounded_cargo_failure_stream(stderr)
+    if stdout_detail and stderr_detail:
+        detail = "\n".join((
+            "stdout:",
+            stdout_detail,
+            "stderr:",
+            stderr_detail,
+        ))
+    else:
+        detail = command_detail(stdout_detail, stderr_detail)
+    return append_detail(
+        f"Pre-flight cargo {subcommand} failed with exit code {exit_code}", detail
+    )
+
+
+def _bounded_cargo_failure_stream(stream: str) -> str:
+    """Return a stripped Cargo stream with a deterministic diagnostic bound."""
+    detail = stream.strip()
+    if len(detail) <= _MAX_CARGO_FAILURE_STREAM_CHARS:
+        return detail
+    return (
+        f"{detail[:_MAX_CARGO_FAILURE_STREAM_CHARS]}\n"
+        f"[truncated after {_MAX_CARGO_FAILURE_STREAM_CHARS} characters]"
     )
 
 
