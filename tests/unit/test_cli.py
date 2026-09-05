@@ -26,6 +26,7 @@ from lading.commands import bump_lockfiles
 from lading.commands import publish as publish_command
 from lading.utils import normalize_workspace_root
 from lading.workspace import WorkspaceCrate, WorkspaceGraph
+from tests.helpers.cwd import chdir_for_test
 
 if typ.TYPE_CHECKING:
     from types import ModuleType
@@ -186,7 +187,7 @@ def test_normalize_workspace_root_defaults_to_cwd(
     tmp_path: Path,
 ) -> None:
     """Default workspace resolution uses the current working directory."""
-    monkeypatch.chdir(tmp_path)
+    chdir_for_test(monkeypatch, tmp_path)
     resolved = normalize_workspace_root(None)
     assert resolved == tmp_path.resolve()
 
@@ -285,7 +286,7 @@ def test_main_handles_invalid_subcommand(
     tmp_path: Path,
 ) -> None:
     """Report an error when the subcommand is unknown."""
-    monkeypatch.chdir(tmp_path)
+    chdir_for_test(monkeypatch, tmp_path)
     exit_code = cli.main(["invalid"])
     assert exit_code != 0
     captured = capsys.readouterr()

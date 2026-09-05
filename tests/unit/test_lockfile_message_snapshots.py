@@ -89,7 +89,7 @@ class TestStaleLockfileMessages:
     """Snapshot stale-lockfile errors for one and multiple lockfiles."""
 
     @pytest.mark.parametrize(
-        "lockfiles",
+        "lockfile_paths",
         [
             pytest.param(
                 (Path("Cargo.lock"),),
@@ -98,7 +98,7 @@ class TestStaleLockfileMessages:
             pytest.param(
                 (
                     Path("Cargo.lock"),
-                    Path("tests/ui_lints/Cargo.lock"),
+                    Path("nested/Cargo.lock"),
                 ),
                 id="multiple",
             ),
@@ -109,13 +109,14 @@ class TestStaleLockfileMessages:
         monkeypatch: pytest.MonkeyPatch,
         snapshot: SnapshotAssertion,
         tmp_path: Path,
-        lockfiles: tuple[Path, ...],
+        lockfile_paths: tuple[Path, ...],
     ) -> None:
         """The public publish command reports every stale lockfile repair."""
+        lockfiles = tuple(tmp_path / path for path in lockfile_paths)
         monkeypatch.setattr(
             lockfile.CargoLockfileInspectionRepository,
             "discover_tracked_lockfiles",
-            lambda _repository, _root: tuple(tmp_path / path for path in lockfiles),
+            lambda _repository, _root: tuple(lockfiles),
         )
         monkeypatch.setattr(
             lockfile.CargoLockfileInspectionRepository,
@@ -146,9 +147,11 @@ class TestStaleLockfileMessages:
                 options=publish.PublishOptions(command_runner=runner),
             )
 
-        message = str(excinfo.value).replace("\\", "/")
-        nested_workspace = str(tmp_path / "tests" / "ui_lints").replace("\\", "/")
-        workspace = str(tmp_path).replace("\\", "/")
-        message = message.replace(nested_workspace, "<nested-workspace>")
-        message = message.replace(workspace, "<workspace>")
-        assert snapshot == message, "stale lockfile message should use stable paths"
+        message = str(excinfo.value)
+        for lockfile_path in lockfiles:
+            assert f"- {lockfile_path}" in message
+            assert (
+                f"cargo generate-lockfile --manifest-path "
+                f"{lockfile_path.parent / 'Cargo.toml'}"
+            ) in message
+        assert snapshot == message.replace(str(tmp_path), "<workspace>")
