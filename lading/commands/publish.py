@@ -21,8 +21,9 @@ in-plan dependencies during a single release train.
 :func:`_package_crate` and :func:`_publish_crate` each invoke ``cargo`` in the
 correct staged directory for a single crate. Both adapt cargo
 index-missing-version output into structured failures and detect publish-phase
-already-uploaded errors (:func:`_is_already_published_error`) to support
-non-fatal downgrade paths.
+already-uploaded errors
+(:func:`~lading.commands.cargo_output_adapter.is_already_published_error`) to
+support non-fatal downgrade paths.
 
 **Error boundary**
 
@@ -63,6 +64,7 @@ from lading.commands import publish_preflight
 from lading.commands.cargo_output_adapter import (
     CargoIndexLookupFailure,
     CargoSubprocessResult,
+    is_already_published_error,
     parse_index_lookup_failure,
 )
 from lading.commands.publish_errors import PublishError, PublishPreflightError
@@ -431,26 +433,6 @@ def _package_crate(
     raise PublishPreflightError(message)
 
 
-_ALREADY_PUBLISHED_MARKERS: tuple[str, ...] = (
-    "already uploaded",
-    "already published",
-    "already exists on crates.io",
-    "already exists on crates.io index",
-)
-
-_CARGO_REGISTRY_ERROR_CODE = 101
-
-
-def _is_already_published_error(exit_code: int, stdout: str, stderr: str) -> bool:
-    """Return True when ``cargo publish`` failed because the version exists."""
-    # Only consider exit code 101 (cargo registry error)
-    if exit_code != _CARGO_REGISTRY_ERROR_CODE:
-        return False
-
-    haystack = f"{stdout}\n{stderr}".lower()
-    return any(marker in haystack for marker in _ALREADY_PUBLISHED_MARKERS)
-
-
 def _publish_crates(
     plan: PublishPlan,
     preparation: PublishPreparation,
@@ -518,7 +500,7 @@ def _handle_publish_result(
             success_message, crate.name, state.position(crate), result.elapsed_seconds
         )
         return
-    if _is_already_published_error(exit_code, stdout, stderr):
+    if is_already_published_error(exit_code, stdout, stderr):
         LOGGER.warning(
             "Crate %s @ %s is already published; skipping",
             crate.name,
