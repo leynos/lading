@@ -1,12 +1,10 @@
 # Debugging plan: Windows subprocess relay encoding failure
 
-**Generated**: 2026-09-05 00:07:43 UTC
-**Issue ID**: Unfiled Windows `Publish dry run` failure
-**Severity**: High
-**Falsification sub-agent**: `alchemist`
-**Planning agent boundary**: This document was prepared by the planning agent.
-Falsification must be executed by the named sub-agent, not by the planning
-agent.
+**Generated**: 2026-09-05 00:07:43 UTC **Issue ID**: Unfiled Windows
+`Publish dry run` failure **Severity**: High **Falsification sub-agent**:
+`alchemist` **Planning agent boundary**: This document was prepared by the
+planning agent. Falsification must be executed by the named sub-agent, not by
+the planning agent.
 
 ## Problem statement
 
