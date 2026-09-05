@@ -104,10 +104,8 @@ typecheck: build $(UV) ## Run typechecking
 	$(UV_ENV) $(TY) check --python-version 3.13 $(PY_SOURCES)
 
 markdownlint: spelling $(MDLINT) ## Lint Markdown files and enforce spelling
-	find . -type f -name '*.md' \
-	  -not -path './.uv-cache/*' \
-	  -not -path './.uv-tools/*' \
-	  -not -path './.venv/*' -print0 | xargs -0 $(MDLINT)
+	git ls-files -z '*.md' | \
+		xargs -0 -r $(MDLINT)
 
 spelling: spelling-helper-test ## Enforce en-GB-oxendict spelling in Markdown prose
 	@$(UV_ENV) $(UV) run scripts/generate_typos_config.py
