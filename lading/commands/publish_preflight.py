@@ -11,6 +11,10 @@ dispatching publication. The function returns ``None`` when every check passes
 and raises :class:`lading.commands.publish_errors.PublishPreflightError` when a
 required check fails.
 
+The Cargo lockfile freshness step is a separate, colocated policy module,
+:mod:`lading.commands.publish_lockfile_preflight`; this module owns the cargo
+and git command orchestration and binds the lockfile inspection port for it.
+
 Examples
 --------
 ```python
@@ -28,19 +32,18 @@ import collections.abc as cabc
 import dataclasses as dc
 import logging
 import os
-import shlex
 import tempfile
 import typing as typ
 from pathlib import Path
 
-from lading.commands.lockfile import CargoLockfileInspectionRepository
+from lading.commands.lockfile_repository import CargoLockfileInspectionRepository
 from lading.commands.publish_diagnostics import _append_compiletest_diagnostics
 from lading.commands.publish_errors import PublishPreflightError
 from lading.commands.publish_execution import _invoke
+from lading.commands.publish_lockfile_preflight import _validate_lockfile_freshness
 from lading.utils.process import append_detail, command_detail, with_detail
 
 if typ.TYPE_CHECKING:
-    from lading.commands.lockfile import LockfileInspectionRepository
     from lading.config import CompiletestExtern, LadingConfig
     from lading.runtime import CommandRunner
 
@@ -132,8 +135,10 @@ def _run_preflight_checks(
     This is the composition root for lockfile inspection: it binds
     :class:`CargoLockfileInspectionRepository` to the selected command runner
     and the pre-flight base environment (issue #82), so the freshness domain
-    step runs through the port without holding a raw runner. Tests inject a
-    port double at the :func:`_validate_lockfile_freshness` seam instead.
+    step runs through the port without holding a raw runner. The freshness
+    policy itself lives in
+    :mod:`lading.commands.publish_lockfile_preflight`; tests inject a port
+    double at its :func:`_validate_lockfile_freshness` seam instead.
     """
     command_runner = runner or _invoke
     preflight_config = configuration.preflight
@@ -199,65 +204,6 @@ def _compose_preflight_arguments(
         arguments.append("--all-targets")
     arguments.append(f"--target-dir={target_dir}")
     return tuple(arguments)
-
-
-def _collect_stale_lockfiles(
-    tracked: cabc.Iterable[Path],
-    repository: LockfileInspectionRepository,
-) -> list[Path]:
-    """Classify tracked lockfiles; raise on error, return the stale paths."""
-    stale: list[Path] = []
-    for lockfile_path in tracked:
-        manifest_path = lockfile_path.parent / "Cargo.toml"
-        freshness = repository.validate_lockfile_freshness(manifest_path)
-        if freshness.is_fresh:
-            continue
-        if freshness.is_stale:
-            stale.append(lockfile_path)
-            continue
-        detail = freshness.detail or "cargo metadata --locked failed"
-        message = f"Cargo lockfile freshness check failed for {manifest_path}: {detail}"
-        LOGGER.error(message)
-        raise PublishPreflightError(message)
-    return stale
-
-
-def _build_stale_lockfile_message(stale_lockfiles: list[Path]) -> str:
-    """Return a human-readable diagnostic message for stale lockfiles."""
-    lines = [
-        "Tracked Cargo.lock files are stale after manifest version changes.",
-        (
-            "This can happen after manifest changes made without `lading bump`, "
-            "or after running `lading bump --no-rebuild-lockfiles`; repair each "
-            "stale lockfile directly:"
-        ),
-    ]
-    for lockfile_path in stale_lockfiles:
-        manifest_path = lockfile_path.parent / "Cargo.toml"
-        lines.append(f"- {lockfile_path}")
-        quoted_manifest_path = shlex.quote(str(manifest_path))
-        lines.append(
-            f"  cargo generate-lockfile --manifest-path {quoted_manifest_path}"
-        )
-    return "\n".join(lines)
-
-
-def _validate_lockfile_freshness(
-    workspace_root: Path,
-    *,
-    repository: LockfileInspectionRepository,
-) -> None:
-    """Fail early when tracked Cargo.lock files are stale."""
-    tracked = repository.discover_tracked_lockfiles(workspace_root)
-    stale_lockfiles = _collect_stale_lockfiles(tracked, repository)
-
-    if not stale_lockfiles:
-        LOGGER.info("All %d tracked lockfile(s) are fresh under --locked", len(tracked))
-        return
-
-    message = _build_stale_lockfile_message(stale_lockfiles)
-    LOGGER.error(message)
-    raise PublishPreflightError(message)
 
 
 def _preflight_argument_sets(

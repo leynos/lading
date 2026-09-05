@@ -16,13 +16,13 @@ from pathlib import Path
 import pytest
 
 from lading import config
-from lading.commands import bump, lockfile, publish
+from lading.commands import bump, lockfile, lockfile_repository, publish
 from lading.workspace import WorkspaceGraph
 
 if typ.TYPE_CHECKING:
     from syrupy.assertion import SnapshotAssertion
 
-_SNAPSHOT_WORKSPACE_ROOT = Path("/ws")
+_SNAPSHOT_WORKSPACE_ROOT = Path("/<tmp-file-path>")
 
 
 class TestBumpLockfileMessages:
@@ -100,7 +100,7 @@ class TestStaleLockfileMessages:
             pytest.param(
                 [
                     _SNAPSHOT_WORKSPACE_ROOT / "Cargo.lock",
-                    _SNAPSHOT_WORKSPACE_ROOT / "tests" / "ui_lints" / "Cargo.lock",
+                    _SNAPSHOT_WORKSPACE_ROOT / "nested" / "Cargo.lock",
                 ],
                 id="multiple",
             ),
@@ -115,12 +115,12 @@ class TestStaleLockfileMessages:
     ) -> None:
         """The public publish command reports every stale lockfile repair."""
         monkeypatch.setattr(
-            lockfile.CargoLockfileInspectionRepository,
+            lockfile_repository.CargoLockfileInspectionRepository,
             "discover_tracked_lockfiles",
             lambda _repository, _root: tuple(lockfiles),
         )
         monkeypatch.setattr(
-            lockfile.CargoLockfileInspectionRepository,
+            lockfile_repository.CargoLockfileInspectionRepository,
             "validate_lockfile_freshness",
             lambda _repository, _manifest: lockfile.LockfileFreshness(
                 is_fresh=False,

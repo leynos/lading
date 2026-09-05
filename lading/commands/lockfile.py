@@ -23,18 +23,20 @@ in place after manifest rewrites, whereas validation here uses
 ``cargo metadata --locked`` purely as a read-only freshness probe.
 
 The publish pre-flight domain reaches these operations through the
-:class:`LockfileInspectionRepository` port (issue #82) rather than holding a
-raw command runner. :class:`CargoLockfileInspectionRepository` is the
-git- and cargo-backed adapter, bound to a runner (and optional environment
-overrides) at the pre-flight composition root.
+:class:`~lading.commands.lockfile_repository.LockfileInspectionRepository` port
+(issue #82) rather than holding a raw command runner. That port and its
+git- and cargo-backed adapter live in
+:mod:`lading.commands.lockfile_repository`, leaving this module to the domain
+operations themselves.
 
-Typical publish-side usage:
+Typical direct usage:
 
 ```python
-repository = CargoLockfileInspectionRepository(runner=runner)
-lockfiles = repository.discover_tracked_lockfiles(workspace_root)
+from pathlib import Path
+
+lockfiles = discover_tracked_lockfiles(Path("."), runner)
 for lockfile_path in lockfiles:
-    repository.validate_lockfile_freshness(lockfile_path.parent / "Cargo.toml")
+    validate_lockfile_freshness(lockfile_path.parent / "Cargo.toml", runner)
 ```
 """
 
@@ -59,12 +61,33 @@ type _ManifestExists = cabc.Callable[[Path], bool]
 
 # Metric names (issue #91); documented in docs/developers-guide.md.
 DISCOVERED_LOCKFILES_METRIC = "lockfile.discovered"
+DISCOVERY_FAILURE_METRIC = "lockfile.discovery.failed"
 VALIDATE_METRIC = "lockfile.validate"
 VALIDATE_DURATION_METRIC = "lockfile.validate.duration"
 
 
 class LockfileDiscoveryError(LadingError):
     """Raised when git cannot list tracked lockfiles."""
+
+
+class NotAGitRepositoryError(LockfileDiscoveryError):
+    """Raised when lockfile discovery targets a directory outside git control.
+
+    Callers that treat a non-git workspace as "nothing to validate" should
+    catch this subclass and decide the skip policy themselves; discovery no
+    longer hides the condition behind a warning and an empty result.
+
+    Attributes
+    ----------
+    workspace_root : Path
+        The directory that was found to be outside git control, kept as a
+        structured attribute so callers need not parse the message.
+    """
+
+    def __init__(self, workspace_root: Path) -> None:
+        """Capture the workspace root that is not under git control."""
+        self.workspace_root = workspace_root
+        super().__init__(f"{workspace_root} is not a git repository")
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -76,22 +99,24 @@ class LockfileFreshness:
     detail: str = ""
 
 
-def _handle_git_ls_files_failure(
+def _raise_git_ls_files_failure(
     exit_code: int,
     stdout: str,
     stderr: str,
     workspace_root: Path,
-) -> tuple[Path, ...] | None:
-    """Return ``None`` on git success or an empty tuple when not a git repo."""
-    if exit_code == 0:
-        return None
+) -> typ.NoReturn:
+    """Raise the typed discovery error for a failed ``git ls-files`` call.
+
+    Both exits are counted under :data:`DISCOVERY_FAILURE_METRIC` regardless of
+    ``emit_observability``, which scopes to success telemetry only. Matching the
+    English text is sound because discovery pins the C locale (issue #79);
+    ``git ls-files`` exits 128 for every fatal condition, so the status code
+    alone cannot separate a non-repository from an unrelated failure.
+    """
     detail = command_detail(stdout, stderr)
     if "not a git repository" in detail.lower():
-        LOGGER.warning(
-            "Skipping Cargo.lock discovery because %s is not a git repository",
-            workspace_root,
-        )
-        return ()
+        metrics.increment_counter(DISCOVERY_FAILURE_METRIC, reason="not_git")
+        raise NotAGitRepositoryError(workspace_root)
     # Unlike the other sites, git may exit non-zero with no output at all, so
     # fall back to the status code before handing the detail to append_detail.
     fallback = f"git ls-files exited with status {exit_code}"
@@ -99,6 +124,8 @@ def _handle_git_ls_files_failure(
         f"Failed to discover tracked Cargo.lock files in {workspace_root}",
         detail or fallback,
     )
+    metrics.increment_counter(DISCOVERY_FAILURE_METRIC, reason="git_error")
+    LOGGER.error(message)
     raise LockfileDiscoveryError(message)
 
 
@@ -142,36 +169,41 @@ def discover_tracked_lockfiles(
         manifest. The default adapter checks the filesystem.
     emit_observability : bool, optional
         Whether successful discovery records metrics and an informational log.
-        Error handling and the non-Git warning remain active when false.
+        It suppresses success telemetry only: the error paths below still
+        raise when false, so a quiet caller cannot mistake a failed discovery
+        for an empty one.
 
     Returns
     -------
     tuple[Path, ...]
         Git-tracked ``Cargo.lock`` files outside any ``target`` directory and
-        with an adjacent ``Cargo.toml`` manifest. The helper
-        :func:`_handle_git_ls_files_failure` handles git failures, and
+        with an adjacent ``Cargo.toml`` manifest.
         :func:`_lockfiles_with_manifests` applies manifest and path filtering.
+
+    Raises
+    ------
+    NotAGitRepositoryError
+        If ``workspace_root`` is not under git control. Callers own the skip
+        policy for that condition.
+    LockfileDiscoveryError
+        If ``git ls-files`` fails for any other reason.
 
     Notes
     -----
-    An empty tuple arises from two distinct paths. First, when
-    ``workspace_root`` is not a git repository, discovery logs a warning
-    through :func:`_handle_git_ls_files_failure` and returns empty. Second,
-    when ``git ls-files`` succeeds but no tracked lockfile qualifies (none
-    outside ``target`` with an adjacent manifest), the filtered result is
-    empty. When ``git ls-files`` exits non-zero for any other reason,
-    :func:`_handle_git_ls_files_failure` raises
-    :class:`LockfileDiscoveryError`.
+    Filesystem access is confined to the injected ``manifest_exists`` port;
+    git access is confined to the injected ``runner``. The function performs
+    no direct I/O of its own, so integration tests can exercise it against
+    real directories and unit tests can substitute both ports. Classification of
+    the failure below matches git's English text, so every production adapter
+    pins the C locale on the runner it injects (see
+    :func:`lading.utils.process.c_locale_env`).
     """
     exit_code, stdout, stderr = runner(
         ("git", "ls-files", "**/Cargo.lock", "Cargo.lock"),
         cwd=workspace_root,
     )
-    error_result = _handle_git_ls_files_failure(
-        exit_code, stdout, stderr, workspace_root
-    )
-    if error_result is not None:
-        return error_result
+    if exit_code != 0:
+        _raise_git_ls_files_failure(exit_code, stdout, stderr, workspace_root)
     lockfiles = _lockfiles_with_manifests(stdout, workspace_root, manifest_exists)
     if emit_observability and lockfiles:
         # Skip a zero-amount increment: it would create a 0-valued counter key
@@ -242,134 +274,3 @@ def _is_lockfile_stale_detail(detail: str) -> bool:
         "needs to be updated" in normalized
         or "cannot update the lock file" in normalized
     )
-
-
-@dc.dataclass(frozen=True, slots=True)
-class CargoLockfileInspectionRepository:
-    """Git- and cargo-backed adapter for publish-side lockfile inspection.
-
-    Binds a :class:`~lading.runtime.CommandRunner` (and optional environment
-    overrides) so the publish pre-flight domain can discover tracked lockfiles
-    and probe their freshness without holding a raw command runner (issue #82).
-    The adapter applies ``env`` to any invocation that does not supply its own,
-    matching the behaviour the pre-flight base environment previously wired in
-    through an inline runner wrapper.
-
-    Attributes
-    ----------
-    runner : CommandRunner
-        Command runner used to execute the git discovery and cargo freshness
-        probes.
-    env : Mapping[str, str] | None, default None
-        Environment overrides applied to any invocation that does not supply
-        its own; ``None`` leaves each call's environment untouched.
-    manifest_exists : Callable[[Path], bool], default Path.exists
-        Predicate deciding whether a discovered lockfile has an adjacent
-        ``Cargo.toml`` manifest; the default checks the filesystem.
-    """
-
-    runner: CommandRunner
-    env: cabc.Mapping[str, str] | None = None
-    manifest_exists: _ManifestExists = Path.exists
-
-    def discover_tracked_lockfiles(self, workspace_root: Path) -> tuple[Path, ...]:
-        """Return tracked Cargo.lock files with adjacent manifests.
-
-        Parameters
-        ----------
-        workspace_root
-            Path to the repository root searched for tracked lockfiles.
-
-        Returns
-        -------
-        tuple[Path, ...]
-            Git-tracked ``Cargo.lock`` files outside any ``target`` directory
-            that have an adjacent ``Cargo.toml`` manifest.
-
-        """
-        return discover_tracked_lockfiles(
-            workspace_root,
-            self._bound_runner(),
-            manifest_exists=self.manifest_exists,
-        )
-
-    def validate_lockfile_freshness(self, manifest_path: Path) -> LockfileFreshness:
-        """Return Cargo's locked-mode freshness result for ``manifest_path``.
-
-        Parameters
-        ----------
-        manifest_path
-            Path to the Cargo manifest to validate under ``--locked``.
-
-        Returns
-        -------
-        LockfileFreshness
-            Structured result describing whether the lockfile is fresh, stale
-            (Cargo says it needs updating under ``--locked``), or failed for
-            another reason.
-
-        """
-        return validate_lockfile_freshness(manifest_path, self._bound_runner())
-
-    def _bound_runner(self) -> CommandRunner:
-        """Return ``runner`` with ``env`` applied when a call omits its own."""
-        if self.env is None:
-            return self.runner
-        base_env = self.env
-        base_runner = self.runner
-
-        def runner_with_env(
-            command: cabc.Sequence[str],
-            *,
-            cwd: Path | None = None,
-            env: cabc.Mapping[str, str] | None = None,
-            **runner_kwargs: bool,
-        ) -> tuple[int, str, str]:
-            """Invoke ``base_runner`` with ``base_env`` as the default env."""
-            effective_env = base_env if env is None else env
-            return base_runner(command, cwd=cwd, env=effective_env, **runner_kwargs)
-
-        return runner_with_env
-
-
-class LockfileInspectionRepository(typ.Protocol):
-    """Port for discovering tracked lockfiles and probing their freshness.
-
-    The publish pre-flight domain depends on this protocol rather than on a
-    command runner, keeping VCS, filesystem, and cargo execution concerns out
-    of the freshness-classification logic (issue #82). This is the publish-side
-    counterpart to :class:`lading.commands.bump_lockfiles.LockfileRepository`,
-    which owns bump-side lockfile projection and regeneration.
-    """
-
-    def discover_tracked_lockfiles(self, workspace_root: Path) -> tuple[Path, ...]:
-        """Return tracked Cargo.lock files with adjacent manifests.
-
-        Parameters
-        ----------
-        workspace_root
-            Path to the repository root searched for tracked lockfiles.
-
-        Returns
-        -------
-        tuple[Path, ...]
-            Git-tracked ``Cargo.lock`` files outside any ``target`` directory
-            that have an adjacent ``Cargo.toml`` manifest.
-
-        """
-
-    def validate_lockfile_freshness(self, manifest_path: Path) -> LockfileFreshness:
-        """Return the freshness result for ``manifest_path``.
-
-        Parameters
-        ----------
-        manifest_path
-            Path to the Cargo manifest to validate.
-
-        Returns
-        -------
-        LockfileFreshness
-            The freshness result, distinguishing fresh, stale, and failed
-            states.
-
-        """
