@@ -49,10 +49,12 @@ needed.
 from __future__ import annotations
 
 import atexit
+import collections.abc as cabc
 import dataclasses as dc
 import logging
 import shutil
 import tempfile
+import time
 import typing as typ
 from pathlib import Path
 
@@ -65,7 +67,9 @@ from lading.commands.cargo_output_adapter import (
 )
 from lading.commands.publish_errors import PublishError, PublishPreflightError
 from lading.commands.publish_execution import (
+    _CargoInvocation,
     _invoke,
+    _run_timed_cargo,
 )
 from lading.commands.publish_index_check import (
     _format_cargo_failure_message,
@@ -91,6 +95,7 @@ from lading.utils.path import normalize_workspace_root
 LOGGER = logging.getLogger(__name__)
 
 if typ.TYPE_CHECKING:
+    from lading.commands.publish_execution import _TimedCargoResult
     from lading.config import LadingConfig
     from lading.runtime import CommandRunner
     from lading.workspace import WorkspaceCrate, WorkspaceGraph
@@ -121,6 +126,14 @@ class _PublicationPipelineState:
     plan: PublishPlan
     preparation: PublishPreparation
     options: _PublishExecutionOptions
+    # Monotonic clock used to time each cargo invocation; tests inject a
+    # deterministic one, matching the ``clock`` seam in
+    # ``bump_lockfile_regeneration``.
+    clock: cabc.Callable[[], float] = time.perf_counter
+
+    def position(self, crate: WorkspaceCrate) -> str:
+        """Return ``crate``'s ``n/total`` position in the publish order."""
+        return f"{self.plan.publishable.index(crate) + 1}/{len(self.plan.publishable)}"
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -384,29 +397,35 @@ def _package_crate(
     options = state.options
     package_args: tuple[str, ...] = ("--allow-dirty",) if options.allow_dirty else ()
     crate_root = _resolve_staged_crate_root(crate, plan, state.preparation.staging_root)
-    LOGGER.info("Running cargo package for crate %s", crate.name)
-    exit_code, stdout, stderr = runner(
-        ("cargo", "package", *package_args),
-        cwd=crate_root,
-        env=None,
+    position = state.position(crate)
+    LOGGER.info("Running cargo package for crate %s (%s)", crate.name, position)
+    result = _run_timed_cargo(
+        _CargoInvocation(("cargo", "package", *package_args), crate_root, crate.name),
+        runner=runner,
+        clock=state.clock,
     )
-    if exit_code == 0:
-        LOGGER.info("Successfully packaged crate %s", crate.name)
+    if result.exit_code == 0:
+        LOGGER.info(
+            "Successfully packaged crate %s (%s) in %.1fs",
+            crate.name,
+            position,
+            result.elapsed_seconds,
+        )
         return
     lookup_failure = parse_index_lookup_failure(
         crate_name=crate.name,
         subcommand="package",
         result=CargoSubprocessResult(
-            exit_code=exit_code,
-            stdout=stdout,
-            stderr=stderr,
+            exit_code=result.exit_code,
+            stdout=result.stdout,
+            stderr=result.stderr,
         ),
     )
     if lookup_failure is not None:
         _handle_index_missing_version(lookup_failure, plan=plan, options=options)
         return
     message = _format_cargo_failure_message(
-        "package", crate.name, exit_code, (stdout, stderr)
+        "package", crate.name, result.exit_code, result.streams
     )
     LOGGER.error(message)
     raise PublishPreflightError(message)
@@ -464,36 +483,40 @@ def _publish_crate(
     publish_args_tuple = tuple(publish_args)
     crate_root = _resolve_staged_crate_root(crate, plan, state.preparation.staging_root)
     LOGGER.info(
-        "Running cargo publish%s for crate %s",
+        "Running cargo publish%s for crate %s (%s)",
         "" if options.live else " --dry-run",
         crate.name,
+        state.position(crate),
     )
-    exit_code, stdout, stderr = runner(
-        ("cargo", "publish", *publish_args_tuple),
-        cwd=crate_root,
-        env=None,
+    result = _run_timed_cargo(
+        _CargoInvocation(
+            ("cargo", "publish", *publish_args_tuple), crate_root, crate.name
+        ),
+        runner=runner,
+        clock=state.clock,
     )
-    _handle_publish_result(
-        crate, (exit_code, stdout, stderr), plan=plan, options=options
-    )
+    _handle_publish_result(crate, result, state=state)
 
 
 def _handle_publish_result(
     crate: WorkspaceCrate,
-    output: tuple[int, str, str],
+    result: _TimedCargoResult,
     *,
-    plan: PublishPlan,
-    options: _PublishExecutionOptions,
+    state: _PublicationPipelineState,
 ) -> None:
     """Handle a completed ``cargo publish`` invocation."""
-    exit_code, stdout, stderr = output
+    plan = state.plan
+    options = state.options
+    exit_code, stdout, stderr = result.exit_code, result.stdout, result.stderr
     if exit_code == 0:
         success_message = (
-            "Successfully published crate %s"
+            "Successfully published crate %s (%s) in %.1fs"
             if options.live
-            else "Dry-run publish succeeded for crate %s"
+            else "Dry-run publish succeeded for crate %s (%s) in %.1fs"
         )
-        LOGGER.info(success_message, crate.name)
+        LOGGER.info(
+            success_message, crate.name, state.position(crate), result.elapsed_seconds
+        )
         return
     if _is_already_published_error(exit_code, stdout, stderr):
         LOGGER.warning(

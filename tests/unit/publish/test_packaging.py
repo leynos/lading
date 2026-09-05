@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import collections.abc as cabc
 import logging
+import re
 import shutil
 import typing as typ
 
@@ -126,14 +127,17 @@ def test_package_publishable_crates_runs_in_plan_order(
     assert runner.calls == [
         (("cargo", "package", "--allow-dirty"), root) for root in expected_roots
     ], "cargo package should run once per publishable crate in order"
-    assert caplog.messages == [
-        "Running cargo package for crate alpha",
-        "Successfully packaged crate alpha",
-        "Running cargo package for crate beta",
-        "Successfully packaged crate beta",
-        "Running cargo package for crate gamma",
-        "Successfully packaged crate gamma",
+    expected_messages = [
+        r"Running cargo package for crate alpha \(1/3\)",
+        r"Successfully packaged crate alpha \(1/3\) in \d+\.\ds",
+        r"Running cargo package for crate beta \(2/3\)",
+        r"Successfully packaged crate beta \(2/3\) in \d+\.\ds",
+        r"Running cargo package for crate gamma \(3/3\)",
+        r"Successfully packaged crate gamma \(3/3\) in \d+\.\ds",
     ]
+    assert len(caplog.messages) == len(expected_messages)
+    for message, pattern in zip(caplog.messages, expected_messages, strict=True):
+        assert re.fullmatch(pattern, message), (message, pattern)
 
 
 @pytest.mark.parametrize(
