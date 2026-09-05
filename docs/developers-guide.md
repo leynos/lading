@@ -1015,6 +1015,24 @@ around command execution. `lading bump` uses the runtime runner directly for
 lockfile refreshes, while `lading publish` uses `_invoke` where failures should
 surface as `PublishPreflightError`.
 
+#### Stream relay helpers
+
+`lading.runtime.stream_relay` is the internal boundary for mirroring decoded
+subprocess chunks to a parent stream. `format_thread_name(program, stream)`
+turns the executable path and stream name into the deterministic, filesystem-
+safe name used by relay threads. `write_to_relay_sink(sink, binary_sink,
+payload)` mirrors one decoded payload and returns the updated `(sink,
+binary_sink)` pair. Callers must retain both returned values as the active sink
+state for the next chunk.
+
+Before a fallback, payloads use the text sink's normal encoding. If that write
+raises `UnicodeEncodeError`, the helper flushes the text sink and writes the
+payload as exact UTF-8 bytes through `sink.buffer`. The returned binary sink
+selects persistent binary mode, so all later chunks use UTF-8 bytes rather than
+switching back to text encoding. If the text sink has no binary buffer, the
+helper returns a disabled `(None, None)` state; subprocess capture continues
+independently and retains the complete decoded output.
+
 The cmd-mox runner validates `CMOX_IPC_TIMEOUT` in `_resolve_cmd_mox_timeout`.
 The two operator-facing messages it raises live as a single source of truth in
 the module constants `INVALID_IPC_TIMEOUT_MESSAGE` and
