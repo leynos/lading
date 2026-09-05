@@ -577,6 +577,16 @@ sequenceDiagram
       crate visible to later crates that depend on it in the same release
       train.
 
+    Every per-crate cargo invocation streams its output as it runs and is
+    timed; the start and success log lines carry the crate's `n/total`
+    position, the success line reports the elapsed seconds, and the duration
+    is recorded under the `publish.cargo.duration` metric with `subcommand`
+    and `crate` labels, so a slow packaged build is attributable to one crate
+    (issue #251). Commands whose stdout is a document rather than progress,
+    such as the `cargo metadata --locked` freshness probe, are captured
+    without being mirrored to the console: a multi-megabyte single line
+    breaks CI log capture and hides everything that follows it.
+
     When the registry reports that a crate version already exists, Lading logs
     a warning and continues to the next crate instead of aborting the
     publication loop. Live publishing is not transactional: if a later crate

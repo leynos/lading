@@ -138,6 +138,11 @@ directly:
 Run each repair command, commit the updated lockfiles, then re-run
 `lading publish`.
 
+The `cargo metadata --locked` output that this probe reads is captured for
+those diagnostics but never mirrored to the console: it is the whole metadata
+document on one line, megabytes long for a large workspace, and echoing it
+broke CI log capture for everything that followed.
+
 To require a clean working tree before running the pre-flight checks, pass
 `--forbid-dirty`:
 
@@ -159,6 +164,22 @@ in the same `--live` run. Live publishing is not transactional; if a later
 crate fails, crates already uploaded to crates.io are not rolled back. Reruns
 skip versions that are already present on crates.io and continue with the
 remaining crates.
+
+Each `cargo package` and `cargo publish` invocation streams its own output
+(the `Compiling` lines from a verify build appear as cargo emits them) and
+reports its position in the publish order and its elapsed time when it
+succeeds, so an operator can tell which crate a run is on and a slow verify
+build can be attributed to a crate:
+
+```plaintext
+INFO: Running cargo package for crate alpha (1/3)
+INFO: Successfully packaged crate alpha (1/3) in 84.2s
+INFO: Running cargo publish --dry-run for crate alpha (1/3)
+INFO: Dry-run publish succeeded for crate alpha (1/3) in 61.9s
+```
+
+The same durations are recorded per crate and subcommand in the metrics
+summary printed at exit (see [Observability](#observability)).
 
 At the end of the run, `lading publish` prints a summary of the publish plan
 it computed, listing the crates to publish and any crates skipped because
@@ -386,6 +407,14 @@ lading metrics summary: [{"metric": "publish.index_lookup_downgrade", "labels": 
 Each entry records a counter name, the label values that identify it, and the
 accumulated count for the current invocation. The summary line is omitted
 entirely when no metrics were recorded (quiet runs stay quiet).
+
+#### `publish.cargo.duration`
+
+One duration observation per `cargo package` or `cargo publish` invocation in
+the publish pipeline, recorded whether or not the invocation succeeded. Labels:
+
+- `subcommand` — `package` or `publish`.
+- `crate` — the crate the invocation ran for.
 
 #### `publish.index_lookup_downgrade`
 

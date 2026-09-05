@@ -244,6 +244,7 @@ def _validate_lockfile_freshness_for_result(
         *,
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
         assert command == (
             "cargo",
@@ -254,6 +255,9 @@ def _validate_lockfile_freshness_for_result(
             "--format-version=1",
         )
         assert cwd == manifest.parent
+        # The probe's stdout is the full metadata document (megabytes on one
+        # line); mirroring it to the console breaks CI log capture (#251).
+        assert echo_stdout is False, "metadata JSON must not be echoed"
         return exit_code, "", stderr
 
     return lockfile.validate_lockfile_freshness(manifest, runner)
@@ -482,8 +486,9 @@ def _static_runner(
         *,
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
-        del command, cwd, env
+        del command, cwd, env, echo_stdout
         return exit_code, stdout, stderr
 
     return runner
@@ -572,7 +577,7 @@ class TestCargoLockfileInspectionRepositoryAdapter:
         assert command[:3] == ("cargo", "metadata", "--locked"), "cargo metadata probe"
         assert cwd == manifest_path.parent, "cargo runs in the manifest directory"
         assert env == base_env, "cargo call should receive the bound env"
-        assert echo_stdout is True, "echo_stdout defaults to True"
+        assert echo_stdout is False, "metadata JSON is captured, never echoed"
 
     @pytest.mark.usefixtures("_cargo_workspace")
     def test_adapter_without_env_leaves_runner_env_untouched(

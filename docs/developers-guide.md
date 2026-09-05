@@ -51,13 +51,13 @@ handles broad style and correctness checks, and imports the stricter lint
 policy used by `leynos/episodic`. If Ruff passes, the target runs `interrogate`
 with `--fail-under 100` across `lading` to enforce **100% docstring coverage**.
 If `interrogate` passes, the third stage runs Pylint through the pinned
-`pylint-pypy-shim` tool under PyPy. That stage is focused on rule families
-that complement Ruff, especially logging format safety, pattern matching
-checks, selected simplification checks, deprecated standard-library usage, file
-hygiene, and design-size limits. The fourth stage runs all
-`df12-python-lints` checks under CPython 3.14, while retaining Lading's Python
-3.13 semantic baseline for version-gated diagnostics. Finally, `ambrleaks`
-scans Syrupy snapshots under `tests` for values that should have been redacted.
+`pylint-pypy-shim` tool under PyPy. That stage is focused on rule families that
+complement Ruff, especially logging format safety, pattern matching checks,
+selected simplification checks, deprecated standard-library usage, file
+hygiene, and design-size limits. The fourth stage runs all `df12-python-lints`
+checks under CPython 3.14, while retaining Lading's Python 3.13 semantic
+baseline for version-gated diagnostics. Finally, `ambrleaks` scans Syrupy
+snapshots under `tests` for values that should have been redacted.
 [ADR-003](adr/003-three-tier-python-linting.md) records the policy decision.
 
 The relevant Makefile variables are:
@@ -257,9 +257,8 @@ exception and appends the manifest and error to `failures`. After the loop, if
 there were no failures it logs overall success and returns the regenerated
 lockfiles; otherwise it raises — when one manifest was attempted it re-raises
 the original cargo error unchanged, and when more than one manifest was
-attempted it selects the first failure's cause, builds an
-aggregated failure message, and raises `LockfileRegenerationError` chained from
-that cause.
+attempted it selects the first failure's cause, builds an aggregated failure
+message, and raises `LockfileRegenerationError` chained from that cause.
 
 ```mermaid
 flowchart TD
@@ -557,15 +556,15 @@ configuration that `main()` sets up. If that raises
 programmatically via `cli.app` without a preloaded scope — it loads
 configuration from disk with `config.load_configuration(workspace_root)` and
 installs it under a fresh `config.use_configuration(...)` scope. When
-configuration is already active, a `nullcontext()` stands in for that scope,
-so the single `with` block is uniform: this was the issue #107 refactor that
+configuration is already active, a `nullcontext()` stands in for that scope, so
+the single `with` block is uniform: this was the issue #107 refactor that
 removed the duplicated load-workspace-and-run block from the two branches.
 
-Under that scope, alongside
-`metadata_module.use_command_runner(active_runner)`, `_run_with_context` loads
-the workspace graph via `load_workspace(workspace_root)` and calls the
-caller-supplied `runner(workspace_root, configuration, workspace_model,
-active_runner)`, returning its string result.
+Under that scope, alongside `metadata_module.use_command_runner(active_runner)`,
+`_run_with_context` loads the workspace graph via
+`load_workspace(workspace_root)` and calls the caller-supplied
+`runner(workspace_root, configuration, workspace_model, active_runner)`,
+returning its string result.
 
 ### Exception hierarchy (`lading.exceptions`)
 
@@ -706,19 +705,21 @@ filtering non-publishable crates, applying `publish.exclude`, validating
 
 `publish_plan.py` also owns section rendering for plan output.
 `render_section(items, *, header, formatter=str, empty_message=None) ->
-list[str]` is the single section renderer (issue #107): a query that returns
-the formatted lines rather than mutating an accumulator. Non-empty items
-render `[header, "- <formatter(item)>", ...]`; an empty sequence renders `[]`
-(the section is omitted) unless `empty_message` is supplied, in which case it
-renders `[empty_message]`. `append_section(lines, items, *, header,
-formatter=str) -> None` is a thin, backwards-compatible command wrapper that
-delegates to `render_section` and extends `lines` in place; it has no
-`empty_message` parameter and is retained as the historical public helper,
-though new code may prefer `render_section`. `format_plan(plan, *,
-strip_patches) -> str` composes the `lading publish` plan summary by calling
-`render_section` for the publishable crates (with `empty_message="Crates to
-publish: none"`) and for each skipped-crate group, then joins the resulting
-lines. All three helpers are public exports of `publish_plan`.
+list[str]`
+is the single section renderer (issue #107): a query that returns the
+formatted lines rather than mutating an accumulator. Non-empty items render
+`[header, "- <formatter(item)>", ...]`; an empty sequence renders `[]` (the
+section is omitted) unless `empty_message` is supplied, in which case it renders
+`[empty_message]`.
+`append_section(lines, items, *, header, formatter=str) -> None` is a thin,
+backwards-compatible command wrapper that delegates to `render_section` and
+extends `lines` in place; it has no `empty_message` parameter and is retained
+as the historical public helper, though new code may prefer `render_section`.
+`format_plan(plan, *, strip_patches) -> str` composes the `lading publish` plan
+summary by calling `render_section` for the publishable crates (with
+`empty_message="Crates to publish: none"`) and for each skipped-crate group,
+then joins the resulting lines. All three helpers are public exports of
+`publish_plan`.
 
 `publish_manifest.py` owns staging-time manifest mutations. It contains
 workspace preparation types and helpers that copy the workspace tree and apply
@@ -778,9 +779,13 @@ diagnostics, and normalizes staging/preparation failures into
 `PublishPreflightError` so callers receive the same publish command error
 boundary.
 
-`_handle_publish_result(crate, exit_code, stdout, stderr, plan, options)` owns
-the result classification for a completed `cargo publish` command. It logs
-success, skips already-published crate versions, adapts crates.io index lookup
+`_handle_publish_result(crate, result, *, state)` owns the result
+classification for a completed `cargo publish` command. `result` is the
+`_TimedCargoResult` from `_run_timed_cargo` (exit code, captured streams,
+elapsed seconds) and `state` is the `_PublicationPipelineState` supplying the
+plan, the execution options, and the crate's `n/total` position. It logs
+success with the position and elapsed time, skips already-published crate
+versions, adapts crates.io index lookup
 failures through `parse_index_lookup_failure()` before delegating to
 `_handle_index_missing_version`, and raises `PublishError` for all other
 non-zero publish exits after formatting the cargo failure message.
@@ -800,7 +805,10 @@ logging and the dry-run two-phase sequencing, keeps `run()` linear, and is the
 seam the dispatch tests exercise directly. `_PublicationPipelineState` keeps
 the per-crate helper signatures within the four-argument lint ceiling and pins
 the invariant that plan, preparation, and options are constructed together and
-immutable for the pipeline's lifetime.
+immutable for the pipeline's lifetime. The state also carries the injectable
+`clock` (default `time.perf_counter`) that `_run_timed_cargo` times each cargo
+invocation with, and `position(crate)` renders the crate's `n/total` place in
+`plan.publishable` for the progress lines.
 
 Publication dispatch deliberately differs by mode. Dry-run mode keeps the
 historical two-phase pipeline: package every publishable crate, then run
@@ -990,6 +998,7 @@ Defined metrics:
 | `lockfile.regenerate.duration`   | (none)                        | Total duration observation around each lockfile-regeneration run.                                                                              |
 | `lockfile.validate`              | `outcome`                     | One increment per `validate_lockfile_freshness` call; `outcome` is `fresh`, `stale`, or `failed`.                                              |
 | `lockfile.validate.duration`     | (none)                        | Duration observation around each `cargo metadata --locked` probe.                                                                              |
+| `publish.cargo.duration`         | `subcommand`, `crate`         | One duration observation per `cargo package` or `cargo publish` invocation in the publish pipeline, successful or not (issue #251).            |
 
 Duration metrics aggregate a count and total seconds per label set via
 `observe_duration` / `duration_stats` and appear in the exit summary with
@@ -1015,15 +1024,29 @@ around command execution. `lading bump` uses the runtime runner directly for
 lockfile refreshes, while `lading publish` uses `_invoke` where failures should
 surface as `PublishPreflightError`.
 
+#### Timed per-crate cargo invocations
+
+`publish_execution._run_timed_cargo(invocation, *, runner, clock)` runs one
+`_CargoInvocation` (the command tuple, the staged crate root as `cwd`, and the
+`crate_name`) through the runner and returns a `_TimedCargoResult` with the
+exit code, captured `stdout` and `stderr`, and `elapsed_seconds`. The clock is
+injectable and defaults to `time.perf_counter`; the pipeline passes
+`_PublicationPipelineState.clock`, so tests inject a scripted clock and assert
+exact figures. The duration is recorded under `publish.cargo.duration` with
+`subcommand` and `crate` labels inside a `finally`, so a non-zero exit and a
+raising runner are timed like a success. `_package_crate` and `_publish_crate`
+log the crate's `n/total` position on the start line and repeat it with the
+elapsed seconds on the success line.
+
 #### Stream relay helpers
 
 `lading.runtime.stream_relay` is the internal boundary for mirroring decoded
 subprocess chunks to a parent stream. `format_thread_name(program, stream)`
 turns the executable path and stream name into the deterministic, filesystem-
-safe name used by relay threads. `write_to_relay_sink(sink, binary_sink,
-payload)` mirrors one decoded payload and returns the updated `(sink,
-binary_sink)` pair. Callers must retain both returned values as the active sink
-state for the next chunk.
+safe name used by relay threads.
+`write_to_relay_sink(sink, binary_sink, payload)` mirrors one decoded payload
+and returns the updated `(sink, binary_sink)` pair. Callers must retain both
+returned values as the active sink state for the next chunk.
 
 Before a fallback, payloads use the text sink's normal encoding. If that write
 raises `UnicodeEncodeError`, the helper flushes the text sink and writes the
@@ -1044,12 +1067,11 @@ operator-facing description of the variable and its failure modes.
 `lading.utils.commands.LADING_CATALOGUE` is the staged cuprum programme
 catalogue (cargo, git). It is intentionally not yet wired into the execution
 path — `publish_execution._invoke` still delegates to the subprocess runner,
-which spawns processes directly. It becomes live with the [Phase 5.2
-publish-execution migration](./roadmap.md), which rewires
+which spawns processes directly. It becomes live with the
+[Phase 5.2 publish-execution migration](./roadmap.md), which rewires
 `publish_execution.py` command execution (the roadmap's
-`_invoke_via_subprocess()` step) onto the catalogue's
-`scoped(allowlist=…)` model. Treat it as a registration point, not as
-active allowlist enforcement.
+`_invoke_via_subprocess()` step) onto the catalogue's `scoped(allowlist=…)`
+model. Treat it as a registration point, not as active allowlist enforcement.
 
 #### Subprocess invocation logging
 

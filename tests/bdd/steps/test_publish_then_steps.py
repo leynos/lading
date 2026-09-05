@@ -556,3 +556,63 @@ def then_publish_preflight_error_is_not_reported(cli_run: CliRunResult) -> None:
     """Assert that publish completed without a pre-flight failure."""
     _assert_cli_run_succeeded(cli_run)
     assert "PublishPreflightError" not in cli_run["stderr"]
+
+
+_PROGRESS_LINE = re.compile(
+    r"^INFO: (?:Running cargo (?P<start>package|publish --dry-run) for crate|"
+    r"(?:(?P<packaged>Successfully packaged)|(?P<published>Dry-run publish "
+    r"succeeded for)) crate) "
+    r"(?P<crate>\S+) \((?P<index>\d+)/(?P<total>\d+)\)"
+    r"(?P<elapsed> in \d+\.\ds)?$"
+)
+
+
+def _progress_phase(match: re.Match[str]) -> str:
+    """Return ``package`` or ``publish`` for a matched progress line."""
+    start = match["start"]
+    if start is not None:
+        return "package" if start == "package" else "publish"
+    return "package" if match["packaged"] else "publish"
+
+
+@then(
+    parsers.parse(
+        'the publish progress lines report crates "{crate_names}" with their '
+        "positions and elapsed times"
+    )
+)
+def then_publish_progress_lines(cli_run: CliRunResult, crate_names: str) -> None:
+    """Assert start and success lines per crate and phase carry n/total and seconds.
+
+    A dry run packages every crate and then publishes every crate, so each
+    crate produces four lines: package start, package success, publish start,
+    publish success. Start lines carry the position; success lines carry the
+    position and the elapsed seconds.
+    """
+    expected_crates = _split_names(crate_names)
+    total = len(expected_crates)
+    matches = [
+        match
+        for line in cli_run["stderr"].splitlines()
+        if (match := _PROGRESS_LINE.match(line))
+    ]
+    observed = [
+        (
+            _progress_phase(match),
+            match["crate"],
+            int(match["index"]),
+            int(match["total"]),
+            bool(match["elapsed"]),
+        )
+        for match in matches
+    ]
+    expected = [
+        (phase, crate, index, total, has_elapsed)
+        for phase in ("package", "publish")
+        for index, crate in enumerate(expected_crates, start=1)
+        for has_elapsed in (False, True)
+    ]
+    assert observed == expected, (
+        f"expected {expected} progress records, observed {observed}\n"
+        f"--- stderr ---\n{cli_run['stderr']}"
+    )

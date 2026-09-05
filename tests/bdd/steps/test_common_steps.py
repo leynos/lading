@@ -61,6 +61,14 @@ def then_stderr_contains(cli_run: dict[str, typ.Any], expected: str) -> None:
     assert expected in cli_run["stderr"]
 
 
+@then(parsers.parse('the stdout does not contain "{unexpected}"'))
+def then_stdout_does_not_contain(cli_run: CliRunResult, unexpected: str) -> None:
+    """Assert that ``unexpected`` is absent from the captured stdout output."""
+    assert unexpected not in cli_run["stdout"], (
+        f"expected {unexpected!r} to be absent from stdout:\n{cli_run['stdout']}"
+    )
+
+
 @then(parsers.parse('the stderr contains workspace path "{relative}"'))
 def then_stderr_contains_workspace_path(
     cli_run: dict[str, typ.Any], relative: str

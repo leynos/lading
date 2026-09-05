@@ -218,6 +218,10 @@ def validate_lockfile_freshness(
             "--format-version=1",
         ),
         cwd=manifest_path.parent,
+        # The metadata document is megabytes on a single line; mirroring it
+        # to the console breaks CI log capture (#251). It is still captured
+        # so failure diagnostics can read it.
+        echo_stdout=False,
     )
     metrics.observe_duration(VALIDATE_DURATION_METRIC, time.perf_counter() - started_at)
     detail = command_detail(stdout, stderr)
