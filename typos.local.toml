@@ -11,7 +11,11 @@ accepted = []
 [words.corrections]
 
 [patterns]
-ignore = []
+# Inline code spans name real identifiers (for example
+# `normalise_workspace_root`), which must keep their source spelling even where
+# the prose policy prefers the -ize form. The shared authority used to supply
+# this exclusion; pin it locally so regenerating typos.toml cannot drop it.
+ignore = ["`[^`\\n]+`"]
 
 [files]
 exclude = []

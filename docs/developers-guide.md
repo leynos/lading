@@ -257,9 +257,8 @@ exception and appends the manifest and error to `failures`. After the loop, if
 there were no failures it logs overall success and returns the regenerated
 lockfiles; otherwise it raises — when one manifest was attempted it re-raises
 the original cargo error unchanged, and when more than one manifest was
-attempted it selects the first failure's cause, builds an
-aggregated failure message, and raises `LockfileRegenerationError` chained from
-that cause.
+attempted it selects the first failure's cause, builds an aggregated failure
+message, and raises `LockfileRegenerationError` chained from that cause.
 
 ```mermaid
 flowchart TD
@@ -309,9 +308,9 @@ discovery errors. Tests inject a repository (or bind the adapter to a recording
 runner) so lockfile commands can be observed without invoking real processes.
 The port's scope is bump-side lockfile projection and regeneration;
 publish-side discovery and validation go through the sibling
-`lockfile.LockfileInspectionRepository` port (see the Lockfile helpers section
-below), so neither the bump nor the publish lockfile domain holds a raw
-`CommandRunner` (issue #82).
+`lockfile_repository.LockfileInspectionRepository` port (see the Lockfile
+helpers section below), so neither the bump nor the publish lockfile domain
+holds a raw `CommandRunner` (issue #82).
 
 Bump-time crate-set derivation is centralized in the bump context: the
 `excluded` and `updated_crate_names` sets are computed exactly once in
@@ -411,8 +410,11 @@ this helper for consistent path handling, including `lading.cli`,
 
 `discover_tracked_lockfiles(workspace_root, runner)` filters git-tracked
 `Cargo.lock` files outside `target/` with adjacent `Cargo.toml` manifests.
-Private helpers `_handle_git_ls_files_failure` and `_lockfiles_with_manifests`
-perform the error-handling and path-filtering passes respectively.
+Private helpers `_raise_git_ls_files_failure` and `_lockfiles_with_manifests`
+perform the error-handling and path-filtering passes respectively. Discovery
+raises `NotAGitRepositoryError` when the workspace is not under git control,
+carrying the failing `workspace_root` as a structured attribute; callers that
+should skip that condition own the skip policy at their boundary.
 
 Lockfile regeneration after `lading bump` is owned by
 `lading.commands.bump_lockfiles.CargoLockfileRepository`. The adapter uses
@@ -432,18 +434,20 @@ Cargo says need updating under `--locked`, and unrelated Cargo failures. The
 publish pre-flight domain reaches both operations through the
 `LockfileInspectionRepository` port (issue #82) rather than holding a command
 runner: `_validate_lockfile_freshness` and `_collect_stale_lockfiles` in
-`publish_preflight.py` depend only on the port, so VCS (git), filesystem, and
-cargo execution concerns stay out of the freshness-classification logic.
-`CargoLockfileInspectionRepository` is the git- and cargo-backed adapter; it
-binds a `CommandRunner` and the optional pre-flight base environment, applying
-that environment to any invocation that does not supply its own.
+`publish_lockfile_preflight.py` depend only on the port, so VCS (git),
+filesystem, and cargo execution concerns stay out of the
+freshness-classification logic. The port and its git- and cargo-backed adapter,
+`CargoLockfileInspectionRepository`, live in
+`lading/commands/lockfile_repository.py`; the adapter binds a `CommandRunner`
+and the optional pre-flight base environment, applying that environment to any
+invocation that does not supply its own.
 `publish_preflight._run_preflight_checks` is the composition root: it binds the
 adapter to the selected command runner and pre-flight environment. Tests inject
 a port double at the `_validate_lockfile_freshness` seam, observing discovery
 and validation without invoking real git or cargo. This is the publish-side
-counterpart to the bump-side `bump_lockfiles.LockfileRepository`; together they
-complete issue #82's separation of lockfile VCS/filesystem concerns from the
-command domain.
+counterpart to the bump-side `bump_lockfiles.LockfileRepository`; together the
+two ports separate lockfile VCS and filesystem concerns from the command domain
+(issue #82).
 
 `_collect_stale_lockfiles` deliberately classifies every tracked lockfile
 rather than short-circuiting on the first stale result (issue #83), so the
@@ -557,15 +561,15 @@ configuration that `main()` sets up. If that raises
 programmatically via `cli.app` without a preloaded scope — it loads
 configuration from disk with `config.load_configuration(workspace_root)` and
 installs it under a fresh `config.use_configuration(...)` scope. When
-configuration is already active, a `nullcontext()` stands in for that scope,
-so the single `with` block is uniform: this was the issue #107 refactor that
+configuration is already active, a `nullcontext()` stands in for that scope, so
+the single `with` block is uniform: this was the issue #107 refactor that
 removed the duplicated load-workspace-and-run block from the two branches.
 
-Under that scope, alongside
-`metadata_module.use_command_runner(active_runner)`, `_run_with_context` loads
-the workspace graph via `load_workspace(workspace_root)` and calls the
-caller-supplied `runner(workspace_root, configuration, workspace_model,
-active_runner)`, returning its string result.
+Under that scope, alongside `metadata_module.use_command_runner(active_runner)`,
+`_run_with_context` loads the workspace graph via
+`load_workspace(workspace_root)` and calls the caller-supplied
+`runner(workspace_root, configuration, workspace_model, active_runner)`,
+returning its string result.
 
 ### Exception hierarchy (`lading.exceptions`)
 
@@ -664,6 +668,7 @@ canonical replacement callers and tests now use directly:
 | Removed shim                                                                                                                                                                                                                                                                                                                                                          | Location               | Canonical replacement                                                                                                                                      |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Eleven `publish_preflight` private aliases (`_preflight_argument_sets`, `_CargoPreflightOptions`, `_apply_compiletest_externs`, `_build_preflight_environment`, `_build_test_arguments`, `_compose_preflight_arguments`, `_normalize_test_excludes`, `_run_aux_build_commands`, `_run_cargo_preflight`, `_validate_lockfile_freshness`, `_verify_clean_working_tree`) | `publish.py`           | `lading.commands.publish_preflight` (patch/call the defining module directly)                                                                              |
+| `_validate_lockfile_freshness` re-export                                                                                                                                                                                                                                                                                                                              | `publish.py`           | `lading.commands.publish_lockfile_preflight` (patch/call the defining module directly)                                                                     |
 | `_run_preflight_checks` thin wrapper                                                                                                                                                                                                                                                                                                                                  | `publish.py`           | `publish_preflight._run_preflight_checks` (called directly by `run()`)                                                                                     |
 | Re-exports `_append_section`, `_format_plan`                                                                                                                                                                                                                                                                                                                          | `publish.py`           | `publish_plan.append_section`, `publish_plan.format_plan`                                                                                                  |
 | Re-export `metadata_module`                                                                                                                                                                                                                                                                                                                                           | `publish.py`           | `lading.workspace.metadata`                                                                                                                                |
@@ -706,19 +711,21 @@ filtering non-publishable crates, applying `publish.exclude`, validating
 
 `publish_plan.py` also owns section rendering for plan output.
 `render_section(items, *, header, formatter=str, empty_message=None) ->
-list[str]` is the single section renderer (issue #107): a query that returns
-the formatted lines rather than mutating an accumulator. Non-empty items
-render `[header, "- <formatter(item)>", ...]`; an empty sequence renders `[]`
-(the section is omitted) unless `empty_message` is supplied, in which case it
-renders `[empty_message]`. `append_section(lines, items, *, header,
-formatter=str) -> None` is a thin, backwards-compatible command wrapper that
-delegates to `render_section` and extends `lines` in place; it has no
-`empty_message` parameter and is retained as the historical public helper,
-though new code may prefer `render_section`. `format_plan(plan, *,
-strip_patches) -> str` composes the `lading publish` plan summary by calling
-`render_section` for the publishable crates (with `empty_message="Crates to
-publish: none"`) and for each skipped-crate group, then joins the resulting
-lines. All three helpers are public exports of `publish_plan`.
+list[str]`
+is the single section renderer (issue #107): a query that returns the
+formatted lines rather than mutating an accumulator. Non-empty items render
+`[header, "- <formatter(item)>", ...]`; an empty sequence renders `[]` (the
+section is omitted) unless `empty_message` is supplied, in which case it renders
+`[empty_message]`.
+`append_section(lines, items, *, header, formatter=str) -> None` is a thin,
+backwards-compatible command wrapper that delegates to `render_section` and
+extends `lines` in place; it has no `empty_message` parameter and is retained
+as the historical public helper, though new code may prefer `render_section`.
+`format_plan(plan, *, strip_patches) -> str` composes the `lading publish` plan
+summary by calling `render_section` for the publishable crates (with
+`empty_message="Crates to publish: none"`) and for each skipped-crate group,
+then joins the resulting lines. All three helpers are public exports of
+`publish_plan`.
 
 `publish_manifest.py` owns staging-time manifest mutations. It contains
 workspace preparation types and helpers that copy the workspace tree and apply
@@ -982,14 +989,15 @@ than bucketed.
 
 Defined metrics:
 
-| Metric                           | Labels                        | Incremented when                                                                                                                               |
-| -------------------------------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `publish.index_lookup_downgrade` | `subcommand`, `missing_crate` | `_handle_index_missing_version` downgrades a crates.io index-lookup failure to a warning (in-plan, override enabled).                          |
-| `lockfile.discovered`            | (none)                        | Incremented by tracked-lockfile count when discovery observability is enabled; dry-run bump projection suppresses it.                          |
-| `lockfile.regenerate`            | `outcome`, `cause`            | Incremented per successful or failed lockfile regeneration; `cause` is `none`, `validation`, `command_spawn`, `runner_value`, or `cargo_exit`. |
-| `lockfile.regenerate.duration`   | (none)                        | Total duration observation around each lockfile-regeneration run.                                                                              |
-| `lockfile.validate`              | `outcome`                     | One increment per `validate_lockfile_freshness` call; `outcome` is `fresh`, `stale`, or `failed`.                                              |
-| `lockfile.validate.duration`     | (none)                        | Duration observation around each `cargo metadata --locked` probe.                                                                              |
+| Metric                           | Labels                        | Incremented when                                                                                                                                                                                    |
+| -------------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `publish.index_lookup_downgrade` | `subcommand`, `missing_crate` | `_handle_index_missing_version` downgrades a crates.io index-lookup failure to a warning (in-plan, override enabled).                                                                               |
+| `lockfile.discovered`            | (none)                        | Incremented by tracked-lockfile count when discovery observability is enabled; dry-run bump projection suppresses it.                                                                               |
+| `lockfile.discovery.failed`      | `reason`                      | Incremented once per failed tracked-lockfile discovery; `reason` is `not_git` or `git_error`. Failure counting ignores the discovery observability switch, which suppresses success telemetry only. |
+| `lockfile.regenerate`            | `outcome`, `cause`            | Incremented per successful or failed lockfile regeneration; `cause` is `none`, `validation`, `command_spawn`, `runner_value`, or `cargo_exit`.                                                      |
+| `lockfile.regenerate.duration`   | (none)                        | Total duration observation around each lockfile-regeneration run.                                                                                                                                   |
+| `lockfile.validate`              | `outcome`                     | One increment per `validate_lockfile_freshness` call; `outcome` is `fresh`, `stale`, or `failed`.                                                                                                   |
+| `lockfile.validate.duration`     | (none)                        | Duration observation around each `cargo metadata --locked` probe.                                                                                                                                   |
 
 Duration metrics aggregate a count and total seconds per label set via
 `observe_duration` / `duration_stats` and appear in the exit summary with
@@ -1018,12 +1026,11 @@ operator-facing description of the variable and its failure modes.
 `lading.utils.commands.LADING_CATALOGUE` is the staged cuprum programme
 catalogue (cargo, git). It is intentionally not yet wired into the execution
 path — `publish_execution._invoke` still delegates to the subprocess runner,
-which spawns processes directly. It becomes live with the [Phase 5.2
-publish-execution migration](./roadmap.md), which rewires
+which spawns processes directly. It becomes live with the
+[Phase 5.2 publish-execution migration](./roadmap.md), which rewires
 `publish_execution.py` command execution (the roadmap's
-`_invoke_via_subprocess()` step) onto the catalogue's
-`scoped(allowlist=…)` model. Treat it as a registration point, not as
-active allowlist enforcement.
+`_invoke_via_subprocess()` step) onto the catalogue's `scoped(allowlist=…)`
+model. Treat it as a registration point, not as active allowlist enforcement.
 
 #### Subprocess invocation logging
 

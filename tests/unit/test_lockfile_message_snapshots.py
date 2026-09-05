@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 from lading import config
-from lading.commands import bump, lockfile, publish
+from lading.commands import bump, lockfile, lockfile_repository, publish
 from lading.workspace import WorkspaceGraph
 
 if typ.TYPE_CHECKING:
@@ -115,12 +115,12 @@ class TestStaleLockfileMessages:
     ) -> None:
         """The public publish command reports every stale lockfile repair."""
         monkeypatch.setattr(
-            lockfile.CargoLockfileInspectionRepository,
+            lockfile_repository.CargoLockfileInspectionRepository,
             "discover_tracked_lockfiles",
             lambda _repository, _root: tuple(lockfiles),
         )
         monkeypatch.setattr(
-            lockfile.CargoLockfileInspectionRepository,
+            lockfile_repository.CargoLockfileInspectionRepository,
             "validate_lockfile_freshness",
             lambda _repository, _manifest: lockfile.LockfileFreshness(
                 is_fresh=False,

@@ -14,7 +14,7 @@ import typing as typ
 from pathlib import Path
 
 from lading.exceptions import LadingError
-from lading.utils.process import log_command_invocation
+from lading.utils.process import c_locale_env, log_command_invocation
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -69,8 +69,9 @@ def subprocess_runner(
     cwd : Path | None
         Optional working directory for the subprocess.
     env : cabc.Mapping[str, object] | None
-        Optional environment mapping for the subprocess. Non-string values
-        (for example ``int`` or ``Path``) are converted with ``str()``.
+        Optional environment mapping. Non-string values (``int``, ``Path``)
+        become ``str()``; :func:`lading.utils.process.c_locale_env` then pins
+        the C locale so failure classification ignores the operator's language.
     echo_stdout : bool
         Whether stdout should be mirrored while being captured.
 
@@ -208,7 +209,7 @@ def invoke_via_subprocess(
     # ``subprocess_runner`` via ``log_command_invocation``; only the
     # environment overrides are worth an extra DEBUG record here.
     _log_subprocess_environment(context.env)
-    normalized_env = normalize_environment(context.env)
+    normalized_env = c_locale_env(normalize_environment(context.env))
     process = _spawn_process(program, command, context, normalized_env)
     stdout_chunks: list[str] = []
     stderr_chunks: list[str] = []

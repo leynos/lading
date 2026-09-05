@@ -138,6 +138,12 @@ directly:
 Run each repair command, commit the updated lockfiles, then re-run
 `lading publish`.
 
+In a workspace that is not a Git repository, tracked-lockfile discovery cannot
+run, so `lading publish` logs a warning and skips this freshness check rather
+than failing. `lading bump` is not affected in the same way: it still
+regenerates the manifests listed in the [`[bump]`](#bump) `lockfile_manifests`
+setting.
+
 To require a clean working tree before running the pre-flight checks, pass
 `--forbid-dirty`:
 
@@ -160,10 +166,10 @@ crate fails, crates already uploaded to crates.io are not rolled back. Reruns
 skip versions that are already present on crates.io and continue with the
 remaining crates.
 
-At the end of the run, `lading publish` prints a summary of the publish plan
-it computed, listing the crates to publish and any crates skipped because
-they are marked `publish = false`, excluded via `publish.exclude`, or named
-in `publish.exclude` but absent from the workspace:
+At the end of the run, `lading publish` prints a summary of the publish plan it
+computed, listing the crates to publish and any crates skipped because they are
+marked `publish = false`, excluded via `publish.exclude`, or named in
+`publish.exclude` but absent from the workspace:
 
 ```plaintext
 Publish plan for <workspace>
@@ -313,10 +319,10 @@ stderr_tail_lines = 40
   `Cargo.toml` manifests whose adjacent `Cargo.lock` files should be
   regenerated after `lading bump`. Git-tracked lockfiles are discovered and
   regenerated automatically. Configured manifests are needed for lockfiles that
-  git does not track (for example, generated fixtures listed in `.gitignore`)
-  and for nested lockfiles when the workspace is outside a Git repository,
-  where discovery returns no tracked manifests. The workspace root `Cargo.toml`
-  is always included and should not be listed.
+  git does not track (for example, generated fixtures listed in `.gitignore`),
+  and for all nested lockfiles when the workspace is outside a Git repository,
+  where tracked-lockfile discovery cannot run at all. The workspace root
+  `Cargo.toml` is always included and should not be listed.
 - `rebuild_lockfiles`: boolean, default `true`. Controls whether `lading bump`
   regenerates the workspace lockfile, discovered tracked lockfiles, and
   configured nested lockfiles after manifest updates. Pass
@@ -346,9 +352,9 @@ Cargo lockfile regeneration failed for 2 manifest(s). Manifests already carry th
 ```
 
 When one manifest was attempted, its lone failure surfaces the plain Cargo
-error instead. To recover, fix the underlying Cargo error and
-rerun `lading bump`, run the printed repair command for each listed manifest,
-or use `--no-rebuild-lockfiles` and regenerate the lockfiles manually before
+error instead. To recover, fix the underlying Cargo error and rerun
+`lading bump`, run the printed repair command for each listed manifest, or use
+`--no-rebuild-lockfiles` and regenerate the lockfiles manually before
 committing the bump.
 
 ### `[bump.documentation]`

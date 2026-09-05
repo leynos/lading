@@ -170,3 +170,31 @@ def test_with_detail_supports_custom_separator() -> None:
     rendered = process.with_detail("Failed", "", "boom", separator="; ")
 
     assert rendered == "Failed; boom"
+
+
+def test_c_locale_env_pins_locale_over_supplied_env() -> None:
+    """Locale variables are pinned while other supplied values survive."""
+    merged = process.c_locale_env({"CARGO_TERM_COLOR": "never", "LC_ALL": "fr_FR"})
+
+    assert merged["CARGO_TERM_COLOR"] == "never", "caller values must survive"
+    assert merged["LC_ALL"] == "C", "LC_ALL must be pinned to C"
+    assert merged["LANG"] == "C", "LANG must be pinned to C"
+    assert merged["LANGUAGE"] == "", (
+        "LANGUAGE must be cleared; a non-empty value overrides LC_ALL for "
+        "message translation"
+    )
+
+
+def test_c_locale_env_defaults_to_process_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A ``None`` base inherits the process environment before pinning."""
+    monkeypatch.setenv("LADING_TEST_MARKER", "present")
+    monkeypatch.setenv("LANGUAGE", "fr")
+
+    merged = process.c_locale_env()
+
+    assert merged["LADING_TEST_MARKER"] == "present", (
+        "None must inherit the current process environment"
+    )
+    assert merged["LANGUAGE"] == "", "inherited LANGUAGE must still be cleared"
