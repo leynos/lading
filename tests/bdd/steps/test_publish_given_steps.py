@@ -93,6 +93,38 @@ def given_publish_preflight_finds_stale_lockfile(
     )
 
 
+@given(
+    "publish pre-flight probes a fresh tracked Cargo.lock with a large "
+    "metadata document"
+)
+def given_publish_preflight_probes_fresh_lockfile_with_large_metadata(
+    workspace_directory: Path,
+    preflight_overrides: dict[tuple[str, ...], ResponseProvider],
+) -> None:
+    """Simulate a fresh lockfile whose probe returns a one-line metadata document.
+
+    ``cargo metadata --locked`` prints the whole metadata document on one
+    line, megabytes long for a real workspace. The stub answers with a
+    sentinel-bearing single line so a scenario can assert that the probe's
+    stdout is captured for diagnostics but never mirrored to the console
+    (issue #251).
+    """
+    (workspace_directory / "Cargo.lock").write_text("# fresh lock\n", encoding="utf-8")
+    preflight_overrides["git", "ls-files", "**/Cargo.lock", "Cargo.lock"] = (
+        _CommandResponse(exit_code=0, stdout="Cargo.lock\n")
+    )
+    metadata_document = (
+        '{"packages": [], "workspace_members": [], '
+        '"marker": "LADING-METADATA-SENTINEL"}\n'
+    )
+    preflight_overrides[
+        "cargo",
+        "metadata",
+        "--locked",
+        "--manifest-path",
+    ] = _CommandResponse(exit_code=0, stdout=metadata_document)
+
+
 @given("publish pre-flight finds multiple stale tracked Cargo.lock files")
 def given_publish_preflight_finds_multiple_stale_lockfiles(
     workspace_directory: Path,

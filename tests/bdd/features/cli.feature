@@ -231,6 +231,14 @@ Feature: Lading CLI scaffolding
     Then the CLI exits with code 1
     And the stderr contains "Tracked Cargo.lock files are stale after manifest version changes."
 
+  Scenario: Publish keeps the lockfile probe's metadata document out of stdout
+    Given a workspace directory with configuration
+    And cargo metadata describes a sample workspace
+    And publish pre-flight probes a fresh tracked Cargo.lock with a large metadata document
+    When I invoke lading publish with that workspace
+    Then the CLI exits with code 0
+    And the stdout does not contain "LADING-METADATA-SENTINEL"
+
   Scenario: Publish pre-flight error includes repair command
     Given a workspace directory with configuration
     And cargo metadata describes a sample workspace
