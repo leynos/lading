@@ -77,6 +77,28 @@ ALLOW_UNPUBLISHED_WORKSPACE_DEPS_PARAMETER = Parameter(
     ),
 )
 
+SCCACHE_STATS_ENV_VAR = "LADING_SCCACHE_STATS"
+SCCACHE_STATS_PARAMETER = Parameter(
+    name="sccache-stats",
+    env_var=SCCACHE_STATS_ENV_VAR,
+    help=(
+        "Query the sccache binary named by RUSTC_WRAPPER before the first "
+        "cargo build and after every cargo package/publish invocation, and "
+        "log one compiler-cache summary line per crate. Skipped with a "
+        "warning when RUSTC_WRAPPER does not name sccache."
+    ),
+)
+
+SCCACHE_STATS_JSON_ENV_VAR = "LADING_SCCACHE_STATS_JSON"
+SCCACHE_STATS_JSON_PARAMETER = Parameter(
+    name="sccache-stats-json",
+    env_var=SCCACHE_STATS_JSON_ENV_VAR,
+    help=(
+        "Write the compiler-cache statistics collected by --sccache-stats to "
+        "this JSON file; implies --sccache-stats."
+    ),
+)
+
 # These aliases remain public for integrations that import CLI annotations.
 # The CLI signatures deliberately spell out Annotated metadata inline because
 # Cyclopts evaluates those annotations at runtime and does not unwrap PEP 695
@@ -90,6 +112,8 @@ type ForbidDirtyFlag = typ.Annotated[bool, FORBID_DIRTY_PARAMETER]
 type AllowUnpublishedWorkspaceDepsFlag = typ.Annotated[
     bool | None, ALLOW_UNPUBLISHED_WORKSPACE_DEPS_PARAMETER
 ]
+type SccacheStatsFlag = typ.Annotated[bool, SCCACHE_STATS_PARAMETER]
+type SccacheStatsJsonOption = typ.Annotated[Path | None, SCCACHE_STATS_JSON_PARAMETER]
 
 
 __all__ = [
@@ -98,6 +122,10 @@ __all__ = [
     "FORBID_DIRTY_PARAMETER",
     "LIVE_PARAMETER",
     "REBUILD_LOCKFILES_PARAMETER",
+    "SCCACHE_STATS_ENV_VAR",
+    "SCCACHE_STATS_JSON_ENV_VAR",
+    "SCCACHE_STATS_JSON_PARAMETER",
+    "SCCACHE_STATS_PARAMETER",
     "VERSION_PARAMETER",
     "WORKSPACE_PARAMETER",
     "WORKSPACE_ROOT_ENV_VAR",
@@ -107,6 +135,8 @@ __all__ = [
     "ForbidDirtyFlag",
     "LiveFlag",
     "RebuildLockfilesFlag",
+    "SccacheStatsFlag",
+    "SccacheStatsJsonOption",
     "VersionArgument",
     "WorkspaceRootOption",
 ]

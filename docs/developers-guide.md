@@ -748,17 +748,33 @@ instances, applies crate-name canonicalization, and decides whether an index
 miss is out-of-plan and fatal, in-plan but still fatal, or in-plan and
 downgraded by `allow_unpublished_workspace_deps` during dry-run publication.
 
+`publish_sccache_stats.py` and `publish_sccache.py` implement the opt-in
+compiler-cache instrumentation (issue #252). The `_stats` module is the adapter:
+`detect_wrapper()` recognizes an sccache binary named by `RUSTC_WRAPPER`,
+`query_snapshot()` and `query_text()` run its `--show-stats` forms through the
+`CommandRunner` port with `echo_stdout=False`, and `parse_counters()` reduces
+the JSON payload to `SccacheCounters` (requests, hits, misses, errors).
+`publish_sccache.py` owns `SccacheSession`, which `_dispatch_publication`
+creates via `create_session()` after pre-flight, `begin()`s before the first
+cargo build, `record()`s after every per-crate cargo invocation (differencing
+against the previous snapshot and logging one line), and `finish()`es with a
+pipeline delta, the human-readable mirror, and the optional atomically written
+JSON report. Every failure in the session is a WARNING that disables further
+queries; the session never raises into the pipeline.
+
 ### `_PublishExecutionOptions`
 
 `_PublishExecutionOptions` is a frozen dataclass that carries the runtime flags
 forwarded to every `cargo package` and `cargo publish` invocation within a
 single `lading publish` run. Its fields are:
 
-| Field                              | Type   | Default | Purpose                                                              |
-| ---------------------------------- | ------ | ------- | -------------------------------------------------------------------- |
-| `live`                             | `bool` | —       | When `True`, omits `--dry-run` from `cargo publish`.                 |
-| `allow_dirty`                      | `bool` | —       | Passes `--allow-dirty` to both cargo subcommands.                    |
-| `allow_unpublished_workspace_deps` | `bool` | `False` | Dry-run-only override; see `allow_unpublished_workspace_deps` above. |
+| Field                              | Type           | Default | Purpose                                                               |
+| ---------------------------------- | -------------- | ------- | --------------------------------------------------------------------- |
+| `live`                             | `bool`         | —       | When `True`, omits `--dry-run` from `cargo publish`.                  |
+| `allow_dirty`                      | `bool`         | —       | Passes `--allow-dirty` to both cargo subcommands.                     |
+| `allow_unpublished_workspace_deps` | `bool`         | `False` | Dry-run-only override; see `allow_unpublished_workspace_deps` above.  |
+| `sccache_stats`                    | `bool`         | `False` | Query sccache around every cargo build and log per-crate cache lines. |
+| `sccache_stats_json`               | `Path \| None` | `None`  | Write the sccache report here; implies `sccache_stats`.               |
 
 The dataclass is an internal implementation detail; callers interact with the
 public `PublishOptions` dataclass, which `run()` converts before dispatching.
@@ -999,6 +1015,7 @@ Defined metrics:
 | `lockfile.validate`              | `outcome`                     | One increment per `validate_lockfile_freshness` call; `outcome` is `fresh`, `stale`, or `failed`.                                              |
 | `lockfile.validate.duration`     | (none)                        | Duration observation around each `cargo metadata --locked` probe.                                                                              |
 | `publish.cargo.duration`         | `subcommand`, `crate`         | One duration observation per `cargo package` or `cargo publish` invocation in the publish pipeline, successful or not (issue #251).            |
+| `publish.sccache.query`          | `outcome`                     | One increment per sccache statistics query under `--sccache-stats`; `outcome` is `success` or `failure` (issue #252).                          |
 
 Duration metrics aggregate a count and total seconds per label set via
 `observe_duration` / `duration_stats` and appear in the exit summary with

@@ -37,6 +37,8 @@ from .cli_options import (
     FORBID_DIRTY_PARAMETER,
     LIVE_PARAMETER,
     REBUILD_LOCKFILES_PARAMETER,
+    SCCACHE_STATS_JSON_PARAMETER,
+    SCCACHE_STATS_PARAMETER,
     VERSION_PARAMETER,
     WORKSPACE_PARAMETER,
     WORKSPACE_ROOT_ENV_VAR,
@@ -56,6 +58,12 @@ from .cli_options import (
 )
 from .cli_options import (
     RebuildLockfilesFlag as RebuildLockfilesFlag,
+)
+from .cli_options import (
+    SccacheStatsFlag as SccacheStatsFlag,
+)
+from .cli_options import (
+    SccacheStatsJsonOption as SccacheStatsJsonOption,
 )
 from .cli_options import (
     VersionArgument as VersionArgument,
@@ -157,6 +165,22 @@ def _resolve_allow_unpublished_workspace_deps(
         reason,
     )
     return resolved_value
+
+
+def _resolve_sccache_stats(
+    *, sccache_stats: bool, sccache_stats_json: Path | None
+) -> bool:
+    """Return whether compiler-cache statistics are enabled.
+
+    ``--sccache-stats-json`` implies ``--sccache-stats``: asking for the report
+    is asking for the measurement.
+
+    Returns
+    -------
+    bool
+        ``True`` when either flag was given.
+    """
+    return sccache_stats or sccache_stats_json is not None
 
 
 def _extract_workspace_override(
@@ -397,7 +421,7 @@ def bump(
 
 
 @app.command
-def publish(
+def publish(  # ruff: ignore[too-many-arguments] - one parameter per CLI flag # pylint: disable=too-many-arguments
     workspace_root: typ.Annotated[Path | None, WORKSPACE_PARAMETER] = None,
     *,
     forbid_dirty: typ.Annotated[bool, FORBID_DIRTY_PARAMETER] = False,
@@ -405,6 +429,8 @@ def publish(
     allow_unpublished_workspace_deps: typ.Annotated[
         bool | None, ALLOW_UNPUBLISHED_WORKSPACE_DEPS_PARAMETER
     ] = None,
+    sccache_stats: typ.Annotated[bool, SCCACHE_STATS_PARAMETER] = False,
+    sccache_stats_json: typ.Annotated[Path | None, SCCACHE_STATS_JSON_PARAMETER] = None,
 ) -> str:
     """Run pre-flight checks, package crates, and execute cargo publish.
 
@@ -424,6 +450,12 @@ def publish(
     allow_unpublished_workspace_deps : bool | None
         Tri-state override for unpublished sibling workspace dependencies;
         resolved against the publish mode when omitted.
+    sccache_stats : bool
+        When ``True``, query sccache around the cargo builds and log one
+        compiler-cache summary line per crate (issue #252).
+    sccache_stats_json : Path | None
+        Optional JSON report path for those statistics; implies
+        ``sccache_stats``.
 
     Returns
     -------
@@ -461,6 +493,11 @@ def publish(
                         ),
                     )
                 ),
+                sccache_stats=_resolve_sccache_stats(
+                    sccache_stats=sccache_stats,
+                    sccache_stats_json=sccache_stats_json,
+                ),
+                sccache_stats_json=sccache_stats_json,
                 command_runner=command_runner,
             ),
         ),

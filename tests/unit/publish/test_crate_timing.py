@@ -253,9 +253,11 @@ def test_each_crate_records_its_own_duration(
     plan, preparation, _staging_root = publish_plan_and_prep
 
     publish._package_publishable_crates(
-        plan,
-        preparation,
-        options=publish._PublishExecutionOptions(live=False, allow_dirty=True),
+        publish._PublicationPipelineState(
+            plan,
+            preparation,
+            publish._PublishExecutionOptions(live=False, allow_dirty=True),
+        ),
         runner=CallTrackingRunner(),
     )
 

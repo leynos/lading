@@ -92,6 +92,7 @@ from lading.commands.publish_plan import (
 from lading.commands.publish_plan import (
     PublishPlanError as PublishPlanError,  # public re-export for plan_publication
 )
+from lading.commands.publish_sccache import SccacheSession, create_session
 from lading.utils.path import normalize_workspace_root
 
 LOGGER = logging.getLogger(__name__)
@@ -110,6 +111,8 @@ class _PublishExecutionOptions:
     live: bool
     allow_dirty: bool
     allow_unpublished_workspace_deps: bool = False
+    sccache_stats: bool = False
+    sccache_stats_json: Path | None = None
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -132,6 +135,8 @@ class _PublicationPipelineState:
     # deterministic one, matching the ``clock`` seam in
     # ``bump_lockfile_regeneration``.
     clock: cabc.Callable[[], float] = time.perf_counter
+    # Compiler-cache instrumentation (issue #252); ``None`` when not requested.
+    sccache: SccacheSession | None = None
 
     def position(self, crate: WorkspaceCrate) -> str:
         """Return ``crate``'s ``n/total`` position in the publish order."""
@@ -173,6 +178,12 @@ class PublishOptions:
         to a warning, provided the missing crate is part of the planned
         publish set. Only valid in dry-run mode (``live=False``); combining it
         with ``live=True`` raises :class:`PublishPreflightError`.
+    sccache_stats:
+        When :data:`True`, query the sccache binary named by ``RUSTC_WRAPPER``
+        around every cargo build and log one cache summary line per crate.
+    sccache_stats_json:
+        Optional path for a JSON report of those statistics; implies
+        ``sccache_stats``.
 
     """
 
@@ -185,6 +196,8 @@ class PublishOptions:
     workspace: WorkspaceGraph | None = None
     command_runner: CommandRunner | None = None
     allow_unpublished_workspace_deps: bool = False
+    sccache_stats: bool = False
+    sccache_stats_json: Path | None = None
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -374,18 +387,12 @@ def _for_each_publishable_crate(
 
 
 def _package_publishable_crates(
-    plan: PublishPlan,
-    preparation: PublishPreparation,
+    state: _PublicationPipelineState,
     *,
-    options: _PublishExecutionOptions,
     runner: CommandRunner,
 ) -> None:
     """Package each publishable crate in order using the staged workspace."""
-    _for_each_publishable_crate(
-        _PublicationPipelineState(plan, preparation, options),
-        runner=runner,
-        action=_package_crate,
-    )
+    _for_each_publishable_crate(state, runner=runner, action=_package_crate)
 
 
 def _package_crate(
@@ -406,6 +413,8 @@ def _package_crate(
         runner=runner,
         clock=state.clock,
     )
+    if state.sccache is not None:
+        state.sccache.record(crate.name, "package", result.elapsed_seconds)
     if result.exit_code == 0:
         LOGGER.info(
             "Successfully packaged crate %s (%s) in %.1fs",
@@ -434,18 +443,12 @@ def _package_crate(
 
 
 def _publish_crates(
-    plan: PublishPlan,
-    preparation: PublishPreparation,
+    state: _PublicationPipelineState,
     *,
     runner: CommandRunner,
-    options: _PublishExecutionOptions,
 ) -> None:
     """Publish each crate in order, respecting dry-run vs live mode."""
-    _for_each_publishable_crate(
-        _PublicationPipelineState(plan, preparation, options),
-        runner=runner,
-        action=_publish_crate,
-    )
+    _for_each_publishable_crate(state, runner=runner, action=_publish_crate)
 
 
 def _publish_crate(
@@ -477,6 +480,8 @@ def _publish_crate(
         runner=runner,
         clock=state.clock,
     )
+    if state.sccache is not None:
+        state.sccache.record(crate.name, "publish", result.elapsed_seconds)
     _handle_publish_result(crate, result, state=state)
 
 
@@ -531,14 +536,12 @@ def _handle_publish_result(
 
 
 def _execute_live_publication_pipeline(
-    plan: PublishPlan,
-    preparation: PublishPreparation,
+    state: _PublicationPipelineState,
     *,
-    options: _PublishExecutionOptions,
     runner: CommandRunner,
 ) -> None:
     """Package and publish each crate before moving to the next crate."""
-    state = _PublicationPipelineState(plan, preparation, options)
+    plan = state.plan
     completed: list[str] = []
     for crate in plan.publishable:
         LOGGER.info("Live pipeline: starting crate %s", crate.name)
@@ -640,29 +643,22 @@ def _dispatch_publication(
     without driving ``run()`` end to end. Inlining it would push ``run()``
     back toward the complexity ceiling that prompted the extraction.
     """
+    # The baseline snapshot is taken here, after pre-flight, so the cargo
+    # check/test builds are excluded and only the packaged builds are counted.
+    sccache = create_session(options, runner=runner, workspace_root=plan.workspace_root)
+    if sccache is not None:
+        sccache.begin()
+    state = _PublicationPipelineState(plan, preparation, options, sccache=sccache)
     if options.live:
         LOGGER.info("Publication mode: live (interleaved per-crate pipeline)")
-        _execute_live_publication_pipeline(
-            plan,
-            preparation,
-            options=options,
-            runner=runner,
-        )
+        _execute_live_publication_pipeline(state, runner=runner)
     else:
         LOGGER.info("Publication mode: dry-run (batched two-phase pipeline)")
-        _package_publishable_crates(
-            plan,
-            preparation,
-            options=options,
-            runner=runner,
-        )
+        _package_publishable_crates(state, runner=runner)
         LOGGER.info("Dry-run pipeline: packaging complete; starting publish phase")
-        _publish_crates(
-            plan,
-            preparation,
-            runner=runner,
-            options=options,
-        )
+        _publish_crates(state, runner=runner)
+    if sccache is not None:
+        sccache.finish()
 
 
 def run(
@@ -748,6 +744,8 @@ def run(
         allow_unpublished_workspace_deps=(
             effective_options.allow_unpublished_workspace_deps
         ),
+        sccache_stats=effective_options.sccache_stats,
+        sccache_stats_json=effective_options.sccache_stats_json,
     )
     _dispatch_publication(
         plan,

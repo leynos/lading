@@ -25,11 +25,12 @@ from cuprum import Program, ProgramCatalogue, ProjectSettings
 # Programme objects for allowed executables
 CARGO = Program("cargo")
 GIT = Program("git")
+SCCACHE = Program("sccache")
 
 # Project settings for the lading package
 _LADING_PROJECT = ProjectSettings(
     name="lading",
-    programs=(CARGO, GIT),
+    programs=(CARGO, GIT, SCCACHE),
     documentation_locations=("docs/lading-design.md#command-execution-migration",),
     noise_rules=(),
 )
@@ -42,6 +43,9 @@ _LADING_PROJECT = ProjectSettings(
 #   ``cargo publish``).
 # - git: Required for pre-flight dirty-tree checks (``git status``) and
 #   end-to-end test infrastructure.
+# - sccache: Queried for compiler-cache statistics by
+#   ``lading publish --sccache-stats`` (issue #252); the binary invoked is the
+#   one ``RUSTC_WRAPPER`` names.
 LADING_CATALOGUE = ProgramCatalogue(projects=(_LADING_PROJECT,))
 
-__all__ = ["CARGO", "GIT", "LADING_CATALOGUE"]
+__all__ = ["CARGO", "GIT", "LADING_CATALOGUE", "SCCACHE"]

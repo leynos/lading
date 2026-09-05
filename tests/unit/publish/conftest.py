@@ -555,11 +555,13 @@ def invoke_phase(phase_name: str, ctx: PhaseContext) -> None:
     """
     if phase_name == "package":
         publish._package_publishable_crates(
-            ctx.plan, ctx.preparation, options=ctx.options, runner=ctx.runner
+            publish._PublicationPipelineState(ctx.plan, ctx.preparation, ctx.options),
+            runner=ctx.runner,
         )
     elif phase_name == "publish":
         publish._publish_crates(
-            ctx.plan, ctx.preparation, runner=ctx.runner, options=ctx.options
+            publish._PublicationPipelineState(ctx.plan, ctx.preparation, ctx.options),
+            runner=ctx.runner,
         )
     else:
         message = f"Unknown phase_name {phase_name!r}; expected 'package' or 'publish'."
