@@ -60,6 +60,7 @@ def _cumulative(increments: list[SccacheCounters]) -> list[SccacheCounters]:
 
 
 def _snapshot(counters: SccacheCounters) -> SccacheSnapshot:
+    """Wrap ``counters`` in a snapshot whose raw payload mirrors them."""
     return SccacheSnapshot(raw={"stats": counters.as_dict()}, counters=counters)
 
 
@@ -132,6 +133,7 @@ class _SequenceRunner:
 
 
 def _payload_stats(counters: SccacheCounters) -> dict[str, object]:
+    """Return the ``stats`` section of a payload carrying ``counters``."""
     return {
         "compile_requests": counters.requests,
         "cache_hits": {"counts": {"Rust": counters.hits}},

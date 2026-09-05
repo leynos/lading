@@ -28,21 +28,17 @@ from contextlib import AbstractContextManager, contextmanager, nullcontext
 from logging import INFO as _DEFAULT_LOG_LEVEL
 from pathlib import Path
 
-from cyclopts import App
+from cyclopts import App, Parameter
 
 from . import commands, config
 from .cli_options import (
-    ALLOW_UNPUBLISHED_WORKSPACE_DEPS_PARAMETER,
     DRY_RUN_PARAMETER,
-    FORBID_DIRTY_PARAMETER,
-    LIVE_PARAMETER,
     REBUILD_LOCKFILES_PARAMETER,
-    SCCACHE_STATS_JSON_PARAMETER,
-    SCCACHE_STATS_PARAMETER,
     VERSION_PARAMETER,
     WORKSPACE_PARAMETER,
     WORKSPACE_ROOT_ENV_VAR,
     WORKSPACE_ROOT_REQUIRED_MESSAGE,
+    PublishFlags,
 )
 from .cli_options import (
     AllowUnpublishedWorkspaceDepsFlag as AllowUnpublishedWorkspaceDepsFlag,
@@ -404,17 +400,14 @@ def bump(
     )
 
 
+_DEFAULT_PUBLISH_FLAGS = PublishFlags()
+
+
 @app.command
-def publish(  # ruff: ignore[too-many-arguments] - one parameter per CLI flag # pylint: disable=too-many-arguments
+def publish(
     workspace_root: typ.Annotated[Path | None, WORKSPACE_PARAMETER] = None,
     *,
-    forbid_dirty: typ.Annotated[bool, FORBID_DIRTY_PARAMETER] = False,
-    live: typ.Annotated[bool, LIVE_PARAMETER] = False,
-    allow_unpublished_workspace_deps: typ.Annotated[
-        bool | None, ALLOW_UNPUBLISHED_WORKSPACE_DEPS_PARAMETER
-    ] = None,
-    sccache_stats: typ.Annotated[bool, SCCACHE_STATS_PARAMETER] = False,
-    sccache_stats_json: typ.Annotated[Path | None, SCCACHE_STATS_JSON_PARAMETER] = None,
+    flags: typ.Annotated[PublishFlags, Parameter(name="*")] = _DEFAULT_PUBLISH_FLAGS,
 ) -> str:
     """Run pre-flight checks, package crates, and execute cargo publish.
 
@@ -427,19 +420,13 @@ def publish(  # ruff: ignore[too-many-arguments] - one parameter per CLI flag # 
     workspace_root : Path | None
         Optional path to the workspace root; resolved to the current
         directory when :data:`None`.
-    forbid_dirty : bool
-        When ``True``, require a clean working tree before pre-flight checks.
-    live : bool
-        When ``True``, run ``cargo publish`` without ``--dry-run``.
-    allow_unpublished_workspace_deps : bool | None
-        Tri-state override for unpublished sibling workspace dependencies;
-        resolved against the publish mode when omitted.
-    sccache_stats : bool
-        Query sccache around the cargo builds and log one compiler-cache
-        summary line per ``cargo package`` or ``cargo publish`` invocation
-        (issue #252).
-    sccache_stats_json : Path | None
-        JSON report path for those statistics; implies ``sccache_stats``.
+    flags : PublishFlags
+        The publish flags, each surfaced by Cyclopts as its own option:
+        ``--forbid-dirty``, ``--live``,
+        ``--allow-unpublished-workspace-deps`` (tri-state, resolved against
+        the publish mode when omitted), ``--sccache-stats``, and
+        ``--sccache-stats-json`` (issue #252; a report path implies the
+        measurement, resolved by the publish command).
 
     Returns
     -------
@@ -449,7 +436,7 @@ def publish(  # ruff: ignore[too-many-arguments] - one parameter per CLI flag # 
     Examples
     --------
     >>> from lading.cli import publish
-    >>> summary = publish(live=False)  # doctest: +SKIP
+    >>> summary = publish(flags=PublishFlags(live=False))  # doctest: +SKIP
     >>> "Staged workspace at:" in summary  # doctest: +SKIP
     True
     """
@@ -460,24 +447,27 @@ def publish(  # ruff: ignore[too-many-arguments] - one parameter per CLI flag # 
             root,
             configuration,
             workspace,
-            options=commands.publish.PublishOptions(
-                allow_dirty=not forbid_dirty,
-                live=live,
-                allow_unpublished_workspace_deps=(
-                    _resolve_allow_unpublished_workspace_deps(
-                        live=live,
-                        allow_unpublished_workspace_deps=(
-                            allow_unpublished_workspace_deps
-                        ),
-                    )
-                ),
-                # A report path implies the measurement; the publish command
-                # resolves that, so library callers get the same behaviour.
-                sccache_stats=sccache_stats,
-                sccache_stats_json=sccache_stats_json,
-                command_runner=command_runner,
-            ),
+            options=_publish_options(flags, command_runner),
         ),
+    )
+
+
+def _publish_options(
+    flags: PublishFlags, command_runner: CommandRunner
+) -> commands.publish.PublishOptions:
+    """Translate the CLI flag bundle into the publish command's options."""
+    return commands.publish.PublishOptions(
+        allow_dirty=not flags.forbid_dirty,
+        live=flags.live,
+        allow_unpublished_workspace_deps=_resolve_allow_unpublished_workspace_deps(
+            live=flags.live,
+            allow_unpublished_workspace_deps=flags.allow_unpublished_workspace_deps,
+        ),
+        # Forwarded unresolved: a report path implying the measurement is the
+        # publish command's decision, so library callers behave the same.
+        sccache_stats=flags.sccache_stats,
+        sccache_stats_json=flags.sccache_stats_json,
+        command_runner=command_runner,
     )
 
 

@@ -1,7 +1,7 @@
 """Unit tests for :mod:`lading.commands.publish_sccache_stats` (issue #252).
 
 Covers wrapper detection from ``RUSTC_WRAPPER``, counter extraction from real
-sccache 0.12 and 0.14 payload shapes, the query adapters through a recording
+sccache 0.12, 0.14, and 0.17 payload shapes, the query adapters through a recording
 runner, and one query through the production subprocess runner against a stub
 ``sccache`` script on ``PATH``.
 """

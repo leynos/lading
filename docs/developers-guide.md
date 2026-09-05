@@ -1085,7 +1085,7 @@ values are pinned by a syrupy snapshot. See the
 operator-facing description of the variable and its failure modes.
 
 `lading.utils.commands.LADING_CATALOGUE` is the staged cuprum programme
-catalogue (cargo, git). It is intentionally not yet wired into the execution
+catalogue (cargo, git, sccache). It is intentionally not yet wired into the execution
 path — `publish_execution._invoke` still delegates to the subprocess runner,
 which spawns processes directly. It becomes live with the
 [Phase 5.2 publish-execution migration](./roadmap.md), which rewires

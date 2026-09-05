@@ -354,8 +354,10 @@ def test_create_session_treats_a_report_path_as_opting_in(
     )
 
     assert (session is not None) is expects_session
-    if session is not None:
-        assert session.json_path == sccache_stats_json
+    if session is not None and sccache_stats_json is not None:
+        assert session.json_path == tmp_path / sccache_stats_json, (
+            "the report path is resolved against the workspace root"
+        )
 
 
 def test_create_session_warns_without_wrapper(
@@ -400,6 +402,27 @@ def test_create_session_binds_wrapper_root_and_report(tmp_path: Path) -> None:
         _WRAPPER,
         tmp_path,
         report,
+    ), "an absolute report path is kept as given"
+
+
+def test_create_session_resolves_a_relative_report_path(tmp_path: Path) -> None:
+    """A relative report path follows the workspace root, not the process cwd."""
+    options = publish._PublishExecutionOptions(
+        live=False,
+        allow_dirty=True,
+        sccache_stats_json=Path("target") / "sccache.json",
+    )
+
+    session = publish_sccache.create_session(
+        options,
+        runner=_ScriptedRunner([]),
+        workspace_root=tmp_path,
+        env={"RUSTC_WRAPPER": str(_WRAPPER)},
+    )
+
+    assert session is not None
+    assert session.json_path == tmp_path / "target" / "sccache.json", (
+        "relative report paths must be resolved against the workspace root"
     )
 
 

@@ -256,7 +256,9 @@ The final block mirrors that cumulative report so the `Cache location` line is
 on record.
 
 Add `--sccache-stats-json PATH` (which implies `--sccache-stats`) to write a
-JSON report alongside, for an artefact upload or a later comparison:
+JSON report alongside, for an artefact upload or a later comparison. A
+relative `PATH` is resolved against the workspace root, like every other path
+`lading` accepts:
 
 ```bash
 lading publish --sccache-stats-json target/sccache-publish.json

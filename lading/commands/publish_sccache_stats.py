@@ -14,7 +14,7 @@ import collections.abc as cabc
 import dataclasses as dc
 import json
 import typing as typ
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 from lading.exceptions import LadingError
 from lading.runtime import coerce_text
@@ -68,7 +68,8 @@ class SccacheStatsParseError(SccacheStatsError):
             "invalid-json": "produced invalid JSON output",
             "non-object": "returned a non-object JSON payload",
         }.get(reason, reason)
-        super().__init__(f"{wrapper} --show-stats {detail}")
+        message = f"{wrapper} --show-stats {detail}"
+        super().__init__(message)
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -147,10 +148,10 @@ def detect_wrapper(env: cabc.Mapping[str, str]) -> Path | None:
     value = env.get(RUSTC_WRAPPER_ENV_VAR, "").strip()
     if not value:
         return None
-    # Split on both separators so a Windows path is recognized on any host,
-    # and case-fold so ``SCCACHE.EXE`` qualifies; the original path is kept
-    # for execution.
-    basename = value.replace("\\", "/").rsplit("/", 1)[-1].casefold()
+    # ``PureWindowsPath`` treats both separators as separators on every host,
+    # so a Windows wrapper path is recognized on Linux; case-fold so
+    # ``SCCACHE.EXE`` qualifies. The original path is kept for execution.
+    basename = PureWindowsPath(value).name.casefold()
     if not basename.startswith(_WRAPPER_BASENAME_PREFIX):
         return None
     return Path(value)

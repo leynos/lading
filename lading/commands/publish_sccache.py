@@ -211,7 +211,8 @@ class SccacheSession:
     cwd : Path
         Working directory for the queries (the workspace root).
     json_path : Path | None
-        Where to write the JSON report, or :data:`None` to skip it.
+        Where to write the JSON report (already resolved against the
+        workspace root by :func:`create_session`), or :data:`None` to skip it.
     """
 
     wrapper: Path
@@ -365,11 +366,16 @@ def create_session(
             RUSTC_WRAPPER_ENV_VAR,
         )
         return None
+    json_path = options.sccache_stats_json
+    if json_path is not None:
+        # Relative report paths follow the workspace root, like every other
+        # path lading accepts; joining leaves an absolute path unchanged.
+        json_path = workspace_root / json_path
     return SccacheSession(
         wrapper=wrapper,
         runner=runner,
         cwd=workspace_root,
-        json_path=options.sccache_stats_json,
+        json_path=json_path,
     )
 
 
