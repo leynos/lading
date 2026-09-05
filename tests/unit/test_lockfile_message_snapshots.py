@@ -22,7 +22,7 @@ from lading.workspace import WorkspaceGraph
 if typ.TYPE_CHECKING:
     from syrupy.assertion import SnapshotAssertion
 
-_SNAPSHOT_WORKSPACE_ROOT = Path("/ws")
+_SNAPSHOT_WORKSPACE_ROOT = Path("/<tmp-file-path>")
 
 
 class TestBumpLockfileMessages:
@@ -100,7 +100,7 @@ class TestStaleLockfileMessages:
             pytest.param(
                 [
                     _SNAPSHOT_WORKSPACE_ROOT / "Cargo.lock",
-                    _SNAPSHOT_WORKSPACE_ROOT / "tests" / "ui_lints" / "Cargo.lock",
+                    _SNAPSHOT_WORKSPACE_ROOT / "nested" / "Cargo.lock",
                 ],
                 id="multiple",
             ),
