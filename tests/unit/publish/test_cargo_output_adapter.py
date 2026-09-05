@@ -10,8 +10,10 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from lading.commands.cargo_output_adapter import (
+    CargoAlreadyPublishedFailure,
     CargoIndexLookupFailure,
     CargoSubprocessResult,
+    parse_already_published_failure,
     parse_index_lookup_failure,
 )
 
@@ -102,6 +104,36 @@ def test_parse_index_lookup_failure_returns_none_for_non_index_errors(
 ) -> None:
     """Non-index failures do not produce structured lookup failures."""
     assert _parse_index_lookup_failure(exit_code, stdout, stderr) is None
+
+
+@pytest.mark.parametrize(
+    ("result", "expected"),
+    [
+        pytest.param(
+            CargoSubprocessResult(101, "", "error: crate already uploaded"),
+            CargoAlreadyPublishedFailure(101, "", "error: crate already uploaded"),
+            id="registry-error-with-marker",
+        ),
+        pytest.param(
+            CargoSubprocessResult(1, "", "error: crate already uploaded"),
+            None,
+            id="non-registry-error",
+        ),
+        pytest.param(
+            CargoSubprocessResult(101, "", "unrelated registry error"),
+            None,
+            id="registry-error-without-marker",
+        ),
+    ],
+)
+def test_parse_already_published_failure_returns_typed_failure(
+    result: CargoSubprocessResult,
+    expected: CargoAlreadyPublishedFailure | None,
+) -> None:
+    """Already-published Cargo diagnostics retain their raw process output."""
+    assert parse_already_published_failure(result) == expected, (
+        f"Unexpected already-published classification for Cargo result {result!r}"
+    )
 
 
 @pytest.mark.parametrize(

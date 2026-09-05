@@ -7,9 +7,10 @@ import typing as typ
 
 import pytest
 
-from lading.commands import publish
+from lading.commands import publish, publish_staging
 from tests.unit.conftest import (
-    PublishFixtures,
+    PreparationFixtures,
+    PrepareWorkspaceFixtures,
     _CrateSpec,
 )
 
@@ -22,7 +23,7 @@ def test_normalize_build_directory_defaults_to_tempdir(tmp_path: Path) -> None:
     workspace_root = tmp_path / "workspace"
     workspace_root.mkdir()
 
-    build_directory = publish._normalize_build_directory(workspace_root, None)
+    build_directory = publish_staging._normalize_build_directory(workspace_root, None)
 
     assert build_directory.exists()
     assert build_directory.is_absolute()
@@ -37,7 +38,9 @@ def test_normalize_build_directory_resolves_relative_paths(
     workspace_root.mkdir()
     monkeypatch.chdir(tmp_path)
 
-    build_directory = publish._normalize_build_directory(workspace_root, "staging")
+    build_directory = publish_staging._normalize_build_directory(
+        workspace_root, "staging"
+    )
 
     expected = (tmp_path / "staging").resolve()
     assert build_directory == expected
@@ -53,10 +56,30 @@ def test_normalize_build_directory_rejects_workspace_descendants(
 
     build_directory = workspace_root / "target"
 
-    with pytest.raises(publish.PublishPreparationError) as excinfo:
-        publish._normalize_build_directory(workspace_root, build_directory)
+    with pytest.raises(publish_staging.PublishPreparationError) as excinfo:
+        publish_staging._normalize_build_directory(workspace_root, build_directory)
 
     assert "cannot reside within the workspace root" in str(excinfo.value)
+
+
+def test_normalize_build_directory_wraps_creation_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Build-directory creation failures use the staging error boundary."""
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+
+    def fail_mkdir(*_args: object, **_kwargs: object) -> None:
+        message = "permission denied"
+        raise OSError(message)
+
+    monkeypatch.setattr(publish_staging.Path, "mkdir", fail_mkdir)
+
+    with pytest.raises(publish_staging.PublishPreparationError) as excinfo:
+        publish_staging._normalize_build_directory(workspace_root, tmp_path / "staging")
+
+    assert "Cannot create publish build directory" in str(excinfo.value)
+    assert isinstance(excinfo.value.__cause__, OSError)
 
 
 def test_copy_workspace_tree_mirrors_workspace_contents(tmp_path: Path) -> None:
@@ -73,7 +96,7 @@ def test_copy_workspace_tree_mirrors_workspace_contents(tmp_path: Path) -> None:
     build_directory = tmp_path / "staging"
     build_directory.mkdir()
 
-    staging_root = publish._copy_workspace_tree(
+    staging_root = publish_staging._copy_workspace_tree(
         workspace_root, build_directory, preserve_symlinks=True
     )
 
@@ -96,7 +119,7 @@ def test_copy_workspace_tree_replaces_existing_clone(tmp_path: Path) -> None:
     stale_file = existing_clone / "stale.txt"
     stale_file.write_text("stale", encoding="utf-8")
 
-    staging_root = publish._copy_workspace_tree(
+    staging_root = publish_staging._copy_workspace_tree(
         workspace_root, build_directory, preserve_symlinks=True
     )
 
@@ -105,17 +128,66 @@ def test_copy_workspace_tree_replaces_existing_clone(tmp_path: Path) -> None:
     assert (staging_root / "marker.txt").read_text(encoding="utf-8") == "fresh"
 
 
+def test_copy_workspace_tree_wraps_staging_cleanup_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Staging-root cleanup failures use the staging error boundary."""
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    build_directory = tmp_path / "staging"
+    staging_root = build_directory / workspace_root.name
+    staging_root.mkdir(parents=True)
+    failure = OSError("permission denied")
+
+    def fail_rmtree(*_args: object, **_kwargs: object) -> None:
+        raise failure
+
+    monkeypatch.setattr(publish_staging.shutil, "rmtree", fail_rmtree)
+
+    with pytest.raises(publish_staging.PublishPreparationError) as excinfo:
+        publish_staging._copy_workspace_tree(
+            workspace_root, build_directory, preserve_symlinks=True
+        )
+
+    assert "Cannot copy workspace into staging directory" in str(excinfo.value)
+    assert excinfo.value.__cause__ is failure
+
+
 def test_copy_workspace_tree_rejects_nested_clone(tmp_path: Path) -> None:
     """Copying into a directory under the workspace is prohibited."""
     workspace_root = tmp_path / "workspace"
     workspace_root.mkdir()
 
-    with pytest.raises(publish.PublishPreparationError) as excinfo:
-        publish._copy_workspace_tree(
+    with pytest.raises(publish_staging.PublishPreparationError) as excinfo:
+        publish_staging._copy_workspace_tree(
             workspace_root, workspace_root, preserve_symlinks=True
         )
 
     assert "cannot be nested inside the workspace root" in str(excinfo.value)
+
+
+def test_copy_workspace_tree_wraps_copy_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Workspace-copy failures use the staging error boundary."""
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    build_directory = tmp_path / "staging"
+    build_directory.mkdir()
+
+    def fail_copytree(*_args: object, **_kwargs: object) -> None:
+        message = "disk full"
+        raise OSError(message)
+
+    monkeypatch.setattr(publish_staging.shutil, "copytree", fail_copytree)
+
+    with pytest.raises(publish_staging.PublishPreparationError) as excinfo:
+        publish_staging._copy_workspace_tree(
+            workspace_root, build_directory, preserve_symlinks=True
+        )
+
+    assert "Cannot copy workspace into staging directory" in str(excinfo.value)
+    assert isinstance(excinfo.value.__cause__, OSError)
 
 
 @pytest.mark.parametrize(
@@ -147,7 +219,7 @@ def test_copy_workspace_tree_symlink_handling(
     build_directory = tmp_path / "staging"
     build_directory.mkdir()
 
-    staging_root = publish._copy_workspace_tree(
+    staging_root = publish_staging._copy_workspace_tree(
         workspace_root, build_directory, preserve_symlinks=preserve_symlinks
     )
 
@@ -159,54 +231,33 @@ def test_copy_workspace_tree_symlink_handling(
     assert staged_link.read_text(encoding="utf-8") == "payload"
 
 
-def test_prepare_workspace_does_not_stage_workspace_readme(
-    publish_fixtures: PublishFixtures,
-) -> None:
-    """Publish staging leaves workspace README adoption to bump."""
-    workspace_root = publish_fixtures.tmp_path / "workspace"
-    workspace_root.mkdir()
-    readme = workspace_root / "README.md"
-    readme.write_text("Workspace README", encoding="utf-8")
-    crate = publish_fixtures.make_crate(
-        workspace_root, "alpha", _CrateSpec(readme_workspace=True)
-    )
-    workspace = publish_fixtures.make_workspace(workspace_root, crate)
-    configuration = publish_fixtures.make_config()
-    plan = publish.plan_publication(workspace, configuration)
-    preparation = publish.prepare_workspace(
-        plan, workspace, options=publish_fixtures.publish_options
-    )
-
-    staging_root = preparation.staging_root
-    assert staging_root.exists()
-    staged_readme = (
-        staging_root / crate.root_path.relative_to(workspace_root) / "README.md"
-    )
-    assert not staged_readme.exists()
-    assert preparation.copied_readmes == ()
-
-
 def test_prepare_workspace_registers_cleanup(
     monkeypatch: pytest.MonkeyPatch,
-    publish_fixtures: PublishFixtures,
+    prepare_workspace_fixtures: PrepareWorkspaceFixtures,
+    preparation_fixtures: PreparationFixtures,
 ) -> None:
     """Cleanup-enabled staging registers an atexit handler."""
-    workspace_root = publish_fixtures.tmp_path / "workspace"
+    fx = prepare_workspace_fixtures
+    pf = preparation_fixtures
+    workspace_root = fx.tmp_path / "workspace"
     workspace_root.mkdir()
-    crate = publish_fixtures.make_crate(workspace_root, "alpha")
-    workspace = publish_fixtures.make_workspace(workspace_root, crate)
-    plan = publish.plan_publication(workspace, publish_fixtures.make_config())
+    crate = pf.make_crate(workspace_root, "alpha")
+    workspace = pf.make_workspace(workspace_root, crate)
+    plan = publish.plan_publication(workspace, pf.make_config())
 
-    build_directory = publish_fixtures.publish_options.build_directory
+    build_directory = fx.publish_options.build_directory
+    build_directory.mkdir(parents=True)
+    marker = build_directory / "keep.txt"
+    marker.write_text("keep", encoding="utf-8")
     registered: list[cabc.Callable[[], None]] = []
 
     def capture(callback: cabc.Callable[[], None]) -> None:
         registered.append(callback)
 
-    monkeypatch.setattr(publish.atexit, "register", capture)
+    monkeypatch.setattr(publish_staging.atexit, "register", capture)
 
     options = publish.PublishOptions(build_directory=build_directory, cleanup=True)
-    preparation = publish.prepare_workspace(plan, workspace, options=options)
+    preparation = publish_staging.prepare_workspace(plan, options=options)
 
     assert len(registered) == 1
     cleanup = registered[0]
@@ -215,6 +266,37 @@ def test_prepare_workspace_registers_cleanup(
     assert build_directory.exists()
 
     cleanup()
+    assert build_directory.exists()
+    assert marker.read_text(encoding="utf-8") == "keep"
+    assert not preparation.staging_root.exists()
+
+
+def test_prepare_workspace_cleanup_removes_auto_created_build_directory(
+    monkeypatch: pytest.MonkeyPatch,
+    prepare_workspace_fixtures: PrepareWorkspaceFixtures,
+    preparation_fixtures: PreparationFixtures,
+) -> None:
+    """Cleanup removes the full temporary build directory that staging creates."""
+    fx = prepare_workspace_fixtures
+    pf = preparation_fixtures
+    workspace_root = fx.tmp_path / "workspace"
+    workspace_root.mkdir()
+    crate = pf.make_crate(workspace_root, "alpha")
+    plan = publish.plan_publication(
+        pf.make_workspace(workspace_root, crate), pf.make_config()
+    )
+    registered: list[cabc.Callable[[], None]] = []
+
+    monkeypatch.setattr(publish_staging.atexit, "register", registered.append)
+
+    preparation = publish_staging.prepare_workspace(
+        plan, options=publish.PublishOptions(cleanup=True)
+    )
+    build_directory = preparation.staging_root.parent
+
+    assert len(registered) == 1
+    registered[0]()
+
     assert not build_directory.exists()
 
 
@@ -228,68 +310,58 @@ def test_prepare_workspace_registers_cleanup(
         pytest.param(_CrateSpec(), id="no_readme_opt_in"),
     ],
 )
-def test_prepare_workspace_returns_empty_copied_readmes(
-    publish_fixtures: PublishFixtures,
+def test_prepare_workspace_copies_workspace_readme_without_adopting_it_for_crates(
+    prepare_workspace_fixtures: PrepareWorkspaceFixtures,
+    preparation_fixtures: PreparationFixtures,
     crate_spec: _CrateSpec,
 ) -> None:
-    """Staging reports no copied READMEs regardless of readme opt-in status."""
-    workspace_root = publish_fixtures.tmp_path / "workspace"
-    workspace_root.mkdir()
-    crate = publish_fixtures.make_crate(workspace_root, "alpha", crate_spec)
-    workspace = publish_fixtures.make_workspace(workspace_root, crate)
-    configuration = publish_fixtures.make_config()
-    plan = publish.plan_publication(workspace, configuration)
-
-    preparation = publish.prepare_workspace(
-        plan, workspace, options=publish_fixtures.publish_options
-    )
-
-    assert preparation.staging_root.exists()
-    assert preparation.copied_readmes == ()
-
-
-def test_prepare_workspace_keeps_copied_readmes_empty_for_opted_in_crates(
-    publish_fixtures: PublishFixtures,
-) -> None:
-    """Readme opt-in does not produce publish-time copied paths."""
-    workspace_root = publish_fixtures.tmp_path / "workspace"
+    """Staging copies the workspace README without creating crate READMEs."""
+    fx = prepare_workspace_fixtures
+    pf = preparation_fixtures
+    workspace_root = fx.tmp_path / "workspace"
     workspace_root.mkdir()
     readme = workspace_root / "README.md"
-    readme.write_text("Workspace", encoding="utf-8")
-    crate_alpha = publish_fixtures.make_crate(
-        workspace_root, "alpha", _CrateSpec(readme_workspace=True)
-    )
-    crate_beta = publish_fixtures.make_crate(
-        workspace_root, "beta", _CrateSpec(readme_workspace=True)
-    )
-    workspace = publish_fixtures.make_workspace(workspace_root, crate_alpha, crate_beta)
-    plan = publish.plan_publication(workspace, publish_fixtures.make_config())
+    readme.write_text("Workspace README", encoding="utf-8")
+    crate = pf.make_crate(workspace_root, "alpha", crate_spec)
+    workspace = pf.make_workspace(workspace_root, crate)
+    configuration = pf.make_config()
+    plan = publish.plan_publication(workspace, configuration)
 
-    preparation = publish.prepare_workspace(
-        plan, workspace, options=publish_fixtures.publish_options
-    )
+    preparation = publish_staging.prepare_workspace(plan, options=fx.publish_options)
 
-    assert preparation.copied_readmes == ()
+    assert preparation.staging_root.exists()
+    assert (preparation.staging_root / readme.name).read_text(encoding="utf-8") == (
+        "Workspace README"
+    )
+    staged_crate_readme = (
+        preparation.staging_root
+        / crate.root_path.relative_to(workspace_root)
+        / "README.md"
+    )
+    assert not staged_crate_readme.exists()
 
 
 def test_prepare_workspace_does_not_register_cleanup_when_disabled(
     monkeypatch: pytest.MonkeyPatch,
-    publish_fixtures: PublishFixtures,
+    prepare_workspace_fixtures: PrepareWorkspaceFixtures,
+    preparation_fixtures: PreparationFixtures,
 ) -> None:
     """Cleanup hook is not registered when the option remains disabled."""
-    workspace_root = publish_fixtures.tmp_path / "workspace"
+    fx = prepare_workspace_fixtures
+    pf = preparation_fixtures
+    workspace_root = fx.tmp_path / "workspace"
     workspace_root.mkdir()
-    crate = publish_fixtures.make_crate(workspace_root, "alpha")
-    workspace = publish_fixtures.make_workspace(workspace_root, crate)
-    plan = publish.plan_publication(workspace, publish_fixtures.make_config())
+    crate = pf.make_crate(workspace_root, "alpha")
+    workspace = pf.make_workspace(workspace_root, crate)
+    plan = publish.plan_publication(workspace, pf.make_config())
 
     registered: list[cabc.Callable[[], None]] = []
 
     def capture(callback: cabc.Callable[[], None]) -> None:
         registered.append(callback)
 
-    monkeypatch.setattr(publish.atexit, "register", capture)
+    monkeypatch.setattr(publish_staging.atexit, "register", capture)
 
-    publish.prepare_workspace(plan, workspace, options=publish_fixtures.publish_options)
+    publish_staging.prepare_workspace(plan, options=fx.publish_options)
 
     assert registered == []

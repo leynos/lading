@@ -1,6 +1,6 @@
-"""Command execution helpers for publish operations.
+"""Execute publish commands through the project's subprocess boundary.
 
-Two concerns live here, both used by :mod:`lading.commands.publish`:
+Two concerns live here, both used by :mod:`lading.commands.publish_pipeline`:
 
 * :func:`_invoke` runs a command through the production subprocess runner
   and maps spawn and argument failures onto

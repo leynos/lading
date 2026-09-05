@@ -18,17 +18,17 @@
   '''
   Tracked Cargo.lock files are stale after manifest version changes.
   This can happen after manifest changes made without `lading bump`, or after running `lading bump --no-rebuild-lockfiles`; repair each stale lockfile directly:
-  - <workspace>/Cargo.lock
-    cargo generate-lockfile --manifest-path <workspace>/Cargo.toml
-  - <nested-workspace>/Cargo.lock
-    cargo generate-lockfile --manifest-path <nested-workspace>/Cargo.toml
+  - <lockfile 1>
+    cargo generate-lockfile --manifest-path <manifest 1>
+  - <lockfile 2>
+    cargo generate-lockfile --manifest-path <manifest 2>
   '''
 # ---
 # name: TestStaleLockfileMessages.test_message[single]
   '''
   Tracked Cargo.lock files are stale after manifest version changes.
   This can happen after manifest changes made without `lading bump`, or after running `lading bump --no-rebuild-lockfiles`; repair each stale lockfile directly:
-  - <workspace>/Cargo.lock
-    cargo generate-lockfile --manifest-path <workspace>/Cargo.toml
+  - <lockfile 1>
+    cargo generate-lockfile --manifest-path <manifest 1>
   '''
 # ---

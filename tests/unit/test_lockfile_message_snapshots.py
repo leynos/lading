@@ -147,8 +147,13 @@ class TestStaleLockfileMessages:
             )
 
         message = str(excinfo.value).replace("\\", "/")
-        nested_workspace = str(tmp_path / "tests" / "ui_lints").replace("\\", "/")
-        workspace = str(tmp_path).replace("\\", "/")
-        message = message.replace(nested_workspace, "<nested-workspace>")
-        message = message.replace(workspace, "<workspace>")
+        for position, lockfile_path in enumerate(lockfiles, start=1):
+            staged_lockfile = tmp_path / lockfile_path
+            staged_manifest = staged_lockfile.parent / "Cargo.toml"
+            message = message.replace(
+                str(staged_lockfile).replace("\\", "/"), f"<lockfile {position}>"
+            )
+            message = message.replace(
+                str(staged_manifest).replace("\\", "/"), f"<manifest {position}>"
+            )
         assert snapshot == message, "stale lockfile message should use stable paths"
