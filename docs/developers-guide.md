@@ -779,9 +779,13 @@ diagnostics, and normalizes staging/preparation failures into
 `PublishPreflightError` so callers receive the same publish command error
 boundary.
 
-`_handle_publish_result(crate, exit_code, stdout, stderr, plan, options)` owns
-the result classification for a completed `cargo publish` command. It logs
-success, skips already-published crate versions, adapts crates.io index lookup
+`_handle_publish_result(crate, result, *, state)` owns the result
+classification for a completed `cargo publish` command. `result` is the
+`_TimedCargoResult` from `_run_timed_cargo` (exit code, captured streams,
+elapsed seconds) and `state` is the `_PublicationPipelineState` supplying the
+plan, the execution options, and the crate's `n/total` position. It logs
+success with the position and elapsed time, skips already-published crate
+versions, adapts crates.io index lookup
 failures through `parse_index_lookup_failure()` before delegating to
 `_handle_index_missing_version`, and raises `PublishError` for all other
 non-zero publish exits after formatting the cargo failure message.
@@ -801,7 +805,10 @@ logging and the dry-run two-phase sequencing, keeps `run()` linear, and is the
 seam the dispatch tests exercise directly. `_PublicationPipelineState` keeps
 the per-crate helper signatures within the four-argument lint ceiling and pins
 the invariant that plan, preparation, and options are constructed together and
-immutable for the pipeline's lifetime.
+immutable for the pipeline's lifetime. The state also carries the injectable
+`clock` (default `time.perf_counter`) that `_run_timed_cargo` times each cargo
+invocation with, and `position(crate)` renders the crate's `n/total` place in
+`plan.publishable` for the progress lines.
 
 Publication dispatch deliberately differs by mode. Dry-run mode keeps the
 historical two-phase pipeline: package every publishable crate, then run

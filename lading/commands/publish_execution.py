@@ -11,8 +11,7 @@ Two concerns live here, both used by :mod:`lading.commands.publish`:
   duration under :data:`CARGO_DURATION_METRIC` whatever the outcome, and
   returns a :class:`_TimedCargoResult` carrying the exit code, captured
   streams, and elapsed seconds. The pipeline uses the elapsed time for its
-  per-crate progress lines and for the compiler-cache attribution in
-  :mod:`lading.commands.publish_sccache`.
+  per-crate progress lines.
 """
 
 from __future__ import annotations

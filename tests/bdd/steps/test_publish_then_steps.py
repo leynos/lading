@@ -560,10 +560,19 @@ def then_publish_preflight_error_is_not_reported(cli_run: CliRunResult) -> None:
 
 _PROGRESS_LINE = re.compile(
     r"^INFO: (?:Running cargo (?P<start>package|publish --dry-run) for crate|"
-    r"(?:Successfully packaged|Dry-run publish succeeded for) crate) "
+    r"(?:(?P<packaged>Successfully packaged)|(?P<published>Dry-run publish "
+    r"succeeded for)) crate) "
     r"(?P<crate>\S+) \((?P<index>\d+)/(?P<total>\d+)\)"
     r"(?P<elapsed> in \d+\.\ds)?$"
 )
+
+
+def _progress_phase(match: re.Match[str]) -> str:
+    """Return ``package`` or ``publish`` for a matched progress line."""
+    start = match["start"]
+    if start is not None:
+        return "package" if start == "package" else "publish"
+    return "package" if match["packaged"] else "publish"
 
 
 @then(
@@ -589,6 +598,7 @@ def then_publish_progress_lines(cli_run: CliRunResult, crate_names: str) -> None
     ]
     observed = [
         (
+            _progress_phase(match),
             match["crate"],
             int(match["index"]),
             int(match["total"]),
@@ -597,7 +607,7 @@ def then_publish_progress_lines(cli_run: CliRunResult, crate_names: str) -> None
         for match in matches
     ]
     expected = [
-        (crate, index, total, has_elapsed)
+        (phase, crate, index, total, has_elapsed)
         for phase in ("package", "publish")
         for index, crate in enumerate(expected_crates, start=1)
         for has_elapsed in (False, True)
