@@ -121,7 +121,7 @@ fixture lockfile and seeing that lockfile listed in the bump output with a
 - [x] (2026-07-07 12:20Z) Stage A: prototype proved
   `cargo update --workspace --manifest-path <nested>` restores freshness for a
   nested fixture package with a path dependency on a bumped workspace crate. See
-  `Artifacts and notes`. No fallback command needed.
+  `Artefacts and notes`. No fallback command needed.
 - [x] (2026-07-07 13:10Z) Stage B: red tests landed and observed failing for
   the expected reasons — three new unit tests plus the two extended wiring
   tests failed with

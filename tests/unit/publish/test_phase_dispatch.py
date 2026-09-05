@@ -126,7 +126,7 @@ def test_missing_dep_later_in_publish_order_raises(
         )
 
 
-def test_missing_dep_in_plan_allows_cargo_name_normalisation(
+def test_missing_dep_in_plan_allows_cargo_name_normalization(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:

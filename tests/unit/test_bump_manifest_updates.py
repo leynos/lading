@@ -192,7 +192,7 @@ def test_run_updates_renamed_internal_dependency_versions(
     )
 
 
-def test_run_normalises_workspace_root(
+def test_run_normalizes_workspace_root(
     tmp_path: pathlib.Path, monkeypatch: MonkeyPatch
 ) -> None:
     """The command resolves the workspace root before applying updates."""
@@ -208,7 +208,7 @@ def test_run_normalises_workspace_root(
     )
     manifest_path = workspace_root / "Cargo.toml"
     assert _load_version(manifest_path, ("workspace", "package")) == "3.4.5", (
-        "workspace version not updated after root normalisation"
+        "workspace version not updated after root normalization"
     )
 
 

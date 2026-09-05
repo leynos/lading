@@ -292,9 +292,9 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DIST = PROJECT_ROOT / "dist"
-(DIST / "artifacts").mkdir(parents=True, exist_ok=True)
+(DIST / "artefacts").mkdir(parents=True, exist_ok=True)
 
-# Portable joins and normalisation
+# Portable joins and normalization
 cfg = PROJECT_ROOT.joinpath("config", "release.toml").resolve()
 ```
 

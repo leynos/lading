@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 
-def normalise_workspace_root(value: Path | str | None) -> Path:
+def normalize_workspace_root(value: Path | str | None) -> Path:
     """Return an absolute workspace path with ``~`` expanded.
 
     Parameters
@@ -22,9 +22,9 @@ def normalise_workspace_root(value: Path | str | None) -> Path:
 
     Examples
     --------
-    >>> normalise_workspace_root("~/workspace").is_absolute()
+    >>> normalize_workspace_root("~/workspace").is_absolute()
     True
-    >>> normalise_workspace_root(None) == Path.cwd().resolve()
+    >>> normalize_workspace_root(None) == Path.cwd().resolve()
     True
     """
     if value is None:

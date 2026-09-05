@@ -107,7 +107,7 @@ def build_workspace_graph(
         workspace_root_value = metadata["workspace_root"]
     except KeyError as exc:
         raise WorkspaceModelError(WORKSPACE_ROOT_MISSING_MSG) from exc
-    workspace_root = _normalise_workspace_root(workspace_root_value)
+    workspace_root = _normalize_workspace_root(workspace_root_value)
     packages = _expect_sequence(metadata.get("packages"), "packages", allow_none=False)
     workspace_members = _expect_sequence(
         metadata.get("workspace_members"), "workspace_members", allow_none=False
@@ -165,7 +165,7 @@ def _build_crate(
     package_id = _expect_string(package.get("id"), "packages[].id")
     name = _expect_string(package.get("name"), f"package {package_id!r} name")
     version = _expect_string(package.get("version"), f"package {package_id!r} version")
-    manifest_path = _normalise_manifest_path(
+    manifest_path = _normalize_manifest_path(
         package.get("manifest_path"), f"package {package_id!r} manifest_path"
     )
     dependencies = _build_dependencies(package, workspace_index)
@@ -246,7 +246,7 @@ def _validate_workspace_dependency_path(
         return True
     if not isinstance(dependency_path, str):
         return False
-    target_manifest_path = _normalise_manifest_path(
+    target_manifest_path = _normalize_manifest_path(
         target_package.get("manifest_path"),
         "dependency target manifest_path",
     )
@@ -350,19 +350,19 @@ def _dependency_manifest_name(
     )
 
 
-def _normalise_workspace_root(value: object) -> Path:
+def _normalize_workspace_root(value: object) -> Path:
     """Return ``value`` as an absolute workspace root path."""
     if not isinstance(value, str | Path):
         message = (
             f"workspace_root must be a path string; received {type(value).__name__}"
         )
         raise WorkspaceModelError(message)
-    from lading.utils.path import normalise_workspace_root
+    from lading.utils.path import normalize_workspace_root
 
-    return normalise_workspace_root(value)
+    return normalize_workspace_root(value)
 
 
-def _normalise_manifest_path(value: object, field_name: str) -> Path:
+def _normalize_manifest_path(value: object, field_name: str) -> Path:
     """Return ``value`` as an absolute :class:`Path` to a manifest."""
     if not isinstance(value, str | Path):
         message = f"{field_name} must be a path string; received {type(value).__name__}"

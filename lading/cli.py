@@ -42,7 +42,7 @@ from .cli_options import (
     WorkspaceRootOption,
 )
 from .runtime import CommandRunner, subprocess_runner
-from .utils import metrics, normalise_workspace_root
+from .utils import metrics, normalize_workspace_root
 from .workspace import WorkspaceGraph, WorkspaceModelError, load_workspace
 from .workspace import metadata as metadata_module
 
@@ -262,7 +262,7 @@ def main(argv: cabc.Sequence[str] | None = None) -> int:
         # an import-time side effect of lading.utils.metrics.
         metrics.register_summary_atexit()
         workspace_override, remaining = _extract_workspace_override(list(argv))
-        workspace_root = normalise_workspace_root(workspace_override)
+        workspace_root = normalize_workspace_root(workspace_override)
         if not remaining:
             _dispatch_and_print(remaining)  # Print usage message
             return 2  # Standard exit code for missing subcommand
@@ -353,7 +353,7 @@ def bump(
     >>> "Dry run; would update version to 1.2.3 in" in summary  # doctest: +SKIP
     True
     """
-    resolved = normalise_workspace_root(workspace_root)
+    resolved = normalize_workspace_root(workspace_root)
     return _run_with_context(
         resolved,
         lambda root, configuration, workspace, command_runner: commands.bump.run(
@@ -420,7 +420,7 @@ def publish(
     >>> readmes in summary  # doctest: +SKIP
     True
     """
-    resolved = normalise_workspace_root(workspace_root)
+    resolved = normalize_workspace_root(workspace_root)
     return _run_with_context(
         resolved,
         lambda root, configuration, workspace, command_runner: commands.publish.run(

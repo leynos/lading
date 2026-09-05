@@ -9,7 +9,7 @@ from pathlib import Path
 import hypothesis.strategies as st
 from hypothesis import given
 
-from lading.utils import normalise_workspace_root
+from lading.utils import normalize_workspace_root
 
 _path_segment: st.SearchStrategy[str] = st.text(
     alphabet=string.ascii_lowercase + string.digits + "_-",
@@ -26,12 +26,12 @@ _relative_segments: st.SearchStrategy[list[str]] = st.lists(
 
 def test_none_defaults_to_cwd() -> None:
     """``None`` selects the resolved current working directory."""
-    assert normalise_workspace_root(None) == Path.cwd().resolve()
+    assert normalize_workspace_root(None) == Path.cwd().resolve()
 
 
 def test_tilde_is_expanded() -> None:
     """A leading ``~`` expands to the user home directory."""
-    result = normalise_workspace_root(str(Path("~", "workspace")))
+    result = normalize_workspace_root(str(Path("~", "workspace")))
 
     assert result == Path.home().resolve() / "workspace"
 
@@ -39,36 +39,36 @@ def test_tilde_is_expanded() -> None:
 def test_accepts_path_instances() -> None:
     """`Path` inputs behave identically to string inputs."""
     candidate = Path("~", "ws")
-    result = normalise_workspace_root(candidate)
+    result = normalize_workspace_root(candidate)
 
     assert result == Path.home().resolve() / "ws"
-    assert result == normalise_workspace_root(str(candidate))
+    assert result == normalize_workspace_root(str(candidate))
 
 
 @given(segments=_relative_segments)
 def test_relative_inputs_resolve_to_absolute_paths(segments: list[str]) -> None:
-    """Relative inputs resolve to a fully normalised, cwd-anchored path."""
+    """Relative inputs resolve to a fully normalized, cwd-anchored path."""
     value = str(Path(*segments))
-    result = normalise_workspace_root(value)
+    result = normalize_workspace_root(value)
 
     # Independent invariants rather than a pathlib mirror of the implementation:
     # the output is absolute, retains no unresolved ``.``/``..`` segments,
     # anchors relative inputs at the cwd, and is a fixed point of further
-    # normalisation.
+    # normalization.
     assert result.is_absolute()
     assert ".." not in result.parts
     assert "." not in result.parts
-    assert result == normalise_workspace_root(Path.cwd() / value)
-    assert normalise_workspace_root(result) == result
+    assert result == normalize_workspace_root(Path.cwd() / value)
+    assert normalize_workspace_root(result) == result
 
 
 @given(segments=_relative_segments)
-def test_redundant_separators_are_normalised(segments: list[str]) -> None:
+def test_redundant_separators_are_normalized(segments: list[str]) -> None:
     """Doubling separators does not change the resolved path."""
     value = str(Path(*segments))
     doubled = value.replace(os.sep, os.sep * 2)
 
-    assert normalise_workspace_root(doubled) == normalise_workspace_root(value)
+    assert normalize_workspace_root(doubled) == normalize_workspace_root(value)
 
 
 @given(segments=_relative_segments)
@@ -76,10 +76,10 @@ def test_tilde_prefix_expands_for_arbitrary_suffixes(segments: list[str]) -> Non
     """Expanding ``~`` is equivalent to substituting the literal home path."""
     tilde_value = str(Path("~", *segments))
     home_value = str(Path(Path.home(), *segments))
-    result = normalise_workspace_root(tilde_value)
+    result = normalize_workspace_root(tilde_value)
 
     # Independent invariants: the output is absolute, fully resolved, and the
     # ``~`` prefix expands to exactly the home directory.
     assert result.is_absolute()
     assert ".." not in result.parts
-    assert result == normalise_workspace_root(home_value)
+    assert result == normalize_workspace_root(home_value)

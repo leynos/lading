@@ -22,7 +22,7 @@ from .preflight_test_utils import _extract_cargo_test_call, _setup_preflight_tes
 
 @dc.dataclass(frozen=True)
 class _ExcludeScenario:
-    """Bundled parameters for a single exclude-normalisation scenario."""
+    """Bundled parameters for a single exclude-normalization scenario."""
 
     configured_excludes: tuple[str, ...]
     expected_excludes: tuple[str, ...]
@@ -110,7 +110,7 @@ def test_run_executes_preflight_checks_in_workspace(
         )
 
 
-# Run every exclude-normalisation scenario in both ``unit_tests_only`` modes so
+# Run every exclude-normalization scenario in both ``unit_tests_only`` modes so
 # the builder's exclude handling is verified to be identical regardless of the
 # target-narrowing flag.
 EXCLUDE_MODE_SCENARIOS = tuple(

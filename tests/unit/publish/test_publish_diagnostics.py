@@ -12,31 +12,31 @@ if typ.TYPE_CHECKING:
 
 
 def test_append_compiletest_diagnostics_includes_tail_lines(tmp_path: Path) -> None:
-    """When artifacts exist, the tail of the file should be appended."""
-    artifact = tmp_path / "ui.stderr"
-    artifact.write_text("line1\nline2\n", encoding="utf-8")
+    """When artefacts exist, the tail of the file should be appended."""
+    artefact = tmp_path / "ui.stderr"
+    artefact.write_text("line1\nline2\n", encoding="utf-8")
 
     message = publish_diagnostics._append_compiletest_diagnostics(
         "Pre-flight failed",
-        stdout=str(artifact),
+        stdout=str(artefact),
         stderr="",
         tail_lines=1,
     )
 
-    assert "Compiletest stderr artifacts" in message
+    assert "Compiletest stderr artefacts" in message
     assert "ui.stderr" in message
     assert "line2" in message
 
 
-def test_append_compiletest_diagnostics_handles_missing_artifact(
+def test_append_compiletest_diagnostics_handles_missing_artefact(
     tmp_path: Path,
 ) -> None:
-    """Missing artifacts should still be reported without raising."""
-    artifact = tmp_path / "missing.stderr"
+    """Missing artefacts should still be reported without raising."""
+    artefact = tmp_path / "missing.stderr"
 
     message = publish_diagnostics._append_compiletest_diagnostics(
         "Failure",
-        stdout=str(artifact),
+        stdout=str(artefact),
         stderr="",
         tail_lines=2,
     )
@@ -45,7 +45,7 @@ def test_append_compiletest_diagnostics_handles_missing_artifact(
 
 
 def test_append_compiletest_diagnostics_no_matches_returns_message() -> None:
-    """When no artifacts are present the original message should be returned."""
+    """When no artefacts are present the original message should be returned."""
     message = publish_diagnostics._append_compiletest_diagnostics(
         "Failure", stdout="", stderr="", tail_lines=2
     )
@@ -53,11 +53,11 @@ def test_append_compiletest_diagnostics_no_matches_returns_message() -> None:
     assert message == "Failure"
 
 
-def test_append_compiletest_diagnostics_deduplicates_artifacts(tmp_path: Path) -> None:
-    """Duplicate artifact tokens should only be reported once."""
-    artifact = tmp_path / "dupe.stderr"
-    artifact.write_text("line\n", encoding="utf-8")
-    stdout = f"{artifact} {artifact})"
+def test_append_compiletest_diagnostics_deduplicates_artefacts(tmp_path: Path) -> None:
+    """Duplicate artefact tokens should only be reported once."""
+    artefact = tmp_path / "dupe.stderr"
+    artefact.write_text("line\n", encoding="utf-8")
+    stdout = f"{artefact} {artefact})"
 
     message = publish_diagnostics._append_compiletest_diagnostics(
         "Failure", stdout=stdout, stderr="", tail_lines=1
@@ -81,11 +81,11 @@ def test_read_tail_lines_handles_zero_and_errors(
     assert publish_diagnostics._read_tail_lines(bogus_path, 2) == ()
 
 
-def test_format_artifact_diagnostics_when_no_tail(tmp_path: Path) -> None:
-    """Artifacts without content should still list the path."""
-    artifact = tmp_path / "empty.stderr"
-    artifact.write_text("", encoding="utf-8")
+def test_format_artefact_diagnostics_when_no_tail(tmp_path: Path) -> None:
+    """Artefacts without content should still list the path."""
+    artefact = tmp_path / "empty.stderr"
+    artefact.write_text("", encoding="utf-8")
 
-    lines = publish_diagnostics._format_artifact_diagnostics(artifact, tail_lines=2)
+    lines = publish_diagnostics._format_artefact_diagnostics(artefact, tail_lines=2)
 
-    assert lines == [f"- {artifact}"]
+    assert lines == [f"- {artefact}"]

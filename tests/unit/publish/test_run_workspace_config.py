@@ -18,7 +18,7 @@ if typ.TYPE_CHECKING:
     from syrupy.assertion import SnapshotAssertion
 
 
-def test_run_normalises_workspace_root(
+def test_run_normalizes_workspace_root(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """The run helper resolves the workspace root before planning."""
@@ -94,13 +94,13 @@ def test_run_loads_configuration_when_inactive(
     )
 
 
-def _normalise_summary(message: str, root: Path) -> str:
+def _normalize_summary(message: str, root: Path) -> str:
     """Redact non-deterministic paths so snapshots are stable across runs."""
-    normalised = message.replace(str(root), "<workspace-root>")
+    normalized = message.replace(str(root), "<workspace-root>")
     return re.sub(
         r"^Staged workspace at: .*$",
         "Staged workspace at: <staging-root>",
-        normalised,
+        normalized,
         flags=re.MULTILINE,
     )
 
@@ -116,7 +116,7 @@ def test_run_formats_plan_summary(tmp_path: Path, snapshot: SnapshotAssertion) -
 
     message = publish.run(root, configuration, workspace)
 
-    assert _normalise_summary(message, root) == snapshot
+    assert _normalize_summary(message, root) == snapshot
 
 
 def test_run_reports_no_publishable_crates(
@@ -134,7 +134,7 @@ def test_run_reports_no_publishable_crates(
 
     message = publish.run(root, configuration, workspace)
 
-    assert _normalise_summary(message, root) == snapshot
+    assert _normalize_summary(message, root) == snapshot
 
 
 def test_run_surfaces_missing_workspace(

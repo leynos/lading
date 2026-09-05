@@ -1,4 +1,4 @@
-"""Compiletest stderr artifact discovery and diagnostics formatting."""
+"""Compiletest stderr artefact discovery and diagnostics formatting."""
 
 from __future__ import annotations
 
@@ -8,22 +8,22 @@ from pathlib import Path
 _STDERR_PATTERN = re.compile(r"(/[^\s)]+\.stderr)")
 
 
-def _trim_artifact_token(token: str) -> str:
-    """Normalise compiletest artifact tokens by stripping punctuation."""
+def _trim_artefact_token(token: str) -> str:
+    """Normalize compiletest artefact tokens by stripping punctuation."""
     return token.rstrip(")]:,.;'\"")
 
 
-def _discover_stderr_artifacts(stream: str) -> tuple[Path, ...]:
+def _discover_stderr_artefacts(stream: str) -> tuple[Path, ...]:
     """Return ``Path`` objects extracted from compiletest output stream."""
-    artifacts: list[Path] = []
+    artefacts: list[Path] = []
     seen: set[str] = set()
     for match in _STDERR_PATTERN.finditer(stream):
-        raw = _trim_artifact_token(match.group(1))
+        raw = _trim_artefact_token(match.group(1))
         if raw in seen:
             continue
         seen.add(raw)
-        artifacts.append(Path(raw))
-    return tuple(artifacts)
+        artefacts.append(Path(raw))
+    return tuple(artefacts)
 
 
 def _read_tail_lines(path: Path, count: int) -> tuple[str, ...]:
@@ -38,13 +38,13 @@ def _read_tail_lines(path: Path, count: int) -> tuple[str, ...]:
     return tuple(lines[-count:]) if lines else ()
 
 
-def _format_artifact_diagnostics(artifact: Path, tail_lines: int) -> list[str]:
-    """Return formatted diagnostic lines for a compiletest stderr artifact."""
-    lines = [f"- {artifact}"]
-    if not artifact.exists():
+def _format_artefact_diagnostics(artefact: Path, tail_lines: int) -> list[str]:
+    """Return formatted diagnostic lines for a compiletest stderr artefact."""
+    lines = [f"- {artefact}"]
+    if not artefact.exists():
         lines.append("  (file not found)")
         return lines
-    tail = _read_tail_lines(artifact, tail_lines)
+    tail = _read_tail_lines(artefact, tail_lines)
     if not tail:
         return lines
     header = f"  Last {tail_lines} line(s):"
@@ -60,22 +60,22 @@ def _append_compiletest_diagnostics(
     *,
     tail_lines: int,
 ) -> str:
-    """Append compiletest stderr artifact hints to ``message`` when present."""
-    artifacts: list[Path] = []
+    """Append compiletest stderr artefact hints to ``message`` when present."""
+    artefacts: list[Path] = []
     seen: set[Path] = set()
     for candidate in (
-        *_discover_stderr_artifacts(stdout),
-        *_discover_stderr_artifacts(stderr),
+        *_discover_stderr_artefacts(stdout),
+        *_discover_stderr_artefacts(stderr),
     ):
         if candidate in seen:
             continue
         seen.add(candidate)
-        artifacts.append(candidate)
-    if not artifacts:
+        artefacts.append(candidate)
+    if not artefacts:
         return message
-    lines = [message, "Compiletest stderr artifacts:"]
-    for artifact in artifacts:
-        lines.extend(_format_artifact_diagnostics(artifact, tail_lines))
+    lines = [message, "Compiletest stderr artefacts:"]
+    for artefact in artefacts:
+        lines.extend(_format_artefact_diagnostics(artefact, tail_lines))
     return "\n".join(lines)
 
 

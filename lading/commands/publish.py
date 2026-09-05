@@ -86,7 +86,7 @@ from lading.commands.publish_plan import (
 from lading.commands.publish_plan import (
     PublishPlanError as PublishPlanError,  # public re-export for plan_publication
 )
-from lading.utils.path import normalise_workspace_root
+from lading.utils.path import normalize_workspace_root
 
 LOGGER = logging.getLogger(__name__)
 
@@ -136,7 +136,7 @@ class PublishOptions:
         Defaults to :data:`False` so publishing remains a dry-run unless
         explicitly enabled.
     build_directory:
-        Optional directory used to stage workspace artifacts. When ``None``,
+        Optional directory used to stage workspace artefacts. When ``None``,
         a temporary directory is created for each invocation.
     preserve_symlinks:
         Control whether staging preserves symbolic links in the workspace
@@ -180,10 +180,10 @@ class PublishPreparation:
     copied_readmes: tuple[Path, ...]
 
 
-def _normalise_build_directory(
+def _normalize_build_directory(
     workspace_root: Path, build_directory: Path | None
 ) -> Path:
-    """Return a directory suitable for staging workspace artifacts."""
+    """Return a directory suitable for staging workspace artefacts."""
     if build_directory is None:
         return Path(tempfile.mkdtemp(prefix="lading-publish-"))
 
@@ -244,7 +244,7 @@ def prepare_workspace(
     PublishPreparationError
         If the staging build directory or copied workspace path is unsafe or
         invalid (for example nested within the workspace root); propagated
-        from :func:`_normalise_build_directory` and :func:`_copy_workspace_tree`.
+        from :func:`_normalize_build_directory` and :func:`_copy_workspace_tree`.
 
     Examples
     --------
@@ -253,7 +253,7 @@ def prepare_workspace(
     PosixPath('/tmp/lading-publish-abcd1234/my-workspace')
     """
     active_options = PublishOptions() if options is None else options
-    build_directory = _normalise_build_directory(
+    build_directory = _normalize_build_directory(
         plan.workspace_root, active_options.build_directory
     )
     LOGGER.info(
@@ -550,7 +550,7 @@ def _execute_live_publication_pipeline(
             )
         except PublishPreparationError as exc:
             # Preparation failures escape the preflight/publish error taxonomy;
-            # normalise them so the live pipeline reports a single abort class.
+            # normalize them so the live pipeline reports a single abort class.
             LOGGER.exception(
                 "Live pipeline: aborted on crate %s — %d/%d crates completed (%s)",
                 crate.name,
@@ -712,7 +712,7 @@ def run(
     >>> "Staged workspace at:" in summary  # doctest: +SKIP
     True
     """
-    root_path = normalise_workspace_root(workspace_root)
+    root_path = normalize_workspace_root(workspace_root)
     LOGGER.info("Starting publish workflow for workspace %s", root_path)
     effective_options = PublishOptions() if options is None else options
     _validate_publication_options(effective_options)
