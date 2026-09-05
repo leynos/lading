@@ -20,8 +20,8 @@
   This can happen after manifest changes made without `lading bump`, or after running `lading bump --no-rebuild-lockfiles`; repair each stale lockfile directly:
   - <workspace>/Cargo.lock
     cargo generate-lockfile --manifest-path <workspace>/Cargo.toml
-  - <nested-workspace>/Cargo.lock
-    cargo generate-lockfile --manifest-path <nested-workspace>/Cargo.toml
+  - <workspace>/nested/Cargo.lock
+    cargo generate-lockfile --manifest-path <workspace>/nested/Cargo.toml
   '''
 # ---
 # name: TestStaleLockfileMessages.test_message[single]
