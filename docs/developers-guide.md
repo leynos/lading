@@ -665,6 +665,9 @@ continue to work.
 The issue #163 sweep removed the following shims; each row records the
 canonical replacement callers and tests now use directly:
 
+_Table 1: Compatibility shims removed by the issue `#163` sweep and their
+canonical replacements._
+
 | Removed shim                                                                                                                                                                                                                                                                                                                                                          | Location               | Canonical replacement                                                                                                                                      |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Eleven `publish_preflight` private aliases (`_preflight_argument_sets`, `_CargoPreflightOptions`, `_apply_compiletest_externs`, `_build_preflight_environment`, `_build_test_arguments`, `_compose_preflight_arguments`, `_normalize_test_excludes`, `_run_aux_build_commands`, `_run_cargo_preflight`, `_validate_lockfile_freshness`, `_verify_clean_working_tree`) | `publish.py`           | `lading.commands.publish_preflight` (patch/call the defining module directly)                                                                              |
@@ -677,9 +680,6 @@ canonical replacement callers and tests now use directly:
 | `_log = LOGGER` alias                                                                                                                                                                                                                                                                                                                                                 | `bump.py`              | the module-level `LOGGER`                                                                                                                                  |
 | Private `_append_section` / `_format_plan`                                                                                                                                                                                                                                                                                                                            | `publish_plan.py`      | renamed to public `append_section` / `format_plan`                                                                                                         |
 | `split_command` / `_split_command` wrapper                                                                                                                                                                                                                                                                                                                            | `publish_execution.py` | `lading.runtime.subprocess_runner.split_command`                                                                                                           |
-
-_Table 1: Compatibility shims removed by the issue `#163` sweep and their
-canonical replacements._
 
 #### Retained boundaries
 
