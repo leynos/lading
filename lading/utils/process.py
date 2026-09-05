@@ -218,10 +218,8 @@ def c_locale_env(
 
     Examples
     --------
-    ```python
-    env = c_locale_env({"CARGO_TERM_COLOR": "never"})
-    # {"CARGO_TERM_COLOR": "never", "LC_ALL": "C", "LANG": "C", "LANGUAGE": ""}
-    ```
+    >>> c_locale_env({"CARGO_TERM_COLOR": "never"})
+    {'CARGO_TERM_COLOR': 'never', 'LC_ALL': 'C', 'LANG': 'C', 'LANGUAGE': ''}
     """
     merged = dict(os.environ if base_env is None else base_env)
     merged.update({"LC_ALL": "C", "LANG": "C", "LANGUAGE": ""})

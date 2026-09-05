@@ -86,7 +86,8 @@ class NotAGitRepositoryError(LockfileDiscoveryError):
     def __init__(self, workspace_root: Path) -> None:
         """Capture the workspace root that is not under git control."""
         self.workspace_root = workspace_root
-        super().__init__(f"{workspace_root} is not a git repository")
+        message = f"{workspace_root} is not a git repository"
+        super().__init__(message)
 @dc.dataclass(frozen=True, slots=True)
 class LockfileFreshness:
     """Result from validating a lockfile under Cargo's locked mode."""
