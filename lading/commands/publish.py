@@ -649,16 +649,20 @@ def _dispatch_publication(
     if sccache is not None:
         sccache.begin()
     state = _PublicationPipelineState(plan, preparation, options, sccache=sccache)
-    if options.live:
-        LOGGER.info("Publication mode: live (interleaved per-crate pipeline)")
-        _execute_live_publication_pipeline(state, runner=runner)
-    else:
-        LOGGER.info("Publication mode: dry-run (batched two-phase pipeline)")
-        _package_publishable_crates(state, runner=runner)
-        LOGGER.info("Dry-run pipeline: packaging complete; starting publish phase")
-        _publish_crates(state, runner=runner)
-    if sccache is not None:
-        sccache.finish()
+    try:
+        if options.live:
+            LOGGER.info("Publication mode: live (interleaved per-crate pipeline)")
+            _execute_live_publication_pipeline(state, runner=runner)
+        else:
+            LOGGER.info("Publication mode: dry-run (batched two-phase pipeline)")
+            _package_publishable_crates(state, runner=runner)
+            LOGGER.info("Dry-run pipeline: packaging complete; starting publish phase")
+            _publish_crates(state, runner=runner)
+    finally:
+        # A failed crate still leaves the measurements taken so far on record;
+        # finish() never raises, so it cannot mask the pipeline's own error.
+        if sccache is not None:
+            sccache.finish()
 
 
 def run(

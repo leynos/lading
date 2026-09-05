@@ -441,6 +441,43 @@ def test_dispatch_without_wrapper_warns_and_still_publishes(
     assert "does not name an sccache binary" in caplog.messages[0]
 
 
+def test_dispatch_reports_what_it_measured_when_a_crate_fails(
+    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A failing crate aborts the publish but the report still lands."""
+    monkeypatch.setenv("RUSTC_WRAPPER", str(_WRAPPER))
+    plan, preparation, _staging_root = publish_plan_and_prep
+    runner = _ScriptedRunner([_payload(10, 8, 2), _payload(20, 16, 4)])
+    original_call = runner.__call__
+
+    def _failing_second_package(
+        command: cabc.Sequence[str], **kwargs: object
+    ) -> tuple[int, str, str]:
+        exit_code, stdout, stderr = original_call(command, **kwargs)
+        if (
+            tuple(command[:2]) == ("cargo", "package")
+            and len(_cargo_calls(runner.calls)) == 2
+        ):
+            return 1, "", "error: verify build failed"
+        return exit_code, stdout, stderr
+
+    report = tmp_path / "sccache-report.json"
+    options = publish._PublishExecutionOptions(
+        live=False, allow_dirty=True, sccache_stats=True, sccache_stats_json=report
+    )
+
+    with pytest.raises(publish.PublishPreflightError):
+        publish._dispatch_publication(
+            plan, preparation, options=options, runner=_failing_second_package
+        )
+
+    written = json.loads(report.read_text(encoding="utf-8"))
+    assert [record["crate"] for record in written["crates"]] == ["alpha", "beta"]
+    assert runner.calls[-1] == _TEXT_QUERY
+
+
 def test_dispatch_without_flag_never_queries(
     publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
     monkeypatch: pytest.MonkeyPatch,
