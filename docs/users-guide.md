@@ -472,7 +472,6 @@ the publish pipeline, recorded whether or not the invocation succeeded. Labels:
 - `subcommand` — `package` or `publish`.
 - `crate` — the crate the invocation ran for.
 
-
 #### `publish.sccache.query`
 
 Incremented once per sccache statistics query made under `--sccache-stats`.
@@ -519,7 +518,6 @@ lading bump 1.2.3 --workspace-root /path/to/workspace
 
 When present, the resolved path is also exported as `LADING_WORKSPACE_ROOT` for
 the duration of the command.
-
 
 ### `--sccache-stats` and `--sccache-stats-json`
 

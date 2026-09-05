@@ -448,15 +448,9 @@ def publish(  # ruff: ignore[too-many-arguments] - one parameter per CLI flag # 
 
     Examples
     --------
-    The rendered summary is a formatted publication plan followed by a
-    blank line and staging-summary lines.
-
     >>> from lading.cli import publish
     >>> summary = publish(live=False)  # doctest: +SKIP
     >>> "Staged workspace at:" in summary  # doctest: +SKIP
-    True
-    >>> readmes = "Workspace READMEs are handled by lading bump."
-    >>> readmes in summary  # doctest: +SKIP
     True
     """
     resolved = normalize_workspace_root(workspace_root)

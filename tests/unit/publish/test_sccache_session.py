@@ -477,20 +477,21 @@ def test_dispatch_brackets_every_cargo_invocation_with_a_query(
     )
 
 
-@pytest.mark.parametrize("live", [False, True], ids=["dry-run", "live"])
 def test_dispatch_logs_one_summary_per_invocation_and_writes_report(
     publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
-    *,
-    live: bool,
 ) -> None:
-    """Every cargo invocation gets a summary line and a record in the report."""
+    """Every cargo invocation gets a summary line and a record in the report.
+
+    The dry-run pipeline is enough here: invocation order per mode is the
+    ordering test's concern, and the summary and report logic is shared.
+    """
     caplog.set_level(logging.INFO, logger=_PIPELINE_LOGGER)
     monkeypatch.setenv("RUSTC_WRAPPER", str(_WRAPPER))
 
-    run = _run_instrumented_dispatch(publish_plan_and_prep, tmp_path, live=live)
+    run = _run_instrumented_dispatch(publish_plan_and_prep, tmp_path, live=False)
 
     cargo_calls = _cargo_calls(run.runner.calls)
     summary_lines = [
