@@ -56,6 +56,10 @@ class PublishOptions:
     allow_unpublished_workspace_deps : bool
         Whether dry-run index failures for planned workspace dependencies become
         warnings rather than preflight failures.
+    sccache_stats : bool
+        Whether to collect compiler-cache statistics for cargo invocations.
+    sccache_stats_json : Path | None
+        Optional JSON report destination for compiler-cache statistics.
     """
 
     allow_dirty: bool = True
@@ -67,6 +71,8 @@ class PublishOptions:
     workspace: WorkspaceGraph | None = None
     command_runner: CommandRunner | None = None
     allow_unpublished_workspace_deps: bool = False
+    sccache_stats: bool = False
+    sccache_stats_json: Path | None = None
 
 
 def _ensure_configuration(
@@ -167,6 +173,8 @@ def run(
         live=effective_options.live,
         allow_dirty=effective_options.allow_dirty,
         allow_unpublished_workspace_deps=effective_options.allow_unpublished_workspace_deps,
+        sccache_stats=effective_options.sccache_stats,
+        sccache_stats_json=effective_options.sccache_stats_json,
     )
     publish_pipeline._dispatch_publication(
         plan, preparation, options=execution_options, runner=command_runner

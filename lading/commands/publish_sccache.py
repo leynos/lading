@@ -15,7 +15,7 @@ failure here is reported as a WARNING and disables further queries.
 
 Related modules
 ---------------
-* :mod:`lading.commands.publish` owns the pipeline and calls
+* :mod:`lading.commands.publish_pipeline` owns the per-crate pipeline and calls
   :func:`create_session`, :meth:`SccacheSession.begin`,
   :meth:`SccacheSession.record`, and :meth:`SccacheSession.finish`.
 * :mod:`lading.commands.publish_execution` times each cargo invocation; the

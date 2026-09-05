@@ -128,6 +128,8 @@ class CargoAlreadyPublishedFailure:
     exit_code: int
     stdout: str
     stderr: str
+
+
 def parse_index_lookup_failure(
     *,
     crate_name: str,
@@ -234,6 +236,8 @@ def parse_already_published_failure(
         stdout=result.stdout,
         stderr=result.stderr,
     )
+
+
 def _output_matches_index_markers(haystack: str) -> bool:
     """Return whether both crates.io index-miss markers appear in cargo output."""
     return all(

@@ -330,15 +330,14 @@ class PhaseContext:
 
 def invoke_phase(phase_name: str, ctx: PhaseContext) -> None:
     """Dispatch to the appropriate cargo sub-command under test."""
+    state = publish_pipeline._PublicationPipelineState(
+        ctx.plan, ctx.preparation, ctx.options
+    )
     match phase_name:
         case "package":
-            publish_pipeline._package_publishable_crates(
-                ctx.plan, ctx.preparation, options=ctx.options, runner=ctx.runner
-            )
+            publish_pipeline._package_publishable_crates(state, runner=ctx.runner)
         case "publish":
-            publish_pipeline._publish_crates(
-                ctx.plan, ctx.preparation, runner=ctx.runner, options=ctx.options
-            )
+            publish_pipeline._publish_crates(state, runner=ctx.runner)
         case _:
             message = (
                 f"Unknown phase_name {phase_name!r}; expected 'package' or 'publish'."

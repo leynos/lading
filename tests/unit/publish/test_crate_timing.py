@@ -15,7 +15,8 @@ import typing as typ
 
 import pytest
 
-from lading.commands import publish, publish_execution
+from lading.commands import publish_execution, publish_pipeline
+from lading.commands.publish_errors import PublishError, PublishPreflightError
 from lading.utils import metrics
 
 from .conftest import CallTrackingRunner, make_failing_runner
@@ -23,6 +24,8 @@ from .conftest import CallTrackingRunner, make_failing_runner
 if typ.TYPE_CHECKING:
     from pathlib import Path
 
+    from lading.commands.publish_plan import PublishPlan
+    from lading.commands.publish_staging import PublishPreparation
     from lading.workspace import WorkspaceCrate
 
 
@@ -33,7 +36,7 @@ def _fixed_clock(*ticks: float) -> cabc.Callable[[], float]:
 
 
 class _TimingCase(typ.NamedTuple):
-    action: publish._CrateAction
+    action: publish_pipeline._CrateAction
     live: bool
     subcommand: str
     expected_message: str
@@ -42,7 +45,7 @@ class _TimingCase(typ.NamedTuple):
 _TIMING_CASES = (
     pytest.param(
         _TimingCase(
-            action=publish._package_crate,
+            action=publish_pipeline._package_crate,
             live=False,
             subcommand="package",
             expected_message="Successfully packaged crate alpha (1/3) in 2.5s",
@@ -51,7 +54,7 @@ _TIMING_CASES = (
     ),
     pytest.param(
         _TimingCase(
-            action=publish._publish_crate,
+            action=publish_pipeline._publish_crate,
             live=False,
             subcommand="publish",
             expected_message="Dry-run publish succeeded for crate alpha (1/3) in 2.5s",
@@ -60,7 +63,7 @@ _TIMING_CASES = (
     ),
     pytest.param(
         _TimingCase(
-            action=publish._publish_crate,
+            action=publish_pipeline._publish_crate,
             live=True,
             subcommand="publish",
             expected_message="Successfully published crate alpha (1/3) in 2.5s",
@@ -79,24 +82,24 @@ def _metrics_registry() -> cabc.Iterator[None]:
 
 
 def _alpha_state(
-    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    publish_plan_and_prep: tuple[PublishPlan, PublishPreparation, Path],
     *,
     live: bool,
-) -> tuple[publish._PublicationPipelineState, WorkspaceCrate]:
+) -> tuple[publish_pipeline._PublicationPipelineState, WorkspaceCrate]:
     """Return the pipeline state and the ``alpha`` crate for one invocation.
 
     Returns
     -------
-    tuple[publish._PublicationPipelineState, WorkspaceCrate]
+    tuple[publish_pipeline._PublicationPipelineState, WorkspaceCrate]
         A state whose clock advances by 2.5 s across one invocation, and the
         ``alpha`` crate from its plan.
     """
     plan, preparation, _staging_root = publish_plan_and_prep
     alpha = next(crate for crate in plan.publishable if crate.name == "alpha")
-    state = publish._PublicationPipelineState(
+    state = publish_pipeline._PublicationPipelineState(
         plan,
         preparation,
-        publish._PublishExecutionOptions(live=live, allow_dirty=True),
+        publish_pipeline._PublishExecutionOptions(live=live, allow_dirty=True),
         clock=_fixed_clock(10.0, 12.5),
     )
     return state, alpha
@@ -104,12 +107,12 @@ def _alpha_state(
 
 @pytest.mark.parametrize("case", _TIMING_CASES)
 def test_success_logs_elapsed_seconds_and_records_duration(
-    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    publish_plan_and_prep: tuple[PublishPlan, PublishPreparation, Path],
     caplog: pytest.LogCaptureFixture,
     case: _TimingCase,
 ) -> None:
     """The success line carries the elapsed time and one duration is recorded."""
-    caplog.set_level(logging.INFO, logger="lading.commands.publish")
+    caplog.set_level(logging.INFO, logger=publish_pipeline.LOGGER.name)
     state, alpha = _alpha_state(publish_plan_and_prep, live=case.live)
 
     case.action(alpha, state, runner=CallTrackingRunner())
@@ -127,18 +130,18 @@ def test_success_logs_elapsed_seconds_and_records_duration(
 
 
 class _FailureCase(typ.NamedTuple):
-    action: publish._CrateAction
+    action: publish_pipeline._CrateAction
     subcommand: str
     error: type[Exception]
 
 
 _FAILURE_CASES = (
     pytest.param(
-        _FailureCase(publish._package_crate, "package", publish.PublishPreflightError),
+        _FailureCase(publish_pipeline._package_crate, "package", PublishPreflightError),
         id="package",
     ),
     pytest.param(
-        _FailureCase(publish._publish_crate, "publish", publish.PublishError),
+        _FailureCase(publish_pipeline._publish_crate, "publish", PublishError),
         id="publish",
     ),
 )
@@ -146,7 +149,7 @@ _FAILURE_CASES = (
 
 @pytest.mark.parametrize("case", _FAILURE_CASES)
 def test_failed_invocation_still_records_duration(
-    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    publish_plan_and_prep: tuple[PublishPlan, PublishPreparation, Path],
     case: _FailureCase,
 ) -> None:
     """A failing cargo invocation is still attributed to its crate and phase."""
@@ -166,7 +169,7 @@ def test_failed_invocation_still_records_duration(
 
 @pytest.mark.parametrize("case", _FAILURE_CASES)
 def test_raising_runner_still_records_duration(
-    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    publish_plan_and_prep: tuple[PublishPlan, PublishPreparation, Path],
     case: _FailureCase,
 ) -> None:
     """A runner that raises (for example a spawn failure) is still timed."""
@@ -174,9 +177,9 @@ def test_raising_runner_still_records_duration(
 
     def _raising_runner(*_args: object, **_kwargs: object) -> tuple[int, str, str]:
         message = "cargo could not be spawned"
-        raise publish.PublishPreflightError(message)
+        raise PublishPreflightError(message)
 
-    with pytest.raises(publish.PublishPreflightError):
+    with pytest.raises(PublishPreflightError):
         case.action(alpha, state, runner=_raising_runner)
 
     assert metrics.duration_stats(
@@ -218,22 +221,22 @@ _PUBLISH_PHASE_LINES = (
 
 @pytest.mark.parametrize("lines", _PUBLISH_PHASE_LINES)
 def test_publish_progress_lines_carry_position_and_elapsed_time(
-    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    publish_plan_and_prep: tuple[PublishPlan, PublishPreparation, Path],
     caplog: pytest.LogCaptureFixture,
     lines: _PublishPhaseLines,
 ) -> None:
     """Every crate's publish start and success lines carry n/total and seconds."""
-    caplog.set_level(logging.INFO, logger="lading.commands.publish")
+    caplog.set_level(logging.INFO, logger=publish_pipeline.LOGGER.name)
     plan, preparation, _staging_root = publish_plan_and_prep
-    state = publish._PublicationPipelineState(
+    state = publish_pipeline._PublicationPipelineState(
         plan,
         preparation,
-        publish._PublishExecutionOptions(live=lines.live, allow_dirty=True),
+        publish_pipeline._PublishExecutionOptions(live=lines.live, allow_dirty=True),
         clock=_fixed_clock(*(float(tick) for tick in range(0, 40, 5))),
     )
 
-    publish._for_each_publishable_crate(
-        state, runner=CallTrackingRunner(), action=publish._publish_crate
+    publish_pipeline._for_each_publishable_crate(
+        state, runner=CallTrackingRunner(), action=publish_pipeline._publish_crate
     )
 
     total = len(plan.publishable)
@@ -247,16 +250,16 @@ def test_publish_progress_lines_carry_position_and_elapsed_time(
 
 
 def test_each_crate_records_its_own_duration(
-    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    publish_plan_and_prep: tuple[PublishPlan, PublishPreparation, Path],
 ) -> None:
     """Durations are keyed by crate, so the summary carries one record each."""
     plan, preparation, _staging_root = publish_plan_and_prep
 
-    publish._package_publishable_crates(
-        publish._PublicationPipelineState(
+    publish_pipeline._package_publishable_crates(
+        publish_pipeline._PublicationPipelineState(
             plan,
             preparation,
-            publish._PublishExecutionOptions(live=False, allow_dirty=True),
+            publish_pipeline._PublishExecutionOptions(live=False, allow_dirty=True),
         ),
         runner=CallTrackingRunner(),
     )

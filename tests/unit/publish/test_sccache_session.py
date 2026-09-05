@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from lading.commands import publish, publish_sccache
+from lading.commands import publish_pipeline, publish_sccache
 from lading.commands.publish_sccache_stats import SccacheCounters
 from lading.utils import metrics
 
@@ -289,7 +289,7 @@ def test_create_session_treats_a_report_path_as_opting_in(
     expects_session: bool,
 ) -> None:
     """A report path implies the measurement for library and CLI callers alike."""
-    options = publish._PublishExecutionOptions(
+    options = publish_pipeline._PublishExecutionOptions(
         live=False,
         allow_dirty=True,
         sccache_stats=sccache_stats,
@@ -315,7 +315,7 @@ def test_create_session_warns_without_wrapper(
 ) -> None:
     """Requesting statistics without an sccache wrapper skips with a WARNING."""
     caplog.set_level(logging.WARNING, logger=PIPELINE_LOGGER)
-    options = publish._PublishExecutionOptions(
+    options = publish_pipeline._PublishExecutionOptions(
         live=False, allow_dirty=True, sccache_stats=True
     )
 
@@ -335,7 +335,7 @@ def test_create_session_warns_without_wrapper(
 def test_create_session_binds_wrapper_root_and_report(tmp_path: Path) -> None:
     """An enabled session carries the wrapper, workspace root, and JSON path."""
     report = tmp_path / "report.json"
-    options = publish._PublishExecutionOptions(
+    options = publish_pipeline._PublishExecutionOptions(
         live=False, allow_dirty=True, sccache_stats=True, sccache_stats_json=report
     )
 
@@ -357,7 +357,7 @@ def test_create_session_binds_wrapper_root_and_report(tmp_path: Path) -> None:
 
 def test_create_session_resolves_a_relative_report_path(tmp_path: Path) -> None:
     """A relative report path follows the workspace root, not the process cwd."""
-    options = publish._PublishExecutionOptions(
+    options = publish_pipeline._PublishExecutionOptions(
         live=False,
         allow_dirty=True,
         sccache_stats_json=Path("target") / "sccache.json",

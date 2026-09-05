@@ -27,7 +27,13 @@ if typ.TYPE_CHECKING:
 
 import pytest
 
-from lading.commands import publish, publish_pipeline, publish_plan, publish_staging
+from lading.commands import (
+    publish,
+    publish_execution,
+    publish_pipeline,
+    publish_plan,
+    publish_staging,
+)
 from lading.commands.cargo_output_adapter import (
     CargoIndexLookupFailure,
     CargoSubprocessResult,
@@ -382,9 +388,12 @@ def test_already_published_warning_snapshot(
 
     publish_pipeline._handle_publish_result(
         beta,
-        (101, "", stderr_marker),
-        plan=plan,
-        options=publish_pipeline._PublishExecutionOptions(live=False, allow_dirty=True),
+        publish_execution._TimedCargoResult(101, "", stderr_marker, 0.0),
+        state=publish_pipeline._PublicationPipelineState(
+            plan,
+            publish_staging.PublishPreparation(staging_root=workspace_root),
+            publish_pipeline._PublishExecutionOptions(live=False, allow_dirty=True),
+        ),
     )
 
     assert _warning_records(caplog) == snapshot()

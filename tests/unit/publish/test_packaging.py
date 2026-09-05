@@ -97,10 +97,10 @@ def _assert_packaging_failure_message_contains(
 
     with pytest.raises(publish.PublishPreflightError) as excinfo:
         publish_pipeline._package_publishable_crates(
-            plan,
-            preparation,
-            options=publish_pipeline._PublishExecutionOptions(
-                live=False, allow_dirty=True
+            publish_pipeline._PublicationPipelineState(
+                plan,
+                preparation,
+                publish_pipeline._PublishExecutionOptions(live=False, allow_dirty=True),
             ),
             runner=runner,
         )
@@ -124,9 +124,11 @@ def test_package_publishable_crates_runs_in_plan_order(
     runner = CallTrackingRunner()
 
     publish_pipeline._package_publishable_crates(
-        plan,
-        preparation,
-        options=publish_pipeline._PublishExecutionOptions(live=False, allow_dirty=True),
+        publish_pipeline._PublicationPipelineState(
+            plan,
+            preparation,
+            publish_pipeline._PublishExecutionOptions(live=False, allow_dirty=True),
+        ),
         runner=runner,
     )
 
@@ -138,12 +140,12 @@ def test_package_publishable_crates_runs_in_plan_order(
         (("cargo", "package", "--allow-dirty"), root) for root in expected_roots
     ], "cargo package should run once per publishable crate in order"
     assert caplog.messages == [
-        "Running cargo package for crate alpha",
-        "Successfully packaged crate alpha",
-        "Running cargo package for crate beta",
-        "Successfully packaged crate beta",
-        "Running cargo package for crate gamma",
-        "Successfully packaged crate gamma",
+        "Running cargo package for crate alpha (1/3)",
+        "Successfully packaged crate alpha (1/3) in 0.0s",
+        "Running cargo package for crate beta (2/3)",
+        "Successfully packaged crate beta (2/3) in 0.0s",
+        "Running cargo package for crate gamma (3/3)",
+        "Successfully packaged crate gamma (3/3) in 0.0s",
     ]
 
 
@@ -267,10 +269,10 @@ def test_package_publishable_crates_stops_on_failure(
 
     with pytest.raises(publish.PublishPreflightError) as excinfo:
         publish_pipeline._package_publishable_crates(
-            plan,
-            preparation,
-            options=publish_pipeline._PublishExecutionOptions(
-                live=False, allow_dirty=True
+            publish_pipeline._PublicationPipelineState(
+                plan,
+                preparation,
+                publish_pipeline._PublishExecutionOptions(live=False, allow_dirty=True),
             ),
             runner=tracked_runner,
         )
@@ -333,10 +335,12 @@ def test_publish_crates_run_dry_run_in_order(
     runner = CallTrackingRunner()
 
     publish_pipeline._publish_crates(
-        plan,
-        preparation,
+        publish_pipeline._PublicationPipelineState(
+            plan,
+            preparation,
+            publish_pipeline._PublishExecutionOptions(live=False, allow_dirty=True),
+        ),
         runner=runner,
-        options=publish_pipeline._PublishExecutionOptions(live=False, allow_dirty=True),
     )
 
     expected_roots = [
@@ -360,10 +364,12 @@ def test_publish_crates_run_live_without_dry_run(
     runner = CallTrackingRunner()
 
     publish_pipeline._publish_crates(
-        plan,
-        preparation,
+        publish_pipeline._PublicationPipelineState(
+            plan,
+            preparation,
+            publish_pipeline._PublishExecutionOptions(live=True, allow_dirty=True),
+        ),
         runner=runner,
-        options=publish_pipeline._PublishExecutionOptions(live=True, allow_dirty=True),
     )
 
     expected_roots = [
@@ -448,10 +454,12 @@ def test_publish_crates_continue_when_version_already_uploaded(
         return (0, "", "")
 
     publish_pipeline._publish_crates(
-        plan,
-        preparation,
+        publish_pipeline._PublicationPipelineState(
+            plan,
+            preparation,
+            publish_pipeline._PublishExecutionOptions(live=live, allow_dirty=True),
+        ),
         runner=runner,
-        options=publish_pipeline._PublishExecutionOptions(live=live, allow_dirty=True),
     )
 
     assert calls == ["alpha", "beta"]
@@ -468,9 +476,11 @@ def test_execute_live_publication_pipeline_interleaves_package_and_publish(
     runner = CallTrackingRunner()
 
     publish_pipeline._execute_live_publication_pipeline(
-        plan,
-        preparation,
-        options=publish_pipeline._PublishExecutionOptions(live=True, allow_dirty=True),
+        publish_pipeline._PublicationPipelineState(
+            plan,
+            preparation,
+            publish_pipeline._PublishExecutionOptions(live=True, allow_dirty=True),
+        ),
         runner=runner,
     )
 
@@ -512,10 +522,10 @@ def test_execute_live_publication_pipeline_stops_after_partial_publish(
 
     with pytest.raises(publish.PublishPreflightError):
         publish_pipeline._execute_live_publication_pipeline(
-            plan,
-            preparation,
-            options=publish_pipeline._PublishExecutionOptions(
-                live=True, allow_dirty=True
+            publish_pipeline._PublicationPipelineState(
+                plan,
+                preparation,
+                publish_pipeline._PublishExecutionOptions(live=True, allow_dirty=True),
             ),
             runner=runner,
         )
@@ -549,10 +559,10 @@ def test_execute_live_publication_pipeline_wraps_preparation_errors(
 
     with pytest.raises(publish.PublishPreflightError) as excinfo:
         publish_pipeline._execute_live_publication_pipeline(
-            plan,
-            preparation,
-            options=publish_pipeline._PublishExecutionOptions(
-                live=True, allow_dirty=True
+            publish_pipeline._PublicationPipelineState(
+                plan,
+                preparation,
+                publish_pipeline._PublishExecutionOptions(live=True, allow_dirty=True),
             ),
             runner=runner,
         )
@@ -586,12 +596,12 @@ def test_publish_crates_raise_on_failure(
 
     with pytest.raises(publish.PublishPreflightError) as excinfo:
         publish_pipeline._publish_crates(
-            plan,
-            preparation,
-            runner=failing_runner,
-            options=publish_pipeline._PublishExecutionOptions(
-                live=False, allow_dirty=True
+            publish_pipeline._PublicationPipelineState(
+                plan,
+                preparation,
+                publish_pipeline._PublishExecutionOptions(live=False, allow_dirty=True),
             ),
+            runner=failing_runner,
         )
 
     message = str(excinfo.value)
