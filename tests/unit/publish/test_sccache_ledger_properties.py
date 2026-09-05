@@ -121,6 +121,7 @@ class _SequenceRunner:
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Serve the next cumulative snapshot or fail on the scripted ordinal."""
         del cwd, env, echo_stdout
         call = tuple(command)
         self.calls.append(call)

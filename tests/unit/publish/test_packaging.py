@@ -65,6 +65,8 @@ from .conftest import (
 
 
 class _SnapshotCase(typ.NamedTuple):
+    """A packaging snapshot expectation and the command that produces it."""
+
     fn: cabc.Callable[..., None]
     options: publish._PublishExecutionOptions
     exc_type: type[Exception]
@@ -72,6 +74,8 @@ class _SnapshotCase(typ.NamedTuple):
 
 
 class _FailureCase(typ.NamedTuple):
+    """A packaging failure scenario: live mode, subcommand, and expectation."""
+
     fn: cabc.Callable[..., None]
     live: bool
     exc_type: type[Exception]

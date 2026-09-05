@@ -26,6 +26,7 @@ def _run_cli(
     workspace_directory: Path,
     *command_args: str,
 ) -> CliRunResult:
+    """Run the CLI in a subprocess and capture its result."""
     command = [
         sys.executable,
         "-m",

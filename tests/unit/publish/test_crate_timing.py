@@ -33,6 +33,8 @@ def _fixed_clock(*ticks: float) -> cabc.Callable[[], float]:
 
 
 class _TimingCase(typ.NamedTuple):
+    """One timed publish action with its expected progress message."""
+
     action: publish._CrateAction
     live: bool
     subcommand: str
@@ -127,6 +129,8 @@ def test_success_logs_elapsed_seconds_and_records_duration(
 
 
 class _FailureCase(typ.NamedTuple):
+    """One publish action expected to fail with a specific exception type."""
+
     action: publish._CrateAction
     subcommand: str
     error: type[Exception]

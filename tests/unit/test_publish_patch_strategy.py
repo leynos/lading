@@ -71,6 +71,7 @@ def make_plan_factory(
 
 
 def _write_manifest(workspace_root: Path, body: str) -> Path:
+    """Create the workspace manifest with *body* and return its path."""
     manifest = workspace_root / "Cargo.toml"
     manifest.parent.mkdir(parents=True, exist_ok=True)
     manifest.write_text(body, encoding="utf-8")
@@ -78,6 +79,7 @@ def _write_manifest(workspace_root: Path, body: str) -> Path:
 
 
 def _base_manifest(entries: str = "") -> str:
+    """Return a minimal workspace manifest with optional extra entries."""
     return (
         "[workspace]\n"
         'members = ["crates/alpha"]\n\n'

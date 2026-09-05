@@ -28,6 +28,7 @@ class _RecordingRunner:
         self,
         result: tuple[int, str, str] = (0, "", ""),
     ) -> None:
+        """Record the result every invocation will return."""
         self.result = result
         self.invocations: list[_Invocation] = []
 

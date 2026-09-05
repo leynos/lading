@@ -47,9 +47,11 @@ class _PreflightInvocationRecorder:
     )
 
     def record(self, label: str, args: tuple[str, ...], env: dict[str, str]) -> None:
+        """Store one invocation under *label*."""
         self.records.append((label, args, env))
 
     def by_label(self, label: str) -> list[tuple[tuple[str, ...], dict[str, str]]]:
+        """Return the arguments and environments recorded under *label*."""
         return [
             (args, env)
             for entry_label, args, env in self.records

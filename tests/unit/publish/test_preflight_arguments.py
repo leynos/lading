@@ -21,6 +21,7 @@ def _make_options(
     test_excludes: tuple[str, ...] = (),
     unit_tests_only: bool = False,
 ) -> publish_preflight._CargoPreflightOptions:
+    """Build preflight options with the given excludes and target selection."""
     return publish_preflight._CargoPreflightOptions(
         extra_args=(),
         test_excludes=test_excludes,

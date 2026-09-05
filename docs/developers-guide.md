@@ -49,7 +49,11 @@ make lint
 The target is deliberately five-stage. Ruff runs first because it is fast,
 handles broad style and correctness checks, and imports the stricter lint
 policy used by `leynos/episodic`. If Ruff passes, the target runs `interrogate`
-with `--fail-under 100` across `lading` to enforce **100% docstring coverage**.
+with `--fail-under 100` twice to enforce **100% docstring coverage**: once
+across `lading`, and once across `tests` and `scripts`, where the shape-based
+`--ignore-nested-functions` and `--ignore-nested-classes` options configured in
+`pyproject.toml` exempt nested test closures and test-local stub classes. Every
+module-level definition in those scopes still requires a docstring.
 If `interrogate` passes, the third stage runs Pylint through the pinned
 `pylint-pypy-shim` tool under PyPy. That stage is focused on rule families that
 complement Ruff, especially logging format safety, pattern matching checks,
