@@ -178,7 +178,6 @@ Property-based tests in the publish suite use
 to keep continuous integration (CI) fast while still exercising a range of
 inputs.
 
-
 ## Working-directory test helper (`tests/helpers/cwd.py`)
 
 Tests that change the process working directory must call
