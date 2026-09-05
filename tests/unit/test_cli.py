@@ -1,18 +1,20 @@
 """Unit tests for ``lading.cli``.
+
 Covers tri-state ``--allow-unpublished-workspace-deps`` flag resolution via
 ``_resolve_allow_unpublished_workspace_deps`` and the resulting
 ``PublishOptions.allow_unpublished_workspace_deps`` value passed to
 ``publish.run``.
 """
+
 from __future__ import annotations
 
-from contextlib import contextmanager
 import collections.abc as cabc
 import dataclasses as dc
 import io
 import logging
 import os
 import typing as typ
+from contextlib import contextmanager
 
 import pytest
 
@@ -27,6 +29,7 @@ from lading.workspace import WorkspaceCrate, WorkspaceGraph
 if typ.TYPE_CHECKING:
     from pathlib import Path
     from types import ModuleType
+
     from syrupy.assertion import SnapshotAssertion
 
 
@@ -67,6 +70,7 @@ class ExceptionHandlingCase:
     expected_exit_code: int
     expected_message: str
 
+
 def test_cli_reexports_public_annotation_aliases() -> None:
     """Public CLI annotation aliases should remain available at both paths."""
     alias_names = (
@@ -83,6 +87,8 @@ def test_cli_reexports_public_annotation_aliases() -> None:
         assert getattr(cli, alias_name) is getattr(cli_options, alias_name), (
             f"lading.cli does not re-export {alias_name}"
         )
+
+
 @pytest.mark.parametrize(
     ("value", "expected"),
     [

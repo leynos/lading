@@ -169,7 +169,7 @@ def load_cargo_metadata(
     >>> metadata = load_cargo_metadata()  # doctest: +SKIP
     >>> metadata["workspace_root"]  # doctest: +SKIP
     '...'
-    """  # noqa: DOC502 -- propagated from the two _*_cargo_metadata helpers
+    """  # ruff: ignore[docstring-extraneous-exception] -- propagated from the two _*_cargo_metadata helpers
     root_path = normalize_workspace_root(workspace_root)
     command_runner = _active_command_runner(runner)
     exit_code, stdout_text, stderr_text = _invoke_cargo_metadata(
