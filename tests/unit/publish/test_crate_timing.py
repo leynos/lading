@@ -114,12 +114,16 @@ def test_success_logs_elapsed_seconds_and_records_duration(
 
     case.action(alpha, state, runner=CallTrackingRunner())
 
-    assert case.expected_message in caplog.messages
+    assert case.expected_message in caplog.messages, (
+        f"expected the success line with elapsed seconds; got {caplog.messages}"
+    )
     assert metrics.duration_stats(
         publish_execution.CARGO_DURATION_METRIC,
         subcommand=case.subcommand,
         crate="alpha",
-    ) == metrics.DurationStats(count=1, total_seconds=2.5)
+    ) == metrics.DurationStats(count=1, total_seconds=2.5), (
+        f"one 2.5 s observation expected for cargo {case.subcommand} alpha"
+    )
 
 
 class _FailureCase(typ.NamedTuple):
@@ -184,30 +188,39 @@ def test_raising_runner_still_records_duration(
     )
 
 
-@pytest.mark.parametrize(
-    ("live", "start_prefix", "success_prefix"),
-    [
-        pytest.param(
-            False,
-            "Running cargo publish --dry-run for crate",
-            "Dry-run publish succeeded for crate",
-            id="dry-run",
+class _PublishPhaseLines(typ.NamedTuple):
+    """The publish-phase log prefixes for one pipeline mode."""
+
+    live: bool
+    start_prefix: str
+    success_prefix: str
+
+
+_PUBLISH_PHASE_LINES = (
+    pytest.param(
+        _PublishPhaseLines(
+            live=False,
+            start_prefix="Running cargo publish --dry-run for crate",
+            success_prefix="Dry-run publish succeeded for crate",
         ),
-        pytest.param(
-            True,
-            "Running cargo publish for crate",
-            "Successfully published crate",
-            id="live",
+        id="dry-run",
+    ),
+    pytest.param(
+        _PublishPhaseLines(
+            live=True,
+            start_prefix="Running cargo publish for crate",
+            success_prefix="Successfully published crate",
         ),
-    ],
+        id="live",
+    ),
 )
+
+
+@pytest.mark.parametrize("lines", _PUBLISH_PHASE_LINES)
 def test_publish_progress_lines_carry_position_and_elapsed_time(
     publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
     caplog: pytest.LogCaptureFixture,
-    *,
-    live: bool,
-    start_prefix: str,
-    success_prefix: str,
+    lines: _PublishPhaseLines,
 ) -> None:
     """Every crate's publish start and success lines carry n/total and seconds."""
     caplog.set_level(logging.INFO, logger="lading.commands.publish")
@@ -215,7 +228,7 @@ def test_publish_progress_lines_carry_position_and_elapsed_time(
     state = publish._PublicationPipelineState(
         plan,
         preparation,
-        publish._PublishExecutionOptions(live=live, allow_dirty=True),
+        publish._PublishExecutionOptions(live=lines.live, allow_dirty=True),
         clock=_fixed_clock(*(float(tick) for tick in range(0, 40, 5))),
     )
 
@@ -226,8 +239,10 @@ def test_publish_progress_lines_carry_position_and_elapsed_time(
     total = len(plan.publishable)
     expected: list[str] = []
     for index, crate in enumerate(plan.publishable, start=1):
-        expected.append(f"{start_prefix} {crate.name} ({index}/{total})")
-        expected.append(f"{success_prefix} {crate.name} ({index}/{total}) in 5.0s")
+        expected.append(f"{lines.start_prefix} {crate.name} ({index}/{total})")
+        expected.append(
+            f"{lines.success_prefix} {crate.name} ({index}/{total}) in 5.0s"
+        )
     assert caplog.messages == expected, "one start and one success line per crate"
 
 
@@ -250,4 +265,4 @@ def test_each_crate_records_its_own_duration(
             subcommand="package",
             crate=crate.name,
         )
-        assert stats.count == 1, crate.name
+        assert stats.count == 1, f"{crate.name} should carry exactly one observation"
