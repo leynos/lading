@@ -141,8 +141,8 @@ Run each repair command, commit the updated lockfiles, then re-run
 In a workspace that is not a Git repository, tracked-lockfile discovery cannot
 run, so `lading publish` logs a warning and skips this freshness check rather
 than failing. `lading bump` is not affected in the same way: it still
-regenerates the manifests listed in the [`[bump]`](#bump) `lockfile_manifests`
-setting.
+regenerates the lockfiles adjacent to the manifests listed in the
+[`[bump]`](#bump) `lockfile_manifests` setting.
 
 To require a clean working tree before running the pre-flight checks, pass
 `--forbid-dirty`:

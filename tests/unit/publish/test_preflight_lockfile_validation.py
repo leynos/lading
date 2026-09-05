@@ -217,8 +217,7 @@ def test_validate_lockfile_freshness_skips_non_git_workspaces(
         def discover_tracked_lockfiles(self, workspace_root: Path) -> tuple[Path, ...]:
             """Record the call and raise the typed non-git discovery error."""
             self.discovered_roots.append(workspace_root)
-            message = f"{workspace_root} is not a git repository"
-            raise lockfile.NotAGitRepositoryError(message)
+            raise lockfile.NotAGitRepositoryError(workspace_root)
 
         def validate_lockfile_freshness(
             self, manifest_path: Path
