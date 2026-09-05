@@ -22,7 +22,6 @@ from lading.workspace import WorkspaceGraph
 if typ.TYPE_CHECKING:
     from syrupy.assertion import SnapshotAssertion
 
-
 class TestBumpLockfileMessages:
     """Snapshot bump messages for root and nested lockfiles."""
 
