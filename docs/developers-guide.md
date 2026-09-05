@@ -51,13 +51,13 @@ handles broad style and correctness checks, and imports the stricter lint
 policy used by `leynos/episodic`. If Ruff passes, the target runs `interrogate`
 with `--fail-under 100` across `lading` to enforce **100% docstring coverage**.
 If `interrogate` passes, the third stage runs Pylint through the pinned
-`pylint-pypy-shim` tool under PyPy. That stage is focused on rule families
-that complement Ruff, especially logging format safety, pattern matching
-checks, selected simplification checks, deprecated standard-library usage, file
-hygiene, and design-size limits. The fourth stage runs all
-`df12-python-lints` checks under CPython 3.14, while retaining Lading's Python
-3.13 semantic baseline for version-gated diagnostics. Finally, `ambrleaks`
-scans Syrupy snapshots under `tests` for values that should have been redacted.
+`pylint-pypy-shim` tool under PyPy. That stage is focused on rule families that
+complement Ruff, especially logging format safety, pattern matching checks,
+selected simplification checks, deprecated standard-library usage, file
+hygiene, and design-size limits. The fourth stage runs all `df12-python-lints`
+checks under CPython 3.14, while retaining Lading's Python 3.13 semantic
+baseline for version-gated diagnostics. Finally, `ambrleaks` scans Syrupy
+snapshots under `tests` for values that should have been redacted.
 [ADR-003](adr/003-three-tier-python-linting.md) records the policy decision.
 
 The relevant Makefile variables are:
