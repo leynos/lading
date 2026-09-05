@@ -131,7 +131,9 @@ def test_parse_already_published_failure_returns_typed_failure(
     expected: CargoAlreadyPublishedFailure | None,
 ) -> None:
     """Already-published Cargo diagnostics retain their raw process output."""
-    assert parse_already_published_failure(result) == expected
+    assert parse_already_published_failure(result) == expected, (
+        f"Unexpected already-published classification for Cargo result {result!r}"
+    )
 
 
 @pytest.mark.parametrize(
