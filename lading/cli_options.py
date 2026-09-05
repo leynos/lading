@@ -7,6 +7,7 @@ access through ``lading.cli`` keeps working.
 
 from __future__ import annotations
 
+import dataclasses as dc
 import re
 import typing as typ
 from pathlib import Path
@@ -77,6 +78,55 @@ ALLOW_UNPUBLISHED_WORKSPACE_DEPS_PARAMETER = Parameter(
     ),
 )
 
+SCCACHE_STATS_ENV_VAR = "LADING_SCCACHE_STATS"
+SCCACHE_STATS_PARAMETER = Parameter(
+    name="sccache-stats",
+    env_var=SCCACHE_STATS_ENV_VAR,
+    help=(
+        "Query the sccache binary named by RUSTC_WRAPPER before the first "
+        "cargo build and after every cargo package/publish invocation, and "
+        "log one compiler-cache summary line per invocation (two per crate "
+        "in a dry run). Skipped with a warning when RUSTC_WRAPPER does not "
+        "name sccache."
+    ),
+)
+
+SCCACHE_STATS_JSON_ENV_VAR = "LADING_SCCACHE_STATS_JSON"
+SCCACHE_STATS_JSON_PARAMETER = Parameter(
+    name="sccache-stats-json",
+    env_var=SCCACHE_STATS_JSON_ENV_VAR,
+    help=(
+        "Write the compiler-cache statistics collected by --sccache-stats to "
+        "this JSON file; implies --sccache-stats."
+    ),
+)
+
+
+@dc.dataclass(frozen=True, slots=True)
+class PublishFlags:
+    """The ``lading publish`` flags, flattened onto the command line by Cyclopts.
+
+    Grouping the flags in one dataclass keeps the command's signature to the
+    workspace root plus this bundle while every field still surfaces as its
+    own option, with its help text, negative form, and environment default.
+
+    Examples
+    --------
+    >>> PublishFlags().live
+    False
+    >>> PublishFlags(sccache_stats_json=Path("stats.json")).sccache_stats_json
+    PosixPath('stats.json')
+    """
+
+    forbid_dirty: typ.Annotated[bool, FORBID_DIRTY_PARAMETER] = False
+    live: typ.Annotated[bool, LIVE_PARAMETER] = False
+    allow_unpublished_workspace_deps: typ.Annotated[
+        bool | None, ALLOW_UNPUBLISHED_WORKSPACE_DEPS_PARAMETER
+    ] = None
+    sccache_stats: typ.Annotated[bool, SCCACHE_STATS_PARAMETER] = False
+    sccache_stats_json: typ.Annotated[Path | None, SCCACHE_STATS_JSON_PARAMETER] = None
+
+
 # These aliases remain public for integrations that import CLI annotations.
 # The CLI signatures deliberately spell out Annotated metadata inline because
 # Cyclopts evaluates those annotations at runtime and does not unwrap PEP 695
@@ -90,6 +140,8 @@ type ForbidDirtyFlag = typ.Annotated[bool, FORBID_DIRTY_PARAMETER]
 type AllowUnpublishedWorkspaceDepsFlag = typ.Annotated[
     bool | None, ALLOW_UNPUBLISHED_WORKSPACE_DEPS_PARAMETER
 ]
+type SccacheStatsFlag = typ.Annotated[bool, SCCACHE_STATS_PARAMETER]
+type SccacheStatsJsonOption = typ.Annotated[Path | None, SCCACHE_STATS_JSON_PARAMETER]
 
 
 __all__ = [
@@ -98,6 +150,10 @@ __all__ = [
     "FORBID_DIRTY_PARAMETER",
     "LIVE_PARAMETER",
     "REBUILD_LOCKFILES_PARAMETER",
+    "SCCACHE_STATS_ENV_VAR",
+    "SCCACHE_STATS_JSON_ENV_VAR",
+    "SCCACHE_STATS_JSON_PARAMETER",
+    "SCCACHE_STATS_PARAMETER",
     "VERSION_PARAMETER",
     "WORKSPACE_PARAMETER",
     "WORKSPACE_ROOT_ENV_VAR",
@@ -106,7 +162,10 @@ __all__ = [
     "DryRunFlag",
     "ForbidDirtyFlag",
     "LiveFlag",
+    "PublishFlags",
     "RebuildLockfilesFlag",
+    "SccacheStatsFlag",
+    "SccacheStatsJsonOption",
     "VersionArgument",
     "WorkspaceRootOption",
 ]

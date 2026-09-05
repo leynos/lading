@@ -504,6 +504,10 @@ callers can customize behaviour via `PublishOptions`. The defaults are:
 - `build_directory=None` — create a fresh temporary directory for staging.
 - `preserve_symlinks=True` — preserve symbolic links in the staged workspace.
 - `cleanup=False` — leave the staging directory intact for inspection.
+- `sccache_stats=False` — query the sccache binary named by `RUSTC_WRAPPER`
+  around every cargo build and log one compiler-cache line per invocation.
+- `sccache_stats_json=None` — also write the JSON report to this path
+  (relative paths resolve against the workspace root); implies `sccache_stats`.
 
 Additional parameters `configuration`, `workspace`, and `command_runner` allow
 dependency injection for testing and are typically left unset.
@@ -748,17 +752,63 @@ instances, applies crate-name canonicalization, and decides whether an index
 miss is out-of-plan and fatal, in-plan but still fatal, or in-plan and
 downgraded by `allow_unpublished_workspace_deps` during dry-run publication.
 
+`publish_sccache_stats.py` and `publish_sccache.py` implement the opt-in
+compiler-cache instrumentation (issue #252). The `_stats` module is the adapter:
+`detect_wrapper()` recognizes an sccache binary named by `RUSTC_WRAPPER`,
+`query_snapshot()` and `query_text()` run its `--show-stats` forms through the
+`CommandRunner` port with `echo_stdout=False`, and `parse_counters()` reduces
+the JSON payload to `SccacheCounters` (requests, hits, misses, errors).
+`publish_sccache.py` owns `SccacheLedger`, the pure reducer (baseline, previous
+snapshot, records, `attribute()`, `delta`, `report()`), and `SccacheSession`,
+which sequences the side effects around it: `_dispatch_publication` creates the
+session via `create_session()` after pre-flight (a report path alone opts in),
+`begin()`s before the first cargo build, `record()`s after every per-crate
+cargo invocation (one snapshot, one ledger entry, one log line), and
+`finish()`es in a `finally` with the pipeline delta, the human-readable mirror,
+and the optional atomically written JSON report. Every failure in the session
+is a WARNING that disables further queries; the session never raises into the
+pipeline.
+
+### CLI publish API (`lading.cli.publish`)
+
+`publish(workspace_root=None, *, flags: PublishFlags = PublishFlags())` is the
+Cyclopts command. `PublishFlags` (in `lading.cli_options`) is a frozen
+dataclass that Cyclopts flattens onto the command line with
+`Parameter(name="*")`, so each field is its own option with its help text,
+negative form, and environment default while the command keeps a two-parameter
+signature:
+
+| Field                              | Option                               | Default | Environment default         |
+| ---------------------------------- | ------------------------------------ | ------- | --------------------------- |
+| `forbid_dirty`                     | `--forbid-dirty`                     | `False` | —                           |
+| `live`                             | `--live`                             | `False` | —                           |
+| `allow_unpublished_workspace_deps` | `--allow-unpublished-workspace-deps` | `None`  | —                           |
+| `sccache_stats`                    | `--sccache-stats`                    | `False` | `LADING_SCCACHE_STATS`      |
+| `sccache_stats_json`               | `--sccache-stats-json`               | `None`  | `LADING_SCCACHE_STATS_JSON` |
+
+`_publish_options(flags, command_runner)` translates the bundle into
+`PublishOptions`: `allow_dirty` is the negation of `forbid_dirty`, the tri-state
+`allow_unpublished_workspace_deps` is resolved against `live` by
+`_resolve_allow_unpublished_workspace_deps`, and the two sccache fields are
+forwarded unresolved because a report path implying the measurement is the
+publish command's decision (`create_session`). The `Annotated` aliases
+`SccacheStatsFlag` and `SccacheStatsJsonOption`, and the `SCCACHE_STATS_*`
+parameters and environment-variable names, stay exported from `cli_options` for
+integrations that import CLI annotations.
+
 ### `_PublishExecutionOptions`
 
 `_PublishExecutionOptions` is a frozen dataclass that carries the runtime flags
 forwarded to every `cargo package` and `cargo publish` invocation within a
 single `lading publish` run. Its fields are:
 
-| Field                              | Type   | Default | Purpose                                                              |
-| ---------------------------------- | ------ | ------- | -------------------------------------------------------------------- |
-| `live`                             | `bool` | —       | When `True`, omits `--dry-run` from `cargo publish`.                 |
-| `allow_dirty`                      | `bool` | —       | Passes `--allow-dirty` to both cargo subcommands.                    |
-| `allow_unpublished_workspace_deps` | `bool` | `False` | Dry-run-only override; see `allow_unpublished_workspace_deps` above. |
+| Field                              | Type           | Default | Purpose                                                               |
+| ---------------------------------- | -------------- | ------- | --------------------------------------------------------------------- |
+| `live`                             | `bool`         | —       | When `True`, omits `--dry-run` from `cargo publish`.                  |
+| `allow_dirty`                      | `bool`         | —       | Passes `--allow-dirty` to both cargo subcommands.                     |
+| `allow_unpublished_workspace_deps` | `bool`         | `False` | Dry-run-only override; see `allow_unpublished_workspace_deps` above.  |
+| `sccache_stats`                    | `bool`         | `False` | Query sccache around every cargo build and log per-crate cache lines. |
+| `sccache_stats_json`               | `Path \| None` | `None`  | Write the sccache report here; implies `sccache_stats`.               |
 
 The dataclass is an internal implementation detail; callers interact with the
 public `PublishOptions` dataclass, which `run()` converts before dispatching.
@@ -785,8 +835,8 @@ classification for a completed `cargo publish` command. `result` is the
 elapsed seconds) and `state` is the `_PublicationPipelineState` supplying the
 plan, the execution options, and the crate's `n/total` position. It logs
 success with the position and elapsed time, skips already-published crate
-versions, adapts crates.io index lookup
-failures through `parse_index_lookup_failure()` before delegating to
+versions, adapts crates.io index lookup failures through
+`parse_index_lookup_failure()` before delegating to
 `_handle_index_missing_version`, and raises `PublishError` for all other
 non-zero publish exits after formatting the cargo failure message.
 
@@ -807,8 +857,13 @@ the per-crate helper signatures within the four-argument lint ceiling and pins
 the invariant that plan, preparation, and options are constructed together and
 immutable for the pipeline's lifetime. The state also carries the injectable
 `clock` (default `time.perf_counter`) that `_run_timed_cargo` times each cargo
-invocation with, and `position(crate)` renders the crate's `n/total` place in
-`plan.publishable` for the progress lines.
+invocation with, `position(crate)` renders the crate's `n/total` place in
+`plan.publishable` for the progress lines, and the optional `sccache` field
+holds the `SccacheSession` for the run (`None` unless instrumentation is on).
+`_dispatch_publication` owns that session's lifecycle: `create_session()` after
+pre-flight, `begin()` before the first cargo build, one `record()` call from
+`_package_crate` and `_publish_crate` after each cargo invocation, and
+`finish()` in a `finally` once both pipeline branches return.
 
 Publication dispatch deliberately differs by mode. Dry-run mode keeps the
 historical two-phase pipeline: package every publishable crate, then run
@@ -990,15 +1045,16 @@ than bucketed.
 
 Defined metrics:
 
-| Metric                           | Labels                        | Incremented when                                                                                                                               |
-| -------------------------------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `publish.index_lookup_downgrade` | `subcommand`, `missing_crate` | `_handle_index_missing_version` downgrades a crates.io index-lookup failure to a warning (in-plan, override enabled).                          |
-| `lockfile.discovered`            | (none)                        | Incremented by tracked-lockfile count when discovery observability is enabled; dry-run bump projection suppresses it.                          |
-| `lockfile.regenerate`            | `outcome`, `cause`            | Incremented per successful or failed lockfile regeneration; `cause` is `none`, `validation`, `command_spawn`, `runner_value`, or `cargo_exit`. |
-| `lockfile.regenerate.duration`   | (none)                        | Total duration observation around each lockfile-regeneration run.                                                                              |
-| `lockfile.validate`              | `outcome`                     | One increment per `validate_lockfile_freshness` call; `outcome` is `fresh`, `stale`, or `failed`.                                              |
-| `lockfile.validate.duration`     | (none)                        | Duration observation around each `cargo metadata --locked` probe.                                                                              |
-| `publish.cargo.duration`         | `subcommand`, `crate`         | One duration observation per `cargo package` or `cargo publish` invocation in the publish pipeline, successful or not (issue #251).            |
+| Metric                           | Labels                        | Incremented when                                                                                                                                                                                  |
+| -------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `publish.index_lookup_downgrade` | `subcommand`, `missing_crate` | `_handle_index_missing_version` downgrades a crates.io index-lookup failure to a warning (in-plan, override enabled).                                                                             |
+| `lockfile.discovered`            | (none)                        | Incremented by tracked-lockfile count when discovery observability is enabled; dry-run bump projection suppresses it.                                                                             |
+| `lockfile.regenerate`            | `outcome`, `cause`            | Incremented per successful or failed lockfile regeneration; `cause` is `none`, `validation`, `command_spawn`, `runner_value`, or `cargo_exit`.                                                    |
+| `lockfile.regenerate.duration`   | (none)                        | Total duration observation around each lockfile-regeneration run.                                                                                                                                 |
+| `lockfile.validate`              | `outcome`                     | One increment per `validate_lockfile_freshness` call; `outcome` is `fresh`, `stale`, or `failed`.                                                                                                 |
+| `lockfile.validate.duration`     | (none)                        | Duration observation around each `cargo metadata --locked` probe.                                                                                                                                 |
+| `publish.cargo.duration`         | `subcommand`, `crate`         | One duration observation per `cargo package` or `cargo publish` invocation in the publish pipeline, successful or not (issue #251).                                                               |
+| `publish.sccache.query`          | `outcome`                     | One increment per sccache statistics query while instrumentation is on (`--sccache-stats`, or a `--sccache-stats-json` path, which implies it); `outcome` is `success` or `failure` (issue #252). |
 
 Duration metrics aggregate a count and total seconds per label set via
 `observe_duration` / `duration_stats` and appear in the exit summary with
@@ -1065,9 +1121,9 @@ values are pinned by a syrupy snapshot. See the
 operator-facing description of the variable and its failure modes.
 
 `lading.utils.commands.LADING_CATALOGUE` is the staged cuprum programme
-catalogue (cargo, git). It is intentionally not yet wired into the execution
-path — `publish_execution._invoke` still delegates to the subprocess runner,
-which spawns processes directly. It becomes live with the
+catalogue (cargo, git, sccache). It is intentionally not yet wired into the
+execution path — `publish_execution._invoke` still delegates to the subprocess
+runner, which spawns processes directly. It becomes live with the
 [Phase 5.2 publish-execution migration](./roadmap.md), which rewires
 `publish_execution.py` command execution (the roadmap's
 `_invoke_via_subprocess()` step) onto the catalogue's `scoped(allowlist=…)`

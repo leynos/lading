@@ -151,3 +151,47 @@ def when_invoke_lading_publish_live(
         stub_config,
         "--live",
     )
+
+
+@when(
+    parsers.parse(
+        'I run lading publish with compiler-cache statistics written to "{name}"'
+    ),
+    target_fixture="cli_run",
+)
+def when_run_lading_publish_with_sccache_report(
+    workspace_directory: Path,
+    repo_root: Path,
+    preflight_test_context: PreflightTestContext,
+    name: str,
+) -> CliRunResult:
+    """Execute the publish CLI with ``--sccache-stats-json`` under the workspace.
+
+    The report path is resolved against the scenario's workspace directory
+    because the CLI runs from the repository root and a relative path would
+    otherwise land there.
+
+    Parameters
+    ----------
+    workspace_directory : Path
+        Root of the staged workspace under test.
+    repo_root : Path
+        Repository root from which the CLI module is launched.
+    preflight_test_context : PreflightTestContext
+        Context bundling the cmd-mox double, overrides, and recorder.
+    name : str
+        Report file name, resolved under ``workspace_directory``.
+
+    Returns
+    -------
+    CliRunResult
+        The captured CLI run result.
+    """
+    stub_config = preflight_test_context.create_stub_config()
+    return _invoke_publish_with_options(
+        repo_root,
+        workspace_directory,
+        stub_config,
+        "--sccache-stats-json",
+        str(workspace_directory / name),
+    )

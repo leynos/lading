@@ -208,6 +208,12 @@ graph TD
 
     B --> J["Module: lading.commands.publish_execution (publish_execution.py)"]
     J --> K["_invoke: subprocess execution with error adaptation"]
+    J --> K2["_run_timed_cargo: per-crate timing and duration metric"]
+
+    B --> L["Module: lading.commands.publish_sccache (publish_sccache.py)"]
+    L --> L1["SccacheSession: baseline, per-invocation delta, report"]
+    L --> M["Module: lading.commands.publish_sccache_stats"]
+    M --> M1["detect_wrapper, query_snapshot, parse_counters"]
 
     B --> N["Module: lading.commands.publish_preflight (publish_preflight.py)"]
     N --> O["Compose final publish plan and execute commands"]
@@ -400,7 +406,7 @@ registry.
 **Command Signature:**
 
 ```shell
-lading publish [--live] [--forbid-dirty]
+lading publish [--live] [--forbid-dirty] [--sccache-stats] [--sccache-stats-json PATH]
 ```
 
 - `--live`: By default, the command simulates the entire process, including
@@ -411,6 +417,16 @@ lading publish [--live] [--forbid-dirty]
 - `--forbid-dirty`: Require a clean working tree before running the pre-flight
   checks. When omitted the git status guard is skipped so that developers can
   iterate on pending changes.
+- `--sccache-stats` / `--sccache-stats-json PATH`: Opt-in compiler-cache
+  instrumentation (issue #252). Lading queries the sccache binary named by
+  `RUSTC_WRAPPER` for a baseline after pre-flight and again after every
+  per-crate cargo invocation, logs one bounded line per crate with the counters
+  attributable to it, and optionally writes a JSON report. Snapshots are
+  differenced rather than zeroed so the caller's own job-wide report keeps its
+  meaning, and every failure is a WARNING: measurement never fails a release
+  rehearsal. The environment variables `LADING_SCCACHE_STATS` and
+  `LADING_SCCACHE_STATS_JSON` supply defaults so CI can enable it without
+  editing a Makefile.
 
 **Execution Flow:**
 
@@ -739,11 +755,14 @@ from cuprum import Program, ProgramCatalogue, ProjectSettings
 # Program objects for allowed executables
 CARGO = Program("cargo")
 GIT = Program("git")
+# Queried for compiler-cache statistics by `lading publish --sccache-stats`;
+# the binary invoked is the one RUSTC_WRAPPER names.
+SCCACHE = Program("sccache")
 
 # Project settings for the lading package
 _LADING_PROJECT = ProjectSettings(
     name="lading",
-    programs=(CARGO, GIT),
+    programs=(CARGO, GIT, SCCACHE),
     documentation_locations=("docs/lading-design.md#command-execution-migration",),
     noise_rules=(),
 )

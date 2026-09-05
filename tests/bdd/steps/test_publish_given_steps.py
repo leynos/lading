@@ -16,6 +16,7 @@ simulated.
 
 from __future__ import annotations
 
+import json
 import typing as typ
 from pathlib import Path
 
@@ -285,6 +286,47 @@ def given_preflight_command_override(
     else:
         message = "preflight command override requires tokens"
         raise AssertionError(message)
+
+
+@given("RUSTC_WRAPPER names a stub sccache")
+def given_rustc_wrapper_names_stub_sccache(
+    monkeypatch: pytest.MonkeyPatch,
+    preflight_overrides: dict[tuple[str, ...], ResponseProvider],
+) -> None:
+    """Point ``RUSTC_WRAPPER`` at a stubbed ``sccache`` on the cmd-mox PATH.
+
+    The JSON query answers with counters that grow by ten requests, eight
+    hits, and two misses per call, so every per-crate delta is the same and
+    the summary lines are predictable. The JSON override is registered before
+    the plain ``--show-stats`` one because the stub dispatcher matches argument
+    prefixes in registration order.
+    """
+    monkeypatch.setenv("RUSTC_WRAPPER", "sccache")
+    queries = 0
+
+    def _json_stats(_invocation: _CmdInvocation) -> _CommandResponse:
+        nonlocal queries
+        queries += 1
+        payload = json.dumps({
+            "stats": {
+                "compile_requests": 10 * queries,
+                "cache_hits": {"counts": {"Rust": 8 * queries}},
+                "cache_misses": {"counts": {"Rust": 2 * queries}},
+            },
+            "version": "0.14.0",
+        })
+        return _CommandResponse(exit_code=0, stdout=payload)
+
+    preflight_overrides["sccache", "--show-stats", "--stats-format=json"] = _json_stats
+    preflight_overrides["sccache", "--show-stats"] = _CommandResponse(
+        exit_code=0, stdout="Compile requests   70\nCache location   ghac\n"
+    )
+
+
+@given("RUSTC_WRAPPER is not set")
+def given_rustc_wrapper_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ensure no compiler wrapper is configured for the CLI subprocess."""
+    monkeypatch.delenv("RUSTC_WRAPPER", raising=False)
 
 
 @given("a valid lading workspace", target_fixture="workspace_directory")

@@ -215,3 +215,44 @@ def _extract_missing_dependency_name(stdout: str, stderr: str) -> str | None:
         if match is not None:
             return match.group("name")
     return None
+
+
+_ALREADY_PUBLISHED_MARKERS: tuple[str, ...] = (
+    "already uploaded",
+    "already published",
+    "already exists on crates.io",
+    "already exists on crates.io index",
+)
+
+_CARGO_REGISTRY_ERROR_CODE = 101
+
+
+def is_already_published_error(exit_code: int, stdout: str, stderr: str) -> bool:
+    """Return whether ``cargo publish`` failed because the version already exists.
+
+    Parameters
+    ----------
+    exit_code : int
+        Exit status of the ``cargo publish`` invocation.
+    stdout : str
+        Captured standard output.
+    stderr : str
+        Captured standard error.
+
+    Returns
+    -------
+    bool
+        ``True`` only for cargo's registry error status (101) whose output
+        carries an already-uploaded marker.
+
+    Examples
+    --------
+    >>> is_already_published_error(101, "", "error: crate version is already uploaded")
+    True
+    >>> is_already_published_error(1, "", "error: crate version is already uploaded")
+    False
+    """
+    if exit_code != _CARGO_REGISTRY_ERROR_CODE:
+        return False
+    haystack = f"{stdout}\n{stderr}".lower()
+    return any(marker in haystack for marker in _ALREADY_PUBLISHED_MARKERS)

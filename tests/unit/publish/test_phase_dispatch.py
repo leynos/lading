@@ -336,10 +336,9 @@ def test_package_and_publish_dispatch_through_shared_helper(
     options = publish._PublishExecutionOptions(live=False, allow_dirty=True)
     runner = object()
 
-    publish._package_publishable_crates(
-        plan, preparation, options=options, runner=runner
-    )
-    publish._publish_crates(plan, preparation, runner=runner, options=options)
+    state = publish._PublicationPipelineState(plan, preparation, options)
+    publish._package_publishable_crates(state, runner=runner)
+    publish._publish_crates(state, runner=runner)
 
     assert len(calls) == 2
     assert calls[0]["action"] is publish._package_crate

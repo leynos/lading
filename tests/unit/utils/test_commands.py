@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from lading.utils.commands import CARGO, GIT, LADING_CATALOGUE
+from lading.utils.commands import CARGO, GIT, LADING_CATALOGUE, SCCACHE
 
 
 class TestLadingCatalogue:
@@ -21,6 +21,13 @@ class TestLadingCatalogue:
     def test_catalogue_registers_git(self) -> None:
         """The catalogue should include git as an allowed programme."""
         assert LADING_CATALOGUE.is_allowed(GIT)
+
+    def test_catalogue_registers_sccache(self) -> None:
+        """The catalogue should include sccache for compiler-cache queries."""
+        assert LADING_CATALOGUE.is_allowed(SCCACHE), "sccache must be allowlisted"
+        assert LADING_CATALOGUE.lookup(SCCACHE).program == SCCACHE, (
+            "catalogue lookup should return the sccache programme entry"
+        )
 
     def test_catalogue_allowlist_contains_cargo_and_git(self) -> None:
         """The catalogue allowlist should contain both cargo and git."""

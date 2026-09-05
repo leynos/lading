@@ -25,6 +25,7 @@ Related step modules
 
 from __future__ import annotations
 
+import json
 import re
 import typing as typ
 
@@ -551,11 +552,22 @@ def then_publish_warning_log_contains(cli_run: CliRunResult, expected: str) -> N
     )
 
 
+@then(parsers.parse('an INFO log should be emitted containing "{expected}"'))
+def then_publish_info_log_contains(cli_run: CliRunResult, expected: str) -> None:
+    """Assert that an INFO log line containing ``expected`` was emitted."""
+    assert any(
+        line.startswith("INFO: ") and expected in line
+        for line in cli_run["stderr"].splitlines()
+    ), f"Expected an INFO line containing {expected!r} in stderr:\n{cli_run['stderr']}"
+
+
 @then("no PublishPreflightError should be raised")
 def then_publish_preflight_error_is_not_reported(cli_run: CliRunResult) -> None:
     """Assert that publish completed without a pre-flight failure."""
     _assert_cli_run_succeeded(cli_run)
-    assert "PublishPreflightError" not in cli_run["stderr"]
+    assert "PublishPreflightError" not in cli_run["stderr"], (
+        f"publish should complete without a pre-flight failure:\n{cli_run['stderr']}"
+    )
 
 
 _PROGRESS_LINE = re.compile(
@@ -615,4 +627,70 @@ def then_publish_progress_lines(cli_run: CliRunResult, crate_names: str) -> None
     assert observed == expected, (
         f"expected {expected} progress records, observed {observed}\n"
         f"--- stderr ---\n{cli_run['stderr']}"
+    )
+
+
+_SCCACHE_JSON_QUERY = ("--show-stats", "--stats-format=json")
+_SCCACHE_TEXT_QUERY = ("--show-stats",)
+_CARGO_BUILD_LABELS = frozenset({"cargo::package", "cargo::publish"})
+
+
+@then(
+    "sccache statistics were queried before the first cargo package and after "
+    "every cargo invocation"
+)
+def then_sccache_queries_bracket_cargo_invocations(
+    preflight_recorder: _PreflightInvocationRecorder,
+) -> None:
+    """Assert the baseline, per-invocation, and final sccache queries.
+
+    The recorder lists every stubbed invocation in call order, so the
+    expected shape is: one JSON query, then for each cargo package/publish a
+    cargo call followed by a JSON query, then one plain ``--show-stats``.
+    """
+    sequence = [
+        (label, tuple(args))
+        for label, args, _env in preflight_recorder.records
+        if label == "sccache" or label in _CARGO_BUILD_LABELS
+    ]
+    cargo_calls = [entry for entry in sequence if entry[0] in _CARGO_BUILD_LABELS]
+    assert cargo_calls, "expected cargo package/publish invocations"
+    expected: list[tuple[str, tuple[str, ...]]] = [("sccache", _SCCACHE_JSON_QUERY)]
+    for entry in cargo_calls:
+        expected.extend((entry, ("sccache", _SCCACHE_JSON_QUERY)))
+    expected.append(("sccache", _SCCACHE_TEXT_QUERY))
+    assert sequence == expected, f"unexpected query order:\n{sequence}"
+
+
+@then(parsers.parse('the compiler-cache report "{name}" lists every cargo invocation'))
+def then_sccache_report_lists_every_invocation(
+    cli_run: CliRunResult,
+    preflight_recorder: _PreflightInvocationRecorder,
+    name: str,
+) -> None:
+    """Assert the JSON report carries one record per cargo package/publish."""
+    report = json.loads((cli_run["workspace"] / name).read_text(encoding="utf-8"))
+    cargo_count = sum(
+        1
+        for label, _args, _env in preflight_recorder.records
+        if label in _CARGO_BUILD_LABELS
+    )
+    assert set(report) == {"wrapper", "baseline", "final", "crates", "delta"}, (
+        f"report schema drifted: {sorted(report)}"
+    )
+    assert report["wrapper"] == "sccache", f"wrapper recorded as {report['wrapper']!r}"
+    assert len(report["crates"]) == cargo_count, (
+        f"expected one record per cargo invocation ({cargo_count}), "
+        f"got {len(report['crates'])}"
+    )
+    assert {record["subcommand"] for record in report["crates"]} == {
+        "package",
+        "publish",
+    }, "records should cover both the package and the publish phase"
+    assert all(
+        record["requests"] == 10 and record["hits"] == 8 and record["misses"] == 2
+        for record in report["crates"]
+    ), f"each record should carry the stub's per-query delta: {report['crates']}"
+    assert report["delta"]["requests"] == 10 * cargo_count, (
+        f"pipeline delta should sum the per-invocation deltas: {report['delta']}"
     )

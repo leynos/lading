@@ -21,8 +21,9 @@ in-plan dependencies during a single release train.
 :func:`_package_crate` and :func:`_publish_crate` each invoke ``cargo`` in the
 correct staged directory for a single crate. Both adapt cargo
 index-missing-version output into structured failures and detect publish-phase
-already-uploaded errors (:func:`_is_already_published_error`) to support
-non-fatal downgrade paths.
+already-uploaded errors
+(:func:`~lading.commands.cargo_output_adapter.is_already_published_error`) to
+support non-fatal downgrade paths.
 
 **Error boundary**
 
@@ -63,6 +64,7 @@ from lading.commands import publish_preflight
 from lading.commands.cargo_output_adapter import (
     CargoIndexLookupFailure,
     CargoSubprocessResult,
+    is_already_published_error,
     parse_index_lookup_failure,
 )
 from lading.commands.publish_errors import PublishError, PublishPreflightError
@@ -90,6 +92,7 @@ from lading.commands.publish_plan import (
 from lading.commands.publish_plan import (
     PublishPlanError as PublishPlanError,  # public re-export for plan_publication
 )
+from lading.commands.publish_sccache import SccacheSession, create_session
 from lading.utils.path import normalize_workspace_root
 
 LOGGER = logging.getLogger(__name__)
@@ -108,6 +111,8 @@ class _PublishExecutionOptions:
     live: bool
     allow_dirty: bool
     allow_unpublished_workspace_deps: bool = False
+    sccache_stats: bool = False
+    sccache_stats_json: Path | None = None
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -130,6 +135,8 @@ class _PublicationPipelineState:
     # deterministic one, matching the ``clock`` seam in
     # ``bump_lockfile_regeneration``.
     clock: cabc.Callable[[], float] = time.perf_counter
+    # Compiler-cache instrumentation (issue #252); ``None`` when not requested.
+    sccache: SccacheSession | None = None
 
     def position(self, crate: WorkspaceCrate) -> str:
         """Return ``crate``'s ``n/total`` position in the publish order."""
@@ -171,6 +178,12 @@ class PublishOptions:
         to a warning, provided the missing crate is part of the planned
         publish set. Only valid in dry-run mode (``live=False``); combining it
         with ``live=True`` raises :class:`PublishPreflightError`.
+    sccache_stats:
+        When :data:`True`, query the sccache binary named by ``RUSTC_WRAPPER``
+        around every cargo build and log one cache summary line per crate.
+    sccache_stats_json:
+        Optional path for a JSON report of those statistics; implies
+        ``sccache_stats``.
 
     """
 
@@ -183,6 +196,8 @@ class PublishOptions:
     workspace: WorkspaceGraph | None = None
     command_runner: CommandRunner | None = None
     allow_unpublished_workspace_deps: bool = False
+    sccache_stats: bool = False
+    sccache_stats_json: Path | None = None
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -372,18 +387,12 @@ def _for_each_publishable_crate(
 
 
 def _package_publishable_crates(
-    plan: PublishPlan,
-    preparation: PublishPreparation,
+    state: _PublicationPipelineState,
     *,
-    options: _PublishExecutionOptions,
     runner: CommandRunner,
 ) -> None:
     """Package each publishable crate in order using the staged workspace."""
-    _for_each_publishable_crate(
-        _PublicationPipelineState(plan, preparation, options),
-        runner=runner,
-        action=_package_crate,
-    )
+    _for_each_publishable_crate(state, runner=runner, action=_package_crate)
 
 
 def _package_crate(
@@ -404,6 +413,8 @@ def _package_crate(
         runner=runner,
         clock=state.clock,
     )
+    if state.sccache is not None:
+        state.sccache.record(crate.name, "package", result.elapsed_seconds)
     if result.exit_code == 0:
         LOGGER.info(
             "Successfully packaged crate %s (%s) in %.1fs",
@@ -431,39 +442,13 @@ def _package_crate(
     raise PublishPreflightError(message)
 
 
-_ALREADY_PUBLISHED_MARKERS: tuple[str, ...] = (
-    "already uploaded",
-    "already published",
-    "already exists on crates.io",
-    "already exists on crates.io index",
-)
-
-_CARGO_REGISTRY_ERROR_CODE = 101
-
-
-def _is_already_published_error(exit_code: int, stdout: str, stderr: str) -> bool:
-    """Return True when ``cargo publish`` failed because the version exists."""
-    # Only consider exit code 101 (cargo registry error)
-    if exit_code != _CARGO_REGISTRY_ERROR_CODE:
-        return False
-
-    haystack = f"{stdout}\n{stderr}".lower()
-    return any(marker in haystack for marker in _ALREADY_PUBLISHED_MARKERS)
-
-
 def _publish_crates(
-    plan: PublishPlan,
-    preparation: PublishPreparation,
+    state: _PublicationPipelineState,
     *,
     runner: CommandRunner,
-    options: _PublishExecutionOptions,
 ) -> None:
     """Publish each crate in order, respecting dry-run vs live mode."""
-    _for_each_publishable_crate(
-        _PublicationPipelineState(plan, preparation, options),
-        runner=runner,
-        action=_publish_crate,
-    )
+    _for_each_publishable_crate(state, runner=runner, action=_publish_crate)
 
 
 def _publish_crate(
@@ -495,6 +480,8 @@ def _publish_crate(
         runner=runner,
         clock=state.clock,
     )
+    if state.sccache is not None:
+        state.sccache.record(crate.name, "publish", result.elapsed_seconds)
     _handle_publish_result(crate, result, state=state)
 
 
@@ -518,7 +505,7 @@ def _handle_publish_result(
             success_message, crate.name, state.position(crate), result.elapsed_seconds
         )
         return
-    if _is_already_published_error(exit_code, stdout, stderr):
+    if is_already_published_error(exit_code, stdout, stderr):
         LOGGER.warning(
             "Crate %s @ %s is already published; skipping",
             crate.name,
@@ -549,14 +536,12 @@ def _handle_publish_result(
 
 
 def _execute_live_publication_pipeline(
-    plan: PublishPlan,
-    preparation: PublishPreparation,
+    state: _PublicationPipelineState,
     *,
-    options: _PublishExecutionOptions,
     runner: CommandRunner,
 ) -> None:
     """Package and publish each crate before moving to the next crate."""
-    state = _PublicationPipelineState(plan, preparation, options)
+    plan = state.plan
     completed: list[str] = []
     for crate in plan.publishable:
         LOGGER.info("Live pipeline: starting crate %s", crate.name)
@@ -658,29 +643,37 @@ def _dispatch_publication(
     without driving ``run()`` end to end. Inlining it would push ``run()``
     back toward the complexity ceiling that prompted the extraction.
     """
-    if options.live:
-        LOGGER.info("Publication mode: live (interleaved per-crate pipeline)")
-        _execute_live_publication_pipeline(
-            plan,
-            preparation,
-            options=options,
-            runner=runner,
-        )
-    else:
-        LOGGER.info("Publication mode: dry-run (batched two-phase pipeline)")
-        _package_publishable_crates(
-            plan,
-            preparation,
-            options=options,
-            runner=runner,
-        )
-        LOGGER.info("Dry-run pipeline: packaging complete; starting publish phase")
-        _publish_crates(
-            plan,
-            preparation,
-            runner=runner,
-            options=options,
-        )
+    # The baseline snapshot is taken here, after pre-flight, so the cargo
+    # check/test builds are excluded and only the packaged builds are counted.
+    sccache = create_session(options, runner=runner, workspace_root=plan.workspace_root)
+    if sccache is not None:
+        sccache.begin()
+    state = _PublicationPipelineState(plan, preparation, options, sccache=sccache)
+    try:
+        if options.live:
+            LOGGER.info("Publication mode: live (interleaved per-crate pipeline)")
+            _execute_live_publication_pipeline(state, runner=runner)
+        else:
+            LOGGER.info("Publication mode: dry-run (batched two-phase pipeline)")
+            _package_publishable_crates(state, runner=runner)
+            LOGGER.info("Dry-run pipeline: packaging complete; starting publish phase")
+            _publish_crates(state, runner=runner)
+    finally:
+        # A failed crate still leaves the measurements taken so far on record;
+        # finish() never raises, so it cannot mask the pipeline's own error.
+        if sccache is not None:
+            sccache.finish()
+
+
+def _execution_options(options: PublishOptions) -> _PublishExecutionOptions:
+    """Narrow the public options to the flags the cargo invocations need."""
+    return _PublishExecutionOptions(
+        live=options.live,
+        allow_dirty=options.allow_dirty,
+        allow_unpublished_workspace_deps=options.allow_unpublished_workspace_deps,
+        sccache_stats=options.sccache_stats,
+        sccache_stats_json=options.sccache_stats_json,
+    )
 
 
 def run(
@@ -760,17 +753,10 @@ def run(
         plan,
         active_configuration.publish.strip_patches,
     )
-    execution_options = _PublishExecutionOptions(
-        live=effective_options.live,
-        allow_dirty=effective_options.allow_dirty,
-        allow_unpublished_workspace_deps=(
-            effective_options.allow_unpublished_workspace_deps
-        ),
-    )
     _dispatch_publication(
         plan,
         preparation,
-        options=execution_options,
+        options=_execution_options(effective_options),
         runner=command_runner,
     )
     plan_message = format_plan(

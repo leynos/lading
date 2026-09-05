@@ -15,6 +15,7 @@ import logging
 import os
 import typing as typ
 from contextlib import contextmanager
+from pathlib import Path
 
 import pytest
 
@@ -27,7 +28,6 @@ from lading.utils import normalize_workspace_root
 from lading.workspace import WorkspaceCrate, WorkspaceGraph
 
 if typ.TYPE_CHECKING:
-    from pathlib import Path
     from types import ModuleType
 
     from syrupy.assertion import SnapshotAssertion
@@ -78,7 +78,10 @@ def test_cli_reexports_public_annotation_aliases() -> None:
         "DryRunFlag",
         "ForbidDirtyFlag",
         "LiveFlag",
+        "PublishFlags",
         "RebuildLockfilesFlag",
+        "SccacheStatsFlag",
+        "SccacheStatsJsonOption",
         "VersionArgument",
         "WorkspaceRootOption",
     )
@@ -536,6 +539,117 @@ def test_publish_cli_passes_unpublished_workspace_deps_flag(
 
     assert exit_code == 0
     assert captured_options["options"].allow_unpublished_workspace_deps is expected
+
+
+@dc.dataclass(frozen=True)
+class _SccacheFlagCase:
+    """One CLI invocation and the options it must produce."""
+
+    extra_args: tuple[str, ...]
+    env: dict[str, str]
+    expected_stats: bool
+    expected_json: Path | None
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        pytest.param(
+            _SccacheFlagCase((), {}, expected_stats=False, expected_json=None),
+            id="default-off",
+        ),
+        pytest.param(
+            _SccacheFlagCase(
+                ("--sccache-stats",), {}, expected_stats=True, expected_json=None
+            ),
+            id="flag",
+        ),
+        pytest.param(
+            _SccacheFlagCase(
+                ("--sccache-stats-json", "out/stats.json"),
+                {},
+                expected_stats=False,
+                expected_json=Path("out/stats.json"),
+            ),
+            id="json-flag-forwarded-raw",
+        ),
+        pytest.param(
+            _SccacheFlagCase(
+                (),
+                {"LADING_SCCACHE_STATS": "1"},
+                expected_stats=True,
+                expected_json=None,
+            ),
+            id="env-flag",
+        ),
+        pytest.param(
+            _SccacheFlagCase(
+                (),
+                {"LADING_SCCACHE_STATS_JSON": "out/stats.json"},
+                expected_stats=False,
+                expected_json=Path("out/stats.json"),
+            ),
+            id="env-json",
+        ),
+        pytest.param(
+            _SccacheFlagCase(
+                ("--no-sccache-stats",),
+                {"LADING_SCCACHE_STATS": "1"},
+                expected_stats=False,
+                expected_json=None,
+            ),
+            id="flag-overrides-env",
+        ),
+    ],
+)
+def test_publish_cli_passes_sccache_flags(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    case: _SccacheFlagCase,
+) -> None:
+    """The sccache flags and their environment defaults reach PublishOptions.
+
+    The flags are forwarded unresolved: a report path implying the
+    measurement is the publish command's decision (``create_session``), so
+    library callers and the CLI behave alike.
+    """
+    for name in ("LADING_SCCACHE_STATS", "LADING_SCCACHE_STATS_JSON"):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in case.env.items():
+        monkeypatch.setenv(name, value)
+    workspace_graph = _make_workspace(tmp_path.resolve())
+    captured_options: dict[str, publish_command.PublishOptions] = {}
+
+    def fake_run(
+        workspace_root: Path,
+        configuration: object,
+        workspace_model: object,
+        *,
+        options: publish_command.PublishOptions | None = None,
+    ) -> str:
+        del workspace_root, configuration, workspace_model
+        assert options is not None
+        captured_options["options"] = options
+        return "publish"
+
+    monkeypatch.setattr(publish_command, "run", fake_run)
+    monkeypatch.setattr(cli, "load_workspace", lambda _: workspace_graph)
+
+    exit_code = cli.main([
+        "--workspace-root",
+        str(tmp_path),
+        "publish",
+        *case.extra_args,
+    ])
+
+    assert exit_code == 0, "publish should succeed with the stubbed run"
+    options = captured_options["options"]
+    assert options.sccache_stats is case.expected_stats, (
+        f"--sccache-stats forwarded as {options.sccache_stats!r}"
+    )
+    assert options.sccache_stats_json == case.expected_json, (
+        f"--sccache-stats-json forwarded as {options.sccache_stats_json!r}"
+    )
 
 
 @pytest.mark.parametrize(

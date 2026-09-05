@@ -165,11 +165,11 @@ crate fails, crates already uploaded to crates.io are not rolled back. Reruns
 skip versions that are already present on crates.io and continue with the
 remaining crates.
 
-Each `cargo package` and `cargo publish` invocation streams its own output
-(the `Compiling` lines from a verify build appear as cargo emits them) and
-reports its position in the publish order and its elapsed time when it
-succeeds, so an operator can tell which crate a run is on and a slow verify
-build can be attributed to a crate:
+Each `cargo package` and `cargo publish` invocation streams its own output (the
+`Compiling` lines from a verify build appear as cargo emits them) and reports
+its position in the publish order and its elapsed time when it succeeds, so an
+operator can tell which crate a run is on and a slow verify build can be
+attributed to a crate:
 
 ```plaintext
 INFO: Running cargo package for crate alpha (1/3)
@@ -178,13 +178,13 @@ INFO: Running cargo publish --dry-run for crate alpha (1/3)
 INFO: Dry-run publish succeeded for crate alpha (1/3) in 61.9s
 ```
 
-The same durations are recorded per crate and subcommand in the metrics
-summary printed at exit (see [Observability](#observability)).
+The same durations are recorded per crate and subcommand in the metrics summary
+printed at exit (see [Observability](#observability)).
 
-At the end of the run, `lading publish` prints a summary of the publish plan
-it computed, listing the crates to publish and any crates skipped because
-they are marked `publish = false`, excluded via `publish.exclude`, or named
-in `publish.exclude` but absent from the workspace:
+At the end of the run, `lading publish` prints a summary of the publish plan it
+computed, listing the crates to publish and any crates skipped because they are
+marked `publish = false`, excluded via `publish.exclude`, or named in
+`publish.exclude` but absent from the workspace:
 
 ```plaintext
 Publish plan for <workspace>
@@ -215,11 +215,69 @@ directory and relative Markdown links are rewritten so they still resolve from
 that directory. `publish` then stages the already-prepared workspace into a
 temporary directory before packaging.
 
-Subprocess output is decoded as UTF-8 and captured in full. Lading first mirrors
-each chunk through the configured text stream; if that stream rejects Unicode,
-the exact UTF-8 bytes are written through its binary buffer when one is
-available. For a text-only narrow stream, mirroring is disabled for that stream
-while capture continues.
+Subprocess output is decoded as UTF-8 and captured in full. Lading first
+mirrors each chunk through the configured text stream; if that stream rejects
+Unicode, the exact UTF-8 bytes are written through its binary buffer when one
+is available. For a text-only narrow stream, mirroring is disabled for that
+stream while capture continues.
+
+#### Measuring compiler-cache use during the packaged builds
+
+`cargo package --verify` and `cargo publish --dry-run` compile each crate from
+a packaged copy under `target/package/`, whose paths and manifest differ from
+the workspace build, so whether those builds hit an
+[sccache](https://github.com/mozilla/sccache) store is a separate question from
+whether the workspace build did. Pass `--sccache-stats` to have
+`lading publish` query the sccache binary named by `RUSTC_WRAPPER` for a
+baseline before the first cargo build and again after every `cargo package` and
+`cargo publish` invocation, and log one line per invocation with the counters
+attributable to it:
+
+```bash
+RUSTC_WRAPPER=/path/to/sccache lading publish --sccache-stats
+```
+
+```plaintext
+INFO: Compiler cache statistics enabled via /path/to/sccache
+INFO: Compiler cache for cargo package alpha: 84.2s, requests=412 hits=398 misses=14 errors=0
+INFO: Compiler cache for cargo publish alpha: 61.9s, requests=40 hits=40 misses=0 errors=0
+INFO: Compiler cache over the publish pipeline: requests=452 hits=438 misses=14 errors=0
+INFO: sccache statistics (cumulative for the server's lifetime):
+Compile requests   11128
+...
+```
+
+`requests` is sccache's `compile_requests`, `hits` and `misses` sum its
+per-language cache counts, and `errors` sums its cache error, read error, write
+error, and timeout counters. The per-crate and pipeline lines are differences
+between snapshots, so the counters sccache itself reports are never reset: a
+job-wide `sccache --show-stats` after the run still means what it did before.
+The final block mirrors that cumulative report so the `Cache location` line is
+on record.
+
+Add `--sccache-stats-json PATH` (which implies `--sccache-stats`) to write a
+JSON report alongside, for an artefact upload or a later comparison. A relative
+`PATH` is resolved against the workspace root, like every other path `lading`
+accepts:
+
+```bash
+lading publish --sccache-stats-json target/sccache-publish.json
+```
+
+The report holds `wrapper`, the raw `baseline` and `final` payloads from
+`sccache --show-stats --stats-format=json`, a `crates` list with one record per
+cargo invocation (`crate`, `subcommand`, `seconds`, and the four counters), and
+the pipeline `delta`.
+
+Both flags default off and can be set from the environment as
+`LADING_SCCACHE_STATS=1` and `LADING_SCCACHE_STATS_JSON=PATH`, which lets a CI
+workflow turn the measurement on without editing a Makefile that hard-codes the
+`lading publish` invocation. The pre-flight `cargo check` and `cargo test`
+builds run before the baseline snapshot and are not counted.
+
+The instrumentation never fails a run. When `RUSTC_WRAPPER` is unset or does
+not name an `sccache` binary, or an sccache query fails part-way through,
+`lading publish` logs a WARNING, stops querying, and carries on.
 
 #### Dry-run limitations with unpublished workspace dependencies
 
@@ -373,9 +431,9 @@ Cargo lockfile regeneration failed for 2 manifest(s). Manifests already carry th
 ```
 
 When one manifest was attempted, its lone failure surfaces the plain Cargo
-error instead. To recover, fix the underlying Cargo error and
-rerun `lading bump`, run the printed repair command for each listed manifest,
-or use `--no-rebuild-lockfiles` and regenerate the lockfiles manually before
+error instead. To recover, fix the underlying Cargo error and rerun
+`lading bump`, run the printed repair command for each listed manifest, or use
+`--no-rebuild-lockfiles` and regenerate the lockfiles manually before
 committing the bump.
 
 ### `[bump.documentation]`
@@ -416,6 +474,14 @@ the publish pipeline, recorded whether or not the invocation succeeded. Labels:
 - `subcommand` — `package` or `publish`.
 - `crate` — the crate the invocation ran for.
 
+#### `publish.sccache.query`
+
+Incremented once per sccache statistics query while the instrumentation is on
+(`--sccache-stats`, or a `--sccache-stats-json` path, which implies it). Labels:
+
+- `outcome` — `success` or `failure`; a failure also disables further queries
+  for the rest of the run.
+
 #### `publish.index_lookup_downgrade`
 
 Incremented on each downgrade event when a crates.io index-lookup failure for a
@@ -454,6 +520,16 @@ lading bump 1.2.3 --workspace-root /path/to/workspace
 
 When present, the resolved path is also exported as `LADING_WORKSPACE_ROOT` for
 the duration of the command.
+
+### `--sccache-stats` and `--sccache-stats-json`
+
+`lading publish --sccache-stats` queries the sccache binary named by
+`RUSTC_WRAPPER` around every cargo build and logs one compiler-cache summary
+line per `cargo package` or `cargo publish` invocation (two per crate in a dry
+run); `--sccache-stats-json PATH` also writes a JSON report and implies
+`--sccache-stats`. The environment variables `LADING_SCCACHE_STATS` and
+`LADING_SCCACHE_STATS_JSON` supply defaults for the two flags. See
+[Measuring compiler-cache use during the packaged builds](#measuring-compiler-cache-use-during-the-packaged-builds).
 
 ### `LADING_LOG_LEVEL`
 
