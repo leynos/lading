@@ -11,6 +11,7 @@ from __future__ import annotations
 import collections.abc as cabc
 import dataclasses as dc
 import logging
+import time
 import typing as typ
 
 from lading.commands.cargo_output_adapter import (
@@ -21,7 +22,13 @@ from lading.commands.cargo_output_adapter import (
     parse_index_lookup_failure,
 )
 from lading.commands.publish_errors import PublishError, PublishPreflightError
-from lading.commands.publish_execution import _invoke as _invoke
+from lading.commands.publish_execution import (
+    _CargoInvocation,
+    _run_timed_cargo,
+)
+from lading.commands.publish_execution import (
+    _invoke as _invoke,
+)
 from lading.commands.publish_index_check import (
     _format_cargo_failure_message,
     _IndexMissingVersionHandling,
@@ -30,12 +37,16 @@ from lading.commands.publish_index_check import (
     _handle_index_missing_version as _raw_handle_index_missing_version,
 )
 from lading.commands.publish_manifest import PublishPreparationError
+from lading.commands.publish_sccache import SccacheSession, create_session
 from lading.commands.publish_staging import (
     PublishPreparation,
     _resolve_staged_crate_root,
 )
 
 if typ.TYPE_CHECKING:
+    from pathlib import Path
+
+    from lading.commands.publish_execution import _TimedCargoResult
     from lading.commands.publish_plan import PublishPlan
     from lading.runtime import CommandRunner
     from lading.workspace import WorkspaceCrate
@@ -50,24 +61,23 @@ class _PublishExecutionOptions:
     live: bool
     allow_dirty: bool
     allow_unpublished_workspace_deps: bool = False
+    sccache_stats: bool = False
+    sccache_stats_json: Path | None = None
 
 
 @dc.dataclass(frozen=True, slots=True)
 class _PublicationPipelineState:
-    """Shared publish state for cargo package and publish invocations.
-
-    Design note (issue #72): this bundle is deliberate. The per-crate
-    helpers (``_package_crate``, ``_publish_crate``) would otherwise need
-    ``plan``, ``preparation``, and ``options`` threaded individually,
-    pushing their signatures past the argument-count lint ceiling and
-    inviting positional mix-ups. The three fields are constructed together
-    in each pipeline entry point and are immutable for the pipeline's
-    lifetime, which is the invariant the dataclass enforces.
-    """
+    """Shared immutable state for cargo package and publish invocations."""
 
     plan: PublishPlan
     preparation: PublishPreparation
     options: _PublishExecutionOptions
+    clock: cabc.Callable[[], float] = time.perf_counter
+    sccache: SccacheSession | None = None
+
+    def position(self, crate: WorkspaceCrate) -> str:
+        """Return the crate's ``n/total`` position in publish order."""
+        return f"{self.plan.publishable.index(crate) + 1}/{len(self.plan.publishable)}"
 
 
 def _handle_index_missing_version(
@@ -76,11 +86,7 @@ def _handle_index_missing_version(
     plan: PublishPlan,
     options: _PublishExecutionOptions,
 ) -> None:
-    """Pick the phase-appropriate error class and delegate to the helper.
-
-    Resolve the error class here based on the cargo subcommand and pass it
-    through to the relocated implementation in ``publish_index_check``.
-    """
+    """Delegate using the phase-appropriate error class."""
     error_cls = (
         PublishError if failure.subcommand == "publish" else PublishPreflightError
     )
@@ -120,18 +126,12 @@ def _for_each_publishable_crate(
 
 
 def _package_publishable_crates(
-    plan: PublishPlan,
-    preparation: PublishPreparation,
+    state: _PublicationPipelineState,
     *,
-    options: _PublishExecutionOptions,
     runner: CommandRunner,
 ) -> None:
     """Package each publishable crate in order using the staged workspace."""
-    _for_each_publishable_crate(
-        _PublicationPipelineState(plan, preparation, options),
-        runner=runner,
-        action=_package_crate,
-    )
+    _for_each_publishable_crate(state, runner=runner, action=_package_crate)
 
 
 def _package_crate(
@@ -145,47 +145,49 @@ def _package_crate(
     options = state.options
     package_args: tuple[str, ...] = ("--allow-dirty",) if options.allow_dirty else ()
     crate_root = _resolve_staged_crate_root(crate, plan, state.preparation.staging_root)
-    LOGGER.info("Running cargo package for crate %s", crate.name)
-    exit_code, stdout, stderr = runner(
-        ("cargo", "package", *package_args),
-        cwd=crate_root,
-        env=None,
+    position = state.position(crate)
+    LOGGER.info("Running cargo package for crate %s (%s)", crate.name, position)
+    result = _run_timed_cargo(
+        _CargoInvocation(("cargo", "package", *package_args), crate_root, crate.name),
+        runner=runner,
+        clock=state.clock,
     )
-    if exit_code == 0:
-        LOGGER.info("Successfully packaged crate %s", crate.name)
+    if state.sccache is not None:
+        state.sccache.record(crate.name, "package", result.elapsed_seconds)
+    if result.exit_code == 0:
+        LOGGER.info(
+            "Successfully packaged crate %s (%s) in %.1fs",
+            crate.name,
+            position,
+            result.elapsed_seconds,
+        )
         return
     lookup_failure = parse_index_lookup_failure(
         crate_name=crate.name,
         subcommand="package",
         result=CargoSubprocessResult(
-            exit_code=exit_code,
-            stdout=stdout,
-            stderr=stderr,
+            exit_code=result.exit_code,
+            stdout=result.stdout,
+            stderr=result.stderr,
         ),
     )
     if lookup_failure is not None:
         _handle_index_missing_version(lookup_failure, plan=plan, options=options)
         return
     message = _format_cargo_failure_message(
-        "package", crate.name, exit_code, (stdout, stderr)
+        "package", crate.name, result.exit_code, result.streams
     )
     LOGGER.error(message)
     raise PublishPreflightError(message)
 
 
 def _publish_crates(
-    plan: PublishPlan,
-    preparation: PublishPreparation,
+    state: _PublicationPipelineState,
     *,
     runner: CommandRunner,
-    options: _PublishExecutionOptions,
 ) -> None:
     """Publish each crate in order, respecting dry-run vs live mode."""
-    _for_each_publishable_crate(
-        _PublicationPipelineState(plan, preparation, options),
-        runner=runner,
-        action=_publish_crate,
-    )
+    _for_each_publishable_crate(state, runner=runner, action=_publish_crate)
 
 
 def _publish_crate(
@@ -205,36 +207,42 @@ def _publish_crate(
     publish_args_tuple = tuple(publish_args)
     crate_root = _resolve_staged_crate_root(crate, plan, state.preparation.staging_root)
     LOGGER.info(
-        "Running cargo publish%s for crate %s",
+        "Running cargo publish%s for crate %s (%s)",
         "" if options.live else " --dry-run",
         crate.name,
+        state.position(crate),
     )
-    exit_code, stdout, stderr = runner(
-        ("cargo", "publish", *publish_args_tuple),
-        cwd=crate_root,
-        env=None,
+    result = _run_timed_cargo(
+        _CargoInvocation(
+            ("cargo", "publish", *publish_args_tuple), crate_root, crate.name
+        ),
+        runner=runner,
+        clock=state.clock,
     )
-    _handle_publish_result(
-        crate, (exit_code, stdout, stderr), plan=plan, options=options
-    )
+    if state.sccache is not None:
+        state.sccache.record(crate.name, "publish", result.elapsed_seconds)
+    _handle_publish_result(crate, result, state=state)
 
 
 def _handle_publish_result(
     crate: WorkspaceCrate,
-    output: tuple[int, str, str],
+    result: _TimedCargoResult,
     *,
-    plan: PublishPlan,
-    options: _PublishExecutionOptions,
+    state: _PublicationPipelineState,
 ) -> None:
     """Handle a completed ``cargo publish`` invocation."""
-    exit_code, stdout, stderr = output
+    plan = state.plan
+    options = state.options
+    exit_code, stdout, stderr = result.exit_code, result.stdout, result.stderr
     if exit_code == 0:
         success_message = (
-            "Successfully published crate %s"
+            "Successfully published crate %s (%s) in %.1fs"
             if options.live
-            else "Dry-run publish succeeded for crate %s"
+            else "Dry-run publish succeeded for crate %s (%s) in %.1fs"
         )
-        LOGGER.info(success_message, crate.name)
+        LOGGER.info(
+            success_message, crate.name, state.position(crate), result.elapsed_seconds
+        )
         return
     cargo_result = CargoSubprocessResult(
         exit_code=exit_code,
@@ -271,14 +279,12 @@ def _handle_publish_result(
 
 
 def _execute_live_publication_pipeline(
-    plan: PublishPlan,
-    preparation: PublishPreparation,
+    state: _PublicationPipelineState,
     *,
-    options: _PublishExecutionOptions,
     runner: CommandRunner,
 ) -> None:
     """Package and publish each crate before moving to the next crate."""
-    state = _PublicationPipelineState(plan, preparation, options)
+    plan = state.plan
     completed: list[str] = []
     for crate in plan.publishable:
         LOGGER.info("Live pipeline: starting crate %s", crate.name)
@@ -316,16 +322,7 @@ def _run_dry_run_phase(
     phase_name: str,
     action: cabc.Callable[[], None],
 ) -> None:
-    """Run one dry-run phase, normalising staging errors at the boundary.
-
-    The shared error handling keeps the two-phase dispatcher focused on phase
-    ordering while retaining its single public preflight-error contract.
-
-    Raises
-    ------
-    PublishPreflightError
-        If the action raises a preparation or preflight error.
-    """
+    """Run one dry-run phase, normalising preparation errors at the boundary."""
     try:
         action()
     except PublishPreparationError as exc:
@@ -352,33 +349,22 @@ def _dispatch_publication(
     without driving ``run()`` end to end. Inlining it would push ``run()``
     back toward the complexity ceiling that prompted the extraction.
     """
-    if options.live:
-        LOGGER.info("Publication mode: live (interleaved per-crate pipeline)")
-        _execute_live_publication_pipeline(
-            plan,
-            preparation,
-            options=options,
-            runner=runner,
-        )
-        return
+    sccache = create_session(options, runner=runner, workspace_root=plan.workspace_root)
+    if sccache is not None:
+        sccache.begin()
+    state = _PublicationPipelineState(plan, preparation, options, sccache=sccache)
+    try:
+        if options.live:
+            LOGGER.info("Publication mode: live (interleaved per-crate pipeline)")
+            _execute_live_publication_pipeline(state, runner=runner)
+            return
 
-    LOGGER.info("Publication mode: dry-run (batched two-phase pipeline)")
-    _run_dry_run_phase(
-        "packaging",
-        lambda: _package_publishable_crates(
-            plan,
-            preparation,
-            options=options,
-            runner=runner,
-        ),
-    )
-    LOGGER.info("Dry-run pipeline: packaging complete; starting publish phase")
-    _run_dry_run_phase(
-        "publish",
-        lambda: _publish_crates(
-            plan,
-            preparation,
-            runner=runner,
-            options=options,
-        ),
-    )
+        LOGGER.info("Publication mode: dry-run (batched two-phase pipeline)")
+        _run_dry_run_phase(
+            "packaging", lambda: _package_publishable_crates(state, runner=runner)
+        )
+        LOGGER.info("Dry-run pipeline: packaging complete; starting publish phase")
+        _run_dry_run_phase("publish", lambda: _publish_crates(state, runner=runner))
+    finally:
+        if sccache is not None:
+            sccache.finish()

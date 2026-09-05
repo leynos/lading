@@ -17,7 +17,8 @@ from pathlib import Path
 
 import pytest
 
-from lading.commands import publish
+from lading.commands import publish_pipeline, publish_plan, publish_staging
+from lading.commands.publish_errors import PublishPreflightError
 from lading.utils import metrics
 
 from .sccache_doubles import (
@@ -69,13 +70,15 @@ def _expected_sequence(*, live: bool, crate_count: int) -> list[str]:
 class _DispatchRun:
     """Outcome of one instrumented ``_dispatch_publication`` call."""
 
-    plan: publish.PublishPlan
+    plan: publish_plan.PublishPlan
     runner: ScriptedRunner
     report: Path
 
 
 def _run_instrumented_dispatch(
-    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    publish_plan_and_prep: tuple[
+        publish_plan.PublishPlan, publish_staging.PublishPreparation, Path
+    ],
     tmp_path: Path,
     *,
     live: bool,
@@ -85,16 +88,20 @@ def _run_instrumented_dispatch(
     payloads = [payload(10 * step, 8 * step, 2 * step) for step in range(1, 9)]
     runner = ScriptedRunner(payloads)
     report = tmp_path / "sccache-report.json"
-    options = publish._PublishExecutionOptions(
+    options = publish_pipeline._PublishExecutionOptions(
         live=live, allow_dirty=True, sccache_stats=True, sccache_stats_json=report
     )
-    publish._dispatch_publication(plan, preparation, options=options, runner=runner)
+    publish_pipeline._dispatch_publication(
+        plan, preparation, options=options, runner=runner
+    )
     return _DispatchRun(plan=plan, runner=runner, report=report)
 
 
 @pytest.mark.parametrize("live", [False, True], ids=["dry-run", "live"])
 def test_dispatch_brackets_every_cargo_invocation_with_a_query(
-    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    publish_plan_and_prep: tuple[
+        publish_plan.PublishPlan, publish_staging.PublishPreparation, Path
+    ],
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     *,
@@ -111,7 +118,9 @@ def test_dispatch_brackets_every_cargo_invocation_with_a_query(
 
 
 def test_dispatch_logs_one_summary_per_invocation_and_writes_report(
-    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    publish_plan_and_prep: tuple[
+        publish_plan.PublishPlan, publish_staging.PublishPreparation, Path
+    ],
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
@@ -155,7 +164,9 @@ def test_dispatch_logs_one_summary_per_invocation_and_writes_report(
 
 
 def test_dispatch_without_wrapper_warns_and_still_publishes(
-    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    publish_plan_and_prep: tuple[
+        publish_plan.PublishPlan, publish_staging.PublishPreparation, Path
+    ],
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -164,11 +175,13 @@ def test_dispatch_without_wrapper_warns_and_still_publishes(
     monkeypatch.delenv("RUSTC_WRAPPER", raising=False)
     plan, preparation, _staging_root = publish_plan_and_prep
     runner = ScriptedRunner([])
-    options = publish._PublishExecutionOptions(
+    options = publish_pipeline._PublishExecutionOptions(
         live=False, allow_dirty=True, sccache_stats=True
     )
 
-    publish._dispatch_publication(plan, preparation, options=options, runner=runner)
+    publish_pipeline._dispatch_publication(
+        plan, preparation, options=options, runner=runner
+    )
 
     assert all(call[0] == "cargo" for call in runner.calls), (
         "no sccache query may run without a wrapper"
@@ -181,7 +194,9 @@ def test_dispatch_without_wrapper_warns_and_still_publishes(
 
 
 def test_dispatch_reports_what_it_measured_when_a_crate_fails(
-    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    publish_plan_and_prep: tuple[
+        publish_plan.PublishPlan, publish_staging.PublishPreparation, Path
+    ],
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -201,12 +216,12 @@ def test_dispatch_reports_what_it_measured_when_a_crate_fails(
         return exit_code, stdout, stderr
 
     report = tmp_path / "sccache-report.json"
-    options = publish._PublishExecutionOptions(
+    options = publish_pipeline._PublishExecutionOptions(
         live=False, allow_dirty=True, sccache_stats=True, sccache_stats_json=report
     )
 
-    with pytest.raises(publish.PublishPreflightError):
-        publish._dispatch_publication(
+    with pytest.raises(PublishPreflightError):
+        publish_pipeline._dispatch_publication(
             plan, preparation, options=options, runner=_failing_second_package
         )
 
@@ -216,7 +231,9 @@ def test_dispatch_reports_what_it_measured_when_a_crate_fails(
 
 
 def test_dispatch_without_flag_never_queries(
-    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    publish_plan_and_prep: tuple[
+        publish_plan.PublishPlan, publish_staging.PublishPreparation, Path
+    ],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """With the flag off a configured wrapper is left alone."""
@@ -224,10 +241,10 @@ def test_dispatch_without_flag_never_queries(
     plan, preparation, _staging_root = publish_plan_and_prep
     runner = ScriptedRunner([])
 
-    publish._dispatch_publication(
+    publish_pipeline._dispatch_publication(
         plan,
         preparation,
-        options=publish._PublishExecutionOptions(live=False, allow_dirty=True),
+        options=publish_pipeline._PublishExecutionOptions(live=False, allow_dirty=True),
         runner=runner,
     )
 
