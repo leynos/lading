@@ -84,8 +84,9 @@ SCCACHE_STATS_PARAMETER = Parameter(
     help=(
         "Query the sccache binary named by RUSTC_WRAPPER before the first "
         "cargo build and after every cargo package/publish invocation, and "
-        "log one compiler-cache summary line per crate. Skipped with a "
-        "warning when RUSTC_WRAPPER does not name sccache."
+        "log one compiler-cache summary line per invocation (two per crate "
+        "in a dry run). Skipped with a warning when RUSTC_WRAPPER does not "
+        "name sccache."
     ),
 )
 

@@ -7,7 +7,7 @@ that a job-wide ``sccache --show-stats`` cannot answer (issue #252). When
 ``lading publish --sccache-stats`` is given, this module queries the sccache
 binary named by ``RUSTC_WRAPPER`` for a baseline snapshot before the first
 cargo build and again after every per-crate cargo invocation, differences the
-snapshots, and logs one bounded line per crate. An optional JSON report keeps
+snapshots, and logs one bounded line per invocation. An optional JSON report keeps
 the raw payloads for after-the-fact comparison.
 
 Instrumentation must never fail a release or a release rehearsal: every
@@ -114,8 +114,93 @@ def _write_atomically(path: Path, content: str) -> None:
 
 
 @dc.dataclass(slots=True)
+class SccacheLedger:
+    """Pure bookkeeping for one instrumented pipeline: no I/O, no logging.
+
+    Holds the baseline snapshot, the most recent snapshot, and the records
+    attributed so far. :meth:`attribute` is the reducer: it takes the next
+    snapshot and the invocation it followed and returns the record for that
+    invocation.
+
+    Examples
+    --------
+    >>> zero = SccacheSnapshot({}, SccacheCounters())
+    >>> ledger = SccacheLedger(baseline=zero)
+    >>> later = SccacheSnapshot({}, SccacheCounters(requests=3, hits=2, misses=1))
+    >>> record = ledger.attribute(
+    ...     later, crate="alpha", subcommand="package", seconds=1.5
+    ... )
+    >>> record.counters
+    SccacheCounters(requests=3, hits=2, misses=1, errors=0)
+    >>> ledger.delta
+    SccacheCounters(requests=3, hits=2, misses=1, errors=0)
+    """
+
+    baseline: SccacheSnapshot
+    previous: SccacheSnapshot = dc.field(init=False)
+    records: list[SccacheCrateRecord] = dc.field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        """Start differencing from the baseline."""
+        self.previous = self.baseline
+
+    def attribute(
+        self,
+        snapshot: SccacheSnapshot,
+        *,
+        crate: str,
+        subcommand: str,
+        seconds: float,
+    ) -> SccacheCrateRecord:
+        """Record the counters between the previous snapshot and ``snapshot``.
+
+        Returns
+        -------
+        SccacheCrateRecord
+            The counters attributed to the invocation, also appended to
+            :attr:`records`.
+        """
+        record = SccacheCrateRecord(
+            crate=crate,
+            subcommand=subcommand,
+            seconds=seconds,
+            counters=snapshot.counters - self.previous.counters,
+        )
+        self.records.append(record)
+        self.previous = snapshot
+        return record
+
+    @property
+    def delta(self) -> SccacheCounters:
+        """Counters accumulated since the baseline."""
+        return self.previous.counters - self.baseline.counters
+
+    def report(self, wrapper: Path) -> dict[str, object]:
+        """Return the JSON-ready report for ``wrapper``.
+
+        Returns
+        -------
+        dict[str, object]
+            ``wrapper``, raw ``baseline`` and ``final`` payloads, one entry per
+            invocation under ``crates``, and the pipeline ``delta``.
+        """
+        return {
+            "wrapper": str(wrapper),
+            "baseline": self.baseline.raw,
+            "final": self.previous.raw,
+            "crates": [record.as_dict() for record in self.records],
+            "delta": self.delta.as_dict(),
+        }
+
+
+@dc.dataclass(slots=True)
 class SccacheSession:
-    """Running state of one instrumented publish pipeline.
+    """Sequence the sccache queries around one publish pipeline.
+
+    The session owns the side effects (queries through the command runner,
+    log lines, the report file) and delegates the arithmetic to a
+    :class:`SccacheLedger`. Every failure is a WARNING that disables further
+    queries; no method raises into the pipeline.
 
     Parameters
     ----------
@@ -134,14 +219,12 @@ class SccacheSession:
     cwd: Path
     json_path: Path | None = None
     enabled: bool = True
-    _baseline: SccacheSnapshot | None = None
-    _previous: SccacheSnapshot | None = None
-    _records: list[SccacheCrateRecord] = dc.field(default_factory=list)
+    _ledger: SccacheLedger | None = None
 
     @property
     def records(self) -> tuple[SccacheCrateRecord, ...]:
-        """The per-crate records collected so far."""
-        return tuple(self._records)
+        """The per-invocation records collected so far."""
+        return () if self._ledger is None else tuple(self._ledger.records)
 
     def _snapshot(self, purpose: str) -> SccacheSnapshot | None:
         """Take a snapshot, or disable the session with a WARNING on failure."""
@@ -159,43 +242,33 @@ class SccacheSession:
         metrics.increment_counter(QUERY_METRIC, outcome="success")
         return snapshot
 
+    def _active_ledger(self) -> SccacheLedger | None:
+        """Return the ledger while the session is live, else :data:`None`."""
+        return self._ledger if self.enabled else None
+
     def begin(self) -> None:
         """Take the baseline snapshot before the first cargo build."""
         if not self.enabled:
             return
         LOGGER.info("Compiler cache statistics enabled via %s", self.wrapper)
         snapshot = self._snapshot("baseline")
-        self._baseline = snapshot
-        self._previous = snapshot
-
-    def _active_snapshots(self) -> tuple[SccacheSnapshot, SccacheSnapshot] | None:
-        """Return ``(baseline, previous)`` while the session is live, else None."""
-        if not self.enabled:
-            return None
-        if self._baseline is None or self._previous is None:
-            return None
-        return self._baseline, self._previous
+        if snapshot is not None:
+            self._ledger = SccacheLedger(baseline=snapshot)
 
     def record(self, crate: str, subcommand: str, seconds: float) -> None:
         """Attribute the counters since the previous snapshot to one invocation.
 
         Never raises: a failed query logs a WARNING and disables the session.
         """
-        active = self._active_snapshots()
-        if active is None:
+        ledger = self._active_ledger()
+        if ledger is None:
             return
-        _baseline, previous = active
         snapshot = self._snapshot(f"cargo {subcommand} {crate}")
         if snapshot is None:
             return
-        record = SccacheCrateRecord(
-            crate=crate,
-            subcommand=subcommand,
-            seconds=seconds,
-            counters=snapshot.counters - previous.counters,
+        record = ledger.attribute(
+            snapshot, crate=crate, subcommand=subcommand, seconds=seconds
         )
-        self._records.append(record)
-        self._previous = snapshot
         LOGGER.info(format_crate_summary(record))
 
     def finish(self) -> None:
@@ -204,45 +277,33 @@ class SccacheSession:
         Never raises: failures log a WARNING and leave the publish outcome
         untouched.
         """
-        active = self._active_snapshots()
-        if active is None:
+        ledger = self._active_ledger()
+        if ledger is None:
             return
-        baseline, previous = active
-        delta = previous.counters - baseline.counters
         LOGGER.info(
-            "Compiler cache over the publish pipeline: %s", format_counters(delta)
+            "Compiler cache over the publish pipeline: %s",
+            format_counters(ledger.delta),
         )
         self._mirror_text_statistics()
         if self.json_path is not None:
-            self._write_report(self.json_path, baseline, previous, delta)
+            self._write_report(self.json_path, ledger.report(self.wrapper))
 
     def _mirror_text_statistics(self) -> None:
         """Log the human-readable statistics, labelled as server-cumulative."""
         try:
             text = query_text(self.wrapper, runner=self.runner, cwd=self.cwd)
         except SccacheStatsError as exc:
+            metrics.increment_counter(QUERY_METRIC, outcome="failure")
             LOGGER.warning("Compiler cache statistics text unavailable: %s", exc)
             return
+        metrics.increment_counter(QUERY_METRIC, outcome="success")
         LOGGER.info(
             "sccache statistics (cumulative for the server's lifetime):\n%s",
             text.rstrip(),
         )
 
-    def _write_report(
-        self,
-        json_path: Path,
-        baseline: SccacheSnapshot,
-        final: SccacheSnapshot,
-        delta: SccacheCounters,
-    ) -> None:
-        """Write the JSON report to ``json_path``, warning on failure."""
-        report = {
-            "wrapper": str(self.wrapper),
-            "baseline": baseline.raw,
-            "final": final.raw,
-            "crates": [record.as_dict() for record in self._records],
-            "delta": delta.as_dict(),
-        }
+    def _write_report(self, json_path: Path, report: dict[str, object]) -> None:
+        """Write ``report`` to ``json_path`` atomically, warning on failure."""
         try:
             _write_atomically(json_path, json.dumps(report, sort_keys=True))
         except OSError as exc:
@@ -289,10 +350,12 @@ def create_session(
     Returns
     -------
     SccacheSession | None
-        :data:`None` when instrumentation is off, or when it is on but no
-        sccache wrapper is configured (a WARNING is logged in that case).
+        :data:`None` when neither ``sccache_stats`` nor ``sccache_stats_json``
+        is set, or when instrumentation is requested but no sccache wrapper
+        is configured (a WARNING is logged in that case).
     """
-    if not options.sccache_stats:
+    # A report path implies the measurement, for CLI and library callers alike.
+    if not (options.sccache_stats or options.sccache_stats_json is not None):
         return None
     wrapper = detect_wrapper(os.environ if env is None else env)
     if wrapper is None:
@@ -312,6 +375,7 @@ def create_session(
 
 __all__ = [
     "QUERY_METRIC",
+    "SccacheLedger",
     "SccacheSession",
     "create_session",
     "format_counters",

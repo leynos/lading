@@ -673,15 +673,22 @@ def then_sccache_report_lists_every_invocation(
         for label, _args, _env in preflight_recorder.records
         if label in _CARGO_BUILD_LABELS
     )
-    assert set(report) == {"wrapper", "baseline", "final", "crates", "delta"}
-    assert report["wrapper"] == "sccache"
-    assert len(report["crates"]) == cargo_count
+    assert set(report) == {"wrapper", "baseline", "final", "crates", "delta"}, (
+        f"report schema drifted: {sorted(report)}"
+    )
+    assert report["wrapper"] == "sccache", f"wrapper recorded as {report['wrapper']!r}"
+    assert len(report["crates"]) == cargo_count, (
+        f"expected one record per cargo invocation ({cargo_count}), "
+        f"got {len(report['crates'])}"
+    )
     assert {record["subcommand"] for record in report["crates"]} == {
         "package",
         "publish",
-    }
+    }, "records should cover both the package and the publish phase"
     assert all(
         record["requests"] == 10 and record["hits"] == 8 and record["misses"] == 2
         for record in report["crates"]
-    ), report["crates"]
-    assert report["delta"]["requests"] == 10 * cargo_count
+    ), f"each record should carry the stub's per-query delta: {report['crates']}"
+    assert report["delta"]["requests"] == 10 * cargo_count, (
+        f"pipeline delta should sum the per-invocation deltas: {report['delta']}"
+    )

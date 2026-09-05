@@ -541,27 +541,6 @@ def test_publish_cli_passes_unpublished_workspace_deps_flag(
 
 
 @pytest.mark.parametrize(
-    ("sccache_stats", "sccache_stats_json", "expected"),
-    [
-        pytest.param(False, None, False, id="neither"),
-        pytest.param(True, None, True, id="flag-only"),
-        pytest.param(False, Path("stats.json"), True, id="json-implies-flag"),
-        pytest.param(True, Path("stats.json"), True, id="both"),
-    ],
-)
-def test_resolve_sccache_stats(
-    *, sccache_stats: bool, sccache_stats_json: Path | None, expected: bool
-) -> None:
-    """Asking for the JSON report implies asking for the measurement."""
-    assert (
-        cli._resolve_sccache_stats(
-            sccache_stats=sccache_stats, sccache_stats_json=sccache_stats_json
-        )
-        is expected
-    )
-
-
-@pytest.mark.parametrize(
     ("extra_args", "env", "expected_stats", "expected_json"),
     [
         pytest.param((), {}, False, None, id="default-off"),
@@ -569,15 +548,15 @@ def test_resolve_sccache_stats(
         pytest.param(
             ("--sccache-stats-json", "out/stats.json"),
             {},
-            True,
+            False,
             Path("out/stats.json"),
-            id="json-flag-implies-stats",
+            id="json-flag-forwarded-raw",
         ),
         pytest.param((), {"LADING_SCCACHE_STATS": "1"}, True, None, id="env-flag"),
         pytest.param(
             (),
             {"LADING_SCCACHE_STATS_JSON": "out/stats.json"},
-            True,
+            False,
             Path("out/stats.json"),
             id="env-json",
         ),
@@ -599,7 +578,12 @@ def test_publish_cli_passes_sccache_flags(
     expected_stats: bool,
     expected_json: Path | None,
 ) -> None:
-    """The sccache flags and their environment defaults reach PublishOptions."""
+    """The sccache flags and their environment defaults reach PublishOptions.
+
+    The flags are forwarded unresolved: a report path implying the
+    measurement is the publish command's decision (``create_session``), so
+    library callers and the CLI behave alike.
+    """
     for name in ("LADING_SCCACHE_STATS", "LADING_SCCACHE_STATS_JSON"):
         monkeypatch.delenv(name, raising=False)
     for name, value in env.items():
@@ -624,10 +608,14 @@ def test_publish_cli_passes_sccache_flags(
 
     exit_code = cli.main(["--workspace-root", str(tmp_path), "publish", *extra_args])
 
-    assert exit_code == 0
+    assert exit_code == 0, "publish should succeed with the stubbed run"
     options = captured_options["options"]
-    assert options.sccache_stats is expected_stats
-    assert options.sccache_stats_json == expected_json
+    assert options.sccache_stats is expected_stats, (
+        f"--sccache-stats forwarded as {options.sccache_stats!r}"
+    )
+    assert options.sccache_stats_json == expected_json, (
+        f"--sccache-stats-json forwarded as {options.sccache_stats_json!r}"
+    )
 
 
 @pytest.mark.parametrize(

@@ -665,6 +665,17 @@ def _dispatch_publication(
             sccache.finish()
 
 
+def _execution_options(options: PublishOptions) -> _PublishExecutionOptions:
+    """Narrow the public options to the flags the cargo invocations need."""
+    return _PublishExecutionOptions(
+        live=options.live,
+        allow_dirty=options.allow_dirty,
+        allow_unpublished_workspace_deps=options.allow_unpublished_workspace_deps,
+        sccache_stats=options.sccache_stats,
+        sccache_stats_json=options.sccache_stats_json,
+    )
+
+
 def run(
     workspace_root: Path,
     configuration: LadingConfig | None = None,
@@ -742,19 +753,10 @@ def run(
         plan,
         active_configuration.publish.strip_patches,
     )
-    execution_options = _PublishExecutionOptions(
-        live=effective_options.live,
-        allow_dirty=effective_options.allow_dirty,
-        allow_unpublished_workspace_deps=(
-            effective_options.allow_unpublished_workspace_deps
-        ),
-        sccache_stats=effective_options.sccache_stats,
-        sccache_stats_json=effective_options.sccache_stats_json,
-    )
     _dispatch_publication(
         plan,
         preparation,
-        options=execution_options,
+        options=_execution_options(effective_options),
         runner=command_runner,
     )
     plan_message = format_plan(

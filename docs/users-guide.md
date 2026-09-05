@@ -230,8 +230,8 @@ the workspace build, so whether those builds hit an
 whether the workspace build did. Pass `--sccache-stats` to have
 `lading publish` query the sccache binary named by `RUSTC_WRAPPER` for a
 baseline before the first cargo build and again after every `cargo package` and
-`cargo publish` invocation, and log one line per crate with the counters
-attributable to that invocation:
+`cargo publish` invocation, and log one line per invocation with the counters
+attributable to it:
 
 ```bash
 RUSTC_WRAPPER=/path/to/sccache lading publish --sccache-stats
@@ -525,7 +525,8 @@ the duration of the command.
 
 `lading publish --sccache-stats` queries the sccache binary named by
 `RUSTC_WRAPPER` around every cargo build and logs one compiler-cache summary
-line per crate; `--sccache-stats-json PATH` also writes a JSON report and
+line per `cargo package` or `cargo publish` invocation (two per crate in a dry
+run); `--sccache-stats-json PATH` also writes a JSON report and
 implies `--sccache-stats`. The environment variables `LADING_SCCACHE_STATS` and
 `LADING_SCCACHE_STATS_JSON` supply defaults for the two flags. See
 [Measuring compiler-cache use during the packaged builds](#measuring-compiler-cache-use-during-the-packaged-builds).

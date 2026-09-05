@@ -45,6 +45,11 @@ def _payload(version: str) -> dict[str, object]:
             id="windows-exe",
         ),
         pytest.param(
+            {"RUSTC_WRAPPER": r"C:\tools\SCCACHE.EXE"},
+            Path(r"C:\tools\SCCACHE.EXE"),
+            id="windows-upper-case",
+        ),
+        pytest.param(
             {"RUSTC_WRAPPER": "  /opt/ci-tools/sccache  "},
             Path("/opt/ci-tools/sccache"),
             id="surrounding-whitespace",
@@ -72,6 +77,11 @@ def test_detect_wrapper(env: dict[str, str], expected: Path | None) -> None:
             "0.14",
             stats.SccacheCounters(requests=11128, hits=6738, misses=1233, errors=10),
             id="sccache-0.14",
+        ),
+        pytest.param(
+            "0.17",
+            stats.SccacheCounters(requests=2044, hits=1690, misses=27, errors=1),
+            id="sccache-0.17",
         ),
     ],
 )
@@ -221,20 +231,24 @@ def test_query_snapshot_wraps_spawn_failures(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    ("stdout", "expected_fragment"),
+    ("stdout", "reason", "expected_fragment"),
     [
-        pytest.param("not json", "invalid JSON output", id="invalid-json"),
-        pytest.param("[1, 2]", "non-object JSON payload", id="non-object"),
+        pytest.param("not json", "invalid-json", "invalid JSON output", id="invalid"),
+        pytest.param("[1, 2]", "non-object", "non-object JSON payload", id="array"),
     ],
 )
 def test_query_snapshot_rejects_unparseable_output(
-    tmp_path: Path, stdout: str, expected_fragment: str
+    tmp_path: Path, stdout: str, reason: str, expected_fragment: str
 ) -> None:
-    """Output that is not a JSON object is a parse error, not a crash."""
+    """Output that is not a JSON object is a structured parse error."""
     runner = _RecordingRunner(stdout=stdout)
 
-    with pytest.raises(stats.SccacheStatsParseError, match=expected_fragment):
+    with pytest.raises(stats.SccacheStatsParseError, match=expected_fragment) as info:
         stats.query_snapshot(Path("sccache"), runner=runner, cwd=tmp_path)
+
+    assert (info.value.wrapper, info.value.reason) == (Path("sccache"), reason), (
+        "the parse error must carry the wrapper and a machine-readable reason"
+    )
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX stub script")

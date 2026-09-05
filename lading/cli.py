@@ -167,22 +167,6 @@ def _resolve_allow_unpublished_workspace_deps(
     return resolved_value
 
 
-def _resolve_sccache_stats(
-    *, sccache_stats: bool, sccache_stats_json: Path | None
-) -> bool:
-    """Return whether compiler-cache statistics are enabled.
-
-    ``--sccache-stats-json`` implies ``--sccache-stats``: asking for the report
-    is asking for the measurement.
-
-    Returns
-    -------
-    bool
-        ``True`` when either flag was given.
-    """
-    return sccache_stats or sccache_stats_json is not None
-
-
 def _extract_workspace_override(
     tokens: cabc.Sequence[str],
 ) -> tuple[str | None, list[str]]:
@@ -451,11 +435,11 @@ def publish(  # ruff: ignore[too-many-arguments] - one parameter per CLI flag # 
         Tri-state override for unpublished sibling workspace dependencies;
         resolved against the publish mode when omitted.
     sccache_stats : bool
-        When ``True``, query sccache around the cargo builds and log one
-        compiler-cache summary line per crate (issue #252).
+        Query sccache around the cargo builds and log one compiler-cache
+        summary line per ``cargo package`` or ``cargo publish`` invocation
+        (issue #252).
     sccache_stats_json : Path | None
-        Optional JSON report path for those statistics; implies
-        ``sccache_stats``.
+        JSON report path for those statistics; implies ``sccache_stats``.
 
     Returns
     -------
@@ -493,10 +477,9 @@ def publish(  # ruff: ignore[too-many-arguments] - one parameter per CLI flag # 
                         ),
                     )
                 ),
-                sccache_stats=_resolve_sccache_stats(
-                    sccache_stats=sccache_stats,
-                    sccache_stats_json=sccache_stats_json,
-                ),
+                # A report path implies the measurement; the publish command
+                # resolves that, so library callers get the same behaviour.
+                sccache_stats=sccache_stats,
                 sccache_stats_json=sccache_stats_json,
                 command_runner=command_runner,
             ),

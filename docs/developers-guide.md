@@ -754,13 +754,16 @@ compiler-cache instrumentation (issue #252). The `_stats` module is the adapter:
 `query_snapshot()` and `query_text()` run its `--show-stats` forms through the
 `CommandRunner` port with `echo_stdout=False`, and `parse_counters()` reduces
 the JSON payload to `SccacheCounters` (requests, hits, misses, errors).
-`publish_sccache.py` owns `SccacheSession`, which `_dispatch_publication`
-creates via `create_session()` after pre-flight, `begin()`s before the first
-cargo build, `record()`s after every per-crate cargo invocation (differencing
-against the previous snapshot and logging one line), and `finish()`es with a
-pipeline delta, the human-readable mirror, and the optional atomically written
-JSON report. Every failure in the session is a WARNING that disables further
-queries; the session never raises into the pipeline.
+`publish_sccache.py` owns `SccacheLedger`, the pure reducer (baseline, previous
+snapshot, records, `attribute()`, `delta`, `report()`), and `SccacheSession`,
+which sequences the side effects around it: `_dispatch_publication` creates the
+session via `create_session()` after pre-flight (a report path alone opts in),
+`begin()`s before the first cargo build, `record()`s after every per-crate
+cargo invocation (one snapshot, one ledger entry, one log line), and
+`finish()`es in a `finally` with the pipeline delta, the human-readable mirror,
+and the optional atomically written JSON report. Every failure in the session
+is a WARNING that disables further queries; the session never raises into the
+pipeline.
 
 ### `_PublishExecutionOptions`
 

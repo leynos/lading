@@ -53,7 +53,22 @@ class SccacheQueryError(SccacheStatsError):
 
 
 class SccacheStatsParseError(SccacheStatsError):
-    """Raised when sccache's JSON statistics cannot be parsed."""
+    """Raised when sccache's JSON statistics cannot be parsed.
+
+    ``reason`` is machine-readable: ``"invalid-json"`` when the output is not
+    JSON at all, ``"non-object"`` when it parses to something other than an
+    object.
+    """
+
+    def __init__(self, wrapper: Path, reason: str) -> None:
+        """Capture the queried wrapper and the parse failure kind."""
+        self.wrapper = wrapper
+        self.reason = reason
+        detail = {
+            "invalid-json": "produced invalid JSON output",
+            "non-object": "returned a non-object JSON payload",
+        }.get(reason, reason)
+        super().__init__(f"{wrapper} --show-stats {detail}")
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -132,8 +147,10 @@ def detect_wrapper(env: cabc.Mapping[str, str]) -> Path | None:
     value = env.get(RUSTC_WRAPPER_ENV_VAR, "").strip()
     if not value:
         return None
-    # Split on both separators so a Windows path is recognized on any host.
-    basename = value.replace("\\", "/").rsplit("/", 1)[-1]
+    # Split on both separators so a Windows path is recognized on any host,
+    # and case-fold so ``SCCACHE.EXE`` qualifies; the original path is kept
+    # for execution.
+    basename = value.replace("\\", "/").rsplit("/", 1)[-1].casefold()
     if not basename.startswith(_WRAPPER_BASENAME_PREFIX):
         return None
     return Path(value)
@@ -160,7 +177,8 @@ def parse_counters(payload: cabc.Mapping[str, object]) -> SccacheCounters:
 
     The keys read (``compile_requests``, ``cache_hits``, ``cache_misses``,
     ``cache_errors``, ``cache_read_errors``, ``cache_write_errors``, and
-    ``cache_timeouts`` under ``stats``) are present in sccache 0.12 and 0.14.
+    ``cache_timeouts`` under ``stats``) are present in sccache 0.12, 0.14,
+    and 0.17.
     Missing or malformed keys count as zero rather than failing the run.
 
     Parameters
@@ -249,11 +267,9 @@ def query_snapshot(
     try:
         payload = json.loads(stdout)
     except json.JSONDecodeError as exc:
-        message = f"{wrapper} --show-stats produced invalid JSON output"
-        raise SccacheStatsParseError(message) from exc
+        raise SccacheStatsParseError(wrapper, "invalid-json") from exc
     if not isinstance(payload, dict):
-        message = f"{wrapper} --show-stats returned a non-object JSON payload"
-        raise SccacheStatsParseError(message)
+        raise SccacheStatsParseError(wrapper, "non-object")
     return SccacheSnapshot(raw=payload, counters=parse_counters(payload))
 
 

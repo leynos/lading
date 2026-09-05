@@ -25,6 +25,7 @@ _WRAPPER = Path("/opt/ci-tools/sccache")
 _JSON_QUERY = (str(_WRAPPER), "--show-stats", "--stats-format=json")
 _TEXT_QUERY = (str(_WRAPPER), "--show-stats")
 _TEXT_OUTPUT = "Compile requests   9\nCache location    ghac\n"
+_PIPELINE_LOGGER = "lading.commands.publish_sccache"
 
 
 def _payload(requests: int, hits: int, misses: int, errors: int = 0) -> str:
@@ -94,23 +95,30 @@ def _session(
     )
 
 
-def test_session_attributes_deltas_per_invocation_and_reports(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
-) -> None:
-    """Each record differences against the previous snapshot; finish reports."""
-    caplog.set_level(logging.INFO, logger="lading.commands.publish_sccache")
+def _run_two_invocation_session(
+    tmp_path: Path, report: Path | None
+) -> publish_sccache.SccacheSession:
+    """Run baseline, one package, one publish, and finish against a script."""
     runner = _ScriptedRunner([
         _payload(100, 90, 10),
         _payload(140, 128, 12),
         _payload(150, 130, 20, errors=1),
     ])
-    report = tmp_path / "reports" / "sccache.json"
     session = _session(runner, tmp_path, json_path=report)
-
     session.begin()
     session.record("alpha", "package", 84.25)
     session.record("alpha", "publish", 61.9)
     session.finish()
+    return session
+
+
+def test_session_attributes_deltas_per_invocation(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Each record differences against the previous snapshot and logs a line."""
+    caplog.set_level(logging.INFO, logger=_PIPELINE_LOGGER)
+
+    session = _run_two_invocation_session(tmp_path, tmp_path / "sccache.json")
 
     assert session.records == (
         publish_sccache.SccacheCrateRecord(
@@ -138,8 +146,19 @@ def test_session_attributes_deltas_per_invocation_and_reports(
             "sccache statistics (cumulative for the server's lifetime):\n"
             "Compile requests   9\nCache location    ghac"
         ),
-        f"Compiler cache report written to {report}",
+        f"Compiler cache report written to {tmp_path / 'sccache.json'}",
     ]
+    # Three JSON snapshots plus the human-readable mirror.
+    assert metrics.counter_value(publish_sccache.QUERY_METRIC, outcome="success") == 4
+    assert metrics.counter_value(publish_sccache.QUERY_METRIC, outcome="failure") == 0
+
+
+def test_session_writes_report_atomically(tmp_path: Path) -> None:
+    """The report carries raw payloads, per-invocation records, and the delta."""
+    report = tmp_path / "reports" / "sccache.json"
+
+    _run_two_invocation_session(tmp_path, report)
+
     written = json.loads(report.read_text(encoding="utf-8"))
     assert written["wrapper"] == str(_WRAPPER)
     assert written["baseline"]["stats"]["compile_requests"] == 100
@@ -168,15 +187,56 @@ def test_session_attributes_deltas_per_invocation_and_reports(
     assert [path.name for path in report.parent.iterdir()] == [report.name], (
         "the atomic write must leave no temporary file behind"
     )
-    assert metrics.counter_value(publish_sccache.QUERY_METRIC, outcome="success") == 3
-    assert metrics.counter_value(publish_sccache.QUERY_METRIC, outcome="failure") == 0
+
+
+def test_report_replaces_an_existing_file_atomically(tmp_path: Path) -> None:
+    """A second run replaces the previous report and leaves no temporary file."""
+    report = tmp_path / "sccache.json"
+    report.write_text('{"stale": true}', encoding="utf-8")
+
+    _run_two_invocation_session(tmp_path, report)
+
+    written = json.loads(report.read_text(encoding="utf-8"))
+    assert "stale" not in written, "the previous report must be replaced"
+    assert written["delta"]["requests"] == 50
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["sccache.json"], (
+        "no temporary file may survive a successful replacement"
+    )
+
+
+def test_report_replacement_failure_keeps_the_existing_file(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When the rename fails the old report is untouched and the temp removed."""
+    caplog.set_level(logging.WARNING, logger=_PIPELINE_LOGGER)
+    report = tmp_path / "sccache.json"
+    report.write_text('{"previous": true}', encoding="utf-8")
+
+    def _refuse_replace(self: Path, target: Path) -> Path:
+        message = f"refusing to replace {target}"
+        raise PermissionError(message)
+
+    monkeypatch.setattr(Path, "replace", _refuse_replace)
+
+    _run_two_invocation_session(tmp_path, report)
+
+    assert json.loads(report.read_text(encoding="utf-8")) == {"previous": True}, (
+        "a failed replacement must leave the existing report intact"
+    )
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["sccache.json"], (
+        "the temporary file must be removed after a failed replacement"
+    )
+    assert len(caplog.messages) == 1
+    assert caplog.messages[0].startswith(
+        f"Could not write compiler cache report to {report}: "
+    )
 
 
 def test_failed_baseline_disables_session_without_raising(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     """A wrapper that cannot answer at baseline switches the session off."""
-    caplog.set_level(logging.WARNING, logger="lading.commands.publish_sccache")
+    caplog.set_level(logging.WARNING, logger=_PIPELINE_LOGGER)
     runner = _ScriptedRunner([_payload(1, 1, 0)], failing_query_index=0)
     session = _session(runner, tmp_path, json_path=tmp_path / "report.json")
 
@@ -201,7 +261,7 @@ def test_failed_query_mid_run_disables_further_queries(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     """A failure after some records keeps those records and stops querying."""
-    caplog.set_level(logging.WARNING, logger="lading.commands.publish_sccache")
+    caplog.set_level(logging.WARNING, logger=_PIPELINE_LOGGER)
     runner = _ScriptedRunner(
         [_payload(10, 5, 5), _payload(20, 15, 5)], failing_query_index=2
     )
@@ -223,7 +283,7 @@ def test_text_query_failure_still_writes_report(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     """The human-readable mirror is best-effort; the JSON report still lands."""
-    caplog.set_level(logging.WARNING, logger="lading.commands.publish_sccache")
+    caplog.set_level(logging.WARNING, logger=_PIPELINE_LOGGER)
     runner = _ScriptedRunner([_payload(1, 1, 0)], text_exit_code=1)
     report = tmp_path / "report.json"
     session = _session(runner, tmp_path, json_path=report)
@@ -239,13 +299,15 @@ def test_text_query_failure_still_writes_report(
             "Cache location    ghac"
         )
     ]
+    assert metrics.counter_value(publish_sccache.QUERY_METRIC, outcome="failure") == 1
+    assert metrics.counter_value(publish_sccache.QUERY_METRIC, outcome="success") == 1
 
 
 def test_unwritable_report_path_warns(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     """A report path under a file cannot be created; that is a WARNING only."""
-    caplog.set_level(logging.WARNING, logger="lading.commands.publish_sccache")
+    caplog.set_level(logging.WARNING, logger=_PIPELINE_LOGGER)
     blocker = tmp_path / "blocker"
     blocker.write_text("not a directory", encoding="utf-8")
     runner = _ScriptedRunner([_payload(1, 1, 0)])
@@ -260,9 +322,29 @@ def test_unwritable_report_path_warns(
     )
 
 
-def test_create_session_is_none_when_not_requested(tmp_path: Path) -> None:
-    """Instrumentation is opt-in."""
-    options = publish._PublishExecutionOptions(live=False, allow_dirty=True)
+@pytest.mark.parametrize(
+    ("sccache_stats", "sccache_stats_json", "expects_session"),
+    [
+        pytest.param(False, None, False, id="neither"),
+        pytest.param(True, None, True, id="flag-only"),
+        pytest.param(False, Path("stats.json"), True, id="json-implies-flag"),
+        pytest.param(True, Path("stats.json"), True, id="both"),
+    ],
+)
+def test_create_session_treats_a_report_path_as_opting_in(
+    tmp_path: Path,
+    *,
+    sccache_stats: bool,
+    sccache_stats_json: Path | None,
+    expects_session: bool,
+) -> None:
+    """A report path implies the measurement for library and CLI callers alike."""
+    options = publish._PublishExecutionOptions(
+        live=False,
+        allow_dirty=True,
+        sccache_stats=sccache_stats,
+        sccache_stats_json=sccache_stats_json,
+    )
 
     session = publish_sccache.create_session(
         options,
@@ -271,14 +353,16 @@ def test_create_session_is_none_when_not_requested(tmp_path: Path) -> None:
         env={"RUSTC_WRAPPER": str(_WRAPPER)},
     )
 
-    assert session is None
+    assert (session is not None) is expects_session
+    if session is not None:
+        assert session.json_path == sccache_stats_json
 
 
 def test_create_session_warns_without_wrapper(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Requesting statistics without an sccache wrapper skips with a WARNING."""
-    caplog.set_level(logging.WARNING, logger="lading.commands.publish_sccache")
+    caplog.set_level(logging.WARNING, logger=_PIPELINE_LOGGER)
     options = publish._PublishExecutionOptions(
         live=False, allow_dirty=True, sccache_stats=True
     )
@@ -319,67 +403,51 @@ def test_create_session_binds_wrapper_root_and_report(tmp_path: Path) -> None:
     )
 
 
+# --- pipeline integration -------------------------------------------------
+
+
 def _cargo_calls(calls: list[tuple[str, ...]]) -> list[tuple[str, ...]]:
     return [call for call in calls if call[0] == "cargo"]
 
 
-@pytest.mark.parametrize(
-    ("live", "expected_sequence"),
-    [
-        pytest.param(
-            False,
-            [
-                "sccache:json",
-                "cargo:package",
-                "sccache:json",
-                "cargo:package",
-                "sccache:json",
-                "cargo:package",
-                "sccache:json",
-                "cargo:publish",
-                "sccache:json",
-                "cargo:publish",
-                "sccache:json",
-                "cargo:publish",
-                "sccache:json",
-                "sccache:text",
-            ],
-            id="dry-run",
-        ),
-        pytest.param(
-            True,
-            [
-                "sccache:json",
-                "cargo:package",
-                "sccache:json",
-                "cargo:publish",
-                "sccache:json",
-                "cargo:package",
-                "sccache:json",
-                "cargo:publish",
-                "sccache:json",
-                "cargo:package",
-                "sccache:json",
-                "cargo:publish",
-                "sccache:json",
-                "sccache:text",
-            ],
-            id="live",
-        ),
-    ],
-)
-def test_dispatch_brackets_every_cargo_invocation_with_a_query(
+def _label(call: tuple[str, ...]) -> str:
+    """Name a recorded call as ``sccache:json``, ``sccache:text``, or cargo."""
+    if call == _JSON_QUERY:
+        return "sccache:json"
+    if call == _TEXT_QUERY:
+        return "sccache:text"
+    return f"{call[0]}:{call[1]}"
+
+
+def _expected_sequence(*, live: bool, crate_count: int) -> list[str]:
+    """Return the query/cargo call order the dispatch layer must produce."""
+    if live:
+        per_crate = ["cargo:package", "sccache:json", "cargo:publish", "sccache:json"]
+        builds = per_crate * crate_count
+    else:
+        builds = ["cargo:package", "sccache:json"] * crate_count + [
+            "cargo:publish",
+            "sccache:json",
+        ] * crate_count
+    return ["sccache:json", *builds, "sccache:text"]
+
+
+@dc.dataclass(frozen=True, slots=True)
+class _DispatchRun:
+    """Outcome of one instrumented ``_dispatch_publication`` call."""
+
+    plan: publish.PublishPlan
+    runner: _ScriptedRunner
+    report: Path
+
+
+def _run_instrumented_dispatch(
     publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
-    monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
-    caplog: pytest.LogCaptureFixture,
     *,
     live: bool,
-    expected_sequence: list[str],
-) -> None:
-    """The baseline precedes the first build; a query follows each invocation."""
-    caplog.set_level(logging.INFO, logger="lading.commands.publish_sccache")
-    monkeypatch.setenv("RUSTC_WRAPPER", str(_WRAPPER))
+) -> _DispatchRun:
+    """Dispatch the pipeline with statistics on and a wrapper configured."""
     plan, preparation, _staging_root = publish_plan_and_prep
     payloads = [_payload(10 * step, 8 * step, 2 * step) for step in range(1, 9)]
     runner = _ScriptedRunner(payloads)
@@ -387,35 +455,61 @@ def test_dispatch_brackets_every_cargo_invocation_with_a_query(
     options = publish._PublishExecutionOptions(
         live=live, allow_dirty=True, sccache_stats=True, sccache_stats_json=report
     )
-
     publish._dispatch_publication(plan, preparation, options=options, runner=runner)
+    return _DispatchRun(plan=plan, runner=runner, report=report)
 
-    def _label(call: tuple[str, ...]) -> str:
-        if call == _JSON_QUERY:
-            return "sccache:json"
-        if call == _TEXT_QUERY:
-            return "sccache:text"
-        return f"{call[0]}:{call[1]}"
 
-    assert [_label(call) for call in runner.calls] == expected_sequence
+@pytest.mark.parametrize("live", [False, True], ids=["dry-run", "live"])
+def test_dispatch_brackets_every_cargo_invocation_with_a_query(
+    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *,
+    live: bool,
+) -> None:
+    """The baseline precedes the first build; a query follows each invocation."""
+    monkeypatch.setenv("RUSTC_WRAPPER", str(_WRAPPER))
+
+    run = _run_instrumented_dispatch(publish_plan_and_prep, tmp_path, live=live)
+
+    assert [_label(call) for call in run.runner.calls] == _expected_sequence(
+        live=live, crate_count=len(run.plan.publishable)
+    )
+
+
+@pytest.mark.parametrize("live", [False, True], ids=["dry-run", "live"])
+def test_dispatch_logs_one_summary_per_invocation_and_writes_report(
+    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    *,
+    live: bool,
+) -> None:
+    """Every cargo invocation gets a summary line and a record in the report."""
+    caplog.set_level(logging.INFO, logger=_PIPELINE_LOGGER)
+    monkeypatch.setenv("RUSTC_WRAPPER", str(_WRAPPER))
+
+    run = _run_instrumented_dispatch(publish_plan_and_prep, tmp_path, live=live)
+
+    cargo_calls = _cargo_calls(run.runner.calls)
     summary_lines = [
         message
         for message in caplog.messages
         if message.startswith("Compiler cache for")
     ]
-    assert summary_lines == [
-        f"Compiler cache for cargo {call[1]} {crate.name}: 0.0s, "
-        "requests=10 hits=8 misses=2 errors=0"
-        for call, crate in zip(
-            _cargo_calls(runner.calls),
-            [crate for crate in plan.publishable for _ in range(2)]
-            if live
-            else list(plan.publishable) * 2,
-            strict=True,
-        )
+    written = json.loads(run.report.read_text(encoding="utf-8"))
+    assert len(summary_lines) == len(cargo_calls) == 2 * len(run.plan.publishable)
+    assert all(
+        line.endswith("0.0s, requests=10 hits=8 misses=2 errors=0")
+        for line in summary_lines
+    ), summary_lines
+    assert [
+        (record["subcommand"], record["crate"]) for record in written["crates"]
+    ] == [
+        (call[1], record["crate"])
+        for call, record in zip(cargo_calls, written["crates"], strict=True)
     ]
-    written = json.loads(report.read_text(encoding="utf-8"))
-    assert len(written["crates"]) == 2 * len(plan.publishable)
     assert written["delta"] == {"requests": 60, "hits": 48, "misses": 12, "errors": 0}
 
 
@@ -425,7 +519,7 @@ def test_dispatch_without_wrapper_warns_and_still_publishes(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """A missing wrapper never blocks the dry run."""
-    caplog.set_level(logging.WARNING, logger="lading.commands.publish_sccache")
+    caplog.set_level(logging.WARNING, logger=_PIPELINE_LOGGER)
     monkeypatch.delenv("RUSTC_WRAPPER", raising=False)
     plan, preparation, _staging_root = publish_plan_and_prep
     runner = _ScriptedRunner([])
@@ -456,10 +550,8 @@ def test_dispatch_reports_what_it_measured_when_a_crate_fails(
         command: cabc.Sequence[str], **kwargs: object
     ) -> tuple[int, str, str]:
         exit_code, stdout, stderr = original_call(command, **kwargs)
-        if (
-            tuple(command[:2]) == ("cargo", "package")
-            and len(_cargo_calls(runner.calls)) == 2
-        ):
+        is_package = tuple(command[:2]) == ("cargo", "package")
+        if is_package and len(_cargo_calls(runner.calls)) == 2:
             return 1, "", "error: verify build failed"
         return exit_code, stdout, stderr
 

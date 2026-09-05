@@ -24,8 +24,10 @@ class TestLadingCatalogue:
 
     def test_catalogue_registers_sccache(self) -> None:
         """The catalogue should include sccache for compiler-cache queries."""
-        assert LADING_CATALOGUE.is_allowed(SCCACHE)
-        assert LADING_CATALOGUE.lookup(SCCACHE).program == SCCACHE
+        assert LADING_CATALOGUE.is_allowed(SCCACHE), "sccache must be allowlisted"
+        assert LADING_CATALOGUE.lookup(SCCACHE).program == SCCACHE, (
+            "catalogue lookup should return the sccache programme entry"
+        )
 
     def test_catalogue_allowlist_contains_cargo_and_git(self) -> None:
         """The catalogue allowlist should contain both cargo and git."""
