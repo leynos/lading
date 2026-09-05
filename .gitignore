@@ -217,6 +217,7 @@ target/
 .claude/
 memories/
 .grepai/
+memories/
 *.swp
 *.swo
 *~
