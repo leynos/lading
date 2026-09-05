@@ -128,6 +128,31 @@ def test_copy_workspace_tree_replaces_existing_clone(tmp_path: Path) -> None:
     assert (staging_root / "marker.txt").read_text(encoding="utf-8") == "fresh"
 
 
+def test_copy_workspace_tree_wraps_staging_cleanup_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Staging-root cleanup failures use the staging error boundary."""
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    build_directory = tmp_path / "staging"
+    staging_root = build_directory / workspace_root.name
+    staging_root.mkdir(parents=True)
+    failure = OSError("permission denied")
+
+    def fail_rmtree(*_args: object, **_kwargs: object) -> None:
+        raise failure
+
+    monkeypatch.setattr(publish_staging.shutil, "rmtree", fail_rmtree)
+
+    with pytest.raises(publish_staging.PublishPreparationError) as excinfo:
+        publish_staging._copy_workspace_tree(
+            workspace_root, build_directory, preserve_symlinks=True
+        )
+
+    assert "Cannot copy workspace into staging directory" in str(excinfo.value)
+    assert excinfo.value.__cause__ is failure
+
+
 def test_copy_workspace_tree_rejects_nested_clone(tmp_path: Path) -> None:
     """Copying into a directory under the workspace is prohibited."""
     workspace_root = tmp_path / "workspace"

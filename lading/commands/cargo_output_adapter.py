@@ -197,7 +197,31 @@ def parse_index_lookup_failure(
 def parse_already_published_failure(
     result: CargoSubprocessResult,
 ) -> CargoAlreadyPublishedFailure | None:
-    """Return a typed Cargo registry failure for an existing crate version."""
+    """Classify a Cargo registry failure for an existing crate version.
+
+    Parameters
+    ----------
+    result : CargoSubprocessResult
+        Completed Cargo invocation to classify.
+
+    Returns
+    -------
+    CargoAlreadyPublishedFailure | None
+        A typed failure preserving the process output streams when Cargo exits
+        with the registry error code and either output stream contains an
+        already-published diagnostic marker; otherwise, :data:`None`.
+
+    Examples
+    --------
+    >>> result = CargoSubprocessResult(
+    ...     exit_code=101,
+    ...     stdout="registry output",
+    ...     stderr="error: crate already published",
+    ... )
+    >>> failure = parse_already_published_failure(result)
+    >>> failure.stdout, failure.stderr
+    ('registry output', 'error: crate already published')
+    """
     if result.exit_code != _CARGO_REGISTRY_ERROR_CODE:
         return None
 

@@ -93,9 +93,9 @@ def _copy_workspace_tree(
     if staging_root.resolve(strict=False).is_relative_to(workspace_root):
         message = "Publish staging directory cannot be nested inside the workspace root"
         raise PublishPreparationError(message)
-    if staging_root.exists():
-        shutil.rmtree(staging_root)
     try:
+        if staging_root.exists():
+            shutil.rmtree(staging_root)
         shutil.copytree(workspace_root, staging_root, symlinks=preserve_symlinks)
     except OSError as exc:
         message = f"Cannot copy workspace into staging directory: {staging_root}"

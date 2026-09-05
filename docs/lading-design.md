@@ -221,6 +221,8 @@ graph TD
     N --> O["Run pre-flight checks before publication dispatch"]
 ```
 
+_Figure 1: Publish data flow from planning and staging through Cargo execution._
+
 ### 2.3. Workspace Discovery and Model
 
 The tool's internal representation of the workspace is critical for its
@@ -512,10 +514,10 @@ names are listed before returning the user-specified order.
    `publish_staging.prepare_workspace` creates an isolated workspace copy.
    Within that staged workspace, determine the patch stripping strategy based
    on the `publish.strip_patches` configuration value and the execution mode
-   (`--dry-run` flag).
+   (`--live` versus the default dry-run mode).
 
-    - If strip_patches is "all" (or is unset and this is a dry run), remove the
-      entire [patch.crates-io] section from the Cargo.toml.
+    - If strip_patches is "all" (or is unset and this is the default dry-run
+      mode), remove the entire [patch.crates-io] section from the Cargo.toml.
 
 ### Lockfile inspection repository port (publish side)
 
@@ -579,6 +581,8 @@ sequenceDiagram
         publish.py-->>Caller: Success
     end
 ```
+
+_Figure 2: Publish pre-flight sequence from checks through crate publication._
 
 ### Publishing iteration
 
