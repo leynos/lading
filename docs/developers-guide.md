@@ -1017,6 +1017,20 @@ around command execution. `lading bump` uses the runtime runner directly for
 lockfile refreshes, while `lading publish` uses `_invoke` where failures should
 surface as `PublishPreflightError`.
 
+#### Timed per-crate cargo invocations
+
+`publish_execution._run_timed_cargo(invocation, *, runner, clock)` runs one
+`_CargoInvocation` (the command tuple, the staged crate root as `cwd`, and the
+`crate_name`) through the runner and returns a `_TimedCargoResult` with the
+exit code, captured `stdout` and `stderr`, and `elapsed_seconds`. The clock is
+injectable and defaults to `time.perf_counter`; the pipeline passes
+`_PublicationPipelineState.clock`, so tests inject a scripted clock and assert
+exact figures. The duration is recorded under `publish.cargo.duration` with
+`subcommand` and `crate` labels inside a `finally`, so a non-zero exit and a
+raising runner are timed like a success. `_package_crate` and `_publish_crate`
+log the crate's `n/total` position on the start line and repeat it with the
+elapsed seconds on the success line.
+
 #### Stream relay helpers
 
 `lading.runtime.stream_relay` is the internal boundary for mirroring decoded

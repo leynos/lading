@@ -122,22 +122,48 @@ def test_success_logs_elapsed_seconds_and_records_duration(
     ) == metrics.DurationStats(count=1, total_seconds=2.5)
 
 
+class _FailureCase(typ.NamedTuple):
+    action: publish._CrateAction
+    subcommand: str
+    error: type[Exception]
+
+
+_FAILURE_CASES = (
+    pytest.param(
+        _FailureCase(publish._package_crate, "package", publish.PublishPreflightError),
+        id="package",
+    ),
+    pytest.param(
+        _FailureCase(publish._publish_crate, "publish", publish.PublishError),
+        id="publish",
+    ),
+)
+
+
+@pytest.mark.parametrize("case", _FAILURE_CASES)
 def test_failed_invocation_still_records_duration(
     publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    case: _FailureCase,
 ) -> None:
-    """A failing cargo package is still attributed to its crate."""
+    """A failing cargo invocation is still attributed to its crate and phase."""
     state, alpha = _alpha_state(publish_plan_and_prep, live=False)
 
-    with pytest.raises(publish.PublishPreflightError):
-        publish._package_crate(alpha, state, runner=make_failing_runner(stderr="boom"))
+    with pytest.raises(case.error):
+        case.action(alpha, state, runner=make_failing_runner(stderr="boom"))
 
     assert metrics.duration_stats(
-        publish_execution.CARGO_DURATION_METRIC, subcommand="package", crate="alpha"
-    ) == metrics.DurationStats(count=1, total_seconds=2.5)
+        publish_execution.CARGO_DURATION_METRIC,
+        subcommand=case.subcommand,
+        crate="alpha",
+    ) == metrics.DurationStats(count=1, total_seconds=2.5), (
+        f"the failed cargo {case.subcommand} must record one 2.5 s observation"
+    )
 
 
+@pytest.mark.parametrize("case", _FAILURE_CASES)
 def test_raising_runner_still_records_duration(
     publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    case: _FailureCase,
 ) -> None:
     """A runner that raises (for example a spawn failure) is still timed."""
     state, alpha = _alpha_state(publish_plan_and_prep, live=False)
@@ -147,11 +173,62 @@ def test_raising_runner_still_records_duration(
         raise publish.PublishPreflightError(message)
 
     with pytest.raises(publish.PublishPreflightError):
-        publish._package_crate(alpha, state, runner=_raising_runner)
+        case.action(alpha, state, runner=_raising_runner)
 
     assert metrics.duration_stats(
-        publish_execution.CARGO_DURATION_METRIC, subcommand="package", crate="alpha"
-    ) == metrics.DurationStats(count=1, total_seconds=2.5)
+        publish_execution.CARGO_DURATION_METRIC,
+        subcommand=case.subcommand,
+        crate="alpha",
+    ) == metrics.DurationStats(count=1, total_seconds=2.5), (
+        f"the raising cargo {case.subcommand} must record one 2.5 s observation"
+    )
+
+
+@pytest.mark.parametrize(
+    ("live", "start_prefix", "success_prefix"),
+    [
+        pytest.param(
+            False,
+            "Running cargo publish --dry-run for crate",
+            "Dry-run publish succeeded for crate",
+            id="dry-run",
+        ),
+        pytest.param(
+            True,
+            "Running cargo publish for crate",
+            "Successfully published crate",
+            id="live",
+        ),
+    ],
+)
+def test_publish_progress_lines_carry_position_and_elapsed_time(
+    publish_plan_and_prep: tuple[publish.PublishPlan, publish.PublishPreparation, Path],
+    caplog: pytest.LogCaptureFixture,
+    *,
+    live: bool,
+    start_prefix: str,
+    success_prefix: str,
+) -> None:
+    """Every crate's publish start and success lines carry n/total and seconds."""
+    caplog.set_level(logging.INFO, logger="lading.commands.publish")
+    plan, preparation, _staging_root = publish_plan_and_prep
+    state = publish._PublicationPipelineState(
+        plan,
+        preparation,
+        publish._PublishExecutionOptions(live=live, allow_dirty=True),
+        clock=_fixed_clock(*(float(tick) for tick in range(0, 40, 5))),
+    )
+
+    publish._for_each_publishable_crate(
+        state, runner=CallTrackingRunner(), action=publish._publish_crate
+    )
+
+    total = len(plan.publishable)
+    expected: list[str] = []
+    for index, crate in enumerate(plan.publishable, start=1):
+        expected.append(f"{start_prefix} {crate.name} ({index}/{total})")
+        expected.append(f"{success_prefix} {crate.name} ({index}/{total}) in 5.0s")
+    assert caplog.messages == expected, "one start and one success line per crate"
 
 
 def test_each_crate_records_its_own_duration(

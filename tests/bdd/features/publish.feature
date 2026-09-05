@@ -42,3 +42,9 @@ Feature: lading publish --allow-unpublished-workspace-deps flag
     When I run "lading publish --allow-unpublished-workspace-deps"
     Then a PublishPreflightError should be raised
     And the error message should contain "appears after crate"
+
+  Scenario: Dry-run progress lines name each crate's position and elapsed time
+    Given a valid lading workspace
+    When I run "lading publish"
+    Then the publish progress lines report crates "alpha, beta, gamma" with their positions and elapsed times
+    And no PublishPreflightError should be raised

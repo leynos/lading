@@ -138,6 +138,11 @@ directly:
 Run each repair command, commit the updated lockfiles, then re-run
 `lading publish`.
 
+The `cargo metadata --locked` output that this probe reads is captured for
+those diagnostics but never mirrored to the console: it is the whole metadata
+document on one line, megabytes long for a large workspace, and echoing it
+broke CI log capture for everything that followed.
+
 To require a clean working tree before running the pre-flight checks, pass
 `--forbid-dirty`:
 
