@@ -46,8 +46,8 @@ the Pylint tier runs.
 
 The separate CPython stage lets the df12 plug-in analyse current syntax without
 changing the PyPy compatibility boundary of the existing Pylint pass. The
-package pin in `pyproject.toml` and the `DF12_PYTHON_LINTS_REF` tool pin must be
-updated together.
+package pin in `pyproject.toml` and the `DF12_PYTHON_LINTS_REF` tool pin must
+be updated together.
 
 Contributors can still use Ruff and targeted tests during inner-loop work, but
 changes are not ready until the full `make lint` target succeeds.
