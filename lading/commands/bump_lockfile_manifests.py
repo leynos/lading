@@ -17,10 +17,16 @@ merge_discovered_manifests(workspace_root, ("fixtures/example/Cargo.toml",))
 from __future__ import annotations
 
 import collections.abc as cabc
+import logging
 from pathlib import Path
 
-from lading.commands.lockfile import discover_tracked_lockfiles
+from lading.commands.lockfile import (
+    NotAGitRepositoryError,
+    discover_tracked_lockfiles,
+)
 from lading.runtime import CommandRunner, subprocess_runner
+
+LOGGER = logging.getLogger(__name__)
 
 
 def merge_discovered_manifests(
@@ -43,7 +49,8 @@ def merge_discovered_manifests(
         :func:`lading.runtime.subprocess_runner` when ``None``.
     emit_discovery_observability : bool, optional
         Whether successful Git discovery records its count and informational
-        log. Non-Git warnings and discovery errors are always retained.
+        log. It suppresses success telemetry only; the non-git warning below
+        and other discovery errors are always retained.
 
     Returns
     -------
@@ -53,8 +60,9 @@ def merge_discovered_manifests(
         ``Cargo.lock`` files (via
         :func:`lading.commands.lockfile.discover_tracked_lockfiles`) in
         sorted order, skipping any manifest already configured under an
-        equivalent spelling. In a non-git workspace the configured tuple is
-        returned unchanged.
+        equivalent spelling. In a non-git workspace discovery raises
+        :class:`lading.commands.lockfile.NotAGitRepositoryError`, which this
+        function catches to return the configured tuple unchanged (issue #79).
 
     Examples
     --------
@@ -66,11 +74,21 @@ def merge_discovered_manifests(
     ```
     """
     command_runner = subprocess_runner if runner is None else runner
-    discovered = discover_tracked_lockfiles(
-        workspace_root,
-        command_runner,
-        emit_observability=emit_discovery_observability,
-    )
+    try:
+        discovered = discover_tracked_lockfiles(
+            workspace_root,
+            command_runner,
+            emit_observability=emit_discovery_observability,
+        )
+    except NotAGitRepositoryError:
+        # Skip policy lives at the caller, not in discovery (issue #79): bump
+        # still works outside git control, so a non-git workspace contributes
+        # no discovered manifests and the configured tuple passes through.
+        LOGGER.warning(
+            "Skipping tracked-lockfile discovery: %s is not a git repository",
+            workspace_root,
+        )
+        return tuple(lockfile_manifests)
     seen_manifests = {
         (workspace_root / manifest).resolve() for manifest in lockfile_manifests
     }
