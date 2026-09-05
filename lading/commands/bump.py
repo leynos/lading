@@ -1,9 +1,11 @@
 """Coordinate the ``lading bump`` workflow.
+
 ``run()`` loads the workspace context and delegates manifest, documentation,
 README, and lockfile updates to :mod:`lading.commands.bump_pipeline`. Keeping
 the entry point here gives the CLI a stable command boundary while the pipeline
 module owns the ordered update sequence.
 """
+
 from __future__ import annotations
 
 import collections.abc as cabc
@@ -19,6 +21,7 @@ from lading.utils import normalize_workspace_root
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
+
     from lading.commands.bump_manifests import _BumpContext
     from lading.config import LadingConfig
     from lading.workspace import WorkspaceGraph

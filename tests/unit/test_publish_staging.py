@@ -243,6 +243,7 @@ def test_prepare_workspace_registers_cleanup(
     assert marker.read_text(encoding="utf-8") == "keep"
     assert not preparation.staging_root.exists()
 
+
 def test_prepare_workspace_cleanup_removes_auto_created_build_directory(
     monkeypatch: pytest.MonkeyPatch,
     prepare_workspace_fixtures: PrepareWorkspaceFixtures,

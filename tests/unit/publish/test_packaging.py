@@ -82,6 +82,7 @@ class _FailureCase(typ.NamedTuple):
     subcommand: str
     output_fragment: str
 
+
 class _PackagingFailureDetail(typ.NamedTuple):
     stdout: str
     stderr: str
@@ -279,6 +280,7 @@ def test_package_publishable_crates_stops_on_failure(
     assert calls == ["cargo package --allow-dirty"]
     assert "cargo package failed for crate alpha" in str(excinfo.value)
     assert "packaging failed" in str(excinfo.value)
+
 
 @pytest.mark.parametrize(
     "case",

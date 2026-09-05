@@ -110,6 +110,7 @@ class TestStaleLockfileMessages:
             ),
         ],
     )
+
     def test_message(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -160,4 +161,13 @@ class TestStaleLockfileMessages:
                 f"cargo generate-lockfile --manifest-path "
                 f"{lockfile_path.parent / 'Cargo.toml'}"
             ) in message
-        assert snapshot == message.replace(str(tmp_path), "<workspace>")
+        message = message.replace("\\", "/")
+        for position, lockfile_path in enumerate(lockfiles, start=1):
+            staged_manifest = lockfile_path.parent / "Cargo.toml"
+            message = message.replace(
+                str(lockfile_path).replace("\\", "/"), f"<lockfile {position}>"
+            )
+            message = message.replace(
+                str(staged_manifest).replace("\\", "/"), f"<manifest {position}>"
+            )
+        assert snapshot == message, "stale lockfile message should use stable paths"
