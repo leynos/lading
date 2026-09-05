@@ -13,6 +13,7 @@ class _RecordingLockfileRepository:
     """LockfileRepository double recording calls without touching Cargo."""
 
     def __init__(self) -> None:
+        """Start with empty call records for both port operations."""
         self.resolved: list[tuple[pathlib.Path, tuple[str, ...]]] = []
         self.regenerated: list[tuple[pathlib.Path, tuple[str, ...]]] = []
 
@@ -21,6 +22,7 @@ class _RecordingLockfileRepository:
         workspace_root: pathlib.Path,
         lockfile_manifests: cabc.Sequence[str],
     ) -> tuple[pathlib.Path, ...]:
+        """Record the resolution request and return a single lockfile path."""
         self.resolved.append((workspace_root, tuple(lockfile_manifests)))
         return (workspace_root / "Cargo.lock",)
 
@@ -29,6 +31,7 @@ class _RecordingLockfileRepository:
         workspace_root: pathlib.Path,
         lockfile_manifests: cabc.Sequence[str],
     ) -> tuple[pathlib.Path, ...]:
+        """Record the regeneration request and return a single lockfile path."""
         self.regenerated.append((workspace_root, tuple(lockfile_manifests)))
         return (workspace_root / "Cargo.lock",)
 

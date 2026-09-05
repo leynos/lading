@@ -277,6 +277,11 @@ ignore-decorators = ["typing.overload", "typ.overload"]
 ignore-one-line-docstrings = true
 [tool.interrogate]
 ignore-overloaded-functions = true
+# Nested defs and classes are test-scoped stubs, closures, and fixture
+# doubles whose documentation duty belongs to the enclosing definition;
+# document the enclosing test or helper instead of the closure body.
+ignore-nested-functions = true
+ignore-nested-classes = true
 [tool.pylint.main]
 # The shared rollout helper has its own pinned Ruff and coverage policy.
 ignore = [

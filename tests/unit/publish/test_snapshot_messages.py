@@ -55,6 +55,8 @@ _PIPELINE_INFO_MESSAGES = frozenset({
 
 
 class _IndexMissingCase(typ.NamedTuple):
+    """Cargo stderr text and whether unpublished workspace deps are allowed."""
+
     stderr: str
     allow_unpublished: bool
 

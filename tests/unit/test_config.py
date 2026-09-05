@@ -14,6 +14,7 @@ if typ.TYPE_CHECKING:
 
 
 def _write_config(tmp_path: Path, body: str) -> Path:
+    """Write a lading.toml with *body* into *tmp_path*."""
     config_path = tmp_path / config_module.CONFIG_FILENAME
     config_path.write_text(textwrap.dedent(body).lstrip())
     return config_path
