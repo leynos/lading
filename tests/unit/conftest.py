@@ -78,6 +78,8 @@ def enable_publish_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
         "_run_preflight_checks",
         _ORIGINAL_PREFLIGHT,
     )
+
+
 @pytest.fixture(autouse=True)
 def stub_lockfile_regeneration(
     request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
