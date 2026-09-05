@@ -270,7 +270,7 @@ class SccacheSession:
         record = ledger.attribute(
             snapshot, crate=crate, subcommand=subcommand, seconds=seconds
         )
-        LOGGER.info(format_crate_summary(record))
+        LOGGER.info("%s", format_crate_summary(record))
 
     def finish(self) -> None:
         """Log the pipeline delta, mirror ``--show-stats``, and write the report.

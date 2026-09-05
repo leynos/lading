@@ -99,7 +99,9 @@ def test_ledger_attributes_consecutive_differences(
     assert summed == ledger.delta, (
         "per-invocation deltas must sum to the pipeline delta"
     )
-    assert ledger.report(_WRAPPER)["crates"] == [record.as_dict() for record in records]
+    assert ledger.report(_WRAPPER)["crates"] == [
+        record.as_dict() for record in records
+    ], "the report lists one ordered entry per attributed invocation"
 
 
 @dc.dataclass
@@ -172,8 +174,10 @@ def test_session_queries_bracket_invocations_and_stop_on_failure(
         assert len(json_queries) == query_count, (
             "one baseline query plus one query per invocation"
         )
-        assert len(session.records) == len(invocations)
-        assert session.enabled
+        assert len(session.records) == len(invocations), (
+            "every invocation must be recorded when no query fails"
+        )
+        assert session.enabled, "a session with no failures stays enabled"
         assert runner.calls[-1] != _JSON_QUERY, "finish() ends with the text mirror"
     else:
         assert len(json_queries) == failing_query_index + 1, (
@@ -182,7 +186,7 @@ def test_session_queries_bracket_invocations_and_stop_on_failure(
         assert len(session.records) == max(failing_query_index - 1, 0), (
             "records stop at the invocation whose query failed"
         )
-        assert not session.enabled
+        assert not session.enabled, "a failed query must disable the session"
         assert all(call == _JSON_QUERY for call in runner.calls), (
             "a disabled session never runs the text mirror"
         )

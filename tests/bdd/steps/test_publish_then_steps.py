@@ -565,7 +565,9 @@ def then_publish_info_log_contains(cli_run: CliRunResult, expected: str) -> None
 def then_publish_preflight_error_is_not_reported(cli_run: CliRunResult) -> None:
     """Assert that publish completed without a pre-flight failure."""
     _assert_cli_run_succeeded(cli_run)
-    assert "PublishPreflightError" not in cli_run["stderr"]
+    assert "PublishPreflightError" not in cli_run["stderr"], (
+        f"publish should complete without a pre-flight failure:\n{cli_run['stderr']}"
+    )
 
 
 _PROGRESS_LINE = re.compile(

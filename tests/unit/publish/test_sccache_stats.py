@@ -62,7 +62,9 @@ def _payload(version: str) -> dict[str, object]:
 )
 def test_detect_wrapper(env: dict[str, str], expected: Path | None) -> None:
     """Only a wrapper whose basename starts with ``sccache`` is detected."""
-    assert stats.detect_wrapper(env) == expected
+    assert stats.detect_wrapper(env) == expected, (
+        f"RUSTC_WRAPPER={env.get('RUSTC_WRAPPER')!r} should resolve to {expected!r}"
+    )
 
 
 @pytest.mark.parametrize(
@@ -89,7 +91,9 @@ def test_parse_counters_reads_recorded_payloads(
     version: str, expected: stats.SccacheCounters
 ) -> None:
     """Hits and misses sum across languages; errors sum every error counter."""
-    assert stats.parse_counters(_payload(version)) == expected
+    assert stats.parse_counters(_payload(version)) == expected, (
+        f"the recorded sccache {version} payload should reduce to {expected}"
+    )
 
 
 @pytest.mark.parametrize(
@@ -123,7 +127,9 @@ def test_parse_counters_tolerates_missing_or_malformed_keys(
     payload: dict[str, object], expected: stats.SccacheCounters
 ) -> None:
     """Gaps in the payload count as zero rather than failing the run."""
-    assert stats.parse_counters(payload) == expected
+    assert stats.parse_counters(payload) == expected, (
+        "missing or malformed keys must count as zero, not fail"
+    )
 
 
 def test_counters_subtraction_is_field_wise() -> None:
@@ -133,13 +139,13 @@ def test_counters_subtraction_is_field_wise() -> None:
 
     assert later - earlier == stats.SccacheCounters(
         requests=6, hits=4, misses=1, errors=1
-    )
+    ), "subtraction must be field-wise"
     assert (later - earlier).as_dict() == {
         "requests": 6,
         "hits": 4,
         "misses": 1,
         "errors": 1,
-    }
+    }, "as_dict() must expose the four counters by name"
 
 
 @dc.dataclass
@@ -182,8 +188,8 @@ def test_query_snapshot_runs_json_query_without_echo(tmp_path: Path) -> None:
     ]
     assert snapshot.counters == stats.SccacheCounters(
         requests=412, hits=398, misses=14, errors=0
-    )
-    assert snapshot.raw["version"] == "0.12.0"
+    ), "the snapshot must carry the parsed counters"
+    assert snapshot.raw["version"] == "0.12.0", "the raw payload must be kept"
 
 
 def test_query_text_returns_human_readable_output(tmp_path: Path) -> None:
@@ -192,8 +198,10 @@ def test_query_text_returns_human_readable_output(tmp_path: Path) -> None:
 
     text = stats.query_text(Path("sccache"), runner=runner, cwd=tmp_path)
 
-    assert text == "Compile requests  412\n"
-    assert runner.calls == [(("sccache", "--show-stats"), tmp_path, False)]
+    assert text == "Compile requests  412\n", "stdout is returned verbatim"
+    assert runner.calls == [(("sccache", "--show-stats"), tmp_path, False)], (
+        "the text query must be the plain --show-stats form, never echoed"
+    )
 
 
 def test_query_snapshot_reports_non_zero_exit(tmp_path: Path) -> None:
@@ -203,7 +211,7 @@ def test_query_snapshot_reports_non_zero_exit(tmp_path: Path) -> None:
     with pytest.raises(stats.SccacheQueryError) as excinfo:
         stats.query_snapshot(Path("sccache"), runner=runner, cwd=tmp_path)
 
-    assert excinfo.value.exit_code == 2
+    assert excinfo.value.exit_code == 2, "the exit status must be preserved"
     assert str(excinfo.value) == (
         "sccache --show-stats exited 2: sccache: error: no server"
     )
@@ -226,8 +234,8 @@ def test_query_snapshot_wraps_spawn_failures(tmp_path: Path) -> None:
     with pytest.raises(stats.SccacheQueryError) as excinfo:
         stats.query_snapshot(Path("sccache"), runner=_runner, cwd=tmp_path)
 
-    assert excinfo.value.exit_code is None
-    assert "could not be run" in str(excinfo.value)
+    assert excinfo.value.exit_code is None, "a spawn failure has no exit status"
+    assert "could not be run" in str(excinfo.value), "the message must say why"
 
 
 @pytest.mark.parametrize(
@@ -280,4 +288,4 @@ def test_query_snapshot_runs_stub_sccache_on_path(
     assert argument_log.read_text(encoding="utf-8") == (
         "--show-stats --stats-format=json\n"
     )
-    assert snapshot.counters.hits == 6738
+    assert snapshot.counters.hits == 6738, "the stub's payload must be parsed"

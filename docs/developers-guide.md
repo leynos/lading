@@ -765,6 +765,33 @@ and the optional atomically written JSON report. Every failure in the session
 is a WARNING that disables further queries; the session never raises into the
 pipeline.
 
+### CLI publish API (`lading.cli.publish`)
+
+`publish(workspace_root=None, *, flags: PublishFlags = PublishFlags())` is the
+Cyclopts command. `PublishFlags` (in `lading.cli_options`) is a frozen
+dataclass that Cyclopts flattens onto the command line with
+`Parameter(name="*")`, so each field is its own option with its help text,
+negative form, and environment default while the command keeps a two-parameter
+signature:
+
+| Field                              | Option                               | Default | Environment default         |
+| ---------------------------------- | ------------------------------------ | ------- | --------------------------- |
+| `forbid_dirty`                     | `--forbid-dirty`                     | `False` | —                           |
+| `live`                             | `--live`                             | `False` | —                           |
+| `allow_unpublished_workspace_deps` | `--allow-unpublished-workspace-deps` | `None`  | —                           |
+| `sccache_stats`                    | `--sccache-stats`                    | `False` | `LADING_SCCACHE_STATS`      |
+| `sccache_stats_json`               | `--sccache-stats-json`               | `None`  | `LADING_SCCACHE_STATS_JSON` |
+
+`_publish_options(flags, command_runner)` translates the bundle into
+`PublishOptions`: `allow_dirty` is the negation of `forbid_dirty`, the tri-state
+`allow_unpublished_workspace_deps` is resolved against `live` by
+`_resolve_allow_unpublished_workspace_deps`, and the two sccache fields are
+forwarded unresolved because a report path implying the measurement is the
+publish command's decision (`create_session`). The `Annotated` aliases
+`SccacheStatsFlag` and `SccacheStatsJsonOption`, and the `SCCACHE_STATS_*`
+parameters and environment-variable names, stay exported from `cli_options` for
+integrations that import CLI annotations.
+
 ### `_PublishExecutionOptions`
 
 `_PublishExecutionOptions` is a frozen dataclass that carries the runtime flags
@@ -804,8 +831,8 @@ classification for a completed `cargo publish` command. `result` is the
 elapsed seconds) and `state` is the `_PublicationPipelineState` supplying the
 plan, the execution options, and the crate's `n/total` position. It logs
 success with the position and elapsed time, skips already-published crate
-versions, adapts crates.io index lookup
-failures through `parse_index_lookup_failure()` before delegating to
+versions, adapts crates.io index lookup failures through
+`parse_index_lookup_failure()` before delegating to
 `_handle_index_missing_version`, and raises `PublishError` for all other
 non-zero publish exits after formatting the cargo failure message.
 
@@ -1085,9 +1112,9 @@ values are pinned by a syrupy snapshot. See the
 operator-facing description of the variable and its failure modes.
 
 `lading.utils.commands.LADING_CATALOGUE` is the staged cuprum programme
-catalogue (cargo, git, sccache). It is intentionally not yet wired into the execution
-path — `publish_execution._invoke` still delegates to the subprocess runner,
-which spawns processes directly. It becomes live with the
+catalogue (cargo, git, sccache). It is intentionally not yet wired into the
+execution path — `publish_execution._invoke` still delegates to the subprocess
+runner, which spawns processes directly. It becomes live with the
 [Phase 5.2 publish-execution migration](./roadmap.md), which rewires
 `publish_execution.py` command execution (the roadmap's
 `_invoke_via_subprocess()` step) onto the catalogue's `scoped(allowlist=…)`
