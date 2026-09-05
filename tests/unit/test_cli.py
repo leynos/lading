@@ -1,19 +1,21 @@
 """Unit tests for ``lading.cli``.
+
 Covers tri-state ``--allow-unpublished-workspace-deps`` flag resolution via
 ``_resolve_allow_unpublished_workspace_deps`` and the resulting
 ``PublishOptions.allow_unpublished_workspace_deps`` value passed to
 ``publish.run``.
 """
+
 from __future__ import annotations
 
-from contextlib import contextmanager
-from pathlib import Path
 import collections.abc as cabc
 import dataclasses as dc
 import io
 import logging
 import os
 import typing as typ
+from contextlib import contextmanager
+from pathlib import Path
 
 import pytest
 
@@ -28,6 +30,7 @@ from tests.helpers.cwd import chdir_for_test
 
 if typ.TYPE_CHECKING:
     from types import ModuleType
+
     from syrupy.assertion import SnapshotAssertion
 
 
