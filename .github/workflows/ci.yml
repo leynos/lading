@@ -1,5 +1,12 @@
 name: CI
 
+env:
+  # Sole declaration of the mdtablefix pin. `make check-fmt` formats tracked
+  # Markdown through scripts/check-markdown-format.sh, and the Install
+  # mdtablefix step below installs exactly this version; the cache key
+  # includes it so a bump invalidates the cached executable.
+  MDTABLEFIX_VERSION: '0.5.1'
+
 on:
   push:
     branches: [main]
@@ -35,6 +42,24 @@ jobs:
           # virtualenv, and developer PATH; bump both sites together.
           uv tool install ruff==0.16.0
           npm install -g markdownlint-cli2
+
+      - name: Cache mdtablefix
+        # The shared action installs into ~/.local/bin and appends it to
+        # GITHUB_PATH, so the cache restores the executable ahead of the
+        # install step rather than the formatter owning a cargo directory.
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.local/bin/mdtablefix
+            ~/.local/bin/mdtablefix.exe
+          key: mdtablefix-${{ runner.os }}-${{ runner.arch }}-${{ env.MDTABLEFIX_VERSION }}
+
+      - name: Install mdtablefix
+        # The shared action accepts only releases with correct multi-platform
+        # metadata and fails closed instead of compiling a formatter in CI.
+        uses: leynos/shared-actions/.github/actions/install-mdtablefix@c5a54701c8603a0fa756a6b34c49bc2af75a6c11
+        with:
+          version: ${{ env.MDTABLEFIX_VERSION }}
 
       - name: Validate Makefile
         run: mbake validate Makefile
@@ -103,7 +128,7 @@ jobs:
         env:
           CS_ACCESS_TOKEN: ${{ secrets.CS_ACCESS_TOKEN }}
         if: env.CS_ACCESS_TOKEN != '' && github.event_name == 'pull_request'
-        uses: leynos/shared-actions/.github/actions/upload-codescene-coverage@8add2d99854a5b77548eae98cca59202e68fefc8
+        uses: leynos/shared-actions/.github/actions/upload-codescene-coverage@c5a54701c8603a0fa756a6b34c49bc2af75a6c11
         with:
           format: cobertura
           path: coverage.xml
