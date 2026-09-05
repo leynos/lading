@@ -18,7 +18,7 @@ from contextlib import contextmanager
 
 import pytest
 
-from lading import cli
+from lading import cli, cli_options
 from lading import config as config_module
 from lading.commands import bump as bump_command
 from lading.commands import bump_lockfiles
@@ -69,6 +69,24 @@ class ExceptionHandlingCase:
     exception: BaseException
     expected_exit_code: int
     expected_message: str
+
+
+def test_cli_reexports_public_annotation_aliases() -> None:
+    """Public CLI annotation aliases should remain available at both paths."""
+    alias_names = (
+        "AllowUnpublishedWorkspaceDepsFlag",
+        "DryRunFlag",
+        "ForbidDirtyFlag",
+        "LiveFlag",
+        "RebuildLockfilesFlag",
+        "VersionArgument",
+        "WorkspaceRootOption",
+    )
+    for alias_name in alias_names:
+        assert alias_name in cli_options.__all__, f"{alias_name} is not public"
+        assert getattr(cli, alias_name) is getattr(cli_options, alias_name), (
+            f"lading.cli does not re-export {alias_name}"
+        )
 
 
 @pytest.mark.parametrize(

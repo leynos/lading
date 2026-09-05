@@ -40,7 +40,7 @@ def _build_package_metadata(
     name: str,
     manifest_path: Path,
     version: str = "0.1.0",
-    **metadata: typ.Any,  # noqa: ANN401 - fixtures accept arbitrary metadata fields
+    **metadata: typ.Any,  # ruff: ignore[any-type] - fixtures accept arbitrary metadata fields
 ) -> dict[str, typ.Any]:
     """Construct the minimal package metadata payload for ``cargo metadata``."""
     dependencies = metadata.get("dependencies")

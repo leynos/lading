@@ -48,7 +48,7 @@ _INDEX_MISSING_VERSION_MARKERS: tuple[str, ...] = (
 # Capture the dependency crate name from cargo's index-lookup error, e.g.
 #   failed to select a version for the requirement `inner_crate = "^0.8.0"`
 _INDEX_MISSING_VERSION_NAME_PATTERN = re.compile(
-    "failed to select a version for the requirement [`'\"]"  # noqa: RUF039 - keeps escaped quote pattern for cargo diagnostics
+    "failed to select a version for the requirement [`'\"]"  # ruff: ignore[unraw-re-pattern] - keeps escaped quote pattern for cargo diagnostics
     r"(?P<name>[A-Za-z_][A-Za-z0-9_-]*)\s*=",
     re.IGNORECASE,
 )

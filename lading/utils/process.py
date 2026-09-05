@@ -36,13 +36,9 @@ import logging
 import shlex
 import typing as typ
 
-if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers only
+if typ.TYPE_CHECKING:
     from logging import Logger as LoggerType
     from pathlib import Path as PathType
-else:  # pragma: no cover - type-only imports
-    LoggerType = typ.Any
-    PathType = typ.Any
-
 
 _LOGGER = logging.getLogger(__name__)
 

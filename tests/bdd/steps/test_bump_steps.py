@@ -8,9 +8,11 @@ from pytest_bdd import given, parsers, then, when
 
 from lading.commands import bump_readme
 
-from . import config_fixtures as _config_fixtures  # noqa: F401
-from . import manifest_fixtures as _manifest_fixtures  # noqa: F401
-from . import metadata_fixtures as _metadata_fixtures  # noqa: F401
+# Keep direct fixture imports for BDD collection even though conftest.py
+# registers the modules as pytest plugins.
+from . import config_fixtures as _config_fixtures  # ruff: ignore[unused-import]
+from . import manifest_fixtures as _manifest_fixtures  # ruff: ignore[unused-import]
+from . import metadata_fixtures as _metadata_fixtures  # ruff: ignore[unused-import]
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
@@ -19,7 +21,9 @@ if typ.TYPE_CHECKING:
     from cmd_mox import CmdMox
 
     from .cli_run_types import CliRunResult
-    from .test_common_steps import _run_cli  # noqa: F401
+    from .test_common_steps import (
+        _run_cli,  # ruff: ignore[unused-import] - imported only for type checking
+    )
 
 
 @given("the workspace has tracked Cargo.lock files")

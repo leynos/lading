@@ -8,10 +8,8 @@ import json
 import textwrap
 import typing as typ
 
-if typ.TYPE_CHECKING:  # pragma: no cover
+if typ.TYPE_CHECKING:  # pragma: no cover  # import exists only for annotations
     from pathlib import Path
-else:  # pragma: no cover - runtime typing fallback
-    Path = typ.Any  # type: ignore[assignment]
 
 
 @dc.dataclass(frozen=True, slots=True)

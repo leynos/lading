@@ -37,15 +37,13 @@ from tomlkit import parse as parse_toml
 from tomlkit.exceptions import TOMLKitError
 from tomlkit.toml_document import TOMLDocument
 
-from lading import config as config_module
 from lading.exceptions import LadingError
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers only
     from pathlib import Path
 
     from lading.commands.publish_plan import PublishPlan
-
-StripPatchesSetting = config_module.StripPatchesSetting
+    from lading.config import StripPatchesSetting
 
 type _ManifestValidation = (
     tuple[
