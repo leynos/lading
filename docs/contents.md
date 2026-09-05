@@ -20,6 +20,12 @@ looking for project guidance, then follow the link that matches the task.
 - [Roadmap](roadmap.md) - phased delivery plan and tracked implementation
   tasks.
 
+## Migration guides
+
+- [Migrate to lading 0.3.0](migrations/0.3.0-lockfile-regeneration.md) -
+  explains lockfile discovery, configuration fallback, and regeneration before
+  publishing.
+
 ## Execution plans
 
 Execution plans are living delivery documents under `execplans/`, one per
