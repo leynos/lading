@@ -215,11 +215,11 @@ directory and relative Markdown links are rewritten so they still resolve from
 that directory. `publish` then stages the already-prepared workspace into a
 temporary directory before packaging.
 
-Subprocess output is decoded as UTF-8 and captured in full. Lading first mirrors
-each chunk through the configured text stream; if that stream rejects Unicode,
-the exact UTF-8 bytes are written through its binary buffer when one is
-available. For a text-only narrow stream, mirroring is disabled for that stream
-while capture continues.
+Subprocess output is decoded as UTF-8 and captured in full. Lading first
+mirrors each chunk through the configured text stream; if that stream rejects
+Unicode, the exact UTF-8 bytes are written through its binary buffer when one
+is available. For a text-only narrow stream, mirroring is disabled for that
+stream while capture continues.
 
 #### Measuring compiler-cache use during the packaged builds
 
@@ -256,9 +256,9 @@ The final block mirrors that cumulative report so the `Cache location` line is
 on record.
 
 Add `--sccache-stats-json PATH` (which implies `--sccache-stats`) to write a
-JSON report alongside, for an artefact upload or a later comparison. A
-relative `PATH` is resolved against the workspace root, like every other path
-`lading` accepts:
+JSON report alongside, for an artefact upload or a later comparison. A relative
+`PATH` is resolved against the workspace root, like every other path `lading`
+accepts:
 
 ```bash
 lading publish --sccache-stats-json target/sccache-publish.json
@@ -476,8 +476,8 @@ the publish pipeline, recorded whether or not the invocation succeeded. Labels:
 
 #### `publish.sccache.query`
 
-Incremented once per sccache statistics query made under `--sccache-stats`.
-Labels:
+Incremented once per sccache statistics query while the instrumentation is on
+(`--sccache-stats`, or a `--sccache-stats-json` path, which implies it). Labels:
 
 - `outcome` — `success` or `failure`; a failure also disables further queries
   for the rest of the run.
@@ -526,8 +526,8 @@ the duration of the command.
 `lading publish --sccache-stats` queries the sccache binary named by
 `RUSTC_WRAPPER` around every cargo build and logs one compiler-cache summary
 line per `cargo package` or `cargo publish` invocation (two per crate in a dry
-run); `--sccache-stats-json PATH` also writes a JSON report and
-implies `--sccache-stats`. The environment variables `LADING_SCCACHE_STATS` and
+run); `--sccache-stats-json PATH` also writes a JSON report and implies
+`--sccache-stats`. The environment variables `LADING_SCCACHE_STATS` and
 `LADING_SCCACHE_STATS_JSON` supply defaults for the two flags. See
 [Measuring compiler-cache use during the packaged builds](#measuring-compiler-cache-use-during-the-packaged-builds).
 

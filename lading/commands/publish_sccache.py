@@ -59,6 +59,11 @@ QUERY_METRIC = "publish.sccache.query"
 def format_counters(counters: SccacheCounters) -> str:
     """Render ``counters`` as the fixed ``requests= hits= misses= errors=`` tail.
 
+    Parameters
+    ----------
+    counters : SccacheCounters
+        The counters to render.
+
     Returns
     -------
     str
@@ -77,6 +82,11 @@ def format_counters(counters: SccacheCounters) -> str:
 
 def format_crate_summary(record: SccacheCrateRecord) -> str:
     """Render the one-line per-crate summary.
+
+    Parameters
+    ----------
+    record : SccacheCrateRecord
+        The invocation's crate, subcommand, elapsed seconds, and counters.
 
     Returns
     -------
@@ -154,6 +164,17 @@ class SccacheLedger:
     ) -> SccacheCrateRecord:
         """Record the counters between the previous snapshot and ``snapshot``.
 
+        Parameters
+        ----------
+        snapshot : SccacheSnapshot
+            The snapshot taken after the invocation.
+        crate : str
+            The crate the invocation ran for.
+        subcommand : str
+            ``package`` or ``publish``.
+        seconds : float
+            The invocation's elapsed time.
+
         Returns
         -------
         SccacheCrateRecord
@@ -177,6 +198,11 @@ class SccacheLedger:
 
     def report(self, wrapper: Path) -> dict[str, object]:
         """Return the JSON-ready report for ``wrapper``.
+
+        Parameters
+        ----------
+        wrapper : Path
+            The sccache binary the snapshots came from, recorded verbatim.
 
         Returns
         -------
@@ -260,6 +286,15 @@ class SccacheSession:
         """Attribute the counters since the previous snapshot to one invocation.
 
         Never raises: a failed query logs a WARNING and disables the session.
+
+        Parameters
+        ----------
+        crate : str
+            The crate the invocation ran for.
+        subcommand : str
+            ``package`` or ``publish``.
+        seconds : float
+            The invocation's elapsed time, reported on the summary line.
         """
         ledger = self._active_ledger()
         if ledger is None:

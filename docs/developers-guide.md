@@ -504,6 +504,10 @@ callers can customize behaviour via `PublishOptions`. The defaults are:
 - `build_directory=None` — create a fresh temporary directory for staging.
 - `preserve_symlinks=True` — preserve symbolic links in the staged workspace.
 - `cleanup=False` — leave the staging directory intact for inspection.
+- `sccache_stats=False` — query the sccache binary named by `RUSTC_WRAPPER`
+  around every cargo build and log one compiler-cache line per invocation.
+- `sccache_stats_json=None` — also write the JSON report to this path
+  (relative paths resolve against the workspace root); implies `sccache_stats`.
 
 Additional parameters `configuration`, `workspace`, and `command_runner` allow
 dependency injection for testing and are typically left unset.
@@ -853,8 +857,13 @@ the per-crate helper signatures within the four-argument lint ceiling and pins
 the invariant that plan, preparation, and options are constructed together and
 immutable for the pipeline's lifetime. The state also carries the injectable
 `clock` (default `time.perf_counter`) that `_run_timed_cargo` times each cargo
-invocation with, and `position(crate)` renders the crate's `n/total` place in
-`plan.publishable` for the progress lines.
+invocation with, `position(crate)` renders the crate's `n/total` place in
+`plan.publishable` for the progress lines, and the optional `sccache` field
+holds the `SccacheSession` for the run (`None` unless instrumentation is on).
+`_dispatch_publication` owns that session's lifecycle: `create_session()` after
+pre-flight, `begin()` before the first cargo build, one `record()` call from
+`_package_crate` and `_publish_crate` after each cargo invocation, and
+`finish()` in a `finally` once both pipeline branches return.
 
 Publication dispatch deliberately differs by mode. Dry-run mode keeps the
 historical two-phase pipeline: package every publishable crate, then run
@@ -1036,16 +1045,16 @@ than bucketed.
 
 Defined metrics:
 
-| Metric                           | Labels                        | Incremented when                                                                                                                               |
-| -------------------------------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `publish.index_lookup_downgrade` | `subcommand`, `missing_crate` | `_handle_index_missing_version` downgrades a crates.io index-lookup failure to a warning (in-plan, override enabled).                          |
-| `lockfile.discovered`            | (none)                        | Incremented by tracked-lockfile count when discovery observability is enabled; dry-run bump projection suppresses it.                          |
-| `lockfile.regenerate`            | `outcome`, `cause`            | Incremented per successful or failed lockfile regeneration; `cause` is `none`, `validation`, `command_spawn`, `runner_value`, or `cargo_exit`. |
-| `lockfile.regenerate.duration`   | (none)                        | Total duration observation around each lockfile-regeneration run.                                                                              |
-| `lockfile.validate`              | `outcome`                     | One increment per `validate_lockfile_freshness` call; `outcome` is `fresh`, `stale`, or `failed`.                                              |
-| `lockfile.validate.duration`     | (none)                        | Duration observation around each `cargo metadata --locked` probe.                                                                              |
-| `publish.cargo.duration`         | `subcommand`, `crate`         | One duration observation per `cargo package` or `cargo publish` invocation in the publish pipeline, successful or not (issue #251).            |
-| `publish.sccache.query`          | `outcome`                     | One increment per sccache statistics query under `--sccache-stats`; `outcome` is `success` or `failure` (issue #252).                          |
+| Metric                           | Labels                        | Incremented when                                                                                                                                                                                  |
+| -------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `publish.index_lookup_downgrade` | `subcommand`, `missing_crate` | `_handle_index_missing_version` downgrades a crates.io index-lookup failure to a warning (in-plan, override enabled).                                                                             |
+| `lockfile.discovered`            | (none)                        | Incremented by tracked-lockfile count when discovery observability is enabled; dry-run bump projection suppresses it.                                                                             |
+| `lockfile.regenerate`            | `outcome`, `cause`            | Incremented per successful or failed lockfile regeneration; `cause` is `none`, `validation`, `command_spawn`, `runner_value`, or `cargo_exit`.                                                    |
+| `lockfile.regenerate.duration`   | (none)                        | Total duration observation around each lockfile-regeneration run.                                                                                                                                 |
+| `lockfile.validate`              | `outcome`                     | One increment per `validate_lockfile_freshness` call; `outcome` is `fresh`, `stale`, or `failed`.                                                                                                 |
+| `lockfile.validate.duration`     | (none)                        | Duration observation around each `cargo metadata --locked` probe.                                                                                                                                 |
+| `publish.cargo.duration`         | `subcommand`, `crate`         | One duration observation per `cargo package` or `cargo publish` invocation in the publish pipeline, successful or not (issue #251).                                                               |
+| `publish.sccache.query`          | `outcome`                     | One increment per sccache statistics query while instrumentation is on (`--sccache-stats`, or a `--sccache-stats-json` path, which implies it); `outcome` is `success` or `failure` (issue #252). |
 
 Duration metrics aggregate a count and total seconds per label set via
 `observe_duration` / `duration_stats` and appear in the exit summary with
