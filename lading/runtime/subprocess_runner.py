@@ -6,7 +6,6 @@ import codecs
 import collections.abc as cabc
 import dataclasses as dc
 import logging
-import re
 import subprocess
 import sys
 import threading
@@ -15,6 +14,9 @@ from pathlib import Path
 
 from lading.exceptions import LadingError
 from lading.utils.process import log_command_invocation
+
+from .stream_relay import format_thread_name as _format_thread_name
+from .stream_relay import write_to_relay_sink as _write_to_relay_sink
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -28,7 +30,6 @@ _ENV_REDACTION_TOKENS = (
     "SECRET",
     "KEY",
 )
-_THREAD_NAME_PATTERN = re.compile(r"[^A-Za-z0-9_.-]+")
 _STREAM_CHUNK_SIZE = 4096
 
 
@@ -308,6 +309,7 @@ def relay_stream(
         return
     decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
     active_sink = sink
+    binary_sink: typ.BinaryIO | None = None
     try:
         try:
             while True:
@@ -317,11 +319,15 @@ def relay_stream(
                 text = decoder.decode(chunk)
                 if text:
                     buffer.append(text)
-                    active_sink = write_to_sink(active_sink, text)
+                    active_sink, binary_sink = _write_to_relay_sink(
+                        active_sink, binary_sink, text
+                    )
             tail = decoder.decode(b"", final=True)
             if tail:
                 buffer.append(tail)
-                active_sink = write_to_sink(active_sink, tail)
+                active_sink, binary_sink = _write_to_relay_sink(
+                    active_sink, binary_sink, tail
+                )
         finally:
             source.close()
     except (OSError, ValueError):  # pragma: no cover - defensive logging guard
@@ -363,31 +369,8 @@ def write_to_sink(sink: typ.TextIO | None, payload: str) -> typ.TextIO | None:
     >>> sink.getvalue()
     'hello'
     """
-    if sink is None or not payload:
-        return sink
-    try:
-        sink.write(payload)
-        sink.flush()
-    except BrokenPipeError:
-        return None
-    except UnicodeEncodeError:
-        binary_sink = typ.cast("typ.BinaryIO | None", getattr(sink, "buffer", None))
-        if binary_sink is None:
-            return None
-        try:
-            sink.flush()
-            binary_sink.write(payload.encode("utf-8"))
-            binary_sink.flush()
-        except BrokenPipeError:
-            return None
-    return sink
-
-
-def _format_thread_name(program: str, stream: str) -> str:
-    """Return a deterministic, filesystem-safe thread name suffix."""
-    base = Path(program).name or program
-    safe = _THREAD_NAME_PATTERN.sub("-", base).strip("-") or "command"
-    return f"lading-cmd-{safe}-{stream}"
+    active_sink, _binary_sink = _write_to_relay_sink(sink, None, payload)
+    return active_sink
 
 
 def _log_subprocess_environment(env: cabc.Mapping[str, object] | None) -> None:

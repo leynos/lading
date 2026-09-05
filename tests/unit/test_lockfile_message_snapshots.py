@@ -133,6 +133,7 @@ class TestStaleLockfileMessages:
             cwd: Path | None = None,
             env: cabc.Mapping[str, str] | None = None,
         ) -> tuple[int, str, str]:
+            """Return a successful no-output command result."""
             del command, cwd, env
             return 0, "", ""
 
@@ -145,8 +146,9 @@ class TestStaleLockfileMessages:
                 options=publish.PublishOptions(command_runner=runner),
             )
 
-        message = str(excinfo.value).replace(
-            str(tmp_path / "tests" / "ui_lints"), "<nested-workspace>"
-        )
-        message = message.replace(str(tmp_path), "<workspace>")
-        assert snapshot == message
+        message = str(excinfo.value).replace("\\", "/")
+        nested_workspace = str(tmp_path / "tests" / "ui_lints").replace("\\", "/")
+        workspace = str(tmp_path).replace("\\", "/")
+        message = message.replace(nested_workspace, "<nested-workspace>")
+        message = message.replace(workspace, "<workspace>")
+        assert snapshot == message, "stale lockfile message should use stable paths"
