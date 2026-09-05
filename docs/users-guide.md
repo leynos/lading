@@ -403,7 +403,6 @@ Each entry records a counter name, the label values that identify it, and the
 accumulated count for the current invocation. The summary line is omitted
 entirely when no metrics were recorded (quiet runs stay quiet).
 
-
 #### `publish.cargo.duration`
 
 One duration observation per `cargo package` or `cargo publish` invocation in

@@ -33,13 +33,13 @@ def _fixed_clock(*ticks: float) -> cabc.Callable[[], float]:
 
 
 class _TimingCase(typ.NamedTuple):
-    action: cabc.Callable[..., None]
+    action: publish._CrateAction
     live: bool
     subcommand: str
     expected_message: str
 
 
-_TIMING_CASES = [
+_TIMING_CASES = (
     pytest.param(
         _TimingCase(
             action=publish._package_crate,
@@ -67,7 +67,7 @@ _TIMING_CASES = [
         ),
         id="publish-live",
     ),
-]
+)
 
 
 @pytest.fixture(autouse=True)
