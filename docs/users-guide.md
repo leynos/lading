@@ -194,6 +194,12 @@ directory and relative Markdown links are rewritten so they still resolve from
 that directory. `publish` then stages the already-prepared workspace into a
 temporary directory before packaging.
 
+Subprocess output is decoded as UTF-8 and captured in full. Lading first mirrors
+each chunk through the configured text stream; if that stream rejects Unicode,
+the exact UTF-8 bytes are written through its binary buffer when one is
+available. For a text-only narrow stream, mirroring is disabled for that stream
+while capture continues.
+
 #### Dry-run limitations with unpublished workspace dependencies
 
 `cargo package` validates dependency versions against the live crates.io index,

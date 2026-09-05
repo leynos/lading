@@ -22,8 +22,6 @@ from lading.workspace import WorkspaceGraph
 if typ.TYPE_CHECKING:
     from syrupy.assertion import SnapshotAssertion
 
-_SNAPSHOT_WORKSPACE_ROOT = Path("/ws")
-
 
 class TestBumpLockfileMessages:
     """Snapshot bump messages for root and nested lockfiles."""
@@ -94,14 +92,14 @@ class TestStaleLockfileMessages:
         "lockfiles",
         [
             pytest.param(
-                [_SNAPSHOT_WORKSPACE_ROOT / "Cargo.lock"],
+                (Path("Cargo.lock"),),
                 id="single",
             ),
             pytest.param(
-                [
-                    _SNAPSHOT_WORKSPACE_ROOT / "Cargo.lock",
-                    _SNAPSHOT_WORKSPACE_ROOT / "tests" / "ui_lints" / "Cargo.lock",
-                ],
+                (
+                    Path("Cargo.lock"),
+                    Path("tests/ui_lints/Cargo.lock"),
+                ),
                 id="multiple",
             ),
         ],
@@ -111,13 +109,13 @@ class TestStaleLockfileMessages:
         monkeypatch: pytest.MonkeyPatch,
         snapshot: SnapshotAssertion,
         tmp_path: Path,
-        lockfiles: list[Path],
+        lockfiles: tuple[Path, ...],
     ) -> None:
         """The public publish command reports every stale lockfile repair."""
         monkeypatch.setattr(
             lockfile.CargoLockfileInspectionRepository,
             "discover_tracked_lockfiles",
-            lambda _repository, _root: tuple(lockfiles),
+            lambda _repository, _root: tuple(tmp_path / path for path in lockfiles),
         )
         monkeypatch.setattr(
             lockfile.CargoLockfileInspectionRepository,
@@ -135,6 +133,7 @@ class TestStaleLockfileMessages:
             cwd: Path | None = None,
             env: cabc.Mapping[str, str] | None = None,
         ) -> tuple[int, str, str]:
+            """Return a successful no-output command result."""
             del command, cwd, env
             return 0, "", ""
 
@@ -147,4 +146,9 @@ class TestStaleLockfileMessages:
                 options=publish.PublishOptions(command_runner=runner),
             )
 
-        assert snapshot == str(excinfo.value)
+        message = str(excinfo.value).replace("\\", "/")
+        nested_workspace = str(tmp_path / "tests" / "ui_lints").replace("\\", "/")
+        workspace = str(tmp_path).replace("\\", "/")
+        message = message.replace(nested_workspace, "<nested-workspace>")
+        message = message.replace(workspace, "<workspace>")
+        assert snapshot == message, "stale lockfile message should use stable paths"
