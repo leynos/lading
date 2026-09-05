@@ -1002,6 +1002,14 @@ Duration metrics aggregate a count and total seconds per label set via
 tests can inject cmd-mox or recording runners without depending on
 publish-specific infrastructure.
 
+The production runner decodes subprocess output as UTF-8 and captures the
+decoded text independently from output mirroring. Mirroring first uses the
+configured text sink. If that sink rejects the payload with
+`UnicodeEncodeError`, the runner flushes it and writes the exact UTF-8 bytes to
+its binary `buffer`. A text-only sink without a binary buffer is disabled for
+the remainder of that stream so capture can continue without corrupting or
+truncating subprocess output.
+
 `lading.commands.publish_execution` still owns publish-specific error mapping
 around command execution. `lading bump` uses the runtime runner directly for
 lockfile refreshes, while `lading publish` uses `_invoke` where failures should

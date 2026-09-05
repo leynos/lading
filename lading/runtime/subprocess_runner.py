@@ -332,7 +332,7 @@ def relay_stream(
 
 
 def write_to_sink(sink: typ.TextIO | None, payload: str) -> typ.TextIO | None:
-    """Write ``payload`` to ``sink`` and swallow broken pipes.
+    """Write ``payload`` to ``sink`` without corrupting Unicode output.
 
     Parameters
     ----------
@@ -370,6 +370,16 @@ def write_to_sink(sink: typ.TextIO | None, payload: str) -> typ.TextIO | None:
         sink.flush()
     except BrokenPipeError:
         return None
+    except UnicodeEncodeError:
+        binary_sink = typ.cast("typ.BinaryIO | None", getattr(sink, "buffer", None))
+        if binary_sink is None:
+            return None
+        try:
+            sink.flush()
+            binary_sink.write(payload.encode("utf-8"))
+            binary_sink.flush()
+        except BrokenPipeError:
+            return None
     return sink
 
 
