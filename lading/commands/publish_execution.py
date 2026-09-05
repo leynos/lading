@@ -1,4 +1,19 @@
-"""Command execution helpers for publish operations."""
+"""Command execution helpers for publish operations.
+
+Two concerns live here, both used by :mod:`lading.commands.publish`:
+
+* :func:`_invoke` runs a command through the production subprocess runner
+  and maps spawn and argument failures onto
+  :class:`~lading.commands.publish_errors.PublishPreflightError`, so the
+  publish workflow reports them through its own error boundary.
+* :func:`_run_timed_cargo` runs one per-crate cargo invocation (a
+  :class:`_CargoInvocation`), times it with an injectable clock, records the
+  duration under :data:`CARGO_DURATION_METRIC` whatever the outcome, and
+  returns a :class:`_TimedCargoResult` carrying the exit code, captured
+  streams, and elapsed seconds. The pipeline uses the elapsed time for its
+  per-crate progress lines and for the compiler-cache attribution in
+  :mod:`lading.commands.publish_sccache`.
+"""
 
 from __future__ import annotations
 
