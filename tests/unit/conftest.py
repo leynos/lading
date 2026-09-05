@@ -291,15 +291,19 @@ def publish_fixtures(
         publish_options=publish_options,
     )
 
+
 @pytest.fixture
 def planning_fixtures(publish_fixtures: PublishFixtures) -> PlanningFixtures:
     """Expose the composite fixtures under the planning-specific alias."""
     return publish_fixtures
 
+
 @pytest.fixture
 def preparation_fixtures(publish_fixtures: PublishFixtures) -> PreparationFixtures:
     """Expose the composite fixtures under the staging-specific alias."""
     return publish_fixtures
+
+
 @pytest.fixture
 def make_dependency() -> cabc.Callable[[str], WorkspaceDependency]:
     """Return a factory for workspace dependency records.
@@ -371,6 +375,7 @@ def publish_options(staging_root: Path) -> publish.PublishOptions:
     ...     assert publish_options.build_directory == staging_root
     """
     return publish.PublishOptions(build_directory=staging_root)
+
 
 @pytest.fixture
 def prepare_workspace_fixtures(

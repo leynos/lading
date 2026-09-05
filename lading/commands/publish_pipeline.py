@@ -171,6 +171,8 @@ def _package_crate(
     )
     LOGGER.error(message)
     raise PublishPreflightError(message)
+
+
 def _publish_crates(
     plan: PublishPlan,
     preparation: PublishPreparation,
@@ -309,6 +311,7 @@ def _live_pipeline_abort_log_args(
         ", ".join(completed) if completed else "none",
     )
 
+
 def _run_dry_run_phase(
     phase_name: str,
     action: cabc.Callable[[], None],
@@ -331,6 +334,8 @@ def _run_dry_run_phase(
     except PublishPreflightError:
         LOGGER.exception("Dry-run pipeline: %s phase failed", phase_name)
         raise
+
+
 def _dispatch_publication(
     plan: PublishPlan,
     preparation: PublishPreparation,

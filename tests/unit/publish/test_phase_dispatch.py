@@ -352,6 +352,7 @@ def test_package_and_publish_dispatch_through_shared_helper(
     assert calls[0]["runner"] is runner
     assert calls[1]["runner"] is runner
 
+
 def test_run_dry_run_phase_normalises_packaging_preparation_failure(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -370,6 +371,7 @@ def test_run_dry_run_phase_normalises_packaging_preparation_failure(
     assert excinfo.value.__cause__ is failure
     assert caplog.messages == ["Dry-run pipeline: packaging phase failed"]
 
+
 def test_run_dry_run_phase_succeeds_without_logging(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -381,6 +383,7 @@ def test_run_dry_run_phase_succeeds_without_logging(
 
     assert calls == ["ran"]
     assert caplog.messages == []
+
 
 def test_run_dry_run_phase_reraises_publish_preflight_failure(
     caplog: pytest.LogCaptureFixture,

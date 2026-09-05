@@ -78,11 +78,14 @@ class _FailureCase(typ.NamedTuple):
     subcommand: str
     output_fragment: str
 
+
 class _PackagingFailureDetail(typ.NamedTuple):
     stdout: str
     stderr: str
     expected_in_message: str
     not_expected_in_message: str | None
+
+
 def _assert_packaging_failure_message_contains(
     plan_and_prep: tuple[publish_plan.PublishPlan, publish_staging.PublishPreparation],
     runner: cabc.Callable[..., tuple[int, str, str]],
@@ -276,6 +279,7 @@ def test_package_publishable_crates_stops_on_failure(
     assert "cargo package failed for crate alpha" in str(excinfo.value)
     assert "packaging failed" in str(excinfo.value)
 
+
 @pytest.mark.parametrize(
     "case",
     [
@@ -315,6 +319,8 @@ def test_package_publishable_crates_reports_failure_detail(
         expected_in_message=case.expected_in_message,
         not_expected_in_message=case.not_expected_in_message,
     )
+
+
 def test_publish_crates_run_dry_run_in_order(
     publish_plan_and_prep: tuple[
         publish_plan.PublishPlan, publish_staging.PublishPreparation, Path

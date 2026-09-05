@@ -110,6 +110,7 @@ class CargoIndexLookupFailure:
     stderr: str
     missing_dependency_name: str | None
 
+
 @dc.dataclass(frozen=True, slots=True)
 class CargoAlreadyPublishedFailure:
     """Represents Cargo reporting an already-published crate version.
@@ -191,6 +192,7 @@ def parse_index_lookup_failure(
         subcommand=subcommand,
         result=result,
     )
+
 
 def parse_already_published_failure(
     result: CargoSubprocessResult,
