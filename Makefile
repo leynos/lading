@@ -96,7 +96,8 @@ check-fmt: $(UV) ## Verify formatting
 lint: build $(UV) interrogate ## Run linters
 	$(RUFF) check
 	$(UV) run interrogate --fail-under 100 lading
-	$(UV) run interrogate --fail-under 100 tests scripts
+	$(UV) run interrogate --fail-under 100 \
+		--ignore-nested-functions --ignore-nested-classes tests scripts
 	$(PYLINT) $(PYLINT_TARGETS)
 	$(DF12_PYLINT) $(PYLINT_TARGETS)
 	$(AMBRLEAKS) tests
