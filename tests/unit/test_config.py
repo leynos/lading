@@ -59,7 +59,9 @@ def test_load_configuration_parses_values(tmp_path: Path) -> None:
     assert configuration.publish.strip_patches == "all"
     assert configuration.preflight.test_exclude == ("cucumber",)
     assert configuration.preflight.unit_tests_only is True
-    assert configuration.preflight.skip is True
+    assert configuration.preflight.skip is True, (
+        "an explicit [preflight] skip = true should be parsed"
+    )
 
 
 @pytest.mark.parametrize(
@@ -259,7 +261,9 @@ def test_preflight_skip_defaults_to_running_the_checks() -> None:
     absent-table case is covered by
     ``test_preflight_config_from_mapping_defaults``.
     """
-    assert config_module.PreflightConfig.from_mapping({}).skip is False
+    assert config_module.PreflightConfig.from_mapping({}).skip is False, (
+        "an empty [preflight] table must leave the build checks running"
+    )
 
 
 def test_preflight_config_parses_extended_fields() -> None:

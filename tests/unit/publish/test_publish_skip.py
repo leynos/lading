@@ -19,16 +19,20 @@ def test_absent_override_takes_the_configured_value() -> None:
     """
     decision = resolve_skip_preflight(None, configured=True)
 
-    assert decision.skip is True
-    assert decision.source is SkipPreflightSource.CONFIGURATION
+    assert decision.skip is True, "the configured value should be taken as given"
+    assert decision.source is SkipPreflightSource.CONFIGURATION, (
+        "an unoverridden decision comes from the configuration"
+    )
 
 
 def test_absent_override_defaults_to_running_the_checks() -> None:
     """A workspace that configures nothing keeps running the build checks."""
     decision = resolve_skip_preflight(None, configured=False)
 
-    assert decision.skip is False
-    assert decision.source is SkipPreflightSource.CONFIGURATION
+    assert decision.skip is False, "the default keeps the build checks running"
+    assert decision.source is SkipPreflightSource.CONFIGURATION, (
+        "an unoverridden decision comes from the configuration"
+    )
 
 
 @pytest.mark.parametrize("configured", [True, False])
@@ -45,8 +49,12 @@ def test_override_wins_over_configuration(*, configured: bool, requested: bool) 
 
     decision = resolve_skip_preflight(override, configured=configured)
 
-    assert decision.skip is requested
-    assert decision.source is SkipPreflightSource.COMMAND_LINE
+    assert decision.skip is requested, (
+        f"the override should win over configured={configured}"
+    )
+    assert decision.source is SkipPreflightSource.COMMAND_LINE, (
+        "the override carries its own source"
+    )
 
 
 def test_every_source_has_a_distinct_description() -> None:
@@ -57,5 +65,9 @@ def test_every_source_has_a_distinct_description() -> None:
     """
     descriptions = [source.description for source in SkipPreflightSource]
 
-    assert len(set(descriptions)) == len(SkipPreflightSource)
-    assert all(descriptions)
+    assert len(set(descriptions)) == len(SkipPreflightSource), (
+        f"each source needs a distinct phrase: {descriptions}"
+    )
+    assert all(descriptions), (
+        f"no source may describe itself as nothing: {descriptions}"
+    )

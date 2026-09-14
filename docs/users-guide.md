@@ -563,10 +563,12 @@ including when it fails. Labels:
 #### `publish.preflight.duration`
 
 One duration observation per `lading publish` run, covering the whole
-pre-flight. Labels:
+pre-flight, recorded whether or not it succeeded. Labels:
 
 - `mode` — `skipped` or `executed`, which makes the saving from a skip
   directly comparable.
+- `source` — the same values as `publish.preflight`, so a skip requested by
+  the environment is distinguishable from one the configuration asked for.
 
 #### `publish.sccache.query`
 

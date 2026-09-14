@@ -39,8 +39,9 @@ def _recording_runner(
         *,
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
-        del cwd, env
+        del cwd, env, echo_stdout
         calls.append(tuple(command))
         return 0, "", ""
 
@@ -75,8 +76,9 @@ def _failing_runner(
         *,
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
-        del cwd, env
+        del cwd, env, echo_stdout
         recorded = tuple(command)
         calls.append(recorded)
         if recorded[: len(failing_prefix)] == failing_prefix:
@@ -228,7 +230,7 @@ def test_skip_records_its_mode_and_source_as_metrics(
             source=str(SkipPreflightSource.CONFIGURATION),
         )
         == 1
-    )
+    ), "a configured skip should be counted once as skipped"
     observed = metrics.duration_stats(
         publish_preflight.PREFLIGHT_DURATION_METRIC,
         mode="skipped",
@@ -261,8 +263,10 @@ def test_default_configuration_runs_the_build_checks(
     """Without a skip request the pre-flight behaves exactly as before."""
     calls = _run_preflight(tmp_path, monkeypatch, _Scenario(configured_skip=False))
 
-    assert _cargo_subcommands(calls) >= {"check", "test"}
-    assert AUX_BUILD_COMMAND in calls
+    assert _cargo_subcommands(calls) >= {"check", "test"}, (
+        f"both pre-flight build commands should run: {calls}"
+    )
+    assert AUX_BUILD_COMMAND in calls, f"the auxiliary build should run: {calls}"
 
 
 def test_override_reinstates_the_build_checks(
@@ -277,8 +281,10 @@ def test_override_reinstates_the_build_checks(
         tmp_path, monkeypatch, _Scenario(configured_skip=True, override=override)
     )
 
-    assert _cargo_subcommands(calls) >= {"check", "test"}
-    assert AUX_BUILD_COMMAND in calls
+    assert _cargo_subcommands(calls) >= {"check", "test"}, (
+        f"both pre-flight build commands should run: {calls}"
+    )
+    assert AUX_BUILD_COMMAND in calls, f"the auxiliary build should run: {calls}"
 
 
 def test_publish_run_forwards_the_skip_override(
@@ -341,7 +347,7 @@ def test_failed_guard_still_records_the_skipped_mode(
             source=str(SkipPreflightSource.CONFIGURATION),
         )
         == 1
-    )
+    ), "a failing lockfile guard should still be counted as skipped"
 
 
 def test_failed_cargo_check_still_records_the_executed_mode(
@@ -366,7 +372,7 @@ def test_failed_cargo_check_still_records_the_executed_mode(
             source=str(SkipPreflightSource.CONFIGURATION),
         )
         == 1
-    )
+    ), "a failing cargo check should still be counted as executed"
     observed = metrics.duration_stats(
         publish_preflight.PREFLIGHT_DURATION_METRIC,
         mode="executed",
@@ -396,8 +402,10 @@ def test_recorded_duration_measures_the_injected_clock(
         mode="skipped",
         source=str(SkipPreflightSource.CONFIGURATION),
     )
-    assert observed.count == 1
-    assert observed.total_seconds == pytest.approx(2.5)
+    assert observed.count == 1, "expected one duration observation"
+    assert observed.total_seconds == pytest.approx(2.5), (
+        "the observation should be the elapsed time the clock reported"
+    )
 
 
 def test_skipped_preflight_still_fails_on_a_dirty_tree(
@@ -415,8 +423,9 @@ def test_skipped_preflight_still_fails_on_a_dirty_tree(
         *,
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
-        del cwd, env
+        del cwd, env, echo_stdout
         recorded = tuple(command)
         calls.append(recorded)
         if recorded[:2] == ("git", "status"):

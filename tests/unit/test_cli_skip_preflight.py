@@ -154,8 +154,12 @@ def test_publish_cli_labels_the_skip_preflight_decision(
         assert decision is None, f"expected no override, got {decision!r}"
         return
     assert decision is not None, "expected an explicit skip decision"
-    assert decision.skip is case.expected_skip
-    assert decision.source is case.expected_source
+    assert decision.skip is case.expected_skip, (
+        f"resolved skip {decision.skip!r}, expected {case.expected_skip!r}"
+    )
+    assert decision.source is case.expected_source, (
+        f"attributed to {decision.source!r}, expected {case.expected_source!r}"
+    )
 
 
 @pytest.mark.parametrize(
@@ -192,4 +196,29 @@ def test_environment_boolean_mirrors_cyclopts_coercion(
     cyclopts 3.24: case-insensitive ``1/true/t/yes/y`` and their negatives,
     with no tolerance for surrounding whitespace.
     """
-    assert cli._environment_boolean(raw) is expected
+    assert cli._environment_boolean(raw) is expected, (
+        f"{raw!r} should read as {expected!r} to mirror cyclopts"
+    )
+
+
+@pytest.mark.parametrize("raw", ["on", "off", "", "2", " 1 ", "maybe"])
+def test_publish_rejects_an_unparseable_environment_value(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, raw: str
+) -> None:
+    """A value cyclopts cannot coerce stops the publish rather than guessing.
+
+    Treating an unrecognised value as false would skip nothing silently;
+    treating it as true would skip the checks on a typo. Both are worse than
+    refusing to run, so this asserts the refusal through the real entry point.
+    """
+    monkeypatch.setenv("LADING_SKIP_PREFLIGHT", raw)
+
+    def fail_if_called(*_args: object, **_kwargs: object) -> str:  # pragma: no cover
+        message = "publish should not run with an unparseable skip value"
+        raise AssertionError(message)
+
+    monkeypatch.setattr(publish_command, "run", fail_if_called)
+
+    exit_code = cli.main(["--workspace-root", str(tmp_path), "publish"])
+
+    assert exit_code == 1, f"{raw!r} should fail the invocation, got {exit_code}"
