@@ -129,6 +129,29 @@ def test_copy_workspace_tree_replaces_existing_clone(tmp_path: Path) -> None:
     assert (staging_root / "marker.txt").read_text(encoding="utf-8") == "fresh"
 
 
+def _assert_copy_workspace_tree_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    workspace_root: Path,
+    build_directory: Path,
+    operation: str,
+    failure: OSError,
+) -> None:
+    """Assert a filesystem failure is wrapped by the staging error boundary."""
+
+    def fail_operation(*_args: object, **_kwargs: object) -> None:
+        raise failure
+
+    monkeypatch.setattr(publish_staging.shutil, operation, fail_operation)
+
+    with pytest.raises(publish_staging.PublishPreparationError) as excinfo:
+        publish_staging._copy_workspace_tree(
+            workspace_root, build_directory, preserve_symlinks=True
+        )
+
+    assert "Cannot copy workspace into staging directory" in str(excinfo.value)
+    assert excinfo.value.__cause__ is failure
+
+
 def test_copy_workspace_tree_wraps_staging_cleanup_failure(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -140,18 +163,9 @@ def test_copy_workspace_tree_wraps_staging_cleanup_failure(
     staging_root.mkdir(parents=True)
     failure = OSError("permission denied")
 
-    def fail_rmtree(*_args: object, **_kwargs: object) -> None:
-        raise failure
-
-    monkeypatch.setattr(publish_staging.shutil, "rmtree", fail_rmtree)
-
-    with pytest.raises(publish_staging.PublishPreparationError) as excinfo:
-        publish_staging._copy_workspace_tree(
-            workspace_root, build_directory, preserve_symlinks=True
-        )
-
-    assert "Cannot copy workspace into staging directory" in str(excinfo.value)
-    assert excinfo.value.__cause__ is failure
+    _assert_copy_workspace_tree_failure(
+        monkeypatch, workspace_root, build_directory, "rmtree", failure
+    )
 
 
 def test_copy_workspace_tree_rejects_nested_clone(tmp_path: Path) -> None:
@@ -176,19 +190,10 @@ def test_copy_workspace_tree_wraps_copy_failure(
     build_directory = tmp_path / "staging"
     build_directory.mkdir()
 
-    def fail_copytree(*_args: object, **_kwargs: object) -> None:
-        message = "disk full"
-        raise OSError(message)
-
-    monkeypatch.setattr(publish_staging.shutil, "copytree", fail_copytree)
-
-    with pytest.raises(publish_staging.PublishPreparationError) as excinfo:
-        publish_staging._copy_workspace_tree(
-            workspace_root, build_directory, preserve_symlinks=True
-        )
-
-    assert "Cannot copy workspace into staging directory" in str(excinfo.value)
-    assert isinstance(excinfo.value.__cause__, OSError)
+    failure = OSError("disk full")
+    _assert_copy_workspace_tree_failure(
+        monkeypatch, workspace_root, build_directory, "copytree", failure
+    )
 
 
 @pytest.mark.parametrize(

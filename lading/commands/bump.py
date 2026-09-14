@@ -119,27 +119,7 @@ def run(
         len(context.excluded),
         len(context.updated_crate_names),
     )
-    changed_manifests: set[Path] = set()
-    bump_pipeline._process_workspace_manifest(
-        context, target_version, changed_manifests
-    )
-    bump_pipeline._process_crate_manifests(context, target_version, changed_manifests)
-    changed_documents = bump_pipeline._process_documentation_files(
-        context, target_version
-    )
-    changed_readmes = bump_pipeline._process_readme_transposition(
-        context, dry_run=context.base_options.dry_run
-    )
-    changed_lockfiles = bump_pipeline._process_lockfiles(context, changed_manifests)
-    changes = bump_pipeline._prepare_sorted_changes(
-        context,
-        changed_manifests,
-        bump_pipeline._BumpAuxiliaryChanges(
-            documents=tuple(changed_documents),
-            readmes=tuple(changed_readmes),
-            lockfiles=changed_lockfiles,
-        ),
-    )
+    changes = bump_pipeline._run_pipeline(context, target_version)
     return _format_result_message(
         changes,
         target_version,

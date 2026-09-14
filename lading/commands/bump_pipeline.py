@@ -56,6 +56,27 @@ class _BumpAuxiliaryChanges:
     lockfiles: cabc.Sequence[Path]
 
 
+def _run_pipeline(context: _BumpContext, target_version: str) -> BumpChanges:
+    """Run update stages and return their ordered changes."""
+    changed_manifests: set[Path] = set()
+    _process_workspace_manifest(context, target_version, changed_manifests)
+    _process_crate_manifests(context, target_version, changed_manifests)
+    changed_documents = _process_documentation_files(context, target_version)
+    changed_readmes = _process_readme_transposition(
+        context, dry_run=context.base_options.dry_run
+    )
+    changed_lockfiles = _process_lockfiles(context, changed_manifests)
+    return _prepare_sorted_changes(
+        context,
+        changed_manifests,
+        _BumpAuxiliaryChanges(
+            documents=tuple(changed_documents),
+            readmes=tuple(changed_readmes),
+            lockfiles=changed_lockfiles,
+        ),
+    )
+
+
 def _process_workspace_manifest(
     context: _BumpContext,
     target_version: str,
