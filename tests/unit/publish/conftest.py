@@ -83,10 +83,12 @@ INDEX_MISSING_STDERR_EXTERNAL = (
 def make_preflight_config(**overrides: object) -> config_module.PreflightConfig:
     """Build a :class:`PreflightConfig` with convenient defaults.
 
-    Args:
-        **overrides: Keyword arguments passed to PreflightConfig constructor.
-            Special handling: compiletest_externs as tuple of (name, path) pairs
-            will be converted to CompiletestExtern objects.
+    Parameters
+    ----------
+    **overrides : object
+        Keyword arguments passed to the ``PreflightConfig`` constructor.
+        Special handling: compiletest_externs as tuple of (name, path) pairs
+        are converted to ``CompiletestExtern`` objects.
 
     Returns
     -------

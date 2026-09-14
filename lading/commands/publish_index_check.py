@@ -1,9 +1,9 @@
 """Handle cargo index-lookup failures during publish workflows.
 
 This module keeps downgrade logic for missing registry versions separate from the
-publish command orchestration. ``publish.py`` imports these helpers while running
-``cargo package`` and ``cargo publish`` so both phases share the same
-index-missing-version failure formatting and override handling.
+publish command orchestration. ``publish_pipeline`` imports these helpers while
+dispatching ``cargo package`` and ``cargo publish`` phases so both phases share
+the same index-missing-version failure formatting and override handling.
 """
 
 from __future__ import annotations

@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import dataclasses as dc
+import logging
 import pathlib
 import typing as typ
 
 import pytest
 
-from lading.commands import bump
+from lading.commands import bump, bump_pipeline
+from lading.commands.bump_readme import ReadmeTranspositionError
 from tests.helpers.workspace_builders import (
     _build_workspace_with_internal_deps,
     _CrateSpec,
@@ -28,6 +30,30 @@ class _ReadmeTransposeScenario:
     test_id: str
     exclude: tuple[str, ...] = ()
     check_version_unchanged: bool = False
+
+
+def test_readme_transposition_failure_is_logged_at_pipeline_boundary(
+    tmp_path: pathlib.Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """README failures are logged once with the affected crate name."""
+    workspace, _manifests = _build_workspace_with_internal_deps(
+        tmp_path,
+        specs=(_CrateSpec(name="alpha", readme_workspace=True),),
+    )
+    configuration = _make_config()
+    context = bump._initialize_bump_context(
+        tmp_path,
+        bump.BumpOptions(configuration=configuration, workspace=workspace),
+    )
+
+    with (
+        caplog.at_level(logging.ERROR, logger=bump_pipeline._log.name),
+        pytest.raises(ReadmeTranspositionError),
+    ):
+        bump_pipeline._process_readme_transposition(context, dry_run=False)
+
+    assert caplog.messages == ["README transposition failed for crate 'alpha'"]
 
 
 def test_run_updates_documentation_snippets(

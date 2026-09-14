@@ -479,8 +479,8 @@ lading publish [--live] [--forbid-dirty] [--sccache-stats] [--sccache-stats-json
       compiletest `*.stderr` files when cargo test fails, exposing the debug
       diff directly in the CLI output.
 
-    Any `PublishPreflightError` aborts execution before workspace discovery,
-    `plan_publication`, `publish_staging.prepare_workspace`, or
+    Any `PublishPreflightError` aborts execution before `plan_publication`,
+    `publish_staging.prepare_workspace`, or
     `publish_pipeline._dispatch_publication` run.
 
 2. **Discover Workspace:** Build the internal workspace model.
@@ -510,7 +510,8 @@ involved to the operator. When `publish.order` is configured the planner
 validates that every publishable crate appears exactly once and that no unknown
 names are listed before returning the user-specified order.
 
-1. **Stage the workspace and prepare its manifest:**
+<!-- markdownlint-disable-next-line MD029 -->
+5. **Stage the workspace and prepare its manifest:**
    `publish_staging.prepare_workspace` creates an isolated workspace copy.
    Within that staged workspace, determine the patch stripping strategy based
    on the `publish.strip_patches` configuration value and the execution mode

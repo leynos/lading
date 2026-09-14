@@ -1,9 +1,9 @@
 """Manifest rewriting helpers for ``lading bump``.
 
 Extracted from :mod:`lading.commands.bump` (issue #108). This module owns
-per-manifest version and dependency-section rewriting; orchestration and
-context derivation stay in ``bump``, which re-exports these helpers for the
-historical ``bump._update_manifest``-style access used by tests.
+per-manifest version and dependency-section rewriting. The ordered update
+sequence is orchestrated by :mod:`lading.commands.bump_pipeline`, while
+``bump`` derives the shared context passed to those pipeline stages.
 """
 
 from __future__ import annotations

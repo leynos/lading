@@ -30,6 +30,30 @@ The 0.1.0 release also changes workspace README adoption:
 > crate README files produced by `lading bump` before running `lading publish`;
 > publish staging no longer creates or repairs those files.
 
+## Programmatic publish staging
+
+Programmatic callers should import the staging helper from
+`lading.commands.publish_staging` and pass a publication plan with options as
+a keyword argument:
+
+```python
+from lading.commands.publish_staging import prepare_workspace
+
+preparation = prepare_workspace(plan, options=options)
+```
+
+The `workspace` argument accepted by older releases is no longer part of the
+`prepare_workspace(plan, *, options=None)` contract; the plan supplies the
+workspace root. When `options.cleanup` is enabled and no
+`options.build_directory` is supplied, process-exit cleanup removes the entire
+automatically created build directory. With a caller-supplied build directory,
+cleanup removes only the staged workspace root and preserves the caller's
+other files.
+
+> **Migration note for the next minor release:** Update imports from
+> `lading.commands.publish` to `lading.commands.publish_staging`, remove the
+> obsolete workspace argument, and pass `options` by keyword.
+
 ## Installation
 
 ### Install from a wheel (recommended for internal distribution)

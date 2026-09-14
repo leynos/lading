@@ -88,6 +88,13 @@ class _PackagingFailureDetail(typ.NamedTuple):
     stderr: str
     expected_in_message: str
     not_expected_in_message: str | None
+
+class _PublishCratesModeCase(typ.NamedTuple):
+    """Expected publish invocation details for one execution mode."""
+
+    live: bool
+    command: tuple[str, ...]
+    expected_log_message: str | None
 def _assert_packaging_failure_message_contains(
     plan_and_prep: tuple[publish_plan.PublishPlan, publish_staging.PublishPreparation],
     runner: cabc.Callable[..., tuple[int, str, str]],
@@ -323,13 +330,36 @@ def test_package_publishable_crates_reports_failure_detail(
         expected_in_message=case.expected_in_message,
         not_expected_in_message=case.not_expected_in_message,
     )
-def test_publish_crates_run_dry_run_in_order(
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        pytest.param(
+            _PublishCratesModeCase(
+                live=False,
+                command=("cargo", "publish", "--allow-dirty", "--dry-run"),
+                expected_log_message="cargo publish",
+            ),
+            id="dry-run",
+        ),
+        pytest.param(
+            _PublishCratesModeCase(
+                live=True,
+                command=("cargo", "publish", "--allow-dirty"),
+                expected_log_message=None,
+            ),
+            id="live",
+        ),
+    ],
+)
+def test_publish_crates_run_in_order_for_execution_mode(
     publish_plan_and_prep: tuple[
         publish_plan.PublishPlan, publish_staging.PublishPreparation, Path
     ],
     caplog: pytest.LogCaptureFixture,
+    case: _PublishCratesModeCase,
 ) -> None:
-    """Cargo publish --dry-run runs for each crate in publish order."""
+    """Cargo publish runs in publish order with mode-specific arguments."""
     caplog.set_level(logging.INFO, logger=publish_pipeline.LOGGER.name)
     plan, preparation, staging_root = publish_plan_and_prep
     runner = CallTrackingRunner()
@@ -338,7 +368,7 @@ def test_publish_crates_run_dry_run_in_order(
         publish_pipeline._PublicationPipelineState(
             plan,
             preparation,
-            publish_pipeline._PublishExecutionOptions(live=False, allow_dirty=True),
+            publish_pipeline._PublishExecutionOptions(live=case.live, allow_dirty=True),
         ),
         runner=runner,
     )
@@ -347,40 +377,9 @@ def test_publish_crates_run_dry_run_in_order(
         staging_root / crate.root_path.relative_to(plan.workspace_root)
         for crate in plan.publishable
     ]
-    assert runner.calls == [
-        (("cargo", "publish", "--allow-dirty", "--dry-run"), root)
-        for root in expected_roots
-    ]
-    assert any("cargo publish" in message for message in caplog.messages)
-
-
-def test_publish_crates_run_live_without_dry_run(
-    publish_plan_and_prep: tuple[
-        publish_plan.PublishPlan, publish_staging.PublishPreparation, Path
-    ],
-) -> None:
-    """Live mode omits the --dry-run flag when publishing crates."""
-    plan, preparation, staging_root = publish_plan_and_prep
-    runner = CallTrackingRunner()
-
-    publish_pipeline._publish_crates(
-        publish_pipeline._PublicationPipelineState(
-            plan,
-            preparation,
-            publish_pipeline._PublishExecutionOptions(live=True, allow_dirty=True),
-        ),
-        runner=runner,
-    )
-
-    expected_roots = [
-        staging_root / crate.root_path.relative_to(plan.workspace_root)
-        for crate in plan.publishable
-    ]
-    assert runner.calls == [
-        (("cargo", "publish", "--allow-dirty"), root) for root in expected_roots
-    ]
-
-
+    assert runner.calls == [(case.command, root) for root in expected_roots]
+    if case.expected_log_message is not None:
+        assert any(case.expected_log_message in message for message in caplog.messages)
 def test_publish_crate_continues_when_version_already_uploaded(
     publish_plan_and_prep: tuple[
         publish_plan.PublishPlan, publish_staging.PublishPreparation, Path

@@ -203,7 +203,11 @@ def test_dispatch_reports_what_it_measured_when_a_crate_fails(
     """A failing crate aborts the publish but the report still lands."""
     monkeypatch.setenv("RUSTC_WRAPPER", str(WRAPPER))
     plan, preparation, _staging_root = publish_plan_and_prep
-    runner = ScriptedRunner([payload(10, 8, 2), payload(20, 16, 4)])
+    runner = ScriptedRunner([
+        payload(10, 8, 2),
+        payload(20, 16, 4),
+        payload(30, 24, 6),
+    ])
     original_call = runner.__call__
 
     def _failing_second_package(
@@ -227,6 +231,26 @@ def test_dispatch_reports_what_it_measured_when_a_crate_fails(
 
     written = json.loads(report.read_text(encoding="utf-8"))
     assert [record["crate"] for record in written["crates"]] == ["alpha", "beta"]
+    alpha_counters = {
+        key: written["crates"][0][key]
+        for key in ("requests", "hits", "misses", "errors")
+    }
+    beta_counters = {
+        key: written["crates"][1][key]
+        for key in ("requests", "hits", "misses", "errors")
+    }
+    assert alpha_counters == {
+        "errors": 0,
+        "hits": 8,
+        "misses": 2,
+        "requests": 10,
+    }
+    assert beta_counters == {
+        "errors": 0,
+        "hits": 8,
+        "misses": 2,
+        "requests": 10,
+    }
     assert runner.calls[-1] == TEXT_QUERY
 
 
