@@ -374,7 +374,7 @@ def test_relay_stream_decodes_and_buffers_text() -> None:
     sink = io.StringIO()
     buffer: list[str] = []
 
-    subprocess_runner.relay_stream(source, sink, buffer)
+    subprocess_runner.relay_stream(source, sink, buffer, "stdout")
 
     assert "".join(buffer).startswith("hello\nworld")
     assert sink.getvalue().startswith("hello\nworld")
@@ -390,8 +390,8 @@ def test_write_to_sink_handles_broken_pipe() -> None:
         def flush(self) -> None:
             raise BrokenPipeError
 
-    assert subprocess_runner.write_to_sink(None, "payload") is None
-    assert subprocess_runner.write_to_sink(_Broken(), "payload") is None
+    assert subprocess_runner.write_to_sink(None, "payload", "stdout") is None
+    assert subprocess_runner.write_to_sink(_Broken(), "payload", "stdout") is None
 
 
 def test_apply_cmd_mox_environment_and_echo(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -399,7 +399,7 @@ def test_apply_cmd_mox_environment_and_echo(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.delenv("NEW_CMD_ENV", raising=False)
 
     cmd_mox_runner._apply_cmd_mox_environment({"NEW_CMD_ENV": "present"})
-    cmd_mox_runner._echo_buffered_output("", io.StringIO())
+    cmd_mox_runner._echo_buffered_output("", io.StringIO(), "stdout")
 
     assert os.environ["NEW_CMD_ENV"] == "present"
 

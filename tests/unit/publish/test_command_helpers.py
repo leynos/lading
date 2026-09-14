@@ -45,7 +45,7 @@ def test_relay_stream_forwards_and_decodes_bytes() -> None:
     sink = io.StringIO()
     buffer: list[str] = []
 
-    execution.relay_stream(source, sink, buffer)
+    execution.relay_stream(source, sink, buffer, "stdout")
 
     assert buffer == ["alpha"]
     assert sink.getvalue() == "alpha"
@@ -61,7 +61,7 @@ def test_write_to_sink_handles_broken_pipe() -> None:
         def flush(self) -> None:  # pragma: no cover - compatibility hook
             return None
 
-    result = execution.write_to_sink(_BrokenSink(), "data")
+    result = execution.write_to_sink(_BrokenSink(), "data", "stdout")
 
     assert result is None
 
@@ -69,7 +69,7 @@ def test_write_to_sink_handles_broken_pipe() -> None:
 def test_echo_buffered_output_skips_empty_payloads() -> None:
     """The echo helper should not write anything for empty payloads."""
     sink = io.StringIO()
-    cmd_mox_runner._echo_buffered_output("", sink)
+    cmd_mox_runner._echo_buffered_output("", sink, "stdout")
     assert sink.getvalue() == ""
 
 

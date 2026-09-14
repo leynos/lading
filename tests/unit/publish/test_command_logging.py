@@ -116,8 +116,8 @@ def test_cmd_mox_passthrough_streams_output(
 
     echo_payloads: list[str] = []
 
-    def fake_echo(payload: str, sink: typ.TextIO) -> None:
-        del sink
+    def fake_echo(payload: str, sink: typ.TextIO, stream: str) -> None:
+        del sink, stream
         echo_payloads.append(payload)
 
     monkeypatch.setattr(
