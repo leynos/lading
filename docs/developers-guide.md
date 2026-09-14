@@ -198,9 +198,10 @@ Two properties keep it fixed, and
   of reporting success.
 
 The script takes the tag from `GITHUB_REF_NAME` and invokes `gh` through a
-cuprum catalogue, so the release job's only permitted external programme is
-`gh`. Its unit tests assert the argv across the process boundary with cmd-mox
-rather than stubbing the call.
+cuprum catalogue whose allowlist permits `gh` alone, so the script cannot run
+any other programme. That boundary covers the script, not the job: the job
+also runs `uv` and its pinned actions. The script's unit tests assert the argv
+across the process boundary with cmd-mox rather than stubbing the call.
 
 ## Property-based testing
 

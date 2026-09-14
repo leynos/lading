@@ -52,7 +52,19 @@ app = App(
 
 
 class UploadError(RuntimeError):
-    """Raised when the wheels cannot be uploaded."""
+    """Raised when the release's wheels cannot be uploaded.
+
+    Both causes are failures of the release rather than conditions to report
+    and continue: a build that produced no wheel, and an upload the GitHub
+    CLI rejected. The workflow step turns either into a non-zero exit.
+
+    Examples
+    --------
+    >>> raise UploadError("No wheel found under dist")
+    Traceback (most recent call last):
+        ...
+    upload_release_wheels.UploadError: No wheel found under dist
+    """
 
 
 def discover_wheels(directory: Path) -> tuple[Path, ...]:
