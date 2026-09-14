@@ -205,7 +205,12 @@ def _record_preflight_metrics(
     """Record how the pre-flight resolved and how long it took."""
     mode = "skipped" if decision.skip else "executed"
     metrics.increment_counter(PREFLIGHT_METRIC, mode=mode, source=str(decision.source))
-    metrics.observe_duration(PREFLIGHT_DURATION_METRIC, elapsed_seconds, mode=mode)
+    metrics.observe_duration(
+        PREFLIGHT_DURATION_METRIC,
+        elapsed_seconds,
+        mode=mode,
+        source=str(decision.source),
+    )
 
 
 @dc.dataclass(frozen=True, slots=True)

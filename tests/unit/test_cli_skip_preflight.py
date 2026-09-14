@@ -163,10 +163,21 @@ def test_publish_cli_labels_the_skip_preflight_decision(
     [
         ("1", True),
         ("true", True),
+        ("t", True),
+        ("yes", True),
+        ("y", True),
         ("YES", True),
         ("0", False),
         ("false", False),
-        (" no ", False),
+        ("f", False),
+        ("no", False),
+        ("n", False),
+        ("No", False),
+        # Cyclopts rejects these outright, so they cannot be the source.
+        ("on", None),
+        ("off", None),
+        (" 1 ", None),
+        ("", None),
         ("maybe", None),
         (None, None),
     ],
@@ -177,6 +188,8 @@ def test_environment_boolean_mirrors_cyclopts_coercion(
     """Only the literals cyclopts coerces count as an environment decision.
 
     Attribution depends on this: a value cyclopts would have rejected cannot
-    be the source of the resolved flag.
+    be the source of the resolved flag. The accepted set was measured against
+    cyclopts 3.24: case-insensitive ``1/true/t/yes/y`` and their negatives,
+    with no tolerance for surrounding whitespace.
     """
     assert cli._environment_boolean(raw) is expected

@@ -200,9 +200,11 @@ The flag overrides the configuration in both directions, so
 The `Cargo.lock` freshness guard is unaffected: it costs one `cargo metadata`
 call rather than a rebuild, and a stale lockfile would still produce a wrong
 publication. The working-tree cleanliness guard is likewise unaffected, but it
-is opt-in, so it runs only when `--forbid-dirty` is also passed. Every skipped
-run logs one line naming the setting, flag, or environment variable that asked
-for it:
+is opt-in, so it runs only when `--forbid-dirty` is also passed. Those two
+guards decide whether the publication would be correct rather than repeat the
+caller's build, which is why a skip never removes them. Every skipped run logs
+one line naming whichever input asked for it: the setting, the flag, the
+environment variable, or an in-process caller.
 
 ```plaintext
 INFO: Skipping the publish pre-flight auxiliary builds, cargo check and cargo

@@ -197,7 +197,9 @@ def test_skip_records_its_mode_and_source_as_metrics(
         == 1
     )
     observed = metrics.duration_stats(
-        publish_preflight.PREFLIGHT_DURATION_METRIC, mode="skipped"
+        publish_preflight.PREFLIGHT_DURATION_METRIC,
+        mode="skipped",
+        source=str(SkipPreflightSource.CONFIGURATION),
     )
     assert observed.count == 1, "expected one pre-flight duration observation"
 

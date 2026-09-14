@@ -86,8 +86,8 @@ _CMD_MOX_TRUTHY_VALUES = frozenset({"1", "true", "yes", "on"})
 # Mirrors the literals cyclopts coerces into a bool for an env_var-backed
 # option. Only consulted when the dispatch tokens are unavailable, which
 # happens when the app is driven in-process rather than through main().
-_ENVIRONMENT_TRUTHY_VALUES = frozenset({"1", "true", "yes"})
-_ENVIRONMENT_FALSY_VALUES = frozenset({"0", "false", "no"})
+_ENVIRONMENT_TRUTHY_VALUES = frozenset({"1", "true", "t", "yes", "y"})
+_ENVIRONMENT_FALSY_VALUES = frozenset({"0", "false", "f", "no", "n"})
 _SKIP_PREFLIGHT_TOKENS = frozenset({"--skip-preflight", "--no-skip-preflight"})
 _command_tokens: contextvars.ContextVar[tuple[str, ...] | None] = (
     contextvars.ContextVar("lading_cli_command_tokens", default=None)
@@ -148,10 +148,20 @@ def _parse_workspace_equals(argument: str, index: int) -> tuple[str, int]:
 
 
 def _environment_boolean(raw: str | None) -> bool | None:
-    """Return the boolean ``raw`` spells, or ``None`` when it spells neither."""
+    """Return the boolean ``raw`` spells, or ``None`` when it spells neither.
+
+    Cyclopts matches these spellings case-insensitively and does not trim, so
+    neither does this; a value it would reject cannot have produced the
+    resolved flag.
+
+    Returns
+    -------
+    bool | None
+        The boolean ``raw`` spells, or ``None`` when it spells neither.
+    """
     if raw is None:
         return None
-    normalized = raw.strip().lower()
+    normalized = raw.lower()
     if normalized in _ENVIRONMENT_TRUTHY_VALUES:
         return True
     if normalized in _ENVIRONMENT_FALSY_VALUES:
