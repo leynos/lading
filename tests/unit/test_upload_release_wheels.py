@@ -1,0 +1,157 @@
+"""Tests for the release wheel upload script.
+
+The script replaced a shell pipeline that could not fail. These tests hold the
+replacement to the behaviour that matters: an empty directory is an error, and
+every wheel found reaches ``gh release upload`` with the right tag.
+"""
+
+from __future__ import annotations
+
+import ast
+import typing as typ
+from pathlib import Path
+
+import pytest
+
+try:
+    from cmd_mox import CmdMox
+except ModuleNotFoundError:  # pragma: no cover - runtime fallback
+    CmdMox = typ.Any  # type: ignore[assignment, misc]
+
+if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
+    import collections.abc as cabc
+    import types
+
+SCRIPT_DIRECTORY = Path(__file__).resolve().parents[2] / "scripts"
+SCRIPT_PATH = SCRIPT_DIRECTORY / "upload_release_wheels.py"
+
+
+@pytest.fixture(name="upload_module")
+def upload_module_fixture(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
+    """Import the script through the path the workflow runs it from.
+
+    Returns
+    -------
+    types.ModuleType
+        The imported ``upload_release_wheels`` module.
+    """
+    import importlib
+
+    monkeypatch.syspath_prepend(str(SCRIPT_DIRECTORY))
+    return importlib.import_module("upload_release_wheels")
+
+
+def _make_wheel(directory: Path, name: str) -> Path:
+    """Create an empty file named like a wheel and return its path."""
+    directory.mkdir(parents=True, exist_ok=True)
+    wheel = directory / name
+    wheel.write_bytes(b"")
+    return wheel
+
+
+def test_script_parses_under_the_declared_python_version() -> None:
+    """The script must parse under the version its metadata block requires."""
+    ast.parse(
+        SCRIPT_PATH.read_text(encoding="utf-8"),
+        filename=str(SCRIPT_PATH),
+        feature_version=(3, 13),
+    )
+
+
+def test_discovery_finds_wheels_in_nested_directories(
+    upload_module: types.ModuleType, tmp_path: Path
+) -> None:
+    """Wheels are found wherever the download action places them.
+
+    The previous shell glob assumed one layout and silently matched nothing
+    when the action changed it, so the search is deliberately recursive.
+    """
+    nested = _make_wheel(tmp_path / "wheels-pure", "b-1.0-py3-none-any.whl")
+    top_level = _make_wheel(tmp_path, "a-1.0-py3-none-any.whl")
+    _make_wheel(tmp_path, "notes.txt")
+
+    found = upload_module.discover_wheels(tmp_path)
+
+    assert found == (top_level, nested), f"expected both wheels in order: {found}"
+
+
+def test_discovery_returns_nothing_for_an_empty_directory(
+    upload_module: types.ModuleType, tmp_path: Path
+) -> None:
+    """An empty directory yields no wheels rather than raising."""
+    assert upload_module.discover_wheels(tmp_path) == ()
+
+
+def test_empty_directory_fails_the_step(
+    upload_module: types.ModuleType, tmp_path: Path
+) -> None:
+    """A release with no wheel to attach is an error, not a silent no-op.
+
+    This is the defect the script exists to fix: the shell pipeline it
+    replaced exited zero in exactly this case, so two releases published
+    without their wheel and the step reported success.
+    """
+    uploaded: list[tuple[str, tuple[Path, ...]]] = []
+    upload_module_upload = upload_module.upload_wheels
+
+    def record(tag: str, wheels: cabc.Sequence[Path]) -> None:
+        uploaded.append((tag, tuple(wheels)))
+
+    try:
+        upload_module.upload_wheels = record
+        with pytest.raises(upload_module.UploadError, match="No wheel found"):
+            upload_module.main(tag="v1.2.3", directory=tmp_path)
+    finally:
+        upload_module.upload_wheels = upload_module_upload
+
+    assert uploaded == [], "nothing may be uploaded when no wheel was built"
+
+
+def test_every_wheel_is_uploaded_against_the_tag(
+    upload_module: types.ModuleType, tmp_path: Path
+) -> None:
+    """Each discovered wheel is handed to the upload with the release tag."""
+    first = _make_wheel(tmp_path, "a-1.0-py3-none-any.whl")
+    second = _make_wheel(tmp_path / "nested", "b-1.0-py3-none-any.whl")
+    uploaded: list[tuple[str, tuple[Path, ...]]] = []
+    original = upload_module.upload_wheels
+
+    def record(tag: str, wheels: cabc.Sequence[Path]) -> None:
+        uploaded.append((tag, tuple(wheels)))
+
+    try:
+        upload_module.upload_wheels = record
+        upload_module.main(tag="v1.2.3", directory=tmp_path)
+    finally:
+        upload_module.upload_wheels = original
+
+    assert uploaded == [("v1.2.3", (first, second))]
+
+
+def test_upload_invokes_gh_with_the_tag_and_wheels(
+    upload_module: types.ModuleType, tmp_path: Path, cmd_mox: CmdMox
+) -> None:
+    """The upload crosses the process boundary as one ``gh release upload``.
+
+    Asserted through cmd-mox rather than a stubbed function so the argv the
+    release actually runs is the thing under test.
+    """
+    wheel = _make_wheel(tmp_path, "a-1.0-py3-none-any.whl")
+    cmd_mox.mock("gh").with_args("release", "upload", "v1.2.3", str(wheel)).returns(
+        exit_code=0
+    )
+
+    upload_module.upload_wheels("v1.2.3", (wheel,))
+
+
+def test_failed_upload_raises(
+    upload_module: types.ModuleType, tmp_path: Path, cmd_mox: CmdMox
+) -> None:
+    """A non-zero ``gh`` exit fails the step with the reason attached."""
+    wheel = _make_wheel(tmp_path, "a-1.0-py3-none-any.whl")
+    cmd_mox.mock("gh").with_args("release", "upload", "v1.2.3", str(wheel)).returns(
+        exit_code=1, stderr="release not found"
+    )
+
+    with pytest.raises(upload_module.UploadError, match="release not found"):
+        upload_module.upload_wheels("v1.2.3", (wheel,))

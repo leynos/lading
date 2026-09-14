@@ -171,6 +171,37 @@ If a workflow's behaviour genuinely depends on a feature only present from a
 particular commit onwards, express that as a comment or a changelog note, not
 as a test assertion on the SHA string.
 
+## Release workflow
+
+`release.yml` runs on a `v*.*.*` tag push. It builds the pure Python wheel,
+creates the GitHub release with generated notes, then attaches the wheel.
+
+The attachment runs `scripts/upload_release_wheels.py` rather than a shell
+pipeline, and the reason is a defect worth remembering. The step used to be:
+
+```bash
+find dist/wheels-* -type f -name "*.whl" -print0 | xargs -0 -r gh release upload "$TAG"
+```
+
+A pipeline reports the exit status of its last command, so `set -eu` never saw
+`find` fail when `dist/wheels-*` did not exist. `xargs -r` then ran nothing and
+the step passed, having uploaded no wheel. Both `v0.3.0` and `v0.3.1` published
+that way and were completed by hand (issue #266).
+
+Two properties keep it fixed, and
+`tests/workflow_contracts/test_release_workflow.py` asserts both:
+
+- The download names the artefact (`name: wheels-pure`), so the wheel's
+  location does not depend on the action's default layout.
+- The search and its empty case run in Python. The script exits non-zero when
+  it finds no wheel, so a release that would ship nothing fails loudly instead
+  of reporting success.
+
+The script takes the tag from `GITHUB_REF_NAME` and invokes `gh` through a
+cuprum catalogue, so the release job's only permitted external programme is
+`gh`. Its unit tests assert the argv across the process boundary with cmd-mox
+rather than stubbing the call.
+
 ## Property-based testing
 
 [Hypothesis](https://hypothesis.readthedocs.io/) is a development dependency
