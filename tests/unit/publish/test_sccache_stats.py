@@ -167,6 +167,7 @@ class _RecordingRunner:
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Record the invocation and replay the scripted result."""
         del env
         self.calls.append((tuple(command), cwd, echo_stdout))
         return self.exit_code, self.stdout, self.stderr

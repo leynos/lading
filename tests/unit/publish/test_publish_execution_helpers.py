@@ -108,6 +108,8 @@ def mock_cmd_mox_modules(tmp_path: Path) -> SimpleNamespace:
                 self.exit_code = exit_code
 
         class PassthroughResult:
+            """Minimal passthrough-result stand-in for the IPC double."""
+
             def __init__(
                 self, invocation_id: str, stdout: str, stderr: str, exit_code: int
             ) -> None:

@@ -13,6 +13,7 @@ SCRIPT_PATH = (
 
 
 def _make_fake_cargo(tmp_path: Path) -> Path:
+    """Create an executable stub that echoes its arguments as JSON."""
     executable = tmp_path / "cargo"
     executable.write_text(
         "#!/usr/bin/env python3\n"

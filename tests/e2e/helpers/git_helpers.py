@@ -36,11 +36,13 @@ class GitCommandError(RuntimeError):
 
 
 def _run_git(repo_path: Path, *args: str) -> tuple[int, str, str]:
+    """Run ``git`` in *repo_path* and return ``(exit_code, stdout, stderr)``."""
     with local.cwd(str(repo_path)):
         return local["git"].run(args, retcode=None)
 
 
 def _run_git_checked(repo_path: Path, *args: str) -> tuple[str, str]:
+    """Run ``git`` and raise :class:`GitCommandError` on a non-zero exit."""
     exit_code, stdout, stderr = _run_git(repo_path, *args)
     if exit_code != 0:
         raise GitCommandError(tuple(args), exit_code, stdout, stderr)

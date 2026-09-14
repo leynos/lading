@@ -209,6 +209,7 @@ target/
 .memdb/
 .vtcode/
 .claude/
+memories/
 .grepai/
 *.swp
 *.swo

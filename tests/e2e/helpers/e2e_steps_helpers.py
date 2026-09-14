@@ -19,6 +19,8 @@ if typ.TYPE_CHECKING:  # pragma: no cover
 
 
 class _CmdMoxInvocation(typ.Protocol):
+    """Shape of a command invocation recorded by cmd-mox doubles."""
+
     args: cabc.Sequence[str]
     env: cabc.Mapping[str, str]
 

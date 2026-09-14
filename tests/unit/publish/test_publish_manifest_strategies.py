@@ -27,6 +27,7 @@ def _make_plan(workspace_root: Path, publishable_names: tuple[str, ...]) -> Publ
 
 
 def _write_manifest(path: Path, body: str) -> None:
+    """Write *body* to the manifest at *path*."""
     path.write_text(body, encoding="utf-8")
 
 

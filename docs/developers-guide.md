@@ -49,7 +49,13 @@ make lint
 The target is deliberately five-stage. Ruff runs first because it is fast,
 handles broad style and correctness checks, and imports the stricter lint
 policy used by `leynos/episodic`. If Ruff passes, the target runs `interrogate`
-with `--fail-under 100` across `lading` to enforce **100% docstring coverage**.
+with `--fail-under 100` twice to enforce **100% docstring coverage**: once
+across `lading`, and once across `tests` and `scripts`, where the shape-based
+`--ignore-nested-functions` and `--ignore-nested-classes` options are passed to
+that invocation on the command line in the Makefile. They exempt nested test
+closures and test-local stub classes. The `lading` pass carries no exemptions,
+and every module-level definition in `tests` and `scripts` still requires a
+docstring.
 If `interrogate` passes, the third stage runs Pylint through the pinned
 `pylint-pypy-shim` tool under PyPy. That stage is focused on rule families that
 complement Ruff, especially logging format safety, pattern matching checks,
@@ -58,7 +64,10 @@ hygiene, and design-size limits. The fourth stage runs all `df12-python-lints`
 checks under CPython 3.14, while retaining Lading's Python 3.13 semantic
 baseline for version-gated diagnostics. Finally, `ambrleaks` scans Syrupy
 snapshots under `tests` for values that should have been redacted.
-[ADR-003](adr/003-three-tier-python-linting.md) records the policy decision.
+[ADR-003](adr/003-three-tier-python-linting.md) records the policy decision,
+including the
+[2026-09-07 addendum](adr/003-three-tier-python-linting.md#addendum-docstring-coverage-for-tests-and-scripts-2026-09-07)
+extending Interrogate coverage to `tests` and `scripts`.
 
 The relevant Makefile variables are:
 
