@@ -1082,8 +1082,8 @@ Defined metrics:
 | `lockfile.regenerate.duration`   | (none)                        | Total duration observation around each lockfile-regeneration run.                                                                                                                                   |
 | `lockfile.validate`              | `outcome`                     | One increment per `validate_lockfile_freshness` call; `outcome` is `fresh`, `stale`, or `failed`.                                                                                                   |
 | `lockfile.validate.duration`     | (none)                        | Duration observation around each `cargo metadata --locked` probe.                                                                                                                                   |
-| `publish.cargo.duration`         | `subcommand`, `crate`         | One duration observation per `cargo package` or `cargo publish` invocation in the publish pipeline, successful or not (issue #251).                                                               |
-| `publish.sccache.query`          | `outcome`                     | One increment per sccache statistics query while instrumentation is on (`--sccache-stats`, or a `--sccache-stats-json` path, which implies it); `outcome` is `success` or `failure` (issue #252). |
+| `publish.cargo.duration`         | `subcommand`, `crate`         | One duration observation per `cargo package` or `cargo publish` invocation in the publish pipeline, successful or not (issue #251).                                                                 |
+| `publish.sccache.query`          | `outcome`                     | One increment per sccache statistics query while instrumentation is on (`--sccache-stats`, or a `--sccache-stats-json` path, which implies it); `outcome` is `success` or `failure` (issue #252).   |
 
 Duration metrics aggregate a count and total seconds per label set via
 `observe_duration` / `duration_stats` and appear in the exit summary with
@@ -1104,33 +1104,10 @@ its binary `buffer`. A text-only sink without a binary buffer is disabled for
 the remainder of that stream so capture can continue without corrupting or
 truncating subprocess output.
 
-`lading.commands.publish_execution` 
-
-still owns publish-specific error mapping
+`lading.commands.publish_execution` still owns publish-specific error mapping
 around command execution. `lading bump` uses the runtime runner directly for
 lockfile refreshes, while `lading publish` uses `_invoke` where failures should
 surface as `PublishPreflightError`.
-
-around command execution. `lading bump` uses the runtime runner directly for
-lockfile refreshes, while `lading publish` uses `_invoke` where failures should
-surface as `PublishPreflightError`.
-
-The cmd-mox runner validates `CMOX_IPC_TIMEOUT` in `_resolve_cmd_mox_timeout`.
-The two operator-facing messages it raises live as a single source of truth in
-the module constants `INVALID_IPC_TIMEOUT_MESSAGE` and
-`NON_POSITIVE_IPC_TIMEOUT_MESSAGE` in `lading/testing/cmd_mox_runner.py`; their
-values are pinned by a syrupy snapshot. See the
-[cmd-mox usage guide](./cmd-mox-usage-guide.md#environment-variables) for the
-operator-facing description of the variable and its failure modes.
-
-`lading.utils.commands.LADING_CATALOGUE` is the staged cuprum programme
-catalogue (cargo, git). It is intentionally not yet wired into the execution
-path — `publish_execution._invoke` still delegates to the subprocess runner,
-which spawns processes directly. It becomes live with the
-[Phase 5.2 publish-execution migration](./roadmap.md), which rewires
-`publish_execution.py` command execution (the roadmap's
-`_invoke_via_subprocess()` step) onto the catalogue's `scoped(allowlist=…)`
-model. Treat it as a registration point, not as active allowlist enforcement.
 
 #### Timed per-crate cargo invocations
 

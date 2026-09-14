@@ -187,6 +187,7 @@ def test_discover_tracked_lockfiles_accepts_manifest_probe(
     assert result == (tmp_path / "Cargo.lock",)
     assert probed == [tmp_path / "Cargo.toml", tmp_path / "nested" / "Cargo.toml"]
 
+
 @pytest.mark.parametrize("emit_observability", [True, False])
 def test_discover_tracked_lockfiles_raises_for_non_git_directory(
     tmp_path: Path,
@@ -221,6 +222,8 @@ def test_discover_tracked_lockfiles_raises_for_non_git_directory(
         "the failing workspace must be exposed as a structured attribute so "
         "callers need not parse the message"
     )
+
+
 def test_discover_tracked_lockfiles_raises_on_git_failure(tmp_path: Path) -> None:
     """Git failures other than non-repositories are surfaced to callers."""
 
@@ -495,6 +498,8 @@ def _static_runner(
         return exit_code, stdout, stderr
 
     return runner
+
+
 @pytest.mark.usefixtures("_metrics_registry")
 def test_discovery_records_lockfile_count(tmp_path: Path) -> None:
     """Discovery increments the discovered-lockfiles counter by the count."""
@@ -556,6 +561,7 @@ def test_validation_records_outcome_and_duration(
 
     assert metrics.counter_value(lockfile.VALIDATE_METRIC, outcome=expected_state) == 1
     assert metrics.duration_stats(lockfile.VALIDATE_DURATION_METRIC).count == 1
+
 
 @pytest.mark.usefixtures("_metrics_registry")
 @pytest.mark.parametrize(

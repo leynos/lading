@@ -2,7 +2,7 @@
 
 This module is the canonical home for the small idioms shared by every command
 that shells out to ``cargo`` or ``git`` and must report a failure to operators.
-It covers two concerns:
+It covers three concerns:
 
 * **Command rendering / logging** — :func:`format_command` and
   :func:`log_command_invocation` produce a stable, shell-style representation of
@@ -11,6 +11,12 @@ It covers two concerns:
   :func:`append_detail`, and :func:`with_detail` collapse the
   ``(stderr or stdout).strip()`` idiom into one place (issue #102) so every
   call site renders the same operator-facing text.
+* **Locale pinning** — :func:`c_locale_env` returns an environment with
+  ``LC_ALL``, ``LANG``, and ``LANGUAGE`` forced to the C locale, so ``git`` and
+  ``cargo`` emit untranslated diagnostics. Any caller that classifies a failure
+  by matching English output depends on this;
+  :mod:`lading.runtime.subprocess_runner` applies it centrally, because it is
+  the single adapter that spawns processes.
 
 The failure-detail helpers form a small layer:
 

@@ -101,7 +101,9 @@ class TestCargoLockfileInspectionRepositoryAdapter:
         assert command[:3] == ("cargo", "metadata", "--locked"), "cargo metadata probe"
         assert cwd == manifest_path.parent, "cargo runs in the manifest directory"
         assert env == base_env, "cargo call should receive the bound env"
-        assert echo_stdout is True, "echo_stdout defaults to True"
+        assert echo_stdout is False, (
+            "the cargo metadata document must not be mirrored to the console"
+        )
 
     @pytest.mark.usefixtures("_cargo_workspace")
     def test_adapter_without_env_leaves_runner_env_untouched(

@@ -69,6 +69,7 @@ VALIDATE_DURATION_METRIC = "lockfile.validate.duration"
 class LockfileDiscoveryError(LadingError):
     """Raised when git cannot list tracked lockfiles."""
 
+
 class NotAGitRepositoryError(LockfileDiscoveryError):
     """Raised when lockfile discovery targets a directory outside git control.
 
@@ -88,6 +89,8 @@ class NotAGitRepositoryError(LockfileDiscoveryError):
         self.workspace_root = workspace_root
         message = f"{workspace_root} is not a git repository"
         super().__init__(message)
+
+
 @dc.dataclass(frozen=True, slots=True)
 class LockfileFreshness:
     """Result from validating a lockfile under Cargo's locked mode."""
@@ -95,6 +98,7 @@ class LockfileFreshness:
     is_fresh: bool
     is_stale: bool = False
     detail: str = ""
+
 
 def _raise_git_ls_files_failure(
     exit_code: int,
@@ -124,6 +128,8 @@ def _raise_git_ls_files_failure(
     metrics.increment_counter(DISCOVERY_FAILURE_METRIC, reason="git_error")
     LOGGER.error(message)
     raise LockfileDiscoveryError(message)
+
+
 def _lockfiles_with_manifests(
     stdout: str,
     workspace_root: Path,

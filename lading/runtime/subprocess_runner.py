@@ -1,7 +1,7 @@
 """Subprocess-backed implementation of the command runner port."""
+
 from __future__ import annotations
 
-from pathlib import Path
 import codecs
 import collections.abc as cabc
 import dataclasses as dc
@@ -10,12 +10,13 @@ import subprocess
 import sys
 import threading
 import typing as typ
+from pathlib import Path
 
 from lading.exceptions import LadingError
+from lading.utils.process import c_locale_env, log_command_invocation
 
 from .stream_relay import format_thread_name as _format_thread_name
 from .stream_relay import write_to_relay_sink as _write_to_relay_sink
-from lading.utils.process import c_locale_env, log_command_invocation
 
 _LOGGER = logging.getLogger(__name__)
 _ENV_REDACTION_TOKENS = (

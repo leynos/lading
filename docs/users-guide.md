@@ -226,6 +226,7 @@ mirrors each chunk through the configured text stream; if that stream rejects
 Unicode, the exact UTF-8 bytes are written through its binary buffer when one
 is available. For a text-only narrow stream, mirroring is disabled for that
 stream while capture continues.
+
 #### Measuring compiler-cache use during the packaged builds
 
 `cargo package --verify` and `cargo publish --dry-run` compile each crate from
