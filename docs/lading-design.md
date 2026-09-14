@@ -513,7 +513,7 @@ validates that every publishable crate appears exactly once and that no unknown
 names are listed before returning the user-specified order.
 
 <!-- markdownlint-disable-next-line MD029 -->
-5. **Stage the workspace and prepare its manifest:**
+1. **Stage the workspace and prepare its manifest:**
    `publish_staging.prepare_workspace` creates an isolated workspace copy.
    Within that staged workspace, determine the patch stripping strategy based
    on the `publish.strip_patches` configuration value and the execution mode

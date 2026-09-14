@@ -520,8 +520,9 @@ future round-tripping.
 
 ## Programmatic publish options
 
-When invoking `lading.commands.publish_staging.prepare_workspace` programmatically,
-callers can customize behaviour via `PublishOptions`. The defaults are:
+When invoking `lading.commands.publish_staging.prepare_workspace`
+programmatically, callers can customize behaviour via `PublishOptions`. The
+defaults are:
 
 - `allow_dirty=True` — skip the git cleanliness guard. **Security note:** this
   means uncommitted changes are permitted by default; pass `allow_dirty=False`
@@ -780,23 +781,23 @@ miss is out-of-plan and fatal, in-plan but still fatal, or in-plan and
 downgraded by `allow_unpublished_workspace_deps` during dry-run publication.
 
 `publish_sccache_stats.py`, `publish_sccache_report.py`, and
-`publish_sccache.py` implement the opt-in compiler-cache instrumentation
-(issue #252). The `_stats` module is the adapter:
-`detect_wrapper()` recognizes an sccache binary named by `RUSTC_WRAPPER`,
-`query_snapshot()` and `query_text()` run its `--show-stats` forms through the
-`CommandRunner` port with `echo_stdout=False`, and `parse_counters()` reduces
-the JSON payload to `SccacheCounters` (requests, hits, misses, errors).
-`publish_sccache_report.py` owns `SccacheLedger`, the pure reducer (baseline,
-previous snapshot, records, `attribute()`, `delta`, `report()`), and the report
-formatting and atomic-serialization helpers. `publish_sccache.py` owns
-`SccacheSession`, which sequences the side effects around that bookkeeping:
-`_dispatch_publication` creates the session via `create_session()` after
-pre-flight (a report path alone opts in), `begin()`s before the first cargo
-build, `record()`s after every per-crate cargo invocation (one snapshot, one
-ledger entry, one log line), and `finish()`es in a `finally` with the pipeline
-delta, the human-readable mirror, and the optional atomically written JSON
-report. Every failure in the session is a WARNING that disables further
-queries; the session never raises into the pipeline.
+`publish_sccache.py` implement the opt-in compiler-cache instrumentation (issue
+252). The `_stats` module is the adapter: `detect_wrapper()` recognizes an
+sccache binary named by `RUSTC_WRAPPER`, `query_snapshot()` and `query_text()`
+run its `--show-stats` forms through the `CommandRunner` port with
+`echo_stdout=False`, and `parse_counters()` reduces the JSON payload to
+`SccacheCounters` (requests, hits, misses, errors). `publish_sccache_report.py`
+owns `SccacheLedger`, the pure reducer (baseline, previous snapshot, records,
+`attribute()`, `delta`, `report()`), and the report formatting and
+atomic-serialization helpers. `publish_sccache.py` owns `SccacheSession`, which
+sequences the side effects around that bookkeeping: `_dispatch_publication`
+creates the session via `create_session()` after pre-flight (a report path
+alone opts in), `begin()`s before the first cargo build, `record()`s after
+every per-crate cargo invocation (one snapshot, one ledger entry, one log
+line), and `finish()`es in a `finally` with the pipeline delta, the
+human-readable mirror, and the optional atomically written JSON report. Every
+failure in the session is a WARNING that disables further queries; the session
+never raises into the pipeline.
 
 ### CLI publish API (`lading.cli.publish`)
 

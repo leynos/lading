@@ -33,8 +33,8 @@ The 0.1.0 release also changes workspace README adoption:
 ## Programmatic publish staging
 
 Programmatic callers should import the staging helper from
-`lading.commands.publish_staging` and pass a publication plan with options as
-a keyword argument:
+`lading.commands.publish_staging` and pass a publication plan with options as a
+keyword argument:
 
 ```python
 from lading.commands.publish_staging import prepare_workspace
@@ -47,8 +47,8 @@ The `workspace` argument accepted by older releases is no longer part of the
 workspace root. When `options.cleanup` is enabled and no
 `options.build_directory` is supplied, process-exit cleanup removes the entire
 automatically created build directory. With a caller-supplied build directory,
-cleanup removes only the staged workspace root and preserves the caller's
-other files.
+cleanup removes only the staged workspace root and preserves the caller's other
+files.
 
 > **Migration note for the next minor release:** Update imports from
 > `lading.commands.publish` to `lading.commands.publish_staging`, remove the
