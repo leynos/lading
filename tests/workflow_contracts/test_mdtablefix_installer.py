@@ -14,6 +14,7 @@ constant in this module rather than a hard-coded copy inside each assertion.
 from __future__ import annotations
 
 import re
+import typing as typ
 from pathlib import Path
 
 import pytest
@@ -55,25 +56,39 @@ def _step(job: dict[str, object], name: str) -> dict[str, object]:
     raise AssertionError(message)
 
 
+def _is_shared_actions_uses_value(value: object) -> typ.TypeIs[str]:
+    """Return whether a YAML uses value references shared-actions."""
+    return isinstance(value, str) and value.startswith("leynos/shared-actions/")
+
+
+def _job_shared_action_uses(job: object) -> list[str]:
+    """Return shared-actions uses references from one YAML job."""
+    if not isinstance(job, dict):
+        return []
+
+    references: list[str] = []
+    job_uses = job.get("uses")
+    if _is_shared_actions_uses_value(job_uses):
+        references.append(job_uses)
+
+    for step in job.get("steps") or []:
+        if not isinstance(step, dict):
+            continue
+        step_uses = step.get("uses")
+        if _is_shared_actions_uses_value(step_uses):
+            references.append(step_uses)
+    return references
+
+
 def _shared_action_uses() -> list[tuple[str, str]]:
     """Return every shared-actions reference across the workflow files."""
     references: list[tuple[str, str]] = []
     for workflow in sorted(WORKFLOW_PATH.parent.glob("*.yml")):
         document = yaml.safe_load(workflow.read_text(encoding="utf-8"))
         for job in (document.get("jobs") or {}).values():
-            if not isinstance(job, dict):
-                continue
-            uses = job.get("uses")
-            if isinstance(uses, str) and uses.startswith("leynos/shared-actions/"):
-                references.append((workflow.name, uses))
-            for step in job.get("steps") or []:
-                if not isinstance(step, dict):
-                    continue
-                step_uses = step.get("uses")
-                if isinstance(step_uses, str) and step_uses.startswith(
-                    "leynos/shared-actions/"
-                ):
-                    references.append((workflow.name, step_uses))
+            references.extend(
+                (workflow.name, uses) for uses in _job_shared_action_uses(job)
+            )
     return references
 
 
@@ -167,3 +182,42 @@ def test_shared_action_references_are_full_commit_shas() -> None:
     for _workflow_name, uses in _shared_action_uses():
         ref = uses.split("@", 1)[1]
         assert _USES_RE.match(uses), f"expected a 40-hex commit SHA, got {ref!r}"
+
+
+def test_shared_action_uses_handles_yaml_job_and_step_values(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Job and step references survive non-mapping YAML entries."""
+    workflows = tmp_path / "workflows"
+    workflows.mkdir()
+    (workflows / "a.yml").write_text(
+        """\
+jobs:
+  reusable:
+    uses: leynos/shared-actions/.github/workflows/reusable.yml@job
+  lint:
+    steps:
+      - uses: leynos/shared-actions/.github/actions/lint@step
+      - invalid-step
+      - run: true
+  invalid-job: invalid-job
+  invalid-list: []
+""",
+        encoding="utf-8",
+    )
+    (workflows / "b.yml").write_text(
+        """\
+jobs:
+  no-reference:
+    steps:
+      - uses: actions/checkout@v7
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(__name__ + ".WORKFLOW_PATH", workflows / "ci.yml")
+
+    assert _shared_action_uses() == [
+        ("a.yml", "leynos/shared-actions/.github/workflows/reusable.yml@job"),
+        ("a.yml", "leynos/shared-actions/.github/actions/lint@step"),
+    ], "the collector must retain valid job and step references in sorted workflows"
