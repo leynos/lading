@@ -84,10 +84,13 @@ class _FailureCase(typ.NamedTuple):
 
 
 class _PackagingFailureDetail(typ.NamedTuple):
+    """Expected diagnostic selection for one packaging failure scenario."""
+
     stdout: str
     stderr: str
     expected_in_message: str
     not_expected_in_message: str | None
+
 
 class _PublishCratesModeCase(typ.NamedTuple):
     """Expected publish invocation details for one execution mode."""
@@ -95,6 +98,8 @@ class _PublishCratesModeCase(typ.NamedTuple):
     live: bool
     command: tuple[str, ...]
     expected_log_message: str | None
+
+
 def _assert_packaging_failure_message_contains(
     plan_and_prep: tuple[publish_plan.PublishPlan, publish_staging.PublishPreparation],
     runner: cabc.Callable[..., tuple[int, str, str]],
@@ -331,6 +336,7 @@ def test_package_publishable_crates_reports_failure_detail(
         not_expected_in_message=case.not_expected_in_message,
     )
 
+
 @pytest.mark.parametrize(
     "case",
     [
@@ -380,6 +386,8 @@ def test_publish_crates_run_in_order_for_execution_mode(
     assert runner.calls == [(case.command, root) for root in expected_roots]
     if case.expected_log_message is not None:
         assert any(case.expected_log_message in message for message in caplog.messages)
+
+
 def test_publish_crate_continues_when_version_already_uploaded(
     publish_plan_and_prep: tuple[
         publish_plan.PublishPlan, publish_staging.PublishPreparation, Path

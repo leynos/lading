@@ -75,17 +75,39 @@ def format_crate_summary(record: SccacheCrateRecord) -> str:
 
 
 def write_atomically(path: Path, content: str) -> None:
-    """Write ``content`` beside ``path`` and atomically replace it."""
+    """Write ``content`` beside ``path`` and atomically replace it.
+
+    Parameters
+    ----------
+    path : Path
+        Destination path to replace after the temporary file has been written.
+    content : str
+        Text to write using UTF-8 encoding.
+
+    Raises
+    ------
+    OSError
+        If the temporary file cannot be written, closed, or replaced.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(
-        "w", encoding="utf-8", delete=False, dir=path.parent, prefix=f".{path.name}."
-    ) as stream:
-        stream.write(content)
-        temporary = Path(stream.name)
+    temporary: Path | None = None
     try:
+        with tempfile.NamedTemporaryFile(
+            "w",
+            encoding="utf-8",
+            delete=False,
+            dir=path.parent,
+            prefix=f".{path.name}.",
+        ) as stream:
+            temporary = Path(stream.name)
+            stream.write(content)
+        if temporary is None:
+            message = "Temporary file did not provide a filesystem path"
+            raise OSError(message)
         temporary.replace(path)
     finally:
-        temporary.unlink(missing_ok=True)
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 @dc.dataclass(slots=True)
@@ -158,7 +180,13 @@ class SccacheLedger:
 
     @property
     def delta(self) -> SccacheCounters:
-        """Counters accumulated since the baseline."""
+        """Counters accumulated since the baseline.
+
+        Returns
+        -------
+        SccacheCounters
+            The difference between the most recent snapshot and ``baseline``.
+        """
         return self.previous.counters - self.baseline.counters
 
     def report(self, wrapper: Path) -> dict[str, object]:
