@@ -173,6 +173,35 @@ those diagnostics but never mirrored to the console: it is the whole metadata
 document on one line, megabytes long for a large workspace, and echoing it
 broke CI log capture for everything that followed.
 
+#### Skipping a pre-flight the caller has already run
+
+The pre-flight rebuilds and retests the whole workspace in a throwaway target
+directory before anything is packaged. In a continuous-integration job that has
+already run the same suite, that repeat dominates the step: on a warm cache it
+accounted for 883 of the 936 seconds of a Linux publish step, while the
+packaging and dry-run publish the step exists to prove took under a minute.
+
+Set `[preflight] skip = true` in `lading.toml`, pass `--skip-preflight`, or set
+`LADING_SKIP_PREFLIGHT=1` to suppress the auxiliary builds, `cargo check`, and
+`cargo test`. The flag overrides the configuration in both directions, so
+`--no-skip-preflight` reinstates the checks for one invocation. The
+working-tree cleanliness guard and the `Cargo.lock` freshness guard cost one
+`git status` and one `cargo metadata` call rather than a rebuild, so they run
+either way, and `lading publish` logs one line naming the setting, flag, or
+environment variable that asked for the skip:
+
+```plaintext
+INFO: Skipping the publish pre-flight auxiliary builds, cargo check and cargo test at the request of the --skip-preflight command-line flag. The working-tree and Cargo.lock freshness checks still ran.
+```
+
+Skip the pre-flight only when the same commit has already been checked. Nothing
+else in `lading publish` compiles the workspace, so a skipped pre-flight means
+no build or test verified what is being published.
+
+```bash
+lading publish --skip-preflight
+```
+
 To require a clean working tree before running the pre-flight checks, pass
 `--forbid-dirty`:
 
@@ -410,6 +439,7 @@ order = ["core", "utils", "app"]
 strip_patches = "per-crate" # "all" | "per-crate" | false
 
 [preflight]
+skip = false
 test_exclude = ["slow-integration-suite"]
 unit_tests_only = false
 aux_build = [["cargo", "+nightly", "test", "-p", "lint", "--no-run"]]
@@ -523,6 +553,10 @@ sibling workspace dependency is downgraded to a warning because
 
 ### `[preflight]`
 
+- `skip`: boolean, default `false`. Skip the pre-flight auxiliary builds,
+  `cargo check`, and `cargo test` because the caller has already verified the
+  workspace. The working-tree and `Cargo.lock` freshness checks always run. See
+  [Skipping a pre-flight the caller has already run](#skipping-a-pre-flight-the-caller-has-already-run).
 - `test_exclude`: array of strings, default `[]`. Crate names to exclude from
   `cargo test` by passing `--exclude`.
 - `unit_tests_only`: boolean, default `false`. Append `--lib --bins` to the
@@ -550,6 +584,15 @@ lading bump 1.2.3 --workspace-root /path/to/workspace
 
 When present, the resolved path is also exported as `LADING_WORKSPACE_ROOT` for
 the duration of the command.
+
+### `--skip-preflight`
+
+`lading publish --skip-preflight` suppresses the pre-flight auxiliary builds,
+`cargo check`, and `cargo test`; `--no-skip-preflight` reinstates them when
+`[preflight] skip` is set. The environment variable `LADING_SKIP_PREFLIGHT`
+supplies the default for the flag, which lets a CI workflow skip the repeat
+without editing the command line it invokes. See
+[Skipping a pre-flight the caller has already run](#skipping-a-pre-flight-the-caller-has-already-run).
 
 ### `--sccache-stats` and `--sccache-stats-json`
 

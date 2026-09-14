@@ -55,17 +55,16 @@ across `lading`, and once across `tests` and `scripts`, where the shape-based
 that invocation on the command line in the Makefile. They exempt nested test
 closures and test-local stub classes. The `lading` pass carries no exemptions,
 and every module-level definition in `tests` and `scripts` still requires a
-docstring.
-If `interrogate` passes, the third stage runs Pylint through the pinned
-`pylint-pypy-shim` tool under PyPy. That stage is focused on rule families that
-complement Ruff, especially logging format safety, pattern matching checks,
-selected simplification checks, deprecated standard-library usage, file
-hygiene, and design-size limits. The fourth stage runs all `df12-python-lints`
-checks under CPython 3.14, while retaining Lading's Python 3.13 semantic
-baseline for version-gated diagnostics. Finally, `ambrleaks` scans Syrupy
-snapshots under `tests` for values that should have been redacted.
-[ADR-003](adr/003-three-tier-python-linting.md) records the policy decision,
-including the
+docstring. If `interrogate` passes, the third stage runs Pylint through the
+pinned `pylint-pypy-shim` tool under PyPy. That stage is focused on rule
+families that complement Ruff, especially logging format safety, pattern
+matching checks, selected simplification checks, deprecated standard-library
+usage, file hygiene, and design-size limits. The fourth stage runs all
+`df12-python-lints` checks under CPython 3.14, while retaining Lading's Python
+3.13 semantic baseline for version-gated diagnostics. Finally, `ambrleaks`
+scans Syrupy snapshots under `tests` for values that should have been redacted.
+[ADR-003](adr/003-three-tier-python-linting.md)
+records the policy decision, including the
 [2026-09-07 addendum](adr/003-three-tier-python-linting.md#addendum-docstring-coverage-for-tests-and-scripts-2026-09-07)
 extending Interrogate coverage to `tests` and `scripts`.
 
@@ -1191,14 +1190,20 @@ and holds no aliases or wrappers for its names; tests that patch or invoke
 pre-flight helpers must target `publish_preflight` itself. The entry point is:
 
 ```python
-_run_preflight_checks(
-    workspace_root: Path,
-    *,
+_run_preflight_checks(workspace_root: Path, request: PreflightRequest) -> None
+
+PreflightRequest(
     allow_dirty: bool,
     configuration: LadingConfig,
     runner: CommandRunner | None = None,
-) -> None
+    skip: SkipPreflightDecision | None = None,
+)
 ```
+
+The inputs travel as one frozen `PreflightRequest` rather than four keyword
+arguments: the policy (`allow_dirty`, `skip`), the configuration, and the
+injected runner are constructed together at each call site, and the bundle
+keeps the entry point inside the repository's argument-count ceiling.
 
 The function verifies the git working tree is clean (unless `allow_dirty` is
 set), then executes `cargo check` and `cargo test` in a temporary
@@ -1210,8 +1215,37 @@ with a descriptive message.
 | ------------------------------ | --------------------------------------------------------------------------------------------- |
 | `_compose_preflight_arguments` | Builds the base `cargo` argument tuple for a given target directory and `--all-targets` flag. |
 | `_preflight_argument_sets`     | Returns `(check_args, test_args)` tuples adapted for unit-test-only mode.                     |
+| `_run_cargo_build_checks`      | Runs the `cargo check`/`cargo test` pair inside the throwaway target directory.               |
 | `_run_cargo_preflight`         | Executes a single `cargo check` or `cargo test` invocation and raises on failure.             |
 | `_verify_clean_working_tree`   | Runs `git status --porcelain` and raises if the tree is dirty and `allow_dirty` is `False`.   |
+
+#### Skipping the build checks (`publish_skip`)
+
+`lading.commands.publish_skip` owns the decision to skip the pre-flight's
+compilation-heavy work and nothing else: `SkipPreflightDecision` pairs the
+boolean with a human-readable source, and `resolve_skip_preflight` returns a
+caller's override or the `[preflight] skip` setting labelled with
+`CONFIGURATION_SOURCE`. `_run_preflight_checks` logs that source when it skips,
+so a publish log never reads as though the checks ran.
+
+The split of what a skip removes is deliberate and is a contract, not an
+implementation detail:
+
+| Step                           | Skipped | Why                                                                             |
+| ------------------------------ | ------- | ------------------------------------------------------------------------------- |
+| `preflight.aux_build` commands | Yes     | They exist to prepare the cargo checks that no longer run.                      |
+| `cargo check` and `cargo test` | Yes     | This is the duplicated work: 883 s of a 936 s warm-cache Linux publish step.    |
+| `git status --porcelain` guard | No      | One process; a dirty tree still produces a wrong publication.                   |
+| `Cargo.lock` freshness guard   | No      | One `cargo metadata` call; a stale lockfile still produces a wrong publication. |
+
+Provenance is resolved in the CLI adapter rather than the command layer,
+because only the adapter can distinguish `--skip-preflight` from
+`LADING_SKIP_PREFLIGHT`. `cli._skip_preflight_override` attributes a resolved
+value to the environment only when the variable spells that same value, since
+Cyclopts gives the command line precedence; `cli._environment_boolean` mirrors
+the literals Cyclopts coerces (`1`, `true`, `yes` and their negatives).
+Resolving an _absent_ flag against the configuration stays in the command
+layer, alongside the other nullable-to-concrete defaulting.
 
 ### Per-crate publication helpers
 

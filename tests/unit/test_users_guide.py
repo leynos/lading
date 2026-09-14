@@ -45,6 +45,7 @@ def test_users_guide_documents_key_cli_flags_and_env_vars() -> None:
     required_cli_terms = (
         "lading bump 1.2.3 --dry-run",
         "lading publish --forbid-dirty",
+        "lading publish --skip-preflight",
         "lading publish --live",
         "### `--workspace-root`",
     )
@@ -52,6 +53,7 @@ def test_users_guide_documents_key_cli_flags_and_env_vars() -> None:
     required_env_terms = (
         "`LADING_WORKSPACE_ROOT`",
         "`LADING_LOG_LEVEL`",
+        "`LADING_SKIP_PREFLIGHT`",
     )
 
     missing_cli = [term for term in required_cli_terms if term not in content]
