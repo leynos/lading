@@ -44,6 +44,7 @@ class SkipPreflightSource(enum.StrEnum):
     CONFIGURATION = "configuration"
     COMMAND_LINE = "command-line"
     ENVIRONMENT = "environment"
+    IN_PROCESS = "in-process"
 
     @property
     def description(self) -> str:
@@ -61,6 +62,7 @@ _SOURCE_DESCRIPTIONS: dict[SkipPreflightSource, str] = {
     SkipPreflightSource.CONFIGURATION: "the lading.toml [preflight] skip setting",
     SkipPreflightSource.COMMAND_LINE: "the --skip-preflight command-line flag",
     SkipPreflightSource.ENVIRONMENT: "the LADING_SKIP_PREFLIGHT environment variable",
+    SkipPreflightSource.IN_PROCESS: "an in-process caller",
 }
 
 

@@ -325,6 +325,7 @@ Feature: Lading CLI scaffolding
   Scenario: A skipped pre-flight still verifies the tree and the lockfiles
     Given a workspace directory with configuration
     And cargo metadata describes a sample workspace
+    And publish pre-flight probes a fresh tracked Cargo.lock with a large metadata document
     And preflight.skip is true
     When I invoke lading publish with that workspace using --forbid-dirty
     Then the publish command still verified the working tree and tracked lockfiles

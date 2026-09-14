@@ -252,12 +252,13 @@ def test_use_configuration_sets_context(tmp_path: Path) -> None:
 
 
 def test_preflight_skip_defaults_to_running_the_checks() -> None:
-    """An absent ``skip`` key leaves the pre-flight build checks enabled.
+    """A present but empty ``[preflight]`` table leaves the build checks on.
 
     The default matters more than most: a publish that silently stopped
-    rebuilding and retesting the workspace would still report success.
+    rebuilding and retesting the workspace would still report success. The
+    absent-table case is covered by
+    ``test_preflight_config_from_mapping_defaults``.
     """
-    assert config_module.PreflightConfig.from_mapping(None).skip is False
     assert config_module.PreflightConfig.from_mapping({}).skip is False
 
 

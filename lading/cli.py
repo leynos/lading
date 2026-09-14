@@ -191,13 +191,14 @@ def _skip_preflight_source(
 
     With the dispatch tokens available, an explicit flag beats the variable,
     exactly as cyclopts resolves them. Without them the app was driven
-    in-process, and the variable is credited only when it spells the value
-    cyclopts resolved.
+    in-process: the variable is credited only when it spells the value
+    cyclopts resolved, and anything else came from the calling code rather
+    than from a command line that was never parsed.
 
     Returns
     -------
     SkipPreflightSource
-        The command line or the environment variable.
+        The command line, the environment variable, or an in-process caller.
     """
     tokens = _command_tokens.get()
     if tokens is not None:
@@ -209,7 +210,7 @@ def _skip_preflight_source(
     from_environment = _environment_boolean(environment.get(SKIP_PREFLIGHT_ENV_VAR))
     if from_environment is skip_preflight:
         return SkipPreflightSource.ENVIRONMENT
-    return SkipPreflightSource.COMMAND_LINE
+    return SkipPreflightSource.IN_PROCESS
 
 
 def _skip_preflight_override(
@@ -239,7 +240,7 @@ def _skip_preflight_override(
     >>> _skip_preflight_override(skip_preflight=None, environment={}) is None
     True
     >>> _skip_preflight_override(skip_preflight=True, environment={}).source
-    <SkipPreflightSource.COMMAND_LINE: 'command-line'>
+    <SkipPreflightSource.IN_PROCESS: 'in-process'>
     """
     if skip_preflight is None:
         return None
@@ -544,8 +545,10 @@ def publish(
         The publish flags, each surfaced by Cyclopts as its own option:
         ``--forbid-dirty``, ``--live``,
         ``--allow-unpublished-workspace-deps`` (tri-state, resolved against
-        the publish mode when omitted), ``--sccache-stats``, and
-        ``--sccache-stats-json`` (issue #252; a report path implies the
+        the publish mode when omitted), ``--skip-preflight`` (tri-state,
+        labelled with its source here and resolved against
+        ``[preflight] skip`` by the publish command), ``--sccache-stats``,
+        and ``--sccache-stats-json`` (issue #252; a report path implies the
         measurement, resolved by the publish command).
 
     Returns

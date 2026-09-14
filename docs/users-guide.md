@@ -554,8 +554,9 @@ Incremented once per `lading publish` run when the pre-flight resolves,
 including when it fails. Labels:
 
 - `mode` — `skipped` or `executed`.
-- `source` — `configuration`, `command-line`, or `environment`; the input that
-  decided `mode`.
+- `source` — `configuration`, `command-line`, `environment`, or `in-process`;
+  the input that decided `mode`. The last covers a caller that drives the
+  command in process rather than through a parsed command line.
 
 #### `publish.preflight.duration`
 

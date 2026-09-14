@@ -69,24 +69,38 @@ def then_preflight_cargo_commands_ran(
         raise AssertionError(message)
 
 
+def _require(*, condition: bool, message: str) -> None:
+    """Raise :class:`AssertionError` with ``message`` unless ``condition`` holds."""
+    if not condition:
+        raise AssertionError(message)
+
+
 @then("the publish command still verified the working tree and tracked lockfiles")
 def then_cheap_guards_ran(
     preflight_recorder: _PreflightInvocationRecorder,
 ) -> None:
     """Assert the guards that a skip must never remove still ran.
 
-    Raises
-    ------
-    AssertionError
-        If the working-tree or lockfile discovery invocation is missing.
+    Discovery alone would still pass with the freshness probe removed, so the
+    locked probe itself is asserted. Cargo metadata is recorded under the plain
+    ``cargo`` label; only check and test are namespaced.
     """
     git_invocations = [args for args, _env in preflight_recorder.by_label("git")]
-    if ("status", "--porcelain") not in git_invocations:
-        message = f"Expected a working-tree check, recorded: {git_invocations}"
-        raise AssertionError(message)
-    if not any(args[:1] == ("ls-files",) for args in git_invocations):
-        message = f"Expected lockfile discovery, recorded: {git_invocations}"
-        raise AssertionError(message)
+    cargo_invocations = [args for args, _env in preflight_recorder.by_label("cargo")]
+    _require(
+        condition=("status", "--porcelain") in git_invocations,
+        message=f"Expected a working-tree check, recorded: {git_invocations}",
+    )
+    _require(
+        condition=any(args[:1] == ("ls-files",) for args in git_invocations),
+        message=f"Expected lockfile discovery, recorded: {git_invocations}",
+    )
+    _require(
+        condition=any(
+            args[:2] == ("metadata", "--locked") for args in cargo_invocations
+        ),
+        message=f"Expected a locked freshness probe, recorded: {cargo_invocations}",
+    )
 
 
 __all__ = [

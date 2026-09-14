@@ -22,7 +22,7 @@ if typ.TYPE_CHECKING:
     from lading.workspace import WorkspaceCrate, WorkspaceGraph
 
 
-@dc.dataclass(frozen=True)
+@dc.dataclass(frozen=True, slots=True)
 class _SkipPreflightCase:
     """One CLI invocation and the skip decision it must produce."""
 

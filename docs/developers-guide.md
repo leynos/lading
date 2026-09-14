@@ -833,8 +833,10 @@ forwards: `_skip_preflight_override` turns the resolved tri-state into a
 the dispatch tokens that `_recorded_command_tokens` publishes for the duration
 of `app(tokens)`, because Cyclopts reports the value it resolved but not the
 input it came from, and a command-line flag beats `env_var`. When the app is
-driven in-process the tokens are absent, and `_environment_boolean` credits the
-variable only when it spells the value Cyclopts resolved. Resolving an _absent_
+driven in-process the tokens are absent: `_environment_boolean` credits the
+variable only when it spells the value Cyclopts resolved, and anything else is
+labelled `SkipPreflightSource.IN_PROCESS` rather than attributed to a command
+line that was never parsed. Resolving an _absent_
 flag against `[preflight] skip` stays in the command layer.
 
 ### `_PublishExecutionOptions`

@@ -85,8 +85,9 @@ SKIP_PREFLIGHT_PARAMETER = Parameter(
     help=(
         "Skip the pre-flight auxiliary builds, cargo check and cargo test "
         "when the caller has already verified the workspace; overrides the "
-        "[preflight] skip setting in either direction. The working-tree and "
-        "Cargo.lock freshness checks always run."
+        "[preflight] skip setting in either direction. The Cargo.lock "
+        "freshness check always runs; the working-tree check runs with "
+        "--forbid-dirty."
     ),
 )
 
