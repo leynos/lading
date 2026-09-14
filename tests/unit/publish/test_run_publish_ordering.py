@@ -52,6 +52,7 @@ def test_run_logs_when_unpublished_workspace_dependency_override_is_enabled(
 ) -> None:
     """``run`` downgrades in-plan index misses when the override is enabled."""
     caplog.set_level(logging.INFO, logger="lading.commands.publish")
+    caplog.set_level(logging.INFO, logger="lading.commands.publish_staging")
     root = tmp_path / "workspace"
     workspace = make_workspace(root, *make_dependency_chain(root))
     configuration = make_config()
@@ -118,6 +119,7 @@ def test_run_keeps_dry_run_publication_batched(
     runs in the correct staging directory.
     """
     caplog.set_level(logging.INFO, logger="lading.commands.publish")
+    caplog.set_level(logging.INFO, logger="lading.commands.publish_staging")
     root = tmp_path / "workspace"
     workspace = make_workspace(root, *make_n_crate_chain(root, crate_count))
     configuration = make_config()

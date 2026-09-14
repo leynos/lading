@@ -14,7 +14,7 @@ import hypothesis.strategies as st
 from hypothesis import given, settings
 from tomlkit import parse as parse_toml
 
-from lading.commands import bump, bump_docs, bump_manifests, bump_toml
+from lading.commands import bump_docs, bump_manifests, bump_toml
 
 if typ.TYPE_CHECKING:
     from syrupy.assertion import SnapshotAssertion
@@ -31,7 +31,7 @@ def test_kind_mapping_agrees_with_canonical_sections() -> None:
 
 def test_workspace_dependency_sections_use_canonical_vocabulary() -> None:
     """The workspace manifest update targets exactly the canonical sections."""
-    sections = bump._workspace_dependency_sections(["alpha", "beta"])
+    sections = bump_manifests._workspace_dependency_sections(["alpha", "beta"])
 
     assert tuple(sections) == bump_toml.DEPENDENCY_SECTIONS
     assert all(names == {"alpha", "beta"} for names in sections.values())

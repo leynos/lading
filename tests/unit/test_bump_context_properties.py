@@ -2,7 +2,7 @@
 
 These tests guard that the ``excluded`` and ``updated_crate_names`` sets are
 derived once in :func:`lading.commands.bump._initialize_bump_context` and that
-:func:`~lading.commands.bump._apply_crate_manifest_update` consumes them,
+:func:`~lading.commands.bump_pipeline._apply_crate_manifest_update` consumes them,
 rather than recomputing selection per crate.
 """
 
@@ -18,9 +18,12 @@ import hypothesis.strategies as st
 from hypothesis import HealthCheck, given, settings
 from tomlkit import parse as parse_toml
 
-from lading.commands import bump
+from lading.commands import bump, bump_pipeline
 from lading.workspace import WorkspaceCrate, WorkspaceDependency, WorkspaceGraph
 from tests.helpers.workspace_builders import _make_config
+
+if typ.TYPE_CHECKING:
+    from lading.commands.bump_manifests import _BumpContext
 
 _crate_name = st.text(
     alphabet=string.ascii_lowercase + string.digits + "-_",
@@ -243,19 +246,21 @@ def _draw_dependency_edges(
 def _assert_crate_manifest_update(
     crate: WorkspaceCrate,
     crate_edges: cabc.Mapping[str, _DependencyKind],
-    context: bump._BumpContext,
+    context: _BumpContext,
     expected: _ExpectedManifestOutcome,
 ) -> None:
     """Apply the manifest update for ``crate`` and check it against reference."""
     depends_on_updated = any(target in expected.updated_names for target in crate_edges)
     expect_skipped = expected.excluded and not depends_on_updated
 
-    outcome = bump._apply_crate_manifest_update(crate, _TARGET_VERSION, context)
+    outcome = bump_pipeline._apply_crate_manifest_update(
+        crate, _TARGET_VERSION, context
+    )
 
     expected_outcome = (
-        bump._CrateManifestOutcome.SKIPPED
+        bump_pipeline._CrateManifestOutcome.SKIPPED
         if expect_skipped
-        else bump._CrateManifestOutcome.UPDATED
+        else bump_pipeline._CrateManifestOutcome.UPDATED
     )
     assert outcome is expected_outcome, (
         f"crate {crate.name!r}: expected outcome {expected_outcome}, got {outcome}"

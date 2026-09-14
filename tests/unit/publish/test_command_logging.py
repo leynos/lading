@@ -6,7 +6,7 @@ import logging
 import sys
 import typing as typ
 
-from lading.commands import publish
+from lading.commands import publish_execution
 from lading.testing import cmd_mox_runner
 
 if typ.TYPE_CHECKING:
@@ -34,7 +34,9 @@ def test_invoke_logs_command_with_cwd(
 ) -> None:
     """``_invoke`` should log the command line and working directory."""
     caplog.set_level(logging.INFO, logger="lading.runtime.subprocess_runner")
-    exit_code, stdout, stderr = publish._invoke(("echo", "hello"), cwd=tmp_path)
+    exit_code, stdout, stderr = publish_execution._invoke(
+        ("echo", "hello"), cwd=tmp_path
+    )
 
     assert exit_code == 0
     assert stdout.strip() == "hello"
@@ -49,7 +51,7 @@ def test_invoke_logs_command_without_cwd(
     """``_invoke`` should omit ``cwd`` details when not provided."""
     caplog.set_level(logging.INFO, logger="lading.runtime.subprocess_runner")
 
-    exit_code, stdout, stderr = publish._invoke(("echo", "hello"))
+    exit_code, stdout, stderr = publish_execution._invoke(("echo", "hello"))
 
     assert exit_code == 0
     assert stdout.strip() == "hello"
@@ -70,7 +72,11 @@ sys.stderr.write("beta")
 sys.stderr.flush()
 """
 
-    exit_code, stdout, stderr = publish._invoke((sys.executable, "-c", script))
+    exit_code, stdout, stderr = publish_execution._invoke((
+        sys.executable,
+        "-c",
+        script,
+    ))
 
     assert exit_code == 0
     assert stdout == "alpha"

@@ -1,190 +1,65 @@
-"""Orchestrate the ``lading publish`` workflow.
+"""Coordinate the ``lading publish`` workflow.
 
-``run()`` is the primary entry point. It loads configuration, discovers the
-workspace graph, runs pre-flight checks (:mod:`~lading.commands.publish_preflight`),
-plans publication order, stages the workspace, and dispatches to one of two
-**publish pipelines** depending on the ``live`` flag.
-
-**Pipeline dispatch**
-
-*Dry-run* (``live=False``) keeps the historical batched two-phase pipeline:
-package every publishable crate, then ``cargo publish --dry-run`` every crate
-in plan order.
-
-*Live* (``live=True``) interleaves packaging and publishing per crate via
-:func:`_execute_live_publication_pipeline`: package the next crate, publish it,
-then advance. This ordering lets dependent crates resolve newly uploaded
-in-plan dependencies during a single release train.
-
-**Per-crate helpers**
-
-:func:`_package_crate` and :func:`_publish_crate` each invoke ``cargo`` in the
-correct staged directory for a single crate. Both adapt cargo
-index-missing-version output into structured failures and detect publish-phase
-already-uploaded errors
-(:func:`~lading.commands.cargo_output_adapter.is_already_published_error`) to
-support non-fatal downgrade paths.
-
-**Error boundary**
-
-:class:`~lading.commands.publish_errors.PublishPreflightError` signals
-pre-publication failures (packaging, pre-flight checks).
-:class:`~lading.commands.publish_errors.PublishError` signals post-pre-flight
-publish failures and subclasses the preflight error so callers can handle all
-failures through one catch boundary or distinguish the publish phase when
-needed.
-
-**Related modules**
-
-* :mod:`lading.commands.publish_plan` — plan construction and formatting
-* :mod:`lading.commands.publish_preflight` — canonical home of the publish
-  pre-flight checks (``cargo check`` / ``cargo test`` / git-status guards).
-  Callers and tests use that module directly; this module holds no
-  compatibility aliases for its helpers.
-* :mod:`lading.commands.publish_errors` — :class:`PublishPreflightError` and
-  :class:`PublishError`
-* :mod:`lading.commands.publish_execution` — subprocess invocation and cmd-mox
-  integration
+``run()`` is the command entry point used by the CLI. It loads configuration
+and the workspace graph, performs preflight checks, creates a publication plan,
+stages that plan, and dispatches package and publish operations. The coordinator
+delegates workspace copies to :mod:`lading.commands.publish_staging` and
+per-crate execution to :mod:`lading.commands.publish_pipeline`; the latter uses
+:mod:`lading.commands.publish_execution` for its default subprocess runner.
 """
 
 from __future__ import annotations
 
-import atexit
-import collections.abc as cabc
 import dataclasses as dc
 import logging
-import shutil
-import tempfile
-import time
 import typing as typ
 from pathlib import Path
 
 from lading import config as config_module
-from lading.commands import publish_preflight
-from lading.commands.cargo_output_adapter import (
-    CargoIndexLookupFailure,
-    CargoSubprocessResult,
-    is_already_published_error,
-    parse_index_lookup_failure,
-)
-from lading.commands.publish_errors import PublishError, PublishPreflightError
-from lading.commands.publish_execution import (
-    _CargoInvocation,
-    _invoke,
-    _run_timed_cargo,
-)
-from lading.commands.publish_index_check import (
-    _format_cargo_failure_message,
-    _IndexMissingVersionHandling,
-)
-from lading.commands.publish_index_check import (
-    _handle_index_missing_version as _raw_handle_index_missing_version,
-)
-from lading.commands.publish_manifest import (
-    PublishPreparationError,
-    _apply_strip_patch_strategy,
-)
-from lading.commands.publish_plan import (
-    PublishPlan,
-    format_plan,
-    plan_publication,
-)
-from lading.commands.publish_plan import (
-    PublishPlanError as PublishPlanError,  # public re-export for plan_publication
-)
-from lading.commands.publish_sccache import SccacheSession, create_session
+from lading.commands import publish_pipeline, publish_preflight, publish_staging
+from lading.commands.publish_errors import PublishPreflightError
+from lading.commands.publish_manifest import _apply_strip_patch_strategy
+from lading.commands.publish_plan import PublishPlanError as PublishPlanError
+from lading.commands.publish_plan import format_plan, plan_publication
 from lading.utils.path import normalize_workspace_root
 
-LOGGER = logging.getLogger(__name__)
-
 if typ.TYPE_CHECKING:
-    from lading.commands.publish_execution import _TimedCargoResult
     from lading.config import LadingConfig
     from lading.runtime import CommandRunner
-    from lading.workspace import WorkspaceCrate, WorkspaceGraph
+    from lading.workspace import WorkspaceGraph
 
-
-@dc.dataclass(frozen=True, slots=True)
-class _PublishExecutionOptions:
-    """Runtime flags that affect cargo package/publish invocations."""
-
-    live: bool
-    allow_dirty: bool
-    allow_unpublished_workspace_deps: bool = False
-    sccache_stats: bool = False
-    sccache_stats_json: Path | None = None
-
-
-@dc.dataclass(frozen=True, slots=True)
-class _PublicationPipelineState:
-    """Shared publish state for cargo package and publish invocations.
-
-    Design note (issue #72): this bundle is deliberate. The per-crate
-    helpers (``_package_crate``, ``_publish_crate``) would otherwise need
-    ``plan``, ``preparation``, and ``options`` threaded individually,
-    pushing their signatures past the argument-count lint ceiling and
-    inviting positional mix-ups. The three fields are constructed together
-    in each pipeline entry point and are immutable for the pipeline's
-    lifetime, which is the invariant the dataclass enforces.
-    """
-
-    plan: PublishPlan
-    preparation: PublishPreparation
-    options: _PublishExecutionOptions
-    # Monotonic clock used to time each cargo invocation; tests inject a
-    # deterministic one, matching the ``clock`` seam in
-    # ``bump_lockfile_regeneration``.
-    clock: cabc.Callable[[], float] = time.perf_counter
-    # Compiler-cache instrumentation (issue #252); ``None`` when not requested.
-    sccache: SccacheSession | None = None
-
-    def position(self, crate: WorkspaceCrate) -> str:
-        """Return ``crate``'s ``n/total`` position in the publish order."""
-        return f"{self.plan.publishable.index(crate) + 1}/{len(self.plan.publishable)}"
+LOGGER = logging.getLogger(__name__)
 
 
 @dc.dataclass(frozen=True, slots=True)
 class PublishOptions:
     """Runtime configuration for publish planning, staging, and checks.
 
-    Parameters
+    Attributes
     ----------
-    allow_dirty:
-        When ``True`` the git cleanliness guard is skipped.
-    live:
-        When :data:`True`, execute ``cargo publish`` without ``--dry-run``.
-        Defaults to :data:`False` so publishing remains a dry-run unless
-        explicitly enabled.
-    build_directory:
-        Optional directory used to stage workspace artefacts. When ``None``,
-        a temporary directory is created for each invocation.
-    preserve_symlinks:
-        Control whether staging preserves symbolic links in the workspace
-        clone instead of dereferencing them.
-    cleanup:
-        When :data:`True`, the staged workspace is removed automatically on
-        process exit.
-    configuration:
-        Optional :class:`~lading.config.LadingConfig` instance to reuse instead
-        of loading from disk.
-    workspace:
-        Optional pre-loaded workspace graph to reuse for planning.
-    command_runner:
-        Optional callable used to execute shell commands. Primarily intended
-        for tests and dependency injection.
-    allow_unpublished_workspace_deps:
-        When :data:`True`, downgrade ``cargo package`` failures caused by a
-        sibling workspace crate version not yet visible on the crates.io index
-        to a warning, provided the missing crate is part of the planned
-        publish set. Only valid in dry-run mode (``live=False``); combining it
-        with ``live=True`` raises :class:`PublishPreflightError`.
-    sccache_stats:
-        When :data:`True`, query the sccache binary named by ``RUSTC_WRAPPER``
-        around every cargo build and log one cache summary line per crate.
-    sccache_stats_json:
-        Optional path for a JSON report of those statistics; implies
-        ``sccache_stats``.
-
+    allow_dirty : bool
+        Whether preflight checks permit a workspace with uncommitted changes.
+    live : bool
+        Whether to invoke ``cargo publish`` without ``--dry-run``.
+    build_directory : Path | None
+        Optional parent directory for the staged workspace.
+    preserve_symlinks : bool
+        Whether staging copies symbolic links as links rather than targets.
+    cleanup : bool
+        Whether process-exit cleanup removes the staged workspace.
+    configuration : LadingConfig | None
+        Optional loaded configuration used instead of loading it from disk.
+    workspace : WorkspaceGraph | None
+        Optional discovered workspace graph used instead of rediscovery.
+    command_runner : CommandRunner | None
+        Optional command runner, primarily for dependency injection and tests.
+    allow_unpublished_workspace_deps : bool
+        Whether dry-run index failures for planned workspace dependencies become
+        warnings rather than preflight failures.
+    sccache_stats : bool
+        Whether to collect compiler-cache statistics for cargo invocations.
+    sccache_stats_json : Path | None
+        Optional JSON report destination for compiler-cache statistics.
     """
 
     allow_dirty: bool = True
@@ -200,395 +75,12 @@ class PublishOptions:
     sccache_stats_json: Path | None = None
 
 
-@dc.dataclass(frozen=True, slots=True)
-class PublishPreparation:
-    """Details about the staged workspace copy."""
-
-    staging_root: Path
-    copied_readmes: tuple[Path, ...]
-
-
-def _normalize_build_directory(
-    workspace_root: Path, build_directory: Path | None
-) -> Path:
-    """Return a directory suitable for staging workspace artefacts."""
-    if build_directory is None:
-        return Path(tempfile.mkdtemp(prefix="lading-publish-"))
-
-    candidate = Path(build_directory).expanduser()
-    candidate = candidate.resolve(strict=False)
-
-    workspace_root = workspace_root.resolve(strict=True)
-    if candidate.is_relative_to(workspace_root):
-        message = "Publish build directory cannot reside within the workspace root"
-        raise PublishPreparationError(message)
-
-    candidate.mkdir(parents=True, exist_ok=True)
-    return candidate
-
-
-def _copy_workspace_tree(
-    workspace_root: Path, build_directory: Path, *, preserve_symlinks: bool
-) -> Path:
-    """Copy ``workspace_root`` into ``build_directory`` and return the clone."""
-    workspace_root = workspace_root.resolve(strict=True)
-    staging_root = build_directory / workspace_root.name
-    if staging_root.resolve(strict=False).is_relative_to(workspace_root):
-        message = "Publish staging directory cannot be nested inside the workspace root"
-        raise PublishPreparationError(message)
-    if staging_root.exists():
-        shutil.rmtree(staging_root)
-    shutil.copytree(workspace_root, staging_root, symlinks=preserve_symlinks)
-    return staging_root
-
-
-def prepare_workspace(
-    plan: PublishPlan,
-    workspace: WorkspaceGraph,
-    *,
-    options: PublishOptions | None = None,
-) -> PublishPreparation:
-    """Stage a workspace copy for publishing.
-
-    Parameters
-    ----------
-    plan : PublishPlan
-        The publication plan describing the workspace root and the publishable
-        crates to be staged.
-    workspace : WorkspaceGraph
-        The resolved workspace graph being staged for publication.
-    options : PublishOptions | None, optional
-        Staging options controlling the build directory, symlink handling, and
-        automatic cleanup. When :data:`None`, default :class:`PublishOptions`
-        are used.
-
-    Returns
-    -------
-    PublishPreparation
-        The staging result, including the staged workspace root.
-
-    Raises
-    ------
-    PublishPreparationError
-        If the staging build directory or copied workspace path is unsafe or
-        invalid (for example nested within the workspace root); propagated
-        from :func:`_normalize_build_directory` and :func:`_copy_workspace_tree`.
-
-    Examples
-    --------
-    >>> preparation = prepare_workspace(plan, workspace)  # doctest: +SKIP
-    >>> preparation.staging_root  # doctest: +SKIP
-    PosixPath('/tmp/lading-publish-abcd1234/my-workspace')
-    """
-    active_options = PublishOptions() if options is None else options
-    build_directory = _normalize_build_directory(
-        plan.workspace_root, active_options.build_directory
-    )
-    LOGGER.info(
-        "Preparing staged workspace for publication under %s",
-        build_directory,
-    )
-    staging_root = _copy_workspace_tree(
-        plan.workspace_root,
-        build_directory,
-        preserve_symlinks=active_options.preserve_symlinks,
-    )
-    LOGGER.info("Staged workspace created at %s", staging_root)
-    LOGGER.info("Workspace README staging skipped; handled by lading bump")
-    preparation = PublishPreparation(staging_root=staging_root, copied_readmes=())
-    if active_options.cleanup:
-        build_root = staging_root.parent
-
-        def _cleanup() -> None:
-            """Remove the staged build directory on process exit."""
-            shutil.rmtree(build_root, ignore_errors=True)
-
-        atexit.register(_cleanup)
-    return preparation
-
-
-def _format_preparation_summary(preparation: PublishPreparation) -> tuple[str, ...]:
-    """Return formatted summary lines for staging results."""
-    lines = [f"Staged workspace at: {preparation.staging_root}"]
-    lines.append("Workspace READMEs are handled by lading bump.")
-    return tuple(lines)
-
-
-def _resolve_staged_crate_root(
-    crate: WorkspaceCrate,
-    plan: PublishPlan,
-    staging_root: Path,
-) -> Path:
-    """Return the staged crate root, ensuring it resides within the workspace."""
-    try:
-        relative_root = crate.root_path.relative_to(plan.workspace_root)
-    except ValueError as exc:  # pragma: no cover - defensive guard
-        message = (
-            f"Crate {crate.name!r} root {crate.root_path} is outside workspace "
-            f"{plan.workspace_root}"
-        )
-        raise PublishPreparationError(message) from exc
-
-    staged_root = staging_root / relative_root
-    if not staged_root.exists():  # pragma: no cover - defensive guard
-        message = f"Staged crate root not found for {crate.name!r}: {staged_root}"
-        raise PublishPreparationError(message)
-
-    return staged_root
-
-
-def _handle_index_missing_version(
-    failure: CargoIndexLookupFailure,
-    *,
-    plan: PublishPlan,
-    options: _PublishExecutionOptions,
-) -> None:
-    """Pick the phase-appropriate error class and delegate to the helper.
-
-    Resolve the error class here based on the cargo subcommand and pass it
-    through to the relocated implementation in ``publish_index_check``.
-    """
-    error_cls = (
-        PublishError if failure.subcommand == "publish" else PublishPreflightError
-    )
-    _raw_handle_index_missing_version(
-        failure,
-        handling=_IndexMissingVersionHandling(
-            plan=plan,
-            options=options,
-            logger=LOGGER,
-        ),
-        error_cls=error_cls,
-    )
-
-
-class _CrateAction(typ.Protocol):
-    """Action applied to each crate in the publication pipeline."""
-
-    def __call__(
-        self,
-        crate: WorkspaceCrate,
-        state: _PublicationPipelineState,
-        *,
-        runner: CommandRunner,
-    ) -> None:
-        """Process a single staged crate from the pipeline."""
-
-
-def _for_each_publishable_crate(
-    state: _PublicationPipelineState,
-    *,
-    runner: CommandRunner,
-    action: _CrateAction,
-) -> None:
-    """Apply *action* to every publishable crate in pipeline order."""
-    for crate in state.plan.publishable:
-        action(crate, state, runner=runner)
-
-
-def _package_publishable_crates(
-    state: _PublicationPipelineState,
-    *,
-    runner: CommandRunner,
-) -> None:
-    """Package each publishable crate in order using the staged workspace."""
-    _for_each_publishable_crate(state, runner=runner, action=_package_crate)
-
-
-def _package_crate(
-    crate: WorkspaceCrate,
-    state: _PublicationPipelineState,
-    *,
-    runner: CommandRunner,
-) -> None:
-    """Package one publishable crate using the staged workspace."""
-    plan = state.plan
-    options = state.options
-    package_args: tuple[str, ...] = ("--allow-dirty",) if options.allow_dirty else ()
-    crate_root = _resolve_staged_crate_root(crate, plan, state.preparation.staging_root)
-    position = state.position(crate)
-    LOGGER.info("Running cargo package for crate %s (%s)", crate.name, position)
-    result = _run_timed_cargo(
-        _CargoInvocation(("cargo", "package", *package_args), crate_root, crate.name),
-        runner=runner,
-        clock=state.clock,
-    )
-    if state.sccache is not None:
-        state.sccache.record(crate.name, "package", result.elapsed_seconds)
-    if result.exit_code == 0:
-        LOGGER.info(
-            "Successfully packaged crate %s (%s) in %.1fs",
-            crate.name,
-            position,
-            result.elapsed_seconds,
-        )
-        return
-    lookup_failure = parse_index_lookup_failure(
-        crate_name=crate.name,
-        subcommand="package",
-        result=CargoSubprocessResult(
-            exit_code=result.exit_code,
-            stdout=result.stdout,
-            stderr=result.stderr,
-        ),
-    )
-    if lookup_failure is not None:
-        _handle_index_missing_version(lookup_failure, plan=plan, options=options)
-        return
-    message = _format_cargo_failure_message(
-        "package", crate.name, result.exit_code, result.streams
-    )
-    LOGGER.error(message)
-    raise PublishPreflightError(message)
-
-
-def _publish_crates(
-    state: _PublicationPipelineState,
-    *,
-    runner: CommandRunner,
-) -> None:
-    """Publish each crate in order, respecting dry-run vs live mode."""
-    _for_each_publishable_crate(state, runner=runner, action=_publish_crate)
-
-
-def _publish_crate(
-    crate: WorkspaceCrate,
-    state: _PublicationPipelineState,
-    *,
-    runner: CommandRunner,
-) -> None:
-    """Publish one crate from the staged workspace."""
-    plan = state.plan
-    options = state.options
-    publish_args: list[str] = []
-    if options.allow_dirty:
-        publish_args.append("--allow-dirty")
-    if not options.live:
-        publish_args.append("--dry-run")
-    publish_args_tuple = tuple(publish_args)
-    crate_root = _resolve_staged_crate_root(crate, plan, state.preparation.staging_root)
-    LOGGER.info(
-        "Running cargo publish%s for crate %s (%s)",
-        "" if options.live else " --dry-run",
-        crate.name,
-        state.position(crate),
-    )
-    result = _run_timed_cargo(
-        _CargoInvocation(
-            ("cargo", "publish", *publish_args_tuple), crate_root, crate.name
-        ),
-        runner=runner,
-        clock=state.clock,
-    )
-    if state.sccache is not None:
-        state.sccache.record(crate.name, "publish", result.elapsed_seconds)
-    _handle_publish_result(crate, result, state=state)
-
-
-def _handle_publish_result(
-    crate: WorkspaceCrate,
-    result: _TimedCargoResult,
-    *,
-    state: _PublicationPipelineState,
-) -> None:
-    """Handle a completed ``cargo publish`` invocation."""
-    plan = state.plan
-    options = state.options
-    exit_code, stdout, stderr = result.exit_code, result.stdout, result.stderr
-    if exit_code == 0:
-        success_message = (
-            "Successfully published crate %s (%s) in %.1fs"
-            if options.live
-            else "Dry-run publish succeeded for crate %s (%s) in %.1fs"
-        )
-        LOGGER.info(
-            success_message, crate.name, state.position(crate), result.elapsed_seconds
-        )
-        return
-    if is_already_published_error(exit_code, stdout, stderr):
-        LOGGER.warning(
-            "Crate %s @ %s is already published; skipping",
-            crate.name,
-            crate.version,
-        )
-        return
-    lookup_failure = parse_index_lookup_failure(
-        crate_name=crate.name,
-        subcommand="publish",
-        result=CargoSubprocessResult(
-            exit_code=exit_code,
-            stdout=stdout,
-            stderr=stderr,
-        ),
-    )
-    if lookup_failure is not None:
-        # cargo publish --dry-run packages internally and hits the same
-        # crates.io index lookup as cargo package, so honour the override
-        # consistently across both phases.
-        _handle_index_missing_version(lookup_failure, plan=plan, options=options)
-        return
-
-    message = _format_cargo_failure_message(
-        "publish", crate.name, exit_code, (stdout, stderr)
-    )
-    LOGGER.error(message)
-    raise PublishError(message)
-
-
-def _execute_live_publication_pipeline(
-    state: _PublicationPipelineState,
-    *,
-    runner: CommandRunner,
-) -> None:
-    """Package and publish each crate before moving to the next crate."""
-    plan = state.plan
-    completed: list[str] = []
-    for crate in plan.publishable:
-        LOGGER.info("Live pipeline: starting crate %s", crate.name)
-        try:
-            _package_crate(
-                crate,
-                state,
-                runner=runner,
-            )
-            _publish_crate(
-                crate,
-                state,
-                runner=runner,
-            )
-        except PublishPreparationError as exc:
-            # Preparation failures escape the preflight/publish error taxonomy;
-            # normalize them so the live pipeline reports a single abort class.
-            LOGGER.exception(
-                "Live pipeline: aborted on crate %s — %d/%d crates completed (%s)",
-                crate.name,
-                len(completed),
-                len(plan.publishable),
-                ", ".join(completed) if completed else "none",
-            )
-            raise PublishPreflightError(str(exc)) from exc
-        # PublishError subclasses PublishPreflightError, so the base class
-        # alone covers both pre-flight and publish failures here.
-        except PublishPreflightError:
-            LOGGER.exception(
-                "Live pipeline: aborted on crate %s — %d/%d crates completed (%s)",
-                crate.name,
-                len(completed),
-                len(plan.publishable),
-                ", ".join(completed) if completed else "none",
-            )
-            raise
-        LOGGER.info("Live pipeline: completed crate %s", crate.name)
-        completed.append(crate.name)
-
-
 def _ensure_configuration(
     configuration: LadingConfig | None, workspace_root: Path
 ) -> LadingConfig:
     """Return the active configuration, loading it from disk when required."""
     if configuration is not None:
         return configuration
-
     try:
         return config_module.current_configuration()
     except config_module.ConfigurationNotLoadedError:
@@ -601,7 +93,6 @@ def _ensure_workspace(
     """Return the workspace graph rooted at ``workspace_root``."""
     if workspace is not None:
         return workspace
-
     from lading.workspace import WorkspaceModelError, load_workspace
 
     try:
@@ -612,7 +103,7 @@ def _ensure_workspace(
 
 
 def _validate_publication_options(options: PublishOptions) -> None:
-    """Raise :class:`PublishPreflightError` for invalid option combinations."""
+    """Raise for invalid publish option combinations."""
     if options.live and options.allow_unpublished_workspace_deps:
         message = (
             "Unpublished workspace dependency override is only valid in dry-run "
@@ -627,55 +118,6 @@ def _validate_publication_options(options: PublishOptions) -> None:
         )
 
 
-def _dispatch_publication(
-    plan: PublishPlan,
-    preparation: PublishPreparation,
-    *,
-    options: _PublishExecutionOptions,
-    runner: CommandRunner,
-) -> None:
-    """Route to the live or dry-run publication pipeline.
-
-    Design note (issue #72): this helper is more than a relocated branch.
-    It owns the operator-facing pipeline-mode log line, sequences the
-    dry-run two-phase pipeline (package everything, then publish
-    everything), and gives tests a single seam to exercise mode dispatch
-    without driving ``run()`` end to end. Inlining it would push ``run()``
-    back toward the complexity ceiling that prompted the extraction.
-    """
-    # The baseline snapshot is taken here, after pre-flight, so the cargo
-    # check/test builds are excluded and only the packaged builds are counted.
-    sccache = create_session(options, runner=runner, workspace_root=plan.workspace_root)
-    if sccache is not None:
-        sccache.begin()
-    state = _PublicationPipelineState(plan, preparation, options, sccache=sccache)
-    try:
-        if options.live:
-            LOGGER.info("Publication mode: live (interleaved per-crate pipeline)")
-            _execute_live_publication_pipeline(state, runner=runner)
-        else:
-            LOGGER.info("Publication mode: dry-run (batched two-phase pipeline)")
-            _package_publishable_crates(state, runner=runner)
-            LOGGER.info("Dry-run pipeline: packaging complete; starting publish phase")
-            _publish_crates(state, runner=runner)
-    finally:
-        # A failed crate still leaves the measurements taken so far on record;
-        # finish() never raises, so it cannot mask the pipeline's own error.
-        if sccache is not None:
-            sccache.finish()
-
-
-def _execution_options(options: PublishOptions) -> _PublishExecutionOptions:
-    """Narrow the public options to the flags the cargo invocations need."""
-    return _PublishExecutionOptions(
-        live=options.live,
-        allow_dirty=options.allow_dirty,
-        allow_unpublished_workspace_deps=options.allow_unpublished_workspace_deps,
-        sccache_stats=options.sccache_stats,
-        sccache_stats_json=options.sccache_stats_json,
-    )
-
-
 def run(
     workspace_root: Path,
     configuration: LadingConfig | None = None,
@@ -683,85 +125,63 @@ def run(
     *,
     options: PublishOptions | None = None,
 ) -> str:
-    """Run pre-flight checks, package crates, and publish from ``workspace_root``.
+    """Plan, stage, and execute publication from a workspace root.
 
     Parameters
     ----------
     workspace_root : Path
-        Filesystem path to the workspace whose crates are published.
-    configuration : LadingConfig | None, optional
-        Pre-loaded configuration to reuse. When :data:`None`, configuration is
-        taken from ``options`` or loaded from ``workspace_root``.
-    workspace : WorkspaceGraph | None, optional
-        Pre-loaded workspace graph to reuse. When :data:`None`, the graph is
-        taken from ``options`` or loaded from ``workspace_root``.
+        Root directory of the Cargo workspace to publish.
+    configuration : LadingConfig | None
+        Optional configuration that overrides configuration loaded from the
+        workspace.
+    workspace : WorkspaceGraph | None
+        Optional pre-discovered workspace graph for publication planning.
     options : PublishOptions | None, optional
-        Runtime configuration for planning, staging, and publish behaviour.
-        When :data:`None`, default :class:`PublishOptions` are used.
+        Runtime flags controlling preflight, staging, cleanup, and publication.
+        When omitted, the default dry-run configuration is used.
 
     Returns
     -------
     str
-        The formatted publication plan followed by the staging summary lines.
-
-    Raises
-    ------
-    PublishPreflightError
-        If ``options`` combines invalid flags (see
-        :func:`_validate_publication_options`) or a pre-flight check fails.
-    PublishPlanError
-        If a valid publication plan cannot be constructed.
-    PublishPreparationError
-        If staging the workspace copy fails, or if the staged manifest cannot
-        be patched according to ``publish.strip_patches`` (propagated from
-        :func:`_apply_strip_patch_strategy`).
-    PublishError
-        If a crate fails to publish. Packaging failures raise
-        :class:`PublishPreflightError` instead.
-
-    Examples
-    --------
-    >>> from lading.commands.publish import run
-    >>> summary = run(workspace_root)  # doctest: +SKIP
-    >>> summary.startswith("Publish plan for")  # doctest: +SKIP
-    True
-    >>> "Staged workspace at:" in summary  # doctest: +SKIP
-    True
+        Human-readable publication plan and staged-workspace summary.
     """
     root_path = normalize_workspace_root(workspace_root)
     LOGGER.info("Starting publish workflow for workspace %s", root_path)
     effective_options = PublishOptions() if options is None else options
     _validate_publication_options(effective_options)
-    configuration_override = configuration or effective_options.configuration
-    workspace_override = workspace or effective_options.workspace
-    command_runner = effective_options.command_runner or _invoke
-    active_configuration = _ensure_configuration(configuration_override, root_path)
-    active_workspace = _ensure_workspace(workspace_override, root_path)
-
+    active_configuration = _ensure_configuration(
+        configuration or effective_options.configuration, root_path
+    )
+    command_runner = effective_options.command_runner or publish_pipeline._invoke
     publish_preflight._run_preflight_checks(
         root_path,
         allow_dirty=effective_options.allow_dirty,
         configuration=active_configuration,
         runner=command_runner,
     )
+    active_workspace = _ensure_workspace(
+        workspace or effective_options.workspace, root_path
+    )
     plan = plan_publication(
         active_workspace, active_configuration, workspace_root=root_path
     )
-    preparation = prepare_workspace(plan, active_workspace, options=options)
+    preparation = publish_staging.prepare_workspace(plan, options=effective_options)
     _apply_strip_patch_strategy(
-        preparation.staging_root,
-        plan,
-        active_configuration.publish.strip_patches,
+        preparation.staging_root, plan, active_configuration.publish.strip_patches
     )
-    _dispatch_publication(
-        plan,
-        preparation,
-        options=_execution_options(effective_options),
-        runner=command_runner,
+    execution_options = publish_pipeline._PublishExecutionOptions(
+        live=effective_options.live,
+        allow_dirty=effective_options.allow_dirty,
+        allow_unpublished_workspace_deps=effective_options.allow_unpublished_workspace_deps,
+        sccache_stats=effective_options.sccache_stats,
+        sccache_stats_json=effective_options.sccache_stats_json,
+    )
+    publish_pipeline._dispatch_publication(
+        plan, preparation, options=execution_options, runner=command_runner
     )
     plan_message = format_plan(
         plan, strip_patches=active_configuration.publish.strip_patches
     )
-    summary_lines = _format_preparation_summary(preparation)
+    summary_lines = publish_staging._format_preparation_summary(preparation)
     LOGGER.info("Publish workflow completed successfully for workspace %s", root_path)
     return f"{plan_message}\n\n" + "\n".join(summary_lines)

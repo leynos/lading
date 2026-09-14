@@ -15,7 +15,11 @@ from pathlib import Path
 
 import pytest
 
-from lading.commands import publish, publish_sccache
+from lading.commands import (
+    publish_pipeline,
+    publish_sccache,
+    publish_sccache_report,
+)
 from lading.commands.publish_sccache_stats import SccacheCounters
 from lading.utils import metrics
 
@@ -26,6 +30,8 @@ from .sccache_doubles import (
     ScriptedRunner,
     payload,
 )
+
+_WRITE_FAILURE_MESSAGE = "write refused"
 
 
 @pytest.fixture(autouse=True)
@@ -182,6 +188,39 @@ def test_report_replacement_failure_keeps_the_existing_file(
     )
 
 
+def test_atomic_write_removes_temporary_file_after_write_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A write failure removes the temporary report file before propagating."""
+    temporary = tmp_path / ".sccache.json.write-failure"
+
+    class _FailingStream:
+        """Temporary stream double that creates a file then rejects writes."""
+
+        name = str(temporary)
+
+        def __enter__(self) -> _FailingStream:
+            temporary.touch()
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def write(self, _content: str) -> None:
+            raise OSError(_WRITE_FAILURE_MESSAGE)
+
+    monkeypatch.setattr(
+        publish_sccache_report.tempfile,
+        "NamedTemporaryFile",
+        lambda *_args, **_kwargs: _FailingStream(),
+    )
+
+    with pytest.raises(OSError, match=_WRITE_FAILURE_MESSAGE):
+        publish_sccache_report.write_atomically(tmp_path / "sccache.json", "report")
+
+    assert not temporary.exists(), "a failed write must remove its temporary file"
+
+
 def test_failed_baseline_disables_session_without_raising(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -289,7 +328,7 @@ def test_create_session_treats_a_report_path_as_opting_in(
     expects_session: bool,
 ) -> None:
     """A report path implies the measurement for library and CLI callers alike."""
-    options = publish._PublishExecutionOptions(
+    options = publish_pipeline._PublishExecutionOptions(
         live=False,
         allow_dirty=True,
         sccache_stats=sccache_stats,
@@ -315,7 +354,7 @@ def test_create_session_warns_without_wrapper(
 ) -> None:
     """Requesting statistics without an sccache wrapper skips with a WARNING."""
     caplog.set_level(logging.WARNING, logger=PIPELINE_LOGGER)
-    options = publish._PublishExecutionOptions(
+    options = publish_pipeline._PublishExecutionOptions(
         live=False, allow_dirty=True, sccache_stats=True
     )
 
@@ -335,7 +374,7 @@ def test_create_session_warns_without_wrapper(
 def test_create_session_binds_wrapper_root_and_report(tmp_path: Path) -> None:
     """An enabled session carries the wrapper, workspace root, and JSON path."""
     report = tmp_path / "report.json"
-    options = publish._PublishExecutionOptions(
+    options = publish_pipeline._PublishExecutionOptions(
         live=False, allow_dirty=True, sccache_stats=True, sccache_stats_json=report
     )
 
@@ -357,7 +396,7 @@ def test_create_session_binds_wrapper_root_and_report(tmp_path: Path) -> None:
 
 def test_create_session_resolves_a_relative_report_path(tmp_path: Path) -> None:
     """A relative report path follows the workspace root, not the process cwd."""
-    options = publish._PublishExecutionOptions(
+    options = publish_pipeline._PublishExecutionOptions(
         live=False,
         allow_dirty=True,
         sccache_stats_json=Path("target") / "sccache.json",
