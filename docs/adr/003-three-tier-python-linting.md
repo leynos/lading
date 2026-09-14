@@ -18,28 +18,13 @@ than an optional local check. It also needs to run after the virtual
 environment has been created and synchronized, because Interrogate is installed
 as a development dependency.
 
-Docstring coverage initially gated only the `lading` production package while
-`tests` and `scripts` stayed measured but unenforced. Triaging the gap showed
-that most missing documentation in the ungated scopes sat in nested helper
-closures and test-local stub classes whose docstrings would only restate the
-enclosing test's name; the definitions that carry real contracts — module-level
-helpers, recording doubles, and protocol or case classes — are much fewer.
-Excluding those nested definitions by shape, rather than by a hand-maintained
-ignore list, keeps the absolute 100% threshold enforceable across the whole
-Python estate.
-
 ## Decision
 
 `make lint` is the canonical Python lint gate and runs five stages in order:
 
 1. Ruff checks formatting-adjacent style and broad correctness rules.
-2. Interrogate runs with `--fail-under 100` and requires 100% docstring
-   coverage, once against `lading` and once against `tests` and `scripts`. The
-   second pass relies on the shape-based `--ignore-nested-functions` and
-   `--ignore-nested-classes` flags passed on that invocation's command line in
-   the Makefile; test closures and test-local stub classes are exempt by
-   structure, and every remaining definition must carry a docstring. The
-   production `lading` pass carries no exemptions.
+2. Interrogate runs with `--fail-under 100` against `lading` and requires 100%
+   docstring coverage.
 3. Pylint runs through the pinned `pylint-pypy-shim` command and applies the
    selected complementary checks.
 4. Pylint loads `df12-python-lints` v0.1.0 under CPython 3.14 and enables all
@@ -55,18 +40,9 @@ the virtual-environment tool.
 
 ## Consequences
 
-New package modules, helper functions, tests, and scripts must include
-docstrings at the time they are introduced. Missing documentation fails
-`make lint` before the Pylint tier runs.
-
-Nested definitions inside tests and scripts remain exempt from the gate, so a
-closure or fixture double added without documentation will not fail the build.
-That exemption is deliberate: such definitions document themselves through
-their enclosing test or helper, and forcing a restating docstring onto each one
-would dilute the signal that meaningful documentation provides. Module-level
-definitions and nested class bodies in the production package stay fully gated,
-while nested definitions under `tests` and `scripts` remain exempt through the
-second pass's command-line flags.
+New package modules, helper functions, and refactors must include docstrings at
+the time they are introduced. Missing documentation fails `make lint` before
+the Pylint tier runs.
 
 The separate CPython stage lets the df12 plug-in analyse current syntax without
 changing the PyPy compatibility boundary of the existing Pylint pass. The
@@ -78,17 +54,20 @@ changes are not ready until the full `make lint` target succeeds.
 
 ## Addendum: docstring coverage for tests and scripts (2026-09-07)
 
-Adopted 2026-09-07. Extends the Interrogate stage of this ADR to the test and
-script scopes at the same absolute 100% threshold.
+Adopted 2026-09-07. This addendum extends the Interrogate stage of the
+decision above; the accepted body of this ADR is unchanged.
 
-The second Makefile invocation covers `tests` and `scripts` with
-`--fail-under 100` plus `--ignore-nested-functions` and
-`--ignore-nested-classes` on its command line. Those exemptions are
-invocation-scoped, never project-wide, and
-`tests/workflow_contracts/test_lint_target.py` pins the two-pass contract at
-the Makefile boundary.
+`make lint` now runs a second Interrogate invocation alongside the existing
+production-package pass: `interrogate --fail-under 100 tests scripts`. The
+shape-based `--ignore-nested-functions` and `--ignore-nested-classes` flags
+apply only to that second invocation, passed on its command line in the
+Makefile; they are never project-wide settings. Nested test closures and
+test-local stub classes are exempt by structure, and every remaining
+definition under `tests` and `scripts` must still carry a docstring.
 
-Nested test definitions are closures and fixture doubles documented by their
-enclosing test or helper; restating that inside each closure dilutes the
-signal. Shape-based flags keep the threshold absolute without a per-file ignore
-list.
+The production `lading` pass remains unexempted: it keeps enforcing docstrings
+on every definition it measures, including nested ones.
+
+`tests/workflow_contracts/test_lint_target.py` enforces this contract at the
+Makefile boundary, pinning both absolute 100% passes and confining the
+nested-definition exemptions to the `tests` and `scripts` invocation.
