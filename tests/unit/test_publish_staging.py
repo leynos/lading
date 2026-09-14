@@ -19,6 +19,14 @@ if typ.TYPE_CHECKING:
     from pathlib import Path
 
 
+class _CopyWorkspaceFailureCase(typ.NamedTuple):
+    """Failure mode exercised while copying a workspace tree."""
+
+    operation: str
+    requires_staging_root: bool
+    message: str
+
+
 def test_normalize_build_directory_defaults_to_tempdir(tmp_path: Path) -> None:
     """Normalization creates a temporary directory when none is provided."""
     workspace_root = tmp_path / "workspace"
@@ -129,19 +137,43 @@ def test_copy_workspace_tree_replaces_existing_clone(tmp_path: Path) -> None:
     assert (staging_root / "marker.txt").read_text(encoding="utf-8") == "fresh"
 
 
-def _assert_copy_workspace_tree_failure(
+@pytest.mark.parametrize(
+    "case",
+    [
+        pytest.param(
+            _CopyWorkspaceFailureCase(
+                "rmtree", requires_staging_root=True, message="permission denied"
+            ),
+            id="staging_cleanup",
+        ),
+        pytest.param(
+            _CopyWorkspaceFailureCase(
+                "copytree", requires_staging_root=False, message="disk full"
+            ),
+            id="workspace_copy",
+        ),
+    ],
+)
+def test_copy_workspace_tree_wraps_filesystem_failures(
     monkeypatch: pytest.MonkeyPatch,
-    workspace_root: Path,
-    build_directory: Path,
-    operation: str,
-    failure: OSError,
+    tmp_path: Path,
+    case: _CopyWorkspaceFailureCase,
 ) -> None:
-    """Assert a filesystem failure is wrapped by the staging error boundary."""
+    """Workspace-copy filesystem failures use the staging error boundary."""
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    build_directory = tmp_path / "staging"
+    if case.requires_staging_root:
+        (build_directory / workspace_root.name).mkdir(parents=True)
+    else:
+        build_directory.mkdir()
+
+    failure = OSError(case.message)
 
     def fail_operation(*_args: object, **_kwargs: object) -> None:
         raise failure
 
-    monkeypatch.setattr(publish_staging.shutil, operation, fail_operation)
+    monkeypatch.setattr(publish_staging.shutil, case.operation, fail_operation)
 
     with pytest.raises(publish_staging.PublishPreparationError) as excinfo:
         publish_staging._copy_workspace_tree(
@@ -150,22 +182,6 @@ def _assert_copy_workspace_tree_failure(
 
     assert "Cannot copy workspace into staging directory" in str(excinfo.value)
     assert excinfo.value.__cause__ is failure
-
-
-def test_copy_workspace_tree_wraps_staging_cleanup_failure(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Staging-root cleanup failures use the staging error boundary."""
-    workspace_root = tmp_path / "workspace"
-    workspace_root.mkdir()
-    build_directory = tmp_path / "staging"
-    staging_root = build_directory / workspace_root.name
-    staging_root.mkdir(parents=True)
-    failure = OSError("permission denied")
-
-    _assert_copy_workspace_tree_failure(
-        monkeypatch, workspace_root, build_directory, "rmtree", failure
-    )
 
 
 def test_copy_workspace_tree_rejects_nested_clone(tmp_path: Path) -> None:
@@ -179,21 +195,6 @@ def test_copy_workspace_tree_rejects_nested_clone(tmp_path: Path) -> None:
         )
 
     assert "cannot be nested inside the workspace root" in str(excinfo.value)
-
-
-def test_copy_workspace_tree_wraps_copy_failure(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Workspace-copy failures use the staging error boundary."""
-    workspace_root = tmp_path / "workspace"
-    workspace_root.mkdir()
-    build_directory = tmp_path / "staging"
-    build_directory.mkdir()
-
-    failure = OSError("disk full")
-    _assert_copy_workspace_tree_failure(
-        monkeypatch, workspace_root, build_directory, "copytree", failure
-    )
 
 
 @pytest.mark.parametrize(
