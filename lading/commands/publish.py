@@ -124,6 +124,20 @@ def _validate_publication_options(options: PublishOptions) -> None:
         )
 
 
+def _preflight_request(
+    options: PublishOptions,
+    configuration: LadingConfig,
+    runner: CommandRunner,
+) -> publish_preflight.PreflightRequest:
+    """Bundle the pre-flight inputs this publish run was configured with."""
+    return publish_preflight.PreflightRequest(
+        allow_dirty=options.allow_dirty,
+        configuration=configuration,
+        runner=runner,
+        skip=options.skip_preflight,
+    )
+
+
 def run(
     workspace_root: Path,
     configuration: LadingConfig | None = None,
@@ -161,12 +175,7 @@ def run(
     command_runner = effective_options.command_runner or publish_pipeline._invoke
     publish_preflight._run_preflight_checks(
         root_path,
-        publish_preflight.PreflightRequest(
-            allow_dirty=effective_options.allow_dirty,
-            configuration=active_configuration,
-            runner=command_runner,
-            skip=effective_options.skip_preflight,
-        ),
+        _preflight_request(effective_options, active_configuration, command_runner),
     )
     active_workspace = _ensure_workspace(
         workspace or effective_options.workspace, root_path
