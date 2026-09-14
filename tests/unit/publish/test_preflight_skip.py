@@ -8,7 +8,10 @@ import logging
 import typing as typ
 from pathlib import Path
 
+import pytest
+
 from lading.commands import publish, publish_pipeline, publish_preflight
+from lading.commands.lockfile import LockfileDiscoveryError
 from lading.commands.publish_skip import SkipPreflightDecision, SkipPreflightSource
 from lading.utils import metrics
 
@@ -21,8 +24,6 @@ from .conftest import (
 )
 
 if typ.TYPE_CHECKING:
-    import pytest
-
     from lading.runtime import CommandRunner
 
 AUX_BUILD_COMMAND = ("cargo", "build", "--package", "lint")
@@ -60,6 +61,39 @@ class _Scenario:
     configured_skip: bool
     override: SkipPreflightDecision | None = None
     allow_dirty: bool = False
+    runner: CommandRunner | None = None
+    clock: cabc.Callable[[], float] | None = None
+
+
+def _failing_runner(
+    calls: list[tuple[str, ...]], failing_prefix: tuple[str, ...]
+) -> CommandRunner:
+    """Return a runner that records commands and fails one matching prefix."""
+
+    def runner(
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        del cwd, env
+        recorded = tuple(command)
+        calls.append(recorded)
+        if recorded[: len(failing_prefix)] == failing_prefix:
+            return 1, "", "stub failure"
+        return 0, "", ""
+
+    return runner
+
+
+def _stepped_clock(values: cabc.Sequence[float]) -> cabc.Callable[[], float]:
+    """Return a clock yielding ``values`` in order, then repeating the last."""
+    remaining = list(values)
+
+    def clock() -> float:
+        return remaining.pop(0) if len(remaining) > 1 else remaining[0]
+
+    return clock
 
 
 def _run_preflight(
@@ -78,15 +112,14 @@ def _run_preflight(
         )
     )
 
-    publish_preflight._run_preflight_checks(
-        root,
-        publish_preflight.PreflightRequest(
-            allow_dirty=scenario.allow_dirty,
-            configuration=configuration,
-            runner=_recording_runner(calls),
-            skip=scenario.override,
-        ),
+    request = publish_preflight.PreflightRequest(
+        allow_dirty=scenario.allow_dirty,
+        configuration=configuration,
+        runner=scenario.runner or _recording_runner(calls),
+        skip=scenario.override,
+        **({} if scenario.clock is None else {"clock": scenario.clock}),
     )
+    publish_preflight._run_preflight_checks(root, request)
     return calls
 
 
@@ -277,3 +310,122 @@ def test_publish_run_forwards_the_skip_override(
     assert _cargo_subcommands(calls) == {"package", "publish"}, (
         f"only the packaging commands should run: {calls}"
     )
+
+
+def test_failed_guard_still_records_the_skipped_mode(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A skipped pre-flight that fails its lockfile guard still counts.
+
+    The metrics are recorded in a ``finally`` block precisely so a failing run
+    is visible; a counter that only ever records successes would understate
+    how often the pre-flight runs and hide the failures entirely. Lockfile
+    discovery raises its own error type, which the counter must survive just
+    the same.
+    """
+    metrics.reset()
+    calls: list[tuple[str, ...]] = []
+    runner = _failing_runner(calls, ("git", "ls-files"))
+
+    with pytest.raises(LockfileDiscoveryError):
+        _run_preflight(
+            tmp_path,
+            monkeypatch,
+            _Scenario(configured_skip=True, runner=runner),
+        )
+
+    assert (
+        metrics.counter_value(
+            publish_preflight.PREFLIGHT_METRIC,
+            mode="skipped",
+            source=str(SkipPreflightSource.CONFIGURATION),
+        )
+        == 1
+    )
+
+
+def test_failed_cargo_check_still_records_the_executed_mode(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An executing pre-flight that fails cargo check still counts."""
+    metrics.reset()
+    calls: list[tuple[str, ...]] = []
+    runner = _failing_runner(calls, ("cargo", "check"))
+
+    with pytest.raises(publish_preflight.PublishPreflightError):
+        _run_preflight(
+            tmp_path,
+            monkeypatch,
+            _Scenario(configured_skip=False, runner=runner),
+        )
+
+    assert (
+        metrics.counter_value(
+            publish_preflight.PREFLIGHT_METRIC,
+            mode="executed",
+            source=str(SkipPreflightSource.CONFIGURATION),
+        )
+        == 1
+    )
+    observed = metrics.duration_stats(
+        publish_preflight.PREFLIGHT_DURATION_METRIC,
+        mode="executed",
+        source=str(SkipPreflightSource.CONFIGURATION),
+    )
+    assert observed.count == 1, "a failing pre-flight still records its duration"
+
+
+def test_recorded_duration_measures_the_injected_clock(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The duration observation is the elapsed time, not an arbitrary value.
+
+    The clock is injected so this is a fact about the metric rather than about
+    how fast the machine happened to be.
+    """
+    metrics.reset()
+
+    _run_preflight(
+        tmp_path,
+        monkeypatch,
+        _Scenario(configured_skip=True, clock=_stepped_clock([10.0, 12.5])),
+    )
+
+    observed = metrics.duration_stats(
+        publish_preflight.PREFLIGHT_DURATION_METRIC,
+        mode="skipped",
+        source=str(SkipPreflightSource.CONFIGURATION),
+    )
+    assert observed.count == 1
+    assert observed.total_seconds == pytest.approx(2.5)
+
+
+def test_skipped_preflight_still_fails_on_a_dirty_tree(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Skipping the build checks does not silence the working-tree guard.
+
+    The guard is what makes `--forbid-dirty` mean anything, so a skip must not
+    turn a dirty workspace into a successful publication.
+    """
+    calls: list[tuple[str, ...]] = []
+
+    def dirty_runner(
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+    ) -> tuple[int, str, str]:
+        del cwd, env
+        recorded = tuple(command)
+        calls.append(recorded)
+        if recorded[:2] == ("git", "status"):
+            return 0, " M lading/cli.py\n", ""
+        return 0, "", ""
+
+    with pytest.raises(publish_preflight.PublishPreflightError, match="uncommitted"):
+        _run_preflight(
+            tmp_path,
+            monkeypatch,
+            _Scenario(configured_skip=True, runner=dirty_runner),
+        )

@@ -535,6 +535,11 @@ callers can customize behaviour via `PublishOptions`. The defaults are:
   around every cargo build and log one compiler-cache line per invocation.
 - `sccache_stats_json=None` — also write the JSON report to this path
   (relative paths resolve against the workspace root); implies `sccache_stats`.
+- `skip_preflight=None` — let `[preflight] skip` decide whether the pre-flight
+  runs its auxiliary builds and cargo check/test pair. A caller that has
+  already verified the workspace passes a
+  `SkipPreflightDecision(skip=True, source=...)`, whose source names the input
+  in the publish log and labels the `publish.preflight` metric.
 
 Additional parameters `configuration`, `workspace`, and `command_runner` allow
 dependency injection for testing and are typically left unset.
@@ -1240,7 +1245,8 @@ with a descriptive message.
 compilation-heavy work and nothing else: `SkipPreflightDecision` pairs the
 boolean with a human-readable source, and `resolve_skip_preflight` returns a
 caller's override or the `[preflight] skip` setting labelled with
-`CONFIGURATION_SOURCE`. `_run_preflight_checks` logs that source when it skips,
+`SkipPreflightSource.CONFIGURATION`. `_run_preflight_checks` logs that source
+when it skips,
 so a publish log never reads as though the checks ran.
 
 The split of what a skip removes is deliberate and is a contract, not an

@@ -589,7 +589,8 @@ sibling workspace dependency is downgraded to a warning because
 
 - `skip`: boolean, default `false`. Skip the pre-flight auxiliary builds,
   `cargo check`, and `cargo test` because the caller has already verified the
-  workspace. The working-tree and `Cargo.lock` freshness checks always run. See
+  workspace. The `Cargo.lock` freshness check always runs, and the working-tree
+  cleanliness check runs whenever `--forbid-dirty` opted into it. See
   [Skipping a pre-flight the caller has already run](#skipping-a-pre-flight-the-caller-has-already-run).
 - `test_exclude`: array of strings, default `[]`. Crate names to exclude from
   `cargo test` by passing `--exclude`.

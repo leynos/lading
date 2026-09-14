@@ -226,6 +226,10 @@ class PreflightRequest:
         pre-flight settings.
     runner:
         Optional command runner; defaults to the publish command's own.
+    clock:
+        Monotonic clock used to time the run for the duration metric. Injected
+        so a test can assert the recorded duration rather than observe the
+        wall clock.
     skip:
         Optional explicit decision, with its provenance, about skipping the
         auxiliary builds and the cargo check/test pair. When ``None`` the
@@ -241,6 +245,7 @@ class PreflightRequest:
     allow_dirty: bool
     configuration: LadingConfig
     runner: CommandRunner | None = None
+    clock: cabc.Callable[[], float] = time.perf_counter
     skip: SkipPreflightDecision | None = None
 
 
@@ -264,7 +269,7 @@ def _run_preflight_checks(
     a caller's test run, so they always execute; the auxiliary builds exist to
     support the cargo checks, so they are skipped alongside them.
     """
-    started_at = time.perf_counter()
+    started_at = request.clock()
     command_runner = request.runner or _invoke
     preflight_config = request.configuration.preflight
     base_env = _build_preflight_environment(preflight_config.env_overrides)
@@ -307,7 +312,7 @@ def _run_preflight_checks(
             base_env=base_env,
         )
     finally:
-        _record_preflight_metrics(decision, time.perf_counter() - started_at)
+        _record_preflight_metrics(decision, request.clock() - started_at)
 
 
 def _compose_preflight_arguments(
