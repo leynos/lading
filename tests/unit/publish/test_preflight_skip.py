@@ -8,7 +8,7 @@ import logging
 import typing as typ
 from pathlib import Path
 
-from lading.commands import publish, publish_preflight
+from lading.commands import publish, publish_pipeline, publish_preflight
 from lading.commands.publish_skip import SkipPreflightDecision, SkipPreflightSource
 from lading.utils import metrics
 
@@ -261,7 +261,7 @@ def test_publish_run_forwards_the_skip_override(
     root.mkdir()
     workspace = make_workspace(root, make_crate(root, "alpha"))
     calls: list[tuple[str, ...]] = []
-    monkeypatch.setattr(publish, "_invoke", _recording_runner(calls))
+    monkeypatch.setattr(publish_pipeline, "_invoke", _recording_runner(calls))
 
     publish.run(
         root,

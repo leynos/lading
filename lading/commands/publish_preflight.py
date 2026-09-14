@@ -253,8 +253,10 @@ def _run_preflight_checks(
     This is the composition root for lockfile inspection: it binds
     :class:`CargoLockfileInspectionRepository` to the selected command runner
     and the pre-flight base environment (issue #82), so the freshness domain
-    step runs through the port without holding a raw runner. Tests inject a
-    port double at the :func:`_validate_lockfile_freshness` seam instead.
+    step runs through the port without holding a raw runner. The freshness
+    policy itself lives in
+    :mod:`lading.commands.publish_lockfile_preflight`; tests inject a port
+    double at its :func:`_validate_lockfile_freshness` seam instead.
 
     ``request.skip`` suppresses the compilation-heavy checks only. The
     working-tree and lockfile guards are publication-correctness checks worth

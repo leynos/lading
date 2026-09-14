@@ -55,16 +55,17 @@ across `lading`, and once across `tests` and `scripts`, where the shape-based
 that invocation on the command line in the Makefile. They exempt nested test
 closures and test-local stub classes. The `lading` pass carries no exemptions,
 and every module-level definition in `tests` and `scripts` still requires a
-docstring. If `interrogate` passes, the third stage runs Pylint through the
-pinned `pylint-pypy-shim` tool under PyPy. That stage is focused on rule
-families that complement Ruff, especially logging format safety, pattern
-matching checks, selected simplification checks, deprecated standard-library
-usage, file hygiene, and design-size limits. The fourth stage runs all
-`df12-python-lints` checks under CPython 3.14, while retaining Lading's Python
-3.13 semantic baseline for version-gated diagnostics. Finally, `ambrleaks`
-scans Syrupy snapshots under `tests` for values that should have been redacted.
-[ADR-003](adr/003-three-tier-python-linting.md)
-records the policy decision, including the
+docstring.
+If `interrogate` passes, the third stage runs Pylint through the pinned
+`pylint-pypy-shim` tool under PyPy. That stage is focused on rule families that
+complement Ruff, especially logging format safety, pattern matching checks,
+selected simplification checks, deprecated standard-library usage, file
+hygiene, and design-size limits. The fourth stage runs all `df12-python-lints`
+checks under CPython 3.14, while retaining Lading's Python 3.13 semantic
+baseline for version-gated diagnostics. Finally, `ambrleaks` scans Syrupy
+snapshots under `tests` for values that should have been redacted.
+[ADR-003](adr/003-three-tier-python-linting.md) records the policy decision,
+including the
 [2026-09-07 addendum](adr/003-three-tier-python-linting.md#addendum-docstring-coverage-for-tests-and-scripts-2026-09-07)
 extending Interrogate coverage to `tests` and `scripts`.
 
