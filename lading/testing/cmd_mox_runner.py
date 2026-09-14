@@ -43,6 +43,7 @@ from lading.runtime.subprocess_runner import (
 from lading.utils.process import log_command_invocation
 
 if typ.TYPE_CHECKING:  # pragma: no cover - import-time typing aids only
+    from lading.runtime.relay_events import StreamName
     from lading.runtime.stream_relay import TextSink
 
 _LOGGER = logging.getLogger(__name__)
@@ -190,8 +191,8 @@ def _process_cmd_mox_response(
     stderr_text = coerce_text(getattr(response, "stderr", ""))
     if not streamed:
         if echo_stdout:
-            _echo_buffered_output(stdout_text, sys.stdout)
-        _echo_buffered_output(stderr_text, sys.stderr)
+            _echo_buffered_output(stdout_text, sys.stdout, "stdout")
+        _echo_buffered_output(stderr_text, sys.stderr, "stderr")
     exit_code = getattr(response, "exit_code", None)
     if exit_code is None:
         message = "cmd-mox response did not include an exit code"
@@ -353,8 +354,12 @@ def _apply_cmd_mox_environment(env: cabc.Mapping[str, str] | None) -> None:
     os.environ.update({str(key): str(value) for key, value in env.items()})
 
 
-def _echo_buffered_output(payload: str, sink: TextSink) -> None:
+def _echo_buffered_output(
+    payload: str,
+    sink: TextSink,
+    stream: StreamName,
+) -> None:
     """Emit buffered cmd-mox output so callers still see command logs."""
     if not payload:
         return
-    write_to_sink(sink, payload)
+    write_to_sink(sink, payload, stream)

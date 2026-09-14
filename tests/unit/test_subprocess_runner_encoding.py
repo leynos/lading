@@ -83,7 +83,7 @@ class TestSubprocessRunnerEncoding:
         payload = "Cargo metadata: ś ń\n"
         sink = _Cp1252Sink()
 
-        result = write_to_sink(sink, payload)
+        result = write_to_sink(sink, payload, "stdout")
 
         assert result is sink, "encoding fallback should preserve the original sink"
         assert sink.flush_count == 1, "text sink should flush before binary fallback"
@@ -100,9 +100,10 @@ class TestSubprocessRunnerEncoding:
 
     def test_write_to_sink_disables_text_only_sink_after_encoding_error(self) -> None:
         """An encoding-rejecting sink without a buffer should be disabled."""
-        assert write_to_sink(_TextOnlyCp1252Sink(), "Cargo metadata: ś ń\n") is None, (
-            "text-only sink should disable mirroring"
-        )
+        assert (
+            write_to_sink(_TextOnlyCp1252Sink(), "Cargo metadata: ś ń\n", "stdout")
+            is None
+        ), "text-only sink should disable mirroring"
 
     def test_relay_stream_preserves_unicode_capture_after_binary_fallback(
         self,
@@ -113,7 +114,7 @@ class TestSubprocessRunnerEncoding:
         sink = _Cp1252Sink()
         captured: list[str] = []
 
-        relay_stream(source, sink, captured)
+        relay_stream(source, sink, captured, "stdout")
 
         assert "".join(captured) == payload, (
             "relay capture should preserve the complete Unicode payload"
@@ -140,7 +141,7 @@ class TestSubprocessRunnerEncoding:
         sink = _Cp1252Sink()
         captured: list[str] = []
 
-        relay_stream(source, sink, captured)
+        relay_stream(source, sink, captured, "stdout")
 
         expected_bytes = (
             initial_chunk.encode("cp1252")
@@ -188,7 +189,7 @@ class TestSubprocessRunnerEncoding:
         unicode_payload = f"{payload}ś"
         sink = _Cp1252Sink()
 
-        result = write_to_sink(sink, unicode_payload)
+        result = write_to_sink(sink, unicode_payload, "stdout")
 
         assert result is sink, "binary fallback should preserve the sink"
         assert sink.buffer.getvalue() == unicode_payload.encode("utf-8"), (
@@ -208,7 +209,7 @@ class TestSubprocessRunnerEncoding:
         sink = _Cp1252Sink()
         captured: list[str] = []
 
-        relay_stream(source, sink, captured)
+        relay_stream(source, sink, captured, "stdout")
 
         assert "".join(captured) == expected_payload, (
             "relay capture should preserve arbitrary Unicode across chunks"
