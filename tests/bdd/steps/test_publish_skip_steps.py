@@ -26,11 +26,15 @@ def given_environment_variable_set(
     monkeypatch.setenv(variable, value)
 
 
-@then("the publish command runs no pre-flight cargo commands")
-def then_no_preflight_cargo_commands(
+@then("the publish command runs no pre-flight build commands")
+def then_no_preflight_build_commands(
     preflight_recorder: _PreflightInvocationRecorder,
 ) -> None:
-    """Assert that neither pre-flight cargo command was invoked.
+    """Assert that no auxiliary build, cargo check, or cargo test ran.
+
+    The lockfile freshness probe still runs, and it invokes ``cargo
+    metadata``, so the assertion names the build commands rather than cargo
+    as a whole.
 
     Raises
     ------
@@ -42,7 +46,7 @@ def then_no_preflight_cargo_commands(
         label for label in _BUILD_CHECK_LABELS if preflight_recorder.by_label(label)
     ]
     if recorded:
-        message = f"Expected no pre-flight cargo commands, recorded: {recorded}"
+        message = f"Expected no pre-flight build commands, recorded: {recorded}"
         raise AssertionError(message)
 
 
@@ -88,6 +92,6 @@ def then_cheap_guards_ran(
 __all__ = [
     "given_environment_variable_set",
     "then_cheap_guards_ran",
-    "then_no_preflight_cargo_commands",
+    "then_no_preflight_build_commands",
     "then_preflight_cargo_commands_ran",
 ]

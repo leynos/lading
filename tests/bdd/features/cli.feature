@@ -319,7 +319,7 @@ Feature: Lading CLI scaffolding
     And cargo metadata describes a sample workspace
     And preflight.skip is true
     When I invoke lading publish with that workspace
-    Then the publish command runs no pre-flight cargo commands
+    Then the publish command runs no pre-flight build commands
     And the stderr contains "the lading.toml [preflight] skip setting"
 
   Scenario: A skipped pre-flight still verifies the tree and the lockfiles
@@ -333,7 +333,7 @@ Feature: Lading CLI scaffolding
     Given a workspace directory with configuration
     And cargo metadata describes a sample workspace
     When I run "lading publish --skip-preflight"
-    Then the publish command runs no pre-flight cargo commands
+    Then the publish command runs no pre-flight build commands
     And the stderr contains "the --skip-preflight command-line flag"
 
   Scenario: LADING_SKIP_PREFLIGHT suppresses the pre-flight build checks
@@ -341,7 +341,7 @@ Feature: Lading CLI scaffolding
     And cargo metadata describes a sample workspace
     And the environment variable LADING_SKIP_PREFLIGHT is set to "1"
     When I invoke lading publish with that workspace
-    Then the publish command runs no pre-flight cargo commands
+    Then the publish command runs no pre-flight build commands
     And the stderr contains "the LADING_SKIP_PREFLIGHT environment variable"
 
   Scenario: --no-skip-preflight reinstates a configured skip

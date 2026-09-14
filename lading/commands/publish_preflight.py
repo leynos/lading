@@ -38,6 +38,7 @@ import dataclasses as dc
 import logging
 import os
 import tempfile
+import time
 import typing as typ
 from pathlib import Path
 
@@ -47,6 +48,7 @@ from lading.commands.publish_errors import PublishPreflightError
 from lading.commands.publish_execution import _invoke
 from lading.commands.publish_lockfile_preflight import _validate_lockfile_freshness
 from lading.commands.publish_skip import SkipPreflightDecision, resolve_skip_preflight
+from lading.utils import metrics
 from lading.utils.process import append_detail, command_detail, with_detail
 
 if typ.TYPE_CHECKING:
@@ -130,10 +132,21 @@ def _apply_compiletest_externs(
     return updated
 
 
+PREFLIGHT_METRIC = "publish.preflight"
+PREFLIGHT_DURATION_METRIC = "publish.preflight.duration"
+
+# The trailing clause differs with ``allow_dirty`` because the working-tree
+# guard is opt-in (``--forbid-dirty``): claiming it ran when it did not would
+# give a publish log false assurance, which is exactly what this line exists
+# to prevent.
 SKIPPED_BUILD_CHECKS_MESSAGE = (
     "Skipping the publish pre-flight auxiliary builds, cargo check and cargo "
-    "test at the request of %s. The working-tree and Cargo.lock freshness "
-    "checks still ran."
+    "test at the request of %s. %s"
+)
+SKIPPED_WITH_TREE_CHECK = "The working-tree and Cargo.lock freshness checks still ran."
+SKIPPED_WITHOUT_TREE_CHECK = (
+    "The Cargo.lock freshness check still ran; the working-tree check remains "
+    "opt-in through --forbid-dirty."
 )
 
 
@@ -186,6 +199,15 @@ def _run_cargo_build_checks(
         )
 
 
+def _record_preflight_metrics(
+    decision: SkipPreflightDecision, elapsed_seconds: float
+) -> None:
+    """Record how the pre-flight resolved and how long it took."""
+    mode = "skipped" if decision.skip else "executed"
+    metrics.increment_counter(PREFLIGHT_METRIC, mode=mode, source=str(decision.source))
+    metrics.observe_duration(PREFLIGHT_DURATION_METRIC, elapsed_seconds, mode=mode)
+
+
 @dc.dataclass(frozen=True, slots=True)
 class PreflightRequest:
     """Inputs for one publish pre-flight run.
@@ -235,40 +257,50 @@ def _run_preflight_checks(
     a caller's test run, so they always execute; the auxiliary builds exist to
     support the cargo checks, so they are skipped alongside them.
     """
+    started_at = time.perf_counter()
     command_runner = request.runner or _invoke
     preflight_config = request.configuration.preflight
     base_env = _build_preflight_environment(preflight_config.env_overrides)
     decision = resolve_skip_preflight(request.skip, configured=preflight_config.skip)
-    _verify_clean_working_tree(
-        workspace_root,
-        allow_dirty=request.allow_dirty,
-        runner=command_runner,
-        env=base_env,
-    )
-    if decision.skip:
+    try:
+        _verify_clean_working_tree(
+            workspace_root,
+            allow_dirty=request.allow_dirty,
+            runner=command_runner,
+            env=base_env,
+        )
+        if decision.skip:
+            _validate_lockfile_freshness(
+                workspace_root,
+                repository=_lockfile_repository(command_runner, base_env),
+            )
+            LOGGER.info(
+                SKIPPED_BUILD_CHECKS_MESSAGE,
+                decision.source.description,
+                SKIPPED_WITHOUT_TREE_CHECK
+                if request.allow_dirty
+                else SKIPPED_WITH_TREE_CHECK,
+            )
+            return
+
+        _run_aux_build_commands(
+            workspace_root,
+            preflight_config.aux_build,
+            runner=command_runner,
+            env=base_env,
+        )
         _validate_lockfile_freshness(
             workspace_root,
             repository=_lockfile_repository(command_runner, base_env),
         )
-        LOGGER.info(SKIPPED_BUILD_CHECKS_MESSAGE, decision.source)
-        return
-
-    _run_aux_build_commands(
-        workspace_root,
-        preflight_config.aux_build,
-        runner=command_runner,
-        env=base_env,
-    )
-    _validate_lockfile_freshness(
-        workspace_root,
-        repository=_lockfile_repository(command_runner, base_env),
-    )
-    _run_cargo_build_checks(
-        workspace_root,
-        preflight_config,
-        runner=command_runner,
-        base_env=base_env,
-    )
+        _run_cargo_build_checks(
+            workspace_root,
+            preflight_config,
+            runner=command_runner,
+            base_env=base_env,
+        )
+    finally:
+        _record_preflight_metrics(decision, time.perf_counter() - started_at)
 
 
 def _compose_preflight_arguments(

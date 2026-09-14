@@ -14,22 +14,54 @@ whether it asked for it at all. Command-line and environment parsing belong to
 every caller log the same provenance sentence, so a publish log never reads as
 though the skipped checks ran.
 
+The source is a closed enumeration rather than free text because it is also a
+metric label, and an unbounded label set would make the exit summary
+unaggregatable.
+
 Examples
 --------
 ```python
 from lading.commands.publish_skip import resolve_skip_preflight
 
 decision = resolve_skip_preflight(None, configured=True)
-decision.skip, decision.source
+decision.skip, decision.source.description
 ```
 """
 
 from __future__ import annotations
 
 import dataclasses as dc
+import enum
 
-CONFIGURATION_SOURCE = "the lading.toml [preflight] skip setting"
-"""Provenance label used when the configuration file supplies the decision."""
+
+class SkipPreflightSource(enum.StrEnum):
+    """The input that supplied a pre-flight skip decision.
+
+    The member values are metric label values; :attr:`description` is the
+    human-readable phrase the publish log prints.
+    """
+
+    CONFIGURATION = "configuration"
+    COMMAND_LINE = "command-line"
+    ENVIRONMENT = "environment"
+
+    @property
+    def description(self) -> str:
+        """The phrase naming this source in operator-facing output.
+
+        Examples
+        --------
+        >>> SkipPreflightSource.ENVIRONMENT.description
+        'the LADING_SKIP_PREFLIGHT environment variable'
+        """
+        return _SOURCE_DESCRIPTIONS[self]
+
+
+_SOURCE_DESCRIPTIONS: dict[SkipPreflightSource, str] = {
+    SkipPreflightSource.CONFIGURATION: "the lading.toml [preflight] skip setting",
+    SkipPreflightSource.COMMAND_LINE: "the --skip-preflight command-line flag",
+    SkipPreflightSource.ENVIRONMENT: "the LADING_SKIP_PREFLIGHT environment variable",
+}
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -46,18 +78,19 @@ class SkipPreflightDecision:
         When :data:`True`, the pre-flight's auxiliary builds, ``cargo check``,
         and ``cargo test`` are suppressed.
     source:
-        Human-readable description of the input that supplied ``skip``, used
-        verbatim in the publish log so operators can see why the checks did
-        not run.
+        The input that supplied ``skip``.
 
     Examples
     --------
-    >>> SkipPreflightDecision(skip=True, source="the --skip-preflight flag").skip
-    True
+    >>> decision = SkipPreflightDecision(
+    ...     skip=True, source=SkipPreflightSource.COMMAND_LINE
+    ... )
+    >>> decision.source.description
+    'the --skip-preflight command-line flag'
     """
 
     skip: bool
-    source: str
+    source: SkipPreflightSource
 
 
 def resolve_skip_preflight(
@@ -77,25 +110,29 @@ def resolve_skip_preflight(
     -------
     SkipPreflightDecision
         ``override`` when one was supplied, otherwise the configured value
-        labelled with :data:`CONFIGURATION_SOURCE`.
+        labelled :attr:`SkipPreflightSource.CONFIGURATION`.
 
     Examples
     --------
     >>> resolve_skip_preflight(None, configured=False).skip
     False
-    >>> resolve_skip_preflight(None, configured=True).source
+    >>> resolve_skip_preflight(None, configured=True).source.description
     'the lading.toml [preflight] skip setting'
-    >>> explicit = SkipPreflightDecision(skip=False, source="the caller")
+    >>> explicit = SkipPreflightDecision(
+    ...     skip=False, source=SkipPreflightSource.COMMAND_LINE
+    ... )
     >>> resolve_skip_preflight(explicit, configured=True).skip
     False
     """
     if override is not None:
         return override
-    return SkipPreflightDecision(skip=configured, source=CONFIGURATION_SOURCE)
+    return SkipPreflightDecision(
+        skip=configured, source=SkipPreflightSource.CONFIGURATION
+    )
 
 
 __all__ = [
-    "CONFIGURATION_SOURCE",
     "SkipPreflightDecision",
+    "SkipPreflightSource",
     "resolve_skip_preflight",
 ]

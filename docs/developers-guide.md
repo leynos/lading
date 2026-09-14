@@ -807,13 +807,14 @@ dataclass that Cyclopts flattens onto the command line with
 negative form, and environment default while the command keeps a two-parameter
 signature:
 
-| Field                              | Option                               | Default | Environment default         |
-| ---------------------------------- | ------------------------------------ | ------- | --------------------------- |
-| `forbid_dirty`                     | `--forbid-dirty`                     | `False` | —                           |
-| `live`                             | `--live`                             | `False` | —                           |
-| `allow_unpublished_workspace_deps` | `--allow-unpublished-workspace-deps` | `None`  | —                           |
-| `sccache_stats`                    | `--sccache-stats`                    | `False` | `LADING_SCCACHE_STATS`      |
-| `sccache_stats_json`               | `--sccache-stats-json`               | `None`  | `LADING_SCCACHE_STATS_JSON` |
+| Field                              | Option                                     | Default | Environment default         |
+| ---------------------------------- | ------------------------------------------ | ------- | --------------------------- |
+| `forbid_dirty`                     | `--forbid-dirty`                           | `False` | —                           |
+| `live`                             | `--live`                                   | `False` | —                           |
+| `allow_unpublished_workspace_deps` | `--allow-unpublished-workspace-deps`       | `None`  | —                           |
+| `skip_preflight`                   | `--skip-preflight` / `--no-skip-preflight` | `None`  | `LADING_SKIP_PREFLIGHT`     |
+| `sccache_stats`                    | `--sccache-stats`                          | `False` | `LADING_SCCACHE_STATS`      |
+| `sccache_stats_json`               | `--sccache-stats-json`                     | `None`  | `LADING_SCCACHE_STATS_JSON` |
 
 `_publish_options(flags, command_runner)` translates the bundle into
 `PublishOptions`: `allow_dirty` is the negation of `forbid_dirty`, the tri-state
@@ -823,7 +824,18 @@ forwarded unresolved because a report path implying the measurement is the
 publish command's decision (`create_session`). The `Annotated` aliases
 `SccacheStatsFlag` and `SccacheStatsJsonOption`, and the `SCCACHE_STATS_*`
 parameters and environment-variable names, stay exported from `cli_options` for
-integrations that import CLI annotations.
+integrations that import CLI annotations, as do `SkipPreflightFlag`,
+`SKIP_PREFLIGHT_PARAMETER`, and `SKIP_PREFLIGHT_ENV_VAR`.
+
+`skip_preflight` is the one field `_publish_options` labels rather than
+forwards: `_skip_preflight_override` turns the resolved tri-state into a
+`SkipPreflightDecision` carrying a `SkipPreflightSource`. The source comes from
+the dispatch tokens that `_recorded_command_tokens` publishes for the duration
+of `app(tokens)`, because Cyclopts reports the value it resolved but not the
+input it came from, and a command-line flag beats `env_var`. When the app is
+driven in-process the tokens are absent, and `_environment_boolean` credits the
+variable only when it spells the value Cyclopts resolved. Resolving an _absent_
+flag against `[preflight] skip` stays in the command layer.
 
 ### `_PublishExecutionOptions`
 
@@ -1240,12 +1252,16 @@ implementation detail:
 
 Provenance is resolved in the CLI adapter rather than the command layer,
 because only the adapter can distinguish `--skip-preflight` from
-`LADING_SKIP_PREFLIGHT`. `cli._skip_preflight_override` attributes a resolved
-value to the environment only when the variable spells that same value, since
-Cyclopts gives the command line precedence; `cli._environment_boolean` mirrors
-the literals Cyclopts coerces (`1`, `true`, `yes` and their negatives).
-Resolving an _absent_ flag against the configuration stays in the command
-layer, alongside the other nullable-to-concrete defaulting.
+`LADING_SKIP_PREFLIGHT`; see
+[CLI publish API](#cli-publish-api-ladingclipublish) for how the dispatch
+tokens decide. `SkipPreflightSource` is a closed enumeration because it is also
+a metric label.
+
+Every pre-flight records two metrics, whether it skips or not:
+`publish.preflight` counts the run with `mode` (`skipped` or `executed`) and
+`source`, and `publish.preflight.duration` observes the elapsed time with
+`mode`. Both are recorded in a `finally` block, so a pre-flight that raises is
+still counted.
 
 ### Per-crate publication helpers
 

@@ -65,14 +65,16 @@ type PreparationFixtures = PublishFixtures
 type PrepareWorkspaceFixtures = PublishFixtures
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def restore_root_logger() -> cabc.Iterator[None]:
-    """Restore the root logger's configuration after a test.
+    """Restore the root logger's configuration after every test.
 
     ``lading.cli.main`` installs a named handler on the root logger and leaves
     it in place. A test that invokes the CLI without restoring the previous
     handlers makes any later test that captures log output fail, and which
-    test that is depends on collection order.
+    test that is depends on collection order. Restoration is automatic rather
+    than opt-in because a new test that calls the CLI would otherwise
+    reintroduce the leak silently.
 
     Yields
     ------

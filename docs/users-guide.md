@@ -181,26 +181,40 @@ already run the same suite, that repeat dominates the step: on a warm cache it
 accounted for 883 of the 936 seconds of a Linux publish step, while the
 packaging and dry-run publish the step exists to prove took under a minute.
 
-Set `[preflight] skip = true` in `lading.toml`, pass `--skip-preflight`, or set
-`LADING_SKIP_PREFLIGHT=1` to suppress the auxiliary builds, `cargo check`, and
-`cargo test`. The flag overrides the configuration in both directions, so
-`--no-skip-preflight` reinstates the checks for one invocation. The
-working-tree cleanliness guard and the `Cargo.lock` freshness guard cost one
-`git status` and one `cargo metadata` call rather than a rebuild, so they run
-either way, and `lading publish` logs one line naming the setting, flag, or
-environment variable that asked for the skip:
+In `lading.toml`, set `skip = true` in the `[preflight]` table. Alternatively
+pass `--skip-preflight`, or set `LADING_SKIP_PREFLIGHT=1`. Any of the three
+suppresses the auxiliary builds, `cargo check`, and `cargo test`:
 
-```plaintext
-INFO: Skipping the publish pre-flight auxiliary builds, cargo check and cargo test at the request of the --skip-preflight command-line flag. The working-tree and Cargo.lock freshness checks still ran.
+```toml
+[preflight]
+skip = true
 ```
-
-Skip the pre-flight only when the same commit has already been checked. Nothing
-else in `lading publish` compiles the workspace, so a skipped pre-flight means
-no build or test verified what is being published.
 
 ```bash
 lading publish --skip-preflight
 ```
+
+The flag overrides the configuration in both directions, so
+`--no-skip-preflight` reinstates the checks for one invocation.
+
+The `Cargo.lock` freshness guard is unaffected: it costs one `cargo metadata`
+call rather than a rebuild, and a stale lockfile would still produce a wrong
+publication. The working-tree cleanliness guard is likewise unaffected, but it
+is opt-in, so it runs only when `--forbid-dirty` is also passed. Every skipped
+run logs one line naming the setting, flag, or environment variable that asked
+for it:
+
+```plaintext
+INFO: Skipping the publish pre-flight auxiliary builds, cargo check and cargo
+test at the request of the --skip-preflight command-line flag. The Cargo.lock
+freshness check still ran; the working-tree check remains opt-in through
+--forbid-dirty.
+```
+
+Skip the pre-flight only when the same commit has already been checked. What
+remains is `cargo package`'s own per-crate verification build, which compiles
+each packaged crate from its `.crate` archive; nothing else checks the
+workspace as a whole and no test runs at all.
 
 To require a clean working tree before running the pre-flight checks, pass
 `--forbid-dirty`:
@@ -533,6 +547,23 @@ the publish pipeline, recorded whether or not the invocation succeeded. Labels:
 
 - `subcommand` — `package` or `publish`.
 - `crate` — the crate the invocation ran for.
+
+#### `publish.preflight`
+
+Incremented once per `lading publish` run when the pre-flight resolves,
+including when it fails. Labels:
+
+- `mode` — `skipped` or `executed`.
+- `source` — `configuration`, `command-line`, or `environment`; the input that
+  decided `mode`.
+
+#### `publish.preflight.duration`
+
+One duration observation per `lading publish` run, covering the whole
+pre-flight. Labels:
+
+- `mode` — `skipped` or `executed`, which makes the saving from a skip
+  directly comparable.
 
 #### `publish.sccache.query`
 

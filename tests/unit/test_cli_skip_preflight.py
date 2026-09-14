@@ -16,6 +16,7 @@ import pytest
 
 from lading import cli
 from lading.commands import publish as publish_command
+from lading.commands.publish_skip import SkipPreflightSource
 
 if typ.TYPE_CHECKING:
     from lading.workspace import WorkspaceCrate, WorkspaceGraph
@@ -28,7 +29,7 @@ class _SkipPreflightCase:
     extra_args: tuple[str, ...]
     env: dict[str, str]
     expected_skip: bool | None
-    expected_source: str | None = None
+    expected_source: SkipPreflightSource | None = None
 
 
 @pytest.mark.parametrize(
@@ -43,7 +44,7 @@ class _SkipPreflightCase:
                 ("--skip-preflight",),
                 {},
                 expected_skip=True,
-                expected_source=cli.SKIP_PREFLIGHT_FLAG_SOURCE,
+                expected_source=SkipPreflightSource.COMMAND_LINE,
             ),
             id="flag",
         ),
@@ -52,7 +53,7 @@ class _SkipPreflightCase:
                 ("--no-skip-preflight",),
                 {},
                 expected_skip=False,
-                expected_source=cli.SKIP_PREFLIGHT_FLAG_SOURCE,
+                expected_source=SkipPreflightSource.COMMAND_LINE,
             ),
             id="negative-flag",
         ),
@@ -61,7 +62,7 @@ class _SkipPreflightCase:
                 (),
                 {"LADING_SKIP_PREFLIGHT": "1"},
                 expected_skip=True,
-                expected_source=cli.SKIP_PREFLIGHT_ENVIRONMENT_SOURCE,
+                expected_source=SkipPreflightSource.ENVIRONMENT,
             ),
             id="environment",
         ),
@@ -70,13 +71,39 @@ class _SkipPreflightCase:
                 ("--no-skip-preflight",),
                 {"LADING_SKIP_PREFLIGHT": "true"},
                 expected_skip=False,
-                expected_source=cli.SKIP_PREFLIGHT_FLAG_SOURCE,
+                expected_source=SkipPreflightSource.COMMAND_LINE,
             ),
             id="flag-overrides-environment",
         ),
+        pytest.param(
+            _SkipPreflightCase(
+                ("--skip-preflight",),
+                {"LADING_SKIP_PREFLIGHT": "1"},
+                expected_skip=True,
+                expected_source=SkipPreflightSource.COMMAND_LINE,
+            ),
+            id="flag-and-environment-agree-true",
+        ),
+        pytest.param(
+            _SkipPreflightCase(
+                ("--no-skip-preflight",),
+                {"LADING_SKIP_PREFLIGHT": "0"},
+                expected_skip=False,
+                expected_source=SkipPreflightSource.COMMAND_LINE,
+            ),
+            id="flag-and-environment-agree-false",
+        ),
+        pytest.param(
+            _SkipPreflightCase(
+                ("--skip-preflight=true",),
+                {"LADING_SKIP_PREFLIGHT": "1"},
+                expected_skip=True,
+                expected_source=SkipPreflightSource.COMMAND_LINE,
+            ),
+            id="flag-with-inline-value-and-environment-agree",
+        ),
     ],
 )
-@pytest.mark.usefixtures("restore_root_logger")
 def test_publish_cli_labels_the_skip_preflight_decision(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -88,7 +115,9 @@ def test_publish_cli_labels_the_skip_preflight_decision(
 
     Each decision carries the input that supplied it, because the publish log
     names that source; a wrong label would tell an operator the checks were
-    skipped by something they did not set.
+    skipped by something they did not set. The agreeing cases matter most:
+    the resolved boolean alone cannot distinguish a flag from a variable that
+    spells the same value, so the dispatch tokens decide.
     """
     monkeypatch.delenv("LADING_SKIP_PREFLIGHT", raising=False)
     for name, value in case.env.items():
@@ -126,7 +155,7 @@ def test_publish_cli_labels_the_skip_preflight_decision(
         return
     assert decision is not None, "expected an explicit skip decision"
     assert decision.skip is case.expected_skip
-    assert decision.source == case.expected_source
+    assert decision.source is case.expected_source
 
 
 @pytest.mark.parametrize(
