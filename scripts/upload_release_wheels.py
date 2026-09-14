@@ -82,6 +82,13 @@ def discover_wheels(directory: Path) -> tuple[Path, ...]:
     tuple[Path, ...]
         The wheels found, sorted by path.
 
+    Raises
+    ------
+    UploadError
+        If ``directory`` is absent or is not a directory. That is a different
+        failure from an empty one -- a download step that did not run at all
+        rather than a build that produced nothing -- and the message says so.
+
     Examples
     --------
     >>> import pathlib, tempfile
@@ -90,6 +97,12 @@ def discover_wheels(directory: Path) -> tuple[Path, ...]:
     >>> [path.name for path in discover_wheels(directory)]
     ['one-1.0-py3-none-any.whl']
     """
+    if not directory.exists():
+        message = f"Artefact directory {directory} does not exist"
+        raise UploadError(message)
+    if not directory.is_dir():
+        message = f"Artefact path {directory} is not a directory"
+        raise UploadError(message)
     return tuple(sorted(directory.rglob("*.whl")))
 
 
@@ -151,6 +164,7 @@ def main(
     for wheel in wheels:
         print(f"Uploading {wheel} to {tag}")
     upload_wheels(tag, wheels)
+    print(f"Attached {len(wheels)} wheel(s) to {tag}")
 
 
 if __name__ == "__main__":  # pragma: no cover - convenience entry point
