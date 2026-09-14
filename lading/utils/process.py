@@ -2,7 +2,7 @@
 
 This module is the canonical home for the small idioms shared by every command
 that shells out to ``cargo`` or ``git`` and must report a failure to operators.
-It covers two concerns:
+It covers three concerns:
 
 * **Command rendering / logging** — :func:`format_command` and
   :func:`log_command_invocation` produce a stable, shell-style representation of
@@ -11,6 +11,12 @@ It covers two concerns:
   :func:`append_detail`, and :func:`with_detail` collapse the
   ``(stderr or stdout).strip()`` idiom into one place (issue #102) so every
   call site renders the same operator-facing text.
+* **Locale pinning** — :func:`c_locale_env` returns an environment with
+  ``LC_ALL``, ``LANG``, and ``LANGUAGE`` forced to the C locale, so ``git`` and
+  ``cargo`` emit untranslated diagnostics. Any caller that classifies a failure
+  by matching English output depends on this;
+  :mod:`lading.runtime.subprocess_runner` applies it centrally, because it is
+  the single adapter that spawns processes.
 
 The failure-detail helpers form a small layer:
 
@@ -33,6 +39,7 @@ from __future__ import annotations
 
 import collections.abc as cabc
 import logging
+import os
 import shlex
 import typing as typ
 
@@ -190,8 +197,44 @@ def with_detail(
     return append_detail(message, command_detail(stdout, stderr), separator=separator)
 
 
+def c_locale_env(
+    base_env: cabc.Mapping[str, str] | None = None,
+) -> dict[str, str]:
+    """Return ``base_env`` with the C locale forced for message stability.
+
+    Parameters
+    ----------
+    base_env : Mapping[str, str] or None, optional
+        Environment to extend. ``None`` starts from the current process
+        environment, matching what an unset ``env`` would give the subprocess.
+
+    Returns
+    -------
+    dict[str, str]
+        A copy of the environment with ``LC_ALL``, ``LANG``, and ``LANGUAGE``
+        pinned so tools emit their untranslated diagnostics.
+
+    Notes
+    -----
+    ``git`` and ``cargo`` translate their diagnostics through gettext, so any
+    caller that classifies a failure by matching the English text must pin the
+    locale first; otherwise a localized machine silently misclassifies the
+    failure. ``LANGUAGE`` is cleared rather than set because it overrides
+    ``LC_ALL`` for message translation when non-empty.
+
+    Examples
+    --------
+    >>> c_locale_env({"CARGO_TERM_COLOR": "never"})
+    {'CARGO_TERM_COLOR': 'never', 'LC_ALL': 'C', 'LANG': 'C', 'LANGUAGE': ''}
+    """
+    merged = dict(os.environ if base_env is None else base_env)
+    merged.update({"LC_ALL": "C", "LANG": "C", "LANGUAGE": ""})
+    return merged
+
+
 __all__ = [
     "append_detail",
+    "c_locale_env",
     "command_detail",
     "format_command",
     "log_command_invocation",

@@ -2,7 +2,9 @@
 
 from pathlib import Path
 
-MAKEFILE_PATH = Path(__file__).resolve().parents[2] / "Makefile"
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+MAKEFILE_PATH = REPOSITORY_ROOT / "Makefile"
+GITIGNORE_PATH = REPOSITORY_ROOT / ".gitignore"
 
 
 def test_df12_pylint_uses_an_isolated_python_environment() -> None:
@@ -21,6 +23,12 @@ def test_df12_pylint_uses_an_isolated_python_environment() -> None:
 def test_markdownlint_excludes_project_local_uv_directories() -> None:
     """Generated uv cache and tool documentation must stay out of lint scope."""
     makefile = MAKEFILE_PATH.read_text(encoding="utf-8")
+    assert "git ls-files -z '*.md'" in makefile, (
+        "markdownlint must lint only tracked files, which excludes every "
+        "gitignored path by construction"
+    )
     for directory in (".uv-cache", ".uv-tools"):
-        exclusion = f"-not -path './{directory}/*'"
-        assert exclusion in makefile, f"markdownlint must exclude {directory}"
+        entry = f"{directory}/"
+        assert entry in GITIGNORE_PATH.read_text(encoding="utf-8"), (
+            f"markdownlint must exclude {directory}"
+        )
