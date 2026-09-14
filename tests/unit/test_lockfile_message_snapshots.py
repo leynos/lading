@@ -110,7 +110,6 @@ class TestStaleLockfileMessages:
             ),
         ],
     )
-
     def test_message(
         self,
         monkeypatch: pytest.MonkeyPatch,
