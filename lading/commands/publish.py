@@ -24,6 +24,7 @@ from lading.commands.publish_plan import format_plan, plan_publication
 from lading.utils.path import normalize_workspace_root
 
 if typ.TYPE_CHECKING:
+    from lading.commands.publish_skip import SkipPreflightDecision
     from lading.config import LadingConfig
     from lading.runtime import CommandRunner
     from lading.workspace import WorkspaceGraph
@@ -60,6 +61,10 @@ class PublishOptions:
         Whether to collect compiler-cache statistics for cargo invocations.
     sccache_stats_json : Path | None
         Optional JSON report destination for compiler-cache statistics.
+    skip_preflight : SkipPreflightDecision | None
+        Optional explicit decision, with its provenance, about skipping the
+        preflight auxiliary builds and the cargo check/test pair. When
+        ``None``, the ``[preflight] skip`` setting decides.
     """
 
     allow_dirty: bool = True
@@ -73,6 +78,7 @@ class PublishOptions:
     allow_unpublished_workspace_deps: bool = False
     sccache_stats: bool = False
     sccache_stats_json: Path | None = None
+    skip_preflight: SkipPreflightDecision | None = None
 
 
 def _ensure_configuration(
@@ -155,9 +161,12 @@ def run(
     command_runner = effective_options.command_runner or publish_pipeline._invoke
     publish_preflight._run_preflight_checks(
         root_path,
-        allow_dirty=effective_options.allow_dirty,
-        configuration=active_configuration,
-        runner=command_runner,
+        publish_preflight.PreflightRequest(
+            allow_dirty=effective_options.allow_dirty,
+            configuration=active_configuration,
+            runner=command_runner,
+            skip=effective_options.skip_preflight,
+        ),
     )
     active_workspace = _ensure_workspace(
         workspace or effective_options.workspace, root_path

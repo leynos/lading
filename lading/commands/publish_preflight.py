@@ -6,6 +6,11 @@ checks whether the working tree is clean, runs configured auxiliary build
 commands, and executes cargo check/test commands with the publish pre-flight
 configuration.
 
+A caller that has already verified the workspace can suppress the auxiliary
+builds and the cargo check/test pair through
+:mod:`lading.commands.publish_skip`; the working-tree and lockfile guards run
+regardless.
+
 The publish command calls :func:`_run_preflight_checks` before planning and
 dispatching publication. The function returns ``None`` when every check passes
 and raises :class:`lading.commands.publish_errors.PublishPreflightError` when a
@@ -41,10 +46,12 @@ from lading.commands.publish_diagnostics import _append_compiletest_diagnostics
 from lading.commands.publish_errors import PublishPreflightError
 from lading.commands.publish_execution import _invoke
 from lading.commands.publish_lockfile_preflight import _validate_lockfile_freshness
+from lading.commands.publish_skip import SkipPreflightDecision, resolve_skip_preflight
 from lading.utils.process import append_detail, command_detail, with_detail
 
 if typ.TYPE_CHECKING:
-    from lading.config import CompiletestExtern, LadingConfig
+    from lading.commands.lockfile_repository import LockfileInspectionRepository
+    from lading.config import CompiletestExtern, LadingConfig, PreflightConfig
     from lading.runtime import CommandRunner
 
 
@@ -123,44 +130,28 @@ def _apply_compiletest_externs(
     return updated
 
 
-def _run_preflight_checks(
+SKIPPED_BUILD_CHECKS_MESSAGE = (
+    "Skipping the publish pre-flight auxiliary builds, cargo check and cargo "
+    "test at the request of %s. The working-tree and Cargo.lock freshness "
+    "checks still ran."
+)
+
+
+def _lockfile_repository(
+    runner: CommandRunner, env: cabc.Mapping[str, str]
+) -> LockfileInspectionRepository:
+    """Bind the lockfile inspection port to ``runner`` and ``env``."""
+    return CargoLockfileInspectionRepository(runner=runner, env=env)
+
+
+def _run_cargo_build_checks(
     workspace_root: Path,
+    preflight_config: PreflightConfig,
     *,
-    allow_dirty: bool,
-    configuration: LadingConfig,
-    runner: CommandRunner | None = None,
+    runner: CommandRunner,
+    base_env: cabc.Mapping[str, str],
 ) -> None:
-    """Execute publish pre-flight checks for ``workspace_root``.
-
-    This is the composition root for lockfile inspection: it binds
-    :class:`CargoLockfileInspectionRepository` to the selected command runner
-    and the pre-flight base environment (issue #82), so the freshness domain
-    step runs through the port without holding a raw runner. The freshness
-    policy itself lives in
-    :mod:`lading.commands.publish_lockfile_preflight`; tests inject a port
-    double at its :func:`_validate_lockfile_freshness` seam instead.
-    """
-    command_runner = runner or _invoke
-    preflight_config = configuration.preflight
-    base_env = _build_preflight_environment(preflight_config.env_overrides)
-    _verify_clean_working_tree(
-        workspace_root,
-        allow_dirty=allow_dirty,
-        runner=command_runner,
-        env=base_env,
-    )
-    _run_aux_build_commands(
-        workspace_root,
-        preflight_config.aux_build,
-        runner=command_runner,
-        env=base_env,
-    )
-    repository = CargoLockfileInspectionRepository(
-        runner=command_runner,
-        env=base_env,
-    )
-    _validate_lockfile_freshness(workspace_root, repository=repository)
-
+    """Run the pre-flight cargo check and cargo test in a throwaway target dir."""
     with tempfile.TemporaryDirectory(prefix="lading-preflight-target-") as target:
         target_path = Path(target)
         unit_tests_only = preflight_config.unit_tests_only
@@ -170,7 +161,7 @@ def _run_preflight_checks(
         _run_cargo_preflight(
             workspace_root,
             "check",
-            runner=command_runner,
+            runner=runner,
             options=_CargoPreflightOptions(
                 extra_args=check_arguments,
                 env=base_env,
@@ -184,7 +175,7 @@ def _run_preflight_checks(
         _run_cargo_preflight(
             workspace_root,
             "test",
-            runner=command_runner,
+            runner=runner,
             options=_CargoPreflightOptions(
                 extra_args=test_arguments,
                 test_excludes=preflight_config.test_exclude,
@@ -193,6 +184,91 @@ def _run_preflight_checks(
                 diagnostics_tail_lines=preflight_config.stderr_tail_lines,
             ),
         )
+
+
+@dc.dataclass(frozen=True, slots=True)
+class PreflightRequest:
+    """Inputs for one publish pre-flight run.
+
+    Parameters
+    ----------
+    allow_dirty:
+        When ``True`` the working-tree cleanliness guard is skipped.
+    configuration:
+        The active configuration, whose ``[preflight]`` table supplies the
+        pre-flight settings.
+    runner:
+        Optional command runner; defaults to the publish command's own.
+    skip:
+        Optional explicit decision, with its provenance, about skipping the
+        auxiliary builds and the cargo check/test pair. When ``None`` the
+        ``[preflight] skip`` setting decides.
+
+    Examples
+    --------
+    >>> from lading.config import LadingConfig
+    >>> PreflightRequest(allow_dirty=True, configuration=LadingConfig()).skip is None
+    True
+    """
+
+    allow_dirty: bool
+    configuration: LadingConfig
+    runner: CommandRunner | None = None
+    skip: SkipPreflightDecision | None = None
+
+
+def _run_preflight_checks(
+    workspace_root: Path,
+    request: PreflightRequest,
+) -> None:
+    """Execute publish pre-flight checks for ``workspace_root``.
+
+    This is the composition root for lockfile inspection: it binds
+    :class:`CargoLockfileInspectionRepository` to the selected command runner
+    and the pre-flight base environment (issue #82), so the freshness domain
+    step runs through the port without holding a raw runner. Tests inject a
+    port double at the :func:`_validate_lockfile_freshness` seam instead.
+
+    ``request.skip`` suppresses the compilation-heavy checks only. The
+    working-tree and lockfile guards are publication-correctness checks worth
+    one ``git status`` and one ``cargo metadata`` call rather than a repeat of
+    a caller's test run, so they always execute; the auxiliary builds exist to
+    support the cargo checks, so they are skipped alongside them.
+    """
+    command_runner = request.runner or _invoke
+    preflight_config = request.configuration.preflight
+    base_env = _build_preflight_environment(preflight_config.env_overrides)
+    decision = resolve_skip_preflight(request.skip, configured=preflight_config.skip)
+    _verify_clean_working_tree(
+        workspace_root,
+        allow_dirty=request.allow_dirty,
+        runner=command_runner,
+        env=base_env,
+    )
+    if decision.skip:
+        _validate_lockfile_freshness(
+            workspace_root,
+            repository=_lockfile_repository(command_runner, base_env),
+        )
+        LOGGER.info(SKIPPED_BUILD_CHECKS_MESSAGE, decision.source)
+        return
+
+    _run_aux_build_commands(
+        workspace_root,
+        preflight_config.aux_build,
+        runner=command_runner,
+        env=base_env,
+    )
+    _validate_lockfile_freshness(
+        workspace_root,
+        repository=_lockfile_repository(command_runner, base_env),
+    )
+    _run_cargo_build_checks(
+        workspace_root,
+        preflight_config,
+        runner=command_runner,
+        base_env=base_env,
+    )
 
 
 def _compose_preflight_arguments(

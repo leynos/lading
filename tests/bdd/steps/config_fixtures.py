@@ -210,6 +210,16 @@ def given_preflight_unit_tests_only_true(workspace_directory: Path) -> None:
     config_path.write_text(doc.as_string(), encoding="utf-8")
 
 
+@given("preflight.skip is true")
+def given_preflight_skip_true(workspace_directory: Path) -> None:
+    """Skip the pre-flight build checks for publish pre-flight scenarios."""
+    config_path = workspace_directory / config_module.CONFIG_FILENAME
+    document = toml_utils.load_or_create_document(config_path)
+    preflight_table = toml_utils.ensure_table(document, "preflight")
+    preflight_table["skip"] = True
+    config_path.write_text(document.as_string(), encoding="utf-8")
+
+
 @given(parsers.parse('publish.order is "{order}"'))
 def given_publish_order_is(workspace_directory: Path, order: str) -> None:
     """Set the publish order configuration to ``order``."""

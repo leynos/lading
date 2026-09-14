@@ -314,6 +314,49 @@ Feature: Lading CLI scaffolding
     And the stderr contains "ui.stderr"
     And the stderr contains "line2"
 
+  Scenario: Configured skip suppresses the pre-flight build checks
+    Given a workspace directory with configuration
+    And cargo metadata describes a sample workspace
+    And preflight.skip is true
+    When I invoke lading publish with that workspace
+    Then the publish command runs no pre-flight cargo commands
+    And the stderr contains "the lading.toml [preflight] skip setting"
+
+  Scenario: A skipped pre-flight still verifies the tree and the lockfiles
+    Given a workspace directory with configuration
+    And cargo metadata describes a sample workspace
+    And preflight.skip is true
+    When I invoke lading publish with that workspace using --forbid-dirty
+    Then the publish command still verified the working tree and tracked lockfiles
+
+  Scenario: The --skip-preflight flag suppresses the pre-flight build checks
+    Given a workspace directory with configuration
+    And cargo metadata describes a sample workspace
+    When I run "lading publish --skip-preflight"
+    Then the publish command runs no pre-flight cargo commands
+    And the stderr contains "the --skip-preflight command-line flag"
+
+  Scenario: LADING_SKIP_PREFLIGHT suppresses the pre-flight build checks
+    Given a workspace directory with configuration
+    And cargo metadata describes a sample workspace
+    And the environment variable LADING_SKIP_PREFLIGHT is set to "1"
+    When I invoke lading publish with that workspace
+    Then the publish command runs no pre-flight cargo commands
+    And the stderr contains "the LADING_SKIP_PREFLIGHT environment variable"
+
+  Scenario: --no-skip-preflight reinstates a configured skip
+    Given a workspace directory with configuration
+    And cargo metadata describes a sample workspace
+    And preflight.skip is true
+    When I run "lading publish --no-skip-preflight"
+    Then the publish command runs the pre-flight cargo check and cargo test
+
+  Scenario: The pre-flight build checks run by default
+    Given a workspace directory with configuration
+    And cargo metadata describes a sample workspace
+    When I invoke lading publish with that workspace
+    Then the publish command runs the pre-flight cargo check and cargo test
+
   Scenario: Publish command rejects dirty workspaces with --forbid-dirty
     Given a workspace directory with configuration
     And cargo metadata describes a sample workspace

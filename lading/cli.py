@@ -34,6 +34,7 @@ from . import commands, config
 from .cli_options import (
     DRY_RUN_PARAMETER,
     REBUILD_LOCKFILES_PARAMETER,
+    SKIP_PREFLIGHT_ENV_VAR,
     VERSION_PARAMETER,
     WORKSPACE_PARAMETER,
     WORKSPACE_ROOT_ENV_VAR,
@@ -62,11 +63,15 @@ from .cli_options import (
     SccacheStatsJsonOption as SccacheStatsJsonOption,
 )
 from .cli_options import (
+    SkipPreflightFlag as SkipPreflightFlag,
+)
+from .cli_options import (
     VersionArgument as VersionArgument,
 )
 from .cli_options import (
     WorkspaceRootOption as WorkspaceRootOption,
 )
+from .commands.publish_skip import SkipPreflightDecision
 from .runtime import CommandRunner, subprocess_runner
 from .utils import metrics, normalize_workspace_root
 from .workspace import WorkspaceGraph, WorkspaceModelError, load_workspace
@@ -77,6 +82,13 @@ _LOG_FORMAT = "%(levelname)s: %(message)s"
 _LADING_HANDLER_NAME = "lading-cli-handler"
 _CMD_MOX_STUB_ENV = "LADING_USE_CMD_MOX_STUB"
 _CMD_MOX_TRUTHY_VALUES = frozenset({"1", "true", "yes", "on"})
+# Mirrors the literals cyclopts coerces into a bool for an env_var-backed
+# option, so the skip decision can be attributed to the environment only when
+# the environment could actually have produced it.
+_ENVIRONMENT_TRUTHY_VALUES = frozenset({"1", "true", "yes"})
+_ENVIRONMENT_FALSY_VALUES = frozenset({"0", "false", "no"})
+SKIP_PREFLIGHT_FLAG_SOURCE = "the --skip-preflight command-line flag"
+SKIP_PREFLIGHT_ENVIRONMENT_SOURCE = f"the {SKIP_PREFLIGHT_ENV_VAR} environment variable"
 _LOG_LEVEL_ALIASES: dict[str, int] = {
     "CRITICAL": logging.CRITICAL,
     "FATAL": logging.CRITICAL,
@@ -130,6 +142,66 @@ def _parse_workspace_equals(argument: str, index: int) -> tuple[str, int]:
     candidate = argument.partition("=")[2]
     workspace = _validate_workspace_value(candidate)
     return workspace, index + 1
+
+
+def _environment_boolean(raw: str | None) -> bool | None:
+    """Return the boolean ``raw`` spells, or ``None`` when it spells neither."""
+    if raw is None:
+        return None
+    normalized = raw.strip().lower()
+    if normalized in _ENVIRONMENT_TRUTHY_VALUES:
+        return True
+    if normalized in _ENVIRONMENT_FALSY_VALUES:
+        return False
+    return None
+
+
+def _skip_preflight_override(
+    *,
+    skip_preflight: bool | None,
+    environment: cabc.Mapping[str, str],
+) -> SkipPreflightDecision | None:
+    """Label an explicit skip decision with the input that supplied it.
+
+    Cyclopts gives the command line precedence over ``env_var``, so a resolved
+    value is attributed to the environment only when the variable spells that
+    same value; otherwise the command line must have supplied it. Returning
+    ``None`` leaves the decision to the ``[preflight] skip`` configuration
+    setting, which the publish command resolves.
+
+    Parameters
+    ----------
+    skip_preflight : bool | None
+        The value cyclopts resolved for ``--skip-preflight``.
+    environment : cabc.Mapping[str, str]
+        The process environment to inspect for the backing variable.
+
+    Returns
+    -------
+    SkipPreflightDecision | None
+        The labelled decision, or ``None`` when no caller expressed one.
+
+    Examples
+    --------
+    >>> _skip_preflight_override(skip_preflight=None, environment={}) is None
+    True
+    >>> _skip_preflight_override(skip_preflight=True, environment={}).source
+    'the --skip-preflight command-line flag'
+    >>> override = _skip_preflight_override(
+    ...     skip_preflight=True, environment={"LADING_SKIP_PREFLIGHT": "1"}
+    ... )
+    >>> override.source
+    'the LADING_SKIP_PREFLIGHT environment variable'
+    """
+    if skip_preflight is None:
+        return None
+    from_environment = _environment_boolean(environment.get(SKIP_PREFLIGHT_ENV_VAR))
+    source = (
+        SKIP_PREFLIGHT_ENVIRONMENT_SOURCE
+        if from_environment is skip_preflight
+        else SKIP_PREFLIGHT_FLAG_SOURCE
+    )
+    return SkipPreflightDecision(skip=skip_preflight, source=source)
 
 
 def _resolve_allow_unpublished_workspace_deps(
@@ -462,6 +534,12 @@ def _publish_options(
         allow_unpublished_workspace_deps=_resolve_allow_unpublished_workspace_deps(
             live=flags.live,
             allow_unpublished_workspace_deps=flags.allow_unpublished_workspace_deps,
+        ),
+        # Labelled, not resolved: only the CLI can tell the flag from its
+        # environment variable, while resolving an absent value against
+        # `[preflight] skip` stays with the publish command.
+        skip_preflight=_skip_preflight_override(
+            skip_preflight=flags.skip_preflight, environment=os.environ
         ),
         # Forwarded unresolved: a report path implying the measurement is the
         # publish command's decision, so library callers behave the same.

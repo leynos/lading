@@ -44,7 +44,11 @@ def test_preflight_checks_remove_all_targets_for_unit_only(
     configuration = make_config(preflight=make_preflight_config(unit_tests_only=True))
 
     publish_preflight._run_preflight_checks(
-        root, allow_dirty=False, configuration=configuration
+        root,
+        publish_preflight.PreflightRequest(
+            allow_dirty=False,
+            configuration=configuration,
+        ),
     )
 
     assert set(recorded) == {"check", "test"}
@@ -101,7 +105,11 @@ def test_preflight_checks_support_special_target_dir(
     configuration = make_config()
 
     publish_preflight._run_preflight_checks(
-        root, allow_dirty=False, configuration=configuration
+        root,
+        publish_preflight.PreflightRequest(
+            allow_dirty=False,
+            configuration=configuration,
+        ),
     )
 
     assert set(recorded) == {"check", "test"}
@@ -138,9 +146,11 @@ def test_preflight_runs_aux_build_commands(
 
     publish_preflight._run_preflight_checks(
         root,
-        allow_dirty=True,
-        configuration=configuration,
-        runner=recording_runner,
+        publish_preflight.PreflightRequest(
+            allow_dirty=True,
+            configuration=configuration,
+            runner=recording_runner,
+        ),
     )
 
     assert commands, "expected at least one command invocation"
@@ -181,9 +191,11 @@ def test_aux_build_failure_surfaces_error(
     with pytest.raises(publish_preflight.PublishPreflightError) as excinfo:
         publish_preflight._run_preflight_checks(
             root,
-            allow_dirty=True,
-            configuration=configuration,
-            runner=runner,
+            publish_preflight.PreflightRequest(
+                allow_dirty=True,
+                configuration=configuration,
+                runner=runner,
+            ),
         )
 
     assert "cargo build --package lint" in str(excinfo.value)
@@ -217,9 +229,11 @@ def test_preflight_env_overrides_forwarded(
 
     publish_preflight._run_preflight_checks(
         root,
-        allow_dirty=True,
-        configuration=configuration,
-        runner=env_recording_runner,
+        publish_preflight.PreflightRequest(
+            allow_dirty=True,
+            configuration=configuration,
+            runner=env_recording_runner,
+        ),
     )
 
     assert captured_env["DYLINT_LOCALE"] == "cy"
@@ -265,9 +279,11 @@ def test_preflight_append_compiletest_externs(
 
     publish_preflight._run_preflight_checks(
         root,
-        allow_dirty=True,
-        configuration=configuration,
-        runner=recording_runner,
+        publish_preflight.PreflightRequest(
+            allow_dirty=True,
+            configuration=configuration,
+            runner=recording_runner,
+        ),
     )
 
     assert rustflags, "Expected cargo test env to include RUSTFLAGS"
