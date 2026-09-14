@@ -423,6 +423,12 @@ lading publish [--live] [--forbid-dirty] [--sccache-stats] [--sccache-stats-json
 - `--forbid-dirty`: Require a clean working tree before running the pre-flight
   checks. When omitted the git status guard is skipped so that developers can
   iterate on pending changes.
+- `--skip-preflight` / `--no-skip-preflight`: Skip, or reinstate, the
+  compilation-heavy part of the pre-flight for callers that have already
+  verified the workspace. The flag overrides `[preflight] skip` in both
+  directions and takes its default from `LADING_SKIP_PREFLIGHT`, so a CI
+  workflow can suppress the repeat without editing the command line. The
+  lockfile guard and the opt-in working-tree guard are unaffected.
 - `--sccache-stats` / `--sccache-stats-json PATH`: Opt-in compiler-cache
   instrumentation (issue #252). Lading queries the sccache binary named by
   `RUSTC_WRAPPER` for a baseline after pre-flight and again after every
@@ -480,6 +486,16 @@ lading publish [--live] [--forbid-dirty] [--sccache-stats] [--sccache-stats-json
     - `preflight.stderr_tail_lines` – the number of lines tailed from
       compiletest `*.stderr` files when cargo test fails, exposing the debug
       diff directly in the CLI output.
+    - `preflight.skip` – suppress the auxiliary builds and the cargo
+      check/test pair outright. A caller that has already built and tested the
+      same commit otherwise pays for the whole suite twice; measured on a warm
+      cache, the repeat was 883 of the 936 seconds a Linux publish step took.
+      The lockfile guard still runs, and so does the working-tree guard when
+      `--forbid-dirty` opts into it, because neither repeats the caller's work
+      and both still decide whether the publication would be correct.
+      `lading publish` logs the setting, flag, or environment variable that
+      requested the skip, and records the `publish.preflight` counter and
+      `publish.preflight.duration` observation for it.
 
     Any `PublishPreflightError` aborts execution before `plan_publication`,
     `publish_staging.prepare_workspace`, or

@@ -19,6 +19,7 @@ across the CLI adapter and the command module.
 from __future__ import annotations
 
 import collections.abc as cabc
+import contextvars
 import importlib
 import logging
 import os
@@ -34,6 +35,7 @@ from . import commands, config
 from .cli_options import (
     DRY_RUN_PARAMETER,
     REBUILD_LOCKFILES_PARAMETER,
+    SKIP_PREFLIGHT_ENV_VAR,
     VERSION_PARAMETER,
     WORKSPACE_PARAMETER,
     WORKSPACE_ROOT_ENV_VAR,
@@ -62,11 +64,15 @@ from .cli_options import (
     SccacheStatsJsonOption as SccacheStatsJsonOption,
 )
 from .cli_options import (
+    SkipPreflightFlag as SkipPreflightFlag,
+)
+from .cli_options import (
     VersionArgument as VersionArgument,
 )
 from .cli_options import (
     WorkspaceRootOption as WorkspaceRootOption,
 )
+from .commands.publish_skip import SkipPreflightDecision, SkipPreflightSource
 from .runtime import CommandRunner, subprocess_runner
 from .utils import metrics, normalize_workspace_root
 from .workspace import WorkspaceGraph, WorkspaceModelError, load_workspace
@@ -77,6 +83,15 @@ _LOG_FORMAT = "%(levelname)s: %(message)s"
 _LADING_HANDLER_NAME = "lading-cli-handler"
 _CMD_MOX_STUB_ENV = "LADING_USE_CMD_MOX_STUB"
 _CMD_MOX_TRUTHY_VALUES = frozenset({"1", "true", "yes", "on"})
+# Mirrors the literals cyclopts coerces into a bool for an env_var-backed
+# option. Only consulted when the dispatch tokens are unavailable, which
+# happens when the app is driven in-process rather than through main().
+_ENVIRONMENT_TRUTHY_VALUES = frozenset({"1", "true", "t", "yes", "y"})
+_ENVIRONMENT_FALSY_VALUES = frozenset({"0", "false", "f", "no", "n"})
+_SKIP_PREFLIGHT_TOKENS = frozenset({"--skip-preflight", "--no-skip-preflight"})
+_command_tokens: contextvars.ContextVar[tuple[str, ...] | None] = (
+    contextvars.ContextVar("lading_cli_command_tokens", default=None)
+)
 _LOG_LEVEL_ALIASES: dict[str, int] = {
     "CRITICAL": logging.CRITICAL,
     "FATAL": logging.CRITICAL,
@@ -130,6 +145,121 @@ def _parse_workspace_equals(argument: str, index: int) -> tuple[str, int]:
     candidate = argument.partition("=")[2]
     workspace = _validate_workspace_value(candidate)
     return workspace, index + 1
+
+
+def _environment_boolean(raw: str | None) -> bool | None:
+    """Return the boolean ``raw`` spells, or ``None`` when it spells neither.
+
+    Cyclopts matches these spellings case-insensitively and does not trim, so
+    neither does this; a value it would reject cannot have produced the
+    resolved flag.
+
+    Returns
+    -------
+    bool | None
+        The boolean ``raw`` spells, or ``None`` when it spells neither.
+    """
+    if raw is None:
+        return None
+    normalized = raw.lower()
+    if normalized in _ENVIRONMENT_TRUTHY_VALUES:
+        return True
+    if normalized in _ENVIRONMENT_FALSY_VALUES:
+        return False
+    return None
+
+
+@contextmanager
+def _recorded_command_tokens(
+    tokens: cabc.Sequence[str],
+) -> cabc.Iterator[None]:
+    """Publish ``tokens`` for the duration of one dispatch.
+
+    Cyclopts reports the value it resolved for an option but not the input it
+    came from, and the command line beats ``env_var``. The tokens this
+    invocation was dispatched with are the only reliable way to tell the two
+    apart.
+    """
+    reset_token = _command_tokens.set(tuple(tokens))
+    try:
+        yield
+    finally:
+        _command_tokens.reset(reset_token)
+
+
+def _mentions_skip_preflight(tokens: cabc.Sequence[str]) -> bool:
+    """Return whether ``tokens`` contain either form of the skip flag."""
+    return any(token.split("=", 1)[0] in _SKIP_PREFLIGHT_TOKENS for token in tokens)
+
+
+def _skip_preflight_source(
+    *,
+    environment: cabc.Mapping[str, str],
+    skip_preflight: bool,
+) -> SkipPreflightSource:
+    """Return the input the resolved skip value came from.
+
+    With the dispatch tokens available, an explicit flag beats the variable,
+    exactly as cyclopts resolves them. Without them the app was driven
+    in-process: the variable is credited only when it spells the value
+    cyclopts resolved, and anything else came from the calling code rather
+    than from a command line that was never parsed.
+
+    Returns
+    -------
+    SkipPreflightSource
+        The command line, the environment variable, or an in-process caller.
+    """
+    tokens = _command_tokens.get()
+    if tokens is not None:
+        return (
+            SkipPreflightSource.COMMAND_LINE
+            if _mentions_skip_preflight(tokens)
+            else SkipPreflightSource.ENVIRONMENT
+        )
+    from_environment = _environment_boolean(environment.get(SKIP_PREFLIGHT_ENV_VAR))
+    if from_environment is skip_preflight:
+        return SkipPreflightSource.ENVIRONMENT
+    return SkipPreflightSource.IN_PROCESS
+
+
+def _skip_preflight_override(
+    *,
+    skip_preflight: bool | None,
+    environment: cabc.Mapping[str, str],
+) -> SkipPreflightDecision | None:
+    """Label an explicit skip decision with the input that supplied it.
+
+    Returning ``None`` leaves the decision to the ``[preflight] skip``
+    configuration setting, which the publish command resolves.
+
+    Parameters
+    ----------
+    skip_preflight : bool | None
+        The value cyclopts resolved for ``--skip-preflight``.
+    environment : cabc.Mapping[str, str]
+        The process environment to inspect for the backing variable.
+
+    Returns
+    -------
+    SkipPreflightDecision | None
+        The labelled decision, or ``None`` when no caller expressed one.
+
+    Examples
+    --------
+    >>> _skip_preflight_override(skip_preflight=None, environment={}) is None
+    True
+    >>> _skip_preflight_override(skip_preflight=True, environment={}).source
+    <SkipPreflightSource.IN_PROCESS: 'in-process'>
+    """
+    if skip_preflight is None:
+        return None
+    return SkipPreflightDecision(
+        skip=skip_preflight,
+        source=_skip_preflight_source(
+            environment=environment, skip_preflight=skip_preflight
+        ),
+    )
 
 
 def _resolve_allow_unpublished_workspace_deps(
@@ -303,6 +433,7 @@ def main(argv: cabc.Sequence[str] | None = None) -> int:
             with (
                 _workspace_env(workspace_root),
                 config.use_configuration(configuration),
+                _recorded_command_tokens(remaining),
             ):
                 try:
                     return _dispatch_and_print(remaining)
@@ -424,8 +555,10 @@ def publish(
         The publish flags, each surfaced by Cyclopts as its own option:
         ``--forbid-dirty``, ``--live``,
         ``--allow-unpublished-workspace-deps`` (tri-state, resolved against
-        the publish mode when omitted), ``--sccache-stats``, and
-        ``--sccache-stats-json`` (issue #252; a report path implies the
+        the publish mode when omitted), ``--skip-preflight`` (tri-state,
+        labelled with its source here and resolved against
+        ``[preflight] skip`` by the publish command), ``--sccache-stats``,
+        and ``--sccache-stats-json`` (issue #252; a report path implies the
         measurement, resolved by the publish command).
 
     Returns
@@ -462,6 +595,12 @@ def _publish_options(
         allow_unpublished_workspace_deps=_resolve_allow_unpublished_workspace_deps(
             live=flags.live,
             allow_unpublished_workspace_deps=flags.allow_unpublished_workspace_deps,
+        ),
+        # Labelled, not resolved: only the CLI can tell the flag from its
+        # environment variable, while resolving an absent value against
+        # `[preflight] skip` stays with the publish command.
+        skip_preflight=_skip_preflight_override(
+            skip_preflight=flags.skip_preflight, environment=os.environ
         ),
         # Forwarded unresolved: a report path implying the measurement is the
         # publish command's decision, so library callers behave the same.

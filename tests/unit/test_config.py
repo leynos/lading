@@ -39,6 +39,7 @@ def test_load_configuration_parses_values(tmp_path: Path) -> None:
         strip_patches = "all"
 
         [preflight]
+        skip = true
         test_exclude = ["cucumber"]
         unit_tests_only = true
         """,
@@ -58,6 +59,9 @@ def test_load_configuration_parses_values(tmp_path: Path) -> None:
     assert configuration.publish.strip_patches == "all"
     assert configuration.preflight.test_exclude == ("cucumber",)
     assert configuration.preflight.unit_tests_only is True
+    assert configuration.preflight.skip is True, (
+        "an explicit [preflight] skip = true should be parsed"
+    )
 
 
 @pytest.mark.parametrize(
@@ -125,6 +129,13 @@ def test_load_configuration_parses_values(tmp_path: Path) -> None:
         pytest.param(
             """
             [preflight]
+            skip = "sometimes"
+            """,
+            id="preflight_skip_invalid_boolean",
+        ),
+        pytest.param(
+            """
+            [preflight]
             unit_tests_only = "sometimes"
             """,
             id="preflight_invalid_boolean",
@@ -184,6 +195,7 @@ def test_preflight_config_from_mapping_defaults() -> None:
 
     assert configuration.test_exclude == ()
     assert configuration.unit_tests_only is False
+    assert configuration.skip is False
 
 
 def test_bump_config_from_mapping_parses_lockfile_fields() -> None:
@@ -241,6 +253,19 @@ def test_use_configuration_sets_context(tmp_path: Path) -> None:
         assert config_module.current_configuration() is configuration
 
 
+def test_preflight_skip_defaults_to_running_the_checks() -> None:
+    """A present but empty ``[preflight]`` table leaves the build checks on.
+
+    The default matters more than most: a publish that silently stopped
+    rebuilding and retesting the workspace would still report success. The
+    absent-table case is covered by
+    ``test_preflight_config_from_mapping_defaults``.
+    """
+    assert config_module.PreflightConfig.from_mapping({}).skip is False, (
+        "an empty [preflight] table must leave the build checks running"
+    )
+
+
 def test_preflight_config_parses_extended_fields() -> None:
     """Aux build commands, externs, and env overrides should be normalized."""
     mapping = {
@@ -250,6 +275,7 @@ def test_preflight_config_parses_extended_fields() -> None:
         "compiletest_extern": {"lint": "target/liblint.so"},
         "env": {"DYLINT_LOCALE": "cy"},
         "stderr_tail_lines": 5,
+        "skip": True,
     }
 
     configuration = config_module.PreflightConfig.from_mapping(mapping)
@@ -262,6 +288,7 @@ def test_preflight_config_parses_extended_fields() -> None:
     assert configuration.stderr_tail_lines == 5
     assert configuration.test_exclude == ("alpha", "beta")
     assert configuration.unit_tests_only is False
+    assert configuration.skip is True
 
 
 def test_validate_mapping_keys_reports_unknown_section() -> None:

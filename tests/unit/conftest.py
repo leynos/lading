@@ -66,6 +66,39 @@ type PrepareWorkspaceFixtures = PublishFixtures
 
 
 @pytest.fixture(autouse=True)
+def restore_root_logger() -> cabc.Iterator[None]:
+    """Restore the root logger's configuration after every test.
+
+    ``lading.cli.main`` installs a named handler on the root logger and leaves
+    it in place. A test that invokes the CLI without restoring the previous
+    handlers makes any later test that captures log output fail, and which
+    test that is depends on collection order. Restoration is automatic rather
+    than opt-in because a new test that calls the CLI would otherwise
+    reintroduce the leak silently.
+
+    Yields
+    ------
+    None
+        Control returns to the test with the root logger untouched.
+    """
+    import logging
+
+    root_logger = logging.getLogger()
+    prior_handlers = list(root_logger.handlers)
+    prior_level = root_logger.level
+    prior_propagation = root_logger.propagate
+    try:
+        yield
+    finally:
+        for handler in list(root_logger.handlers):
+            root_logger.removeHandler(handler)
+        for handler in prior_handlers:
+            root_logger.addHandler(handler)
+        root_logger.setLevel(prior_level)
+        root_logger.propagate = prior_propagation
+
+
+@pytest.fixture(autouse=True)
 def disable_publish_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
     """Stub publish pre-flight checks for tests that do not exercise them."""
     monkeypatch.setattr(

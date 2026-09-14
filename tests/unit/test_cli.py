@@ -83,6 +83,7 @@ def test_cli_reexports_public_annotation_aliases() -> None:
         "RebuildLockfilesFlag",
         "SccacheStatsFlag",
         "SccacheStatsJsonOption",
+        "SkipPreflightFlag",
         "VersionArgument",
         "WorkspaceRootOption",
     )

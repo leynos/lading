@@ -535,6 +535,11 @@ callers can customize behaviour via `PublishOptions`. The defaults are:
   around every cargo build and log one compiler-cache line per invocation.
 - `sccache_stats_json=None` — also write the JSON report to this path
   (relative paths resolve against the workspace root); implies `sccache_stats`.
+- `skip_preflight=None` — let `[preflight] skip` decide whether the pre-flight
+  runs its auxiliary builds and cargo check/test pair. A caller that has
+  already verified the workspace passes a
+  `SkipPreflightDecision(skip=True, source=...)`, whose source names the input
+  in the publish log and labels the `publish.preflight` metric.
 
 Additional parameters `configuration`, `workspace`, and `command_runner` allow
 dependency injection for testing and are typically left unset.
@@ -808,13 +813,14 @@ dataclass that Cyclopts flattens onto the command line with
 negative form, and environment default while the command keeps a two-parameter
 signature:
 
-| Field                              | Option                               | Default | Environment default         |
-| ---------------------------------- | ------------------------------------ | ------- | --------------------------- |
-| `forbid_dirty`                     | `--forbid-dirty`                     | `False` | —                           |
-| `live`                             | `--live`                             | `False` | —                           |
-| `allow_unpublished_workspace_deps` | `--allow-unpublished-workspace-deps` | `None`  | —                           |
-| `sccache_stats`                    | `--sccache-stats`                    | `False` | `LADING_SCCACHE_STATS`      |
-| `sccache_stats_json`               | `--sccache-stats-json`               | `None`  | `LADING_SCCACHE_STATS_JSON` |
+| Field                              | Option                                     | Default | Environment default         |
+| ---------------------------------- | ------------------------------------------ | ------- | --------------------------- |
+| `forbid_dirty`                     | `--forbid-dirty`                           | `False` | —                           |
+| `live`                             | `--live`                                   | `False` | —                           |
+| `allow_unpublished_workspace_deps` | `--allow-unpublished-workspace-deps`       | `None`  | —                           |
+| `skip_preflight`                   | `--skip-preflight` / `--no-skip-preflight` | `None`  | `LADING_SKIP_PREFLIGHT`     |
+| `sccache_stats`                    | `--sccache-stats`                          | `False` | `LADING_SCCACHE_STATS`      |
+| `sccache_stats_json`               | `--sccache-stats-json`                     | `None`  | `LADING_SCCACHE_STATS_JSON` |
 
 `_publish_options(flags, command_runner)` translates the bundle into
 `PublishOptions`: `allow_dirty` is the negation of `forbid_dirty`, the tri-state
@@ -824,7 +830,20 @@ forwarded unresolved because a report path implying the measurement is the
 publish command's decision (`create_session`). The `Annotated` aliases
 `SccacheStatsFlag` and `SccacheStatsJsonOption`, and the `SCCACHE_STATS_*`
 parameters and environment-variable names, stay exported from `cli_options` for
-integrations that import CLI annotations.
+integrations that import CLI annotations, as do `SkipPreflightFlag`,
+`SKIP_PREFLIGHT_PARAMETER`, and `SKIP_PREFLIGHT_ENV_VAR`.
+
+`skip_preflight` is the one field `_publish_options` labels rather than
+forwards: `_skip_preflight_override` turns the resolved tri-state into a
+`SkipPreflightDecision` carrying a `SkipPreflightSource`. The source comes from
+the dispatch tokens that `_recorded_command_tokens` publishes for the duration
+of `app(tokens)`, because Cyclopts reports the value it resolved but not the
+input it came from, and a command-line flag beats `env_var`. When the app is
+driven in-process the tokens are absent: `_environment_boolean` credits the
+variable only when it spells the value Cyclopts resolved, and anything else is
+labelled `SkipPreflightSource.IN_PROCESS` rather than attributed to a command
+line that was never parsed. Resolving an _absent_
+flag against `[preflight] skip` stays in the command layer.
 
 ### `_PublishExecutionOptions`
 
@@ -1191,14 +1210,20 @@ and holds no aliases or wrappers for its names; tests that patch or invoke
 pre-flight helpers must target `publish_preflight` itself. The entry point is:
 
 ```python
-_run_preflight_checks(
-    workspace_root: Path,
-    *,
+_run_preflight_checks(workspace_root: Path, request: PreflightRequest) -> None
+
+PreflightRequest(
     allow_dirty: bool,
     configuration: LadingConfig,
     runner: CommandRunner | None = None,
-) -> None
+    skip: SkipPreflightDecision | None = None,
+)
 ```
+
+The inputs travel as one frozen `PreflightRequest` rather than four keyword
+arguments: the policy (`allow_dirty`, `skip`), the configuration, and the
+injected runner are constructed together at each call site, and the bundle
+keeps the entry point inside the repository's argument-count ceiling.
 
 The function verifies the git working tree is clean (unless `allow_dirty` is
 set), then executes `cargo check` and `cargo test` in a temporary
@@ -1210,8 +1235,42 @@ with a descriptive message.
 | ------------------------------ | --------------------------------------------------------------------------------------------- |
 | `_compose_preflight_arguments` | Builds the base `cargo` argument tuple for a given target directory and `--all-targets` flag. |
 | `_preflight_argument_sets`     | Returns `(check_args, test_args)` tuples adapted for unit-test-only mode.                     |
+| `_run_cargo_build_checks`      | Runs the `cargo check`/`cargo test` pair inside the throwaway target directory.               |
 | `_run_cargo_preflight`         | Executes a single `cargo check` or `cargo test` invocation and raises on failure.             |
 | `_verify_clean_working_tree`   | Runs `git status --porcelain` and raises if the tree is dirty and `allow_dirty` is `False`.   |
+
+#### Skipping the build checks (`publish_skip`)
+
+`lading.commands.publish_skip` owns the decision to skip the pre-flight's
+compilation-heavy work and nothing else: `SkipPreflightDecision` pairs the
+boolean with a human-readable source, and `resolve_skip_preflight` returns a
+caller's override or the `[preflight] skip` setting labelled with
+`SkipPreflightSource.CONFIGURATION`. `_run_preflight_checks` logs that source
+when it skips,
+so a publish log never reads as though the checks ran.
+
+The split of what a skip removes is deliberate and is a contract, not an
+implementation detail:
+
+| Step                           | Skipped | Why                                                                             |
+| ------------------------------ | ------- | ------------------------------------------------------------------------------- |
+| `preflight.aux_build` commands | Yes     | They exist to prepare the cargo checks that no longer run.                      |
+| `cargo check` and `cargo test` | Yes     | This is the duplicated work: 883 s of a 936 s warm-cache Linux publish step.    |
+| `git status --porcelain` guard | No      | One process; a dirty tree still produces a wrong publication.                   |
+| `Cargo.lock` freshness guard   | No      | One `cargo metadata` call; a stale lockfile still produces a wrong publication. |
+
+Provenance is resolved in the CLI adapter rather than the command layer,
+because only the adapter can distinguish `--skip-preflight` from
+`LADING_SKIP_PREFLIGHT`; see
+[CLI publish API](#cli-publish-api-ladingclipublish) for how the dispatch
+tokens decide. `SkipPreflightSource` is a closed enumeration because it is also
+a metric label.
+
+Every pre-flight records two metrics, whether it skips or not:
+`publish.preflight` counts the run with `mode` (`skipped` or `executed`) and
+`source`, and `publish.preflight.duration` observes the elapsed time with
+`mode`. Both are recorded in a `finally` block, so a pre-flight that raises is
+still counted.
 
 ### Per-crate publication helpers
 

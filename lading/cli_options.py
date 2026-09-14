@@ -78,6 +78,19 @@ ALLOW_UNPUBLISHED_WORKSPACE_DEPS_PARAMETER = Parameter(
     ),
 )
 
+SKIP_PREFLIGHT_ENV_VAR = "LADING_SKIP_PREFLIGHT"
+SKIP_PREFLIGHT_PARAMETER = Parameter(
+    name="skip-preflight",
+    env_var=SKIP_PREFLIGHT_ENV_VAR,
+    help=(
+        "Skip the pre-flight auxiliary builds, cargo check and cargo test "
+        "when the caller has already verified the workspace; overrides the "
+        "[preflight] skip setting in either direction. The Cargo.lock "
+        "freshness check always runs; the working-tree check runs with "
+        "--forbid-dirty."
+    ),
+)
+
 SCCACHE_STATS_ENV_VAR = "LADING_SCCACHE_STATS"
 SCCACHE_STATS_PARAMETER = Parameter(
     name="sccache-stats",
@@ -116,6 +129,8 @@ class PublishFlags:
     False
     >>> PublishFlags(sccache_stats_json=Path("stats.json")).sccache_stats_json
     PosixPath('stats.json')
+    >>> PublishFlags().skip_preflight is None
+    True
     """
 
     forbid_dirty: typ.Annotated[bool, FORBID_DIRTY_PARAMETER] = False
@@ -123,6 +138,7 @@ class PublishFlags:
     allow_unpublished_workspace_deps: typ.Annotated[
         bool | None, ALLOW_UNPUBLISHED_WORKSPACE_DEPS_PARAMETER
     ] = None
+    skip_preflight: typ.Annotated[bool | None, SKIP_PREFLIGHT_PARAMETER] = None
     sccache_stats: typ.Annotated[bool, SCCACHE_STATS_PARAMETER] = False
     sccache_stats_json: typ.Annotated[Path | None, SCCACHE_STATS_JSON_PARAMETER] = None
 
@@ -140,6 +156,7 @@ type ForbidDirtyFlag = typ.Annotated[bool, FORBID_DIRTY_PARAMETER]
 type AllowUnpublishedWorkspaceDepsFlag = typ.Annotated[
     bool | None, ALLOW_UNPUBLISHED_WORKSPACE_DEPS_PARAMETER
 ]
+type SkipPreflightFlag = typ.Annotated[bool | None, SKIP_PREFLIGHT_PARAMETER]
 type SccacheStatsFlag = typ.Annotated[bool, SCCACHE_STATS_PARAMETER]
 type SccacheStatsJsonOption = typ.Annotated[Path | None, SCCACHE_STATS_JSON_PARAMETER]
 
@@ -154,6 +171,8 @@ __all__ = [
     "SCCACHE_STATS_JSON_ENV_VAR",
     "SCCACHE_STATS_JSON_PARAMETER",
     "SCCACHE_STATS_PARAMETER",
+    "SKIP_PREFLIGHT_ENV_VAR",
+    "SKIP_PREFLIGHT_PARAMETER",
     "VERSION_PARAMETER",
     "WORKSPACE_PARAMETER",
     "WORKSPACE_ROOT_ENV_VAR",
@@ -166,6 +185,7 @@ __all__ = [
     "RebuildLockfilesFlag",
     "SccacheStatsFlag",
     "SccacheStatsJsonOption",
+    "SkipPreflightFlag",
     "VersionArgument",
     "WorkspaceRootOption",
 ]

@@ -40,6 +40,7 @@ PUBLISH_TOML_KEYS: typ.Final[frozenset[str]] = frozenset({
     "strip_patches",
 })
 PREFLIGHT_TOML_KEYS: typ.Final[frozenset[str]] = frozenset({
+    "skip",
     "test_exclude",
     "unit_tests_only",
     "aux_build",
@@ -219,8 +220,16 @@ class CompiletestExtern:
 
 @dc.dataclass(frozen=True, slots=True)
 class PreflightConfig:
-    """Settings for publish pre-flight checks."""
+    """Settings for publish pre-flight checks.
 
+    ``skip`` suppresses only the compilation-heavy part of the pre-flight: the
+    auxiliary build commands, ``cargo check``, and ``cargo test``. The
+    working-tree cleanliness guard and the lockfile freshness guard cost
+    nothing and always run, so a skipped pre-flight never weakens the
+    publication guarantees those two checks provide.
+    """
+
+    skip: bool = False
     test_exclude: tuple[str, ...] = ()
     unit_tests_only: bool = False
     aux_build: tuple[tuple[str, ...], ...] = ()
@@ -257,6 +266,8 @@ class PreflightConfig:
         True
         >>> PreflightConfig.from_mapping(None).stderr_tail_lines
         40
+        >>> PreflightConfig.from_mapping({"skip": True}).skip
+        True
         """  # ruff: ignore[docstring-extraneous-exception]  # propagated from the shared mapping validators
         if mapping is None:
             return cls()
@@ -277,6 +288,7 @@ class PreflightConfig:
         )
         env_overrides = _string_mapping(mapping.get("env"), "preflight.env")
         return cls(
+            skip=_boolean(mapping.get("skip"), "preflight.skip"),
             test_exclude=filtered_excludes,
             unit_tests_only=_boolean(
                 mapping.get("unit_tests_only"), "preflight.unit_tests_only"
