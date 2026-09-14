@@ -34,6 +34,8 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
   for Ruff, Interrogate, Pylint, df12 house rules, and snapshot redaction.
 - [ADR-004: In-process metrics accumulator flushed at exit][adr-004] - accepted
   design for the `lading.utils.metrics` backend and metric contracts.
+- [ADR-005: Emit bounded per-event relay observability logs][adr-005] - accepted
+  contract for privacy-safe subprocess relay decision events.
 
 ## Reference documents
 
@@ -46,4 +48,5 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
 
 [adr-003]: adr/003-three-tier-python-linting.md
 [adr-004]: adr/004-in-process-metrics-backend.md
+[adr-005]: adr/005-relay-observability-events.md
 [execplan-regenerate-lockfiles]: execplans/regenerate-lockfiles.md

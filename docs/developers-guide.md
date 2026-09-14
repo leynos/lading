@@ -782,7 +782,7 @@ downgraded by `allow_unpublished_workspace_deps` during dry-run publication.
 
 `publish_sccache_stats.py`, `publish_sccache_report.py`, and
 `publish_sccache.py` implement the opt-in compiler-cache instrumentation
-(issue #252). The `_stats` module is the adapter:
+(issue 252). The `_stats` module is the adapter:
 `detect_wrapper()` recognizes an sccache binary named by `RUSTC_WRAPPER`,
 `query_snapshot()` and `query_text()` run its `--show-stats` forms through the
 `CommandRunner` port with `echo_stdout=False`, and `parse_counters()` reduces
@@ -1148,6 +1148,25 @@ selects persistent binary mode, so all later chunks use UTF-8 bytes rather than
 switching back to text encoding. If the text sink has no binary buffer, the
 helper returns a disabled `(None, None)` state; subprocess capture continues
 independently and retains the complete decoded output.
+
+#### Relay observability
+
+`lading.runtime.relay_events` emits one `INFO` record for each relay decision.
+The record message is `relay observability event: %s`, with a frozen
+`RelayEvent` as its sole parameter. The event contains exactly these bounded
+fields:
+
+| Field | Stable values | Meaning |
+| --- | --- | --- |
+| `operation` | `relay_mirror` | Mirroring decoded child output to a parent stream. |
+| `stream` | `stdout`, `stderr` | The child stream whose mirror changed state. |
+| `transition` | `text_to_binary`, `disable_mirroring` | Select the parent binary buffer, or stop parent-stream mirroring. |
+| `error_category` | `unicode_encode`, `broken_pipe` | A parent encoding rejection, or a closed parent pipe. |
+
+Events never contain subprocess payloads, decoded output, command arguments,
+or other unbounded subprocess data. This per-decision contract is separate
+from the aggregate exit-time metrics in `lading.utils.metrics`; see
+[ADR-005](adr/005-relay-observability-events.md).
 
 The cmd-mox runner validates `CMOX_IPC_TIMEOUT` in `_resolve_cmd_mox_timeout`.
 The two operator-facing messages it raises live as a single source of truth in
