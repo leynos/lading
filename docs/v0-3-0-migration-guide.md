@@ -17,8 +17,8 @@ workspace outside Git, discovery cannot identify tracked lockfiles:
 `lading bump` emits a warning and falls back to this configuration. The setting
 therefore also covers nested lockfiles in non-Git workspaces.
 
-See the [lockfile configuration reference](../users-guide.md#bump) for the
-configuration format and the [bump workflow](../users-guide.md#2-bump-versions)
+See the [lockfile configuration reference](users-guide.md#bump) for the
+configuration format and the [bump workflow](users-guide.md#2-bump-versions)
 for the complete regeneration behaviour.
 
 ## Preview the migration
@@ -26,7 +26,7 @@ for the complete regeneration behaviour.
 `lading bump <version> --dry-run` discovers and reports the same lockfile set
 as a non-dry-run bump. It lists each lockfile with the `(lockfile)` suffix but
 does not modify manifests or lockfiles. See the
-[dry-run output description](../users-guide.md#2-bump-versions) for the full
+[dry-run output description](users-guide.md#2-bump-versions) for the full
 output format.
 
 ## Regenerate before publishing
@@ -36,5 +36,5 @@ automatic regeneration must be skipped. It also leaves lockfiles stale when
 manifests are modified directly. Regenerate every affected lockfile before
 publishing, then run `lading publish`; the publish pre-flight reports stale
 lockfiles and the repair commands for them. See
-[publishing with fresh lockfiles](../users-guide.md#3-publish-in-dry-run-mode)
+[publishing with fresh lockfiles](users-guide.md#3-publish-in-dry-run-mode)
 for the recovery procedure.

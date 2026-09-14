@@ -22,7 +22,7 @@ looking for project guidance, then follow the link that matches the task.
 
 ## Migration guides
 
-- [Migrate to lading 0.3.0](migrations/0.3.0-lockfile-regeneration.md) -
+- [Migrate to lading 0.3.0](v0-3-0-migration-guide.md) -
   explains lockfile discovery, configuration fallback, and regeneration before
   publishing.
 
