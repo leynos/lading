@@ -50,6 +50,7 @@ class TestBumpLockfileMessages:
         lockfile_paths: tuple[Path, ...],
     ) -> None:
         """The public bump command renders lockfiles relative to the workspace."""
+        target_version = "1.2.3"
         (tmp_path / "Cargo.toml").write_text(
             '[workspace]\nmembers = []\n\n[workspace.package]\nversion = "0.1.0"\n',
             encoding="utf-8",
@@ -73,7 +74,7 @@ class TestBumpLockfileMessages:
 
         message = bump.run(
             tmp_path,
-            "1.2.3",
+            target_version,
             options=bump.BumpOptions(
                 rebuild_lockfiles=True,
                 configuration=config.LadingConfig(),
@@ -81,6 +82,11 @@ class TestBumpLockfileMessages:
             ),
         )
 
+        assert f"Updated version to {target_version}" in message
+        assert "1 manifest(s)" in message
+        assert f"{len(lockfile_paths)} lockfile(s)" in message
+        for lockfile_path in lockfile_paths:
+            assert f"- {lockfile_path} (lockfile)" in message
         assert snapshot == message
 
 

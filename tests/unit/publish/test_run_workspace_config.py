@@ -117,7 +117,9 @@ def test_run_formats_plan_summary(tmp_path: Path, snapshot: SnapshotAssertion) -
 
     message = publish.run(root, configuration, workspace)
 
-    assert _normalize_summary(message, root) == snapshot
+    assert _normalize_summary(message, root) == snapshot, (
+        "publish summary should match snapshot"
+    )
 
 
 def test_run_reports_no_publishable_crates(
@@ -135,7 +137,9 @@ def test_run_reports_no_publishable_crates(
 
     message = publish.run(root, configuration, workspace)
 
-    assert _normalize_summary(message, root) == snapshot
+    assert _normalize_summary(message, root) == snapshot, (
+        "no-publishable-crates summary should match snapshot"
+    )
 
 
 def test_run_surfaces_missing_workspace(
