@@ -20,9 +20,9 @@ find dist/wheels-* -type f -name "*.whl" -print0 | \
 ```
 
 Two properties of that arrangement combined into a silent failure. A pipeline
-reports the exit status of its last command, so `set -eu` never saw `find`
-fail when `dist/wheels-*` did not exist, and `xargs -r` then ran nothing and
-exited zero. Separately, `softprops/action-gh-release` publishes immediately by
+reports the exit status of its last command, so `set -eu` never saw `find` fail
+when `dist/wheels-*` did not exist, and `xargs -r` then ran nothing and exited
+zero. Separately, `softprops/action-gh-release` publishes immediately by
 default, so the release was already visible before the upload ran at all.
 
 Both `v0.3.0` and `v0.3.1` published with no wheel attached and a green job.
@@ -67,11 +67,11 @@ Keeping the upload in the workflow and adding `set -o pipefail` would fix the
 exit status but not the publication order, and would leave multi-command gate
 logic in a `run:` block, which the repository's scripting standard rules out.
 
-Importing `lading.utils.metrics` (see [ADR-004](004-in-process-metrics-backend.md))
-for the outcome signal was rejected. The uploader is a standalone PEP 723
-script that does not import the package, and the workflow step is shorter
-lived than even a `lading` run, so the job log and `GITHUB_OUTPUT` are the
-signals a consumer can actually read.
+Importing `lading.utils.metrics` (see
+[ADR-004](004-in-process-metrics-backend.md)) for the outcome signal was
+rejected. The uploader is a standalone PEP 723 script that does not import the
+package, and the workflow step is shorter lived than even a `lading` run, so
+the job log and `GITHUB_OUTPUT` are the signals a consumer can actually read.
 
 ## Consequences
 

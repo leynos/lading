@@ -33,8 +33,8 @@ The 0.1.0 release also changes workspace README adoption:
 ## Programmatic publish staging
 
 Programmatic callers should import the staging helper from
-`lading.commands.publish_staging` and pass a publication plan with options as
-a keyword argument:
+`lading.commands.publish_staging` and pass a publication plan with options as a
+keyword argument:
 
 ```python
 from lading.commands.publish_staging import prepare_workspace
@@ -47,8 +47,8 @@ The `workspace` argument accepted by older releases is no longer part of the
 workspace root. When `options.cleanup` is enabled and no
 `options.build_directory` is supplied, process-exit cleanup removes the entire
 automatically created build directory. With a caller-supplied build directory,
-cleanup removes only the staged workspace root and preserves the caller's
-other files.
+cleanup removes only the staged workspace root and preserves the caller's other
+files.
 
 > **Migration note for the next minor release:** Update imports from
 > `lading.commands.publish` to `lading.commands.publish_staging`, remove the
@@ -58,8 +58,8 @@ other files.
 
 ### Install from a tagged release
 
-A `v*.*.*` tag whose release workflow completes successfully publishes the
-pure Python wheel as an asset on the matching
+A `v*.*.*` tag whose release workflow completes successfully publishes the pure
+Python wheel as an asset on the matching
 [GitHub release](https://github.com/leynos/lading/releases). Download it and
 install it with `pip`:
 
@@ -516,7 +516,9 @@ lockfiles are regenerated, `lading` raises one aggregated error that lists
 every failed manifest with the exact repair command to run:
 
 ```plaintext
-Cargo lockfile regeneration failed for 2 manifest(s). Manifests already carry the new version, so the workspace is inconsistent until each lockfile below is repaired:
+Cargo lockfile regeneration failed for 2 manifest(s). Manifests already carry
+the new version, so the workspace is inconsistent until each lockfile below is
+repaired:
 - Cargo lockfile regeneration failed for crates/a/Cargo.toml with exit code 101: <cargo error>
   cargo update --workspace --manifest-path crates/a/Cargo.toml
 - Cargo lockfile regeneration failed for crates/b/Cargo.toml with exit code 101: <cargo error>
@@ -552,7 +554,8 @@ command can emit it — and reports whichever metrics that run recorded. For
 example, a `publish` run that downgraded an index-lookup failure emits:
 
 ```plaintext
-lading metrics summary: [{"metric": "publish.index_lookup_downgrade", "labels": {"missing_crate": "...", "subcommand": "..."}, "value": 1}]
+lading metrics summary: [{"metric": "publish.index_lookup_downgrade",
+  "labels": {"missing_crate": "...", "subcommand": "..."}, "value": 1}]
 ```
 
 Each entry records a counter name, the label values that identify it, and the

@@ -55,17 +55,16 @@ across `lading`, and once across `tests` and `scripts`, where the shape-based
 that invocation on the command line in the Makefile. They exempt nested test
 closures and test-local stub classes. The `lading` pass carries no exemptions,
 and every module-level definition in `tests` and `scripts` still requires a
-docstring.
-If `interrogate` passes, the third stage runs Pylint through the pinned
-`pylint-pypy-shim` tool under PyPy. That stage is focused on rule families that
-complement Ruff, especially logging format safety, pattern matching checks,
-selected simplification checks, deprecated standard-library usage, file
-hygiene, and design-size limits. The fourth stage runs all `df12-python-lints`
-checks under CPython 3.14, while retaining Lading's Python 3.13 semantic
-baseline for version-gated diagnostics. Finally, `ambrleaks` scans Syrupy
-snapshots under `tests` for values that should have been redacted.
-[ADR-003](adr/003-three-tier-python-linting.md) records the policy decision,
-including the
+docstring. If `interrogate` passes, the third stage runs Pylint through the
+pinned `pylint-pypy-shim` tool under PyPy. That stage is focused on rule
+families that complement Ruff, especially logging format safety, pattern
+matching checks, selected simplification checks, deprecated standard-library
+usage, file hygiene, and design-size limits. The fourth stage runs all
+`df12-python-lints` checks under CPython 3.14, while retaining Lading's Python
+3.13 semantic baseline for version-gated diagnostics. Finally, `ambrleaks`
+scans Syrupy snapshots under `tests` for values that should have been redacted.
+[ADR-003](adr/003-three-tier-python-linting.md)
+records the policy decision, including the
 [2026-09-07 addendum](adr/003-three-tier-python-linting.md#addendum-docstring-coverage-for-tests-and-scripts-2026-09-07)
 extending Interrogate coverage to `tests` and `scripts`.
 
@@ -206,9 +205,9 @@ Two properties keep it fixed, and
 The decision behind this order, and the alternatives weighed, are recorded in
 [ADR-005](adr/005-release-wheel-publication.md).
 
-`scripts/upload_release_wheels.py` is the command-line edge and the
-composition root; the logic lives beside it in `scripts/release_wheel_upload.py`
-and is imported as a sibling, which resolves because `uv run --script` puts the
+`scripts/upload_release_wheels.py` is the command-line edge and the composition
+root; the logic lives beside it in `scripts/release_wheel_upload.py` and is
+imported as a sibling, which resolves because `uv run --script` puts the
 script's directory first on the path. The runner, the clock, and the two output
 sinks are parameters with production defaults bound in the entry point, so
 tests state the dependency they exercise rather than intercepting the
@@ -229,11 +228,11 @@ stderr.
 
 The script takes the tag from `GITHUB_REF_NAME` and invokes `gh` through a
 cuprum catalogue whose allowlist permits `gh` alone, so the script cannot run
-any other programme. That boundary covers the script, not the job: the job
-also runs `uv` and its pinned actions. Unit tests assert the `SafeCmd` argv
-with cmd-mox. End-to-end tests execute the script as a subprocess with a
-recording `gh` stub, which is the only level at which the process boundary
-itself is exercised.
+any other programme. That boundary covers the script, not the job: the job also
+runs `uv` and its pinned actions. Unit tests assert the `SafeCmd` argv with
+cmd-mox. End-to-end tests execute the script as a subprocess with a recording
+`gh` stub, which is the only level at which the process boundary itself is
+exercised.
 
 The step reports one machine-readable line to stderr before it exits, whatever
 the result:
@@ -244,10 +243,10 @@ release_wheel_upload {"discovery_seconds": 0.0, "outcome": "success", "upload_se
 
 `outcome` is a member of the `Outcome` string enumeration (`success`,
 `no-wheel`, `missing-directory`, `not-a-directory`, `unreadable-directory`,
-`upload-failed`), so a counter built from the release logs stays bounded,
-and no path, tag, or message text is reported alongside it. The same `outcome`
-and `wheels` values are written to `GITHUB_OUTPUT` when the workflow sets it.
-A short-lived workflow step has no collector to push to, so this line and that
+`upload-failed`), so a counter built from the release logs stays bounded, and
+no path, tag, or message text is reported alongside it. The same `outcome` and
+`wheels` values are written to `GITHUB_OUTPUT` when the workflow sets it. A
+short-lived workflow step has no collector to push to, so this line and that
 output are the signal; `lading`'s in-process metrics summary is unavailable
 here because the uploader is a standalone PEP 723 script that does not import
 the package.
@@ -609,8 +608,9 @@ future round-tripping.
 
 ## Programmatic publish options
 
-When invoking `lading.commands.publish_staging.prepare_workspace` programmatically,
-callers can customize behaviour via `PublishOptions`. The defaults are:
+When invoking `lading.commands.publish_staging.prepare_workspace`
+programmatically, callers can customize behaviour via `PublishOptions`. The
+defaults are:
 
 - `allow_dirty=True` — skip the git cleanliness guard. **Security note:** this
   means uncommitted changes are permitted by default; pass `allow_dirty=False`
@@ -874,23 +874,23 @@ miss is out-of-plan and fatal, in-plan but still fatal, or in-plan and
 downgraded by `allow_unpublished_workspace_deps` during dry-run publication.
 
 `publish_sccache_stats.py`, `publish_sccache_report.py`, and
-`publish_sccache.py` implement the opt-in compiler-cache instrumentation
-(issue #252). The `_stats` module is the adapter:
-`detect_wrapper()` recognizes an sccache binary named by `RUSTC_WRAPPER`,
-`query_snapshot()` and `query_text()` run its `--show-stats` forms through the
-`CommandRunner` port with `echo_stdout=False`, and `parse_counters()` reduces
-the JSON payload to `SccacheCounters` (requests, hits, misses, errors).
-`publish_sccache_report.py` owns `SccacheLedger`, the pure reducer (baseline,
-previous snapshot, records, `attribute()`, `delta`, `report()`), and the report
-formatting and atomic-serialization helpers. `publish_sccache.py` owns
-`SccacheSession`, which sequences the side effects around that bookkeeping:
-`_dispatch_publication` creates the session via `create_session()` after
-pre-flight (a report path alone opts in), `begin()`s before the first cargo
-build, `record()`s after every per-crate cargo invocation (one snapshot, one
-ledger entry, one log line), and `finish()`es in a `finally` with the pipeline
-delta, the human-readable mirror, and the optional atomically written JSON
-report. Every failure in the session is a WARNING that disables further
-queries; the session never raises into the pipeline.
+`publish_sccache.py` implement the opt-in compiler-cache instrumentation (issue
+[#252](https://github.com/leynos/lading/issues/252)).
+The `_stats` module is the adapter: `detect_wrapper()` recognizes an sccache
+binary named by `RUSTC_WRAPPER`, `query_snapshot()` and `query_text()` run its
+`--show-stats` forms through the `CommandRunner` port with `echo_stdout=False`,
+and `parse_counters()` reduces the JSON payload to `SccacheCounters` (requests,
+hits, misses, errors). `publish_sccache_report.py` owns `SccacheLedger`, the
+pure reducer (baseline, previous snapshot, records, `attribute()`, `delta`,
+`report()`), and the report formatting and atomic-serialization helpers.
+`publish_sccache.py` owns `SccacheSession`, which sequences the side effects
+around that bookkeeping: `_dispatch_publication` creates the session via
+`create_session()` after pre-flight (a report path alone opts in), `begin()`s
+before the first cargo build, `record()`s after every per-crate cargo
+invocation (one snapshot, one ledger entry, one log line), and `finish()`es in a
+`finally` with the pipeline delta, the human-readable mirror, and the optional
+atomically written JSON report. Every failure in the session is a WARNING that
+disables further queries; the session never raises into the pipeline.
 
 ### CLI publish API (`lading.cli.publish`)
 
@@ -930,8 +930,8 @@ input it came from, and a command-line flag beats `env_var`. When the app is
 driven in-process the tokens are absent: `_environment_boolean` credits the
 variable only when it spells the value Cyclopts resolved, and anything else is
 labelled `SkipPreflightSource.IN_PROCESS` rather than attributed to a command
-line that was never parsed. Resolving an _absent_
-flag against `[preflight] skip` stays in the command layer.
+line that was never parsed. Resolving an _absent_ flag against
+`[preflight] skip` stays in the command layer.
 
 ### `_PublishExecutionOptions`
 
@@ -1188,17 +1188,17 @@ than bucketed.
 
 Defined metrics:
 
-| Metric                           | Labels                        | Incremented when                                                                                                                                                                                    |
-| -------------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `publish.index_lookup_downgrade` | `subcommand`, `missing_crate` | `_handle_index_missing_version` downgrades a crates.io index-lookup failure to a warning (in-plan, override enabled).                                                                               |
-| `lockfile.discovered`            | (none)                        | Incremented by tracked-lockfile count when discovery observability is enabled; dry-run bump projection suppresses it.                                                                               |
-| `lockfile.discovery.failed`      | `reason`                      | Incremented once per failed tracked-lockfile discovery; `reason` is `not_git` or `git_error`. Failure counting ignores the discovery observability switch, which suppresses success telemetry only. |
-| `lockfile.regenerate`            | `outcome`, `cause`            | Incremented per successful or failed lockfile regeneration; `cause` is `none`, `validation`, `command_spawn`, `runner_value`, or `cargo_exit`.                                                      |
-| `lockfile.regenerate.duration`   | (none)                        | Total duration observation around each lockfile-regeneration run.                                                                                                                                   |
-| `lockfile.validate`              | `outcome`                     | One increment per `validate_lockfile_freshness` call; `outcome` is `fresh`, `stale`, or `failed`.                                                                                                   |
-| `lockfile.validate.duration`     | (none)                        | Duration observation around each `cargo metadata --locked` probe.                                                                                                                                   |
-| `publish.cargo.duration`         | `subcommand`, `crate`         | One duration observation per `cargo package` or `cargo publish` invocation in the publish pipeline, successful or not (issue #251).                                                                 |
-| `publish.sccache.query`          | `outcome`                     | One increment per sccache statistics query while instrumentation is on (`--sccache-stats`, or a `--sccache-stats-json` path, which implies it); `outcome` is `success` or `failure` (issue #252).   |
+| Metric                           | Labels                        | Incremented when                                                                                                                                                                                                                                 |
+| -------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `publish.index_lookup_downgrade` | `subcommand`, `missing_crate` | `_handle_index_missing_version` downgrades a crates.io index-lookup failure to a warning (in-plan, override enabled).                                                                                                                            |
+| `lockfile.discovered`            | (none)                        | Incremented by tracked-lockfile count when discovery observability is enabled; dry-run bump projection suppresses it.                                                                                                                            |
+| `lockfile.discovery.failed`      | `reason`                      | Incremented once per failed tracked-lockfile discovery; `reason` is `not_git` or `git_error`. Failure counting ignores the discovery observability switch, which suppresses success telemetry only.                                              |
+| `lockfile.regenerate`            | `outcome`, `cause`            | Incremented per successful or failed lockfile regeneration; `cause` is `none`, `validation`, `command_spawn`, `runner_value`, or `cargo_exit`.                                                                                                   |
+| `lockfile.regenerate.duration`   | (none)                        | Total duration observation around each lockfile-regeneration run.                                                                                                                                                                                |
+| `lockfile.validate`              | `outcome`                     | One increment per `validate_lockfile_freshness` call; `outcome` is `fresh`, `stale`, or `failed`.                                                                                                                                                |
+| `lockfile.validate.duration`     | (none)                        | Duration observation around each `cargo metadata --locked` probe.                                                                                                                                                                                |
+| `publish.cargo.duration`         | `subcommand`, `crate`         | One duration observation per `cargo package` or `cargo publish` invocation in the publish pipeline, successful or not (issue #251).                                                                                                              |
+| `publish.sccache.query`          | `outcome`                     | One increment per sccache statistics query while instrumentation is on (`--sccache-stats`, or a `--sccache-stats-json` path, which implies it); `outcome` is `success` or `failure` (issue [#252](https://github.com/leynos/lading/issues/252)). |
 
 Duration metrics aggregate a count and total seconds per label set via
 `observe_duration` / `duration_stats` and appear in the exit summary with
@@ -1334,8 +1334,7 @@ compilation-heavy work and nothing else: `SkipPreflightDecision` pairs the
 boolean with a human-readable source, and `resolve_skip_preflight` returns a
 caller's override or the `[preflight] skip` setting labelled with
 `SkipPreflightSource.CONFIGURATION`. `_run_preflight_checks` logs that source
-when it skips,
-so a publish log never reads as though the checks ran.
+when it skips, so a publish log never reads as though the checks ran.
 
 The split of what a skip removes is deliberate and is a contract, not an
 implementation detail:
