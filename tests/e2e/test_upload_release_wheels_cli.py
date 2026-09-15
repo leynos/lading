@@ -116,9 +116,8 @@ def test_every_wheel_reaches_gh_with_the_tag_from_the_environment(
 
     assert result.returncode == 0, result.stderr
     recorded = json.loads(record.read_text(encoding="utf-8"))
-    assert recorded == ["release", "upload", "v9.9.9", str(first), str(second)], (
-        f"gh received {recorded}"
-    )
+    expected = ["release", "upload", "v9.9.9", str(first), str(second), "--clobber"]
+    assert recorded == expected, f"gh received {recorded}"
 
 
 def test_a_failing_gh_fails_the_step(tmp_path: Path) -> None:

@@ -885,3 +885,17 @@ either:
 The goal is to eliminate the current split between plumbum and subprocess while
 preserving the user experience of seeing cargo output as it happens rather than
 buffered at completion.
+
+## 8. Release Publication
+
+Tagged releases publish the pure Python wheel as a GitHub release asset. The
+release is created as a draft, the wheel is attached by
+`scripts/upload_release_wheels.py`, and only then is the draft cleared, so a
+visible release always carries its wheel. The uploader is a standalone PEP 723
+script rather than a shell pipeline, because the pipeline it replaced could not
+fail: two releases published with nothing attached while the job stayed green.
+
+[ADR-005](adr/005-release-wheel-publication.md) records the decision, the
+alternatives weighed, and the workflow contracts that hold it. The operational
+detail, including the bounded outcome the step reports, is in the
+[developers' guide](developers-guide.md#release-workflow).

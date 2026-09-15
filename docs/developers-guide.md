@@ -203,6 +203,21 @@ Two properties keep it fixed, and
   `gh release edit --draft=false` step, so nothing is visible until its wheel
   is attached.
 
+The decision behind this order, and the alternatives weighed, are recorded in
+[ADR-005](adr/005-release-wheel-publication.md).
+
+`scripts/upload_release_wheels.py` is the command-line edge and the
+composition root; the logic lives beside it in `scripts/release_wheel_upload.py`
+and is imported as a sibling, which resolves because `uv run --script` puts the
+script's directory first on the path. The runner, the clock, and the two output
+sinks are parameters with production defaults bound in the entry point, so
+tests state the dependency they exercise rather than intercepting the
+environment.
+
+The upload passes `--clobber`. The draft release is reused across runs, so a
+rerun after a failed publication would otherwise meet the asset its own
+previous attempt uploaded.
+
 The script takes the tag from `GITHUB_REF_NAME` and invokes `gh` through a
 cuprum catalogue whose allowlist permits `gh` alone, so the script cannot run
 any other programme. That boundary covers the script, not the job: the job
@@ -218,9 +233,9 @@ the result:
 release_wheel_upload {"discovery_seconds": 0.0, "outcome": "success", "upload_seconds": 0.4, "wheels": 1}
 ```
 
-`outcome` is drawn from a closed set (`success`, `no-wheel`,
-`missing-directory`, `not-a-directory`, `unreadable-directory`,
-`upload-failed`) so that a counter built from the release logs stays bounded,
+`outcome` is a member of the `Outcome` string enumeration (`success`,
+`no-wheel`, `missing-directory`, `not-a-directory`, `unreadable-directory`,
+`upload-failed`), so a counter built from the release logs stays bounded,
 and no path, tag, or message text is reported alongside it. The same `outcome`
 and `wheels` values are written to `GITHUB_OUTPUT` when the workflow sets it.
 A short-lived workflow step has no collector to push to, so this line and that

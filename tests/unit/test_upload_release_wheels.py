@@ -8,6 +8,7 @@ every wheel found reaches ``gh release upload`` with the right tag.
 from __future__ import annotations
 
 import ast
+import io
 import os
 import string
 import typing as typ
@@ -27,22 +28,43 @@ if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
     import types
 
 SCRIPT_DIRECTORY = Path(__file__).resolve().parents[2] / "scripts"
-SCRIPT_PATH = SCRIPT_DIRECTORY / "upload_release_wheels.py"
+CLI_PATH = SCRIPT_DIRECTORY / "upload_release_wheels.py"
+LIBRARY_PATH = SCRIPT_DIRECTORY / "release_wheel_upload.py"
 
 
 @pytest.fixture(name="upload_module")
 def upload_module_fixture(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
-    """Import the script through the path the workflow runs it from.
+    """Import the uploader's logic the way the script imports it.
+
+    The script is run as ``uv run --script scripts/upload_release_wheels.py``,
+    which puts ``scripts`` first on the path, so a sibling import resolves.
 
     Returns
     -------
     types.ModuleType
-        The imported ``upload_release_wheels`` module.
+        The imported ``release_wheel_upload`` module.
     """
     import importlib
 
     monkeypatch.syspath_prepend(str(SCRIPT_DIRECTORY))
-    return importlib.import_module("upload_release_wheels")
+    return importlib.import_module("release_wheel_upload")
+
+
+def _recorder(
+    uploaded: list[tuple[str, tuple[Path, ...]]],
+) -> cabc.Callable[[str, cabc.Sequence[Path]], None]:
+    """Return an upload that records its arguments instead of running ``gh``.
+
+    Returns
+    -------
+    cabc.Callable[[str, cabc.Sequence[Path]], None]
+        The recording upload.
+    """
+
+    def record(tag: str, wheels: cabc.Sequence[Path]) -> None:
+        uploaded.append((tag, tuple(wheels)))
+
+    return record
 
 
 def _make_wheel(directory: Path, name: str) -> Path:
@@ -53,11 +75,12 @@ def _make_wheel(directory: Path, name: str) -> Path:
     return wheel
 
 
-def test_script_parses_under_the_declared_python_version() -> None:
-    """The script must parse under the version its metadata block requires."""
+@pytest.mark.parametrize("script", [CLI_PATH, LIBRARY_PATH], ids=["cli", "library"])
+def test_script_parses_under_the_declared_python_version(script: Path) -> None:
+    """Both files must parse under the version the metadata block requires."""
     ast.parse(
-        SCRIPT_PATH.read_text(encoding="utf-8"),
-        filename=str(SCRIPT_PATH),
+        script.read_text(encoding="utf-8"),
+        filename=str(script),
         feature_version=(3, 13),
     )
 
@@ -96,40 +119,119 @@ def test_empty_directory_fails_the_step(
     without their wheel and the step reported success.
     """
     uploaded: list[tuple[str, tuple[Path, ...]]] = []
-    upload_module_upload = upload_module.upload_wheels
 
-    def record(tag: str, wheels: cabc.Sequence[Path]) -> None:
-        uploaded.append((tag, tuple(wheels)))
+    with pytest.raises(upload_module.UploadError, match="No wheel found") as raised:
+        upload_module.attach_wheels(
+            "v1.2.3",
+            tmp_path,
+            upload_module.Timings(),
+            upload_module.Dependencies(upload=_recorder(uploaded)),
+        )
 
-    try:
-        upload_module.upload_wheels = record
-        with pytest.raises(upload_module.UploadError, match="No wheel found"):
-            upload_module.main(tag="v1.2.3", directory=tmp_path)
-    finally:
-        upload_module.upload_wheels = upload_module_upload
-
+    assert raised.value.outcome == upload_module.Outcome.NO_WHEEL
     assert uploaded == [], "nothing may be uploaded when no wheel was built"
 
 
 def test_every_wheel_is_uploaded_against_the_tag(
     upload_module: types.ModuleType, tmp_path: Path
 ) -> None:
-    """Each discovered wheel is handed to the upload with the release tag."""
+    """Each discovered wheel is handed to the upload with the release tag.
+
+    The upload is injected rather than patched onto the module, so the test
+    states the dependency it is exercising.
+    """
     first = _make_wheel(tmp_path, "a-1.0-py3-none-any.whl")
     second = _make_wheel(tmp_path / "nested", "b-1.0-py3-none-any.whl")
     uploaded: list[tuple[str, tuple[Path, ...]]] = []
-    original = upload_module.upload_wheels
 
-    def record(tag: str, wheels: cabc.Sequence[Path]) -> None:
-        uploaded.append((tag, tuple(wheels)))
-
-    try:
-        upload_module.upload_wheels = record
-        upload_module.main(tag="v1.2.3", directory=tmp_path)
-    finally:
-        upload_module.upload_wheels = original
+    upload_module.attach_wheels(
+        "v1.2.3",
+        tmp_path,
+        upload_module.Timings(),
+        upload_module.Dependencies(upload=_recorder(uploaded), log=io.StringIO()),
+    )
 
     assert uploaded == [("v1.2.3", (first, second))]
+
+
+def test_each_phase_is_timed_by_the_injected_clock(
+    upload_module: types.ModuleType, tmp_path: Path
+) -> None:
+    """Discovery and upload are timed apart, from the clock they are given.
+
+    A single duration could not distinguish a slow artefact tree from a slow
+    GitHub, which are the two things the number is read for.
+    """
+    _make_wheel(tmp_path, "a-1.0-py3-none-any.whl")
+    ticks = iter([0.0, 2.0, 10.0, 17.0])
+    timings = upload_module.Timings()
+
+    upload_module.attach_wheels(
+        "v1.2.3",
+        tmp_path,
+        timings,
+        upload_module.Dependencies(
+            upload=_recorder([]), clock=lambda: next(ticks), log=io.StringIO()
+        ),
+    )
+
+    assert timings.discovery == 2.0, timings
+    assert timings.upload == 7.0, timings
+
+
+def test_the_upload_runner_is_an_injectable_dependency(
+    upload_module: types.ModuleType, tmp_path: Path
+) -> None:
+    """``upload_wheels`` states its process dependency as a parameter.
+
+    The argv can therefore be asserted without intercepting a process, and
+    ``--clobber`` is part of it: the release is a reused draft, so a rerun
+    after a failed publish would otherwise meet its own asset.
+    """
+    wheel = _make_wheel(tmp_path, "a-1.0-py3-none-any.whl")
+    seen: list[tuple[str, ...]] = []
+
+    def run(arguments: cabc.Sequence[str]) -> object:
+        seen.append(tuple(arguments))
+        return upload_module.CommandOutcome(exit_code=0)
+
+    upload_module.upload_wheels("v1.2.3", (wheel,), run=run)
+
+    assert seen == [("release", "upload", "v1.2.3", str(wheel), "--clobber")]
+
+
+def test_a_rejected_upload_names_the_reason(
+    upload_module: types.ModuleType, tmp_path: Path
+) -> None:
+    """A runner that reports failure fails the step with gh's own reason."""
+    wheel = _make_wheel(tmp_path, "a-1.0-py3-none-any.whl")
+
+    def run(arguments: cabc.Sequence[str]) -> object:
+        return upload_module.CommandOutcome(exit_code=1, stderr="release not found")
+
+    with pytest.raises(upload_module.UploadError, match="release not found") as raised:
+        upload_module.upload_wheels("v1.2.3", (wheel,), run=run)
+
+    assert raised.value.outcome == upload_module.Outcome.UPLOAD_FAILED
+
+
+def test_the_outcome_is_written_to_the_sinks_it_is_given(
+    upload_module: types.ModuleType, tmp_path: Path
+) -> None:
+    """Reporting writes to the sinks passed in, not to ambient streams."""
+    log = io.StringIO()
+    destination = tmp_path / "github-output"
+    summary = upload_module.build_summary(
+        upload_module.Outcome.SUCCESS, wheels=2, timings=upload_module.Timings()
+    )
+
+    upload_module.report_outcome(
+        summary, upload_module.Sinks(log=log, github_output=destination)
+    )
+
+    assert '"outcome": "success"' in log.getvalue(), log.getvalue()
+    written = destination.read_text(encoding="utf-8")
+    assert written == "outcome=success\nwheels=2\n", written
 
 
 def test_upload_invokes_gh_with_the_tag_and_wheels(
@@ -141,9 +243,9 @@ def test_upload_invokes_gh_with_the_tag_and_wheels(
     release actually runs is the thing under test.
     """
     wheel = _make_wheel(tmp_path, "a-1.0-py3-none-any.whl")
-    cmd_mox.mock("gh").with_args("release", "upload", "v1.2.3", str(wheel)).returns(
-        exit_code=0
-    )
+    cmd_mox.mock("gh").with_args(
+        "release", "upload", "v1.2.3", str(wheel), "--clobber"
+    ).returns(exit_code=0)
 
     upload_module.upload_wheels("v1.2.3", (wheel,))
 
@@ -153,9 +255,9 @@ def test_failed_upload_raises(
 ) -> None:
     """A non-zero ``gh`` exit fails the step with the reason attached."""
     wheel = _make_wheel(tmp_path, "a-1.0-py3-none-any.whl")
-    cmd_mox.mock("gh").with_args("release", "upload", "v1.2.3", str(wheel)).returns(
-        exit_code=1, stderr="release not found"
-    )
+    cmd_mox.mock("gh").with_args(
+        "release", "upload", "v1.2.3", str(wheel), "--clobber"
+    ).returns(exit_code=1, stderr="release not found")
 
     with pytest.raises(upload_module.UploadError, match="release not found"):
         upload_module.upload_wheels("v1.2.3", (wheel,))
@@ -210,7 +312,7 @@ def test_an_unreadable_subtree_is_an_error_not_an_empty_result(
     finally:
         locked.chmod(0o755)
 
-    assert raised.value.outcome == upload_module.UNREADABLE_DIRECTORY
+    assert raised.value.outcome == upload_module.Outcome.UNREADABLE_DIRECTORY
     assert "Could not read" in str(raised.value), str(raised.value)
 
 
@@ -232,16 +334,17 @@ def test_an_unreadable_artefact_path_is_not_reported_as_absent(
     finally:
         parent.chmod(0o755)
 
-    assert raised.value.outcome == upload_module.UNREADABLE_DIRECTORY
+    assert raised.value.outcome == upload_module.Outcome.UNREADABLE_DIRECTORY
 
 
 def test_every_outcome_is_drawn_from_the_bounded_set(
     upload_module: types.ModuleType,
 ) -> None:
     """The outcome label stays a closed set, so a counter built on it is bounded."""
-    assert len(set(upload_module.OUTCOMES)) == len(upload_module.OUTCOMES)
-    assert upload_module.SUCCESS in upload_module.OUTCOMES
-    assert upload_module.UploadError("x").outcome in upload_module.OUTCOMES
+    outcomes = list(upload_module.Outcome)
+    assert len({str(outcome) for outcome in outcomes}) == len(outcomes)
+    assert upload_module.Outcome.SUCCESS in outcomes
+    assert upload_module.UploadError("x").outcome in outcomes
 
 
 @given(
@@ -272,7 +375,7 @@ def test_discovery_returns_exactly_the_wheels(
 
     if str(SCRIPT_DIRECTORY) not in sys.path:
         sys.path.insert(0, str(SCRIPT_DIRECTORY))
-    module = importlib.import_module("upload_release_wheels")
+    module = importlib.import_module("release_wheel_upload")
 
     with tempfile.TemporaryDirectory() as raw_root:
         root = Path(raw_root)

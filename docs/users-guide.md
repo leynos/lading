@@ -58,7 +58,8 @@ other files.
 
 ### Install from a tagged release
 
-Every `v*.*.*` tag publishes the pure Python wheel as an asset on the matching
+A `v*.*.*` tag whose release workflow completes successfully publishes the
+pure Python wheel as an asset on the matching
 [GitHub release](https://github.com/leynos/lading/releases). Download it and
 install it with `pip`:
 
