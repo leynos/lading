@@ -60,8 +60,8 @@ def func(x):
 
 Don't rely on implicit `None` if the function may return a value
 elsewhere—always return something at the end. This requirement does not apply
-to functions whose only possible result is `None`; they do not need a
-redundant bare `return` at the end.
+to functions whose only possible result is `None`; they do not need a redundant
+bare `return` at the end.
 
 ______________________________________________________________________
 

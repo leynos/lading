@@ -46,24 +46,24 @@ the Pylint tier runs.
 
 The separate CPython stage lets the df12 plug-in analyse current syntax without
 changing the PyPy compatibility boundary of the existing Pylint pass. The
-package pin in `pyproject.toml` and the `DF12_PYTHON_LINTS_REF` tool pin must be
-updated together.
+package pin in `pyproject.toml` and the `DF12_PYTHON_LINTS_REF` tool pin must
+be updated together.
 
 Contributors can still use Ruff and targeted tests during inner-loop work, but
 changes are not ready until the full `make lint` target succeeds.
 
 ## Addendum: docstring coverage for tests and scripts (2026-09-07)
 
-Adopted 2026-09-07. This addendum extends the Interrogate stage of the
-decision above; the accepted body of this ADR is unchanged.
+Adopted 2026-09-07. This addendum extends the Interrogate stage of the decision
+above; the accepted body of this ADR is unchanged.
 
 `make lint` now runs a second Interrogate invocation alongside the existing
 production-package pass: `interrogate --fail-under 100 tests scripts`. The
 shape-based `--ignore-nested-functions` and `--ignore-nested-classes` flags
 apply only to that second invocation, passed on its command line in the
 Makefile; they are never project-wide settings. Nested test closures and
-test-local stub classes are exempt by structure, and every remaining
-definition under `tests` and `scripts` must still carry a docstring.
+test-local stub classes are exempt by structure, and every remaining definition
+under `tests` and `scripts` must still carry a docstring.
 
 The production `lading` pass remains unexempted: it keeps enforcing docstrings
 on every definition it measures, including nested ones.
