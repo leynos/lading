@@ -47,7 +47,11 @@ class PublishOptions:
     preserve_symlinks : bool
         Whether staging copies symbolic links as links rather than targets.
     cleanup : bool
-        Whether process-exit cleanup removes the staged workspace.
+        Whether the staged workspace is removed when publication ends.
+        Defaults to :data:`True`; a staged copy is the whole workspace plus
+        its verify build, and leaving it behind filled a 1.9 TB volume
+        (issue #269). Set it to :data:`False`, or pass ``--keep-staging``, to
+        retain the copy for debugging; the path is then logged.
     configuration : LadingConfig | None
         Optional loaded configuration used instead of loading it from disk.
     workspace : WorkspaceGraph | None
@@ -71,7 +75,7 @@ class PublishOptions:
     live: bool = False
     build_directory: Path | None = None
     preserve_symlinks: bool = True
-    cleanup: bool = False
+    cleanup: bool = True
     configuration: LadingConfig | None = None
     workspace: WorkspaceGraph | None = None
     command_runner: CommandRunner | None = None
@@ -183,23 +187,27 @@ def run(
     plan = plan_publication(
         active_workspace, active_configuration, workspace_root=root_path
     )
-    preparation = publish_staging.prepare_workspace(plan, options=effective_options)
-    _apply_strip_patch_strategy(
-        preparation.staging_root, plan, active_configuration.publish.strip_patches
-    )
-    execution_options = publish_pipeline._PublishExecutionOptions(
-        live=effective_options.live,
-        allow_dirty=effective_options.allow_dirty,
-        allow_unpublished_workspace_deps=effective_options.allow_unpublished_workspace_deps,
-        sccache_stats=effective_options.sccache_stats,
-        sccache_stats_json=effective_options.sccache_stats_json,
-    )
-    publish_pipeline._dispatch_publication(
-        plan, preparation, options=execution_options, runner=command_runner
-    )
-    plan_message = format_plan(
-        plan, strip_patches=active_configuration.publish.strip_patches
-    )
-    summary_lines = publish_staging._format_preparation_summary(preparation)
+    # The staged tree lives no longer than this block: a publish that raises
+    # or is interrupted must not leave its copy of the workspace behind.
+    with publish_staging.staged_workspace(
+        plan, options=effective_options
+    ) as preparation:
+        _apply_strip_patch_strategy(
+            preparation.staging_root, plan, active_configuration.publish.strip_patches
+        )
+        execution_options = publish_pipeline._PublishExecutionOptions(
+            live=effective_options.live,
+            allow_dirty=effective_options.allow_dirty,
+            allow_unpublished_workspace_deps=effective_options.allow_unpublished_workspace_deps,
+            sccache_stats=effective_options.sccache_stats,
+            sccache_stats_json=effective_options.sccache_stats_json,
+        )
+        publish_pipeline._dispatch_publication(
+            plan, preparation, options=execution_options, runner=command_runner
+        )
+        plan_message = format_plan(
+            plan, strip_patches=active_configuration.publish.strip_patches
+        )
+        summary_lines = publish_staging._format_preparation_summary(preparation)
     LOGGER.info("Publish workflow completed successfully for workspace %s", root_path)
     return f"{plan_message}\n\n" + "\n".join(summary_lines)

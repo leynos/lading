@@ -42,6 +42,44 @@ def repo_root() -> Path:
 
 
 @pytest.fixture(autouse=True)
+def _no_staging_leaks(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> cabc.Iterator[None]:
+    """Fail the test that leaves a staged workspace behind.
+
+    Each test gets its own temporary directory, so a leaked
+    ``lading-publish-*`` tree is attributed to the test that created it rather
+    than discovered months later as 214 GB on a shared host (issue #269).
+
+    Both ``tempfile.tempdir`` and ``TMPDIR`` are set, because neither alone
+    covers the suite. ``tempfile`` caches the resolved directory on first use,
+    so the environment variable has no effect on this process mid-session; and
+    the attribute is process-local, so it has no effect on the lading
+    subprocesses the command-line scenarios start.
+
+    Yields
+    ------
+    None
+        Control, while the temporary directory is redirected.
+
+    Raises
+    ------
+    AssertionError
+        If the test left a staged workspace behind.
+    """
+    import tempfile
+
+    staging_area = tmp_path_factory.mktemp("tmpdir")
+    monkeypatch.setattr(tempfile, "tempdir", str(staging_area))
+    monkeypatch.setenv("TMPDIR", str(staging_area))
+    yield
+    leaked = sorted(staging_area.glob("lading-publish-*"))
+    if leaked:
+        message = f"staged workspaces left behind: {leaked}"
+        raise AssertionError(message)
+
+
+@pytest.fixture(autouse=True)
 def _restore_workspace_env() -> cabc.Iterator[None]:
     """Ensure tests do not leak ``LADING_WORKSPACE_ROOT`` between runs."""
     from lading.cli import WORKSPACE_ROOT_ENV_VAR
