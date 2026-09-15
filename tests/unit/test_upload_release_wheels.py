@@ -8,6 +8,7 @@ every wheel found reaches ``gh release upload`` with the right tag.
 from __future__ import annotations
 
 import ast
+import os
 import string
 import typing as typ
 from pathlib import Path
@@ -182,6 +183,65 @@ def test_a_file_in_place_of_the_directory_is_rejected(
 
     with pytest.raises(upload_module.UploadError, match="not a directory"):
         upload_module.discover_wheels(path)
+
+
+requires_unprivileged = pytest.mark.skipif(
+    os.name != "posix" or os.geteuid() == 0,
+    reason="permission bits do not restrain this user",
+)
+
+
+@requires_unprivileged
+def test_an_unreadable_subtree_is_an_error_not_an_empty_result(
+    upload_module: types.ModuleType, tmp_path: Path
+) -> None:
+    """A subtree the job cannot read fails loudly instead of reading as empty.
+
+    ``Path.rglob`` skips directories it cannot open, so an artefact tree with
+    one unreadable branch would otherwise discover nothing and fail with "no
+    wheel found" -- the wrong diagnosis of a permissions problem.
+    """
+    locked = tmp_path / "wheels-pure"
+    _make_wheel(locked, "a-1.0-py3-none-any.whl")
+    locked.chmod(0o000)
+    try:
+        with pytest.raises(upload_module.UploadError) as raised:
+            upload_module.discover_wheels(tmp_path)
+    finally:
+        locked.chmod(0o755)
+
+    assert raised.value.outcome == upload_module.UNREADABLE_DIRECTORY
+    assert "Could not read" in str(raised.value), str(raised.value)
+
+
+@requires_unprivileged
+def test_an_unreadable_artefact_path_is_not_reported_as_absent(
+    upload_module: types.ModuleType, tmp_path: Path
+) -> None:
+    """A stat the job is not permitted to make is a read failure, not absence.
+
+    ``Path.exists`` answers False for a permission error, which would blame the
+    download step for a problem it did not cause.
+    """
+    parent = tmp_path / "locked"
+    (parent / "dist").mkdir(parents=True)
+    parent.chmod(0o000)
+    try:
+        with pytest.raises(upload_module.UploadError) as raised:
+            upload_module.discover_wheels(parent / "dist")
+    finally:
+        parent.chmod(0o755)
+
+    assert raised.value.outcome == upload_module.UNREADABLE_DIRECTORY
+
+
+def test_every_outcome_is_drawn_from_the_bounded_set(
+    upload_module: types.ModuleType,
+) -> None:
+    """The outcome label stays a closed set, so a counter built on it is bounded."""
+    assert len(set(upload_module.OUTCOMES)) == len(upload_module.OUTCOMES)
+    assert upload_module.SUCCESS in upload_module.OUTCOMES
+    assert upload_module.UploadError("x").outcome in upload_module.OUTCOMES
 
 
 @given(

@@ -38,7 +38,10 @@ jobs:
         with:
           fetch-depth: 0
       - uses: softprops/action-gh-release@v3.0.3
+        # Created as a draft so that a failure between here and the upload
+        # leaves nothing published: v0.3.0 and v0.3.1 were live with no wheel.
         with:
+          draft: true
           generate_release_notes: true
       - uses: actions/download-artifact@v8
         with:
@@ -54,3 +57,9 @@ jobs:
         env:
           GITHUB_REF_NAME: ${{ github.ref_name }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish release
+        # Last step in the job: the release becomes visible only once its
+        # wheel is attached.
+        run: gh release edit "$GITHUB_REF_NAME" --draft=false
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

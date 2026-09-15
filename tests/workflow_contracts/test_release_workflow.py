@@ -25,6 +25,8 @@ RELEASE_WORKFLOW = REPOSITORY_ROOT / ".github" / "workflows" / "release.yml"
 UPLOAD_SCRIPT = "scripts/upload_release_wheels.py"
 WHEEL_ARTEFACT = "wheels-pure"
 UPLOAD_COMMAND = ("uv", "run", "--script", UPLOAD_SCRIPT)
+RELEASE_ACTION = "softprops/action-gh-release"
+PUBLISH_COMMAND = ("gh", "release", "edit")
 
 
 class WorkflowStep(typ.TypedDict, total=False):
@@ -104,6 +106,29 @@ def _upload_steps() -> list[WorkflowStep]:
     return [step for step in _release_steps() if UPLOAD_SCRIPT in step.get("run", "")]
 
 
+def _creation_steps() -> list[WorkflowStep]:
+    """Return the steps that create the GitHub release."""
+    return [
+        step
+        for step in _release_steps()
+        if step.get("uses", "").startswith(RELEASE_ACTION)
+    ]
+
+
+def _publish_steps() -> list[WorkflowStep]:
+    """Return the steps that take the release out of draft."""
+    return [
+        step
+        for step in _release_steps()
+        if tuple(shlex.split(step.get("run", "")))[:3] == PUBLISH_COMMAND
+    ]
+
+
+def _index_of(step: WorkflowStep) -> int:
+    """Return the position of ``step`` within the release job's steps."""
+    return _release_steps().index(step)
+
+
 def test_the_wheel_artefact_is_named_on_download() -> None:
     """The download names the wheel artefact instead of trusting a layout.
 
@@ -176,4 +201,37 @@ def test_the_upload_step_receives_the_tag_and_a_token() -> None:
     )
     assert environment.get("GITHUB_TOKEN") == "${{ secrets.GITHUB_TOKEN }}", (
         f"gh release upload needs the workflow token: {environment}"
+    )
+
+
+def test_the_release_is_created_as_a_draft() -> None:
+    """The release is a draft until its wheel is attached.
+
+    The action publishes by default, so a failure between creation and upload
+    would leave a visible release with nothing on it -- which is what v0.3.0
+    and v0.3.1 were.
+    """
+    creations = _creation_steps()
+
+    assert len(creations) == 1, f"expected one release-creation step: {creations}"
+    assert creations[0].get("with_", {}).get("draft") is True, (
+        f"the release must be created with draft: true, got {creations[0]}"
+    )
+
+
+def test_the_release_is_published_only_after_the_upload() -> None:
+    """Publication is the last thing the job does.
+
+    Ordering is the whole point: a publish step that ran before the upload
+    would restore exactly the behaviour the draft is there to prevent.
+    """
+    publishes = _publish_steps()
+
+    assert len(publishes) == 1, f"expected one publish step: {publishes}"
+    tokens = tuple(shlex.split(publishes[0]["run"]))
+    assert "--draft=false" in tokens, (
+        f"the publish step must clear the draft flag, got {tokens}"
+    )
+    assert _index_of(publishes[0]) > _index_of(_upload_steps()[0]), (
+        "the release must be published after the wheels are uploaded"
     )

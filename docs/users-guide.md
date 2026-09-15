@@ -56,6 +56,22 @@ other files.
 
 ## Installation
 
+### Install from a tagged release
+
+Every `v*.*.*` tag publishes the pure Python wheel as an asset on the matching
+[GitHub release](https://github.com/leynos/lading/releases). Download it and
+install it with `pip`:
+
+```bash
+gh release download v0.3.1 --pattern '*.whl'
+python -m pip install lading-*.whl
+```
+
+A release is created as a draft and becomes visible only once its wheel has
+been attached, so a release you can see always has its wheel. If a build
+produces no wheel, or the upload is rejected, the release stays a draft and the
+workflow fails.
+
 ### Install from a wheel (recommended for internal distribution)
 
 Build a wheel from the repository, then install it:

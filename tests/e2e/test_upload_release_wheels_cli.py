@@ -27,18 +27,24 @@ import sys
 
 record = pathlib.Path({record!r})
 record.write_text(json.dumps(sys.argv[1:]), encoding="utf-8")
+sys.stderr.write({stderr!r})
 sys.exit({exit_code})
 """
 
 
-def _install_gh_stub(directory: Path, *, exit_code: int = 0) -> Path:
+def _install_gh_stub(directory: Path, *, exit_code: int = 0, stderr: str = "") -> Path:
     """Put a recording ``gh`` on ``PATH`` and return its record file."""
     bin_directory = directory / "bin"
     bin_directory.mkdir(parents=True, exist_ok=True)
     record = directory / "gh-argv.json"
     stub = bin_directory / "gh"
     stub.write_text(
-        _GH_STUB.format(python=sys.executable, record=str(record), exit_code=exit_code),
+        _GH_STUB.format(
+            python=sys.executable,
+            record=str(record),
+            exit_code=exit_code,
+            stderr=stderr,
+        ),
         encoding="utf-8",
     )
     stub.chmod(0o755)
@@ -46,7 +52,10 @@ def _install_gh_stub(directory: Path, *, exit_code: int = 0) -> Path:
 
 
 def _run(
-    directory: Path, *arguments: str, tag: str | None = None
+    directory: Path,
+    *arguments: str,
+    tag: str | None = None,
+    github_output: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run the script as the workflow does and capture its result."""
     environment = dict(os.environ)
@@ -55,6 +64,10 @@ def _run(
         environment.pop("GITHUB_REF_NAME", None)
     else:
         environment["GITHUB_REF_NAME"] = tag
+    if github_output is None:
+        environment.pop("GITHUB_OUTPUT", None)
+    else:
+        environment["GITHUB_OUTPUT"] = str(github_output)
     return subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - fixed argv, no shell
         [sys.executable, str(SCRIPT), *arguments],
         capture_output=True,
@@ -109,8 +122,13 @@ def test_every_wheel_reaches_gh_with_the_tag_from_the_environment(
 
 
 def test_a_failing_gh_fails_the_step(tmp_path: Path) -> None:
-    """A rejected upload is a failed release, not a warning."""
-    _install_gh_stub(tmp_path, exit_code=1)
+    """A rejected upload is a failed release, and keeps gh's own diagnostic.
+
+    Asserting only the uploader's own wording would pass even if the command
+    boundary discarded gh's stderr, which is the part that says why.
+    """
+    diagnostic = "HTTP 422: release asset already exists"
+    _install_gh_stub(tmp_path, exit_code=1, stderr=diagnostic)
     dist = tmp_path / "dist"
     _make_wheel(dist, "a-1.0-py3-none-any.whl")
 
@@ -118,6 +136,7 @@ def test_a_failing_gh_fails_the_step(tmp_path: Path) -> None:
 
     assert result.returncode == 1, f"expected failure, got {result.returncode}"
     assert "gh release upload failed" in result.stderr, result.stderr
+    assert diagnostic in result.stderr, result.stderr
 
 
 def test_a_missing_directory_is_reported_as_such(tmp_path: Path) -> None:
@@ -138,3 +157,88 @@ def test_the_tag_is_required(tmp_path: Path, arguments: tuple[str, ...]) -> None
     result = _run(tmp_path, *arguments, tag=None)
 
     assert result.returncode != 0, "a missing tag must not upload anything"
+
+
+def _outcome_line(stderr: str) -> dict[str, object]:
+    """Return the decoded ``release_wheel_upload`` summary from ``stderr``.
+
+    Returns
+    -------
+    dict[str, object]
+        The decoded summary object.
+
+    Raises
+    ------
+    AssertionError
+        If the step emitted no summary line.
+    """
+    prefix = "release_wheel_upload "
+    for line in stderr.splitlines():
+        if line.startswith(prefix):
+            return json.loads(line[len(prefix) :])
+    message = f"no outcome line in {stderr!r}"
+    raise AssertionError(message)
+
+
+def test_a_successful_step_reports_its_outcome(tmp_path: Path) -> None:
+    """A success names itself, counts its wheels, and times both phases."""
+    _install_gh_stub(tmp_path)
+    dist = tmp_path / "dist"
+    _make_wheel(dist, "a-1.0-py3-none-any.whl")
+    output = tmp_path / "github-output"
+    output.touch()
+
+    result = _run(
+        tmp_path, "--directory", str(dist), tag="v1.2.3", github_output=output
+    )
+
+    assert result.returncode == 0, result.stderr
+    summary = _outcome_line(result.stderr)
+    assert summary["outcome"] == "success", summary
+    assert summary["wheels"] == 1, summary
+    assert {"discovery_seconds", "upload_seconds"} <= set(summary), summary
+    written = output.read_text(encoding="utf-8")
+    assert "outcome=success" in written, written
+
+
+@pytest.mark.parametrize(
+    ("scenario", "expected"),
+    [
+        ("empty", "no-wheel"),
+        ("absent", "missing-directory"),
+        ("file", "not-a-directory"),
+        ("rejected", "upload-failed"),
+    ],
+)
+def test_each_failure_reports_its_own_outcome(
+    tmp_path: Path, scenario: str, expected: str
+) -> None:
+    """Every way the step can fail reports a distinct, bounded outcome.
+
+    One shared failure label would make the release log unable to tell a build
+    that produced nothing from an upload GitHub rejected.
+    """
+    _install_gh_stub(tmp_path, exit_code=1 if scenario == "rejected" else 0)
+    directory = _prepare_scenario(tmp_path, scenario)
+
+    result = _run(tmp_path, "--directory", str(directory), tag="v1.2.3")
+
+    assert result.returncode == 1, result.stderr
+    summary = _outcome_line(result.stderr)
+    assert summary["outcome"] == expected, summary
+    assert summary["wheels"] == 0, summary
+
+
+def _prepare_scenario(tmp_path: Path, scenario: str) -> Path:
+    """Build the artefact path for a named failure scenario."""
+    directory = tmp_path / "dist"
+    match scenario:
+        case "empty":
+            directory.mkdir()
+        case "file":
+            directory.write_bytes(b"")
+        case "rejected":
+            _make_wheel(directory, "a-1.0-py3-none-any.whl")
+        case _:
+            pass  # "absent": the directory is deliberately never created
+    return directory
