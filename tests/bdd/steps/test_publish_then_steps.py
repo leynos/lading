@@ -70,6 +70,11 @@ def then_staged_workspace_copy_removed(cli_run: CliRunResult) -> None:
     behind on a long-lived host is what issue #269 records. The path is read
     back out of the publish plan, so this measures the run rather than a
     convention about where staging happens.
+
+    Parameters
+    ----------
+    cli_run : CliRunResult
+        The captured publish run whose plan names the staging path.
     """
     _assert_cli_run_succeeded(cli_run)
     staging_root = _extract_staging_root_from_plan(_publish_plan_lines(cli_run))

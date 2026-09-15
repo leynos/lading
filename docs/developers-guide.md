@@ -271,22 +271,37 @@ cleanup runs from `atexit`, which is weaker: a terminated process never reaches
 it.
 
 Termination is handled separately. `publish_staging` tracks the trees this
-process owns in `_ACTIVE_STAGING_ROOTS`, and `install_termination_cleanup`
-installs a `SIGTERM` handler that removes them and then re-raises the signal
-under its default disposition, so cleaning up does not swallow the termination.
-It is installed from `lading.cli.main` rather than on import, for the same
-reason the metrics summary is
-([ADR-004](adr/004-in-process-metrics-backend.md)): exit-time behaviour should
-be a visible lifecycle decision.
+process owns in `_ACTIVE_STAGING_ROOTS`, from before the copy starts until
+after its removal succeeds. Both bounds matter, and both are long windows:
+copying a workspace takes minutes, and so does removing one. Registering after
+the copy returned would leave a partial tree behind for exactly the
+interruption this exists to survive, and discarding the target before the
+removal completed would hide a failed removal from every later attempt.
+
+A removal that fails is reported and the target stays tracked. It is never
+raised out of the context manager's exit, because that exception would replace
+the publish failure the caller is waiting on, nor out of the signal handler,
+because the termination matters more than the tree.
+`install_termination_cleanup` installs a `SIGTERM` handler that removes them
+and then re-raises the signal under its default disposition, so cleaning up
+does not swallow the termination. It is installed from `lading.cli.main` rather
+than on import, for the same reason the metrics summary's `atexit` hook is
+registered there ([ADR-004](adr/004-in-process-metrics-backend.md)): exit-time
+behaviour should be a visible lifecycle decision rather than an import side
+effect.
 
 Two safeguards keep this honest.
-`tests/e2e/test_staging_cleanup_on_termination.py` signals a real process and
-then looks at the filesystem, and it includes the negative control, so it
-measures the handler rather than something the interpreter would have done
-anyway. An autouse fixture in `tests/conftest.py` points `tempfile.tempdir` at
-a per-test directory and fails any test that leaves a `lading-publish-*` tree
-behind, which is how a single helper test came to leave 3,925 directories on a
-shared host (issue #269).
+`tests/e2e/test_staging_cleanup_on_termination.py` signals a real process
+driving lading's own staging and then looks at the filesystem. It covers
+termination during the copy as well as after it, and it includes the negative
+control, so it measures the handler rather than something the interpreter would
+have done anyway. An autouse fixture in `tests/conftest.py` points both
+`tempfile.tempdir` and `TMPDIR` at a per-test directory and fails any test that
+leaves a `lading-publish-*` tree behind, which is how a single helper test came
+to leave 3,925 directories on a shared host (issue #269). Both are needed:
+`tempfile` caches its directory on first use, so the variable cannot redirect
+this process mid-session, and the attribute is process-local, so it cannot
+redirect the lading subprocesses the command-line scenarios start.
 
 At the command-line level, `tests/bdd/features/cli.feature` asserts that a
 publish leaves nothing at the staging path it printed, and the patch-stripping

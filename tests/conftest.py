@@ -51,9 +51,11 @@ def _no_staging_leaks(
     ``lading-publish-*`` tree is attributed to the test that created it rather
     than discovered months later as 214 GB on a shared host (issue #269).
 
-    ``tempfile.tempdir`` is set rather than ``TMPDIR`` because ``tempfile``
-    caches the resolved directory on first use, so the environment variable
-    would have no effect mid-session.
+    Both ``tempfile.tempdir`` and ``TMPDIR`` are set, because neither alone
+    covers the suite. ``tempfile`` caches the resolved directory on first use,
+    so the environment variable has no effect on this process mid-session; and
+    the attribute is process-local, so it has no effect on the lading
+    subprocesses the command-line scenarios start.
 
     Yields
     ------
@@ -69,6 +71,7 @@ def _no_staging_leaks(
 
     staging_area = tmp_path_factory.mktemp("tmpdir")
     monkeypatch.setattr(tempfile, "tempdir", str(staging_area))
+    monkeypatch.setenv("TMPDIR", str(staging_area))
     yield
     leaked = sorted(staging_area.glob("lading-publish-*"))
     if leaked:

@@ -209,10 +209,11 @@ def make_n_crate_chain(root: Path, count: int) -> tuple[WorkspaceCrate, ...]:
     --------
     >>> import tempfile
     >>> from pathlib import Path
-    >>> chain = make_n_crate_chain(Path(tempfile.mkdtemp()), 3)
-    >>> [crate.name for crate in chain]
+    >>> with tempfile.TemporaryDirectory() as directory:
+    ...     chain = make_n_crate_chain(Path(directory), 3)
+    ...     [crate.name for crate in chain]
+    ...     [len(crate.dependencies) for crate in chain]
     ['crate_0', 'crate_1', 'crate_2']
-    >>> [len(crate.dependencies) for crate in chain]
     [0, 1, 1]
 
     """

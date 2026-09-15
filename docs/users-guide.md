@@ -34,13 +34,15 @@ The 0.1.0 release also changes workspace README adoption:
 
 `lading publish` copies the whole workspace before packaging it, so cargo never
 builds against your working tree. The copy goes under the system temporary
-directory, honouring `TMPDIR`, in a directory named `lading-publish-*`. Use
-`--build-directory` to put it somewhere else.
+directory, honouring `TMPDIR`, in a directory named `lading-publish-*`. Set
+`TMPDIR` to put it somewhere else; there is no command-line option for the
+location, and the programmatic `PublishOptions.build_directory` is the only way
+to name one directly.
 
 That copy is the entire workspace plus its verify build, which is tens of
 gigabytes for a large one. It is removed when the publish ends: on success, on
-failure, and when the run is interrupted or terminated. Nothing accumulates
-between runs.
+failure, on `Ctrl-C`, and on `SIGTERM`. A `SIGKILL` cannot be handled, so that
+one case still leaves the copy behind. Nothing else accumulates between runs.
 
 Pass `--keep-staging` to retain it while debugging a staging problem. The
 retained path is logged, and removing it is then your responsibility:

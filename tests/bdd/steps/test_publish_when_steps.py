@@ -54,7 +54,9 @@ def _staging_kept_under_a_removable_directory(
     root = tmp_path_factory.mktemp("retained-staging")
     monkeypatch.setenv("TMPDIR", str(root))
     yield
-    shutil.rmtree(root, ignore_errors=True)
+    # Not ignore_errors: a removal that fails here is a scenario leaving tens
+    # of gigabytes behind, which is the thing issue #269 is about.
+    shutil.rmtree(root)
 
 
 @when(
@@ -71,6 +73,18 @@ def when_invoke_lading_publish_retaining_the_staged_copy(
 
     These scenarios assert on the staged manifest, which a publish now removes
     when it ends, so the copy has to be retained deliberately.
+
+    Parameters
+    ----------
+    workspace_directory : Path
+        The workspace the publish runs against.
+    repo_root : Path
+        The repository root the CLI subprocess runs from.
+    preflight_test_context : PreflightTestContext
+        Supplies the pre-flight command doubles the run needs.
+    _staging_kept_under_a_removable_directory : None
+        Requested for its effect: it points the subprocess's ``TMPDIR`` at a
+        directory it removes afterwards.
 
     Returns
     -------

@@ -505,7 +505,7 @@ lading publish [--live] [--forbid-dirty] [--keep-staging] [--sccache-stats]
       `publish.preflight.duration` observation for it.
 
     Any `PublishPreflightError` aborts execution before `plan_publication`,
-    `publish_staging.prepare_workspace`, or
+    `publish_staging.staged_workspace`, or
     `publish_pipeline._dispatch_publication` run.
 
 2. **Discover Workspace:** Build the internal workspace model.
@@ -599,7 +599,7 @@ sequenceDiagram
     else rc == 0
         publish.py->>publish_plan: plan_publication(workspace, configuration, workspace_root)
         publish_plan-->>publish.py: PublishPlan
-        publish.py->>publish_staging: prepare_workspace(plan)
+        publish.py->>publish_staging: staged_workspace(plan)
         publish_staging-->>publish.py: PublishPreparation
         publish.py->>publish_pipeline: _dispatch_publication(plan, preparation)
         publish_pipeline->>publish_execution: _invoke(cargo package/publish, ...)

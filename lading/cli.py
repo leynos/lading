@@ -563,8 +563,11 @@ def publish(
         the publish mode when omitted), ``--skip-preflight`` (tri-state,
         labelled with its source here and resolved against
         ``[preflight] skip`` by the publish command), ``--sccache-stats``,
-        and ``--sccache-stats-json`` (issue #252; a report path implies the
-        measurement, resolved by the publish command).
+        ``--sccache-stats-json`` (issue #252; a report path implies the
+        measurement, resolved by the publish command), and
+        ``--keep-staging``, which retains the staged workspace copy and logs
+        where it was left. The copy is removed when the publish ends unless
+        that flag is given (issue #269).
 
     Returns
     -------

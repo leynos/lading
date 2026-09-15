@@ -13,11 +13,14 @@ Examples
 >>> from pathlib import Path
 >>> from lading import config
 >>> from lading.commands import bump_docs
->>> workspace = Path(tempfile.mkdtemp())
->>> _ = (workspace / "README.md").write_text("", encoding="utf-8")
->>> documentation = config.DocumentationConfig(globs=("README.md",))
->>> targets = bump_docs.resolve_documentation_targets(workspace, documentation)
->>> [path.name for path in targets]
+>>> with tempfile.TemporaryDirectory() as directory:
+...     workspace = Path(directory)
+...     _ = (workspace / "README.md").write_text("", encoding="utf-8")
+...     documentation = config.DocumentationConfig(globs=("README.md",))
+...     targets = bump_docs.resolve_documentation_targets(
+...         workspace, documentation
+...     )
+...     [path.name for path in targets]
 ['README.md']
 
 ``update_documentation_files(targets, "1.2.0", {"my-crate"}, dry_run=False)``

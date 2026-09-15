@@ -512,3 +512,81 @@ def test_an_active_tree_is_tracked_for_the_signal_handler(
         assert build_directory in publish_staging._ACTIVE_STAGING_ROOTS
 
     assert build_directory not in publish_staging._ACTIVE_STAGING_ROOTS
+
+
+def test_a_failed_removal_stays_tracked_and_is_reported(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A removal that fails must not be silently forgotten.
+
+    Discarding the target first, or suppressing the error, leaves the tree on
+    disk with nothing tracking it: no exit hook and no signal handler would
+    ever try again, and no log line would say so.
+    """
+    cleanup_target = tmp_path / "staged"
+    cleanup_target.mkdir()
+    publish_staging._ACTIVE_STAGING_ROOTS.add(cleanup_target)
+
+    def refuse(*_arguments: object, **_keywords: object) -> None:
+        """Fail the removal the way a busy or read-only tree would."""
+        message = "device or resource busy"
+        raise OSError(message)
+
+    monkeypatch.setattr(publish_staging.shutil, "rmtree", refuse)
+
+    try:
+        with caplog.at_level("ERROR", logger="lading.commands.publish_staging"):
+            removed = publish_staging._remove_staged_tree_or_report(cleanup_target)
+
+        assert removed is False
+        assert cleanup_target in publish_staging._ACTIVE_STAGING_ROOTS, (
+            "a tree that could not be removed must stay tracked"
+        )
+        assert str(cleanup_target) in caplog.text, caplog.text
+    finally:
+        publish_staging._ACTIVE_STAGING_ROOTS.discard(cleanup_target)
+
+
+def test_a_failed_removal_does_not_mask_the_publish_failure(
+    prepare_workspace_fixtures: PrepareWorkspaceFixtures,
+    preparation_fixtures: PreparationFixtures,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The caller must still see why the publish failed.
+
+    An exception raised from the context manager's ``finally`` would replace
+    the one already propagating, so a publish failure would surface as a
+    filesystem error about a directory the caller never asked about.
+    """
+    plan = _plan_for(prepare_workspace_fixtures, preparation_fixtures)
+    published = RuntimeError("cargo publish refused the crate")
+
+    def refuse(*_arguments: object, **_keywords: object) -> None:
+        """Fail the removal while the block is already unwinding."""
+        message = "device or resource busy"
+        raise OSError(message)
+
+    retained: Path | None = None
+
+    def publish_then_fail() -> None:
+        """Stage a tree, then fail the way a publish would."""
+        nonlocal retained
+        with publish_staging.staged_workspace(plan) as preparation:
+            retained = preparation.staging_root.parent
+            monkeypatch.setattr(publish_staging.shutil, "rmtree", refuse)
+            raise published
+
+    try:
+        with pytest.raises(RuntimeError) as raised:
+            publish_then_fail()
+
+        assert raised.value is published
+    finally:
+        # The removal was made to fail, so the tree is still there and still
+        # tracked. Clear both, or the leak detector attributes it to this test.
+        monkeypatch.undo()
+        assert retained is not None
+        publish_staging._ACTIVE_STAGING_ROOTS.discard(retained)
+        shutil.rmtree(retained, ignore_errors=True)

@@ -11,6 +11,12 @@ and on ``KeyboardInterrupt``, and :func:`install_termination_cleanup` removes
 it on ``SIGTERM``, which no ``atexit`` hook or ``finally`` block would reach
 (issue #269).
 
+A tree is tracked in ``_ACTIVE_STAGING_ROOTS`` from before the copy starts
+until after its removal succeeds, so both long windows are covered: a
+termination during the copy, and one during the removal. A removal that fails
+leaves the target tracked and logs the failure, rather than discarding it
+silently.
+
 Examples
 --------
 Staging copies an entire workspace, so this is shown rather than executed: a
@@ -146,16 +152,33 @@ def _stage(
         "Preparing staged workspace for publication under %s",
         build_directory,
     )
-    staging_root = _copy_workspace_tree(
-        plan.workspace_root,
-        build_directory,
-        preserve_symlinks=active_options.preserve_symlinks,
-    )
-    LOGGER.info("Staged workspace created at %s", staging_root)
-    LOGGER.info("Workspace README staging skipped; handled by lading bump")
     # An automatically created build directory is ours entirely, so it goes.
     # A caller-supplied one may hold their files, so only the copy goes.
-    cleanup_target = build_directory if auto_created_build_directory else staging_root
+    cleanup_target = (
+        build_directory
+        if auto_created_build_directory
+        else _staging_root_for(plan.workspace_root, build_directory)
+    )
+    # Tracked before the copy starts, not after it finishes. Copying a
+    # workspace takes minutes, and a SIGTERM arriving inside that window is
+    # exactly what issue #269 is about; a target registered afterwards would
+    # leave the partial tree behind.
+    if active_options.cleanup:
+        _ACTIVE_STAGING_ROOTS.add(cleanup_target)
+    try:
+        staging_root = _copy_workspace_tree(
+            plan.workspace_root,
+            build_directory,
+            preserve_symlinks=active_options.preserve_symlinks,
+        )
+    except BaseException:
+        # Staging failed part way through, so no caller will ever be handed a
+        # block to leave. Whatever was written goes now.
+        if active_options.cleanup:
+            _remove_staged_tree_or_report(cleanup_target)
+        raise
+    LOGGER.info("Staged workspace created at %s", staging_root)
+    LOGGER.info("Workspace README staging skipped; handled by lading bump")
     if not active_options.cleanup:
         LOGGER.info(
             "Retaining staged workspace at %s; remove it when you are done",
@@ -164,14 +187,59 @@ def _stage(
     return (
         PublishPreparation(staging_root=staging_root),
         cleanup_target,
-        (active_options.cleanup),
+        active_options.cleanup,
     )
 
 
+def _staging_root_for(workspace_root: Path, build_directory: Path) -> Path:
+    """Return where the workspace copy will go, before it is made.
+
+    Knowing this in advance is what lets the cleanup target be registered
+    before the copy begins.
+
+    Returns
+    -------
+    Path
+        The staging root :func:`_copy_workspace_tree` will create.
+    """
+    return build_directory / workspace_root.resolve(strict=True).name
+
+
 def _remove_staged_tree(cleanup_target: Path) -> None:
-    """Remove a staged tree and stop tracking it."""
+    """Remove a staged tree, untracking it only once it is gone.
+
+    An :class:`OSError` from the removal is left to propagate, and the target
+    stays tracked, so a later exit hook or signal handler can try again and a
+    failure is visible rather than silently forgotten. Callers that must not
+    be interrupted by that use :func:`_remove_staged_tree_or_report`.
+    """
+    if cleanup_target.exists():
+        shutil.rmtree(cleanup_target)
     _ACTIVE_STAGING_ROOTS.discard(cleanup_target)
-    shutil.rmtree(cleanup_target, ignore_errors=True)
+
+
+def _remove_staged_tree_or_report(cleanup_target: Path) -> bool:
+    """Remove a staged tree, reporting rather than raising on failure.
+
+    Used where an exception would displace something more important: the
+    publish result the caller is waiting on, or the termination the signal
+    handler is in the middle of honouring.
+
+    Returns
+    -------
+    bool
+        Whether the tree was removed. A retained target stays tracked.
+    """
+    try:
+        _remove_staged_tree(cleanup_target)
+    except OSError:
+        LOGGER.exception(
+            "Could not remove the staged workspace at %s; it is left behind and "
+            "still tracked. Remove it by hand if nothing else does",
+            cleanup_target,
+        )
+        return False
+    return True
 
 
 @contextlib.contextmanager
@@ -205,7 +273,10 @@ def staged_workspace(
         yield preparation
     finally:
         if cleanup:
-            _remove_staged_tree(cleanup_target)
+            # Reported rather than raised: an exception here would replace
+            # whatever the block was already propagating, including the
+            # publish failure the caller needs to see.
+            _remove_staged_tree_or_report(cleanup_target)
 
 
 def prepare_workspace(
@@ -235,7 +306,7 @@ def prepare_workspace(
     preparation, cleanup_target, cleanup = _stage(plan, options)
     if cleanup:
         _ACTIVE_STAGING_ROOTS.add(cleanup_target)
-        atexit.register(_remove_staged_tree, cleanup_target)
+        atexit.register(_remove_staged_tree_or_report, cleanup_target)
     return preparation
 
 
@@ -247,11 +318,18 @@ def _handle_termination(signal_number: int, frame: object) -> None:
     without this a SIGTERM leaves the staged copy behind.
     """
     del frame
-    for cleanup_target in tuple(_ACTIVE_STAGING_ROOTS):
-        LOGGER.warning("Terminated; removing staged workspace at %s", cleanup_target)
-        _remove_staged_tree(cleanup_target)
-    signal.signal(signal_number, signal.SIG_DFL)
-    signal.raise_signal(signal_number)
+    try:
+        for cleanup_target in tuple(_ACTIVE_STAGING_ROOTS):
+            LOGGER.warning(
+                "Terminated; removing staged workspace at %s", cleanup_target
+            )
+            _remove_staged_tree_or_report(cleanup_target)
+    finally:
+        # In a finally block so a cleanup that goes wrong still ends the
+        # process. Swallowing the signal would turn a termination request
+        # into a hang, which is worse than the tree it failed to remove.
+        signal.signal(signal_number, signal.SIG_DFL)
+        signal.raise_signal(signal_number)
 
 
 def install_termination_cleanup() -> None:
