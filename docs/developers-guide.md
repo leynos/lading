@@ -680,7 +680,7 @@ future round-tripping.
 
 ## Programmatic publish options
 
-When invoking `lading.commands.publish_staging.prepare_workspace`
+When invoking `lading.commands.publish_staging.staged_workspace`
 programmatically, callers can customize behaviour via `PublishOptions`. The
 defaults are:
 
@@ -690,7 +690,9 @@ defaults are:
 - `live=False` — run `cargo publish --dry-run` rather than uploading crates.
 - `build_directory=None` — create a fresh temporary directory for staging.
 - `preserve_symlinks=True` — preserve symbolic links in the staged workspace.
-- `cleanup=False` — leave the staging directory intact for inspection.
+- `cleanup=True` — remove the staged copy when publication ends, including
+  when it fails or is interrupted. This defaulted to `False` before issue
+  #269, so every run leaked a copy of the workspace.
 - `sccache_stats=False` — query the sccache binary named by `RUSTC_WRAPPER`
   around every cargo build and log one compiler-cache line per invocation.
 - `sccache_stats_json=None` — also write the JSON report to this path
@@ -709,8 +711,9 @@ Examples:
 - `PublishOptions(preserve_symlinks=False)` — disable symlink preservation when
   staging the workspace (useful when external assets need to be copied rather
   than linked).
-- `PublishOptions(cleanup=True)` — remove the temporary staging directory
-  automatically at process exit instead of leaving it for inspection.
+- `PublishOptions(cleanup=False)` — retain the staged copy for inspection
+  instead of removing it, and log where it was left. Removing it is then the
+  caller's responsibility; `lading publish --keep-staging` sets this.
 - `PublishOptions(allow_dirty=False)` — require a clean git working tree before
   proceeding with publish preparation.
 
