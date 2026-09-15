@@ -266,9 +266,9 @@ def staged_workspace(
     PublishPreparation
         The staged workspace location, valid until the block exits.
     """
+    # `_stage` has already registered the target, from before it began
+    # copying, so there is nothing to add here.
     preparation, cleanup_target, cleanup = _stage(plan, options)
-    if cleanup:
-        _ACTIVE_STAGING_ROOTS.add(cleanup_target)
     try:
         yield preparation
     finally:
@@ -303,9 +303,9 @@ def prepare_workspace(
     PublishPreparation
         The staged workspace location.
     """
+    # Registered by `_stage`; this form adds only the exit hook.
     preparation, cleanup_target, cleanup = _stage(plan, options)
     if cleanup:
-        _ACTIVE_STAGING_ROOTS.add(cleanup_target)
         atexit.register(_remove_staged_tree_or_report, cleanup_target)
     return preparation
 
