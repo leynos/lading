@@ -1,6 +1,13 @@
-MDLINT ?= $(shell which markdownlint)
+MDLINT ?= $(shell command -v markdownlint-cli2 2>/dev/null || printf '%s' "$$HOME/.bun/bin/markdownlint-cli2")
 NIXIE ?= $(shell which nixie)
-MDFORMAT_ALL ?= $(shell which mdformat-all)
+# `make fmt` and `make check-fmt` call mdtablefix directly. `--git` selects the
+# Markdown files Git tracks and `--include-untracked` adds the untracked files
+# Git does not ignore, so a new document is formatted before it is staged.
+# Both modes need mdtablefix 0.6.0 or later; CI pins the version in
+# .github/workflows/ci.yml.
+MDTABLEFIX ?= mdtablefix
+MDTABLEFIX_SELECT = --git --include-untracked
+MDTABLEFIX_RULES = --wrap --renumber --breaks --ellipsis --fences
 UV ?= $(shell command -v uv 2>/dev/null || printf '%s/.local/bin/uv' "$$HOME")
 # Pin Ruff so `make` invokes the same version as the `ruff==` dev dependency
 # in pyproject.toml and the `uv tool install ruff==` step in
@@ -17,7 +24,7 @@ TYPOS_VERSION ?= 1.48.0
 TY_VERSION ?= 0.0.56
 TY ?= $(UV) tool run --from ty==$(TY_VERSION) ty
 UV_ENV = UV_CACHE_DIR=.uv-cache UV_TOOL_DIR=.uv-tools
-TOOLS = $(MDFORMAT_ALL) $(MDLINT) $(NIXIE) $(UV)
+TOOLS = $(MDLINT) $(NIXIE) $(UV)
 PY_SOURCES := $(sort $(shell find lading scripts -type f -name '*.py' -print))
 VENV_TOOLS = interrogate pytest
 PYLINT_PYTHON ?= pypy
@@ -84,14 +91,15 @@ $(VENV_TOOLS): build ## Verify required CLI tools in venv
 	$(call ensure_tool_venv,$@)
 endif
 
-fmt: $(UV) $(MDFORMAT_ALL) ## Format sources
+fmt: $(UV) ## Format sources
 	$(RUFF) format
 	$(RUFF) check --select I --fix
-	$(MDFORMAT_ALL)
+	$(MDTABLEFIX) --in-place $(MDTABLEFIX_SELECT) $(MDTABLEFIX_RULES)
+	@unset FORCE_COLOR; $(MDLINT) --fix "**/*.md"
 
 check-fmt: $(UV) ## Verify formatting
 	$(RUFF) format --check
-	# mdformat-all doesn't currently do checking
+	$(MDTABLEFIX) --check $(MDTABLEFIX_SELECT) $(MDTABLEFIX_RULES)
 
 lint: build $(UV) interrogate ## Run linters
 	$(RUFF) check
