@@ -7,9 +7,13 @@ changes or invoking cargo.
 
 Examples
 --------
->>> preparation = prepare_workspace(plan, options=options)
->>> preparation.staging_root.is_dir()
-True
+Staging copies an entire workspace, so this is shown rather than executed: a
+runnable example here would leave a staged tree behind on every test run.
+
+.. code-block:: python
+
+    preparation = prepare_workspace(plan, options=options)
+    preparation.staging_root.is_dir()
 """
 
 from __future__ import annotations

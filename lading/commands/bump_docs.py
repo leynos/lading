@@ -9,15 +9,20 @@ workspace version. The public surface is ``resolve_documentation_targets``,
 
 Examples
 --------
+>>> import tempfile
 >>> from pathlib import Path
+>>> from lading import config
 >>> from lading.commands import bump_docs
->>> paths = bump_docs.resolve_documentation_targets(
-...     Path("/workspace"), documentation_config
-... )
->>> changed = bump_docs.update_documentation_files(
-...     paths, "1.2.0", {"my-crate"}, dry_run=False
-... )
+>>> workspace = Path(tempfile.mkdtemp())
+>>> _ = (workspace / "README.md").write_text("", encoding="utf-8")
+>>> documentation = config.DocumentationConfig(globs=("README.md",))
+>>> targets = bump_docs.resolve_documentation_targets(workspace, documentation)
+>>> [path.name for path in targets]
+['README.md']
 
+``update_documentation_files(targets, "1.2.0", {"my-crate"}, dry_run=False)``
+then rewrites the version entries in those files and returns the ones it
+changed.
 """
 
 from __future__ import annotations

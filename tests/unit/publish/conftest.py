@@ -207,9 +207,13 @@ def make_n_crate_chain(root: Path, count: int) -> tuple[WorkspaceCrate, ...]:
 
     Examples
     --------
-    >>> crate_0, crate_1, crate_2 = make_n_crate_chain(root, 3)
-    >>> # crate_0 <- crate_1 <- crate_2: crate_1 depends on crate_0 and
-    >>> # crate_2 depends on crate_1.
+    >>> import tempfile
+    >>> from pathlib import Path
+    >>> chain = make_n_crate_chain(Path(tempfile.mkdtemp()), 3)
+    >>> [crate.name for crate in chain]
+    ['crate_0', 'crate_1', 'crate_2']
+    >>> [len(crate.dependencies) for crate in chain]
+    [0, 1, 1]
 
     """
     if count < 1:

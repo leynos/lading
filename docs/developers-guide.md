@@ -258,6 +258,27 @@ produced no wheel. The script stats the artefact path directly and walks it
 with an error handler that re-raises, turning every `OSError` into an
 `UploadError` naming the path and the cause.
 
+## Doctests
+
+`make test` runs `pytest -v --doctest-modules`, so the examples in module and
+function docstrings are executed, not merely displayed. Before the flag was
+added the repository held 342 example lines across 45 files and ran none of
+them; adding it collected 140 further test items, taking collection from 977
+to 1117.
+
+Write examples that run. An example using names the reader cannot see, such as
+an undefined `plan` or `config`, fails collection now rather than quietly
+misleading. Where a runnable example would be disproportionate or harmful --
+staging copies an entire workspace, so an executable example would leave a
+staged tree behind on every run -- use an indented `.. code-block:: python`
+illustration instead, and say why in the surrounding prose.
+
+Prefer either of those to `# doctest: +SKIP`. A skipped example is not
+compiled and not run: an example containing invalid Python and a wrong
+expected result still reports as skipped. The 50 skipped examples in this
+repository are unverified text that looks verified, which is the failure mode
+the flag exists to remove.
+
 ## Property-based testing
 
 [Hypothesis](https://hypothesis.readthedocs.io/) is a development dependency
