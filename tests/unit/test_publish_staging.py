@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import collections.abc as cabc
+import dataclasses as dc
+import shutil
 import typing as typ
 
 import pytest
@@ -28,15 +30,22 @@ class _CopyWorkspaceFailureCase(typ.NamedTuple):
 
 
 def test_normalize_build_directory_defaults_to_tempdir(tmp_path: Path) -> None:
-    """Normalization creates a temporary directory when none is provided."""
+    """Normalization creates a temporary directory when none is provided.
+
+    The directory is removed here because nothing else will: this helper is
+    below the level that registers cleanup, and this test alone left 3,925
+    empty directories on a shared host (issue #269).
+    """
     workspace_root = tmp_path / "workspace"
     workspace_root.mkdir()
 
     build_directory = publish_staging._normalize_build_directory(workspace_root, None)
-
-    assert build_directory.exists()
-    assert build_directory.is_absolute()
-    assert not build_directory.is_relative_to(workspace_root)
+    try:
+        assert build_directory.exists()
+        assert build_directory.is_absolute()
+        assert not build_directory.is_relative_to(workspace_root)
+    finally:
+        shutil.rmtree(build_directory, ignore_errors=True)
 
 
 def test_normalize_build_directory_resolves_relative_paths(
@@ -258,8 +267,8 @@ def test_prepare_workspace_registers_cleanup(
     marker.write_text("keep", encoding="utf-8")
     registered: list[cabc.Callable[[], None]] = []
 
-    def capture(callback: cabc.Callable[[], None]) -> None:
-        registered.append(callback)
+    def capture(callback: cabc.Callable[..., None], *arguments: object) -> None:
+        registered.append(lambda: callback(*arguments))
 
     monkeypatch.setattr(publish_staging.atexit, "register", capture)
 
@@ -294,7 +303,10 @@ def test_prepare_workspace_cleanup_removes_auto_created_build_directory(
     )
     registered: list[cabc.Callable[[], None]] = []
 
-    monkeypatch.setattr(publish_staging.atexit, "register", registered.append)
+    def capture(callback: cabc.Callable[..., None], *arguments: object) -> None:
+        registered.append(lambda: callback(*arguments))
+
+    monkeypatch.setattr(publish_staging.atexit, "register", capture)
 
     preparation = publish_staging.prepare_workspace(
         plan, options=publish.PublishOptions(cleanup=True)
@@ -353,7 +365,12 @@ def test_prepare_workspace_does_not_register_cleanup_when_disabled(
     prepare_workspace_fixtures: PrepareWorkspaceFixtures,
     preparation_fixtures: PreparationFixtures,
 ) -> None:
-    """Cleanup hook is not registered when the option remains disabled."""
+    """Cleanup hook is not registered when the option is explicitly disabled.
+
+    Cleanup is the default since issue #269, so opting out is what has to be
+    stated; a test that relied on the old default would silently stop covering
+    anything.
+    """
     fx = prepare_workspace_fixtures
     pf = preparation_fixtures
     workspace_root = fx.tmp_path / "workspace"
@@ -364,11 +381,134 @@ def test_prepare_workspace_does_not_register_cleanup_when_disabled(
 
     registered: list[cabc.Callable[[], None]] = []
 
-    def capture(callback: cabc.Callable[[], None]) -> None:
-        registered.append(callback)
+    def capture(callback: cabc.Callable[..., None], *arguments: object) -> None:
+        registered.append(lambda: callback(*arguments))
 
     monkeypatch.setattr(publish_staging.atexit, "register", capture)
 
-    publish_staging.prepare_workspace(plan, options=fx.publish_options)
+    options = dc.replace(fx.publish_options, cleanup=False)
+    publish_staging.prepare_workspace(plan, options=options)
 
     assert registered == []
+
+
+def _plan_for(
+    fx: PrepareWorkspaceFixtures, pf: PreparationFixtures
+) -> publish.PublishPlan:
+    """Return a publication plan for a one-crate workspace under ``fx``.
+
+    Returns
+    -------
+    publish.PublishPlan
+        The plan to stage.
+    """
+    workspace_root = fx.tmp_path / "workspace"
+    workspace_root.mkdir()
+    crate = pf.make_crate(workspace_root, "alpha")
+    workspace = pf.make_workspace(workspace_root, crate)
+    return publish.plan_publication(workspace, pf.make_config())
+
+
+def test_staged_workspace_removes_the_tree_when_the_block_ends(
+    prepare_workspace_fixtures: PrepareWorkspaceFixtures,
+    preparation_fixtures: PreparationFixtures,
+) -> None:
+    """A completed publish leaves nothing behind.
+
+    The staged copy is the whole workspace, so retaining it after a successful
+    run is what filled the host in issue #269.
+    """
+    plan = _plan_for(prepare_workspace_fixtures, preparation_fixtures)
+
+    with publish_staging.staged_workspace(plan) as preparation:
+        staging_root = preparation.staging_root
+        assert staging_root.is_dir()
+        build_directory = staging_root.parent
+
+    assert not build_directory.exists(), f"{build_directory} survived the block"
+
+
+@pytest.mark.parametrize(
+    "raised",
+    [RuntimeError, KeyboardInterrupt],
+    ids=["failure", "interrupt"],
+)
+def test_staged_workspace_removes_the_tree_when_the_block_raises(
+    prepare_workspace_fixtures: PrepareWorkspaceFixtures,
+    preparation_fixtures: PreparationFixtures,
+    raised: type[BaseException],
+) -> None:
+    """A failed or interrupted publish cleans up too.
+
+    ``KeyboardInterrupt`` is covered separately because it does not inherit
+    from ``Exception``, so an ``except Exception`` guard would miss it.
+    """
+    plan = _plan_for(prepare_workspace_fixtures, preparation_fixtures)
+    build_directory: Path | None = None
+
+    def stage_then_fail() -> None:
+        """Stage a tree, then fail inside the block."""
+        nonlocal build_directory
+        with publish_staging.staged_workspace(plan) as preparation:
+            build_directory = preparation.staging_root.parent
+            raise raised
+
+    with pytest.raises(raised):
+        stage_then_fail()
+
+    assert build_directory is not None
+    assert not build_directory.exists(), f"{build_directory} survived {raised}"
+
+
+def test_staged_workspace_keeps_the_tree_when_cleanup_is_disabled(
+    prepare_workspace_fixtures: PrepareWorkspaceFixtures,
+    preparation_fixtures: PreparationFixtures,
+    tmp_path: Path,
+) -> None:
+    """``--keep-staging`` retains the copy for debugging."""
+    plan = _plan_for(prepare_workspace_fixtures, preparation_fixtures)
+    build_directory = tmp_path / "kept"
+    options = publish.PublishOptions(build_directory=build_directory, cleanup=False)
+
+    with publish_staging.staged_workspace(plan, options=options) as preparation:
+        staging_root = preparation.staging_root
+
+    assert staging_root.is_dir(), "the staged copy must survive --keep-staging"
+
+
+def test_a_retained_tree_reports_where_it_is(
+    prepare_workspace_fixtures: PrepareWorkspaceFixtures,
+    preparation_fixtures: PreparationFixtures,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Retaining without saying where would leave the user hunting for it."""
+    plan = _plan_for(prepare_workspace_fixtures, preparation_fixtures)
+    build_directory = tmp_path / "kept"
+    options = publish.PublishOptions(build_directory=build_directory, cleanup=False)
+
+    with (
+        caplog.at_level("INFO", logger="lading.commands.publish_staging"),
+        publish_staging.staged_workspace(plan, options=options) as preparation,
+    ):
+        retained = preparation.staging_root
+
+    assert str(retained) in caplog.text, caplog.text
+
+
+def test_an_active_tree_is_tracked_for_the_signal_handler(
+    prepare_workspace_fixtures: PrepareWorkspaceFixtures,
+    preparation_fixtures: PreparationFixtures,
+) -> None:
+    """The handler can only remove trees it is told about.
+
+    Tracked while staged and untracked afterwards, so a later signal cannot
+    try to remove a path this process no longer owns.
+    """
+    plan = _plan_for(prepare_workspace_fixtures, preparation_fixtures)
+
+    with publish_staging.staged_workspace(plan) as preparation:
+        build_directory = preparation.staging_root.parent
+        assert build_directory in publish_staging._ACTIVE_STAGING_ROOTS
+
+    assert build_directory not in publish_staging._ACTIVE_STAGING_ROOTS

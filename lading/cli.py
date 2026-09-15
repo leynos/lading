@@ -72,6 +72,7 @@ from .cli_options import (
 from .cli_options import (
     WorkspaceRootOption as WorkspaceRootOption,
 )
+from .commands import publish_staging
 from .commands.publish_skip import SkipPreflightDecision, SkipPreflightSource
 from .runtime import CommandRunner, subprocess_runner
 from .utils import metrics, normalize_workspace_root
@@ -416,6 +417,10 @@ def main(argv: cabc.Sequence[str] | None = None) -> int:
         # Registered here in bootstrap so the lifecycle is explicit rather than
         # an import-time side effect of lading.utils.metrics.
         metrics.register_summary_atexit()
+        # Remove staged workspace copies if this process is terminated;
+        # registered here for the same reason, and because a SIGTERM never
+        # reaches an atexit hook (issue #269).
+        publish_staging.install_termination_cleanup()
         workspace_override, remaining = _extract_workspace_override(list(argv))
         workspace_root = normalize_workspace_root(workspace_override)
         if not remaining:
@@ -606,6 +611,9 @@ def _publish_options(
         # publish command's decision, so library callers behave the same.
         sccache_stats=flags.sccache_stats,
         sccache_stats_json=flags.sccache_stats_json,
+        # --keep-staging is the negative of the option it sets: retaining the
+        # staged copy is the exception, so the flag names the exception.
+        cleanup=not flags.keep_staging,
         command_runner=command_runner,
     )
 

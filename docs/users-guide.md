@@ -30,26 +30,64 @@ The 0.1.0 release also changes workspace README adoption:
 > crate README files produced by `lading bump` before running `lading publish`;
 > publish staging no longer creates or repairs those files.
 
+## Where a publish stages the workspace
+
+`lading publish` copies the whole workspace before packaging it, so cargo never
+builds against your working tree. The copy goes under the system temporary
+directory, honouring `TMPDIR`, in a directory named `lading-publish-*`. Use
+`--build-directory` to put it somewhere else.
+
+That copy is the entire workspace plus its verify build, which is tens of
+gigabytes for a large one. It is removed when the publish ends: on success, on
+failure, and when the run is interrupted or terminated. Nothing accumulates
+between runs.
+
+Pass `--keep-staging` to retain it while debugging a staging problem. The
+retained path is logged, and removing it is then your responsibility:
+
+```bash
+lading publish --keep-staging
+```
+
+`LADING_KEEP_STAGING=1` has the same effect.
+
+To reclaim space from earlier versions, which did not remove the copy, delete
+the leftovers once no publish is running:
+
+```bash
+rm -rf "${TMPDIR:-/tmp}"/lading-publish-*
+```
+
 ## Programmatic publish staging
 
-Programmatic callers should import the staging helper from
+Programmatic callers should use the staging context manager from
 `lading.commands.publish_staging` and pass a publication plan with options as a
 keyword argument:
 
 ```python
-from lading.commands.publish_staging import prepare_workspace
+from lading.commands.publish_staging import staged_workspace
 
-preparation = prepare_workspace(plan, options=options)
+with staged_workspace(plan, options=options) as preparation:
+    ...  # the staged tree exists for the body of this block
 ```
 
-The `workspace` argument accepted by older releases is no longer part of the
-`prepare_workspace(plan, *, options=None)` contract; the plan supplies the
-workspace root. When `options.cleanup` is enabled and no
-`options.build_directory` is supplied, process-exit cleanup removes the entire
-automatically created build directory. With a caller-supplied build directory,
-cleanup removes only the staged workspace root and preserves the caller's other
-files.
+The tree is removed when the block ends, including when the body raises or is
+interrupted. `prepare_workspace(plan, *, options=None)` remains for callers
+that cannot express that scope; its cleanup runs from `atexit`, which a
+terminated process never reaches, so prefer the context manager.
 
+The `workspace` argument accepted by older releases is no longer part of the
+contract; the plan supplies the workspace root. When no
+`options.build_directory` is supplied, cleanup removes the entire automatically
+created build directory. With a caller-supplied build directory, cleanup
+removes only the staged workspace root and preserves the caller's other files.
+
+> **Migration note:** `options.cleanup` now defaults to `True`. Callers that
+> relied on the previous `False` default to inspect the staged tree after
+> `prepare_workspace` returns must pass `cleanup=False` explicitly, which also
+> logs where the tree was left. Callers that never set it were leaking a copy
+> of the workspace on every run and need no change.
+>
 > **Migration note for the next minor release:** Update imports from
 > `lading.commands.publish` to `lading.commands.publish_staging`, remove the
 > obsolete workspace argument, and pass `options` by keyword.

@@ -412,7 +412,8 @@ registry.
 **Command Signature:**
 
 ```shell
-lading publish [--live] [--forbid-dirty] [--sccache-stats] [--sccache-stats-json PATH]
+lading publish [--live] [--forbid-dirty] [--keep-staging] [--sccache-stats]
+               [--sccache-stats-json PATH]
 ```
 
 - `--live`: By default, the command simulates the entire process, including
@@ -423,6 +424,12 @@ lading publish [--live] [--forbid-dirty] [--sccache-stats] [--sccache-stats-json
 - `--forbid-dirty`: Require a clean working tree before running the pre-flight
   checks. When omitted the git status guard is skipped so that developers can
   iterate on pending changes.
+- `--keep-staging`: Retain the staged workspace copy after publication and log
+  where it is, instead of removing it. The copy is the whole workspace plus its
+  verify build, so retaining it is the exception and the flag names the
+  exception; `LADING_KEEP_STAGING` supplies its default. Removing the copy is
+  otherwise unconditional, covering success, failure, interruption and
+  `SIGTERM` (issue #269).
 - `--skip-preflight` / `--no-skip-preflight`: Skip, or reinstate, the
   compilation-heavy part of the pre-flight for callers that have already
   verified the workspace. The flag overrides `[preflight] skip` in both
@@ -530,10 +537,11 @@ names are listed before returning the user-specified order.
 
 <!-- markdownlint-disable-next-line MD029 -->
 1. **Stage the workspace and prepare its manifest:**
-   `publish_staging.prepare_workspace` creates an isolated workspace copy.
-   Within that staged workspace, determine the patch stripping strategy based
-   on the `publish.strip_patches` configuration value and the execution mode
-   (`--live` versus the default dry-run mode).
+   `publish_staging.staged_workspace` creates an isolated workspace copy that
+   is removed when publication ends. Within that staged workspace, determine
+   the patch stripping strategy based on the `publish.strip_patches`
+   configuration value and the execution mode (`--live` versus the default
+   dry-run mode).
 
     - If strip_patches is "all" (or is unset and this is the default dry-run
       mode), remove the entire [patch.crates-io] section from the Cargo.toml.

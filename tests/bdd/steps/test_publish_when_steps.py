@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import collections.abc as cabc
 import shlex
+import shutil
 import typing as typ
 
+import pytest
 from pytest_bdd import parsers, when
 
 from .test_publish_infrastructure import (
@@ -29,6 +32,55 @@ def when_invoke_lading_publish(
     """Run the publish CLI against the staged workspace and capture the result."""
     stub_config = preflight_test_context.create_stub_config()
     return _invoke_publish_with_options(repo_root, workspace_directory, stub_config)
+
+
+@pytest.fixture
+def _staging_kept_under_a_removable_directory(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> cabc.Iterator[None]:
+    """Point the publish subprocess's ``TMPDIR`` at a directory this removes.
+
+    Retaining a staged copy makes its removal the caller's responsibility, so
+    a scenario that asks for one removes it here rather than leaving it on the
+    host (issue #269). The directory comes from the factory rather than
+    ``tmp_path`` because ``tmp_path`` is the workspace root in these scenarios,
+    and staging refuses to nest inside the workspace it is copying.
+
+    Yields
+    ------
+    None
+        Control, while ``TMPDIR`` is redirected.
+    """
+    root = tmp_path_factory.mktemp("retained-staging")
+    monkeypatch.setenv("TMPDIR", str(root))
+    yield
+    shutil.rmtree(root, ignore_errors=True)
+
+
+@when(
+    "I invoke lading publish with that workspace, retaining the staged copy",
+    target_fixture="cli_run",
+)
+def when_invoke_lading_publish_retaining_the_staged_copy(
+    workspace_directory: Path,
+    repo_root: Path,
+    preflight_test_context: PreflightTestContext,
+    _staging_kept_under_a_removable_directory: None,
+) -> CliRunResult:
+    """Run the publish CLI with ``--keep-staging`` and capture the result.
+
+    These scenarios assert on the staged manifest, which a publish now removes
+    when it ends, so the copy has to be retained deliberately.
+
+    Returns
+    -------
+    CliRunResult
+        The captured exit status, stdout and stderr of the publish run.
+    """
+    stub_config = preflight_test_context.create_stub_config()
+    return _invoke_publish_with_options(
+        repo_root, workspace_directory, stub_config, "--keep-staging"
+    )
 
 
 @when(parsers.parse('I run "{command}"'), target_fixture="cli_run")

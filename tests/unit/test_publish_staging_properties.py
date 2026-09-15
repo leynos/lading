@@ -98,7 +98,12 @@ def test_prepare_workspace_cleanup_scopes_generated_caller_content(
         pf.make_workspace(workspace_root, crate), pf.make_config()
     )
     registered: list[cabc.Callable[[], None]] = []
-    monkeypatch.setattr(publish_staging.atexit, "register", registered.append)
+
+    def capture(callback: cabc.Callable[..., None], *arguments: object) -> None:
+        """Record an ``atexit`` registration with the arguments bound to it."""
+        registered.append(lambda: callback(*arguments))
+
+    monkeypatch.setattr(publish_staging.atexit, "register", capture)
 
     build_directory = fx.tmp_path / "build"
     shutil.rmtree(build_directory, ignore_errors=True)

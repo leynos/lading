@@ -373,12 +373,19 @@ Feature: Lading CLI scaffolding
     When I invoke lading publish with that workspace
     Then the publish command prints the publish plan for "alpha"
 
+  Scenario: Publish command removes its staged workspace copy
+    Given a workspace directory with configuration
+    And cargo metadata describes a sample workspace
+    When I invoke lading publish with that workspace
+    Then the publish command prints the publish plan for "alpha"
+    And the staged workspace copy has been removed
+
   Scenario: Publish command strips all patch entries when configured
     Given a workspace directory with configuration
     And cargo metadata describes a sample workspace
     And the workspace manifest patches crates "alpha, serde"
     And publish.strip_patches is "all"
-    When I invoke lading publish with that workspace
+    When I invoke lading publish with that workspace, retaining the staged copy
     Then the publish command prints the publish plan for "alpha"
     And the publish staging manifest has no patch section
 
@@ -387,7 +394,7 @@ Feature: Lading CLI scaffolding
     And cargo metadata describes a sample workspace
     And the workspace manifest patches crates "alpha, serde"
     And publish.strip_patches is "per-crate"
-    When I invoke lading publish with that workspace
+    When I invoke lading publish with that workspace, retaining the staged copy
     Then the publish command prints the publish plan for "alpha"
     And the publish staging manifest omits patch entries "alpha"
     And the publish staging manifest retains patch entries "serde"
@@ -397,7 +404,7 @@ Feature: Lading CLI scaffolding
     And cargo metadata describes a sample workspace
     And the workspace manifest patches crates "alpha, serde"
     And publish.strip_patches is false
-    When I invoke lading publish with that workspace
+    When I invoke lading publish with that workspace, retaining the staged copy
     Then the publish command prints the publish plan for "alpha"
     And the publish staging manifest retains patch entries "alpha, serde"
 

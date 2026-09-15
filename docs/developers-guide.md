@@ -258,13 +258,49 @@ produced no wheel. The script stats the artefact path directly and walks it
 with an error handler that re-raises, turning every `OSError` into an
 `UploadError` naming the path and the cause.
 
+## Staged workspace lifetime
+
+`lading publish` copies the workspace before packaging. That copy is tens of
+gigabytes, so its lifetime is bounded explicitly rather than left to the
+process: `publish_staging.staged_workspace` is a context manager whose exit
+removes the tree on success, on exception and on `KeyboardInterrupt`, and
+`publish.run` wraps the whole publication in it.
+
+`prepare_workspace` remains for callers that cannot express that scope. Its
+cleanup runs from `atexit`, which is weaker: a terminated process never reaches
+it.
+
+Termination is handled separately. `publish_staging` tracks the trees this
+process owns in `_ACTIVE_STAGING_ROOTS`, and `install_termination_cleanup`
+installs a `SIGTERM` handler that removes them and then re-raises the signal
+under its default disposition, so cleaning up does not swallow the termination.
+It is installed from `lading.cli.main` rather than on import, for the same
+reason the metrics summary is
+([ADR-004](adr/004-in-process-metrics-backend.md)): exit-time behaviour should
+be a visible lifecycle decision.
+
+Two safeguards keep this honest.
+`tests/e2e/test_staging_cleanup_on_termination.py` signals a real process and
+then looks at the filesystem, and it includes the negative control, so it
+measures the handler rather than something the interpreter would have done
+anyway. An autouse fixture in `tests/conftest.py` points `tempfile.tempdir` at
+a per-test directory and fails any test that leaves a `lading-publish-*` tree
+behind, which is how a single helper test came to leave 3,925 directories on a
+shared host (issue #269).
+
+At the command-line level, `tests/bdd/features/cli.feature` asserts that a
+publish leaves nothing at the staging path it printed, and the patch-stripping
+scenarios pass `--keep-staging` because they read the staged manifest after the
+run. Those scenarios redirect `TMPDIR` for the subprocess so the copy they ask
+to keep is still removed with the test.
+
 ## Doctests
 
 `make test` runs `pytest -v --doctest-modules`, so the examples in module and
 function docstrings are executed, not merely displayed. Before the flag was
 added the repository held 342 example lines across 45 files and ran none of
-them; adding it collected 140 further test items, taking collection from 977
-to 1117.
+them; adding it collected 140 further test items, taking collection from 977 to
+1117.
 
 Write examples that run. An example using names the reader cannot see, such as
 an undefined `plan` or `config`, fails collection now rather than quietly
@@ -273,11 +309,11 @@ staging copies an entire workspace, so an executable example would leave a
 staged tree behind on every run -- use an indented `.. code-block:: python`
 illustration instead, and say why in the surrounding prose.
 
-Prefer either of those to `# doctest: +SKIP`. A skipped example is not
-compiled and not run: an example containing invalid Python and a wrong
-expected result still reports as skipped. The 50 skipped examples in this
-repository are unverified text that looks verified, which is the failure mode
-the flag exists to remove.
+Prefer either of those to `# doctest: +SKIP`. A skipped example is not compiled
+and not run: an example containing invalid Python and a wrong expected result
+still reports as skipped. The 50 skipped examples in this repository are
+unverified text that looks verified, which is the failure mode the flag exists
+to remove.
 
 ## Property-based testing
 

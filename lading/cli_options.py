@@ -115,6 +115,19 @@ SCCACHE_STATS_JSON_PARAMETER = Parameter(
 )
 
 
+KEEP_STAGING_ENV_VAR = "LADING_KEEP_STAGING"
+KEEP_STAGING_PARAMETER = Parameter(
+    name="keep-staging",
+    env_var=KEEP_STAGING_ENV_VAR,
+    help=(
+        "Keep the staged workspace copy after publication instead of removing "
+        "it, and log where it is. The copy is the whole workspace plus its "
+        "verify build, so it is tens of gigabytes; retain it only while "
+        "debugging a staging problem."
+    ),
+)
+
+
 @dc.dataclass(frozen=True, slots=True)
 class PublishFlags:
     """The ``lading publish`` flags, flattened onto the command line by Cyclopts.
@@ -131,6 +144,8 @@ class PublishFlags:
     PosixPath('stats.json')
     >>> PublishFlags().skip_preflight is None
     True
+    >>> PublishFlags().keep_staging
+    False
     """
 
     forbid_dirty: typ.Annotated[bool, FORBID_DIRTY_PARAMETER] = False
@@ -141,6 +156,7 @@ class PublishFlags:
     skip_preflight: typ.Annotated[bool | None, SKIP_PREFLIGHT_PARAMETER] = None
     sccache_stats: typ.Annotated[bool, SCCACHE_STATS_PARAMETER] = False
     sccache_stats_json: typ.Annotated[Path | None, SCCACHE_STATS_JSON_PARAMETER] = None
+    keep_staging: typ.Annotated[bool, KEEP_STAGING_PARAMETER] = False
 
 
 # These aliases remain public for integrations that import CLI annotations.
