@@ -263,6 +263,26 @@ def test_failed_upload_raises(
         upload_module.upload_wheels("v1.2.3", (wheel,))
 
 
+def test_run_gh_returns_the_diagnostic_it_captured(
+    upload_module: types.ModuleType, cmd_mox: CmdMox
+) -> None:
+    """The production runner carries ``gh``'s own stderr back to its caller.
+
+    Asserted on ``run_gh`` itself rather than through the error it feeds,
+    because the capture is what the record's contract promises: a runner that
+    discarded the stream would still produce the right exit code.
+    """
+    diagnostic = "HTTP 404: release not found"
+    cmd_mox.mock("gh").with_args("release", "view").returns(
+        exit_code=1, stderr=diagnostic
+    )
+
+    outcome = upload_module.run_gh(("release", "view"))
+
+    assert outcome.exit_code == 1, outcome
+    assert outcome.stderr.strip() == diagnostic, outcome
+
+
 def test_missing_directory_is_a_distinct_failure(
     upload_module: types.ModuleType, tmp_path: Path
 ) -> None:

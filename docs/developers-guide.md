@@ -218,6 +218,15 @@ The upload passes `--clobber`. The draft release is reused across runs, so a
 rerun after a failed publication would otherwise meet the asset its own
 previous attempt uploaded.
 
+The `gh` invocation states `capture=True` even though that is cuprum's default.
+Keeping `gh`'s stderr is the point of the call: without capture both streams
+come back as `None` and a rejected upload reports its exit code with no reason.
+Three tests hold it, and each fails if capture is turned off: the runner's own
+cmd-mox test asserts the diagnostic reaches `CommandOutcome.stderr`, the upload
+test asserts it reaches the error message, and the end-to-end test asserts it
+reaches the uploader's `Error:` line rather than merely appearing somewhere on
+stderr.
+
 The script takes the tag from `GITHUB_REF_NAME` and invokes `gh` through a
 cuprum catalogue whose allowlist permits `gh` alone, so the script cannot run
 any other programme. That boundary covers the script, not the job: the job

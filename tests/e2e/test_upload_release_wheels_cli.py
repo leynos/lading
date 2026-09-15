@@ -120,11 +120,33 @@ def test_every_wheel_reaches_gh_with_the_tag_from_the_environment(
     assert recorded == expected, f"gh received {recorded}"
 
 
+def _error_line(stderr: str) -> str:
+    """Return the uploader's own ``Error:`` line from ``stderr``.
+
+    Returns
+    -------
+    str
+        The reported failure line.
+
+    Raises
+    ------
+    AssertionError
+        If the uploader reported no error line.
+    """
+    for line in stderr.splitlines():
+        if line.startswith("Error: "):
+            return line
+    message = f"no uploader error line in {stderr!r}"
+    raise AssertionError(message)
+
+
 def test_a_failing_gh_fails_the_step(tmp_path: Path) -> None:
     """A rejected upload is a failed release, and keeps gh's own diagnostic.
 
-    Asserting only the uploader's own wording would pass even if the command
-    boundary discarded gh's stderr, which is the part that says why.
+    The assertion is made on the uploader's own error line rather than on all
+    of stderr: the stub writes its diagnostic to inherited stderr too, so a
+    search of the whole stream would pass even if the command boundary had
+    discarded it.
     """
     diagnostic = "HTTP 422: release asset already exists"
     _install_gh_stub(tmp_path, exit_code=1, stderr=diagnostic)
@@ -134,8 +156,9 @@ def test_a_failing_gh_fails_the_step(tmp_path: Path) -> None:
     result = _run(tmp_path, "--directory", str(dist), tag="v1.2.3")
 
     assert result.returncode == 1, f"expected failure, got {result.returncode}"
-    assert "gh release upload failed" in result.stderr, result.stderr
-    assert diagnostic in result.stderr, result.stderr
+    reported = _error_line(result.stderr)
+    assert "gh release upload failed" in reported, reported
+    assert diagnostic in reported, reported
 
 
 def test_a_missing_directory_is_reported_as_such(tmp_path: Path) -> None:

@@ -234,7 +234,11 @@ def run_gh(arguments: cabc.Sequence[str]) -> CommandOutcome:
         The exit status and captured streams.
     """
     with scoped(allowlist=RELEASE_CATALOGUE.allowlist):
-        result = sh.make(GH, catalogue=RELEASE_CATALOGUE)(*arguments).run_sync()
+        # capture=True is cuprum's default, but it is stated here because the
+        # whole point of the call is to keep gh's diagnostic: without capture
+        # both streams come back None and a failure reports no reason at all.
+        command = sh.make(GH, catalogue=RELEASE_CATALOGUE)(*arguments)
+        result = command.run_sync(capture=True)
     return CommandOutcome(
         exit_code=result.exit_code,
         stdout=result.stdout or "",
