@@ -34,6 +34,9 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
   for Ruff, Interrogate, Pylint, df12 house rules, and snapshot redaction.
 - [ADR-004: In-process metrics accumulator flushed at exit][adr-004] - accepted
   design for the `lading.utils.metrics` backend and metric contracts.
+- [ADR-005: Draft-then-publish releases with a standalone wheel
+  uploader][adr-005] - accepted design for the release workflow's publication
+  order and the uploader script.
 
 ## Reference documents
 
@@ -46,4 +49,5 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
 
 [adr-003]: adr/003-three-tier-python-linting.md
 [adr-004]: adr/004-in-process-metrics-backend.md
+[adr-005]: adr/005-release-wheel-publication.md
 [execplan-regenerate-lockfiles]: execplans/regenerate-lockfiles.md

@@ -38,15 +38,28 @@ jobs:
         with:
           fetch-depth: 0
       - uses: softprops/action-gh-release@v3.0.3
+        # Created as a draft so that a failure between here and the upload
+        # leaves nothing published: v0.3.0 and v0.3.1 were live with no wheel.
         with:
+          draft: true
           generate_release_notes: true
       - uses: actions/download-artifact@v8
         with:
+          name: wheels-pure
           path: dist
+      - name: Install uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
       - name: Upload wheels to release
-        run: |
-          set -eu
-          find dist/wheels-* -type f -name "*.whl" -print0 | \
-            xargs -0 -r gh release upload "${{ github.ref_name }}"
+        # The wheel search and its empty case live in the script: a shell
+        # pipeline reports the exit status of its last command, which is how
+        # this step used to pass having uploaded nothing.
+        run: uv run --script scripts/upload_release_wheels.py --directory dist
         env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish release
+        # Last step in the job: the release becomes visible only once its
+        # wheel is attached.
+        run: gh release edit "$GITHUB_REF_NAME" --draft=false
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

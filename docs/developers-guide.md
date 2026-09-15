@@ -171,6 +171,94 @@ If a workflow's behaviour genuinely depends on a feature only present from a
 particular commit onwards, express that as a comment or a changelog note, not
 as a test assertion on the SHA string.
 
+## Release workflow
+
+`release.yml` runs on a `v*.*.*` tag push. It builds the pure Python wheel,
+creates the GitHub release as a draft with generated notes, attaches the wheel,
+and only then takes the release out of draft. The draft is what makes the order
+matter: `softprops/action-gh-release` publishes by default, so any failure
+between creation and upload used to leave a visible release with nothing on it.
+
+The attachment runs `scripts/upload_release_wheels.py` rather than a shell
+pipeline, and the reason is a defect worth remembering. The step used to be:
+
+```bash
+find dist/wheels-* -type f -name "*.whl" -print0 | xargs -0 -r gh release upload "$TAG"
+```
+
+A pipeline reports the exit status of its last command, so `set -eu` never saw
+`find` fail when `dist/wheels-*` did not exist. `xargs -r` then ran nothing and
+the step passed, having uploaded no wheel. Both `v0.3.0` and `v0.3.1` published
+that way and were completed by hand (issue #266).
+
+Two properties keep it fixed, and
+`tests/workflow_contracts/test_release_workflow.py` asserts both:
+
+- The download names the artefact (`name: wheels-pure`), so the wheel's
+  location does not depend on the action's default layout.
+- The search and its empty case run in Python. The script exits non-zero when
+  it finds no wheel, so a release that would ship nothing fails loudly instead
+  of reporting success.
+- The release is created with `draft: true` and published by a later
+  `gh release edit --draft=false` step, so nothing is visible until its wheel
+  is attached.
+
+The decision behind this order, and the alternatives weighed, are recorded in
+[ADR-005](adr/005-release-wheel-publication.md).
+
+`scripts/upload_release_wheels.py` is the command-line edge and the
+composition root; the logic lives beside it in `scripts/release_wheel_upload.py`
+and is imported as a sibling, which resolves because `uv run --script` puts the
+script's directory first on the path. The runner, the clock, and the two output
+sinks are parameters with production defaults bound in the entry point, so
+tests state the dependency they exercise rather than intercepting the
+environment.
+
+The upload passes `--clobber`. The draft release is reused across runs, so a
+rerun after a failed publication would otherwise meet the asset its own
+previous attempt uploaded.
+
+The `gh` invocation states `capture=True` even though that is cuprum's default.
+Keeping `gh`'s stderr is the point of the call: without capture both streams
+come back as `None` and a rejected upload reports its exit code with no reason.
+Three tests hold it, and each fails if capture is turned off: the runner's own
+cmd-mox test asserts the diagnostic reaches `CommandOutcome.stderr`, the upload
+test asserts it reaches the error message, and the end-to-end test asserts it
+reaches the uploader's `Error:` line rather than merely appearing somewhere on
+stderr.
+
+The script takes the tag from `GITHUB_REF_NAME` and invokes `gh` through a
+cuprum catalogue whose allowlist permits `gh` alone, so the script cannot run
+any other programme. That boundary covers the script, not the job: the job
+also runs `uv` and its pinned actions. Unit tests assert the `SafeCmd` argv
+with cmd-mox. End-to-end tests execute the script as a subprocess with a
+recording `gh` stub, which is the only level at which the process boundary
+itself is exercised.
+
+The step reports one machine-readable line to stderr before it exits, whatever
+the result:
+
+```plaintext
+release_wheel_upload {"discovery_seconds": 0.0, "outcome": "success", "upload_seconds": 0.4, "wheels": 1}
+```
+
+`outcome` is a member of the `Outcome` string enumeration (`success`,
+`no-wheel`, `missing-directory`, `not-a-directory`, `unreadable-directory`,
+`upload-failed`), so a counter built from the release logs stays bounded,
+and no path, tag, or message text is reported alongside it. The same `outcome`
+and `wheels` values are written to `GITHUB_OUTPUT` when the workflow sets it.
+A short-lived workflow step has no collector to push to, so this line and that
+output are the signal; `lading`'s in-process metrics summary is unavailable
+here because the uploader is a standalone PEP 723 script that does not import
+the package.
+
+Discovery reports read failures rather than absorbing them. `Path.rglob` skips
+directories it cannot open and `Path.exists` answers `False` for a permission
+error, so an unreadable artefact tree would be diagnosed as a build that
+produced no wheel. The script stats the artefact path directly and walks it
+with an error handler that re-raises, turning every `OSError` into an
+`UploadError` naming the path and the cause.
+
 ## Property-based testing
 
 [Hypothesis](https://hypothesis.readthedocs.io/) is a development dependency
