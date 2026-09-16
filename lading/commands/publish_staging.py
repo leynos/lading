@@ -351,12 +351,26 @@ def install_termination_cleanup() -> None:
         signal.signal(signal.SIGTERM, _handle_termination)
 
 
-def _format_preparation_summary(preparation: PublishPreparation) -> tuple[str, ...]:
-    """Return formatted summary lines for staging results."""
-    return (
-        f"Staged workspace at: {preparation.staging_root}",
-        "Workspace READMEs are handled by lading bump.",
-    )
+def _format_preparation_summary(
+    preparation: PublishPreparation, *, retained: bool
+) -> tuple[str, ...]:
+    """Return formatted summary lines for staging results.
+
+    ``retained`` says whether the staged tree outlives the publish. It is
+    required rather than defaulted because the honest answer changed with
+    issue #269: cleanup now defaults to on, so by the time a caller reads
+    this the tree has usually gone, and a line reading ``Staged workspace
+    at:`` alone names a path that no longer exists.
+
+    Returns
+    -------
+    tuple of str
+        The summary lines, the first naming the staged tree and its fate.
+    """
+    location = f"Staged workspace at: {preparation.staging_root}"
+    if not retained:
+        location = f"{location} (removed)"
+    return (location, "Workspace READMEs are handled by lading bump.")
 
 
 def _resolve_staged_crate_root(

@@ -208,6 +208,8 @@ def run(
         plan_message = format_plan(
             plan, strip_patches=active_configuration.publish.strip_patches
         )
-        summary_lines = publish_staging._format_preparation_summary(preparation)
+        summary_lines = publish_staging._format_preparation_summary(
+            preparation, retained=not effective_options.cleanup
+        )
     LOGGER.info("Publish workflow completed successfully for workspace %s", root_path)
     return f"{plan_message}\n\n" + "\n".join(summary_lines)
