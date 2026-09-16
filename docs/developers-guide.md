@@ -423,6 +423,31 @@ scenarios pass `--keep-staging` because they read the staged manifest after the
 run. Those scenarios redirect `TMPDIR` for the subprocess so the copy they ask
 to keep is still removed with the test.
 
+## The clean command
+
+`lading clean` sweeps what earlier releases left behind. Its whole design is
+about what it must not delete, because it is the one command in the tool that
+removes directories the user did not name.
+
+It considers only the immediate children of one directory, only names carrying
+`publish_staging.STAGING_PREFIX`, and only real directories. Symbolic links are
+refused rather than followed. There is no resolved-parent check, and the
+absence is deliberate: once links are refused and the search does not recurse,
+such a test can never fail, and an unreachable safety check is worse than none
+because a reader trusts it.
+
+The prefix is imported from `publish_staging` rather than repeated. The two
+must not drift: a publish that changed its prefix would leak trees no clean
+could find, and a clean carrying its own copy of the string would not notice.
+`tests/unit/test_clean.py` asserts the two are the same object, so a copied
+literal fails.
+
+Reporting is the default and `--remove` names the exception, the same shape as
+`--keep-staging` on the publish command. Each guard is proved by a mutation
+that removes it: dropping the prefix test, dropping the symlink test, making
+the search recursive, and removing the report-only default each fail exactly
+the cases that name them.
+
 ## Doctests
 
 `make test` runs `pytest -v --doctest-modules`, so the examples in module and
