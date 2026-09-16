@@ -160,7 +160,12 @@
 
 ## Markdown guidance
 
-- Validate Markdown files using `make markdownlint`.
+- Validate Markdown files using `make markdownlint`; this also runs the
+  en-GB-oxendict spelling gate.
+- Enforce spelling with `make spelling`. It regenerates `typos.toml` from the
+  live shared dictionary and the `typos.local.toml` overlay on every run, so
+  `typos.toml` must not be drift checked in CI. Put narrow repository-specific
+  exceptions in `typos.local.toml`; never edit generated entries by hand.
 - Run `make fmt` after documentation changes to format Markdown and fix table
   markup.
 - Validate Mermaid diagrams in Markdown by running `make nixie`.
