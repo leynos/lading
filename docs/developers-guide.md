@@ -334,6 +334,37 @@ that removes it: dropping the prefix test, dropping the symlink test, making
 the search recursive, and removing the report-only default each fail exactly
 the cases that name them.
 
+### Claiming a staging tree across processes
+
+The scope rules above say nothing about _time_. A staged tree belonging to a
+running publish is indistinguishable, by name and by shape, from one abandoned
+by a release that never cleaned up, and the publish is in another process, so
+`_ACTIVE_STAGING_ROOTS` cannot answer for it.
+
+`staging_lock` closes that. `_normalize_build_directory` claims each tree it
+creates with `mkdtemp`, opening `.lading-staging-lock` inside it and taking an
+exclusive non-blocking lock that the process holds for the tree's life;
+`clean.run` attempts the same lock immediately before each `shutil.rmtree` and
+skips the tree if it cannot take it. One module wraps both platforms:
+`fcntl.flock` on POSIX and `msvcrt.locking` on Windows.
+
+A lock rather than a recorded process identifier, because a marker file fails
+in both directions. A reused identifier makes a dead owner look alive, and a
+publish killed outright leaves a marker that would make its tree permanently
+unremovable, which is the exact leftover this command exists to sweep. A
+kernel-held lock is released when its holder dies however it dies, so there is
+no stale state and nothing to time out. A tree with no lock file predates the
+mechanism and stays removable.
+
+`tests/unit/test_staging_lock.py` proves this across real process boundaries,
+because no in-process test can: a holder subprocess signals readiness on its
+standard output rather than the tests sleeping. Four mutations, each failing
+one case: `clean` not consulting the claim leaves the live-holder case deleting
+a tree in use; a claim that outlives its holder leaves the killed- holder case
+unable to sweep an abandoned tree; staging not claiming what it creates fails
+the publisher case; and not releasing before removal fails it on the registry
+assertion, which stands in for the Windows behaviour POSIX does not exhibit.
+
 ## Doctests
 
 `make test` runs `pytest -v --doctest-modules`, so the examples in module and

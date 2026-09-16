@@ -41,6 +41,7 @@ import tempfile
 import typing as typ
 from pathlib import Path
 
+from lading.commands import staging_lock
 from lading.commands.publish_manifest import PublishPreparationError
 
 if typ.TYPE_CHECKING:
@@ -81,7 +82,12 @@ def _normalize_build_directory(
 ) -> Path:
     """Return a directory suitable for staging workspace artifacts."""
     if build_directory is None:
-        return Path(tempfile.mkdtemp(prefix=STAGING_PREFIX))
+        created = Path(tempfile.mkdtemp(prefix=STAGING_PREFIX))
+        # Claimed the moment it exists, because this is the shape `lading
+        # clean` sweeps: an unclaimed tree here is indistinguishable from one
+        # an older release abandoned, and `clean --remove` would take it.
+        staging_lock.claim(created)
+        return created
 
     candidate = Path(build_directory).expanduser()
     candidate = candidate.resolve(strict=False)
@@ -220,6 +226,9 @@ def _remove_staged_tree(cleanup_target: Path) -> None:
     failure is visible rather than silently forgotten. Callers that must not
     be interrupted by that use :func:`_remove_staged_tree_or_report`.
     """
+    # Released before the removal, not after: on Windows the open lock handle
+    # would stop the directory holding it being deleted.
+    staging_lock.release(cleanup_target)
     if cleanup_target.exists():
         shutil.rmtree(cleanup_target)
     _ACTIVE_STAGING_ROOTS.discard(cleanup_target)
