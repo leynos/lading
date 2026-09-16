@@ -258,6 +258,78 @@ produced no wheel. The script stats the artefact path directly and walks it
 with an error handler that re-raises, turning every `OSError` into an
 `UploadError` naming the path and the cause.
 
+## Staged workspace lifetime
+
+`lading publish` copies the workspace before packaging. That copy is tens of
+gigabytes, so its lifetime is bounded explicitly rather than left to the
+process: `publish_staging.staged_workspace` is a context manager whose exit
+removes the tree on success, on exception and on `KeyboardInterrupt`, and
+`publish.run` wraps the whole publication in it.
+
+`prepare_workspace` remains for callers that cannot express that scope. Its
+cleanup runs from `atexit`, which is weaker: a terminated process never reaches
+it.
+
+Termination is handled separately. `publish_staging` tracks the trees this
+process owns in `_ACTIVE_STAGING_ROOTS`, from before the copy starts until
+after its removal succeeds. Both bounds matter, and both are long windows:
+copying a workspace takes minutes, and so does removing one. Registering after
+the copy returned would leave a partial tree behind for exactly the
+interruption this exists to survive, and discarding the target before the
+removal completed would hide a failed removal from every later attempt.
+
+A removal that fails is reported and the target stays tracked. It is never
+raised out of the context manager's exit, because that exception would replace
+the publish failure the caller is waiting on, nor out of the signal handler,
+because the termination matters more than the tree.
+`install_termination_cleanup` installs a `SIGTERM` handler that removes them
+and then re-raises the signal under its default disposition, so cleaning up
+does not swallow the termination. It is installed from `lading.cli.main` rather
+than on import, for the same reason the metrics summary's `atexit` hook is
+registered there ([ADR-004](adr/004-in-process-metrics-backend.md)): exit-time
+behaviour should be a visible lifecycle decision rather than an import side
+effect.
+
+Two safeguards keep this honest.
+`tests/e2e/test_staging_cleanup_on_termination.py` signals a real process
+driving lading's own staging and then looks at the filesystem. It covers
+termination during the copy as well as after it, and it includes the negative
+control, so it measures the handler rather than something the interpreter would
+have done anyway. An autouse fixture in `tests/conftest.py` points both
+`tempfile.tempdir` and `TMPDIR` at a per-test directory and fails any test that
+leaves a `lading-publish-*` tree behind, which is how a single helper test came
+to leave 3,925 directories on a shared host (issue #269). Both are needed:
+`tempfile` caches its directory on first use, so the variable cannot redirect
+this process mid-session, and the attribute is process-local, so it cannot
+redirect the lading subprocesses the command-line scenarios start.
+
+At the command-line level, `tests/bdd/features/cli.feature` asserts that a
+publish leaves nothing at the staging path it printed, and the patch-stripping
+scenarios pass `--keep-staging` because they read the staged manifest after the
+run. Those scenarios redirect `TMPDIR` for the subprocess so the copy they ask
+to keep is still removed with the test.
+
+## Doctests
+
+`make test` runs `pytest -v --doctest-modules`, so the examples in module and
+function docstrings are executed, not merely displayed. Before the flag was
+added the repository held 342 example lines across 45 files and ran none of
+them; adding it collected 140 further test items, taking collection from 977 to
+1117.
+
+Write examples that run. An example using names the reader cannot see, such as
+an undefined `plan` or `config`, fails collection now rather than quietly
+misleading. Where a runnable example would be disproportionate or harmful --
+staging copies an entire workspace, so an executable example would leave a
+staged tree behind on every run -- use an indented `.. code-block:: python`
+illustration instead, and say why in the surrounding prose.
+
+Prefer either of those to `# doctest: +SKIP`. A skipped example is not compiled
+and not run: an example containing invalid Python and a wrong expected result
+still reports as skipped. The 50 skipped examples in this repository are
+unverified text that looks verified, which is the failure mode the flag exists
+to remove.
+
 ## Property-based testing
 
 [Hypothesis](https://hypothesis.readthedocs.io/) is a development dependency
@@ -608,7 +680,7 @@ future round-tripping.
 
 ## Programmatic publish options
 
-When invoking `lading.commands.publish_staging.prepare_workspace`
+When invoking `lading.commands.publish_staging.staged_workspace`
 programmatically, callers can customize behaviour via `PublishOptions`. The
 defaults are:
 
@@ -618,7 +690,9 @@ defaults are:
 - `live=False` — run `cargo publish --dry-run` rather than uploading crates.
 - `build_directory=None` — create a fresh temporary directory for staging.
 - `preserve_symlinks=True` — preserve symbolic links in the staged workspace.
-- `cleanup=False` — leave the staging directory intact for inspection.
+- `cleanup=True` — remove the staged copy when publication ends, including
+  when it fails or is interrupted. This defaulted to `False` before issue
+  #269, so every run leaked a copy of the workspace.
 - `sccache_stats=False` — query the sccache binary named by `RUSTC_WRAPPER`
   around every cargo build and log one compiler-cache line per invocation.
 - `sccache_stats_json=None` — also write the JSON report to this path
@@ -637,8 +711,9 @@ Examples:
 - `PublishOptions(preserve_symlinks=False)` — disable symlink preservation when
   staging the workspace (useful when external assets need to be copied rather
   than linked).
-- `PublishOptions(cleanup=True)` — remove the temporary staging directory
-  automatically at process exit instead of leaving it for inspection.
+- `PublishOptions(cleanup=False)` — retain the staged copy for inspection
+  instead of removing it, and log where it was left. Removing it is then the
+  caller's responsibility; `lading publish --keep-staging` sets this.
 - `PublishOptions(allow_dirty=False)` — require a clean git working tree before
   proceeding with publish preparation.
 

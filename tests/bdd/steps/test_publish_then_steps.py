@@ -37,6 +37,7 @@ from .test_publish_helpers import (
     _assert_invocations_have_flag,
     _assert_invocations_lack_flag,
     _extract_crate_names_from_invocations,
+    _extract_staging_root_from_plan,
     _get_patch_entries,
     _get_required_invocations,
     _has_contiguous_args,
@@ -59,6 +60,25 @@ def then_publish_prints_plan(cli_run: CliRunResult, crate_name: str) -> None:
     assert lines[0] == f"Publish plan for {workspace}"
     assert lines[1].startswith("Strip patch strategy:")
     assert f"- {crate_name} @ 0.1.0" in lines
+
+
+@then("the staged workspace copy has been removed")
+def then_staged_workspace_copy_removed(cli_run: CliRunResult) -> None:
+    """Assert the publish removed the copy it announced in its plan.
+
+    The copy is the whole workspace plus its verify build, and leaving it
+    behind on a long-lived host is what issue #269 records. The path is read
+    back out of the publish plan, so this measures the run rather than a
+    convention about where staging happens.
+
+    Parameters
+    ----------
+    cli_run : CliRunResult
+        The captured publish run whose plan names the staging path.
+    """
+    _assert_cli_run_succeeded(cli_run)
+    staging_root = _extract_staging_root_from_plan(_publish_plan_lines(cli_run))
+    assert not staging_root.exists(), f"{staging_root} survived the publish"
 
 
 @then("the publish staging manifest has no patch section")
