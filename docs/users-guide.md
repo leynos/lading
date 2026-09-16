@@ -33,7 +33,7 @@ The 0.1.0 release also changes workspace README adoption:
 ## Where a publish stages the workspace
 
 `lading publish` copies the whole workspace before packaging it, so packaging
-and publication never read your working tree. The pre-flight is the exception:
+and publication never read the working tree. The pre-flight is the exception:
 its `cargo check` and `cargo test` run in the workspace root, before staging
 begins, though into a throwaway target directory. The copy goes under the
 system temporary directory, honouring `TMPDIR`, in a directory named
@@ -47,7 +47,7 @@ failure, on `Ctrl-C`, and on `SIGTERM`. A `SIGKILL` cannot be handled, so that
 one case still leaves the copy behind. Nothing else accumulates between runs.
 
 Pass `--keep-staging` to retain it while debugging a staging problem. The
-retained path is logged, and removing it is then your responsibility:
+retained path is logged, and removing it is then a manual step:
 
 ```bash
 lading publish --keep-staging
@@ -65,7 +65,7 @@ and reports what removing them would reclaim:
 lading clean
 ```
 
-It deletes nothing until you ask:
+It deletes nothing unless asked:
 
 ```bash
 lading clean --remove
