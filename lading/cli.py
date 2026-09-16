@@ -33,6 +33,8 @@ from cyclopts import App, Parameter
 
 from . import commands, config
 from .cli_options import (
+    CLEAN_LOCATION_PARAMETER,
+    CLEAN_REMOVE_PARAMETER,
     DRY_RUN_PARAMETER,
     REBUILD_LOCKFILES_PARAMETER,
     SKIP_PREFLIGHT_ENV_VAR,
@@ -533,6 +535,46 @@ def bump(
                 ),
             ),
         ),
+    )
+
+
+@app.command
+def clean(
+    *,
+    location: typ.Annotated[Path | None, CLEAN_LOCATION_PARAMETER] = None,
+    remove: typ.Annotated[bool, CLEAN_REMOVE_PARAMETER] = False,
+) -> str:
+    """Report, and optionally remove, staging copies left by earlier publishes.
+
+    Publishes before issue #269 never removed their staged workspace copy.
+    This finds what they left and, when asked, deletes it. Reporting is the
+    default, and only directories named with the staging prefix, directly
+    under the searched location, are ever considered.
+
+    Run it when no publish is in progress: a staging copy belonging to a
+    running publish looks exactly like one that was abandoned.
+
+    Parameters
+    ----------
+    location : Path | None
+        Directory to search; defaults to the system temporary directory.
+    remove : bool
+        Whether to delete what is found rather than only report it.
+
+    Returns
+    -------
+    str
+        The rendered summary of what was found, and of what was removed.
+
+    Examples
+    --------
+    >>> from lading.cli import clean
+    >>> summary = clean()  # doctest: +SKIP
+    >>> summary.startswith(("Found", "No staging"))  # doctest: +SKIP
+    True
+    """
+    return commands.clean.run(
+        options=commands.clean.CleanOptions(location=location, remove=remove)
     )
 
 

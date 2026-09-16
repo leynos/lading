@@ -50,6 +50,13 @@ if typ.TYPE_CHECKING:
 
 LOGGER = logging.getLogger(__name__)
 
+#: The name every automatically created staging directory begins with.
+#: `lading clean` finds leftovers by this prefix, so the two must not drift:
+#: a publish that stopped using it would leak trees no clean could find, and a
+#: clean that stopped using it would either miss them or reach for something
+#: else.
+STAGING_PREFIX = "lading-publish-"
+
 #: Staged trees the process is responsible for removing. A signal handler
 #: installed by the command-line entry point reads this, because a terminated
 #: process never reaches an ``atexit`` hook or a ``finally`` block.
@@ -74,7 +81,7 @@ def _normalize_build_directory(
 ) -> Path:
     """Return a directory suitable for staging workspace artifacts."""
     if build_directory is None:
-        return Path(tempfile.mkdtemp(prefix="lading-publish-"))
+        return Path(tempfile.mkdtemp(prefix=STAGING_PREFIX))
 
     candidate = Path(build_directory).expanduser()
     candidate = candidate.resolve(strict=False)

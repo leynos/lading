@@ -55,12 +55,34 @@ lading publish --keep-staging
 
 `LADING_KEEP_STAGING=1` has the same effect.
 
-To reclaim space from earlier versions, which did not remove the copy, delete
-the leftovers once no publish is running:
+## Reclaiming space from earlier versions
+
+Releases before this one never removed the staged copy, so a host that has been
+publishing for a while holds one directory per run. `lading clean` finds them
+and reports what removing them would reclaim:
 
 ```bash
-rm -rf "${TMPDIR:-/tmp}"/lading-publish-*
+lading clean
 ```
+
+It deletes nothing until you ask:
+
+```bash
+lading clean --remove
+```
+
+Use `--location` to search somewhere other than the system temporary directory,
+for example when past runs had a different `TMPDIR`.
+
+The scope is deliberately narrow, because the command deletes. It considers
+only the immediate children of the directory it searches, only those whose
+names begin with `lading-publish-`, and only real directories: a symbolic link
+with a matching name is never followed, so nothing outside that directory can
+be reached.
+
+Run it when no publish is in progress. A staging copy belonging to a running
+publish looks exactly like one that was abandoned, and removing it would fail
+that publish.
 
 ## Programmatic publish staging
 

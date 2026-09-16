@@ -651,6 +651,34 @@ _Figure 2: Publish pre-flight sequence from checks through crate publication._
     fails, any earlier successful uploads remain on crates.io and are skipped
     on a subsequent run.
 
+## 4a. `clean` Subcommand Design
+
+The `clean` command removes staging copies that earlier releases left behind.
+Publishes no longer leak them (issue #269), but a long-lived host already holds
+one per past run.
+
+**Command Signature:**
+
+```shell
+lading clean [--location PATH] [--remove]
+```
+
+- `--location PATH`: Directory to search. Defaults to the system temporary
+  directory, which is where a publish stages unless `TMPDIR` says otherwise.
+- `--remove`: Delete what is found. Reporting is the default, and the flag
+  names the exception, the same shape as `--keep-staging` on `publish`.
+
+This is the only command that deletes directories the user did not name, so its
+scope is the design. It considers the immediate children of one directory and
+does not recurse; it matches names by `publish_staging.STAGING_PREFIX`,
+imported rather than repeated so the two cannot drift; and it refuses symbolic
+links rather than following them, so nothing outside the searched directory can
+be reached. A removal that fails is logged and the sweep continues, so one busy
+tree does not abandon the rest.
+
+The report names the bytes each tree holds and their total, because reclaiming
+space is the reason to run it.
+
 ## 5. Refactoring and Project Structure
 
 The legacy repository-specific scripts have been consolidated into the `lading`
