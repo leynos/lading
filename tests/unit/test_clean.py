@@ -38,7 +38,9 @@ def test_the_prefix_is_the_one_a_publish_stages_with() -> None:
     A publish that changed its prefix would leak trees no clean could find,
     and a clean with its own copy of the string would not notice.
     """
-    assert clean.STAGING_PREFIX is STAGING_PREFIX
+    assert clean.STAGING_PREFIX is STAGING_PREFIX, (
+        "clean and publish staging must read one constant, not two literals"
+    )
 
 
 def test_leftovers_are_found_with_their_sizes(tmp_path: Path) -> None:
@@ -51,8 +53,10 @@ def test_leftovers_are_found_with_their_sizes(tmp_path: Path) -> None:
     assert [leftover.path.name for leftover in found] == [
         f"{STAGING_PREFIX}aaa",
         f"{STAGING_PREFIX}bbb",
-    ]
-    assert [leftover.size_bytes for leftover in found] == [100, 20]
+    ], "the leftovers were not reported in name order"
+    assert [leftover.size_bytes for leftover in found] == [100, 20], (
+        "each leftover must carry the bytes removing it would reclaim"
+    )
 
 
 def test_a_directory_without_the_prefix_is_not_in_scope(tmp_path: Path) -> None:
@@ -67,7 +71,9 @@ def test_a_directory_without_the_prefix_is_not_in_scope(tmp_path: Path) -> None:
 
     found = clean.find_leftovers(tmp_path)
 
-    assert [leftover.path for leftover in found] == [tmp_path / f"{STAGING_PREFIX}mine"]
+    assert [leftover.path for leftover in found] == [
+        tmp_path / f"{STAGING_PREFIX}mine"
+    ], "a directory without the staging prefix was taken into scope"
 
 
 def test_a_nested_match_is_not_in_scope(tmp_path: Path) -> None:
@@ -80,7 +86,9 @@ def test_a_nested_match_is_not_in_scope(tmp_path: Path) -> None:
     nested.mkdir()
     _staging_tree(nested, "buried")
 
-    assert clean.find_leftovers(tmp_path) == ()
+    assert clean.find_leftovers(tmp_path) == (), (
+        "a match nested below the search directory was taken into scope"
+    )
 
 
 def test_a_symlink_is_never_followed(tmp_path: Path) -> None:
@@ -95,7 +103,9 @@ def test_a_symlink_is_never_followed(tmp_path: Path) -> None:
     link = tmp_path / f"{STAGING_PREFIX}link"
     link.symlink_to(target, target_is_directory=True)
 
-    assert clean.find_leftovers(tmp_path) == ()
+    assert clean.find_leftovers(tmp_path) == (), (
+        "a symbolic link named like a staging tree was taken into scope"
+    )
 
     clean.run(options=clean.CleanOptions(location=tmp_path, remove=True))
 
@@ -107,7 +117,9 @@ def test_a_file_named_like_a_staging_tree_is_not_in_scope(tmp_path: Path) -> Non
     """The command removes trees; a regular file is not one."""
     (tmp_path / f"{STAGING_PREFIX}notadir").write_text("x", encoding="utf-8")
 
-    assert clean.find_leftovers(tmp_path) == ()
+    assert clean.find_leftovers(tmp_path) == (), (
+        "a regular file named like a staging tree was taken into scope"
+    )
 
 
 def test_reporting_is_the_default(tmp_path: Path) -> None:
@@ -121,8 +133,10 @@ def test_reporting_is_the_default(tmp_path: Path) -> None:
     summary = clean.run(options=clean.CleanOptions(location=tmp_path))
 
     assert tree.is_dir(), "the default run deleted something"
-    assert "Found 1 staging directory" in summary
-    assert "--remove" in summary
+    assert "Found 1 staging directory" in summary, (
+        "the default run did not report what it found"
+    )
+    assert "--remove" in summary, "the report did not say how to delete them"
 
 
 def test_removal_reports_what_it_reclaimed(tmp_path: Path) -> None:
@@ -131,21 +145,27 @@ def test_removal_reports_what_it_reclaimed(tmp_path: Path) -> None:
 
     summary = clean.run(options=clean.CleanOptions(location=tmp_path, remove=True))
 
-    assert not tree.exists()
-    assert "Removed 1 staging directory" in summary
-    assert "2.0 KiB" in summary
+    assert not tree.exists(), "the tree survived a removal run"
+    assert "Removed 1 staging directory" in summary, (
+        "the removal did not report what it took"
+    )
+    assert "2.0 KiB" in summary, "the removal did not report the space reclaimed"
 
 
 def test_an_empty_location_says_so(tmp_path: Path) -> None:
     """Silence would leave the user wondering whether it ran."""
     summary = clean.run(options=clean.CleanOptions(location=tmp_path))
 
-    assert "No staging directories found" in summary
+    assert "No staging directories found" in summary, (
+        "an empty search reported nothing at all"
+    )
 
 
 def test_a_missing_location_is_not_an_error(tmp_path: Path) -> None:
     """A temporary directory that does not exist holds no leftovers."""
-    assert clean.find_leftovers(tmp_path / "absent") == ()
+    assert clean.find_leftovers(tmp_path / "absent") == (), (
+        "a search directory that does not exist was not treated as empty"
+    )
 
 
 def test_a_tree_that_cannot_be_removed_is_reported_not_raised(
@@ -167,6 +187,41 @@ def test_a_tree_that_cannot_be_removed_is_reported_not_raised(
 
     summary = clean.run(options=clean.CleanOptions(location=tmp_path, remove=True))
 
-    assert stubborn.is_dir()
-    assert not removable.exists()
-    assert "Removed 1 staging directory" in summary
+    assert stubborn.is_dir(), "the tree whose removal failed was reported gone"
+    assert not removable.exists(), "the sweep stopped at the first failure"
+    assert "Removed 1 of 2 staging directories" in summary, (
+        "a partial sweep must count both what it removed and what it found"
+    )
+    assert stubborn.name in summary, "the retained tree was not named"
+    assert "Could not remove 1" in summary, "the failure was not reported"
+
+
+def test_a_sweep_that_removes_nothing_does_not_claim_an_empty_search(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Finding trees and removing none of them is not an empty directory.
+
+    Summarising the removed trees alone made these two cases identical, so a
+    sweep in which every `shutil.rmtree` raised reported `No staging
+    directories found` while every tree it found was still on disk.
+    """
+    trees = [_staging_tree(tmp_path, "aaa"), _staging_tree(tmp_path, "bbb")]
+
+    def refuse(path: object, *arguments: object, **keywords: object) -> None:
+        """Fail for every tree."""
+        del path, arguments, keywords
+        message = "device or resource busy"
+        raise OSError(message)
+
+    monkeypatch.setattr(clean.shutil, "rmtree", refuse)
+
+    summary = clean.run(options=clean.CleanOptions(location=tmp_path, remove=True))
+
+    assert all(tree.is_dir() for tree in trees), "a tree was removed after all"
+    assert "No staging directories found" not in summary, (
+        "a failed sweep claimed the search found nothing"
+    )
+    assert "Removed 0 of 2 staging directories" in summary, (
+        "the summary did not report zero removals against two found"
+    )
+    assert "Could not remove 2" in summary, "the failures were not reported"

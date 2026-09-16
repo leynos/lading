@@ -176,10 +176,56 @@ def _format_size(size_bytes: int) -> str:
     return f"{size:.1f} {_SIZE_UNITS[-1]}"
 
 
+def _entries(leftovers: cabc.Sequence[LeftoverTree]) -> list[str]:
+    """Return one indented line per tree, naming it and what it holds.
+
+    Returns
+    -------
+    list of str
+        The rendered entry lines, in the order given.
+    """
+    return [
+        f"  {leftover.path.name}  {_format_size(leftover.size_bytes)}"
+        for leftover in leftovers
+    ]
+
+
+def _total_size(leftovers: cabc.Sequence[LeftoverTree]) -> str:
+    """Return the summed size of ``leftovers``, rendered for the report.
+
+    Returns
+    -------
+    str
+        A human-readable size.
+    """
+    return _format_size(sum(leftover.size_bytes for leftover in leftovers))
+
+
+def _noun(count: int) -> str:
+    """Return the noun agreeing with ``count``.
+
+    Returns
+    -------
+    str
+        Either ``'directory'`` or ``'directories'``.
+    """
+    return "directory" if count == 1 else "directories"
+
+
 def _summarize(
-    leftovers: cabc.Sequence[LeftoverTree], location: Path, *, removed: bool
+    leftovers: cabc.Sequence[LeftoverTree],
+    location: Path,
+    *,
+    removed: cabc.Sequence[LeftoverTree] | None = None,
 ) -> str:
     """Return the report for what was found, and what was done with it.
+
+    ``removed`` is :data:`None` when the caller asked only for a report, and
+    the trees actually removed otherwise. The two are separate because a
+    removal can fail: summarising ``removed`` alone would announce that
+    nothing was found whenever every :func:`shutil.rmtree` raised, which is
+    the opposite of what happened and would leave the caller believing the
+    directory had been swept.
 
     Returns
     -------
@@ -188,23 +234,39 @@ def _summarize(
     """
     if not leftovers:
         return f"No staging directories found under {location}"
-    total = sum(leftover.size_bytes for leftover in leftovers)
-    verb = "Removed" if removed else "Found"
-    noun = "directory" if len(leftovers) == 1 else "directories"
-    headline = (
-        f"{verb} {len(leftovers)} staging {noun} under {location}, "
-        f"{_format_size(total)}"
-    )
-    lines = [
-        headline,
-        *(
-            f"  {leftover.path.name}  {_format_size(leftover.size_bytes)}"
-            for leftover in leftovers
-        ),
+    if removed is None:
+        headline = (
+            f"Found {len(leftovers)} staging {_noun(len(leftovers))} under "
+            f"{location}, {_total_size(leftovers)}"
+        )
+        return "\n".join([
+            headline,
+            *_entries(leftovers),
+            "Pass --remove to delete them.",
+        ])
+    if len(removed) == len(leftovers):
+        headline = (
+            f"Removed {len(removed)} staging {_noun(len(removed))} under "
+            f"{location}, {_total_size(removed)}"
+        )
+        return "\n".join([headline, *_entries(removed)])
+    removed_paths = {leftover.path for leftover in removed}
+    retained = [
+        leftover for leftover in leftovers if leftover.path not in removed_paths
     ]
-    if not removed:
-        lines.append("Pass --remove to delete them.")
-    return "\n".join(lines)
+    headline = (
+        f"Removed {len(removed)} of {len(leftovers)} staging "
+        f"{_noun(len(leftovers))} under {location}, {_total_size(removed)}"
+    )
+    failure = (
+        f"Could not remove {len(retained)}, {_total_size(retained)}; the log says why"
+    )
+    return "\n".join([
+        headline,
+        *_entries(removed),
+        failure,
+        *_entries(retained),
+    ])
 
 
 def run(*, options: CleanOptions | None = None) -> str:
@@ -225,7 +287,7 @@ def run(*, options: CleanOptions | None = None) -> str:
     location = _resolve_location(active_options.location)
     leftovers = find_leftovers(location)
     if not active_options.remove:
-        return _summarize(leftovers, location, removed=False)
+        return _summarize(leftovers, location)
 
     removed: list[LeftoverTree] = []
     for leftover in leftovers:
@@ -236,7 +298,9 @@ def run(*, options: CleanOptions | None = None) -> str:
             LOGGER.exception("Could not remove %s; leaving it", leftover.path)
             continue
         removed.append(leftover)
-    return _summarize(removed, location, removed=True)
+    # Both sequences go in: the summary has to tell an empty search apart
+    # from a search that found trees and removed none of them.
+    return _summarize(leftovers, location, removed=removed)
 
 
 __all__: typ.Final = [
