@@ -80,9 +80,21 @@ names begin with `lading-publish-`, and only real directories: a symbolic link
 with a matching name is never followed, so nothing outside that directory can
 be reached.
 
-Run it when no publish is in progress. A staging copy belonging to a running
-publish looks exactly like one that was abandoned, and removing it would fail
-that publish.
+A staging copy belonging to a running publish looks exactly like one that was
+abandoned, so each copy carries a claim: a `.lading-staging-lock` file that the
+publish holds open and locked for as long as it owns the copy. `lading clean`
+tries to take that lock just before deleting a copy and leaves the copy alone
+if it cannot, reporting it as skipped and naming it. The operating system drops
+a lock when the process holding it ends, however it ends, so a copy left by an
+interrupted publish is swept on the next run rather than being protected
+forever.
+
+Copies left by releases before this one have no such file and are removed
+normally.
+
+The claim is advisory. Deleting the lock file by hand, or removing the copy with
+`rm -rf` rather than with `lading clean`, defeats the protection and can take
+a copy a publish is still using.
 
 ## Programmatic publish staging
 

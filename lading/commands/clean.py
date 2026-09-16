@@ -11,6 +11,10 @@ only the immediate children of one directory, only those whose names begin
 with :data:`~lading.commands.publish_staging.STAGING_PREFIX`, and only real
 directories rather than symbolic links. Nothing is removed unless the caller
 asks: the report is the default, and ``--remove`` names the exception.
+
+Scope alone says nothing about time, so a removal also consults
+:mod:`lading.commands.staging_lock`: a tree a running publish still holds is
+skipped and reported rather than deleted.
 """
 
 from __future__ import annotations
@@ -23,6 +27,7 @@ import tempfile
 import typing as typ
 from pathlib import Path
 
+from lading.commands import staging_lock
 from lading.commands.publish_staging import STAGING_PREFIX
 
 LOGGER = logging.getLogger(__name__)
@@ -217,15 +222,18 @@ def _summarize(
     location: Path,
     *,
     removed: cabc.Sequence[LeftoverTree] | None = None,
+    skipped: cabc.Sequence[LeftoverTree] = (),
 ) -> str:
     """Return the report for what was found, and what was done with it.
 
     ``removed`` is :data:`None` when the caller asked only for a report, and
-    the trees actually removed otherwise. The two are separate because a
-    removal can fail: summarising ``removed`` alone would announce that
-    nothing was found whenever every :func:`shutil.rmtree` raised, which is
-    the opposite of what happened and would leave the caller believing the
-    directory had been swept.
+    the trees actually removed otherwise. It is separate from ``leftovers``
+    because a removal can fail: summarising ``removed`` alone would announce
+    that nothing was found whenever every :func:`shutil.rmtree` raised, which
+    is the opposite of what happened and would leave the caller believing the
+    directory had been swept. ``skipped`` holds the trees a running publish
+    still owns, which are neither a failure nor a removal and must not read
+    as either.
 
     Returns
     -------
@@ -250,23 +258,25 @@ def _summarize(
             f"{location}, {_total_size(removed)}"
         )
         return "\n".join([headline, *_entries(removed)])
-    removed_paths = {leftover.path for leftover in removed}
-    retained = [
-        leftover for leftover in leftovers if leftover.path not in removed_paths
-    ]
+    accounted = {leftover.path for leftover in (*removed, *skipped)}
+    failed = [leftover for leftover in leftovers if leftover.path not in accounted]
     headline = (
         f"Removed {len(removed)} of {len(leftovers)} staging "
         f"{_noun(len(leftovers))} under {location}, {_total_size(removed)}"
     )
-    failure = (
-        f"Could not remove {len(retained)}, {_total_size(retained)}; the log says why"
-    )
-    return "\n".join([
-        headline,
-        *_entries(removed),
-        failure,
-        *_entries(retained),
-    ])
+    lines = [headline, *_entries(removed)]
+    if skipped:
+        in_use = (
+            f"Skipped {len(skipped)}, {_total_size(skipped)}; "
+            f"in use by a running publish"
+        )
+        lines += [in_use, *_entries(skipped)]
+    if failed:
+        failure = (
+            f"Could not remove {len(failed)}, {_total_size(failed)}; the log says why"
+        )
+        lines += [failure, *_entries(failed)]
+    return "\n".join(lines)
 
 
 def run(*, options: CleanOptions | None = None) -> str:
@@ -290,7 +300,15 @@ def run(*, options: CleanOptions | None = None) -> str:
         return _summarize(leftovers, location)
 
     removed: list[LeftoverTree] = []
+    skipped: list[LeftoverTree] = []
     for leftover in leftovers:
+        # Checked immediately before the removal rather than once up front:
+        # the answer is about another process, so the narrower the window
+        # between asking and acting, the better.
+        if staging_lock.is_in_use(leftover.path):
+            LOGGER.info("Skipping %s; a publish still holds it", leftover.path)
+            skipped.append(leftover)
+            continue
         LOGGER.info("Removing staging directory %s", leftover.path)
         try:
             shutil.rmtree(leftover.path)
@@ -298,9 +316,10 @@ def run(*, options: CleanOptions | None = None) -> str:
             LOGGER.exception("Could not remove %s; leaving it", leftover.path)
             continue
         removed.append(leftover)
-    # Both sequences go in: the summary has to tell an empty search apart
-    # from a search that found trees and removed none of them.
-    return _summarize(leftovers, location, removed=removed)
+    # All three sequences go in: the summary has to tell an empty search from
+    # a search that found trees and removed none, and a tree left alone on
+    # purpose from one whose removal failed.
+    return _summarize(leftovers, location, removed=removed, skipped=skipped)
 
 
 __all__: typ.Final = [
