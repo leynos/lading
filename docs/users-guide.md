@@ -32,12 +32,14 @@ The 0.1.0 release also changes workspace README adoption:
 
 ## Where a publish stages the workspace
 
-`lading publish` copies the whole workspace before packaging it, so cargo never
-builds against your working tree. The copy goes under the system temporary
-directory, honouring `TMPDIR`, in a directory named `lading-publish-*`. Set
-`TMPDIR` to put it somewhere else; there is no command-line option for the
-location, and the programmatic `PublishOptions.build_directory` is the only way
-to name one directly.
+`lading publish` copies the whole workspace before packaging it, so packaging
+and publication never read your working tree. The pre-flight is the exception:
+its `cargo check` and `cargo test` run in the workspace root, before staging
+begins, though into a throwaway target directory. The copy goes under the
+system temporary directory, honouring `TMPDIR`, in a directory named
+`lading-publish-*`. Set `TMPDIR` to put it somewhere else; there is no
+command-line option for the location, and the programmatic
+`PublishOptions.build_directory` is the only way to name one directly.
 
 That copy is the entire workspace plus its verify build, which is tens of
 gigabytes for a large one. It is removed when the publish ends: on success, on
