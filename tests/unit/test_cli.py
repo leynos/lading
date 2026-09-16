@@ -970,3 +970,93 @@ def test_publish_via_app_matches_across_config_branches(
     assert disk_call[1] is not preloaded, (
         "the disk branch must reload a fresh configuration object"
     )
+
+
+def test_main_installs_the_termination_cleanup(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Bootstrap must install the handler, not merely define it.
+
+    The end-to-end tests install it themselves inside their probe, so they
+    prove the handler works without proving anything reaches it. A handler
+    nothing installs leaves every staged copy behind on termination, which is
+    the defect in issue #269 restored in full.
+    """
+    installed: list[bool] = []
+    monkeypatch.setattr(
+        cli.publish_staging,
+        "install_termination_cleanup",
+        lambda: installed.append(True),
+    )
+    monkeypatch.setattr(cli, "load_workspace", lambda _: _make_workspace(tmp_path))
+    monkeypatch.setattr(publish_command, "run", lambda *_a, **_k: "done")
+
+    exit_code = cli.main(["publish", "--workspace-root", str(tmp_path)])
+
+    assert exit_code == 0
+    assert installed == [True], "lading.cli.main did not install the handler"
+
+
+class _KeepStagingCase(typ.NamedTuple):
+    """One way of asking for, or declining, a retained staging copy.
+
+    Attributes
+    ----------
+    environment : str | None
+        Value for ``LADING_KEEP_STAGING``, or ``None`` to leave it unset.
+    argument : str | None
+        Extra command-line argument, or ``None`` for none.
+    expected_cleanup : bool
+        The ``PublishOptions.cleanup`` the CLI should compose.
+    """
+
+    environment: str | None
+    argument: str | None
+    expected_cleanup: bool
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        _KeepStagingCase(None, None, expected_cleanup=True),
+        _KeepStagingCase(None, "--keep-staging", expected_cleanup=False),
+        _KeepStagingCase("1", None, expected_cleanup=False),
+        _KeepStagingCase("0", None, expected_cleanup=True),
+        _KeepStagingCase("1", "--no-keep-staging", expected_cleanup=True),
+    ],
+    ids=["default", "flag", "env-set", "env-unset", "flag-beats-env"],
+)
+def test_keep_staging_resolves_to_the_cleanup_option(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    case: _KeepStagingCase,
+) -> None:
+    """``--keep-staging`` and its variable must reach ``PublishOptions``.
+
+    The flag is the negative of the option it sets, so a wiring mistake is
+    invisible: the command still runs, and the only evidence is a staged copy
+    that survives, or one that vanishes while someone is debugging it. The
+    environment cases matter because Cyclopts resolves the variable, and the
+    command line has to win over it.
+    """
+    captured: list[publish_command.PublishOptions] = []
+
+    def fake_run(*arguments: object, options: publish_command.PublishOptions) -> str:
+        """Record the options the CLI composed."""
+        del arguments
+        captured.append(options)
+        return "done"
+
+    monkeypatch.setattr(publish_command, "run", fake_run)
+    monkeypatch.setattr(cli, "load_workspace", lambda _: _make_workspace(tmp_path))
+    if case.environment is None:
+        monkeypatch.delenv(cli_options.KEEP_STAGING_ENV_VAR, raising=False)
+    else:
+        monkeypatch.setenv(cli_options.KEEP_STAGING_ENV_VAR, case.environment)
+
+    arguments = ["publish", "--workspace-root", str(tmp_path)]
+    if case.argument is not None:
+        arguments.append(case.argument)
+
+    assert cli.main(arguments) == 0
+    assert captured[-1].cleanup is case.expected_cleanup
