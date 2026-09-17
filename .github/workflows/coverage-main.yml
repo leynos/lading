@@ -31,7 +31,7 @@ jobs:
         uses: astral-sh/setup-uv@v7
 
       - name: Generate coverage
-        uses: leynos/shared-actions/.github/actions/generate-coverage@ac272c8de8d34b6b773274f7c1a11041e23cf1eb
+        uses: leynos/shared-actions/.github/actions/generate-coverage@ac272c8273c5baa53a26b4ac96b8ede3e86b7f94
         with:
           language: python
           python-source: ./lading
