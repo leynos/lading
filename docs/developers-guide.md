@@ -5,6 +5,16 @@ for contributors to `lading`. For the end-user CLI reference and `lading.toml`
 configuration, see the [user guide](./users-guide.md). For repository operating
 rules and required quality gates, see the [agent instructions](../AGENTS.md).
 
+## Coverage ownership
+
+Pull-request CI generates coverage with the local ratchet baseline written by
+`coverage-main.yml`. It does not fetch full Git history, invoke CodeScene, or
+receive `CS_ACCESS_TOKEN`. Lading's root `Cargo.toml` is a release-test
+fixture, so both coverage workflows force `language: python` in the shared
+generator and retain the existing `./lading` source scope. The main-only
+workflow writes the ratchet baseline and uploads its Cobertura report to
+CodeScene with `mode: upload` after a merge.
+
 ## Spelling policy
 
 Run `make spelling` to enforce en-GB-oxendict prose spelling. The gate
