@@ -1,9 +1,10 @@
 name: Coverage (main)
 
-# CodeScene accepts `cs-coverage upload` only for analysed branches, so
-# main-branch coverage is uploaded here on push; pull requests run the
-# lint-test suite (and, in a future fast-follow, the changed-line
-# `cs-coverage check` gate) in ci.yml instead, without an upload.
+# This workflow is the repository's only CodeScene caller. Pull requests
+# run the lint-test suite in ci.yml and never receive the token, never
+# invoke `cs-coverage` and never upload: CodeScene accepts an upload only
+# for analysed branches, and the changed-line gate that used to run there
+# is gone.
 #
 # NOTE: coverage generation uses the pre-existing bespoke slipcover
 # invocation, not the shared generate-coverage action. lading's root
@@ -12,11 +13,10 @@ name: Coverage (main)
 # shared action's language auto-detection has no override and always
 # treats a root Cargo.toml as Rust (or "mixed" alongside pyproject.toml),
 # so it tries `cargo llvm-cov nextest --workspace` against members that
-# do not exist on disk and fails immediately. Consequently this workflow
-# cannot use generate-coverage's with-ratchet baseline either — the
-# ratchet is implemented inside that action. The coverage ratchet is
-# skipped for lading until the shared action gains a language override
-# (see the CodeScene coverage rollout notes).
+# do not exist on disk and fails immediately. Moving to the shared action,
+# and with it to its coverage ratchet, needs leynos/shared-actions#502;
+# see the developer guide for what that branch carries and why the repin
+# was tried here and reverted.
 
 on:
   push:
@@ -29,7 +29,6 @@ jobs:
       contents: read
     env:
       CS_ACCESS_TOKEN: ${{ secrets.CS_ACCESS_TOKEN || '' }}
-      CODESCENE_CLI_SHA256: ${{ vars.CODESCENE_CLI_SHA256 || '' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -40,7 +39,10 @@ jobs:
           python-version: '3.13'
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        # The same commit ci.yml pins, so the two workflows install the same
+        # uv. A third-party action moves under a tag; the first-party
+        # `actions/*` steps above stay on their major tag, as they do there.
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
 
       - name: Install code
         run: make build
@@ -61,12 +63,23 @@ jobs:
             --out coverage.xml \
             -m pytest --forked -v
 
+      # Repinned past f68e8e2e, which resolves the cs-coverage version from
+      # a committed manifest rather than fetching the latest release. An
+      # unpinned CLI is what broke Cobertura parsing across the estate on
+      # 2026-09-16, and this step is the only place left to fix it.
+      #
+      # No checksum input is passed. `installer-checksum` is rejected when
+      # non-empty, and its replacement `archive-checksum` checks the
+      # manifest's archive digest, whereas the repository variable
+      # get-codescene-sha.yml writes is the digest of the installer script
+      # the action no longer uses. The manifest carries its own pin, so the
+      # optional input is left out rather than fed a value that means
+      # something else.
       - name: Upload coverage data to CodeScene
         if: env.CS_ACCESS_TOKEN
-        uses: leynos/shared-actions/.github/actions/upload-codescene-coverage@6b5cdc2d4c0bb72cafd5a66d24d248ac25827db9
+        uses: leynos/shared-actions/.github/actions/upload-codescene-coverage@a5765019912a8ab6882b12db049c7cde635f3a85
         with:
           format: cobertura
           path: coverage.xml
           mode: upload
           access-token: ${{ env.CS_ACCESS_TOKEN }}
-          installer-checksum: ${{ env.CODESCENE_CLI_SHA256 }}

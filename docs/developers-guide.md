@@ -5,6 +5,60 @@ for contributors to `lading`. For the end-user CLI reference and `lading.toml`
 configuration, see the [user guide](./users-guide.md). For repository operating
 rules and required quality gates, see the [agent instructions](../AGENTS.md).
 
+## Coverage ownership
+
+Main is the sole owner of CodeScene publication. `coverage-main.yml` runs on
+pushes to main, and it is the only place in this repository that holds
+`CS_ACCESS_TOKEN`, names a CodeScene endpoint or invokes `cs-coverage`.
+Pull-request CI runs the suite and publishes its Cobertura report as a workflow
+artefact; it does not check coverage against CodeScene, and it no longer
+fetches full Git history, which existed only so the removed gate could reach a
+merge base.
+
+This is half of the estate rule. The other half puts the shared
+`generate-coverage` action on both lanes with its coverage ratchet, and this
+repository cannot adopt it yet. lading's root `Cargo.toml` is a release-test
+fixture, so the action's language detection must be overridden, and the two
+things that make that work exist only on leynos/shared-actions#502:
+`python-source`, which keeps the metric on `./lading` rather than broadening it
+to tests and fixtures, and a fix prepending the isolated coverage environment's
+scripts directory to `PATH`. Without the second, the cmd-mox tests in
+`tests/unit/test_upload_release_wheels.py` cannot find the executables they
+create. The repin was tried on this branch, pushed, reddened exactly those
+three tests, and was reverted. Both workflows therefore keep this repository's
+own slipcover invocation, and the ratchet arrives when #502 lands.
+
+The uploader is pinned past shared-actions `f68e8e2e`, which resolves the
+`cs-coverage` version from a committed manifest rather than fetching the latest
+release; an unpinned CLI is what broke Cobertura parsing across the estate, and
+this step is the only place left to fix it. No checksum input is passed.
+`installer-checksum` is rejected when it carries a value, and its replacement
+`archive-checksum` digests the manifest archive, whereas the repository variable
+`get-codescene-sha.yml` writes is the digest of the installer script the
+action no longer uses. Feeding the old variable to the new input would fail
+every run, so the optional input is omitted and the manifest's own pin stands.
+
+## Markdown linting
+
+CI lints Markdown only through `DavidAnson/markdownlint-cli2-action`, pinned to
+the commit `v24.2.0` points at rather than to the annotated tag object of the
+same name. The tag object's SHA is immutable but is not a commit, so a pin
+naming it names a different kind of object than a commit pin does. No CI step
+invokes `markdownlint-cli2` from a `run:` line: that would resolve whatever
+version the runner happened to carry, which is the drift the pin exists to
+stop. Locally, `make fmt` calls `mdtablefix` and `markdownlint-cli2 --fix`
+directly, and `.markdownlint-cli2.jsonc` is the canonical configuration, so the
+rules the action applies are the rules a contributor sees.
+
+`tests/workflow_contracts/test_coverage_ownership.py` holds both shapes, and
+enumerates the pull-request workflows rather than naming them, so one added
+later is covered the day it appears. Every clause was proved by putting the
+forbidden thing back: the CodeScene check step, a bare `cs-coverage` command,
+the full-history checkout, the publisher switched to `check`, the publisher
+also triggered on pull requests, the uploader repinned to the unpinned-CLI
+commit, `installer-checksum`, the Markdown tag-object pin, and a `run:` step
+invoking the linter each fail one case and no other.
+
 ## Spelling policy
 
 Run `make spelling` to enforce en-GB-oxendict prose spelling. The gate
