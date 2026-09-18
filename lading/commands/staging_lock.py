@@ -6,9 +6,17 @@ release that never cleaned up. The publish is in another process, so the
 in-memory ``_ACTIVE_STAGING_ROOTS`` set cannot answer for it.
 
 Every automatically created staging tree therefore carries a lock file, which
-its publisher holds open and locked for the tree's life. `clean` tries the
-same lock immediately before removing a tree and leaves the tree alone if it
-cannot take it.
+its publisher holds open and locked for the tree's life. `clean` takes the
+same lock and *holds* it across the removal, through
+:func:`hold_for_removal`, rather than asking and then deleting: between those
+two moments a publish could claim the tree, and the deletion would take a
+workspace still being read.
+
+Windows is the exception, and it is safe for a different reason. An open
+handle inside a directory stops that directory being deleted there, so the
+claim cannot be held across the removal; but the same rule means a live
+publisher's own handle makes the removal fail rather than succeed, so an
+in-use tree is still never deleted.
 
 A lock rather than a recorded process identifier, because the two failure
 modes of a marker file point in opposite directions: a reused identifier makes
@@ -24,11 +32,13 @@ removable. The lock is advisory: deleting the file by hand defeats it.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import sys
 import typing as typ
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
+    import collections.abc as cabc
     import io
     from pathlib import Path
 
@@ -81,25 +91,32 @@ def _open(root: Path) -> io.BufferedRandom:
     return handle
 
 
-def claim(root: Path) -> None:
+def claim(root: Path) -> bool:
     """Claim ``root`` for this process until :func:`release`, or until exit.
 
-    A claim that cannot be made is logged and otherwise ignored. The lock is a
+    A claim that cannot be made is reported rather than raised. The lock is a
     courtesy to a concurrent `clean`, and a filesystem that will not lock must
-    not stop a publish.
+    not stop a publish; the caller is told so it can say what it is doing
+    rather than assume the tree is protected.
+
+    Returns
+    -------
+    bool
+        Whether the claim was made.
     """
     try:
         handle = _open(root)
     except OSError:
         LOGGER.warning("Could not create a staging lock in %s", root, exc_info=True)
-        return
+        return False
     try:
         _take(handle)
     except OSError:
         LOGGER.warning("Could not claim the staging lock in %s", root, exc_info=True)
         handle.close()
-        return
+        return False
     _HELD[root] = handle
+    return True
 
 
 def release(root: Path) -> None:
@@ -117,8 +134,79 @@ def release(root: Path) -> None:
         handle.close()
 
 
+def _acquire_for_removal(root: Path) -> tuple[bool, io.BufferedRandom | None]:
+    """Report whether ``root`` may be removed, with the handle holding it so.
+
+    Returns
+    -------
+    tuple[bool, io.BufferedRandom | None]
+        Whether the tree is free to remove, and the open handle whose lock
+        keeps it that way. The handle is :data:`None` when there is nothing
+        to hold: either the tree is not free, or it carries no lock file.
+    """
+    if root in _HELD:
+        # This process is publishing into the tree. Asking the kernel would
+        # only take the claim we already hold, which answers nothing.
+        return (False, None)
+    if not (root / LOCK_NAME).is_file():
+        # A tree from a release predating the claim. Nothing holds it, and
+        # nothing here can, which is the documented bargain.
+        return (True, None)
+    try:
+        handle = _open(root)
+    except OSError:
+        # The lock file cannot even be opened, so its tree is not ours to
+        # judge. Reporting it in use is the answer that does not delete.
+        LOGGER.warning("Could not read the staging lock in %s", root, exc_info=True)
+        return (False, None)
+    try:
+        _take(handle)
+    except OSError:
+        handle.close()
+        return (False, None)
+    if sys.platform == "win32":  # pragma: no cover - runs on the Windows lanes
+        # The claim cannot be held across the removal here, because the open
+        # handle would itself stop the directory being deleted. The same rule
+        # is what keeps the tree safe: a live publisher's handle makes the
+        # removal fail rather than succeed.
+        _drop(handle)
+        handle.close()
+        return (True, None)
+    return (True, handle)
+
+
+@contextlib.contextmanager
+def hold_for_removal(root: Path) -> cabc.Iterator[bool]:
+    """Claim ``root`` for deletion, holding the claim for the block's life.
+
+    Asking whether a tree is in use and then deleting it are two moments, and
+    a publish can claim the tree in between. Callers that delete must do so
+    inside this block, so the claim they were given is still theirs when the
+    directory goes.
+
+    Yields
+    ------
+    bool
+        Whether the tree is free to remove. :data:`False` means a live
+        publish holds it, or that its claim could not be read.
+    """
+    free, handle = _acquire_for_removal(root)
+    try:
+        yield free
+    finally:
+        if handle is not None:
+            try:
+                _drop(handle)
+            finally:
+                handle.close()
+
+
 def is_in_use(root: Path) -> bool:
     """Report whether a live publish still holds ``root``.
+
+    The answer is true only for the instant it is given, so anything that
+    acts on it must use :func:`hold_for_removal` instead. This remains for
+    callers that only report.
 
     Returns
     -------
@@ -126,22 +214,5 @@ def is_in_use(root: Path) -> bool:
         Whether some process holds the tree's lock. A tree carrying no lock
         file predates the lock and is reported as free.
     """
-    if root in _HELD:
-        return True
-    lock = root / LOCK_NAME
-    if not lock.is_file():
-        return False
-    try:
-        handle = _open(root)
-    except OSError:
-        # The lock file cannot even be opened, so its tree is not ours to
-        # judge. Reporting it in use is the answer that does not delete.
-        LOGGER.warning("Could not read the staging lock in %s", root, exc_info=True)
-        return True
-    with handle:
-        try:
-            _take(handle)
-        except OSError:
-            return True
-        _drop(handle)
-    return False
+    with hold_for_removal(root) as free:
+        return not free

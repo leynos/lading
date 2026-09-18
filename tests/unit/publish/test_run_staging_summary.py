@@ -1,18 +1,19 @@
 """Cover what `publish.run` says about the staged tree it names.
 
-The summary line is built inside the `staged_workspace` block and returned
-after it, so by the time a caller reads `Staged workspace at: <path>` the
-tree has usually gone: cleanup has defaulted to on since issue #269. These
-tests pin the reported state to the option that decides it. The plan
-snapshot cannot: it redacts the whole line, so it passes whichever state the
-line reports.
+The tree named by `Staged workspace at: <path>` has usually gone by the time
+a caller reads the line, cleanup having defaulted to on since issue #269.
+These tests pin what the line says to what actually became of the tree,
+rather than to the option that asked for it: those two answers differ
+whenever a removal fails. The plan snapshot cannot do this: it redacts the
+whole line, so it passes whichever state the line reports.
 """
 
 from __future__ import annotations
 
+import shutil
 import typing as typ
 
-from lading.commands import publish
+from lading.commands import publish, publish_staging
 
 from .conftest import make_config, make_crate, make_workspace
 
@@ -94,4 +95,39 @@ def test_the_summary_leaves_a_retained_tree_unqualified(
 
     assert not _staging_line(output).endswith("(removed)"), (
         "a retained staged tree was reported as removed"
+    )
+
+
+def test_the_summary_does_not_claim_a_removal_that_failed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A removal that raised leaves the tree, so the line must not say gone.
+
+    This is the case the option alone cannot answer, and the one that
+    separates reporting an intention from reporting an outcome. With
+    `cleanup=True` the request was made and refused; a summary built from the
+    request calls a directory that is still on disk removed, and sends whoever
+    reads it looking for something they were told had been deleted.
+    """
+
+    def _refuse(*_args: object, **_kwargs: object) -> None:
+        """Fail every removal the way a permission error would."""
+        message = "refusing to remove the staged tree"
+        raise OSError(message)
+
+    build_directory = tmp_path.parent / "build"
+    cleanup_target = build_directory / tmp_path.resolve().name
+    monkeypatch.setattr(shutil, "rmtree", _refuse)
+    try:
+        output = _run(monkeypatch, tmp_path, cleanup=True)
+    finally:
+        # Undone before the tree is swept, because the sweep needs the real
+        # `rmtree` back, and the target is untracked because a failed removal
+        # deliberately leaves it registered for a later attempt.
+        monkeypatch.undo()
+        publish_staging._ACTIVE_STAGING_ROOTS.discard(cleanup_target)
+        shutil.rmtree(build_directory, ignore_errors=True)
+
+    assert not _staging_line(output).endswith("(removed)"), (
+        "a staged tree whose removal failed was reported as removed"
     )

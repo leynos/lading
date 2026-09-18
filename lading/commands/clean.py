@@ -12,9 +12,10 @@ with :data:`~lading.commands.publish_staging.STAGING_PREFIX`, and only real
 directories rather than symbolic links. Nothing is removed unless the caller
 asks: the report is the default, and ``--remove`` names the exception.
 
-Scope alone says nothing about time, so a removal also consults
-:mod:`lading.commands.staging_lock`: a tree a running publish still holds is
-skipped and reported rather than deleted.
+Scope alone says nothing about time, so a removal also takes the tree's claim
+from :mod:`lading.commands.staging_lock` and holds it until the deletion is
+done: a tree a running publish still holds is skipped and reported rather than
+deleted, and one that is free cannot be claimed while it is going.
 """
 
 from __future__ import annotations
@@ -302,20 +303,22 @@ def run(*, options: CleanOptions | None = None) -> str:
     removed: list[LeftoverTree] = []
     skipped: list[LeftoverTree] = []
     for leftover in leftovers:
-        # Checked immediately before the removal rather than once up front:
-        # the answer is about another process, so the narrower the window
-        # between asking and acting, the better.
-        if staging_lock.is_in_use(leftover.path):
-            LOGGER.info("Skipping %s; a publish still holds it", leftover.path)
-            skipped.append(leftover)
-            continue
-        LOGGER.info("Removing staging directory %s", leftover.path)
-        try:
-            shutil.rmtree(leftover.path)
-        except OSError:
-            LOGGER.exception("Could not remove %s; leaving it", leftover.path)
-            continue
-        removed.append(leftover)
+        # The claim is held across the removal rather than merely checked
+        # before it. The answer is about another process, so asking and then
+        # deleting leaves a window in which a publish can claim the tree and
+        # have its workspace deleted out from under it.
+        with staging_lock.hold_for_removal(leftover.path) as free:
+            if not free:
+                LOGGER.info("Skipping %s; a publish still holds it", leftover.path)
+                skipped.append(leftover)
+                continue
+            LOGGER.info("Removing staging directory %s", leftover.path)
+            try:
+                shutil.rmtree(leftover.path)
+            except OSError:
+                LOGGER.exception("Could not remove %s; leaving it", leftover.path)
+                continue
+            removed.append(leftover)
     # All three sequences go in: the summary has to tell an empty search from
     # a search that found trees and removed none, and a tree left alone on
     # purpose from one whose removal failed.

@@ -5,29 +5,35 @@ clean --remove` running while a *separate* `lading publish` still owns a
 staged tree. The cases that turn on that therefore start a real second
 process and let the operating system arbitrate.
 
-The four are chosen so that each fails something the others do not. A live
+The cases are chosen so that each fails something the others do not. A live
 holder must stop the removal; a dead holder must not, because a claim that
 outlived its owner would make an abandoned tree permanently unremovable,
 which is the leftover `lading clean` exists to sweep; staging must claim what
 it creates, without which the first case would pass while nothing in the
 product claimed anything; and a tree from a release predating the claim must
 stay removable.
+
+Three more cover the moments around the claim rather than the claim itself:
+that it is still held while the tree is being deleted, that a publish told to
+retain its tree gives the claim up anyway, and that a claim which could not be
+made is reported rather than swallowed.
 """
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import sys
 import tempfile
 import typing as typ
+
+import pytest
 
 from lading.commands import clean, publish_staging, staging_lock
 from lading.commands.publish_staging import STAGING_PREFIX
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
     from pathlib import Path
-
-    import pytest
 
 #: Loads the real `staging_lock` module from its own file rather than through
 #: `lading.commands`, whose package import pulls in the whole command stack for
@@ -210,3 +216,91 @@ def test_a_tree_from_an_older_release_carries_no_claim(tmp_path: Path) -> None:
 
     assert not tree.exists(), "a tree with no claim was treated as in use"
     assert "Removed 1 staging directory" in summary, "the removal was not reported"
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason=(
+        "Windows will not delete a directory holding an open handle, so the "
+        "claim cannot be held across the removal there; what protects an "
+        "in-use tree on that platform is the holder's own handle making the "
+        "removal fail, which this case cannot observe"
+    ),
+)
+def test_the_claim_is_still_held_while_the_tree_is_deleted(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The removal must own the tree for the whole deletion, not just before.
+
+    Every other case here settles the question before the removal begins, so
+    all of them pass against a `clean` that asks, releases, and only then
+    deletes. That order leaves a window in which a publish claims the tree and
+    has its workspace deleted out from under it. This one asks a separate
+    process what it sees at the instant of the deletion, which is the only
+    moment that answers the question.
+    """
+    tree = _staging_tree(tmp_path, "held-through")
+    # An unheld lock file, which is what an abandoned tree carries: `clean`
+    # must be able to take it, and must then keep it.
+    (tree / staging_lock.LOCK_NAME).touch()
+    seen: list[bool] = []
+    remove = shutil.rmtree
+
+    def _observe(path: Path, *args: object, **kwargs: object) -> None:
+        """Record what another process sees, then remove the tree for real."""
+        seen.append(_probe_in_use(path))
+        remove(path, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(shutil, "rmtree", _observe)
+
+    summary = clean.run(options=clean.CleanOptions(location=tmp_path, remove=True))
+
+    assert not tree.exists(), "the tree was not removed"
+    assert "Removed 1 staging directory" in summary, "the removal was not reported"
+    assert seen == [True], (
+        "the removal claim was dropped before the tree was deleted, leaving a "
+        "window in which a publish could claim it"
+    )
+
+
+def test_a_claim_that_cannot_be_made_is_reported(tmp_path: Path) -> None:
+    """A failed claim must be a value the caller sees, not only a log line.
+
+    The lock is a courtesy, so a filesystem that will not lock does not stop a
+    publish. That decision is only defensible if the publish knows it is
+    running unprotected; a `claim` returning nothing leaves every caller
+    assuming the tree is held.
+    """
+    missing = tmp_path / "never-created"
+
+    assert not staging_lock.claim(missing), (
+        "a claim on a tree that does not exist reported success"
+    )
+    assert missing not in staging_lock._HELD, "a failed claim was recorded as held"
+
+
+def test_a_publish_says_so_when_it_cannot_claim_its_tree(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Staging must act on the claim result rather than discard it.
+
+    The previous case proves `claim` reports the failure; this proves anything
+    reads it. Without this, the return value could be deleted again and only a
+    lock-level debug line would remain, which says nothing about the publish
+    that is now running in a tree `clean --remove` may take.
+    """
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    monkeypatch.setattr(staging_lock, "claim", lambda _root: False)
+
+    with caplog.at_level("WARNING", logger="lading.commands.publish_staging"):
+        created = publish_staging._normalize_build_directory(tmp_path, None)
+
+    try:
+        assert created.is_dir(), "an unclaimable tree stopped the publish"
+        assert "unclaimed" in caplog.text, (
+            "staging did not report that its tree is unprotected"
+        )
+    finally:
+        shutil.rmtree(created, ignore_errors=True)
