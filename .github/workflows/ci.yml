@@ -54,7 +54,11 @@ jobs:
         # pin alongside the other actions. It reads .markdownlint-cli2.jsonc
         # from the workspace, so the rules and ignores match `make
         # markdownlint`. Spelling stays in `make spelling` below.
-        uses: DavidAnson/markdownlint-cli2-action@4580e1612f6407034edd6c0e4e316d725920867b  # v24.2.0
+        # Pinned to the commit v24.2.0 points at, not to the tag object.
+        # 4580e161 is the annotated tag's own SHA: immutable, but not a
+        # commit, so a checkout resolving it is resolving a different kind of
+        # object than the pin is meant to name.
+        uses: DavidAnson/markdownlint-cli2-action@21c1be1b93ad9ed58fa840aacc3f279cde2a72ff  # v24.2.0
         with:
           globs: '**/*.md'
 
@@ -67,24 +71,39 @@ jobs:
       - name: Run typechecker
         run: make typecheck
 
-      # The root Cargo.toml is a fixture, not a buildable workspace. Force
-      # Python so the shared action skips Cargo auto-detection while retaining
-      # its main-written coverage ratchet.
-      - name: Generate coverage
-        if: github.event_name == 'pull_request'
-        uses: leynos/shared-actions/.github/actions/generate-coverage@152d9c4784d0ae5877938a984fe6d1f04d718fd8
-        with:
-          language: python
-          python-source: ./lading
-          output-path: coverage.xml
-          format: cobertura
-          pytest-workers: ''
-          with-ratchet: 'true'
+      # NOTE: the shared generate-coverage action is not used here. Its
+      # language auto-detection treats any repository-root Cargo.toml as
+      # Rust (or "mixed" alongside pyproject.toml) with no override, and
+      # lading commits a synthetic root Cargo.toml as a fixture for its
+      # own workspace-release test scenarios (see
+      # docs/repository-layout.md) — it references crates/ directories
+      # that do not exist on disk. `cargo llvm-cov nextest --workspace`
+      # therefore fails immediately in CI trying to resolve that
+      # manifest. Coverage generation therefore stays on this bespoke
+      # slipcover invocation. Moving it to the shared action needs
+      # leynos/shared-actions#502, which adds the `python-source` scope
+      # that keeps the metric on ./lading, and the fix prepending the
+      # coverage environment's scripts directory to PATH, without which
+      # the cmd-mox tests cannot find the executables they create. That
+      # repin was tried on this branch and reverted; see the developer
+      # guide. Adds --xml: without it slipcover's --out target is a
+      # plain-text report, not Cobertura XML, which went unnoticed
+      # while the CodeScene upload step was guarded by an unset secret.
+      - name: Run tests with coverage
+        run: |
+          uv pip install slipcover pytest-forked
+          uv run python -m slipcover \
+            --source=./lading \
+            --omit="*/.venv/*" \
+            --branch \
+            --xml \
+            --out coverage.xml \
+            -m pytest --forked -v
 
-      # Keep the project-specific artefact for pull-request inspection. The
-      # shared generator also archives its own coverage report.
+      # The only publisher of this file in this workflow. The CodeScene
+      # gate that used to upload a second copy under the name "coverage"
+      # has gone; coverage-main.yml owns every upload now.
       - name: Upload coverage artifact
-        if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage-report
