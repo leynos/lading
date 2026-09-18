@@ -42,14 +42,17 @@ MARKDOWNLINT_ACTION = (
 
 
 def _load_workflow(path: Path) -> dict[str, typ.Any]:
-    """Return one decoded workflow mapping.
+    """Return one decoded workflow mapping, with its `on:` key restored.
+
+    PyYAML reads a bare `on` as the boolean :data:`True`, so it is moved back
+    before any caller looks for a trigger that would otherwise appear absent.
+    A contract that missed this would report every workflow as untriggered and
+    pass whatever it was asked.
 
     Returns
     -------
     dict
-        The decoded workflow document, with the `on:` key restored. PyYAML
-        reads a bare `on` as the boolean True, so it is moved back before any
-        caller looks for a trigger that would otherwise appear absent.
+        The decoded workflow document.
     """
     workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
     assert isinstance(workflow, dict), f"{path} must contain a mapping"
@@ -59,13 +62,7 @@ def _load_workflow(path: Path) -> dict[str, typ.Any]:
 
 
 def _job(workflow: dict[str, typ.Any], name: str) -> dict[str, typ.Any]:
-    """Return a named workflow job.
-
-    Returns
-    -------
-    dict
-        The named job declaration.
-    """
+    """Return a named workflow job."""
     jobs = workflow.get("jobs")
     assert isinstance(jobs, dict), "workflow must declare a jobs mapping"
     job = jobs.get(name)
@@ -74,13 +71,7 @@ def _job(workflow: dict[str, typ.Any], name: str) -> dict[str, typ.Any]:
 
 
 def _step(job: dict[str, typ.Any], name: str) -> dict[str, typ.Any]:
-    """Return a named job step.
-
-    Returns
-    -------
-    dict
-        The named step declaration.
-    """
+    """Return a named job step."""
     steps = _steps(job)
     step = next(
         (candidate for candidate in steps if candidate.get("name") == name),
@@ -91,26 +82,14 @@ def _step(job: dict[str, typ.Any], name: str) -> dict[str, typ.Any]:
 
 
 def _steps(job: dict[str, typ.Any]) -> list[dict[str, typ.Any]]:
-    """Return a job's steps.
-
-    Returns
-    -------
-    list of dict
-        Every mapping in the job's step list.
-    """
+    """Return every mapping in a job's step list."""
     steps = job.get("steps")
     assert isinstance(steps, list), "job must declare a steps list"
     return [step for step in steps if isinstance(step, dict)]
 
 
 def _uses(step: dict[str, typ.Any]) -> str:
-    """Return a validated action reference.
-
-    Returns
-    -------
-    str
-        The step action reference.
-    """
+    """Return a step's action reference, rejecting a non-string."""
     uses = step.get("uses")
     assert isinstance(uses, str), f"step uses must be a string, got {uses!r}"
     return uses
