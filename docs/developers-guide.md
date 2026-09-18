@@ -309,6 +309,86 @@ scenarios pass `--keep-staging` because they read the staged manifest after the
 run. Those scenarios redirect `TMPDIR` for the subprocess so the copy they ask
 to keep is still removed with the test.
 
+## The clean command
+
+`lading clean` sweeps what earlier releases left behind. Its whole design is
+about what it must not delete, because it is the one command in the tool that
+removes directories the user did not name.
+
+It considers only the immediate children of one directory, only names carrying
+`publish_staging.STAGING_PREFIX`, and only real directories. Symbolic links are
+refused rather than followed. There is no resolved-parent check, and the
+absence is deliberate: once links are refused and the search does not recurse,
+such a test can never fail, and an unreachable safety check is worse than none
+because a reader trusts it.
+
+The prefix is imported from `publish_staging` rather than repeated. The two
+must not drift: a publish that changed its prefix would leak trees no clean
+could find, and a clean carrying its own copy of the string would not notice.
+`tests/unit/test_clean.py` asserts the two are the same object, so a copied
+literal fails.
+
+Reporting is the default and `--remove` names the exception, the same shape as
+`--keep-staging` on the publish command. Each guard is proved by a mutation
+that removes it: dropping the prefix test, dropping the symlink test, making
+the search recursive, and removing the report-only default each fail exactly
+the cases that name them.
+
+### Claiming a staging tree across processes
+
+The scope rules above say nothing about _time_. A staged tree belonging to a
+running publish is indistinguishable, by name and by shape, from one abandoned
+by a release that never cleaned up, and the publish is in another process, so
+`_ACTIVE_STAGING_ROOTS` cannot answer for it.
+
+`staging_lock` closes that. `_normalize_build_directory` claims each tree it
+creates with `mkdtemp`, opening `.lading-staging-lock` inside it and taking an
+exclusive non-blocking lock that the process holds for the tree's life;
+`clean.run` takes the same lock through `hold_for_removal` and **holds it
+across** the `shutil.rmtree`, skipping the tree if it cannot take it. One
+module wraps both platforms: `fcntl.flock` on POSIX and `msvcrt.locking` on
+Windows.
+
+Holding rather than asking matters because asking and deleting are two moments,
+and a publish can claim the tree in between. Windows is the exception and is
+safe for a different reason: an open handle inside a directory stops that
+directory being deleted there, so the claim cannot be held across the removal,
+but the same rule means a live publisher's own handle makes the removal fail
+rather than succeed. `is_in_use` remains as the thin query over
+`hold_for_removal`, for callers that only report; anything that acts on the
+answer must use the context manager.
+
+`claim` returns whether it succeeded. The lock is a courtesy, so a filesystem
+that will not lock must not stop a publish, but that trade is only defensible
+if the publish knows it is unprotected: staging logs a warning naming the tree
+a concurrent `lading clean --remove` could take, and carries on.
+
+A publish told to retain its staged tree releases the claim when its block
+ends. The tree stays; the claim does not, because no publish is reading it any
+more, and holding on would keep a descriptor open for the life of a
+long-running caller and make a later sweep skip a tree nothing is using.
+
+A lock rather than a recorded process identifier, because a marker file fails
+in both directions. A reused identifier makes a dead owner look alive, and a
+publish killed outright leaves a marker that would make its tree permanently
+unremovable, which is the exact leftover this command exists to sweep. A
+kernel-held lock is released when its holder dies however it dies, so there is
+no stale state and nothing to time out. A tree with no lock file predates the
+mechanism and stays removable.
+
+`tests/unit/test_staging_lock.py` proves this across real process boundaries,
+because no in-process test can: a holder subprocess signals readiness on its
+standard output rather than the tests sleeping. Seven mutations, each failing
+one case: `clean` not consulting the claim leaves the live-holder case deleting
+a tree in use; a claim that outlives its holder leaves the killed-holder case
+unable to sweep an abandoned tree; staging not claiming what it creates fails
+the publisher case; not releasing before removal fails it on the registry
+assertion, which stands in for the Windows behaviour POSIX does not exhibit;
+dropping the removal claim before the `rmtree` rather than after fails the case
+that asks a separate process what it sees at the instant of deletion; `claim`
+returning nothing fails the reported-failure case; and staging discarding that
+result fails the case that reads the warning.
+
 ## Doctests
 
 `make test` runs `pytest -v --doctest-modules`, so the examples in module and

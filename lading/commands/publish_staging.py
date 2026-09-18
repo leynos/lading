@@ -24,8 +24,9 @@ runnable example here would leave a staged tree behind on every test run.
 
 .. code-block:: python
 
-    with staged_workspace(plan, options=options) as preparation:
-        preparation.staging_root.is_dir()
+    with staged_workspace(plan, options=options) as staged:
+        staged.staging_root.is_dir()
+    staged.removed
 """
 
 from __future__ import annotations
@@ -41,6 +42,7 @@ import tempfile
 import typing as typ
 from pathlib import Path
 
+from lading.commands import staging_lock
 from lading.commands.publish_manifest import PublishPreparationError
 
 if typ.TYPE_CHECKING:
@@ -49,6 +51,13 @@ if typ.TYPE_CHECKING:
     from lading.workspace import WorkspaceCrate
 
 LOGGER = logging.getLogger(__name__)
+
+#: The name every automatically created staging directory begins with.
+#: `lading clean` finds leftovers by this prefix, so the two must not drift:
+#: a publish that stopped using it would leak trees no clean could find, and a
+#: clean that stopped using it would either miss them or reach for something
+#: else.
+STAGING_PREFIX = "lading-publish-"
 
 #: Staged trees the process is responsible for removing. A signal handler
 #: installed by the command-line entry point reads this, because a terminated
@@ -74,7 +83,23 @@ def _normalize_build_directory(
 ) -> Path:
     """Return a directory suitable for staging workspace artifacts."""
     if build_directory is None:
-        return Path(tempfile.mkdtemp(prefix="lading-publish-"))
+        created = Path(tempfile.mkdtemp(prefix=STAGING_PREFIX))
+        # Claimed the moment it exists, because this is the shape `lading
+        # clean` sweeps: an unclaimed tree here is indistinguishable from one
+        # an older release abandoned, and `clean --remove` would take it.
+        if not staging_lock.claim(created):
+            # Said plainly rather than left in a lock-level log line, because
+            # the consequence is the caller's: this publish is running in a
+            # tree a concurrent `lading clean --remove` is entitled to delete.
+            # It is still not grounds to stop. The claim is a courtesy, and a
+            # filesystem that will not lock would otherwise make publishing
+            # impossible rather than merely unprotected.
+            LOGGER.warning(
+                "Staging tree %s is unclaimed, so a concurrent `lading clean "
+                "--remove` could take it while this publish runs; continuing",
+                created,
+            )
+        return created
 
     candidate = Path(build_directory).expanduser()
     candidate = candidate.resolve(strict=False)
@@ -213,6 +238,9 @@ def _remove_staged_tree(cleanup_target: Path) -> None:
     failure is visible rather than silently forgotten. Callers that must not
     be interrupted by that use :func:`_remove_staged_tree_or_report`.
     """
+    # Released before the removal, not after: on Windows the open lock handle
+    # would stop the directory holding it being deleted.
+    staging_lock.release(cleanup_target)
     if cleanup_target.exists():
         shutil.rmtree(cleanup_target)
     _ACTIVE_STAGING_ROOTS.discard(cleanup_target)
@@ -242,12 +270,62 @@ def _remove_staged_tree_or_report(cleanup_target: Path) -> bool:
     return True
 
 
+@dc.dataclass(slots=True)
+class StagedWorkspace:
+    """The staged copy, and what became of it once the block ended.
+
+    Mutable, and deliberately so: ``removed`` is the one thing a caller
+    cannot know from inside the block, because the removal happens as the
+    block exits. Anything summarising the tree's fate has to read it
+    afterwards or it will describe an intention rather than an outcome.
+
+    Attributes
+    ----------
+    preparation : PublishPreparation
+        Where the staged workspace lives.
+    removed : bool | None
+        Whether the tree was removed. :data:`None` while the block is open,
+        and for a block that was asked to retain the tree, since no removal
+        was attempted in either case.
+    """
+
+    preparation: PublishPreparation
+    removed: bool | None = None
+
+    @property
+    def staging_root(self) -> Path:
+        """Root of the copied workspace used by publication commands.
+
+        Returns
+        -------
+        Path
+            Root of the copied workspace used by publication commands.
+        """
+        return self.preparation.staging_root
+
+    @property
+    def retained(self) -> bool:
+        """Whether the staged tree is still on disk.
+
+        Read after the block ends. A removal that failed retains the tree
+        just as surely as one that was never asked for, and a summary that
+        told the two apart by intention rather than outcome would name a
+        directory that is still there as gone.
+
+        Returns
+        -------
+        bool
+            Whether the tree outlived the block.
+        """
+        return self.removed is not True
+
+
 @contextlib.contextmanager
 def staged_workspace(
     plan: PublishPlan,
     *,
     options: PublishOptions | None = None,
-) -> cabc.Iterator[PublishPreparation]:
+) -> cabc.Iterator[StagedWorkspace]:
     """Stage a workspace copy and remove it when the block ends.
 
     This is the form callers should prefer. The removal runs on success, on an
@@ -263,20 +341,29 @@ def staged_workspace(
 
     Yields
     ------
-    PublishPreparation
-        The staged workspace location, valid until the block exits.
+    StagedWorkspace
+        The staged workspace location, valid until the block exits, and the
+        removal outcome once it has.
     """
     # `_stage` has already registered the target, from before it began
     # copying, so there is nothing to add here.
     preparation, cleanup_target, cleanup = _stage(plan, options)
+    staged = StagedWorkspace(preparation=preparation)
     try:
-        yield preparation
+        yield staged
     finally:
         if cleanup:
             # Reported rather than raised: an exception here would replace
             # whatever the block was already propagating, including the
             # publish failure the caller needs to see.
-            _remove_staged_tree_or_report(cleanup_target)
+            staged.removed = _remove_staged_tree_or_report(cleanup_target)
+        else:
+            # The tree stays, but the claim does not. It says a publish is
+            # using the tree, and this one has finished; holding it would
+            # keep a file descriptor open for the life of a long-running
+            # caller and make `lading clean --remove` skip a tree nothing is
+            # reading.
+            staging_lock.release(cleanup_target)
 
 
 def prepare_workspace(
@@ -344,12 +431,26 @@ def install_termination_cleanup() -> None:
         signal.signal(signal.SIGTERM, _handle_termination)
 
 
-def _format_preparation_summary(preparation: PublishPreparation) -> tuple[str, ...]:
-    """Return formatted summary lines for staging results."""
-    return (
-        f"Staged workspace at: {preparation.staging_root}",
-        "Workspace READMEs are handled by lading bump.",
-    )
+def _format_preparation_summary(
+    preparation: PublishPreparation, *, retained: bool
+) -> tuple[str, ...]:
+    """Return formatted summary lines for staging results.
+
+    ``retained`` says whether the staged tree outlives the publish. It is
+    required rather than defaulted because the honest answer changed with
+    issue #269: cleanup now defaults to on, so by the time a caller reads
+    this the tree has usually gone, and a line reading ``Staged workspace
+    at:`` alone names a path that no longer exists.
+
+    Returns
+    -------
+    tuple of str
+        The summary lines, the first naming the staged tree and its fate.
+    """
+    location = f"Staged workspace at: {preparation.staging_root}"
+    if not retained:
+        location = f"{location} (removed)"
+    return (location, "Workspace READMEs are handled by lading bump.")
 
 
 def _resolve_staged_crate_root(

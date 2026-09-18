@@ -115,6 +115,23 @@ SCCACHE_STATS_JSON_PARAMETER = Parameter(
 )
 
 
+CLEAN_LOCATION_PARAMETER = Parameter(
+    name="location",
+    help=(
+        "Directory to search for leftover staging copies. Defaults to the "
+        "system temporary directory, where a publish stages unless TMPDIR "
+        "says otherwise."
+    ),
+)
+CLEAN_REMOVE_PARAMETER = Parameter(
+    name="remove",
+    help=(
+        "Delete what is found instead of only reporting it. Reporting is the "
+        "default because this removes directories."
+    ),
+)
+
+
 KEEP_STAGING_ENV_VAR = "LADING_KEEP_STAGING"
 KEEP_STAGING_PARAMETER = Parameter(
     name="keep-staging",
