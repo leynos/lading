@@ -7,6 +7,7 @@ taken.
 
 from __future__ import annotations
 
+import tempfile
 import typing as typ
 
 from lading.commands import clean
@@ -225,3 +226,24 @@ def test_a_sweep_that_removes_nothing_does_not_claim_an_empty_search(
         "the summary did not report zero removals against two found"
     )
     assert "Could not remove 2" in summary, "the failures were not reported"
+
+
+def test_the_default_location_is_where_a_publish_stages(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Omitting the location must search the system temporary directory.
+
+    Every other case supplies one, so all of them would pass against a
+    default that resolved somewhere else entirely. The default is the whole
+    point of the command: a user sweeping leftovers runs `lading clean` with
+    no arguments, and a wrong default reports an empty directory while
+    thousands of staged trees sit where it did not look.
+    """
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    tree = _staging_tree(tmp_path, "default", contents=b"x" * 32)
+
+    summary = clean.run()
+
+    assert tree.is_dir(), "a default report removed a tree"
+    assert tree.name in summary, "the default search did not find the staged tree"
+    assert "Found 1 staging directory" in summary, "the default search reported nothing"

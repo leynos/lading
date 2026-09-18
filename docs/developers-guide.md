@@ -458,9 +458,29 @@ by a release that never cleaned up, and the publish is in another process, so
 `staging_lock` closes that. `_normalize_build_directory` claims each tree it
 creates with `mkdtemp`, opening `.lading-staging-lock` inside it and taking an
 exclusive non-blocking lock that the process holds for the tree's life;
-`clean.run` attempts the same lock immediately before each `shutil.rmtree` and
-skips the tree if it cannot take it. One module wraps both platforms:
-`fcntl.flock` on POSIX and `msvcrt.locking` on Windows.
+`clean.run` takes the same lock through `hold_for_removal` and **holds it
+across** the `shutil.rmtree`, skipping the tree if it cannot take it. One
+module wraps both platforms: `fcntl.flock` on POSIX and `msvcrt.locking` on
+Windows.
+
+Holding rather than asking matters because asking and deleting are two moments,
+and a publish can claim the tree in between. Windows is the exception and is
+safe for a different reason: an open handle inside a directory stops that
+directory being deleted there, so the claim cannot be held across the removal,
+but the same rule means a live publisher's own handle makes the removal fail
+rather than succeed. `is_in_use` remains as the thin query over
+`hold_for_removal`, for callers that only report; anything that acts on the
+answer must use the context manager.
+
+`claim` returns whether it succeeded. The lock is a courtesy, so a filesystem
+that will not lock must not stop a publish, but that trade is only defensible
+if the publish knows it is unprotected: staging logs a warning naming the tree
+a concurrent `lading clean --remove` could take, and carries on.
+
+A publish told to retain its staged tree releases the claim when its block
+ends. The tree stays; the claim does not, because no publish is reading it any
+more, and holding on would keep a descriptor open for the life of a
+long-running caller and make a later sweep skip a tree nothing is using.
 
 A lock rather than a recorded process identifier, because a marker file fails
 in both directions. A reused identifier makes a dead owner look alive, and a
@@ -472,12 +492,16 @@ mechanism and stays removable.
 
 `tests/unit/test_staging_lock.py` proves this across real process boundaries,
 because no in-process test can: a holder subprocess signals readiness on its
-standard output rather than the tests sleeping. Four mutations, each failing
+standard output rather than the tests sleeping. Seven mutations, each failing
 one case: `clean` not consulting the claim leaves the live-holder case deleting
-a tree in use; a claim that outlives its holder leaves the killed- holder case
+a tree in use; a claim that outlives its holder leaves the killed-holder case
 unable to sweep an abandoned tree; staging not claiming what it creates fails
-the publisher case; and not releasing before removal fails it on the registry
-assertion, which stands in for the Windows behaviour POSIX does not exhibit.
+the publisher case; not releasing before removal fails it on the registry
+assertion, which stands in for the Windows behaviour POSIX does not exhibit;
+dropping the removal claim before the `rmtree` rather than after fails the case
+that asks a separate process what it sees at the instant of deletion; `claim`
+returning nothing fails the reported-failure case; and staging discarding that
+result fails the case that reads the warning.
 
 ## Doctests
 

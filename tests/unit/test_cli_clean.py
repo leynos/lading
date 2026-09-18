@@ -11,6 +11,7 @@ deletes somewhere else.
 
 from __future__ import annotations
 
+import tempfile
 import typing as typ
 
 from lading import cli
@@ -19,15 +20,11 @@ from lading.commands.publish_staging import STAGING_PREFIX
 if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
     from pathlib import Path
 
+    import pytest
+
 
 def _staging_tree(location: Path, suffix: str) -> Path:
-    """Create a staging directory the way a publish would have left one.
-
-    Returns
-    -------
-    Path
-        The directory created.
-    """
+    """Create a staging directory the way a publish would have left one."""
     tree = location / f"{STAGING_PREFIX}{suffix}"
     tree.mkdir()
     (tree / "Cargo.toml").write_bytes(b"")
@@ -79,4 +76,24 @@ def test_the_command_reports_rather_than_removes_by_default(tmp_path: Path) -> N
     assert tree.is_dir(), "a bare clean deleted a staging tree"
     assert "Found 1 staging directory" in summary, (
         "the default run did not report what it found"
+    )
+
+
+def test_the_command_defaults_to_the_staging_directory(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A bare `lading clean` must search where a publish actually stages.
+
+    Every other case here passes `--location`, so all of them would pass
+    against a command whose default never reached `CleanOptions`, and the
+    form the guide documents is the one nobody would have run.
+    """
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    tree = _staging_tree(tmp_path, "bare")
+
+    summary = cli.app(["clean"])
+
+    assert tree.is_dir(), "a bare clean removed a staging tree"
+    assert tree.name in summary, (
+        "the default location did not reach the command's search"
     )
