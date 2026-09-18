@@ -30,8 +30,22 @@ from pathlib import Path
 
 from lading.commands import staging_lock
 from lading.commands.publish_staging import STAGING_PREFIX
+from lading.exceptions import LadingError
 
 LOGGER = logging.getLogger(__name__)
+
+
+class CleanError(LadingError):
+    """A sweep that could not be carried out.
+
+    Raised when the search directory itself cannot be listed, which is the
+    one filesystem failure here that is not a stale entry to step over. The
+    per-file errors met while sizing a tree are counted as zero and walked
+    past, because a directory vanishing underfoot is exactly what this
+    command exists to clear; a location that cannot be read is different in
+    kind, and reporting it as an empty sweep would tell the caller their disk
+    was clean when nothing had been looked at.
+    """
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -136,13 +150,23 @@ def find_leftovers(location: Path | None = None) -> tuple[LeftoverTree, ...]:
     -------
     tuple of LeftoverTree
         What was found, in name order, each with the bytes it holds.
+
+    Raises
+    ------
+    CleanError
+        If the search directory exists but cannot be listed.
     """
     root = _resolve_location(location)
     if not root.is_dir():
         return ()
+    try:
+        entries = sorted(root.iterdir())
+    except OSError as exc:
+        message = f"Cannot read the staging location: {root}"
+        raise CleanError(message) from exc
     found = (
         LeftoverTree(path=candidate, size_bytes=_tree_size(candidate))
-        for candidate in sorted(root.iterdir())
+        for candidate in entries
         if _is_leftover(candidate)
     )
     return tuple(found)
@@ -289,6 +313,10 @@ def run(*, options: CleanOptions | None = None) -> str:
         Where to search and whether to remove. Defaults to reporting on the
         system temporary directory.
 
+    A search directory that cannot be listed propagates
+    :class:`CleanError` from :func:`find_leftovers` rather than reporting an
+    empty sweep.
+
     Returns
     -------
     str
@@ -326,6 +354,7 @@ def run(*, options: CleanOptions | None = None) -> str:
 
 
 __all__: typ.Final = [
+    "CleanError",
     "CleanOptions",
     "LeftoverTree",
     "find_leftovers",

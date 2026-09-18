@@ -96,6 +96,15 @@ The claim is advisory. Deleting the lock file by hand, or removing the copy with
 `rm -rf` rather than with `lading clean`, defeats the protection and can take
 a copy a publish is still using.
 
+A `--remove` that cannot delete one copy carries on with the rest. The failure
+is logged, and the summary counts the copies removed against the copies found,
+lists the ones a running publish still holds separately from the ones whose
+removal failed, and names both. So a sweep that met a permission error tells
+you which directories are still there rather than stopping at the first one. A
+search directory that cannot be read at all is different: the command fails
+outright rather than reporting an empty sweep, because an empty report would
+say your disk was clear when nothing had been looked at.
+
 ## Programmatic publish staging
 
 Programmatic callers should use the staging context manager from
@@ -105,9 +114,18 @@ keyword argument:
 ```python
 from lading.commands.publish_staging import staged_workspace
 
-with staged_workspace(plan, options=options) as preparation:
-    ...  # the staged tree exists for the body of this block
+with staged_workspace(plan, options=options) as staged:
+    staged.staging_root  # the staged tree exists for the body of this block
+print(staged.removed)  # True, False, or None if no removal was asked for
 ```
+
+The block yields a `StagedWorkspace`, which carries the staged tree as
+`staging_root` and, once the block has ended, what became of it. `removed` is
+`True` when the tree was deleted, `False` when the deletion was attempted and
+failed, and `None` when cleanup was not requested; `retained` is the same
+answer as a single boolean, and is what the publish summary uses to decide
+whether to mark the path `(removed)`. Read either only after the block, since
+the removal happens as it exits.
 
 The tree is removed when the block ends, including when the body raises or is
 interrupted. `prepare_workspace(plan, *, options=None)` remains for callers

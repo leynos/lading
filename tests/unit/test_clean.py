@@ -7,16 +7,17 @@ taken.
 
 from __future__ import annotations
 
+import os
 import tempfile
 import typing as typ
+
+import pytest
 
 from lading.commands import clean
 from lading.commands.publish_staging import STAGING_PREFIX
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
     from pathlib import Path
-
-    import pytest
 
 
 def _staging_tree(location: Path, suffix: str, *, contents: bytes = b"") -> Path:
@@ -247,3 +248,26 @@ def test_the_default_location_is_where_a_publish_stages(
     assert tree.is_dir(), "a default report removed a tree"
     assert tree.name in summary, "the default search did not find the staged tree"
     assert "Found 1 staging directory" in summary, "the default search reported nothing"
+
+
+@pytest.mark.skipif(
+    hasattr(os, "geteuid") and os.geteuid() == 0,
+    reason="root reads a directory whose mode forbids it, so nothing fails",
+)
+def test_an_unreadable_location_is_a_domain_error(tmp_path: Path) -> None:
+    """A directory that cannot be listed must not read as an empty sweep.
+
+    The per-file errors met while sizing a tree are counted as zero on
+    purpose: an entry vanishing underfoot is the stale state this command
+    clears. A search directory that cannot be read is different in kind.
+    Swallowing it would report "No staging directories found" and tell the
+    caller their disk was clear when nothing had been looked at.
+    """
+    location = tmp_path / "unreadable"
+    location.mkdir()
+    location.chmod(0o000)
+    try:
+        with pytest.raises(clean.CleanError, match="Cannot read the staging location"):
+            clean.run(options=clean.CleanOptions(location=location))
+    finally:
+        location.chmod(0o700)
