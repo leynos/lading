@@ -288,118 +288,161 @@ distribution.
   - **Completion Criteria:** The `pyproject.toml` is fully configured for
     building a distributable package, and a successful build can be triggered.
 
-## 5. Command Execution Modernization
+## 5. Command execution modernization
 
-**Objective:** Replace plumbum and subprocess with cuprum for unified,
-security-conscious command execution with built-in observability.
+Idea (re-architecting): one cuprum execution adapter behind `CommandRunner` can
+remove lading-owned subprocess and plumbum execution while preserving command
+results, real-time relay, domain errors, and cmd-mox isolation.
 
-______________________________________________________________________
+The [beta adoption assessment](cuprum-v0-2-0-beta1-adoption-assessment.md)
+defines the compatibility requirements and acceptance gates. The current work
+delivers that assessment, this reconciled plan, and deduplicated upstream
+tracking. It does not implement the migration or certify a release artefact.
+Only the catalogue, pathlib conversion, and source-level assessment are
+complete; all execution migration and release validation below remain open.
 
-### 5.1. Core Infrastructure Migration
+Scope includes the production runner and every caller, real cmd-mox
+passthrough, six test files importing `subprocess`, two plumbum test helpers,
+and the existing cuprum release uploader. Dependency-internal subprocess use
+and the cargo shim's `os.execvp` process replacement are outside this phase.
+General-purpose upstream extensions are tracked separately in
+[assessment §6.7](cuprum-v0-2-0-beta1-adoption-assessment.md#67-upstream-tracking-after-issue-and-roadmap-reconciliation);
+they are not mandatory additions to the final 0.2.0 surface or prerequisites
+when the documented compatibility shims preserve the required behaviour.
 
-**Description:** Establish cuprum catalogue and migrate the cargo metadata
-invocation and path utilities.
+### 5.1. Establish the beta contract and dependency boundary
 
-**Tasks:**
+This step settles whether the actual beta and the existing command catalogue
+can support one adapter. It fixes known API incompatibilities before changing
+production execution. See the assessment §§1-3 and §7.
 
-- [x] **Define Lading Catalogue:**
+- [x] 5.1.1. Define the lading programme catalogue.
+  - `lading/utils/commands.py` registers `cargo`, `git`, and `sccache` in
+    `LADING_CATALOGUE`; enforcement is not yet wired into the production runner.
+- [x] 5.1.2. Normalize workspace paths with `pathlib`.
+  - `lading/utils/path.py` no longer depends on `plumbum.local.path()`.
+- [x] 5.1.3. Record source-level beta compatibility and streaming evidence.
+  - The assessment records live capture/relay probes, environment and
+    broken-pipe differences, API incompatibilities, and upstream PR coverage.
+    This completes the streaming evaluation, not the adapter implementation.
+  - Remaining upstream gaps have deduplicated issue links in assessment §6.7;
+    completed and already-planned capabilities were not filed again.
+- [ ] 5.1.4. Select and validate the published beta for both dependency paths.
+  - Replace the current cuprum 0.1.0 lock with an explicit beta selection in
+    `pyproject.toml` and `uv.lock`; align inline dependency metadata in
+    `scripts/upload_release_wheels.py`.
+  - Update `scripts/release_wheel_upload.py:run_gh` to use `ScopeConfig` and
+    `RunOutputOptions`, replacing the removed flat keyword forms.
+  - Success: the installed beta works through repository and standalone script
+    execution with a stub `gh`; no GitHub release is published by validation.
+- [ ] 5.1.5. Record the adapter compatibility policy in the design document.
+  - Preserve the existing `CommandRunner` tuple and exception contracts;
+    separate catalogue rejection from actual spawn `OSError`.
+  - Specify environment inheritance versus exact replacement, an exec shim
+    where necessary, validated executable-path registration, and text-first
+    relay compatibility without exposing a bypassing raw buffer.
+  - Success: the decision is recorded in `docs/lading-design.md` §7 and an
+    ADR where substantive; no global `os.environ` mutation or retained
+    subprocess backend is needed to implement it.
 
-  - **Outcome:** A cuprum `Catalogue` registers `cargo` and `git` as allowed
-    programs in a new `lading/utils/commands.py` module.
-  - **Completion Criteria:** Catalogue is importable and can be used with
-    `sh.scoped()` to construct commands.
+### 5.2. Route production and passthrough through one adapter
 
-- [ ] **Migrate `lading/workspace/metadata.py`:**
+This step proves that the cuprum boundary preserves the current execution
+contract across metadata, publishing, lockfiles, and compiler-cache queries. It
+reuses the existing runner protocol and relay policy. See the assessment §§3-4
+and §7.
 
-  - **Outcome:** Cargo metadata invocation uses cuprum instead of plumbum.
-    The `_ensure_command()` function returns a cuprum `SafeCmd` or the existing
-    cmd-mox proxy when stub mode is enabled.
-  - **Completion Criteria:** All unit tests pass; cmd-mox integration preserved;
-    `CargoExecutableNotFoundError` raised via cuprum's `UnknownProgramError`.
+- [ ] 5.2.1. Replace the concrete production subprocess backend with cuprum.
+  - Requires 5.1.4 and 5.1.5.
+  - Replace `lading/runtime/subprocess_runner.py` spawning behind
+    `CommandRunner`; use the explicit catalogue plus scoped allowlist and
+    preserve positional argument vectors and `(exit_code, stdout, stderr)`.
+  - Retain C-locale normalization, cwd, input handling, and exact environment
+    omission where requested; validate configured sccache and resolved paths.
+  - Success: non-zero exits remain data, spawn failures remain
+    `CommandSpawnError`, and missing Cargo still becomes
+    `CargoExecutableNotFoundError`; `UnknownProgramError` remains a catalogue
+    error, not executable discovery.
+- [ ] 5.2.2. Preserve incremental relay and capture through the adapter.
+  - Requires 5.2.1.
+  - Capture both streams, keep metadata stdout silent and stderr live, and
+    select `max_echo_line_bytes=None` for current unbounded relay parity.
+  - Reuse the relay policy in a sink facade for UTF-8 boundaries, narrow
+    encodings, binary fallback, and broken-pipe suppression; remove redundant
+    pipe-draining threads once cuprum owns draining.
+  - Success: output arrives before exit, including partial lines; capture
+    survives rejected sinks and lines over 64 KiB without truncation.
+- [ ] 5.2.3. Route every production caller through the cuprum adapter.
+  - Requires 5.2.2.
+  - Update runner selection and defaults in the CLI, workspace metadata,
+    publish/preflight, lockfile discovery/regeneration, and sccache statistics.
+    Metadata already uses an injected runner; `_ensure_command()` is obsolete.
+  - Preserve one invocation log, environment redaction, per-crate timing, and
+    domain error translation; make additional cuprum telemetry opt-in.
+  - Success: these workflows pass through the installed beta while their
+    existing externally observable contracts remain covered.
+- [ ] 5.2.4. Migrate real cmd-mox passthrough to the same adapter.
+  - Requires 5.2.2.
+  - Preserve `lading/testing/cmd_mox_runner.py` IPC, cargo namespacing,
+    real-command overrides, PATH filtering, PWD, stdin, and result reporting.
+  - Success: stub and real-passthrough cases preserve streaming and one
+    invocation log without recursively executing the command shim.
 
-- [x] **Migrate `lading/utils/path.py`:**
+### 5.3. Remove subprocess and plumbum from test execution
 
-  - **Outcome:** Path normalization uses `pathlib.Path` directly, removing the
-    `plumbum.local.path()` dependency.
-  - **Completion Criteria:** `normalize_workspace_root()` behaviour unchanged;
-    plumbum import removed from the module.
+This step proves that fixture setup and real CLI tests can use the same beta
+without losing independent process-lifecycle checks. Keep interpreter, make,
+and fixture executables in test-only catalogues. See the assessment §2, §4, and
+§7.
 
-______________________________________________________________________
+- [ ] 5.3.1. Migrate both plumbum end-to-end helpers.
+  - Requires 5.1.4.
+  - Update `tests/e2e/helpers/git_helpers.py` and
+    `tests/e2e/helpers/e2e_steps_helpers.py`; preserve `GitCommandError`.
+- [ ] 5.3.2. Migrate capture-oriented direct-subprocess test invocations.
+  - Requires 5.2.1.
+  - Cover `tests/bdd/steps/test_common_steps.py`,
+    `tests/e2e/test_upload_release_wheels_cli.py`,
+    `tests/integration/test_cargo_shim_cli.py`,
+    `tests/integration/test_lockfile_discovery.py`, and
+    `tests/workflow_contracts/test_lint_target.py`.
+  - Success: checked exits and captured output retain their semantics,
+    deliberately omitted GitHub environment variables stay absent, and no
+    subprocess result or exception types remain in these helpers.
+- [ ] 5.3.3. Migrate the SIGTERM staging-cleanup process fixture.
+  - Requires 5.1.4.
+  - Update `tests/e2e/test_staging_cleanup_on_termination.py` using async
+    cuprum execution, public start/readiness observation, and POSIX signalling.
+  - Success: readiness precedes SIGTERM; cleanup during and after copy,
+    negative signal status, early exit, readiness timeout, and bounded final
+    reaping remain covered without `Popen` or private cuprum process handles.
 
-### 5.2. Publish Execution Migration
+### 5.4. Complete the migration contract and dependency cleanup
 
-**Description:** Replace subprocess-based streaming with cuprum execution while
-preserving real-time output relay.
+This step establishes whether the integrated beta satisfies phase 5 across real
+workflows and whether documentation describes the implemented boundary. See the
+assessment §7; individual task tests remain part of implementation.
 
-**Tasks:**
-
-- [ ] **Evaluate cuprum streaming capabilities:**
-
-  - **Outcome:** Document whether cuprum's `run_sync()` or async `run()` can
-    provide real-time stdout/stderr relay equivalent to the current threaded
-    subprocess implementation.
-  - **Completion Criteria:** Decision documented; implementation approach
-    chosen.
-
-- [ ] **Migrate `_invoke_via_subprocess()`:**
-
-  - **Outcome:** The streaming command execution in `publish_execution.py` uses
-    cuprum's execution model or a minimal cuprum-compatible wrapper.
-  - **Completion Criteria:** Real-time output streaming preserved; all publish
-    tests pass; thread-based relay simplified or eliminated.
-
-- [ ] **Verify cmd-mox passthrough:**
-
-  - **Outcome:** Passthrough semantics work correctly with cuprum.
-  - **Completion Criteria:** End-to-end publish tests pass with both stubbed
-    and real command execution.
-
-______________________________________________________________________
-
-### 5.3. Test Helper Migration
-
-**Description:** Update end-to-end (e2e) test helpers to use cuprum for git
-operations.
-
-**Tasks:**
-
-- [ ] **Migrate `tests/e2e/helpers/git_helpers.py`:**
-
-  - **Outcome:** Git helpers use cuprum catalogue instead of `plumbum.local`.
-    The `_run_git()` function uses `sh.make("git")` within a scoped catalogue.
-  - **Completion Criteria:** All e2e tests pass; `GitCommandError` exception
-    handling preserved.
-
-- [ ] **Update `tests/e2e/helpers/e2e_steps_helpers.py`:**
-
-  - **Outcome:** Any plumbum imports removed or replaced with cuprum.
-  - **Completion Criteria:** No plumbum references remain in test helpers.
-
-______________________________________________________________________
-
-### 5.4. Documentation and Dependency Cleanup
-
-**Description:** Update scripting standards documentation and remove the
-plumbum dependency from the project.
-
-**Tasks:**
-
-- [ ] **Update `docs/scripting-standards.md`:**
-
-  - **Outcome:** Cuprum documented as the standard for command execution,
-    replacing the plumbum section with equivalent cuprum patterns and examples.
-  - **Completion Criteria:** All code examples use cuprum; migration guidance
-    from plumbum to cuprum provided.
-
-- [ ] **Remove plumbum dependency:**
-
-  - **Outcome:** `plumbum>=1.8` removed from `pyproject.toml` dependencies.
-  - **Completion Criteria:** `uv sync` succeeds; `uv run pytest` passes; no
-    plumbum imports remain in the codebase.
-
-- [ ] **Add cuprum dependency:**
-
-  - **Outcome:** `cuprum` added to `pyproject.toml` with appropriate version
-    constraint.
-  - **Completion Criteria:** Dependency resolves correctly; version pinned to
-    stable release.
+- [ ] 5.4.1. Validate the integrated command-boundary behaviour matrix.
+  - Requires 5.2.3, 5.2.4, 5.3.1, 5.3.2, and 5.3.3.
+  - Exercise real and stub execution across relay/capture combinations,
+    environment omission, stdin closure, missing/forbidden programmes, bad cwd,
+    timeout partial output, cancellation, and signal termination.
+  - Success: supported Python/platform and applicable wheel/backend paths pass
+    the acceptance gates; record any unvalidated platform explicitly.
+- [ ] 5.4.2. Remove obsolete execution code and the plumbum dependency.
+  - Requires 5.4.1.
+  - Remove plumbum from development dependencies and regenerate the lockfile;
+    retire old runner imports and obsolete relay/thread utilities after moving
+    any still-required policy into the canonical adapter.
+  - Success: tracked Python and extensionless scripts contain no lading-owned
+    subprocess/plumbum execution or associated result/exception imports;
+    `make test`, `make lint`, `make check-fmt`, and `make typecheck` pass.
+- [ ] 5.4.3. Publish the implemented migration guidance.
+  - Requires 5.4.2.
+  - Update design §7, developer conventions, scripting examples, and any
+    user-visible compatibility changes in the users' guide. Scripting standards
+    already prescribe cuprum; correct their obsolete API examples.
+  - Success: examples use real beta APIs, `make fmt`, `make markdownlint`, and
+    `make nixie` pass, and the assessment's proposed shims are distinguished
+    from the implementation actually delivered.

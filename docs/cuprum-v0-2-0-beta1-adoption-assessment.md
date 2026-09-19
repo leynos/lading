@@ -23,6 +23,12 @@ features remaining after those PRs are listed in section 6. This is an
 assessment and proposed direction, not an accepted architectural decision or an
 implementation of phase 5.
 
+Follow-up: [phase 5](roadmap.md#5-command-execution-modernization) now records
+the exact migration scope and completed assessment work. The source/PR tables
+below remain the original assessment snapshot; section 6.7 records subsequent
+upstream status and deduplicated issue tracking. No execution migration or
+published-beta validation has been completed by these documentation changes.
+
 ### 1.1. Evidence boundary
 
 - Assessment date: 2026-09-19.
@@ -177,8 +183,8 @@ The intended scope is the existing runtime boundary and test support. Reuse
 `CommandRunner`, the catalogue, locale normalization, relay helpers, and
 cmd-mox adapter; a second general-purpose process framework is unnecessary.
 Record the eventual adapter decisions in the
-[design document](lading-design.md#command-execution-migration) and its
-maintainer contract in the [developer guide](developers-guide.md).
+[design document](lading-design.md#7-command-execution-migration-phase-5) and
+its maintainer contract in the [developer guide](developers-guide.md).
 
 | Gap or difference                                  | Workaround and limits                                                                                                                                                             | Ownership                                          |
 | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
@@ -348,6 +354,57 @@ executable can work around parts of this, but is not a coherent typed binary
 execution API. PR #365's bounded line-delivery queue does not bound full
 capture or add binary results.
 
+### 6.7. Upstream tracking after issue and roadmap reconciliation
+
+The follow-up checked all current open and closed cuprum issues, relevant issue
+bodies, open PRs, and the upstream roadmap. Line iteration PR
+[#365](https://github.com/leynos/cuprum/pull/365) has since merged as
+`361887e634ce05fbce99b6a2cfa9d38b7cc71a48`; the environment, broken-pipe,
+terminal-event, and binary-result probes were repeated against that source. The
+subsequently observed main commit `fdfcebc387ac93e2b993185acf272d600cb80f05`
+changes native formatter fixtures, not these contracts. The upstream roadmap
+matched the sibling checkout.
+
+Each new issue records its own evidence, requested contract, acceptance
+criteria, and distinction from existing coverage. They are upstream extensions
+or separately scoped behavioural gaps, not a requirement to enlarge 0.2.0
+before lading can adopt it with compatibility shims.
+
+| Assessment area                 | Newly filed upstream work                                                                                                                                                                                                                             |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Environment semantics (§6.1)    | [#434: replacement and unset policies](https://github.com/leynos/cuprum/issues/434)                                                                                                                                                                   |
+| Output delivery (§6.2)          | [#435: opt-in broken-pipe policy](https://github.com/leynos/cuprum/issues/435); [#436: bounded off-loop delivery](https://github.com/leynos/cuprum/issues/436)                                                                                        |
+| Process lifetime (§6.3)         | [#437: owned running-command handle](https://github.com/leynos/cuprum/issues/437); [#438: process-group and descendant cleanup](https://github.com/leynos/cuprum/issues/438)                                                                          |
+| Command interfaces (§6.4)       | [#439: typed generic builder contract](https://github.com/leynos/cuprum/issues/439); [#440: executable binding](https://github.com/leynos/cuprum/issues/440)                                                                                          |
+| Execution observation (§6.5)    | [#441: terminal outcomes](https://github.com/leynos/cuprum/issues/441); [#442: shared telemetry redaction](https://github.com/leynos/cuprum/issues/442)                                                                                               |
+| Capture and input/output (§6.6) | [#443: bounded/file-backed capture](https://github.com/leynos/cuprum/issues/443); [#444: typed bytes results](https://github.com/leynos/cuprum/issues/444); [#445: streaming stdin and file redirection](https://github.com/leynos/cuprum/issues/445) |
+
+*Table 4: New upstream issues after checking existing coverage.*
+
+No duplicate issues were filed for the following:
+
+- Line iteration: #357 and merged #365; ordinary result timing/resources:
+  #358 and open #371; Actions presentation: #360 and open #376, with
+  convenience flags already tracked by #375.
+- Encoding fallback, its diagnostics, and echo bounds: completed #348,
+  #356, and #355. Issue #356 explicitly excludes broken-pipe policy, so #435
+  tracks that separate extension without treating strict handling as a
+  regression in the encoding fix.
+- Builder scaffolding and attribute-style typing: upstream roadmap 3.1.2
+  and 3.2.2. Issue #439 is limited to the existing generic callable signature.
+- Native error types and event-allocation refactoring: roadmap 6.1.1 and
+  5.2.1, with planning PRs #432 and #433.
+- Structured idle observation: #424; catalogue boilerplate: completed
+  #374/#396. Neither needs another adoption issue.
+
+The existing live-environment issues (#100/#101/#173/#174) concern inheritance,
+not replacement. The closed PID-reuse issue #122 concerns identity, not missing
+terminal events. Native raw-sink acceleration in roadmap phase 7 does not
+specify an off-loop transport for arbitrary Python sinks. These distinctions
+are recorded in the corresponding new issues. Lading's obsolete uploader calls,
+locale choices, cmd-mox routing, and domain errors remain downstream migration
+tasks rather than cuprum defects.
+
 ## 7. Adoption acceptance gates
 
 1. Select and install the actual beta artefact, regenerate the lockfile, and
@@ -393,7 +450,7 @@ capture or add binary results.
 | Generic keyword flags `check=True, locked=False`                 | `('--check=True', '--locked=False')`                                            |
 | Legacy `scoped(allowlist=...)` and `run_sync(capture=True)`      | Each raised `TypeError` for an unexpected keyword argument                      |
 
-*Table 4: Focused runtime evidence; timings are illustrative, not benchmarks.*
+*Table 5: Focused runtime evidence; timings are illustrative, not benchmarks.*
 
 [^1]: Inspected
       [lading revision](https://github.com/leynos/lading/tree/c0dda6821de1ac097ce89be96003a051aa11ac99)
