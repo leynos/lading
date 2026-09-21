@@ -6,21 +6,32 @@ name: Coverage (main)
 # for analysed branches, and the changed-line gate that used to run there
 # is gone.
 #
-# NOTE: coverage generation uses the pre-existing bespoke slipcover
-# invocation, not the shared generate-coverage action. lading's root
-# Cargo.toml is a committed fixture for its own workspace-release test
-# scenarios (see docs/repository-layout.md), not a buildable crate; the
-# shared action's language auto-detection has no override and always
-# treats a root Cargo.toml as Rust (or "mixed" alongside pyproject.toml),
-# so it tries `cargo llvm-cov nextest --workspace` against members that
-# do not exist on disk and fails immediately. Moving to the shared action,
-# and with it to its coverage ratchet, needs leynos/shared-actions#502;
-# see the developer guide for what that branch carries and why the repin
-# was tried here and reverted.
+# Main owns both persistent coverage outputs: the CodeScene upload below and
+# the ratchet baseline the shared action advances. Caches saved on main are
+# readable by every pull-request run, so the baseline written here is the one
+# a pull request's ratchet compares against. The action's default
+# `publish-baseline: auto` is what confines the advance to a push to
+# `refs/heads/main`, which is this workflow's only trigger.
+#
+# The shared action is usable here because `language: python` skips its
+# manifest-based detection. lading commits a synthetic root Cargo.toml as a
+# fixture for its own workspace-release test scenarios (see
+# docs/repository-layout.md); it names crates/ directories that do not exist
+# on disk, so detection would run `cargo llvm-cov nextest --workspace`
+# against them and fail immediately. `python-source` holds the metric to the
+# package, exactly as the bespoke slipcover invocation did.
 
 on:
   push:
     branches: [main]
+
+# Two pushes to main in quick succession would otherwise race, both to upload
+# to CodeScene and to advance the ratchet baseline in the Actions cache, and
+# the later run could overtake the earlier one. Runs queue per ref rather than
+# cancelling, because a cancelled run leaves main's coverage unpublished.
+concurrency:
+  group: coverage-main-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   coverage-upload:
@@ -47,21 +58,23 @@ jobs:
       - name: Install code
         run: make build
 
-      # --xml is required: without it slipcover's --out target is a
-      # plain-text report, not Cobertura XML, which went unnoticed
-      # while the CodeScene upload step was guarded by an unset secret
-      # (confirmed by this workflow's first live run failing to parse
-      # the uploaded coverage data).
-      - name: Run tests with coverage
-        run: |
-          uv pip install slipcover pytest-forked
-          uv run python -m slipcover \
-            --source=./lading \
-            --omit="*/.venv/*" \
-            --branch \
-            --xml \
-            --out coverage.xml \
-            -m pytest --forked -v
+      # Cobertura is the action's default format, and the upload step below
+      # names it too. The bespoke invocation this replaced needed an explicit
+      # `--xml`: without it slipcover's `--out` target was a plain-text
+      # report, which went unnoticed while the upload step was guarded by an
+      # unset secret, and was confirmed by this workflow's first live run
+      # failing to parse the uploaded coverage data.
+      - name: Generate coverage
+        uses: leynos/shared-actions/.github/actions/generate-coverage@dbe2e22ceaf498d85512679ccded38be9dbe7777
+        with:
+          language: python
+          output-path: coverage.xml
+          python-source: ./lading
+          with-ratchet: 'true'
+          # `publish-artefact` is deliberately left unset, so the action keeps
+          # its default and archives the report this lane uploads to
+          # CodeScene. Setting it here, as the pull-request lane does, would
+          # leave the run with no published report at all.
 
       # Repinned past f68e8e2e, which resolves the cs-coverage version from
       # a committed manifest rather than fetching the latest release. An
@@ -75,8 +88,12 @@ jobs:
       # the action no longer uses. The manifest carries its own pin, so the
       # optional input is left out rather than fed a value that means
       # something else.
+      # The ref guard states the rule at the step that depends on it, rather
+      # than leaving it implied by the trigger above. CodeScene accepts an
+      # upload only for an analysed branch, so a later dispatch trigger or a
+      # second branch must not be able to reach this step by accident.
       - name: Upload coverage data to CodeScene
-        if: env.CS_ACCESS_TOKEN
+        if: env.CS_ACCESS_TOKEN && github.ref == 'refs/heads/main'
         uses: leynos/shared-actions/.github/actions/upload-codescene-coverage@a5765019912a8ab6882b12db049c7cde635f3a85
         with:
           format: cobertura

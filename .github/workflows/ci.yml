@@ -71,38 +71,42 @@ jobs:
       - name: Run typechecker
         run: make typecheck
 
-      # NOTE: the shared generate-coverage action is not used here. Its
-      # language auto-detection treats any repository-root Cargo.toml as
-      # Rust (or "mixed" alongside pyproject.toml) with no override, and
-      # lading commits a synthetic root Cargo.toml as a fixture for its
-      # own workspace-release test scenarios (see
-      # docs/repository-layout.md) — it references crates/ directories
-      # that do not exist on disk. `cargo llvm-cov nextest --workspace`
-      # therefore fails immediately in CI trying to resolve that
-      # manifest. Coverage generation therefore stays on this bespoke
-      # slipcover invocation. Moving it to the shared action needs
-      # leynos/shared-actions#502, which adds the `python-source` scope
-      # that keeps the metric on ./lading, and the fix prepending the
-      # coverage environment's scripts directory to PATH, without which
-      # the cmd-mox tests cannot find the executables they create. That
-      # repin was tried on this branch and reverted; see the developer
-      # guide. Adds --xml: without it slipcover's --out target is a
-      # plain-text report, not Cobertura XML, which went unnoticed
-      # while the CodeScene upload step was guarded by an unset secret.
-      - name: Run tests with coverage
-        run: |
-          uv pip install slipcover pytest-forked
-          uv run python -m slipcover \
-            --source=./lading \
-            --omit="*/.venv/*" \
-            --branch \
-            --xml \
-            --out coverage.xml \
-            -m pytest --forked -v
+      # `language: python` is what makes the shared action usable here.
+      # lading commits a synthetic root Cargo.toml as a fixture for its own
+      # workspace-release test scenarios (see docs/repository-layout.md); it
+      # names crates/ directories that do not exist on disk, so the action's
+      # manifest-based detection would run `cargo llvm-cov nextest
+      # --workspace` against them and fail immediately. Forcing the scope
+      # skips the Rust path entirely.
+      #
+      # `python-source` reproduces the scope the bespoke slipcover invocation
+      # carried, keeping the metric on the package rather than widening it to
+      # tests and fixtures. It also makes the old `--omit="*/.venv/*"`
+      # redundant: scoped to ./lading, both invocations report the same 58
+      # files at the same rates, which is why the ratchet baseline does not
+      # move on adoption. The `--forked` the old invocation used is gone with
+      # it; nothing in the suite depends on forking, and `make test` has
+      # always run plain pytest.
+      - name: Generate coverage
+        uses: leynos/shared-actions/.github/actions/generate-coverage@dbe2e22ceaf498d85512679ccded38be9dbe7777
+        with:
+          language: python
+          output-path: coverage.xml
+          python-source: ./lading
+          # Compare against the baseline written by coverage-main.yml; caches
+          # saved on main are readable by every pull-request run.
+          with-ratchet: 'true'
+          # This lane measures and compares; it does not publish. The action
+          # archives the report under a step of its own, which no scanner over
+          # this file's steps can see, so declining that archive is the only
+          # way the boundary is observable here. The report stays on the
+          # runner for the upload step below.
+          publish-artefact: 'false'
 
-      # The only publisher of this file in this workflow. The CodeScene
-      # gate that used to upload a second copy under the name "coverage"
-      # has gone; coverage-main.yml owns every upload now.
+      # The only publisher of this file in this workflow, and the only one
+      # that can be: the coverage action above declines its own archive. The
+      # CodeScene gate that used to upload a second copy under the name
+      # "coverage" has gone; coverage-main.yml owns every upload now.
       - name: Upload coverage artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
