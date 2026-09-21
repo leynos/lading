@@ -80,12 +80,9 @@ jobs:
       # 2026-09-16, and this step is the only place left to fix it.
       #
       # No checksum input is passed. `installer-checksum` is rejected when
-      # non-empty, and its replacement `archive-checksum` checks the
-      # manifest's archive digest, whereas the repository variable
-      # get-codescene-sha.yml writes is the digest of the installer script
-      # the action no longer uses. The manifest carries its own pin, so the
-      # optional input is left out rather than fed a value that means
-      # something else.
+      # non-empty, and `archive-checksum` only restates the manifest archive
+      # digest the action already verifies. The optional inputs are left out,
+      # so the manifest carries the only pin the caller needs.
       # The ref guard states the rule at the step that depends on it, rather
       # than leaving it implied by the trigger above. CodeScene accepts an
       # upload only for an analysed branch, so a later dispatch trigger or a
