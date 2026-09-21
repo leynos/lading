@@ -134,6 +134,53 @@ The end-to-end suite in `tests/e2e/` keeps git interactions real while stubbing
 only `cargo` operations, using cmd-mox passthrough spies for `git status` when
 publish runs with stub mode enabled.
 
+## Coverage
+
+Both coverage lanes run the shared `generate-coverage` action from
+`leynos/shared-actions`: `ci.yml` on pull requests and pushes to main, and
+`coverage-main.yml` on pushes to main only. Neither invokes slipcover directly
+any more.
+
+Three inputs carry the whole of what this repository needs.
+
+`language: python` overrides the action's manifest-based detection. lading
+commits a synthetic root `Cargo.toml` as a fixture for its own
+workspace-release scenarios (see [repository layout](./repository-layout.md));
+it names `crates/` directories that do not exist on disk, so detection would run
+`cargo llvm-cov nextest --workspace` against them and fail before any Python
+ran. This is what the adoption waited on, along with a fix to the action making
+the isolated coverage environment reach child processes, without which the
+cmd-mox tests in `tests/unit/test_upload_release_wheels.py` cannot find the
+executables they create.
+
+`python-source: ./lading` holds the measured population to the package. It
+reproduces the scope the bespoke `--source=./lading` invocation had, and makes
+the old `--omit="*/.venv/*"` redundant: scoped this way, the two invocations
+report the same 58 files at the same rates, so the ratchet baseline did not
+move on adoption. The value is passed to slipcover unchanged as a single
+`--source` argument.
+
+`with-ratchet: 'true'` compares each run against a baseline held in the Actions
+cache. Only a push to `refs/heads/main` advances it, which is
+`coverage-main.yml`'s sole trigger, and caches saved on main are readable by
+every pull-request run. A drop of more than one percentage point fails the run;
+a change within one point is treated as noise and holds the baseline.
+
+Artefact publication is split between the lanes. `ci.yml` passes
+`publish-artefact: 'false'` and uploads the report itself under the name
+`coverage-report`, because the CodeScene step in that job uploads one called
+`coverage` and two uploads of the same name collide. `coverage-main.yml` leaves
+the input unset, so the action archives the report that lane's upload step
+reads.
+
+The old invocation also ran pytest under `pytest-forked`. Nothing in the suite
+depends on forking -- `make test` has always run plain pytest -- and the shared
+action runs pytest through xdist instead.
+
+`tests/workflow_contracts/test_coverage_generation.py` pins this shape. It
+enumerates `.github/workflows` and classifies each file by its triggers rather
+than naming files, so a coverage lane added later is covered the day it appears.
+
 ## Workflow pins and Dependabot
 
 Dependabot owns the upgrade of GitHub Actions and reusable workflows, including
