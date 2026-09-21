@@ -38,8 +38,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    env:
-      CS_ACCESS_TOKEN: ${{ secrets.CS_ACCESS_TOKEN || '' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -93,7 +91,9 @@ jobs:
       # upload only for an analysed branch, so a later dispatch trigger or a
       # second branch must not be able to reach this step by accident.
       - name: Upload coverage data to CodeScene
-        if: env.CS_ACCESS_TOKEN && github.ref == 'refs/heads/main'
+        env:
+          CS_ACCESS_TOKEN: ${{ secrets.CS_ACCESS_TOKEN }}
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && env.CS_ACCESS_TOKEN != ''
         uses: leynos/shared-actions/.github/actions/upload-codescene-coverage@a5765019912a8ab6882b12db049c7cde635f3a85
         with:
           format: cobertura

@@ -36,6 +36,7 @@ through.
 from __future__ import annotations
 
 import collections.abc as cabc
+import json
 import re
 import typing as typ
 from pathlib import Path
@@ -51,6 +52,9 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW_DIRECTORY = REPOSITORY_ROOT / ".github" / "workflows"
 CI_WORKFLOW_PATH = WORKFLOW_DIRECTORY / "ci.yml"
 MAIN_COVERAGE_WORKFLOW_PATH = WORKFLOW_DIRECTORY / "coverage-main.yml"
+APPROVED_ACTION_REVISIONS_PATH = (
+    REPOSITORY_ROOT / "tests" / "support" / "approved_action_revisions.json"
+)
 
 UPLOAD_CODESCENE_ACTION = (
     "leynos/shared-actions/.github/actions/upload-codescene-coverage"
@@ -70,6 +74,10 @@ GENERATE_COVERAGE_ACTION = "leynos/shared-actions/.github/actions/generate-cover
 GENERATE_COVERAGE_ANY_REF = re.compile(rf"^{re.escape(GENERATE_COVERAGE_ACTION)}@")
 COMMIT_PINNED = re.compile(r"@[0-9a-f]{40}$")
 SETUP_UV_ACTION = "astral-sh/setup-uv"
+UPLOAD_GUARD = (
+    "github.event_name == 'push' && github.ref == 'refs/heads/main' && "
+    "env.CS_ACCESS_TOKEN != ''"
+)
 #: The upstream Markdown linter, pinned to the commit `v24.2.0` points at
 #: rather than to the annotated tag object of the same name.
 MARKDOWNLINT_ACTION = (
@@ -294,6 +302,34 @@ def _coverage_steps() -> list[CoverageStep]:
     return found
 
 
+def _codescene_contact_steps(
+    workflow: Workflow,
+) -> cabc.Iterator[tuple[str, dict[str, YamlValue]]]:
+    """Yield every step that could contact CodeScene.
+
+    A step is selected by its behaviour: calling the shared uploader or
+    invoking ``cs-coverage``. The caller's label is not evidence, since it can
+    change without changing what the step does.
+
+    Yields
+    ------
+    tuple[str, dict[str, YamlValue]]
+        The job name and one CodeScene-contacting step.
+    """
+    for job_name, step in _job_steps(workflow):
+        uses = str(step.get("uses", ""))
+        run = str(step.get("run", ""))
+        if UPLOAD_CODESCENE_ACTION in uses or "cs-coverage" in run:
+            yield job_name, step
+
+
+def _approved_action_revisions() -> dict[str, object]:
+    """Return the offline record of approved composite-action revisions."""
+    fixture = json.loads(APPROVED_ACTION_REVISIONS_PATH.read_text(encoding="utf-8"))
+    assert isinstance(fixture, dict), "the approved action revisions must map keys"
+    return typ.cast("dict[str, object]", fixture)
+
+
 def test_no_pull_request_workflow_touches_codescene() -> None:
     """Keep CodeScene off every pull-request lane, by any of its three doors.
 
@@ -317,10 +353,11 @@ def test_no_pull_request_workflow_touches_codescene() -> None:
             f"{path.name} must not invoke the CodeScene CLI"
         )
 
-        for job_name, step in _job_steps(workflow):
-            assert UPLOAD_CODESCENE_ACTION not in str(step.get("uses", "")), (
-                f"{path.name}:{job_name} must not use the CodeScene action"
-            )
+        contacts = list(_codescene_contact_steps(workflow))
+        assert not contacts, (
+            f"{path.name} must not contact CodeScene: "
+            f"{[f'{job}:{step.get("name")}' for job, step in contacts]}"
+        )
 
 
 def test_the_publisher_is_the_only_workflow_using_the_uploader() -> None:
@@ -402,8 +439,15 @@ def test_main_is_the_only_uploader_and_is_pinned() -> None:
     assert "installer-checksum" not in upload_inputs, (
         "installer-checksum is rejected when non-empty; the manifest pins the CLI"
     )
-    assert "refs/heads/main" in str(upload.get("if", "")), (
-        "the upload step must guard on the ref it is allowed to publish from"
+    assert "archive-checksum" not in upload_inputs, (
+        "the action verifies its own manifest archive digest, so callers must "
+        "not provide archive-checksum"
+    )
+    assert upload.get("env") == {"CS_ACCESS_TOKEN": "${{ secrets.CS_ACCESS_TOKEN }}"}, (
+        "the upload step alone must receive the CodeScene token"
+    )
+    assert upload.get("if") == UPLOAD_GUARD, (
+        "the upload step must be limited to an authenticated push to main"
     )
 
 
@@ -423,6 +467,63 @@ def test_the_publisher_queues_runs_per_ref() -> None:
         "a cancelled publisher leaves main's coverage unpublished, so runs "
         f"must queue, got {concurrency.get('cancel-in-progress')!r}"
     )
+
+
+def test_coverage_composites_do_not_reach_retired_action_revisions() -> None:
+    """Reject retired pins, including dependencies nested in composites.
+
+    A workflow pin cannot constrain a ``uses:`` entry inside the action it
+    calls. The checked-in fixture makes that dependency graph available to
+    this offline contract and must be refreshed with each coverage-action pin.
+    """
+    fixture = _approved_action_revisions()
+    retired = fixture.get("retired")
+    approved = fixture.get("approved")
+    assert isinstance(retired, dict), "the fixture must record retired revisions"
+    assert isinstance(approved, dict), "the fixture must record approved revisions"
+    assert all(isinstance(reference, str) for reference in retired), (
+        "retired action references must be strings"
+    )
+    retired_references = set(typ.cast("dict[str, object]", retired))
+
+    for path in _workflow_paths():
+        text = path.read_text(encoding="utf-8")
+        for reference, reason in retired.items():
+            assert reference not in text, (
+                f"{path.name} reaches retired {reference}: {reason}"
+            )
+
+    coverage_actions = {UPLOAD_CODESCENE_ACTION, GENERATE_COVERAGE_ACTION}
+    for path in _workflow_paths():
+        for _job_name, step in _job_steps(_load_workflow(path)):
+            uses = step.get("uses")
+            if not isinstance(uses, str) or "@" not in uses:
+                continue
+            action, revision = uses.rsplit("@", maxsplit=1)
+            if action not in coverage_actions:
+                continue
+            action_revisions = approved.get(action)
+            assert isinstance(action_revisions, dict), (
+                f"{action} is missing from {APPROVED_ACTION_REVISIONS_PATH.name}"
+            )
+            detail = action_revisions.get(revision)
+            assert isinstance(detail, dict), (
+                f"{action}@{revision} is not recorded in "
+                f"{APPROVED_ACTION_REVISIONS_PATH.name}"
+            )
+            nested_uses = detail.get("nested_uses")
+            assert isinstance(nested_uses, dict), (
+                f"{action}@{revision} must record its nested actions"
+            )
+            assert all(isinstance(reference, str) for reference in nested_uses), (
+                f"{action}@{revision} must name nested actions as strings"
+            )
+            nested_references = set(typ.cast("dict[str, object]", nested_uses))
+            retired_dependencies = nested_references & retired_references
+            assert not retired_dependencies, (
+                f"{action}@{revision} reaches retired dependencies: "
+                f"{sorted(retired_dependencies)}"
+            )
 
 
 def test_both_workflows_install_uv_from_one_commit_pin() -> None:

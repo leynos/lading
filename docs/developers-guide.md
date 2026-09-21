@@ -36,10 +36,8 @@ The uploader is pinned past shared-actions `f68e8e2e`, which resolves the
 release; an unpinned CLI is what broke Cobertura parsing across the estate, and
 this step is the only place left to fix it. No checksum input is passed.
 `installer-checksum` is rejected when it carries a value, and its replacement
-`archive-checksum` digests the manifest archive, whereas the repository variable
-`get-codescene-sha.yml` writes is the digest of the installer script the
-action no longer uses. Feeding the old variable to the new input would fail
-every run, so the optional input is omitted and the manifest's own pin stands.
+`archive-checksum` only restates the manifest archive digest the action already
+checks. The optional inputs are omitted, so the manifest's own pin stands.
 
 ## Markdown linting
 
@@ -250,6 +248,15 @@ manual chore.
 
 Contract tests may still verify the _shape_ of a reusable-workflow caller. They
 must not verify the specific SHA value.
+
+The CodeScene coverage composites have a narrower maintenance rule. A full SHA
+prevents a tag from moving, but it does not freeze the third-party actions that
+the pinned composite calls. GitHub can retire one of those nested revisions
+without changing the composite's SHA. Review
+`tests/support/approved_action_revisions.json` whenever either coverage-action
+pin moves, and keep `tests/workflow_contracts/test_coverage_ownership.py`'s
+retired-dependency contract aligned with it. That offline record catches a
+retired transitive pin before a workflow reaches action preparation.
 
 - Do assert the workflow references the correct reusable workflow path.
 - Do assert the ref is pinned to a full 40-character commit SHA, not a

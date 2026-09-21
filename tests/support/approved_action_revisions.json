@@ -1,0 +1,28 @@
+{
+  "_comment": "Approved CodeScene coverage composite revisions and their nested third-party actions. The workflow contract reads this offline record, so update it with each coverage-action pin change.",
+  "retired": {
+    "actions/cache@6849a6489940f00c2f30c0fb92c6274307ccb58a": "actions/cache v4.1.2 was retired by GitHub and fails action preparation.",
+    "leynos/shared-actions/.github/actions/upload-codescene-coverage@395f8e8630d431abb4a136847f1c14c4ad5a0ccc": "Obsolete uploader revision; it reaches the retired actions/cache v4.1.2 revision."
+  },
+  "approved": {
+    "leynos/shared-actions/.github/actions/generate-coverage": {
+      "dbe2e22ceaf498d85512679ccded38be9dbe7777": {
+        "nested_uses": {
+          "actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9": "v6.1.0, full SHA",
+          "actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9": "v6.1.0, full SHA",
+          "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9": "v6.1.0, full SHA",
+          "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a": "v7.0.1, full SHA",
+          "astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b": "full SHA"
+        }
+      }
+    },
+    "leynos/shared-actions/.github/actions/upload-codescene-coverage": {
+      "a5765019912a8ab6882b12db049c7cde635f3a85": {
+        "nested_uses": {
+          "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9": "v6.1.0, full SHA",
+          "actions/upload-artifact@v4": "floating tag; the retired-SHA rule does not apply to it"
+        }
+      }
+    }
+  }
+}
