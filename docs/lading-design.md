@@ -885,6 +885,35 @@ threaded stream relay to provide real-time output during long-running cargo
 operations. The migration will evaluate cuprum's streaming capabilities and
 either:
 
+For screen readers: The following sequence shows a Lading caller passing its
+working directory, standard input, environment, and relay policy to the Cuprum
+adapter. The adapter uses Cuprum to validate and spawn the child process.
+Cuprum relays incremental output to the sink while retaining capture if the
+sink fails, then returns the child's exit status and captured streams through
+the adapter to the caller.
+
+```mermaid
+sequenceDiagram
+    participant Caller as Lading caller
+    participant Adapter as Cuprum adapter
+    participant Cuprum as Cuprum
+    participant Child as Child process
+    participant Sink as Relay sink
+
+    Caller->>Adapter: run command with cwd, stdin, env, and relay policy
+    Adapter->>Cuprum: make and run_sync or run
+    Cuprum->>Child: spawn validated executable
+    Child-->>Cuprum: stdout and stderr incrementally
+    Cuprum->>Sink: echo captured output
+    Sink-->>Cuprum: continue capture after relay failure
+    Child-->>Cuprum: exit status
+    Cuprum-->>Adapter: CommandResult
+    Adapter-->>Caller: exit_code, stdout, stderr
+```
+
+_Figure 3: Cuprum adapter relays incremental output while preserving capture
+and returns the command result to the Lading caller._
+
 1. Use cuprum's native streaming support if it provides equivalent real-time
    output relay, or
 2. Retain a thin subprocess wrapper for streaming-specific scenarios while
