@@ -9,11 +9,16 @@ rules and required quality gates, see the [agent instructions](../AGENTS.md).
 
 Main is the sole owner of CodeScene publication. `coverage-main.yml` runs on
 pushes to main, and it is the only place in this repository that holds
-`CS_ACCESS_TOKEN`, names a CodeScene endpoint or invokes `cs-coverage`.
-Pull-request CI runs the suite and publishes its Cobertura report as a workflow
-artefact; it does not check coverage against CodeScene, and it no longer
-fetches full Git history, which existed only so the removed gate could reach a
-merge base.
+`CS_ACCESS_TOKEN`, names a CodeScene endpoint or invokes `cs-coverage`. Its
+upload step also guards on `refs/heads/main`, stating at the step what the
+trigger implies, so a trigger added later cannot reach an upload from a branch
+CodeScene does not analyse. Runs queue per ref rather than cancelling one
+another, because two pushes in quick succession would otherwise contend for the
+upload and for the ratchet baseline cache, and a cancelled run leaves main's
+coverage unpublished. Pull-request CI runs the suite and publishes its
+Cobertura report as a workflow artefact; it does not check coverage against
+CodeScene, and it no longer fetches full Git history, which existed only so the
+removed gate could reach a merge base.
 
 That is one half of the estate rule. The other half puts the shared
 `generate-coverage` action on both lanes with its coverage ratchet, and this
@@ -48,13 +53,16 @@ stop. Locally, `make fmt` calls `mdtablefix` and `markdownlint-cli2 --fix`
 directly, and `.markdownlint-cli2.jsonc` is the canonical configuration, so the
 rules the action applies are the rules a contributor sees.
 
-`tests/workflow_contracts/test_coverage_ownership.py` holds both shapes, and
-enumerates the pull-request workflows rather than naming them, so one added
-later is covered the day it appears. Every clause was proved by putting the
-forbidden thing back: the CodeScene check step, a bare `cs-coverage` command,
-the full-history checkout, the publisher switched to `check`, the publisher
-also triggered on pull requests, the uploader repinned to the unpinned-CLI
-commit, `installer-checksum`, the Markdown tag-object pin, and a `run:` step
+`tests/workflow_contracts/test_coverage_ownership.py` holds all three shapes,
+and enumerates the workflow directory rather than naming files, in both the
+`.yml` and `.yaml` spellings, so a lane added later is covered the day it
+appears. Every clause was proved by putting the forbidden thing back: the
+CodeScene check step, a bare `cs-coverage` command, the full-history checkout,
+the publisher switched to `check`, the publisher also triggered on pull
+requests, its ref guard and its concurrency block removed, the uploader
+repinned to the unpinned-CLI commit, `installer-checksum`, `setup-uv` moved to
+a tag or drifted apart between the lanes, the bespoke slipcover invocation,
+each coverage input in turn, the Markdown tag-object pin, and a `run:` step
 invoking the linter each fail one case and no other.
 
 ## Spelling policy
@@ -227,9 +235,9 @@ The old invocation also ran pytest under `pytest-forked`. Nothing in the suite
 depends on forking -- `make test` has always run plain pytest -- and the shared
 action runs pytest through xdist instead.
 
-`tests/workflow_contracts/test_coverage_generation.py` pins this shape. It
-enumerates `.github/workflows` and classifies each file by its triggers rather
-than naming files, so a coverage lane added later is covered the day it appears.
+`tests/workflow_contracts/test_coverage_ownership.py` pins this shape alongside
+the ownership rules, since the two describe one lane apiece and a reader
+checking either needs both.
 
 ## Workflow pins and Dependabot
 
