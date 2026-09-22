@@ -5,6 +5,64 @@ for contributors to `lading`. For the end-user CLI reference and `lading.toml`
 configuration, see the [user guide](./users-guide.md). For repository operating
 rules and required quality gates, see the [agent instructions](../AGENTS.md).
 
+## Coverage ownership
+
+Main is the sole owner of CodeScene publication. `coverage-main.yml` runs on
+pushes to main, and it is the only place in this repository that holds
+`CS_ACCESS_TOKEN`, names a CodeScene endpoint or invokes `cs-coverage`. Its
+upload step also guards on `refs/heads/main`, stating at the step what the
+trigger implies, so a trigger added later cannot reach an upload from a branch
+CodeScene does not analyse. Runs queue per ref rather than cancelling one
+another, because two pushes in quick succession would otherwise contend for the
+upload and for the ratchet baseline cache, and a cancelled run leaves main's
+coverage unpublished. Pull-request CI runs the suite and publishes its
+Cobertura report as a workflow artefact; it does not check coverage against
+CodeScene, and it no longer fetches full Git history, which existed only so the
+removed gate could reach a merge base.
+
+That is one half of the estate rule. The other half puts the shared
+`generate-coverage` action on both lanes with its coverage ratchet, and this
+repository now does that too; see [coverage generation](#coverage-generation)
+for how. The adoption was blocked for a while on two things that reached
+shared-actions together: `python-source`, which keeps the metric on `./lading`
+rather than broadening it to tests and fixtures, and a fix making the isolated
+coverage environment reach child processes. Without the second, the cmd-mox
+tests in `tests/unit/test_upload_release_wheels.py` could not find the
+executables they create; an earlier repin was tried, reddened exactly those
+three tests, and was reverted.
+
+The uploader is pinned past shared-actions `f68e8e2e`, which resolves the
+`cs-coverage` version from a committed manifest rather than fetching the latest
+release; an unpinned CLI is what broke Cobertura parsing across the estate, and
+this step is the only place left to fix it. No checksum input is passed.
+`installer-checksum` is rejected when it carries a value, and its replacement
+`archive-checksum` only restates the manifest archive digest the action already
+checks. The optional inputs are omitted, so the manifest's own pin stands.
+
+## Markdown linting
+
+CI lints Markdown only through `DavidAnson/markdownlint-cli2-action`, pinned to
+the commit `v24.2.0` points at rather than to the annotated tag object of the
+same name. The tag object's SHA is immutable but is not a commit, so a pin
+naming it names a different kind of object than a commit pin does. No CI step
+invokes `markdownlint-cli2` from a `run:` line: that would resolve whatever
+version the runner happened to carry, which is the drift the pin exists to
+stop. Locally, `make fmt` calls `mdtablefix` and `markdownlint-cli2 --fix`
+directly, and `.markdownlint-cli2.jsonc` is the canonical configuration, so the
+rules the action applies are the rules a contributor sees.
+
+`tests/workflow_contracts/test_coverage_ownership.py` holds all three shapes,
+and enumerates the workflow directory rather than naming files, in both the
+`.yml` and `.yaml` spellings, so a lane added later is covered the day it
+appears. Every clause was proved by putting the forbidden thing back: the
+CodeScene check step, a bare `cs-coverage` command, the full-history checkout,
+the publisher switched to `check`, the publisher also triggered on pull
+requests, its ref guard and its concurrency block removed, the uploader
+repinned to the unpinned-CLI commit, `installer-checksum`, `setup-uv` moved to
+a tag or drifted apart between the lanes, the bespoke slipcover invocation,
+each coverage input in turn, the Markdown tag-object pin, and a `run:` step
+invoking the linter each fail one case and no other.
+
 ## Spelling policy
 
 Run `make spelling` to enforce en-GB-oxendict prose spelling. The gate
@@ -134,6 +192,53 @@ The end-to-end suite in `tests/e2e/` keeps git interactions real while stubbing
 only `cargo` operations, using cmd-mox passthrough spies for `git status` when
 publish runs with stub mode enabled.
 
+## Coverage generation
+
+Both coverage lanes run the shared `generate-coverage` action from
+`leynos/shared-actions`: `ci.yml` on pull requests and pushes to main, and
+`coverage-main.yml` on pushes to main only. Neither invokes slipcover directly
+any more.
+
+Three inputs carry the whole of what this repository needs.
+
+`language: python` overrides the action's manifest-based detection. lading
+commits a synthetic root `Cargo.toml` as a fixture for its own
+workspace-release scenarios (see [repository layout](./repository-layout.md));
+it names `crates/` directories that do not exist on disk, so detection would run
+`cargo llvm-cov nextest --workspace` against them and fail before any Python
+ran. This is what the adoption waited on, along with a fix to the action making
+the isolated coverage environment reach child processes, without which the
+cmd-mox tests in `tests/unit/test_upload_release_wheels.py` cannot find the
+executables they create.
+
+`python-source: ./lading` holds the measured population to the package. It
+reproduces the scope the bespoke `--source=./lading` invocation had, and makes
+the old `--omit="*/.venv/*"` redundant: scoped this way, the two invocations
+report the same 58 files at the same rates, so the ratchet baseline did not
+move on adoption. The value is passed to slipcover unchanged as a single
+`--source` argument.
+
+`ci.yml` enables `with-ratchet` only for pull requests, which compare each run
+against a baseline held in the Actions cache. Its pushes to main still generate
+and publish the artefact, but do not save a baseline. `coverage-main.yml` alone
+enables the ratchet unconditionally, so its sole push-to-main trigger is the
+only writer in the cache family. Caches saved on main are readable by every
+pull-request run. A drop of more than one percentage point fails the run; a
+change within one point is treated as noise and holds the baseline.
+
+Artefact publication is split between the lanes. `ci.yml` passes
+`publish-artefact: 'false'` and uploads the report itself, keeping the name
+`coverage-report` it has always had. `coverage-main.yml` leaves the input
+unset, so the action archives the report that lane's upload step reads.
+
+The old invocation also ran pytest under `pytest-forked`. Nothing in the suite
+depends on forking -- `make test` has always run plain pytest -- and the shared
+action runs pytest through xdist instead.
+
+`tests/workflow_contracts/test_coverage_ownership.py` pins this shape alongside
+the ownership rules, since the two describe one lane apiece and a reader
+checking either needs both.
+
 ## Workflow pins and Dependabot
 
 Dependabot owns the upgrade of GitHub Actions and reusable workflows, including
@@ -145,6 +250,15 @@ manual chore.
 
 Contract tests may still verify the _shape_ of a reusable-workflow caller. They
 must not verify the specific SHA value.
+
+The CodeScene coverage composites have a narrower maintenance rule. A full SHA
+prevents a tag from moving, but it does not freeze the third-party actions that
+the pinned composite calls. GitHub can retire one of those nested revisions
+without changing the composite's SHA. Review
+`tests/support/approved_action_revisions.json` whenever either coverage-action
+pin moves, and keep `tests/workflow_contracts/test_coverage_ownership.py`'s
+retired-dependency contract aligned with it. That offline record catches a
+retired transitive pin before a workflow reaches action preparation.
 
 - Do assert the workflow references the correct reusable workflow path.
 - Do assert the ref is pinned to a full 40-character commit SHA, not a

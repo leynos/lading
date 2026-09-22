@@ -11,10 +11,6 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
-        with:
-          # Full history so a future `cs-coverage check` can reach the
-          # pull request's merge base (see the deferred gate note below).
-          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -58,7 +54,11 @@ jobs:
         # pin alongside the other actions. It reads .markdownlint-cli2.jsonc
         # from the workspace, so the rules and ignores match `make
         # markdownlint`. Spelling stays in `make spelling` below.
-        uses: DavidAnson/markdownlint-cli2-action@4580e1612f6407034edd6c0e4e316d725920867b  # v24.2.0
+        # Pinned to the commit v24.2.0 points at, not to the tag object.
+        # 4580e161 is the annotated tag's own SHA: immutable, but not a
+        # commit, so a checkout resolving it is resolving a different kind of
+        # object than the pin is meant to name.
+        uses: DavidAnson/markdownlint-cli2-action@21c1be1b93ad9ed58fa840aacc3f279cde2a72ff  # v24.2.0
         with:
           globs: '**/*.md'
 
@@ -71,60 +71,45 @@ jobs:
       - name: Run typechecker
         run: make typecheck
 
-      # NOTE: the shared generate-coverage action is not used here. Its
-      # language auto-detection treats any repository-root Cargo.toml as
-      # Rust (or "mixed" alongside pyproject.toml) with no override, and
-      # lading commits a synthetic root Cargo.toml as a fixture for its
-      # own workspace-release test scenarios (see
-      # docs/repository-layout.md) — it references crates/ directories
-      # that do not exist on disk. `cargo llvm-cov nextest --workspace`
-      # therefore fails immediately in CI trying to resolve that
-      # manifest. Coverage generation stays on the pre-existing bespoke
-      # slipcover invocation until the shared action supports a
-      # language override; the CodeScene wiring layers the shared
-      # upload-codescene-coverage action on top of this coverage.xml
-      # instead. Adds --xml: without it slipcover's --out target is a
-      # plain-text report, not Cobertura XML, which went unnoticed
-      # while the CodeScene upload step was guarded by an unset secret.
-      - name: Run tests with coverage
-        run: |
-          uv pip install slipcover pytest-forked
-          uv run python -m slipcover \
-            --source=./lading \
-            --omit="*/.venv/*" \
-            --branch \
-            --xml \
-            --out coverage.xml \
-            -m pytest --forked -v
+      # `language: python` is what makes the shared action usable here.
+      # lading commits a synthetic root Cargo.toml as a fixture for its own
+      # workspace-release test scenarios (see docs/repository-layout.md); it
+      # names crates/ directories that do not exist on disk, so the action's
+      # manifest-based detection would run `cargo llvm-cov nextest
+      # --workspace` against them and fail immediately. Forcing the scope
+      # skips the Rust path entirely.
+      #
+      # `python-source` reproduces the scope the bespoke slipcover invocation
+      # carried, keeping the metric on the package rather than widening it to
+      # tests and fixtures. It also makes the old `--omit="*/.venv/*"`
+      # redundant: scoped to ./lading, both invocations report the same 58
+      # files at the same rates, which is why the ratchet baseline does not
+      # move on adoption. The `--forked` the old invocation used is gone with
+      # it; nothing in the suite depends on forking, and `make test` has
+      # always run plain pytest.
+      - name: Generate coverage
+        uses: leynos/shared-actions/.github/actions/generate-coverage@dbe2e22ceaf498d85512679ccded38be9dbe7777
+        with:
+          language: python
+          output-path: coverage.xml
+          python-source: ./lading
+          # Pull requests compare against the baseline coverage-main.yml
+          # writes. Pushes still generate and upload the artefact, but must
+          # not become a second writer in the shared baseline cache family.
+          with-ratchet: ${{ github.event_name == 'pull_request' }}
+          # This lane measures and compares; it does not publish. The action
+          # archives the report under a step of its own, which no scanner over
+          # this file's steps can see, so declining that archive is the only
+          # way the boundary is observable here. The report stays on the
+          # runner for the upload step below.
+          publish-artefact: 'false'
 
-      # Named coverage-report rather than "coverage" because the
-      # upload-codescene-coverage action below unconditionally uploads
-      # the same file as an artifact named "coverage"; sharing the name
-      # makes the second upload fail with a 409 name conflict. Keeping
-      # this standalone upload preserves the coverage artifact on runs
-      # where the gate step is skipped (secret-less fork PRs, and
-      # push-to-main where the gate is PR-only).
+      # The only publisher of this file in this workflow, and the only one
+      # that can be: the coverage action above declines its own archive. The
+      # CodeScene gate that used to upload a second copy under the name
+      # "coverage" has gone; coverage-main.yml owns every upload now.
       - name: Upload coverage artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage-report
           path: coverage.xml
-
-      # CodeScene accepts `cs-coverage upload` only for analysed branches
-      # (main), so no upload happens on pull requests; coverage-main.yml
-      # uploads on push to main instead. The changed-line gate below
-      # reuses the bespoke coverage.xml generated above (see the note on
-      # the "Run tests with coverage" step for why the shared
-      # generate-coverage action cannot be used here).
-      - name: Check coverage against CodeScene gates
-        env:
-          CS_ACCESS_TOKEN: ${{ secrets.CS_ACCESS_TOKEN }}
-        if: env.CS_ACCESS_TOKEN != '' && github.event_name == 'pull_request'
-        uses: leynos/shared-actions/.github/actions/upload-codescene-coverage@6b5cdc2d4c0bb72cafd5a66d24d248ac25827db9
-        with:
-          format: cobertura
-          path: coverage.xml
-          mode: check
-          project-url: https://api.codescene.io/v2/projects/72980
-          access-token: ${{ env.CS_ACCESS_TOKEN }}
-          installer-checksum: ${{ vars.CODESCENE_CLI_SHA256 }}
