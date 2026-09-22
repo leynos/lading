@@ -747,43 +747,81 @@ utilities to the highest-level user-facing commands.
 
 ### 7.1. Rationale for Cuprum Adoption
 
-The project currently uses plumbum for structured command execution and raw
-subprocess for streaming output scenarios.
-[Cuprum](https://github.com/leynos/cuprum/) provides several advantages that
-warrant migration:
+Production command execution is standard-library `subprocess`, centralized in
+one runner module: `lading/runtime/subprocess_runner.py` holds the sole
+`subprocess.Popen` call, inside `_spawn_process`, and exposes
+`subprocess_runner` as its public entry point, which delegates to
+`invoke_via_subprocess`. Plumbum survives only in two end-to-end test helpers,
+`tests/e2e/helpers/git_helpers.py` and
+`tests/e2e/helpers/e2e_steps_helpers.py`; no module under `lading/` imports it.
+`lading/utils/path.py` is already pure pathlib. Lading's logging of external
+commands is established rather than ad hoc: `log_command_invocation` in
+`lading/utils/process.py` sources exactly one INFO record per external command
+invocation, plus a DEBUG record with the redacted environment diff.
+[Cuprum](https://github.com/leynos/cuprum/) offers the following advantages as
+additions to, or replacements for, that arrangement:
 
-- **Security-first design**: Allowlist-based program registration prevents
-  accidental shell access; unknown executables raise `UnknownProgramError`
-  rather than silently executing arbitrary commands.
+- **Security-first design**: Allowlist-based program registration adds
+  enforcement to the staged catalogue; unknown executables raise
+  `UnknownProgramError` rather than silently executing arbitrary commands.
 - **Unified API**: Both synchronous and asynchronous execution through
-  `run_sync()` and `run()`, eliminating the split between plumbum for simple
-  invocations and subprocess for streaming scenarios.
+  `run_sync()` and `run()`, replacing the split between plumbum in the
+  end-to-end helpers and `subprocess` in production.
 - **Built-in observability**: Hooks and structured events integrate naturally
-  with logging without custom wrappers, replacing the ad-hoc
-  `log_command_invocation` helpers.
-- **Pipeline composition**: Native support for command pipelines with
-  backpressure handling via the `|` operator, matching plumbum's ergonomics
-  while adding safety guarantees.
+  with logging without custom wrappers, complementing the existing
+  single-invocation log rather than replacing it.
+- **Pipeline composition**: Native support for command pipelines via the `|`
+  operator, matching plumbum's ergonomics while adding safety guarantees.
 - **Typed command building**: `sh.make()` constructs `SafeCmd` instances from
   curated programs, with keyword arguments transformed into `--flag=value`
   format automatically.
 
+The rationale is bounded by §1 of the
+[beta adoption assessment](cuprum-v0-2-0-beta1-adoption-assessment.md#1-recommendation-and-scope),
+which records that only the catalogue, the pathlib conversion, and the
+source-level assessment are complete, that the migration itself is not
+implemented, and that the beta's published artefact remains unvalidated.
+
 ### 7.2. Migration Scope
 
-The migration affects four code locations:
+The migration covers six areas:
 
-1. **`lading/workspace/metadata.py`**: Replace `plumbum.local` command
-   construction and `CommandNotFound` exception handling with cuprum catalogue
-   lookups and `SafeCmd` execution.
-2. **`lading/utils/path.py`**: Replace `local.path()` with direct pathlib usage.
-   Plumbum's path normalization adds no value over the standard library for the
-   current use case.
-3. **`lading/commands/publish_execution.py`**: Replace `subprocess.Popen` with
-   threaded stream relay with cuprum's execution model. This is the most
-   complex migration point as it requires preserving real-time output streaming
-   semantics.
-4. **`tests/e2e/helpers/git_helpers.py`**: Replace plumbum git invocations with
-   cuprum catalogue-based commands.
+1. **`lading/runtime/subprocess_runner.py`**: Replace the spawning backend
+   behind the existing `lading/runtime/runner.py` `CommandRunner` protocol. The
+   module's public `subprocess_runner` entry point and the `subprocess.Popen`
+   call inside `_spawn_process` form the only production process-spawning
+   boundary, so replacing that backend is the primary migration point.
+   Preserving real-time stream relay through the same boundary is what makes it
+   the most complex one.
+2. **Production callers**: Route every remaining caller through the selected
+   adapter. `lading/workspace/metadata.py` already builds a plain argument
+   vector and delegates to an injected `CommandRunner`, so it is a caller to
+   migrate rather than a spawner. `lading/commands/publish_execution.py` also
+   delegates to the production runner and owns error translation and per-crate
+   duration timing. The `pathlib` conversion is already the finished part of
+   the phase: `lading/utils/path.py` no longer depends on plumbum and carries
+   no execution work.
+3. **Real cmd-mox passthrough**: Route `lading/testing/cmd_mox_runner.py`
+   through the same adapter while preserving IPC routing, cargo subcommand
+   namespacing, real-command overrides, PATH filtering, and PWD handling.
+4. **End-to-end test helpers**: Migrate both plumbum helpers,
+   `tests/e2e/helpers/git_helpers.py` and
+   `tests/e2e/helpers/e2e_steps_helpers.py`, preserving `GitCommandError`.
+5. **Direct-subprocess test invocations**: Migrate the six test files that
+   import `subprocess`: `tests/bdd/steps/test_common_steps.py`,
+   `tests/e2e/test_upload_release_wheels_cli.py`,
+   `tests/e2e/test_staging_cleanup_on_termination.py`,
+   `tests/integration/test_cargo_shim_cli.py`,
+   `tests/integration/test_lockfile_discovery.py`, and
+   `tests/workflow_contracts/test_lint_target.py`.
+6. **Release scripts**: Update the existing cuprum release uploader,
+   `scripts/release_wheel_upload.py`, whose `run_gh` still uses removed flat
+   keyword forms. Dependency-internal subprocess use and the cargo shim's
+   `os.execvp` process replacement stay outside this phase.
+
+The sequencing, dependencies, and per-task success criteria for this scope are
+recorded in the roadmap's command execution modernization section, and the
+streaming, catalogue, and compatibility details follow in §7.3, §7.4, and §7.5.
 
 ### 7.3. Catalogue Definition
 
@@ -817,13 +855,17 @@ Command construction uses cuprum's scoped context manager with the catalogue's
 allowlist, passing the catalogue explicitly to `sh.make()`:
 
 ```python
-from cuprum import scoped, sh
+from cuprum import ScopeConfig, scoped, sh
 from lading.utils.commands import CARGO, LADING_CATALOGUE
 
-with scoped(allowlist=LADING_CATALOGUE.allowlist):
+with scoped(ScopeConfig(allowlist=LADING_CATALOGUE.allowlist)):
     cargo_builder = sh.make(CARGO, catalogue=LADING_CATALOGUE)
     result = cargo_builder("metadata", "--format-version", "1").run_sync()
 ```
+
+The flat `scoped(allowlist=...)` and `run_sync(capture=...)` forms were removed
+before 0.2.0 and raise `TypeError`; capture settings now travel in a
+`RunOutputOptions` instance passed as `output=`.
 
 #### Implementation Notes (Step 5.1)
 
@@ -844,16 +886,23 @@ with scoped(allowlist=LADING_CATALOGUE.allowlist):
 The existing cmd-mox integration for test isolation must be preserved. The
 migration will maintain the `LADING_USE_CMD_MOX_STUB` environment variable
 pattern, routing invocations through inter-process communication (IPC) when
-enabled. The `_CmdMoxCommand` proxy class in `metadata.py` will be adapted to
-work alongside cuprum's execution model, ensuring behavioural tests continue to
-function without a Rust toolchain.
+enabled. Real passthrough lives in `lading/testing/cmd_mox_runner.py`:
+`cmd_mox_runner` is the `CommandRunner`-conforming adapter entry point,
+`_handle_cmd_mox_passthrough` performs local real execution through
+`invoke_via_subprocess`, and `normalize_cmd_mox_command` namespaces cargo
+subcommands for cmd-mox. `_build_cmd_mox_passthrough_env` and
+`_merge_cmd_mox_path_entries` build the filtered `PATH`, and the working
+directory is carried as `PWD` for the passthrough execution. Behavioural tests
+therefore continue to function without a Rust toolchain.
 
 The integration pattern separates catalogue-based command construction from the
-actual execution backend. When `LADING_USE_CMD_MOX_STUB` is set, the execution
-layer routes commands through cmd-mox IPC rather than spawning real processes:
+actual execution backend. Selection happens in `lading/cli.py`, where
+`_select_runner()` returns `cmd_mox_runner` when `LADING_USE_CMD_MOX_STUB` is
+set and `subprocess_runner` otherwise, so the execution layer routes commands
+through cmd-mox IPC rather than spawning real processes:
 
 ```python
-from cuprum import scoped, sh
+from cuprum import Program, ScopeConfig, sh, scoped
 from lading.utils.commands import CARGO, GIT, LADING_CATALOGUE
 
 def _invoke(
@@ -868,7 +917,7 @@ def _invoke(
         return _invoke_via_cmd_mox(program, args, cwd)
 
     # Production path: use cuprum's scoped catalogue
-    with scoped(allowlist=LADING_CATALOGUE.allowlist):
+    with scoped(ScopeConfig(allowlist=LADING_CATALOGUE.allowlist)):
         cmd_builder = sh.make(program, catalogue=LADING_CATALOGUE)
         cmd = cmd_builder(*args)
         return cmd.run_sync()
@@ -880,10 +929,13 @@ taken at runtime.
 
 ### 7.5. Streaming Output Migration
 
-The `publish_execution.py` module currently uses `subprocess.Popen` with
-threaded stream relay to provide real-time output during long-running cargo
-operations. The migration will evaluate cuprum's streaming capabilities and
-either:
+The `lading/runtime/subprocess_runner.py` module owns the subprocess boundary:
+it holds the only `subprocess.Popen` call, inside `_spawn_process`, which is
+reached through `subprocess_runner` and `invoke_via_subprocess`. Threaded
+stream relay in that module provides real-time output during long-running cargo
+operations. `lading/commands/publish_execution.py` only delegates to that
+runner and owns error translation and per-crate duration timing. The migration
+will retain this behaviour through a cuprum adapter, as follows:
 
 For screen readers: The following sequence shows a Lading caller passing its
 working directory, standard input, environment, and relay policy to the Cuprum
@@ -914,14 +966,28 @@ sequenceDiagram
 _Figure 3: Cuprum adapter relays incremental output while preserving capture
 and returns the command result to the Lading caller._
 
-1. Use cuprum's native streaming support if it provides equivalent real-time
-   output relay, or
-2. Retain a thin subprocess wrapper for streaming-specific scenarios while
-   using cuprum for all other command execution.
+1. The streaming requirement is already met by cuprum's live stdout/stderr
+   relay, so no line-iteration API is required for lading's publish streaming
+   requirement.
+2. Two demonstrated differences block a direct behaviour-preserving
+   substitution and need shims: cuprum's `ExecutionContext.env` always overlays
+   the live parent environment, whereas lading's runner replaces the
+   environment; and an equivalent broken text sink raises `BrokenPipeError`,
+   whereas lading's relay policy disables a failed relay while preserving
+   capture.
+3. Relay is preserved through a text-facade sink that reuses lading's existing
+   relay policy (UTF-8 replacement decoding, binary fallback, broken-pipe
+   suppression) and does not expose a raw `.buffer` that would bypass the
+   wrapper; `max_echo_line_bytes=None` is selected for current unbounded relay
+   parity.
+4. Cargo output continues to be relayed as it is produced, not buffered until
+   completion, and recorded output remains complete.
 
 The goal is to eliminate the current split between plumbum and subprocess while
 preserving the user experience of seeing cargo output as it happens rather than
-buffered at completion.
+buffered at completion. Sections 1, 3, 4, and 7 of the
+[beta adoption assessment](cuprum-v0-2-0-beta1-adoption-assessment.md) assess
+these outcomes.
 
 ## 8. Release Publication
 

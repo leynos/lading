@@ -2,20 +2,23 @@
 
 This module defines the shared programme catalogue that registers all
 external executables permitted within the lading package. Using a
-centralised catalogue ensures consistent allowlist enforcement across
+centralized catalogue ensures consistent allowlist enforcement across
 the codebase.
 
 Migration context: This is Step 5.1 of the Cuprum migration. Subsequent
 steps will migrate existing plumbum and subprocess code to use this
-catalogue via ``scoped(allowlist=LADING_CATALOGUE.allowlist)``.
+catalogue via ``scoped(ScopeConfig(allowlist=LADING_CATALOGUE.allowlist))``.
 
 The catalogue is staged but intentionally not yet wired into the execution
-path: ``publish_execution._invoke`` still delegates to the subprocess runner,
-which spawns processes directly. The wiring lands with the Phase 5.2
-publish-execution migration in ``docs/roadmap.md`` -- the
-``_invoke_via_subprocess()`` step that rewires ``publish_execution.py``
-command execution onto ``scoped(allowlist=LADING_CATALOGUE.allowlist)``; do
-not mistake this module for live enforcement in the meantime.
+path: every production invocation still goes through
+``lading.runtime.subprocess_runner``, which spawns processes directly. The
+wiring lands with the Phase 5.2 production migration in ``docs/roadmap.md``,
+which rewires the spawning backend behind the ``CommandRunner`` protocol onto
+``scoped(ScopeConfig(allowlist=LADING_CATALOGUE.allowlist))``; do not mistake
+this module for live enforcement in the meantime. Until task 5.1.4 selects the
+beta, the locked cuprum 0.1.0 accepts only the flat keyword form, so this
+module's own tests still use it; the interface reference is §7 of
+``docs/lading-design.md``.
 """
 
 from __future__ import annotations

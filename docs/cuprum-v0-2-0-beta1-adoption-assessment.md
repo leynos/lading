@@ -44,9 +44,13 @@ published-beta validation has been completed by these documentation changes.
   of the three relevant feature PRs were inspected as well as their
   descriptions.
 
-The source and runtime observations below describe those exact revisions. They
-do not certify Windows/macOS behaviour, packaging, all native backends, or the
-future beta's complete test suite.[^1]
+The source and runtime observations below describe only that initial snapshot.
+They do not certify Windows/macOS behaviour, packaging, all native backends, or
+the future beta's complete test suite. Section 6.7 is the exception: it is a
+later follow-up, taken after line-iteration PR `#365` merged as
+`361887e634ce05fbce99b6a2cfa9d38b7cc71a48` and after cuprum `main` reached
+`fdfcebc387ac93e2b993185acf272d600cb80f05`, so its observations do not describe
+the initial cuprum revision `861fe2f053645311482141f155baeaa70dca0299`.[^1]
 
 ## 2. Actual migration scope
 

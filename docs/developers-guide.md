@@ -1455,12 +1455,21 @@ operator-facing description of the variable and its failure modes.
 
 `lading.utils.commands.LADING_CATALOGUE` is the staged cuprum programme
 catalogue (cargo, git, sccache). It is intentionally not yet wired into the
-execution path — `publish_execution._invoke` still delegates to the subprocess
-runner, which spawns processes directly. It becomes live with the
-[Phase 5.2 publish-execution migration](./roadmap.md), which rewires
-`publish_execution.py` command execution (the roadmap's
-`_invoke_via_subprocess()` step) onto the catalogue's `scoped(allowlist=…)`
-model. Treat it as a registration point, not as active allowlist enforcement.
+execution path — every production invocation still goes through
+`lading/runtime/subprocess_runner.py`, which spawns processes directly. It
+becomes live with the [Phase 5.2 production migration](./roadmap.md), which
+rewires the spawning backend behind the `CommandRunner` protocol onto the
+catalogue's `scoped(ScopeConfig(allowlist=…))` model. Treat it as a
+registration point, not as active allowlist enforcement.
+
+The scoped-context examples in `lading/utils/commands.py`,
+`tests/unit/utils/test_commands.py`, and
+`tests/bdd/steps/test_commands_catalogue_steps.py` still use the flat
+`scoped(allowlist=…)` keyword form, which the beta removed. They are pinned to
+the locked cuprum 0.1.0 and must be corrected as part of task 5.1.4, before the
+dependency is upgraded. The interface reference in
+[design §7](lading-design.md#7-command-execution-migration-phase-5) already
+describes the beta forms; follow it rather than the older call sites.
 
 #### Subprocess invocation logging
 
