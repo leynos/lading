@@ -469,6 +469,96 @@ def test_the_publisher_queues_runs_per_ref() -> None:
     )
 
 
+def _fixture_mapping(fixture: dict[str, object], section: str) -> dict[str, object]:
+    """Return one required mapping from the approved-revisions fixture."""
+    value = fixture.get(section)
+    assert isinstance(value, dict), f"the fixture must record {section}"
+    return typ.cast("dict[str, object]", value)
+
+
+def _assert_workflow_avoids_retired_references(
+    path: Path, retired: dict[str, object]
+) -> None:
+    """Reject retired action references in one workflow."""
+    text = path.read_text(encoding="utf-8")
+    for reference, reason in retired.items():
+        assert reference not in text, (
+            f"{path.name} reaches retired {reference}: {reason}"
+        )
+
+
+def _assert_workflows_avoid_retired_references(retired: dict[str, object]) -> None:
+    """Reject retired action references across every workflow."""
+    for path in _workflow_paths():
+        _assert_workflow_avoids_retired_references(path, retired)
+
+
+def _coverage_action_revision(
+    step: dict[str, YamlValue],
+) -> tuple[str, str] | None:
+    """Return a coverage composite action and revision from one step."""
+    uses = step.get("uses")
+    if not isinstance(uses, str) or "@" not in uses:
+        return None
+    action, revision = uses.rsplit("@", maxsplit=1)
+    return (
+        (action, revision)
+        if action
+        in {
+            UPLOAD_CODESCENE_ACTION,
+            GENERATE_COVERAGE_ACTION,
+        }
+        else None
+    )
+
+
+def _coverage_action_revisions() -> cabc.Iterator[tuple[str, str]]:
+    """Yield every coverage composite action reference in the workflows."""
+    for path in _workflow_paths():
+        workflow = _load_workflow(path)
+        yield from _coverage_action_revisions_in_workflow(workflow)
+
+
+def _coverage_action_revisions_in_workflow(
+    workflow: Workflow,
+) -> cabc.Iterator[tuple[str, str]]:
+    """Yield coverage composite action references in one workflow."""
+    for _job_name, step in _job_steps(workflow):
+        reference = _coverage_action_revision(step)
+        if reference is not None:
+            yield reference
+
+
+def _assert_coverage_action_has_no_retired_dependency(
+    action: str,
+    revision: str,
+    approved: dict[str, object],
+    retired_references: set[str],
+) -> None:
+    """Require an approved coverage action without retired dependencies."""
+    action_revisions = approved.get(action)
+    assert isinstance(action_revisions, dict), (
+        f"{action} is missing from {APPROVED_ACTION_REVISIONS_PATH.name}"
+    )
+    detail = action_revisions.get(revision)
+    assert isinstance(detail, dict), (
+        f"{action}@{revision} is not recorded in {APPROVED_ACTION_REVISIONS_PATH.name}"
+    )
+    nested_uses = detail.get("nested_uses")
+    assert isinstance(nested_uses, dict), (
+        f"{action}@{revision} must record its nested actions"
+    )
+    assert all(isinstance(reference, str) for reference in nested_uses), (
+        f"{action}@{revision} must name nested actions as strings"
+    )
+    nested_references = set(typ.cast("dict[str, object]", nested_uses))
+    retired_dependencies = nested_references & retired_references
+    assert not retired_dependencies, (
+        f"{action}@{revision} reaches retired dependencies: "
+        f"{sorted(retired_dependencies)}"
+    )
+
+
 def test_coverage_composites_do_not_reach_retired_action_revisions() -> None:
     """Reject retired pins, including dependencies nested in composites.
 
@@ -477,53 +567,18 @@ def test_coverage_composites_do_not_reach_retired_action_revisions() -> None:
     this offline contract and must be refreshed with each coverage-action pin.
     """
     fixture = _approved_action_revisions()
-    retired = fixture.get("retired")
-    approved = fixture.get("approved")
-    assert isinstance(retired, dict), "the fixture must record retired revisions"
-    assert isinstance(approved, dict), "the fixture must record approved revisions"
+    retired = _fixture_mapping(fixture, "retired")
+    approved = _fixture_mapping(fixture, "approved")
     assert all(isinstance(reference, str) for reference in retired), (
         "retired action references must be strings"
     )
     retired_references = set(typ.cast("dict[str, object]", retired))
 
-    for path in _workflow_paths():
-        text = path.read_text(encoding="utf-8")
-        for reference, reason in retired.items():
-            assert reference not in text, (
-                f"{path.name} reaches retired {reference}: {reason}"
-            )
-
-    coverage_actions = {UPLOAD_CODESCENE_ACTION, GENERATE_COVERAGE_ACTION}
-    for path in _workflow_paths():
-        for _job_name, step in _job_steps(_load_workflow(path)):
-            uses = step.get("uses")
-            if not isinstance(uses, str) or "@" not in uses:
-                continue
-            action, revision = uses.rsplit("@", maxsplit=1)
-            if action not in coverage_actions:
-                continue
-            action_revisions = approved.get(action)
-            assert isinstance(action_revisions, dict), (
-                f"{action} is missing from {APPROVED_ACTION_REVISIONS_PATH.name}"
-            )
-            detail = action_revisions.get(revision)
-            assert isinstance(detail, dict), (
-                f"{action}@{revision} is not recorded in "
-                f"{APPROVED_ACTION_REVISIONS_PATH.name}"
-            )
-            nested_uses = detail.get("nested_uses")
-            assert isinstance(nested_uses, dict), (
-                f"{action}@{revision} must record its nested actions"
-            )
-            assert all(isinstance(reference, str) for reference in nested_uses), (
-                f"{action}@{revision} must name nested actions as strings"
-            )
-            nested_references = set(typ.cast("dict[str, object]", nested_uses))
-            retired_dependencies = nested_references & retired_references
-            assert not retired_dependencies, (
-                f"{action}@{revision} reaches retired dependencies: "
-                f"{sorted(retired_dependencies)}"
-            )
+    _assert_workflows_avoid_retired_references(retired)
+    for action, revision in _coverage_action_revisions():
+        _assert_coverage_action_has_no_retired_dependency(
+            action, revision, approved, retired_references
+        )
 
 
 def test_both_workflows_install_uv_from_one_commit_pin() -> None:
