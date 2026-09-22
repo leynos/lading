@@ -218,11 +218,13 @@ report the same 58 files at the same rates, so the ratchet baseline did not
 move on adoption. The value is passed to slipcover unchanged as a single
 `--source` argument.
 
-`with-ratchet: 'true'` compares each run against a baseline held in the Actions
-cache. Only a push to `refs/heads/main` advances it, which is
-`coverage-main.yml`'s sole trigger, and caches saved on main are readable by
-every pull-request run. A drop of more than one percentage point fails the run;
-a change within one point is treated as noise and holds the baseline.
+`ci.yml` enables `with-ratchet` only for pull requests, which compare each run
+against a baseline held in the Actions cache. Its pushes to main still generate
+and publish the artefact, but do not save a baseline. `coverage-main.yml` alone
+enables the ratchet unconditionally, so its sole push-to-main trigger is the
+only writer in the cache family. Caches saved on main are readable by every
+pull-request run. A drop of more than one percentage point fails the run; a
+change within one point is treated as noise and holds the baseline.
 
 Artefact publication is split between the lanes. `ci.yml` passes
 `publish-artefact: 'false'` and uploads the report itself, keeping the name

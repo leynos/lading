@@ -93,9 +93,10 @@ jobs:
           language: python
           output-path: coverage.xml
           python-source: ./lading
-          # Compare against the baseline written by coverage-main.yml; caches
-          # saved on main are readable by every pull-request run.
-          with-ratchet: 'true'
+          # Pull requests compare against the baseline coverage-main.yml
+          # writes. Pushes still generate and upload the artefact, but must
+          # not become a second writer in the shared baseline cache family.
+          with-ratchet: ${{ github.event_name == 'pull_request' }}
           # This lane measures and compares; it does not publish. The action
           # archives the report under a step of its own, which no scanner over
           # this file's steps can see, so declining that archive is the only

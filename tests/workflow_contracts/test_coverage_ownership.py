@@ -78,6 +78,7 @@ UPLOAD_GUARD = (
     "github.event_name == 'push' && github.ref == 'refs/heads/main' && "
     "env.CS_ACCESS_TOKEN != ''"
 )
+PULL_REQUEST_RATCHET = "${{ github.event_name == 'pull_request' }}"
 #: The upstream Markdown linter, pinned to the commit `v24.2.0` points at
 #: rather than to the annotated tag object of the same name.
 MARKDOWNLINT_ACTION = (
@@ -676,13 +677,26 @@ def test_every_coverage_step_scopes_the_metric_to_the_package() -> None:
         )
 
 
-def test_every_coverage_step_enables_the_ratchet() -> None:
-    """Both lanes compare against the baseline main publishes."""
-    for step in _coverage_steps():
-        assert step.inputs.get("with-ratchet") in {True, "true"}, (
-            f"{step.path.name}: the {step.name!r} step must enable the "
-            f"ratchet, got {step.inputs.get('with-ratchet')!r}"
+def _assert_coverage_step_has_the_correct_ratchet(step: CoverageStep) -> None:
+    """Assert one coverage step has the baseline role its workflow permits."""
+    ratchet = step.inputs.get("with-ratchet")
+    workflow = _load_workflow(step.path)
+    if _is_publisher(workflow):
+        assert ratchet == "true", (
+            f"{step.path.name}: the publisher must enable its literal ratchet, "
+            f"got {ratchet!r}"
         )
+    elif _runs_on_pull_requests(workflow):
+        assert ratchet in {None, PULL_REQUEST_RATCHET}, (
+            f"{step.path.name}: a pull-request lane must condition the ratchet "
+            f"on pull_request or omit it, got {ratchet!r}"
+        )
+
+
+def test_only_the_publisher_writes_the_ratchet_baseline() -> None:
+    """Keep pushes to main from creating a second baseline writer."""
+    for step in _coverage_steps():
+        _assert_coverage_step_has_the_correct_ratchet(step)
 
 
 def test_only_the_publisher_archives_the_action_report() -> None:
