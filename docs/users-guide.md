@@ -102,7 +102,7 @@ lists the ones a running publish still holds separately from the ones whose
 removal failed, and names both. So a sweep that met a permission error names
 the directories still on disk rather than stopping at the first one. A search
 directory that cannot be read at all is different: the command fails outright
-rather than reporting an empty sweep, because an empty report would describe a
+rather than reporting an empty sweep because an empty report would describe a
 directory as clear when nothing in it had been looked at.
 
 ## Programmatic publish staging

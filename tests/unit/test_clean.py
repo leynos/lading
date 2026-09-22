@@ -7,7 +7,7 @@ taken.
 
 from __future__ import annotations
 
-import os
+import collections.abc as cabc
 import tempfile
 from pathlib import Path
 
@@ -247,11 +247,9 @@ def test_the_default_location_is_where_a_publish_stages(
     assert "Found 1 staging directory" in summary, "the default search reported nothing"
 
 
-@pytest.mark.skipif(
-    hasattr(os, "geteuid") and os.geteuid() == 0,
-    reason="root reads a directory whose mode forbids it, so nothing fails",
-)
-def test_an_unreadable_location_is_a_domain_error(tmp_path: Path) -> None:
+def test_an_unreadable_location_is_a_domain_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     """A directory that cannot be listed must not read as an empty sweep.
 
     The per-file errors met while sizing a tree are counted as zero on
@@ -259,23 +257,34 @@ def test_an_unreadable_location_is_a_domain_error(tmp_path: Path) -> None:
     clears. A search directory that cannot be read is different in kind.
     Swallowing it would report "No staging directories found" and tell the
     caller their disk was clear when nothing had been looked at.
+
+    The refusal is injected rather than made with ``chmod``, because a mode
+    that forbids reading stops neither root nor a Windows runner from
+    listing the directory, so a permission-based case skips or passes
+    vacuously on exactly the runners it most needs to cover.
     """
     location = tmp_path / "unreadable"
     location.mkdir()
-    location.chmod(0o000)
-    try:
-        with pytest.raises(
-            clean.CleanError, match="Cannot read the staging location"
-        ) as raised:
-            clean.run(options=clean.CleanOptions(location=location))
-        # Carried as a value, not only inside the message: a caller deciding
-        # what to do next should not have to parse prose to learn which
-        # directory failed.
-        assert raised.value.location == location.resolve(), (
-            "the failure did not name the directory it could not read"
-        )
-    finally:
-        location.chmod(0o700)
+    resolved = location.resolve()
+    real_iterdir = Path.iterdir
+
+    def refuse_location(path: Path) -> cabc.Iterator[Path]:
+        if path == resolved:
+            message = "directory is unreadable"
+            raise PermissionError(message)
+        return real_iterdir(path)
+
+    monkeypatch.setattr(Path, "iterdir", refuse_location)
+    with pytest.raises(
+        clean.CleanError, match="Cannot read the staging location"
+    ) as raised:
+        clean.run(options=clean.CleanOptions(location=location))
+    # Carried as a value, not only inside the message: a caller deciding
+    # what to do next should not have to parse prose to learn which
+    # directory failed.
+    assert raised.value.location == resolved, (
+        "the failure did not name the directory it could not read"
+    )
 
 
 def test_a_windows_junction_is_not_in_scope(
