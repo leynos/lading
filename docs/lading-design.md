@@ -714,9 +714,11 @@ stops that directory being deleted there, so the claim cannot be held while the
 tree is removed on that platform. The same rule, though, is what keeps a live
 tree safe: the publisher's own open handle makes the removal itself fail rather
 than succeed, so an in-use tree is never deleted there. The claim turns that
-failure into an orderly skip. `is_in_use` offers a point-in-time query over the
-same mechanism for callers that only report; anything that acts on the answer
-must hold the claim, not merely read it.
+failure into an orderly skip. There is deliberately no separate "is this tree
+in use" query: probing a kernel lock means taking it, so such a query would
+mutate while presenting as a read, and its answer would be stale before the
+caller could act on it. `hold_for_removal` is the one way to ask, and it
+returns the answer together with the claim that keeps it true.
 
 The lock is advisory, a courtesy rather than a guarantee: `claim` returns
 whether it succeeded, and a filesystem that refuses to lock does not stop a

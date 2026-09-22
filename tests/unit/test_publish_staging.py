@@ -497,15 +497,13 @@ def test_a_retained_tree_gives_up_its_claim(
 
     with publish_staging.staged_workspace(plan, options=options) as staged:
         build_directory = staged.staging_root.parent
-        assert staging_lock.is_in_use(build_directory), (
-            "staging did not claim the tree it created"
-        )
+        with staging_lock.hold_for_removal(build_directory) as free:
+            assert not free, "staging did not claim the tree it created"
 
     try:
         assert build_directory.is_dir(), "the retained tree was removed"
-        assert not staging_lock.is_in_use(build_directory), (
-            "a retained tree kept its claim after the block ended"
-        )
+        with staging_lock.hold_for_removal(build_directory) as free:
+            assert free, "a retained tree kept its claim after the block ended"
     finally:
         shutil.rmtree(build_directory, ignore_errors=True)
 

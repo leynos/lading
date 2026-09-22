@@ -75,8 +75,13 @@ else:
 _HELD: dict[Path, io.BufferedRandom] = {}
 
 
-def _open(root: Path) -> io.BufferedRandom:
-    """Return an open handle on ``root``'s lock file, creating it if absent.
+def _open(root: Path, *, create: bool) -> io.BufferedRandom:
+    """Return an open handle on ``root``'s lock file.
+
+    Only a claim creates the file. The removal side opens an existing one and
+    fails if it has gone, so judging a tree never leaves a lock file behind in
+    it; a tree whose lock vanished mid-check is then reported in use, which is
+    the answer that does not delete.
 
     The position is set to the start because Windows locks a byte range from
     wherever the handle happens to be, and both sides must name the same byte.
@@ -86,7 +91,7 @@ def _open(root: Path) -> io.BufferedRandom:
     io.BufferedRandom
         The open handle.
     """
-    handle = (root / LOCK_NAME).open("a+b")
+    handle = (root / LOCK_NAME).open("a+b" if create else "r+b")
     handle.seek(0)
     return handle
 
@@ -111,7 +116,7 @@ def claim(root: Path) -> bool:
         Whether the claim was made.
     """
     try:
-        handle = _open(root)
+        handle = _open(root, create=True)
     except OSError:
         LOGGER.warning("Could not create a staging lock in %s", root, exc_info=True)
         return False
@@ -165,7 +170,7 @@ def _acquire_for_removal(root: Path) -> tuple[bool, io.BufferedRandom | None]:
         # nothing here can, which is the documented bargain.
         return (True, None)
     try:
-        handle = _open(root)
+        handle = _open(root, create=False)
     except OSError:
         # The lock file cannot even be opened, so its tree is not ours to
         # judge. Reporting it in use is the answer that does not delete.
@@ -217,25 +222,3 @@ def hold_for_removal(root: Path) -> cabc.Iterator[bool]:
                 _drop(handle)
             finally:
                 handle.close()
-
-
-def is_in_use(root: Path) -> bool:
-    """Report whether a live publish still holds ``root``.
-
-    The answer is true only for the instant it is given, so anything that
-    acts on it must use :func:`hold_for_removal` instead. This remains for
-    callers that only report.
-
-    Parameters
-    ----------
-    root : Path
-        The staging tree to ask about.
-
-    Returns
-    -------
-    bool
-        Whether some process holds the tree's lock. A tree carrying no lock
-        file predates the lock and is reported as free.
-    """
-    with hold_for_removal(root) as free:
-        return not free

@@ -13,10 +13,11 @@ it creates, without which the first case would pass while nothing in the
 product claimed anything; and a tree from a release predating the claim must
 stay removable.
 
-Three more cover the moments around the claim rather than the claim itself:
+Four more cover the moments around the claim rather than the claim itself:
 that it is still held while the tree is being deleted, that a publish told to
-retain its tree gives the claim up anyway, and that a claim which could not be
-made is reported rather than swallowed.
+retain its tree gives the claim up anyway, that a claim which could not be
+made is reported rather than swallowed, and that a sweep judging a tree never
+plants a lock of its own in it.
 """
 
 from __future__ import annotations
@@ -25,15 +26,12 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import typing as typ
+from pathlib import Path
 
 import pytest
 
 from lading.commands import clean, publish_staging, staging_lock
 from lading.commands.publish_staging import STAGING_PREFIX
-
-if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
-    from pathlib import Path
 
 #: Loads the real `staging_lock` module from its own file rather than through
 #: `lading.commands`, whose package import pulls in the whole command stack for
@@ -67,13 +65,14 @@ sys.stdin.readline()
 
 
 #: Reports whether the tree named on the command line reads as in use. Run in
-#: a second process because :func:`staging_lock.is_in_use` short-circuits on
-#: the claims its own process holds, which is the answer that proves nothing.
+#: a second process because :func:`staging_lock.hold_for_removal`
+#: short-circuits on the claims its own process holds, which is the answer
+#: that proves nothing.
 _PROBE = (
     _PRELUDE
     + """
-held = staging_lock.is_in_use(Path(sys.argv[1]))
-sys.stdout.write("yes\\n" if held else "no\\n")
+with staging_lock.hold_for_removal(Path(sys.argv[1])) as free:
+    sys.stdout.write("no\\n" if free else "yes\\n")
 """
 )
 
@@ -210,7 +209,8 @@ def test_a_tree_from_an_older_release_carries_no_claim(tmp_path: Path) -> None:
     tree = _staging_tree(tmp_path, "ancient")
 
     assert not (tree / staging_lock.LOCK_NAME).exists(), "the fixture claimed the tree"
-    assert not staging_lock.is_in_use(tree), "an unclaimed tree was reported in use"
+    with staging_lock.hold_for_removal(tree) as free:
+        assert free, "an unclaimed tree was reported in use"
 
     summary = clean.run(options=clean.CleanOptions(location=tmp_path, remove=True))
 
@@ -277,6 +277,31 @@ def test_a_claim_that_cannot_be_made_is_reported(tmp_path: Path) -> None:
         "a claim on a tree that does not exist reported success"
     )
     assert missing not in staging_lock._HELD, "a failed claim was recorded as held"
+
+
+def test_judging_a_tree_never_creates_its_lock(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A lock that vanishes mid-check must not be recreated by the sweep.
+
+    The removal side looks for the lock file and then opens it, and the file
+    can go in between, most plausibly because the tree is being removed.
+    Opening it for creation there would plant a lock in a tree the sweep does
+    not own and then report that tree free on the strength of a lock it had
+    just made itself. The window is opened deterministically by having the
+    existence check answer yes for a file that is not there.
+    """
+    tree = _staging_tree(tmp_path, "vanishing")
+    lock = tree / staging_lock.LOCK_NAME
+    real_is_file = Path.is_file
+    monkeypatch.setattr(
+        Path, "is_file", lambda path: path == lock or real_is_file(path)
+    )
+
+    with staging_lock.hold_for_removal(tree) as free:
+        assert not free, "a tree whose lock vanished was reported free to remove"
+
+    assert not lock.exists(), "judging the tree created a lock file inside it"
 
 
 def test_a_publish_says_so_when_it_cannot_claim_its_tree(

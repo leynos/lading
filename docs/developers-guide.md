@@ -468,9 +468,9 @@ and a publish can claim the tree in between. Windows is the exception and is
 safe for a different reason: an open handle inside a directory stops that
 directory being deleted there, so the claim cannot be held across the removal,
 but the same rule means a live publisher's own handle makes the removal fail
-rather than succeed. `is_in_use` remains as the thin query over
-`hold_for_removal`, for callers that only report; anything that acts on the
-answer must use the context manager.
+rather than succeed. There is no bare "is it in use" query: probing the lock
+takes it, and the answer is stale the moment it is returned, so tests and
+callers alike ask through `hold_for_removal` and read the yielded flag.
 
 `claim` returns whether it succeeded. The lock is a courtesy, so a filesystem
 that will not lock must not stop a publish, but that trade is only defensible
