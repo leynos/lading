@@ -43,9 +43,21 @@ class CleanError(LadingError):
     per-file errors met while sizing a tree are counted as zero and walked
     past, because a directory vanishing underfoot is exactly what this
     command exists to clear; a location that cannot be read is different in
-    kind, and reporting it as an empty sweep would tell the caller their disk
-    was clean when nothing had been looked at.
+    kind, and reporting it as an empty sweep would describe a directory as
+    clean when nothing in it had been looked at.
+
+    Attributes
+    ----------
+    location : Path
+        The directory that could not be read, carried as a value rather than
+        only inside the message, so a programmatic caller can act on which
+        directory failed without parsing prose.
     """
+
+    def __init__(self, message: str, *, location: Path) -> None:
+        """Record the message and the directory the sweep could not read."""
+        super().__init__(message)
+        self.location = location
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -120,12 +132,17 @@ def _tree_size(path: Path) -> int:
 def _is_leftover(candidate: Path) -> bool:
     """Report whether ``candidate`` is a staging directory this may remove.
 
-    Both conditions are things the command must not delete: a directory
-    without the staging prefix belongs to someone else, and a symbolic link
-    would lead the removal to whatever it points at rather than to a staged
-    copy. Nesting is excluded by the caller iterating one level rather than
-    recursing; there is no third check here, because a resolved-parent test
-    would be unreachable once links are already refused, and an unreachable
+    Every condition is something the command must not delete. A directory
+    without the staging prefix belongs to someone else. A symbolic link would
+    lead the removal to whatever it points at rather than to a staged copy.
+    So would a Windows junction, which is the case a symlink test alone
+    misses: a junction answers :data:`True` to ``is_dir`` and :data:`False`
+    to ``is_symlink``, so it would reach ``shutil.rmtree`` and be removed as
+    though it were the staged tree it merely points at.
+
+    Nesting is excluded by the caller iterating one level rather than
+    recursing. There is no resolved-parent test, because it would be
+    unreachable once links and junctions are both refused, and an unreachable
     safety check is worse than none.
 
     Returns
@@ -135,7 +152,9 @@ def _is_leftover(candidate: Path) -> bool:
     """
     if not candidate.name.startswith(STAGING_PREFIX):
         return False
-    return candidate.is_dir() and not candidate.is_symlink()
+    if not candidate.is_dir():
+        return False
+    return not candidate.is_symlink() and not candidate.is_junction()
 
 
 def find_leftovers(location: Path | None = None) -> tuple[LeftoverTree, ...]:
@@ -163,7 +182,7 @@ def find_leftovers(location: Path | None = None) -> tuple[LeftoverTree, ...]:
         entries = sorted(root.iterdir())
     except OSError as exc:
         message = f"Cannot read the staging location: {root}"
-        raise CleanError(message) from exc
+        raise CleanError(message, location=root) from exc
     found = (
         LeftoverTree(path=candidate, size_bytes=_tree_size(candidate))
         for candidate in entries

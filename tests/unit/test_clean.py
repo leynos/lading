@@ -9,15 +9,12 @@ from __future__ import annotations
 
 import os
 import tempfile
-import typing as typ
+from pathlib import Path
 
 import pytest
 
 from lading.commands import clean
 from lading.commands.publish_staging import STAGING_PREFIX
-
-if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
-    from pathlib import Path
 
 
 def _staging_tree(location: Path, suffix: str, *, contents: bytes = b"") -> Path:
@@ -267,7 +264,42 @@ def test_an_unreadable_location_is_a_domain_error(tmp_path: Path) -> None:
     location.mkdir()
     location.chmod(0o000)
     try:
-        with pytest.raises(clean.CleanError, match="Cannot read the staging location"):
+        with pytest.raises(
+            clean.CleanError, match="Cannot read the staging location"
+        ) as raised:
             clean.run(options=clean.CleanOptions(location=location))
+        # Carried as a value, not only inside the message: a caller deciding
+        # what to do next should not have to parse prose to learn which
+        # directory failed.
+        assert raised.value.location == location.resolve(), (
+            "the failure did not name the directory it could not read"
+        )
     finally:
         location.chmod(0o700)
+
+
+def test_a_windows_junction_is_not_in_scope(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A junction named like a staging tree must not be removed.
+
+    The symbolic-link case above cannot reach this one. A Windows junction
+    answers :data:`True` to ``is_dir`` and :data:`False` to ``is_symlink``, so
+    a scope rule that tested only for links would take it into scope and hand
+    it to :func:`shutil.rmtree`, which removes the junction itself. What is
+    lost is a link to a real directory somewhere else, which is the harm the
+    link rule exists to prevent.
+
+    Junctions cannot be created on this platform, so the predicate is driven
+    directly rather than through a fixture that would silently test nothing:
+    a fixture that cannot build the case cannot discriminate.
+    """
+    tree = _staging_tree(tmp_path, "junction")
+    monkeypatch.setattr(
+        Path, "is_junction", lambda self: self.name == tree.name, raising=False
+    )
+
+    assert not clean._is_leftover(tree), (
+        "a junction named like a staging tree was taken into scope"
+    )
+    assert clean.find_leftovers(tmp_path) == (), "discovery returned a junction"

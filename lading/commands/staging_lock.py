@@ -99,6 +99,12 @@ def claim(root: Path) -> bool:
     not stop a publish; the caller is told so it can say what it is doing
     rather than assume the tree is protected.
 
+    Parameters
+    ----------
+    root : Path
+        The staging tree to claim. Its lock file is created if absent, so the
+        directory must already exist.
+
     Returns
     -------
     bool
@@ -124,6 +130,12 @@ def release(root: Path) -> None:
 
     Called before the tree is removed. On Windows an open handle inside a
     directory stops that directory being deleted.
+
+    Parameters
+    ----------
+    root : Path
+        The staging tree to release. A tree this process does not hold is
+        ignored, so the call is safe to make unconditionally.
     """
     handle = _HELD.pop(root, None)
     if handle is None:
@@ -184,6 +196,12 @@ def hold_for_removal(root: Path) -> cabc.Iterator[bool]:
     inside this block, so the claim they were given is still theirs when the
     directory goes.
 
+    Parameters
+    ----------
+    root : Path
+        The staging tree to claim for deletion. A tree carrying no lock file
+        is reported free without anything being held.
+
     Yields
     ------
     bool
@@ -207,6 +225,11 @@ def is_in_use(root: Path) -> bool:
     The answer is true only for the instant it is given, so anything that
     acts on it must use :func:`hold_for_removal` instead. This remains for
     callers that only report.
+
+    Parameters
+    ----------
+    root : Path
+        The staging tree to ask about.
 
     Returns
     -------

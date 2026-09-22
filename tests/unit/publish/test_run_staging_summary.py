@@ -47,23 +47,26 @@ def _staging_line(output: str) -> str:
 def _run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, cleanup: bool) -> str:
     """Run a publish against a one-crate workspace and return its summary.
 
-    The build directory is named so the staged tree stays under ``tmp_path``
-    rather than the system temporary directory, which keeps the retained case
-    from leaking a tree the suite's leak check would then fail on.
+    The workspace and the build directory are siblings under ``tmp_path``
+    rather than the system temporary directory, so the retained case leaves
+    nothing the suite's leak check would find, and nothing outside the
+    directory this test was given. They must be siblings rather than nested,
+    because staging refuses a build directory inside the workspace root.
 
     Returns
     -------
     str
         The publish summary.
     """
-    root = tmp_path.resolve()
+    root = (tmp_path / "workspace").resolve()
+    root.mkdir()
     workspace = make_workspace(root, make_crate(root, "alpha"))
     monkeypatch.setattr("lading.workspace.load_workspace", lambda _: workspace)
     return publish.run(
         root,
         make_config(),
         options=publish.PublishOptions(
-            build_directory=tmp_path.parent / "build", cleanup=cleanup
+            build_directory=tmp_path / "build", cleanup=cleanup
         ),
     )
 
@@ -115,8 +118,8 @@ def test_the_summary_does_not_claim_a_removal_that_failed(
         message = "refusing to remove the staged tree"
         raise OSError(message)
 
-    build_directory = tmp_path.parent / "build"
-    cleanup_target = build_directory / tmp_path.resolve().name
+    build_directory = tmp_path / "build"
+    cleanup_target = build_directory / "workspace"
     monkeypatch.setattr(shutil, "rmtree", _refuse)
     try:
         output = _run(monkeypatch, tmp_path, cleanup=True)

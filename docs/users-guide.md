@@ -99,11 +99,11 @@ a copy a publish is still using.
 A `--remove` that cannot delete one copy carries on with the rest. The failure
 is logged, and the summary counts the copies removed against the copies found,
 lists the ones a running publish still holds separately from the ones whose
-removal failed, and names both. So a sweep that met a permission error tells
-you which directories are still there rather than stopping at the first one. A
-search directory that cannot be read at all is different: the command fails
-outright rather than reporting an empty sweep, because an empty report would
-say your disk was clear when nothing had been looked at.
+removal failed, and names both. So a sweep that met a permission error names
+the directories still on disk rather than stopping at the first one. A search
+directory that cannot be read at all is different: the command fails outright
+rather than reporting an empty sweep, because an empty report would describe a
+directory as clear when nothing in it had been looked at.
 
 ## Programmatic publish staging
 
