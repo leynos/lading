@@ -651,6 +651,89 @@ _Figure 2: Publish pre-flight sequence from checks through crate publication._
     fails, any earlier successful uploads remain on crates.io and are skipped
     on a subsequent run.
 
+## 4a. `clean` Subcommand Design
+
+The `clean` command removes staging copies that earlier releases left behind.
+Publishes no longer leak them (issue #269), but a long-lived host already holds
+one per past run.
+
+**Command Signature:**
+
+```shell
+lading clean [--location PATH] [--remove]
+```
+
+- `--location PATH`: Directory to search. Defaults to the system temporary
+  directory, which is where a publish stages unless `TMPDIR` says otherwise.
+- `--remove`: Delete what is found. Reporting is the default, and the flag
+  names the exception, the same shape as `--keep-staging` on `publish`.
+
+This is the only command that deletes directories the user did not name, so its
+scope is the design. It considers the immediate children of one directory and
+does not recurse; it matches names by `publish_staging.STAGING_PREFIX`,
+imported rather than repeated so the two cannot drift; and it refuses symbolic
+links rather than following them, so nothing outside the searched directory can
+be reached. A removal that fails is logged and the sweep continues, so one busy
+tree does not abandon the rest.
+
+The report names the bytes each tree holds and their total, because reclaiming
+space is the reason to run it.
+
+### Cross-process staging claim
+
+A staged tree left behind by a still-running publish is indistinguishable, by
+name and shape, from one abandoned by a release that never cleaned up: both
+carry `STAGING_PREFIX` and both are ordinary directories. The publish that owns
+a tree runs in a different process from `clean`, so the in-memory
+`_ACTIVE_STAGING_ROOTS` set that guards termination cleanup within one process
+cannot answer for it. Crossing that process boundary is what the claim exists
+to do.
+
+Every automatically created staging tree therefore carries a
+`.lading-staging-lock` file, which its publisher opens and holds under an
+exclusive, non-blocking lock for the tree's whole life: `fcntl.flock` on POSIX,
+`msvcrt.locking` on Windows, both behind the single `staging_lock` module so
+callers do not choose a platform.
+
+The claim is a kernel-held lock rather than a marker file recording a process
+identifier, because a marker fails in both directions that matter here. A
+reused process identifier can make a dead owner look alive, and a publish
+killed outright leaves its marker behind, making the tree permanently
+unremovable — the exact leftover `clean` exists to sweep. A kernel lock avoids
+both: it is dropped when its holder dies, however it dies, so there is no stale
+state to reconcile and nothing to time out.
+
+The design has to close the gap between asking and deleting, so `clean` does
+not check the claim and then remove the tree: `hold_for_removal` holds the
+claim across the `shutil.rmtree` call itself. A publish could claim the tree in
+the interval between a check and a delete, so the claim must span the whole
+removal, not merely precede it.
+
+Windows cannot honour that shape directly: an open handle inside a directory
+stops that directory being deleted there, so the claim cannot be held while the
+tree is removed on that platform. The same rule, though, is what keeps a live
+tree safe: the publisher's own open handle makes the removal itself fail rather
+than succeed, so an in-use tree is never deleted there. The claim turns that
+failure into an orderly skip. There is deliberately no separate "is this tree
+in use" query: probing a kernel lock means taking it, so such a query would
+mutate while presenting as a read, and its answer would be stale before the
+caller could act on it. `hold_for_removal` is the one way to ask, and it
+returns the answer together with the claim that keeps it true.
+
+The lock is advisory, a courtesy rather than a guarantee: `claim` returns
+whether it succeeded, and a filesystem that refuses to lock does not stop a
+publish, only leaves it to log a warning that a concurrent
+`lading clean --remove` could take its tree. A publish that retains its staged
+tree still releases the claim once its block ends, since no publish is left
+reading it. A tree with no lock file predates the mechanism and stays
+removable, and deleting the lock file by hand defeats the claim entirely.
+
+One window remains open by construction: `_normalize_build_directory` creates
+the tree with `mkdtemp` and only calls `claim` afterwards, because a directory
+cannot be created already locked. Closing that gap would require the lock to
+live outside the tree it protects, which would orphan lock files on removal and
+change what an absent lock file means.
+
 ## 5. Refactoring and Project Structure
 
 The legacy repository-specific scripts have been consolidated into the `lading`

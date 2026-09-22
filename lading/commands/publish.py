@@ -189,11 +189,9 @@ def run(
     )
     # The staged tree lives no longer than this block: a publish that raises
     # or is interrupted must not leave its copy of the workspace behind.
-    with publish_staging.staged_workspace(
-        plan, options=effective_options
-    ) as preparation:
+    with publish_staging.staged_workspace(plan, options=effective_options) as staged:
         _apply_strip_patch_strategy(
-            preparation.staging_root, plan, active_configuration.publish.strip_patches
+            staged.staging_root, plan, active_configuration.publish.strip_patches
         )
         execution_options = publish_pipeline._PublishExecutionOptions(
             live=effective_options.live,
@@ -203,11 +201,16 @@ def run(
             sccache_stats_json=effective_options.sccache_stats_json,
         )
         publish_pipeline._dispatch_publication(
-            plan, preparation, options=execution_options, runner=command_runner
+            plan, staged.preparation, options=execution_options, runner=command_runner
         )
         plan_message = format_plan(
             plan, strip_patches=active_configuration.publish.strip_patches
         )
-        summary_lines = publish_staging._format_preparation_summary(preparation)
+    # Summarised after the block, not inside it. The removal happens as the
+    # block exits, and a removal can fail: asking `effective_options.cleanup`
+    # from within would report a tree as gone whenever `shutil.rmtree` raised.
+    summary_lines = publish_staging._format_preparation_summary(
+        staged.preparation, retained=staged.retained
+    )
     LOGGER.info("Publish workflow completed successfully for workspace %s", root_path)
     return f"{plan_message}\n\n" + "\n".join(summary_lines)

@@ -5,11 +5,12 @@ from __future__ import annotations
 import collections.abc as cabc
 import dataclasses as dc
 import shutil
+import tempfile
 import typing as typ
 
 import pytest
 
-from lading.commands import publish, publish_staging
+from lading.commands import publish, publish_staging, staging_lock
 from tests.helpers.cwd import chdir_for_test
 from tests.unit.conftest import (
     PreparationFixtures,
@@ -474,6 +475,37 @@ def test_staged_workspace_keeps_the_tree_when_cleanup_is_disabled(
         staging_root = preparation.staging_root
 
     assert staging_root.is_dir(), "the staged copy must survive --keep-staging"
+
+
+def test_a_retained_tree_gives_up_its_claim(
+    prepare_workspace_fixtures: PrepareWorkspaceFixtures,
+    preparation_fixtures: PreparationFixtures,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Retaining the tree must not retain the claim on it.
+
+    The claim says a publish is using the tree. Once the block has ended none
+    is, and holding on costs twice: a descriptor stays open for the life of a
+    long-running caller, and `lading clean --remove` skips a tree nothing is
+    reading. This needs an automatically created build directory, because that
+    is the only shape staging claims.
+    """
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    plan = _plan_for(prepare_workspace_fixtures, preparation_fixtures)
+    options = publish.PublishOptions(cleanup=False)
+
+    with publish_staging.staged_workspace(plan, options=options) as staged:
+        build_directory = staged.staging_root.parent
+        with staging_lock.hold_for_removal(build_directory) as free:
+            assert not free, "staging did not claim the tree it created"
+
+    try:
+        assert build_directory.is_dir(), "the retained tree was removed"
+        with staging_lock.hold_for_removal(build_directory) as free:
+            assert free, "a retained tree kept its claim after the block ended"
+    finally:
+        shutil.rmtree(build_directory, ignore_errors=True)
 
 
 def test_a_retained_tree_reports_where_it_is(

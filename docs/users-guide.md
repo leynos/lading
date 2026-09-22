@@ -33,7 +33,7 @@ The 0.1.0 release also changes workspace README adoption:
 ## Where a publish stages the workspace
 
 `lading publish` copies the whole workspace before packaging it, so packaging
-and publication never read your working tree. The pre-flight is the exception:
+and publication never read the working tree. The pre-flight is the exception:
 its `cargo check` and `cargo test` run in the workspace root, before staging
 begins, though into a throwaway target directory. The copy goes under the
 system temporary directory, honouring `TMPDIR`, in a directory named
@@ -47,7 +47,7 @@ failure, on `Ctrl-C`, and on `SIGTERM`. A `SIGKILL` cannot be handled, so that
 one case still leaves the copy behind. Nothing else accumulates between runs.
 
 Pass `--keep-staging` to retain it while debugging a staging problem. The
-retained path is logged, and removing it is then your responsibility:
+retained path is logged, and removing it is then a manual step:
 
 ```bash
 lading publish --keep-staging
@@ -55,12 +55,55 @@ lading publish --keep-staging
 
 `LADING_KEEP_STAGING=1` has the same effect.
 
-To reclaim space from earlier versions, which did not remove the copy, delete
-the leftovers once no publish is running:
+## Reclaiming space from earlier versions
+
+Releases before this one never removed the staged copy, so a host that has been
+publishing for a while holds one directory per run. `lading clean` finds them
+and reports what removing them would reclaim:
 
 ```bash
-rm -rf "${TMPDIR:-/tmp}"/lading-publish-*
+lading clean
 ```
+
+It deletes nothing unless asked:
+
+```bash
+lading clean --remove
+```
+
+Use `--location` to search somewhere other than the system temporary directory,
+for example when past runs had a different `TMPDIR`.
+
+The scope is deliberately narrow, because the command deletes. It considers
+only the immediate children of the directory it searches, only those whose
+names begin with `lading-publish-`, and only real directories: a symbolic link
+with a matching name is never followed, so nothing outside that directory can
+be reached.
+
+A staging copy belonging to a running publish looks exactly like one that was
+abandoned, so each copy carries a claim: a `.lading-staging-lock` file that the
+publish holds open and locked for as long as it owns the copy. `lading clean`
+tries to take that lock just before deleting a copy and leaves the copy alone
+if it cannot, reporting it as skipped and naming it. The operating system drops
+a lock when the process holding it ends, however it ends, so a copy left by an
+interrupted publish is swept on the next run rather than being protected
+forever.
+
+Copies left by releases before this one have no such file and are removed
+normally.
+
+The claim is advisory. Deleting the lock file by hand, or removing the copy with
+`rm -rf` rather than with `lading clean`, defeats the protection and can take
+a copy a publish is still using.
+
+A `--remove` that cannot delete one copy carries on with the rest. The failure
+is logged, and the summary counts the copies removed against the copies found,
+lists the ones a running publish still holds separately from the ones whose
+removal failed, and names both. So a sweep that met a permission error names
+the directories still on disk rather than stopping at the first one. A search
+directory that cannot be read at all is different: the command fails outright
+rather than reporting an empty sweep because an empty report would describe a
+directory as clear when nothing in it had been looked at.
 
 ## Programmatic publish staging
 
@@ -71,9 +114,18 @@ keyword argument:
 ```python
 from lading.commands.publish_staging import staged_workspace
 
-with staged_workspace(plan, options=options) as preparation:
-    ...  # the staged tree exists for the body of this block
+with staged_workspace(plan, options=options) as staged:
+    staged.staging_root  # the staged tree exists for the body of this block
+print(staged.removed)  # True, False, or None if no removal was asked for
 ```
+
+The block yields a `StagedWorkspace`, which carries the staged tree as
+`staging_root` and, once the block has ended, what became of it. `removed` is
+`True` when the tree was deleted, `False` when the deletion was attempted and
+failed, and `None` when cleanup was not requested; `retained` is the same
+answer as a single boolean, and is what the publish summary uses to decide
+whether to mark the path `(removed)`. Read either only after the block, since
+the removal happens as it exits.
 
 The tree is removed when the block ends, including when the body raises or is
 interrupted. `prepare_workspace(plan, *, options=None)` remains for callers
