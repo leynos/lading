@@ -86,7 +86,20 @@
   - Formatting is correct and validated.
 - **For Python files:**
   - **Testing:** Passes all relevant unit and behavioural tests (`make test`).
-  - **Linting:** Passes lint checks (`make lint`).
+  - **Linting:** Passes the complete `make lint` pipeline: Ruff, Interrogate,
+    Pylint, and the blocking, strict, production-only Skylos dead-code scan.
+    Skylos runs under Python 3.14 because it parses source with its own runtime
+    AST; pinning that interpreter avoids phantom findings for newer syntax.
+    Investigate every Skylos finding and remove genuine dead code. After
+    verifying a false positive,
+    prefer a precise, typed entry-point rule in `[tool.skylos.dead_code]` with
+    its fully qualified symbol and a reason that names the verified caller.
+    Use `type = "method"` for methods. Use
+    `make skylos-allow SYMBOL=handler REASON="verified caller"` only when an
+    entry-point rule cannot describe the boundary. Both variables must contain
+    non-whitespace content; `NAME` is reserved by WSL for the host name and
+    must not be used for Skylos symbols. Skylos records the symbol only, so
+    retain the caller-specific rationale with the reviewing change.
   - **Formatting:** Adheres to formatting standards (`make check-fmt`; use
     `make fmt` to apply fixes).
   - **Typechecking:** Passes type checking (`make typecheck`).

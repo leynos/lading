@@ -33,7 +33,8 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
 ## Decision records
 
 - [ADR-003: Use multi-stage Python linting][adr-003] - accepted linting policy
-  for Ruff, Interrogate, Pylint, df12 house rules, and snapshot redaction.
+  for Ruff, Interrogate, Pylint, df12 house rules, snapshot redaction, and
+  Skylos dead-code detection.
 - [ADR-004: In-process metrics accumulator flushed at exit][adr-004] - accepted
   design for the `lading.utils.metrics` backend and metric contracts.
 - [ADR-005: Draft-then-publish releases with a standalone wheel

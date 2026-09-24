@@ -747,7 +747,6 @@ lading/
   ├── cli.py  # Cyclopts app definition and command wiring
   ├── commands/
   │   ├── __init__.py
-  │   ├── _shared.py  # Command-level helper utilities
   │   ├── bump.py  # Logic for the `bump` subcommand
   │   └── publish.py  # Logic for the `publish` subcommand
   ├── config.py  # Frozen dataclasses for `lading.toml`

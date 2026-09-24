@@ -44,10 +44,18 @@ DF12_PYLINT = $(UV_ENV) $(UV) run --isolated --python $(DF12_PYTHON) --with '$(D
 	--py-version=3.13 --enable=$(DF12_PYLINT_MESSAGES)
 AMBRLEAKS = $(UV_ENV) $(UV) tool run --python $(DF12_PYTHON) \
 	--from '$(DF12_PYTHON_LINTS)' ambrleaks
+SKYLOS_VERSION ?= 4.33.2
+# Skylos parses source using its own Python AST, so Python 3.14 prevents
+# phantom dead-code findings from syntax older tool runtimes cannot parse.
+SKYLOS_CLI ?= $(UV_ENV) $(UV) tool run --python 3.14 --from 'skylos==$(SKYLOS_VERSION)' skylos
+SKYLOS ?= $(SKYLOS_CLI) --config-file pyproject.toml
+SKYLOS_PRODUCTION_TARGETS ?= lading
+SKYLOS_EXCLUDE_FOLDERS ?= tests
+SKYLOS_WHITELIST_LOCK ?= .skylos-whitelist.lock
 
 .PHONY: help all clean build build-release lint fmt check-fmt \
 	markdownlint nixie spelling test typecheck crosshair \
-	$(TOOLS) $(VENV_TOOLS)
+	makeutil skylos-allow $(TOOLS) $(VENV_TOOLS)
 
 .DEFAULT_GOAL := all
 
@@ -112,6 +120,15 @@ lint: build $(UV) interrogate ## Run linters
 	$(PYLINT) $(PYLINT_TARGETS)
 	$(DF12_PYLINT) $(PYLINT_TARGETS)
 	$(AMBRLEAKS) tests
+	$(SKYLOS) $(SKYLOS_PRODUCTION_TARGETS) --exclude $(SKYLOS_EXCLUDE_FOLDERS) --category dead_code --gate \
+		--format concise --no-upload --no-provenance --no-grep-verify
+
+skylos-allow: export SKYLOS_SYMBOL = $(value SYMBOL)
+skylos-allow: export SKYLOS_REASON = $(value REASON)
+skylos-allow: ## Document one named Skylos exception, not an entry point
+	@case "$${SKYLOS_SYMBOL}" in *[![:space:]]*) ;; *) printf "Error: SYMBOL is required for a named whitelist exception\\n" >&2; exit 2;; esac
+	@case "$${SKYLOS_REASON}" in *[![:space:]]*) ;; *) printf "Error: REASON is required for a named whitelist exception\\n" >&2; exit 2;; esac
+	flock "$(SKYLOS_WHITELIST_LOCK)" env $(SKYLOS_CLI) whitelist "$${SKYLOS_SYMBOL}" --reason "$${SKYLOS_REASON}"
 
 typecheck: build $(UV) ## Run typechecking
 	$(UV_ENV) $(TY) check --python-version 3.13 $(PY_SOURCES)
@@ -126,7 +143,10 @@ spelling: $(UV) ## Enforce en-GB-oxendict spelling
 nixie: $(NIXIE) ## Validate Mermaid diagrams
 	nixie --no-sandbox
 
-test: build $(UV) pytest ## Run tests
+makeutil: ## Verify the Makefile parser used by contract tests
+	$(call ensure_tool,$@)
+
+test: build $(UV) pytest makeutil ## Run tests
 	# --doctest-modules collects the examples in module and function
 	# docstrings. Without it they are documentation nobody checks: 342 example
 	# lines across 45 files were never run before this was added.

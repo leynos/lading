@@ -104,7 +104,7 @@ Run the Python lint gate with:
 make lint
 ```
 
-The target is deliberately five-stage. Ruff runs first because it is fast,
+The target is deliberately six-stage. Ruff runs first because it is fast,
 handles broad style and correctness checks, and imports the stricter lint
 policy used by `leynos/episodic`. If Ruff passes, the target runs `interrogate`
 with `--fail-under 100` twice to enforce **100% docstring coverage**: once
@@ -119,10 +119,12 @@ families that complement Ruff, especially logging format safety, pattern
 matching checks, selected simplification checks, deprecated standard-library
 usage, file hygiene, and design-size limits. The fourth stage runs all
 `df12-python-lints` checks under CPython 3.14, while retaining Lading's Python
-3.13 semantic baseline for version-gated diagnostics. Finally, `ambrleaks`
-scans Syrupy snapshots under `tests` for values that should have been redacted.
-[ADR-003](adr/003-three-tier-python-linting.md)
-records the policy decision, including the
+3.13 semantic baseline for version-gated diagnostics. The fifth stage runs
+`ambrleaks`, which scans Syrupy snapshots under `tests` for values that should
+have been redacted. Finally, Skylos runs a blocking, strict, production-only
+dead-code scan across `lading`, after which the lint gate is complete.
+[ADR-003](adr/003-three-tier-python-linting.md) records the policy decision,
+including the
 [2026-09-07 addendum](adr/003-three-tier-python-linting.md#addendum-docstring-coverage-for-tests-and-scripts-2026-09-07)
 extending Interrogate coverage to `tests` and `scripts`.
 
@@ -160,21 +162,69 @@ The relevant Makefile variables are:
   baseline without replacing the project's `.venv` interpreter.
 - `AMBRLEAKS` — isolated `df12-python-lints` tool invocation used to scan
   Syrupy snapshots under `tests`.
+- `SKYLOS_VERSION` — the pinned Skylos release used by the command-only CLI
+  macro; defaults to `4.33.2`.
+- `SKYLOS_CLI` — the Python 3.14 Skylos CLI invocation. Skylos parses source
+  using its own runtime AST; pinning Python 3.14 prevents phantom findings when
+  newer Python syntax is present.
+- `SKYLOS` — the configured Skylos scan command used by `make lint`; global
+  scan options such as `--config-file` are kept separate from the CLI macro.
+- `SKYLOS_EXCLUDE_FOLDERS` — folders excluded from the production Skylos scan;
+  this keeps test modules out of the blocking dead-code gate.
+- `SKYLOS_WHITELIST_LOCK` — lock file used to serialize concurrent
+  `make skylos-allow` updates.
+- `SKYLOS_PRODUCTION_TARGETS` — source directories checked for dead code;
+  defaults to `lading` so test-only references do not keep application symbols
+  live.
 
-The `lint` target depends on `ruff`, `build`, `uv`, and `interrogate`, so it
-creates and syncs the virtual environment before checking virtual-environment
-tools. Keep any future lint additions wired through Makefile prerequisites as
-well as command invocations, so local failures remain early and clear.
+The `lint` target depends on `build`, `uv`, and `interrogate`, so it creates
+and syncs the virtual environment before checking virtual-environment tools.
+Ruff and Skylos are provisioned in the recipe commands, not as Makefile
+prerequisites. Keep any future lint additions wired through Makefile
+prerequisites and command invocations, so local failures remain early and clear.
 
-Ruff and Pylint policy live in `pyproject.toml`. The Ruff configuration enables
-preview rules, targets Python 3.13, imports the selected `episodic` rule set,
-and bans deprecated `typing` aliases in favour of built-in collection types,
-`collections.abc`, `collections`, `contextlib`, or `re` as appropriate. The
-Pylint configuration keeps both passes opt-in. The existing PyPy pass uses the
-chosen built-in checks, while the CPython 3.14 pass disables built-in messages
-and enables every diagnostic shipped by `df12-python-lints` v0.1.0. Local
-ignores and thresholds document existing codebase constraints that should be
-addressed as focused cleanup work rather than incidental lint-gate churn.
+The workflow-contract tests parse the Makefile with Makeutil. Bootstrap the
+pinned parser locally with:
+
+```bash
+rustup toolchain install nightly-2026-05-28
+RUSTFLAGS="-Zpolonius=next" cargo +nightly-2026-05-28 install \
+  --git https://github.com/leynos/makeutil \
+  --rev 29fc5a1634ffbaa18a773eed9dff1b2838a45d9c --locked --force makeutil
+```
+
+Ruff, Pylint, and Skylos policy live in `pyproject.toml`. The Ruff
+configuration enables preview rules, targets Python 3.13, imports the selected
+`episodic` rule set, and bans deprecated `typing` aliases in favour of built-in
+collection types, `collections.abc`, `collections`, `contextlib`, or `re` as
+appropriate. The Pylint configuration keeps both passes opt-in. The existing
+PyPy pass uses the chosen built-in checks, while the CPython 3.14 pass disables
+built-in messages and enables every diagnostic shipped by `df12-python-lints`
+v0.1.0. Local ignores and thresholds document existing codebase constraints
+that should be addressed as focused cleanup work rather than incidental
+lint-gate churn.
+
+Skylos runs with concise, non-interactive output, dead-code analysis only, no
+uploads or provenance collection, and no repository-wide grep verification. The
+latter two constraints keep the local and CI gate deterministic and prevent
+test references from distorting production liveness. It never modifies source
+files.
+
+Treat every Skylos finding as dead code until its caller is verified. Remove
+genuine dead code. When a protocol-dispatched method, framework callback, or
+other runtime boundary cannot be inferred statically, add a precise, typed
+entry-point rule under `[tool.skylos.dead_code]`, using the fully qualified
+symbol and a reason that identifies the verified caller. Use `type = "method"`
+for methods. The configured entry points are the version-controlled Skylos
+allow-list; do not add unexplained broad exceptions.
+
+Use `make skylos-allow SYMBOL=... REASON=...` only when no typed entry-point
+rule can model the boundary. Both values must contain non-whitespace content;
+the target rejects missing or whitespace-only values. `NAME` must not be used:
+WSL injects it with the hostname. The target invokes Skylos as
+`skylos whitelist <symbol> --reason <reason>` and serializes documented
+whitelist writes. Never use a broad or unreasoned exception, and remove
+allow-list entries when the runtime boundary disappears.
 
 ## Testing hooks
 
@@ -1056,18 +1106,18 @@ canonical replacement callers and tests now use directly:
 _Table 1: Compatibility shims removed by the issue `#163` sweep and their
 canonical replacements._
 
-| Removed shim                                                                                                                                                                                                                                                                                                                                                          | Location               | Canonical replacement                                                                                                                                      |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Eleven `publish_preflight` private aliases (`_preflight_argument_sets`, `_CargoPreflightOptions`, `_apply_compiletest_externs`, `_build_preflight_environment`, `_build_test_arguments`, `_compose_preflight_arguments`, `_normalize_test_excludes`, `_run_aux_build_commands`, `_run_cargo_preflight`, `_validate_lockfile_freshness`, `_verify_clean_working_tree`) | `publish.py`           | `lading.commands.publish_preflight` (patch/call the defining module directly)                                                                              |
-| `_validate_lockfile_freshness` re-export                                                                                                                                                                                                                                                                                                                              | `publish.py`           | `lading.commands.publish_lockfile_preflight` (patch/call the defining module directly)                                                                     |
-| `_run_preflight_checks` thin wrapper                                                                                                                                                                                                                                                                                                                                  | `publish.py`           | `publish_preflight._run_preflight_checks` (called directly by `run()`)                                                                                     |
-| Re-exports `_append_section`, `_format_plan`                                                                                                                                                                                                                                                                                                                          | `publish.py`           | `publish_plan.append_section`, `publish_plan.format_plan`                                                                                                  |
-| Re-export `metadata_module`                                                                                                                                                                                                                                                                                                                                           | `publish.py`           | `lading.workspace.metadata`                                                                                                                                |
-| Re-export `StripPatchesSetting`                                                                                                                                                                                                                                                                                                                                       | `publish.py`           | `lading.config.StripPatchesSetting`                                                                                                                        |
-| Six `bump_toml` re-exports (`_parse_manifest`, `_select_table`, `_assign_version`, `_value_matches`, `_update_dependency_sections`, `_update_dependency_table`)                                                                                                                                                                                                       | `bump.py`              | `lading.commands.bump_toml` (`parse_manifest`, `select_table`, `assign_version`, `value_matches`, `update_dependency_sections`, `update_dependency_table`) |
-| `_log = LOGGER` alias                                                                                                                                                                                                                                                                                                                                                 | `bump.py`              | the module-level `LOGGER`                                                                                                                                  |
-| Private `_append_section` / `_format_plan`                                                                                                                                                                                                                                                                                                                            | `publish_plan.py`      | renamed to public `append_section` / `format_plan`                                                                                                         |
-| `split_command` / `_split_command` wrapper                                                                                                                                                                                                                                                                                                                            | `publish_execution.py` | `lading.runtime.subprocess_runner.split_command`                                                                                                           |
+| Removed shim                                                                                                                                                                                                                                                                                                                                                          | Location                            | Canonical replacement                                                                                                                                      |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Eleven `publish_preflight` private aliases (`_preflight_argument_sets`, `_CargoPreflightOptions`, `_apply_compiletest_externs`, `_build_preflight_environment`, `_build_test_arguments`, `_compose_preflight_arguments`, `_normalize_test_excludes`, `_run_aux_build_commands`, `_run_cargo_preflight`, `_validate_lockfile_freshness`, `_verify_clean_working_tree`) | `publish.py`                        | `lading.commands.publish_preflight` (patch/call the defining module directly)                                                                              |
+| `_validate_lockfile_freshness` re-export                                                                                                                                                                                                                                                                                                                              | `publish.py`                        | `lading.commands.publish_lockfile_preflight` (patch/call the defining module directly)                                                                     |
+| `_run_preflight_checks` thin wrapper                                                                                                                                                                                                                                                                                                                                  | `publish.py`                        | `publish_preflight._run_preflight_checks` (called directly by `run()`)                                                                                     |
+| Re-exports `_append_section`, `_format_plan`                                                                                                                                                                                                                                                                                                                          | `publish.py`                        | `publish_plan.append_section`, `publish_plan.format_plan`                                                                                                  |
+| Re-export `metadata_module`                                                                                                                                                                                                                                                                                                                                           | `publish.py`                        | `lading.workspace.metadata`                                                                                                                                |
+| Re-export `StripPatchesSetting`                                                                                                                                                                                                                                                                                                                                       | `publish.py`                        | `lading.config.StripPatchesSetting`                                                                                                                        |
+| Six `bump_toml` re-exports (`_parse_manifest`, `_select_table`, `_assign_version`, `_value_matches`, `_update_dependency_sections`, `_update_dependency_table`)                                                                                                                                                                                                       | `bump.py`, then `bump_manifests.py` | `lading.commands.bump_toml` (`parse_manifest`, `select_table`, `assign_version`, `value_matches`, `update_dependency_sections`, `update_dependency_table`) |
+| `_log = LOGGER` alias                                                                                                                                                                                                                                                                                                                                                 | `bump.py`                           | the module-level `LOGGER`                                                                                                                                  |
+| Private `_append_section` / `_format_plan`                                                                                                                                                                                                                                                                                                                            | `publish_plan.py`                   | renamed to public `append_section` / `format_plan`                                                                                                         |
+| `split_command` / `_split_command` wrapper                                                                                                                                                                                                                                                                                                                            | `publish_execution.py`              | `lading.runtime.subprocess_runner.split_command`                                                                                                           |
 
 #### Retained boundaries
 

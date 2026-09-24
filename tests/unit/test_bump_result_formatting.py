@@ -51,7 +51,6 @@ def _make_test_crate_with_dependency(
         encoding="utf-8",
     )
     return WorkspaceCrate(
-        id=f"{crate_name}-id",
         name=crate_name,
         version=crate_version,
         manifest_path=manifest_path,
@@ -85,7 +84,6 @@ def _make_workspace_with_alpha_dependency(
     )
 
     alpha_crate = WorkspaceCrate(
-        id="alpha-id",
         name="alpha",
         version="0.1.0",
         manifest_path=alpha_manifest,
