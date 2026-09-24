@@ -100,13 +100,22 @@ jobs:
       # than leaving it implied by the trigger above. CodeScene accepts an
       # upload only for an analysed branch, so a later dispatch trigger or a
       # second branch must not be able to reach this step by accident.
+      #
+      # The token stays out of every `env` on this job. The upload is a
+      # composite action, and a composite action's nested steps inherit the
+      # calling step's environment, so a token bound there reached every one
+      # of them. The check step publishes only whether the token exists:
+      # GitHub evaluates the expression before the shell starts, so the token
+      # enters no process, and the upload takes it directly as an input.
+      - name: Check CodeScene token availability
+        id: codescene_token
+        run: echo "available=${{ secrets.CS_ACCESS_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+
       - name: Upload coverage data to CodeScene
-        env:
-          CS_ACCESS_TOKEN: ${{ secrets.CS_ACCESS_TOKEN }}
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && env.CS_ACCESS_TOKEN != ''
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.codescene_token.outputs.available == 'true'
         uses: leynos/shared-actions/.github/actions/upload-codescene-coverage@a5765019912a8ab6882b12db049c7cde635f3a85
         with:
           format: cobertura
           path: coverage.xml
           mode: upload
-          access-token: ${{ env.CS_ACCESS_TOKEN }}
+          access-token: ${{ secrets.CS_ACCESS_TOKEN }}

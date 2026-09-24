@@ -20,6 +20,26 @@ Cobertura report as a workflow artefact; it does not check coverage against
 CodeScene, and it no longer fetches full Git history, which existed only so the
 removed gate could reach a merge base.
 
+The token itself never enters an `env` on the publisher. A
+`Check CodeScene token availability` step (id `codescene_token`) runs exactly
+`echo "available=${{ secrets.CS_ACCESS_TOKEN != '' }}" >> "$GITHUB_OUTPUT"`,
+with no `if:` and no `env`. GitHub evaluates the expression before the shell
+starts, so the command writes a literal `true` or `false` and the token enters
+no process. The upload's condition reads
+`steps.codescene_token.outputs.available == 'true'` beside its push and ref
+guards, and the upload takes `access-token: ${{ secrets.CS_ACCESS_TOKEN }}`
+directly. The upload is a composite action, and a composite action's nested
+steps inherit the calling step's environment, so a token bound in the step's
+`env` reached every one of them.
+`tests/workflow_contracts/test_codescene_token.py` holds the shape. Its
+positive half requires the token to be named exactly in the check's command and
+the upload's input, because deleting the token would otherwise pass for keeping
+it out of an `env` while the upload skipped forever. A merge made by the
+Dependabot automerge workflow's `GITHUB_TOKEN` fires no push event, so such a
+merge publishes no coverage until the next push to main; that is a known
+exception (see
+[shared-actions issue 518](https://github.com/leynos/shared-actions/issues/518)).
+
 That is one half of the estate rule. The other half puts the shared
 `generate-coverage` action on both lanes with its coverage ratchet, and this
 repository now does that too; see [coverage generation](#coverage-generation)

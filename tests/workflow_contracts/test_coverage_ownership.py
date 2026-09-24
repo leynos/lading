@@ -76,7 +76,7 @@ COMMIT_PINNED = re.compile(r"@[0-9a-f]{40}$")
 SETUP_UV_ACTION = "astral-sh/setup-uv"
 UPLOAD_GUARD = (
     "github.event_name == 'push' && github.ref == 'refs/heads/main' && "
-    "env.CS_ACCESS_TOKEN != ''"
+    "steps.codescene_token.outputs.available == 'true'"
 )
 PULL_REQUEST_RATCHET = "${{ github.event_name == 'pull_request' }}"
 #: The upstream Markdown linter, pinned to the commit `v24.2.0` points at
@@ -444,8 +444,9 @@ def test_main_is_the_only_uploader_and_is_pinned() -> None:
         "the action verifies its own manifest archive digest, so callers must "
         "not provide archive-checksum"
     )
-    assert upload.get("env") == {"CS_ACCESS_TOKEN": "${{ secrets.CS_ACCESS_TOKEN }}"}, (
-        "the upload step alone must receive the CodeScene token"
+    assert "env" not in upload, (
+        "the upload is a composite action whose nested steps inherit its env, "
+        "so it takes the token as an input instead; see test_codescene_token"
     )
     assert upload.get("if") == UPLOAD_GUARD, (
         "the upload step must be limited to an authenticated push to main"
