@@ -41,7 +41,7 @@ def _run_skylos_allow(*arguments: str) -> subprocess.CompletedProcess[str]:
     environment.pop("REASON", None)
     environment.pop("SYMBOL", None)
     environment.update(argument.split("=", maxsplit=1) for argument in arguments)
-    return subprocess.run(  # noqa: S603 - fixed Make target and arguments.
+    return subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - fixed Make target and arguments.
         (_make_executable(), "--no-print-directory", "skylos-allow"),
         capture_output=True,
         check=False,
@@ -112,7 +112,7 @@ def test_skylos_allow_forwards_generated_argument_boundaries(
     configuration_path = tmp_path / "pyproject.toml"
     configuration_path.write_text("[tool.skylos]\n", encoding="utf-8")
     before = configuration_path.read_bytes()
-    completed = subprocess.run(  # noqa: S603 - fixed Make target and recorder.
+    completed = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - fixed Make target and recorder.
         _whitelist_command(tmp_path, cli=str(recorder)),
         capture_output=True,
         check=False,
@@ -167,7 +167,7 @@ def test_skylos_whitelist_lock_preserves_concurrent_entries(tmp_path: Path) -> N
     with ExitStack() as processes:
         requests = tuple(
             processes.enter_context(
-                subprocess.Popen(  # noqa: S603 - fixed Makefile and test arguments.
+                subprocess.Popen(  # ruff: ignore[subprocess-without-shell-equals-true] - fixed Makefile and test arguments.
                     command,
                     cwd=tmp_path,
                     env={

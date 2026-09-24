@@ -380,7 +380,7 @@ dev = [
     { name = "cmd-mox", git = "https://github.com/leynos/cmd-mox?rev=f583c279a15760aba5cfd9bddf1fbbe9b1f8c429" },
     { name = "crosshair-tool", specifier = ">=0.0.107" },
     { name = "df12-python-lints", git = "https://github.com/leynos/df12-python-lints.git?rev=v0.1.0" },
-    { name = "hypothesis", specifier = ">=6" },
+    { name = "hypothesis", specifier = ">=6,<7" },
     { name = "interrogate", specifier = ">=1.7.0" },
     { name = "plumbum", specifier = ">=1.8" },
     { name = "pyright" },

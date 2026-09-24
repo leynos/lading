@@ -148,6 +148,39 @@ removes only the staged workspace root and preserves the caller's other files.
 > `lading.commands.publish` to `lading.commands.publish_staging`, remove the
 > obsolete workspace argument, and pass `options` by keyword.
 
+## Programmatic workspace model
+
+Programmatic callers reach workspace crates through `lading.workspace`, which
+re-exports `WorkspaceCrate`, `WorkspaceDependency`, and `WorkspaceGraph`.
+
+> **Migration note:** `WorkspaceCrate` no longer carries an `id` field. Read
+> `crate.name` and `crate.version` instead, both of which remain, and omit the
+> `id` keyword argument when constructing a crate. The cargo package id is
+> still recorded where it describes a dependency edge:
+> `WorkspaceDependency.package_id` carries the `packages[].id` value that
+> `cargo metadata` reports for the dependency target.
+
+```python
+from pathlib import Path
+
+from lading.workspace import WorkspaceCrate
+
+# Before: `id` was a required keyword argument.
+# WorkspaceCrate(id=package_id, name="alpha", version="0.1.0", ...)
+
+# After: the same crate is addressed by name and version.
+crate = WorkspaceCrate(
+    name="alpha",
+    version="0.1.0",
+    manifest_path=Path("crates/alpha/Cargo.toml"),
+    root_path=Path("crates/alpha"),
+    publish=True,
+    readme_is_workspace=False,
+    dependencies=(),
+)
+label = f"{crate.name} {crate.version}"  # replaces the removed `crate.id`
+```
+
 ## Installation
 
 ### Install from a tagged release

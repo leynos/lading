@@ -86,24 +86,27 @@ nested-definition exemptions to the `tests` and `scripts` invocation.
 Adopted 2026-08-27. This addendum extends the decision above with a sixth
 stage; the accepted body of this ADR is otherwise unchanged.
 
-Skylos is the final, blocking stage of `make lint`. It scans production
-modules only, excludes `tests`, and runs in strict gate mode. The scan is
-dead-code analysis only: no uploads, no provenance collection, and no
-repository-wide grep verification, so the gate stays deterministic and
-test-only references cannot be mistaken for application liveness. Skylos never
-modifies source files.
+Skylos is the final, blocking stage of `make lint`. It scans production modules
+only, excludes `tests`, and runs in strict gate mode. The scan is dead-code
+analysis only: no uploads, no provenance collection, and no repository-wide
+grep verification, so the gate stays deterministic and test-only references
+cannot be mistaken for application liveness. Skylos never modifies source files.
 
 Skylos is invoked through a command-only macro, `$(SKYLOS_CLI)`, that pins both
-the interpreter and the release: `uv tool run --python 3.14 --from
-'skylos==$(SKYLOS_VERSION)' skylos`. Skylos parses source through its own
-runtime AST, so fixing the interpreter version prevents phantom findings for
-syntax added by newer Python releases, and the release pin keeps local and
-Continuous Integration (CI) runs on the same rule set. Scan options are held
-separately in `$(SKYLOS)`, so the command macro stays reusable by the
-whitelist target.
+the interpreter and the release:
+`uv tool run --python 3.14 --from 'skylos==$(SKYLOS_VERSION)' skylos`. Skylos
+parses source through its own runtime AST, so fixing the interpreter version
+prevents phantom findings for syntax added by newer Python releases, and the
+release pin keeps local and Continuous Integration (CI) runs on the same rule
+set. Scan options are held separately in `$(SKYLOS)`, so the command macro
+stays reusable by the whitelist target. That tool environment is deliberately
+independent of the project lock file, so the interpreter and the release are
+both pinned on the command line rather than resolved from `uv.lock`.
 
 Every finding remains subject to caller verification. Genuine dead code is
 removed. For a verified false positive, contributors must first use a typed
-entry-point rule. A named whitelist exception is appropriate only when that
+entry-point rule. The `type` selector may be `function`, `method`, or
+`parameter`; the last form covers protocol-mandated parameters such as a signal
+handler's `frame`. A named whitelist exception is appropriate only when that
 rule cannot model the runtime boundary, and it must include a caller-specific
 reason through `make skylos-allow SYMBOL=... REASON=...`.

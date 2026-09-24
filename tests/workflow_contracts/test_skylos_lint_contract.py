@@ -75,7 +75,12 @@ _ENTRYPOINT_NAMES: typ.Final = frozenset({
     "lading.commands.lockfile._is_lockfile_stale_detail",
     "lading.commands.bump_lockfiles.CargoLockfileRepository.resolve_lockfile_paths",
     "lading.commands.bump_lockfiles.CargoLockfileRepository.regenerate_lockfiles",
-    "lading.commands.lockfile.CargoLockfileInspectionRepository.validate_lockfile_freshness",
+    "lading.commands.lockfile_repository.CargoLockfileInspectionRepository.discover_tracked_lockfiles",
+    "lading.commands.lockfile_repository.CargoLockfileInspectionRepository.validate_lockfile_freshness",
+    "lading.commands.lockfile_repository.CargoLockfileInspectionRepository._bound_runner",
+    "lading.commands.lockfile_repository.CargoLockfileInspectionRepository._bound_runner.runner_with_env",
+    "lading.commands.publish_staging.prepare_workspace",
+    "lading.commands.publish_staging._handle_termination.frame",
 })
 _MAKEUTIL_INSTALL_TOKENS: typ.Final = (
     "rustup",
@@ -100,7 +105,7 @@ _MAKEUTIL_INSTALL_TOKENS: typ.Final = (
 
 def _makefile_report() -> dict[str, object]:
     """Return the complete, successfully parsed Makeutil report."""
-    completed = subprocess.run(  # noqa: S603 - fixed local parser command.
+    completed = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - fixed local parser command.
         _MAKEUTIL_COMMAND,
         capture_output=True,
         check=True,
@@ -305,7 +310,7 @@ def test_skylos_configuration_is_strict_and_reasoned() -> None:
     assert entrypoints, "Skylos dead-code configuration must retain entrypoints."
     entrypoint_names: set[str] = set()
     for entrypoint in entrypoints:
-        assert entrypoint.get("type") in {"function", "method"}, (
+        assert entrypoint.get("type") in {"function", "method", "parameter"}, (
             "Every Skylos entrypoint must name a supported symbol type."
         )
         full_names = _text_sequence(
