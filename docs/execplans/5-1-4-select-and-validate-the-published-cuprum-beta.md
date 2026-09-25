@@ -238,6 +238,14 @@ in `Decision log`, and escalate.
   pre-existing repo-wide blind spot: `recursive = true` never descends into
   directories lacking `__init__.py`, so `tests/unit/` escapes the df12 tier
   entirely (see `Surprises & discoveries`).
+  - Green at `d419939`: `check-fmt`, `typecheck`, `lint` (all seven stages,
+    including the first-ever clean runs of `ambrleaks` and `skylos`), `test`
+    (1193 passed, 30 skipped, 3 xfailed, 0 xpass, 0 failed), `markdownlint`,
+    `nixie`, and `spelling`. A third red run caught only an `mdtablefix`
+    reflow in this file, itself introduced by the fix commit.
+  - `make nixie` passes for this ExecPlan **vacuously**: the file contains no
+    mermaid diagrams, so the change carries no diagram regression coverage.
+    Its fences are `bash`, `python`, `plaintext`, `toml`, and `gherkin`.
 - [ ] EP-M2: beta selected and locked on both paths; callers migrated; markers
   removed; all gates green; seeded mutations observed.
 - [ ] EP-M3: distribution evidence recorded; documentation, ADR, and roadmap
