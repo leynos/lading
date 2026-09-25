@@ -1250,10 +1250,19 @@ prose; one is substantive and is the most important finding of either pass.
 - **First-person pronouns in this plan, twice. Fixed.** "the false sentence
   explaining *why* was introduced by my own fix for it" and "the prose **I**
   added to justify it". The style guide's rule against first person predates
-  the branch. Reworded impersonally, and a sweep for `I`/`my`/`we`/`our` across
-  the file now finds none. The finding's cited line numbers were stale (it
-  named 954/957; the text had moved), which is the review having read committed
-  HEAD while the tree was being edited concurrently.
+  the branch, and both are now reworded impersonally. The finding's cited line
+  numbers were stale (it named 954/957; the text had moved), which is the
+  review having read committed HEAD while the tree was being edited
+  concurrently.
+  - A later pass re-flagged the *quotation* of that fixed wording, which this
+    disposition keeps because a record of what was wrong is the point of it.
+    Stating the sweep result precisely, so the distinction survives: scanning
+    the file for the character sequences `I`, `my`, `we`, and `our` returns
+    hits at that quotation and at this sentence (which names the sequences),
+    and exactly one elsewhere -- the letters inside an en-GB-oxendict `-our`
+    spelling. **No first-person pronoun remains in the document's own voice.**
+    A sweep that cannot tell a use from a mention will report the remaining
+    hits forever; that is a property of the sweep, not of the prose.
 - **A single-backtick `uv.lock` amid double backticks. Fixed.** The docstring's
   closing paragraph used `` `uv.lock` `` once where the rest of the module uses
   RST double backticks, and that paragraph also carried the caveat the fix
@@ -1320,15 +1329,80 @@ dispositions carry meaning.
   finding was already met by the ADR's own `## Date` section, so the edit is
   the summary alone.
 
+#### Final EP-M3 pass
+
+A further pass ran at `46cc5ac` to confirm the ADR fix held and to cover the
+two commits after `ce97066`. It completed in 360 seconds, **not** rate-limited,
+and reported four entries rated `minor` -- three distinct issues, since one was
+emitted twice. Notably, **none of the four is in either commit under review**:
+the ADR fix held, no finding recurs against ADR-006, and every finding targets
+text from an earlier commit. Scrutineer also re-derived the ten-finding pass's
+severity tally independently and confirmed the correction made at `367d4ea` (2
+`major`, 6 `minor`, 2 `trivial`) is right.
+
+A first attempt at this pass exited 1 with `WebSocket closed` during
+`connecting_to_review_service`, before any analysis; the free-tier quota read
+`7 of 10` both before and after, so nothing was consumed and no rate limit was
+hit. One retry succeeded. The concurrent `coderabbit review --agent` that
+another session was running in an unrelated worktree is a plausible cause of
+the dropped connection, reported as an observation rather than a determined
+cause.
+
+- **`tests/helpers/cuprum_pin.py`'s `pyproject_text` was documented as "parsed
+  text". Fixed.** `declared_pin` takes the raw file text with type `str` and
+  calls `tomllib.loads` on it, and every caller passes
+  `PYPROJECT.read_text(...)`, so "parsed" described neither the parameter nor
+  the caller's job. Now "The raw text of `pyproject.toml`, parsed here rather
+  than by the caller." This is the only finding of the four that is both real
+  and new, and it is this branch's own prose from `73bd86c`.
+- **The first-person-pronoun entries. Declined as written; the disposition
+  clarified.** Two identical entries asked for the removal of first-person
+  pronouns from lines 1252-1253. The flagged text is the *quotation* inside the
+  earlier disposition of the wording that was found and fixed; deleting it
+  would destroy the record, and the reviewer's own phrase "historical
+  quotations" concedes the text is a quotation. The underlying rule is real
+  (`docs/documentation-style-guide.md:32`), and the live prose is already clean.
+  - The earlier disposition's claim that a sweep "now finds none" was too
+    strong, and the sweep proves it: `grep -noE '\b(I|my|we|our)\b'` returns
+    hits inside the quotation, inside the sentence naming the sequences, and one
+    false positive -- the letters of an en-GB-oxendict `-our` spelling. The
+    disposition now says "no first-person pronoun remains in the document's own
+    voice", which is the claim the evidence supports, and notes that a sweep
+    unable to tell a use from a mention will report those hits forever.
+  - Worth recording as a recurrence: this is the second time this issue class
+    has been raised. The fix after the first pass rewrote the prose but left the
+    pronoun inside the quotation marks, so the residue is expected rather than
+    surprising.
+- **`pyproject.toml`'s wheel metadata. Declined as a duplicate.** The finding
+  asked that tagged wheel metadata not carry the `cuprum==0.2.0b1` pin, or that
+  the users' guide match. Its mechanical claim is correct -- setuptools builds
+  the metadata straight from `project.dependencies`, with no dynamic rewrite --
+  but its substance is the `major` final-release-guard finding already declined
+  under D8 and raised for the maintainer, re-raised here at `minor` and
+  attached to a different file. The guide-matching half is also already
+  satisfied.
+  - The finding did surface one genuine tension, which is fixed rather than
+    declined: `docs/users-guide.md` asserted as present fact that "a tagged
+    wheel never carries a pre-release requirement", while the developers' guide
+    says the current state *would* record one. The users' guide sentence is true
+    only because the release gate is honoured, and it did not say so. It now
+    says "No final release is tagged while the pin names a pre-release, so a
+    tagged wheel does not carry one", names the gate, links ADR-006, and states
+    that the gate is a procedure rather than an automated check. No test asserts
+    that string, so the wording was free to change.
+
 ## Outcomes & retrospective
 
-Status: **EP-M3 complete; the closing CodeRabbit review reported one `minor`
-finding, now fixed, and the milestone's other `major` finding -- the
-final-release guard -- is declined and raised for the maintainer.** EP-M0,
-EP-M1 and EP-M2 are closed. The completion checklist the plan set for this
-section still stands: before setting the status to `COMPLETE`, reconcile every
-discovery with the artefacts in `Conformance basis` -- update the assessment's
-evidence boundary and design §7, and mark roadmap item 5.1.4 done.
+Status: **EP-M3 complete.** Two CodeRabbit passes closed it: one `minor`
+finding against ADR-006, fixed, and a final confirming pass whose four `minor`
+entries resolved to one real fix, two declinations of quoted text, and one
+duplicate of the already-declined release guard. The milestone's `major`
+finding -- the automated final-release guard -- remains declined and raised for
+the maintainer under D8. EP-M0, EP-M1 and EP-M2 are closed. The completion
+checklist the plan set for this section still stands: before setting the status
+to `COMPLETE`, reconcile every discovery with the artefacts in
+`Conformance basis` -- update the assessment's evidence boundary and design §7,
+and mark roadmap item 5.1.4 done.
 
 **What the milestone delivered.** The published `cuprum==0.2.0b1` artefact is
 selected on both dependency paths, both locks agree with their manifests, the

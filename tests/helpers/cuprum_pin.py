@@ -109,7 +109,8 @@ def declared_pin(pyproject_text: str) -> str:
     Parameters
     ----------
     pyproject_text : str
-        The parsed text of ``pyproject.toml``.
+        The raw text of ``pyproject.toml``, parsed here rather than by the
+        caller.
 
     Returns
     -------

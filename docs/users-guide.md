@@ -223,8 +223,11 @@ pinned exactly as `cuprum==0.2.0b1`. An environment that already pins a
 different Cuprum will refuse to resolve against this requirement and must be
 reconciled first.
 
-The pin is temporary, and it applies to source and development installs only: a
-tagged wheel never carries a pre-release requirement. See
+The pin is temporary, and it applies to source and development installs only.
+No final release is tagged while the pin names a pre-release, so a tagged wheel
+does not carry one; that release gate is a procedure rather than an automated
+check, as recorded in
+[ADR-006](adr/006-align-cuprum-selection-across-dependency-paths.md). See
 [Changing the cuprum version](developers-guide.md#changing-the-cuprum-version)
 for the maintainer procedure.
 
