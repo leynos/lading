@@ -385,6 +385,24 @@ in `Decision log`, and escalate.
     confirmed by running `git rev-parse --show-toplevel` with
     `ExecutionContext(cwd="/tmp")` and getting exit 128 because `/tmp` is not
     a work tree, and the phase list was read from `cuprum.events.ExecPhase`.
+  - [x] (2026-09-25) Stage D step 9: gates run and the commit made. All seven
+    gates were re-run against exactly the staged index by `scrutineer` and
+    passed -- `check-fmt`, `typecheck` (ty 0.0.56, 62 sources), `lint` (all 7
+    stages, pylint 10.00/10 twice), `test` (`1200 passed, 30 skipped`, 76
+    snapshots), `spelling` (`typos.toml` byte-identical, no drift),
+    `markdownlint` (28 files, 0 errors), `nixie` (28 files, all diagrams
+    validated). No gate dirtied the tree. Committed as `3492b43` and pushed;
+    PR #285's body was replaced, because it still claimed the branch was
+    "planning and documentation only" and "changes no code", both false since
+    EP-M0.
+  - [x] (2026-09-25) A finding carried forward from the gate run: **no gate
+    executes the Python fenced blocks in `docs/scripting-standards.md`.**
+    Verified three ways -- `pyproject.toml`'s pytest config sets only
+    `timeout`, the installed environment has no Markdown-code-block plugin,
+    and `pytest -v --doctest-modules` collected 154 files, all `.py`, zero
+    `.md`. The 17 snippets' correctness therefore rests on the measurement
+    done in this step, not on a gate, and will rot silently as the beta moves
+    toward 0.2.0 final. This is a known gap, not a defect in this change.
 
 ## Surprises & discoveries
 
