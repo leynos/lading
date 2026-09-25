@@ -14,7 +14,8 @@ empty result as the failure it is, and invokes ``gh`` through cuprum's
 allowlist rather than a shell. Its process dependencies -- the ``gh`` runner,
 the clock, and the two output sinks -- are parameters with production
 defaults, so tests drive the command path explicitly rather than by
-intercepting the environment.
+intercepting the environment. The runner itself lives beside this module in
+``release_gh``, which owns the whole cuprum boundary.
 """
 
 from __future__ import annotations
@@ -30,19 +31,10 @@ import time
 import typing as typ
 from pathlib import Path
 
-from cuprum import Program, ProgramCatalogue, ProjectSettings, scoped, sh
+from release_gh import CommandOutcome, run_gh
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
     import io
-
-GH = Program("gh")
-_RELEASE_PROJECT = ProjectSettings(
-    name="lading-release",
-    programs=(GH,),
-    documentation_locations=("docs/developers-guide.md#release-workflow",),
-    noise_rules=(),
-)
-RELEASE_CATALOGUE = ProgramCatalogue(projects=(_RELEASE_PROJECT,))
 
 
 class Outcome(enum.StrEnum):
@@ -91,19 +83,6 @@ class UploadError(RuntimeError):
         """Record the diagnostic and the outcome it should be counted as."""
         super().__init__(message)
         self.outcome = outcome
-
-
-@dc.dataclass(frozen=True, slots=True)
-class CommandOutcome:
-    """What a ``gh`` invocation reported back.
-
-    This is the whole of the command dependency's return contract, so a test
-    runner can satisfy it without a process.
-    """
-
-    exit_code: int
-    stdout: str = ""
-    stderr: str = ""
 
 
 class UploadRunner(typ.Protocol):
@@ -221,29 +200,6 @@ def discover_wheels(directory: Path) -> tuple[Path, ...]:
     except OSError as error:
         message = f"Could not read artefact directory {directory}: {error}"
         raise UploadError(message, outcome=Outcome.UNREADABLE_DIRECTORY) from error
-
-
-def run_gh(arguments: cabc.Sequence[str]) -> CommandOutcome:
-    """Run ``gh`` through the release catalogue and report the result.
-
-    This is the production edge: the only place the script starts a process.
-
-    Returns
-    -------
-    CommandOutcome
-        The exit status and captured streams.
-    """
-    with scoped(allowlist=RELEASE_CATALOGUE.allowlist):
-        # capture=True is cuprum's default, but it is stated here because the
-        # whole point of the call is to keep gh's diagnostic: without capture
-        # both streams come back None and a failure reports no reason at all.
-        command = sh.make(GH, catalogue=RELEASE_CATALOGUE)(*arguments)
-        result = command.run_sync(capture=True)
-    return CommandOutcome(
-        exit_code=result.exit_code,
-        stdout=result.stdout or "",
-        stderr=result.stderr or "",
-    )
 
 
 def upload_wheels(
