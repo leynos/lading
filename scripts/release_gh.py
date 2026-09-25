@@ -13,7 +13,14 @@ from __future__ import annotations
 import collections.abc as cabc
 import dataclasses as dc
 
-from cuprum import Program, ProgramCatalogue, ProjectSettings, scoped, sh
+from cuprum import (
+    Program,
+    ProgramCatalogue,
+    ProjectSettings,
+    RunOutputOptions,
+    scoped,
+    sh,
+)
 
 GH = Program("gh")
 _RELEASE_PROJECT = ProjectSettings(
@@ -53,12 +60,12 @@ def run_gh(arguments: cabc.Sequence[str]) -> CommandOutcome:
     CommandOutcome
         The exit status and captured streams.
     """
-    with scoped(allowlist=RELEASE_CATALOGUE.allowlist):
+    with scoped(catalogue=RELEASE_CATALOGUE):
         # capture=True is cuprum's default, but it is stated here because the
         # whole point of the call is to keep gh's diagnostic: without capture
         # both streams come back None and a failure reports no reason at all.
         command = sh.make(GH, catalogue=RELEASE_CATALOGUE)(*arguments)
-        result = command.run_sync(capture=True)
+        result = command.run_sync(output=RunOutputOptions(capture=True))
     return CommandOutcome(
         exit_code=result.exit_code,
         stdout=result.stdout or "",

@@ -18,4 +18,10 @@ accepted = []
 ignore = ["`[^`\\n]+`"]
 
 [files]
-exclude = []
+# The standalone path's lockfile. The generated typos.toml excludes lockfiles
+# by basename (uv.lock, Cargo.lock, ...) and this one is named for its script,
+# so it is listed here instead. The exclusion is defensive rather than
+# load-bearing today: the gate's scope reaches Markdown, so a hash in a
+# lockfile is not currently scanned. It is declared so that a future widening
+# of the scope does not have to re-discover these hashes.
+exclude = ["scripts/upload_release_wheels.py.lock"]

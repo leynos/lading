@@ -23,6 +23,7 @@ import re
 import shutil
 import subprocess
 import tomllib
+import typing as typ
 from pathlib import Path
 
 import pytest
@@ -188,8 +189,18 @@ def _lock_pin(lock_text: str, *, site: str) -> str:
     return locked[0]
 
 
-def _lock_specifier(lock_text: str, *, site: str) -> str:
-    """Return the pinned version named by the lock's ``requires-dist`` entry.
+#: Which kind of uv lock a check is reading. The two are not interchangeable:
+#: a project lock resolves the project itself, so its requirement lives in the
+#: ``lading`` package's metadata, while a ``--script`` lock resolves only the
+#: script's dependencies and has no package for the script at all -- its
+#: requirement is in a top-level manifest. Naming the shape at the call site,
+#: rather than trying one and falling back to the other, keeps a script lock
+#: that lost its manifest from reading as a lock that merely names no cuprum.
+type LockOrigin = typ.Literal["project", "script"]
+
+
+def _lock_specifier(lock_text: str, *, site: str, origin: LockOrigin) -> str:
+    """Return the pinned version named by the lock's own recorded requirement.
 
     A lockfile records the resolved version *and* a copy of the requirement
     that produced it. Checking both catches the lock that was regenerated
@@ -203,6 +214,8 @@ def _lock_specifier(lock_text: str, *, site: str) -> str:
         The text of a uv lockfile.
     site : str
         Human-readable name of the lock, used in failure messages.
+    origin : LockOrigin
+        Which shape of lock this is: ``"project"`` or ``"script"``.
 
     Returns
     -------
@@ -214,12 +227,19 @@ def _lock_specifier(lock_text: str, *, site: str) -> str:
     SelectionError
         If the requirement is missing or is not a single exact pin.
     """
-    packages = tomllib.loads(lock_text).get("package", [])
-    lading = [entry for entry in packages if entry.get("name") == "lading"]
-    if len(lading) != 1:
-        message = f"{site} must contain exactly one lading package entry"
-        raise SelectionError(message)
-    entries = lading[0].get("metadata", {}).get("requires-dist", [])
+    document = tomllib.loads(lock_text)
+    if origin == "project":
+        lading = [
+            entry
+            for entry in document.get("package", [])
+            if entry.get("name") == "lading"
+        ]
+        if len(lading) != 1:
+            message = f"{site} must contain exactly one lading package entry"
+            raise SelectionError(message)
+        entries = lading[0].get("metadata", {}).get("requires-dist", [])
+    else:
+        entries = document.get("manifest", {}).get("requirements", [])
     specifiers = [
         entry["specifier"]
         for entry in entries
@@ -230,7 +250,7 @@ def _lock_specifier(lock_text: str, *, site: str) -> str:
             f"{site} must record exactly one cuprum requirement, found {specifiers}"
         )
         raise SelectionError(message)
-    return _pin_from([f"{CUP}{specifiers[0]}"], site=f"{site} requires-dist")
+    return _pin_from([f"{CUP}{specifiers[0]}"], site=f"{site} requirement")
 
 
 def _metadata_blocks(script_text: str) -> list[str]:
@@ -303,11 +323,6 @@ def _installed_version() -> str:
     return importlib.metadata.version(CUP)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=SelectionError,
-    reason="5.1.4: cuprum beta not yet selected",
-)
 def test_every_site_declares_the_same_exact_cuprum_pin() -> None:
     """All five requirement sites name one exact version, and it is installed.
 
@@ -331,7 +346,7 @@ def test_every_site_declares_the_same_exact_cuprum_pin() -> None:
     assert _lock_pin(lock, site="uv.lock") == expected, (
         f"uv.lock resolves cuprum to a version other than {expected}"
     )
-    assert _lock_specifier(lock, site="uv.lock") == expected, (
+    assert _lock_specifier(lock, site="uv.lock", origin="project") == expected, (
         f"uv.lock's recorded requirement disagrees with pyproject.toml ({expected})"
     )
 
@@ -343,7 +358,10 @@ def test_every_site_declares_the_same_exact_cuprum_pin() -> None:
     assert _lock_pin(script_lock, site=SCRIPT_LOCKFILE.name) == expected, (
         f"{SCRIPT_LOCKFILE.name} resolves cuprum to a version other than {expected}"
     )
-    assert _lock_specifier(script_lock, site=SCRIPT_LOCKFILE.name) == expected, (
+    assert (
+        _lock_specifier(script_lock, site=SCRIPT_LOCKFILE.name, origin="script")
+        == expected
+    ), (
         f"{SCRIPT_LOCKFILE.name}'s recorded requirement disagrees with "
         f"pyproject.toml ({expected})"
     )
@@ -428,12 +446,74 @@ def test_a_lock_with_two_cuprum_entries_is_reported() -> None:
         _lock_pin(lock, site="a doubled lock")
 
 
-def test_a_lock_entry_without_a_requirement_is_reported() -> None:
+def test_a_project_lock_entry_without_a_requirement_is_reported() -> None:
     """A lock that recorded no requirement cannot be checked for staleness."""
     lock = '[[package]]\nname = "lading"\nversion = "0.3.1"\n'
 
     with pytest.raises(SelectionError, match="exactly one cuprum requirement"):
-        _lock_specifier(lock, site="a lock with no requirement")
+        _lock_specifier(lock, site="a lock with no requirement", origin="project")
+
+
+#: The two lock shapes, as ``uv lock`` writes them. A script lock resolves only
+#: the script's dependencies, so it carries no package for the script itself
+#: and its requirement sits in ``[manifest]``; a project lock resolves the
+#: project, so the requirement is in that package's metadata. Reading either
+#: with the other's rule reports a correct lock as broken, which is why the
+#: shape is a parameter rather than something guessed.
+_SCRIPT_LOCK_SHAPE = (
+    "version = 1\n\n[manifest]\nrequirements = [\n"
+    '    { name = "cuprum", specifier = "==0.2.0b1" },\n]\n'
+)
+_PROJECT_LOCK_SHAPE = (
+    '[[package]]\nname = "lading"\nversion = "0.3.1"\n\n[package.metadata]\n'
+    'requires-dist = [\n    { name = "cuprum", specifier = "==0.2.0b1" },\n]\n'
+)
+
+
+def test_each_lock_shape_is_read_from_its_own_requirement_site() -> None:
+    """A script lock's pin comes from ``[manifest]``, a project lock's from metadata.
+
+    Reading a script lock the project way is not a hypothetical: it reports
+    the lock as carrying no lading entry, so a correctly locked script reads
+    as broken, and the mistake is invisible while the caller is only ever
+    handed a document it happens to know the shape of.
+    """
+    from_script = _lock_specifier(
+        _SCRIPT_LOCK_SHAPE, site="a script lock", origin="script"
+    )
+    assert from_script == "0.2.0b1", f"the script lock's pin read as {from_script!r}"
+    from_project = _lock_specifier(
+        _PROJECT_LOCK_SHAPE, site="a project lock", origin="project"
+    )
+    assert from_project == "0.2.0b1", f"the project lock's pin read as {from_project!r}"
+
+
+def test_a_script_lock_losing_its_manifest_is_reported() -> None:
+    """The manifest is the script path's only requirement record; its absence fails.
+
+    Without this, a script lock that dropped its manifest would be read as a
+    lock that names no cuprum, and the ``exactly one`` assertion would be the
+    thing that failed -- a message pointing at the symptom rather than at the
+    missing record.
+    """
+    with pytest.raises(SelectionError, match="exactly one cuprum requirement"):
+        _lock_specifier(
+            'version = 1\n\n[[package]]\nname = "attrs"\nversion = "26.1.0"\n',
+            site="a script lock with no manifest",
+            origin="script",
+        )
+
+
+def test_a_project_lock_read_as_a_script_lock_is_reported() -> None:
+    """The shape argument is load-bearing, not decorative.
+
+    This is the inverse of the defect the shape parameter exists to prevent:
+    it pins down that the two readings are genuinely different, so a later
+    "simplification" that tries project first and falls back to the manifest
+    cannot pass both this test and the one above.
+    """
+    with pytest.raises(SelectionError, match="exactly one cuprum requirement"):
+        _lock_specifier(_PROJECT_LOCK_SHAPE, site="a project lock", origin="script")
 
 
 # ---------------------------------------------------------------------------
@@ -484,11 +564,6 @@ def test_the_project_lock_is_fresh() -> None:
 @pytest.mark.skipif(
     not (REPOSITORY_ROOT / ".git").exists(),
     reason="no Git checkout to re-lock against (for example in mutmut's sandbox)",
-)
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="5.1.4: cuprum beta not yet selected",
 )
 def test_the_script_lock_is_fresh() -> None:
     """``scripts/upload_release_wheels.py.lock`` matches the script metadata."""

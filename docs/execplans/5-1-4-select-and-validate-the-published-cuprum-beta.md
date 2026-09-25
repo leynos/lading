@@ -292,6 +292,22 @@ in `Decision log`, and escalate.
     about these fixes, it is cleared before EP-M3, not deferred again.
 - [ ] EP-M2: beta selected and locked on both paths; callers migrated; markers
   removed; all gates green; seeded mutations observed.
+  - [x] (2026-09-25) Selection, locking, and migration done and verified: the
+    pin is `cuprum==0.2.0b1` in `pyproject.toml` and in the PEP 723 block,
+    both locks are regenerated, and all five `scoped(allowlist=...)` call
+    sites plus the `lading/utils/commands.py` docstring are migrated to
+    `scoped(catalogue=...)`.
+  - [x] (2026-09-25) Markers removed (step 9). **Removing them exposed a real
+    defect that the strict `xfail` had hidden**: `_lock_specifier` read every
+    lock as a project lock, but a `--script` lock has no `lading` package and
+    records its requirement in `[manifest]`. The check failed with
+    `must contain exactly one lading package entry` against a **correct**
+    script lock -- the mirror image of the EP-M1 red, and a failure that would
+    have persisted forever. Fixed by making the lock shape a required
+    argument, with three self-tests covering the two shapes. See
+    `Surprises & discoveries`.
+  - [x] (2026-09-25) Focused green command: `100 passed`, with no `xfail` and
+    no `xpass`, and `rg "cuprum beta not yet selected" tests` prints nothing.
 - [ ] EP-M3: distribution evidence recorded; documentation, ADR, and roadmap
   updated; all gates green.
 
@@ -327,6 +343,73 @@ in `Decision log`, and escalate.
     Firecrawl; local probes.
   - Impact: the standalone path is independent of `uv.lock`. It can be locked
     without changing the workflow (D4).
+- **A script lockfile is not shaped like a project lockfile, and the O1a
+  checker assumed it was.**
+  - Observation: a `--script` lock resolves only the script's dependencies, so
+    it contains **no `lading` package entry at all**. Its requirement is
+    recorded in a top-level `[manifest] requirements` array. A project lock is
+    the other way round: no manifest, and the requirement in the `lading`
+    package's `[package.metadata] requires-dist`. The two shapes are mutually
+    exclusive; each is silent about the half the other records.
+  - Evidence: `rg -n '^name = ' scripts/upload_release_wheels.py.lock` lists
+    nine packages and no `lading`; `rg -c '^\[manifest\]' uv.lock` finds none.
+    The failure that surfaced it:
+    `SelectionError: upload_release_wheels.py.lock must contain exactly one lading package entry`.
+  - Impact: this is the defect that the strict `xfail` hid. `_lock_specifier`
+    read every lock as a project lock, so it reported a **correct** script lock
+    as broken. It could not fail in EP-M1, because the script lock did not yet
+    exist and the marker expected a failure anyway. The first moment the check
+    could be observed -- removing the marker in EP-M2 step 9 -- it failed.
+    - The plan's O1a obligation text described this site as the script
+      lockfile's "script `requires-dist` specifier", which no such lock has.
+      That wording is corrected below, and `_lock_specifier` now takes the lock
+      shape as a required `origin` parameter so neither reading can be applied
+      to the wrong document by accident. Three self-tests cover the shapes:
+      each is read from its own site, a script lock that lost its manifest is
+      reported, and a project lock read as a script lock is reported.
+    - The implication for the method: a strict `xfail` proves a test is red
+      *now*, never that the **cause** it is red for is the only thing wrong
+      with it. Here the marker's `raises=` matched the failure type while the
+      message was about a defect that would survive the fix. Removing the
+      marker is the only step that distinguishes the two, which is why EP-M2
+      step 9 exists as its own step rather than being folded into the commit.
+- **A probe artefact survived into the working tree, and only the index caught
+  it.**
+  - Observation: the working-tree `scripts/upload_release_wheels.py.lock` ended
+    up containing `version = "0.2.0b1" # colourz` -- a word planted to test
+    whether the spelling gate scans lockfiles. It is a valid TOML comment, so
+    `uv lock --script --check` still exited 0, `tomllib` still parsed the pin
+    as `0.2.0b1`, and every gate stayed green. Nothing but inspection would
+    have caught it.
+  - Evidence: `git diff scripts/upload_release_wheels.py.lock` showed the
+    one-line addition while `git show :scripts/upload_release_wheels.py.lock`
+    did not. `rg "colourz"` found it in no commit, no hook, and no
+    configuration -- only in the working copy of that one generated file.
+  - Impact: the cause was the probe procedure, not the tooling. The planted
+    marker was restored by `cp /tmp/script.lock.bak`, but the backup had been
+    taken *after* an earlier probe had already planted it, so the "restore"
+    faithfully restored the contamination. A backup taken inside the same
+    window as the mutation is not a backup. Restoring from the git index gave
+    the authentic content, and re-running `uv lock --script` confirmed the
+    committed lock is byte-identical to fresh uv output.
+    - The generalization worth keeping: **a probe that mutates a tracked file
+      must be reversible from the index, not from a copy taken while
+      probing.** `git checkout -- <file>` is the only restore that does not
+      depend on remembering the right moment to snapshot. This is the same
+      defect class as the earlier mdtablefix near-miss, where a backup taken
+      after the edit made the diff read wrongly.
+    - The freshness check does **not** catch it either, and this was measured
+      rather than assumed: with the marker re-planted,
+      `uv lock --script scripts/upload_release_wheels.py --check` still exited
+      0 and the contract module still reported 15 passed. uv compares resolved
+      content, not bytes, so a comment is invisible to it. Nothing in the
+      repository's gates observes the lock's exact bytes.
+    - A byte-exactness guard was considered and declined. It would fire on
+      every legitimate reformat that a uv version bump produces, and the
+      comment's only cost is that it is unexplained -- the next `uv lock
+      --script` drops it. The protection that is worth its cost is the one
+      that found it: diffing the working copy against the index, which is what
+      `git status` already shows.
 - **The standalone path resolves a different cyclopts major version.**
   - Observation: resolved afresh, `cyclopts>=3` becomes cyclopts 5.0.0, while
     `uv.lock` holds 3.24.0. The release job resolves at tag time with no lock
@@ -1013,12 +1096,20 @@ repository test interpreter has that version installed:
 - the PEP 723 block's cuprum requirement;
 - `uv.lock`'s single `cuprum` package entry and lading's `requires-dist`
   specifier;
-- the script lockfile's `cuprum` package entry and its script `requires-dist`
-  specifier.
+- the script lockfile's `cuprum` package entry and the requirement its
+  `[manifest]` records.
 
 **Method.** A contract test over a finite set of sites, so enumeration is
 exhaustive. The expected value comes from `pyproject.toml`; the test contains
 no version literal.
+
+**Lock shapes.** The two lockfiles record their requirement in different
+places, and neither place exists in the other's document: the project lock in
+the `lading` package's `requires-dist`, and the `--script` lock in a top-level
+`[manifest] requirements` array. It has no `lading` package at all. The checker
+therefore takes the shape as an argument rather than guessing it -- see
+`Surprises & discoveries`, "A script lockfile is not shaped like a project
+lockfile".
 
 **Shape checks.** Each requirement is a single `==` specifier with no extras
 and no markers. Parse with the pattern `^cuprum==(?P<version>[^\s,;\[\]]+)$`
@@ -1664,6 +1755,55 @@ To abandon the work, revert the milestone commits in reverse order: EP-M3, then
 EP-M2, then EP-M1, then EP-M0. Each milestone is a coherent plateau.
 
 ## Artefacts and notes
+
+The EP-M2 pin-only red, observed 2026-09-25 on a quiesced tree at `HEAD` after
+`uv sync` installed cuprum 0.2.0b1 and before any call site was migrated:
+
+```plaintext
+$ uv run --frozen pytest -q tests/unit/utils/test_commands.py \
+    tests/bdd/steps/test_commands_catalogue_steps.py tests/unit/test_release_gh.py \
+    tests/unit/test_upload_release_wheels.py tests/e2e/test_upload_release_wheels_cli.py \
+    tests/bdd/steps/test_release_wheel_upload_steps.py
+16 failed, 44 passed, 1 xfailed, 28 warnings in 4.67s
+```
+
+Every one of the 16 is the same defect, and two shapes of it appear. Thirteen
+report it directly:
+
+```plaintext
+TypeError: scoped() got an unexpected keyword argument 'allowlist'
+```
+
+The other three are the standalone path failing from the outside, which is O2's
+evidence: the uploader exits non-zero, no call reaches the stub, and the
+assertion is on the absent error line. Unwrapping that assertion shows the
+`TypeError` raised inside the child, through the standalone environment the
+script's own lockfile built:
+
+```plaintext
+File ".../scripts/upload_release_wheels.py", line 97, in <module>
+    app()
+File ".../scripts/release_wheel_upload.py", line 354, in attach_wheels
+    bound.upload(tag, wheels)
+File ".../scripts/release_wheel_upload.py", line 235, in upload_wheels
+    result = run(arguments)
+File ".../scripts/release_gh.py", line 56, in run_gh
+    with scoped(allowlist=RELEASE_CATALOGUE.allowlist):
+TypeError: scoped() got an unexpected keyword argument 'allowlist'
+```
+
+The traceback resolves cyclopts and cuprum under
+`~/.cache/uv/environments-v2/upload-release-wheels-<hash>/lib/python3.14/`,
+which is the standalone environment rather than the project's `.venv` -- so the
+failure is proof that the script's inline metadata and its lockfile are what
+the standalone path actually resolved, which is the property task 5.1.4 exists
+to establish.
+
+Note the count: 16, not the 13 the planner recorded. The three extra are the
+standalone BDD scenarios, which the earlier probe did not run, and they are
+distinct evidence rather than repeats -- a failing upload, a rejected upload,
+and the credential scenario each fail because the child dies before reaching
+`gh`.
 
 Published files (PyPI JSON API, 2026-09-25):
 

@@ -20,6 +20,7 @@ extend-exclude = [
     "node_modules",
     "package-lock.json",
     "pnpm-lock.yaml",
+    "scripts/upload_release_wheels.py.lock",
     "target",
     "typos.local.toml",
     "typos.toml",

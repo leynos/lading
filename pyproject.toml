@@ -16,7 +16,7 @@ classifiers = [
 keywords = ["rust", "cargo", "workspace", "release", "lading"]
 authors = [{ name = "Payton McIntosh", email = "pmcintosh@df12.net" }]
 dependencies = [
-    "cuprum>=0.1.0",
+    "cuprum==0.2.0b1",
     "cyclopts>=2.9",
     "markdown-it-py>=3,<5",
     "msgspec>=0.18,<1.0",
@@ -435,7 +435,9 @@ pytest_add_cli_args_test_selection = ["tests/"]
 # into its mutants/ working copy. The suite also reads docs/users-guide.md
 # and scripts/publish-check/bin/cargo relative to the repository root, so
 # copy those trees as well or the baseline run fails.
-also_copy = ["docs/", "scripts/"]
+# uv.lock joined the list with task 5.1.4: the selection contract reads it, and
+# the standalone path's lockfile lives under scripts/, which is already copied.
+also_copy = ["docs/", "scripts/", "uv.lock"]
 # lading/testing/ is test scaffolding (the cmd-mox command-runner adapter
 # and TOML assertion helpers used by the suite itself); mutating it wastes
 # cycles and can poison the very helpers the tests assert with.

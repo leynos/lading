@@ -297,14 +297,6 @@ def then_no_call_mutates_a_release(gh_stub: GhStub) -> None:
     assert not mutations, f"the uploader mutated a release: {mutations}"
 
 
-# The marker goes above ``@scenario``: that decorator replaces the function it
-# is given, so a mark applied underneath it is discarded and the test would run
-# unmarked.
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="5.1.4: cuprum beta not yet selected",
-)
 @scenario(_FEATURE, "The standalone uploader attaches a wheel with the pinned cuprum")
 def test_standalone_upload_uses_the_pinned_cuprum() -> None:
     """The standalone path runs under the version the repository pins."""
