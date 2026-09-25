@@ -219,13 +219,12 @@ uv run lading --help
 ```
 
 Source and development installs currently depend on the Cuprum 0.2.0 beta,
-pinned exactly as `cuprum==0.2.0b1`. A `pip` install of a released wheel needs
-no action: the pin names the pre-release, so the installer resolves it. An
-environment that already pins a different Cuprum will refuse to resolve against
-this requirement and must be reconciled first.
+pinned exactly as `cuprum==0.2.0b1`. An environment that already pins a
+different Cuprum will refuse to resolve against this requirement and must be
+reconciled first.
 
-The pin is temporary. No final 0.x release of `lading` is cut while it names a
-pre-release, so a tagged wheel never carries a pre-release requirement. See
+The pin is temporary, and it applies to source and development installs only: a
+tagged wheel never carries a pre-release requirement. See
 [Changing the cuprum version](developers-guide.md#changing-the-cuprum-version)
 for the maintainer procedure.
 

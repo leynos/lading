@@ -1854,6 +1854,7 @@ wc -l scripts/release_wheel_upload.py tests/unit/test_upload_release_wheels.py
 ### Red (EP-M1)
 
 ```bash
+set -o pipefail
 uv run pytest -q -rxX tests/workflow_contracts/test_cuprum_selection.py \
   tests/bdd/steps/test_release_wheel_upload_steps.py \
   tests/unit/test_release_gh_properties.py \
@@ -1869,6 +1870,7 @@ script-lock check, and the O2 scenario). Every other test passes, and none is
 ### Green (EP-M2)
 
 ```bash
+set -o pipefail
 uv lock && uv lock --script scripts/upload_release_wheels.py
 git diff --stat uv.lock          # a small diff, limited to cuprum
 uv sync
@@ -1905,13 +1907,21 @@ scratch files and are never committed.
 
 ### Gates, in sequence, after each milestone
 
+`pipefail` is set first: without it a pipeline reports the exit status of
+`tee`, so a failed gate would read as success to a caller that checks the
+pipeline. All seven gates appear, including `spelling`, which
+`markdownlint` also runs as a dependency but which is a required gate in its
+own right.
+
 ```bash
-make check-fmt | tee /tmp/check-fmt-lading-$(git branch --show-current).out
-make typecheck | tee /tmp/typecheck-lading-$(git branch --show-current).out
-make lint      | tee /tmp/lint-lading-$(git branch --show-current).out
-make test      | tee /tmp/test-lading-$(git branch --show-current).out
+set -o pipefail
+make check-fmt    | tee /tmp/check-fmt-lading-$(git branch --show-current).out
+make typecheck    | tee /tmp/typecheck-lading-$(git branch --show-current).out
+make lint         | tee /tmp/lint-lading-$(git branch --show-current).out
+make test         | tee /tmp/test-lading-$(git branch --show-current).out
+make spelling     | tee /tmp/spelling-lading-$(git branch --show-current).out
 make markdownlint | tee /tmp/markdownlint-lading-$(git branch --show-current).out
-make nixie     | tee /tmp/nixie-lading-$(git branch --show-current).out
+make nixie        | tee /tmp/nixie-lading-$(git branch --show-current).out
 ```
 
 ### Distribution smoke (EP-M3)

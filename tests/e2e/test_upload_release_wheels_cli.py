@@ -207,10 +207,23 @@ def test_a_missing_directory_is_reported_as_such(tmp_path: Path, stub: GhStub) -
 def test_the_tag_is_required(
     tmp_path: Path, stub: GhStub, arguments: tuple[str, ...]
 ) -> None:
-    """Without a tag the script refuses rather than guessing one."""
+    """Without a tag the script refuses rather than guessing one.
+
+    The asserted text is Cyclopts's own missing-argument diagnostic, so the
+    test cannot pass on an unrelated failure -- a missing ``dist`` directory,
+    for instance. Cyclopts writes that diagnostic to stdout while still
+    exiting non-zero, which is why the assertion is not made on stderr. The
+    environment builder also strips ``GITHUB_REF_NAME``, so the check means
+    the same thing under CI as it does locally; before that, a CI run
+    inherited the branch name as its tag and only failed for some other
+    reason.
+    """
     result = _run(stub, *arguments)
 
     assert result.returncode != 0, "a missing tag must not upload anything"
+    assert "requires an argument" in result.stdout, result.stdout
+    assert "--tag" in result.stdout, result.stdout
+    assert stub.calls() == (), "gh must not be invoked without a tag"
 
 
 def _outcome_line(stderr: str) -> dict[str, object]:

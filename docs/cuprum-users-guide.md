@@ -31,7 +31,7 @@ Cuprum requires Python 3.12 or newer. Install it with pip:
 <!-- shell-example: install-pip -->
 
 ```shell
-python -m pip install cuprum
+python -m pip install cuprum==0.2.0b1
 ```
 
 Or add it to a uv project:
@@ -39,7 +39,7 @@ Or add it to a uv project:
 <!-- shell-example: install-uv -->
 
 ```shell
-uv add cuprum
+uv add cuprum==0.2.0b1
 ```
 
 The pure Python installation has no runtime dependencies. On glibc-based Linux,

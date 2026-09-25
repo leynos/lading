@@ -59,6 +59,18 @@ _UV_VARIABLES = (
     "VIRTUAL_ENV",
 )
 
+#: Variables GitHub Actions sets for every step. The uploader reads the tag from
+#: ``GITHUB_REF_NAME`` and appends its outcome summary to the file named by
+#: ``GITHUB_OUTPUT``, so inheriting them would let a CI run tag an upload with
+#: the branch name, let the missing-tag test pass for an unrelated reason, and
+#: write ``outcome=`` lines into the real step output. A caller that wants any
+#: of them passes it through ``extra``, which is applied afterwards.
+_ACTIONS_STEP_VARIABLES = (
+    "GITHUB_REF_NAME",
+    "GITHUB_OUTPUT",
+    "GITHUB_STEP_SUMMARY",
+)
+
 _STUB_SOURCE = """#!{python}
 import json
 import os
@@ -202,7 +214,9 @@ def isolated_environment(
     stub : GhStub
         The stub whose directory goes first on ``PATH``.
     extra : cabc.Mapping[str, str] | None
-        Further variables to set, applied last.
+        Further variables to set, applied last. Credentials, the uv project
+        variables, and the Actions step variables are removed before this
+        mapping is applied, so a caller can put any of them back deliberately.
 
     Returns
     -------
@@ -218,7 +232,9 @@ def isolated_environment(
     """
     environment = dict(os.environ)
     environment["PATH"] = f"{stub.bin_directory}{os.pathsep}{environment['PATH']}"
-    for variable in _CREDENTIAL_VARIABLES + _UV_VARIABLES:
+    for variable in (
+        _CREDENTIAL_VARIABLES + _UV_VARIABLES + _ACTIONS_STEP_VARIABLES
+    ):
         environment.pop(variable, None)
     environment["GH_CONFIG_DIR"] = str(_empty_config_directory(stub))
     environment["GH_HOST"] = "stub.invalid"

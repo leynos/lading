@@ -991,10 +991,11 @@ test, and manual bumps -- is
   version; `tests/workflow_contracts/test_cuprum_selection.py` reads the
   expected version from `pyproject.toml` and fails if any site disagrees, so a
   bump moves them together or fails.
-- The same test checks that each lock is fresh, reading the committed blobs
-  rather than the working tree: `make build` and the standalone BDD scenario
-  both re-lock silently before the suite runs, so a tree-reading check cannot
-  fail.
+- The same test checks that each lock is fresh, reading the Git index rather
+  than the working tree: `make build` and the standalone BDD scenario both
+  re-lock silently before the suite runs, so a tree-reading check cannot fail.
+  Staging the lockfiles is therefore enough to verify them; a commit is not
+  required first.
 - All call sites moved to the beta forms in the same commit as the pin. No
   compatibility shim accepts both call forms, and no re-export alias remains.
 - Above the catalogue, the beta's API is otherwise unchanged: `Program`,

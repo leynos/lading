@@ -20,6 +20,7 @@ from pathlib import Path
 import pytest
 from pytest_bdd import given, scenario, then, when
 
+from tests.helpers.cuprum_pin import declared_pin
 from tests.helpers.gh_stub import (
     SENTINEL_VARIABLE,
     STUB_TAG,
@@ -28,7 +29,6 @@ from tests.helpers.gh_stub import (
     isolated_environment,
     run_uploader,
 )
-from tests.workflow_contracts.test_cuprum_selection import _declared_pin
 
 if typ.TYPE_CHECKING:
     import subprocess
@@ -228,7 +228,7 @@ def then_the_environment_holds_the_pin(gh_stub: GhStub) -> None:
     interpreter: those are different environments, and only the child's
     answers the question the release workflow asks.
     """
-    expected = _declared_pin(PYPROJECT.read_text(encoding="utf-8"))
+    expected = declared_pin(PYPROJECT.read_text(encoding="utf-8"))
     calls = gh_stub.calls()
     assert calls, "the uploader never reached gh, so no environment was recorded"
     virtual_env = calls[0].virtual_env

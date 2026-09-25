@@ -12,9 +12,9 @@ The alignment test reads the expected version from ``pyproject.toml`` and
 contains no version literal of its own, so a bump moves every site together or
 fails. The freshness tests cover the half a version comparison cannot prove:
 a lock can name the right version and still be stale, so its recorded
-requirement is checked too. They read the committed blobs rather than the
-working tree, because ``make build`` and the standalone BDD scenario both
-re-lock silently before the suite runs; see the note above them.
+requirement is checked too. They read the Git index rather than the working
+tree, because ``make build`` and the standalone BDD scenario both re-lock
+silently before the suite runs; see the note above them.
 """
 
 from __future__ import annotations
@@ -30,6 +30,14 @@ from pathlib import Path
 
 import pytest
 
+from tests.helpers.cuprum_pin import (
+    CUP,
+    SelectionError,
+    declared_pin,
+    names_cuprum,
+    pin_from,
+)
+
 #: The lock commands are resolved to a full path rather than left to ``PATH``
 #: lookup at exec time.
 UV_BINARY = shutil.which("uv") or "uv"
@@ -38,7 +46,7 @@ GIT_BINARY = shutil.which("git") or "git"
 #: The two committed-state freshness checks both need the index, and both are
 #: skipped for the same reason when it is absent.
 _NO_GIT_CHECKOUT = (
-    "no Git checkout to read committed blobs from (for example in mutmut's sandbox)"
+    "no Git checkout to read indexed files from (for example in mutmut's sandbox)"
 )
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -49,123 +57,11 @@ SCRIPT_LOCKFILE = REPOSITORY_ROOT / "scripts" / "upload_release_wheels.py.lock"
 
 pytestmark = pytest.mark.timeout(60)
 
-#: The leading distribution name of a requirement string, before whichever
-#: specifier or separator follows it. Matching the name this way (rather than
-#: splitting on ``==``) keeps a requirement that is a range -- the exact defect
-#: the alignment test looks for -- from being read as "cuprum is not named".
-_NAME_PATTERN = re.compile(r"^(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*)")
-
-#: A requirement that pins one exact version of ``cuprum`` and nothing more.
-#: Extras or a version range or an environment marker would each let the two
-#: paths select different artefacts, which is the drift this test exists for.
-PIN_PATTERN = re.compile(r"^cuprum==(?P<version>[^\s,;\[\]]+)$")
-
 #: PEP 723's block delimiter. The reference implementation's single regular
 #: expression is greedy across adjacent blocks, so the blocks are paired by
 #: scanning for the delimiters instead; a script with two blocks must report
 #: two, not one merged and unparseable block.
 _METADATA_DELIMITER = re.compile(r"(?m)^# /// ?(?P<type>[a-zA-Z0-9-]*)$")
-
-
-class SelectionError(AssertionError):
-    """A requirement site does not name the expected cuprum version.
-
-    It is an assertion rather than a distinct failure type because every cause
-    is a defect in the repository's own configuration; the message names the
-    site so the fix is obvious.
-    """
-
-
-def _declared_pin(pyproject_text: str) -> str:
-    """Return the exact cuprum version ``pyproject.toml`` declares.
-
-    Parameters
-    ----------
-    pyproject_text : str
-        The parsed text of ``pyproject.toml``.
-
-    Returns
-    -------
-    str
-        The version the repository's own requirement pins.
-
-    Raises
-    ------
-    SelectionError
-        If the requirement is missing, or is not a single exact pin.
-    """  # ruff: ignore[docstring-extraneous-exception]  # raised by the delegated _pin_from
-    document = tomllib.loads(pyproject_text)
-    requirements = document["project"]["dependencies"]
-    return _pin_from(requirements, site="pyproject.toml [project] dependencies")
-
-
-def _pin_from(requirements: cabc.Sequence[str], *, site: str) -> str:
-    """Return the version pinned by the one cuprum requirement in ``requirements``.
-
-    Parameters
-    ----------
-    requirements : cabc.Sequence[str]
-        Requirement strings from one site.
-    site : str
-        Human-readable name of the site, used in failure messages.
-
-    Returns
-    -------
-    str
-        The pinned version.
-
-    Raises
-    ------
-    SelectionError
-        If the site holds no cuprum requirement, holds more than one, or holds
-        one that is not a single exact pin.
-    """
-    candidates = [item for item in requirements if _names_cuprum(item)]
-    if len(candidates) != 1:
-        message = f"{site} must name cuprum exactly once, found {candidates}"
-        raise SelectionError(message)
-    match = PIN_PATTERN.fullmatch(candidates[0].replace(" ", ""))
-    if match is None:
-        message = (
-            f"{site} must pin cuprum exactly as 'cuprum==<version>' with no "
-            f"extras, range, or marker, found {candidates[0]!r}"
-        )
-        raise SelectionError(message)
-    return match.group("version")
-
-
-#: The distribution name the sites below all constrain. Only case varies among
-#: the spellings that normalise to this: ``Cuprum`` and ``CUPRUM`` are this
-#: name, while ``cup-rum`` is a different one.
-CUP = "cuprum"
-
-
-def _names_cuprum(requirement: str) -> bool:
-    """Whether ``requirement`` constrains the cuprum distribution.
-
-    The name is normalised as PEP 503 specifies -- runs of ``-``, ``_``, and
-    ``.`` collapse to a single ``-``, then the result is lowercased -- so this
-    agrees with the index about which spellings denote the same project. For
-    this target only the case-insensitivity is reachable, because ``cuprum``
-    holds no separator for the collapse rule to act on, and a spelling that
-    introduces one normalises to ``cup-rum``, which is a different project.
-    ``test_the_name_matcher_agrees_with_pep_503_on_what_is_cuprum`` pins both
-    halves of that.
-
-    Parameters
-    ----------
-    requirement : str
-        One requirement string from a site.
-
-    Returns
-    -------
-    bool
-        Whether the requirement's distribution name normalises to ``cuprum``.
-    """
-    match = _NAME_PATTERN.match(requirement.strip())
-    if match is None:
-        return False
-    return re.sub(r"[-_.]+", "-", match.group("name")).lower() == CUP
 
 
 def _lock_pin(lock_text: str, *, site: str) -> str:
@@ -263,7 +159,7 @@ def _lock_specifier(lock_text: str, *, site: str, origin: LockOrigin) -> str:
             f"{site} must record exactly one cuprum requirement, found {specifiers}"
         )
         raise SelectionError(message)
-    return _pin_from([f"{CUP}{specifiers[0]}"], site=f"{site} requirement")
+    return pin_from([f"{CUP}{specifiers[0]}"], site=f"{site} requirement")
 
 
 def _metadata_blocks(script_text: str) -> list[str]:
@@ -344,9 +240,9 @@ def test_every_site_declares_the_same_exact_cuprum_pin() -> None:
     edits four sites out of five fails, and the message names the one that
     lagged.
     """
-    expected = _declared_pin(PYPROJECT.read_text(encoding="utf-8"))
+    expected = declared_pin(PYPROJECT.read_text(encoding="utf-8"))
 
-    script = _pin_from(
+    script = pin_from(
         _script_requirements(UPLOAD_SCRIPT.read_text(encoding="utf-8")),
         site="scripts/upload_release_wheels.py PEP 723 block",
     )
@@ -398,10 +294,10 @@ def _pyproject_with(dependency: str) -> str:
 
 def test_a_metadata_block_pinning_another_version_is_reported() -> None:
     """The script's own pin is compared, not merely parsed."""
-    other = _declared_pin(_pyproject_with("cuprum==0.1.0"))
+    other = declared_pin(_pyproject_with("cuprum==0.1.0"))
 
     assert other == "0.1.0", f"the pin was mis-parsed as {other!r}"
-    assert other != _declared_pin(_pyproject_with("cuprum==0.2.0b1")), (
+    assert other != declared_pin(_pyproject_with("cuprum==0.2.0b1")), (
         "two different pins must not compare equal"
     )
 
@@ -416,7 +312,7 @@ def test_a_requirement_that_is_not_an_exact_pin_is_reported(requirement: str) ->
     text = _pyproject_with(requirement)
 
     with pytest.raises(SelectionError):
-        _declared_pin(text)
+        declared_pin(text)
 
 
 def test_a_requirement_with_a_marker_is_reported() -> None:
@@ -424,7 +320,7 @@ def test_a_requirement_with_a_marker_is_reported() -> None:
     text = _pyproject_with('cuprum==0.2.0b1; python_version >= "3.13"')
 
     with pytest.raises(SelectionError):
-        _declared_pin(text)
+        declared_pin(text)
 
 
 def test_a_script_without_a_metadata_block_is_reported() -> None:
@@ -469,11 +365,11 @@ def test_the_name_matcher_agrees_with_pep_503_on_what_is_cuprum() -> None:
     requirement ``cup-rum`` genuinely selects another distribution and must
     not be counted as a cuprum site here.
     """
-    assert _names_cuprum("Cuprum==0.2.0b1"), "the name is case-insensitive"
-    assert _names_cuprum("CUPRUM==0.2.0b1"), "upper case must still match"
+    assert names_cuprum("Cuprum==0.2.0b1"), "the name is case-insensitive"
+    assert names_cuprum("CUPRUM==0.2.0b1"), "upper case must still match"
 
     for spelling in ("cup_rum", "cup.rum", "cup--rum", "cup-rum"):
-        assert not _names_cuprum(f"{spelling}==0.2.0b1"), (
+        assert not names_cuprum(f"{spelling}==0.2.0b1"), (
             f"{spelling!r} normalises to 'cup-rum', which is not cuprum"
         )
 

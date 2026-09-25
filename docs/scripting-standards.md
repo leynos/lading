@@ -285,8 +285,12 @@ CARGO = Program("cargo")
 
 with scoped(catalogue=CATALOGUE):
     cargo = sh.make(CARGO, catalogue=CATALOGUE)
-    # Builds: cargo build --release=True --target=x86_64-unknown-linux-gnu
-    result = cargo("build", release=True, target="x86_64-unknown-linux-gnu").run_sync()
+    # Correct: a boolean flag goes in as a bare positional.
+    result = cargo("build", "--release", target="x86_64-unknown-linux-gnu").run_sync()
+
+    # Counter-example, not runnable: the keyword form builds `--release=True`,
+    # which cargo rejects.
+    # cargo("build", release=True, target="x86_64-unknown-linux-gnu").run_sync()
 ```
 
 Pass a boolean flag as a bare positional (`cargo("build", "--release")`) when
@@ -621,10 +625,10 @@ existing error handling logic.
 6. Non‑raising execution: replace `.run(retcode=None)` patterns with
    `run_sync()` and check `result.exit_code` explicitly. Note that this is now
    the default behaviour, not a special case.
-7. Working directory: replace `with local.cwd(path):` context manager with
-   `cwd=path` parameter on the command.
-8. Environment: replace `with local.env(VAR=value):` with `env={"VAR": value}`
-   parameter on the command.
+7. Working directory: replace the `with local.cwd(path):` context manager with
+   `run_sync(context=ExecutionContext(cwd=path))`.
+8. Environment: replace `with local.env(VAR=value):` with
+   `run_sync(context=ExecutionContext(env={"VAR": value}))`.
 9. Pipelines: the `|` operator works identically; ensure both commands are
    constructed via `sh.make()`.
 10. Error handling: replace `CommandNotFound` with cuprum's
