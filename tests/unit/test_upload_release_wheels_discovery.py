@@ -10,14 +10,15 @@ from __future__ import annotations
 
 import os
 import string
+import tempfile
 import typing as typ
 from pathlib import Path
 
 import pytest
-from hypothesis import given, settings
+from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
-from tests.helpers.script_imports import SCRIPT_DIRECTORY, import_script_module
+from tests.helpers.script_imports import import_script_module
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
     import types
@@ -154,23 +155,31 @@ def test_an_unreadable_artefact_path_is_not_reported_as_absent(
     ),
     suffixes=st.lists(st.sampled_from([".whl", ".txt", ".tar.gz"]), max_size=6),
 )
-@settings(max_examples=40, deadline=None)
+@settings(
+    max_examples=40,
+    deadline=None,
+    # The module is stateless, so re-importing it per example changes nothing.
+    # The fixture is suppressed rather than hoisted to module scope, because a
+    # module-scoped import would leak the scripts directory onto ``sys.path``
+    # for the whole session -- which is the leak this test no longer creates.
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
 def test_discovery_returns_exactly_the_wheels(
-    names: list[list[str]], suffixes: list[str]
+    upload_module: types.ModuleType,
+    names: list[list[str]],
+    suffixes: list[str],
 ) -> None:
     """Every wheel is found, nothing else is, and the order is by path.
 
     The layout the download action produces is not fixed, so the property is
     stated over arbitrary nesting rather than the one tree an example can show.
+
+    The import goes through the module's own fixture rather than prepending to
+    ``sys.path`` here, so the scripts directory is not left on the path after
+    the run. The temporary directory stays per-example: Hypothesis reuses
+    ``tmp_path`` across examples, so a shared tree would let one example's
+    wheels be discovered by the next.
     """
-    import importlib
-    import sys
-    import tempfile
-
-    if str(SCRIPT_DIRECTORY) not in sys.path:
-        sys.path.insert(0, str(SCRIPT_DIRECTORY))
-    module = importlib.import_module("release_wheel_upload")
-
     with tempfile.TemporaryDirectory() as raw_root:
         root = Path(raw_root)
         expected: list[Path] = []
@@ -184,7 +193,7 @@ def test_discovery_returns_exactly_the_wheels(
             if suffix == ".whl":
                 expected.append(path)
 
-        found = module.discover_wheels(root)
+        found = upload_module.discover_wheels(root)
 
     assert found == tuple(sorted(expected)), (
         f"expected exactly the wheels in path order: {found} != {sorted(expected)}"

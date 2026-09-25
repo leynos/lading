@@ -61,5 +61,7 @@ def test_the_catalogue_admits_gh_alone(release_gh: types.ModuleType) -> None:
     catalogue that admitted another programme would let a defect in the
     uploader run it with the release token in its environment.
     """
-    assert str(release_gh.GH) == "gh"
-    assert set(release_gh.RELEASE_CATALOGUE.allowlist) == {release_gh.GH}
+    allowlist = release_gh.RELEASE_CATALOGUE.allowlist
+
+    assert str(release_gh.GH) == "gh", f"the programme is {release_gh.GH}"
+    assert set(allowlist) == {release_gh.GH}, f"the catalogue admits {allowlist}"

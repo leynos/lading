@@ -262,11 +262,10 @@ def test_a_signalled_child_reports_a_negative_status(
     """
     (tmp_path / "bin").mkdir()
     _install_driver(tmp_path / "bin" / "gh", _SIGNALLED_DRIVER)
-    payload = tmp_path / "payload"
-    payload.mkdir()
-    (payload / "stdout").write_bytes(b"")
-    (payload / "stderr").write_bytes(b"")
-    (payload / "status").write_text("0", encoding="ascii")
+    # The slot directory only: ``_drive`` writes the three payload files itself,
+    # and this driver ignores them. Creating the directory is still needed,
+    # because ``_drive`` does not.
+    (tmp_path / "payload").mkdir()
 
     outcome = _drive(tmp_path, release_gh, stdout=b"", stderr=b"", status=0)
 

@@ -45,6 +45,11 @@ PYPROJECT = Path(__file__).resolve().parents[3] / "pyproject.toml"
 _WHEEL_NAME = "lading-0.0.0-py3-none-any.whl"
 _RELEASE_PREFIX = ("release", "upload", STUB_TAG)
 
+#: The value the ``Given`` plants in the parent for the child to inherit. It is
+#: named once so the ``Given`` and the ``Then`` cannot drift apart, and it is
+#: never passed to the environment builder -- see ``gh_stub``.
+_INHERITED_SENTINEL = "the-child-inherited-the-environment"
+
 
 def _error_line(stderr: str) -> str:
     """Return the uploader's own ``Error:`` line from ``stderr``.
@@ -152,14 +157,17 @@ def given_a_rejecting_stub(tmp_path: Path) -> GhStub:
     'the parent environment holds a GH_TOKEN and the sentinel "LADING_STUB_SENTINEL"'
 )
 def given_the_parent_holds_a_token(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Put a credential in the parent, for the child to fail to inherit.
+    """Put a credential and a sentinel in the parent, for the child to inherit one.
 
-    The token is set here rather than assumed absent so the assertion is
-    meaningful: a run that inherited everything would carry it through, and a
-    helper that merely never set one would look identical.
+    Both are set here rather than handed to the helper. The token proves
+    removal and the sentinel proves inheritance, so the pair distinguishes a
+    helper that strips everything from one that strips only the credentials.
+    Neither value reaches the environment builder as an argument, so both
+    assertions can fail: a helper that wrote the sentinel itself would make
+    "the child saw it" unfalsifiable.
     """
     monkeypatch.setenv("GH_TOKEN", "ghp_this_must_not_reach_the_child")
-    monkeypatch.setenv(SENTINEL_VARIABLE, "the-child-inherited-the-environment")
+    monkeypatch.setenv(SENTINEL_VARIABLE, _INHERITED_SENTINEL)
 
 
 @when(
@@ -176,11 +184,7 @@ def when_the_uploader_runs(
     subprocess.CompletedProcess[str]
         The completed run.
     """
-    environment = isolated_environment(
-        gh_stub,
-        sentinel="the-child-inherited-the-environment",
-        extra={"GITHUB_REF_NAME": STUB_TAG},
-    )
+    environment = isolated_environment(gh_stub, extra={"GITHUB_REF_NAME": STUB_TAG})
     return run_uploader(
         "standalone", environment, "--directory", str(tmp_path / "dist")
     )
@@ -258,7 +262,7 @@ def then_gh_saw_the_sentinel(gh_stub: GhStub) -> None:
     calls = gh_stub.calls()
     assert calls, "the uploader never reached gh"
     sentinel = calls[0].sentinel
-    assert sentinel == "the-child-inherited-the-environment", (
+    assert sentinel == _INHERITED_SENTINEL, (
         f"the child did not inherit the environment: saw {sentinel!r}"
     )
 

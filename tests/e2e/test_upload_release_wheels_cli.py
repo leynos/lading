@@ -58,7 +58,7 @@ def _run(
 
     Returns
     -------
-    object
+    subprocess.CompletedProcess[str]
         The completed run.
     """
     child = isolated_environment(stub, extra=environment or {})

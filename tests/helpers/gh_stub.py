@@ -34,10 +34,11 @@ UPLOAD_SCRIPT = REPOSITORY_ROOT / "scripts" / "upload_release_wheels.py"
 #: reached by mistake would still have nothing to modify.
 STUB_TAG = "v0.0.0-stub"
 
-#: The variable a test sets in the parent to prove the child inherited the
+#: The variable a test sets in the **parent** to prove the child inherited the
 #: environment. Production needs that inheritance for ``GITHUB_TOKEN``, so a
 #: run that dropped the environment would fail the release for the wrong
-#: reason.
+#: reason. Set it with ``monkeypatch.setenv`` before building the environment;
+#: the helper must not set it, or the assertion it feeds could not fail.
 SENTINEL_VARIABLE = "LADING_STUB_SENTINEL"
 
 #: How long the uploader child process may run before the test fails. The
@@ -185,18 +186,21 @@ def install_gh_stub(
 def isolated_environment(
     stub: GhStub,
     *,
-    sentinel: str | None = None,
     extra: cabc.Mapping[str, str] | None = None,
 ) -> dict[str, str]:
     """Return a child environment in which ``gh`` can only be the stub.
+
+    The environment is the parent's, minus the credentials and the uv project
+    variables named above. ``LADING_STUB_SENTINEL`` is deliberately *not* a
+    parameter: a helper that set the sentinel itself would let a test assert a
+    value the helper had just written, which proves nothing. A test that wants
+    to show inheritance sets it in the parent with ``monkeypatch.setenv`` and
+    then asserts the child saw it, so the assertion can fail.
 
     Parameters
     ----------
     stub : GhStub
         The stub whose directory goes first on ``PATH``.
-    sentinel : str | None
-        Value to set for ``LADING_STUB_SENTINEL``, proving inheritance. Omit
-        to leave the variable unset.
     extra : cabc.Mapping[str, str] | None
         Further variables to set, applied last.
 
@@ -216,8 +220,6 @@ def isolated_environment(
     environment["PATH"] = f"{stub.bin_directory}{os.pathsep}{environment['PATH']}"
     for variable in _CREDENTIAL_VARIABLES + _UV_VARIABLES:
         environment.pop(variable, None)
-    if sentinel is not None:
-        environment[SENTINEL_VARIABLE] = sentinel
     environment["GH_CONFIG_DIR"] = str(_empty_config_directory(stub))
     environment["GH_HOST"] = "stub.invalid"
     environment["GH_PROMPT_DISABLED"] = "1"

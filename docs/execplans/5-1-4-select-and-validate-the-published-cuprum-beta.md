@@ -257,6 +257,23 @@ in `Decision log`, and escalate.
     df12 and pylint-pypy both 10.00/10), `test` (1193 passed, 30 skipped,
     3 xfailed, 0 xpass, 0 failed), `markdownlint`, `nixie` (which validated
     real diagrams this run), and `spelling`.
+- [x] (2026-09-25) EP-M1 CodeRabbit review completed
+  (`coderabbit review --agent --base-commit a527e22`), **not** rate-limited.
+  Ten findings, three of them duplicates and two of those mutually
+  contradictory, so seven are unique. All seven were verified against the code
+  and all seven were real; none was spurious. They are recorded in
+  `Decision log`, "EP-M1 review dispositions", with the fix or the reason for
+  skipping.
+  - The finding that mattered: the O3 sentinel could not fail. The helper wrote
+    the value and the test asserted it back, so the scenario would have passed
+    against an uploader that dropped the entire environment. Proven by
+    reproducing both helpers: the old one and a from-scratch "no inheritance"
+    regression both report the sentinel as inherited. Inheriting is a required
+    security property, so this was a false assurance on a load-bearing test.
+  - `sentinel=` was removed from `isolated_environment` outright rather than
+    left optional: a parameter that makes an assertion unfalsifiable should not
+    exist for a later test to reach for. Tests now plant the value in the
+    parent with `monkeypatch.setenv`.
 - [ ] EP-M2: beta selected and locked on both paths; callers migrated; markers
   removed; all gates green; seeded mutations observed.
 - [ ] EP-M3: distribution evidence recorded; documentation, ADR, and roadmap
@@ -510,7 +527,7 @@ in `Decision log`, and escalate.
     appear. In this repository `tests/unit` reports 781 `C9102` findings when
     named directly and none when reached through `tests`.
   - Impact: pre-existing and repo-wide, not introduced here. It means the
-    dif12 tier is silent on the largest test directory, so its `C9102`,
+    df12 tier is silent on the largest test directory, so its `C9102`,
     `R9108`/`R9109` (snapshot-assertion) and `R9111` (dataclass slots) rules
     are unenforced there. This task fixes its own files to the standard the
     tier intends -- `tests/unit/test_gh_stub_helper.py` and
@@ -743,6 +760,65 @@ viability, "Approve with changes". Every blocking finding is addressed:
     statuses, and the property's cost is about 0.25 s.
   - A cyclopts major-version cap was not adopted; D4 supersedes it.
   - Pinning uv in `release.yml` was deferred (see `Risks`).
+
+### EP-M1 review dispositions
+
+`coderabbit review --agent --base-commit a527e22` ran on 2026-09-25 after the
+EP-M1 gates were green, and was **not** rate-limited. It reported ten findings;
+three are duplicates of others, and two of those duplicate *pairs* contradict
+each other, so seven are unique. All seven were checked against the code and
+all seven were real. The three that duplicate a pair are resolved by the more
+precise variant, named below.
+
+- **The O3 sentinel test could not fail. Fixed.** The helper took a `sentinel`
+  argument and wrote it into the child environment; the test then asserted the
+  child saw that value. The only reachable outcome was agreement, so a run that
+  dropped the entire environment would still have passed. Demonstrated by
+  reproducing both the old helper and a from-scratch "no inheritance"
+  regression: both report the sentinel as inherited. `sentinel=` is now gone
+  from `isolated_environment` rather than made optional, because the parameter
+  is what made the assertion unfalsifiable; tests plant the value in the parent
+  with `monkeypatch.setenv`. Verified by mutation: drop the sentinel in the
+  helper and both the unit test and the BDD scenario fail.
+- **The guard test's decoy was not executable. Fixed before the review.** This
+  was found by inspection, not by CodeRabbit; it is listed here because it is
+  the same defect class. See `Surprises & discoveries`.
+- **`test_the_project_variables_are_stripped` tested the machine, not the
+  code.** Same class again: this host leaves `UV_PROJECT`,
+  `UV_PROJECT_ENVIRONMENT`, and `UV_WORKING_DIRECTORY` unset, so an absence
+  check against the ambient environment passed whether or not the helper
+  stripped anything. Fixed by planting all four variables (including
+  `VIRTUAL_ENV`) in the parent first, then asserting absence.
+- **`_names_cuprum` used the wrong normalization.** It lowercased and replaced
+  `_` with `-`, which is not PEP 503: that rule collapses *runs* of `-`, `_`,
+  and `.` to a single `-`. A site spelling the name `cup.rum` or `cup--rum`
+  would have read as a different distribution while the index treats it as this
+  one. Fixed with `re.sub(r"[-_.]+", "-", name).lower()`.
+- **`_drive` redundancy in the signalled-driver test.** Two variants arrived;
+  the more precise one is correct, and the code confirms it: `_drive` writes
+  the three payload files but never calls `mkdir`, so `payload.mkdir()` must
+  stay and only the three file writes are redundant. Fixed accordingly, with a
+  comment recording why the `mkdir` remains.
+- **The discovery property leaked `sys.path`.** It prepended the scripts
+  directory and never restored it, and re-implemented the import the module's
+  own `upload_module` fixture already does correctly through
+  `monkeypatch.syspath_prepend`. Fixed by taking the fixture; `tempfile` moved
+  to module scope and the function-scoped-fixture health check is suppressed
+  with the reasoning recorded, matching the precedent in
+  `test_release_gh_properties.py`. The per-example `TemporaryDirectory` stays:
+  Hypothesis reuses `tmp_path`, so a shared tree would let one example discover
+  the next example's wheels.
+- **`_run`'s documented return type was wrong.** It said `object`; the
+  annotation is `subprocess.CompletedProcess[str]`. Fixed.
+- **Two assertions in `test_the_catalogue_admits_gh_alone` lacked failure
+  messages**, which is the `C9102` standard the rest of the branch was brought
+  to. Fixed; the second message names the programmes actually admitted.
+- **A `dif12` typo in this ExecPlan** at the df12-tier Surprises entry. Fixed.
+
+No finding was skipped, and none was found spurious. That the review surfaced
+three instances of one defect class -- an assertion that could not fail -- is
+the strongest argument for keeping the review step: none of the seven was
+reachable by any deterministic gate, because every one of them was *green*.
 
 ## Outcomes & retrospective
 

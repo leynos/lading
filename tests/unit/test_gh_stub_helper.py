@@ -108,15 +108,24 @@ def test_the_token_is_removed_not_merely_absent(
     assert "GITHUB_TOKEN" not in environment, "GITHUB_TOKEN survived into the child"
 
 
-def test_the_sentinel_is_inherited(stub: GhStub) -> None:
+def test_the_sentinel_is_inherited(
+    stub: GhStub, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The environment is inherited, which production needs for its token.
 
     This is the other half of the token assertion: the helper strips two named
     variables and passes the rest through, rather than clearing the
     environment. A release that ran with no environment at all would fail for
     a reason unrelated to the upload.
+
+    The sentinel is set in the *parent*, not passed to the helper. A helper
+    that wrote the value itself would make the assertion unfalsifiable -- it
+    would compare the environment against the input it had just been given --
+    so the variable is planted here and merely looked for in the result.
     """
-    environment = isolated_environment(stub, sentinel="carried-through")
+    monkeypatch.setenv(SENTINEL_VARIABLE, "carried-through")
+
+    environment = isolated_environment(stub)
 
     assert environment[SENTINEL_VARIABLE] == "carried-through", (
         "the sentinel did not survive into the child environment"
@@ -153,17 +162,33 @@ def test_extra_variables_are_applied_last(stub: GhStub) -> None:
     )
 
 
-def test_the_project_variables_are_stripped(stub: GhStub) -> None:
+def test_the_project_variables_are_stripped(
+    stub: GhStub, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Uv's project variables are removed, so the standalone path is standalone.
 
     ``uv run --script`` must build the child environment from the script's own
     metadata. A leaked ``UV_PROJECT`` or ``VIRTUAL_ENV`` would point it at the
     repository instead, and the run would prove nothing about the script's
     lockfile.
+
+    Each variable is set in the parent first. This host happens to leave them
+    unset (only ``VIRTUAL_ENV`` is present, and only under ``uv run``), so an
+    absence check against the ambient environment would pass whether or not the
+    helper stripped anything -- it would be testing the machine, not the code.
     """
+    planted = {
+        "UV_PROJECT": "/planted/project",
+        "UV_PROJECT_ENVIRONMENT": "/planted/env",
+        "UV_WORKING_DIRECTORY": "/planted/cwd",
+        "VIRTUAL_ENV": "/planted/venv",
+    }
+    for variable, value in planted.items():
+        monkeypatch.setenv(variable, value)
+
     environment = isolated_environment(stub)
 
-    for variable in ("UV_PROJECT", "UV_PROJECT_ENVIRONMENT", "UV_WORKING_DIRECTORY"):
+    for variable in planted:
         assert variable not in environment, f"{variable} survived into the child"
 
 

@@ -130,9 +130,28 @@ CUP = "cuprum"
 
 
 def _names_cuprum(requirement: str) -> bool:
-    """Whether ``requirement`` constrains the cuprum distribution."""
+    """Whether ``requirement`` constrains the cuprum distribution.
+
+    The name is normalised the way PEP 503 specifies: runs of ``-``, ``_``, and
+    ``.`` each collapse to a single ``-``, then the result is lowercased. A
+    hand-rolled ``_`` substitution is not the same rule, and it would let a
+    site spelling the name ``cup.rum`` or ``cup--rum`` read as a different
+    distribution while the index treats it as this one.
+
+    Parameters
+    ----------
+    requirement : str
+        One requirement string from a site.
+
+    Returns
+    -------
+    bool
+        Whether the requirement's distribution name normalises to ``cuprum``.
+    """
     match = _NAME_PATTERN.match(requirement.strip())
-    return match is not None and match.group("name").lower().replace("_", "-") == CUP
+    if match is None:
+        return False
+    return re.sub(r"[-_.]+", "-", match.group("name")).lower() == CUP
 
 
 def _lock_pin(lock_text: str, *, site: str) -> str:
