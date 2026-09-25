@@ -408,8 +408,10 @@ in `Decision log`, and escalate.
     pins a cuprum pre-release, and cover the guard with a contract test.
     **Disposition: the finding is declined as out of scope and raised for the
     maintainer to reverse if they disagree; the wording it targets is
-    corrected.** It is the review's only `major` finding, so the decline is
-    recorded here rather than dropped silently.
+    corrected.** It is one of the EP-M3 review's two `major` findings -- the
+    other, on `docs/scripting-standards.md`'s migration steps 7 and 8, was
+    fixed in `73bd86c` -- so the decline is recorded here rather than dropped
+    silently.
     - The automation is ruled out by D8 above, recorded by the maintainer on
       2026-09-25 at `a527e22` and therefore before any implementation work:
       *"This task adds no automated enforcement, such as a release-workflow
@@ -1242,13 +1244,67 @@ tests were vacuous, which took staling the tree through the real `make` and
 something weaker than its name implies; only running the gate can show that the
 weaker claim is also unreachable.
 
+### EP-M3 review dispositions
+
+`coderabbit review --agent` ran on 2026-09-25 against the clean tree at
+`ce97066`, after the seven gates were green, **not** rate-limited, and reported
+**one finding**, rated `minor`, over a 398-second run -- the branch's first
+single-finding review. The preceding EP-M3 pass reported ten, and the counts
+are worth stating precisely because two of them are easy to conflate:
+
+That pass's ten findings were two `major`, six `minor`, and two `trivial`. The
+two `major` ones were the final-release guard, declined above, and
+`docs/scripting-standards.md`'s migration steps 7 and 8, which still advised the
+`cwd=`/`env=` builder keywords that step 5 of the same list rules out --
+advice that silently builds `--cwd=` flags instead of setting a working
+directory. The second was a genuine defect in this branch's own new prose and
+was fixed in `73bd86c`, along with six of the smaller findings.
+
+Commit `35bca01`'s message calls the final-release guard "its only `major`".
+That is wrong and is corrected here: the rendered findings list marks two. The
+decline itself is unaffected, but a reader checking that commit against the
+review would otherwise find a contradiction with no explanation. Earlier passes
+are no guide either -- the EP-M2 one reported five findings, all `minor`, and
+the EP-M1 one ten with three duplicate pairs -- so only each pass's own
+dispositions carry meaning.
+
+- **ADR-006's Status section was missing the decision summary. Fixed.** The
+  finding cited `docs/documentation-style-guide.md`, which is a real rule
+  rather than a reviewer's preference: *"For `Accepted` status, include the
+  date and a brief summary of what was decided."* The finding named line 5, the
+  bare `Accepted.`, and the date half was already satisfied -- the ADR has a
+  `## Date` section holding `2026-09-25`, as do ADRs 004 and 005.
+  - The unmet half was the summary. The Status section now reads `Accepted,
+    2026-09-25.` followed by one sentence naming the decision: `cuprum` is
+    pinned exactly, to the same version, on both dependency paths, and a
+    contract test enforces the alignment. One sentence is deliberate -- the
+    guideline says *brief*, and the Decision section already carries the
+    detail, so a longer summary would only duplicate it.
+  - ADRs 003, 004 and 005 carry the same bare `Accepted.`, so this ADR is now
+    the only one that satisfies the rule. That is a pre-existing non-conformity
+    in the other three, not a reason to leave this one wrong; it is noted here
+    because a future reader comparing the four will otherwise read the
+    difference as an accident of authorship.
+  - The rule was checked against the guide before the edit, not inferred from
+    the finding. The finding's own instruction is not directive on its own, but
+    an independently verified guideline that names this file is.
+- **This is the branch's first single-finding review, and the finding was
+  actionable on its own merits.** Unlike the `major` final-release-guard
+  finding from the preceding pass, whose disposition is recorded in the step
+  list above, this one neither pre-empts D8 nor requires machinery #286 owns:
+  it is one sentence in a file this branch authored. The date half of the
+  finding was already met by the ADR's own `## Date` section, so the edit is
+  the summary alone.
+
 ## Outcomes & retrospective
 
-Status: **EP-M3 complete, pending the closing CodeRabbit review.** EP-M0, EP-M1
-and EP-M2 are closed. Fill this section in further at each milestone and at
-completion. Before setting the status to `COMPLETE`, reconcile every discovery
-with the artefacts in `Conformance basis`: update the assessment's evidence
-boundary and design §7, and mark roadmap item 5.1.4 done.
+Status: **EP-M3 complete; the closing CodeRabbit review reported one `minor`
+finding, now fixed, and the milestone's other `major` finding -- the
+final-release guard -- is declined and raised for the maintainer.** EP-M0,
+EP-M1 and EP-M2 are closed. The completion checklist the plan set for this
+section still stands: before setting the status to `COMPLETE`, reconcile every
+discovery with the artefacts in `Conformance basis` -- update the assessment's
+evidence boundary and design §7, and mark roadmap item 5.1.4 done.
 
 **What the milestone delivered.** The published `cuprum==0.2.0b1` artefact is
 selected on both dependency paths, both locks agree with their manifests, the

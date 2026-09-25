@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted.
+Accepted, 2026-09-25. `cuprum` is pinned exactly, to the same version, on both
+dependency paths, and a contract test enforces the alignment.
 
 ## Date
 
