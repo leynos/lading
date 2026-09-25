@@ -5,7 +5,7 @@ This ExecPlan (execution plan) is a living document. The sections `Constraints`,
 `Outcomes & retrospective`, `Conformance basis`, and `Verification plan` must
 be kept up to date as work proceeds.
 
-Status: IN PROGRESS
+Status: COMPLETE
 
 Roadmap item: 5.1.4 in [the roadmap](../roadmap.md), step 5.1 "Establish the
 beta contract and dependency boundary".
@@ -524,6 +524,32 @@ in `Decision log`, and escalate.
     rather than ticked: the final-release-guard finding is declined and raised
     for the maintainer. Every other EP-M2 and EP-M3 sub-item is complete and
     the gates are green on the final commit.
+  - [x] (2026-09-25) Final gate run on the last review-driven fixes, at
+    `e08726e`, again all seven green and again run by `scrutineer` strictly
+    sequentially on a verified-clean tree: `check-fmt` (both stages, ruff `212`
+    formatted and mdtablefix `28` unchanged), `typecheck` (60 sources),
+    `lint` (all stages, pylint 10.00/10 twice, skylos clean), `test` (`1200
+    passed, 30 skipped`, 76 snapshots), `spelling` (`typos.toml`
+    byte-identical before and after), `markdownlint` (28 files, 0 errors),
+    `nixie`. HEAD and the tracked-file-set hash were unchanged across the run
+    and `git status --porcelain` was empty. Logs:
+    `/tmp/GATE-lading-5-1-4-select-and-validate-the-published-cuprum-beta-e08726e-<gate>.out`.
+    - The run specifically exercised the two modules that call the edited
+      function: the three BDD uploader scenarios and the sixteen contract
+      tests all passed.
+    - Three gate runs now stand on this branch (`9b73c08`, `367d4ea`,
+      `e08726e`), each valid for the commit it names. That is the cost of
+      fixing review findings after gating rather than before, and it is the
+      reason the plan's own habit note says to gate the commit, not the
+      change.
+  - [x] (2026-09-25) **Reconciliation complete, and the plan is closed.** The
+    three items the completion checklist named are all done and each was
+    verified rather than assumed: roadmap 5.1.4 is checked at
+    `docs/roadmap.md:331`; the assessment's evidence boundary carries a dated
+    follow-up at §1.1 naming what was validated and what remains; and the
+    design's §7.3 and its new "Implementation notes (Step 5.1.4)" record the
+    policy and its evidence. Roadmap items 5.1.5 and the phase-5 items that
+    require 5.1.4 are unblocked.
 
 ## Surprises & discoveries
 
@@ -1393,16 +1419,16 @@ cause.
 
 ## Outcomes & retrospective
 
-Status: **EP-M3 complete.** Two CodeRabbit passes closed it: one `minor`
-finding against ADR-006, fixed, and a final confirming pass whose four `minor`
-entries resolved to one real fix, two declinations of quoted text, and one
-duplicate of the already-declined release guard. The milestone's `major`
-finding -- the automated final-release guard -- remains declined and raised for
-the maintainer under D8. EP-M0, EP-M1 and EP-M2 are closed. The completion
-checklist the plan set for this section still stands: before setting the status
-to `COMPLETE`, reconcile every discovery with the artefacts in
-`Conformance basis` -- update the assessment's evidence boundary and design §7,
-and mark roadmap item 5.1.4 done.
+Status: **COMPLETE.** All four milestones are closed. Two CodeRabbit passes
+closed EP-M3: one `minor` finding against ADR-006, fixed, and a final
+confirming pass whose four `minor` entries resolved to one real fix, two
+declinations of quoted text, and one duplicate of the already-declined release
+guard. The milestone's `major` finding -- the automated final-release guard --
+remains declined and raised for the maintainer under D8; that is the one item
+this plan leaves open, and it is recorded in the step list rather than dropped.
+The completion checklist was discharged before the status changed: roadmap
+5.1.4 is checked, the assessment's §1.1 carries its dated follow-up, and the
+design's §7.3 records the policy with its implementation notes.
 
 **What the milestone delivered.** The published `cuprum==0.2.0b1` artefact is
 selected on both dependency paths, both locks agree with their manifests, the
@@ -1438,11 +1464,27 @@ states the policy as implemented. Roadmap 5.1.4 is checked.
   correctly flagged that the freshness tests' names overclaimed, but could not
   see that the weaker claim was also unreachable. That needed the gate.
 
-**Cost.** Four CodeRabbit rounds to EP-M2 closure, one design review, and one
-gate run per milestone. The docs-only Stage D diff still required the full
-seven gates, because `tests/unit/test_users_guide.py` asserts literal strings
-against `docs/users-guide.md` and the branch diff against `origin/main`
-contains real Python and dependency changes.
+**Cost.** CodeRabbit was the dominant cost. The branch's passes reported ten
+findings (EP-M1), five (EP-M2), ten again on the first EP-M3 pass, then one,
+then four, with one further attempt failing on a dropped connection before the
+last. The counts are worth recording because they do not trend monotonically to
+zero -- the first EP-M3 pass found ten, twice what the EP-M2 pass before it
+found, on a diff that had already been reviewed once. Three full gate runs
+stand at the end (`9b73c08`, `367d4ea`, `e08726e`), because review-driven fixes
+landed after gating twice. Each of the three ran all seven gates, even though
+the last two diffs were largely documentation: the branch diff against
+`origin/main` contains real Python and dependency changes, and `mdtablefix`
+reads every Markdown file regardless. The Markdown-only plan edits that
+followed the first two runs were scoped instead, to `check-fmt` plus
+`markdownlint` -- the two gates that read Markdown -- which is why the plan's
+own edit history shows a scoped pair where a full pass would otherwise sit.
+
+The reviews earned their keep on substance -- the vacuous freshness checks and
+the CI-inherited tag in the stub helper were both real defects no gate would
+have reported -- but their fixes cost two further gate runs, and one of those
+runs is what caught a formatting violation in a commit that had never been
+gated at all. Both directions of that lesson are recorded above: gate the
+commit before requesting a review, and re-gate after acting on one.
 
 ## Context and orientation
 
