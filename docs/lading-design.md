@@ -861,8 +861,11 @@ additions to, or replacements for, that arrangement:
 The rationale is bounded by §1 of the
 [beta adoption assessment](cuprum-v0-2-0-beta1-adoption-assessment.md#1-recommendation-and-scope),
 which records that only the catalogue, the pathlib conversion, and the
-source-level assessment are complete, that the migration itself is not
-implemented, and that the beta's published artefact remains unvalidated.
+source-level assessment were complete when it was written. Its §1.1 now carries
+a follow-up recording that the published beta has since been selected and
+validated on both dependency paths by step 5.1.4, which also migrated the
+release uploader. The bulk of the migration -- the production backend and every
+other caller -- remains unimplemented and belongs to 5.2.
 
 ### 7.2. Migration Scope
 
@@ -896,10 +899,15 @@ The migration covers six areas:
    `tests/integration/test_cargo_shim_cli.py`,
    `tests/integration/test_lockfile_discovery.py`, and
    `tests/workflow_contracts/test_lint_target.py`.
-6. **Release scripts**: Update the existing cuprum release uploader,
-   `scripts/release_wheel_upload.py`, whose `run_gh` still uses removed flat
-   keyword forms. Dependency-internal subprocess use and the cargo shim's
-   `os.execvp` process replacement stay outside this phase.
+6. **Release scripts**: The uploader's cuprum boundary now lives in
+   `scripts/release_gh.py`, which holds the release catalogue, the `Program` for
+   `gh`, and `run_gh`, the script's only process edge. It uses the beta forms
+   -- `scoped(catalogue=RELEASE_CATALOGUE)` and
+   `run_sync(output=RunOutputOptions(capture=True))` -- and was migrated in
+   5.1.4 alongside the pin. `scripts/release_wheel_upload.py` keeps the upload
+   logic and takes the runner as an injected `UploadRunner`, so the logic is
+   testable without a process. Dependency-internal subprocess use and the cargo
+   shim's `os.execvp` process replacement stay outside this phase.
 
 The sequencing, dependencies, and per-task success criteria for this scope are
 recorded in the roadmap's command execution modernization section, and the
@@ -933,21 +941,27 @@ _LADING_PROJECT = ProjectSettings(
 LADING_CATALOGUE = ProgramCatalogue(projects=(_LADING_PROJECT,))
 ```
 
-Command construction uses cuprum's scoped context manager with the catalogue's
-allowlist, passing the catalogue explicitly to `sh.make()`:
+Command construction uses cuprum's scoped context manager, naming the catalogue
+directly, and passes the same catalogue to `sh.make()`:
 
 ```python
-from cuprum import ScopeConfig, scoped, sh
+from cuprum import RunOutputOptions, scoped, sh
 from lading.utils.commands import CARGO, LADING_CATALOGUE
 
-with scoped(ScopeConfig(allowlist=LADING_CATALOGUE.allowlist)):
+with scoped(catalogue=LADING_CATALOGUE):
     cargo_builder = sh.make(CARGO, catalogue=LADING_CATALOGUE)
-    result = cargo_builder("metadata", "--format-version", "1").run_sync()
+    metadata = cargo_builder("metadata", "--format-version", "1")
+    result = metadata.run_sync(output=RunOutputOptions(capture=True))
 ```
 
-The flat `scoped(allowlist=...)` and `run_sync(capture=...)` forms were removed
-before 0.2.0 and raise `TypeError`; capture settings now travel in a
-`RunOutputOptions` instance passed as `output=`.
+The catalogue is what the scope needs, because every `Program` it registers is
+admissible. `ScopeConfig` remains available for the cases a catalogue cannot
+express: a narrower allowlist than the catalogue carries, scope-level hooks, a
+scope timeout, or an environment overlay.
+
+Two call forms were removed before 0.2.0 and raise `TypeError`: the flat
+`scoped(allowlist=...)` and `run_sync(capture=...)` keywords. Capture settings
+now travel in a `RunOutputOptions` instance passed as `output=`.
 
 #### Implementation Notes (Step 5.1)
 
@@ -962,6 +976,39 @@ before 0.2.0 and raise `TypeError`; capture settings now travel in a
 - Behaviour-driven development (BDD) scenarios document the expected behaviour
   for downstream consumers, including command construction within scoped
   contexts.
+
+#### Implementation notes (Step 5.1.4)
+
+Step 5.1.4 selects the published `cuprum==0.2.0b1` on both dependency paths and
+migrates the call sites that the beta broke. The selection policy -- an exact
+pin on each path, a lock per path, cross-path alignment enforced by a contract
+test, and manual bumps -- is
+[ADR-006](adr/006-align-cuprum-selection-across-dependency-paths.md).
+
+- The repository path is `pyproject.toml` plus `uv.lock`. The standalone path is
+  the PEP 723 metadata block in `scripts/upload_release_wheels.py` plus
+  `scripts/upload_release_wheels.py.lock`. Four places must name the same
+  version; `tests/workflow_contracts/test_cuprum_selection.py` reads the
+  expected version from `pyproject.toml` and fails if any site disagrees, so a
+  bump moves them together or fails.
+- The same test checks that each lock is fresh, reading the committed blobs
+  rather than the working tree: `make build` and the standalone BDD scenario
+  both re-lock silently before the suite runs, so a tree-reading check cannot
+  fail.
+- All call sites moved to the beta forms in the same commit as the pin. No
+  compatibility shim accepts both call forms, and no re-export alias remains.
+- Above the catalogue, the beta's API is otherwise unchanged: `Program`,
+  `ProjectSettings`, `ProgramCatalogue(projects=...)`, `sh.make()`,
+  `SafeCmd.argv`, and `UnknownProgramError` all behave as before.
+- No GitHub release is published by validation. Every test that runs the
+  uploader in a child process uses the stub helper in
+  `tests/helpers/gh_stub.py`, which puts the stub first on `PATH`, removes
+  `GH_TOKEN` and `GITHUB_TOKEN`, points `GH_CONFIG_DIR` at an empty directory,
+  sets `GH_HOST=stub.invalid` and `GH_PROMPT_DISABLED=1`, and uses the tag
+  `v0.0.0-stub`.
+- The migration is scoped to the pin and the released API. Rewiring the
+  production subprocess backend behind `CommandRunner` onto the catalogue stays
+  with 5.2, and the routes that still spawn directly are listed in §7.2.
 
 ### 7.4. Compatibility with cmd-mox
 
@@ -984,7 +1031,7 @@ set and `subprocess_runner` otherwise, so the execution layer routes commands
 through cmd-mox IPC rather than spawning real processes:
 
 ```python
-from cuprum import Program, ScopeConfig, sh, scoped
+from cuprum import Program, sh, scoped
 from lading.utils.commands import CARGO, GIT, LADING_CATALOGUE
 
 def _invoke(
@@ -999,11 +1046,19 @@ def _invoke(
         return _invoke_via_cmd_mox(program, args, cwd)
 
     # Production path: use cuprum's scoped catalogue
-    with scoped(ScopeConfig(allowlist=LADING_CATALOGUE.allowlist)):
+    with scoped(catalogue=LADING_CATALOGUE):
         cmd_builder = sh.make(program, catalogue=LADING_CATALOGUE)
         cmd = cmd_builder(*args)
         return cmd.run_sync()
 ```
+
+This block is a sketch of the intended 5.2 end state rather than today's code.
+`lading/cli.py` does define `_select_runner()`, but it returns a
+`CommandRunner` and knows nothing about cuprum; the `_invoke` in
+`lading/commands/publish_execution.py:47` takes an argument vector and
+delegates to the subprocess runner. The released boundary is
+`lading/runtime/subprocess_runner.py`, as §7.2 and §7.5 record, and only the
+release uploader runs through cuprum today.
 
 Test authors configure expectations via the cmd-mox fixture, and the
 `LADING_USE_CMD_MOX_STUB` environment variable controls which execution path is

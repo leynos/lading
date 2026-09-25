@@ -346,6 +346,45 @@ in `Decision log`, and escalate.
     cyclopts divergence (3.24.0 repository vs 5.0.0 standalone), and the
     contract test's path. The style guide's ADR naming rule is corrected to
     `NNN-short-description.md` under `docs/adr/`.
+  - [x] (2026-09-25) EP-M2 closed and committed as `1a5de20`, after re-running
+    all seven gates against the staged index: `check-fmt`, `typecheck`, `lint`
+    (7/7 stages, 10.00/10 twice), `test` (1200 passed, 30 skipped, no xfail,
+    no xpass), `spelling`, `markdownlint` (28 files, 0 errors -- the new ADR is
+    now in scope because it is staged), and `nixie`. The commit contains the
+    vacuity fix for both O1b freshness checks, ADR-006, the style-guide
+    correction, the `erazed` overlay entry, and the plan's own record.
+  - [x] (2026-09-25) Stage D steps 3-8: documentation updated. Design §7.2
+    item 6 now records the uploader running on the beta through
+    `scripts/release_gh.py`; §7.3's example uses `scoped(catalogue=...)` and
+    says when `ScopeConfig` is still needed; a new "Implementation notes
+    (Step 5.1.4)" subsection records the policy. §7.4's example was stale in
+    the same way and was corrected too, and now says it is a sketch of the 5.2
+    end state rather than today's code (`_select_runner` returns a
+    `CommandRunner`; the `_invoke` at
+    `lading/commands/publish_execution.py:47` has a different signature).
+    The developers' guide gains D8's release gate, the corrected uploader
+    layout, the `RunOutputOptions(capture=True)` call, the stub-helper rule,
+    and a top-level "Changing the cuprum version" section carrying D9; its
+    claim that the call sites "must be corrected as part of task 5.1.4" was
+    replaced with the measured state (they already use the beta forms). The
+    users' guide's Installation section names the beta dependency. The
+    assessment's §1.1 gains a dated follow-up that names what was validated
+    and what remains. The roadmap marks 5.1.4 done with its evidence, rewords
+    its second bullet for D2, adds `tests/helpers/gh_stub.py` to 5.3.2, and
+    corrects the phase-5 preamble's "does not certify a release artefact".
+  - [x] (2026-09-25) `docs/scripting-standards.md` was rewritten against the
+    installed beta rather than by pattern-matching. **Every example in it was
+    executable but wrong**: `Catalogue` does not exist in 0.2.0b1,
+    `sh.scoped(CATALOGUE)` passed positionally raises
+    `AttributeError: 'ProgramCatalogue' object has no attribute
+    'before_hooks'`, `Hook(before=…, after=…)` is not the observe API (a
+    plain callable receiving an `ExecEvent` is), and `cwd=`/`env=` are not
+    builder keywords at all -- they become command flags
+    (`git("tag", cwd=…)` builds `--cwd=/tmp`). Each correction was measured:
+    all six rewritten snippets were executed successfully, the cwd claim was
+    confirmed by running `git rev-parse --show-toplevel` with
+    `ExecutionContext(cwd="/tmp")` and getting exit 128 because `/tmp` is not
+    a work tree, and the phase list was read from `cuprum.events.ExecPhase`.
 
 ## Surprises & discoveries
 
@@ -584,6 +623,30 @@ in `Decision log`, and escalate.
 - **cuprum ships no `py.typed` marker in either 0.1.0 or the beta.**
   - Evidence: probe of the installed packages.
   - Impact: no change in how cuprum is type-checked (see `Risks`).
+- **Every cuprum example in `docs/scripting-standards.md` was wrong, and wrong
+  in a way no gate could catch.**
+  - Observation: the document prescribed a `Catalogue` class that does not
+    exist in `0.2.0b1`; `sh.scoped(CATALOGUE)` passed positionally, which fails
+    with `AttributeError: 'ProgramCatalogue' object has no attribute
+    'before_hooks'` because the first parameter is a `ScopeConfig`;
+    `Hook(before=…, after=…)` as the observe API, when a plain callable
+    receiving an `ExecEvent` is what `sh.observe()` takes; and `cwd=`/`env=` as
+    builder keywords, which are not special-cased at all -- keyword arguments
+    become the command's own `--flag=value` arguments, so `git("tag",
+    cwd=repo_dir)` builds `git tag --cwd=<path>` and silently runs in the
+    ambient directory.
+  - Evidence: all measured against the installed `0.2.0b1`. The `cwd` claim was
+    confirmed by running `git rev-parse --show-toplevel` under
+    `ExecutionContext(cwd="/tmp")`: exit 128, because `/tmp` is not a work tree,
+    which is only correct if the cwd was honoured.
+  - Impact: the section was rewritten from measurements, and all six snippets
+    were executed successfully afterwards. This is the second documentation set
+    found to describe a cuprum API that does not exist (the first was design
+    §7.3's `scoped(ScopeConfig(allowlist=…))`), which is why the rewrite says
+    which version it targets and notes that the old forms do not exist.
+  - Impact (for 5.4.3): the same class of error is likely in any document that
+    predates the beta. Roadmap 5.4.3 already requires the correction; this
+    finding is the reason it should be done by execution rather than reading.
 - **`tests/unit/test_upload_release_wheels.py` could not be brought under 400
   lines by the EP-M0 move alone.**
   - Observation: moving the `run_gh` test out took the file from 417 to 417
