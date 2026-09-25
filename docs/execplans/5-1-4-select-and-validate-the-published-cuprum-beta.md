@@ -246,6 +246,17 @@ in `Decision log`, and escalate.
   - `make nixie` passes for this ExecPlan **vacuously**: the file contains no
     mermaid diagrams, so the change carries no diagram regression coverage.
     Its fences are `bash`, `python`, `plaintext`, `toml`, and `gherkin`.
+- [x] (2026-09-25) Post-review inspection found the EP-M1 environment guard
+  passing for the wrong reason, and fixed it (commit `fb70195`): its decoy `gh`
+  was mode `0o644`, so `shutil.which` returned `None` and the guard tripped on
+  its missing-`gh` branch rather than the shadowing branch its docstring names.
+  The decoy is now executable and the assertion matches the full message.
+  Re-verified with a mutation: remove the `chmod` and the test fails with
+  "Actual message: … gh resolves to None". See `Surprises & discoveries`.
+  - Green at `fb70195`: `check-fmt`, `typecheck`, `lint` (all seven stages,
+    df12 and pylint-pypy both 10.00/10), `test` (1193 passed, 30 skipped,
+    3 xfailed, 0 xpass, 0 failed), `markdownlint`, `nixie` (which validated
+    real diagrams this run), and `spelling`.
 - [ ] EP-M2: beta selected and locked on both paths; callers migrated; markers
   removed; all gates green; seeded mutations observed.
 - [ ] EP-M3: distribution evidence recorded; documentation, ADR, and roadmap
@@ -348,6 +359,24 @@ in `Decision log`, and escalate.
     "Actual message: … gh resolves to None". This is the same
     distinguish-the-two-behaviours discipline the token test in that file
     already applies, applied to the guard.
+- **The EP-M2 target form works under the beta, and O5's refusal survives it.**
+  - Observation: `scoped(catalogue=cat)` accepts `sh.make(GH, catalogue=cat)`
+    and returns a `SafeCmd`, which is the whole of the migration's production
+    edit. More importantly, an unregistered programme inside that scope still
+    raises `UnknownProgramError`: enforcement does not depend on the removed
+    keyword, so O5 ("catalogue behaviour is unchanged") holds under the new
+    form rather than merely being assumed to.
+  - Evidence: probe of the published beta, 2026-09-25. `ScopeConfig` keeps its
+    `allowlist` field, so the flat form survives as
+    `scoped(ScopeConfig(allowlist=...))` -- but that is a longer spelling of the
+    same thing, and `catalogue=` is the documented target.
+  - Impact: the migration's risk is confined to mechanical keyword changes.
+    Neither removed name was load-bearing for enforcement, so O5 needs a
+    re-run against the selected beta rather than fresh investigation. This also
+    means the current 13 failures, which all die at the `scoped()` call before
+    reaching `sh.make`, are not the whole migration surface -- the two
+    `sh.make` call sites in `release_gh` and the five migrated test sites are
+    exercised for the first time only once the keyword is fixed.
 - **The beta keeps `ProgramCatalogue.allowlist` and `is_allowed`, so only the
   `scoped()` keyword moves.**
   - Observation: in the beta, `ProgramCatalogue` still exposes the `allowlist`
