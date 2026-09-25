@@ -417,15 +417,18 @@ in `Decision log`, and escalate.
       asked for it; if wanted, it belongs with #286, which reworks the release
       workflow."* Issue #286 carries the gate as its own constraint. Adding
       the guard here would pre-empt a workflow #286 is chartered to rewrite.
-    - The finding's premise is a misreading of ADR-006. Its driver line read
-      *"The constraint should be enforceable by the deterministic gates, not
-      by convention alone"*, which governs **cross-path alignment**, as the
-      adjacent decision sentence states: *"A gate that a person must remember
-      to run is not an alignment mechanism."* That alignment gate exists and
-      passes. The driver was ambiguous enough to invite the reading, so it now
-      names its subject -- "Cross-path alignment should be enforceable..." --
-      and the release-gate decision states outright that the gate is the one
-      constraint left to a person, and why.
+    - The finding's premise rests on ADR-006's driver line, *"The constraint
+      should be enforceable by the deterministic gates, not by convention
+      alone"*. The ADR is titled "Align cuprum selection across dependency
+      paths", and read in that context "the constraint" is the alignment
+      constraint of its subject: the Decision section says so directly --
+      *"A gate that a person must remember to run is not an alignment
+      mechanism"* -- and that gate exists and passes. The finding read the
+      line as covering the release gate as well, which the wording did not
+      exclude, so the clarification is recorded rather than left to
+      inference: the driver now names its subject ("Cross-path alignment
+      should be enforceable...") and the release-gate decision states outright
+      that it is the one constraint left to a person, and why.
     - The wording the finding did correctly identify as wrong was mine, not
       the maintainer's. Commit `3492b43` had justified the unautomated gate
       with "a check that fires on the wrong tag is worse than the reminder".

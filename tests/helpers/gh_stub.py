@@ -232,9 +232,7 @@ def isolated_environment(
     """
     environment = dict(os.environ)
     environment["PATH"] = f"{stub.bin_directory}{os.pathsep}{environment['PATH']}"
-    for variable in (
-        _CREDENTIAL_VARIABLES + _UV_VARIABLES + _ACTIONS_STEP_VARIABLES
-    ):
+    for variable in _CREDENTIAL_VARIABLES + _UV_VARIABLES + _ACTIONS_STEP_VARIABLES:
         environment.pop(variable, None)
     environment["GH_CONFIG_DIR"] = str(_empty_config_directory(stub))
     environment["GH_HOST"] = "stub.invalid"
