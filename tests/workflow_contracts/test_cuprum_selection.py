@@ -125,19 +125,23 @@ def _pin_from(requirements: cabc.Sequence[str], *, site: str) -> str:
     return match.group("version")
 
 
-#: The distribution name the sites below all constrain. Normalized, because
-#: PEP 503 treats ``Cuprum``, ``cuprum``, and ``cup-rum`` as one name.
+#: The distribution name the sites below all constrain. Only case varies among
+#: the spellings that normalise to this: ``Cuprum`` and ``CUPRUM`` are this
+#: name, while ``cup-rum`` is a different one.
 CUP = "cuprum"
 
 
 def _names_cuprum(requirement: str) -> bool:
     """Whether ``requirement`` constrains the cuprum distribution.
 
-    The name is normalised the way PEP 503 specifies: runs of ``-``, ``_``, and
-    ``.`` each collapse to a single ``-``, then the result is lowercased. A
-    hand-rolled ``_`` substitution is not the same rule, and it would let a
-    site spelling the name ``cup.rum`` or ``cup--rum`` read as a different
-    distribution while the index treats it as this one.
+    The name is normalised as PEP 503 specifies -- runs of ``-``, ``_``, and
+    ``.`` collapse to a single ``-``, then the result is lowercased -- so this
+    agrees with the index about which spellings denote the same project. For
+    this target only the case-insensitivity is reachable, because ``cuprum``
+    holds no separator for the collapse rule to act on, and a spelling that
+    introduces one normalises to ``cup-rum``, which is a different project.
+    ``test_the_name_matcher_agrees_with_pep_503_on_what_is_cuprum`` pins both
+    halves of that.
 
     Parameters
     ----------
@@ -444,6 +448,25 @@ def test_a_lock_with_two_cuprum_entries_is_reported() -> None:
 
     with pytest.raises(SelectionError, match="exactly one cuprum package entry"):
         _lock_pin(lock, site="a doubled lock")
+
+
+def test_the_name_matcher_agrees_with_pep_503_on_what_is_cuprum() -> None:
+    """Normalization is PEP 503's, and ``cup-rum`` is a *different* project.
+
+    Two claims live here, and the second is the one that is easy to get
+    backwards. PEP 503 collapses separator runs, so ``cup_rum``, ``cup.rum``,
+    and ``cup--rum`` are one name -- but that name is ``cup-rum``, not
+    ``cuprum``. The index does not equate them, so a site spelling the
+    requirement ``cup-rum`` genuinely selects another distribution and must
+    not be counted as a cuprum site here.
+    """
+    assert _names_cuprum("Cuprum==0.2.0b1"), "the name is case-insensitive"
+    assert _names_cuprum("CUPRUM==0.2.0b1"), "upper case must still match"
+
+    for spelling in ("cup_rum", "cup.rum", "cup--rum", "cup-rum"):
+        assert not _names_cuprum(f"{spelling}==0.2.0b1"), (
+            f"{spelling!r} normalises to 'cup-rum', which is not cuprum"
+        )
 
 
 def test_a_project_lock_entry_without_a_requirement_is_reported() -> None:

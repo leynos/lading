@@ -308,6 +308,18 @@ in `Decision log`, and escalate.
     `Surprises & discoveries`.
   - [x] (2026-09-25) Focused green command: `100 passed`, with no `xfail` and
     no `xpass`, and `rg "cuprum beta not yet selected" tests` prints nothing.
+  - [x] (2026-09-25) EP-M2 committed as `4bc006c` with all four code gates
+    green (`check-fmt`, `typecheck`, `lint` all seven stages, `test` 1199
+    passed / 30 skipped / no xfail / no xpass) plus `spelling`.
+  - [x] (2026-09-25) Seeded mutations run from patch files and recorded in
+    `Artefacts and notes`: the three O4 mutations each failed for their stated
+    reason (6, 6, and 5 tests respectively) and the O1b staleness mutation
+    failed exactly `test_the_script_lock_is_fresh`. All reversed, tree clean.
+  - [x] (2026-09-25) The EP-M1 review's scrutineer reported one residual defect
+    the review had not raised, and a caveat on review finding 5. Both verified
+    and corrected: the PEP 503 rationale was false, and the finding it
+    justified was a comment-accuracy issue whose fix changed no behaviour.
+    See `EP-M1 review dispositions`.
 - [ ] EP-M3: distribution evidence recorded; documentation, ADR, and roadmap
   updated; all gates green.
 
@@ -353,8 +365,8 @@ in `Decision log`, and escalate.
     exclusive; each is silent about the half the other records.
   - Evidence: `rg -n '^name = ' scripts/upload_release_wheels.py.lock` lists
     nine packages and no `lading`; `rg -c '^\[manifest\]' uv.lock` finds none.
-    The failure that surfaced it:
-    `SelectionError: upload_release_wheels.py.lock must contain exactly one lading package entry`.
+    The failure that surfaced it: `SelectionError:` from `_lock_specifier`,
+    whose message is "must contain exactly one lading package entry".
   - Impact: this is the defect that the strict `xfail` hid. `_lock_specifier`
     read every lock as a project lock, so it reported a **correct** script lock
     as broken. It could not fail in EP-M1, because the script lock did not yet
@@ -918,6 +930,41 @@ No finding was skipped, and none was found spurious. That the review surfaced
 three instances of one defect class -- an assertion that could not fail -- is
 the strongest argument for keeping the review step: none of the seven was
 reachable by any deterministic gate, because every one of them was *green*.
+
+**The scrutineer's own residual finding, and a correction to the above.** The
+agent that ran the review verified each finding and reported one defect the
+review had *not* raised, plus a caveat on one that it had. Both hold up under
+independent checking, and both concern `test_cuprum_selection.py`:
+
+- **The PEP 503 rationale was false.** The comment on `CUP` and the docstring
+  of `_names_cuprum` both claimed PEP 503 treats `cup-rum` as the same
+  distribution as `cuprum`. It does not: norm(`cup-rum`) is `cup-rum`, not
+  `cuprum`, so the index treats them as different projects. Measured directly:
+  `Cuprum -> cuprum`, `cup.rum -> cup-rum`, `cup--rum -> cup-rum`, and
+  `norm("cup-rum") == norm("cuprum")` is `False`.
+- **Finding 5 was a comment-accuracy issue, not a behavioural one, and the
+  fix for it changed nothing.** An exhaustive check over 299,592 candidate
+  names drawn from `cuprm-._` found **zero** disagreements between the old
+  `.lower().replace("_", "-")` and the new `re.sub(r"[-_.]+", "-", ...)` when
+  the target is `cuprum`. The two are extensionally equal *for this target*,
+  because producing `cup-rum` from `cuprum` requires introducing a separator
+  that no separator-collapsing rule removes again. The reviewer's instruction
+  ("do not treat `cup-rum` as equivalent to `cuprum`") described what the
+  original code already did, and the false sentence explaining *why* was
+  introduced by my own fix for it -- inherited verbatim from the finding.
+  - This is the second-order risk of applying a review finding without
+    re-deriving its claim: the code change was behaviour-preserving, but the
+    prose I added to justify it asserted something untrue, and no gate reads
+    prose. The correction now states the reachable truth (only
+    case-insensitivity is exercisable for this name) and is pinned by
+    `test_the_name_matcher_agrees_with_pep_503_on_what_is_cuprum`, which
+    asserts both that `Cuprum`/`CUPRUM` match and that the four separator
+    spellings do not. Mutation-checked: making the matcher strip separators
+    fails it.
+- The review's severity ratings put the unfalsifiable security assertion at
+  `minor` while rating typo-level items the same way. Severity here tracked
+  textual prominence, not consequence, which is worth remembering when triaging
+  a future pass by label.
 
 ## Outcomes & retrospective
 
@@ -1755,6 +1802,68 @@ To abandon the work, revert the milestone commits in reverse order: EP-M3, then
 EP-M2, then EP-M1, then EP-M0. Each milestone is a coherent plateau.
 
 ## Artefacts and notes
+
+The EP-M2 seeded mutations, run 2026-09-25 at `4bc006c` from patch files under
+`/tmp`, each reversed with `git apply -R` and confirmed clean afterwards. The
+O4 mutations all target `scripts/release_gh.py`; `--hypothesis-show-statistics`
+is omitted here for brevity, but each run drove the real adapter against the
+task's stub `gh`:
+
+```plaintext
+$ git apply /tmp/mutation-capture-false.patch
+$ uv run pytest -q tests/unit/test_release_gh_properties.py
+6 failed, 3 passed
+  ... CommandOutcome(exit_code=1, stdout='', stderr='')
+  ... CommandOutcome(exit_code=0, stdout='', stderr='')
+  ... CommandOutcome(exit_code=3, stdout='', stderr='')
+
+$ git apply /tmp/mutation-streams-swapped.patch
+$ uv run pytest -q tests/unit/test_release_gh_properties.py
+6 failed, 3 passed
+  ... CommandOutcome(exit_code=0, stdout='caf�...')
+
+$ git apply /tmp/mutation-exit-code-zero.patch
+$ uv run pytest -q tests/unit/test_release_gh_properties.py
+5 failed, 4 passed
+  ... test_a_signalled_child_reports_a_negative_status
+  ... CommandOutcome(exit_code=0, stdout='', stderr='')
+```
+
+All three failed for the stated reason and none for an unrelated one: the
+emptied streams, the transposed streams, and the erazed status each show up in
+the assertion text. The third mutation is the one that also breaks the SIGTERM
+example, which is the example that exists to pin a negative status.
+
+The O1b mutation, per the plan's `Non-vacuity` note: an unrelated dependency is
+added to the PEP 723 block without re-locking, and the script freshness check
+must fail. This was run last, so the working tree stayed clean until the end:
+
+```plaintext
+$ # plant "msgspec>=0.18" in the PEP 723 block, unrelocked
+$ uv run pytest -q tests/workflow_contracts/test_cuprum_selection.py
+FAILED test_the_script_lock_is_fresh
+  assert 1 == 0
+    ... CompletedProcess(args=['uv', 'lock', '--script',
+        'scripts/upload_release_wheels.py', '--check'], returncode=1)
+  AssertionError: upload_release_wheels.py.lock is stale; run 'uv lock --script ...'
+1 failed, 15 passed
+$ git checkout -- scripts/upload_release_wheels.py   # restore from the index
+16 passed
+```
+
+Exactly one test failed, and it was the script-lock check -- the project-lock
+check passed, which is right, since the project lock is unaffected by a change
+to the script's inline metadata. uv's own message is misleading here ("the
+lockfile at `uv.lock` needs to be updated" when the stale file is the script's
+lock), which is why the checker appends its own sentence naming the real file
+and the exact command to fix it.
+
+The O2 mutation -- reapplying the old flat `scoped(allowlist=...)` call form --
+is not run as a separate experiment, because its evidence is already recorded:
+the pin-only red drove the standalone path end to end and captured the
+`TypeError` from inside the child, through the standalone environment the
+script's own lockfile built. That is the same experiment with the same
+conclusion, and it is recorded above with its full traceback.
 
 The EP-M2 pin-only red, observed 2026-09-25 on a quiesced tree at `HEAD` after
 `uv sync` installed cuprum 0.2.0b1 and before any call site was migrated:
