@@ -435,8 +435,33 @@ in `Decision log`, and escalate.
       No such reasoning exists in D8 or anywhere else in the repository; it
       was invented while writing that commit. The guide now gives D8's actual
       reason -- automation belongs with #286 -- and drops the fabrication.
-    - This is a Markdown-only correction, so the seven gates are unaffected
-      beyond `markdownlint` and the Markdown half of `spelling`.
+    - This correction is Markdown-only, so it can only affect `markdownlint`
+      and the Markdown half of `spelling`. That reasoning was applied to the
+      **wrong commit**, and the gate run proved it: see the `check-fmt`
+      failure below.
+  - [x] (2026-09-25) **`check-fmt` caught an ungated commit, which is the
+    milestone's most useful failure.** The first gate run on the corrected
+    tree failed: `ruff format --check` wanted the `gh_stub.py` variable loop
+    on one line, because the three-way concatenation fits in 88 columns.
+    That line was written by `73bd86c`, the commit clearing the other eight
+    review findings -- and `73bd86c` had **never been gated**. Fixed in
+    `d392900` (whitespace only; same tuple order, same loop body) and verified
+    with `ruff format --check tests/helpers/gh_stub.py` before re-running the
+    suite.
+    - The reasoning error is worth recording, because it is a repeat of one
+      this plan already carries. The disposition above was drafted from the
+      *content* of the change ("this is Markdown-only") rather than from the
+      *state of the tree*, and it quietly assumed the commit under review was
+      the only unreviewed one. It was not: the finding-2 work sat on top of
+      eight findings' worth of ungated Python. The Milestone EP-M2 entry
+      records the same class of mistake -- an "all gates green" claim whose
+      logs predated later edits -- so the corrected habit is now stated once
+      here: **gates are run against a commit, so the question is never "did
+      this change need gating?" but "which commits are unverified?"**
+    - This is also the second time in this milestone that a review finding was
+      acted on without the gates confirming it. Deterministic checks caught
+      what reading had missed in both cases, which is the argument for running
+      them before the review rather than after.
 
 ## Surprises & discoveries
 
