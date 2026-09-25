@@ -437,9 +437,9 @@ cuprum `0.2.0` final first, using the procedure in
 [Changing the cuprum version](#changing-the-cuprum-version). Issue #286,
 adopting the cuprum release process from
 [leynos/cuprum#488](https://github.com/leynos/cuprum/pull/488), should land
-before that first final release. The gate is a maintainer convention rather
-than an automated check: nothing in `release.yml` refuses a tag, because a
-check that fires on the wrong tag is worse than the reminder.
+before that first final release. Nothing in `release.yml` refuses a tag, so the
+gate is a release procedure rather than an automated check; automating it is
+deliberately left to #286, which reworks the release workflow.
 [ADR-006](adr/006-align-cuprum-selection-across-dependency-paths.md) records
 the decision.
 

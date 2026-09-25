@@ -40,8 +40,8 @@ untested beta through a range.
 - Behaviour verified by the suite should be the behaviour that ships.
 - A pre-release API is not a stable interface, and a published wheel should
   name exactly the pre-release that was tested, or none at all.
-- The constraint should be enforceable by the deterministic gates, not by
-  convention alone.
+- Cross-path alignment should be enforceable by the deterministic gates, not
+  by convention alone.
 - Bumping should be a small, explicit, reviewed act rather than an automation
   side effect.
 
@@ -71,7 +71,10 @@ enforced by a contract test.
   is in the developers' guide.
 - **Gate the first final release.** No final `lading` 0.x release until cuprum
   0.2.0 final ships and the pin has moved to it, so that no final `lading`
-  wheel ever records a pre-release requirement.
+  wheel ever records a pre-release requirement. The gate is stated rather than
+  automated: `release.yml` accepts any tag, and a check that refuses one
+  belongs with #286, which reworks that workflow. This is unlike the alignment
+  constraint above, which is a gate no person has to remember to run.
 
 ## Consequences
 

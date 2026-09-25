@@ -403,6 +403,37 @@ in `Decision log`, and escalate.
     `.md`. The 17 snippets' correctness therefore rests on the measurement
     done in this step, not on a gate, and will rot silently as the beta moves
     toward 0.2.0 final. This is a known gap, not a defect in this change.
+  - [x] (2026-09-25) The EP-M3 review's finding 2 asked for an automated
+    final-release guard: refuse a `v*.*.*` tag while either dependency path
+    pins a cuprum pre-release, and cover the guard with a contract test.
+    **Disposition: the finding is declined as out of scope and raised for the
+    maintainer to reverse if they disagree; the wording it targets is
+    corrected.** It is the review's only `major` finding, so the decline is
+    recorded here rather than dropped silently.
+    - The automation is ruled out by D8 above, recorded by the maintainer on
+      2026-09-25 at `a527e22` and therefore before any implementation work:
+      *"This task adds no automated enforcement, such as a release-workflow
+      check that refuses a final tag while a pre-release pin exists. Nobody
+      asked for it; if wanted, it belongs with #286, which reworks the release
+      workflow."* Issue #286 carries the gate as its own constraint. Adding
+      the guard here would pre-empt a workflow #286 is chartered to rewrite.
+    - The finding's premise is a misreading of ADR-006. Its driver line read
+      *"The constraint should be enforceable by the deterministic gates, not
+      by convention alone"*, which governs **cross-path alignment**, as the
+      adjacent decision sentence states: *"A gate that a person must remember
+      to run is not an alignment mechanism."* That alignment gate exists and
+      passes. The driver was ambiguous enough to invite the reading, so it now
+      names its subject -- "Cross-path alignment should be enforceable..." --
+      and the release-gate decision states outright that the gate is the one
+      constraint left to a person, and why.
+    - The wording the finding did correctly identify as wrong was mine, not
+      the maintainer's. Commit `3492b43` had justified the unautomated gate
+      with "a check that fires on the wrong tag is worse than the reminder".
+      No such reasoning exists in D8 or anywhere else in the repository; it
+      was invented while writing that commit. The guide now gives D8's actual
+      reason -- automation belongs with #286 -- and drops the fabrication.
+    - This is a Markdown-only correction, so the seven gates are unaffected
+      beyond `markdownlint` and the Markdown half of `spelling`.
 
 ## Surprises & discoveries
 
