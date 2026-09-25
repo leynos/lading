@@ -5,7 +5,7 @@ This ExecPlan (execution plan) is a living document. The sections `Constraints`,
 `Outcomes & retrospective`, `Conformance basis`, and `Verification plan` must
 be kept up to date as work proceeds.
 
-Status: DRAFT
+Status: IN PROGRESS
 
 Roadmap item: 5.1.4 in [the roadmap](../roadmap.md), step 5.1 "Establish the
 beta contract and dependency boundary".
