@@ -108,6 +108,62 @@ def _lock_pin(lock_text: str, *, site: str) -> str:
 type LockOrigin = typ.Literal["project", "script"]
 
 
+def _project_lock_requirements(
+    document: dict[str, typ.Any], *, site: str
+) -> list[dict[str, typ.Any]]:
+    """Return the requirements a project lock records for ``lading`` itself.
+
+    A project lock resolves the project, so the requirement being checked sits
+    in the ``lading`` package's own metadata rather than in a manifest.
+
+    Parameters
+    ----------
+    document : dict[str, typ.Any]
+        The parsed lockfile.
+    site : str
+        Human-readable name of the lock, used in failure messages.
+
+    Returns
+    -------
+    list[dict[str, typ.Any]]
+        The requirement entries recorded against the ``lading`` package.
+
+    Raises
+    ------
+    SelectionError
+        If the lock holds no ``lading`` package entry, or holds more than one.
+    """
+    lading = [
+        entry for entry in document.get("package", []) if entry.get("name") == "lading"
+    ]
+    if len(lading) != 1:
+        message = f"{site} must contain exactly one lading package entry"
+        raise SelectionError(message)
+    return lading[0].get("metadata", {}).get("requires-dist", [])
+
+
+def _script_lock_requirements(
+    document: dict[str, typ.Any],
+) -> list[dict[str, typ.Any]]:
+    """Return the requirements a script lock records in its top-level manifest.
+
+    A ``uv lock --script`` lock resolves the script's dependencies alone, so it
+    holds no package entry for the script at all; its requirement sits in the
+    manifest instead.
+
+    Parameters
+    ----------
+    document : dict[str, typ.Any]
+        The parsed lockfile.
+
+    Returns
+    -------
+    list[dict[str, typ.Any]]
+        The requirement entries recorded in the manifest.
+    """
+    return document.get("manifest", {}).get("requirements", [])
+
+
 def _lock_specifier(lock_text: str, *, site: str, origin: LockOrigin) -> str:
     """Return the pinned version named by the lock's own recorded requirement.
 
@@ -137,18 +193,11 @@ def _lock_specifier(lock_text: str, *, site: str, origin: LockOrigin) -> str:
         If the requirement is missing or is not a single exact pin.
     """
     document = tomllib.loads(lock_text)
-    if origin == "project":
-        lading = [
-            entry
-            for entry in document.get("package", [])
-            if entry.get("name") == "lading"
-        ]
-        if len(lading) != 1:
-            message = f"{site} must contain exactly one lading package entry"
-            raise SelectionError(message)
-        entries = lading[0].get("metadata", {}).get("requires-dist", [])
-    else:
-        entries = document.get("manifest", {}).get("requirements", [])
+    entries = (
+        _project_lock_requirements(document, site=site)
+        if origin == "project"
+        else _script_lock_requirements(document)
+    )
     specifiers = [
         entry["specifier"]
         for entry in entries

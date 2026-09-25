@@ -111,13 +111,21 @@ def _expected(payload: bytes) -> str:
     return payload.decode("utf-8", "replace")
 
 
+class _Payload(typ.NamedTuple):
+    """What the driver programme should emit, and how it should exit.
+
+    The three travel together: the adapter is stated to map each stream and the
+    status, and a test case is one such triple. Passing them as one value keeps
+    a call site from pairing a stream with the wrong test case.
+    """
+
+    stdout: bytes
+    stderr: bytes
+    status: int
+
+
 def _drive(
-    payload_root: Path,
-    release_gh: types.ModuleType,
-    *,
-    stdout: bytes,
-    stderr: bytes,
-    status: int,
+    payload_root: Path, release_gh: types.ModuleType, payload: _Payload
 ) -> object:
     """Run the adapter against the driver with the given payload.
 
@@ -127,10 +135,8 @@ def _drive(
         The directory the ``payload_root`` fixture returned.
     release_gh : types.ModuleType
         The module under test.
-    stdout, stderr : bytes
-        Bytes the driver writes to that stream.
-    status : int
-        The status the driver exits with.
+    payload : _Payload
+        Bytes the driver writes to each stream, and the status it exits with.
 
     Returns
     -------
@@ -138,9 +144,9 @@ def _drive(
         Whatever the adapter returned.
     """
     slot = payload_root / "payload"
-    (slot / "stdout").write_bytes(stdout)
-    (slot / "stderr").write_bytes(stderr)
-    (slot / "status").write_text(str(status), encoding="ascii")
+    (slot / "stdout").write_bytes(payload.stdout)
+    (slot / "stderr").write_bytes(payload.stderr)
+    (slot / "status").write_text(str(payload.status), encoding="ascii")
     with pytest.MonkeyPatch.context() as patch:
         patch.setenv(
             "PATH",
@@ -168,9 +174,7 @@ def test_capture_maps_each_stream_and_the_status(
     the two would be invisible to an assertion that only checked "something was
     captured" -- which is what makes the pairing worth asserting.
     """
-    outcome = _drive(
-        payload_root, release_gh, stdout=stdout, stderr=stderr, status=status
-    )
+    outcome = _drive(payload_root, release_gh, _Payload(stdout, stderr, status))
 
     assert outcome.exit_code == status, outcome
     assert outcome.stdout == _expected(stdout), outcome
@@ -196,9 +200,7 @@ def test_both_streams_are_captured_on_every_failure(
     stopped capturing would still report the right exit code, and the release
     would fail with no reason attached.
     """
-    outcome = _drive(
-        payload_root, release_gh, stdout=stdout, stderr=stderr, status=status
-    )
+    outcome = _drive(payload_root, release_gh, _Payload(stdout, stderr, status))
 
     assert outcome.stdout == _expected(stdout), outcome
     assert outcome.stderr == _expected(stderr), outcome
@@ -238,9 +240,7 @@ def test_representative_payloads_map_exactly(
     a random generator reaches rarely; the empty stream is the case where a
     ``None`` would leak through as the string ``"None"``.
     """
-    outcome = _drive(
-        payload_root, release_gh, stdout=stdout, stderr=stderr, status=status
-    )
+    outcome = _drive(payload_root, release_gh, _Payload(stdout, stderr, status))
 
     assert outcome.exit_code == status, outcome
     assert outcome.stdout == _expected(stdout), outcome
@@ -267,6 +267,6 @@ def test_a_signalled_child_reports_a_negative_status(
     # because ``_drive`` does not.
     (tmp_path / "payload").mkdir()
 
-    outcome = _drive(tmp_path, release_gh, stdout=b"", stderr=b"", status=0)
+    outcome = _drive(tmp_path, release_gh, _Payload(b"", b"", 0))
 
     assert outcome.exit_code == -15, outcome
