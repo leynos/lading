@@ -761,6 +761,10 @@ in `Decision log`, and escalate.
     claim as "the gate is satisfied", and the second round is not a new
     defect surfacing but the same defect seen from one level up.
     Two lessons:
+    - **The gate is now satisfied.** At `d677609` CodeScene reports `pass`
+      (1m21s) with no findings. The whole exchange cost two commits and two
+      gate runs, and the plan records it because the finding was invisible to
+      every check the milestone had been gating on.
     - **The gate set is not closed.** Seven gates passed on every commit of
       this branch, and a check the plan never enumerated still had two
       substantive findings on it. "All gates green" is a claim about a named
@@ -1469,6 +1473,19 @@ this plan leaves open, and it is recorded in the step list rather than dropped.
 The completion checklist was discharged before the status changed: roadmap
 5.1.4 is checked, the assessment's §1.1 carries its dated follow-up, and the
 design's §7.3 records the policy with its implementation notes.
+
+One finding arrived **after** that closure, which is why the status line above
+is worth reading twice. CodeScene's Code Health review -- an app on the
+pull-request lane, not one of the seven gates the Makefile defines -- failed
+this branch on two test helpers, and then on a third function once those two
+were split. All three were fixed (`33aefe0`, `d677609`), and the check reports
+`pass`. It cost two further commits and the two full gate runs that covered
+them. Nothing in the milestone's own reviews or gate runs had anything to say
+about it, because the configuration that produces it was restored to the lane
+(#287) after the bulk of this branch was written. It is recorded in
+`Surprises & discoveries` rather than folded in silently, and it is the one
+respect in which "COMPLETE" here means "complete against the review software
+that had run at the time".
 
 **What the milestone delivered.** The published `cuprum==0.2.0b1` artefact is
 selected on both dependency paths, both locks agree with their manifests, the
