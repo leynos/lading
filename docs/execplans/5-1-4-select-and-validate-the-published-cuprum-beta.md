@@ -332,6 +332,22 @@ in `Decision log`, and escalate.
     contracts panel's probes.
   - Impact: the adapter change is two call sites plus an import.
     `RunOutputOptions(capture=True)` preserves 0.1.0 semantics exactly.
+- **The EP-M1 environment guard passed for the wrong reason.**
+  - Observation: `test_the_guard_rejects_a_caller_override_that_hides_the_stub`
+    created its decoy `gh` with `write_text`, which leaves mode `0o644`. A
+    non-executable file is not what `shutil.which` returns, so the guard tripped
+    on its missing-`gh` branch (`resolves to None`) rather than on the
+    shadowing branch its docstring describes -- the branch the hazard actually
+    travels. The test was green and its `match="must be the gh on PATH"` was
+    satisfied by the wrong message, since both branches share that prefix.
+  - Evidence: probe showing `shutil.which("gh", path=shadow)` returns `None`
+    at `0o644` and the decoy path at `0o755`; the mutation transcript below.
+  - Impact: the decoy is now `chmod(0o755)`, and the assertion matches the full
+    message (`resolves to <decoy>`) so the two branches cannot be confused
+    again. Verified load-bearing: with the `chmod` removed the test fails with
+    "Actual message: … gh resolves to None". This is the same
+    distinguish-the-two-behaviours discipline the token test in that file
+    already applies, applied to the guard.
 - **The beta keeps `ProgramCatalogue.allowlist` and `is_allowed`, so only the
   `scoped()` keyword moves.**
   - Observation: in the beta, `ProgramCatalogue` still exposes the `allowlist`

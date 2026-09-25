@@ -61,12 +61,21 @@ def test_the_guard_rejects_a_caller_override_that_hides_the_stub(
     binary -- the one mistake that could reach a live release. The ambient
     ``PATH`` cannot cause this (the stub is prepended to it), so the override
     is the reachable hazard, and the assertion is what makes it unreachable.
+
+    The decoy is made executable deliberately. ``write_text`` leaves mode
+    0o644, and a non-executable ``gh`` makes ``shutil.which`` return ``None``
+    -- so the guard would trip on its missing-``gh`` branch and this test would
+    pass without the shadowing branch ever running, which is the branch the
+    hazard actually travels. The assertion on the message is what keeps the
+    two branches distinguishable.
     """
     shadow = stub.bin_directory.parent / "shadow"
     shadow.mkdir()
-    (shadow / "gh").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    decoy = shadow / "gh"
+    decoy.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    decoy.chmod(0o755)
 
-    with pytest.raises(AssertionError, match="must be the gh on PATH"):
+    with pytest.raises(AssertionError, match=f"resolves to {decoy}"):
         isolated_environment(stub, extra={"PATH": str(shadow)})
 
 
