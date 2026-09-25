@@ -427,7 +427,7 @@ in `Decision log`, and escalate.
       line as covering the release gate as well, which the wording did not
       exclude, so the clarification is recorded rather than left to
       inference: the driver now names its subject ("Cross-path alignment
-      should be enforceable...") and the release-gate decision states outright
+      should be enforceable…") and the release-gate decision states outright
       that it is the one constraint left to a person, and why.
     - The wording the finding did correctly identify as wrong was mine, not
       the maintainer's. Commit `3492b43` had justified the unautomated gate
@@ -1968,9 +1968,8 @@ scratch files and are never committed.
 
 `pipefail` is set first: without it a pipeline reports the exit status of
 `tee`, so a failed gate would read as success to a caller that checks the
-pipeline. All seven gates appear, including `spelling`, which
-`markdownlint` also runs as a dependency but which is a required gate in its
-own right.
+pipeline. All seven gates appear, including `spelling`, which `markdownlint`
+also runs as a dependency but which is a required gate in its own right.
 
 ```bash
 set -o pipefail

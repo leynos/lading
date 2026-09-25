@@ -378,14 +378,14 @@ uv lock --script scripts/upload_release_wheels.py
 `tests/workflow_contracts/test_cuprum_selection.py` reads the expected version
 from `pyproject.toml` and contains no version literal, so all four sites must
 agree or the suite fails. Its freshness checks read the Git index rather than
-the working tree, because `make build` and the standalone BDD scenario
-both re-lock silently: a stale lock is repaired before the suite sees it, so
-the check can only fail against indexed state. Stage the lockfiles, then
-verify with the test rather than assuming the tree is fresh: the check reads
-the index, so a commit is not required first, and verifying before committing
-is preferred.
-Rerun the distribution smoke recorded in the plan's `Artefacts and notes` and
-update the version named in the documentation afterwards.
+the working tree, because `make build` and the standalone BDD scenario both
+re-lock silently: a stale lock is repaired before the suite sees it, so the
+check can only fail against indexed state. Stage the lockfiles, then verify
+with the test rather than assuming the tree is fresh: the check reads the
+index, so a commit is not required first, and verifying before committing is
+preferred. Rerun the distribution smoke recorded in the plan's
+`Artefacts and notes` and update the version named in the documentation
+afterwards.
 
 Dependabot stays configured and will not move the pin on its own: a pull
 request that edits `pyproject.toml` and `uv.lock` alone leaves the standalone
