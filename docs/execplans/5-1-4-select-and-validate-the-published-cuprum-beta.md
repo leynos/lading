@@ -274,6 +274,22 @@ in `Decision log`, and escalate.
     left optional: a parameter that makes an assertion unfalsifiable should not
     exist for a later test to reach for. Tests now plant the value in the
     parent with `monkeypatch.setenv`.
+- [x] (2026-09-25) EP-M1 closed. All seven review findings fixed and committed
+  (`9c0591e`), and **all seven gates are green at that commit**: `check-fmt`,
+  `typecheck`, `lint` (all seven stages), `test` (1193 passed, 30 skipped, 3
+  xfailed, 0 xpassed, 0 failed), `spelling`, `markdownlint`, and `nixie`. The
+  three expected `xfail`s are exactly the sites EP-M2 clears, and the xfail
+  markers are confined to the two files that hold them.
+  - Two of the reflows in an earlier gate run were false reds caused by editing
+    files while `test` and `spelling` were mid-run; the run recorded here was
+    made on a quiesced tree with no concurrent edits.
+  - The fixes are themselves unreviewed. That is deliberate rather than an
+    omission: the next review will be requested with `--base-commit a527e22`,
+    the branch base, so its diff covers the whole branch -- these fixes
+    included, and the review of them is what EP-M2's pass will report on.
+    Re-reviewing EP-M1 in place would spend the free tier's rate-limit window
+    to see the same commits twice. If that branch-wide review raises anything
+    about these fixes, it is cleared before EP-M3, not deferred again.
 - [ ] EP-M2: beta selected and locked on both paths; callers migrated; markers
   removed; all gates green; seeded mutations observed.
 - [ ] EP-M3: distribution evidence recorded; documentation, ADR, and roadmap
