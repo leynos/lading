@@ -1149,10 +1149,51 @@ weaker claim is also unreachable.
 
 ## Outcomes & retrospective
 
-Not started. Fill this in at each milestone and at completion. Before setting
-the status to `COMPLETE`, reconcile every discovery with the artefacts in
-`Conformance basis`: update the assessment's evidence boundary and design §7,
-and mark roadmap item 5.1.4 done.
+Status: **EP-M3 complete, pending the closing CodeRabbit review.** EP-M0, EP-M1
+and EP-M2 are closed. Fill this section in further at each milestone and at
+completion. Before setting the status to `COMPLETE`, reconcile every discovery
+with the artefacts in `Conformance basis`: update the assessment's evidence
+boundary and design §7, and mark roadmap item 5.1.4 done.
+
+**What the milestone delivered.** The published `cuprum==0.2.0b1` artefact is
+selected on both dependency paths, both locks agree with their manifests, the
+uploader runs the beta end to end under both wheels, and the documentation
+states the policy as implemented. Roadmap 5.1.4 is checked.
+
+**What went well.**
+
+- **The obligations were discharged by execution, not by inspection.** O1a, O1b,
+  O2, O3 and O4 each have a test that fails when the property is broken and was
+  mutation-verified in both directions. The distribution smoke ran both wheels
+  the beta ships and distinguished them through `is_rust_available()`.
+- **The red specification did its job.** Three tests were `XFAIL` before EP-M2
+  and `XPASS`-free after, so the EP-M2 diff is known to be the change that
+  turned them green.
+- **Reading a gate's mechanism rather than its result caught the vacuity.** The
+  O1b checks passed before they were meaningful; only staleness driven through
+  the real `make` and `uv` paths showed why.
+
+**What was learned, and cost.**
+
+- **Documentation that looks like code still has to be executed.** Every cuprum
+  example in `docs/scripting-standards.md` was wrong, in four independent ways,
+  and no gate could catch any of them. The rewrite cost a measurement pass
+  against the installed `0.2.0b1`, and the result is correct today but
+  unguarded: no gate runs those fences, so they will rot as the beta moves to
+  final. Recorded above as a known gap.
+- **"All gates green" is a claim about a point in time.** The first EP-M2
+  closure asserted it while two logs predated later edits. Staging everything
+  and re-running the full set is what made the claim true; comparing log
+  timestamps is what showed it was not.
+- **A review reading a diff cannot establish unreachability.** The EP-M2 review
+  correctly flagged that the freshness tests' names overclaimed, but could not
+  see that the weaker claim was also unreachable. That needed the gate.
+
+**Cost.** Four CodeRabbit rounds to EP-M2 closure, one design review, and one
+gate run per milestone. The docs-only Stage D diff still required the full
+seven gates, because `tests/unit/test_users_guide.py` asserts literal strings
+against `docs/users-guide.md` and the branch diff against `origin/main`
+contains real Python and dependency changes.
 
 ## Context and orientation
 
