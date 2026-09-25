@@ -116,12 +116,32 @@ class _Payload(typ.NamedTuple):
 
     The three travel together: the adapter is stated to map each stream and the
     status, and a test case is one such triple. Passing them as one value keeps
-    a call site from pairing a stream with the wrong test case.
+    a call site from pairing a stream with the wrong test case, and lets
+    Hypothesis build a whole case from one strategy.
     """
 
     stdout: bytes
     stderr: bytes
     status: int
+
+
+#: Payloads whose streams may be empty, which is the case where a ``None``
+#: would leak through as the string ``"None"``.
+_ANY_PAYLOAD = st.builds(
+    _Payload,
+    stdout=st.binary(max_size=200),
+    stderr=st.binary(max_size=200),
+    status=st.integers(min_value=0, max_value=255),
+)
+
+#: Payloads whose streams are non-empty, so an assertion that a stream was
+#: captured is not vacuous.
+_NONEMPTY_PAYLOAD = st.builds(
+    _Payload,
+    stdout=st.binary(min_size=1, max_size=200),
+    stderr=st.binary(min_size=1, max_size=200),
+    status=st.integers(min_value=1, max_value=255),
+)
 
 
 def _drive(
@@ -155,18 +175,12 @@ def _drive(
         return release_gh.run_gh(("release", "view"))
 
 
-@given(
-    stdout=st.binary(max_size=200),
-    stderr=st.binary(max_size=200),
-    status=st.integers(min_value=0, max_value=255),
-)
+@given(payload=_ANY_PAYLOAD)
 @_SETTINGS
 def test_capture_maps_each_stream_and_the_status(
     payload_root: Path,
     release_gh: types.ModuleType,
-    stdout: bytes,
-    stderr: bytes,
-    status: int,
+    payload: _Payload,
 ) -> None:
     """Each stream reaches its own field, decoded as cuprum decodes it.
 
@@ -174,25 +188,19 @@ def test_capture_maps_each_stream_and_the_status(
     the two would be invisible to an assertion that only checked "something was
     captured" -- which is what makes the pairing worth asserting.
     """
-    outcome = _drive(payload_root, release_gh, _Payload(stdout, stderr, status))
+    outcome = _drive(payload_root, release_gh, payload)
 
-    assert outcome.exit_code == status, outcome
-    assert outcome.stdout == _expected(stdout), outcome
-    assert outcome.stderr == _expected(stderr), outcome
+    assert outcome.exit_code == payload.status, outcome
+    assert outcome.stdout == _expected(payload.stdout), outcome
+    assert outcome.stderr == _expected(payload.stderr), outcome
 
 
-@given(
-    stdout=st.binary(min_size=1, max_size=200),
-    stderr=st.binary(min_size=1, max_size=200),
-    status=st.integers(min_value=1, max_value=255),
-)
+@given(payload=_NONEMPTY_PAYLOAD)
 @_SETTINGS
 def test_both_streams_are_captured_on_every_failure(
     payload_root: Path,
     release_gh: types.ModuleType,
-    stdout: bytes,
-    stderr: bytes,
-    status: int,
+    payload: _Payload,
 ) -> None:
     """Neither stream is discarded, on any failure.
 
@@ -200,23 +208,23 @@ def test_both_streams_are_captured_on_every_failure(
     stopped capturing would still report the right exit code, and the release
     would fail with no reason attached.
     """
-    outcome = _drive(payload_root, release_gh, _Payload(stdout, stderr, status))
+    outcome = _drive(payload_root, release_gh, payload)
 
-    assert outcome.stdout == _expected(stdout), outcome
-    assert outcome.stderr == _expected(stderr), outcome
+    assert outcome.stdout == _expected(payload.stdout), outcome
+    assert outcome.stderr == _expected(payload.stderr), outcome
     assert outcome.stdout, "stdout was not captured"
     assert outcome.stderr, "stderr was not captured"
 
 
 @pytest.mark.parametrize(
-    ("stdout", "stderr", "status"),
+    "payload",
     [
-        (b"", b"", 0),
-        (b"", b"", 255),
-        (b"ok\n", b"HTTP 422: asset exists\n", 1),
-        (b"caf\xc3\xa9\n", b"caf\xe9\n", 0),
-        (b"a\r\nb\r\n", b"c\r\nd\r\n", 0),
-        (b"before\x00after", b"\xff\xfe", 3),
+        _Payload(b"", b"", 0),
+        _Payload(b"", b"", 255),
+        _Payload(b"ok\n", b"HTTP 422: asset exists\n", 1),
+        _Payload(b"caf\xc3\xa9\n", b"caf\xe9\n", 0),
+        _Payload(b"a\r\nb\r\n", b"c\r\nd\r\n", 0),
+        _Payload(b"before\x00after", b"\xff\xfe", 3),
     ],
     ids=[
         "empty",
@@ -230,9 +238,7 @@ def test_both_streams_are_captured_on_every_failure(
 def test_representative_payloads_map_exactly(
     payload_root: Path,
     release_gh: types.ModuleType,
-    stdout: bytes,
-    stderr: bytes,
-    status: int,
+    payload: _Payload,
 ) -> None:
     """The examples Hypothesis is unlikely to find on its own.
 
@@ -240,11 +246,11 @@ def test_representative_payloads_map_exactly(
     a random generator reaches rarely; the empty stream is the case where a
     ``None`` would leak through as the string ``"None"``.
     """
-    outcome = _drive(payload_root, release_gh, _Payload(stdout, stderr, status))
+    outcome = _drive(payload_root, release_gh, payload)
 
-    assert outcome.exit_code == status, outcome
-    assert outcome.stdout == _expected(stdout), outcome
-    assert outcome.stderr == _expected(stderr), outcome
+    assert outcome.exit_code == payload.status, outcome
+    assert outcome.stdout == _expected(payload.stdout), outcome
+    assert outcome.stderr == _expected(payload.stderr), outcome
 
 
 def test_a_signalled_child_reports_a_negative_status(

@@ -733,6 +733,46 @@ in `Decision log`, and escalate.
     reaching `sh.make`, are not the whole migration surface -- the two
     `sh.make` call sites in `release_gh` and the five migrated test sites are
     exercised for the first time only once the keyword is fixed.
+- **A gate outside the seven found two helpers, after the milestone had
+  closed.**
+  - Observation: CodeScene's Code Health review, a third-party app on the
+    pull-request lane, failed this branch on `_lock_specifier` ("Complex
+    Method") and `_drive` ("Excess Number of Function Arguments"). It is not
+    one of the seven gates the Makefile defines and not a required check --
+    the ruleset requires `lint-test` alone -- but it named code this branch
+    wrote, and it was failing no other open pull request at the time.
+  - Evidence: `gh pr checks 285` showed `CodeScene Code Health Review (main)
+    fail` while #288, #283, #264, #258, #257 and the Dependabot pull requests
+    all passed. Both flagged functions arrive in this branch's diff
+    (`_lock_specifier` in `73bd86c`, `_drive` in `9c0591e`).
+  - Impact: the finding was real, and the repository's own precedent is to
+    act on it rather than suppress -- `f7a4ac2` ("Split the lane reading
+    CodeScene flagged") refactored a flagged test reading the same way. Both
+    helpers were split, the four-argument `_drive` taking a `_Payload`
+    NamedTuple for its three-part payload. CodeScene then cleared both
+    findings and raised a third: the hypothesis test that had called `_drive`
+    with five parameters of its own. That is the same fix one level up, and
+    the `_Payload` value was already the answer -- `st.builds(_Payload, ...)`
+    generates the whole case from one strategy, so the test takes the payload
+    rather than its three parts, which is the `_CLEANUP_CASE` shape the
+    repository's other property tests already use. Worth recording that the
+    gate reports **one layer at a time**: clearing two findings is what made
+    the third visible, so "the flagged function is fixed" is not the same
+    claim as "the gate is satisfied", and the second round is not a new
+    defect surfacing but the same defect seen from one level up.
+    Two lessons:
+    - **The gate set is not closed.** Seven gates passed on every commit of
+      this branch, and a check the plan never enumerated still had two
+      substantive findings on it. "All gates green" is a claim about a named
+      set, and this milestone's set was the Makefile's.
+    - **The lane itself is unstable.** CodeScene was taken off the
+      pull-request lane in #276 ("Take CodeScene off the pull-request lane",
+      which records that it "fails on the pull-request lane whatever the
+      branch contains") and restored in #287 at 15:28 on 2026-09-25. So the
+      finding appeared long after the code was written: the branch was pushed
+      at 19:19 and the check first reported against it then, but the code it
+      flags dates from hours earlier. A reviewer's verdict is about the
+      configuration in force when it ran, not only about the diff.
 - **The beta keeps `ProgramCatalogue.allowlist` and `is_allowed`, so only the
   `scoped()` keyword moves.**
   - Observation: in the beta, `ProgramCatalogue` still exposes the `allowlist`
