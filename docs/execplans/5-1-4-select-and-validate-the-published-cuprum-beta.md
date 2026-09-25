@@ -435,10 +435,16 @@ in `Decision log`, and escalate.
       No such reasoning exists in D8 or anywhere else in the repository; it
       was invented while writing that commit. The guide now gives D8's actual
       reason -- automation belongs with #286 -- and drops the fabrication.
-    - This correction is Markdown-only, so it can only affect `markdownlint`
-      and the Markdown half of `spelling`. That reasoning was applied to the
-      **wrong commit**, and the gate run proved it: see the `check-fmt`
-      failure below.
+    - This correction is Markdown-only, so it was reasoned to affect only
+      `markdownlint` and the Markdown half of `spelling`. That reasoning was
+      applied to the **wrong commit**, and the gate run proved it: see the
+      `check-fmt` failure below. The second half of the premise was wrong
+      too, as scrutineer's report corrects: `check-fmt` is not a Python-only
+      gate. Its second stage, `mdtablefix --check`, reads every Markdown file,
+      so a Markdown edit **can** fail gate 1. The reason this did not happen
+      is narrower and worth stating precisely: `make` aborts the target at the
+      first failing command, so while `ruff format --check` was failing,
+      `mdtablefix` never ran and its findings were invisible.
   - [x] (2026-09-25) **`check-fmt` caught an ungated commit, which is the
     milestone's most useful failure.** The first gate run on the corrected
     tree failed: `ruff format --check` wanted the `gh_stub.py` variable loop
@@ -462,6 +468,36 @@ in `Decision log`, and escalate.
       acted on without the gates confirming it. Deterministic checks caught
       what reading had missed in both cases, which is the argument for running
       them before the review rather than after.
+  - [x] (2026-09-25) Stage D step 10: all seven gates green on the clean tree
+    at `9b73c08`, run by `scrutineer` in the required order and strictly
+    sequentially -- `check-fmt` (both stages: ruff `212 files already
+    formatted`, mdtablefix `28 files left unchanged`), `typecheck` (ty 0.0.56,
+    `All checks passed!`), `lint` (all seven stages, pylint 10.00/10 twice),
+    `test` (`1200 passed, 30 skipped`, 76 snapshots), `spelling`,
+    `markdownlint` (28 files, 0 errors), `nixie` (all diagrams validated).
+    The venv race did not occur, so no gate needed a re-run. `typos.toml` was
+    confirmed unmodified, its mtime predating the gate window. Nothing dirtied
+    the tree.
+    - Two runs were needed, and the reason matters for reading the logs. The
+      first pass began at `35bca01` and was overtaken by the fixes below, so
+      its verdicts describe states that no longer exist. The second pass ran
+      against a working tree that was byte-identical to `9b73c08` but not yet
+      committed; `scrutineer` proved the equivalence by hashing the tracked
+      file set. A final `check-fmt` pass was then run against the committed
+      clean HEAD to close the one gap that could depend on tree-versus-index
+      state. **Only the second pass and that confirming pass are valid
+      evidence**; the first pass's logs carry no suffix and must not be cited.
+  - [x] (2026-09-25) **Scrutineer falsified a premise of this plan, and the
+    correction is recorded rather than quietly dropped.** The disposition
+    above claimed the finding-2 correction "is Markdown-only, so it can only
+    affect `markdownlint` and the Markdown half of `spelling`". The second
+    half is false: `check-fmt` is not a Python-only gate. Its second stage,
+    `mdtablefix --check`, reads every tracked and untracked Markdown file, so
+    a Markdown-only edit can fail gate 1 -- and in fact one did, at
+    `docs/developers-guide.md` and this plan, fixed in `9b73c08`. What made
+    the original reasoning *look* right was the abort-at-first-failure
+    behaviour of `make`, not any property of the gate. The disposition now
+    states the narrower true reason.
 
 ## Surprises & discoveries
 
