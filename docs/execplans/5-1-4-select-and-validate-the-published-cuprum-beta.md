@@ -332,6 +332,21 @@ in `Decision log`, and escalate.
     contracts panel's probes.
   - Impact: the adapter change is two call sites plus an import.
     `RunOutputOptions(capture=True)` preserves 0.1.0 semantics exactly.
+- **The beta keeps `ProgramCatalogue.allowlist` and `is_allowed`, so only the
+  `scoped()` keyword moves.**
+  - Observation: in the beta, `ProgramCatalogue` still exposes the `allowlist`
+    property (`frozenset({'gh'})` for the probe's one-programme catalogue) and
+    `is_allowed`. `scoped(catalogue=...)` is accepted, and
+    `scoped(allowlist=...)` raises
+    `TypeError: scoped() got an unexpected keyword argument 'allowlist'`.
+  - Evidence: probe of the published beta in a throwaway environment,
+    2026-09-25.
+  - Impact: this narrows the migration to the `scoped()` call sites. The
+    membership assertions that read `.allowlist` or call `is_allowed` -- in
+    `tests/unit/utils/test_commands.py`, the BDD allowlist steps, and
+    `tests/unit/test_release_gh.py` -- keep working untouched, so the edit list
+    is smaller than the failure count alone would suggest. Every one of the 13
+    known failures is a `scoped()` keyword, and none is a removed attribute.
 - **Two files are already over the 400-line limit, and the migration would add
   about seven lines.**
   - Observation: `scripts/release_wheel_upload.py` has 401 lines and
@@ -1168,9 +1183,16 @@ These steps form one commit.
    Record both in `Artefacts and notes`.
 7. Migrate `scripts/release_gh.py`: import `RunOutputOptions`, and change
    `run_gh` as shown in `Interfaces and dependencies`.
-8. Migrate `tests/unit/utils/test_commands.py` and
-   `tests/bdd/steps/test_commands_catalogue_steps.py` to
-   `scoped(catalogue=LADING_CATALOGUE)`. Update the `lading/utils/commands.py`
+8. Migrate the five `scoped(allowlist=...)` call sites. Each becomes
+   `scoped(catalogue=<catalogue>)`; the argument is the catalogue whose
+   `.allowlist` was being passed.
+   - `tests/unit/utils/test_commands.py` lines 90, 101, and 119 --
+     `scoped(catalogue=LADING_CATALOGUE)`.
+   - `tests/bdd/steps/test_commands_catalogue_steps.py` lines 96 and 237 --
+     `scoped(catalogue=catalogue_context)`.
+
+   Do not touch the membership assertions (`.allowlist`, `is_allowed`): the
+   beta keeps both, so they still hold. Update the `lading/utils/commands.py`
    module docstring, which shows `scoped(ScopeConfig(...))`, to the same form.
    This is a docstring-only change to a production module; its doctests must
    still pass.
