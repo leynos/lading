@@ -41,9 +41,9 @@ After this change:
 
 - Both paths select exactly `cuprum==0.2.0b1`, and each is locked by hash.
 - The uploader's cuprum boundary sits in one small module,
-  `scripts/release_gh.py`, and uses the beta's `ScopeConfig` and
-  `RunOutputOptions` forms.
-- The catalogue tests use the same forms.
+  `scripts/release_gh.py`. It uses the beta's catalogue-backed scope,
+  `scoped(catalogue=...)`, and `RunOutputOptions`.
+- The catalogue tests use the same catalogue-backed scope.
 - The suite shows that the installed beta works through both paths with a stub
   `gh`, and no validation step can publish a GitHub release.
 
@@ -165,13 +165,15 @@ in `Decision log`, and escalate.
       still honour an exact `==` pin to a yanked version.
     - A move to a later version is a deliberate, manual edit (D9). The selection
       contract test forces every site to move together.
-- **Every published `lading` wheel will require a pre-release.**
+- **A lading build from this branch onwards requires a cuprum pre-release.**
   - Severity: low. Likelihood: low.
   - A scratch-wheel probe confirmed that pip, `uv pip`, `uv run --with`, and
     `uv tool install` all accept a transitive `cuprum==0.2.0b1` with no flags.
-  - A user environment that also requires `cuprum<0.2` fails to resolve. A
-    release cut while the pin is in place records it in that wheel for good.
-  - Mitigation: D8 and the users' guide installation note.
+  - A user environment that also requires `cuprum<0.2` fails to resolve.
+  - Mitigation: D8. No final lading 0.x release is cut until cuprum 0.2.0
+    final ships and the pin moves to it, so no final lading wheel ever records
+    the beta requirement. The users' guide installation note covers source and
+    development installs.
 - **The native wheel (`manylinux_2_28`) needs glibc 2.28 or newer.**
   - Severity: low. Likelihood: low.
   - On older glibc or on musl, installers fall back to the pure-Python wheel.
@@ -215,7 +217,13 @@ in `Decision log`, and escalate.
   after revision, and Approve with changes.
 - [x] (2026-09-25T12:40Z) Revised the plan to address every blocking finding
   (see `Decision log`, "Design review dispositions").
-- [ ] Approval of this plan.
+- [x] (2026-09-25T13:30Z) Maintainer decisions received. D2: adopt
+  `scoped(catalogue=...)`. D4: script lockfile approved. D8: no final lading
+  0.x release until cuprum 0.2.0 final ships. The maintainer also asked for an
+  issue mandating the cuprum release process (leynos/cuprum#488); it is raised
+  as #286. The plan is updated to match.
+- [ ] Go-ahead to implement. The maintainer asked for no implementation work
+  yet.
 - [ ] EP-M0: uploader's cuprum boundary extracted to `scripts/release_gh.py`;
   all gates green.
 - [ ] EP-M1: hardened stub helper, characterization tests, and red tests
@@ -309,10 +317,10 @@ in `Decision log`, and escalate.
 - **Two files are already over the 400-line limit, and the migration would add
   about seven lines.**
   - Observation: `scripts/release_wheel_upload.py` has 401 lines and
-    `tests/unit/test_upload_release_wheels.py` has 417. Adding `RunOutputOptions`
-    and `ScopeConfig` to the one-line `from cuprum import ...` takes it past
-    ruff's 88-column limit. `ruff format` then turns it into a nine-line
-    parenthesized block.
+    `tests/unit/test_upload_release_wheels.py` has 417. Adding the beta's
+    names to the one-line `from cuprum import ...` takes it past ruff's
+    88-column limit, and `ruff format` then turns it into a parenthesized
+    block several lines long.
   - Evidence: `wc -l`; `pyproject.toml` `line-length = 88`.
   - Impact: EP-M0 extracts the cuprum boundary into its own module before the
     migration.
@@ -363,19 +371,31 @@ in `Decision log`, and escalate.
     - The split becomes attractive once 0.2.0 final ships. ADR-006 records it
       as the policy to revisit then.
   - Date/Author: 2026-09-25, planning agent; kept after review.
-- **D2: `run_gh` uses
-  `scoped(ScopeConfig(allowlist=RELEASE_CATALOGUE.allowlist))` and
-  `run_sync(output=RunOutputOptions(capture=True))`.**
+- **D2 (maintainer decision): `run_gh` uses
+  `scoped(catalogue=RELEASE_CATALOGUE)` and
+  `run_sync(output=RunOutputOptions(capture=True))`.** The catalogue tests use
+  `scoped(catalogue=LADING_CATALOGUE)`.
   - Rationale:
-    - Roadmap 5.1.4 names `ScopeConfig` and `RunOutputOptions`, and design §7.3
-      documents that form.
-    - The migration guide recommends the shorter `scoped(catalogue=...)` when
-      the allowlist equals the catalogue, which is exactly this case. We use
-      the roadmap's form because the roadmap specifies it, not for any
-      speculative 5.2 need. ADR-006 notes the alternative.
+    - The migration guide recommends `scoped(catalogue=...)` when the
+      allowlist should equal the catalogue's programmes, which is exactly this
+      case. `scoped` derives the allowlist from the catalogue.
+    - Roadmap 5.1.4 names `ScopeConfig`, but it predates this affordance. The
+      maintainer directed adopting the shorter form. This is an accepted
+      deviation from `RM-5.1.4-API`'s wording, not from its intent (the
+      removed flat forms are replaced). EP-M3 updates the roadmap wording,
+      design §7.3, the developers' guide, and the `lading/utils/commands.py`
+      docstring to match.
+    - `ScopeConfig` remains the documented form when a scope also needs hooks,
+      a timeout, or an environment overlay. Nothing in 5.1.4 does.
     - Stating `capture=True` explicitly keeps the guarantee that `gh`'s
       diagnostic reaches the caller.
-  - Date/Author: 2026-09-25, planning agent; rationale corrected after review.
+  - Evidence: a probe against the beta with the stub `gh` showed the same
+    behaviour as the `ScopeConfig` form. `gh` ran with both streams captured
+    and exit status 3. `sh.make` of an unregistered programme raised
+    `UnknownProgramError`. A programme from another catalogue, run inside the
+    scope, raised `ForbiddenProgramError` ("denied by context allowlist").
+  - Date/Author: 2026-09-25, maintainer (leynos); replaces the planning
+    agent's `ScopeConfig` choice.
 - **D3: migrate the catalogue tests (`tests/unit/utils/test_commands.py`,
   `tests/bdd/steps/test_commands_catalogue_steps.py`) in the same commit as the
   pin.**
@@ -419,7 +439,7 @@ in `Decision log`, and escalate.
   - a lock on each path;
   - cross-path agreement enforced by a contract test;
   - manual bumps;
-  - the release stance in D8.
+  - the release gate in D8.
 
   The ADR takes its title from the lasting alignment policy, not from the
   temporary pin. It amends ADR-005's standalone-script contract, which the ADR
@@ -441,13 +461,22 @@ in `Decision log`, and escalate.
       import cycle.
     - Tests import from the new module directly; there is no alias.
   - Date/Author: 2026-09-25, after review.
-- **D8: do not block lading releases while the beta pin is in place.**
-  - Rationale: lading works with `0.2.0b1`, and pip admits the pin without
-    flags. A release made in this window records `cuprum==0.2.0b1` in its wheel.
-    The users' guide and ADR-006 state this.
-  - **Needs the maintainer's confirmation at plan approval.** The alternative
-    is to hold releases until cuprum 0.2.0 final.
-  - Date/Author: 2026-09-25, planning agent.
+- **D8 (maintainer decision): no final lading 0.x release until cuprum 0.2.0
+  final ships.**
+  - Rationale: both repositories are under the same ownership, so the lading
+    release can wait for the cuprum release. The pin then moves from
+    `0.2.0b1` to `0.2.0` through the D9 procedure before any final lading tag.
+    No final lading wheel ever records a pre-release requirement.
+  - Consequences:
+    - ADR-006 and the developers' guide release section state the gate.
+    - This task adds no automated enforcement, such as a release-workflow
+      check that refuses a final tag while a pre-release pin exists. Nobody
+      asked for it; if wanted, it belongs with #286, which reworks the release
+      workflow.
+    - #286 (adopt the cuprum release process from leynos/cuprum#488) should
+      land before that first final release.
+  - Date/Author: 2026-09-25, maintainer (leynos); replaces the planning
+    agent's "do not block releases" proposal.
 - **D9: cuprum bumps are manual. Leave Dependabot configured as it is.**
   - Rationale:
     - A Dependabot pull request that bumps cuprum edits only `pyproject.toml`
@@ -648,8 +677,10 @@ The upstream artefacts are these, as of commit `d613a80` on this branch:
 - `RM-5.1.4-SEL`: roadmap 5.1.4, first bullet. It requires an explicit beta
   selection in `pyproject.toml` and `uv.lock`, with aligned inline script
   metadata.
-- `RM-5.1.4-API`: roadmap 5.1.4, second bullet. `run_gh` uses `ScopeConfig` and
-  `RunOutputOptions`.
+- `RM-5.1.4-API`: roadmap 5.1.4, second bullet. `run_gh` replaces the removed
+  flat forms. The bullet names `ScopeConfig` and `RunOutputOptions`; the
+  maintainer replaced `ScopeConfig` with `scoped(catalogue=...)` (D2, an
+  accepted deviation). EP-M3 updates the roadmap text.
 - `RM-5.1.4-OK`: roadmap 5.1.4, success bullet. The installed beta works through
   repository and standalone execution with a stub `gh`, and validation
   publishes nothing.
@@ -873,7 +904,7 @@ reason:
 
 **Statement.** The existing catalogue unit tests and the
 `commands_catalogue.feature` scenarios pass using
-`scoped(ScopeConfig(allowlist=...))`. That includes rejecting an unregistered
+`scoped(catalogue=LADING_CATALOGUE)`. That includes rejecting an unregistered
 programme with `UnknownProgramError`.
 
 **Method.** The existing named tests and scenarios, which are finite contract
@@ -891,8 +922,9 @@ These are trusted and are not verified by this plan:
   project, and uses an adjacent script lockfile. This comes from the uv
   documentation and was confirmed locally with uv 0.11.19.
 - **A2:** cuprum 0.2.0b1 behaves as its users' guide describes. Capture is
-  available through `RunOutputOptions`, `scoped` takes a `ScopeConfig`, a
-  catalogued programme is found on `PATH`, and the environment is inherited.
+  available through `RunOutputOptions`. `scoped(catalogue=...)` derives its
+  allowlist from the catalogue's programmes. A catalogued programme is found on
+  `PATH`, and the environment is inherited.
 - **A3:** PyPI serves the published artefacts with the hashes recorded in the
   locks.
 - **A4:** with `GH_CONFIG_DIR` empty, no token, and `GH_HOST=stub.invalid`, a
@@ -996,12 +1028,14 @@ These steps form one commit.
    - O2 failing with the `TypeError` in the uploader's stderr.
 
    Record both in `Artefacts and notes`.
-7. Migrate `scripts/release_gh.py`: import `RunOutputOptions` and `ScopeConfig`,
-   and change `run_gh` as shown in `Interfaces and dependencies`.
+7. Migrate `scripts/release_gh.py`: import `RunOutputOptions`, and change
+   `run_gh` as shown in `Interfaces and dependencies`.
 8. Migrate `tests/unit/utils/test_commands.py` and
    `tests/bdd/steps/test_commands_catalogue_steps.py` to
-   `scoped(ScopeConfig(allowlist=LADING_CATALOGUE.allowlist))`, importing
-   `ScopeConfig` beside `scoped`.
+   `scoped(catalogue=LADING_CATALOGUE)`. Update the `lading/utils/commands.py`
+   module docstring, which shows `scoped(ScopeConfig(...))`, to the same form.
+   This is a docstring-only change to a production module; its doctests must
+   still pass.
 9. Remove every `xfail` marker added in EP-M1. Then
    `rg "cuprum beta not yet selected" tests` must print nothing.
 10. Run the focused green command and the four gates, then commit.
@@ -1015,25 +1049,32 @@ These steps form one commit.
 1. Run the distribution smoke checks in `Concrete steps` for the native wheel
    and the pure-Python wheel. Paste the transcripts into `Artefacts and notes`.
 2. Write `docs/adr/006-align-cuprum-selection-across-dependency-paths.md`,
-   recording D1, D2's alternative, D4, D8, and D9, and link it from
-   `docs/contents.md` and design §7. In `docs/documentation-style-guide.md`,
-   correct the ADR path rule to `docs/adr/NNN-short-description.md`.
+   recording D1, D2, D4, D8, and D9, and link it from `docs/contents.md` and
+   design §7. In `docs/documentation-style-guide.md`, correct the ADR path rule
+   to `docs/adr/NNN-short-description.md`.
 3. `docs/lading-design.md` §7:
    - in §7.2 item 6, record that the uploader now uses the beta forms through
      `scripts/release_gh.py`;
-   - in §7.3, state the selection policy and link ADR-006;
+   - in §7.3, replace the `scoped(ScopeConfig(allowlist=...))` example with
+     `scoped(catalogue=...)`, say when `ScopeConfig` is still needed, and
+     state the selection policy with a link to ADR-006;
    - add "Implementation notes (Step 5.1.4)".
 4. `docs/developers-guide.md`:
    - Replace the paragraph saying the catalogue call sites "must be corrected
-     as part of task 5.1.4" with the current state.
+     as part of task 5.1.4" with the current state. The `LADING_CATALOGUE`
+     paragraph's `scoped(ScopeConfig(allowlist=…))` becomes
+     `scoped(catalogue=…)`.
+   - In the release section, state D8's gate: no final lading 0.x release
+     until cuprum 0.2.0 final ships and the pin has moved to it. Link #286.
    - Update the "Release workflow" description of the uploader's layout
      (composition root, logic module, `release_gh` adapter) and of the capture
      call (`RunOutputOptions(capture=True)`).
    - Add "Changing the cuprum version", with the manual bump procedure from D9
      and the stub-helper rule from `Constraints`.
-5. `docs/users-guide.md` "Installation": say that lading depends on the cuprum
-   0.2.0 beta. Pip installs it automatically because the pin names the
-   pre-release, and environments that pin another cuprum will conflict.
+5. `docs/users-guide.md` "Installation": say that source and development
+   installs of lading currently depend on the cuprum 0.2.0 beta. Pip installs
+   it automatically because the pin names the pre-release, and environments
+   that pin another cuprum will conflict.
 6. `docs/scripting-standards.md`: correct the cuprum examples
    (`sh.scoped(CATALOGUE)`, `Catalogue`) to the beta forms used by
    `scripts/release_gh.py`.
@@ -1042,7 +1083,9 @@ These steps form one commit.
    selected and validated on both dependency paths (gate 1), with a pointer to
    this plan. Leave the original text intact.
 8. `docs/roadmap.md`:
-   - Mark 5.1.4 done (`- [x]`) with a one-line evidence note.
+   - Mark 5.1.4 done (`- [x]`) with a one-line evidence note. Reword its
+     second bullet to name `scoped(catalogue=...)` and `RunOutputOptions`
+     (D2).
    - Add `tests/helpers/gh_stub.py` to 5.3.2's list of capture-oriented
      subprocess call sites.
 9. Run `make fmt`, then `make markdownlint`, `make nixie`, and the four code
@@ -1132,7 +1175,9 @@ gate is red.
 - **Remaining gaps:**
   - roadmap 5.1.5 onwards;
   - pinning uv in `release.yml`;
-  - D8's release stance, if the maintainer overrides it.
+  - moving the pin to cuprum 0.2.0 final before the first final lading
+    release (D8);
+  - adopting the cuprum release process (#286).
 - **Compatibility decision:** none.
 
 ## Concrete steps
@@ -1418,7 +1463,6 @@ from cuprum import (
     ProgramCatalogue,
     ProjectSettings,
     RunOutputOptions,
-    ScopeConfig,
     scoped,
     sh,
 )
@@ -1435,7 +1479,7 @@ class CommandOutcome:
 
 
 def run_gh(arguments: cabc.Sequence[str]) -> CommandOutcome:
-    with scoped(ScopeConfig(allowlist=RELEASE_CATALOGUE.allowlist)):
+    with scoped(catalogue=RELEASE_CATALOGUE):
         command = sh.make(GH, catalogue=RELEASE_CATALOGUE)(*arguments)
         result = command.run_sync(output=RunOutputOptions(capture=True))
     return CommandOutcome(
@@ -1537,3 +1581,20 @@ No new runtime or development dependency is added. `hypothesis`, `pytest-bdd`,
     version.
   - **Effect on remaining work:** one extra refactor milestone and about eight
     more files. The scope tolerance is raised to match.
+- 2026-09-25, revision 2, after the maintainer's decisions.
+  - **What changed:**
+    - D2 now uses `scoped(catalogue=...)` for `run_gh` and the catalogue
+      tests. The roadmap's `ScopeConfig` wording is an accepted deviation,
+      corrected in EP-M3.
+    - D4 (the script lockfile) is approved.
+    - D8 is reversed: no final lading 0.x release until cuprum 0.2.0 final
+      ships.
+    - Issue #286, raised at the maintainer's request, mandates adopting the
+      cuprum release process from leynos/cuprum#488 once it merges. It is
+      referenced as remaining work.
+    - EP-M2 and EP-M3 gain the matching docstring, design, developers'
+      guide, users' guide, and roadmap wording changes.
+  - **Why:** the maintainer answered the three decisions the PR raised.
+  - **Effect on remaining work:** there are no new milestones. `run_gh` needs
+    one fewer import, and EP-M3 has a few more wording edits. Implementation
+    waits for an explicit go-ahead.
