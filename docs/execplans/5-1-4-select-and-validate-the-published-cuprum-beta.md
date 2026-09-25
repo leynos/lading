@@ -222,12 +222,14 @@ in `Decision log`, and escalate.
   0.x release until cuprum 0.2.0 final ships. The maintainer also asked for an
   issue mandating the cuprum release process (leynos/cuprum#488); it is raised
   as #286. The plan is updated to match.
-- [ ] Go-ahead to implement. The maintainer asked for no implementation work
-  yet.
-- [ ] EP-M0: uploader's cuprum boundary extracted to `scripts/release_gh.py`;
-  all gates green.
-- [ ] EP-M1: hardened stub helper, characterization tests, and red tests
-  committed; all gates green.
+- [x] (2026-09-25T14:00Z) Go-ahead to implement received.
+- [x] EP-M0: uploader's cuprum boundary extracted to `scripts/release_gh.py`;
+  `check-fmt` and `typecheck` green, and the extracted surface ruff-clean
+  (`make lint` red only on the then-untracked in-flight EP-M1 helper, since
+  fixed; `make test` not yet re-run on a quiesced tree).
+- [x] (2026-09-25) EP-M1: hardened stub helper, characterization tests, and red
+  tests committed. The focused red command reports exactly the three expected
+  `XFAIL` entries and no `XPASS` (48 passed, 3 xfailed).
 - [ ] EP-M2: beta selected and locked on both paths; callers migrated; markers
   removed; all gates green; seeded mutations observed.
 - [ ] EP-M3: distribution evidence recorded; documentation, ADR, and roadmap
@@ -354,6 +356,70 @@ in `Decision log`, and escalate.
 - **cuprum ships no `py.typed` marker in either 0.1.0 or the beta.**
   - Evidence: probe of the installed packages.
   - Impact: no change in how cuprum is type-checked (see `Risks`).
+- **`tests/unit/test_upload_release_wheels.py` could not be brought under 400
+  lines by the EP-M0 move alone.**
+  - Observation: moving the `run_gh` test out took the file from 417 to 417
+    net lines -- adding the `release_gh` fixture put back what the move
+    removed. Splitting the fixtures into a shared helper
+    (`tests/helpers/script_imports.py`) brought it to 410, still over.
+  - Evidence: `wc -l` at each step.
+  - Impact: the module was split by concern. Discovery tests, which include the
+    unprivileged-permission cases and the Hypothesis property, moved to
+    `tests/unit/test_upload_release_wheels_discovery.py`. The original is now
+    261 lines, the new module about 190, and both are comfortably inside the
+    limit. The split is by responsibility rather than by size: one module
+    covers "what gets uploaded and what is reported", the other "where the
+    wheels are found and how a bad directory is diagnosed".
+- **`make lint` uses the `ruff: ignore[...]` spelling, not `# noqa`.**
+  - Observation: new EP-M1 files written with `# noqa: S603` failed
+    `noqa-comments` (RUF105), which requires the project's own spelling.
+    `DOC502` (extraneous exception) also fires on a `Raises` section that
+    documents an exception raised by a *delegated* helper or by the standard
+    library call the body makes, not by a `raise` in that function.
+  - Evidence: `make lint` log during the EP-M0 gate run; the message
+    "Use `ruff: ignore` instead".
+  - Impact: every suppression in the new files uses `# ruff: ignore[rule] -
+    reason`, matching `tests/bdd/steps/test_publish_when_steps.py`. A partial
+    `make lint` run also reaches only as far as `ruff check`; failures there
+    mean `interrogate`, `pylint`, `df12-pylint`, and `ambrleaks` have not run
+    at all, so a single passed stage is not a passed gate.
+- **A `pytest.mark.xfail` under a pytest-bdd `@scenario` is discarded.**
+  - Observation: the marker was placed between `@scenario(...)` and the test
+    function, matching the order the plan's snippet suggests. The test ran
+    unmarked, and the red run reported `1 failed` instead of `1 xfailed`.
+    pytest-bdd's `@scenario` returns a wrapper built from the function it
+    decorates, and the inner function's marks do not travel outward.
+  - Evidence:
+    `uv run pytest -rxX tests/bdd/steps/test_release_wheel_upload_steps.py`
+    before and after moving the decorator.
+  - Impact: the marker goes *above* `@scenario`, with a comment saying why, so
+    the next person to add one to another scenario does not repeat it. The
+    plan's snippet is a fragment and does not show the required order.
+- **The stub's `which` guard is defeated by `extra`, not by the ambient `PATH`
+  .**
+  - Observation: a test that prepended a shadowing directory to `PATH` could
+    not make the guard fire: `isolated_environment` prepends the stub's own
+    directory after reading the environment, so the stub always wins. The
+    reachable hazard is the caller's `extra` mapping, which is applied last.
+  - Evidence: a direct call with a shadowing directory in `PATH` returned
+    normally; the same directory passed through `extra` raised.
+  - Impact: the helper test asserts the `extra` case, which is the one a
+    future caller could actually trigger. The guard itself is unchanged and
+    still checks the environment as built.
+- **The standalone run reports a usable `VIRTUAL_ENV`, so O2 is measurable.**
+  - Observation: `uv run --script` gives the child
+    `VIRTUAL_ENV=~/.cache/uv/environments-v2/upload-release-wheels-<hash>`,
+    with `site-packages` at `lib/python3.14/site-packages` under it, and
+    `UV_PROJECT`, `UV_PROJECT_ENVIRONMENT`, and `UV_WORKING_DIRECTORY` unset.
+    A probe reading that path found exactly one cuprum distribution, version
+    `0.1.0` -- the pre-beta value the scenario must fail on.
+  - Evidence: a temporary probe script run as the stub, recording its
+    environment; `importlib.metadata.distributions(name="cuprum", path=[site])`
+    against the recorded path.
+  - Impact: the O2 step resolves the interpreter version part of the path with
+    `Path.glob("lib/python*/site-packages")` rather than assuming 3.13. The
+    helper's stripping of the `UV_*` variables is confirmed not to break the
+    standalone path, because uv sets them itself for the child.
 
 ## Decision log
 
