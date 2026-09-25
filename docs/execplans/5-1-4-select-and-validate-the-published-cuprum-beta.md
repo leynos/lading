@@ -452,6 +452,37 @@ in `Decision log`, and escalate.
     follow-up rather than actioned.
   - Impact on this task's red tests: the `xfail` markers themselves are
     unaffected; only message-carrying asserts were added.
+- **`docs/scripting-standards.md`'s cuprum examples name an API that never
+  existed in either version.**
+  - Observation: the guide's examples use `from cuprum import Catalogue, sh`,
+    `Catalogue.from_programs(...)`, `Hook(...)`, and `sh.scoped(CATALOGUE)`.
+    Probing both releases: `Catalogue` and `Hook` are absent from `cuprum`
+    0.1.0 *and* from `0.2.0b1`; `sh.scoped` does not exist in 0.1.0 at all.
+    The real names are `ProgramCatalogue`, `ExecHook`, and the module-level
+    `scoped(catalogue=...)`.
+  - Evidence: `dir(cuprum)` on both versions, run in scratch environments.
+    0.1.0 exposes `ProgramCatalogue`, `observe`, `scoped`, and `sh`;
+    `sh.scoped` raises `AttributeError` there. The beta adds
+    `RunOutputOptions`, `ScopeConfig`, and `Catalogue`-free `scoped`.
+  - Impact: EP-M3 step 6 is a larger correction than "correct the cuprum
+    examples" implies. The examples are not merely on the old `0.1.0` form --
+    they are wrong for every published cuprum, so a reader following them
+    cannot succeed on any version. They are documentation-only and gate-
+    invisible (mdformat does not execute them), so they have gone unnoticed.
+    The correction is therefore to the beta's real surface, and should say so
+    where an example would otherwise look like a version choice.
+- **`scoped(catalogue=...)` preserves the rejection semantics O5 asserts.**
+  - Observation: under `0.2.0b1`, `sh.make` of an unregistered programme
+    inside `scoped(catalogue=LADING_CATALOGUE)` raises `UnknownProgramError`
+    with "is not in the catalogue allowlist", and the allowlist derives from
+    the catalogue's programmes (`cargo`, `git`, `sccache`).
+  - Evidence: a probe against the beta building the same `ProgramCatalogue`
+    shape as `lading/utils/commands.py`.
+  - Impact: confirms D2 from the maintainer. It also shows a limit worth
+    recording: a programme from a *different* catalogue, constructed inside
+    our scope, did **not** raise in this probe. Nothing in 5.1.4 relies on
+    that case, and no existing test asserts it, but §7.3's "nested scopes
+    cannot widen their parent's allowlist" should not be read as covering it.
 
 ## Decision log
 
@@ -1022,7 +1053,8 @@ These are trusted and are not verified by this plan:
 - **A2:** cuprum 0.2.0b1 behaves as its users' guide describes. Capture is
   available through `RunOutputOptions`. `scoped(catalogue=...)` derives its
   allowlist from the catalogue's programmes. A catalogued programme is found on
-  `PATH`, and the environment is inherited.
+  `PATH`, and the environment is inherited. (Directly probed on 2026-09-25
+  against the published beta; see `Surprises & discoveries`.)
 - **A3:** PyPI serves the published artefacts with the hashes recorded in the
   locks.
 - **A4:** with `GH_CONFIG_DIR` empty, no token, and `GH_HOST=stub.invalid`, a
