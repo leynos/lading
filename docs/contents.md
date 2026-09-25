@@ -49,6 +49,10 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
   scripts, secure command execution, and command mocking.
 - [cmd-mox usage guide](cmd-mox-usage-guide.md) - testing guidance for command
   spies, fixtures, and process-boundary assertions.
+- [Complexity antipatterns and refactoring
+  strategies](complexity-antipatterns-and-refactoring-strategies.md) -
+  reference on cyclomatic and cognitive complexity metrics, the bumpy road
+  antipattern, and refactoring techniques that reduce cognitive load.
 
 [adr-003]: adr/003-three-tier-python-linting.md
 [adr-004]: adr/004-in-process-metrics-backend.md
