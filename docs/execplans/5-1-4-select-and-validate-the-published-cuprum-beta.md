@@ -290,7 +290,7 @@ in `Decision log`, and escalate.
     Re-reviewing EP-M1 in place would spend the free tier's rate-limit window
     to see the same commits twice. If that branch-wide review raises anything
     about these fixes, it is cleared before EP-M3, not deferred again.
-- [ ] EP-M2: beta selected and locked on both paths; callers migrated; markers
+- [x] EP-M2: beta selected and locked on both paths; callers migrated; markers
   removed; all gates green; seeded mutations observed.
   - [x] (2026-09-25) Selection, locking, and migration done and verified: the
     pin is `cuprum==0.2.0b1` in `pyproject.toml` and in the PEP 723 block,
@@ -320,7 +320,7 @@ in `Decision log`, and escalate.
     and corrected: the PEP 503 rationale was false, and the finding it
     justified was a comment-accuracy issue whose fix changed no behaviour.
     See `EP-M1 review dispositions`.
-- [ ] EP-M3: distribution evidence recorded; documentation, ADR, and roadmap
+- [x] EP-M3: distribution evidence recorded; documentation, ADR, and roadmap
   updated; all gates green.
   - [x] (2026-09-25) EP-M2 closed as a milestone: both commits (`4bc006c`,
     `17a1885`) carry all four code gates green plus `spelling`, `markdownlint`,
@@ -500,6 +500,30 @@ in `Decision log`, and escalate.
     the original reasoning *look* right was the abort-at-first-failure
     behaviour of `make`, not any property of the gate. The disposition now
     states the narrower true reason.
+  - [x] (2026-09-25) Stage D step 10, closing run: all seven gates green on the
+    clean tree at `367d4ea`, run by `scrutineer` in the required order and
+    strictly sequentially, with no gate failing and therefore no re-run. The
+    counts: `check-fmt` (ruff `212 files already formatted`, mdtablefix `28
+    files left unchanged`), `typecheck` (ty 0.0.56, 58 sources,
+    `All checks passed!`), `lint` (all stages, pylint 10.00/10 twice),
+    `test` (`1200 passed, 30 skipped`, 76 snapshots), `spelling`,
+    `markdownlint` (28 files, 0 errors), `nixie` (all diagrams validated).
+    HEAD was `367d4ea` both before and after, the index and tracked-content
+    hashes were identical, and `git status --porcelain` was empty: the tree
+    stayed clean throughout, so all seven results describe the committed
+    state. `typos.toml` was again confirmed undrifted by hash.
+    - This is the same gate set as the `9b73c08` run above, re-run because the
+      ADR summary and this plan changed afterwards. The re-run is the one that
+      covers the review-finding fix; the earlier run remains valid evidence for
+      `9b73c08` only.
+    - Logs are under `/tmp/<gate>-lading-5-1-4-select-and-validate-the-published-cuprum-beta-367d4ea.out`.
+      `scrutineer` noted that `make markdownlint` depends on `spelling`, so
+      that gate legitimately runs twice in a full pass -- a Makefile property,
+      not a defect.
+  - [x] (2026-09-25) EP-M3 milestone box closed, with one item carried forward
+    rather than ticked: the final-release-guard finding is declined and raised
+    for the maintainer. Every other EP-M2 and EP-M3 sub-item is complete and
+    the gates are green on the final commit.
 
 ## Surprises & discoveries
 
