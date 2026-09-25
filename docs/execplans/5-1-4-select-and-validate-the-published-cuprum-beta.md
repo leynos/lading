@@ -231,8 +231,8 @@ in `Decision log`, and escalate.
   tests committed. The focused red command reports exactly the three expected
   `XFAIL` entries and no `XPASS` (48 passed, 3 xfailed).
 - [x] (2026-09-25) EP-M1 gate pass. First run was red on two real defects, both
-  now fixed: a bare `assert` (df12 `C9102`) in `test_cuprum_selection.py`, and
-  a `GhStub.calls` doctest whose `+SKIP` covered only the binding line, leaving
+  now fixed: a bare `assert` (df12 `C9102`) in `test_cuprum_selection.py`, and a
+  `GhStub.calls` doctest whose `+SKIP` covered only the binding line, leaving
   the next line to run with `stub` unbound. The doctest now runs for real
   instead of being skipped. Investigating the first defect surfaced a
   pre-existing repo-wide blind spot: `recursive = true` never descends into
