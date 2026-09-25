@@ -230,6 +230,14 @@ in `Decision log`, and escalate.
 - [x] (2026-09-25) EP-M1: hardened stub helper, characterization tests, and red
   tests committed. The focused red command reports exactly the three expected
   `XFAIL` entries and no `XPASS` (48 passed, 3 xfailed).
+- [x] (2026-09-25) EP-M1 gate pass. First run was red on two real defects, both
+  now fixed: a bare `assert` (df12 `C9102`) in `test_cuprum_selection.py`, and
+  a `GhStub.calls` doctest whose `+SKIP` covered only the binding line, leaving
+  the next line to run with `stub` unbound. The doctest now runs for real
+  instead of being skipped. Investigating the first defect surfaced a
+  pre-existing repo-wide blind spot: `recursive = true` never descends into
+  directories lacking `__init__.py`, so `tests/unit/` escapes the df12 tier
+  entirely (see `Surprises & discoveries`).
 - [ ] EP-M2: beta selected and locked on both paths; callers migrated; markers
   removed; all gates green; seeded mutations observed.
 - [ ] EP-M3: distribution evidence recorded; documentation, ADR, and roadmap
@@ -420,6 +428,30 @@ in `Decision log`, and escalate.
     `Path.glob("lib/python*/site-packages")` rather than assuming 3.13. The
     helper's stripping of the `UV_*` variables is confirmed not to break the
     standalone path, because uv sets them itself for the child.
+- **The df12 lint tier does not reach `tests/unit/` at all.**
+  - Observation: `make lint`'s df12-pylint stage reported a single `C9102`
+    (bare `assert`) in `tests/workflow_contracts/test_cuprum_selection.py`,
+    while running the same command against `tests/unit` reports hundreds
+    across that directory's existing files. The cause is configuration, not
+    rule selection: `[tool.pylint.main] recursive = true` descends only into
+    packages, and `tests/unit/`, `tests/unit/utils/`, `tests/bdd/`, and
+    `tests/support/` carry no `__init__.py`. A directory without one is never
+    walked, so every file under it escapes this tier.
+  - Evidence: a two-file scratch tree. With `pkg/sub/__init__.py` absent, a
+    bare `assert` in `pkg/sub/mod.py` is unreported; adding the file makes it
+    appear. In this repository `tests/unit` reports 781 `C9102` findings when
+    named directly and none when reached through `tests`.
+  - Impact: pre-existing and repo-wide, not introduced here. It means the
+    dif12 tier is silent on the largest test directory, so its `C9102`,
+    `R9108`/`R9109` (snapshot-assertion) and `R9111` (dataclass slots) rules
+    are unenforced there. This task fixes its own files to the standard the
+    tier intends -- `tests/unit/test_gh_stub_helper.py` and
+    `tests/unit/test_release_gh_properties.py` are clean when named directly --
+    but does not add `__init__.py` files or re-lint the directory wholesale,
+    which would be a large unrelated change dwarfing 5.1.4. Recorded as a
+    follow-up rather than actioned.
+  - Impact on this task's red tests: the `xfail` markers themselves are
+    unaffected; only message-carrying asserts were added.
 
 ## Decision log
 

@@ -350,7 +350,7 @@ def test_a_metadata_block_pinning_another_version_is_reported() -> None:
     """The script's own pin is compared, not merely parsed."""
     other = _declared_pin(_pyproject_with("cuprum==0.1.0"))
 
-    assert other == "0.1.0"
+    assert other == "0.1.0", f"the pin was mis-parsed as {other!r}"
     assert other != _declared_pin(_pyproject_with("cuprum==0.2.0b1")), (
         "two different pins must not compare equal"
     )

@@ -115,8 +115,10 @@ class GhStub:
 
         Examples
         --------
-        >>> stub = install_gh_stub(tmp_path)  # doctest: +SKIP
-        >>> stub.calls()
+        >>> import tempfile
+        >>> with tempfile.TemporaryDirectory() as tmp:
+        ...     stub = install_gh_stub(Path(tmp))
+        ...     stub.calls()
         ()
         """
         if not self.record.exists():

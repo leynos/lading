@@ -74,7 +74,10 @@ def test_the_guard_passes_when_the_stub_is_first(stub: GhStub) -> None:
     """The ordinary case is accepted, so the guard is not merely always-failing."""
     environment = isolated_environment(stub)
 
-    assert environment["PATH"].split(os.pathsep)[0] == str(stub.bin_directory)
+    first = environment["PATH"].split(os.pathsep)[0]
+    assert first == str(stub.bin_directory), (
+        f"the stub directory must lead PATH, but {first} does"
+    )
 
 
 def test_the_token_is_removed_not_merely_absent(
@@ -106,7 +109,9 @@ def test_the_sentinel_is_inherited(stub: GhStub) -> None:
     """
     environment = isolated_environment(stub, sentinel="carried-through")
 
-    assert environment[SENTINEL_VARIABLE] == "carried-through"
+    assert environment[SENTINEL_VARIABLE] == "carried-through", (
+        "the sentinel did not survive into the child environment"
+    )
 
 
 def test_the_configuration_directory_is_empty(stub: GhStub) -> None:
@@ -122,15 +127,21 @@ def test_the_host_is_invalid_and_prompts_are_disabled(stub: GhStub) -> None:
     """A mistaken call cannot reach GitHub, and cannot block waiting for input."""
     environment = isolated_environment(stub)
 
-    assert environment["GH_HOST"] == "stub.invalid"
-    assert environment["GH_PROMPT_DISABLED"] == "1"
+    assert environment["GH_HOST"] == "stub.invalid", (
+        "a mistaken call could reach the real host"
+    )
+    assert environment["GH_PROMPT_DISABLED"] == "1", (
+        "a prompt could block the child waiting for input"
+    )
 
 
 def test_extra_variables_are_applied_last(stub: GhStub) -> None:
     """A caller's overrides win, so one helper serves every scenario."""
     environment = isolated_environment(stub, extra={"GITHUB_REF_NAME": STUB_TAG})
 
-    assert environment["GITHUB_REF_NAME"] == STUB_TAG
+    assert environment["GITHUB_REF_NAME"] == STUB_TAG, (
+        "the caller's override did not win"
+    )
 
 
 def test_the_project_variables_are_stripped(stub: GhStub) -> None:
@@ -175,7 +186,7 @@ def test_an_empty_record_reports_no_calls(tmp_path: Path) -> None:
     """A stub that was never invoked reports an empty tuple, not an error."""
     stub = install_gh_stub(tmp_path)
 
-    assert stub.calls() == ()
+    assert stub.calls() == (), "an unused stub must report no calls, not an error"
 
 
 def test_the_stub_can_fail_with_a_chosen_diagnostic(tmp_path: Path) -> None:
