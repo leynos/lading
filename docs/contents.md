@@ -58,6 +58,10 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
 - [cuprum 0.2.0 migration guide](cuprum-v0-2-0-migration-guide.md) - imported
   `cuprum` 0.2.0-beta1 guide to the API changes from 0.1.x, including
   `ScopeConfig` and `RunOutputOptions`.
+- [Complexity antipatterns and refactoring
+  strategies](complexity-antipatterns-and-refactoring-strategies.md) -
+  reference on cyclomatic and cognitive complexity metrics, the bumpy road
+  antipattern, and refactoring techniques that reduce cognitive load.
 
 [adr-003]: adr/003-three-tier-python-linting.md
 [adr-004]: adr/004-in-process-metrics-backend.md
