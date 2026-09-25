@@ -40,6 +40,9 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
 - [ADR-005: Draft-then-publish releases with a standalone wheel
   uploader][adr-005] - accepted design for the release workflow's publication
   order and the uploader script.
+- [ADR-006: Align cuprum selection across dependency paths][adr-006] - accepted
+  policy for pinning, locking, and bumping cuprum on both the repository and
+  the standalone script path.
 
 ## Reference documents
 
@@ -59,4 +62,5 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
 [adr-003]: adr/003-three-tier-python-linting.md
 [adr-004]: adr/004-in-process-metrics-backend.md
 [adr-005]: adr/005-release-wheel-publication.md
+[adr-006]: adr/006-align-cuprum-selection-across-dependency-paths.md
 [execplan-regenerate-lockfiles]: execplans/regenerate-lockfiles.md

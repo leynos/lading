@@ -9,6 +9,13 @@ stems = []
 accepted = []
 
 [words.corrections]
+# The shared dictionary has no entry for this misspelling, so the gate passes
+# with it present. Both directions were measured on 2026-09-25: with this line
+# the gate reports "`erazed` should be `erased`" and exits 2, and with the line
+# removed it exits 0 while the word is still in the prose. It is written down
+# because a one-off typo in a plan's mutation transcript reached the branch
+# through a green spelling gate.
+erazed = "erased"
 
 [patterns]
 # Inline code spans name real identifiers (for example

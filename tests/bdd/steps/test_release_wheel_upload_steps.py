@@ -7,8 +7,8 @@ properties of a child process, so every step here observes a real run rather
 than a double.
 
 Each scenario is bound with its own ``@scenario`` decorator instead of the
-``scenarios()`` helper, because one of them needs its own marker: the pin
-assertion is red until task 5.1.4 selects the beta.
+``scenarios()`` helper, so that a scenario needing its own marker can carry
+one. The beta has since been selected, and no scenario here is marked.
 """
 
 from __future__ import annotations

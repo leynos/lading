@@ -322,6 +322,30 @@ in `Decision log`, and escalate.
     See `EP-M1 review dispositions`.
 - [ ] EP-M3: distribution evidence recorded; documentation, ADR, and roadmap
   updated; all gates green.
+  - [x] (2026-09-25) EP-M2 closed as a milestone: both commits (`4bc006c`,
+    `17a1885`) carry all four code gates green plus `spelling`, `markdownlint`,
+    and `nixie`, and the test count reconciles exactly (1193 at EP-M1 + 3
+    converted xfails + 3 lock-shape self-tests + 1 PEP 503 test = 1200). The
+    EP-M2 CodeRabbit review was launched branch-wide
+    (`--base-commit a527e22`), covering EP-M0 through EP-M2, and its findings
+    are cleared before this milestone proceeds.
+  - [x] (2026-09-25) Stage D step 1: both distribution smokes run and recorded
+    in `Artefacts and notes`. The native wheel prints `True` and the
+    pure-Python wheel prints `False` for `is_rust_available()`, with
+    `CommandOutcome(exit_code=3, stdout='stub release view\n',
+    stderr='diag\n')` in both cases -- exactly the plan's prediction. The wheels
+    were checked at the artefact level too: the native archive carries
+    `cuprum/_rust_backend_native.abi3.so` and the pure-Python one carries no
+    `.so` at all, so the differing first field is a property of which wheel was
+    installed rather than of the machine.
+  - [x] (2026-09-25) Stage D step 2:
+        `docs/adr/006-align-cuprum-selection-across-dependency-paths.md`
+    written, recording D1, D2, D4, D8, and D9, and linked from `docs/contents.md`
+    (both the Decision records entry and its link definition). Every factual
+    claim in it was verified by inspection -- the pins, the two lockfiles, the
+    cyclopts divergence (3.24.0 repository vs 5.0.0 standalone), and the
+    contract test's path. The style guide's ADR naming rule is corrected to
+    `NNN-short-description.md` under `docs/adr/`.
 
 ## Surprises & discoveries
 
@@ -676,9 +700,10 @@ in `Decision log`, and escalate.
     shape as `lading/utils/commands.py`.
   - Impact: confirms D2 from the maintainer. It also shows a limit worth
     recording: a programme from a *different* catalogue, constructed inside
-    our scope, did **not** raise in this probe. Nothing in 5.1.4 relies on
-    that case, and no existing test asserts it, but §7.3's "nested scopes
-    cannot widen their parent's allowlist" should not be read as covering it.
+    the scope under test, did **not** raise in this probe. Nothing in 5.1.4
+    relies on that case, and no existing test asserts it, but §7.3's "nested
+    scopes cannot widen their parent's allowlist" should not be read as
+    covering it.
 
 ## Decision log
 
@@ -951,10 +976,10 @@ independent checking, and both concern `test_cuprum_selection.py`:
   that no separator-collapsing rule removes again. The reviewer's instruction
   ("do not treat `cup-rum` as equivalent to `cuprum`") described what the
   original code already did, and the false sentence explaining *why* was
-  introduced by my own fix for it -- inherited verbatim from the finding.
+  introduced by the fix applied for it -- inherited verbatim from the finding.
   - This is the second-order risk of applying a review finding without
     re-deriving its claim: the code change was behaviour-preserving, but the
-    prose I added to justify it asserted something untrue, and no gate reads
+    prose added to justify it asserted something untrue, and no gate reads
     prose. The correction now states the reachable truth (only
     case-insensitivity is exercisable for this name) and is pinned by
     `test_the_name_matcher_agrees_with_pep_503_on_what_is_cuprum`, which
@@ -965,6 +990,81 @@ independent checking, and both concern `test_cuprum_selection.py`:
   `minor` while rating typo-level items the same way. Severity here tracked
   textual prominence, not consequence, which is worth remembering when triaging
   a future pass by label.
+
+### EP-M2 review dispositions
+
+`coderabbit review --agent --base-commit a527e22` ran again on 2026-09-25 after
+the EP-M2 gates were green, **not** rate-limited, and again branch-wide. It
+reported five findings, all rated `minor`, and reviewed 23 files. Four are
+prose; one is substantive and is the most important finding of either pass.
+
+- **The two lock-freshness checks could not fail. Fixed, and this is the
+  headline finding.** The review raised it as finding 5, conceding only that
+  the *docstring* understated the test; the reach of the defect is larger than
+  that, and the measurement below is what establishes it.
+  - The mechanism has two halves, and they are separate. `Makefile:149` makes
+    `test` depend on `build`, and `Makefile:68` runs `uv sync --group dev`
+    with no `--locked`. Measured on a deliberately staled tree: `uv lock
+    --check` exits 1, `make build` exits 0, and `uv lock --check` then exits
+    **0** -- the prerequisite re-locked the file in place before pytest ran.
+    Separately, `uv run --script scripts/upload_release_wheels.py` does the
+    same to the script lock: measured with an unrelated dependency planted in
+    the PEP 723 block, the script check went from exit 1 to exit 0 across one
+    `uv run --script`, and the BDD scenario runs exactly that command.
+  - So both checks validated the *post-repair* lock. Under `make test`, and in
+    CI for the same reason, neither could report a stale lock that had been
+    committed; O1b's guarantee was not established by the tests that claimed
+    it. This is the same defect class as the EP-M1 sentinel and the
+    `test_the_project_variables_are_stripped` case, and it is the third
+    instance of it on this branch.
+  - Fixed by reconstructing each pair from the index: `_committed()` reads a
+    blob with `git show :<path>`, the pair is written into `tmp_path`, and uv
+    checks it there. The two tests are now falsifiable, and the mutation that
+    proves it is decisive in both directions: with the committed `pyproject.toml`
+    changed to a range, `make build` still repairs the working tree (exit 0)
+    and the new test **fails** with "is stale as committed"; the same holds for
+    the script lock with a planted dependency. The old version passed that
+    mutation.
+  - The scratch-directory construction is what makes it work, and it needs no
+    network: three variants were measured before the fix was written -- a fresh
+    committed pair exits 0, a stale committed pair exits 1, and a minimal
+    directory holding only the two files is sufficient.
+- **The BDD module docstring described a state that no longer exists. Fixed.**
+  It said one scenario "needs its own marker" and that "the pin assertion is
+  red until task 5.1.4 selects the beta". The markers were removed in
+  `4bc006c`, and the sentence was written for EP-M1. Reworded to past tense and
+  to say that no scenario is marked now.
+- **`erazed` for `erased`, in a mutation transcript. Fixed, and the gate gap
+  it exposed is now closed.** The typo was real and committed. The scrutineer
+  established that `make spelling` passes with the word present, because the
+  shared dictionary has no entry for it -- a dictionary gap, not a scope
+  exclusion. Both directions were then measured directly: with
+  `erazed = "erased"` in `typos.local.toml` the gate reports the correction and
+  exits 2; with that line removed it exits 0 while the word is still in the
+  prose. The entry is therefore load-bearing rather than cosmetic, and it is
+  recorded in the overlay with the measurement, since the class of defect --
+  prose that reaches the branch through a green gate -- is exactly what this
+  plan has been bitten by repeatedly.
+- **First-person pronouns in this plan, twice. Fixed.** "the false sentence
+  explaining *why* was introduced by my own fix for it" and "the prose **I**
+  added to justify it". The style guide's rule against first person predates
+  the branch. Reworded impersonally, and a sweep for `I`/`my`/`we`/`our` across
+  the file now finds none. The finding's cited line numbers were stale (it
+  named 954/957; the text had moved), which is the review having read committed
+  HEAD while the tree was being edited concurrently.
+- **A single-backtick `uv.lock` amid double backticks. Fixed.** The docstring's
+  closing paragraph used `` `uv.lock` `` once where the rest of the module uses
+  RST double backticks, and that paragraph also carried the caveat the fix
+  above removes, so it was rewritten rather than punctuated.
+
+Two notes on the pass itself. The severity ratings are again not a guide to
+consequence: the finding that mattered was rated `minor`, as were three prose
+items. And the review's reach had a boundary worth recording -- it correctly
+identified that the freshness test's *name* overclaimed, but not that both
+tests were vacuous, which took staling the tree through the real `make` and
+`uv` paths to establish. A review reading a diff can see that a test says
+something weaker than its name implies; only running the gate can show that the
+weaker claim is also unreachable.
 
 ## Outcomes & retrospective
 
@@ -1830,7 +1930,7 @@ $ uv run pytest -q tests/unit/test_release_gh_properties.py
 ```
 
 All three failed for the stated reason and none for an unrelated one: the
-emptied streams, the transposed streams, and the erazed status each show up in
+emptied streams, the transposed streams, and the erased status each show up in
 the assertion text. The third mutation is the one that also breaks the SIGTERM
 example, which is the example that exists to pin a negative status.
 
@@ -1982,6 +2082,52 @@ FAILED tests/e2e/test_upload_release_wheels_cli.py::test_a_successful_step_repor
 FAILED tests/e2e/test_upload_release_wheels_cli.py::test_each_failure_reports_its_own_outcome[rejected-upload-failed]
 13 failed, 49 passed
 ```
+
+### Distribution smoke (EP-M3, run 2026-09-25 at `17a1885`)
+
+Both commands are the plan's `Distribution smoke` block verbatim, with the
+pure-Python URL taken from `uv.lock` at this revision. The stub `gh` prints
+`stub $*` to stdout, `diag` to stderr, and exits 3; the smoke prints
+`cuprum.is_rust_available()` and then the `CommandOutcome` that came back
+through `run_gh`:
+
+```plaintext
+$ STUB=$(mktemp -d); printf '#!/bin/sh\necho "stub $*"; echo diag >&2; exit 3\n' > "$STUB/gh"
+$ chmod +x "$STUB/gh"; mkdir "$STUB/config"
+
+$ $ISOLATE uv run --no-project --python 3.13 --with cuprum==0.2.0b1 python -c "$SMOKE"
+True CommandOutcome(exit_code=3, stdout='stub release view\n', stderr='diag\n')
+
+# The pure-Python URL is read from uv.lock rather than pasted, so this
+# transcript names the same artefact the repository resolves:
+$ URL=$(grep -o 'https://[^"]*cuprum-0.2.0b1-py3-none-any\.whl' uv.lock)
+$ $ISOLATE uv run --no-project --python 3.13 --with "cuprum @ $URL" python -c "$SMOKE"
+False CommandOutcome(exit_code=3, stdout='stub release view\n', stderr='diag\n')
+```
+
+Four things are asserted by that pair, and each is visible in the output:
+
+- `True` then `False`: the native wheel loads the Rust-backed stream capture and
+  the pure-Python wheel falls back to the Python one. **This is what
+  distinguishes the two wheels** -- a smoke that printed the same first field
+  twice would have installed the same distribution twice. The field is not a
+  constant: `is_rust_available()` calls `_rust_backend.is_available()`. The
+  wheels differ in exactly the way that answer implies -- the native archive
+  holds `cuprum/_rust_backend_native.abi3.so` (619,544 bytes, 521,332 total)
+  and the pure-Python archive holds no `.so` at all (259,115 bytes) -- so the
+  pair of answers is a property of which wheel was installed, not of this
+  machine.
+- `exit_code=3` in both lines: the child's real status survives the adapter.
+- Both streams are non-empty and hold what the stub actually wrote, in the
+  right stream. The `diag` output is on `stderr` and the `stub release view`
+  output is on `stdout`, so the pair is not transposed.
+- `CommandOutcome(...)` and not `CommandResult(...)`: the value that crossed the
+  boundary is the adapter's own type, so `release_gh.run_gh` is the code that
+  ran, on both wheels.
+
+The isolation env is the one the plan specifies (`-u GH_TOKEN`,
+`-u GITHUB_TOKEN`, `-u CUPRUM_STREAM_BACKEND`, a scratch `GH_CONFIG_DIR`, and
+`GH_HOST=stub.invalid`), so neither smoke reached a real `gh` or a real account.
 
 ## Interfaces and dependencies
 

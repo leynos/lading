@@ -776,6 +776,7 @@ extend-ignore-re = [
 "equalizers" = "equalizers"
 "equalizes" = "equalizes"
 "equalizing" = "equalizing"
+"erazed" = "erased"
 "exercize" = "exercise"
 "exercized" = "exercised"
 "exercizes" = "exercises"
