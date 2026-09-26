@@ -51,10 +51,23 @@ SKYLOS ?= $(SKYLOS_CLI) --config-file pyproject.toml
 SKYLOS_PRODUCTION_TARGETS ?= lading
 SKYLOS_EXCLUDE_FOLDERS ?= tests
 SKYLOS_WHITELIST_LOCK ?= .skylos-whitelist.lock
+# Pin the nose duplication detector so `make` and CI install the same release.
+# Bump the three sites together: this variable, the NOSE_VERSION environment in
+# .github/workflows/ci.yml, and [tool.nose].version in pyproject.toml.
+# tests/workflow_contracts/test_duplication_toolchain_contract.py fails on drift.
+NOSE_VERSION ?= 0.20.0
+NOSE_TOOLS_DIR ?= .tools/nose
+NOSE_BIN ?= $(NOSE_TOOLS_DIR)/nose
+CARGO_BINSTALL ?= cargo-binstall
+# The gate wrapper is PEP 723 tooling: `uv run` reads its inline metadata and
+# resolves cyclopts/tomlkit on its own interpreter, so the gate never imports
+# lading or touches the project virtualenv.
+DUPLICATION_GATE = $(UV_ENV) NOSE_BIN=$(NOSE_BIN) $(UV) run scripts/duplication_gate.py
 
 .PHONY: help all clean build build-release lint fmt check-fmt \
 	markdownlint nixie spelling test typecheck crosshair \
-	makeutil skylos-allow $(TOOLS) $(VENV_TOOLS)
+	makeutil skylos-allow install-nose duplication duplication-test \
+	duplication-allow $(TOOLS) $(VENV_TOOLS)
 
 .DEFAULT_GOAL := all
 
@@ -111,7 +124,7 @@ check-fmt: $(UV) ## Verify formatting
 	$(RUFF) format --check
 	$(MDTABLEFIX) --check $(MDTABLEFIX_SELECT) $(MDTABLEFIX_RULES)
 
-lint: build $(UV) interrogate ## Run linters
+lint: build $(UV) interrogate install-nose ## Run linters
 	$(RUFF) check
 	$(UV) run interrogate --fail-under 100 lading
 	$(UV) run interrogate --fail-under 100 \
@@ -121,6 +134,16 @@ lint: build $(UV) interrogate ## Run linters
 	$(AMBRLEAKS) tests
 	$(SKYLOS) $(SKYLOS_PRODUCTION_TARGETS) --exclude $(SKYLOS_EXCLUDE_FOLDERS) --category dead_code --gate \
 		--format concise --no-upload --no-provenance --no-grep-verify
+	$(DUPLICATION_GATE) check
+
+# Accept FIRST/SECOND/REASON only from the make command line. Ambient values
+# must not satisfy the duplication targets: `FIRST` and `REASON` are common
+# enough names that an exported environment could otherwise record an exception
+# nobody asked for. `cli_value` therefore reads a variable only when the
+# command line set it. Values travel to the recipes through `export`, so a
+# reason containing quotes, `$`, or `$(...)` is passed through literally rather
+# than re-expanded as Make or shell text.
+cli_value = $(if $(filter command line,$(origin $(1))),$(value $(1)))
 
 skylos-allow: export SKYLOS_SYMBOL = $(value SYMBOL)
 skylos-allow: export SKYLOS_REASON = $(value REASON)
@@ -128,6 +151,40 @@ skylos-allow: ## Document one named Skylos exception, not an entry point
 	@case "$${SKYLOS_SYMBOL}" in *[![:space:]]*) ;; *) printf "Error: SYMBOL is required for a named whitelist exception\\n" >&2; exit 2;; esac
 	@case "$${SKYLOS_REASON}" in *[![:space:]]*) ;; *) printf "Error: REASON is required for a named whitelist exception\\n" >&2; exit 2;; esac
 	flock "$(SKYLOS_WHITELIST_LOCK)" env $(SKYLOS_CLI) whitelist "$${SKYLOS_SYMBOL}" --reason "$${SKYLOS_REASON}"
+
+install-nose: ## Install the pinned nose duplication detector
+	@if [ "$$($(NOSE_BIN) --version 2>/dev/null)" = "nose $(NOSE_VERSION)" ]; then \
+	  printf "nose %s already installed at %s\\n" "$(NOSE_VERSION)" "$(NOSE_BIN)"; \
+	else \
+	  printf "Installing nose %s into %s\\n" "$(NOSE_VERSION)" "$(NOSE_TOOLS_DIR)"; \
+	  mkdir -p "$(NOSE_TOOLS_DIR)"; \
+	  $(CARGO_BINSTALL) --no-confirm --install-path "$(NOSE_TOOLS_DIR)" \
+	    --disable-strategies compile,quick-install \
+	    --git https://github.com/corca-ai/nose 'nose-cli@$(NOSE_VERSION)'; \
+	fi
+
+duplication: install-nose ## Run the blocking code-duplication gate
+	$(DUPLICATION_GATE) check
+
+# The gate wrapper and its helper tests run on their own tooling environment,
+# not the project virtualenv: `uv run --no-project` ignores pyproject.toml and
+# resolves the pinned dependencies from the inline script metadata. The
+# application suite must not collect these tests, and they run here instead.
+duplication-test: ## Run the duplication-gate helper tests
+	@$(UV_ENV) NOSE_BIN=$(NOSE_BIN) $(UV) run --no-project \
+		--with pytest==9.1.1 --with cyclopts==4.25.2 \
+		--with tomlkit==0.15.1 --with 'hypothesis[asyncio]==6.163.0' \
+		python -m pytest -c /dev/null --rootdir=. -p no:cacheprovider scripts/tests/
+
+duplication-allow: export DUPLICATION_FIRST = $(call cli_value,FIRST)
+duplication-allow: export DUPLICATION_SECOND = $(call cli_value,SECOND)
+duplication-allow: export DUPLICATION_REASON = $(call cli_value,REASON)
+duplication-allow: ## Record one reasoned duplication exception
+	@test -n "$${DUPLICATION_FIRST}" || { printf "Error: FIRST is required (path[::name])\\n" >&2; exit 2; }
+	@test -n "$${DUPLICATION_REASON}" || { printf "Error: REASON is required for a duplication exception\\n" >&2; exit 2; }
+	$(DUPLICATION_GATE) allow --first "$${DUPLICATION_FIRST}" \
+		$(if $(call cli_value,SECOND),--second "$${DUPLICATION_SECOND}",) \
+		--reason "$${DUPLICATION_REASON}"
 
 typecheck: build $(UV) ## Run typechecking
 	$(UV_ENV) $(TY) check --python-version 3.13 $(PY_SOURCES)

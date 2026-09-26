@@ -8,6 +8,17 @@ on:
 jobs:
   lint-test:
     runs-on: ubuntu-latest
+    env:
+      # The pinned nose duplication detector. Bump alongside NOSE_VERSION in
+      # the Makefile and [tool.nose].version in pyproject.toml;
+      # tests/workflow_contracts/test_duplication_toolchain_contract.py fails
+      # on drift between the three.
+      NOSE_VERSION: "0.20.0"
+      # cargo-binstall is the trusted prebuilt installer for the detector. The
+      # digest is the published release artefact for this exact version and
+      # target triple, verified with `sha256sum -c` before it is unpacked.
+      BINSTALL_VERSION: "v1.22.0"
+      BINSTALL_SHA256: "df2921254924066627685ee09f6c8b9acd7acef68a338668f879d2b033c09458"
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -58,6 +69,59 @@ jobs:
 
       - name: Validate Makefile
         run: mbake validate Makefile
+
+      # The Makefile scopes uv to repo-local cache and tool directories, so
+      # caching them preserves the duplication gate's script environment (its
+      # PEP 723 cyclopts/tomlkit resolution) and the Skylos tool environment
+      # between runs. The Makefile and the gate scripts pin those versions, so
+      # they key the cache alongside the project lockfile.
+      - name: Cache uv tool and script environments
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            .uv-cache
+            .uv-tools
+          key: uv-envs-${{ runner.os }}-${{ hashFiles('uv.lock', 'Makefile', 'scripts/*.py') }}
+          restore-keys: |
+            uv-envs-${{ runner.os }}-
+
+      # cargo-binstall clones the nose repository before it downloads the
+      # release artefact, so cache the installed binary and skip the whole
+      # install on a hit. The key carries the pinned version, so a bump misses
+      # the cache and reinstalls. `make install-nose` performs the same
+      # version check, so a developer machine and CI converge on one binary.
+      - name: Cache the pinned nose duplication detector
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .tools/nose
+          key: nose-${{ runner.os }}-${{ env.NOSE_VERSION }}
+
+      # Deliberately not `make install-nose`: the Makefile target expects
+      # cargo-binstall on PATH, and installing it from an unverified source is
+      # what this step exists to avoid. The download is digested before it is
+      # unpacked, and the detector is installed from the pinned upstream repo
+      # with source compilation disabled, so a missing trusted release is a
+      # provisioning failure rather than a silent source build.
+      - name: Install nose duplication detector
+        run: |
+          if [ "$(.tools/nose/nose --version 2>/dev/null)" = "nose ${NOSE_VERSION}" ]; then
+            echo "nose ${NOSE_VERSION} restored from cache"
+            exit 0
+          fi
+          binstall_archive="$(mktemp)"
+          binstall_directory="$(mktemp -d)"
+          curl -fsSL --proto '=https' --tlsv1.2 -o "$binstall_archive" \
+            "https://github.com/cargo-bins/cargo-binstall/releases/download/${BINSTALL_VERSION}/cargo-binstall-x86_64-unknown-linux-musl.tgz"
+          echo "${BINSTALL_SHA256}  ${binstall_archive}" | sha256sum -c -
+          tar -xzf "$binstall_archive" -C "$binstall_directory"
+          mkdir -p .tools/nose
+          "$binstall_directory/cargo-binstall" --no-confirm --install-path .tools/nose \
+            --disable-strategies compile,quick-install \
+            --git https://github.com/corca-ai/nose "nose-cli@${NOSE_VERSION}"
+          .tools/nose/nose --version
+
+      - name: Run duplication gate tests
+        run: make duplication-test
 
       - name: Install code
         run: make build

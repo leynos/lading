@@ -100,112 +100,46 @@ def _log_missing_dependency_failure(
     )
 
 
-def _raise_out_of_plan_dependency(
+def _raise_missing_dependency(
     context: _IndexMissingVersionFailure,
     *,
     missing_name: str,
+    reason: str,
+    guidance: str,
+    detail: str,
 ) -> typ.NoReturn:
-    """Log and raise when the unindexed dependency is outside the publish plan."""
-    message = _format_missing_dependency_failure(
-        context.failure_message,
-        missing_name=missing_name,
-        reason=(
-            "is not part of the current publish plan, so the unpublished "
-            "workspace dependency override cannot help"
-        ),
-        guidance="Publish or index the dependency first.",
-    )
-    _log_missing_dependency_failure(
-        context.logger,
-        context.failure,
-        missing_name=missing_name,
-        detail="which is not in the current publish plan; cannot continue",
-    )
-    raise context.error_cls(message)
+    """Report one fatal index miss for an unindexed sibling dependency.
 
+    Every fatal dependency-index path has the same shape: build the operator
+    message from the shared formatter, emit the matching warning, and raise the
+    caller's exception class. The paths differ only in the prose they carry, so
+    the wording stays at the call site and this function owns the sequence.
 
-def _raise_out_of_order_dependency(
-    context: _IndexMissingVersionFailure,
-    *,
-    missing_name: str,
-) -> typ.NoReturn:
-    """Log and raise when a planned dependency is published too late."""
-    message = _format_missing_dependency_failure(
-        context.failure_message,
-        missing_name=missing_name,
-        reason=(
-            f"appears after crate {context.failure.crate_name!r} in publish "
-            "order, so it will not be available when this crate is published"
-        ),
-        guidance=(
-            "Adjust publish.order so the dependency comes first, or omit "
-            "publish.order and rely on dependency-derived topological sorting."
-        ),
-    )
-    _log_missing_dependency_failure(
-        context.logger,
-        context.failure,
-        missing_name=missing_name,
-        detail=(
-            "which appears after the current crate in publish order; cannot continue"
-        ),
-    )
-    raise context.error_cls(message)
-
-
-def _raise_self_dependency(
-    context: _IndexMissingVersionFailure,
-    *,
-    missing_name: str,
-) -> typ.NoReturn:
-    """Log and raise when cargo reports the current crate as its dependency."""
-    message = _format_missing_dependency_failure(
-        context.failure_message,
-        missing_name=missing_name,
-        reason=(
-            f"is the same crate as {context.failure.crate_name!r}, so the "
-            "publish plan cannot make it available before itself"
-        ),
-        guidance="Remove the self-dependency from the crate manifest.",
-    )
-    _log_missing_dependency_failure(
-        context.logger,
-        context.failure,
-        missing_name=missing_name,
-        detail="which is the current crate; cannot continue",
-    )
-    raise context.error_cls(message)
-
-
-def _raise_unpublished_dependency_override_required(
-    context: _IndexMissingVersionFailure,
-    *,
-    missing_name: str,
-) -> typ.NoReturn:
-    """Log and raise when the unpublished dependency override is disabled.
-
-    Called when the missing dependency is part of the publish plan but the
-    caller has not opted into the dry-run override that downgrades the failure
-    to a warning.
+    Parameters
+    ----------
+    context : _IndexMissingVersionFailure
+        The shared failure context carrying the message, error class, and
+        logger.
+    missing_name : str
+        The unindexed dependency's name as cargo reported it.
+    reason : str
+        Why this dependency cannot be resolved, for the raised message.
+    guidance : str
+        The operator's next step, for the raised message.
+    detail : str
+        The same explanation, phrased for the warning log.
     """
     message = _format_missing_dependency_failure(
         context.failure_message,
         missing_name=missing_name,
-        reason="is scheduled in this publish run but is not yet on crates.io",
-        guidance=(
-            "Enable the dry-run unpublished workspace dependency override, or "
-            "follow the staged-publish workaround."
-        ),
+        reason=reason,
+        guidance=guidance,
     )
     _log_missing_dependency_failure(
         context.logger,
         context.failure,
         missing_name=missing_name,
-        detail=(
-            "(in plan); enable the dry-run unpublished workspace dependency "
-            "override to downgrade to a warning, or follow the staged-publish "
-            "workaround"
-        ),
+        detail=detail,
     )
     raise context.error_cls(message)
 
@@ -269,11 +203,44 @@ def _validate_dependency_placement(
         missing_index if missing_index is not None else "<not in plan>",
     )
     if missing_index is None:
-        _raise_out_of_plan_dependency(context, missing_name=missing_name)
+        _raise_missing_dependency(
+            context,
+            missing_name=missing_name,
+            reason=(
+                "is not part of the current publish plan, so the unpublished "
+                "workspace dependency override cannot help"
+            ),
+            guidance="Publish or index the dependency first.",
+            detail="which is not in the current publish plan; cannot continue",
+        )
     if missing_index == current_index:
-        _raise_self_dependency(context, missing_name=missing_name)
+        _raise_missing_dependency(
+            context,
+            missing_name=missing_name,
+            reason=(
+                f"is the same crate as {context.failure.crate_name!r}, so the "
+                "publish plan cannot make it available before itself"
+            ),
+            guidance="Remove the self-dependency from the crate manifest.",
+            detail="which is the current crate; cannot continue",
+        )
     if missing_index > current_index:
-        _raise_out_of_order_dependency(context, missing_name=missing_name)
+        _raise_missing_dependency(
+            context,
+            missing_name=missing_name,
+            reason=(
+                f"appears after crate {context.failure.crate_name!r} in publish "
+                "order, so it will not be available when this crate is published"
+            ),
+            guidance=(
+                "Adjust publish.order so the dependency comes first, or omit "
+                "publish.order and rely on dependency-derived topological sorting."
+            ),
+            detail=(
+                "which appears after the current crate in publish order; "
+                "cannot continue"
+            ),
+        )
     return _DependencyPlacement(current_index, missing_index, missing_canonical_name)
 
 
@@ -384,5 +351,20 @@ def _downgrade_or_raise(
             placement=placement,
         )
         return
-    _raise_unpublished_dependency_override_required(context, missing_name=missing_name)
+    # The dependency is in the plan, but the caller has not opted into the
+    # dry-run override that downgrades this failure to a warning.
+    _raise_missing_dependency(
+        context,
+        missing_name=missing_name,
+        reason="is scheduled in this publish run but is not yet on crates.io",
+        guidance=(
+            "Enable the dry-run unpublished workspace dependency override, or "
+            "follow the staged-publish workaround."
+        ),
+        detail=(
+            "(in plan); enable the dry-run unpublished workspace dependency "
+            "override to downgrade to a warning, or follow the staged-publish "
+            "workaround"
+        ),
+    )
     return
