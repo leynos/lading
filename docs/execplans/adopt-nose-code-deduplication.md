@@ -160,23 +160,24 @@ take precedence. This plan records every deliberate deviation.
 - Observation: `--exclude` globs are anchored to each `--root`, **not** to the
   repository root. The repository-relative spelling `scripts/tests/**` matched
   nothing and excluded no files, leaving the gate reporting 30 families from a
-  tree the configuration claimed to have skipped. Evidence: `--exclude
-  scripts/tests/**` returned 30 families with 19 involving `scripts/tests`;
-  `--exclude tests/**` returned 11 with 0, and `**/tests/**` returned 11 with
+  tree the configuration claimed to have skipped. Evidence:
+  `--exclude scripts/tests/**` returned 30 families with 19 involving
+  `scripts/tests`; `--exclude tests/**` returned 11 with 0, and `**/tests/**`
+  returned 11 with
   0. Impact: the exclusion is written `**/tests/**`, and a contract test now
   rejects any exclusion glob that is not `**/`-prefixed or that names a
-  directory no configured root contains. This is exactly the "empty or
-  mistyped scope masquerading as a clean result" failure the task warns about,
-  and it was silent: had the glob excluded *more* than intended, nothing would
-  have reported it either.
-- Observation: the `toml_coerce/_mappings.py ~ _sequences.py` family (copy-paste,
-  40.3) is shared *declaration* scaffolding, not shared logic. Evidence: a
-  controlled experiment replacing every function body in both modules with a
-  distinct trivial statement left a 230.1-token match (against 284.7 with
-  bodies intact), so the match survives the removal of all behaviour. Impact:
-  adjudicated as an intentional parallel and recorded as an exception rather
-  than extracted; extracting it would couple eight independent coercers to one
-  docstring/signature generator.
+  directory no configured root contains. This is exactly the "empty or mistyped
+  scope masquerading as a clean result" failure the task warns about, and it
+  was silent: had the glob excluded *more* than intended, nothing would have
+  reported it either.
+- Observation: the `toml_coerce/_mappings.py ~ _sequences.py` family
+  (copy-paste, 40.3) is shared *declaration* scaffolding, not shared logic.
+  Evidence: a controlled experiment replacing every function body in both
+  modules with a distinct trivial statement left a 230.1-token match (against
+  284.7 with bodies intact), so the match survives the removal of all
+  behaviour. Impact: adjudicated as an intentional parallel and recorded as an
+  exception rather than extracted; extracting it would couple eight independent
+  coercers to one docstring/signature generator.
 - Observation: `top = 30` does not currently truncate this repository's
   surface. Evidence: an uncapped `top=0` scan at the configured settings
   returns exactly the same 10 families. Impact: the recorded exceptions cannot
@@ -219,15 +220,15 @@ take precedence. This plan records every deliberate deviation.
   bindings of one lock primitive) whose "shared" content is a single statement
   or a platform-independent obligation. Extracting them would mean generic
   helpers, injected key sets, or platform branches inside primitives -- exactly
-  the manufactured abstractions the adoption criteria exclude. The tenth is
-  the declaration-scaffolding family described above. Date/Author: 2026-09-26,
+  the manufactured abstractions the adoption criteria exclude. The tenth is the
+  declaration-scaffolding family described above. Date/Author: 2026-09-26,
   implementing agent.
 - Decision: revert `skylos-allow` to its original `$(value ...)` form instead
   of routing it through the new `cli_value` macro, even though the macro was
   already written. Rationale:
   `tests/workflow_contracts/test_skylos_whitelist_boundary.py` pins the
-  existing behaviour by injecting `SYMBOL`/`REASON` through the environment,
-  and `cli_value` requires a value to come from the `make` command line. The
+  existing behaviour by injecting `SYMBOL`/`REASON` through the environment, and
+  `cli_value` requires a value to come from the `make` command line. The
   change broke that contract, and the Skylos target is outside this task's
   scope. `cli_value` now applies only to the duplication targets, which is what
   the task requires. Date/Author: 2026-09-26, implementing agent.
