@@ -58,7 +58,7 @@ jobs:
         # The same commit ci.yml pins, so the two workflows install the same
         # uv. A third-party action moves under a tag; the first-party
         # `actions/*` steps above stay on their major tag, as they do there.
-        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
 
       - name: Install Makefile parser
         run: |
@@ -117,7 +117,7 @@ jobs:
 
       - name: Upload coverage data to CodeScene
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.codescene_token.outputs.available == 'true'
-        uses: leynos/shared-actions/.github/actions/upload-codescene-coverage@a5765019912a8ab6882b12db049c7cde635f3a85
+        uses: leynos/shared-actions/.github/actions/upload-codescene-coverage@2a910bfcfd1ea4216419f9290331785f05b33320
         with:
           format: cobertura
           path: coverage.xml
