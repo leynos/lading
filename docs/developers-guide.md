@@ -164,13 +164,13 @@ make duplication
 
 It runs the pinned [nose](https://github.com/corca-ai/nose) detector over the
 maintained first-party roots (`lading` and `scripts`) and reports duplication
-families ranked by refactoring value. Every family must then be either extracted
-or recorded as a reasoned exception. The objective is to remove unjustified
-repeated logic and to keep intentional parallels explicitly reviewable, **not**
-to drive the duplication count down through indiscriminate abstraction or
-suppression. [ADR-007](adr/007-adopt-nose-duplication-gate.md) records the
-decision, the scan scope, and the adjudication of this repository's initial
-findings.
+families ranked by refactoring value. Every family must then be either
+extracted or recorded as a reasoned exception. The objective is to remove
+unjustified repeated logic and to keep intentional parallels explicitly
+reviewable, **not** to drive the duplication count down through indiscriminate
+abstraction or suppression. [ADR-007](adr/007-adopt-nose-duplication-gate.md)
+records the decision, the scan scope, and the adjudication of this repository's
+initial findings.
 
 Install the detector before the first run, and after a version bump:
 
@@ -212,11 +212,12 @@ is stored exactly as written rather than being re-expanded as Make or shell
 program text.
 
 An entry silences a family only when **every** location it reports is covered
-by one of the entry's keys, so adding a copy in an unlisted file blocks the gate
-again. A `unit = "path[::name]"` entry supplies a single key; `members = [...]`
-supplies two or more. Keys are repository-relative paths, optionally suffixed
-with `::name` to require the detector's unit name; they are never line numbers
-or detector IDs, both of which churn. A non-blank reason is mandatory.
+by one of the entry's keys, so adding a copy in an unlisted file blocks the
+gate again. A `unit = "path[::name]"` entry supplies a single key;
+`members = [...]` supplies two or more. Keys are repository-relative paths,
+optionally suffixed with `::name` to require the detector's unit name; they are
+never line numbers or detector IDs, both of which churn. A non-blank reason is
+mandatory.
 
 Edits go through an atomic read-modify-write under a sidecar lock, so comments
 and unrelated configuration survive and repeating the same command is
@@ -229,15 +230,15 @@ Exclusions and the ranking budget have consequences worth knowing before
 concluding that a clean run means the codebase is duplication-free:
 
 - `exclude` globs are anchored to each scan **root**, not to the repository
-  root, so a repository-relative glob such as `scripts/tests/**` matches nothing
-  and excludes no files. Write them `**/`-prefixed; a contract test rejects the
-  silently-inert form.
+  root, so a repository-relative glob such as `scripts/tests/**` matches
+  nothing and excludes no files. Write them `**/`-prefixed; a contract test
+  rejects the silently-inert form.
 - `top = 30` bounds the adjudicated surface rather than describing the scan.
   Allowed families still occupy places in it, and lower-ranked families are
   measured but not enforced.
 - Stale-entry reporting means "unmatched in this scan", not "proven gone". A
-  family can fall below the ranking bound and be reported as unmatched while its
-  duplication is intact. Confirm a removal by inspecting the source or by
+  family can fall below the ranking bound and be reported as unmatched while
+  its duplication is intact. Confirm a removal by inspecting the source or by
   running a deliberately widened `top=0` scan before deleting an entry.
 
 The gate fails **closed**. A missing or wrong-version binary, a timeout, a

@@ -12,17 +12,18 @@ Accepted.
 
 Duplication in `lading` was neither measured nor enforced. Nothing stopped a
 second copy of a helper being written beside the first, and nothing recorded
-when two similar-looking pieces of code were deliberately independent. Reviewers
-noticed repetition by eye, inconsistently, and a codebase that publishes release
-artefacts depends on exactly that kind of drift being caught before publication.
+when two similar-looking pieces of code were deliberately independent.
+Reviewers noticed repetition by eye, inconsistently, and a codebase that
+publishes release artefacts depends on exactly that kind of drift being caught
+before publication.
 
 The approach adopted here is not invented for `lading`. `leynos/episodic`
-evaluated several duplication detectors and recorded the decision in its ADR-021,
-settling on [nose](https://github.com/corca-ai/nose) and a wrapper that turns its
-ranked report into a blocking gate with reasoned, reviewable exceptions. That
-evaluation is adopted **by reference**: this repository does not repeat the
-detector competition, and it makes no claim about episodic's precision, recall,
-or run timings. The merged implementation at revision
+evaluated several duplication detectors and recorded the decision in its
+ADR-021, settling on [nose](https://github.com/corca-ai/nose) and a wrapper
+that turns its ranked report into a blocking gate with reasoned, reviewable
+exceptions. That evaluation is adopted **by reference**: this repository does
+not repeat the detector competition, and it makes no claim about episodic's
+precision, recall, or run timings. The merged implementation at revision
 `d9e5ac0d254f375e2986f52d91a3b88c117c833b` (PR
 [leynos/episodic#276](https://github.com/leynos/episodic/pull/276)) is the
 authoritative reference; where its opening description and its merged ADR-021
@@ -43,19 +44,19 @@ extracted or recorded as a reasoned exception.
 
 The gate pins `nose` at **0.20.0**, verified before every scan against
 `[tool.nose].version`. The version is declared in three places -- the Makefile's
-`NOSE_VERSION`, the `NOSE_VERSION` environment in `.github/workflows/ci.yml`, and
-`[tool.nose].version` -- and
-`tests/workflow_contracts/test_duplication_toolchain_contract.py` fails on drift,
-because a detector that installs cleanly and then rejects its own version is the
-failure mode drift produces.
+`NOSE_VERSION`, the `NOSE_VERSION` environment in `.github/workflows/ci.yml`,
+and `[tool.nose].version` -- and
+`tests/workflow_contracts/test_duplication_toolchain_contract.py` fails on
+drift, because a detector that installs cleanly and then rejects its own
+version is the failure mode drift produces.
 
 `make install-nose` provisions the binary into `.tools/nose` from a trusted
 prebuilt release via `cargo-binstall`, with
 `--disable-strategies compile,quick-install`. A missing trusted binary is a
 provisioning failure; it is never permission to start a costly source build, and
-`cargo install`, floating `latest` installers, and curl-to-shell bootstraps are
-excluded by the same rule. CI downloads `cargo-binstall` itself, verifies its
-published SHA-256 digest, and only then unpacks it.
+`cargo install`, floating `latest` installers, and curl-to-shell bootstraps
+are excluded by the same rule. CI downloads `cargo-binstall` itself, verifies
+its published SHA-256 digest, and only then unpacks it.
 
 `NOSE_BIN` overrides the binary location, and a relative override resolves
 against the repository root rather than the caller's working directory, so an
@@ -69,8 +70,8 @@ The scan covers `lading` and `scripts` over all three channels (`syntax`,
 
 `tests/` is deliberately out of scope. nose reports 190 families across that
 tree, almost all of them parallel scenario scaffolding, and gating it would say
-nothing about production duplication. The same tests-are-not-production boundary
-applies to `scripts/tests/` through `exclude`.
+nothing about production duplication. The same tests-are-not-production
+boundary applies to `scripts/tests/` through `exclude`.
 
 That exclusion is written `**/tests/**`, and the form matters: nose anchors
 `--exclude` globs to each `--root`, not to the repository root. The
@@ -93,11 +94,11 @@ structured argument vectors and run with an explicit repository working
 directory, JSON output, and a bounded timeout. Exit status 0 (pass), 1
 (unsuppressed families), and 2 (invalid input or configuration) are preserved.
 
-Failures fail **closed**. A missing or wrong-version binary, a timeout, a failed
-command, malformed JSON, and an invalid report shape all raise with actionable
-diagnostics. None of them is converted into an empty findings list or a skipped
-successful check, because a gate that passes when it could not run is worse than
-no gate.
+Failures fail **closed**. A missing or wrong-version binary, a timeout, a
+failed command, malformed JSON, and an invalid report shape all raise with
+actionable diagnostics. None of them is converted into an empty findings list
+or a skipped successful check, because a gate that passes when it could not run
+is worse than no gate.
 
 Exceptions are reasoned TOML entries:
 
@@ -114,11 +115,11 @@ Keys are never line numbers or detector IDs, both of which are unstable. A
 non-blank reason is required, and there is no repository-wide wildcard, no
 mass-generated reason, and no automatic allowlisting of the initial scan.
 
-Entries are edited only through `make duplication-allow`, which appends under an
-advisory sidecar lock with an atomic read-modify-write, preserving TOML comments
-and unrelated configuration and updating the same target idempotently. The lock
-coordinates writers that participate in its protocol; it does not coordinate
-unrelated editors that do not.
+Entries are edited only through `make duplication-allow`, which appends under
+an advisory sidecar lock with an atomic read-modify-write, preserving TOML
+comments and unrelated configuration and updating the same target idempotently.
+The lock coordinates writers that participate in its protocol; it does not
+coordinate unrelated editors that do not.
 
 Stale-entry reporting observes absence from the capped ranked surface, so
 "unmatched in this scan" is not proof that the duplication is gone: the family
@@ -130,23 +131,23 @@ deliberate, and a deliberate `top=0` scan is the way to confirm a candidate.
 Adoption starts from **no copied exceptions**. The configured gate was run, and
 each blocking family was inspected against its callers and its behaviour.
 
-One family was genuinely repeated logic. The four dependency-index failure paths
-in `lading/commands/publish_index_check.py` each built a message from the shared
-formatter, logged the matching warning, and raised the caller's exception class,
-varying only in prose. They now call one `_raise_missing_dependency` helper with
-the wording still at each call site. The 31 message snapshots are byte-identical
-before and after, which is what makes the extraction behaviour-preserving rather
-than merely similar-looking.
+One family was genuinely repeated logic. The four dependency-index failure
+paths in `lading/commands/publish_index_check.py` each built a message from the
+shared formatter, logged the matching warning, and raised the caller's
+exception class, varying only in prose. They now call one
+`_raise_missing_dependency` helper with the wording still at each call site.
+The 31 message snapshots are byte-identical before and after, which is what
+makes the extraction behaviour-preserving rather than merely similar-looking.
 
 The remaining ten families were adjudicated as intentional parallel structure
-and recorded as reasoned exceptions in `[tool.duplication_gate]`. They fall into
-two groups. Nine are shared *idioms*: one-statement optional-input guards,
+and recorded as reasoned exceptions in `[tool.duplication_gate]`. They fall
+into two groups. Nine are shared *idioms*: one-statement optional-input guards,
 dependency-injection fallbacks at four independent seams, type-checking import
 blocks, the `absent table yields defaults` contract, two distinct exception
 types that each record one diagnostic attribute, and the Windows and POSIX
 bindings of a single lock primitive. Each would require a generic helper,
-injected key sets, or a platform branch inside the primitive -- the abstractions
-the adoption criteria exclude.
+injected key sets, or a platform branch inside the primitive -- the
+abstractions the adoption criteria exclude.
 
 The tenth, the `toml_coerce` pair, is shared *declaration scaffolding*. The
 region the detector reports is the module preamble, the mandated Numpydoc
@@ -169,10 +170,10 @@ entries.
 
 `make lint` now runs the duplication gate after Skylos, and `make duplication`
 runs it standalone. A clone past the size floor blocks the canonical pipeline
-unless it is extracted or recorded with a reason a reviewer can weigh. Reviewers
-gain a durable, versioned record of which parallels are intentional and why,
-which is the outcome that matters: the exceptions are the reviewable artefact,
-not an absence of findings.
+unless it is extracted or recorded with a reason a reviewer can weigh.
+Reviewers gain a durable, versioned record of which parallels are intentional
+and why, which is the outcome that matters: the exceptions are the reviewable
+artefact, not an absence of findings.
 
 The costs are real. The detector is a Rust binary, so a new contributor needs
 `make install-nose` and a working `cargo-binstall`, and native Windows is not
@@ -180,8 +181,8 @@ supported by the unchanged helper, which uses `fcntl.flock` and POSIX directory
 operations. The size floor and ranking budget mean lower-ranked duplication is
 measured but not enforced, and the file-granular keys noted above make an
 exception slightly wider than the family it was written for. Those limitations
-are recorded here rather than resolved by widening the gate, because a gate that
-reports everything is one nobody adjudicates.
+are recorded here rather than resolved by widening the gate, because a gate
+that reports everything is one nobody adjudicates.
 
 ## Alternatives considered
 
@@ -207,9 +208,12 @@ couple the coercers to it.
 
 ## References
 
-- Reference PR: [leynos/episodic#276](https://github.com/leynos/episodic/pull/276)
+- Reference PR:
+  [leynos/episodic#276](https://github.com/leynos/episodic/pull/276)
 - Reference revision: `d9e5ac0d254f375e2986f52d91a3b88c117c833b`
-- Upstream detector: [corca-ai/nose](https://github.com/corca-ai/nose) at `v0.20.0`
+- Upstream detector: [corca-ai/nose](https://github.com/corca-ai/nose) at
+  `v0.20.0`
 - `[tool.nose]` and `[tool.duplication_gate]` in `pyproject.toml`
 - `tests/workflow_contracts/test_duplication_toolchain_contract.py`
-- [ADR-003](003-three-tier-python-linting.md) for the existing `make lint` stages
+- [ADR-003](003-three-tier-python-linting.md) for the existing `make lint`
+  stages
