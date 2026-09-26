@@ -1026,6 +1026,44 @@ in `Decision log`, and escalate.
   - Resolution: recorded as D10, an accepted exception with its grounds, and
     named in `Outcomes & retrospective` beside the status.
 
+- **mdtablefix wraps blockquotes, but will not break inside an inline code
+  span.**
+  - Observation: the snapshot notes added to `Purpose` and `Context` are
+    blockquotes, and `--wrap` does reflow them -- unlike fenced code blocks,
+    which it leaves alone. What it will not do is split a line *within* an
+    inline code span. Hand-wrapping a blockquote so that a backtick span
+    straddles the line boundary therefore fails `check-fmt`, even though every
+    line is inside the 80-column limit: the wrapper moves the whole span down
+    to the next line rather than breaking it.
+  - Evidence: `make check-fmt` failed with `+2 -2` on the new blockquote while
+    `markdownlint`, `spelling`, and `nixie` were all green. `mdtablefix --diff`
+    (read-only, no `--in-place`) showed the intended rewrap exactly.
+  - Resolution: rewrapped so the span sits wholly on one line. The general rule
+    for this file: when hand-wrapping, never let a line boundary fall inside a
+    backtick span.
+  - This compounds the already-recorded `--wrap` hazard: the earlier entry
+    notes the wrap covers paragraphs and list items; the addition here is that
+    blockquotes are covered too, with inline code spans as the carve-out.
+
+- **A stale `GH_TOKEN` in the environment breaks `git push`, and `env -u` fixes
+  it.**
+  - Observation: `git push` failed with `could not read Username for
+    'https://github.com/leynos/lading.git': terminal prompts disabled`, while
+    `gh` operations against the same remote succeeded. The cause is the same
+    stale-token interference already recorded for `gh`: a `GH_TOKEN` is present
+    in the environment and takes precedence over the credential helper, which
+    then has no working credential to offer. Unsetting it for the push
+    (`env -u GH_TOKEN git push`) succeeds immediately.
+  - Resolution: this confirms and extends the existing workaround. The earlier
+    note applied `env -u GH_TOKEN` to `gh` calls; it applies to `git push` as
+    well, which is worth recording because the failure looks like an
+    authentication misconfiguration rather than a stale variable.
+  - A second, avoidable failure on the same push: passing
+    `-c credential.helper=` to rule the helper out disabled the working helper
+    and produced `No anonymous write access`. Diagnosing an auth problem by
+    disabling the mechanism that provides auth is self-defeating; unset the
+    interfering variable instead.
+
 ## Decision log
 
 - **D1: pin exactly, `cuprum==0.2.0b1`, in both `pyproject.toml` and the
