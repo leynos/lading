@@ -51,6 +51,9 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
   the standalone script path.
 - [ADR-007: Emit bounded per-event relay observability logs][adr-007] - accepted
   contract for privacy-safe subprocess relay decision events.
+- [ADR-008: Adopt the nose duplication gate][adr-008] - accepted design for the
+  blocking code-duplication gate, its scan scope, and the adjudication of
+  intentional parallels.
 
 ## Reference documents
 
@@ -78,4 +81,5 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
 [adr-005]: adr/005-release-wheel-publication.md
 [adr-006]: adr/006-align-cuprum-selection-across-dependency-paths.md
 [adr-007]: adr/007-relay-observability-events.md
+[adr-008]: adr/008-adopt-nose-duplication-gate.md
 [execplan-regenerate-lockfiles]: execplans/regenerate-lockfiles.md
