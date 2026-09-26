@@ -12,6 +12,13 @@ beta contract and dependency boundary".
 
 ## Purpose / big picture
 
+> **Snapshot note.** This section and `Context and orientation` describe the
+> repository as it stood when the plan was written, before any of the work
+> below. They are the plan's motivation and orientation, not a description of
+> the finished state, and the version numbers and call forms they quote are the
+> pre-change ones on purpose. For the finished state see
+> `Outcomes & retrospective`.
+
 `lading` is a Python command-line tool that manages Rust workspaces. It depends
 on `cuprum`, a library that runs external programmes only when they are listed
 in an allowlist called a catalogue. The repository locks cuprum 0.1.0 today.
@@ -1710,6 +1717,99 @@ its anchor.
     behind it is a rule that only bites when a reviewer reads the file. Worth
     noting for whichever task next touches `AGENTS.md`, not fixed here.
 
+#### Pre-merge rows from the hosted walkthrough (2026-09-27)
+
+The walkthrough's pre-merge table carries three `⚠️ Warning` rows, alongside
+twelve passing checks. All three are disposed of here. The table is edited in
+place by the bot, so the rows are quoted from the live comment at head
+`00da646`; the bot truncates each cell, and the quotations below are truncated
+where the source is.
+
+- **Developer Documentation -- "The new ExecPlan is not fully current." Valid;
+  fixed by labelling the snapshot rather than rewriting the sections.**
+  - The row is correct on its facts. `Purpose / big picture` still says "The
+    repository locks cuprum 0.1.0 today", and `Context and orientation` still
+    quotes `"cuprum>=0.1.0"`, a `uv.lock` pinning 0.1.0, and the
+    `cuprum>=0.1.0` PEP 723 line -- all five hits verified in the current file.
+  - The row offers two remedies: update the sections to the finished state, or
+    "clearly label the old material as a pre-implementation snapshot". The
+    second is taken, because the first would destroy the record. A plan's
+    opening sections state the problem the work exists to solve; rewriting them
+    to describe the finished state would remove the statement of what was wrong
+    and leave the reader unable to see what changed. The freshness tests make
+    the same distinction the other way round, reading the committed state
+    rather than the working tree.
+  - Fix: both sections now open with a snapshot note naming the version numbers
+    and call forms as the pre-change state and pointing at `Outcomes &
+    retrospective` for the finished state. The `cuprum 0.1.0` line is
+    deliberately **not** deleted -- it is the deliberate record of the starting
+    point, and the row's own alternative remedy permits it.
+- **Domain Architecture -- "Reverse the dependency direction at the new
+  uploader boundary." Valid observation, declined: it describes an arrangement
+  the plan's constraints require, and the remedy would break a pinned
+  signature.**
+  - What is true: `release_wheel_upload.py` does hold `Outcome`,
+    `UploadError`, `UploadRunner`, and the discovery logic, and it imports
+    `CommandOutcome` and `run_gh` from `release_gh.py`. The proposed remedy --
+    a cuprum-free port module that `release_gh` imports from -- would invert
+    that.
+  - Why it is declined. Three reasons, in order of weight:
+    1. **The constraint pins the signature.** `Constraints` states that
+       `run_gh(arguments: Sequence[str]) -> CommandOutcome` and the
+       `CommandOutcome` fields "must not change", and that `run_gh`,
+       `CommandOutcome`, `GH`, and `RELEASE_CATALOGUE` "may move to a new
+       module". That is D7's recorded decision, made after review on
+       2026-09-25. The remedy moves `CommandOutcome` again, into a fourth
+       module, and has `release_gh` import it -- a change to the arrangement
+       the constraint settles.
+    2. **The inversion is inherited, not introduced.** At merge base
+       `3e706bf`, `CommandOutcome` was defined in
+       `scripts/release_wheel_upload.py:97` and `release_gh.py` did not exist.
+       This branch *extracted* the process edge out of the policy module: the
+       two modules were one file, and the dependency became an import rather
+       than being created by it. An inversion cannot be said to have been
+       introduced where the previous state was a single module containing both.
+    3. **The concrete hazard is already closed.** The reason a port should not
+       depend on its adapter is that the adapter drags in the technology --
+       here, cuprum. `release_wheel_upload.py` imports `CommandOutcome` (a
+       frozen dataclass of `int` and two `str`s) and `run_gh` (the default
+       binding). It does **not** import cuprum: the only `cuprum` occurrences
+       in it are prose. Its one cuprum-aware parameter is `run: UploadRunner`,
+       whose protocol is `Callable[[Sequence[str]], CommandOutcome]`. So the
+       policy module can be tested, and is tested, with no cuprum present.
+  - Not routed to an issue, because it is not a defect awaiting a later task:
+    it is a deliberate arrangement recorded in D7. If a future task wants a
+    cuprum-free port module, D7 is the entry to reopen -- not this row.
+- **Observability -- "the added boundary has no tracing hook." Declined as
+  inapplicable to this repository, with the substantive half already covered by
+  a different mechanism.**
+  - The row asks for a tracing span recording operation name, duration, exit
+    status, and a bounded error category, with context propagation.
+  - **There is no tracing stack to hook into.** Repository-wide counts:
+    `get_tracer` 0, `start_span` 0, `opentelemetry` 0, `tracer.` 0,
+    `structlog` 0. The repository has no span-based telemetry anywhere, so
+    "add a tracing span" has no implementation that would not be invented
+    here.
+  - **The signal is delivered by the mechanism ADR-005 chose instead.**
+    ADR-005 rejects importing `lading.utils.metrics` for exactly this reason --
+    "the uploader is a standalone PEP 723 script that does not import the
+    package, and the workflow step is shorter lived than even a `lading` run,
+    so the job log and `GITHUB_OUTPUT` are the signals a consumer can
+    actually read". The boundary already reports, per `build_summary` and
+    `report_outcome`: the bounded outcome (`outcome`, from a closed set), the
+    duration (`discovery_seconds`, `upload_seconds`, per phase and reported
+    whether or not the phase succeeds), and a bounded failure category with
+    `gh`'s own diagnostic preferred over an empty reason. That is the row's
+    requested content -- operation, duration, status, bounded error -- through
+    the sink the architecture actually has.
+  - The one item with no analogue is trace-context propagation, which is
+    meaningless without a tracer. Recorded as out of scope rather than
+    silently dropped.
+  - Precedent for the repository's position: issue #253 ("Add observability
+    for relay encoding fallback") is the open item in this area, and it is
+    scoped to the `lading` package's relay path, not to the release script.
+    Nothing in the current arrangement contradicts it.
+
 ## Outcomes & retrospective
 
 Status: **COMPLETE.** All four milestones are closed. Two CodeRabbit passes
@@ -1803,6 +1903,13 @@ gated at all. Both directions of that lesson are recorded above: gate the
 commit before requesting a review, and re-gate after acting on one.
 
 ## Context and orientation
+
+> **Snapshot note.** As with `Purpose / big picture`, this is the repository as
+> it stood before the work began. The `cuprum 0.1.0` pin, the `cuprum>=0.1.0`
+> declaration, and the `subprocess`-era call forms quoted below are the
+> pre-change state the plan set out to move away from; the finished state is in
+> `Outcomes & retrospective`. Read this section for orientation, not for the
+> current pin.
 
 The repository root contains the `lading` package, `scripts/`, `tests/`, and
 `docs/`. Run all commands from the repository root. `make` targets wrap `uv`.
