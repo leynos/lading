@@ -57,6 +57,9 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
 - [ADR-009: Publish Python distributions to PyPI first][adr-009] - accepted
   decision for PyPI Trusted Publishing, idempotent filename checks, and the
   GitHub Release as a second target.
+- [ADR-010: Adopt the nose duplication gate][adr-010] - accepted design for the
+  blocking code-duplication gate, its scan scope, and the adjudication of
+  intentional parallels.
 
 ## Reference documents
 
@@ -86,4 +89,5 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
 [adr-007]: adr/007-relay-observability-events.md
 [adr-008]: adr/008-adopt-the-shared-cv005-contract-library.md
 [adr-009]: adr/009-pypi-first-distribution-publication.md
+[adr-010]: adr/008-adopt-nose-duplication-gate.md
 [execplan-regenerate-lockfiles]: execplans/regenerate-lockfiles.md
