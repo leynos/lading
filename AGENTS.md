@@ -108,10 +108,10 @@
     indiscriminate abstraction or suppression. Investigate every reported
     family and extract the smallest coherent shared implementation at the
     correct architectural layer when the repetition is genuine. When the
-    parallel structure is intentional, record it with
-    `make duplication-allow FIRST='path[::name]' [SECOND='path[::name]']
-    REASON='...'`, naming the specific independent contracts or architectural
-    boundary an extraction would wrongly couple. Never reduce the ranking
+    parallel structure is intentional, record it with `make duplication-allow`
+    (see the developer guide for its arguments), naming the specific
+    independent contracts or architectural boundary an extraction would wrongly
+    couple. Never reduce the ranking
     budget, raise the size floor, or widen an exception merely to obtain a
     green run. Never use a repository-wide wildcard, a mass-generated reason,
     or automatic allowlisting. Run `make install-nose` first if the pinned
