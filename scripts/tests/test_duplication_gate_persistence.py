@@ -1,6 +1,6 @@
 """Persistence and contention tests for duplication-gate allow entries."""
 
-import subprocess  # noqa: S404 - tests exercise copied gate commands.
+import subprocess
 import tomllib
 from pathlib import Path
 
@@ -47,7 +47,7 @@ class TestLoadAllowEntry:
             before.st_mtime_ns,
             before.st_size,
         ), "Loading must leave the file untouched."
-        assert list(tmp_path.glob(".pyproject.toml.*")) == [], (
+        assert not list(tmp_path.glob(".pyproject.toml.*")), (
             "Loading must not leave a lock or temporary sibling behind."
         )
 
@@ -58,7 +58,7 @@ class TestLoadAllowEntry:
         pyproject = tmp_path / "pyproject.toml"
         pyproject.write_text('[project]\nname = "x"\n', encoding="utf-8")
 
-        assert allowlist.load_allowlist(pyproject) == (), (
+        assert not allowlist.load_allowlist(pyproject), (
             "A document without an allow table must load no entries."
         )
         assert list(tmp_path.iterdir()) == [pyproject], (
@@ -203,7 +203,7 @@ class TestAppendAllowEntry:
         """Two blocked writers retain both exceptions after the lock releases."""
         _, script = copied_gate_workspace(tmp_path)
         with allowlist._locked_file(script.parent.parent / "pyproject.toml"):
-            first = subprocess.Popen(  # noqa: S603 - fixed copied gate command.
+            first = subprocess.Popen(  # ruff: ignore[subprocess-without-shell-equals-true] # pylint: disable=consider-using-with  # must outlive the lock scope; reaped below
                 gate_command(
                     script,
                     "allow",
@@ -218,7 +218,7 @@ class TestAppendAllowEntry:
                 stderr=subprocess.PIPE,
                 text=True,
             )
-            second = subprocess.Popen(  # noqa: S603 - fixed copied gate command.
+            second = subprocess.Popen(  # ruff: ignore[subprocess-without-shell-equals-true] # pylint: disable=consider-using-with  # must outlive the lock scope; reaped below
                 gate_command(
                     script,
                     "allow",

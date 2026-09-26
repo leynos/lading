@@ -44,12 +44,12 @@ class Location:
 
     @property
     def span(self) -> str:
-        """Return the ``path:start-end`` span of this location."""
+        """The ``path:start-end`` span of this location."""
         return f"{self.file}:{self.start}-{self.end}"
 
     @property
     def label(self) -> str:
-        """Return the span, suffixed with the unit name when nose named one."""
+        """The span, suffixed with the unit name when nose named one."""
         return self.span if self.name is None else f"{self.span} {self.name}"
 
 
@@ -73,7 +73,7 @@ class Finding:
 
     @property
     def label(self) -> str:
-        """Return the ``path:lines ~ path:lines`` summary of the family."""
+        """The ``path:lines ~ path:lines`` summary of the family."""
         return " ~ ".join(location.label for location in self.locations)
 
 
@@ -136,6 +136,11 @@ def _is_array(value: object) -> typ.TypeIs[cabc.Sequence[object]]:
 
     ``str`` and ``bytes`` are sequences to ``isinstance`` but are TOML
     scalars, so they are rejected explicitly wherever an array is required.
+
+    Returns
+    -------
+    bool
+        ``True`` when ``value`` is a non-string TOML array.
     """
     return isinstance(value, cabc.Sequence) and not isinstance(value, (str, bytes))
 
