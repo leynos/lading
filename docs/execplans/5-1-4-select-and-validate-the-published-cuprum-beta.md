@@ -1199,6 +1199,59 @@ in `Decision log`, and escalate.
     restatement of the tolerance, because the tolerance was in force throughout
     and was not met.
 
+- **D11 (maintainer decision): the selection contract is split across three
+  files, and the finding's proposed cut is rejected as insufficient.**
+  - What happened: Codex raised a P1 against `8f44094` pointing at
+    `tests/workflow_contracts/test_cuprum_selection.py`, which was 628 lines
+    against `AGENTS.md:40`'s hard 400-line limit. The finding is valid on its
+    own terms -- the file was 628 lines and the rule is stated flatly -- and
+    the module is one the plan itself cites as conformance basis `AGENTS-400`,
+    so a breach there is a breach of the plan's own stated basis.
+  - Why the proposed remedy is rejected: Codex proposed extracting the O1b
+    freshness checks "beginning here" (its anchor was line 497), which would
+    leave 510 lines -- still over the limit. A remedy that does not reach the
+    stated property is not a remedy, so the finding's *intent* is kept (no
+    code file over 400 lines) and its *implementation* is replaced.
+  - What was done instead: the module was split along all four of its axes,
+    not one. The readers (lock and PEP 723 parsers) moved to
+    `tests/helpers/cuprum_selection.py` (250); their self-tests -- the
+    documents each reader must reject -- moved to a new
+    `tests/workflow_contracts/test_cuprum_selection_readers.py` (177); and
+    `test_cuprum_selection.py` keeps the O1a alignment and O1b freshness
+    assertions (243).
+  - Why the readers go to `tests/helpers/`: two modules now assert against
+    them, and neither test module should become the other's library.
+    `tests/helpers/cuprum_pin.py` already states that reason in its own
+    docstring for living where it does, so this follows the existing
+    convention rather than inventing one. The repository has already applied
+    the same shape to another contract module:
+    `test_skylos_lint_contract.py` (364) plus
+    `test_skylos_whitelist_boundary.py` (201) exist as a pair for this
+    reason.
+  - Why the self-tests separate from the assertions that use them: a broken
+    reader should be reported against the reader, not against whichever
+    alignment assertion it happened to break. Folding them into the readers'
+    own module was rejected because a `tests/helpers/` file that pytest
+    collects as tests would blur the helper package's role.
+  - Evidence that this is a move and not a rewrite: all 14 test names are
+    identical across the before and after trees, and all 19 assertion lines
+    are identical once the leading underscore is dropped. The private-name
+    prefixes (`_lock_pin` and the rest) are dropped on the move, because a
+    name imported from another module is not private to its caller.
+  - Scope check: `test_cuprum_selection.py` was the only file this branch
+    *adds* that exceeds the limit in a code language. Every other over-limit
+    file the branch touches is Markdown, `pyproject.toml`, `typos.toml`, or
+    `uv.lock`, none of which the rule's wording covers -- it says "code file",
+    and its remedies are about switch statements, dispatch tables, and test
+    data. So this one split discharges the rule for the branch; no second
+    split is pending.
+  - Why not recorded under `Tolerances`: the tolerance is a scope budget
+    (files and net lines), not a style rule. `AGENTS-400` is a conformance
+    basis, and the breach is recorded here rather than raised as a tolerance
+    exception because it does not excuse anything -- it is fixed.
+  - Date/Author: 2026-09-27. The finding is Codex's; the disposition, the
+    rejected remedy, and the split are the agent's.
+
 ### Design review dispositions
 
 A community-of-experts panel (Logisphere) reviewed the draft through six lenses
@@ -1622,6 +1675,41 @@ conformance decisions were not flagged.
     naming the sequences `I`, `my`, `we`, and `our` as sequences is a mention,
     and a document may mention a word it must not use.
 
+#### Post-readiness pass (2026-09-27, at `c106f85`)
+
+The pass that followed the pull request being marked ready for review. Codex
+had submitted one `P1` against `8f44094`; it was the only finding outstanding
+on the current head, and it was checked against the tree rather than against
+its anchor.
+
+- **`tests/workflow_contracts/test_cuprum_selection.py` -- the module is 628
+  lines against a 400-line limit. `P1`, Codex. Valid; the proposed remedy was
+  not, and is replaced.**
+  - Verified against the current source, not the anchor: the file was 628 lines
+    and `AGENTS.md:40` states the limit flatly ("No single code file should be
+    longer than 400 lines"). The branch's own conformance basis `AGENTS-400`
+    cites this rule, so the breach is against the plan's stated basis and not
+    only against `AGENTS.md`.
+  - The finding's remedy is insufficient, which is why it is not applied
+    as written. It proposed extracting the O1b freshness checks "beginning
+    here" (anchored at line 497), which leaves 510 lines -- still over the
+    limit. The intent is kept and the implementation replaced, per the
+    disposition rule for a valid finding with a wrong remedy.
+  - Fixed by splitting along all four axes: readers to
+    `tests/helpers/cuprum_selection.py`, their self-tests to
+    `test_cuprum_selection_readers.py`, and the O1a alignment plus O1b freshness
+    assertions staying in `test_cuprum_selection.py`. See D11 for the reasoning
+    and the scope check.
+  - The split is verified as a move rather than a rewrite: identical test-name
+    sets (14) and identical assertion lines (19) across the before and after
+    trees, modulo the dropped private underscore on the moved readers.
+  - The limit is **not gate-enforced** -- no test, Makefile target, or
+    `pyproject.toml` setting checks it -- which is why a 628-line module could
+    pass every gate. That is the same class of gap the tofu finding exposed
+    from the other side: a rule stated in prose with no deterministic check
+    behind it is a rule that only bites when a reviewer reads the file. Worth
+    noting for whichever task next touches `AGENTS.md`, not fixed here.
+
 ## Outcomes & retrospective
 
 Status: **COMPLETE.** All four milestones are closed. Two CodeRabbit passes
@@ -1860,7 +1948,9 @@ Trace links:
 
 ```plaintext
 AGENTS-400, ADR-005 -> EP-M0 -> tests/unit/test_release_gh.py (moved run_gh tests, unchanged assertions)
-RM-5.1.4-SEL, ASM-3.4 -> EP-M2 -> tests/workflow_contracts/test_cuprum_selection.py (O1a, O1b)
+RM-5.1.4-SEL, ASM-3.4 -> EP-M2 -> tests/workflow_contracts/test_cuprum_selection.py (O1a, O1b),
+tests/workflow_contracts/test_cuprum_selection_readers.py (O1a reader self-tests),
+tests/helpers/cuprum_selection.py (the readers themselves)
 RM-5.1.4-API, ASM-3.1, DES-7.2.6 -> EP-M2 -> tests/unit/test_release_gh.py, tests/e2e/test_upload_release_wheels_cli.py
 RM-5.1.4-API -> EP-M1/EP-M2 -> tests/unit/test_release_gh_properties.py (O4 capture fidelity)
 DG-CAT, DES-7.3 -> EP-M2 -> tests/unit/utils/test_commands.py, commands_catalogue.feature (O5)
@@ -1906,7 +1996,9 @@ after removing whitespace, and fail with a message that names the site. Do not
 declare `packaging`: it is only a transitive dependency, and a new development
 dependency trips a tolerance.
 
-**Artefact.** `tests/workflow_contracts/test_cuprum_selection.py`.
+**Artefact.** `tests/workflow_contracts/test_cuprum_selection.py`, with the
+readers in `tests/helpers/cuprum_selection.py` and their self-tests in
+`tests/workflow_contracts/test_cuprum_selection_readers.py` (the split is D11).
 
 - It reads the TOML files with `tomllib`.
 - It extracts the PEP 723 block with the regular expression from the PEP 723
@@ -2193,7 +2285,8 @@ above. No code changes.
    unmarked.
 3. Create `tests/workflow_contracts/test_cuprum_selection.py`. It holds O1a with
    green checker self-tests, and O1b with the project check green and the
-   script check strict-xfail.
+   script check strict-xfail. The single module grew past the 400-line limit;
+   the final shape is split across three files (D11).
 4. Create `tests/bdd/features/release_wheel_upload.feature` and
    `tests/bdd/steps/test_release_wheel_upload_steps.py`.
    - Bind each scenario with its own `@scenario(...)` decorator; do not use
@@ -2937,6 +3030,10 @@ The new test modules:
 - `tests/unit/test_gh_stub_helper.py`: the helper's isolation guarantees (O3).
 - `tests/workflow_contracts/test_cuprum_selection.py`: selection alignment and
   lock freshness (O1a, O1b).
+- `tests/workflow_contracts/test_cuprum_selection_readers.py`: the reader
+  self-tests (O1a), split out under D11.
+- `tests/helpers/cuprum_selection.py`: the readers both modules assert
+  against, moved to the shared helper package under D11.
 - `tests/bdd/features/release_wheel_upload.feature` and
   `tests/bdd/steps/test_release_wheel_upload_steps.py`: standalone behaviour
   (O2, O3).
