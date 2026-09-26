@@ -298,9 +298,6 @@ max-positional-arguments = 5
 # Keep this Pylint pass focused on the explicitly selected messages.
 disable = [
     "all",
-    # Managed PyPy is currently 3.11 while the project targets Python 3.13
-    # syntax; keep PyPy-backed Pylint useful on files it can parse.
-    "syntax-error",
 ]
 enable = [
     # Logging format safety.

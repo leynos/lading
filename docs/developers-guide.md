@@ -133,18 +133,18 @@ across `lading`, and once across `tests` and `scripts`, where the shape-based
 that invocation on the command line in the Makefile. They exempt nested test
 closures and test-local stub classes. The `lading` pass carries no exemptions,
 and every module-level definition in `tests` and `scripts` still requires a
-docstring. If `interrogate` passes, the third stage runs Pylint through the
-pinned `pylint-pypy-shim` tool under PyPy. That stage is focused on rule
-families that complement Ruff, especially logging format safety, pattern
-matching checks, selected simplification checks, deprecated standard-library
-usage, file hygiene, and design-size limits. The fourth stage runs all
-`df12-python-lints` checks under CPython 3.14, while retaining Lading's Python
-3.13 semantic baseline for version-gated diagnostics. The fifth stage runs
-`ambrleaks`, which scans Syrupy snapshots under `tests` for values that should
-have been redacted. Finally, Skylos runs a blocking, strict, production-only
-dead-code scan across `lading`, after which the lint gate is complete.
-[ADR-003](adr/003-three-tier-python-linting.md) records the policy decision,
-including the
+docstring. If `interrogate` passes, the third stage runs the pinned Pylint
+release under the `pypy@3.12` managed interpreter through `uv tool run`. That
+stage is focused on rule families that complement Ruff, especially logging
+format safety, pattern matching checks, selected simplification checks,
+deprecated standard-library usage, file hygiene, and design-size limits. The
+fourth stage runs all `df12-python-lints` checks under CPython 3.14, while
+retaining Lading's Python 3.13 semantic baseline for version-gated diagnostics.
+The fifth stage runs `ambrleaks`, which scans Syrupy snapshots under `tests`
+for values that should have been redacted. Finally, Skylos runs a blocking,
+strict, production-only dead-code scan across `lading`, after which the lint
+gate is complete. [ADR-003](adr/003-three-tier-python-linting.md) records the
+policy decision, including the
 [2026-09-07 addendum](adr/003-three-tier-python-linting.md#addendum-docstring-coverage-for-tests-and-scripts-2026-09-07)
 extending Interrogate coverage to `tests` and `scripts`.
 
@@ -163,13 +163,15 @@ The relevant Makefile variables are:
   install ty separately; it runs whatever `TY_VERSION` pins.
 - `TY` — the pinned ty command (`uv tool run --from ty==$(TY_VERSION) ty`)
   that the `typecheck` target invokes.
-- `PYLINT_PYTHON` — Python executable used by `uv tool run`; defaults to `pypy`.
+- `PYLINT_PYTHON` — Python executable used by `uv tool run`; defaults to
+  `pypy@3.12`. The interpreter is pinned to the `3.12` release line, not bare
+  `pypy`, so a new PyPy release cannot silently change the parsed grammar.
+- `PYLINT_VERSION` — pinned Pylint release; defaults to `4.0.9`.
 - `PYLINT_TARGETS` — directories passed to Pylint; defaults to
   `lading scripts tests`.
-- `PYLINT_PYPY_SHIM_REF` — pinned `pylint-pypy-shim` revision.
-- `PYLINT_PYPY_SHIM` — Git URL assembled from the pinned shim revision.
-- `PYLINT` — full `uv tool run --python $(PYLINT_PYTHON)` invocation for the
-  shimmed Pylint command.
+- `PYLINT` — full
+  `uv tool run --managed-python --python $(PYLINT_PYTHON)` with
+  `--from 'pylint==$(PYLINT_VERSION)' pylint` invocation.
 - `DF12_PYTHON_LINTS_REF` — pinned `df12-python-lints` release used by the
   separately provisioned `ambrleaks` command; defaults to `v0.1.0` and must
   remain aligned with the development dependency in `pyproject.toml`.
