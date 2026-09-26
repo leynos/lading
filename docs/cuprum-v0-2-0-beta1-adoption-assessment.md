@@ -52,6 +52,24 @@ later follow-up, taken after line-iteration PR `#365` merged as
 `fdfcebc387ac93e2b993185acf272d600cb80f05`, so its observations do not describe
 the initial cuprum revision `861fe2f053645311482141f155baeaa70dca0299`.[^1]
 
+**Follow-up, 2026-09-25.** The published `0.2.0b1` artefact has since been
+selected and validated on both dependency paths, closing this section's open
+item. `pyproject.toml` pins `cuprum==0.2.0b1` for the repository and the PEP
+723 block in `scripts/upload_release_wheels.py` pins it for the standalone
+uploader; each path carries its own lockfile. The validation this plan
+specifies is recorded in
+[issue 5.1.4](execplans/5-1-4-select-and-validate-the-published-cuprum-beta.md):
+the beta resolves and runs end to end on both paths with a stub `gh`, the
+uploader's call sites use the beta forms, and the distribution smoke executed
+both the pure-Python wheel and the native `manylinux` wheel. No GitHub release
+was published by any of it.
+
+This follow-up covers artefact selection and the released API surface. It does
+not discharge the two demonstrated blockers in section 3 -- environment
+replacement semantics and broken-pipe handling -- which still need shims, nor
+any part of the production migration. Sections 1 to 6 above remain the
+assessment of the source snapshot and are not superseded.
+
 ## 2. Actual migration scope
 
 The [phase 5 roadmap](roadmap.md#5-command-execution-modernization) predates

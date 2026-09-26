@@ -7,17 +7,16 @@ the codebase.
 
 Migration context: This is Step 5.1 of the Cuprum migration. Subsequent
 steps will migrate existing plumbum and subprocess code to use this
-catalogue via ``scoped(ScopeConfig(allowlist=LADING_CATALOGUE.allowlist))``.
+catalogue via ``scoped(catalogue=LADING_CATALOGUE)``.
 
 The catalogue is staged but intentionally not yet wired into the execution
 path: every production invocation still goes through
 ``lading.runtime.subprocess_runner``, which spawns processes directly. The
 wiring lands with the Phase 5.2 production migration in ``docs/roadmap.md``,
 which rewires the spawning backend behind the ``CommandRunner`` protocol onto
-``scoped(ScopeConfig(allowlist=LADING_CATALOGUE.allowlist))``; do not mistake
-this module for live enforcement in the meantime. Until task 5.1.4 selects the
-beta, the locked cuprum 0.1.0 accepts only the flat keyword form, so this
-module's own tests still use it; the interface reference is §7 of
+``scoped(catalogue=LADING_CATALOGUE)``; do not mistake this module for live
+enforcement in the meantime. Task 5.1.4 selected the cuprum 0.2.0 beta, so the
+keyword form above is the one that holds; the interface reference is §7 of
 ``docs/lading-design.md``.
 """
 

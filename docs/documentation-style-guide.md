@@ -360,9 +360,9 @@ providing a historical record for future maintainers.
 
 ### Naming convention
 
-Name ADR files using the pattern `adr-NNN-short-description.md`, where `NNN` is
-a zero-padded sequence number (e.g. `adr-001-async-fixtures-and-tests.md`).
-Place ADRs in the `docs/` directory.
+Name ADR files using the pattern `NNN-short-description.md`, where `NNN` is a
+zero-padded sequence number (e.g. `001-async-fixtures-and-tests.md`). Place
+ADRs in the `docs/adr/` directory.
 
 ### Required sections
 
