@@ -103,9 +103,15 @@ def default(
     build_dir.mkdir(parents=True, exist_ok=True)
     catalogue = ProgramCatalogue.from_programs("tofu", name="deploy")
     tofu = Program("tofu")
+    # ``cwd`` is an execution parameter, not a command flag: it selects the
+    # directory the process runs in. It must therefore name a directory that
+    # already holds the tool's own inputs -- ``build_dir`` above is this
+    # script's *output* directory, so planning there would find no
+    # configuration. Point it at the OpenTofu root module instead.
+    tofu_root = project_root / "infra"
     with scoped(catalogue=catalogue):
         sh.make(tofu, catalogue=catalogue)("plan").run_sync(
-            context=ExecutionContext(cwd=build_dir),
+            context=ExecutionContext(cwd=tofu_root),
         )
 
 def main():

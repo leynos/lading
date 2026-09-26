@@ -1408,22 +1408,24 @@ prose; one is substantive and is the most important finding of either pass.
   recorded in the overlay with the measurement, since the class of defect --
   prose that reaches the branch through a green gate -- is exactly what this
   plan has been bitten by repeatedly.
-- **First-person pronouns in this plan, twice. Fixed.** "the false sentence
-  explaining *why* was introduced by my own fix for it" and "the prose **I**
-  added to justify it". The style guide's rule against first person predates
-  the branch, and both are now reworded impersonally. The finding's cited line
-  numbers were stale (it named 954/957; the text had moved), which is the
-  review having read committed HEAD while the tree was being edited
-  concurrently.
-  - A later pass re-flagged the *quotation* of that fixed wording, which this
-    disposition keeps because a record of what was wrong is the point of it.
-    Stating the sweep result precisely, so the distinction survives: scanning
-    the file for the character sequences `I`, `my`, `we`, and `our` returns
-    hits at that quotation and at this sentence (which names the sequences),
-    and exactly one elsewhere -- the letters inside an en-GB-oxendict `-our`
-    spelling. **No first-person pronoun remains in the document's own voice.**
-    A sweep that cannot tell a use from a mention will report the remaining
-    hits forever; that is a property of the sweep, not of the prose.
+- **First-person pronouns in this plan, twice. Fixed.** Two sentences had
+  described the drafting history in the first person: one said the false
+  sentence explaining *why* had been introduced by the fix for it, the other
+  that the prose justifying it had been added by the same hand. The style
+  guide's rule against first person predates the branch, and both are now
+  reworded impersonally. The finding's cited line numbers were stale (it named
+  954/957; the text had moved), which is the review having read committed HEAD
+  while the tree was being edited concurrently.
+  - A later pass re-flagged the same passage, because the record above quoted
+    the offending wording and the quotation still carried `I` and `my`. Quoting
+    a violation is not committing one -- this plan's own use-versus-mention
+    distinction applies to its own prose too -- but the quotation was of the
+    plan's *own* earlier writing, so nothing was lost by stating it indirectly
+    instead, which is what the wording above now does. Naming the sequences
+    `I`, `my`, `we`, and `our` as sequences is a mention, not a use. **No
+    first-person pronoun remains in the document's own voice.** A sweep that
+    cannot tell a use from a mention will report the remaining hits forever;
+    that is a property of the sweep, not of the prose.
 - **A single-backtick `uv.lock` amid double backticks. Fixed.** The docstring's
   closing paragraph used `` `uv.lock` `` once where the rest of the module uses
   RST double backticks, and that paragraph also carried the caveat the fix
@@ -1551,6 +1553,74 @@ cause.
     tagged wheel does not carry one", names the gate, links ADR-006, and states
     that the gate is a procedure rather than an automated check. No test asserts
     that string, so the wording was free to change.
+
+#### Post-closure pass (2026-09-27, at `8f44094`)
+
+The pass that closed the two conformance gaps, run after the pull request left
+draft. The CLI pass completed in about 150 seconds and was **not** rate-limited
+(quota after it: 9 of 10 in the rolling hour). It reported two entries, and a
+parallel hosted review returned a third that the CLI pass did not: the hosted
+check came back `CHANGES_REQUESTED` on one `major` finding. All three are
+addressed; none re-litigated D10 or the O3 restatement, so the maintainer's two
+conformance decisions were not flagged.
+
+- **`docs/scripting-standards.md:108` -- the `tofu` example plans in an empty
+  directory. `major`, hosted only. Fixed.**
+  - The finding is correct. `build_dir` is derived as
+    `(outdir or project_root / "dist") / name`, so it is the script's *output*
+    directory; the example creates it with `mkdir(parents=True,
+    exist_ok=True)`, immediately making it empty, and then passes it as
+    `ExecutionContext(cwd=build_dir)`. `tofu plan` there finds no
+    configuration and exits 1.
+  - Verified by execution rather than by reading, because this document's own
+    history is that prose describing cuprum can be wrong in ways reading cannot
+    detect. A probe under the project's lockfile reproduced the failure exactly:
+    `exit: 1`, stderr `Error: No configuration files`, "Plan requires
+    configuration to be present". `tofu` 1.12.5, `cuprum==0.2.0b1`.
+  - Fixed by pointing `cwd` at `project_root / "infra"`, a directory that can
+    hold the OpenTofu root module, and adding a comment stating the distinction
+    the example had blurred: `cwd` selects the directory the *process* runs in
+    and so must name a directory holding the tool's own inputs, while
+    `build_dir` is where this script writes its outputs.
+  - This is a pre-existing defect in the example's semantics, not a regression
+    from the beta migration -- it dates from the original
+    `run_sync(cwd=build_dir)` form. It went unnoticed because no gate executes
+    Markdown code fences, which is the gap already recorded at EP-M3.
+  - The record above claims "all six rewritten snippets were executed
+    successfully". That claim is about the cuprum *API forms* -- that they
+    resolve, are callable, and mean what the document says -- and it is
+    supported by the measurements taken at the time. It is not a claim that
+    each snippet runs as a complete programme against real inputs, which this
+    snippet does not, since the repository contains no OpenTofu configuration
+    for it to plan. The finding exposed that ambiguity in the wording; this
+    disposition states the narrower claim rather than re-running the pass.
+- **`docs/execplans/…:2829` -- the helper interface snippet advertises a
+  `sentinel=` keyword that was removed. `minor`, CLI pass. Fixed.**
+  - Correct, and the finding had the plan's own decision log as its witness:
+    `sentinel=` was removed from `isolated_environment` rather than made
+    optional, precisely because a parameter the helper wrote made the
+    inheritance assertion unfalsifiable.
+  - The snippet was stale in two further ways the finding did not name, both
+    checked against `tests/helpers/gh_stub.py`: `run_uploader` takes no
+    `directory` parameter, and the docstring described stripping "`UV_*`
+    variables other than `UV_CACHE_DIR`", which is not what the helper does --
+    it strips the two credentials, four named uv project variables, and three
+    Actions step variables. The snippet now matches the real signatures, and
+    the docstring text is replaced by an accurate summary plus the reason the
+    sentinel is absent from the signature.
+- **`docs/execplans/…:1412` -- first-person pronouns inside a retained
+  quotation. `minor`, CLI pass, third time this passage has been flagged.
+  Fixed, and the disposition it relied on is revised.**
+  - Previous passes declined this on a use-versus-mention argument: the
+    pronouns were inside a quotation *recording* the offending wording, and the
+    record was the point. The argument is sound in general, but it does not
+    apply here. The quoted text was this plan's own earlier phrasing, not an
+    external source, so nothing is lost by stating the history indirectly --
+    which is what the passage now does. Declining it a third time would have
+    cost more in review churn than the rewording cost in fidelity.
+  - The revised text keeps the distinction explicit rather than abandoning it:
+    naming the sequences `I`, `my`, `we`, and `our` as sequences is a mention,
+    and a document may mention a word it must not use.
 
 ## Outcomes & retrospective
 
@@ -2823,22 +2893,37 @@ class GhStub:
     def calls(self) -> tuple[GhCall, ...]: ...
 
 
-def install_gh_stub(directory: Path, *, exit_code: int = 0, stderr: str = "") -> GhStub: ...
+def install_gh_stub(
+    directory: Path,
+    *,
+    exit_code: int = 0,
+    stdout: str = "",
+    stderr: str = "",
+) -> GhStub: ...
 
 
-def isolated_environment(stub: GhStub, *, sentinel: str | None = None) -> dict[str, str]:
+def isolated_environment(
+    stub: GhStub,
+    *,
+    extra: cabc.Mapping[str, str] | None = None,
+) -> dict[str, str]:
     """Return a child environment in which ``gh`` can only be the stub.
 
     Prepends the stub directory to PATH and checks it with ``shutil.which``,
-    removes GH_TOKEN, GITHUB_TOKEN, VIRTUAL_ENV, and UV_* variables other than
-    UV_CACHE_DIR, and sets GH_CONFIG_DIR (an empty directory), GH_HOST, and
-    GH_PROMPT_DISABLED.
+    removes the two credentials, the uv project variables, and the Actions step
+    variables, and sets GH_CONFIG_DIR (an empty directory), GH_HOST, and
+    GH_PROMPT_DISABLED. ``extra`` is applied last, so a caller can put any of
+    them back deliberately.
+
+    ``LADING_STUB_SENTINEL`` is deliberately not a parameter: a helper that set
+    the sentinel itself would let a test assert a value the helper had just
+    written. A test that wants to show inheritance sets it in the parent with
+    ``monkeypatch.setenv`` and asserts the child saw it.
     """
 
 
 def run_uploader(
     mode: typ.Literal["repository", "standalone"],
-    directory: Path,
     environment: cabc.Mapping[str, str],
     *arguments: str,
 ) -> subprocess.CompletedProcess[str]:
