@@ -28,12 +28,20 @@ def _tooling_environment_is_available() -> bool:
     """Report whether this interpreter can run the duplication-gate suite.
 
     The suite imports the pinned cyclopts and tomlkit the wrapper declares,
-    and the wrapper itself requires Python 3.14.
+    needs syrupy for the shortcut snapshots, and the wrapper itself requires
+    Python 3.14.
+
+    Returns
+    -------
+    bool
+        ``True`` when the interpreter is new enough and every dependency the
+        suite needs at import or fixture time is importable.
     """
     if sys.version_info < (3, 14):
         return False
     return all(
-        _module_is_importable(name) for name in ("cyclopts", "hypothesis", "tomlkit")
+        _module_is_importable(name)
+        for name in ("cyclopts", "hypothesis", "syrupy", "tomlkit")
     )
 
 

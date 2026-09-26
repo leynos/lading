@@ -44,6 +44,21 @@ class _IndexMissingVersionHandling:
     logger: logging.Logger
 
 
+@dc.dataclass(frozen=True, slots=True)
+class _MissingDependencyWording:
+    """The per-path prose for one fatal dependency-index failure.
+
+    Every fatal index miss varies only in the words it carries, so the four
+    strings travel together: ``reason`` and ``guidance`` compose the raised
+    message, and ``detail`` phrases the same explanation for the warning log.
+    """
+
+    missing_name: str
+    reason: str
+    guidance: str
+    detail: str
+
+
 def _format_cargo_failure_message(
     command: str,
     crate_name: str,
@@ -102,11 +117,7 @@ def _log_missing_dependency_failure(
 
 def _raise_missing_dependency(
     context: _IndexMissingVersionFailure,
-    *,
-    missing_name: str,
-    reason: str,
-    guidance: str,
-    detail: str,
+    wording: _MissingDependencyWording,
 ) -> typ.NoReturn:
     """Report one fatal index miss for an unindexed sibling dependency.
 
@@ -120,26 +131,20 @@ def _raise_missing_dependency(
     context : _IndexMissingVersionFailure
         The shared failure context carrying the message, error class, and
         logger.
-    missing_name : str
-        The unindexed dependency's name as cargo reported it.
-    reason : str
-        Why this dependency cannot be resolved, for the raised message.
-    guidance : str
-        The operator's next step, for the raised message.
-    detail : str
-        The same explanation, phrased for the warning log.
+    wording : _MissingDependencyWording
+        The per-path prose for the raised message and the warning log.
     """
     message = _format_missing_dependency_failure(
         context.failure_message,
-        missing_name=missing_name,
-        reason=reason,
-        guidance=guidance,
+        missing_name=wording.missing_name,
+        reason=wording.reason,
+        guidance=wording.guidance,
     )
     _log_missing_dependency_failure(
         context.logger,
         context.failure,
-        missing_name=missing_name,
-        detail=detail,
+        missing_name=wording.missing_name,
+        detail=wording.detail,
     )
     raise context.error_cls(message)
 
@@ -205,40 +210,46 @@ def _validate_dependency_placement(
     if missing_index is None:
         _raise_missing_dependency(
             context,
-            missing_name=missing_name,
-            reason=(
-                "is not part of the current publish plan, so the unpublished "
-                "workspace dependency override cannot help"
+            _MissingDependencyWording(
+                missing_name=missing_name,
+                reason=(
+                    "is not part of the current publish plan, so the unpublished "
+                    "workspace dependency override cannot help"
+                ),
+                guidance="Publish or index the dependency first.",
+                detail="which is not in the current publish plan; cannot continue",
             ),
-            guidance="Publish or index the dependency first.",
-            detail="which is not in the current publish plan; cannot continue",
         )
     if missing_index == current_index:
         _raise_missing_dependency(
             context,
-            missing_name=missing_name,
-            reason=(
-                f"is the same crate as {context.failure.crate_name!r}, so the "
-                "publish plan cannot make it available before itself"
+            _MissingDependencyWording(
+                missing_name=missing_name,
+                reason=(
+                    f"is the same crate as {context.failure.crate_name!r}, so the "
+                    "publish plan cannot make it available before itself"
+                ),
+                guidance="Remove the self-dependency from the crate manifest.",
+                detail="which is the current crate; cannot continue",
             ),
-            guidance="Remove the self-dependency from the crate manifest.",
-            detail="which is the current crate; cannot continue",
         )
     if missing_index > current_index:
         _raise_missing_dependency(
             context,
-            missing_name=missing_name,
-            reason=(
-                f"appears after crate {context.failure.crate_name!r} in publish "
-                "order, so it will not be available when this crate is published"
-            ),
-            guidance=(
-                "Adjust publish.order so the dependency comes first, or omit "
-                "publish.order and rely on dependency-derived topological sorting."
-            ),
-            detail=(
-                "which appears after the current crate in publish order; "
-                "cannot continue"
+            _MissingDependencyWording(
+                missing_name=missing_name,
+                reason=(
+                    f"appears after crate {context.failure.crate_name!r} in publish "
+                    "order, so it will not be available when this crate is published"
+                ),
+                guidance=(
+                    "Adjust publish.order so the dependency comes first, or omit "
+                    "publish.order and rely on dependency-derived topological sorting."
+                ),
+                detail=(
+                    "which appears after the current crate in publish order; "
+                    "cannot continue"
+                ),
             ),
         )
     return _DependencyPlacement(current_index, missing_index, missing_canonical_name)
@@ -355,16 +366,18 @@ def _downgrade_or_raise(
     # dry-run override that downgrades this failure to a warning.
     _raise_missing_dependency(
         context,
-        missing_name=missing_name,
-        reason="is scheduled in this publish run but is not yet on crates.io",
-        guidance=(
-            "Enable the dry-run unpublished workspace dependency override, or "
-            "follow the staged-publish workaround."
-        ),
-        detail=(
-            "(in plan); enable the dry-run unpublished workspace dependency "
-            "override to downgrade to a warning, or follow the staged-publish "
-            "workaround"
+        _MissingDependencyWording(
+            missing_name=missing_name,
+            reason="is scheduled in this publish run but is not yet on crates.io",
+            guidance=(
+                "Enable the dry-run unpublished workspace dependency override, or "
+                "follow the staged-publish workaround."
+            ),
+            detail=(
+                "(in plan); enable the dry-run unpublished workspace dependency "
+                "override to downgrade to a warning, or follow the staged-publish "
+                "workaround"
+            ),
         ),
     )
     return

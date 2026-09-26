@@ -11,7 +11,7 @@ cannot hide the planted family behind the ranking bound.
 
 import dataclasses as dc
 import json
-import subprocess  # noqa: S404 - tests exercise the pinned repository binary.
+import subprocess
 import textwrap
 from pathlib import Path
 
@@ -76,9 +76,11 @@ def _resolved_binary() -> str:
     """Return the pinned detector path, skipping when it is unavailable."""
     settings = detector.load_settings(REPOSITORY_ROOT / "pyproject.toml")
     try:
-        return detector.resolve_binary(settings)
+        binary = detector.resolve_binary(settings)
     except detector.GateExecutionError as error:  # pragma: no cover
         pytest.skip(str(error))
+        raise  # Unreachable; keeps the return paths symmetric for Pylint.
+    return binary
 
 
 def _write_planted_package(workspace: Path, bodies: dict[str, str]) -> None:
@@ -148,9 +150,7 @@ class TestCleanWorkspace:
             workspace,
             {"mod.py": _DUPLICATE_BODY.replace("NAME", "only_total")},
         )
-        (workspace / "pyproject.toml").write_text(
-            _PLANTED_PYPROJECT, encoding="utf-8"
-        )
+        (workspace / "pyproject.toml").write_text(_PLANTED_PYPROJECT, encoding="utf-8")
 
         result = _run_check(workspace)
 
@@ -178,7 +178,7 @@ class TestPlantedDuplicate:
         command = detector.build_command(
             binary, dc.replace(settings, roots=(".",), min_size=8)
         )
-        result = subprocess.run(  # noqa: S603 - pinned, repository-owned binary.
+        result = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - pinned, repository-owned binary.
             command,
             cwd=tmp_path,
             check=True,

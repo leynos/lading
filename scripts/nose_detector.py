@@ -12,7 +12,7 @@ import dataclasses as dc
 import json
 import os
 import shutil
-import subprocess  # noqa: S404 - the gate runs one pinned, repository-owned binary.
+import subprocess
 import tomllib
 from collections import abc as cabc
 from pathlib import Path
@@ -258,7 +258,7 @@ def run_detector(
 def _run_command(command: cabc.Sequence[str]) -> str:
     """Run one detector command from the repository root and return stdout."""
     try:
-        result = subprocess.run(  # noqa: S603 - fixed, repository-owned binary.
+        result = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - fixed, repository-owned binary.
             list(command),
             cwd=REPO_ROOT,
             check=False,

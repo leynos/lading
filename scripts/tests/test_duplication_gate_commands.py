@@ -6,10 +6,13 @@ the orchestration, diagnostics, and exit statuses without the pinned binary.
 detector.
 """
 
-import subprocess  # noqa: S404 - tests exercise copied gate commands.
+from __future__ import annotations
+
+import subprocess
 import sys
 import textwrap
 import tomllib
+import typing as typ
 from pathlib import Path
 
 import pytest
@@ -23,6 +26,9 @@ from duplication_gate_test_support import (
     run_gate_command,
     write_stub_nose,
 )
+
+if typ.TYPE_CHECKING:
+    from syrupy.assertion import SnapshotAssertion
 
 #: The stale-entry diagnostic, kept as a literal so a change to the honesty
 #: wording has to be made deliberately in both places.
@@ -46,13 +52,14 @@ def _finding() -> detector.Finding:
 
 
 class TestGateCommands:
-    """CLI orchestration and real workflow contracts."""
+    """CLI orchestration: exit statuses, diagnostics, and failure translation."""
 
     def test_check_reports_blocking_findings(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
+        snapshot: SnapshotAssertion,
     ) -> None:
         """The check command emits the blocking report and status one."""
         monkeypatch.chdir(tmp_path)
@@ -61,15 +68,9 @@ class TestGateCommands:
         with pytest.raises(SystemExit) as error:
             gate.check()
         assert error.value.code == 1, "Blocking findings must return status one."
-        assert capsys.readouterr().out == (
-            "duplicate code: 1 unsuppressed family/families\n"
-            "  lading/a.py:1-20 ~ lading/b.py:30-49 beta "
-            "(copy-paste, value 22.1)\n"
-            "Extract the shared logic into one helper, or record a considered "
-            "exception:\n"
-            "  make duplication-allow FIRST='<path[::name]>' "
-            "[SECOND='<path[::name]>'] REASON='<why this stays>'\n"
-        ), "Blocking report must remain actionable and deterministic."
+        assert snapshot == capsys.readouterr().out, (
+            "The blocking report must remain actionable and deterministic."
+        )
 
     def test_check_reports_stale_entries(
         self,
@@ -83,9 +84,9 @@ class TestGateCommands:
         monkeypatch.setattr(gate, "load_allowlist", lambda _path: (entry,))
         monkeypatch.setattr(gate, "detect_findings", lambda: [])
         gate.check()
-        assert capsys.readouterr().out == (
-            _STALE_LINE + "duplication gate passed\n"
-        ), "Stale entries must be reported alongside a passing gate."
+        assert capsys.readouterr().out == (_STALE_LINE + "duplication gate passed\n"), (
+            "Stale entries must be reported alongside a passing gate."
+        )
 
     @pytest.mark.parametrize(
         "error",
@@ -378,6 +379,10 @@ class TestGateCommands:
             "The diagnostic must name the missing reason."
         )
 
+
+class TestGateWorkflowContracts:
+    """The real CLI and Make boundaries, exercised end to end."""
+
     @pytest.mark.parametrize(
         ("second", "expected_keys"),
         [
@@ -504,7 +509,7 @@ class TestGateCommands:
             detector.resolve_binary(settings)
         except detector.GateExecutionError as error:  # pragma: no cover
             pytest.skip(str(error))
-        result = subprocess.run(  # noqa: S603 - fixed repository gate command.
+        result = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - fixed repository gate command.
             [
                 sys.executable,
                 str(REPOSITORY_ROOT / "scripts" / "duplication_gate.py"),

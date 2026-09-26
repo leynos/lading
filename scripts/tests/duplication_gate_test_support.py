@@ -1,9 +1,11 @@
 """Shared support for the duplication-gate script tests."""
 
+from __future__ import annotations
+
 import json
 import os
 import shutil
-import subprocess  # noqa: S404 - support invokes fixed test commands.
+import subprocess
 import sys
 import typing as typ
 from pathlib import Path
@@ -124,7 +126,7 @@ def run_gate_command(
     environment: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run a copied gate command and capture its completed result."""
-    return subprocess.run(  # noqa: S603 - fixed test interpreter and copied script.
+    return subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - fixed test interpreter and copied script.
         gate_command(script, *arguments),
         cwd=script.parent.parent,
         env=gate_environment() if environment is None else environment,

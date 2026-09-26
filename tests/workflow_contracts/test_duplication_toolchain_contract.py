@@ -12,13 +12,19 @@ prebuilt release is a provisioning failure, never permission to compile the
 detector from source or to accept a binary from an unapproved source.
 """
 
+from __future__ import annotations
+
 import re
 import shutil
-import subprocess  # noqa: S404 - tests expand the real Make recipes.
+import subprocess
 import tomllib
+import typing as typ
 from pathlib import Path
 
 import pytest
+
+if typ.TYPE_CHECKING:
+    from syrupy.assertion import SnapshotAssertion
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MAKEFILE_PATH = REPO_ROOT / "Makefile"
@@ -44,11 +50,11 @@ def _pyproject() -> dict[str, object]:
 def _nose_version() -> str:
     """Return the detector version pinned in ``[tool.nose]``."""
     tool = _pyproject()["tool"]
-    assert isinstance(tool, dict)
+    assert isinstance(tool, dict), "The pyproject must expose a [tool] table."
     nose = tool["nose"]
-    assert isinstance(nose, dict)
+    assert isinstance(nose, dict), "[tool.nose] must be a TOML table."
     version = nose["version"]
-    assert isinstance(version, str)
+    assert isinstance(version, str), "[tool.nose].version must be a string."
     return version
 
 
@@ -119,7 +125,7 @@ def test_every_declaration_site_agrees_on_the_detector_version() -> None:
 def test_the_installer_refuses_unapproved_installation_strategies() -> None:
     """The recipe disables source compilation and third-party binary mirrors."""
     assert MAKE_BINARY is not None, "make executable not found on PATH"
-    completed = subprocess.run(  # noqa: S603 - fixed target in the repository root.
+    completed = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - fixed target in the repository root.
         [MAKE_BINARY, "--dry-run", "--no-print-directory", "install-nose"],
         cwd=REPO_ROOT,
         check=True,
@@ -147,7 +153,7 @@ def _disabled_strategies(recipe: str) -> tuple[str, ...]:
 def test_the_installer_runs_non_interactively() -> None:
     """Installation must never wait for a prompt on a developer machine."""
     assert MAKE_BINARY is not None, "make executable not found on PATH"
-    completed = subprocess.run(  # noqa: S603 - fixed target in the repository root.
+    completed = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - fixed target in the repository root.
         [MAKE_BINARY, "--dry-run", "--no-print-directory", "install-nose"],
         cwd=REPO_ROOT,
         check=True,
@@ -161,7 +167,7 @@ def test_the_installer_runs_non_interactively() -> None:
 def test_the_nose_install_is_not_a_floating_latest_installer() -> None:
     """The recipe requests an exact crate version rather than a floating ref."""
     assert MAKE_BINARY is not None, "make executable not found on PATH"
-    completed = subprocess.run(  # noqa: S603 - fixed target in the repository root.
+    completed = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - fixed target in the repository root.
         [MAKE_BINARY, "--dry-run", "--no-print-directory", "install-nose"],
         cwd=REPO_ROOT,
         check=True,
@@ -182,7 +188,7 @@ def test_the_nose_install_is_not_a_floating_latest_installer() -> None:
 def test_the_gate_is_wired_into_the_lint_target() -> None:
     """The blocking gate must run as part of the canonical lint pipeline."""
     assert MAKE_BINARY is not None, "make executable not found on PATH"
-    completed = subprocess.run(  # noqa: S603 - fixed target in the repository root.
+    completed = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - fixed target in the repository root.
         [MAKE_BINARY, "--dry-run", "--no-print-directory", "lint"],
         cwd=REPO_ROOT,
         check=True,
@@ -195,20 +201,29 @@ def test_the_gate_is_wired_into_the_lint_target() -> None:
     )
 
 
-def test_the_gate_does_not_require_the_application_environment() -> None:
+def test_the_gate_does_not_require_the_application_environment(
+    snapshot: SnapshotAssertion,
+) -> None:
     """The gate wrapper resolves its own tooling rather than importing lading."""
     wrapper = (REPO_ROOT / "scripts" / "duplication_gate.py").read_text(
         encoding="utf-8"
     )
-    metadata = re.search(
-        r"# /// script\n(?P<body>.*?)# ///", wrapper, flags=re.DOTALL
-    )
+    metadata = re.search(r"# /// script\n(?P<body>.*?)# ///", wrapper, flags=re.DOTALL)
     assert metadata is not None, "The wrapper must declare PEP 723 inline metadata."
     body = metadata.group("body")
+    declaration = tomllib.loads(
+        "\n".join(line.removeprefix("# ") for line in body.splitlines())
+    )
 
-    assert "requires-python" in body, "The wrapper must pin its own interpreter."
-    assert "cyclopts==" in body, "The wrapper must pin its CLI dependency."
-    assert "tomlkit==" in body, "The wrapper must pin its TOML dependency."
+    # The interpreter floor and every pinned tooling dependency, locked
+    # together. A snapshot states the whole declaration, so widening the gate's
+    # dependencies or relaxing its interpreter has to be a reviewed change
+    # rather than a string that happens to still be present.
+    assert declaration == snapshot, (
+        "The wrapper's PEP 723 declaration must name its interpreter floor and "
+        "pin every tooling dependency it relies on."
+    )
+
     for forbidden in ("lading", "cuprum", "msgspec"):
         assert forbidden not in body, (
             f"The gate must not depend on the application package {forbidden!r}."
@@ -230,14 +245,15 @@ def test_the_helper_tests_are_not_collected_by_the_application_suite() -> None:
 def test_configured_roots_exist_and_are_not_empty() -> None:
     """Every configured scan root must be a real, non-empty source tree."""
     tool = _pyproject()["tool"]
-    assert isinstance(tool, dict)
+    assert isinstance(tool, dict), "The pyproject must expose a [tool] table."
     nose = tool["nose"]
-    assert isinstance(nose, dict)
+    assert isinstance(nose, dict), "[tool.nose] must be a TOML table."
     roots = nose["roots"]
-    assert isinstance(roots, list) and roots, "[tool.nose].roots must not be empty."
+    assert isinstance(roots, list), "[tool.nose].roots must be a TOML array."
+    assert roots, "[tool.nose].roots must not be empty."
 
     for root in roots:
-        assert isinstance(root, str)
+        assert isinstance(root, str), "Every configured root must be a string path."
         directory = REPO_ROOT / root
         assert directory.is_dir(), f"Configured nose root {root!r} does not exist."
         assert any(directory.rglob("*.py")), (
@@ -248,11 +264,11 @@ def test_configured_roots_exist_and_are_not_empty() -> None:
 def test_the_scan_never_targets_the_whole_checkout() -> None:
     """A repository-wide root would gate vendored and generated code."""
     tool = _pyproject()["tool"]
-    assert isinstance(tool, dict)
+    assert isinstance(tool, dict), "The pyproject must expose a [tool] table."
     nose = tool["nose"]
-    assert isinstance(nose, dict)
+    assert isinstance(nose, dict), "[tool.nose] must be a TOML table."
     roots = nose["roots"]
-    assert isinstance(roots, list)
+    assert isinstance(roots, list), "[tool.nose].roots must be a TOML array."
 
     for root in roots:
         assert root not in {".", "/", ""}, (
@@ -263,9 +279,9 @@ def test_the_scan_never_targets_the_whole_checkout() -> None:
 def test_the_ranking_bound_stays_bounded() -> None:
     """`top` must bound the adjudicated surface rather than disabling it."""
     tool = _pyproject()["tool"]
-    assert isinstance(tool, dict)
+    assert isinstance(tool, dict), "The pyproject must expose a [tool] table."
     nose = tool["nose"]
-    assert isinstance(nose, dict)
+    assert isinstance(nose, dict), "[tool.nose] must be a TOML table."
 
     assert nose["top"], "`top` must be set so the graded surface stays bounded."
     assert nose["top"] != 0, (
@@ -276,9 +292,9 @@ def test_the_ranking_bound_stays_bounded() -> None:
 def _nose_table() -> dict[str, object]:
     """Return the ``[tool.nose]`` table from the repository pyproject."""
     tool = _pyproject()["tool"]
-    assert isinstance(tool, dict)
+    assert isinstance(tool, dict), "The pyproject must expose a [tool] table."
     nose = tool["nose"]
-    assert isinstance(nose, dict)
+    assert isinstance(nose, dict), "[tool.nose] must be a TOML table."
     return nose
 
 
@@ -295,10 +311,10 @@ def test_configured_exclusions_actually_exclude_something() -> None:
     """
     nose = _nose_table()
     excludes = nose.get("exclude", [])
-    assert isinstance(excludes, list)
+    assert isinstance(excludes, list), "[tool.nose].exclude must be a TOML array."
 
     for glob in excludes:
-        assert isinstance(glob, str)
+        assert isinstance(glob, str), "Every exclusion glob must be a string."
         assert glob.startswith("**/"), (
             f"Exclude glob {glob!r} is anchored to the top of a scan root and "
             "would exclude nothing below it; prefix it with `**/` to match at "
@@ -310,12 +326,12 @@ def test_declared_exclusions_target_directories_that_exist() -> None:
     """A mistyped exclusion must not pass for a scoped scan."""
     nose = _nose_table()
     excludes = nose.get("exclude", [])
-    assert isinstance(excludes, list)
+    assert isinstance(excludes, list), "[tool.nose].exclude must be a TOML array."
     roots = nose["roots"]
-    assert isinstance(roots, list)
+    assert isinstance(roots, list), "[tool.nose].roots must be a TOML array."
 
     for glob in excludes:
-        assert isinstance(glob, str)
+        assert isinstance(glob, str), "Every exclusion glob must be a string."
         literal = glob.removeprefix("**/").removesuffix("/**")
         assert literal, f"Exclude glob {glob!r} names no directory."
         matches = [
@@ -333,15 +349,20 @@ def test_declared_exclusions_target_directories_that_exist() -> None:
 def test_the_gate_records_no_copied_exceptions() -> None:
     """Adoption starts from this repository's own adjudication, not upstream's."""
     tool = _pyproject()["tool"]
-    assert isinstance(tool, dict)
+    assert isinstance(tool, dict), "The pyproject must expose a [tool] table."
     gate = tool.get("duplication_gate", {})
-    assert isinstance(gate, dict)
+    assert isinstance(gate, dict), "[tool.duplication_gate] must be a TOML table."
     entries = gate.get("allow", [])
-    assert isinstance(entries, list)
+    assert isinstance(entries, list), (
+        "[tool.duplication_gate].allow must be a TOML array."
+    )
 
     for entry in entries:
-        assert isinstance(entry, dict)
+        assert isinstance(entry, dict), "Every allow entry must be a TOML table."
         reason = entry.get("reason")
-        assert isinstance(reason, str) and reason.strip(), (
+        assert isinstance(reason, str), (
+            "Every recorded exception must carry a string reason."
+        )
+        assert reason.strip(), (
             "Every recorded exception must carry a reviewable reason."
         )

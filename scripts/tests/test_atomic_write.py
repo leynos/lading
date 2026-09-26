@@ -6,6 +6,8 @@ rather than through that caller: default parent creation, mode preservation
 only when a destination exists, and the descriptor discipline around fsync.
 """
 
+from __future__ import annotations
+
 import dataclasses as dc
 import inspect
 import os
@@ -172,7 +174,7 @@ def test_closes_the_directory_descriptor_when_the_sync_fails(
     assert spy.closed == spy.opened, (
         "The directory descriptor must be closed even when os.fsync raises."
     )
-    assert list(tmp_path.glob(f".{destination.name}.*")) == [], (
+    assert not list(tmp_path.glob(f".{destination.name}.*")), (
         "A failed sync must not leave the temporary sibling behind."
     )
 
