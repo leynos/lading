@@ -1848,6 +1848,36 @@ where the source is.
     scoped to the `lading` package's relay path, not to the release script.
     Nothing in the current arrangement contradicts it.
 
+#### Replies posted to the hosted surfaces (2026-09-27, at `3d16be9`)
+
+Both dispositions were posted through the project's existing reply identity
+(`leynos`), which is the route already used for thread replies on this
+repository. The replies are recorded here because a drafted disposition and a
+posted one are different facts, and the queue's convergence criteria rest on
+the latter.
+
+- **Codex P1, thread `PRRT_kwDOP5-KWc6mVG48`** (comment `4113178267`, anchored
+  at `original_line=497`, re-anchored to `line=112` on `3d16be9`). Replied as
+  comment `4113379447`
+  (<https://github.com/leynos/lading/pull/285#discussion_r4113379447>). The
+  reply states the finding was valid, gives the arithmetic showing the proposed
+  cut point leaves 510 lines, and records the three-file split in `f2e84c8`
+  with the move-not-rewrite evidence. Note that the anchor's move from line 497
+  to line 112 is itself observable evidence the split landed: the O1b block the
+  comment pointed at is no longer at its original offset.
+- **Pre-merge rows, top-level comment `5850963316`**
+  (<https://github.com/leynos/lading/pull/285#issuecomment-5850963316>). Posted
+  with the live `### ❌ Failed checks (3 warnings)` heading and all three rows
+  reproduced verbatim, per the reconciliation template, plus the candidate
+  (`head 3d16be9`, `base 3e706bf`) and the per-row dispositions above. The
+  `@coderabbitai` prefix and the request for an AI agent prompt for any
+  remaining work are both present, as the template requires.
+- **Not done, and deliberately so:** the Codex thread is left unresolved rather
+  than resolved by reply. The skill's rule is that a reply is not a resolution,
+  and read-back is what counts; forcing the thread's `isResolved` state would
+  be a claim about the reviewer's judgment rather than a record of the repair.
+  Resolution is expected to follow the queued review's read-back.
+
 ## Outcomes & retrospective
 
 Status: **COMPLETE.** All four milestones are closed. Two CodeRabbit passes
