@@ -1878,6 +1878,44 @@ the latter.
   be a claim about the reviewer's judgment rather than a record of the repair.
   Resolution is expected to follow the queued review's read-back.
 
+#### Convergence state (2026-09-27 01:43 CEST, at `1bcdbec`)
+
+Recorded because the queue's eligibility list requires the surfaces to be read
+separately rather than collapsed into one green flag. Nothing here is a merge
+claim; the merge decision belongs to the designated owner.
+
+| Surface           | State at `1bcdbec`                                                                                                                        |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Remote head       | `1bcdbec` -- matches local, pushed                                                                                                        |
+| Base              | `3e706bf`                                                                                                                                 |
+| Inline threads    | 2 total: 1 resolved (`docs/scripting-standards.md`, CodeRabbit, outdated), 1 unresolved (`test_cuprum_selection.py`, Codex, now answered) |
+| Review decision   | `CHANGES_REQUESTED`, anchored to `8f44094` -- stale with respect to the current head                                                      |
+| Reviews submitted | CodeRabbit's sole review is `5327885999` at `8f44094`; CodeRabbit has never reviewed `1bcdbec`                                            |
+| Required checks   | All green at `3d16be9`; CodeRabbit's check shows `SUCCESS` as of 2026-09-26T23:35:26Z                                                     |
+| Merge state       | `BLOCKED`, `mergeable: MERGEABLE`                                                                                                         |
+| Queue             | `7825c5a5` for `leynos/lading#285`, ~45m remaining at the time of this record                                                             |
+
+Two findings from reading the surrounding state, both recorded because they
+correct an assumption that was carried earlier:
+
+- **Leaving the Codex thread unresolved is repo practice, not a lapse.** PR #291
+  -- merged 2026-09-26T19:15:17Z, the most recent merge to `main` -- was merged
+  with its `chatgpt-codex-connector` thread on `Makefile` still
+  `resolved: false`, at `reviewDecision: APPROVED`. So an open Codex thread is
+  not by itself a merge blocker on this repository. This corrects the earlier
+  working assumption that the thread had to be resolved before the PR could
+  converge; the honest position is that it is answered, and the repository's
+  own precedent is to merge with it open.
+- **The blocker is the stale review decision.** `mergeStateStatus: BLOCKED`
+  with `mergeable: MERGEABLE` and every required check green points at
+  `reviewDecision: CHANGES_REQUESTED` as the remaining constraint. The branch
+  protection rule itself cannot be read back --
+  `gh api repos/leynos/lading/branches/main/protection` returns
+  `403 Resource not accessible by integration` -- so the review decision is the
+  observable blocker and the one the queued review is expected to clear. This
+  is a strong indication, not a proven one: the exact required-context list is
+  unread, and that gap is stated rather than papered over.
+
 ## Outcomes & retrospective
 
 Status: **COMPLETE.** All four milestones are closed. Two CodeRabbit passes
