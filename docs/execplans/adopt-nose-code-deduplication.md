@@ -120,10 +120,15 @@ take precedence. This plan records every deliberate deviation.
       enforced by `tests/workflow_contracts/test_duplication_toolchain_contract.py`.
 - [x] (2026-09-26) Adjudication of every blocking family; gate green with 10
       reasoned exceptions, 0 blocking, 0 stale.
-- [ ] Canary demonstration in a scratch workspace.
+- [x] (2026-09-26) Canary demonstration in a scratch workspace: clean case,
+      planted clone blocking, narrow exception allowing, and an out-of-scope
+      third copy blocking again. No planted clone or temporary exception was
+      left behind.
 - [x] (2026-09-26) Documentation: ADR-007, developer guide, AGENTS.md,
       `docs/contents.md`.
-- [ ] Full gate run; draft PR.
+- [x] (2026-09-27) Full gate run green: all seven gates pass, including the
+      Ambrleaks, Skylos and duplication stages reached for the first time.
+- [ ] Draft PR.
 - [x] (2026-09-26) `scripts/tests` scan-scope decision: excluded, with the
       glob-form hazard recorded and guarded (see Surprises).
 
@@ -248,7 +253,78 @@ take precedence. This plan records every deliberate deviation.
 
 ## Outcomes & retrospective
 
-Pending. To be completed before the plan is marked `COMPLETE`.
+Delivered as four commits on `adopt-nose-code-deduplication`, 30 files changed
+(5,835 insertions, 108 deletions) against `origin/main`.
+
+### What shipped
+
+- The gate itself: `scripts/nose_detector.py` (detector execution),
+  `scripts/nose_schema.py` (report validation),
+  `scripts/duplication_allowlist.py` (family matching, persistence),
+  `scripts/duplication_gate.py` (CLI), plus `scripts/atomic_write.py` as the
+  persistence primitive.
+- Focused tests: 140 passing cases across nine modules under `scripts/tests/`,
+  including end-to-end canary tests against the real pinned binary and property
+  tests for whole-family matching.
+- A toolchain contract at
+  `tests/workflow_contracts/test_duplication_toolchain_contract.py`, which
+  fails on version drift between `Makefile`, `.github/workflows/ci.yml` and
+  `pyproject.toml`, on a re-enabled compile strategy, and on an inert exclusion
+  glob.
+- Configuration in `pyproject.toml`: `[tool.nose]` over the `lading` and
+  `scripts` roots, and `[tool.duplication_gate]` with ten reasoned exceptions.
+- Wiring: `make install-nose`, `make duplication`, `make duplication-test`,
+  `make duplication-allow`, with the blocking check as the final stage of
+  `make lint`.
+- Documentation: ADR-006, a developers-guide section, an `AGENTS.md` bullet, and
+  the documentation index.
+
+### Adjudication outcome
+
+The initial scan of this repository's own code produced the families recorded
+in the decision log above. One was a genuine extraction, at the correct layer:
+the five-argument fatal-index-miss helper in
+`lading/commands/publish_index_check.py` collapsed to two parameters by
+bundling four co-travelling strings into a frozen dataclass, removing repeated
+call-site logic without inventing an abstraction. The remaining ten are
+intentional parallel structure, each recorded with a reason naming the
+independent contracts an extraction would wrongly couple. No exception is a
+repository-wide wildcard, and none was mass-generated.
+
+### Validation actually run
+
+| Gate                    | Result                                                         |
+| ----------------------- | -------------------------------------------------------------- |
+| `make check-fmt`        | pass — 221 Python files formatted, 26 Markdown files unchanged |
+| `make lint`             | pass — all seven stages, exit 0                                |
+| `make typecheck`        | pass — `ty check --python-version 3.13`, "All checks passed!"  |
+| `make test`             | pass — 1318 passed, 29 skipped, 80 snapshots passed            |
+| `make spelling`         | pass                                                           |
+| `make markdownlint`     | pass — 26 files, 0 errors                                      |
+| `make duplication-test` | pass — 140 passed, 3 snapshots passed                          |
+
+Within `make lint`, the previously-unexercised stages all executed and passed:
+Ambrleaks (clean on `tests/`), Skylos (`dead_code` gate clean on `lading`), and
+the duplication gate itself, reporting
+`duplication gate passed; 10 allowed by reasoned exceptions`. Pylint scored
+10.00/10 on both tiers.
+
+### Lessons
+
+- The gate's helper suite and the application suite are separate interpreters
+  with separate dependency sets. Reaching for the application venv's `syrupy`
+  from `scripts/tests/` looked free but was not: the tooling invocation is
+  `--no-project`, so `syrupy` had to be added to the `duplication-test` recipe
+  and to the conftest availability guard in the same change. The guard would
+  otherwise have collected the suite and failed on import.
+- `mdtablefix --ellipsis` rewrites ASCII `...` to a literal ellipsis, including
+  inside inline code spans. A placeholder such as `REASON='...'` therefore
+  cannot survive formatting; prose that points at the real command is both
+  stable and clearer than a spawn of the command that drifts from it.
+- The repository's three-tier lint is cumulative, and each tier is only reached
+  once the previous one is clean. Fixing Ruff exposed seven Pylint findings;
+  fixing those exposed twenty-seven df12 findings. Gate the whole chain, not
+  the first stage, before believing a change is lint-clean.
 
 ## Context and orientation
 
