@@ -128,7 +128,7 @@ Run the Python lint gate with:
 make lint
 ```
 
-The target is deliberately six-stage. Ruff runs first because it is fast,
+The target is deliberately seven-stage. Ruff runs first because it is fast,
 handles broad style and correctness checks, and imports the stricter lint
 policy used by `leynos/episodic`. If Ruff passes, the target runs `interrogate`
 with `--fail-under 100` twice to enforce **100% docstring coverage**: once
@@ -145,12 +145,118 @@ deprecated standard-library usage, file hygiene, and design-size limits. The
 fourth stage runs all `df12-python-lints` checks under CPython 3.14, while
 retaining Lading's Python 3.13 semantic baseline for version-gated diagnostics.
 The fifth stage runs `ambrleaks`, which scans Syrupy snapshots under `tests`
-for values that should have been redacted. Finally, Skylos runs a blocking,
-strict, production-only dead-code scan across `lading`, after which the lint
-gate is complete. [ADR-003](adr/003-three-tier-python-linting.md) records the
-policy decision, including the
+for values that should have been redacted. The sixth stage is Skylos, a
+blocking, strict, production-only dead-code scan across `lading`. The seventh
+and final stage is the code-duplication gate, after which the lint gate is
+complete. [ADR-003](adr/003-three-tier-python-linting.md) records the policy
+decision, including the
 [2026-09-07 addendum](adr/003-three-tier-python-linting.md#addendum-docstring-coverage-for-tests-and-scripts-2026-09-07)
 extending Interrogate coverage to `tests` and `scripts`.
+
+## Code-duplication gate
+
+The final stage of `make lint` is a blocking code-duplication gate, which can
+also be run on its own:
+
+```bash
+make duplication
+```
+
+It runs the pinned [nose](https://github.com/corca-ai/nose) detector over the
+maintained first-party roots (`lading` and `scripts`) and reports duplication
+families ranked by refactoring value. Every family must then be either extracted
+or recorded as a reasoned exception. The objective is to remove unjustified
+repeated logic and to keep intentional parallels explicitly reviewable, **not**
+to drive the duplication count down through indiscriminate abstraction or
+suppression. [ADR-007](adr/007-adopt-nose-duplication-gate.md) records the
+decision, the scan scope, and the adjudication of this repository's initial
+findings.
+
+Install the detector before the first run, and after a version bump:
+
+```bash
+make install-nose
+```
+
+The target is idempotent: it reuses a binary that already reports
+`NOSE_VERSION`, and otherwise installs the pinned release into `.tools/nose`
+with `cargo-binstall`. Source compilation and third-party binary mirrors are
+disabled through `--disable-strategies compile,quick-install`, so a missing
+trusted prebuilt release is a provisioning failure rather than a silent local
+build. `NOSE_BIN` overrides the binary location; a relative value resolves
+against the repository root, so the override works from any working directory.
+
+The detector version is pinned in three places -- `NOSE_VERSION` in the
+Makefile, the `NOSE_VERSION` environment in `.github/workflows/ci.yml`, and
+`[tool.nose].version` in `pyproject.toml` -- and
+`tests/workflow_contracts/test_duplication_toolchain_contract.py` fails when
+they disagree. Bump all three together.
+
+### Recording an exception
+
+When a reported family is intentional parallel structure, record why:
+
+```bash
+make duplication-allow \
+  FIRST='lading/commands/example.py' \
+  SECOND='lading/commands/other.py' \
+  REASON='Why these two must remain separate.'
+```
+
+`FIRST` and `REASON` are required, and `SECOND` is repeated for a family with
+more members. Values are accepted only when supplied on the `make` command
+line, so an exported `FIRST` or `REASON` in the environment cannot record an
+exception nobody asked for. They are passed through literally, so a reason
+containing spaces, quotes, dollar signs, or command-substitution-looking text
+is stored exactly as written rather than being re-expanded as Make or shell
+program text.
+
+An entry silences a family only when **every** location it reports is covered
+by one of the entry's keys, so adding a copy in an unlisted file blocks the gate
+again. A `unit = "path[::name]"` entry supplies a single key; `members = [...]`
+supplies two or more. Keys are repository-relative paths, optionally suffixed
+with `::name` to require the detector's unit name; they are never line numbers
+or detector IDs, both of which churn. A non-blank reason is mandatory.
+
+Edits go through an atomic read-modify-write under a sidecar lock, so comments
+and unrelated configuration survive and repeating the same command is
+idempotent. The lock coordinates writers following that protocol; it does not
+coordinate unrelated editors that do not.
+
+### Reading the report
+
+Exclusions and the ranking budget have consequences worth knowing before
+concluding that a clean run means the codebase is duplication-free:
+
+- `exclude` globs are anchored to each scan **root**, not to the repository
+  root, so a repository-relative glob such as `scripts/tests/**` matches nothing
+  and excludes no files. Write them `**/`-prefixed; a contract test rejects the
+  silently-inert form.
+- `top = 30` bounds the adjudicated surface rather than describing the scan.
+  Allowed families still occupy places in it, and lower-ranked families are
+  measured but not enforced.
+- Stale-entry reporting means "unmatched in this scan", not "proven gone". A
+  family can fall below the ranking bound and be reported as unmatched while its
+  duplication is intact. Confirm a removal by inspecting the source or by
+  running a deliberately widened `top=0` scan before deleting an entry.
+
+The gate fails **closed**. A missing or wrong-version binary, a timeout, a
+failed command, malformed JSON, or an invalid report shape raises with a
+diagnostic rather than being treated as an empty findings list, so a gate that
+could not run never reports success.
+
+### Running the helper tests
+
+```bash
+make duplication-test
+```
+
+The gate modules and their tests are pinned PEP 723 tooling: `uv` reads the
+inline script metadata and resolves `cyclopts` and `tomlkit` on its own
+interpreter, so the gate never imports `lading` and never touches the project
+virtualenv. The helper tests run on their own interpreter for the same reason,
+and `scripts/tests/conftest.py` opts them out of the application suite's
+collection.
 
 The relevant Makefile variables are:
 

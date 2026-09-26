@@ -110,17 +110,22 @@ take precedence. This plan records every deliberate deviation.
 - [x] (2026-09-26) Baseline scan: `--root lading` yields 10 families, `--root
       lading --root scripts` yields 11, `--root lading --root tests --root
       scripts` yields 190.
-- [ ] ExecPlan drafted and committed.
-- [ ] `.gitignore` entries; `[tool.nose]` and `[tool.duplication_gate]`
-      configuration.
-- [ ] Five gate modules ported to `scripts/`.
-- [ ] Focused tests ported and green in isolation.
-- [ ] Makefile targets and `lint` wiring.
-- [ ] CI caching and gate steps.
-- [ ] Adjudication of every blocking family; gate green.
+- [x] (2026-09-26) ExecPlan drafted and committed (`5319799`).
+- [x] (2026-09-26) `.gitignore` entries; `[tool.nose]` and
+      `[tool.duplication_gate]` configuration.
+- [x] (2026-09-26) Five gate modules ported to `scripts/`.
+- [x] (2026-09-26) Focused tests ported and green in isolation: 140 passed.
+- [x] (2026-09-26) Makefile targets and `lint` wiring.
+- [x] (2026-09-26) CI caching and gate steps; `NOSE_VERSION` pin agreement
+      enforced by `tests/workflow_contracts/test_duplication_toolchain_contract.py`.
+- [x] (2026-09-26) Adjudication of every blocking family; gate green with 10
+      reasoned exceptions, 0 blocking, 0 stale.
 - [ ] Canary demonstration in a scratch workspace.
-- [ ] Documentation: ADR-006, developer guide, AGENTS.md, `docs/contents.md`.
+- [x] (2026-09-26) Documentation: ADR-007, developer guide, AGENTS.md,
+      `docs/contents.md`.
 - [ ] Full gate run; draft PR.
+- [x] (2026-09-26) `scripts/tests` scan-scope decision: excluded, with the
+      glob-form hazard recorded and guarded (see Surprises).
 
 ## Surprises & discoveries
 
@@ -146,6 +151,39 @@ take precedence. This plan records every deliberate deviation.
   and parent creation, and neither is importable from the gate's isolated
   interpreter.
 
+- Observation: the `scripts` root initially reported 30 families against 11 for
+  `lading` alone, because the ported helper tests sit under `scripts/tests/`
+  and duplicate each other's fixtures. Evidence: the top family was
+  `test_duplication_gate.py:151-253 ~ test_nose_detector.py:41-115`
+  (copy-paste, 115.7). Impact: the same tests-are-not-production boundary that
+  excludes `tests/` must apply to `scripts/tests/`.
+- Observation: `--exclude` globs are anchored to each `--root`, **not** to the
+  repository root. The repository-relative spelling `scripts/tests/**` matched
+  nothing and excluded no files, leaving the gate reporting 30 families from a
+  tree the configuration claimed to have skipped. Evidence: `--exclude
+  scripts/tests/**` returned 30 families with 19 involving `scripts/tests`;
+  `--exclude tests/**` returned 11 with 0, and `**/tests/**` returned 11 with
+  0. Impact: the exclusion is written `**/tests/**`, and a contract test now
+  rejects any exclusion glob that is not `**/`-prefixed or that names a
+  directory no configured root contains. This is exactly the "empty or
+  mistyped scope masquerading as a clean result" failure the task warns about,
+  and it was silent: had the glob excluded *more* than intended, nothing would
+  have reported it either.
+- Observation: the `toml_coerce/_mappings.py ~ _sequences.py` family (copy-paste,
+  40.3) is shared *declaration* scaffolding, not shared logic. Evidence: a
+  controlled experiment replacing every function body in both modules with a
+  distinct trivial statement left a 230.1-token match (against 284.7 with
+  bodies intact), so the match survives the removal of all behaviour. Impact:
+  adjudicated as an intentional parallel and recorded as an exception rather
+  than extracted; extracting it would couple eight independent coercers to one
+  docstring/signature generator.
+- Observation: `top = 30` does not currently truncate this repository's
+  surface. Evidence: an uncapped `top=0` scan at the configured settings
+  returns exactly the same 10 families. Impact: the recorded exceptions cannot
+  be hiding a lower-ranked family *today*, but that will change as the codebase
+  grows, so stale-entry wording is kept qualified and `top=0` is documented as
+  the confirmation scan.
+
 ## Decision log
 
 - Decision: adopt the reference at `d9e5ac0d254f375e2986f52d91a3b88c117c833b`,
@@ -166,6 +204,46 @@ take precedence. This plan records every deliberate deviation.
   own behavioural risk. The gate's helper is the tooling-side implementation
   the reference also ships in `scripts/`. Date/Author: 2026-09-26, implementing
   agent.
+- Decision: extract `_raise_missing_dependency` in
+  `lading/commands/publish_index_check.py` rather than record an exception for
+  the 59.0 family. Rationale: the four dependency-index paths were identical
+  logic -- build message, log warning, raise -- differing only in prose, which
+  is unjustified repetition rather than intentional parallelism. The extraction
+  leaves the wording at each call site, so all 31 message snapshots stay
+  byte-identical; that is the evidence the change is behaviour-preserving.
+  Date/Author: 2026-09-26, implementing agent.
+- Decision: record the remaining ten families as reasoned exceptions rather
+  than extract them. Rationale: nine are shared idioms (optional-input guards,
+  DI fallbacks, type-checking import blocks, the absent-table-yields-defaults
+  contract, two attribute-recording exception classes, and the Windows/POSIX
+  bindings of one lock primitive) whose "shared" content is a single statement
+  or a platform-independent obligation. Extracting them would mean generic
+  helpers, injected key sets, or platform branches inside primitives -- exactly
+  the manufactured abstractions the adoption criteria exclude. The tenth is
+  the declaration-scaffolding family described above. Date/Author: 2026-09-26,
+  implementing agent.
+- Decision: revert `skylos-allow` to its original `$(value ...)` form instead
+  of routing it through the new `cli_value` macro, even though the macro was
+  already written. Rationale:
+  `tests/workflow_contracts/test_skylos_whitelist_boundary.py` pins the
+  existing behaviour by injecting `SYMBOL`/`REASON` through the environment,
+  and `cli_value` requires a value to come from the `make` command line. The
+  change broke that contract, and the Skylos target is outside this task's
+  scope. `cli_value` now applies only to the duplication targets, which is what
+  the task requires. Date/Author: 2026-09-26, implementing agent.
+- Decision: make `duplication-test` run the whole `scripts/tests/` directory
+  rather than an explicit file list. Rationale: the reference's explicit list
+  already drifted -- it omitted `test_duplication_gate_e2e.py`, split out of
+  the 596-line reference file to satisfy the 400-line limit in `AGENTS.md`.
+  Directory collection cannot silently skip a newly added test file.
+  Date/Author: 2026-09-26, implementing agent.
+- Decision: key the named exceptions at file granularity where nose reports
+  unnamed fragments. Rationale: a `::name` key cannot match a location that
+  carries no unit name, and nose reports these regions as fragments, so file
+  granularity is the tightest available key. Each affected entry records that
+  its key covers the whole file, so a future family arising inside it is
+  understood to be silenced and re-adjudicated. Date/Author: 2026-09-26,
+  implementing agent.
 
 ## Outcomes & retrospective
 
@@ -218,14 +296,14 @@ The governing artefacts are:
 - `corca-ai/nose` at `v0.20.0`, the pinned detector.
 - Repository governance: `AGENTS.md` (quality gates, refactoring heuristics,
   400-line limit, en-GB-oxendict spelling), `docs/documentation-style-guide.md`
-  (ADR-006 shape), `docs/scripting-standards.md` (`scripts/tests/` layout).
+  (ADR-007 shape), `docs/scripting-standards.md` (`scripts/tests/` layout).
 - This repository's existing quality gates in `Makefile`: `check-fmt`, `lint`,
   `test`, `typecheck`, `spelling`.
 
 Trace: reference ADR-021 -> `EP-M1` (provisioning) -> `make install-nose` prints
 `nose 0.20.0`; -> `EP-M2` (gate core) -> `scripts/tests/*` green; -> `EP-M3`
 (integration) -> `make lint` fails on a planted clone; -> `EP-M4`
-(documentation) -> `docs/adr/006-*.md` indexed from `docs/contents.md`.
+(documentation) -> `docs/adr/007-*.md` indexed from `docs/contents.md`.
 
 ## Verification plan
 
@@ -327,7 +405,7 @@ Stage F (canary): in a scratch copy, plant a clone, watch the gate fail, record
 an exception, watch it pass, add an out-of-scope member, watch it fail again.
 Check the normalized output is byte-identical across repeated runs.
 
-Stage G (documentation and delivery): ADR-006, a developer-guide section,
+Stage G (documentation and delivery): ADR-007, a developer-guide section,
 `AGENTS.md` gate list, `docs/contents.md` index entry, then the full gate run
 and the draft PR.
 
@@ -344,7 +422,7 @@ and the draft PR.
 - `EP-M3` integration: `make lint` runs the gate and honours its exit status.
   Acceptance: a planted clone in a scratch workspace makes `make duplication`
   exit 1. Recovery: remove the planted clone.
-- `EP-M4` documentation: ADR-006 accepted and indexed; developer guide documents
+- `EP-M4` documentation: ADR-007 accepted and indexed; developer guide documents
   roots, channels, budget, exception review and stale-entry limits. Acceptance:
   `make markdownlint`, `make nixie` and `make check-fmt` green.
 
@@ -386,7 +464,7 @@ and an atomic replacement.
 The reference revision, the deliberate omissions, the scan scope and ranking
 policy, the adjudication record and the exact validation outcomes are recorded
 in the pull request description. Per-family adjudication reasons live beside
-the exceptions in `[tool.duplication_gate]` and in `docs/adr/006-*.md`.
+the exceptions in `[tool.duplication_gate]` and in `docs/adr/007-*.md`.
 
 ## Interfaces and dependencies
 

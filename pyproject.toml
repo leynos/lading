@@ -484,7 +484,7 @@ exclude = ["**/tests/**"]
 # only when EVERY location it reports is covered by one of the entry's keys;
 # a new copy in an unlisted file blocks again. Prefer `unit` for a
 # single-location key and `members` for a family, and always record why the
-# parallel structure is intentional. See docs/adr/006-adopt-nose-duplication-gate.md.
+# parallel structure is intentional. See docs/adr/007-adopt-nose-duplication-gate.md.
 #
 # Entries are keyed by file, not by line span, because spans churn whenever
 # code above them moves. nose reports the regions below as fragments without a
