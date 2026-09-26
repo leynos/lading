@@ -6,7 +6,7 @@
   },
   "approved": {
     "leynos/shared-actions/.github/actions/generate-coverage": {
-      "dbe2e22ceaf498d85512679ccded38be9dbe7777": {
+      "2a910bfcfd1ea4216419f9290331785f05b33320": {
         "nested_uses": {
           "actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9": "v6.1.0, full SHA",
           "actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9": "v6.1.0, full SHA",

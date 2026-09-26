@@ -80,7 +80,7 @@ jobs:
       # unset secret, and was confirmed by this workflow's first live run
       # failing to parse the uploaded coverage data.
       - name: Generate coverage
-        uses: leynos/shared-actions/.github/actions/generate-coverage@dbe2e22ceaf498d85512679ccded38be9dbe7777
+        uses: leynos/shared-actions/.github/actions/generate-coverage@2a910bfcfd1ea4216419f9290331785f05b33320
         with:
           language: python
           output-path: coverage.xml
