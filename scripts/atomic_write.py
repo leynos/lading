@@ -6,6 +6,8 @@ sequence with its knobs is wanted by other tooling too, so the routine lives
 on its own rather than in whichever module needed it first.
 """
 
+from __future__ import annotations
+
 import contextlib
 import dataclasses as dc
 import os

@@ -1,0 +1,10 @@
+# serializer version: 1
+# name: test_the_gate_does_not_require_the_application_environment
+  dict({
+    'dependencies': list([
+      'cyclopts==4.25.2',
+      'tomlkit==0.15.1',
+    ]),
+    'requires-python': '>=3.14',
+  })
+# ---

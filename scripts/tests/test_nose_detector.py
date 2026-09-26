@@ -1,5 +1,7 @@
 """Tests for the pinned nose detector wrapper used by the duplication gate."""
 
+from __future__ import annotations
+
 import copy
 import dataclasses as dc
 import re
@@ -18,6 +20,8 @@ from duplication_gate_test_support import (
 if typ.TYPE_CHECKING:
     from collections import abc as cabc
     from pathlib import Path
+
+    from syrupy.assertion import SnapshotAssertion
 
 
 def _settings_body(
@@ -166,7 +170,7 @@ class TestResolveBinary:
 class TestBuildCommand:
     """Translation of gate settings into a nose query command."""
 
-    def test_pins_every_configured_setting(self) -> None:
+    def test_pins_every_configured_setting(self, snapshot: SnapshotAssertion) -> None:
         """The whole argument vector is pinned, in order, from the settings."""
         settings = dc.replace(
             stub_settings(),
@@ -180,28 +184,13 @@ class TestBuildCommand:
 
         command = detector.build_command("nose", settings)
 
-        assert command == [
-            "nose",
-            "query",
-            "--root",
-            "lading",
-            "--root",
-            "scripts",
-            "all",
-            "top=30",
-            "--mode",
-            "semantic",
-            "--min-size",
-            "40",
-            "--exclude",
-            "**/generated/**",
-            "--exclude",
-            "**/_vendor/**",
-            "--format",
-            "json",
-        ], "Every configured setting must reach nose, in the documented order."
+        assert command == snapshot, (
+            "Every configured setting must reach nose, in the documented order."
+        )
 
-    def test_default_surface_omits_the_all_term(self) -> None:
+    def test_default_surface_omits_the_all_term(
+        self, snapshot: SnapshotAssertion
+    ) -> None:
         """The default surface leaves nose on its ranked dashboard."""
         settings = dc.replace(
             stub_settings(),
@@ -215,18 +204,9 @@ class TestBuildCommand:
 
         command = detector.build_command("nose", settings)
 
-        assert command == [
-            "nose",
-            "query",
-            "--root",
-            "lading",
-            "--mode",
-            "syntax",
-            "--min-size",
-            "24",
-            "--format",
-            "json",
-        ], "The default surface must not widen the view or pass a ranking bound."
+        assert command == snapshot, (
+            "The default surface must not widen the view or pass a ranking bound."
+        )
 
     def test_never_asks_nose_to_report_every_family(self) -> None:
         """A bounded ranking view must stay bounded."""
