@@ -30,11 +30,10 @@ UV_ENV = UV_CACHE_DIR=.uv-cache UV_TOOL_DIR=.uv-tools
 TOOLS = $(MDLINT) $(NIXIE) $(UV)
 PY_SOURCES := $(sort $(shell find lading scripts -type f -name '*.py' -print))
 VENV_TOOLS = interrogate pytest
-PYLINT_PYTHON ?= pypy
+PYLINT_PYTHON ?= pypy@3.12
+PYLINT_VERSION ?= 4.0.9
 PYLINT_TARGETS ?= lading scripts tests
-PYLINT_PYPY_SHIM_REF ?= 726d09f968b4d729ee4b29c71fc732e744854f3b
-PYLINT_PYPY_SHIM = git+https://github.com/leynos/pylint-pypy-shim.git@$(PYLINT_PYPY_SHIM_REF)
-PYLINT = $(UV) tool run --python $(PYLINT_PYTHON) --from '$(PYLINT_PYPY_SHIM)' pylint-pypy
+PYLINT = $(UV) tool run --managed-python --python $(PYLINT_PYTHON) --from 'pylint==$(PYLINT_VERSION)' pylint
 DF12_PYTHON_LINTS_REF ?= v0.1.0
 DF12_PYTHON_LINTS = git+https://github.com/leynos/df12-python-lints.git@$(DF12_PYTHON_LINTS_REF)
 DF12_PYTHON ?= 3.14

@@ -7,13 +7,13 @@ Accepted.
 ## Context
 
 The Python lint workflow uses Ruff for broad style and correctness checks,
-Interrogate for docstring coverage, and Pylint through `pylint-pypy-shim` for
-focused rule families that complement Ruff. The shared df12 house rules add
-project-specific structural, assertion, suppression, snapshot, alias, and
-annotation checks that the existing stages do not provide. Syrupy snapshots
-also need an explicit redaction scan. Cross-module dead-code detection also
-needs a blocking, deterministic production scan, without treating test-only
-references as application liveness.
+Interrogate for docstring coverage, and Pylint under PyPy for focused rule
+families that complement Ruff. The shared df12 house rules add project-specific
+structural, assertion, suppression, snapshot, alias, and annotation checks that
+the existing stages do not provide. Syrupy snapshots also need an explicit
+redaction scan. Cross-module dead-code detection also needs a blocking,
+deterministic production scan, without treating test-only references as
+application liveness.
 
 That documentation requirement needs to be part of the normal lint gate rather
 than an optional local check. It also needs to run after the virtual
@@ -29,8 +29,10 @@ as application liveness.
 1. Ruff checks formatting-adjacent style and broad correctness rules.
 2. Interrogate runs with `--fail-under 100` against `lading` and requires 100%
    docstring coverage.
-3. Pylint runs through the pinned `pylint-pypy-shim` command and applies the
-   selected complementary checks.
+3. Pylint runs under the pinned `pypy@3.12` managed interpreter through
+   `uv tool run` and applies the selected complementary checks. See the
+   [2026-09-25 amendment](#amendment-2026-09-25-plain-pylint-on-pypy-312) for
+   the runner that replaced the original shim-based invocation.
 4. Pylint loads `df12-python-lints` v0.1.0 under CPython 3.14 and enables all
    diagnostics shipped by that release. Version-gated diagnostics use the
    project's Python 3.13 baseline.
@@ -110,3 +112,24 @@ entry-point rule. The `type` selector may be `function`, `method`, or
 handler's `frame`. A named whitelist exception is appropriate only when that
 rule cannot model the runtime boundary, and it must include a caller-specific
 reason through `make skylos-allow SYMBOL=... REASON=...`.
+
+## Amendment (2026-09-25): plain Pylint on PyPy 3.12
+
+Adopted 2026-09-25. This amendment replaces the third-tier Pylint runner
+described in the decision above; the rest of this ADR is unchanged.
+
+The third stage no longer runs Pylint through `pylint-pypy-shim`. PyPy 8
+implements Python 3.12, and `uv` 0.12.19 (2026-09-25) ships it as a managed
+interpreter, so Pylint runs on it directly without the shim's object-build
+patch. `make lint` now invokes
+`uv tool run --managed-python --python $(PYLINT_PYTHON)` with
+`--from 'pylint==$(PYLINT_VERSION)' pylint`, with `PYLINT_PYTHON` defaulting to
+`pypy@3.12` and `PYLINT_VERSION` defaulting to `4.0.9`. The interpreter is
+pinned to the `3.12` release line, not bare `pypy`, so a new PyPy release
+cannot change the parsed grammar without a commit.
+
+`pyproject.toml` no longer disables the `syntax-error` message. While it was
+disabled, any module the PyPy runtime could not parse produced no messages at
+all, so the lint passed without linting it. Nine modules in this repository
+were skipped that way under PyPy 3.11. PyPy 3.12 parses all of them, and they
+lint clean. A parse failure now fails the lint.
