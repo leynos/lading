@@ -2651,8 +2651,12 @@ real stub process.
   with `tmp_path_factory`, because Hypothesis rejects function-scoped fixtures.
 - `PATH` is patched inside the test body with `pytest.MonkeyPatch.context()`.
 - Settings: `max_examples=25`, `deadline=None`.
-- Explicit `@example`s cover empty streams, status 0, status 255, invalid UTF-8,
-  CRLF, non-ASCII text, and SIGTERM.
+- The named cases are pinned by a parametrized test rather than by `@example`
+  decorators: `test_representative_payloads_map_exactly` covers empty streams,
+  status 255, plain text, invalid UTF-8, CRLF, and NUL plus invalid UTF-8, and
+  `test_a_signalled_child_reports_a_negative_status` covers SIGTERM. (This
+  corrects an earlier statement that the cases were `@example`s; the coverage
+  is the same, the mechanism is not.)
 
 **Rationale.** This checks repository-owned mapping against the real beta
 interface rather than cuprum's internals. The input domain matters because the
@@ -3408,10 +3412,27 @@ The dependency after EP-M2, identical on both paths:
 These are locked by `uv.lock` and by `scripts/upload_release_wheels.py.lock`
 respectively.
 
-The adapter module after EP-M2, `scripts/release_gh.py`. The signature and the
-`CommandOutcome` fields are unchanged from today:
+The boundary as implemented. EP-M2 left `CommandOutcome` in the adapter; D12
+then moved it to `scripts/release_port.py` so the policy could depend on the
+record without depending on the module that imports cuprum, and D13 added
+`scripts/release_span.py` as the boundary's telemetry. The signature and the
+`CommandOutcome` fields are unchanged from before the work:
 
 ```python
+# scripts/release_port.py -- the port; imports only the standard library
+@dc.dataclass(frozen=True, slots=True)
+class CommandOutcome:
+    exit_code: int
+    stdout: str = ""
+    stderr: str = ""
+
+
+class UploadRunner(typ.Protocol):
+    def __call__(self, arguments: cabc.Sequence[str]) -> CommandOutcome: ...
+```
+
+```python
+# scripts/release_gh.py -- the driven adapter
 from cuprum import (
     Program,
     ProgramCatalogue,
@@ -3420,22 +3441,23 @@ from cuprum import (
     scoped,
     sh,
 )
+from release_port import CommandOutcome
+from release_span import record_gh_span
 
 GH = Program("gh")
 RELEASE_CATALOGUE = ProgramCatalogue(projects=(...,))  # gh alone, as today
 
 
-@dc.dataclass(frozen=True, slots=True)
-class CommandOutcome:
-    exit_code: int
-    stdout: str = ""
-    stderr: str = ""
-
-
-def run_gh(arguments: cabc.Sequence[str]) -> CommandOutcome:
-    with scoped(catalogue=RELEASE_CATALOGUE):
-        command = sh.make(GH, catalogue=RELEASE_CATALOGUE)(*arguments)
-        result = command.run_sync(output=RunOutputOptions(capture=True))
+def run_gh(
+    arguments: cabc.Sequence[str],
+    *,
+    log: io.TextIOBase | typ.TextIO = sys.stderr,
+) -> CommandOutcome:
+    with record_gh_span(log) as set_exit:
+        with scoped(catalogue=RELEASE_CATALOGUE):
+            command = sh.make(GH, catalogue=RELEASE_CATALOGUE)(*arguments)
+            result = command.run_sync(output=RunOutputOptions(capture=True))
+        set_exit(result.exit_code)
     return CommandOutcome(
         exit_code=result.exit_code,
         stdout=result.stdout or "",
@@ -3443,8 +3465,15 @@ def run_gh(arguments: cabc.Sequence[str]) -> CommandOutcome:
     )
 ```
 
-`scripts/release_wheel_upload.py` keeps `UploadRunner`, `upload_wheels`, and
-`Dependencies`, and it imports `CommandOutcome` and `run_gh` from `release_gh`.
+`scripts/release_wheel_upload.py` is the policy. It keeps `upload_wheels` and
+`Dependencies`, and it does **not** import cuprum, `CommandOutcome`, or
+`run_gh`: `UploadRunner` moved to the port with the record, so the one port
+name it imports is `UploadRunner`, under `TYPE_CHECKING`. Neither
+`upload_wheels` nor `attach_wheels` defaults a runner; the composition root
+binds it, as
+`_PRODUCTION = Dependencies(upload=partial(upload_wheels, run=run_gh))` in
+`scripts/upload_release_wheels.py`. `tests/unit/test_release_port.py` asserts
+each of these. See D12 for why the first draft of this section was wrong.
 
 The shared stub helper, `tests/helpers/gh_stub.py`:
 
@@ -3508,6 +3537,13 @@ The new test modules:
 
 - `tests/unit/test_release_gh.py`: the moved `run_gh` cmd-mox test.
 - `tests/unit/test_release_gh_properties.py`: capture fidelity (O4).
+- `tests/unit/test_release_port.py`: the dependency direction, asserted
+  structurally by parsing each module's imports rather than by reading them
+  (D12). It also caps every module at `AGENTS.md`'s 400 lines, which the split
+  is what keeps true.
+- `tests/unit/test_release_span.py`: the span record's exits -- success,
+  non-zero status, and exception -- plus the bounded field set and the closed
+  category enum (D13).
 - `tests/unit/test_gh_stub_helper.py`: the helper's isolation guarantees (O3).
 - `tests/workflow_contracts/test_cuprum_selection.py`: selection alignment and
   lock freshness (O1a, O1b).
@@ -3571,3 +3607,30 @@ No new runtime or development dependency is added. `hypothesis`, `pytest-bdd`,
   - **Effect on remaining work:** there are no new milestones. `run_gh` needs
     one fewer import, and EP-M3 has a few more wording edits. Implementation
     waits for an explicit go-ahead.
+- 2026-09-27, revision 3, after the pre-merge rows were reconciled against the
+  implementation. Documentation only; no design decision changed.
+  - **What changed:**
+    - D12: the Domain Architecture row was right and the first rebuttal of it
+      was wrong. `CommandOutcome` and the `UploadRunner` protocol moved to the
+      new cuprum-free `scripts/release_port.py`; `run_gh` now translates into
+      that type; `upload_wheels` and `attach_wheels` no longer default a
+      runner, and `scripts/upload_release_wheels.py` binds it as
+      `_PRODUCTION`.
+    - D13: the Observability row is answered by `scripts/release_span.py`,
+      which emits one bounded record per `gh` invocation. No trace context is
+      propagated, because the repository has no tracer and the release
+      workflow passes the uploader no such value.
+    - `Interfaces and dependencies` and the new-test inventory now describe the
+      tree as it is after D12 and D13 rather than as EP-M2 left it. O4's
+      `Method` now names the parametrized cases that actually pin its examples.
+    - `Purpose / big picture` and `Context and orientation` carry widened
+      snapshot notes, so the pre-change pin, metadata, module ownership, call
+      forms, absent script lockfile, and test inventory are labelled rather
+      than left to read as current.
+  - **Why:** CodeRabbit's pre-merge table and a post-compaction re-read both
+    found the non-historical sections asserting the pre-D12 arrangement. The
+    first rebuttal of the Domain Architecture row also misquoted the
+    constraint as a prohibition where it grants a permission.
+  - **Effect on remaining work:** none on the plan's scope. Two modules are
+    added to the change surface, and the seven gates were re-run green on the
+    revision that carries them.
