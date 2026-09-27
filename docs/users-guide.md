@@ -218,6 +218,26 @@ make build
 uv run lading --help
 ```
 
+Lading currently depends on the Cuprum 0.2.0 beta, pinned exactly as
+`cuprum==0.2.0b1`. An environment that already pins a different Cuprum will
+refuse to resolve against this requirement and must be reconciled first.
+
+The pin is declared in the project's own dependencies, so it is not limited to
+the development environment: **a wheel built from this tree records
+`cuprum==0.2.0b1` as a requirement**, and installing that wheel pulls the beta
+into the target environment. An exact `==` pin on a pre-release is deliberate —
+it keeps every install, however it was made, on the version this tree was
+validated against.
+
+Wheels from releases tagged before this change declare the older
+`cuprum>=0.1.0` range instead; `v0.3.1` is the most recent of those. No further
+release is tagged while the pin names a pre-release, so no newly tagged wheel
+carries the beta. That release gate is a procedure rather than an automated
+check, as recorded in
+[ADR-006](adr/006-align-cuprum-selection-across-dependency-paths.md). See
+[Changing the cuprum version](developers-guide.md#changing-the-cuprum-version)
+for the maintainer procedure.
+
 ## Tutorial
 
 This tutorial assumes a Rust workspace with a root `Cargo.toml` and one or more

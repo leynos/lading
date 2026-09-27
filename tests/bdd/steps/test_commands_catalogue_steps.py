@@ -93,7 +93,7 @@ def _construct_command_with_args(
     from cuprum import scoped, sh
 
     parsed_args = _parse_quoted_args(args)
-    with scoped(allowlist=catalogue_context.allowlist):
+    with scoped(catalogue=catalogue_context):
         cmd_builder = sh.make(program, catalogue=catalogue_context)
         return cmd_builder(*parsed_args)
 
@@ -234,7 +234,7 @@ def when_construct_unregistered_command(
 
     unregistered = Program(program_name)
 
-    with scoped(allowlist=catalogue_context.allowlist):
+    with scoped(catalogue=catalogue_context):
         try:
             sh.make(unregistered, catalogue=catalogue_context)
         except UnknownProgramError as exc:

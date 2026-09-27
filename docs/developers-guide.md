@@ -356,6 +356,47 @@ If a workflow's behaviour genuinely depends on a feature only present from a
 particular commit onwards, express that as a comment or a changelog note, not
 as a test assertion on the SHA string.
 
+## Changing the cuprum version
+
+Unlike the workflow pins above, the cuprum pin is exact on both dependency
+paths, so a bump is a deliberate edit in four places rather than a resolution
+the solver performs:
+
+```text
+# pyproject.toml, [project] dependencies
+"cuprum==0.2.0b1",
+
+# scripts/upload_release_wheels.py, PEP 723 block
+# dependencies = ["cuprum==0.2.0b1", "cyclopts>=3"]
+```
+
+then regenerate both locks:
+
+```bash
+uv lock
+uv lock --script scripts/upload_release_wheels.py
+```
+
+`tests/workflow_contracts/test_cuprum_selection.py` reads the expected version
+from `pyproject.toml` and contains no version literal, so all four sites must
+agree or the suite fails. Its freshness checks read the Git index rather than
+the working tree, because `make build` and the standalone BDD scenario both
+re-lock silently: a stale lock is repaired before the suite sees it, so the
+check can only fail against indexed state. Stage the lockfiles, then verify
+with the test rather than assuming the tree is fresh: the check reads the
+index, so a commit is not required first, and verifying before committing is
+preferred. Rerun the distribution smoke recorded in the plan's
+`Artefacts and notes` and update the version named in the documentation
+afterwards.
+
+Dependabot stays configured and will not move the pin on its own: a pull
+request that edits `pyproject.toml` and `uv.lock` alone leaves the standalone
+path behind, so the selection contract fails it. The red pull request is the
+notice that a new release exists, not a merge candidate.
+
+[ADR-006](adr/006-align-cuprum-selection-across-dependency-paths.md) records
+the policy and the reasoning behind it.
+
 ## Release workflow
 
 `release.yml` runs on a `v*.*.*` tag push. It builds the pure Python wheel,
@@ -391,26 +432,72 @@ Two properties keep it fixed, and
 The decision behind this order, and the alternatives weighed, are recorded in
 [ADR-005](adr/005-release-wheel-publication.md).
 
-`scripts/upload_release_wheels.py` is the command-line edge and the composition
-root; the logic lives beside it in `scripts/release_wheel_upload.py` and is
-imported as a sibling, which resolves because `uv run --script` puts the
-script's directory first on the path. The runner, the clock, and the two output
-sinks are parameters with production defaults bound in the entry point, so
-tests state the dependency they exercise rather than intercepting the
-environment.
+No final `lading` 0.x release is cut while the cuprum pin names a pre-release.
+The repository currently depends on `cuprum==0.2.0b1`, so the next `v*.*.*` tag
+would record a pre-release requirement in a published wheel. Move the pin to
+cuprum `0.2.0` final first, using the procedure in
+[Changing the cuprum version](#changing-the-cuprum-version). Issue #286,
+adopting the cuprum release process from
+[leynos/cuprum#488](https://github.com/leynos/cuprum/pull/488), should land
+before that first final release. Nothing in `release.yml` refuses a tag, so the
+gate is a release procedure rather than an automated check; automating it is
+deliberately left to #286, which reworks the release workflow.
+[ADR-006](adr/006-align-cuprum-selection-across-dependency-paths.md) records
+the decision.
+
+The uploader is five modules, split so that no part of it depends on a part it
+has no business knowing about. `scripts/upload_release_wheels.py` is the
+command-line edge and the composition root. The logic lives beside it in
+`scripts/release_wheel_upload.py`: discovery, the `Outcome` enumeration, the
+`UploadError`, and the reporting. `scripts/release_port.py` holds the port —
+`CommandOutcome` and the `UploadRunner` protocol — and imports nothing beyond
+the standard library. `scripts/release_gh.py` is the driven adapter: the
+release catalogue, the `Program` for `gh`, and `run_gh`, the only place the
+script starts a process. `scripts/release_span.py` is the boundary's telemetry,
+described below.
+
+All five are imported as siblings, which resolves because `uv run --script`
+puts the script's directory first on the path.
+
+The dependency direction is the point of the split, and it is worth stating
+plainly because it reads as inverted if you only look at which module names
+which. The policy does not import the adapter, and the adapter does not define
+the record they exchange:
+
+- `release_wheel_upload` imports `UploadRunner` from the port. It imports no
+  cuprum, and it does not import `release_gh`.
+- `release_gh` imports `CommandOutcome` from the port and translates cuprum's
+  result into it. It does not import the policy.
+- `upload_release_wheels` imports both and binds them:
+  `_PRODUCTION = Dependencies(upload=partial(upload_wheels, run=run_gh))`.
+
+Without that last line, production would upload nothing — hence the binding is
+asserted structurally, alongside the direction, in
+`tests/unit/test_release_port.py`, which parses each module's imports rather
+than reading them.
+
+The runner, the clock, and the two output sinks are parameters, so tests state
+the dependency they exercise rather than intercepting the environment. Only the
+clock and the sink have production defaults; `upload` deliberately does not,
+because defaulting it would name a runner in the policy module — the one
+dependency that module exists not to have — and `attach_wheels` likewise
+requires its `Dependencies` rather than building one. Keeping the catalogue and
+the invocation together in `release_gh` means a change to how `gh` is invoked
+touches one small module rather than the logic that decides what to upload.
 
 The upload passes `--clobber`. The draft release is reused across runs, so a
 rerun after a failed publication would otherwise meet the asset its own
 previous attempt uploaded.
 
-The `gh` invocation states `capture=True` even though that is cuprum's default.
-Keeping `gh`'s stderr is the point of the call: without capture both streams
-come back as `None` and a rejected upload reports its exit code with no reason.
-Three tests hold it, and each fails if capture is turned off: the runner's own
-cmd-mox test asserts the diagnostic reaches `CommandOutcome.stderr`, the upload
-test asserts it reaches the error message, and the end-to-end test asserts it
-reaches the uploader's `Error:` line rather than merely appearing somewhere on
-stderr.
+The `gh` invocation passes `RunOutputOptions(capture=True)` even though that is
+cuprum's default. Keeping `gh`'s stderr is the point of the call: without
+capture both streams come back as `None` and a rejected upload reports its exit
+code with no reason. The beta removed the flat `run_sync(capture=…)` keyword,
+so the setting travels in the options object. Three tests hold it, and each
+fails if capture is turned off: the runner's own cmd-mox test asserts the
+diagnostic reaches `CommandOutcome.stderr`, the upload test asserts it reaches
+the error message, and the end-to-end test asserts it reaches the uploader's
+`Error:` line rather than merely appearing somewhere on stderr.
 
 The script takes the tag from `GITHUB_REF_NAME` and invokes `gh` through a
 cuprum catalogue whose allowlist permits `gh` alone, so the script cannot run
@@ -436,6 +523,32 @@ short-lived workflow step has no collector to push to, so this line and that
 output are the signal; `lading`'s in-process metrics summary is unavailable
 here because the uploader is a standalone PEP 723 script that does not import
 the package.
+
+The adapter writes a second machine-readable line to stderr, one per `gh`
+invocation:
+
+```plaintext
+release_span {"duration_seconds": 0.05, "exit_code": 0,
+              "failure_category": "none", "operation": "gh.invoke",
+              "schema": 1}
+```
+
+`scripts/release_span.py` emits it from a context manager wrapped around the
+process call, so a record closes on every exit: a clean run, a non-zero status,
+and a raised exception all produce a line, and the exception still propagates
+rather than being swallowed by the boundary. The fields are closed sets and
+scalars — `operation` is `gh.invoke`, `schema` is `1`, and `failure_category`
+is one of `none`, `non-zero-exit`, or `raised`. `exit_code` is an integer, or
+the empty string when no status was observed; `null` would read as a status
+that was reported as missing rather than unreported. Nothing else reaches the
+record: the arguments, the tag, the wheel paths, and both captured streams stay
+out of it, so a span's cardinality cannot grow with the data it carries.
+
+The record is not a metric and has no exporter behind it;
+[ADR-004](adr/004-in-process-metrics-backend.md) fixes that boundary, and the
+reasons that keep the outcome line a log line apply here too. No trace context
+is propagated, because there is no tracer in this repository to produce or
+consume one.
 
 Discovery reports read failures rather than absorbing them. `Path.rglob` skips
 directories it cannot open and `Path.exists` answers `False` for a permission
@@ -1611,17 +1724,24 @@ execution path — every production invocation still goes through
 `lading/runtime/subprocess_runner.py`, which spawns processes directly. It
 becomes live with the [Phase 5.2 production migration](./roadmap.md), which
 rewires the spawning backend behind the `CommandRunner` protocol onto the
-catalogue's `scoped(ScopeConfig(allowlist=…))` model. Treat it as a
-registration point, not as active allowlist enforcement.
+catalogue's `scoped(catalogue=…)` model. Treat it as a registration point, not
+as active allowlist enforcement.
 
-The scoped-context examples in `lading/utils/commands.py`,
-`tests/unit/utils/test_commands.py`, and
-`tests/bdd/steps/test_commands_catalogue_steps.py` still use the flat
-`scoped(allowlist=…)` keyword form, which the beta removed. They are pinned to
-the locked cuprum 0.1.0 and must be corrected as part of task 5.1.4, before the
-dependency is upgraded. The interface reference in
-[design §7](lading-design.md#7-command-execution-migration-phase-5) already
-describes the beta forms; follow it rather than the older call sites.
+Every scoped-context call site in the repository already uses the beta forms —
+`scoped(catalogue=…)`, `sh.make(program, catalogue=…)`, and
+`run_sync(output=RunOutputOptions(…))`. They were corrected in 5.1.4 in the
+same commit as the pin. The interface reference in
+[design §7](lading-design.md#7-command-execution-migration-phase-5) describes
+the same forms and notes when `ScopeConfig` is still the right tool.
+
+No test may reach a real `gh` or a real GitHub account. Every test that runs
+the uploader in a child process goes through `tests/helpers/gh_stub.py`, which
+installs a recording stub first on `PATH` and verifies with `shutil.which` that
+its stub is the one that resolves, removes `GH_TOKEN` and `GITHUB_TOKEN`, points
+`GH_CONFIG_DIR` at an empty directory so a stored login cannot be used, sets
+`GH_HOST=stub.invalid` and `GH_PROMPT_DISABLED=1`, and uses the tag
+`v0.0.0-stub`, which cannot exist. New tests that execute the uploader must use
+that helper rather than building their own environment.
 
 #### Subprocess invocation logging
 

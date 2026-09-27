@@ -167,11 +167,16 @@ wheels = [
 
 [[package]]
 name = "cuprum"
-version = "0.1.0"
+version = "0.2.0b1"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/41/2a/75534f4578a7437fab7d0075ea5955a1553bf4cf016ab0d9a6e5a24f6f7f/cuprum-0.1.0.tar.gz", hash = "sha256:bdc6ab92b1895613f7bfc35c762376f4830928add3d39061f7b3806d7aa422b4", size = 47214, upload-time = "2025-12-25T23:15:10.091Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/86/30/170d5f78a930661f91162b334d4e1d2b7092acf478d01f6dafc736dc8edf/cuprum-0.2.0b1.tar.gz", hash = "sha256:dc590eabc0b4dd2d191a2c8d4933001c9b50fee12044fcda928a0cbef0990ab3", size = 277364, upload-time = "2026-09-25T00:14:25.11Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/2f/2b/a5ada0f42e8e27c0ce8102256344db5adc339334293431319da06e33a80c/cuprum-0.1.0-py3-none-any.whl", hash = "sha256:b03e813bb56afe75f6cc38ec742091a0b1dc183480630abbaf8f205c984c3e72", size = 60578, upload-time = "2025-12-25T23:15:08.336Z" },
+    { url = "https://files.pythonhosted.org/packages/03/fc/f1bd7c376507766c5a4358538a1b80f42e4210287ba05b400d2747610939/cuprum-0.2.0b1-cp312-abi3-macosx_10_12_x86_64.whl", hash = "sha256:44c63156002c9415ad2035ceb59348d1563b538a6e73ce1de243bc71f4620f25", size = 480715, upload-time = "2026-09-25T00:33:30.948Z" },
+    { url = "https://files.pythonhosted.org/packages/0c/61/6d94724cc03644f1c882aebe224ae79eea3c48b4e412ecb6bc712412f03e/cuprum-0.2.0b1-cp312-abi3-macosx_11_0_arm64.whl", hash = "sha256:ac480a7cc911c0036b2b471f311d54fe70f21dd6de4ded5c964ac48e9691e318", size = 479494, upload-time = "2026-09-25T00:33:32.027Z" },
+    { url = "https://files.pythonhosted.org/packages/86/1a/afbbc11bc897e4290cce95b19b4d19e3647d902665a6d1066e7d095817a4/cuprum-0.2.0b1-cp312-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:18cb11d29efc95b7aabfa58187653e60738a428081470590feeb2bf382a64596", size = 522777, upload-time = "2026-09-25T00:33:33.32Z" },
+    { url = "https://files.pythonhosted.org/packages/36/5c/efc6bff370f810755f5db647a9991138e8972f0caeb7f846987e031e8ee3/cuprum-0.2.0b1-cp312-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:04fbb1f6cc223dc0daa80594271360c0801380148f41ddbb603899b62cca6e0b", size = 521332, upload-time = "2026-09-25T00:33:34.629Z" },
+    { url = "https://files.pythonhosted.org/packages/91/97/71764c1637faaa8c615fcfa8648e4de82f1155d57775eb1fa0e56ac6cd0d/cuprum-0.2.0b1-cp312-abi3-win_amd64.whl", hash = "sha256:84e1b2804d1dd1d2a97e78760d7f9e181b7e76c6457305d155a9b72a0cc14356", size = 377583, upload-time = "2026-09-25T00:33:35.684Z" },
+    { url = "https://files.pythonhosted.org/packages/15/eb/52af3139aa40a924b8491b53c637b719f3a055bd93772f2d93b30cca8ead/cuprum-0.2.0b1-py3-none-any.whl", hash = "sha256:09dcd284eabcfb085cc8f51ba33a4ea087df8ccf318aea4f5c09e74e6b01ab65", size = 259115, upload-time = "2026-09-25T00:14:26.813Z" },
 ]
 
 [[package]]
@@ -367,7 +372,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "cuprum", specifier = ">=0.1.0" },
+    { name = "cuprum", specifier = "==0.2.0b1" },
     { name = "cyclopts", specifier = ">=2.9" },
     { name = "markdown-it-py", specifier = ">=3,<5" },
     { name = "msgspec", specifier = ">=0.18,<1.0" },

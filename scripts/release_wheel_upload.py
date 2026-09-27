@@ -10,11 +10,18 @@ and v0.3.1 published without their wheel as a result, and a human attached it
 afterwards.
 
 This module is the replacement: it decides what to upload in Python, treats an
-empty result as the failure it is, and invokes ``gh`` through cuprum's
+empty result as the failure it is, and reaches ``gh`` through cuprum's
 allowlist rather than a shell. Its process dependencies -- the ``gh`` runner,
-the clock, and the two output sinks -- are parameters with production
-defaults, so tests drive the command path explicitly rather than by
-intercepting the environment.
+the clock, and the two output sinks -- are parameters, so tests drive the
+command path explicitly rather than by intercepting the environment.
+
+This module imports no cuprum and does not import the adapter that does. The
+port it depends on, ``UploadRunner``, and the record that crosses it,
+``CommandOutcome``, live in ``release_port``; the cuprum process edge lives in
+``release_gh``; and the two are bound together at the composition root in
+``upload_release_wheels``. That direction is deliberate -- a policy module that
+imported its adapter would drag the process technology into every test that
+exercises it -- and is worth preserving when the upload path changes.
 """
 
 from __future__ import annotations
@@ -30,19 +37,14 @@ import time
 import typing as typ
 from pathlib import Path
 
-from cuprum import Program, ProgramCatalogue, ProjectSettings, scoped, sh
-
 if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
     import io
 
-GH = Program("gh")
-_RELEASE_PROJECT = ProjectSettings(
-    name="lading-release",
-    programs=(GH,),
-    documentation_locations=("docs/developers-guide.md#release-workflow",),
-    noise_rules=(),
-)
-RELEASE_CATALOGUE = ProgramCatalogue(projects=(_RELEASE_PROJECT,))
+    # Only the port protocol is named here. The record that crosses it is part
+    # of the protocol's signature, not of this module's vocabulary: importing
+    # it would be an import this module does not use, and the port is the one
+    # thing it genuinely depends on.
+    from release_port import UploadRunner
 
 
 class Outcome(enum.StrEnum):
@@ -91,26 +93,6 @@ class UploadError(RuntimeError):
         """Record the diagnostic and the outcome it should be counted as."""
         super().__init__(message)
         self.outcome = outcome
-
-
-@dc.dataclass(frozen=True, slots=True)
-class CommandOutcome:
-    """What a ``gh`` invocation reported back.
-
-    This is the whole of the command dependency's return contract, so a test
-    runner can satisfy it without a process.
-    """
-
-    exit_code: int
-    stdout: str = ""
-    stderr: str = ""
-
-
-class UploadRunner(typ.Protocol):
-    """Runs one ``gh`` invocation and reports how it went."""
-
-    def __call__(self, arguments: cabc.Sequence[str]) -> CommandOutcome:
-        """Run ``gh`` with ``arguments`` and return its outcome."""
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -223,32 +205,7 @@ def discover_wheels(directory: Path) -> tuple[Path, ...]:
         raise UploadError(message, outcome=Outcome.UNREADABLE_DIRECTORY) from error
 
 
-def run_gh(arguments: cabc.Sequence[str]) -> CommandOutcome:
-    """Run ``gh`` through the release catalogue and report the result.
-
-    This is the production edge: the only place the script starts a process.
-
-    Returns
-    -------
-    CommandOutcome
-        The exit status and captured streams.
-    """
-    with scoped(allowlist=RELEASE_CATALOGUE.allowlist):
-        # capture=True is cuprum's default, but it is stated here because the
-        # whole point of the call is to keep gh's diagnostic: without capture
-        # both streams come back None and a failure reports no reason at all.
-        command = sh.make(GH, catalogue=RELEASE_CATALOGUE)(*arguments)
-        result = command.run_sync(capture=True)
-    return CommandOutcome(
-        exit_code=result.exit_code,
-        stdout=result.stdout or "",
-        stderr=result.stderr or "",
-    )
-
-
-def upload_wheels(
-    tag: str, wheels: cabc.Sequence[Path], *, run: UploadRunner = run_gh
-) -> None:
+def upload_wheels(tag: str, wheels: cabc.Sequence[Path], *, run: UploadRunner) -> None:
     """Attach ``wheels`` to the release for ``tag``.
 
     ``--clobber`` is passed because the release is created as a draft and
@@ -262,7 +219,9 @@ def upload_wheels(
     wheels : cabc.Sequence[Path]
         The wheels to upload; never empty by the time this is called.
     run : UploadRunner
-        How to invoke ``gh``. Defaults to the cuprum-allowlisted runner.
+        How to invoke ``gh``. Bound to the production adapter at the
+        composition root rather than defaulted here, so this module never
+        imports the module that imports cuprum.
 
     Raises
     ------
@@ -344,10 +303,15 @@ class Dependencies:
 
     Gathering the upload, the clock, and the progress sink into one record
     keeps them injectable without giving the function a parameter list nobody
-    can read. The defaults are the production bindings.
+    can read.
+
+    The clock and the sink are defaulted, because production and test want the
+    same ones. ``upload`` is not: it carries the process port, and defaulting
+    it here would mean naming a runner in this module, which is the dependency
+    this module exists not to have. The composition root supplies it.
     """
 
-    upload: cabc.Callable[[str, cabc.Sequence[Path]], None] = upload_wheels
+    upload: cabc.Callable[[str, cabc.Sequence[Path]], None]
     clock: cabc.Callable[[], float] = time.monotonic
     log: io.TextIOBase | typ.TextIO = dc.field(default_factory=lambda: sys.stdout)
 
@@ -356,7 +320,7 @@ def attach_wheels(
     tag: str,
     directory: Path,
     timings: Timings,
-    dependencies: Dependencies | None = None,
+    dependencies: Dependencies,
 ) -> tuple[Path, ...]:
     """Upload every wheel under ``directory`` to ``tag`` and return them.
 
@@ -368,8 +332,10 @@ def attach_wheels(
         Directory to search for wheels.
     timings : Timings
         Filled in with the duration of each phase, whether or not it succeeds.
-    dependencies : Dependencies | None
-        The upload, clock, and progress sink to use. Defaults to production.
+    dependencies : Dependencies
+        The upload, clock, and progress sink to use. There is no default: the
+        upload carries the process port, and only the composition root knows
+        which runner to bind to it.
 
     Returns
     -------
@@ -381,7 +347,7 @@ def attach_wheels(
     UploadError
         If the directory holds no wheel, or the upload fails.
     """
-    bound = dependencies if dependencies is not None else Dependencies()
+    bound = dependencies
     clock = bound.clock
     started = clock()
     try:

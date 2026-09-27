@@ -8,9 +8,32 @@ import typing as typ
 import pytest
 
 from tests.e2e.helpers import git_helpers, workspace_builder
+from tests.helpers.gh_stub import GhStub, install_gh_stub
 
 if typ.TYPE_CHECKING:  # pragma: no cover
     from pathlib import Path
+
+
+@pytest.fixture(name="stub")
+def stub_fixture(tmp_path: Path) -> GhStub:
+    """Return a recording stub ``gh`` that succeeds.
+
+    Shared by both uploader modules -- the workflow-contract tests and the
+    span-record tests -- because both run the script as a subprocess and
+    neither should define a fixture the other has to import from a test
+    module.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        Per-test temporary directory provided by pytest.
+
+    Returns
+    -------
+    GhStub
+        The installed stub.
+    """
+    return install_gh_stub(tmp_path)
 
 
 @pytest.fixture

@@ -87,7 +87,7 @@ class TestScopedContext:
         """The catalogue should work with scoped() context manager."""
         from cuprum import scoped, sh
 
-        with scoped(allowlist=LADING_CATALOGUE.allowlist):
+        with scoped(catalogue=LADING_CATALOGUE):
             cargo_builder = sh.make(CARGO, catalogue=LADING_CATALOGUE)
             git_builder = sh.make(GIT, catalogue=LADING_CATALOGUE)
 
@@ -98,7 +98,7 @@ class TestScopedContext:
         """Commands should be constructable within a scoped context."""
         from cuprum import scoped, sh
 
-        with scoped(allowlist=LADING_CATALOGUE.allowlist):
+        with scoped(catalogue=LADING_CATALOGUE):
             cargo_builder = sh.make(CARGO, catalogue=LADING_CATALOGUE)
             cmd = cargo_builder("metadata", "--format-version", "1")
 
@@ -116,7 +116,7 @@ class TestScopedContext:
         unregistered = Program("unregistered-program-xyz")
 
         with (
-            scoped(allowlist=LADING_CATALOGUE.allowlist),
+            scoped(catalogue=LADING_CATALOGUE),
             pytest.raises(UnknownProgramError),
         ):
             sh.make(unregistered, catalogue=LADING_CATALOGUE)

@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run python
 # /// script
 # requires-python = ">=3.13"
-# dependencies = ["cuprum>=0.1.0", "cyclopts>=3"]
+# dependencies = ["cuprum==0.2.0b1", "cyclopts>=3"]
 # ///
 """Attach the wheels built for a release tag to that GitHub release.
 
@@ -23,11 +23,14 @@ from __future__ import annotations
 import os
 import sys
 import typing as typ
+from functools import partial
 from pathlib import Path
 
 import cyclopts
 from cyclopts import App, Parameter
+from release_gh import run_gh
 from release_wheel_upload import (
+    Dependencies,
     Outcome,
     Sinks,
     Timings,
@@ -35,7 +38,14 @@ from release_wheel_upload import (
     attach_wheels,
     build_summary,
     report_outcome,
+    upload_wheels,
 )
+
+#: The production wiring of the upload port. It is bound here, at the one
+#: place that knows both the policy and the adapter, rather than defaulted in
+#: the policy module -- which is what lets the policy be imported, and tested,
+#: with no cuprum present at all.
+_PRODUCTION = Dependencies(upload=partial(upload_wheels, run=run_gh))
 
 app = App(
     name="upload-release-wheels",
@@ -82,7 +92,7 @@ def main(
     timings = Timings()
     sinks = _environment_sinks()
     try:
-        wheels = attach_wheels(tag, directory, timings)
+        wheels = attach_wheels(tag, directory, timings, _PRODUCTION)
     except UploadError as error:
         report_outcome(build_summary(error.outcome, wheels=0, timings=timings), sinks)
         raise

@@ -295,11 +295,12 @@ remove lading-owned subprocess and plumbum execution while preserving command
 results, real-time relay, domain errors, and cmd-mox isolation.
 
 The [beta adoption assessment](cuprum-v0-2-0-beta1-adoption-assessment.md)
-defines the compatibility requirements and acceptance gates. The current work
-delivers that assessment, this reconciled plan, and deduplicated upstream
-tracking. It does not implement the migration or certify a release artefact.
-Only the catalogue, pathlib conversion, and source-level assessment are
-complete; all execution migration and release validation below remain open.
+defines the compatibility requirements and acceptance gates. 5.1.4 has since
+selected and validated the published beta on both dependency paths and migrated
+the release uploader, so the release artefact is certified and a release path
+runs on the beta. The production migration below remains open: the catalogue,
+the pathlib conversion, the source-level assessment, and the uploader are
+complete, and every other execution migration task is not.
 
 Scope includes the production runner and every caller, real cmd-mox
 passthrough, six test files importing `subprocess`, two plumbum test helpers,
@@ -327,14 +328,21 @@ production execution. See the assessment §§1-3 and §7.
     This completes the streaming evaluation, not the adapter implementation.
   - Remaining upstream gaps have deduplicated issue links in assessment §6.7;
     completed and already-planned capabilities were not filed again.
-- [ ] 5.1.4. Select and validate the published beta for both dependency paths.
-  - Replace the current cuprum 0.1.0 lock with an explicit beta selection in
-    `pyproject.toml` and `uv.lock`; align inline dependency metadata in
-    `scripts/upload_release_wheels.py`.
-  - Update `scripts/release_wheel_upload.py:run_gh` to use `ScopeConfig` and
-    `RunOutputOptions`, replacing the removed flat keyword forms.
-  - Success: the installed beta works through repository and standalone script
-    execution with a stub `gh`; no GitHub release is published by validation.
+- [x] 5.1.4. Select and validate the published beta for both dependency paths.
+  - Replaced the cuprum 0.1.0 lock with an explicit beta selection in
+    `pyproject.toml` and `uv.lock`, and aligned the inline dependency metadata
+    in `scripts/upload_release_wheels.py`; each path carries its own lockfile.
+  - Moved the uploader's cuprum boundary into `scripts/release_gh.py`, which
+    uses `scoped(catalogue=…)`, `sh.make(program, catalogue=…)`, and
+    `run_sync(output=RunOutputOptions(capture=True))`, replacing the removed
+    flat keyword forms.
+  - Success met: the installed beta works through repository and standalone
+    script execution with a stub `gh`, and no GitHub release was published by
+    validation. Evidence: the distribution smoke in the plan's `Artefacts and
+    notes` ran both the native and pure-Python wheels; the selection policy is
+    [ADR-006](adr/006-align-cuprum-selection-across-dependency-paths.md).
+  - Consequence: no final lading 0.x release until the pin moves to cuprum
+    0.2.0 final (D8, and #286 for the release process).
 - [ ] 5.1.5. Record the adapter compatibility policy in the design document.
   - Preserve the existing `CommandRunner` tuple and exception contracts;
     separate catalogue rejection from actual spawn `OSError`.
@@ -404,8 +412,9 @@ and fixture executables in test-only catalogues. See the assessment §2, §4, an
   - Cover `tests/bdd/steps/test_common_steps.py`,
     `tests/e2e/test_upload_release_wheels_cli.py`,
     `tests/integration/test_cargo_shim_cli.py`,
-    `tests/integration/test_lockfile_discovery.py`, and
-    `tests/workflow_contracts/test_lint_target.py`.
+    `tests/integration/test_lockfile_discovery.py`,
+    `tests/workflow_contracts/test_lint_target.py`, and
+    `tests/helpers/gh_stub.py`.
   - Success: checked exits and captured output retain their semantics,
     deliberately omitted GitHub environment variables stay absent, and no
     subprocess result or exception types remain in these helpers.
