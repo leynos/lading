@@ -1,0 +1,7 @@
+# serializer version: 1
+# name: test_a_successful_invocation_serializes_to_the_expected_line
+  'release_span {"duration_seconds": 0.25, "exit_code": 0, "failure_category": "none", "operation": "gh.invoke", "schema": 1}'
+# ---
+# name: test_an_unobserved_status_serializes_as_an_empty_string
+  'release_span {"duration_seconds": 0.25, "exit_code": "", "failure_category": "non-zero-exit", "operation": "gh.invoke", "schema": 1}'
+# ---

@@ -443,18 +443,45 @@ deliberately left to #286, which reworks the release workflow.
 [ADR-006](adr/006-align-cuprum-selection-across-dependency-paths.md) records
 the decision.
 
-The uploader is three modules. `scripts/upload_release_wheels.py` is the
-command-line edge and the composition root; the logic lives beside it in
-`scripts/release_wheel_upload.py`, and the cuprum boundary in
-`scripts/release_gh.py`, which holds the release catalogue, the `Program` for
-`gh`, and `run_gh` — the only place the script starts a process. All three are
-imported as siblings, which resolves because `uv run --script` puts the
-script's directory first on the path. The runner, the clock, and the two output
-sinks are parameters with production defaults bound in the entry point, so
-tests state the dependency they exercise rather than intercepting the
-environment. Keeping the catalogue and the invocation together in `release_gh`
-means a change to how `gh` is invoked touches one small module rather than the
-logic that decides what to upload.
+The uploader is five modules, split so that no part of it depends on a part it
+has no business knowing about. `scripts/upload_release_wheels.py` is the
+command-line edge and the composition root. The logic lives beside it in
+`scripts/release_wheel_upload.py`: discovery, the `Outcome` enumeration, the
+`UploadError`, and the reporting. `scripts/release_port.py` holds the port —
+`CommandOutcome` and the `UploadRunner` protocol — and imports nothing beyond
+the standard library. `scripts/release_gh.py` is the driven adapter: the
+release catalogue, the `Program` for `gh`, and `run_gh`, the only place the
+script starts a process. `scripts/release_span.py` is the boundary's telemetry,
+described below.
+
+All five are imported as siblings, which resolves because `uv run --script`
+puts the script's directory first on the path.
+
+The dependency direction is the point of the split, and it is worth stating
+plainly because it reads as inverted if you only look at which module names
+which. The policy does not import the adapter, and the adapter does not define
+the record they exchange:
+
+- `release_wheel_upload` imports `UploadRunner` from the port. It imports no
+  cuprum, and it does not import `release_gh`.
+- `release_gh` imports `CommandOutcome` from the port and translates cuprum's
+  result into it. It does not import the policy.
+- `upload_release_wheels` imports both and binds them:
+  `_PRODUCTION = Dependencies(upload=partial(upload_wheels, run=run_gh))`.
+
+Without that last line, production would upload nothing — hence the binding is
+asserted structurally, alongside the direction, in
+`tests/unit/test_release_port.py`, which parses each module's imports rather
+than reading them.
+
+The runner, the clock, and the two output sinks are parameters, so tests state
+the dependency they exercise rather than intercepting the environment. Only the
+clock and the sink have production defaults; `upload` deliberately does not,
+because defaulting it would name a runner in the policy module — the one
+dependency that module exists not to have — and `attach_wheels` likewise
+requires its `Dependencies` rather than building one. Keeping the catalogue and
+the invocation together in `release_gh` means a change to how `gh` is invoked
+touches one small module rather than the logic that decides what to upload.
 
 The upload passes `--clobber`. The draft release is reused across runs, so a
 rerun after a failed publication would otherwise meet the asset its own
@@ -494,6 +521,32 @@ short-lived workflow step has no collector to push to, so this line and that
 output are the signal; `lading`'s in-process metrics summary is unavailable
 here because the uploader is a standalone PEP 723 script that does not import
 the package.
+
+The adapter writes a second machine-readable line to stderr, one per `gh`
+invocation:
+
+```plaintext
+release_span {"duration_seconds": 0.05, "exit_code": 0,
+              "failure_category": "none", "operation": "gh.invoke",
+              "schema": 1}
+```
+
+`scripts/release_span.py` emits it from a context manager wrapped around the
+process call, so a record closes on every exit: a clean run, a non-zero status,
+and a raised exception all produce a line, and the exception still propagates
+rather than being swallowed by the boundary. The fields are closed sets and
+scalars — `operation` is `gh.invoke`, `schema` is `1`, and `failure_category`
+is one of `none`, `non-zero-exit`, or `raised`. `exit_code` is an integer, or
+the empty string when no status was observed; `null` would read as a status
+that was reported as missing rather than unreported. Nothing else reaches the
+record: the arguments, the tag, the wheel paths, and both captured streams stay
+out of it, so a span's cardinality cannot grow with the data it carries.
+
+The record is not a metric and has no exporter behind it;
+[ADR-004](adr/004-in-process-metrics-backend.md) fixes that boundary, and the
+reasons that keep the outcome line a log line apply here too. No trace context
+is propagated, because there is no tracer in this repository to produce or
+consume one.
 
 Discovery reports read failures rather than absorbing them. `Path.rglob` skips
 directories it cannot open and `Path.exists` answers `False` for a permission

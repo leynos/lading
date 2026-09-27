@@ -2853,8 +2853,32 @@ CrossHair is not used. The only repository-owned logic, the result mapping, is
 exercised against the real interface by O4. A symbolic run over a mocked
 `CommandResult` would test the mock, not the contract.
 
-No syrupy snapshot is added. The uploader's output format does not change, and
-the existing e2e tests already assert exact outcome lines.
+No syrupy snapshot was originally planned. The reason given was that the
+uploader's output format does not change and the existing e2e tests already
+assert exact outcome lines. **That reason does not survive the change this plan
+makes.** The outcome line is indeed unchanged, but `release_span` is a second
+line the uploader did not emit before, and it is a wire format a log consumer
+parses. The premise of the decision was false, so the decision is reversed.
+
+Syrupy snapshots are now added, in `tests/unit/test_release_span.py`. Two
+representative records are pinned: a clean run, and a context that closes
+without a status. They assert on the serialized *line*, not the decoded
+mapping, because the existing field assertions decode through the encoding they
+would need to detect a change to -- rename a JSON key or drop the
+`release_span` prefix and every one of them still passes while a consumer's
+parser breaks.
+
+The duration is exact rather than redacted: the clock is injected, so there is
+nothing volatile in the record to erase. Nothing else needs normalizing for the
+same reason -- a span carries no path, filename, tag, or captured output by
+construction, and `test_no_field_can_carry_data_from_the_invocation` is the
+test that fails first if that ever stops being true.
+
+This follows the repository's established idiom for pinning a log format, in
+`tests/unit/test_subprocess_runner_logging.py`: snapshot the rendered line,
+redact what is genuinely volatile, and take `SnapshotAssertion` through the
+`if typ.TYPE_CHECKING:` conditional import. The e2e assertions are kept as they
+are; they cover the process boundary, which a unit snapshot cannot.
 
 ## Plan of work
 

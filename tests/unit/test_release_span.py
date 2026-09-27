@@ -7,6 +7,15 @@ output can reach a field however the invocation fails. The tests below drive
 each exit and then assert on the parsed record, so a field that started
 carrying data would fail the boundedness assertion rather than being found in
 production.
+
+Two of them compare the serialized *line* against a Syrupy snapshot rather
+than against the parsed mapping. The others assert that each field is present,
+bounded, and agrees with the exit that produced it; a snapshot additionally
+pins the wire format a log consumer parses -- the ``release_span`` prefix, the
+JSON key names, and the empty-string status an unobserved exit carries. The
+clock is injected, so the duration is exact rather than merely redacted, and no
+path, filename, tag, or captured output appears in a record to be leaked into
+the snapshot.
 """
 
 from __future__ import annotations
@@ -23,6 +32,10 @@ from tests.helpers.script_imports import import_script_module
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
     import types
+
+    from syrupy.assertion import SnapshotAssertion
+else:  # pragma: no cover - typing helpers
+    SnapshotAssertion = typ.Any
 
 SPAN_PATH = Path(__file__).resolve().parents[2] / "scripts" / "release_span.py"
 
@@ -55,6 +68,23 @@ def span_module_fixture(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
     return import_script_module(monkeypatch, "release_span")
 
 
+def _span_line(sink: io.StringIO) -> str:
+    """Return the single span line written to ``sink``.
+
+    Returns
+    -------
+    str
+        The whole line, prefix included.
+    """
+    lines = [
+        line
+        for line in sink.getvalue().splitlines()
+        if line.startswith("release_span ")
+    ]
+    assert len(lines) == 1, f"expected one span line, found {lines}"
+    return lines[0]
+
+
 def _record(sink: io.StringIO) -> dict[str, object]:
     """Parse the single span line written to ``sink``.
 
@@ -63,13 +93,7 @@ def _record(sink: io.StringIO) -> dict[str, object]:
     dict[str, object]
         The decoded record.
     """
-    lines = [
-        line
-        for line in sink.getvalue().splitlines()
-        if line.startswith("release_span ")
-    ]
-    assert len(lines) == 1, f"expected one span line, found {lines}"
-    return json.loads(lines[0].removeprefix("release_span "))
+    return json.loads(_span_line(sink).removeprefix("release_span "))
 
 
 def test_a_successful_invocation_reports_its_status_and_duration(
@@ -193,3 +217,49 @@ def test_the_failure_category_set_is_closed(span_module: types.ModuleType) -> No
     assert all(json.dumps(category) == f'"{category}"' for category in categories), (
         "every category must serialize as itself"
     )
+
+
+def test_a_successful_invocation_serializes_to_the_expected_line(
+    span_module: types.ModuleType,
+    snapshot: SnapshotAssertion,
+) -> None:
+    """The emitted line is the wire format a log consumer parses.
+
+    The field assertions above read the decoded mapping, which cannot notice a
+    change to the encoding they decode through: renaming a JSON key or dropping
+    the ``release_span`` prefix would leave every one of them passing while
+    every consumer's parser broke. This pins the line itself.
+
+    The duration is exact rather than redacted because the clock is injected --
+    there is nothing volatile to erase.
+    """
+    sink = io.StringIO()
+
+    with span_module.record_gh_span(sink, clock=_ticks()) as set_exit:
+        set_exit(0)
+
+    line = _span_line(sink)
+    assert line == snapshot()
+    assert line.startswith("release_span {"), line
+
+
+def test_an_unobserved_status_serializes_as_an_empty_string(
+    span_module: types.ModuleType,
+    snapshot: SnapshotAssertion,
+) -> None:
+    """A span that closed without a status serializes to the expected line.
+
+    The empty string is the record's own convention for "no status observed"
+    and the one field whose encoding is a deliberate choice rather than a
+    direct dump. ``None`` would serialize as JSON's ``null``, which a consumer
+    reads as a reported absence rather than an unreported one, so the choice is
+    worth pinning where a change to it is visible.
+    """
+    sink = io.StringIO()
+
+    with span_module.record_gh_span(sink, clock=_ticks()):
+        pass
+
+    line = _span_line(sink)
+    assert line == snapshot()
+    assert '"exit_code": ""' in line, line
