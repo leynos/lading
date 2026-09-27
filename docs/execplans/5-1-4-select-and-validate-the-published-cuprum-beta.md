@@ -2557,9 +2557,11 @@ readers in `tests/helpers/cuprum_selection.py` and their self-tests in
   and because the script lockfile is missing, which the test asserts. In EP-M2
   it passes.
 
-**Non-vacuity.** Helper tests in the same file land green in EP-M1. They feed
-the checker in-memory documents, and each must be reported with the offending
-site named:
+**Non-vacuity.** The helper tests in
+`tests/workflow_contracts/test_cuprum_selection_readers.py` land green in
+EP-M1. (The selection tests moved to that module under D11; the phrase "in the
+same file" previously stood here and named no file.) They feed the checker
+in-memory documents, and each must be reported with the offending site named:
 
 - a metadata block that pins `cuprum==0.1.0` while `pyproject.toml` pins
   another version;
