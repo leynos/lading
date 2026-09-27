@@ -4,11 +4,13 @@ The pull-request lane ratchets against the baseline the push-to-main publisher
 writes, and a figure measured on one interpreter is not comparable with one
 measured on another. The shared ``generate-coverage`` action builds its
 environment on the Python the job put on ``PATH`` unless the job names one, so
-the lanes agree only while their ``actions/setup-python`` steps do. Every job
-that runs the coverage action must therefore set Python up before that step,
-in the same job, and every such job must set up the same version. A setup step
-in another job, or after the coverage step, puts nothing on the coverage
-step's ``PATH`` and does not count.
+the lanes agree only while their ``actions/setup-python`` steps do.
+
+A job's steps run in order, and each ``setup-python`` step replaces the Python
+on ``PATH`` for the steps after it. Every coverage call therefore measures on
+the most recent setup before it in its own job; a setup in another job, or
+after the call, does not count. Every call must follow a setup naming a
+``python-version``, and every call in both lanes must measure on one version.
 """
 
 from __future__ import annotations
@@ -21,11 +23,11 @@ import yaml
 from tests.workflow_contracts.test_coverage_ownership import (
     GENERATE_COVERAGE_ANY_REF,
     YamlValue,
-    _coverage_steps,
     _jobs,
     _load_workflow,
     _step_inputs,
     _steps,
+    _workflow_paths,
 )
 
 if typ.TYPE_CHECKING:
@@ -40,82 +42,110 @@ def _action(step: dict[str, YamlValue]) -> str:
     return uses if isinstance(uses, str) else ""
 
 
-def _setups_before_coverage(path: Path, job_name: str) -> list[str]:
-    """Return the Python versions a job sets up before its coverage step.
+def _pythons_at_coverage(path: Path) -> list[tuple[str, str]]:
+    """Return the Python on ``PATH`` at every coverage call in one workflow.
 
     Returns
     -------
-    list of str
-        The ``python-version`` of each ``setup-python`` step that precedes the
-        job's first shared-action coverage step.
+    list of tuple of (str, str)
+        One ``(job, version)`` pair per shared-action coverage call, in
+        workflow order. The version is empty when no ``setup-python`` step
+        precedes the call in its job, or the latest one names no
+        ``python-version``.
     """
-    job = _jobs(_load_workflow(path))[job_name]
-    assert isinstance(job, dict), f"{path.name}:{job_name} must be a job mapping"
-    steps = _steps(typ.cast("dict[str, YamlValue]", job))
-    coverage = next(
-        index
-        for index, step in enumerate(steps)
-        if GENERATE_COVERAGE_ANY_REF.match(_action(step))
-    )
+    runs: list[tuple[str, str]] = []
+    for job_name, job in _jobs(_load_workflow(path)).items():
+        if not isinstance(job, dict) or not isinstance(job.get("steps"), list):
+            continue
+        on_path = ""
+        for step in _steps(typ.cast("dict[str, YamlValue]", job)):
+            if _action(step).startswith(SETUP_PYTHON_ACTION):
+                on_path = str(_step_inputs(step).get("python-version") or "")
+            elif GENERATE_COVERAGE_ANY_REF.match(_action(step)):
+                runs.append((job_name, on_path))
+    return runs
+
+
+def _all_coverage_runs() -> list[tuple[str, str]]:
+    """Return every ``(workflow:job, version)`` coverage call in the repository."""
     return [
-        str(_step_inputs(step).get("python-version"))
-        for step in steps[:coverage]
-        if _action(step).startswith(SETUP_PYTHON_ACTION)
+        (f"{path.name}:{job}", version)
+        for path in _workflow_paths()
+        for job, version in _pythons_at_coverage(path)
     ]
 
 
-def test_every_coverage_job_sets_up_python_before_measuring() -> None:
-    """Each coverage job installs the Python it measures on, ahead of the step."""
-    missing = [
-        f"{step.path.name}:{step.job}"
-        for step in _coverage_steps()
-        if not _setups_before_coverage(step.path, step.job)
-    ]
+def test_every_coverage_call_measures_on_a_named_python() -> None:
+    """Each coverage call follows, in its job, a setup naming its version."""
+    runs = _all_coverage_runs()
+    unnamed = [job for job, version in runs if not version]
 
-    assert _coverage_steps(), "no coverage step found, so this contract proves nothing"
-    assert missing == [], f"these coverage jobs set up no Python first: {missing}"
+    assert runs, "no coverage call found, so this contract proves nothing"
+    assert unnamed == [], (
+        f"these coverage calls reach the action without a setup-python step "
+        f"naming a python-version: {unnamed}"
+    )
 
 
 def test_both_lanes_measure_on_one_python() -> None:
-    """Every coverage job, in both lanes, sets up one and the same version."""
-    requested = {
-        version
-        for step in _coverage_steps()
-        for version in _setups_before_coverage(step.path, step.job)
-    }
+    """Every coverage call, in both lanes, measures on one and the same version."""
+    requested = {version for _job, version in _all_coverage_runs()}
 
-    assert len(requested) == 1, f"coverage lanes set up {sorted(requested)}"
+    assert len(requested) == 1, f"coverage lanes measure on {sorted(requested)}"
 
 
-_SETUP = {
-    "uses": f"{SETUP_PYTHON_ACTION}{'0' * 40}",
-    "with": {"python-version": "3.13"},
-}
+_SETUP = {"uses": f"{SETUP_PYTHON_ACTION}{'0' * 40}"}
 _COVERAGE = {
     "uses": f"leynos/shared-actions/.github/actions/generate-coverage@{'0' * 40}"
 }
 _RUN = {"run": "make lint"}
 
 
+def _setup(version: str) -> dict[str, object]:
+    """Return a setup-python step requesting ``version``."""
+    return {**_SETUP, "with": {"python-version": version}}
+
+
 @pytest.mark.parametrize(
-    ("steps", "expected"),
+    ("jobs", "expected"),
     [
-        ([_SETUP, _RUN, _COVERAGE], ["3.13"]),
-        ([_COVERAGE, _SETUP], []),
-        ([_RUN, _COVERAGE], []),
+        ({"cov": [_setup("3.13"), _RUN, _COVERAGE]}, [("cov", "3.13")]),
+        ({"cov": [_COVERAGE, _setup("3.13")]}, [("cov", "")]),
+        ({"other": [_setup("3.13")], "cov": [_COVERAGE]}, [("cov", "")]),
+        (
+            {"cov": [_setup("3.13"), _COVERAGE, _setup("3.14"), _COVERAGE]},
+            [("cov", "3.13"), ("cov", "3.14")],
+        ),
+        ({"cov": [_SETUP, _COVERAGE]}, [("cov", "")]),
     ],
-    ids=["before-the-step", "after-the-step", "none"],
+    ids=[
+        "before-the-call",
+        "after-the-call",
+        "another-job",
+        "latest-setup-per-call",
+        "setup-without-version",
+    ],
 )
-def test_only_setups_before_the_coverage_step_count(
-    tmp_path: Path, steps: list[dict[str, object]], expected: list[str]
+def test_each_call_reads_the_latest_setup_before_it(
+    tmp_path: Path,
+    jobs: dict[str, list[dict[str, object]]],
+    expected: list[tuple[str, str]],
 ) -> None:
-    """A setup step counts only when it runs before coverage in the same job."""
+    """A call measures on its job's most recent named setup, or on nothing."""
     workflow = tmp_path / "coverage.yml"
+    # Keep the jobs in the order given: a setup in an earlier job must not
+    # leak into a later one, and sorting would put "cov" before "other".
     workflow.write_text(
-        yaml.safe_dump({"on": "push", "jobs": {"cov": {"steps": steps}}}),
+        yaml.safe_dump(
+            {
+                "on": "push",
+                "jobs": {name: {"steps": steps} for name, steps in jobs.items()},
+            },
+            sort_keys=False,
+        ),
         encoding="utf-8",
     )
 
-    assert _setups_before_coverage(workflow, "cov") == expected, (
-        "only setup-python steps before the coverage step, in its job, count"
+    assert _pythons_at_coverage(workflow) == expected, (
+        "a call measures on the latest named setup before it, in its own job"
     )

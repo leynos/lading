@@ -312,11 +312,13 @@ the ownership rules, since the two describe one lane apiece and a reader
 checking either needs both.
 
 Both lanes measure on one Python. The shared action builds its environment on
-the Python the job put on `PATH` unless the job names one, so the pull-request
-ratchet compares like with like only while the two lanes' `setup-python` steps
-agree. `tests/workflow_contracts/test_coverage_python_parity.py` requires every
-job that runs the coverage action to set Python up before that step, in the
-same job, and every such job to set up the same version.
+the Python the job put on `PATH` unless the job names one, and each
+`setup-python` step replaces that Python for the steps after it, so a coverage
+call measures on the most recent setup before it in its own job. The
+pull-request ratchet compares like with like only while the lanes agree, so
+`tests/workflow_contracts/test_coverage_python_parity.py` requires every call
+of the coverage action to follow, in its job, a `setup-python` step naming its
+version, and every call in both lanes to measure on that one version.
 
 ## Workflow pins and Dependabot
 
