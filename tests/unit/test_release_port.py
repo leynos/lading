@@ -156,6 +156,28 @@ def test_the_policy_defaults_no_process_dependency() -> None:
     )
 
 
+def _partial_bindings(path: Path) -> dict[str, ast.expr]:
+    """Return what each ``partial(...)`` call in ``path`` binds by keyword.
+
+    Returns
+    -------
+    dict[str, ast.expr]
+        Keyword name to the expression bound to it, across every ``partial``
+        call in the module. A name bound twice keeps the last, which is enough
+        for a module that binds one production wiring.
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    return {
+        keyword.arg: keyword.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "partial"
+        for keyword in node.keywords
+        if keyword.arg is not None
+    }
+
+
 def test_the_composition_root_binds_the_production_runner() -> None:
     """Something must still bind them, or production would upload nothing.
 
@@ -165,34 +187,20 @@ def test_the_composition_root_binds_the_production_runner() -> None:
     ``upload_wheels`` would still pass if the runner were dropped.
     """
     imported = _imported_names(ENTRYPOINT_PATH)
+    bound = _partial_bindings(ENTRYPOINT_PATH).get("run")
 
     assert "release_gh" in imported, (
         "the entrypoint must import the production adapter to bind it"
     )
-    tree = ast.parse(ENTRYPOINT_PATH.read_text(encoding="utf-8"))
-    calls = [
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id == "partial"
-    ]
-    bound = {
-        keyword.arg
-        for call in calls
-        for keyword in call.keywords
-        if keyword.arg is not None
-    }
-
-    assert "run" in bound, (
+    assert bound is not None, (
         "the composition root must bind the runner into upload_wheels"
     )
-    assert any(
-        isinstance(keyword.value, ast.Name) and keyword.value.id == "run_gh"
-        for call in calls
-        for keyword in call.keywords
-        if keyword.arg == "run"
-    ), "the runner bound at the composition root must be the production run_gh"
+    assert isinstance(bound, ast.Name), (
+        f"the runner must be named directly, not built: {ast.dump(bound)}"
+    )
+    assert bound.id == "run_gh", (
+        f"the composition root binds {bound.id}, not the production run_gh"
+    )
 
 
 @pytest.mark.parametrize(
