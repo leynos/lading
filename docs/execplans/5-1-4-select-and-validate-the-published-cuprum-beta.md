@@ -2234,7 +2234,7 @@ first cost D14's gate run. The second cost a scan. A reviewer reading the code
 finds a correct implementation and reports it correctly -- which is precisely
 why the sections *about* the code need a reader of their own.
 
-#### The review returned `APPROVED`, and the stale decision is discharged (2026-09-27, at `04df704`)
+#### The review returned `APPROVED`, and the stale decision is discharged (2026-09-27, head `09ab08b`)
 
 Request `ca8fa765` posted at 01:12:56 and completed at 01:18. The review reports
 `APPROVED` on commit `6640921` (review `5328381774`), having processed 14
@@ -2245,14 +2245,17 @@ commit from before the port move, and a read-back of `reviewDecision` now
 returns `APPROVED` rather than a value this plan has to reason about or explain
 away.
 
-That read-back occurred at three points, because a new commit invalidates an
-approval and that is a fact to check rather than assume:
+That read-back occurred at four points, because a new commit invalidates an
+approval and that is a fact to check rather than assume. The fourth row is this
+section's own commit: it changed one Markdown file, so it could not have
+invalidated the approval, and it was read back anyway.
 
-| Head                                      | `reviewDecision` | `mergeStateStatus` | Checks                                   |
-| ----------------------------------------- | ---------------- | ------------------ | ---------------------------------------- |
-| `6640921`                                 | `APPROVED`       | `CLEAN`            | all pass                                 |
-| `04df704` (this record's fix landed here) | `APPROVED`       | `BLOCKED`          | `lint-test`, CodeScene, Kody in progress |
-| `04df704` after checks                    | `APPROVED`       | `CLEAN`            | all pass                                 |
+| Head                                    | `reviewDecision` | `mergeStateStatus` | Checks                                   |
+| --------------------------------------- | ---------------- | ------------------ | ---------------------------------------- |
+| `6640921`                               | `APPROVED`       | `CLEAN`            | all pass                                 |
+| `04df704` (the `Minor` fix landed here) | `APPROVED`       | `BLOCKED`          | `lint-test`, CodeScene, Kody in progress |
+| `04df704` after checks                  | `APPROVED`       | `CLEAN`            | all pass                                 |
+| `09ab08b` (this record)                 | `APPROVED`       | `CLEAN`            | all pass                                 |
 
 The review's substantive content was a single `Minor` finding, outside the diff
 range, against a line the review was permitted to leave un-anchored: O1a's
@@ -2282,16 +2285,26 @@ commit it does not.
 
 ## Outcomes & retrospective
 
-Status: **COMPLETE.** All four milestones are closed. Two CodeRabbit passes
-closed EP-M3: one `minor` finding against ADR-006, fixed, and a final
-confirming pass whose four `minor` entries resolved to one real fix, two
-declinations of quoted text, and one duplicate of the already-declined release
-guard. The milestone's `major` finding -- the automated final-release guard --
-remains declined and raised for the maintainer under D8; that is the one item
-this plan leaves open, and it is recorded in the step list rather than dropped.
-The completion checklist was discharged before the status changed: roadmap
-5.1.4 is checked, the assessment's §1.1 carries its dated follow-up, and the
-design's §7.3 records the policy with its implementation notes.
+Status: **COMPLETE**, and independently reviewed. All four milestones are
+closed. Two CodeRabbit passes closed EP-M3: one `minor` finding against
+ADR-006, fixed, and a final confirming pass whose four `minor` entries resolved
+to one real fix, two declinations of quoted text, and one duplicate of the
+already-declined release guard. The milestone's `major` finding -- the
+automated final-release guard -- remains declined and raised for the maintainer
+under D8; that is the one item this plan leaves open, and it is recorded in the
+step list rather than dropped. The completion checklist was discharged before
+the status changed: roadmap 5.1.4 is checked, the assessment's §1.1 carries its
+dated follow-up, and the design's §7.3 records the policy with its
+implementation notes.
+
+**A third pass followed, and it approved.** After the two conformance gaps were
+raised and the pre-merge rows reconciled, request `ca8fa765` returned
+`APPROVED` on `6640921`, discharging the stale `CHANGES_REQUESTED` by read-back
+rather than by argument. That pass prompted the four stale-claim corrections in
+`b1730a2` and the one `Minor` finding fixed in `04df704`, and the approval has
+been read back at every head since, including this record's own. The section
+above, "The review returned `APPROVED`", carries the read-backs and the
+reasoning; the dispositions are in D12 through D15.
 
 One finding arrived **after** that closure, which is why the status line above
 is worth reading twice. CodeScene's Code Health review -- an app on the
