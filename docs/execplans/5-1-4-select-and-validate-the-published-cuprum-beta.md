@@ -1916,6 +1916,120 @@ correct an assumption that was carried earlier:
   is a strong indication, not a proven one: the exact required-context list is
   unread, and that gap is stated rather than papered over.
 
+#### D12: the Domain Architecture warning was right, and D5's rebuttal was wrong
+
+**Decision: accept the warning, and reverse the earlier declination of it.**
+
+This is the most instructive failure of the whole task, so it is recorded in
+full. The warning told us to move `CommandOutcome` out of the cuprum-importing
+adapter into a cuprum-free module so the policy module's dependency does not
+pass through the process technology. That was declined in the pre-merge
+dispositions with three reasons. Two of them do not survive contact.
+
+- **The factual error.** The disposition stated "`scripts/release_gh.py`
+  imports no cuprum at all; it is the one module of the uploader that starts a
+  process, and it is where the cuprum result is translated." In fact
+  `scripts/release_gh.py:16` is a cuprum import:
+
+  ```python
+  from cuprum import (
+      Program,
+      ProgramCatalogue,
+      ProjectSettings,
+      RunOutputOptions,
+      scoped,
+      sh,
+  )
+  ```
+
+  and line 68 calls `command.run_sync(...)`. It is the **most**
+  cuprum-dependent module of the three. What had actually been verified was the
+  opposite direction -- `release_wheel_upload.py` has zero cuprum imports --
+  and the two were transposed while writing the reply. The claim that the
+  *policy* is cuprum-free is true; the claim that the module holding the type
+  is cuprum-free is false, and it was the load-bearing one.
+  - This was published in a PR comment before CodeRabbit rebutted it. The
+    correction was posted as a separate comment rather than quietly edited,
+    because a stated but false disposition is worse than the original defect:
+    it would have closed the row on a premise a later reader could not check.
+- **The constraint misreading.** The disposition argued the pinned signature
+  "prevents" moving the type. The constraint at `Constraints` reads that
+  `run_gh`, `CommandOutcome`, `GH`, and `RELEASE_CATALOGUE` "may move to a new
+  module (EP-M0)". That is a permission, and it was read as a prohibition.
+- **What survives.** Only the observation that the inversion is *inherited*
+  rather than introduced: at merge base `3e706bf` one module held both the
+  policy and the cuprum import, and this branch split them. That is a
+  mitigation, not a defence -- splitting the policy away from the import while
+  leaving the policy's *type* importing from the cuprum side improves one half
+  and leaves the other pointing the wrong way.
+
+**Implemented.** `scripts/release_port.py` (42 lines) holds `CommandOutcome` and
+`UploadRunner` and imports only `__future__`, `collections`, `dataclasses`, and
+`typing` -- asserted by a test that fails on any other import. The adapter
+imports the port and translates into it; the policy imports the port and never
+the adapter; `upload_wheels` no longer defaults its runner, and the production
+binding moved to the composition root, in `upload_release_wheels.py`:
+
+```python
+_PRODUCTION = Dependencies(upload=partial(upload_wheels, run=run_gh))
+```
+
+The direction is asserted structurally rather than by comment, in
+`tests/unit/test_release_port.py`, by parsing each module's imports with `ast`.
+A comment claiming the direction would not survive the edit that breaks it; an
+import check does. The removal of the default is checked too, because a default
+is the one coupling an import scan cannot see.
+
+#### D13: the Observability warning -- a span record, and no trace context
+
+**Decision: implement the span on the log boundary the repository already has;
+record trace-context propagation as unachievable without inventing it.**
+
+The warning asked for a tracing span around the `gh` invocation recording
+operation name, duration, exit status, and a bounded error category, closed on
+success/failure/exception, with trace-context propagation.
+
+- **What is implemented.** `scripts/release_span.py` (159 lines) emits one JSON
+  line per invocation: `operation` (bounded to `gh.invoke`), `schema`,
+  `duration_seconds`, `exit_code`, and `failure_category` drawn from a closed
+  `FailureCategory` enum (`none`, `non-zero-exit`, `raised`). It is invoked from
+  `release_gh.run_gh`, so the process edge owns its own telemetry and the
+  policy does not know the process was spanned. Verified in a real run, not
+  only in unit tests, on stderr beside the existing
+  `release_wheel_upload {...}` summary line:
+
+  ```text
+  release_span {"duration_seconds": 0.024, "exit_code": 0,
+                "failure_category": "none", "operation": "gh.invoke",
+                "schema": 1}
+  ```
+
+- **Why not a span API.** There is no tracer in this repository -- repo-wide
+  counts are `get_tracer` 0, `start_span` 0, `opentelemetry` 0, `structlog` 0
+  -- and ADR-004 states the position directly: a `lading` invocation is a
+  short-lived command with "no scrape endpoint to expose and no daemon lifetime
+  over which a time series would accumulate", so "the logs a `lading` run
+  already emits are the established operational boundary". ADR-005 applies the
+  same reasoning to the uploader specifically. Adopting a tracing library to
+  serve one process edge would add a dependency and an exporter with no
+  consumer, which is what ADR-004 rejected for metrics. The prompt's own
+  instruction was to establish an explicit standalone boundary rather than
+  describe the job-log summary as a span; this is that boundary, and it is
+  distinct from the summary line rather than a relabelling of it.
+- **Boundedness is enforced, not asserted in prose.** The e2e test
+  `test_the_span_carries_no_argument_or_path` searches the serialized line for
+  the release tag, the wheel's filename, and the artefact directory. It was
+  probed by deliberately adding an `argv` field carrying the tag: the test
+  failed with "the tag reached the span", and passed again once reverted.
+- **What is not done, and why.** No trace context is propagated. Without a
+  tracer there is no context to propagate and no consumer that could read one; a
+  `traceparent` field would be a value this code invented, which is worse than
+  its absence because it would look like interoperability. Recorded as out of
+  scope on that basis rather than dropped.
+- **Not routed to #286.** CodeRabbit was explicit that #286 covers release
+  publication, not uploader tracing. The work is done in this PR rather than
+  deferred; nothing here is assigned to that issue.
+
 ## Outcomes & retrospective
 
 Status: **COMPLETE.** All four milestones are closed. Two CodeRabbit passes
@@ -2045,6 +2159,7 @@ The files this task touches:
   It imports its sibling `release_wheel_upload`. Python finds the sibling
   because a script's own directory is first on `sys.path`, and that holds for
   both paths.
+
 - **`scripts/release_wheel_upload.py`** holds the uploader logic.
   - It builds `RELEASE_CATALOGUE`, a `ProgramCatalogue` whose only programme is
     `GH = Program("gh")`.

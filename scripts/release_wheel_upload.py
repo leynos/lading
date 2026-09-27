@@ -12,10 +12,16 @@ afterwards.
 This module is the replacement: it decides what to upload in Python, treats an
 empty result as the failure it is, and invokes ``gh`` through cuprum's
 allowlist rather than a shell. Its process dependencies -- the ``gh`` runner,
-the clock, and the two output sinks -- are parameters with production
-defaults, so tests drive the command path explicitly rather than by
-intercepting the environment. The runner itself lives beside this module in
-``release_gh``, which owns the whole cuprum boundary.
+the clock, and the two output sinks -- are parameters, so tests drive the
+command path explicitly rather than by intercepting the environment.
+
+This module imports no cuprum and does not import the adapter that does. The
+port it depends on, ``UploadRunner``, and the record that crosses it,
+``CommandOutcome``, live in ``release_port``; the cuprum process edge lives in
+``release_gh``; and the two are bound together at the composition root in
+``upload_release_wheels``. That direction is deliberate -- a policy module that
+imported its adapter would drag the process technology into every test that
+exercises it -- and is worth preserving when the upload path changes.
 """
 
 from __future__ import annotations
@@ -31,7 +37,7 @@ import time
 import typing as typ
 from pathlib import Path
 
-from release_gh import CommandOutcome, run_gh
+from release_port import CommandOutcome, UploadRunner
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
     import io
@@ -83,13 +89,6 @@ class UploadError(RuntimeError):
         """Record the diagnostic and the outcome it should be counted as."""
         super().__init__(message)
         self.outcome = outcome
-
-
-class UploadRunner(typ.Protocol):
-    """Runs one ``gh`` invocation and reports how it went."""
-
-    def __call__(self, arguments: cabc.Sequence[str]) -> CommandOutcome:
-        """Run ``gh`` with ``arguments`` and return its outcome."""
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -202,9 +201,7 @@ def discover_wheels(directory: Path) -> tuple[Path, ...]:
         raise UploadError(message, outcome=Outcome.UNREADABLE_DIRECTORY) from error
 
 
-def upload_wheels(
-    tag: str, wheels: cabc.Sequence[Path], *, run: UploadRunner = run_gh
-) -> None:
+def upload_wheels(tag: str, wheels: cabc.Sequence[Path], *, run: UploadRunner) -> None:
     """Attach ``wheels`` to the release for ``tag``.
 
     ``--clobber`` is passed because the release is created as a draft and
@@ -218,7 +215,9 @@ def upload_wheels(
     wheels : cabc.Sequence[Path]
         The wheels to upload; never empty by the time this is called.
     run : UploadRunner
-        How to invoke ``gh``. Defaults to the cuprum-allowlisted runner.
+        How to invoke ``gh``. Bound to the production adapter at the
+        composition root rather than defaulted here, so this module never
+        imports the module that imports cuprum.
 
     Raises
     ------
@@ -300,10 +299,15 @@ class Dependencies:
 
     Gathering the upload, the clock, and the progress sink into one record
     keeps them injectable without giving the function a parameter list nobody
-    can read. The defaults are the production bindings.
+    can read.
+
+    The clock and the sink are defaulted, because production and test want the
+    same ones. ``upload`` is not: it carries the process port, and defaulting
+    it here would mean naming a runner in this module, which is the dependency
+    this module exists not to have. The composition root supplies it.
     """
 
-    upload: cabc.Callable[[str, cabc.Sequence[Path]], None] = upload_wheels
+    upload: cabc.Callable[[str, cabc.Sequence[Path]], None]
     clock: cabc.Callable[[], float] = time.monotonic
     log: io.TextIOBase | typ.TextIO = dc.field(default_factory=lambda: sys.stdout)
 

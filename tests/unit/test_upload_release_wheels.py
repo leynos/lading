@@ -32,11 +32,16 @@ SCRIPT_DIRECTORY = Path(__file__).resolve().parents[2] / "scripts"
 CLI_PATH = SCRIPT_DIRECTORY / "upload_release_wheels.py"
 LIBRARY_PATH = SCRIPT_DIRECTORY / "release_wheel_upload.py"
 ADAPTER_PATH = SCRIPT_DIRECTORY / "release_gh.py"
+PORT_PATH = SCRIPT_DIRECTORY / "release_port.py"
+SPAN_PATH = SCRIPT_DIRECTORY / "release_span.py"
 
 
 @pytest.fixture(name="release_gh")
 def release_gh_fixture(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
     """Import the uploader's ``gh`` adapter.
+
+    Unlike the port fixture, this one exists for the two tests that genuinely
+    cross the process boundary and so must name the production runner.
 
     Returns
     -------
@@ -44,6 +49,25 @@ def release_gh_fixture(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
         The imported ``release_gh`` module.
     """
     return import_script_module(monkeypatch, "release_gh")
+
+
+@pytest.fixture(name="release_port")
+def release_port_fixture(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
+    """Import the uploader's process port.
+
+    Returns
+    -------
+    types.ModuleType
+        The imported ``release_port`` module.
+
+    Note
+    ----
+    The port is imported rather than the ``gh`` adapter on purpose. These
+    tests exercise the policy, and the policy's dependency points at the
+    port: reaching through the adapter would re-import cuprum to construct a
+    two-integer record, which is the coupling the port exists to remove.
+    """
+    return import_script_module(monkeypatch, "release_port")
 
 
 @pytest.fixture(name="upload_module")
@@ -85,11 +109,11 @@ def _make_wheel(directory: Path, name: str) -> Path:
 
 @pytest.mark.parametrize(
     "script",
-    [CLI_PATH, LIBRARY_PATH, ADAPTER_PATH],
-    ids=["cli", "library", "adapter"],
+    [CLI_PATH, LIBRARY_PATH, ADAPTER_PATH, PORT_PATH, SPAN_PATH],
+    ids=["cli", "library", "adapter", "port", "span"],
 )
 def test_script_parses_under_the_declared_python_version(script: Path) -> None:
-    """Both files must parse under the version the metadata block requires."""
+    """Every module of the uploader parses under the required version."""
     ast.parse(
         script.read_text(encoding="utf-8"),
         filename=str(script),
@@ -168,7 +192,7 @@ def test_each_phase_is_timed_by_the_injected_clock(
 
 
 def test_the_upload_runner_is_an_injectable_dependency(
-    upload_module: types.ModuleType, release_gh: types.ModuleType, tmp_path: Path
+    upload_module: types.ModuleType, release_port: types.ModuleType, tmp_path: Path
 ) -> None:
     """``upload_wheels`` states its process dependency as a parameter.
 
@@ -181,7 +205,7 @@ def test_the_upload_runner_is_an_injectable_dependency(
 
     def run(arguments: cabc.Sequence[str]) -> object:
         seen.append(tuple(arguments))
-        return release_gh.CommandOutcome(exit_code=0)
+        return release_port.CommandOutcome(exit_code=0)
 
     upload_module.upload_wheels("v1.2.3", (wheel,), run=run)
 
@@ -189,13 +213,13 @@ def test_the_upload_runner_is_an_injectable_dependency(
 
 
 def test_a_rejected_upload_names_the_reason(
-    upload_module: types.ModuleType, release_gh: types.ModuleType, tmp_path: Path
+    upload_module: types.ModuleType, release_port: types.ModuleType, tmp_path: Path
 ) -> None:
     """A runner that reports failure fails the step with gh's own reason."""
     wheel = _make_wheel(tmp_path, "a-1.0-py3-none-any.whl")
 
     def run(arguments: cabc.Sequence[str]) -> object:
-        return release_gh.CommandOutcome(exit_code=1, stderr="release not found")
+        return release_port.CommandOutcome(exit_code=1, stderr="release not found")
 
     with pytest.raises(upload_module.UploadError, match="release not found") as raised:
         upload_module.upload_wheels("v1.2.3", (wheel,), run=run)
@@ -223,23 +247,31 @@ def test_the_outcome_is_written_to_the_sinks_it_is_given(
 
 
 def test_upload_invokes_gh_with_the_tag_and_wheels(
-    upload_module: types.ModuleType, tmp_path: Path, cmd_mox: CmdMox
+    upload_module: types.ModuleType,
+    release_gh: types.ModuleType,
+    tmp_path: Path,
+    cmd_mox: CmdMox,
 ) -> None:
     """The upload crosses the process boundary as one ``gh release upload``.
 
     Asserted through cmd-mox rather than a stubbed function so the argv the
-    release actually runs is the thing under test.
+    release actually runs is the thing under test. The production adapter is
+    named at the call site because that binding now lives at the composition
+    root rather than in the policy module's signature.
     """
     wheel = _make_wheel(tmp_path, "a-1.0-py3-none-any.whl")
     cmd_mox.mock("gh").with_args(
         "release", "upload", "v1.2.3", str(wheel), "--clobber"
     ).returns(exit_code=0)
 
-    upload_module.upload_wheels("v1.2.3", (wheel,))
+    upload_module.upload_wheels("v1.2.3", (wheel,), run=release_gh.run_gh)
 
 
 def test_failed_upload_raises(
-    upload_module: types.ModuleType, tmp_path: Path, cmd_mox: CmdMox
+    upload_module: types.ModuleType,
+    release_gh: types.ModuleType,
+    tmp_path: Path,
+    cmd_mox: CmdMox,
 ) -> None:
     """A non-zero ``gh`` exit fails the step with the reason attached."""
     wheel = _make_wheel(tmp_path, "a-1.0-py3-none-any.whl")
@@ -248,7 +280,7 @@ def test_failed_upload_raises(
     ).returns(exit_code=1, stderr="release not found")
 
     with pytest.raises(upload_module.UploadError, match="release not found"):
-        upload_module.upload_wheels("v1.2.3", (wheel,))
+        upload_module.upload_wheels("v1.2.3", (wheel,), run=release_gh.run_gh)
 
 
 def test_every_outcome_is_drawn_from_the_bounded_set(
