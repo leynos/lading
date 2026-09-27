@@ -2137,6 +2137,32 @@ defect another gate measures.
   returns 403 -- so the inference that this decision is the one blocker is
   strong but not proven, and is recorded as such.
 
+#### The reply against `d5b22a9`, and what it concedes
+
+Comment `5851247449` answers CodeRabbit's rebuttal point by point, against the
+final commit rather than the earlier green gates, which is what its prompt
+asked for.
+
+- **Both warnings are conceded.** The rebuttal is right that the Domain
+  Architecture warning was not resolved at `3d16be9`, and right that the
+  Observability warning was not either. Neither is argued; both are now
+  implemented, and D12 records why the original declination was wrong rather
+  than restating it more carefully.
+- **One clause is reported as not done, with evidence.** The prompt asks for an
+  existing trace context to be propagated "when present". A repository-wide
+  search for `traceparent`, `tracestate`, `otel_`, `opentelemetry`,
+  `get_tracer`, and `start_span` across Python, YAML and TOML returns **zero
+  matches**, and `release.yml:56-59` passes the uploader only `GITHUB_REF_NAME`
+  and `GITHUB_TOKEN`. There is no context present to propagate, so the clause
+  is recorded as unachievable-here rather than marked done on a technicality.
+  Inventing a `traceparent` field would satisfy the letter of the instruction
+  while producing a value nothing can read -- which is the failure mode D13
+  exists to avoid.
+- **The gate table names the commit each result belongs to.** The code gates
+  are `c562f09`; the four Markdown gates are `d5b22a9`, which is documentation
+  only. Presenting them as one undifferentiated "all gates green" would have
+  been the same conflation this task has twice had to correct.
+
 ## Outcomes & retrospective
 
 Status: **COMPLETE.** All four milestones are closed. Two CodeRabbit passes
