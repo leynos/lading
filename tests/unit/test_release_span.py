@@ -11,6 +11,7 @@ production.
 
 from __future__ import annotations
 
+import collections.abc as cabc
 import io
 import json
 import typing as typ
@@ -26,7 +27,7 @@ if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
 SPAN_PATH = Path(__file__).resolve().parents[2] / "scripts" / "release_span.py"
 
 
-def _ticks() -> typ.Callable[[], float]:
+def _ticks() -> cabc.Callable[[], float]:
     """Return a clock reading 100.25 seconds after 100.0 exactly once.
 
     Built per test rather than shared, because an exhausted iterator would
@@ -35,7 +36,7 @@ def _ticks() -> typ.Callable[[], float]:
 
     Returns
     -------
-    typ.Callable[[], float]
+    cabc.Callable[[], float]
         The clock.
     """
     readings = iter([100.0, 100.25])
@@ -61,11 +62,6 @@ def _record(sink: io.StringIO) -> dict[str, object]:
     -------
     dict[str, object]
         The decoded record.
-
-    Raises
-    ------
-    AssertionError
-        If the sink does not hold exactly one parseable span line.
     """
     lines = [
         line
@@ -123,9 +119,11 @@ def test_an_exception_still_closes_the_span_and_propagates(
         message = "the process edge raised"
         raise RuntimeError(message)
 
-    with pytest.raises(RuntimeError, match="the process edge raised"):
-        with span_module.record_gh_span(sink, clock=_ticks()):
-            explode()
+    with (
+        pytest.raises(RuntimeError, match="the process edge raised"),
+        span_module.record_gh_span(sink, clock=_ticks()),
+    ):
+        explode()
 
     record = _record(sink)
     assert record["failure_category"] == "raised", record
@@ -174,7 +172,8 @@ def test_no_field_can_carry_data_from_the_invocation(
         "exit_code",
         "failure_category",
     }, record
-    assert isinstance(record["operation"], str) and record["operation"], record
+    assert isinstance(record["operation"], str), record
+    assert record["operation"], record
     assert record["operation"].startswith("gh."), (
         f"the operation name is {record['operation']!r}, which is not bounded"
     )

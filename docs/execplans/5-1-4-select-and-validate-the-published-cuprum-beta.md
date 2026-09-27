@@ -2030,6 +2030,56 @@ success/failure/exception, with trace-context propagation.
   publication, not uploader tracing. The work is done in this PR rather than
   deferred; nothing here is assigned to that issue.
 
+#### D14: the first gate run on the reform was red, and what it cost
+
+**Decision: record the failure rather than only the fixed result.**
+
+The reform was pushed as `98f64d9` and then gated. Two of the seven gates were
+red, so the CodeRabbit review stayed unrequested -- which is the rule this task
+runs under, and the reason the rule exists: both were faults a deterministic
+check caught, and neither should have reached a reviewer.
+
+- `make typecheck` -- one diagnostic. `Dependencies.upload` had lost its
+  default while `attach_wheels` still read
+  `Dependencies() if dependencies is None else dependencies`. `ty` reported
+  `missing-argument`, and the runtime would have raised `TypeError` on any call
+  that omitted the record. The default was never exercised by a test because
+  every test passes one.
+- `make lint` -- ten `ruff` errors, in the two files the reform added:
+  `_emit` took five arguments against a `max-args = 4` limit; three deprecated
+  `typing.Callable`/`typing.Iterator` generics (the repository bans them in
+  favour of `collections.abc`); a `typing-only-third-party-import` for
+  `release_port`; and four test-style findings (a `Raises` section for an
+  `AssertionError` a helper does not raise, nested `with` statements, and a
+  composite assertion).
+- **The lint gate did not finish.** `ruff` aborts the multi-line recipe, so
+  `interrogate`, `pylint`, `df12-pylint`, `ambrleaks`, and `skylos` never ran.
+  Reporting "two of seven red" would have understated it: five further lint
+  stages were simply unexercised, and the logs said nothing about them. The
+  re-run is what closes that, and it is why a red `make lint` cannot be triaged
+  from its own output alone.
+
+**Fixed and re-verified.** The record became a `SpanRecord` dataclass, which
+removes the argument-count problem and makes the field set the thing a reviewer
+reads; `attach_wheels` requires its `Dependencies`; the deprecated generics
+became `cabc` aliases; the port import moved into the type-checking block. The
+structural tests were strengthened in the same pass -- the composition-root
+check now reads the `partial(...)` call for the bound `run_gh` keyword rather
+than searching the file for the text `upload_wheels`, because a substring match
+would still have passed with the runner dropped. Both new assertions were
+probed by reintroducing the defect they guard: the dropped `run=` binding and
+the restored `Dependencies | None = None` default each failed exactly one test.
+
+**A second lesson, from the probes.** The `attach_wheels` probe was undone with
+`git checkout -- scripts/release_wheel_upload.py`, which restored the file to
+`HEAD` and so destroyed the three uncommitted lint and typecheck fixes along
+with the probe. The `diff` run as the restore check is what caught it, and the
+pre-probe copy taken moments earlier was intact and held every fix. The rule
+this task now records: a probe restores from the index when the file is
+unmodified, and from a copy taken immediately before the mutation when it is
+not -- and either way the restore is verified by grepping for the fix markers,
+because a wrongly reverted file also shows a clean `git status`.
+
 ## Outcomes & retrospective
 
 Status: **COMPLETE.** All four milestones are closed. Two CodeRabbit passes

@@ -30,7 +30,9 @@ consumer could read.
 
 from __future__ import annotations
 
+import collections.abc as cabc
 import contextlib
+import dataclasses as dc
 import enum
 import json
 import time
@@ -63,13 +65,45 @@ _OPERATION = "gh.invoke"
 _SCHEMA = 1
 
 
+@dc.dataclass(frozen=True, slots=True)
+class SpanRecord:
+    """One invocation's span, in the fields a consumer may rely on.
+
+    A record rather than five positional arguments, because the whole point of
+    the shape is that it is closed: a new field is a visible change to this
+    class and to the boundedness test, not a sixth argument a caller can pass
+    to carry whatever it has to hand. The empty string for an unobserved status
+    is the record's own convention -- ``None`` would serialize as JSON's
+    ``null`` and read as a status that was reported as missing.
+    """
+
+    operation: str
+    duration_seconds: float
+    exit_code: int | None
+    category: FailureCategory
+    schema: int = _SCHEMA
+
+    def as_json(self) -> str:
+        """Render the record as the single line the job log carries.
+
+        Returns
+        -------
+        str
+            The line, prefix included.
+        """
+        body = {
+            "operation": self.operation,
+            "schema": self.schema,
+            "duration_seconds": round(self.duration_seconds, 3),
+            "exit_code": "" if self.exit_code is None else self.exit_code,
+            "failure_category": str(self.category),
+        }
+        return f"release_span {json.dumps(body, sort_keys=True)}"
+
+
 def _emit(
     log: io.TextIOBase | typ.TextIO,
-    *,
-    operation: str,
-    duration_seconds: float,
-    exit_code: int | None,
-    category: FailureCategory,
+    record: SpanRecord,
 ) -> None:
     """Write one span record as a single line.
 
@@ -77,24 +111,10 @@ def _emit(
     ----------
     log : io.TextIOBase | typ.TextIO
         The sink the record is written to, normally ``sys.stderr``.
-    operation : str
-        The bounded operation name.
-    duration_seconds : float
-        How long the invocation took.
-    exit_code : int | None
-        The process exit status, or ``None`` when no process result was
-        produced.
-    category : FailureCategory
-        The bounded failure category.
+    record : SpanRecord
+        The invocation to record.
     """
-    record = {
-        "operation": operation,
-        "schema": _SCHEMA,
-        "duration_seconds": round(duration_seconds, 3),
-        "exit_code": "" if exit_code is None else exit_code,
-        "failure_category": str(category),
-    }
-    print(f"release_span {json.dumps(record, sort_keys=True)}", file=log)
+    print(record.as_json(), file=log)
 
 
 @contextlib.contextmanager
@@ -102,8 +122,8 @@ def record_gh_span(
     log: io.TextIOBase | typ.TextIO,
     *,
     operation: str = _OPERATION,
-    clock: typ.Callable[[], float] = time.monotonic,
-) -> typ.Iterator[typ.Callable[[int], None]]:
+    clock: cabc.Callable[[], float] = time.monotonic,
+) -> cabc.Iterator[cabc.Callable[[int], None]]:
     """Time one ``gh`` invocation and always write a span record.
 
     Parameters
@@ -112,12 +132,12 @@ def record_gh_span(
         The sink the record is written to.
     operation : str
         The bounded operation name to record.
-    clock : typ.Callable[[], float]
+    clock : cabc.Callable[[], float]
         The monotonic clock, injected so a test can state the duration.
 
     Yields
     ------
-    typ.Callable[[int], None]
+    cabc.Callable[[int], None]
         Records the process exit status. A caller that never calls it is
         treated as having raised rather than exited, which is the honest
         reading: no status was observed.
@@ -141,20 +161,24 @@ def record_gh_span(
         # failure. The category distinguishes it from a clean non-zero exit.
         _emit(
             log,
-            operation=operation,
-            duration_seconds=clock() - started,
-            exit_code=None,
-            category=FailureCategory.RAISED,
+            SpanRecord(
+                operation=operation,
+                duration_seconds=clock() - started,
+                exit_code=None,
+                category=FailureCategory.RAISED,
+            ),
         )
         raise
     _emit(
         log,
-        operation=operation,
-        duration_seconds=clock() - started,
-        exit_code=recorded[0] if recorded else None,
-        category=(
-            FailureCategory.NONE
-            if recorded and recorded[0] == 0
-            else FailureCategory.NON_ZERO_EXIT
+        SpanRecord(
+            operation=operation,
+            duration_seconds=clock() - started,
+            exit_code=recorded[0] if recorded else None,
+            category=(
+                FailureCategory.NONE
+                if recorded and recorded[0] == 0
+                else FailureCategory.NON_ZERO_EXIT
+            ),
         ),
     )

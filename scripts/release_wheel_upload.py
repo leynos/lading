@@ -10,7 +10,7 @@ and v0.3.1 published without their wheel as a result, and a human attached it
 afterwards.
 
 This module is the replacement: it decides what to upload in Python, treats an
-empty result as the failure it is, and invokes ``gh`` through cuprum's
+empty result as the failure it is, and reaches ``gh`` through cuprum's
 allowlist rather than a shell. Its process dependencies -- the ``gh`` runner,
 the clock, and the two output sinks -- are parameters, so tests drive the
 command path explicitly rather than by intercepting the environment.
@@ -37,10 +37,14 @@ import time
 import typing as typ
 from pathlib import Path
 
-from release_port import CommandOutcome, UploadRunner
-
 if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
     import io
+
+    # Only the port protocol is named here. The record that crosses it is part
+    # of the protocol's signature, not of this module's vocabulary: importing
+    # it would be an import this module does not use, and the port is the one
+    # thing it genuinely depends on.
+    from release_port import UploadRunner
 
 
 class Outcome(enum.StrEnum):
@@ -316,7 +320,7 @@ def attach_wheels(
     tag: str,
     directory: Path,
     timings: Timings,
-    dependencies: Dependencies | None = None,
+    dependencies: Dependencies,
 ) -> tuple[Path, ...]:
     """Upload every wheel under ``directory`` to ``tag`` and return them.
 
@@ -328,8 +332,10 @@ def attach_wheels(
         Directory to search for wheels.
     timings : Timings
         Filled in with the duration of each phase, whether or not it succeeds.
-    dependencies : Dependencies | None
-        The upload, clock, and progress sink to use. Defaults to production.
+    dependencies : Dependencies
+        The upload, clock, and progress sink to use. There is no default: the
+        upload carries the process port, and only the composition root knows
+        which runner to bind to it.
 
     Returns
     -------
@@ -341,7 +347,7 @@ def attach_wheels(
     UploadError
         If the directory holds no wheel, or the upload fails.
     """
-    bound = dependencies if dependencies is not None else Dependencies()
+    bound = dependencies
     clock = bound.clock
     started = clock()
     try:

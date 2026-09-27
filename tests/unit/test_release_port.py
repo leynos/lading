@@ -99,20 +99,39 @@ def test_the_adapter_imports_the_port_and_not_the_policy() -> None:
     )
 
 
-def test_the_policy_has_no_production_runner_default() -> None:
+def _function(path: Path, name: str) -> ast.FunctionDef:
+    """Return the named function definition from ``path``.
+
+    Returns
+    -------
+    ast.FunctionDef
+        The definition.
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    found = next(
+        (
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef) and node.name == name
+        ),
+        None,
+    )
+    message = f"{path.name} declares no function named {name}"
+    assert found is not None, message
+    return found
+
+
+def test_the_policy_defaults_no_process_dependency() -> None:
     """Production wiring is bound at the composition root, not in the policy.
 
     A default runner in ``upload_wheels`` would name the adapter in this
     module's namespace, which is the coupling the port removes -- and it would
     do so in the one place a structural import check cannot see, since a
-    default is not an import.
+    default is not an import. The same holds one level up: an ``attach_wheels``
+    that defaulted a whole ``Dependencies`` would put the runner back, since
+    only the composition root can build one.
     """
-    tree = ast.parse(POLICY_PATH.read_text(encoding="utf-8"), filename=str(POLICY_PATH))
-    upload = next(
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.FunctionDef) and node.name == "upload_wheels"
-    )
+    upload = _function(POLICY_PATH, "upload_wheels")
     defaults = dict(zip(upload.args.kwonlyargs, upload.args.kw_defaults, strict=True))
     runner = next(arg for arg in upload.args.kwonlyargs if arg.arg == "run")
 
@@ -121,23 +140,59 @@ def test_the_policy_has_no_production_runner_default() -> None:
         "upload_wheels must not default its runner; bind it at the composition root"
     )
 
+    attach = _function(POLICY_PATH, "attach_wheels")
+    optional = dict(
+        zip(
+            [arg.arg for arg in attach.args.args],
+            [None] * (len(attach.args.args) - len(attach.args.defaults))
+            + list(attach.args.defaults),
+            strict=True,
+        )
+    )
+
+    assert optional["dependencies"] is None, (
+        "attach_wheels must require its dependencies; a default would have to "
+        "name a runner"
+    )
+
 
 def test_the_composition_root_binds_the_production_runner() -> None:
     """Something must still bind them, or production would upload nothing.
 
     The check above is only safe because this one holds: the removal of the
-    default is a move, not a deletion.
+    default is a move, not a deletion. The binding is read out of the call
+    rather than searched for as text, because a substring match for
+    ``upload_wheels`` would still pass if the runner were dropped.
     """
     imported = _imported_names(ENTRYPOINT_PATH)
 
     assert "release_gh" in imported, (
         "the entrypoint must import the production adapter to bind it"
     )
-    source = ENTRYPOINT_PATH.read_text(encoding="utf-8")
-    assert "Dependencies(" in source, "the entrypoint must build a Dependencies"
-    assert "upload_wheels" in source, (
-        "the entrypoint must bind upload_wheels to the production runner"
+    tree = ast.parse(ENTRYPOINT_PATH.read_text(encoding="utf-8"))
+    calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "partial"
+    ]
+    bound = {
+        keyword.arg
+        for call in calls
+        for keyword in call.keywords
+        if keyword.arg is not None
+    }
+
+    assert "run" in bound, (
+        "the composition root must bind the runner into upload_wheels"
     )
+    assert any(
+        isinstance(keyword.value, ast.Name) and keyword.value.id == "run_gh"
+        for call in calls
+        for keyword in call.keywords
+        if keyword.arg == "run"
+    ), "the runner bound at the composition root must be the production run_gh"
 
 
 @pytest.mark.parametrize(
