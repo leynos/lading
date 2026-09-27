@@ -2234,7 +2234,7 @@ first cost D14's gate run. The second cost a scan. A reviewer reading the code
 finds a correct implementation and reports it correctly -- which is precisely
 why the sections *about* the code need a reader of their own.
 
-#### The review returned `APPROVED`, and the stale decision is discharged (2026-09-27, head `09ab08b`)
+#### The review returned `APPROVED`, and the stale decision is discharged (2026-09-27)
 
 Request `ca8fa765` posted at 01:12:56 and completed at 01:18. The review reports
 `APPROVED` on commit `6640921` (review `5328381774`), having processed 14
@@ -2245,17 +2245,20 @@ commit from before the port move, and a read-back of `reviewDecision` now
 returns `APPROVED` rather than a value this plan has to reason about or explain
 away.
 
-That read-back occurred at four points, because a new commit invalidates an
-approval and that is a fact to check rather than assume. The fourth row is this
-section's own commit: it changed one Markdown file, so it could not have
-invalidated the approval, and it was read back anyway.
+That read-back occurred at every head the branch produced after the approval,
+because a new commit invalidates an approval and that is a fact to check rather
+than assume. The table lists them; it necessarily ends one commit short of the
+head, since a commit cannot name itself. **The operative read-back is therefore
+not a row in this table** -- it is the one taken against whatever head is
+current when the merge decision is made. The rows below are the record that the
+check was performed rather than assumed.
 
 | Head                                    | `reviewDecision` | `mergeStateStatus` | Checks                                   |
 | --------------------------------------- | ---------------- | ------------------ | ---------------------------------------- |
 | `6640921`                               | `APPROVED`       | `CLEAN`            | all pass                                 |
 | `04df704` (the `Minor` fix landed here) | `APPROVED`       | `BLOCKED`          | `lint-test`, CodeScene, Kody in progress |
 | `04df704` after checks                  | `APPROVED`       | `CLEAN`            | all pass                                 |
-| `09ab08b` (this record)                 | `APPROVED`       | `CLEAN`            | all pass                                 |
+| `09ab08b`                               | `APPROVED`       | `CLEAN`            | all pass                                 |
 
 The review's substantive content was a single `Minor` finding, outside the diff
 range, against a line the review was permitted to leave un-anchored: O1a's
