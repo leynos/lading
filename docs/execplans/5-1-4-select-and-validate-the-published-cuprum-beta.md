@@ -2234,6 +2234,52 @@ first cost D14's gate run. The second cost a scan. A reviewer reading the code
 finds a correct implementation and reports it correctly -- which is precisely
 why the sections *about* the code need a reader of their own.
 
+#### The review returned `APPROVED`, and the stale decision is discharged (2026-09-27, at `04df704`)
+
+Request `ca8fa765` posted at 01:12:56 and completed at 01:18. The review reports
+`APPROVED` on commit `6640921` (review `5328381774`), having processed 14
+files between `8f44094` and that head. **This is the explicit reconciliation
+the stale `CHANGES_REQUESTED` needed**, and it is stronger than the argument
+that was available before it: the earlier decision was anchored to `8f44094`, a
+commit from before the port move, and a read-back of `reviewDecision` now
+returns `APPROVED` rather than a value this plan has to reason about or explain
+away.
+
+That read-back occurred at three points, because a new commit invalidates an
+approval and that is a fact to check rather than assume:
+
+| Head                                      | `reviewDecision` | `mergeStateStatus` | Checks                                   |
+| ----------------------------------------- | ---------------- | ------------------ | ---------------------------------------- |
+| `6640921`                                 | `APPROVED`       | `CLEAN`            | all pass                                 |
+| `04df704` (this record's fix landed here) | `APPROVED`       | `BLOCKED`          | `lint-test`, CodeScene, Kody in progress |
+| `04df704` after checks                    | `APPROVED`       | `CLEAN`            | all pass                                 |
+
+The review's substantive content was a single `Minor` finding, outside the diff
+range, against a line the review was permitted to leave un-anchored: O1a's
+Non-vacuity paragraph said the helper tests land green "in the same file",
+three lines after naming *two* files that D11 split the coverage across. The
+nearer antecedent was the wrong one -- the selection module holds 3 tests and
+the readers module 11, so the self-tests are in the readers module. Fixed in
+`04df704` by naming the path.
+
+It is worth naming what that finding is, because it is the third instance of
+one pattern on this branch: a **location claim a reader would follow and find
+nothing at**. The Codex P1 anchor moved from line 497 to 112 and that movement
+was itself evidence the split landed (see the replies section). The four
+contradictions the scan found were of the same kind. This one is the mildest --
+the claim was true of *a* file, just not the one a reader would pick -- and it
+still warranted the fix, because the reader who picks wrong concludes the
+coverage does not exist.
+
+**One finding was fixed after the approval rather than before it.** That
+ordering is deliberate: CodeRabbit's own guidance to "fix only still-valid
+issues" and the skill's rule against reflexively requesting another full review
+for a corrected line both point the same way. A doc-only change to one `.md`,
+fixing the exact line the review named, does not warrant a new full review; the
+approval is on the code the review was asked to inspect, and that code did not
+change. The record states this rather than implying the approval covers a
+commit it does not.
+
 ## Outcomes & retrospective
 
 Status: **COMPLETE.** All four milestones are closed. Two CodeRabbit passes
