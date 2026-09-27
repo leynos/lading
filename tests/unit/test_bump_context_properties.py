@@ -283,8 +283,14 @@ def _assert_crate_manifest_update(
 
 
 @given(data=st.data())
+# No deadline: each example writes and rewrites real manifests under
+# `tmp_path`, so its cost is the host's filesystem and import warm-up, not the
+# property. The first example ran 281 ms against the 200 ms default on a cold
+# start and 51 ms on the rerun; a deadline here asserts the host, and a larger
+# number would only move the flake.
 @settings(
     max_examples=20,
+    deadline=None,
     suppress_health_check=[HealthCheck.function_scoped_fixture],
 )
 def test_manifest_selection_matches_naive_reference(
