@@ -1297,6 +1297,13 @@ in `Decision log`, and escalate.
     and its remedies are about switch statements, dispatch tables, and test
     data. So this one split discharges the rule for the branch; no second
     split is pending.
+  - **Superseded (2026-09-27).** Both the scope check above and the sentence
+    that follows it are wrong at later heads. `tests/e2e/test_upload_release_wheels_cli.py`
+    crossed the limit at `98f64d9`, reaching 428 lines at `54bef8c`, so a
+    second split was pending after all. The text is kept here as the record of
+    what was believed at `3d16be9`; D16 gives the correction and the split.
+    The Codex reply posted against this entry repeated the claim and needed a
+    follow-up.
   - Why not recorded under `Tolerances`: the tolerance is a scope budget
     (files and net lines), not a style rule. `AGENTS-400` is a conformance
     basis, and the breach is recorded here rather than raised as a tolerance
@@ -2123,6 +2130,63 @@ defect another gate measures.
   change that touches method structure; the hosted check remains the authority,
   but it no longer has to be the first reader.
 
+#### D16: the branch crossed the 400-line rule in a third file, and D11's scope check was wrong
+
+**Decision: split `tests/e2e/test_upload_release_wheels_cli.py`, and correct
+the claim D11 recorded about the branch's conformance.**
+
+D11 (this log) disposed of Codex's oversized-module finding and closed with a
+scope check: "`test_cuprum_selection.py` was the only file this branch *adds*
+that exceeds the limit in a code language … So this one split discharges the
+rule for the branch; no second split is pending." That statement is false, and
+the reply posted to Codex's thread repeated it. The check was made when it was
+true and was not renewed afterwards, which is the defect: a scope claim is only
+good for the tree it was computed against.
+
+- **What was missed.** `tests/e2e/test_upload_release_wheels_cli.py` was 266
+  lines on `main` and is 428 at `54bef8c`. The plan itself predicted the
+  opposite -- Stage B says "Move `tests/e2e/test_upload_release_wheels_cli.py`
+  onto the helper. The file gets shorter" -- so the growth was not a surprise
+  failure to notice but a prediction that stopped holding. Four commits touched
+  the file; the crossing happened in `98f64d9`, which added the three span
+  tests (266 → 321 → 428 across the branch, not counting `98f64d9`'s own
+  earlier steps).
+- **Why it is a real breach and not a pre-existing one.** 29 tracked code files
+  already exceed 400 lines on `main`, so the rule is broadly unenforced across
+  the repository. That is not a defence: the plan cites `AGENTS-400` as one of
+  its own conformance bases, so the rule binds this branch by the plan's
+  choice. And the rule's remedies -- "Large blocks of test data should be moved
+  to external data files", "broken up by feature" -- describe exactly the
+  remedy applied here.
+- **The split follows D11's reasoning, not its shape.** The span tests are a
+  separate responsibility (process-edge telemetry) from the workflow contract
+  tests (exit status, argv, outcomes). The run helper and wheel builder they
+  share moved to `tests/e2e/helpers/wheel_upload.py`, and the `stub` fixture to
+  `tests/e2e/conftest.py`, because neither test module should be the other's
+  library -- the same reason D11 moved the readers to `tests/helpers/`. The
+  result:
+
+  | file                                           | lines | holds                             |
+  | ---------------------------------------------- | ----- | --------------------------------- |
+  | `tests/e2e/test_upload_release_wheels_cli.py`  | 275   | the workflow contract             |
+  | `tests/e2e/test_upload_release_wheels_span.py` | 140   | the span record                   |
+  | `tests/e2e/helpers/wheel_upload.py`            | 68    | the shared run helper and builder |
+  | `tests/e2e/conftest.py`                        | 176   | the shared `stub` fixture         |
+
+- **Verified as a move, not a rewrite.** The 11 test names before and after are
+  identical as sets, and all 30 tests across both modules pass. No test was
+  added, lost, or renamed.
+- **A claim that needs correcting, not just recording.** The Codex reply is
+  already posted and says the split "discharges the rule for the branch". That
+  was wrong when written. The follow-up reply names this commit and states the
+  correction, rather than leaving a false assurance standing on the record.
+- **Lesson.** A conformance claim computed once has a shelf life. D11's check
+  was true at `3d16be9`; two commits later it was not. Scope checks belong with
+  the final head, alongside the read-back, not with the finding they answer.
+- **Date/Author:** 2026-09-27. The finding is the agent's, caught while reading
+  the file for an unrelated reason; the disposition and the split are the
+  agent's.
+
 #### Convergence state (2026-09-27 02:24 CEST, at c562f09)
 
 - **Head:** `c562f09`, pushed; local and remote agree.
@@ -2918,6 +2982,11 @@ above. No code changes.
    `tests/unit/test_gh_stub_helper.py`. Move
    `tests/e2e/test_upload_release_wheels_cli.py` onto the helper. The file gets
    shorter, and the repository path gains the same no-publication protections.
+   - **Correction (2026-09-27): the file did not get shorter.** Moving it onto
+     the helper took it from 266 to 308 lines, and the span tests added later
+     took it to 428 -- past `AGENTS.md`'s 400-line limit, which this plan cites
+     as conformance basis `AGENTS-400`. The prediction was wrong and went
+     unrenewed; D16 records the breach and the split that answers it.
 2. Create `tests/unit/test_release_gh_properties.py` (O4). It is green and
    unmarked.
 3. Create `tests/workflow_contracts/test_cuprum_selection.py`. It holds O1a with

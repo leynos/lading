@@ -15,62 +15,14 @@ same helper, so neither can reach a real ``gh`` or inherit a credential.
 from __future__ import annotations
 
 import json
-import typing as typ
 from pathlib import Path
 
 import pytest
 
-from tests.helpers.gh_stub import (
-    STUB_TAG,
-    GhStub,
-    install_gh_stub,
-    isolated_environment,
-    run_uploader,
-)
-
-if typ.TYPE_CHECKING:
-    import subprocess
+from tests.e2e.helpers.wheel_upload import make_wheel, run_repository_upload
+from tests.helpers.gh_stub import STUB_TAG, GhStub, install_gh_stub
 
 pytestmark = pytest.mark.timeout(60)
-
-
-@pytest.fixture(name="stub")
-def stub_fixture(tmp_path: Path) -> GhStub:
-    """Return a stub ``gh`` that succeeds."""
-    return install_gh_stub(tmp_path)
-
-
-def _run(
-    stub: GhStub,
-    *arguments: str,
-    environment: dict[str, str] | None = None,
-) -> subprocess.CompletedProcess[str]:
-    """Run the script the way the workflow does and capture its result.
-
-    Parameters
-    ----------
-    stub : GhStub
-        The stub the child must resolve ``gh`` to.
-    *arguments : str
-        Arguments for the uploader.
-    environment : dict[str, str] | None
-        Overrides applied to the isolated environment; the tag goes here.
-
-    Returns
-    -------
-    subprocess.CompletedProcess[str]
-        The completed run.
-    """
-    child = isolated_environment(stub, extra=environment or {})
-    return run_uploader("repository", child, *arguments)
-
-
-def _make_wheel(directory: Path, name: str) -> Path:
-    """Create an empty file named like a wheel and return its path."""
-    directory.mkdir(parents=True, exist_ok=True)
-    wheel = directory / name
-    wheel.write_bytes(b"")
-    return wheel
 
 
 def test_an_empty_directory_exits_non_zero(tmp_path: Path, stub: GhStub) -> None:
@@ -82,7 +34,7 @@ def test_an_empty_directory_exits_non_zero(tmp_path: Path, stub: GhStub) -> None
     dist = tmp_path / "dist"
     dist.mkdir()
 
-    result = _run(
+    result = run_repository_upload(
         stub,
         "--directory",
         str(dist),
@@ -99,10 +51,10 @@ def test_every_wheel_reaches_gh_with_the_tag_from_the_environment(
 ) -> None:
     """The tag comes from ``GITHUB_REF_NAME`` and every wheel is uploaded once."""
     dist = tmp_path / "dist"
-    first = _make_wheel(dist, "a-1.0-py3-none-any.whl")
-    second = _make_wheel(dist / "nested", "b-1.0-py3-none-any.whl")
+    first = make_wheel(dist, "a-1.0-py3-none-any.whl")
+    second = make_wheel(dist / "nested", "b-1.0-py3-none-any.whl")
 
-    result = _run(
+    result = run_repository_upload(
         stub,
         "--directory",
         str(dist),
@@ -147,9 +99,9 @@ def test_a_failing_gh_fails_the_step(tmp_path: Path) -> None:
     diagnostic = "HTTP 422: release asset already exists"
     rejecting = install_gh_stub(tmp_path, exit_code=1, stderr=f"{diagnostic}\n")
     dist = tmp_path / "dist"
-    _make_wheel(dist, "a-1.0-py3-none-any.whl")
+    make_wheel(dist, "a-1.0-py3-none-any.whl")
 
-    result = _run(
+    result = run_repository_upload(
         rejecting,
         "--directory",
         str(dist),
@@ -172,9 +124,9 @@ def test_a_repository_mode_run_reaches_no_real_release(
     and issued no call that could change a release.
     """
     dist = tmp_path / "dist"
-    _make_wheel(dist, "a-1.0-py3-none-any.whl")
+    make_wheel(dist, "a-1.0-py3-none-any.whl")
 
-    result = _run(
+    result = run_repository_upload(
         stub,
         "--directory",
         str(dist),
@@ -192,7 +144,7 @@ def test_a_repository_mode_run_reaches_no_real_release(
 
 def test_a_missing_directory_is_reported_as_such(tmp_path: Path, stub: GhStub) -> None:
     """A download that never ran reads differently from an empty build."""
-    result = _run(
+    result = run_repository_upload(
         stub,
         "--directory",
         str(tmp_path / "absent"),
@@ -218,7 +170,7 @@ def test_the_tag_is_required(
     inherited the branch name as its tag and only failed for some other
     reason.
     """
-    result = _run(stub, *arguments)
+    result = run_repository_upload(stub, *arguments)
 
     assert result.returncode != 0, "a missing tag must not upload anything"
     assert "requires an argument" in result.stdout, result.stdout
@@ -250,11 +202,11 @@ def _outcome_line(stderr: str) -> dict[str, object]:
 def test_a_successful_step_reports_its_outcome(tmp_path: Path, stub: GhStub) -> None:
     """A success names itself, counts its wheels, and times both phases."""
     dist = tmp_path / "dist"
-    _make_wheel(dist, "a-1.0-py3-none-any.whl")
+    make_wheel(dist, "a-1.0-py3-none-any.whl")
     output = tmp_path / "github-output"
     output.touch()
 
-    result = _run(
+    result = run_repository_upload(
         stub,
         "--directory",
         str(dist),
@@ -293,7 +245,7 @@ def test_each_failure_reports_its_own_outcome(
     stub = install_gh_stub(tmp_path, exit_code=1 if scenario == "rejected" else 0)
     directory = _prepare_scenario(tmp_path, scenario)
 
-    result = _run(
+    result = run_repository_upload(
         stub,
         "--directory",
         str(directory),
@@ -315,114 +267,7 @@ def _prepare_scenario(tmp_path: Path, scenario: str) -> Path:
         case "file":
             directory.write_bytes(b"")
         case "rejected":
-            _make_wheel(directory, "a-1.0-py3-none-any.whl")
+            make_wheel(directory, "a-1.0-py3-none-any.whl")
         case _:
             pass  # "absent": the directory is deliberately never created
     return directory
-
-
-def _span_line(stderr: str) -> dict[str, object] | None:
-    """Return the decoded ``release_span`` record from ``stderr``, if any.
-
-    Returns
-    -------
-    dict[str, object] | None
-        The decoded record, or ``None`` when the step emitted none.
-    """
-    prefix = "release_span "
-    for line in stderr.splitlines():
-        if line.startswith(prefix):
-            return json.loads(line[len(prefix) :])
-    return None
-
-
-def test_a_real_invocation_emits_a_bounded_span_record(
-    tmp_path: Path, stub: GhStub
-) -> None:
-    """The process edge records a span through the real script, not a stub.
-
-    The unit tests drive ``record_gh_span`` in isolation, which proves the
-    record's shape but not that production reaches it. This runs the workflow's
-    own invocation and asserts the span is in the output the job log keeps.
-    """
-    dist = tmp_path / "dist"
-    _make_wheel(dist, "a-1.0-py3-none-any.whl")
-
-    result = _run(
-        stub,
-        "--directory",
-        str(dist),
-        environment={"GITHUB_REF_NAME": "v1.2.3"},
-    )
-
-    assert result.returncode == 0, result.stderr
-    record = _span_line(result.stderr)
-    assert record is not None, f"no span record in {result.stderr!r}"
-    assert record["operation"] == "gh.invoke", record
-    assert record["exit_code"] == 0, record
-    assert record["failure_category"] == "none", record
-    assert set(record) == {
-        "operation",
-        "schema",
-        "duration_seconds",
-        "exit_code",
-        "failure_category",
-    }, record
-
-
-def test_the_span_carries_no_argument_or_path(tmp_path: Path, stub: GhStub) -> None:
-    """The record must not carry the release tag or a wheel's path.
-
-    This is the boundedness property asserted against the real invocation,
-    where an argv genuinely exists to leak. A record that grew with its data
-    would be a cardinality and a disclosure problem at once, so the tag and the
-    wheel name are searched for in the serialized line rather than only the
-    parsed fields.
-    """
-    dist = tmp_path / "dist"
-    wheel = _make_wheel(dist, "a-1.0-py3-none-any.whl")
-
-    result = _run(
-        stub,
-        "--directory",
-        str(dist),
-        environment={"GITHUB_REF_NAME": "v9.9.9"},
-    )
-
-    assert result.returncode == 0, result.stderr
-    line = next(
-        (
-            line
-            for line in result.stderr.splitlines()
-            if line.startswith("release_span ")
-        ),
-        None,
-    )
-    assert line is not None, f"no span record in {result.stderr!r}"
-    assert "v9.9.9" not in line, f"the tag reached the span: {line}"
-    assert wheel.name not in line, f"the wheel name reached the span: {line}"
-    assert str(dist) not in line, f"the directory reached the span: {line}"
-
-
-def test_a_failed_invocation_still_emits_a_span(tmp_path: Path) -> None:
-    """A rejected upload records its span before the step exits non-zero.
-
-    The interesting path for a trace is the one that failed; a span emitted
-    only on success would be missing exactly when it is read.
-    """
-    stub = install_gh_stub(tmp_path, exit_code=1, stderr="release not found\n")
-    dist = tmp_path / "dist"
-    _make_wheel(dist, "a-1.0-py3-none-any.whl")
-
-    result = _run(
-        stub,
-        "--directory",
-        str(dist),
-        environment={"GITHUB_REF_NAME": "v1.2.3"},
-    )
-
-    assert result.returncode == 1, result.stderr
-    record = _span_line(result.stderr)
-    assert record is not None, f"no span record in {result.stderr!r}"
-    assert record["failure_category"] == "non-zero-exit", record
-    assert record["exit_code"] == 1, record
