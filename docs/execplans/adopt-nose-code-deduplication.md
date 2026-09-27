@@ -129,7 +129,7 @@ take precedence. This plan records every deliberate deviation.
 - [x] (2026-09-27) Full gate run green: all seven gates pass, including the
       Ambrleaks, Skylos and duplication stages reached for the first time.
 - [x] (2026-09-27) Draft PR [#292](https://github.com/leynos/lading/pull/292)
-      opened against `main`, carrying all seven commits.
+      opened against `main`, carrying the whole branch.
 - [x] (2026-09-26) `scripts/tests` scan-scope decision: excluded, with the
       glob-form hazard recorded and guarded (see Surprises).
 
@@ -254,9 +254,9 @@ take precedence. This plan records every deliberate deviation.
 
 ## Outcomes & retrospective
 
-Delivered as seven commits on `adopt-nose-code-deduplication`, 31 files changed
-(5,936 insertions, 111 deletions) against `origin/main`, and opened as draft PR
-[#292](https://github.com/leynos/lading/pull/292).
+Delivered on `adopt-nose-code-deduplication` and opened as draft PR
+[#292](https://github.com/leynos/lading/pull/292). The branch changes 31 files
+against `origin/main`, the overwhelming majority of them additions.
 
 Main's [#291](https://github.com/leynos/lading/pull/291) landed while this
 branch was in review and rewrote the Pylint tier, so the branch was rebased
