@@ -2170,6 +2170,70 @@ asked for.
   only. Presenting them as one undifferentiated "all gates green" would have
   been the same conflation this task has twice had to correct.
 
+#### CodeRabbit's answer, and the scan it prompted (2026-09-27, at `b1730a2`)
+
+Comment `5851251960` is CodeRabbit's reply to the dispositions above. It is
+worth reading twice, because it *concedes both warnings on the merits* -- "the
+returned inspection confirms the Domain Architecture warning is resolved at
+`d5b22a9`" and "the Observability warning is addressed as a standalone job-log
+boundary" -- and then narrows what it is willing to call established:
+
+> I verified those changes by inspection, not by rerunning tests. CodeScene had
+> passed in the returned check results; hosted `lint-test` was still pending.
+> Confirm that check before treating hosted validation as complete.
+
+That check has since completed, and it passed on `10cfa36`; the full seven-gate
+set was then re-run green on `851cd15`, which is the first commit carrying both
+corrections. Two things follow, and the second is the one that matters.
+
+- **The `lint-test` confirmation is discharged.** It was genuinely pending when
+  the reply was written, so the caution was correct at the time. It is not an
+  open item now.
+- **Inspection by a reviewer is not the same inspection as a scan.** CodeRabbit
+  read `release_port.py`, `release_gh.py`, `release_span.py`, the focused
+  tests, and D12/D13, and its reading is accurate about all of them. It did not
+  read the plan's non-historical sections, and the Developer Documentation
+  row's own resolution had asked for exactly that: "Recheck all non-historical
+  plan sections for similar stale statements before merge." Nobody had.
+
+That recheck was run as a read-only scan over the plan's non-historical
+sections -- `Constraints`, `Tolerances`, `Risks`, `Conformance basis`,
+`Verification plan`, `Plan of work`, `Milestones and plateaus`,
+`Concrete steps`, `Validation and acceptance`, `Interfaces and dependencies` --
+comparing every current-state assertion against the tree. The historical
+sections were excluded by construction: `Progress`, `Surprises & discoveries`,
+`Decision log`, and `Outcomes & retrospective` are a record of what was true
+when written, and the dispositions quote them as such.
+
+Four contradictions, all in sections the row's resolution covers:
+
+- `Interfaces and dependencies` showed `CommandOutcome` and `run_gh` inside
+  `release_gh.py` and described the policy as importing both from it. That is
+  the pre-`98f64d9` arrangement, and it is the very structure the Domain
+  Architecture row was about. Leaving it would have re-asserted the fixed
+  defect in the document that records the fix.
+- The policy sentence named `UploadRunner` as living in the policy module; it
+  moved to the port with the record.
+- The new-test inventory omitted `test_release_port.py` and
+  `test_release_span.py`.
+- O4's `Method` claimed its named payload cases are `@example` decorators. The
+  module has none; they are a parametrized test plus a separate SIGTERM test,
+  both of which the plan names correctly elsewhere. The coverage claim is
+  unchanged -- only the mechanism was wrong, which is the milder of the two
+  kinds of documentation error and still worth correcting, because a reader
+  checking the claim would grep for `@example` and find nothing.
+
+All four are fixed in `b1730a2`. A fifth finding -- that the test inventory
+predates D12 and D13 -- is the same defect as the third and is fixed with it.
+
+**The lesson, recorded rather than smoothed over.** This is the second time on
+this branch that a documentation set describing a moving implementation went
+stale behind it, and both times the staleness was invisible to every gate: no
+gate reads the plan, and `markdownlint` checks prose form, not prose truth. The
+first cost D14's gate run. The second cost a scan. A reviewer reading the code
+finds a correct implementation and reports it correctly -- which is precisely
+why the sections *about* the code need a reader of their own.
+
 ## Outcomes & retrospective
 
 Status: **COMPLETE.** All four milestones are closed. Two CodeRabbit passes
