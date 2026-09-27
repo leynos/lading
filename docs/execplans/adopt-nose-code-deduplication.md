@@ -5,7 +5,7 @@ This ExecPlan (execution plan) is a living document. The sections `Constraints`,
 `Outcomes & retrospective`, `Conformance basis`, and `Verification plan` must
 be kept up to date as work proceeds.
 
-Status: IN PROGRESS
+Status: COMPLETE — implemented and opened as draft PR #292.
 
 ## Purpose / big picture
 
@@ -128,7 +128,8 @@ take precedence. This plan records every deliberate deviation.
       `docs/contents.md`.
 - [x] (2026-09-27) Full gate run green: all seven gates pass, including the
       Ambrleaks, Skylos and duplication stages reached for the first time.
-- [ ] Draft PR.
+- [x] (2026-09-27) Draft PR [#292](https://github.com/leynos/lading/pull/292)
+      opened against `main`, carrying all seven commits.
 - [x] (2026-09-26) `scripts/tests` scan-scope decision: excluded, with the
       glob-form hazard recorded and guarded (see Surprises).
 
@@ -253,8 +254,18 @@ take precedence. This plan records every deliberate deviation.
 
 ## Outcomes & retrospective
 
-Delivered as four commits on `adopt-nose-code-deduplication`, 30 files changed
-(5,835 insertions, 108 deletions) against `origin/main`.
+Delivered as seven commits on `adopt-nose-code-deduplication`, 31 files changed
+(5,936 insertions, 111 deletions) against `origin/main`, and opened as draft PR
+[#292](https://github.com/leynos/lading/pull/292).
+
+Main's [#291](https://github.com/leynos/lading/pull/291) landed while this
+branch was in review and rewrote the Pylint tier, so the branch was rebased
+onto it. The one conflict was in the developer guide's lint-stage list; main's
+newer Pylint wording and this branch's account of the gate running last were
+both kept, the stage count was corrected from six to seven, and ADR-003 — which
+still called Skylos the final blocking check — gained a dated amendment. Main's
+commit touches neither `lading/` nor `scripts/`, so the adjudication below is
+unaffected.
 
 ### What shipped
 
@@ -293,15 +304,18 @@ repository-wide wildcard, and none was mass-generated.
 
 ### Validation actually run
 
+Run at `091b47a` on the rebased head, sequentially:
+
 | Gate                    | Result                                                         |
 | ----------------------- | -------------------------------------------------------------- |
-| `make check-fmt`        | pass — 221 Python files formatted, 26 Markdown files unchanged |
+| `make check-fmt`        | pass — 222 Python files formatted, 26 Markdown files unchanged |
 | `make lint`             | pass — all seven stages, exit 0                                |
 | `make typecheck`        | pass — `ty check --python-version 3.13`, "All checks passed!"  |
-| `make test`             | pass — 1318 passed, 29 skipped, 80 snapshots passed            |
+| `make test`             | pass — 1322 passed, 29 skipped, 80 snapshots passed            |
 | `make spelling`         | pass                                                           |
 | `make markdownlint`     | pass — 26 files, 0 errors                                      |
 | `make duplication-test` | pass — 140 passed, 3 snapshots passed                          |
+| `make nixie`            | pass — all diagrams validated                                  |
 
 Within `make lint`, the previously-unexercised stages all executed and passed:
 Ambrleaks (clean on `tests/`), Skylos (`dead_code` gate clean on `lading`), and
