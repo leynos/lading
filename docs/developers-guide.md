@@ -311,14 +311,17 @@ action runs pytest through xdist instead.
 the ownership rules, since the two describe one lane apiece and a reader
 checking either needs both.
 
-Both lanes measure on one Python. The shared action builds its environment on
-the Python the job put on `PATH` unless the job names one, and each
-`setup-python` step replaces that Python for the steps after it, so a coverage
-call measures on the most recent setup before it in its own job. The
-pull-request ratchet compares like with like only while the lanes agree, so
-`tests/workflow_contracts/test_coverage_python_parity.py` requires every call
-of the coverage action to follow, in its job, a `setup-python` step naming its
-version, and every call in both lanes to measure on that one version.
+Both lanes measure on one Python. The shared action chooses its interpreter
+from its `python-version` input, then `UV_PYTHON`, then `.python-version`, then
+the `python3` on `PATH`, which is the most recent `setup-python` step before
+the call in its job, and the pull-request ratchet compares like with like only
+while every call resolves to one version.
+`tests/workflow_contracts/test_coverage_python_parity.py` requires every
+coverage call in every workflow to declare at least one of those sources, every
+declared source to name the same version, and every call to measure on that one
+version. A `setup-python` step guarded by `if:` or allowed to fail with
+`continue-on-error` declares nothing. A Hypothesis property checks the reading
+against a naive model.
 
 ## Workflow pins and Dependabot
 
