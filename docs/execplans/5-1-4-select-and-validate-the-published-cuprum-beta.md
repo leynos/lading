@@ -15,9 +15,16 @@ beta contract and dependency boundary".
 > **Snapshot note.** This section and `Context and orientation` describe the
 > repository as it stood when the plan was written, before any of the work
 > below. They are the plan's motivation and orientation, not a description of
-> the finished state, and the version numbers and call forms they quote are the
-> pre-change ones on purpose. For the finished state see
-> `Outcomes & retrospective`.
+> the finished state. Six things they state are the **pre-change** state and
+> are quoted on purpose: the pin and lock (`cuprum` 0.1.0), the dependency
+> metadata (`cuprum>=0.1.0` in both manifests), the module ownership (the
+> adapter and the port inside `release_wheel_upload.py`), the call forms
+> (`scoped(allowlist=...)`, `run_sync(capture=...)`), the absent script
+> lockfile, and the test coverage they name. For the finished state --
+> `cuprum==0.2.0b1` on both paths, the boundary split across `release_port.py`,
+> `release_gh.py` and `release_span.py`, and the beta's
+> `scoped(catalogue=...)` -- see `Outcomes & retrospective` and the `D`
+> entries in `Decision log`.
 
 `lading` is a Python command-line tool that manages Rust workspaces. It depends
 on `cuprum`, a library that runs external programmes only when they are listed
@@ -2258,11 +2265,24 @@ commit before requesting a review, and re-gate after acting on one.
 ## Context and orientation
 
 > **Snapshot note.** As with `Purpose / big picture`, this is the repository as
-> it stood before the work began. The `cuprum 0.1.0` pin, the `cuprum>=0.1.0`
-> declaration, and the `subprocess`-era call forms quoted below are the
-> pre-change state the plan set out to move away from; the finished state is in
-> `Outcomes & retrospective`. Read this section for orientation, not for the
-> current pin.
+> it stood before the work began. Read this section for orientation, not for
+> the current state. Everything it says below about where code lives and what
+> the manifests declare is the **pre-change** arrangement, and in particular
+> these are no longer true of the tree:
+>
+> - the `cuprum 0.1.0` pin, the `cuprum>=0.1.0` declarations, and the call
+>   forms `scoped(allowlist=...)` and `run_sync(capture=...)`;
+> - `RELEASE_CATALOGUE`, `GH`, `CommandOutcome`, the `UploadRunner` protocol,
+>   and `run_gh` all living in `scripts/release_wheel_upload.py`, which is also
+>   said here to hold the uploader logic;
+> - `upload_wheels(tag, wheels, *, run=run_gh)` and a `Dependencies` that
+>   "bind the production defaults";
+> - the absence of `scripts/upload_release_wheels.py.lock`;
+> - the test inventory, which predates `tests/unit/test_release_port.py`,
+>   `tests/unit/test_release_span.py`, and the release-span e2e assertions.
+>
+> The finished state is in `Outcomes & retrospective`; `Decision log` D7, D12
+> and D13 record why the boundary sits where it now does.
 
 The repository root contains the `lading` package, `scripts/`, `tests/`, and
 `docs/`. Run all commands from the repository root. `make` targets wrap `uv`.
