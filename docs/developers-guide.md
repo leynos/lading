@@ -314,14 +314,15 @@ checking either needs both.
 Both lanes measure on one Python. The shared action chooses its interpreter
 from its `python-version` input, then `UV_PYTHON`, then `.python-version`, then
 the `python3` on `PATH`, which is the most recent `setup-python` step before
-the call in its job, and the pull-request ratchet compares like with like only
-while every call resolves to one version.
-`tests/workflow_contracts/test_coverage_python_parity.py` requires every
-coverage call in every workflow to declare at least one of those sources, every
-declared source to name the same version, and every call to measure on that one
-version. A `setup-python` step guarded by `if:` or allowed to fail with
-`continue-on-error` declares nothing. A Hypothesis property checks the reading
-against a naive model.
+the call in its job. `tests/workflow_contracts/test_coverage_python_parity.py`
+requires every coverage call in `ci.yml` and `coverage-main.yml` to declare at
+least one of those sources, every declared source to name the same version, and
+both lanes to measure on that one version. A `setup-python` step guarded by
+`if:` or allowed to fail with `continue-on-error` declares nothing. The ratchet
+baseline key already carries the interpreter
+(`ratchet-baseline-<os>-py<major.minor>-`), so a lane on another Python would
+miss its baseline rather than compare against the wrong one; the contract turns
+that silent restart into a failure.
 
 ## Workflow pins and Dependabot
 

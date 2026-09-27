@@ -1,49 +1,51 @@
-"""Contract-test that every coverage call measures on one declared Python.
+"""Contract-test that both coverage lanes measure on one declared Python.
 
 The pull-request lane ratchets against the baseline the push-to-main publisher
-writes, and a figure measured on one interpreter is not comparable with one
-measured on another. The shared ``generate-coverage`` action chooses its
-interpreter in a fixed order: its ``python-version`` input, then
-``UV_PYTHON``, then the first entry of ``.python-version``, then the
-``python3`` the job put on ``PATH``, which is the most recent
-``actions/setup-python`` step before the call in its job.
+writes. The shared ``generate-coverage`` action chooses its interpreter in a
+fixed order: its ``python-version`` input, then ``UV_PYTHON``, then the first
+entry of ``.python-version``, then the ``python3`` the job put on ``PATH``,
+which is the most recent ``actions/setup-python`` step before the call in its
+job.
 
-Every coverage call in every workflow must therefore declare at least one of
-those sources, every source it declares must name the same version (a
+Every coverage call in both lanes must therefore declare at least one of those
+sources, every source it declares must name the same version (a
 higher-priority value silently overriding a lower one is how lanes drift), and
-every call must measure on that one version. A setup step guarded by ``if:``
+both lanes must measure on that one version. A setup step guarded by ``if:``
 or allowed to fail with ``continue-on-error`` may not run, so it declares
-nothing; a setup in another job, or after the call, does not count.
+nothing. The ratchet baseline key already carries the interpreter
+(``ratchet-baseline-<os>-py<major.minor>-``), so a lane on another Python
+misses its baseline rather than comparing against the wrong one; this
+contract turns that silent restart into a failure.
 """
 
 from __future__ import annotations
 
-import re
+import itertools
 import typing as typ
 
 import pytest
 import yaml
-from hypothesis import given
-from hypothesis import strategies as st
 
 from tests.workflow_contracts.test_coverage_ownership import (
+    CI_WORKFLOW_PATH,
+    GENERATE_COVERAGE_ANY_REF,
+    MAIN_COVERAGE_WORKFLOW_PATH,
     REPOSITORY_ROOT,
     YamlValue,
     _jobs,
     _load_workflow,
     _step_inputs,
     _steps,
-    _workflow_paths,
 )
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
 
 SETUP_PYTHON_ACTION = "actions/setup-python@"
-#: A pinned, a relative (``./``) or a same-repository (``$/``) reference.
-GENERATE_COVERAGE = re.compile(r"(?:^|/)\.github/actions/generate-coverage(?:@|$)")
 #: The resolver's order, highest priority first.
 SOURCES = ("input", "UV_PYTHON", ".python-version", "setup-python")
+AGREE = "3.13"
+CONFLICT = "3.14"
 
 type Mapping = dict[str, YamlValue]
 
@@ -63,6 +65,14 @@ class CoverageCall(typ.NamedTuple):
     def effective(self) -> str:
         """The version the resolver would choose, or empty."""
         return next(iter(self.declared.values()), "")
+
+
+def _verdict(call: CoverageCall) -> str:
+    """Return why a call's declared sources fail the contract, or empty."""
+    declared = set(call.declared.values())
+    if not declared:
+        return "undeclared"
+    return "conflicting" if len(declared) > 1 else ""
 
 
 def _action(step: Mapping) -> str:
@@ -106,7 +116,7 @@ def _job_calls(
         action = _action(step)
         if action.startswith(SETUP_PYTHON_ACTION):
             on_path = _declared_by_setup(step)
-        elif GENERATE_COVERAGE.search(action):
+        elif GENERATE_COVERAGE_ANY_REF.match(action):
             versions = (
                 str(_step_inputs(step).get("python-version") or ""),
                 _uv_python(step, job, workflow),
@@ -135,42 +145,34 @@ def _coverage_calls(path: Path, python_version: str = "") -> list[CoverageCall]:
     ]
 
 
-def _all_coverage_calls() -> dict[str, list[CoverageCall]]:
-    """Return every workflow's coverage calls, keyed by workflow file name."""
+def _lane_calls() -> dict[str, list[CoverageCall]]:
+    """Return both lanes' coverage calls, keyed by workflow file name."""
     python_version = _python_version_entry(REPOSITORY_ROOT / ".python-version")
     return {
-        path.name: _coverage_calls(path, python_version) for path in _workflow_paths()
+        path.name: _coverage_calls(path, python_version)
+        for path in (CI_WORKFLOW_PATH, MAIN_COVERAGE_WORKFLOW_PATH)
     }
 
 
 def test_every_coverage_call_declares_one_python() -> None:
-    """Each call names a Python, and every source it declares agrees."""
-    calls = [
-        (f"{workflow}:{call.job}", call)
-        for workflow, found in _all_coverage_calls().items()
-        for call in found
-    ]
-    undeclared = [where for where, call in calls if not call.declared]
-    conflicting = {
-        where: call.declared
-        for where, call in calls
-        if len(set(call.declared.values())) > 1
+    """Both lanes call the action, and each call's declared sources agree."""
+    lanes = _lane_calls()
+    failures = {
+        f"{lane}:{call.job}": _verdict(call)
+        for lane, calls in lanes.items()
+        for call in calls
+        if _verdict(call)
     }
 
-    assert calls, "no coverage call found, so this contract proves nothing"
-    assert undeclared == [], (
-        f"these calls measure on an undeclared Python: {undeclared}"
-    )
-    assert conflicting == {}, f"these calls declare conflicting versions: {conflicting}"
+    assert all(lanes.values()), f"{list(lanes)} must each call the coverage action"
+    assert failures == {}, f"these coverage calls fail the contract: {failures}"
 
 
 def test_both_lanes_measure_on_one_python() -> None:
-    """Every coverage call, in every workflow, measures on one version."""
-    effective = {
-        call.effective for found in _all_coverage_calls().values() for call in found
-    }
+    """Every coverage call, in both lanes, measures on one version."""
+    effective = {call.effective for calls in _lane_calls().values() for call in calls}
 
-    assert len(effective) == 1, f"coverage calls measure on {sorted(effective)}"
+    assert len(effective) == 1, f"coverage lanes measure on {sorted(effective)}"
 
 
 _SETUP = {"uses": f"{SETUP_PYTHON_ACTION}{'0' * 40}"}
@@ -204,142 +206,116 @@ def _write(tmp_path: Path, document: dict[str, object]) -> Path:
             {"cov": [_setup("3.13"), _COVERAGE, _setup("3.14"), _COVERAGE]},
             ["3.13", "3.14"],
         ),
-        ({"cov": [_SETUP, _COVERAGE]}, [""]),
-        ({"cov": [_setup("3.13", **{"if": "false"}), _COVERAGE]}, [""]),
-        ({"cov": [_setup("3.13", **{"continue-on-error": True}), _COVERAGE]}, [""]),
-        (
-            {"cov": [_setup("3.13"), {"uses": "./.github/actions/generate-coverage"}]},
-            ["3.13"],
-        ),
-        (
-            {"cov": [_setup("3.13"), {"uses": "$/.github/actions/generate-coverage"}]},
-            ["3.13"],
-        ),
     ],
-    ids=[
-        "before-the-call",
-        "after-the-call",
-        "another-job",
-        "latest-setup-per-call",
-        "setup-without-version",
-        "conditional-setup",
-        "fail-green-setup",
-        "relative-action",
-        "same-repository-action",
-    ],
+    ids=["before-the-call", "after-the-call", "another-job", "latest-setup-per-call"],
 )
-def test_each_call_reads_the_setup_that_reliably_precedes_it(
+def test_each_call_reads_the_latest_setup_before_it_in_its_job(
     tmp_path: Path, jobs: dict[str, list[dict[str, object]]], expected: list[str]
 ) -> None:
-    """A call's setup-python source is its job's latest unconditional setup."""
+    """A call's setup-python source is its own job's latest setup before it."""
     document = {"jobs": {name: {"steps": steps} for name, steps in jobs.items()}}
     calls = _coverage_calls(_write(tmp_path, document))
 
     assert [call.sources["setup-python"] for call in calls] == expected, (
-        "a call reads the latest setup that always runs before it, in its job"
+        "a call reads the latest setup before it, in its own job"
     )
 
 
 @pytest.mark.parametrize(
-    ("document", "declared"),
+    ("scopes", "expected"),
     [
-        (
-            {
-                "jobs": {
-                    "cov": {
-                        "steps": [
-                            _setup("3.14"),
-                            {**_COVERAGE, "with": {"python-version": "3.13"}},
-                        ]
-                    }
-                }
-            },
-            {"input": "3.13", "setup-python": "3.14"},
-        ),
-        (
-            {
-                "jobs": {
-                    "cov": {
-                        "env": {"UV_PYTHON": "3.13"},
-                        "steps": [_setup("3.14"), _COVERAGE],
-                    }
-                }
-            },
-            {"UV_PYTHON": "3.13", "setup-python": "3.14"},
-        ),
-        (
-            {
-                "env": {"UV_PYTHON": "3.12"},
-                "jobs": {
-                    "cov": {
-                        "env": {"UV_PYTHON": "3.13"},
-                        "steps": [_setup("3.14"), _COVERAGE],
-                    }
-                },
-            },
-            {"UV_PYTHON": "3.13", "setup-python": "3.14"},
-        ),
+        (({"UV_PYTHON": "3.12"}, {"UV_PYTHON": "3.13"}, {"UV_PYTHON": "3.14"}), "3.12"),
+        (({}, {"UV_PYTHON": "3.13"}, {"UV_PYTHON": "3.14"}), "3.13"),
     ],
-    ids=["input", "job-uv-python", "job-uv-python-wins-over-workflow"],
+    ids=["step-over-job-and-workflow", "job-over-workflow"],
 )
-def test_higher_priority_sources_are_declared_beside_the_setup(
-    tmp_path: Path, document: dict[str, object], declared: dict[str, str]
+def test_the_innermost_uv_python_is_read(
+    tmp_path: Path,
+    scopes: tuple[dict[str, str], dict[str, str], dict[str, str]],
+    expected: str,
 ) -> None:
-    """Every source the resolver reads is recorded, so a conflict is visible."""
-    (call,) = _coverage_calls(_write(tmp_path, document))
+    """``UV_PYTHON`` set in several scopes resolves to the innermost one."""
+    step_env, job_env, workflow_env = scopes
+    call = {**_COVERAGE, **({"env": step_env} if step_env else {})}
+    document = {"env": workflow_env, "jobs": {"cov": {"env": job_env, "steps": [call]}}}
+    (read,) = _coverage_calls(_write(tmp_path, document))
 
-    assert call.declared == declared, "each declared source is recorded"
-    assert call.effective == next(iter(declared.values())), (
+    assert read.sources["UV_PYTHON"] == expected, "the innermost UV_PYTHON wins"
+
+
+class SourceCombination(typ.NamedTuple):
+    """One combination of the sources the resolver reads for a single call."""
+
+    input: str
+    uv_scope: str
+    uv_version: str
+    python_version: str
+    setup: str
+
+    def document(self) -> dict[str, object]:
+        """Return the fixture workflow declaring exactly these sources."""
+        setup = {
+            "named": _setup(AGREE),
+            "unversioned": dict(_SETUP),
+            "if": _setup(AGREE, **{"if": "false"}),
+            "continue-on-error": _setup(AGREE, **{"continue-on-error": True}),
+        }[self.setup]
+        call: dict[str, object] = dict(_COVERAGE)
+        if self.input:
+            call["with"] = {"python-version": self.input}
+        uv = {"UV_PYTHON": self.uv_version}
+        if self.uv_scope == "step":
+            call["env"] = uv
+        job: dict[str, object] = {"steps": [setup, call]}
+        if self.uv_scope == "job":
+            job["env"] = uv
+        document: dict[str, object] = {"jobs": {"cov": job}}
+        if self.uv_scope == "workflow":
+            document["env"] = uv
+        return document
+
+    def expected_declared(self) -> dict[str, str]:
+        """Return the sources this combination declares, highest priority first."""
+        named = {
+            "input": self.input,
+            "UV_PYTHON": self.uv_version if self.uv_scope else "",
+            ".python-version": self.python_version,
+            "setup-python": AGREE if self.setup == "named" else "",
+        }
+        return {name: version for name, version in named.items() if version}
+
+
+_UV = [("", "")] + [
+    (scope, version)
+    for scope in ("step", "job", "workflow")
+    for version in (AGREE, CONFLICT)
+]
+COMBINATIONS = [
+    SourceCombination(given, uv_scope, uv_version, python_version, setup)
+    for given, (uv_scope, uv_version), python_version, setup in itertools.product(
+        ("", AGREE, CONFLICT),
+        _UV,
+        ("", AGREE, CONFLICT),
+        ("named", "unversioned", "if", "continue-on-error"),
+    )
+]
+
+
+@pytest.mark.parametrize("combination", COMBINATIONS, ids=str)
+def test_every_source_combination_is_read_and_judged(
+    tmp_path: Path, combination: SourceCombination
+) -> None:
+    """Exhaustively: each declared source is read, and disagreement or absence fails."""
+    (call,) = _coverage_calls(
+        _write(tmp_path, combination.document()), combination.python_version
+    )
+    declared = combination.expected_declared()
+    versions = set(declared.values())
+
+    assert call.declared == declared, "every declared source is read"
+    assert call.effective == next(iter(declared.values()), ""), (
         "the effective version is the highest-priority declared source"
     )
-
-
-_STEP = st.one_of(
-    st.tuples(
-        st.just("setup"), st.sampled_from(["3.12", "3.13", "3.14", ""]), st.booleans()
-    ),
-    st.tuples(st.just("coverage"), st.just(""), st.just(value=False)),
-    st.tuples(st.just("run"), st.just(""), st.just(value=False)),
-)
-
-
-def _render(kind: str, version: str, *, guarded: bool) -> dict[str, object]:
-    """Return a fixture step for one drawn step description."""
-    if kind == "setup":
-        return _setup(version, **({"if": "always()"} if guarded else {}))
-    return _COVERAGE if kind == "coverage" else _RUN
-
-
-def _naive_setup_sources(jobs: list[list[tuple[str, str, bool]]]) -> list[str]:
-    """Return each call's setup source by the plainest possible reading."""
-    expected: list[str] = []
-    for steps in jobs:
-        on_path = ""
-        for kind, version, guarded in steps:
-            match kind:
-                case "setup":
-                    on_path = "" if guarded else version
-                case "coverage":
-                    expected.append(on_path)
-                case _:
-                    pass
-    return expected
-
-
-@given(jobs=st.lists(st.lists(_STEP, max_size=8), min_size=1, max_size=4))
-def test_the_setup_source_matches_a_naive_reading(
-    tmp_path_factory: pytest.TempPathFactory,
-    jobs: list[list[tuple[str, str, bool]]],
-) -> None:
-    """For any jobs, each call's setup source is its job's latest unguarded setup."""
-    rendered = {
-        f"job{index}": {"steps": [_render(k, v, guarded=g) for k, v, g in steps]}
-        for index, steps in enumerate(jobs)
-    }
-    workflow = _write(tmp_path_factory.mktemp("property"), {"jobs": rendered})
-
-    calls = _coverage_calls(workflow)
-
-    assert [call.sources["setup-python"] for call in calls] == _naive_setup_sources(
-        jobs
-    ), "the reading must match the naive model"
+    assert _verdict(call) == (
+        "undeclared" if not versions else "conflicting" if len(versions) > 1 else ""
+    ), "absence and disagreement fail; agreement passes"
