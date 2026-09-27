@@ -2080,6 +2080,63 @@ unmodified, and from a copy taken immediately before the mutation when it is
 not -- and either way the restore is verified by grepping for the fix markers,
 because a wrongly reverted file also shows a clean `git status`.
 
+#### D15: the CodeScene gate, and using the local CLI to avoid a second blind push
+
+**Decision: treat the hosted CodeScene failure as a real finding, fix it, and
+validate the fix locally rather than by pushing and waiting.**
+
+The seven deterministic gates were green on `2c29e27`, but the PR's hosted
+checks were not: `CodeScene Code Health Review (main)` failed with
+`Complex Method (cc = 9)` on
+`test_the_composition_root_binds_the_production_runner` -- a test added one
+commit earlier, in the same pass that fixed the lint failures. The quality gate
+was therefore doing its job: a change made to satisfy one gate had introduced a
+defect another gate measures.
+
+- **The offered remedy was wrong.** CodeScene's report carries a `Suppress`
+  link per violation, and suppressing a complexity finding in a test that was
+  only just written would have hidden a real smell rather than answered it. The
+  test did have two nested comprehensions and a compound `any(...)` doing the
+  AST walk; the fix was to extract `_partial_bindings` and reduce the test body
+  to `bound = ...get("run")` plus three plain assertions.
+- **A side benefit.** The rewritten form also gives a better failure message:
+  the old assertion said the runner binding was missing even when it was
+  present but bound to the wrong name, where the new one reports what was
+  actually bound.
+- **Validated locally, not by pushing.** `cs` (the CodeScene CLI, 1.0.33) is
+  installed, and `cs check` / `cs delta` reproduce the hosted gate. Scoring the
+  flagged revision gave **9.68 with `Complex Method (cc = 9)`** -- matching the
+  hosted report's 9.69 to rounding -- and the simplified version gives
+  **10.00**, with `cs delta origin/main` reporting no issues. Every file in the
+  change surface was then scored individually and all nine are at 10.00.
+- **Why this mattered here.** The previous candidate had been pushed before its
+  hosted state was known, and came back failing. Reading the equivalent signal
+  locally first turned a push-and-wait cycle into a check that takes seconds.
+  The `cs check`/`cs delta` pair is now the tool to reach for before pushing a
+  change that touches method structure; the hosted check remains the authority,
+  but it no longer has to be the first reader.
+
+#### Convergence state (2026-09-27 02:24 CEST, at c562f09)
+
+- **Head:** `c562f09`, pushed; local and remote agree.
+- **Deterministic gates:** all seven green on `c562f09`
+  (`/tmp/<gate>-c562f09-lading.out`), including all seven `make lint` stages --
+  the run that matters, because an earlier attempt aborted at ruff and left
+  interrogate, pylint, df12-pylint, ambrleaks and skylos unexercised.
+- **Hosted checks:** all passing. `CodeScene` passes at 10.00 on the new head;
+  `lint-test` passes; `CodeRabbit` reports `Review paused`; `mergeStateStatus`
+  moved `BLOCKED` → `UNSTABLE` → **`CLEAN`**.
+- **Review:** queued as `ca8fa765`, ETA ~50 minutes at the time of writing. The
+  earlier queued review was deliberately deleted before this refactor began, so
+  the shared quota was not spent reviewing a mid-refactor head.
+- **Still outstanding:** `reviewDecision` remains `CHANGES_REQUESTED`, anchored
+  to `8f44094`. Every check on the current head passes and every inline thread
+  has been answered, so the decision is stale rather than contradicted; it is
+  reconciled explicitly after the queued review reports, not assumed away. The
+  exact required-context list stays unread -- the branch-protection endpoint
+  returns 403 -- so the inference that this decision is the one blocker is
+  strong but not proven, and is recorded as such.
+
 ## Outcomes & retrospective
 
 Status: **COMPLETE.** All four milestones are closed. Two CodeRabbit passes
