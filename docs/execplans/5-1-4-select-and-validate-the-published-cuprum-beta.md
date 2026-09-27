@@ -2148,9 +2148,8 @@ good for the tree it was computed against.
   opposite -- Stage B says "Move `tests/e2e/test_upload_release_wheels_cli.py`
   onto the helper. The file gets shorter" -- so the growth was not a surprise
   failure to notice but a prediction that stopped holding. Four commits touched
-  the file; the crossing happened in `98f64d9`, which added the three span
-  tests (266 → 321 → 428 across the branch, not counting `98f64d9`'s own
-  earlier steps).
+  the file -- 308, 308, 321, 428 lines -- and the crossing happened in
+  `98f64d9`, which added the three span tests and took it from 321 to 428.
 - **Why it is a real breach and not a pre-existing one.** 29 tracked code files
   already exceed 400 lines on `main`, so the rule is broadly unenforced across
   the repository. That is not a defence: the plan cites `AGENTS-400` as one of
@@ -2168,7 +2167,7 @@ good for the tree it was computed against.
 
   | file                                           | lines | holds                             |
   | ---------------------------------------------- | ----- | --------------------------------- |
-  | `tests/e2e/test_upload_release_wheels_cli.py`  | 275   | the workflow contract             |
+  | `tests/e2e/test_upload_release_wheels_cli.py`  | 273   | the workflow contract             |
   | `tests/e2e/test_upload_release_wheels_span.py` | 140   | the span record                   |
   | `tests/e2e/helpers/wheel_upload.py`            | 68    | the shared run helper and builder |
   | `tests/e2e/conftest.py`                        | 176   | the shared `stub` fixture         |
@@ -2207,6 +2206,39 @@ good for the tree it was computed against.
   exact required-context list stays unread -- the branch-protection endpoint
   returns 403 -- so the inference that this decision is the one blocker is
   strong but not proven, and is recorded as such.
+
+#### Convergence state (2026-09-27, at `f91aab5`)
+
+- **Head:** `f91aab5`, pushed; local and remote agree
+  (`git ls-remote` returns `f91aab5109c78704d411ca5547d860d47cb3129a`).
+- **Two commits past the last state recorded above.** `e919a04` answers the
+  three warnings the pre-merge table still carried at `54bef8c` (user-facing
+  documentation, developer documentation, and the missing span snapshot).
+  `f91aab5` is the line-limit split recorded as D16.
+- **Deterministic gates:** all seven green at both contents
+  (`/tmp/<gate>-54bef8c-lading.out` and `/tmp/<gate>-split-lading.out`), both
+  with all seven `make lint` stages executed. `make test` reports 1223 passed /
+  30 skipped / 0 failed / 78 snapshots at both heads, which is what makes the
+  split provably a move rather than a rewrite.
+- **The three warnings were verified as real before being answered**, not
+  assumed stale: `pyproject.toml:19` does carry the pin in
+  `[project] dependencies`; the developers guide did say "three modules" and
+  mentioned neither `release_port` nor `release_span`; and
+  `test_release_span.py` had no snapshot while the plan's own
+  `Methods not used` declined one. That last sentence has been reversed in
+  place, because its premise ("the uploader's output format does not change")
+  was already false when written.
+- **Hosted checks:** green at `54bef8c`; at `f91aab5` the long-running checks
+  (`lint-test`, `CodeScene`) were still in flight when the follow-ups were
+  posted, and are monitored to completion before any approval request.
+- **Review:** `reviewDecision` is `APPROVED` at `f91aab5`. The stale
+  `CHANGES_REQUESTED` anchored to `8f44094` was discharged by read-back at
+  `6640921` and has not recurred.
+- **Follow-ups posted, no new review requested.** Comment `5856657962` answers
+  all three warnings with the commit and the evidence for each. Reply
+  `4115678170` on Codex's thread corrects the scope claim in the earlier reply,
+  which was true at `3d16be9` and false afterwards. Neither asks for a further
+  full review; both ask for confirmation of the specific disposition.
 
 #### The reply against `d5b22a9`, and what it concedes
 
