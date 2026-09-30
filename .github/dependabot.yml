@@ -2,6 +2,13 @@ version: 2
 updates:
   - package-ecosystem: "uv"
     directory: "/"
+    groups:
+      minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
@@ -16,12 +23,17 @@ updates:
       github-actions:
         patterns:
           - '*'
-    directory: "/"
+        update-types:
+          - 'minor'
+          - 'patch'
+    directories:
+      - "/"
+      - "/.github/actions/*"
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
       - "github-actions"
     schedule:
-      interval: "weekly"
+      interval: "daily"
     cooldown:
       default-days: 7
