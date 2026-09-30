@@ -19,8 +19,10 @@ import yaml
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 _MAKEUTIL_COMMAND: typ.Final = ("makeutil", "parse", "Makefile")
-_MAKEUTIL_REVISION: typ.Final = "29fc5a1634ffbaa18a773eed9dff1b2838a45d9c"
-_MAKEUTIL_TOOLCHAIN: typ.Final = "nightly-2026-05-28"
+_INSTALL_MAKEUTIL_ACTION: typ.Final = (
+    "leynos/shared-actions/.github/actions/install-makeutil"
+    "@d57cb19b82281236088108f2ffb7e13bc00fc2f8"
+)
 _SKYLOS_VERSION_TOKENS: typ.Final = ("4.33.2",)
 _SKYLOS_CLI_TOKENS: typ.Final = (
     "$(UV_ENV)",
@@ -82,25 +84,6 @@ _ENTRYPOINT_NAMES: typ.Final = frozenset({
     "lading.commands.publish_staging.prepare_workspace",
     "lading.commands.publish_staging._handle_termination.frame",
 })
-_MAKEUTIL_INSTALL_TOKENS: typ.Final = (
-    "rustup",
-    "toolchain",
-    "install",
-    "${MAKEUTIL_TOOLCHAIN}",
-    "--profile",
-    "minimal",
-    "RUSTFLAGS=-Zpolonius=next",
-    "cargo",
-    "+${MAKEUTIL_TOOLCHAIN}",
-    "install",
-    "--git",
-    "https://github.com/leynos/makeutil",
-    "--rev",
-    "${MAKEUTIL_REVISION}",
-    "--locked",
-    "--force",
-    "makeutil",
-)
 
 
 def _makefile_report() -> dict[str, object]:
@@ -210,14 +193,17 @@ def _sole_workflow_step(
     return matches[0]
 
 
-def _assert_makeutil_installation(command: object, *, contract: str) -> None:
-    """Assert that `command` installs the pinned Makeutil parser."""
-    assert isinstance(command, str), (
-        f"{contract} must provide a Makeutil installation shell command."
+def _assert_makeutil_installation(step: dict[str, object], *, contract: str) -> None:
+    """Assert that `step` runs the pinned prebuilt install action, defaults only.
+
+    A `run` key would mean a from-source install had crept back, and a `with`
+    key would move the version off the action's own default and digest table.
+    """
+    assert step.get("uses") == _INSTALL_MAKEUTIL_ACTION, (
+        f"{contract} must use the pinned install-makeutil action."
     )
-    assert (
-        tuple(shlex.split(command.replace("\\\n", ""))) == _MAKEUTIL_INSTALL_TOKENS
-    ), f"{contract} must pin the Makeutil installation command."
+    assert "run" not in step, f"{contract} must not also run an install command."
+    assert "with" not in step, f"{contract} must take the action's default version."
 
 
 def test_makefile_defines_the_strict_production_skylos_gate() -> None:
@@ -347,18 +333,16 @@ def test_full_suite_workflows_provision_pinned_makeutil() -> None:
     ):
         job = _workflow_job(workflow_path, job_name)
         environment = _mapping(
-            job.get("env"), subject=f"{workflow_path} {job_name} environment"
+            job.get("env", {}), subject=f"{workflow_path} {job_name} environment"
         )
-        assert environment.get("MAKEUTIL_REVISION") == _MAKEUTIL_REVISION, (
-            f"{workflow_path} {job_name} must pin the Makeutil revision."
+        assert "MAKEUTIL_REVISION" not in environment, (
+            f"{workflow_path} {job_name} must not carry a from-source Makeutil pin."
         )
-        assert environment.get("MAKEUTIL_TOOLCHAIN") == _MAKEUTIL_TOOLCHAIN, (
-            f"{workflow_path} {job_name} must pin the Makeutil nightly toolchain."
+        assert "MAKEUTIL_TOOLCHAIN" not in environment, (
+            f"{workflow_path} {job_name} must not carry a Makeutil nightly toolchain."
         )
-        parser_step = _sole_workflow_step(
-            workflow_path, job_name, "Install Makefile parser"
-        )
+        parser_step = _sole_workflow_step(workflow_path, job_name, "Install makeutil")
         _assert_makeutil_installation(
-            parser_step.get("run"),
+            parser_step,
             contract=f"{workflow_path} {job_name} Makeutil-install contract",
         )

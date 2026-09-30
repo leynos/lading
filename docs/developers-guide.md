@@ -205,15 +205,13 @@ Ruff and Skylos are provisioned in the recipe commands, not as Makefile
 prerequisites. Keep any future lint additions wired through Makefile
 prerequisites and command invocations, so local failures remain early and clear.
 
-The workflow-contract tests parse the Makefile with Makeutil. Bootstrap the
-pinned parser locally with:
-
-```bash
-rustup toolchain install nightly-2026-05-28
-RUSTFLAGS="-Zpolonius=next" cargo +nightly-2026-05-28 install \
-  --git https://github.com/leynos/makeutil \
-  --rev 29fc5a1634ffbaa18a773eed9dff1b2838a45d9c --locked --force makeutil
-```
+The workflow-contract tests parse the Makefile with Makeutil. CI installs it
+with the shared `install-makeutil` action, which downloads a prebuilt release
+and checks it against a pinned digest and the release's own `.sha256` file.
+Locally, download `makeutil-x86_64-unknown-linux-musl` (or the `aarch64` build)
+from the `v0.1.1` release at <https://github.com/leynos/makeutil/releases>,
+verify it against the matching `.sha256` file, and put it on `PATH` as
+`makeutil`.
 
 Ruff, Pylint, and Skylos policy live in `pyproject.toml`. The Ruff
 configuration enables preview rules, targets Python 3.13, imports the selected
