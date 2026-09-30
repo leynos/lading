@@ -206,6 +206,49 @@ def _assert_makeutil_installation(step: dict[str, object], *, contract: str) -> 
     assert "with" not in step, f"{contract} must take the action's default version."
 
 
+def _assert_makeutil_verification(
+    install_step: dict[str, object],
+    verify_step: dict[str, object],
+    *,
+    contract: str,
+) -> None:
+    """Assert the smoke step that proves the installed binary is usable.
+
+    The install step needs an id so the verify step can read the version the
+    action reports; the verify step must compare the binary's own version with
+    it and require a complete parse of the repository Makefile.
+    """
+    assert install_step.get("id") == "makeutil", f"{contract} install step needs id"
+    environment = _mapping(verify_step.get("env"), subject=f"{contract} environment")
+    assert environment.get("INSTALLED_VERSION") == (
+        "${{ steps.makeutil.outputs.version }}"
+    ), f"{contract} must read the version the install action reports."
+    script = verify_step.get("run")
+    assert isinstance(script, str), f"{contract} must run a verification script."
+    assert 'test "$(makeutil --version)" = "makeutil ${INSTALLED_VERSION}"' in script, (
+        f"{contract} must compare the binary's version with the installed one."
+    )
+    assert "makeutil parse Makefile" in script, (
+        f"{contract} must parse the repository Makefile."
+    )
+    assert '["parse"]["status"] == "complete"' in script, (
+        f"{contract} must require a complete parse."
+    )
+
+
+def _assert_verification_follows_install(workflow_path: str, job_name: str) -> None:
+    """Assert the verify step directly follows the install step."""
+    steps = _objects(
+        _workflow_job(workflow_path, job_name).get("steps"),
+        subject=f"{workflow_path} {job_name} steps",
+    )
+    names = [step.get("name") for step in steps]
+    position = names.index("Install makeutil")
+    assert names[position + 1] == "Verify makeutil", (
+        f"{workflow_path} {job_name} must verify makeutil right after installing it."
+    )
+
+
 def test_makefile_defines_the_strict_production_skylos_gate() -> None:
     """Keep the pinned Python 3.14 scan separate from its scan-only options."""
     test_prerequisites = _text_sequence(
@@ -346,3 +389,9 @@ def test_full_suite_workflows_provision_pinned_makeutil() -> None:
             parser_step,
             contract=f"{workflow_path} {job_name} Makeutil-install contract",
         )
+        _assert_makeutil_verification(
+            parser_step,
+            _sole_workflow_step(workflow_path, job_name, "Verify makeutil"),
+            contract=f"{workflow_path} {job_name} Makeutil-verify contract",
+        )
+        _assert_verification_follows_install(workflow_path, job_name)
