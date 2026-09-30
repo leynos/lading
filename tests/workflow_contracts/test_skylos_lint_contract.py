@@ -9,6 +9,7 @@ and recipe contracts rather than incidental formatting. Run this suite with:
 from __future__ import annotations
 
 import json
+import re
 import shlex
 import subprocess
 import tomllib
@@ -233,6 +234,9 @@ def _assert_makeutil_verification(
     )
     assert '["parse"]["status"] == "complete"' in script, (
         f"{contract} must require a complete parse."
+    )
+    assert not re.search(r"\d+\.\d+\.\d+", script), (
+        f"{contract} must compare versions, never name one."
     )
 
 
