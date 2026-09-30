@@ -175,10 +175,6 @@
 
 - Validate Markdown files using `make markdownlint`; this also runs the
   en-GB-oxendict spelling gate.
-- Enforce spelling with `make spelling`. It regenerates `typos.toml` from the
-  live shared dictionary and the `typos.local.toml` overlay on every run, so
-  `typos.toml` must not be drift checked in CI. Put narrow repository-specific
-  exceptions in `typos.local.toml`; never edit generated entries by hand.
 - Run `make fmt` after documentation changes to format Markdown and fix table
   markup.
 - Validate Mermaid diagrams in Markdown by running `make nixie`.
@@ -187,6 +183,22 @@
 - Tables and headings should not be wrapped.
 - Use dashes (`-`) for list bullets.
 - Use GitHub-flavoured Markdown footnotes (`[^1]`) for references and footnotes.
+
+<!-- typos-config-builder:agents-md:start -->
+
+## Spelling
+
+- `make spelling` runs the pinned `typos-config-builder gate`, which
+  regenerates `typos.toml` from the shared en-GB-oxendict dictionary and
+  `typos.local.toml`, then checks spelling and the shared phrase corrections.
+- `typos.toml` is generated: never edit it by hand. Put narrow
+  repository-specific exceptions in `typos.local.toml`, as exact or full-line
+  patterns rather than bare accepted words.
+- When `make spelling` changes `typos.toml`, commit the regenerated file. If
+  the change is unrelated to your work, commit it in a separate base pull
+  request and stack your branch on it, so each review diff stays focused.
+
+<!-- typos-config-builder:agents-md:end -->
 
 ## Project documentation
 
