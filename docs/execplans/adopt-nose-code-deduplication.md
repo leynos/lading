@@ -267,6 +267,32 @@ still called Skylos the final blocking check — gained a dated amendment. Main'
 commit touches neither `lading/` nor `scripts/`, so the adjudication below is
 unaffected.
 
+The branch was then rebased onto `origin/main` at `eecd39e`, which had advanced
+by a further eighteen commits. Three conflicts and one collision followed.
+
+- Main landed its own ADR-006 in [#285](https://github.com/leynos/lading/pull/285),
+  so this record was renumbered to ADR-007 and every local reference was
+  updated. The execplan's references to the upstream `episodic` ADR-021 were
+  deliberately left alone — those name another repository's record.
+- `ci.yml` conflicted because main's [#306](https://github.com/leynos/lading/pull/306)
+  removed the `MAKEUTIL_REVISION`/`MAKEUTIL_TOOLCHAIN` `env:` keys in favour of
+  the shared prebuilt installer action, and
+  `tests/workflow_contracts/test_skylos_lint_contract.py` now asserts their
+  absence. Only this branch's nose keys were kept.
+- `typos.toml` conflicted, and the branch's earlier regenerated-typos commit
+  became empty once main's own v0.1.3 builder bump
+  ([#307](https://github.com/leynos/lading/pull/307)) had landed. That the
+  commit was redundant rather than lost was verified, not assumed: regenerating
+  at the rebased head produces byte-identical output
+  (sha256 `acd0838c…`), so the post-turn hook's write-mode regeneration leaves
+  the tree clean.
+
+Two ADR-006 references survived that renumber by mistake — a broken relative
+link in ADR-003's amendment and a stale name in this plan — and were caught by
+a grep across the tree rather than by any gate. Markdownlint and the spelling
+gate do not resolve relative links, so a renumbering rename has no automated
+backstop in this repository.
+
 ### What shipped
 
 - The gate itself: `scripts/nose_detector.py` (detector execution),
@@ -304,16 +330,15 @@ repository-wide wildcard, and none was mass-generated.
 
 ### Validation actually run
 
-Run at `091b47a` on the rebased head, sequentially:
+Run at `8560757` on the rebased head, sequentially:
 
 | Gate                    | Result                                                         |
 | ----------------------- | -------------------------------------------------------------- |
-| `make check-fmt`        | pass — 222 Python files formatted, 26 Markdown files unchanged |
+| `make check-fmt`        | pass — 241 Python files formatted, 31 Markdown files unchanged |
 | `make lint`             | pass — all seven stages, exit 0                                |
 | `make typecheck`        | pass — `ty check --python-version 3.13`, "All checks passed!"  |
-| `make test`             | pass — 1322 passed, 29 skipped, 80 snapshots passed            |
-| `make spelling`         | pass                                                           |
-| `make markdownlint`     | pass — 26 files, 0 errors                                      |
+| `make test`             | pass — 1652 passed, 30 skipped, 82 snapshots passed            |
+| `make markdownlint`     | pass — 31 files, 0 errors                                      |
 | `make duplication-test` | pass — 140 passed, 3 snapshots passed                          |
 | `make nixie`            | pass — all diagrams validated                                  |
 
@@ -339,6 +364,11 @@ the duplication gate itself, reporting
   once the previous one is clean. Fixing Ruff exposed seven Pylint findings;
   fixing those exposed twenty-seven df12 findings. Gate the whole chain, not
   the first stage, before believing a change is lint-clean.
+- Renumbering an ADR is a rename with no automated backstop here. Markdownlint
+  checks syntax and the spelling gate checks words; neither resolves a relative
+  link, so a stale `006-adopt-nose-duplication-gate.md` path stays green while
+  pointing at a file the rename deleted. After any ADR renumber, grep for the
+  old number across the tree rather than trusting the gates.
 
 ## Context and orientation
 
