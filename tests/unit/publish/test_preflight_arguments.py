@@ -1,7 +1,5 @@
 """Unit tests for publish preflight argument helpers."""
 
-from __future__ import annotations
-
 import string
 import typing as typ
 from pathlib import Path
@@ -36,8 +34,12 @@ def test_build_test_arguments_does_not_mutate_base_list() -> None:
 
     result = publish_preflight._build_test_arguments(base, options)
 
-    assert result is not base
-    assert base == ["--workspace"]
+    assert result is not base, (
+        "the helper must return a new list rather than mutating the base in place"
+    )
+    assert base == ["--workspace"], (
+        "the caller's base argument list must be left untouched"
+    )
 
 
 def test_build_test_arguments_with_no_unit_tests_and_no_excludes() -> None:
@@ -47,8 +49,12 @@ def test_build_test_arguments_with_no_unit_tests_and_no_excludes() -> None:
 
     result = publish_preflight._build_test_arguments(base, options)
 
-    assert result is not base
-    assert result == ["--workspace"]
+    assert result is not base, (
+        "the helper must return a new list rather than mutating the base in place"
+    )
+    assert result == ["--workspace"], (
+        "with no options the base arguments must pass through unchanged"
+    )
 
 
 def test_build_test_arguments_appends_unit_test_flags_after_excludes() -> None:
@@ -60,8 +66,13 @@ def test_build_test_arguments_appends_unit_test_flags_after_excludes() -> None:
 
     result = publish_preflight._build_test_arguments(base, options)
 
-    assert result[1:5] == ["--exclude", "alpha", "--exclude", "beta"]
-    assert result[5:] == ["--lib", "--bins"]
+    assert result[1:5] == ["--exclude", "alpha", "--exclude", "beta"], (
+        "normalized excludes must be emitted as sorted --exclude pairs after "
+        "the base arguments"
+    )
+    assert result[5:] == ["--lib", "--bins"], (
+        "unit-test target flags must come after every --exclude pair"
+    )
 
 
 def test_build_test_arguments_ignores_blank_excludes() -> None:
@@ -71,7 +82,9 @@ def test_build_test_arguments_ignores_blank_excludes() -> None:
 
     result = publish_preflight._build_test_arguments(base, options)
 
-    assert "--exclude" not in result
+    assert "--exclude" not in result, (
+        "whitespace-only entries must not produce an --exclude flag"
+    )
 
 
 def test_build_test_arguments_skips_blank_entries_with_valid_names() -> None:
@@ -81,7 +94,9 @@ def test_build_test_arguments_skips_blank_entries_with_valid_names() -> None:
 
     result = publish_preflight._build_test_arguments(base, options)
 
-    assert result[-4:] == ["--exclude", "alpha", "--exclude", "beta"]
+    assert result[-4:] == ["--exclude", "alpha", "--exclude", "beta"], (
+        "only the meaningful crate names may produce --exclude flags"
+    )
 
 
 def test_normalize_test_excludes_sorts_and_deduplicates() -> None:
@@ -92,6 +107,9 @@ def test_normalize_test_excludes_sorts_and_deduplicates() -> None:
         "alpha",
         "beta",
         "gamma",
+    ), (
+        "normalization must strip whitespace, drop duplicates, and sort the "
+        "surviving names"
     )
 
 
@@ -99,7 +117,10 @@ def test_normalize_test_excludes_handles_empty_values() -> None:
     """Blank strings are ignored when normalizing test excludes."""
     entries = ("", " \t", "alpha", "", "beta")
 
-    assert publish_preflight._normalize_test_excludes(entries) == ("alpha", "beta")
+    assert publish_preflight._normalize_test_excludes(entries) == (
+        "alpha",
+        "beta",
+    ), "blank entries must be dropped from the normalized excludes"
 
 
 # ---------------------------------------------------------------------------
@@ -132,13 +153,22 @@ def test_preflight_argument_set_invariants(
     )
 
     for arguments in (check_args, test_args):
-        assert arguments[0] == "--workspace"
-        assert arguments[-1] == f"--target-dir={target_dir}"
-    assert "--all-targets" in check_args
-    assert ("--all-targets" in test_args) == (not unit_tests_only)
+        assert arguments[0] == "--workspace", (
+            "every composed cargo argument set must lead with --workspace"
+        )
+        assert arguments[-1] == f"--target-dir={target_dir}", (
+            "every composed cargo argument set must end with the supplied --target-dir"
+        )
+    assert "--all-targets" in check_args, (
+        "the check set must always include --all-targets"
+    )
+    assert ("--all-targets" in test_args) == (not unit_tests_only), (
+        "the test set must include --all-targets exactly when full test "
+        "targets are requested"
+    )
     assert (check_args, test_args) == publish_preflight._preflight_argument_sets(
         target_dir, unit_tests_only=unit_tests_only
-    )
+    ), "argument composition must be deterministic for identical inputs"
 
 
 @pytest.mark.parametrize("unit_tests_only", [True, False])
@@ -152,4 +182,6 @@ def test_preflight_argument_sets_snapshot(
         Path("/preflight/target"), unit_tests_only=unit_tests_only
     )
 
-    assert snapshot == {"check": check_args, "test": test_args}
+    assert snapshot == {"check": check_args, "test": test_args}, (
+        "the composed check and test argument tuples drifted from the recorded snapshot"
+    )

@@ -8,8 +8,6 @@ full, and a ``--keep-staging`` that does not reach ``PublishOptions`` either
 deletes a copy someone was debugging or retains one nobody asked for.
 """
 
-from __future__ import annotations
-
 import typing as typ
 
 import pytest
@@ -64,7 +62,7 @@ def test_main_installs_the_termination_cleanup(
 
     exit_code = cli.main(["publish", "--workspace-root", str(tmp_path)])
 
-    assert exit_code == 0
+    assert exit_code == 0, "a successful publish must exit with status zero"
     assert installed == [True], "lading.cli.main did not install the handler"
 
 
@@ -129,5 +127,10 @@ def test_keep_staging_resolves_to_the_cleanup_option(
     if case.argument is not None:
         arguments.append(case.argument)
 
-    assert cli.main(arguments) == 0
-    assert captured[-1].cleanup is case.expected_cleanup
+    assert cli.main(arguments) == 0, (
+        "resolving --keep-staging must not fail the publish command"
+    )
+    assert captured[-1].cleanup is case.expected_cleanup, (
+        "the CLI must compose PublishOptions.cleanup from the flag, its "
+        "environment variable, and their precedence"
+    )

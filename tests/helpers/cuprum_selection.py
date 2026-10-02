@@ -17,8 +17,6 @@ reader is reported against the reader rather than against whichever assertion
 it happened to break.
 """
 
-from __future__ import annotations
-
 import importlib.metadata
 import re
 import tomllib

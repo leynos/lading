@@ -5,21 +5,16 @@ ones that cross the command boundary: the argv the release actually runs, and
 the capture that carries ``gh``'s diagnostic back to its caller.
 """
 
-from __future__ import annotations
-
 import typing as typ
 
 import pytest
 
 from tests.helpers.script_imports import import_script_module
 
-try:
-    from cmd_mox import CmdMox
-except ModuleNotFoundError:  # pragma: no cover - runtime fallback
-    CmdMox = typ.Any  # type: ignore[assignment, misc]
-
 if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
     import types
+
+    from cmd_mox import CmdMox
 
 
 @pytest.fixture(name="release_gh")

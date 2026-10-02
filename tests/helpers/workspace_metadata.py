@@ -1,8 +1,11 @@
 """Helper utilities for workspace metadata tests."""
 
-from __future__ import annotations
-
-__all__ = ["ErrorScenario", "build_test_package", "create_test_manifest"]
+__all__ = [
+    "DependencyEntry",
+    "ErrorScenario",
+    "build_test_package",
+    "create_test_manifest",
+]
 
 import dataclasses as dc
 import textwrap

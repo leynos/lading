@@ -1,23 +1,17 @@
 """BDD steps for the cargo metadata wrapper."""
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import json
 import textwrap
 import typing as typ
 from pathlib import Path
 
+import pytest
+from cmd_mox import CmdMox
 from pytest_bdd import given, scenarios, then, when
 
-from lading.workspace import load_cargo_metadata, load_workspace
+from lading.workspace import WorkspaceGraph, load_cargo_metadata, load_workspace
 from tests.helpers.workspace_helpers import install_cargo_stub
-
-if typ.TYPE_CHECKING:
-    import pytest
-    from cmd_mox import CmdMox
-
-    from lading.workspace import WorkspaceGraph
 
 _FEATURES_DIR = Path(__file__).resolve().parent.parent / "features"
 
@@ -90,7 +84,9 @@ def then_metadata_contains_workspace(
     metadata_payload: cabc.Mapping[str, typ.Any], workspace_directory: Path
 ) -> None:
     """Assert that the workspace root was parsed from the JSON payload."""
-    assert metadata_payload["workspace_root"] == str(workspace_directory)
+    assert metadata_payload["workspace_root"] == str(workspace_directory), (
+        "the parsed payload must report the workspace root cargo returned"
+    )
 
 
 @given(
@@ -225,10 +221,20 @@ def then_workspace_model_reflects_metadata(
     workspace_metadata_payload: dict[str, typ.Any],
 ) -> None:
     """Verify the workspace graph contains the stubbed crate."""
-    assert workspace_model.workspace_root == crate_manifest.parent.parent.resolve()
+    assert workspace_model.workspace_root == crate_manifest.parent.parent.resolve(), (
+        "the workspace root must resolve to the crate's grandparent directory"
+    )
     expected_name = workspace_metadata_payload["packages"][0]["name"]
     crate = workspace_model.crates[0]
-    assert crate.name == expected_name
-    assert crate.readme_is_workspace is True
-    assert crate.manifest_path == crate_manifest.resolve()
-    assert crate.publish is True
+    assert crate.name == expected_name, (
+        "the crate name must be taken from the cargo metadata payload"
+    )
+    assert crate.readme_is_workspace is True, (
+        "readme.workspace = true must mark the crate as workspace-README owned"
+    )
+    assert crate.manifest_path == crate_manifest.resolve(), (
+        "the crate must retain the resolved manifest path cargo reported"
+    )
+    assert crate.publish is True, (
+        "a crates-io publish list must mark the crate as publishable"
+    )

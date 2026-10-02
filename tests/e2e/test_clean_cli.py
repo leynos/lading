@@ -9,8 +9,6 @@ filesystem, because a command that deletes is only described truthfully by
 what is left on disk afterwards.
 """
 
-from __future__ import annotations
-
 import subprocess
 import sys
 from pathlib import Path

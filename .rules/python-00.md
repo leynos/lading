@@ -1,4 +1,4 @@
-# Python 3.13 Code Style Guidelines (with Ruff, Pyright, and pytest)
+# Python 3.14 Code Style Guidelines (with Ruff, ty, and pytest)
 
 ## Naming Conventions
 
@@ -15,7 +15,7 @@
 ### Python Typing Practices
 
 - **Use typing everywhere.** Enable and maintain full static type coverage. Use
-  Pyright for type-checking.
+  ty for type-checking.
 - **Use `TypedDict` or `dataclass` for structured data where appropriate.** For
   internal-only usage, prefer `@dataclass(slots=True)`.
 - **Avoid `Any`.** Prefer precise types (`TypeVar`, `Protocol`, `Literal`,
@@ -31,9 +31,12 @@
 
 - **Enable Ruff.** Use Ruff to lint for performance, security, consistency, and
   style issues. Enable fixers and formatters.
-- Use `pyproject.toml` to configure tools like Ruff, Pyright, and Pytest.
-- **Enforce `strict` in Pyright.** Treat all Pyright warnings as CI errors. Use
-  `# pyright: ignore` sparingly and with explanation.
+- Use `pyproject.toml` to configure tools like Ruff, ty, and Pytest.
+- **Fail the check on ty's error-level diagnostics.** `make typecheck` runs
+  `ty check` over every gated source. ty has no `strict` mode; rule severity is
+  set individually with `--warn` and `--error`, and only error-level
+  diagnostics fail the command unless `--error-on-warning` is passed. Suppress
+  with a rule-specific `# ty: ignore[rule]` sparingly and with explanation.
 - **Avoid side effects at import time.** Modules should not modify global state
   or perform actions on import.
 - **Treat `.env` as local-only.** Do not commit `.env` files. Load them in
@@ -133,6 +136,6 @@ def test_login_failure():
 
 ______________________________________________________________________
 
-This style guide aims to foster clean, consistent, and maintainable Python 3.13
+This style guide aims to foster clean, consistent, and maintainable Python 3.14
 code with modern tooling. The priority is correctness, clarity, and developer
 empathy.

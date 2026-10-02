@@ -1,7 +1,5 @@
 """TOML manipulation utilities for version bumping."""
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import os
 import re

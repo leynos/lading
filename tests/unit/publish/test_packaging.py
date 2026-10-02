@@ -37,8 +37,6 @@ Coverage
 - Exact error-message formatting locked in via syrupy snapshot assertions.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import logging
 import shutil
@@ -52,6 +50,7 @@ if typ.TYPE_CHECKING:
 import pytest
 
 from lading.commands import publish, publish_pipeline, publish_plan, publish_staging
+from tests.helpers.path_normalization import normalized
 
 from .conftest import (
     CallTrackingRunner,
@@ -120,10 +119,16 @@ def _assert_packaging_failure_message_contains(
         )
 
     message = str(excinfo.value)
-    assert "cargo package failed for crate alpha" in message
-    assert expected_in_message in message
+    assert "cargo package failed for crate alpha" in message, (
+        "the failure must identify the cargo package command and crate alpha"
+    )
+    assert expected_in_message in message, (
+        "the failure must surface the expected runner output"
+    )
     if not_expected_in_message is not None:
-        assert not_expected_in_message not in message
+        assert not_expected_in_message not in message, (
+            "the failure must omit the output that is not expected"
+        )
 
 
 def test_package_publishable_crates_runs_in_plan_order(
@@ -160,7 +165,7 @@ def test_package_publishable_crates_runs_in_plan_order(
         "Successfully packaged crate beta (2/3) in 0.0s",
         "Running cargo package for crate gamma (3/3)",
         "Successfully packaged crate gamma (3/3) in 0.0s",
-    ]
+    ], "the progress log must report each crate in plan order"
 
 
 @pytest.mark.parametrize(
@@ -201,7 +206,10 @@ def test_single_crate_helper_invokes_correct_cargo_command(
     )
 
     expected_root = staging_root / crate.root_path.relative_to(plan.workspace_root)
-    assert runner.calls == [(expected_cmd, expected_root)]
+    assert runner.calls == [(expected_cmd, expected_root)], (
+        "the helper must invoke the expected cargo subcommand "
+        "in the crate's staging root"
+    )
 
 
 @pytest.mark.parametrize(
@@ -277,6 +285,7 @@ def test_package_publishable_crates_stops_on_failure(
         *,
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
         calls.append(" ".join(command))
         return failing_runner(command, cwd=cwd, env=env)
@@ -291,9 +300,16 @@ def test_package_publishable_crates_stops_on_failure(
             runner=tracked_runner,
         )
 
-    assert calls == ["cargo package --allow-dirty"]
-    assert "cargo package failed for crate alpha" in str(excinfo.value)
-    assert "packaging failed" in str(excinfo.value)
+    assert calls == ["cargo package --allow-dirty"], (
+        "packaging must stop after the first failure instead of "
+        "continuing through the plan"
+    )
+    assert "cargo package failed for crate alpha" in str(excinfo.value), (
+        "the failure must identify the crate whose packaging failed"
+    )
+    assert "packaging failed" in str(excinfo.value), (
+        "the failure must include the runner's error output"
+    )
 
 
 @pytest.mark.parametrize(
@@ -383,9 +399,13 @@ def test_publish_crates_run_in_order_for_execution_mode(
         staging_root / crate.root_path.relative_to(plan.workspace_root)
         for crate in plan.publishable
     ]
-    assert runner.calls == [(case.command, root) for root in expected_roots]
+    assert runner.calls == [(case.command, root) for root in expected_roots], (
+        "cargo publish must run once per publishable crate in plan order"
+    )
     if case.expected_log_message is not None:
-        assert any(case.expected_log_message in message for message in caplog.messages)
+        assert any(
+            case.expected_log_message in message for message in caplog.messages
+        ), "the dry-run log must mention the cargo publish invocation"
 
 
 def test_publish_crate_continues_when_version_already_uploaded(
@@ -403,8 +423,9 @@ def test_publish_crate_continues_when_version_already_uploaded(
         *,
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
-        del command, cwd, env
+        del command, cwd, env, echo_stdout
         return 101, "", "error: crate version `alpha v0.1.0` is already uploaded"
 
     state = publish_pipeline._PublicationPipelineState(
@@ -419,7 +440,9 @@ def test_publish_crate_continues_when_version_already_uploaded(
         runner=already_uploaded_runner,
     )
 
-    assert any("already published" in message for message in caplog.messages)
+    assert any("already published" in message for message in caplog.messages), (
+        "an already-uploaded version must log an already-published warning"
+    )
 
 
 @pytest.mark.parametrize(
@@ -448,8 +471,9 @@ def test_publish_crates_continue_when_version_already_uploaded(
         *,
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
-        del env
+        del env, echo_stdout
         crate_name = "" if cwd is None else cwd.name
         calls.append(crate_name)
         if crate_name == "alpha":
@@ -469,8 +493,12 @@ def test_publish_crates_continue_when_version_already_uploaded(
         runner=runner,
     )
 
-    assert calls == ["alpha", "beta"]
-    assert any("already published" in message for message in caplog.messages)
+    assert calls == ["alpha", "beta"], (
+        "publication must continue past the already-uploaded alpha to beta"
+    )
+    assert any("already published" in message for message in caplog.messages), (
+        "the skipped crate must log an already-published warning"
+    )
 
 
 def test_execute_live_publication_pipeline_interleaves_package_and_publish(
@@ -499,13 +527,16 @@ def test_execute_live_publication_pipeline_interleaves_package_and_publish(
             (("cargo", "publish", "--allow-dirty"), crate_root),
         ])
 
-    assert runner.calls == expected_calls
+    assert runner.calls == expected_calls, (
+        "each crate must be packaged immediately before it is published"
+    )
 
 
 def test_execute_live_publication_pipeline_stops_after_partial_publish(
     publish_plan_and_prep: tuple[
         publish_plan.PublishPlan, publish_staging.PublishPreparation, Path
     ],
+    snapshot: SnapshotAssertion,
 ) -> None:
     """A later live failure leaves earlier publish attempts completed."""
     plan, preparation, staging_root = publish_plan_and_prep
@@ -519,8 +550,9 @@ def test_execute_live_publication_pipeline_stops_after_partial_publish(
         *,
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
-        del env
+        del env, echo_stdout
         normalized = tuple(command)
         calls.append((normalized, cwd))
         if normalized[:2] == ("cargo", "package") and cwd == beta_root:
@@ -537,14 +569,16 @@ def test_execute_live_publication_pipeline_stops_after_partial_publish(
             runner=runner,
         )
 
-    alpha_root = staging_root / plan.publishable[0].root_path.relative_to(
-        plan.workspace_root
-    )
-    assert calls == [
-        (("cargo", "package", "--allow-dirty"), alpha_root),
-        (("cargo", "publish", "--allow-dirty"), alpha_root),
-        (("cargo", "package", "--allow-dirty"), beta_root),
+    recorded = [
+        (command, normalized(str(root), staging_root, placeholder="<staging>"))
+        for command, root in calls
     ]
+    assert recorded == snapshot(name="calls"), (
+        "the live pipeline must package and publish alpha before beta's failure"
+    )
+    assert calls[-1] == (("cargo", "package", "--allow-dirty"), beta_root), (
+        "the aborted pipeline must stop on beta's package step"
+    )
 
 
 def test_execute_live_publication_pipeline_wraps_preparation_errors(
@@ -552,6 +586,7 @@ def test_execute_live_publication_pipeline_wraps_preparation_errors(
         publish_plan.PublishPlan, publish_staging.PublishPreparation, Path
     ],
     caplog: pytest.LogCaptureFixture,
+    snapshot: SnapshotAssertion,
 ) -> None:
     """Preparation failures surface as ``PublishPreflightError`` for the caller."""
     caplog.set_level(logging.ERROR, logger=publish_pipeline.LOGGER.name)
@@ -574,22 +609,22 @@ def test_execute_live_publication_pipeline_wraps_preparation_errors(
             runner=runner,
         )
 
-    assert isinstance(excinfo.value.__cause__, publish_staging.PublishPreparationError)
-    assert str(beta_root) in str(excinfo.value)
-    alpha_root = staging_root / plan.publishable[0].root_path.relative_to(
-        plan.workspace_root
+    assert isinstance(
+        excinfo.value.__cause__, publish_staging.PublishPreparationError
+    ), "a preparation failure must be wrapped as a preflight error cause"
+    assert str(beta_root) in str(excinfo.value), (
+        "the wrapped error must name the crate root that failed to resolve"
     )
-    assert runner.calls == [
-        (("cargo", "package", "--allow-dirty"), alpha_root),
-        (("cargo", "publish", "--allow-dirty"), alpha_root),
-    ], (
-        "expected alpha to be packaged and published "
-        "(cargo package + cargo publish) in alpha_root before beta "
-        f"preparation aborted; alpha_root={alpha_root!s}, calls={runner.calls!r}"
+    recorded = [
+        (command, normalized(str(root), staging_root, placeholder="<staging>"))
+        for command, root in runner.calls
+    ]
+    assert recorded == snapshot(name="calls"), (
+        "expected alpha to be packaged and published before beta preparation aborted"
     )
     assert any(
         "Live pipeline: aborted on crate beta" in message for message in caplog.messages
-    )
+    ), "the abort must be logged against the crate that failed"
 
 
 def test_publish_crates_raise_on_failure(
@@ -612,8 +647,12 @@ def test_publish_crates_raise_on_failure(
         )
 
     message = str(excinfo.value)
-    assert "cargo publish failed for crate" in message
-    assert "network offline" in message
+    assert "cargo publish failed for crate" in message, (
+        "the failure must identify the cargo publish command and crate"
+    )
+    assert "network offline" in message, (
+        "the failure must include the runner's error output"
+    )
 
 
 @pytest.mark.parametrize(
@@ -661,4 +700,6 @@ def test_crate_helper_error_message_snapshot(
             runner=make_failing_runner(stdout="", stderr=case.stderr_text),
         )
 
-    assert str(excinfo.value) == snapshot()
+    assert str(excinfo.value) == snapshot(), (
+        "the helper's error message must match the locked snapshot"
+    )

@@ -14,8 +14,6 @@ resolve_lockfile_paths(workspace_root, ("fixtures/example/Cargo.toml",))
 ```
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 from pathlib import Path
 

@@ -6,8 +6,6 @@ and recipe contracts rather than incidental formatting. Run this suite with:
     uv run pytest tests/workflow_contracts/test_skylos_lint_contract.py
 """
 
-from __future__ import annotations
-
 import json
 import re
 import shlex
@@ -31,7 +29,7 @@ _SKYLOS_CLI_TOKENS: typ.Final = (
     "tool",
     "run",
     "--python",
-    "3.14",
+    "$(PYTHON_BASELINE)",
     "--from",
     "skylos==$(SKYLOS_VERSION)",
     "skylos",
@@ -254,7 +252,7 @@ def _assert_verification_follows_install(workflow_path: str, job_name: str) -> N
 
 
 def test_makefile_defines_the_strict_production_skylos_gate() -> None:
-    """Keep the pinned Python 3.14 scan separate from its scan-only options."""
+    """Keep the pinned baseline scan separate from its scan-only options."""
     test_prerequisites = _text_sequence(
         _sole_recipe_rule("test").get("prerequisites"),
         subject="test target prerequisites",
@@ -266,7 +264,7 @@ def test_makefile_defines_the_strict_production_skylos_gate() -> None:
         "Skylos version must pin 4.33.2."
     )
     assert _variable_tokens("SKYLOS_CLI") == _SKYLOS_CLI_TOKENS, (
-        "Skylos CLI must run the pinned tool through Python 3.14."
+        "Skylos CLI must run the pinned tool through the Python baseline."
     )
     assert _variable_tokens("SKYLOS") == _SKYLOS_SCAN_TOKENS, (
         "Skylos scan macro must add only the configuration file."

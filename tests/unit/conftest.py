@@ -6,8 +6,6 @@ Publish tests rely on the workspace/config factory fixtures and the
 ``_LOCKFILE_STUB_MODULES``.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import dataclasses as dc
 import typing as typ
@@ -17,9 +15,8 @@ import tomlkit
 
 from lading import config as config_module
 from lading.commands import bump, publish, publish_preflight
+from lading.commands.publish_preflight import _run_preflight_checks as _real_preflight
 from lading.workspace import WorkspaceCrate, WorkspaceDependency, WorkspaceGraph
-
-_ORIGINAL_PREFLIGHT = publish_preflight._run_preflight_checks
 
 # These modules drive ``bump.run`` to exercise manifest updates, documentation
 # rewriting, and the rebuild_lockfiles resolution logic -- none of which need
@@ -48,13 +45,43 @@ class _CrateSpec:
     readme_workspace: bool = False
 
 
+class _CrateFactory(typ.Protocol):
+    """Materialise a temporary workspace crate.
+
+    A `Callable` alias cannot describe this factory: callers may omit the
+    spec entirely, and a `Callable[[Path, str, _CrateSpec | None], ...]`
+    shorthand declares all three parameters required.
+    """
+
+    def __call__(
+        self,
+        root: Path,
+        name: str,
+        spec: _CrateSpec | None = None,
+    ) -> WorkspaceCrate:
+        """Write the named crate's manifest beneath *root* and return it."""
+        ...
+
+
+class _WorkspaceFactory(typ.Protocol):
+    """Assemble a workspace graph from zero or more crates.
+
+    The factory is variadic -- it materialises a default crate when called with
+    none -- so a fixed-arity `Callable` alias misstates the contract.
+    """
+
+    def __call__(self, root: Path, *crates: WorkspaceCrate) -> WorkspaceGraph:
+        """Return a graph over *crates* rooted at *root*."""
+        ...
+
+
 @dc.dataclass(frozen=True, slots=True)
 class PublishFixtures:
     """Bundle reusable publish helpers to trim fixture fan-out."""
 
     tmp_path: Path
-    make_crate: cabc.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate]
-    make_workspace: cabc.Callable[[Path, WorkspaceCrate], WorkspaceGraph]
+    make_crate: _CrateFactory
+    make_workspace: _WorkspaceFactory
     make_config: cabc.Callable[..., config_module.LadingConfig]
     make_dependency: cabc.Callable[[str], WorkspaceDependency]
     publish_options: publish.PublishOptions
@@ -114,7 +141,7 @@ def enable_publish_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         publish_preflight,
         "_run_preflight_checks",
-        _ORIGINAL_PREFLIGHT,
+        _real_preflight,
     )
 
 
@@ -186,9 +213,12 @@ def make_config() -> cabc.Callable[..., config_module.LadingConfig]:
         *,
         preflight_test_exclude: tuple[str, ...] | None = None,
         preflight_unit_tests_only: bool = False,
-        **overrides: object,
+        exclude: tuple[str, ...] = (),
+        order: tuple[str, ...] = (),
     ) -> config_module.LadingConfig:
-        publish_table = config_module.PublishConfig(strip_patches="all", **overrides)
+        publish_table = config_module.PublishConfig(
+            strip_patches="all", exclude=exclude, order=order
+        )
         preflight_config = config_module.PreflightConfig(
             test_exclude=()
             if preflight_test_exclude is None
@@ -204,12 +234,12 @@ def make_config() -> cabc.Callable[..., config_module.LadingConfig]:
 
 
 @pytest.fixture
-def make_crate() -> cabc.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate]:
+def make_crate() -> _CrateFactory:
     """Return a factory that materialises temporary workspace crates.
 
     Returns
     -------
-    Callable[[Path, str, _CrateSpec | None], WorkspaceCrate]
+    _CrateFactory
         A factory that writes crate manifests and returns crate records.
 
     Examples
@@ -256,18 +286,18 @@ def make_crate() -> cabc.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate
 
 @pytest.fixture
 def make_workspace(
-    make_crate: cabc.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
-) -> cabc.Callable[[Path, WorkspaceCrate], WorkspaceGraph]:
+    make_crate: _CrateFactory,
+) -> _WorkspaceFactory:
     """Return a factory that assembles workspace graphs for tests.
 
     Parameters
     ----------
-    make_crate : Callable[[Path, str, _CrateSpec | None], WorkspaceCrate]
+    make_crate : _CrateFactory
         Factory fixture used to materialise the crates within each graph.
 
     Returns
     -------
-    Callable[[Path, WorkspaceCrate], WorkspaceGraph]
+    _WorkspaceFactory
         A factory that builds workspace graphs from crates.
 
     Examples

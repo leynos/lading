@@ -1,7 +1,5 @@
 """Property tests for publish staging path safety."""
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import shutil
 import typing as typ
@@ -12,9 +10,7 @@ from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 from lading.commands import publish, publish_staging
-
-if typ.TYPE_CHECKING:
-    from tests.unit.conftest import PreparationFixtures, PrepareWorkspaceFixtures
+from tests.unit.conftest import PreparationFixtures, PrepareWorkspaceFixtures
 
 _SAFE_PATH_COMPONENT = st.text(
     alphabet="abcdefghijklmnopqrstuvwxyz0123456789",
@@ -129,7 +125,9 @@ def test_prepare_workspace_cleanup_scopes_generated_caller_content(
     preparation = publish_staging.prepare_workspace(plan, options=options)
     generated_build_directory = preparation.staging_root.parent
 
-    assert len(registered) == 1
+    assert len(registered) == 1, (
+        "preparing the workspace must register exactly one cleanup callback"
+    )
     registered[0]()
 
     assert not preparation.staging_root.exists(), (

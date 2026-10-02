@@ -1,7 +1,5 @@
 """Integration tests for the injected LockfileRepository port in :mod:`lading.commands.bump`."""  # ruff: ignore[line-too-long] fixed one-line module docstring; wrapping it trips pydocstyle D205/D209
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import pathlib
 
@@ -51,9 +49,15 @@ def test_run_uses_injected_lockfile_repository(tmp_path: pathlib.Path) -> None:
         ),
     )
 
-    assert repository.regenerated == [(tmp_path.resolve(), ())]
-    assert repository.resolved == []
-    assert "Cargo.lock (lockfile)" in message
+    assert repository.regenerated == [(tmp_path.resolve(), ())], (
+        "a real bump must regenerate lockfiles through the repository port"
+    )
+    assert not repository.resolved, (
+        "a real bump must not resolve lockfile paths without regenerating"
+    )
+    assert "Cargo.lock (lockfile)" in message, (
+        "the bump summary must report the regenerated lockfile"
+    )
 
 
 def test_dry_run_projects_through_lockfile_repository(
@@ -74,5 +78,7 @@ def test_dry_run_projects_through_lockfile_repository(
         ),
     )
 
-    assert repository.resolved == [(tmp_path.resolve(), ())]
-    assert repository.regenerated == []
+    assert repository.resolved == [(tmp_path.resolve(), ())], (
+        "a dry run must project lockfile paths through the repository port"
+    )
+    assert not repository.regenerated, "a dry run must not regenerate any lockfiles"

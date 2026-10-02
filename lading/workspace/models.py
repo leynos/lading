@@ -1,7 +1,5 @@
 """Workspace graph models and builders for :mod:`lading`."""
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import dataclasses as dc
 import heapq

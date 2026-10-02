@@ -16,8 +16,6 @@ the same calls through the cmd-mox adapter in
 :mod:`lading.testing.cmd_mox_runner` without touching the call sites.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import contextlib
 import contextvars

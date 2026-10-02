@@ -37,8 +37,8 @@ published-beta validation has been completed by these documentation changes.
   the GitHub `main` commit matched the sibling checkout during inspection.
 - The prospective release name is supplied by the release assumption. Cuprum's
   source metadata still says `0.1.0`; no published beta artefact was tested.
-- Runtime probes used Python 3.13 on Linux, importing the sibling source tree
-  through `uv run --no-project --python 3.13 python`. They exercise the Python
+- Runtime probes used Python 3.14 on Linux, importing the sibling source tree
+  through `uv run --no-project --python 3.14 python`. They exercise the Python
   execution path, not a newly built native wheel or a merged PR combination.
 - All 16 open cuprum PRs were inventoried through GitHub. The public API patches
   of the three relevant feature PRs were inspected as well as their
@@ -187,7 +187,7 @@ expose a raw `.buffer` that lets cuprum bypass the wrapper.
 
 ### 3.4. Publication and integration gates remain outstanding
 
-Python compatibility is not a blocker: lading requires Python 3.13 or newer;
+Python compatibility is not a blocker: lading requires Python 3.14 or newer;
 cuprum requires 3.12 or newer. Lading currently locks cuprum 0.1.0, however.
 The beta must be explicitly selected, for example with a trial pin to
 `cuprum==0.2.0b1`, and the lockfile regenerated. Merely retaining

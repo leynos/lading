@@ -1,7 +1,5 @@
 """Tests for cmd-mox command runner integration paths."""
 
-from __future__ import annotations
-
 import logging
 import math
 import string
@@ -41,7 +39,9 @@ def test_resolve_cmd_mox_timeout_accepts_valid(
     raw: str | None, expected: float
 ) -> None:
     """A missing or finite positive value resolves to a usable timeout."""
-    assert cmd_mox_runner._resolve_cmd_mox_timeout(raw) == expected
+    assert cmd_mox_runner._resolve_cmd_mox_timeout(raw) == expected, (
+        "a missing or finite positive timeout must resolve to the expected value"
+    )
 
 
 @pytest.mark.parametrize(
@@ -76,20 +76,26 @@ def test_resolve_cmd_mox_timeout_rejects_with_canonical_message(
         pytest.raises(cmd_mox_runner.CmdMoxError) as excinfo,
     ):
         cmd_mox_runner._resolve_cmd_mox_timeout(raw)
-    assert str(excinfo.value) == expected_message
+    assert str(excinfo.value) == expected_message, (
+        "each invalid input class must raise its own canonical message"
+    )
     assert [
         record
         for record in caplog.records
         if record.levelno == logging.WARNING
         and "CMOX_IPC_TIMEOUT" in record.getMessage()
         and repr(raw) in record.getMessage()
-    ]
+    ], "a diagnostic warning naming the rejected raw value must be logged"
 
 
 def test_ipc_timeout_messages_are_stable(snapshot: SnapshotAssertion) -> None:
     """The canonical IPC-timeout messages change only deliberately."""
-    assert snapshot == cmd_mox_runner.INVALID_IPC_TIMEOUT_MESSAGE
-    assert snapshot == cmd_mox_runner.NON_POSITIVE_IPC_TIMEOUT_MESSAGE
+    assert snapshot == cmd_mox_runner.INVALID_IPC_TIMEOUT_MESSAGE, (
+        "the invalid-timeout message must match its committed snapshot"
+    )
+    assert snapshot == cmd_mox_runner.NON_POSITIVE_IPC_TIMEOUT_MESSAGE, (
+        "the non-positive-timeout message must match its committed snapshot"
+    )
 
 
 class _TimeoutCase(typ.NamedTuple):
@@ -141,12 +147,16 @@ def test_resolve_cmd_mox_timeout_classes(case: _TimeoutCase) -> None:
     """
     if case.raises_message is None:
         resolved = cmd_mox_runner._resolve_cmd_mox_timeout(case.raw)
-        assert resolved == case.resolves_to
+        assert resolved == case.resolves_to, (
+            "a valid timeout input must resolve to the value it declares"
+        )
         return
 
     with pytest.raises(cmd_mox_runner.CmdMoxError) as excinfo:
         cmd_mox_runner._resolve_cmd_mox_timeout(case.raw)
-    assert str(excinfo.value) == case.raises_message
+    assert str(excinfo.value) == case.raises_message, (
+        "an invalid timeout input must raise the message its case declares"
+    )
 
 
 @given(value=st.one_of(st.none(), st.floats(), st.text(max_size=12)))
@@ -162,8 +172,10 @@ def test_resolve_cmd_mox_timeout_is_total(value: float | str | None) -> None:
         resolved = cmd_mox_runner._resolve_cmd_mox_timeout(raw)
     except cmd_mox_runner.CmdMoxError:
         return
-    assert math.isfinite(resolved)
-    assert resolved > 0
+    assert math.isfinite(resolved), (
+        "a resolved timeout must be finite, never NaN or infinite"
+    )
+    assert resolved > 0, "a resolved timeout must be strictly positive"
 
 
 def test_cmd_mox_runner_executes_via_ipc(
@@ -207,11 +219,21 @@ def test_cmd_mox_runner_executes_via_ipc(
         cwd=tmp_path / "workspace",
     )
 
-    assert exit_code == 0
-    assert stdout == "{}"
-    assert stderr == ""
-    assert ipc.last_invocation is not None
-    assert ipc.last_invocation.command == "cargo"
-    assert ipc.last_invocation.args == ["metadata", "--format-version", "1"]
-    assert ipc.last_invocation.env["PWD"] == str(tmp_path / "workspace")
-    assert ipc.timeout == 1.5
+    assert exit_code == 0, "a successful stub invocation must exit zero"
+    assert stdout == "{}", "the server's stdout must be returned to the caller"
+    assert not stderr, "a successful stub invocation must produce no stderr"
+    assert ipc.last_invocation is not None, (
+        "the runner must have invoked the IPC server once"
+    )
+    assert ipc.last_invocation.command == "cargo", (
+        "the program name must be forwarded to the IPC server"
+    )
+    assert ipc.last_invocation.args == ["metadata", "--format-version", "1"], (
+        "the program arguments must be forwarded to the IPC server in order"
+    )
+    assert ipc.last_invocation.env["PWD"] == str(tmp_path / "workspace"), (
+        "the runner must forward the requested working directory as PWD"
+    )
+    assert ipc.timeout == 1.5, (
+        "the CMOX_IPC_TIMEOUT value must be parsed and passed to the server"
+    )

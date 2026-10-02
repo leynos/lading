@@ -1,7 +1,5 @@
 """Tests for merging configured and discovered lockfile manifests."""
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import dataclasses as dc
 import tempfile
@@ -37,8 +35,11 @@ class _RecordingRunner:
         command: cabc.Sequence[str],
         *,
         cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
         """Record one command invocation."""
+        del env, echo_stdout
         self.invocations.append(_Invocation(command=tuple(command), cwd=cwd))
         return self.result
 

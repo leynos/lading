@@ -14,8 +14,6 @@ pin (the workflow path and a full 40-hex commit SHA) rather than the
 specific commit.
 """
 
-from __future__ import annotations
-
 import re
 import typing as typ
 from pathlib import Path
@@ -72,7 +70,9 @@ def _mutation_job(workflow: dict[str, object]) -> dict[str, object]:
     assert list(jobs) == ["mutation"], (
         f"expected a single job named 'mutation', found {sorted(jobs)}"
     )
-    return typ.cast("dict[str, object]", jobs["mutation"])
+    job = jobs.get("mutation")
+    assert isinstance(job, dict), "the workflow must declare a 'mutation' job"
+    return typ.cast("dict[str, object]", job)
 
 
 def test_uses_reference_is_pinned_to_a_commit_sha() -> None:

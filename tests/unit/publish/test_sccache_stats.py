@@ -6,20 +6,22 @@ runner, and one query through the production subprocess runner against a stub
 ``sccache`` script on ``PATH``.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import dataclasses as dc
 import json
 import os
 import stat
 import sys
+import typing as typ
 from pathlib import Path
 
 import pytest
 
 from lading.commands import publish_sccache_stats as stats
 from lading.runtime import CommandSpawnError, subprocess_runner
+
+if typ.TYPE_CHECKING:
+    from syrupy.assertion import SnapshotAssertion
 
 _DATA_DIR = Path(__file__).parent / "data"
 
@@ -132,7 +134,7 @@ def test_parse_counters_tolerates_missing_or_malformed_keys(
     )
 
 
-def test_counters_subtraction_is_field_wise() -> None:
+def test_counters_subtraction_is_field_wise(snapshot: SnapshotAssertion) -> None:
     """Differencing two snapshots yields the counters between them."""
     later = stats.SccacheCounters(requests=10, hits=7, misses=2, errors=1)
     earlier = stats.SccacheCounters(requests=4, hits=3, misses=1, errors=0)
@@ -140,15 +142,12 @@ def test_counters_subtraction_is_field_wise() -> None:
     assert later - earlier == stats.SccacheCounters(
         requests=6, hits=4, misses=1, errors=1
     ), "subtraction must be field-wise"
-    assert (later - earlier).as_dict() == {
-        "requests": 6,
-        "hits": 4,
-        "misses": 1,
-        "errors": 1,
-    }, "as_dict() must expose the four counters by name"
+    assert (later - earlier).as_dict() == snapshot, (
+        "as_dict() must expose the four counters by name"
+    )
 
 
-@dc.dataclass
+@dc.dataclass(slots=True)
 class _RecordingRunner:
     """Runner double recording each call and replaying a scripted result."""
 
@@ -186,7 +185,7 @@ def test_query_snapshot_runs_json_query_without_echo(tmp_path: Path) -> None:
             tmp_path,
             False,
         )
-    ]
+    ], "the JSON query must name the wrapper, pass --stats-format=json, and never echo"
     assert snapshot.counters == stats.SccacheCounters(
         requests=412, hits=398, misses=14, errors=0
     ), "the snapshot must carry the parsed counters"
@@ -215,7 +214,7 @@ def test_query_snapshot_reports_non_zero_exit(tmp_path: Path) -> None:
     assert excinfo.value.exit_code == 2, "the exit status must be preserved"
     assert str(excinfo.value) == (
         "sccache --show-stats exited 2: sccache: error: no server"
-    )
+    ), "the error message must carry the exit status and the stderr detail"
 
 
 def test_query_snapshot_wraps_spawn_failures(tmp_path: Path) -> None:
@@ -288,5 +287,5 @@ def test_query_snapshot_runs_stub_sccache_on_path(
 
     assert argument_log.read_text(encoding="utf-8") == (
         "--show-stats --stats-format=json\n"
-    )
+    ), "the production runner must pass the JSON query arguments to the wrapper"
     assert snapshot.counters.hits == 6738, "the stub's payload must be parsed"

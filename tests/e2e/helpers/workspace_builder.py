@@ -1,7 +1,5 @@
 """Workspace builder for end-to-end tests."""
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import dataclasses as dc
 import json

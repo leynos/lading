@@ -1,7 +1,5 @@
 """Tests for projecting Cargo manifests to lockfile paths."""
 
-from __future__ import annotations
-
 import string
 import tempfile
 from pathlib import Path
@@ -23,7 +21,7 @@ def test_resolve_lockfile_paths_reports_dry_run_targets(tmp_path: Path) -> None:
     assert lockfiles == (
         tmp_path / "Cargo.lock",
         tmp_path / "crates/nested/Cargo.lock",
-    )
+    ), "each manifest must resolve to a sibling Cargo.lock, root manifest first"
 
 
 @pytest.mark.parametrize(
@@ -144,7 +142,9 @@ def test_root_manifest_spellings_deduplicate_to_one_invocation(
 
         lockfiles = bump_lockfiles.resolve_lockfile_paths(workspace_root, spellings)
 
-        assert lockfiles == (workspace_root.resolve() / "Cargo.lock",)
+        assert lockfiles == (workspace_root.resolve() / "Cargo.lock",), (
+            "every spelling of the root manifest must collapse to one root entry"
+        )
 
 
 @given(

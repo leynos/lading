@@ -10,8 +10,6 @@ A helper that never set a token would pass a check for the token's absence
 without protecting anything, so the parent is given one first.
 """
 
-from __future__ import annotations
-
 import json
 import os
 import stat
@@ -220,7 +218,7 @@ def test_an_empty_record_reports_no_calls(tmp_path: Path) -> None:
     """A stub that was never invoked reports an empty tuple, not an error."""
     stub = install_gh_stub(tmp_path)
 
-    assert stub.calls() == (), "an unused stub must report no calls, not an error"
+    assert not stub.calls(), "an unused stub must report no calls, not an error"
 
 
 def test_the_stub_can_fail_with_a_chosen_diagnostic(tmp_path: Path) -> None:

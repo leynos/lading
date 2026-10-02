@@ -5,8 +5,6 @@ must refuse to touch. Each case names one thing a careless glob would have
 taken.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import tempfile
 from pathlib import Path
@@ -85,7 +83,7 @@ def test_a_nested_match_is_not_in_scope(tmp_path: Path) -> None:
     nested.mkdir()
     _staging_tree(nested, "buried")
 
-    assert clean.find_leftovers(tmp_path) == (), (
+    assert not clean.find_leftovers(tmp_path), (
         "a match nested below the search directory was taken into scope"
     )
 
@@ -102,7 +100,7 @@ def test_a_symlink_is_never_followed(tmp_path: Path) -> None:
     link = tmp_path / f"{STAGING_PREFIX}link"
     link.symlink_to(target, target_is_directory=True)
 
-    assert clean.find_leftovers(tmp_path) == (), (
+    assert not clean.find_leftovers(tmp_path), (
         "a symbolic link named like a staging tree was taken into scope"
     )
 
@@ -116,7 +114,7 @@ def test_a_file_named_like_a_staging_tree_is_not_in_scope(tmp_path: Path) -> Non
     """The command removes trees; a regular file is not one."""
     (tmp_path / f"{STAGING_PREFIX}notadir").write_text("x", encoding="utf-8")
 
-    assert clean.find_leftovers(tmp_path) == (), (
+    assert not clean.find_leftovers(tmp_path), (
         "a regular file named like a staging tree was taken into scope"
     )
 
@@ -162,7 +160,7 @@ def test_an_empty_location_says_so(tmp_path: Path) -> None:
 
 def test_a_missing_location_is_not_an_error(tmp_path: Path) -> None:
     """A temporary directory that does not exist holds no leftovers."""
-    assert clean.find_leftovers(tmp_path / "absent") == (), (
+    assert not clean.find_leftovers(tmp_path / "absent"), (
         "a search directory that does not exist was not treated as empty"
     )
 
@@ -175,12 +173,12 @@ def test_a_tree_that_cannot_be_removed_is_reported_not_raised(
     removable = _staging_tree(tmp_path, "bbb")
     real_rmtree = clean.shutil.rmtree
 
-    def refuse(path: object, *arguments: object, **keywords: object) -> None:
-        """Fail for the first tree only."""
+    def refuse(path: Path) -> None:
+        """Fail for the first tree only, mirroring the call the sweep makes."""
         if path == stubborn:
             message = "device or resource busy"
             raise OSError(message)
-        real_rmtree(path, *arguments, **keywords)
+        real_rmtree(path)
 
     monkeypatch.setattr(clean.shutil, "rmtree", refuse)
 
@@ -311,4 +309,4 @@ def test_a_windows_junction_is_not_in_scope(
     assert not clean._is_leftover(tree), (
         "a junction named like a staging tree was taken into scope"
     )
-    assert clean.find_leftovers(tmp_path) == (), "discovery returned a junction"
+    assert not clean.find_leftovers(tmp_path), "discovery returned a junction"

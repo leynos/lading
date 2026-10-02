@@ -3,11 +3,11 @@ name = "lading"
 version = "0.3.1"
 description = "Manage Rust workspace versioning and publishing."
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 license = { text = "ISC" }
 classifiers = [
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "License :: OSI Approved :: ISC License (ISCL)",
     "Environment :: Console",
     "Intended Audience :: Developers",
@@ -49,13 +49,16 @@ dev = [
     "plumbum>=1.8",
     "pyyaml>=6.0.3",
     "crosshair-tool>=0.0.107",
-    "df12-python-lints @ git+https://github.com/leynos/df12-python-lints.git@v0.1.0",
+    # Pinned to a commit, not a tag: the lint result must not move under an
+    # annotation that someone force-pushes. Must stay in step with
+    # DF12_PYTHON_LINTS_REF in the Makefile.
+    "df12-python-lints @ git+https://github.com/leynos/df12-python-lints.git@4cf41736cce2f7ba2778882a5c629c044568a0e5",
 ]
 
 [tool.ruff]
 line-length = 88
 preview = true
-target-version = "py313"
+target-version = "py314"
 extend-exclude = [
     ".rules",
     "docs",
@@ -76,7 +79,7 @@ select = [
     "I",        # Sort imports properly
     "UP",       # Warn if certain things can changed due to newer Python versions
     "C4",       # Catch incorrect use of comprehensions, dict, list, etc
-    "FA",       # Enforce from __future__ import annotations
+    "FA",       # Flake8-future-annotations; inert at the 3.14 baseline, kept for the version-independent checks
     "ISC",      # Good use of string concatenation
     "ICN",      # Use common import conventions
     "RET",      # Good return practices
@@ -185,6 +188,35 @@ extend-ignore = [
 # (AGENTS.md) says to omit; scope DOC201 off rather than choose between them.
 "lading/commands/bump_output.py" = ["docstring-missing-returns"]
 
+[tool.ruff.lint.flake8-type-checking]
+# Decorators that evaluate their target's annotations when the decorator runs.
+# Annotating a decorated function with a name that exists only under
+# `if TYPE_CHECKING:` therefore raises `NameError` at import time, so Ruff must
+# not classify such an import as typing-only. Two libraries here do this, and
+# both look their annotations up in the defining module's globals:
+#
+# - pytest-bdd resolves every registered step's signature while collecting, so
+#   a step whose parameter is annotated with a `TYPE_CHECKING`-only name fails
+#   the suite before a single test runs.
+# - Hypothesis resolves the signatures of the tests it decorates.
+#
+# `runtime-evaluated-decorators` matches on the decorator as written, so the
+# fully qualified spellings cover the `given`/`when`/`then` steps and each
+# Hypothesis entry point this repository uses (`@given`, `@example`, and
+# `@settings`, including the module-level `_SETTINGS` alias those two files
+# apply). Entries for pytest's own markers are deliberately absent: pytest
+# resolves fixture and parametrization values by name, not by annotation, so a
+# plain test whose parameter carries a `TYPE_CHECKING`-only annotation is safe
+# and its import stays typing-only.
+runtime-evaluated-decorators = [
+    "pytest_bdd.given",
+    "pytest_bdd.when",
+    "pytest_bdd.then",
+    "hypothesis.given",
+    "hypothesis.example",
+    "hypothesis.settings",
+]
+
 [tool.ruff.lint.mccabe]
 max-complexity = 8
 
@@ -274,11 +306,17 @@ ignore-one-line-docstrings = true
 [tool.interrogate]
 ignore-overloaded-functions = true
 [tool.pylint.main]
+# Activate rules whose behaviour depends on the project's Python baseline. The
+# df12 redundant-future-annotations check (C9112) stays inert below 3.14, so
+# this is also what turns the 3.14 baseline into a real lint contract.
+py-version = "3.14"
 # Expand directory targets like lading and tests even when a target is not a
 # package.
 recursive = true
-# Keep Pylint's module-size check active without forcing an unrelated module
-# split while importing the second-tier lint action.
+# Keep Pylint's module-size check active without forcing unrelated module
+# splits. AGENTS.md sets a 400-line ceiling for new and edited modules, but
+# 28 existing files predate it (the largest is 971 lines); enforcing the
+# ceiling gate here would fold that separate refactor into every lint run.
 max-module-lines = 800
 
 [tool.pylint.design]

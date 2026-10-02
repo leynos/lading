@@ -1,7 +1,5 @@
 """Workspace construction helpers for bump command tests."""
 
-from __future__ import annotations
-
 import dataclasses as dc
 import textwrap
 import typing as typ

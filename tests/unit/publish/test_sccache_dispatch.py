@@ -7,12 +7,11 @@ writes the report even when a crate fails, and never queries when the flag is
 off or no wrapper is configured.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import dataclasses as dc
 import json
 import logging
+import typing as typ
 from pathlib import Path
 
 import pytest
@@ -29,6 +28,9 @@ from .sccache_doubles import (
     ScriptedRunner,
     payload,
 )
+
+if typ.TYPE_CHECKING:
+    from syrupy.assertion import SnapshotAssertion
 
 
 @pytest.fixture(autouse=True)
@@ -114,7 +116,7 @@ def test_dispatch_brackets_every_cargo_invocation_with_a_query(
 
     assert [_label(call) for call in run.runner.calls] == _expected_sequence(
         live=live, crate_count=len(run.plan.publishable)
-    )
+    ), "a query must bracket every cargo invocation in both pipeline modes"
 
 
 def test_dispatch_logs_one_summary_per_invocation_and_writes_report(
@@ -124,6 +126,7 @@ def test_dispatch_logs_one_summary_per_invocation_and_writes_report(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
+    snapshot: SnapshotAssertion,
 ) -> None:
     """Every cargo invocation gets a summary line and a record in the report.
 
@@ -154,13 +157,10 @@ def test_dispatch_logs_one_summary_per_invocation_and_writes_report(
     ] == [
         (call[1], record["crate"])
         for call, record in zip(cargo_calls, written["crates"], strict=True)
-    ]
-    assert written["delta"] == {
-        "requests": 60,
-        "hits": 48,
-        "misses": 12,
-        "errors": 0,
-    }, "the pipeline delta must sum the six per-invocation deltas"
+    ], "each report entry must pair the crate with the subcommand it was measured for"
+    assert written["delta"] == snapshot(name="delta"), (
+        "the pipeline delta must sum the six per-invocation deltas"
+    )
 
 
 def test_dispatch_without_wrapper_warns_and_still_publishes(
@@ -189,8 +189,12 @@ def test_dispatch_without_wrapper_warns_and_still_publishes(
     assert len(_cargo_calls(runner.calls)) == 2 * len(plan.publishable), (
         "the dry run must still package and publish every crate"
     )
-    assert len(caplog.messages) == 1
-    assert "does not name an sccache binary" in caplog.messages[0]
+    assert len(caplog.messages) == 1, (
+        "a missing wrapper must warn exactly once and never abort the dry run"
+    )
+    assert "does not name an sccache binary" in caplog.messages[0], (
+        "the warning must explain that RUSTC_WRAPPER is not an sccache binary"
+    )
 
 
 def test_dispatch_reports_what_it_measured_when_a_crate_fails(
@@ -199,6 +203,7 @@ def test_dispatch_reports_what_it_measured_when_a_crate_fails(
     ],
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    snapshot: SnapshotAssertion,
 ) -> None:
     """A failing crate aborts the publish but the report still lands."""
     monkeypatch.setenv("RUSTC_WRAPPER", str(WRAPPER))
@@ -211,9 +216,15 @@ def test_dispatch_reports_what_it_measured_when_a_crate_fails(
     original_call = runner.__call__
 
     def _failing_second_package(
-        command: cabc.Sequence[str], **kwargs: object
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
-        exit_code, stdout, stderr = original_call(command, **kwargs)
+        exit_code, stdout, stderr = original_call(
+            command, cwd=cwd, env=env, echo_stdout=echo_stdout
+        )
         is_package = tuple(command[:2]) == ("cargo", "package")
         if is_package and len(_cargo_calls(runner.calls)) == 2:
             return 1, "", "error: verify build failed"
@@ -230,28 +241,21 @@ def test_dispatch_reports_what_it_measured_when_a_crate_fails(
         )
 
     written = json.loads(report.read_text(encoding="utf-8"))
-    assert [record["crate"] for record in written["crates"]] == ["alpha", "beta"]
-    alpha_counters = {
-        key: written["crates"][0][key]
-        for key in ("requests", "hits", "misses", "errors")
+    assert [record["crate"] for record in written["crates"]] == ["alpha", "beta"], (
+        "the report must record the crates measured before the failure"
+    )
+    counters = {
+        record["crate"]: {
+            key: record[key] for key in ("requests", "hits", "misses", "errors")
+        }
+        for record in written["crates"]
     }
-    beta_counters = {
-        key: written["crates"][1][key]
-        for key in ("requests", "hits", "misses", "errors")
-    }
-    assert alpha_counters == {
-        "errors": 0,
-        "hits": 8,
-        "misses": 2,
-        "requests": 10,
-    }
-    assert beta_counters == {
-        "errors": 0,
-        "hits": 8,
-        "misses": 2,
-        "requests": 10,
-    }
-    assert runner.calls[-1] == TEXT_QUERY
+    assert counters == snapshot(name="crate_counters"), (
+        "each crate's counters must be recorded as measured"
+    )
+    assert runner.calls[-1] == TEXT_QUERY, (
+        "the final summary query must be the human-readable text form"
+    )
 
 
 def test_dispatch_without_flag_never_queries(

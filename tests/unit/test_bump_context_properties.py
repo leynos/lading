@@ -6,8 +6,6 @@ derived once in :func:`lading.commands.bump._initialize_bump_context` and that
 rather than recomputing selection per crate.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import dataclasses as dc
 import string

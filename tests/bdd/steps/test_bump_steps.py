@@ -1,9 +1,10 @@
 """BDD steps focused on the bump subcommand."""
 
-from __future__ import annotations
-
 import typing as typ
+from pathlib import Path
 
+import pytest
+from cmd_mox import CmdMox
 from pytest_bdd import given, parsers, then, when
 
 from lading.commands import bump_readme
@@ -11,16 +12,16 @@ from lading.commands import bump_readme
 # Keep direct fixture imports for BDD collection even though conftest.py
 # registers the modules as pytest plugins.
 from . import config_fixtures as _config_fixtures  # ruff: ignore[unused-import]
-from . import manifest_fixtures as _manifest_fixtures  # ruff: ignore[unused-import]
-from . import metadata_fixtures as _metadata_fixtures  # ruff: ignore[unused-import]
+from . import (
+    manifest_fixtures as _manifest_fixtures,  # ruff: ignore[unused-import] - direct import keeps the manifest step module collected
+)
+from . import (
+    metadata_fixtures as _metadata_fixtures,  # ruff: ignore[unused-import] - direct import keeps the metadata step module collected
+)
+from .cli_run_types import CliRunResult
 
 if typ.TYPE_CHECKING:
-    from pathlib import Path
 
-    import pytest
-    from cmd_mox import CmdMox
-
-    from .cli_run_types import CliRunResult
     from .test_common_steps import (
         _run_cli,  # ruff: ignore[unused-import] - imported only for type checking
     )
@@ -150,10 +151,16 @@ def when_invoke_lading_bump_dry_run(
 @then(parsers.parse('the bump command reports manifest updates for "{version}"'))
 def then_command_reports_workspace(cli_run: dict[str, typ.Any], version: str) -> None:
     """Assert that the bump command reports the updated manifests."""
-    assert cli_run["returncode"] == 0
+    assert cli_run["returncode"] == 0, (
+        f"bump must succeed for version {version!r}; stderr:\n{cli_run['stderr']}"
+    )
     stdout = cli_run["stdout"]
-    assert "Updated version to " in stdout
-    assert version in stdout
+    assert "Updated version to " in stdout, (
+        "bump must emit the 'Updated version to' header when manifests change"
+    )
+    assert version in stdout, (
+        f"bump output must report the requested version {version!r}"
+    )
 
 
 @then(parsers.parse('the bump command reports no manifest changes for "{version}"'))
@@ -162,10 +169,17 @@ def then_command_reports_no_changes(
     version: str,
 ) -> None:
     """Assert that the bump command reports that no updates were required."""
-    assert cli_run["returncode"] == 0
+    assert cli_run["returncode"] == 0, (
+        f"a no-op bump to {version!r} must still succeed; "
+        f"stderr:\n{cli_run['stderr']}"
+    )
     stdout = cli_run["stdout"]
-    assert "No manifest changes required" in stdout
-    assert f"already {version}" in stdout
+    assert "No manifest changes required" in stdout, (
+        "bump must emit the no-change notice when all versions already match"
+    )
+    assert f"already {version}" in stdout, (
+        f"the no-change notice must name {version!r} as the current version"
+    )
 
 
 @then(parsers.parse('the bump command reports a dry-run plan for "{version}"'))
@@ -174,10 +188,16 @@ def then_command_reports_dry_run(
     version: str,
 ) -> None:
     """Assert that the bump command reports the dry-run summary."""
-    assert cli_run["returncode"] == 0
+    assert cli_run["returncode"] == 0, (
+        f"a dry-run bump to {version!r} must succeed; stderr:\n{cli_run['stderr']}"
+    )
     stdout = cli_run["stdout"]
-    assert "Dry run;" in stdout
-    assert f"would update version to {version}" in stdout
+    assert "Dry run;" in stdout, (
+        "a dry run must label its output with the 'Dry run;' prefix"
+    )
+    assert f"would update version to {version}" in stdout, (
+        f"the dry-run plan must state it would update version to {version!r}"
+    )
 
 
 @then(
@@ -187,11 +207,16 @@ def then_bump_reports_invalid_version(
     cli_run: dict[str, typ.Any], version: str
 ) -> None:
     """Assert that invalid versions cause the command to fail with details."""
-    assert cli_run["returncode"] == 1
+    assert cli_run["returncode"] == 1, (
+        f"an invalid version {version!r} must fail the command with exit code 1, "
+        f"but exited with {cli_run['returncode']}"
+    )
     # Cyclopts renders argument-validation errors through its own console
     # (stdout), consistent with other cyclopts errors such as "Unknown command".
     stdout = cli_run["stdout"]
-    assert f"Invalid version argument '{version}'" in stdout
+    assert f"Invalid version argument '{version}'" in stdout, (
+        f"the failure must name {version!r} as an invalid version argument"
+    )
 
 
 @then(parsers.parse('the CLI output lists manifest paths "{first}" and "{second}"'))
@@ -201,7 +226,10 @@ def then_cli_output_lists_manifest_paths(
     second: str,
 ) -> None:
     """Assert that the CLI output lists the expected manifest paths."""
-    assert cli_run["returncode"] == 0
+    assert cli_run["returncode"] == 0, (
+        "listing manifest paths requires a successful bump run; "
+        f"stderr:\n{cli_run['stderr']}"
+    )
     expected_lines = [first, second]
     stdout_lines = [line.strip() for line in cli_run["stdout"].splitlines()]
     manifest_lines = [
@@ -209,7 +237,9 @@ def then_cli_output_lists_manifest_paths(
         for line in stdout_lines
         if line.startswith("- ") and line.endswith("Cargo.toml")
     ]
-    assert manifest_lines == expected_lines
+    assert manifest_lines == expected_lines, (
+        "the output must list the changed manifests as bullet lines in order"
+    )
 
 
 @then(parsers.parse('the CLI output lists documentation path "{expected}"'))
@@ -217,9 +247,14 @@ def then_cli_output_lists_documentation_path(
     cli_run: dict[str, typ.Any], expected: str
 ) -> None:
     """Assert that the CLI output includes ``expected`` as a documentation line."""
-    assert cli_run["returncode"] == 0
+    assert cli_run["returncode"] == 0, (
+        "listing a documentation path requires a successful bump run; "
+        f"stderr:\n{cli_run['stderr']}"
+    )
     stdout_lines = [line.strip() for line in cli_run["stdout"].splitlines()]
-    assert expected in stdout_lines
+    assert expected in stdout_lines, (
+        f"the output must acknowledge the changed documentation file {expected!r}"
+    )
 
 
 @then(parsers.parse('the CLI output lists README path "{expected}"'))
@@ -227,9 +262,14 @@ def then_cli_output_lists_readme_path(
     cli_run: dict[str, typ.Any], expected: str
 ) -> None:
     """Assert that the CLI output includes ``expected`` as a README line."""
-    assert cli_run["returncode"] == 0
+    assert cli_run["returncode"] == 0, (
+        "listing a README path requires a successful bump run; "
+        f"stderr:\n{cli_run['stderr']}"
+    )
     stdout_lines = [line.strip() for line in cli_run["stdout"].splitlines()]
-    assert expected in stdout_lines
+    assert expected in stdout_lines, (
+        f"the output must acknowledge the transposed README {expected!r}"
+    )
 
 
 @then(parsers.parse('the CLI output lists lockfile path "{expected}"'))
@@ -237,17 +277,26 @@ def then_cli_output_lists_lockfile_path(
     cli_run: dict[str, typ.Any], expected: str
 ) -> None:
     """Assert that the CLI output includes ``expected`` as a lockfile line."""
-    assert cli_run["returncode"] == 0
+    assert cli_run["returncode"] == 0, (
+        "listing a lockfile path requires a successful bump run; "
+        f"stderr:\n{cli_run['stderr']}"
+    )
     stdout_lines = [line.strip() for line in cli_run["stdout"].splitlines()]
-    assert expected in stdout_lines
+    assert expected in stdout_lines, (
+        f"the output must acknowledge the refreshed lockfile {expected!r}"
+    )
 
 
 @then("the bump command refreshed tracked lockfiles")
 def then_bump_refreshed_lockfiles(cli_run: dict[str, typ.Any]) -> None:
     """Assert the live bump lockfile scenario completed successfully."""
-    assert cli_run["returncode"] == 0
+    assert cli_run["returncode"] == 0, (
+        f"the live lockfile bump must succeed; stderr:\n{cli_run['stderr']}"
+    )
     output = f"{cli_run['stdout']}\n{cli_run['stderr']}"
-    assert "cargo update --workspace" in output
+    assert "cargo update --workspace" in output, (
+        "the bump must refresh the tracked lockfiles via cargo update --workspace"
+    )
 
 
 @then("the bump command refreshed workspace and nested tracked lockfiles")
@@ -296,10 +345,16 @@ def then_bump_refreshed_workspace_and_nested_lockfiles(
 @then("the bump command did not refresh tracked lockfiles")
 def then_bump_did_not_refresh_lockfiles(cli_run: dict[str, typ.Any]) -> None:
     """Assert the dry-run lockfile scenario completed without refresh."""
-    assert cli_run["returncode"] == 0
+    assert cli_run["returncode"] == 0, (
+        f"the dry-run lockfile bump must succeed; stderr:\n{cli_run['stderr']}"
+    )
     output = f"{cli_run['stdout']}\n{cli_run['stderr']}"
-    assert "cargo::update" not in output
-    assert "cargo update --workspace" not in output
+    assert "cargo::update" not in output, (
+        "a dry run must not invoke the cargo update shim"
+    )
+    assert "cargo update --workspace" not in output, (
+        "a dry run must not refresh lockfiles"
+    )
 
 
 @then(parsers.parse('the documentation file "{relative_path}" contains "{expected}"'))
@@ -310,7 +365,10 @@ def then_documentation_contains(
     doc_path = cli_run["workspace"] / relative_path
     normalized_expected = expected.replace(r"\"", '"')
     contents = doc_path.read_text(encoding="utf-8")
-    assert normalized_expected in contents
+    assert normalized_expected in contents, (
+        f"the documentation file {relative_path!r} must contain {expected!r} "
+        "after the bump"
+    )
 
 
 @then(parsers.parse('the crate "{crate_name}" README contains "{expected}"'))
@@ -321,7 +379,10 @@ def then_crate_readme_contains(
     readme_path = cli_run["workspace"] / "crates" / crate_name / "README.md"
     normalized_expected = expected.replace(r"\"", '"')
     contents = readme_path.read_text(encoding="utf-8")
-    assert normalized_expected in contents
+    assert normalized_expected in contents, (
+        f"the {crate_name!r} crate README must contain {expected!r} "
+        "after the bump"
+    )
 
 
 @given(parsers.parse('the workspace README contains a relative link to "{target}"'))

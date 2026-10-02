@@ -1,0 +1,10 @@
+# serializer version: 1
+# name: test_append_compiletest_diagnostics_includes_tail_lines
+  '''
+  Pre-flight failed
+  Compiletest stderr artefacts:
+  - <tmp>/ui.stderr
+    Last 1 line(s):
+      line2
+  '''
+# ---

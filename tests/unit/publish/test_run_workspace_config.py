@@ -1,7 +1,5 @@
 """Publish run workspace-root and configuration test coverage."""
 
-from __future__ import annotations
-
 import re
 import typing as typ
 from pathlib import Path

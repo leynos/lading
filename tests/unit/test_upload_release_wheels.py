@@ -8,10 +8,9 @@ be read is reported -- lives in
 ``test_upload_release_wheels_discovery.py``.
 """
 
-from __future__ import annotations
-
 import ast
 import io
+import re
 import typing as typ
 from pathlib import Path
 
@@ -19,14 +18,11 @@ import pytest
 
 from tests.helpers.script_imports import import_script_module
 
-try:
-    from cmd_mox import CmdMox
-except ModuleNotFoundError:  # pragma: no cover - runtime fallback
-    CmdMox = typ.Any  # type: ignore[assignment, misc]
-
 if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
     import collections.abc as cabc
     import types
+
+    from cmd_mox import CmdMox
 
 SCRIPT_DIRECTORY = Path(__file__).resolve().parents[2] / "scripts"
 CLI_PATH = SCRIPT_DIRECTORY / "upload_release_wheels.py"
@@ -113,12 +109,43 @@ def _make_wheel(directory: Path, name: str) -> Path:
     ids=["cli", "library", "adapter", "port", "span"],
 )
 def test_script_parses_under_the_declared_python_version(script: Path) -> None:
-    """Every module of the uploader parses under the required version."""
+    """Every module of the uploader parses at the script block's floor.
+
+    The floor is read from the script's own ``requires-python`` rather than
+    written here, because this test and the script block are two statements of
+    the same promise: bumping one and not the other would leave a module
+    parseable by a release the script refuses to start on, or accepted here
+    while the resolver rejects it. The sibling modules are checked against the
+    composition root's floor because that is the floor they are imported under.
+    """
+    source = script.read_text(encoding="utf-8")
     ast.parse(
-        script.read_text(encoding="utf-8"),
+        source,
         filename=str(script),
-        feature_version=(3, 13),
+        feature_version=_declared_python_floor(CLI_PATH),
     )
+
+
+def _declared_python_floor(script: Path) -> tuple[int, int]:
+    """Return the script block's ``requires-python`` floor.
+
+    Parameters
+    ----------
+    script : Path
+        The script whose PEP 723 block declares the floor.
+
+    Returns
+    -------
+    tuple[int, int]
+        The floor's major and minor components, ready for ``ast.parse``.
+    """
+    match = re.search(
+        r'^# requires-python = ">=(\d+)\.(\d+)"$',
+        script.read_text(encoding="utf-8"),
+        flags=re.MULTILINE,
+    )
+    assert match is not None, f"{script.name} must declare a requires-python floor"
+    return int(match.group(1)), int(match.group(2))
 
 
 def test_empty_directory_fails_the_step(
@@ -140,8 +167,10 @@ def test_empty_directory_fails_the_step(
             upload_module.Dependencies(upload=_recorder(uploaded)),
         )
 
-    assert raised.value.outcome == upload_module.Outcome.NO_WHEEL
-    assert uploaded == [], "nothing may be uploaded when no wheel was built"
+    assert raised.value.outcome == upload_module.Outcome.NO_WHEEL, (
+        "an empty wheel directory must be reported as the NO_WHEEL outcome"
+    )
+    assert not uploaded, "nothing may be uploaded when no wheel was built"
 
 
 def test_every_wheel_is_uploaded_against_the_tag(
@@ -163,7 +192,9 @@ def test_every_wheel_is_uploaded_against_the_tag(
         upload_module.Dependencies(upload=_recorder(uploaded), log=io.StringIO()),
     )
 
-    assert uploaded == [("v1.2.3", (first, second))]
+    assert uploaded == [("v1.2.3", (first, second))], (
+        "every discovered wheel must upload once against the release tag"
+    )
 
 
 def test_each_phase_is_timed_by_the_injected_clock(
@@ -209,7 +240,9 @@ def test_the_upload_runner_is_an_injectable_dependency(
 
     upload_module.upload_wheels("v1.2.3", (wheel,), run=run)
 
-    assert seen == [("release", "upload", "v1.2.3", str(wheel), "--clobber")]
+    assert seen == [("release", "upload", "v1.2.3", str(wheel), "--clobber")], (
+        "the upload must run as one clobbering gh release upload for the tag"
+    )
 
 
 def test_a_rejected_upload_names_the_reason(
@@ -224,7 +257,9 @@ def test_a_rejected_upload_names_the_reason(
     with pytest.raises(upload_module.UploadError, match="release not found") as raised:
         upload_module.upload_wheels("v1.2.3", (wheel,), run=run)
 
-    assert raised.value.outcome == upload_module.Outcome.UPLOAD_FAILED
+    assert raised.value.outcome == upload_module.Outcome.UPLOAD_FAILED, (
+        "a non-zero gh exit must be reported as the UPLOAD_FAILED outcome"
+    )
 
 
 def test_the_outcome_is_written_to_the_sinks_it_is_given(
@@ -288,6 +323,12 @@ def test_every_outcome_is_drawn_from_the_bounded_set(
 ) -> None:
     """The outcome label stays a closed set, so a counter built on it is bounded."""
     outcomes = list(upload_module.Outcome)
-    assert len({str(outcome) for outcome in outcomes}) == len(outcomes)
-    assert upload_module.Outcome.SUCCESS in outcomes
-    assert upload_module.UploadError("x").outcome in outcomes
+    assert len({str(outcome) for outcome in outcomes}) == len(outcomes), (
+        "each outcome must carry a distinct label so counters cannot collide"
+    )
+    assert upload_module.Outcome.SUCCESS in outcomes, (
+        "SUCCESS must remain a member of the outcome set"
+    )
+    assert upload_module.UploadError("x").outcome in outcomes, (
+        "an upload error must classify itself with a known outcome"
+    )

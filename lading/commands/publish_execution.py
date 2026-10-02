@@ -14,8 +14,6 @@ Two concerns live here, both used by :mod:`lading.commands.publish_pipeline`:
   per-crate progress lines.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import dataclasses as dc
 import time

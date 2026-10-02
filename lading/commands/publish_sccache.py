@@ -24,8 +24,6 @@ Related modules
   ``--show-stats`` queries, and parses the counters.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import dataclasses as dc
 import json

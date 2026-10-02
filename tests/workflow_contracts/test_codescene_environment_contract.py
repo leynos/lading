@@ -5,8 +5,6 @@ could, and asserts the clause meant to catch it does. The check step, the ref
 guard and `access-token:` stay held by the existing CV-005 contract.
 """
 
-from __future__ import annotations
-
 import copy
 import typing as typ
 from pathlib import Path

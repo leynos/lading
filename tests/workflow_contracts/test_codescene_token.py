@@ -14,8 +14,6 @@ and publishing silently stops, so the token must be named exactly twice: in
 the check step's command and in the upload's input.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import typing as typ
 from pathlib import Path
@@ -54,7 +52,7 @@ def _publisher() -> Mapping:
 def _mapping(value: YamlValue, what: str) -> Mapping:
     """Return ``value`` as a mapping, failing with ``what`` otherwise."""
     assert isinstance(value, dict), f"{what} must be a mapping, got {value!r}"
-    return typ.cast("Mapping", value)
+    return value
 
 
 def _steps(workflow: Mapping) -> list[Mapping]:
@@ -108,7 +106,9 @@ def _environments(workflow: Mapping) -> cabc.Iterator[YamlValue]:
     for job in _mapping(workflow.get("jobs"), "jobs").values():
         job_mapping = _mapping(job, "a job")
         yield job_mapping.get("env")
-        for step in job_mapping.get("steps") or []:
+        declared = job_mapping.get("steps") or []
+        assert isinstance(declared, list), "a job's steps must be a list"
+        for step in declared:
             yield _mapping(step, "a step").get("env")
 
 

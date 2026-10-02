@@ -1,0 +1,13 @@
+# serializer version: 1
+# name: test_users_guide_includes_required_sections
+  list([
+    '## Where a publish stages the workspace',
+    '## Reclaiming space from earlier versions',
+    '## Programmatic publish staging',
+    '## Programmatic workspace model',
+    '## Installation',
+    '## Tutorial',
+    '## Configuration reference (`lading.toml`)',
+    '## Reference: CLI flags and environment variables',
+  ])
+# ---

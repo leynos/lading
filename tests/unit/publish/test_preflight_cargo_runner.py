@@ -1,7 +1,5 @@
 """Unit tests for the low-level _run_cargo_preflight helper."""
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import dataclasses as dc
 import typing as typ
@@ -11,7 +9,7 @@ import pytest
 
 from lading.commands import publish_preflight
 
-from .conftest import ORIGINAL_PREFLIGHT
+from .conftest import _real_preflight
 
 if typ.TYPE_CHECKING:
     from syrupy.assertion import SnapshotAssertion
@@ -23,13 +21,14 @@ def test_run_cargo_preflight_raises_on_failure(
     """Non-zero command results are converted into preflight errors."""
 
     def failing_runner(
-        command: tuple[str, ...],
+        command: cabc.Sequence[str],
         *,
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
-        assert cwd == tmp_path
-        assert command[0] == "cargo"
+        assert cwd == tmp_path, "cargo pre-flight must run in the workspace root"
+        assert command[0] == "cargo", "pre-flight commands must be cargo invocations"
         return 1, "", "boom"
 
     with pytest.raises(publish_preflight.PublishPreflightError) as excinfo:
@@ -43,11 +42,13 @@ def test_run_cargo_preflight_raises_on_failure(
         )
 
     message = str(excinfo.value)
-    assert "cargo check" in message
-    assert "boom" in message
+    assert "cargo check" in message, (
+        "the pre-flight error must name the failing cargo subcommand"
+    )
+    assert "boom" in message, "the pre-flight error must surface cargo's stderr"
 
 
-@dc.dataclass(frozen=True)
+@dc.dataclass(frozen=True, slots=True)
 class _PreflightFailureCase:
     """Inputs for a single cargo-preflight failure-message snapshot."""
 
@@ -81,12 +82,13 @@ def test_run_cargo_preflight_failure_message_snapshot(
     """
 
     def failing_runner(
-        command: tuple[str, ...],
+        command: cabc.Sequence[str],
         *,
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
-        del command, cwd, env
+        del command, cwd, env, echo_stdout
         return case.exit_code, "", case.stderr
 
     with pytest.raises(publish_preflight.PublishPreflightError) as excinfo:
@@ -99,10 +101,12 @@ def test_run_cargo_preflight_failure_message_snapshot(
             ),
         )
 
-    assert str(excinfo.value) == snapshot()
+    assert str(excinfo.value) == snapshot(), (
+        "the operator-facing pre-flight failure message must not drift"
+    )
 
 
-@dc.dataclass(frozen=True)
+@dc.dataclass(frozen=True, slots=True)
 class _RunCargoPreflightCase:
     """Parameters for a single cargo-preflight argument-construction scenario."""
 
@@ -119,12 +123,14 @@ def _run_and_record_cargo_preflight(
     recorded: list[tuple[str, ...]] = []
 
     def recording_runner(
-        command: tuple[str, ...],
+        command: cabc.Sequence[str],
         *,
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
-        recorded.append(command)
+        del cwd, env, echo_stdout
+        recorded.append(tuple(command))
         return 0, "", ""
 
     publish_preflight._run_cargo_preflight(
@@ -216,15 +222,16 @@ def test_compiletest_diagnostic_details(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Failing cargo test pre-flight lists stderr artefacts with tail output."""
-    monkeypatch.setattr(publish_preflight, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
+    monkeypatch.setattr(publish_preflight, "_run_preflight_checks", _real_preflight)
     artefact = tmp_path / "ui.stderr"
     artefact.write_text("line1\nline2\nline3\n", encoding="utf-8")
 
     def failing_runner(
-        command: tuple[str, ...],
+        command: cabc.Sequence[str],
         *,
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
         return 1, f"diff at {artefact}", ""
 
@@ -242,6 +249,10 @@ def test_compiletest_diagnostic_details(
         )
 
     message = str(excinfo.value)
-    assert str(artefact) in message
-    assert "line2" in message
-    assert "line3" in message
+    assert str(artefact) in message, (
+        "the diagnostic error must name the failing stderr artefact"
+    )
+    assert "line2" in message, (
+        "the diagnostic error must include the last two stderr lines"
+    )
+    assert "line3" in message, "the diagnostic error must include the final line"

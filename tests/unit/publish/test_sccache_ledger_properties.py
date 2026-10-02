@@ -11,8 +11,6 @@ sccache counters, and an optional query that fails part-way through:
   querying without raising.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import dataclasses as dc
 import json
@@ -104,7 +102,7 @@ def test_ledger_attributes_consecutive_differences(
     ], "the report lists one ordered entry per attributed invocation"
 
 
-@dc.dataclass
+@dc.dataclass(slots=True)
 class _SequenceRunner:
     """Runner double serving cumulative counters and failing at one ordinal."""
 

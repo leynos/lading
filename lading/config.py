@@ -1,7 +1,5 @@
 """Configuration loading for the :mod:`lading` toolkit."""
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import contextlib
 import contextvars

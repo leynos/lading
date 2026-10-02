@@ -5,8 +5,6 @@ rewrites) and hosts the workspace-construction fixtures those assertions share.
 Result-message formatting lives in ``test_bump_output_formatting``.
 """
 
-from __future__ import annotations
-
 import dataclasses as dc
 from pathlib import Path
 

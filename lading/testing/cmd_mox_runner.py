@@ -23,8 +23,6 @@ single canonical home here as the module constants
 them.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import logging
 import math
@@ -43,6 +41,9 @@ from lading.runtime.subprocess_runner import (
     write_to_sink,
 )
 from lading.utils.process import log_command_invocation
+
+if typ.TYPE_CHECKING:  # pragma: no cover - import-time typing aids only
+    from lading.runtime.stream_relay import TextSink
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -352,7 +353,7 @@ def _apply_cmd_mox_environment(env: cabc.Mapping[str, str] | None) -> None:
     os.environ.update({str(key): str(value) for key, value in env.items()})
 
 
-def _echo_buffered_output(payload: str, sink: typ.TextIO) -> None:
+def _echo_buffered_output(payload: str, sink: TextSink) -> None:
     """Emit buffered cmd-mox output so callers still see command logs."""
     if not payload:
         return

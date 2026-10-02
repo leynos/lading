@@ -15,8 +15,6 @@ baseline with ``FileNotFoundError`` (issue #196), aborting the whole
 mutation-testing job before any mutants are generated.
 """
 
-from __future__ import annotations
-
 import typing as typ
 
 if typ.TYPE_CHECKING:

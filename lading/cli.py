@@ -16,8 +16,6 @@ nullable-to-concrete defaulting in a single place rather than splitting it
 across the CLI adapter and the command module.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import contextvars
 import importlib

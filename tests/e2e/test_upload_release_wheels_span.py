@@ -20,8 +20,6 @@ library. The no-publication guarantees both rely on are the stub helper's, in
 :mod:`tests.helpers.gh_stub`.
 """
 
-from __future__ import annotations
-
 import json
 from pathlib import Path
 

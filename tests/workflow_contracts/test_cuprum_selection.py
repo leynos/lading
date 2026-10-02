@@ -22,8 +22,6 @@ tested in ``test_cuprum_selection_readers.py``. This module owns what the
 repository must satisfy; that one owns whether the reading is correct.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import shutil
 import subprocess

@@ -13,8 +13,6 @@ All message assertions use syrupy ``snapshot()`` comparisons rather than
 substring matching to lock in the exact format for regression detection.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import dataclasses as dc
 import logging
@@ -92,7 +90,7 @@ class _InPlanSnapshotCase(typ.NamedTuple):
 
 def _pipeline_info_records(
     caplog: pytest.LogCaptureFixture,
-) -> tuple[tuple[str, tuple[object, ...]], ...]:
+) -> tuple[tuple[object, object], ...]:
     """Return captured INFO records for publish pipeline operator messages."""
     return tuple(
         (record.msg, record.args)
@@ -124,14 +122,17 @@ def test_run_rejects_allow_unpublished_with_live(
             ),
         )
 
-    assert str(excinfo.value) == snapshot()
+    assert str(excinfo.value) == snapshot(), (
+        "combining --live with --allow-unpublished-workspace-deps must fail "
+        "pre-flight with the locked diagnostic"
+    )
     assert caplog.messages == [
         (
             "Unpublished workspace dependency override is only valid in dry-run "
             "mode. Live publish requires all dependency packages to be "
             "available on crates.io before the dependent crate is published."
         )
-    ]
+    ], "the rejection must warn that the override is only valid in dry-run mode"
 
 
 def _handle_index_missing_version_message(
@@ -208,8 +209,12 @@ def test_index_missing_version_message_snapshot(
         caplog=caplog,
     )
 
-    assert _snapshot_message(message) == snapshot(name="message")
-    assert _warning_records(caplog) == snapshot(name="warning")
+    assert _snapshot_message(message) == snapshot(name="message"), (
+        "the index-missing-version failure message must keep its locked format"
+    )
+    assert _warning_records(caplog) == snapshot(name="warning"), (
+        "the accompanying warning must keep its locked format"
+    )
 
 
 def test_index_missing_in_plan_downgrade_snapshot(
@@ -242,11 +247,16 @@ def test_index_missing_in_plan_downgrade_snapshot(
         ),
     )
 
-    assert _warning_records(caplog) == snapshot(name="warning")
+    assert _warning_records(caplog) == snapshot(name="warning"), (
+        "the in-plan downgrade warning must keep its locked format"
+    )
     assert any(
         "Downgraded cargo package failure for crate beta" in message
         and "dependency alpha (index 0) is part of the publish plan" in message
         for message in caplog.messages
+    ), (
+        "an in-plan missing dependency must be downgraded to a warning naming "
+        "the crate and the planned dependency"
     )
 
 
@@ -269,8 +279,12 @@ def test_index_missing_out_of_plan_message_snapshot(
         caplog=caplog,
     )
 
-    assert _snapshot_message(message) == snapshot(name="message")
-    assert _warning_records(caplog) == snapshot(name="warning")
+    assert _snapshot_message(message) == snapshot(name="message"), (
+        "an out-of-plan dependency must fail with the locked message format"
+    )
+    assert _warning_records(caplog) == snapshot(name="warning"), (
+        "the out-of-plan failure warning must keep its locked format"
+    )
 
 
 @pytest.mark.parametrize(
@@ -319,8 +333,12 @@ def test_index_missing_in_plan_fatal_message_snapshot(
         caplog=caplog,
     )
 
-    assert _snapshot_message(message) == snapshot(name="message")
-    assert _warning_records(caplog) == snapshot(name="warning")
+    assert _snapshot_message(message) == snapshot(name="message"), (
+        "an in-plan missing dependency must fail with the locked message format"
+    )
+    assert _warning_records(caplog) == snapshot(name="warning"), (
+        "the in-plan fatal-path warning must keep its locked format"
+    )
 
 
 @pytest.mark.parametrize(
@@ -355,7 +373,9 @@ def test_pipeline_info_log_snapshot(
         runner=CallTrackingRunner(),
     )
 
-    assert _pipeline_info_records(caplog) == snapshot()
+    assert _pipeline_info_records(caplog) == snapshot(), (
+        "pipeline selector and progression logs must keep their locked format"
+    )
 
 
 @pytest.mark.parametrize(
@@ -398,4 +418,6 @@ def test_already_published_warning_snapshot(
         ),
     )
 
-    assert _warning_records(caplog) == snapshot()
+    assert _warning_records(caplog) == snapshot(), (
+        "the already-published downgrade warning must keep its locked format"
+    )

@@ -1,7 +1,5 @@
 """Publish preflight execution test coverage."""
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import dataclasses as dc
 from pathlib import Path
@@ -11,7 +9,7 @@ import pytest
 from lading.commands import publish, publish_pipeline, publish_preflight
 
 from .conftest import (
-    ORIGINAL_PREFLIGHT,
+    _real_preflight,
     make_config,
     make_crate,
     make_preflight_config,
@@ -20,38 +18,39 @@ from .conftest import (
 from .preflight_test_utils import _extract_cargo_test_call, _setup_preflight_test
 
 
-@dc.dataclass(frozen=True)
+@dc.dataclass(frozen=True, slots=True)
 class _ExcludeScenario:
     """Bundled parameters for a single exclude-normalization scenario."""
 
     configured_excludes: tuple[str, ...]
     expected_excludes: tuple[str, ...]
-    unit_tests_only: bool
+    unit_tests_only: bool = False
+    id: str = ""
 
 
 EXCLUDE_SCENARIOS = (
-    pytest.param((), (), id="none"),
-    pytest.param(("alpha", "beta"), ("alpha", "beta"), id="ordered"),
-    pytest.param(("beta", "alpha"), ("alpha", "beta"), id="sorted"),
-    pytest.param((" alpha ", "beta", "alpha"), ("alpha", "beta"), id="trimmed"),
-    pytest.param(("", " ", "\t"), (), id="blank_entries"),
-    pytest.param(
+    _ExcludeScenario((), (), id="none"),
+    _ExcludeScenario(("alpha", "beta"), ("alpha", "beta"), id="ordered"),
+    _ExcludeScenario(("beta", "alpha"), ("alpha", "beta"), id="sorted"),
+    _ExcludeScenario((" alpha ", "beta", "alpha"), ("alpha", "beta"), id="trimmed"),
+    _ExcludeScenario(("", " ", "\t"), (), id="blank_entries"),
+    _ExcludeScenario(
         (" \n", "\rbeta\t", "\talpha", "beta"),
         ("alpha", "beta"),
         id="whitespace_variants",
     ),
-    pytest.param(
+    _ExcludeScenario(
         ("gamma", "beta", "alpha"),
         ("alpha", "beta", "gamma"),
         id="unsorted",
     ),
-    pytest.param(("beta", "beta", "beta"), ("beta",), id="deduplicated"),
-    pytest.param(
+    _ExcludeScenario(("beta", "beta", "beta"), ("beta",), id="deduplicated"),
+    _ExcludeScenario(
         ("alpha", "alpha", " alpha ", "\talpha\t"),
         ("alpha",),
         id="duplicate_whitespace",
     ),
-    pytest.param(("alpha", "", "beta"), ("alpha", "beta"), id="mixed_blank"),
+    _ExcludeScenario(("alpha", "", "beta"), ("alpha", "beta"), id="mixed_blank"),
 )
 
 
@@ -59,7 +58,7 @@ def test_run_executes_preflight_checks_in_workspace(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Pre-flight commands run inside the resolved workspace root."""
-    monkeypatch.setattr(publish_preflight, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
+    monkeypatch.setattr(publish_preflight, "_run_preflight_checks", _real_preflight)
     root = tmp_path / "workspace"
     root.mkdir()
     workspace = make_workspace(root, make_crate(root, "alpha"))
@@ -72,8 +71,10 @@ def test_run_executes_preflight_checks_in_workspace(
         *,
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
         """Record the invocation and return a successful result."""
+        del env
         calls.append((tuple(command), cwd))
         return 0, "", ""
 
@@ -115,11 +116,7 @@ def test_run_executes_preflight_checks_in_workspace(
 # target-narrowing flag.
 EXCLUDE_MODE_SCENARIOS = tuple(
     pytest.param(
-        _ExcludeScenario(
-            configured_excludes=scenario.values[0],
-            expected_excludes=scenario.values[1],
-            unit_tests_only=unit_tests_only,
-        ),
+        dc.replace(scenario, unit_tests_only=unit_tests_only),
         id=f"{scenario.id}-{'unit_only' if unit_tests_only else 'all_targets'}",
     )
     for scenario in EXCLUDE_SCENARIOS
@@ -248,7 +245,7 @@ def test_dirty_workspace_allowed_by_default(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Publish skips git status when cleanliness enforcement is disabled."""
-    monkeypatch.setattr(publish_preflight, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
+    monkeypatch.setattr(publish_preflight, "_run_preflight_checks", _real_preflight)
     root = tmp_path / "workspace"
     root.mkdir()
     workspace = make_workspace(root, make_crate(root, "alpha"))
@@ -259,8 +256,10 @@ def test_dirty_workspace_allowed_by_default(
         *,
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
         """Fail the test if git status is invoked; succeed otherwise."""
+        del cwd, env
         normalized_cmd = tuple(command)
         if normalized_cmd == ("git", "status", "--porcelain"):
             message = "git status should be skipped by default"
@@ -280,7 +279,7 @@ def test_forbid_dirty_flag_enforces_cleanliness(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Explicit forbid-dirty option requires a clean git status."""
-    monkeypatch.setattr(publish_preflight, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
+    monkeypatch.setattr(publish_preflight, "_run_preflight_checks", _real_preflight)
     root = tmp_path / "workspace"
     root.mkdir()
     workspace = make_workspace(root, make_crate(root, "alpha"))
@@ -291,8 +290,10 @@ def test_forbid_dirty_flag_enforces_cleanliness(
         *,
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
         """Return dirty git output; succeed for all other commands."""
+        del cwd, env
         if command[0] == "git":
             return 0, " M Cargo.toml\n", ""
         return 0, "", ""
@@ -327,7 +328,7 @@ def test_run_raises_when_preflight_cargo_fails(
     expected_message: str,
 ) -> None:
     """Non-zero cargo check/test aborts the publish command."""
-    monkeypatch.setattr(publish_preflight, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
+    monkeypatch.setattr(publish_preflight, "_run_preflight_checks", _real_preflight)
     root = tmp_path / "workspace"
     root.mkdir()
     workspace = make_workspace(root, make_crate(root, "alpha"))
@@ -338,8 +339,10 @@ def test_run_raises_when_preflight_cargo_fails(
         *,
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
         """Fail the configured subcommand; succeed for all others."""
+        del cwd, env
         if command[0] == "git":
             return 0, "", ""
         if len(command) > 1 and command[1] == failing_subcommand:

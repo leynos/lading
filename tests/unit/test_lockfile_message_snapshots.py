@@ -7,8 +7,6 @@ messages and the multi-line stale-lockfile error raised by
 and lock in the exact formats.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import typing as typ
 from pathlib import Path
@@ -82,12 +80,23 @@ class TestBumpLockfileMessages:
             ),
         )
 
-        assert f"Updated version to {target_version}" in message
-        assert "1 manifest(s)" in message
-        assert f"{len(lockfile_paths)} lockfile(s)" in message
+        assert f"Updated version to {target_version}" in message, (
+            "the bump summary must report the version that was applied"
+        )
+        assert "1 manifest(s)" in message, (
+            "the bump summary must count the manifests it rewrote"
+        )
+        assert f"{len(lockfile_paths)} lockfile(s)" in message, (
+            "the bump summary must count the lockfiles it regenerated"
+        )
         for lockfile_path in lockfile_paths:
-            assert f"- {lockfile_path} (lockfile)" in message
-        assert snapshot == message
+            assert f"- {lockfile_path} (lockfile)" in message, (
+                "each regenerated lockfile must be listed with its "
+                "workspace-relative path and the (lockfile) suffix"
+            )
+        assert snapshot == message, (
+            "the bump lockfile summary must match the recorded snapshot"
+        )
 
 
 @pytest.mark.usefixtures("enable_publish_preflight")
@@ -139,9 +148,10 @@ class TestStaleLockfileMessages:
             *,
             cwd: Path | None = None,
             env: cabc.Mapping[str, str] | None = None,
+            echo_stdout: bool = True,
         ) -> tuple[int, str, str]:
             """Return a successful no-output command result."""
-            del command, cwd, env
+            del command, cwd, env, echo_stdout
             return 0, "", ""
 
         workspace = WorkspaceGraph(workspace_root=tmp_path, crates=())
@@ -155,11 +165,16 @@ class TestStaleLockfileMessages:
 
         message = str(excinfo.value)
         for lockfile_path in lockfiles:
-            assert f"- {lockfile_path}" in message
+            assert f"- {lockfile_path}" in message, (
+                "the stale-lockfile diagnostic must name every offending lockfile path"
+            )
             assert (
                 f"cargo generate-lockfile --manifest-path "
                 f"{lockfile_path.parent / 'Cargo.toml'}"
-            ) in message
+            ) in message, (
+                "the stale-lockfile diagnostic must offer the exact "
+                "regeneration command for each offending manifest"
+            )
         message = message.replace("\\", "/")
         for position, lockfile_path in enumerate(lockfiles, start=1):
             staged_manifest = lockfile_path.parent / "Cargo.toml"

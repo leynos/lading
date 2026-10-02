@@ -1,7 +1,5 @@
 """Infrastructure helpers for publish BDD steps."""
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import contextlib
 import dataclasses as dc
@@ -9,29 +7,25 @@ import os
 import typing as typ
 
 import pytest
+from cmd_mox import Invocation
 
 from lading.testing.cmd_mox_runner import normalize_cmd_mox_command
-
-try:
-    from cmd_mox import CmdMox
-except ModuleNotFoundError:  # pragma: no cover - runtime fallback
-    CmdMox = typ.Any  # type: ignore[assignment]
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
 
-    from tomlkit.toml_document import TOMLDocument  # pragma: no cover
+    from cmd_mox import CmdMox
 
     from .cli_run_types import CliRunResult
-    from .test_common_steps import _run_cli  # ruff: ignore[unused-import]
-else:  # pragma: no cover - runtime fallback for typing helpers
-    Path = typ.Any  # type: ignore[assignment]
-    TOMLDocument = typ.Any  # type: ignore[assignment]
 
 
 @dc.dataclass(frozen=True, slots=True)
 class _CommandResponse:
-    """Describe the outcome of a mocked command invocation."""
+    """Describe the outcome of a mocked command invocation.
+
+    ``exit_code`` is the process status cmd-mox should report, while ``stdout``
+    and ``stderr`` carry the captured streams a probe is expected to read back.
+    """
 
     exit_code: int
     stdout: str = ""
@@ -73,7 +67,7 @@ class _PreflightStubConfig:
 class PreflightTestContext:
     """Context for executing preflight tests with stubbed commands."""
 
-    cmd_mox: typ.Any
+    cmd_mox: CmdMox
     overrides: dict[tuple[str, ...], ResponseProvider]
     recorder: _PreflightInvocationRecorder
 
@@ -96,13 +90,11 @@ class PreflightTestContext:
         )
 
 
-class _CmdInvocation(typ.Protocol):
-    """Protocol describing the cmd-mox invocation payload."""
-
-    args: cabc.Sequence[str]
-
-
-ResponseProvider = _CommandResponse | cabc.Callable[[_CmdInvocation], _CommandResponse]
+# ``Invocation`` is cmd-mox's own record, and ``runs`` is declared over it.
+# A local structural protocol cannot stand in for it: ``Invocation.args`` is a
+# ``list[str]`` and a protocol member is invariant, so the handler would not be
+# assignable to the ``Callable[[Invocation], ...]`` the double accepts.
+ResponseProvider = _CommandResponse | cabc.Callable[[Invocation], _CommandResponse]
 
 
 def _validate_stub_arguments(
@@ -152,14 +144,17 @@ def _make_preflight_handler(
     expected_arguments: tuple[str, ...],
     recorder: _PreflightInvocationRecorder | None,
     label: str,
-) -> cabc.Callable[[_CmdInvocation], tuple[str, str, int]]:
+) -> cabc.Callable[[Invocation], tuple[str, str, int]]:
     """Build a cmd-mox handler that validates argument prefixes."""
 
-    def _handler(invocation: _CmdInvocation) -> tuple[str, str, int]:
+    def _handler(invocation: Invocation) -> tuple[str, str, int]:
         _validate_stub_arguments(expected_arguments, tuple(invocation.args))
-        active_response = response(invocation) if callable(response) else response
+        if isinstance(response, _CommandResponse):
+            active_response = response
+        else:
+            active_response = response(invocation)
         if recorder is not None:
-            env_mapping = dict(getattr(invocation, "env", {}))
+            env_mapping = dict(invocation.env)
             recorder.record(label, tuple(invocation.args), env_mapping)
         return (
             active_response.stdout,
@@ -186,18 +181,19 @@ def _make_preflight_dispatch_handler(
     entries: cabc.Sequence[tuple[tuple[str, ...], ResponseProvider]],
     recorder: _PreflightInvocationRecorder | None,
     label: str,
-) -> cabc.Callable[[_CmdInvocation], tuple[str, str, int]]:
+) -> cabc.Callable[[Invocation], tuple[str, str, int]]:
     """Build a handler that dispatches several prefixes for one command."""
 
-    def _handler(invocation: _CmdInvocation) -> tuple[str, str, int]:
+    def _handler(invocation: Invocation) -> tuple[str, str, int]:
         received = tuple(invocation.args)
         for expected_arguments, response in entries:
             if _matches_expected_prefix(expected_arguments, received):
-                active_response = (
-                    response(invocation) if callable(response) else response
-                )
+                if isinstance(response, _CommandResponse):
+                    active_response = response
+                else:
+                    active_response = response(invocation)
                 if recorder is not None:
-                    env_mapping = dict(getattr(invocation, "env", {}))
+                    env_mapping = dict(invocation.env)
                     recorder.record(label, received, env_mapping)
                 return (
                     active_response.stdout,
@@ -358,19 +354,22 @@ def _register_preflight_commands(
 def _make_git_handler(
     responses: dict[tuple[str, ...], ResponseProvider],
     recorder: _PreflightInvocationRecorder | None,
-) -> cabc.Callable[[_CmdInvocation], tuple[str, str, int]]:
+) -> cabc.Callable[[Invocation], tuple[str, str, int]]:
     """Build a git handler that can serve multiple git subcommands."""
 
-    def _handler(invocation: _CmdInvocation) -> tuple[str, str, int]:
+    def _handler(invocation: Invocation) -> tuple[str, str, int]:
         args = tuple(invocation.args)
         try:
             response = responses[args]
         except KeyError as exc:
             message = f"Unexpected git invocation arguments: {args!r}"
             raise AssertionError(message) from exc
-        active_response = response(invocation) if callable(response) else response
+        if isinstance(response, _CommandResponse):
+            active_response = response
+        else:
+            active_response = response(invocation)
         if recorder is not None:
-            env_mapping = dict(getattr(invocation, "env", {}))
+            env_mapping = dict(invocation.env)
             recorder.record("git", args, env_mapping)
         return (
             active_response.stdout,
@@ -445,5 +444,10 @@ def test_resolve_preflight_expectation_normalizes_cargo_commands(
     """Ensure cmd-mox expectations follow publish command normalization."""
     program, args_prefix = _resolve_preflight_expectation(command)
 
-    assert program == expected_program
-    assert args_prefix == expected_args_prefix
+    assert program == expected_program, (
+        "each cargo subcommand must resolve to its cmd-mox stub program"
+    )
+    assert args_prefix == expected_args_prefix, (
+        "the resolved expectation must keep the arguments that followed the "
+        "cargo subcommand"
+    )

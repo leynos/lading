@@ -11,8 +11,6 @@ The no-publication guarantees are the stub helper's, in
 both callers share.
 """
 
-from __future__ import annotations
-
 import typing as typ
 from pathlib import Path
 

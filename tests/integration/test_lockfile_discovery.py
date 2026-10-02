@@ -6,8 +6,6 @@ the internals, so the git and filesystem integrations are covered rather
 than mocked layouts.
 """
 
-from __future__ import annotations
-
 import shutil
 import subprocess
 import typing as typ
