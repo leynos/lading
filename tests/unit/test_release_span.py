@@ -18,8 +18,6 @@ path, filename, tag, or captured output appears in a record to be leaked into
 the snapshot.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import io
 import json
@@ -34,8 +32,6 @@ if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
     import types
 
     from syrupy.assertion import SnapshotAssertion
-else:  # pragma: no cover - typing helpers
-    SnapshotAssertion = typ.Any
 
 SPAN_PATH = Path(__file__).resolve().parents[2] / "scripts" / "release_span.py"
 
@@ -151,7 +147,7 @@ def test_an_exception_still_closes_the_span_and_propagates(
 
     record = _record(sink)
     assert record["failure_category"] == "raised", record
-    assert record["exit_code"] == "", record
+    assert not record["exit_code"], record
 
 
 def test_a_missing_status_is_not_reported_as_success(
@@ -169,7 +165,7 @@ def test_a_missing_status_is_not_reported_as_success(
         pass
 
     record = _record(sink)
-    assert record["exit_code"] == "", record
+    assert not record["exit_code"], record
     assert record["failure_category"] != "none", record
 
 
@@ -239,8 +235,12 @@ def test_a_successful_invocation_serializes_to_the_expected_line(
         set_exit(0)
 
     line = _span_line(sink)
-    assert line == snapshot()
-    assert line.startswith("release_span {"), line
+    assert line == snapshot(), (
+        "a successful invocation must serialize to the pinned span line"
+    )
+    assert line.startswith("release_span {"), (
+        "every span line must open with the release_span prefix"
+    )
 
 
 def test_an_unobserved_status_serializes_as_an_empty_string(
@@ -261,5 +261,9 @@ def test_an_unobserved_status_serializes_as_an_empty_string(
         pass
 
     line = _span_line(sink)
-    assert line == snapshot()
-    assert '"exit_code": ""' in line, line
+    assert line == snapshot(), (
+        "an unobserved status must serialize to the pinned span line"
+    )
+    assert '"exit_code": ""' in line, (
+        "an unobserved status must serialize as an empty string, not null"
+    )

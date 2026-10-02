@@ -1,7 +1,5 @@
 """Tests for ``rebuild_lockfiles`` resolution in :mod:`lading.commands.bump`."""
 
-from __future__ import annotations
-
 import logging
 import pathlib
 import tempfile

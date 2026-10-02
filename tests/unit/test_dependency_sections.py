@@ -6,8 +6,6 @@ Issue #103: the section names live once in
 with it.
 """
 
-from __future__ import annotations
-
 import typing as typ
 
 import hypothesis.strategies as st
@@ -26,15 +24,21 @@ def test_kind_mapping_agrees_with_canonical_sections() -> None:
     """Every mapped section is canonical and every canonical section is mapped."""
     mapped = set(bump_manifests._DEPENDENCY_SECTION_BY_KIND.values())
 
-    assert mapped == set(bump_toml.DEPENDENCY_SECTIONS)
+    assert mapped == set(bump_toml.DEPENDENCY_SECTIONS), (
+        "the kind mapping and the canonical section list must agree exactly"
+    )
 
 
 def test_workspace_dependency_sections_use_canonical_vocabulary() -> None:
     """The workspace manifest update targets exactly the canonical sections."""
     sections = bump_manifests._workspace_dependency_sections(["alpha", "beta"])
 
-    assert tuple(sections) == bump_toml.DEPENDENCY_SECTIONS
-    assert all(names == {"alpha", "beta"} for names in sections.values())
+    assert tuple(sections) == bump_toml.DEPENDENCY_SECTIONS, (
+        "workspace updates must target the canonical sections in order"
+    )
+    assert all(names == {"alpha", "beta"} for names in sections.values()), (
+        "every canonical section must receive the same dependency names"
+    )
 
 
 def _render_manifest(sections: tuple[str, ...]) -> str:
@@ -63,7 +67,9 @@ def test_snippet_rewrite_visits_exactly_canonical_sections(
 
     changed = bump_docs.update_toml_snippet_dependencies(document, ("alpha",), "2.0.0")
 
-    assert changed is bool(present)
+    assert changed is bool(present), (
+        "the rewrite must report a change only when a canonical section is present"
+    )
     rendered = document.as_string()
     for section in ordered:
         table = document[section]
@@ -80,5 +86,9 @@ def test_multi_section_manifest_rewrite_snapshot(
     manifest = _render_manifest(bump_toml.DEPENDENCY_SECTIONS + _DECOY_SECTIONS)
     document = parse_toml(manifest)
 
-    assert bump_docs.update_toml_snippet_dependencies(document, ("alpha",), "2.0.0")
-    assert snapshot == document.as_string()
+    assert bump_docs.update_toml_snippet_dependencies(document, ("alpha",), "2.0.0"), (
+        "the multi-section manifest rewrite must report a change"
+    )
+    assert snapshot == document.as_string(), (
+        "the rewritten manifest must match the recorded snapshot"
+    )

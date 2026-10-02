@@ -1,7 +1,5 @@
 """Unit tests for :mod:`lading.utils.commands`."""
 
-from __future__ import annotations
-
 import pytest
 
 from lading.utils.commands import CARGO, GIT, LADING_CATALOGUE, SCCACHE
@@ -12,15 +10,21 @@ class TestLadingCatalogue:
 
     def test_catalogue_is_importable(self) -> None:
         """The catalogue should be importable from lading.utils.commands."""
-        assert LADING_CATALOGUE is not None
+        assert LADING_CATALOGUE is not None, (
+            "importing the shared catalogue must yield a catalogue instance"
+        )
 
     def test_catalogue_registers_cargo(self) -> None:
         """The catalogue should include cargo as an allowed programme."""
-        assert LADING_CATALOGUE.is_allowed(CARGO)
+        assert LADING_CATALOGUE.is_allowed(CARGO), (
+            "cargo must be an allowlisted programme in the shared catalogue"
+        )
 
     def test_catalogue_registers_git(self) -> None:
         """The catalogue should include git as an allowed programme."""
-        assert LADING_CATALOGUE.is_allowed(GIT)
+        assert LADING_CATALOGUE.is_allowed(GIT), (
+            "git must be an allowlisted programme in the shared catalogue"
+        )
 
     def test_catalogue_registers_sccache(self) -> None:
         """The catalogue should include sccache for compiler-cache queries."""
@@ -33,22 +37,24 @@ class TestLadingCatalogue:
         """The catalogue allowlist should contain both cargo and git."""
         allowlist = LADING_CATALOGUE.allowlist
 
-        assert CARGO in allowlist
-        assert GIT in allowlist
+        assert CARGO in allowlist, "cargo must appear in the catalogue's allowlist"
+        assert GIT in allowlist, "git must appear in the catalogue's allowlist"
 
     def test_catalogue_can_lookup_cargo(self) -> None:
         """The catalogue should return a ProgramEntry for cargo."""
         entry = LADING_CATALOGUE.lookup(CARGO)
 
-        assert entry is not None
-        assert entry.program == CARGO
+        assert entry is not None, "looking up cargo must return a catalogue entry"
+        assert entry.program == CARGO, (
+            "the cargo entry must name cargo as its programme"
+        )
 
     def test_catalogue_can_lookup_git(self) -> None:
         """The catalogue should return a ProgramEntry for git."""
         entry = LADING_CATALOGUE.lookup(GIT)
 
-        assert entry is not None
-        assert entry.program == GIT
+        assert entry is not None, "looking up git must return a catalogue entry"
+        assert entry.program == GIT, "the git entry must name git as its programme"
 
     def test_catalogue_rejects_unregistered_program(self) -> None:
         """Unregistered programmes should raise UnknownProgramError."""
@@ -65,19 +71,25 @@ class TestProgramConstants:
 
     def test_cargo_program_name(self) -> None:
         """CARGO should represent the cargo executable."""
-        assert str(CARGO) == "cargo"
+        assert str(CARGO) == "cargo", (
+            "the CARGO constant must represent the cargo executable"
+        )
 
     def test_git_program_name(self) -> None:
         """GIT should represent the git executable."""
-        assert str(GIT) == "git"
+        assert str(GIT) == "git", "the GIT constant must represent the git executable"
 
     def test_programs_exported_from_utils_package(self) -> None:
         """Program constants should be accessible from lading.utils."""
         from lading import utils
 
-        assert utils.CARGO is CARGO
-        assert utils.GIT is GIT
-        assert utils.LADING_CATALOGUE is LADING_CATALOGUE
+        assert utils.CARGO is CARGO, (
+            "utils.CARGO must re-export the same programme constant"
+        )
+        assert utils.GIT is GIT, "utils.GIT must re-export the same programme constant"
+        assert utils.LADING_CATALOGUE is LADING_CATALOGUE, (
+            "utils.LADING_CATALOGUE must re-export the same catalogue instance"
+        )
 
 
 class TestScopedContext:
@@ -91,8 +103,12 @@ class TestScopedContext:
             cargo_builder = sh.make(CARGO, catalogue=LADING_CATALOGUE)
             git_builder = sh.make(GIT, catalogue=LADING_CATALOGUE)
 
-            assert cargo_builder is not None
-            assert git_builder is not None
+            assert cargo_builder is not None, (
+                "scoped() must yield a usable cargo command builder"
+            )
+            assert git_builder is not None, (
+                "scoped() must yield a usable git command builder"
+            )
 
     def test_scoped_context_allows_command_construction(self) -> None:
         """Commands should be constructable within a scoped context."""
@@ -107,7 +123,7 @@ class TestScopedContext:
                 "metadata",
                 "--format-version",
                 "1",
-            )
+            ), "argv must preserve the built cargo metadata invocation exactly"
 
     def test_scoped_context_rejects_unregistered_program(self) -> None:
         """Unregistered programmes should raise UnknownProgramError in scope."""

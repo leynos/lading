@@ -1,15 +1,17 @@
 """Contract tests for the Pylint lint tier.
 
-The tier runs a pinned Pylint as a uv tool on managed PyPy 3.12. Two
-properties of that tier are easy to lose without any test noticing: the
-interpreter pin, which decides the grammar Pylint parses with, and the
-`syntax-error` message, which decides whether a module that grammar cannot
-parse fails the lint or is skipped without a word. Both regressed silently
-before: a bare `pypy` moved to a newer PyPy with no commit here, and a
-disabled `syntax-error` let unparsable modules go unlinted.
-"""
+The tier runs a pinned Pylint as a uv tool on the managed interpreter named by
+``PYTHON_BASELINE``. Two properties of that tier are easy to lose without any
+test noticing: the interpreter pin, which decides the grammar Pylint parses
+with, and the `syntax-error` message, which decides whether a module that
+grammar cannot parse fails the lint or is skipped without a word. Both
+regressed silently before: a floating interpreter moved under the tier with no
+commit here, and a disabled `syntax-error` let unparsable modules go unlinted.
 
-from __future__ import annotations
+The interpreter is pinned to the baseline rather than to PyPy. The source and
+the df12 rules are both written to that baseline, so the interpreter Pylint
+parses with is the same one the package declares support for.
+"""
 
 import re
 import shlex
@@ -53,9 +55,10 @@ def _makefile_variable(name: str) -> str:
 
 
 def test_pylint_tier_pins_the_interpreter() -> None:
-    """The tier must name the interpreter whose grammar it parses with."""
-    assert _makefile_variable("PYLINT_PYTHON") == "pypy@3.12", (
-        "PYLINT_PYTHON must stay pypy@3.12: bare pypy follows uv's next release"
+    """The tier must parse with the declared Python baseline, not a float."""
+    assert _makefile_variable("PYLINT_PYTHON") == "$(PYTHON_BASELINE)", (
+        "PYLINT_PYTHON must track PYTHON_BASELINE: a floating interpreter "
+        "would follow uv's next release instead of the declared baseline"
     )
 
 

@@ -1,7 +1,5 @@
 """Real Git helpers for end-to-end tests."""
 
-from __future__ import annotations
-
 import shutil
 import typing as typ
 from contextlib import suppress

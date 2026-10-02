@@ -23,14 +23,12 @@ Related step modules
     Shared assertion helpers used across given/when/then step modules.
 """
 
-from __future__ import annotations
-
 import json
 import re
-import typing as typ
 
 from pytest_bdd import parsers, then
 
+from .cli_run_types import CliRunResult
 from .test_publish_helpers import (
     _assert_cli_run_succeeded,
     _assert_crate_order_matches,
@@ -45,10 +43,7 @@ from .test_publish_helpers import (
     _publish_plan_lines,
     _split_names,
 )
-
-if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
-    from .cli_run_types import CliRunResult
-    from .test_publish_infrastructure import _PreflightInvocationRecorder
+from .test_publish_infrastructure import _PreflightInvocationRecorder
 
 
 @then(parsers.parse('the publish command prints the publish plan for "{crate_name}"'))
@@ -57,9 +52,15 @@ def then_publish_prints_plan(cli_run: CliRunResult, crate_name: str) -> None:
     _assert_cli_run_succeeded(cli_run)
     workspace = cli_run["workspace"]
     lines = _publish_plan_lines(cli_run)
-    assert lines[0] == f"Publish plan for {workspace}"
-    assert lines[1].startswith("Strip patch strategy:")
-    assert f"- {crate_name} @ 0.1.0" in lines
+    assert lines[0] == f"Publish plan for {workspace}", (
+        "the plan must open by naming the workspace root"
+    )
+    assert lines[1].startswith("Strip patch strategy:"), (
+        "the plan must state the strip patch strategy on its second line"
+    )
+    assert f"- {crate_name} @ 0.1.0" in lines, (
+        "the plan must list the requested crate at its published version"
+    )
 
 
 @then("the staged workspace copy has been removed")
@@ -86,7 +87,7 @@ def then_publish_manifest_has_no_patch_section(cli_run: CliRunResult) -> None:
     """Assert the staged manifest lacks ``[patch.crates-io]`` entirely."""
     document = _load_staged_manifest(cli_run)
     entries = _get_patch_entries(document)
-    assert entries == {}
+    assert entries == {}, "the staged manifest must not carry any patch entries"
 
 
 @then(parsers.parse('the publish staging manifest omits patch entries "{crate_names}"'))
@@ -97,7 +98,9 @@ def then_publish_manifest_omits_entries(
     document = _load_staged_manifest(cli_run)
     entries = _get_patch_entries(document)
     for name in _split_names(crate_names):
-        assert name not in entries
+        assert name not in entries, (
+            f"crate {name} must be stripped from the staged patch table"
+        )
 
 
 @then(
@@ -110,7 +113,9 @@ def then_publish_manifest_retains_entries(
     document = _load_staged_manifest(cli_run)
     entries = _get_patch_entries(document)
     for name in _split_names(crate_names):
-        assert name in entries
+        assert name in entries, (
+            f"crate {name} must be retained in the staged patch table"
+        )
 
 
 @then(
@@ -311,7 +316,9 @@ def then_publish_lists_crates_in_order(cli_run: CliRunResult, crate_names: str) 
     expected = _split_names(crate_names)
     lines = _publish_plan_lines(cli_run)
     header = f"Crates to publish ({len(expected)}):"
-    assert header in lines
+    assert header in lines, (
+        "the plan must head the publish list with the expected crate count"
+    )
     section_index = lines.index(header)
     publish_lines: list[str] = []
     for line in lines[section_index + 1 :]:
@@ -319,7 +326,9 @@ def then_publish_lists_crates_in_order(cli_run: CliRunResult, crate_names: str) 
             break
         publish_lines.append(line[2:])
     actual = [entry.split(" @ ", 1)[0] for entry in publish_lines]
-    assert actual == expected
+    assert actual == expected, (
+        "the plan must list publishable crates in the expected order"
+    )
 
 
 @then(parsers.parse('the publish command packages crates in order "{crate_names}"'))
@@ -341,7 +350,7 @@ def then_publish_packages_crates_in_order(
     AssertionError
         If no ``cargo::package`` invocations were recorded, or the
         packaged crate order does not match the expected publish order.
-    """  # ruff: ignore[docstring-extraneous-exception]
+    """  # ruff: ignore[docstring-extraneous-exception]  # raised by the delegated _get_required_invocations, not here
     expected = [name.strip() for name in crate_names.split(",") if name.strip()]
     invocations = _get_required_invocations(
         preflight_recorder,
@@ -375,7 +384,7 @@ def then_publish_runs_dry_run(
         If no ``cargo::publish`` invocations were recorded, an invocation
         is missing the ``--dry-run`` flag, or the crate order does not
         match.
-    """  # ruff: ignore[docstring-extraneous-exception]
+    """  # ruff: ignore[docstring-extraneous-exception]  # raised by the delegated _get_required_invocations, not here
     expected = _split_names(crate_names)
     invocations = _get_required_invocations(
         preflight_recorder,
@@ -410,7 +419,7 @@ def then_publish_runs_live(
         If no ``cargo::publish`` invocations were recorded, an invocation
         unexpectedly carries the ``--dry-run`` flag, or the crate order
         does not match.
-    """  # ruff: ignore[docstring-extraneous-exception]
+    """  # ruff: ignore[docstring-extraneous-exception]  # raised by the delegated _get_required_invocations, not here
     expected = _split_names(crate_names)
     invocations = _get_required_invocations(
         preflight_recorder,
@@ -476,7 +485,9 @@ def then_publish_reports_none(cli_run: CliRunResult) -> None:
     """Assert that the publish command highlights the empty publish list."""
     _assert_cli_run_succeeded(cli_run)
     lines = _publish_plan_lines(cli_run)
-    assert "Crates to publish: none" in lines
+    assert "Crates to publish: none" in lines, (
+        "a workspace with nothing to publish must be reported as such"
+    )
 
 
 @then(
@@ -485,10 +496,14 @@ def then_publish_reports_none(cli_run: CliRunResult) -> None:
 def then_publish_reports_manifest_skip(cli_run: CliRunResult, crate_name: str) -> None:
     """Assert the publish plan lists ``crate_name`` under manifest skips."""
     lines = _publish_plan_lines(cli_run)
-    assert "Skipped (publish = false):" in lines
+    assert "Skipped (publish = false):" in lines, (
+        "the plan must include a manifest-skipped section when crates opt out"
+    )
     section_index = lines.index("Skipped (publish = false):")
     skipped = lines[section_index + 1 :]
-    assert f"- {crate_name}" in skipped
+    assert f"- {crate_name}" in skipped, (
+        f"crate {crate_name} must be listed under the manifest skips"
+    )
 
 
 @then(
@@ -501,10 +516,14 @@ def then_publish_reports_configuration_skip(
 ) -> None:
     """Assert the publish plan lists ``crate_name`` under configuration skips."""
     lines = _publish_plan_lines(cli_run)
-    assert "Skipped via publish.exclude:" in lines
+    assert "Skipped via publish.exclude:" in lines, (
+        "the plan must include a configuration-skipped section when exclusions apply"
+    )
     section_index = lines.index("Skipped via publish.exclude:")
     skipped = lines[section_index + 1 :]
-    assert f"- {crate_name}" in skipped
+    assert f"- {crate_name}" in skipped, (
+        f"crate {crate_name} must be listed under the configuration skips"
+    )
 
 
 @then(
@@ -518,47 +537,66 @@ def then_publish_reports_multiple_configuration_skips(
     """Assert the publish plan lists all configuration exclusions."""
     expected_names = [name.strip() for name in crate_names.split(",") if name.strip()]
     lines = _publish_plan_lines(cli_run)
-    assert "Skipped via publish.exclude:" in lines
+    assert "Skipped via publish.exclude:" in lines, (
+        "the plan must include a configuration-skipped section when exclusions apply"
+    )
     section_index = lines.index("Skipped via publish.exclude:")
     skipped = lines[section_index + 1 :]
     for name in expected_names:
-        assert f"- {name}" in skipped
+        assert f"- {name}" in skipped, (
+            f"crate {name} must be listed under the configuration skips"
+        )
 
 
 @then(parsers.parse('the publish command reports missing exclusion "{name}"'))
 def then_publish_reports_missing_exclusion(cli_run: CliRunResult, name: str) -> None:
     """Assert the publish plan reports the missing exclusion ``name``."""
     lines = _publish_plan_lines(cli_run)
-    assert "Configured exclusions not found in workspace:" in lines
+    assert "Configured exclusions not found in workspace:" in lines, (
+        "the plan must call out configured exclusions that matched no crate"
+    )
     section_index = lines.index("Configured exclusions not found in workspace:")
     missing = lines[section_index + 1 :]
-    assert f"- {name}" in missing
+    assert f"- {name}" in missing, (
+        f"the unmatched exclusion {name} must be listed as missing"
+    )
 
 
 @then(parsers.parse('the publish command omits section "{header}"'))
 def then_publish_omits_section(cli_run: CliRunResult, header: str) -> None:
     """Assert that the publish plan does not mention ``header``."""
     lines = _publish_plan_lines(cli_run)
-    assert header not in lines
+    assert header not in lines, (
+        "the plan must omit the section when nothing belongs in it"
+    )
 
 
 @then("the command should not raise a preflight error about the flag")
 def then_publish_flag_is_accepted(cli_run: CliRunResult) -> None:
     """Assert that the dry-run override flag does not fail pre-flight."""
     _assert_cli_run_succeeded(cli_run)
-    assert "--allow-unpublished-workspace-deps is only valid" not in cli_run["stderr"]
+    assert (
+        "--allow-unpublished-workspace-deps is only valid" not in cli_run["stderr"]
+    ), (
+        "the override flag must be accepted in dry-run mode without the "
+        "dry-run-only rejection"
+    )
 
 
 @then("a PublishPreflightError should be raised")
 def then_publish_preflight_error_is_reported(cli_run: CliRunResult) -> None:
     """Assert that the CLI surfaced a publish pre-flight failure."""
-    assert cli_run["returncode"] == 1
+    assert cli_run["returncode"] == 1, (
+        "a publish pre-flight failure must surface as exit status one"
+    )
 
 
 @then(parsers.parse('the error message should contain "{expected}"'))
 def then_publish_error_message_contains(cli_run: CliRunResult, expected: str) -> None:
     """Assert that the CLI error output contains ``expected``."""
-    assert expected in cli_run["stderr"]
+    assert expected in cli_run["stderr"], (
+        "the reported error must contain the expected text"
+    )
 
 
 @then(parsers.parse('a WARNING log should be emitted containing "{expected}"'))

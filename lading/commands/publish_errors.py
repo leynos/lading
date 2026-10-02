@@ -23,8 +23,6 @@ Examples
 'cargo publish failed'
 """
 
-from __future__ import annotations
-
 from lading.exceptions import LadingError
 
 

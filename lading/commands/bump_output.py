@@ -29,8 +29,6 @@ This module is the sole owner of ``BumpChanges`` and bump result-message
 formatting (issue #95); no other module may re-declare them.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import dataclasses as dc
 

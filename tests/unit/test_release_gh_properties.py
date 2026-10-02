@@ -12,10 +12,9 @@ The test drives the real adapter against a real child process. A mocked
 ``CommandResult`` would test the mock, not the contract.
 """
 
-from __future__ import annotations
-
 import os
 import sys
+import types
 import typing as typ
 from pathlib import Path
 
@@ -24,9 +23,6 @@ from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 from tests.helpers.script_imports import import_script_module
-
-if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
-    import types
 
 #: The adapter is stateless -- importing it once per example rather than per
 #: input changes nothing -- so the function-scoped-fixture health check is
@@ -125,6 +121,20 @@ class _Payload(typ.NamedTuple):
     status: int
 
 
+class _CommandOutcome(typ.Protocol):
+    """The adapter's return contract, as the tests read it.
+
+    ``release_gh`` imports ``CommandOutcome`` from ``release_port``, but the
+    script pair is only importable with ``scripts`` on ``sys.path``. Declaring
+    the three fields here keeps a field access from being an attribute error on
+    ``object`` without reaching into another module's import machinery.
+    """
+
+    exit_code: int
+    stdout: str
+    stderr: str
+
+
 #: Payloads whose streams may be empty, which is the case where a ``None``
 #: would leak through as the string ``"None"``.
 _ANY_PAYLOAD = st.builds(
@@ -146,7 +156,7 @@ _NONEMPTY_PAYLOAD = st.builds(
 
 def _drive(
     payload_root: Path, release_gh: types.ModuleType, payload: _Payload
-) -> object:
+) -> _CommandOutcome:
     """Run the adapter against the driver with the given payload.
 
     Parameters
@@ -160,7 +170,7 @@ def _drive(
 
     Returns
     -------
-    object
+    _CommandOutcome
         Whatever the adapter returned.
     """
     slot = payload_root / "payload"

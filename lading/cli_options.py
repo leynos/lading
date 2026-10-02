@@ -5,8 +5,6 @@ apart from dispatch logic. ``cli`` re-imports every public name, so external
 access through ``lading.cli`` keeps working.
 """
 
-from __future__ import annotations
-
 import dataclasses as dc
 import re
 import typing as typ

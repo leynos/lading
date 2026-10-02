@@ -1,16 +1,11 @@
 """Manifest-related behavioural fixtures for CLI scenarios."""
 
-from __future__ import annotations
-
-import typing as typ
+from pathlib import Path
 
 from pytest_bdd import given, parsers
 from tomlkit import inline_table, table
 
 from lading.testing import toml_utils
-
-if typ.TYPE_CHECKING:
-    from pathlib import Path
 
 
 def _update_manifest_version(

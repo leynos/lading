@@ -8,6 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from cmd_mox import ipc as cmd_mox_ipc
 
 from lading.commands import publish_execution
 from lading.commands.publish import PublishPreflightError
@@ -160,12 +161,18 @@ def test_build_cmd_mox_invocation_env_merges_overrides(
     value_path = workspace_root / "value"
     env = cmd_mox_runner._build_cmd_mox_invocation_env(
         workspace_root,
-        {"NEW": value_path},
+        {"NEW": str(value_path)},
     )
 
-    assert env["PWD"] == str(workspace_root)
-    assert env["NEW"] == str(value_path)
-    assert env["EXISTING"] == "keep"
+    assert env["PWD"] == str(workspace_root), (
+        "the workspace root must supply the invocation's working directory"
+    )
+    assert env["NEW"] == str(value_path), (
+        "an explicit override must be merged and stringified into the environment"
+    )
+    assert env["EXISTING"] == "keep", (
+        "pre-existing environment entries must survive the merge"
+    )
 
 
 def test_build_cmd_mox_invocation_env_prefers_cwd_over_pwd_override(
@@ -178,8 +185,12 @@ def test_build_cmd_mox_invocation_env_prefers_cwd_over_pwd_override(
         {"PWD": "/root/repo", "OTHER": "ok"},
     )
 
-    assert env["PWD"] == str(workspace_root)
-    assert env["OTHER"] == "ok"
+    assert env["PWD"] == str(workspace_root), (
+        "the explicit cwd must win over a PWD supplied in the overrides"
+    )
+    assert env["OTHER"] == "ok", (
+        "unrelated overrides must still be merged alongside the PWD rewrite"
+    )
 
 
 def test_process_cmd_mox_response_updates_environment(
@@ -202,12 +213,14 @@ def test_process_cmd_mox_response_updates_environment(
     )
     captured = capsys.readouterr()
 
-    assert os.environ["ADDED_VAR"] == "yes"
-    assert captured.out.endswith("out\n")
-    assert captured.err.endswith("err\n")
-    assert exit_code == 3
-    assert stdout == "out\n"
-    assert stderr == "err\n"
+    assert os.environ["ADDED_VAR"] == "yes", (
+        "environment updates from the response must be applied to os.environ"
+    )
+    assert captured.out.endswith("out\n"), "buffered stdout must be echoed to stdout"
+    assert captured.err.endswith("err\n"), "buffered stderr must be echoed to stderr"
+    assert exit_code == 3, "the response's exit code must be returned unchanged"
+    assert stdout == "out\n", "the response's stdout must be returned verbatim"
+    assert stderr == "err\n", "the response's stderr must be returned verbatim"
 
 
 def test_process_cmd_mox_response_rejects_missing_exit_code() -> None:
@@ -221,14 +234,16 @@ def test_process_cmd_mox_response_rejects_missing_exit_code() -> None:
 def test_handle_cmd_mox_passthrough_returns_unmodified_response() -> None:
     """When no passthrough directive is present, the response should be returned."""
     response = SimpleNamespace()
-    invocation = SimpleNamespace(env={}, command="", args=(), stdin="")
+    invocation = cmd_mox_ipc.Invocation(command="", args=[], stdin="", env={})
 
     returned, streamed = cmd_mox_runner._handle_cmd_mox_passthrough(
         response, invocation, timeout=1.0
     )
 
-    assert returned is response
-    assert streamed is False
+    assert returned is response, (
+        "without a passthrough directive the very same response must come back"
+    )
+    assert streamed is False, "a response with no passthrough is never streamed"
 
 
 def test_handle_cmd_mox_passthrough_reports_response(
@@ -250,11 +265,11 @@ def test_handle_cmd_mox_passthrough_reports_response(
         lookup_path=str(tmp_path / "cmox" / "bin"),
         extra_env={"EXTRA": "1"},
     )
-    invocation = SimpleNamespace(
-        env={"PATH": str(tmp_path / "cmox" / "bin")},
+    invocation = cmd_mox_ipc.Invocation(
         command="cargo",
-        args=("test",),
+        args=["test"],
         stdin="",
+        env={"PATH": str(tmp_path / "cmox" / "bin")},
     )
     response = SimpleNamespace(passthrough=directive)
 
@@ -264,9 +279,15 @@ def test_handle_cmd_mox_passthrough_reports_response(
         timeout=1.0,
     )
 
-    assert streamed is False
-    assert isinstance(returned, mock_cmd_mox_modules.ipc_module.Response)
-    assert returned.stdout == "pass"
+    assert streamed is False, (
+        "a locally resolved canned response leaves streaming untouched"
+    )
+    assert isinstance(returned, mock_cmd_mox_modules.ipc_module.Response), (
+        "the reported passthrough result must come back as an IPC response"
+    )
+    assert returned.stdout == "pass", (
+        "the resolved command's stdout must be carried into the reported result"
+    )
 
 
 def test_handle_cmd_mox_passthrough_uses_pwd_for_cwd(
@@ -287,11 +308,14 @@ def test_handle_cmd_mox_passthrough_uses_pwd_for_cwd(
         extra_env={},
     )
     expected_cwd = tmp_path / "workspace"
-    invocation = SimpleNamespace(
-        env={"PATH": str(tmp_path / "cmox" / "bin"), "PWD": str(expected_cwd)},
+    invocation = cmd_mox_ipc.Invocation(
         command="git",
-        args=("status",),
+        args=["status"],
         stdin="",
+        env={
+            "PATH": str(tmp_path / "cmox" / "bin"),
+            "PWD": str(expected_cwd),
+        },
     )
     captured: dict[str, Path | None] = {"cwd": None}
 
@@ -315,9 +339,13 @@ def test_handle_cmd_mox_passthrough_uses_pwd_for_cwd(
         timeout=1.0,
     )
 
-    assert streamed is True
-    assert isinstance(returned, _MockCmdMoxIPC.PassthroughResult)
-    assert captured["cwd"] == expected_cwd
+    assert streamed is True, "a subprocess passthrough must be reported as streamed"
+    assert isinstance(returned, _MockCmdMoxIPC.PassthroughResult), (
+        "the passthrough outcome must be reported back to cmd-mox"
+    )
+    assert captured["cwd"] == expected_cwd, (
+        "the passthrough subprocess must run in the working directory from PWD"
+    )
 
 
 def test_invoke_via_subprocess_surfaces_spawn_errors() -> None:
@@ -339,16 +367,20 @@ def test_invoke_via_subprocess_writes_stdin() -> None:
         context,
     )
 
-    assert exit_code == 0
-    assert stdout == "payload"
-    assert stderr == ""
+    assert exit_code == 0, "a completed invocation must report a zero exit code"
+    assert stdout == "payload", (
+        "the payload written to stdin must be relayed back to stdout"
+    )
+    assert not stderr, "a clean invocation must produce no stderr output"
 
 
 def test_normalize_environment_stringifies_values() -> None:
     """Environment dictionaries should be coerced to string values."""
     result = subprocess_runner.normalize_environment({"PATH": Path.cwd()})
 
-    assert result == {"PATH": str(Path.cwd())}
+    assert result == {"PATH": str(Path.cwd())}, (
+        "non-string environment values must be coerced with str()"
+    )
 
 
 def test_merge_cmd_mox_path_entries_filters_shim(
@@ -363,9 +395,15 @@ def test_merge_cmd_mox_path_entries_filters_shim(
         f"/opt/tools{os.pathsep}/usr/bin",
     )
 
-    assert shim_dir.as_posix() not in merged
-    assert "/usr/bin" in merged
-    assert "/opt/tools" in merged
+    assert shim_dir.as_posix() not in merged, (
+        "the cmd-mox shim directory must be dropped from the merged PATH"
+    )
+    assert "/usr/bin" in merged, (
+        "a shared entry must survive deduplication into the merged PATH"
+    )
+    assert "/opt/tools" in merged, (
+        "entries from the lookup path must be appended to the merged PATH"
+    )
 
 
 def test_relay_stream_decodes_and_buffers_text() -> None:
@@ -376,22 +414,30 @@ def test_relay_stream_decodes_and_buffers_text() -> None:
 
     subprocess_runner.relay_stream(source, sink, buffer)
 
-    assert "".join(buffer).startswith("hello\nworld")
-    assert sink.getvalue().startswith("hello\nworld")
+    assert "".join(buffer).startswith("hello\nworld"), (
+        "decoded text must be accumulated into the capture buffer"
+    )
+    assert sink.getvalue().startswith("hello\nworld"), (
+        "decoded text must also be mirrored to the sink"
+    )
 
 
 def test_write_to_sink_handles_broken_pipe() -> None:
     """Broken pipes should be swallowed and return None."""
 
     class _Broken:
-        def write(self, _: str) -> None:
+        def write(self, _: str, /) -> int:
             raise BrokenPipeError
 
-        def flush(self) -> None:
+        def flush(self, /) -> None:
             raise BrokenPipeError
 
-    assert subprocess_runner.write_to_sink(None, "payload") is None
-    assert subprocess_runner.write_to_sink(_Broken(), "payload") is None
+    assert subprocess_runner.write_to_sink(None, "payload") is None, (
+        "writing to a missing sink must be a no-op"
+    )
+    assert subprocess_runner.write_to_sink(_Broken(), "payload") is None, (
+        "a broken pipe must be swallowed rather than raised"
+    )
 
 
 def test_apply_cmd_mox_environment_and_echo(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -401,14 +447,18 @@ def test_apply_cmd_mox_environment_and_echo(monkeypatch: pytest.MonkeyPatch) -> 
     cmd_mox_runner._apply_cmd_mox_environment({"NEW_CMD_ENV": "present"})
     cmd_mox_runner._echo_buffered_output("", io.StringIO())
 
-    assert os.environ["NEW_CMD_ENV"] == "present"
+    assert os.environ["NEW_CMD_ENV"] == "present", (
+        "environment overrides must be applied to the process environment"
+    )
 
 
 def test_cmd_mox_shim_directory_without_socket(monkeypatch: pytest.MonkeyPatch) -> None:
     """Shim directory helper should return None when socket is unset."""
     monkeypatch.delenv("CMOX_IPC_SOCKET", raising=False)
 
-    assert cmd_mox_runner._cmd_mox_shim_directory() is None
+    assert cmd_mox_runner._cmd_mox_shim_directory() is None, (
+        "an unset CMOX_IPC_SOCKET means there is no shim directory"
+    )
 
 
 def test_log_subprocess_environment_redacts_sensitive_values(
@@ -422,5 +472,9 @@ def test_log_subprocess_environment_redacts_sensitive_values(
         "PATH": "/usr/bin",
     })
 
-    assert "PATH" in caplog.text
-    assert "<redacted>" in caplog.text
+    assert "PATH" in caplog.text, (
+        "benign environment keys must still be logged at DEBUG"
+    )
+    assert "<redacted>" in caplog.text, (
+        "a secret-bearing key's value must be replaced with the redaction marker"
+    )

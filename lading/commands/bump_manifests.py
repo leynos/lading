@@ -6,8 +6,6 @@ sequence is orchestrated by :mod:`lading.commands.bump_pipeline`, while
 ``bump`` derives the shared context passed to those pipeline stages.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import dataclasses as dc
 import types

@@ -11,8 +11,6 @@ The assertions name exact values rather than accept any non-empty one: a
 contract that passes for any artefact name would also pass for the wrong one.
 """
 
-from __future__ import annotations
-
 import shlex
 import typing as typ
 from pathlib import Path

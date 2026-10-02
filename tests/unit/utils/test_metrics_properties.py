@@ -17,8 +17,6 @@ rather than via a function-scoped fixture, which Hypothesis discourages when
 combined with ``@given``.
 """
 
-from __future__ import annotations
-
 import collections
 import operator
 
@@ -28,7 +26,9 @@ from hypothesis import strategies as st
 from lading.utils import metrics
 
 # ``increment_counter(name, *, amount=1, **labels)`` reserves these keyword
-# names, so they cannot be supplied as label keys through the kwargs API.
+# names. ``amount`` is supplied explicitly at every ``**`` call site below,
+# which both states the default and makes a colliding label key an immediate
+# ``TypeError`` rather than a silently consumed counter increment.
 _RESERVED_LABEL_KEYS = frozenset({"name", "amount"})
 
 # Label keys and values span the printable ASCII range; keys within a single
@@ -56,10 +56,14 @@ def test_label_order_does_not_affect_counter_identity(
     metrics.reset()
     permuted = data.draw(st.permutations(pairs))
 
-    metrics.increment_counter("prop.identity", **dict(pairs))
+    metrics.increment_counter("prop.identity", amount=1, **dict(pairs))
 
-    assert metrics.counter_value("prop.identity", **dict(permuted)) == 1
-    assert metrics.snapshot() == {("prop.identity", tuple(sorted(pairs))): 1}
+    assert metrics.counter_value("prop.identity", **dict(permuted)) == 1, (
+        "permuting label order must address the same counter"
+    )
+    assert metrics.snapshot() == {("prop.identity", tuple(sorted(pairs))): 1}, (
+        "the registry key must hold labels sorted by key"
+    )
 
 
 @given(
@@ -82,7 +86,9 @@ def test_increments_accumulate_per_label(
         expected[subcommand] += amount
 
     for subcommand, total in expected.items():
-        assert metrics.counter_value("prop.count", subcommand=subcommand) == total
+        assert metrics.counter_value("prop.count", subcommand=subcommand) == total, (
+            "each label set's counter must equal the sum of its increments"
+        )
 
 
 @given(pairs=_label_pairs)
@@ -90,12 +96,14 @@ def test_increments_accumulate_per_label(
 def test_snapshot_is_an_isolated_copy(pairs: list[tuple[str, str]]) -> None:
     """A snapshot is unaffected by later increments and registry resets."""
     metrics.reset()
-    metrics.increment_counter("prop.snapshot", **dict(pairs))
+    metrics.increment_counter("prop.snapshot", amount=1, **dict(pairs))
 
     captured = metrics.snapshot()
     expected = dict(captured)
 
-    metrics.increment_counter("prop.snapshot", **dict(pairs))
+    metrics.increment_counter("prop.snapshot", amount=1, **dict(pairs))
     metrics.reset()
 
-    assert captured == expected
+    assert captured == expected, (
+        "a snapshot must be unaffected by later increments and resets"
+    )

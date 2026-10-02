@@ -1,7 +1,5 @@
 """Scalar coercion helpers for TOML values (strings, booleans, integers)."""
 
-from __future__ import annotations
-
 from lading.toml_coerce._core import _ErrorType, _reject
 
 

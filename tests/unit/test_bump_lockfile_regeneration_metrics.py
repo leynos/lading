@@ -1,7 +1,5 @@
 """Tests for Cargo lockfile-regeneration metrics."""
 
-from __future__ import annotations
-
 import collections.abc as cabc
 from pathlib import Path
 
@@ -16,9 +14,11 @@ def _successful_runner(
     command: cabc.Sequence[str],
     *,
     cwd: Path | None = None,
+    env: cabc.Mapping[str, str] | None = None,
+    echo_stdout: bool = True,
 ) -> tuple[int, str, str]:
     """Return one successful command result."""
-    del command, cwd
+    del command, cwd, echo_stdout
     return 0, "", ""
 
 
@@ -26,9 +26,11 @@ def _cargo_failure_runner(
     command: cabc.Sequence[str],
     *,
     cwd: Path | None = None,
+    env: cabc.Mapping[str, str] | None = None,
+    echo_stdout: bool = True,
 ) -> tuple[int, str, str]:
     """Return one non-zero Cargo result."""
-    del command, cwd
+    del command, cwd, echo_stdout
     return 101, "", "dependency conflict"
 
 
@@ -36,9 +38,11 @@ def _spawn_failure_runner(
     command: cabc.Sequence[str],
     *,
     cwd: Path | None = None,
+    env: cabc.Mapping[str, str] | None = None,
+    echo_stdout: bool = True,
 ) -> tuple[int, str, str]:
     """Raise the expected command-spawn failure."""
-    del command, cwd
+    del command, cwd, echo_stdout
     command_name = "cargo"
     raise CommandSpawnError(command_name, FileNotFoundError(command_name))
 
@@ -47,9 +51,11 @@ def _runner_value_failure(
     command: cabc.Sequence[str],
     *,
     cwd: Path | None = None,
+    env: cabc.Mapping[str, str] | None = None,
+    echo_stdout: bool = True,
 ) -> tuple[int, str, str]:
     """Raise an expected runner value error."""
-    del command, cwd
+    del command, cwd, echo_stdout
     message = "invalid command value"
     raise ValueError(message)
 
@@ -167,8 +173,10 @@ def test_regenerate_lockfiles_records_partial_success_and_failure(
         command: cabc.Sequence[str],
         *,
         cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
-        del cwd
+        del cwd, env, echo_stdout
         return (
             (101, "", "dependency conflict") if "nested" in command[-1] else (0, "", "")
         )

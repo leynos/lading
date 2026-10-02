@@ -1,7 +1,5 @@
 """Unit tests for adapting cargo output into structured index failures."""
 
-from __future__ import annotations
-
 import re
 import typing as typ
 
@@ -103,7 +101,9 @@ def test_parse_index_lookup_failure_returns_none_for_non_index_errors(
     exit_code: int, stdout: str, stderr: str
 ) -> None:
     """Non-index failures do not produce structured lookup failures."""
-    assert _parse_index_lookup_failure(exit_code, stdout, stderr) is None
+    assert _parse_index_lookup_failure(exit_code, stdout, stderr) is None, (
+        "a result without both index-miss markers must not classify"
+    )
 
 
 @pytest.mark.parametrize(
@@ -199,7 +199,7 @@ def test_parse_index_lookup_failure_returns_structured_failure(
         stdout=stdout,
         stderr=stderr,
         missing_dependency_name=expected_name,
-    )
+    ), "the parsed failure must retain the command context and dependency name"
 
 
 # Verbatim transcripts as cargo emits them on a crates.io index miss, including
@@ -249,7 +249,7 @@ def test_parse_index_lookup_failure_parses_real_cargo_transcript(
         stdout="",
         stderr=stderr,
         missing_dependency_name="alpha",
-    )
+    ), "a real cargo index-miss transcript must parse to the expected failure"
 
 
 @given(stdout=st.text(), stderr=st.text())
@@ -258,7 +258,9 @@ def test_parse_index_lookup_failure_success_always_returns_none(
     stdout: str, stderr: str
 ) -> None:
     """A zero exit code always produces None regardless of output content."""
-    assert _parse_index_lookup_failure(0, stdout, stderr) is None
+    assert _parse_index_lookup_failure(0, stdout, stderr) is None, (
+        "a zero exit code must never classify as an index-lookup failure"
+    )
 
 
 @given(case=_both_markers_stderr(), exit_code=st.integers(min_value=1, max_value=255))
@@ -269,7 +271,9 @@ def test_parse_index_lookup_failure_both_markers_nonzero_returns_failure(
     """Both index-miss markers with a non-zero exit code produce a failure."""
     _name, stderr = case
     result = _parse_index_lookup_failure(exit_code, "", stderr)
-    assert result is not None
+    assert result is not None, (
+        "both index-miss markers with a non-zero exit code must classify"
+    )
 
 
 @given(
@@ -282,7 +286,9 @@ def test_parse_index_lookup_failure_missing_index_marker_returns_none(
     stdout: str, stderr: str, exit_code: int
 ) -> None:
     """Absence of the crates.io index marker always produces None."""
-    assert _parse_index_lookup_failure(exit_code, stdout, stderr) is None
+    assert _parse_index_lookup_failure(exit_code, stdout, stderr) is None, (
+        "output lacking the crates.io index marker must not classify"
+    )
 
 
 @given(case=_both_markers_stderr(), exit_code=st.integers(min_value=1, max_value=255))
@@ -294,7 +300,9 @@ def test_parse_index_lookup_failure_extracted_name_matches_crate_name_pattern(
     _name, stderr = case
     result = _parse_index_lookup_failure(exit_code, "", stderr)
     if result is not None and result.missing_dependency_name is not None:
-        assert _VALID_CRATE_NAME_RE.match(result.missing_dependency_name)
+        assert _VALID_CRATE_NAME_RE.match(result.missing_dependency_name), (
+            "an extracted dependency name must match the crate-name pattern"
+        )
 
 
 @given(
@@ -315,5 +323,9 @@ def test_parse_index_lookup_failure_matches_markers_case_insensitively(
     """
     stderr = f'{version_marker} `{name} = "^1.0"`\n{index_marker}'
     result = _parse_index_lookup_failure(exit_code, "", stderr)
-    assert result is not None
-    assert result.missing_dependency_name == name
+    assert result is not None, (
+        "arbitrarily cased markers must still classify as an index-lookup failure"
+    )
+    assert result.missing_dependency_name == name, (
+        "the dependency name must be extracted despite marker casing"
+    )

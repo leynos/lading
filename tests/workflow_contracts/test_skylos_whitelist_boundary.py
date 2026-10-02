@@ -1,7 +1,5 @@
 """Exercise the Skylos named-whitelist boundary without changing its policy file."""
 
-from __future__ import annotations
-
 import json
 import os
 import shutil
@@ -37,10 +35,13 @@ def _make_executable() -> str:
 
 def _run_skylos_allow(*arguments: str) -> subprocess.CompletedProcess[str]:
     """Run an invalid whitelist boundary with WSL's NAME value injected."""
-    environment = {**os.environ, "NAME": "wsl-hostname"}
+    environment: dict[str, str] = {**os.environ, "NAME": "wsl-hostname"}
     environment.pop("REASON", None)
     environment.pop("SYMBOL", None)
-    environment.update(argument.split("=", maxsplit=1) for argument in arguments)
+    for argument in arguments:
+        name, has_equals, value = argument.partition("=")
+        assert has_equals, f"arguments must be NAME=value pairs, got {argument!r}"
+        environment[name] = value
     return subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - fixed Make target and arguments.
         (_make_executable(), "--no-print-directory", "skylos-allow"),
         capture_output=True,

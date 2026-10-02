@@ -1,28 +1,57 @@
 """Additional tests for ``lading.commands.publish_manifest``."""
 
-from __future__ import annotations
-
 import typing as typ
-from types import SimpleNamespace
 
 import pytest
 import tomlkit
 
 from lading.commands import publish_manifest
 from lading.commands.publish_plan import PublishPlan
+from lading.workspace import WorkspaceCrate
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
 
+    from lading.config import StripPatchesSetting
+
 
 def _make_plan(workspace_root: Path, publishable_names: tuple[str, ...]) -> PublishPlan:
-    """Construct a lightweight publish plan with the supplied names."""
-    publishable = tuple(SimpleNamespace(name=name) for name in publishable_names)
+    """Construct a publish plan whose only exercised field is the crate names.
+
+    The strip-patch strategy under test reads nothing but the plan's crate
+    names, so each crate is described purely in memory rather than
+    materialised on disk. They are real
+    :class:`~lading.workspace.WorkspaceCrate` instances so that the plan
+    satisfies the type its consumers declare.
+
+    Returns
+    -------
+    PublishPlan
+        A plan that publishes one named crate per entry in
+        ``publishable_names`` and skips nothing.
+    """
+    publishable = tuple(
+        _name_only_crate(workspace_root, name) for name in publishable_names
+    )
     return PublishPlan(
         workspace_root=workspace_root,
-        publishable=publishable,  # pyright: ignore[reportArgumentType] - test stubs only require .name
+        publishable=publishable,
         skipped_manifest=(),
         skipped_configuration=(),
+    )
+
+
+def _name_only_crate(root: Path, name: str) -> WorkspaceCrate:
+    """Return an in-memory workspace crate carrying only *name* and *root*."""
+    crate_root = root / name
+    return WorkspaceCrate(
+        name=name,
+        version="0.1.0",
+        manifest_path=crate_root / "Cargo.toml",
+        root_path=crate_root,
+        publish=True,
+        readme_is_workspace=False,
+        dependencies=(),
     )
 
 
@@ -35,7 +64,7 @@ def _test_strip_patch_strategy_helper(
     tmp_path: Path,
     manifest_content: str,
     publishable_names: tuple[str, ...],
-    strategy: str,
+    strategy: StripPatchesSetting,
 ) -> tomlkit.TOMLDocument:
     """Write, mutate, and reload a staged manifest for strip patch checks."""
     manifest_path = tmp_path / "Cargo.toml"
@@ -57,7 +86,9 @@ def test_apply_strip_patch_strategy_removes_all_entries(tmp_path: Path) -> None:
         ("alpha",),
         "all",
     )
-    assert "patch" not in document
+    assert "patch" not in document, (
+        "the all strategy must remove the patch table entirely"
+    )
 
 
 def test_apply_strip_patch_strategy_removes_publishable_entries(tmp_path: Path) -> None:
@@ -73,8 +104,12 @@ def test_apply_strip_patch_strategy_removes_publishable_entries(tmp_path: Path) 
         "per-crate",
     )
     crates_io = document["patch"]["crates-io"]
-    assert "alpha" not in crates_io
-    assert "serde" in crates_io
+    assert "alpha" not in crates_io, (
+        "the per-crate strategy must prune the publishable crate's patch entry"
+    )
+    assert "serde" in crates_io, (
+        "the per-crate strategy must keep the third-party patch entry"
+    )
 
 
 def test_apply_strip_patch_strategy_skips_missing_manifest(tmp_path: Path) -> None:
@@ -95,9 +130,12 @@ def test_apply_strategy_to_patches_rejects_unknown_strategy(tmp_path: Path) -> N
         """,
     )
     plan = _make_plan(tmp_path, ("alpha",))
+    # The cast is the point of the test: an unrepresentable strategy reaches
+    # the helper from untyped configuration input, and must be rejected.
+    unexpected = typ.cast("StripPatchesSetting", "unexpected")
 
     with pytest.raises(publish_manifest.PublishPreparationError):
-        publish_manifest._apply_strip_patch_strategy(tmp_path, plan, "unexpected")  # type: ignore[arg-type]
+        publish_manifest._apply_strip_patch_strategy(tmp_path, plan, unexpected)
 
 
 def test_apply_strip_patch_strategy_handles_unmodified_manifest(tmp_path: Path) -> None:
@@ -111,7 +149,9 @@ def test_apply_strip_patch_strategy_handles_unmodified_manifest(tmp_path: Path) 
         ("alpha",),
         "per-crate",
     )
-    assert "other" in document["patch"]["crates-io"]
+    assert "other" in document["patch"]["crates-io"], (
+        "a patch entry for a non-publishable crate must survive untouched"
+    )
 
 
 def test_validate_and_load_manifest_rejects_invalid_toml(tmp_path: Path) -> None:

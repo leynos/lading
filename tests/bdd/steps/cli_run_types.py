@@ -7,8 +7,6 @@ every consumer into a ``TYPE_CHECKING``-guarded import to avoid a cycle. A
 dependency-free module can be imported normally from any step module.
 """
 
-from __future__ import annotations
-
 import typing as typ
 from pathlib import Path
 

@@ -20,8 +20,6 @@ keyword form above is the one that holds; the interface reference is §7 of
 ``docs/lading-design.md``.
 """
 
-from __future__ import annotations
-
 from cuprum import Program, ProgramCatalogue, ProjectSettings
 
 # Programme objects for allowed executables

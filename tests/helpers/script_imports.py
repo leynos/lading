@@ -8,8 +8,6 @@ reproduce that with this helper rather than reaching for the package layout the
 scripts do not have.
 """
 
-from __future__ import annotations
-
 import importlib
 import typing as typ
 from pathlib import Path

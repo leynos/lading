@@ -1,7 +1,5 @@
 """Compiletest stderr artefact discovery and diagnostics formatting."""
 
-from __future__ import annotations
-
 import re
 from pathlib import Path
 

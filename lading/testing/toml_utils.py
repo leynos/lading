@@ -20,8 +20,6 @@ Example manifests:
     * load_crate_manifest(Path("/tmp/workspace"), "alpha")
 """
 
-from __future__ import annotations
-
 import typing as typ
 
 from tomlkit import array, table

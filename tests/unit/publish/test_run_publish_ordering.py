@@ -1,9 +1,8 @@
 """Publish run ordering and interleaving test coverage."""
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import logging
+import typing as typ
 from pathlib import Path
 
 import pytest
@@ -11,6 +10,9 @@ from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 from lading.commands import publish
+
+if typ.TYPE_CHECKING:
+    from lading.runtime import CommandRunner
 
 from .conftest import (
     CARGO_PACKAGE,
@@ -25,9 +27,7 @@ from .conftest import (
 )
 
 
-def _make_beta_package_index_failure_runner() -> cabc.Callable[
-    [cabc.Sequence[str]], tuple[int, str, str]
-]:
+def _make_beta_package_index_failure_runner() -> CommandRunner:
     """Return a runner that simulates beta failing cargo package."""
 
     def runner(
@@ -35,9 +35,10 @@ def _make_beta_package_index_failure_runner() -> cabc.Callable[
         *,
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
         """Fail cargo package for crate_beta; succeed otherwise."""
-        del env
+        del env, echo_stdout
         is_package = tuple(command[:2]) == ("cargo", "package")
         is_beta = cwd is not None and cwd.name == "beta"
         if is_package and is_beta:

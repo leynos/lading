@@ -6,8 +6,6 @@ lockfiles. The resulting paths flow through :func:`_prepare_sorted_changes`
 before the coordinator renders the user-facing summary.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import dataclasses as dc
 import enum

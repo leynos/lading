@@ -23,19 +23,18 @@ A typical scenario using these steps::
 
 """
 
-from __future__ import annotations
-
 import re
 import typing as typ
 from pathlib import Path
 
 import pytest
+from cuprum import ProgramCatalogue, SafeCmd
 from pytest_bdd import given, parsers, scenarios, then, when
 
 from lading.utils.commands import CARGO, GIT, LADING_CATALOGUE
 
 if typ.TYPE_CHECKING:
-    from cuprum import Program, ProgramCatalogue, SafeCmd
+    from cuprum import Program
 
 _FEATURES_DIR = Path(__file__).resolve().parent.parent / "features"
 
@@ -135,8 +134,12 @@ def then_cargo_in_allowlist(catalogue: ProgramCatalogue) -> None:
         The catalogue fixture provided by a preceding Given step.
 
     """
-    assert catalogue.is_allowed(CARGO)
-    assert CARGO in catalogue.allowlist
+    assert catalogue.is_allowed(CARGO), (
+        "the lading catalogue must accept cargo as an allowed program"
+    )
+    assert CARGO in catalogue.allowlist, (
+        "cargo must appear in the catalogue's allowlist"
+    )
 
 
 @then("git should be in the allowlist")
@@ -149,8 +152,10 @@ def then_git_in_allowlist(catalogue: ProgramCatalogue) -> None:
         The catalogue fixture provided by a preceding Given step.
 
     """
-    assert catalogue.is_allowed(GIT)
-    assert GIT in catalogue.allowlist
+    assert catalogue.is_allowed(GIT), (
+        "the lading catalogue must accept git as an allowed program"
+    )
+    assert GIT in catalogue.allowlist, "git must appear in the catalogue's allowlist"
 
 
 @when(
@@ -239,8 +244,7 @@ def when_construct_unregistered_command(
             sh.make(unregistered, catalogue=catalogue_context)
         except UnknownProgramError as exc:
             return exc
-        else:
-            return None
+    return None
 
 
 @then(parsers.re(r"the command argv should be (?P<expected_argv>.+)"))
@@ -259,7 +263,9 @@ def then_command_argv_matches(
 
     """
     expected = _parse_quoted_args(expected_argv)
-    assert constructed_command.argv_with_program == expected
+    assert constructed_command.argv_with_program == expected, (
+        "the constructed command's argv must match the quoted step arguments"
+    )
 
 
 @then("an UnknownProgramError should be raised")
@@ -275,7 +281,9 @@ def then_unknown_program_error_raised(unregistered_error: Exception | None) -> N
     """
     from cuprum import UnknownProgramError
 
-    assert isinstance(unregistered_error, UnknownProgramError)
+    assert isinstance(unregistered_error, UnknownProgramError), (
+        "constructing an unregistered program must raise UnknownProgramError"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -288,36 +296,54 @@ class TestParseQuotedArgs:
 
     def test_single_quoted_arg(self) -> None:
         """A single quoted argument should be parsed correctly."""
-        assert _parse_quoted_args('"foo"') == ("foo",)
+        assert _parse_quoted_args('"foo"') == ("foo",), (
+            "a single quoted argument must parse to a one-element tuple"
+        )
 
     def test_multiple_quoted_args(self) -> None:
         """Multiple quoted arguments should be parsed correctly."""
-        assert _parse_quoted_args('"foo" "bar"') == ("foo", "bar")
+        assert _parse_quoted_args('"foo" "bar"') == ("foo", "bar"), (
+            "each quoted argument must be preserved in order"
+        )
 
     def test_quoted_arg_with_spaces(self) -> None:
         """Embedded spaces within quotes should be preserved."""
-        assert _parse_quoted_args('"foo bar"') == ("foo bar",)
+        assert _parse_quoted_args('"foo bar"') == ("foo bar",), (
+            "spaces inside quotes must be preserved in a single argument"
+        )
 
     def test_multiple_args_with_embedded_spaces(self) -> None:
         """Multiple args with embedded spaces should all be preserved."""
-        assert _parse_quoted_args('"foo bar" "baz qux"') == ("foo bar", "baz qux")
+        assert _parse_quoted_args('"foo bar" "baz qux"') == ("foo bar", "baz qux"), (
+            "every argument's embedded spaces must be preserved independently"
+        )
 
     def test_empty_quoted_arg(self) -> None:
         """Empty quotes should produce an empty string argument."""
-        assert _parse_quoted_args('""') == ("",)
+        assert _parse_quoted_args('""') == ("",), (
+            "empty quotes must yield one empty-string argument, not no argument"
+        )
 
     def test_empty_quotes_with_other_args(self) -> None:
         """Empty quotes mixed with non-empty args should work."""
-        assert _parse_quoted_args('"" "bar"') == ("", "bar")
-        assert _parse_quoted_args('"foo" ""') == ("foo", "")
+        assert _parse_quoted_args('"" "bar"') == ("", "bar"), (
+            "a leading empty argument must not be dropped or reordered"
+        )
+        assert _parse_quoted_args('"foo" ""') == ("foo", ""), (
+            "a trailing empty argument must not be dropped or reordered"
+        )
 
     def test_empty_string_input(self) -> None:
         """An empty string input should return an empty tuple."""
-        assert _parse_quoted_args("") == ()
+        assert not _parse_quoted_args(""), (
+            "an empty input must parse to an empty argument tuple"
+        )
 
     def test_whitespace_only_input(self) -> None:
         """Whitespace-only input should return an empty tuple."""
-        assert _parse_quoted_args("   ") == ()
+        assert not _parse_quoted_args("   "), (
+            "whitespace-only input must parse to an empty argument tuple"
+        )
 
     def test_unquoted_arg_raises_valueerror(self) -> None:
         """Unquoted arguments should raise ValueError."""
@@ -341,5 +367,9 @@ class TestParseQuotedArgs:
 
     def test_extra_whitespace_between_args_allowed(self) -> None:
         """Extra whitespace between quoted args should be allowed."""
-        assert _parse_quoted_args('"foo"   "bar"') == ("foo", "bar")
-        assert _parse_quoted_args('  "foo"  "bar"  ') == ("foo", "bar")
+        assert _parse_quoted_args('"foo"   "bar"') == ("foo", "bar"), (
+            "extra whitespace between quoted arguments must be tolerated"
+        )
+        assert _parse_quoted_args('  "foo"  "bar"  ') == ("foo", "bar"), (
+            "leading and trailing whitespace must be ignored"
+        )

@@ -29,8 +29,6 @@ runnable example here would leave a staged tree behind on every test run.
     staged.removed
 """
 
-from __future__ import annotations
-
 import atexit
 import collections.abc as cabc
 import contextlib

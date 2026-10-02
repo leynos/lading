@@ -16,8 +16,6 @@ Feature scenarios covered:
 - publish-order violations that remain fatal.
 """
 
-from __future__ import annotations
-
 from pytest_bdd import scenarios
 
 from .test_common_steps import _FEATURES_DIR

@@ -1,6 +1,6 @@
 """Shared pytest fixtures for publish BDD steps."""
 
-from __future__ import annotations
+import typing as typ
 
 import pytest
 
@@ -9,6 +9,9 @@ from .test_publish_infrastructure import (
     ResponseProvider,
     _PreflightInvocationRecorder,
 )
+
+if typ.TYPE_CHECKING:
+    from cmd_mox import CmdMox
 
 
 @pytest.fixture
@@ -37,7 +40,7 @@ def preflight_recorder() -> _PreflightInvocationRecorder:
 
 @pytest.fixture
 def preflight_test_context(
-    cmd_mox: object,
+    cmd_mox: CmdMox,
     preflight_overrides: dict[tuple[str, ...], ResponseProvider],
     preflight_recorder: _PreflightInvocationRecorder,
 ) -> PreflightTestContext:
@@ -45,7 +48,7 @@ def preflight_test_context(
 
     Parameters
     ----------
-    cmd_mox : object
+    cmd_mox : CmdMox
         The cmd-mox controller supplying stubbed command doubles.
     preflight_overrides : dict[tuple[str, ...], ResponseProvider]
         Per-scenario overrides keyed by command tuple.

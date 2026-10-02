@@ -6,8 +6,6 @@ dispatching ``cargo package`` and ``cargo publish`` phases so both phases share
 the same index-missing-version failure formatting and override handling.
 """
 
-from __future__ import annotations
-
 import dataclasses as dc
 import logging
 import typing as typ

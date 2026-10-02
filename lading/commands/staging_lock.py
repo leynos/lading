@@ -30,8 +30,6 @@ A tree with no lock file was left by a release predating this and stays
 removable. The lock is advisory: deleting the file by hand defeats it.
 """
 
-from __future__ import annotations
-
 import contextlib
 import logging
 import sys

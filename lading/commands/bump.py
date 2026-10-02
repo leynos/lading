@@ -6,13 +6,12 @@ the entry point here gives the CLI a stable command boundary while the pipeline
 module owns the ordered update sequence.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import dataclasses as dc
 import logging
 import types
 import typing as typ
+from pathlib import Path
 
 from lading import config as config_module
 from lading.commands import bump_lockfiles, bump_manifests, bump_pipeline
@@ -20,11 +19,10 @@ from lading.commands.bump_output import _format_result_message
 from lading.utils import normalize_workspace_root
 
 if typ.TYPE_CHECKING:
-    from pathlib import Path
-
     from lading.commands.bump_manifests import _BumpContext
     from lading.config import LadingConfig
     from lading.workspace import WorkspaceGraph
+
 LOGGER = logging.getLogger(__name__)
 
 

@@ -1,7 +1,5 @@
 """Property tests for publish preflight failure transitions."""
 
-from __future__ import annotations
-
 from pathlib import Path
 
 import pytest
@@ -52,7 +50,7 @@ def test_run_never_stages_or_dispatches_after_preflight_failure(
     with pytest.raises(PublishPreflightError, match=detail):
         publish.run(root, configuration, workspace)
 
-    assert reached_phases == [], (
+    assert not reached_phases, (
         "preflight failure must prevent staging and publication dispatch; "
         f"reached {reached_phases}"
     )

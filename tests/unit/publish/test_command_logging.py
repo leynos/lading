@@ -1,7 +1,5 @@
 """Tests covering logging for publish command execution helpers."""
 
-from __future__ import annotations
-
 import logging
 import sys
 import typing as typ
@@ -17,20 +15,9 @@ if typ.TYPE_CHECKING:
 
     from lading.runtime import SubprocessContext
 
-    LogCaptureFixture = pytest.LogCaptureFixture
-    CaptureFixture = pytest.CaptureFixture
-    MonkeyPatch = pytest.MonkeyPatch
-else:  # pragma: no cover - typing helpers
-    Path = typ.Any
-    LogCaptureFixture = typ.Any
-    CaptureFixture = typ.Any
-    CmdMox = typ.Any
-    MonkeyPatch = typ.Any
-    SubprocessContext = typ.Any
-
 
 def test_invoke_logs_command_with_cwd(
-    tmp_path: Path, caplog: LogCaptureFixture, use_real_invoke: None
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, use_real_invoke: None
 ) -> None:
     """``_invoke`` should log the command line and working directory."""
     caplog.set_level(logging.INFO, logger="lading.runtime.subprocess_runner")
@@ -38,30 +25,36 @@ def test_invoke_logs_command_with_cwd(
         ("echo", "hello"), cwd=tmp_path
     )
 
-    assert exit_code == 0
-    assert stdout.strip() == "hello"
-    assert stderr == ""
+    assert exit_code == 0, "the echo command must exit successfully"
+    assert stdout.strip() == "hello", "stdout must carry the echoed payload"
+    assert not stderr, "a successful echo must produce no stderr"
     expected = f"Running external command: echo hello (cwd={tmp_path})"
-    assert expected in caplog.messages
+    assert expected in caplog.messages, (
+        "the invocation log must name the command and its working directory"
+    )
 
 
 def test_invoke_logs_command_without_cwd(
-    caplog: LogCaptureFixture, use_real_invoke: None
+    caplog: pytest.LogCaptureFixture, use_real_invoke: None
 ) -> None:
     """``_invoke`` should omit ``cwd`` details when not provided."""
     caplog.set_level(logging.INFO, logger="lading.runtime.subprocess_runner")
 
     exit_code, stdout, stderr = publish_execution._invoke(("echo", "hello"))
 
-    assert exit_code == 0
-    assert stdout.strip() == "hello"
-    assert stderr == ""
-    assert "Running external command: echo hello" in caplog.messages
-    assert not any("(cwd=" in message for message in caplog.messages)
+    assert exit_code == 0, "the echo command must exit successfully"
+    assert stdout.strip() == "hello", "stdout must carry the echoed payload"
+    assert not stderr, "a successful echo must produce no stderr"
+    assert "Running external command: echo hello" in caplog.messages, (
+        "the invocation log must name the command when no cwd is supplied"
+    )
+    assert not any("(cwd=" in message for message in caplog.messages), (
+        "the log must omit cwd details when the caller supplies none"
+    )
 
 
 def test_invoke_proxies_command_output(
-    capsys: CaptureFixture[str], use_real_invoke: None
+    capsys: pytest.CaptureFixture[str], use_real_invoke: None
 ) -> None:
     """``_invoke`` should stream stdout/stderr to the parent process."""
     script = """\
@@ -78,12 +71,16 @@ sys.stderr.flush()
         script,
     ))
 
-    assert exit_code == 0
-    assert stdout == "alpha"
-    assert stderr == "beta"
+    assert exit_code == 0, "the streaming probe must exit successfully"
+    assert stdout == "alpha", "_invoke must return the child's stdout verbatim"
+    assert stderr == "beta", "_invoke must return the child's stderr verbatim"
     captured = capsys.readouterr()
-    assert captured.out == "alpha"
-    assert captured.err.endswith("beta")
+    assert captured.out == "alpha", (
+        "the child's stdout must be relayed to the parent's stdout"
+    )
+    assert captured.err.endswith("beta"), (
+        "the child's stderr must be relayed to the parent's stderr"
+    )
 
 
 def test_cmd_mox_passthrough_streams_output(
@@ -91,9 +88,9 @@ def test_cmd_mox_passthrough_streams_output(
     request: pytest.FixtureRequest,
 ) -> None:
     """cmd-mox passthrough should stream via the subprocess runner."""
-    capsys: CaptureFixture[str] = request.getfixturevalue("capsys")
-    caplog: LogCaptureFixture = request.getfixturevalue("caplog")
-    monkeypatch: MonkeyPatch = request.getfixturevalue("monkeypatch")
+    capsys: pytest.CaptureFixture[str] = request.getfixturevalue("capsys")
+    caplog: pytest.LogCaptureFixture = request.getfixturevalue("caplog")
+    monkeypatch: pytest.MonkeyPatch = request.getfixturevalue("monkeypatch")
     request.getfixturevalue("use_real_invoke")
     caplog.set_level(logging.INFO, logger="lading.testing.cmd_mox_runner")
     monkeypatch.setenv("LADING_USE_CMD_MOX_STUB", "1")
@@ -133,14 +130,22 @@ def test_cmd_mox_passthrough_streams_output(
         script,
     ))
 
-    assert exit_code == 0
-    assert stdout == "alpha"
-    assert stderr == "beta"
+    assert exit_code == 0, "the passthrough stub must exit successfully"
+    assert stdout == "alpha", "the passthrough must return the stub's stdout"
+    assert stderr == "beta", "the passthrough must return the stub's stderr"
     captured = capsys.readouterr()
-    assert captured.out == "alpha"
-    assert captured.err == "beta"
-    assert calls == [(sys.executable, ("-c", script), None)]
-    assert not echo_payloads
+    assert captured.out == "alpha", (
+        "the stub's stdout must be streamed to the parent process"
+    )
+    assert captured.err == "beta", (
+        "the stub's stderr must be streamed to the parent process"
+    )
+    assert calls == [(sys.executable, ("-c", script), None)], (
+        "the runner must receive the stubbed argv with no stdin payload"
+    )
+    assert not echo_payloads, (
+        "the echo fallback must not run when the stub streams output itself"
+    )
     # The passthrough path bypasses ``subprocess_runner``, so it must emit the
     # single INFO invocation record itself (regression for #104).
     invocation_records = [
@@ -148,10 +153,16 @@ def test_cmd_mox_passthrough_streams_output(
         for record in caplog.records
         if "Running external command" in record.getMessage()
     ]
-    assert len(invocation_records) == 1
-    assert invocation_records[0].levelno == logging.INFO
+    assert len(invocation_records) == 1, (
+        "the passthrough path must emit exactly one invocation record"
+    )
+    assert invocation_records[0].levelno == logging.INFO, (
+        "the invocation record must be logged at INFO level"
+    )
     message = invocation_records[0].getMessage()
-    assert "-c" in message
+    assert "-c" in message, "the logged command line must include the interpreter flags"
     # ``script`` is shell-quoted in the rendered command line, so match on its
     # inner content rather than the raw string.
-    assert "unused" in message
+    assert "unused" in message, (
+        "the logged command line must include the script payload"
+    )

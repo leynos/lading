@@ -11,8 +11,6 @@ exactly the immediate children that carry the prefix and are real
 directories, no more and no fewer, whatever else is sitting beside them.
 """
 
-from __future__ import annotations
-
 import string
 import tempfile
 from pathlib import Path
@@ -47,16 +45,17 @@ _ENTRIES = st.lists(
 def _create(location: Path, name: str, kind: str, link_target: Path) -> None:
     """Create one immediate child of ``location`` of the requested shape."""
     entry = location / name
-    if kind == "directory":
-        entry.mkdir()
-        # A nested match, so the property also pins the one-level rule: a
-        # prefixed directory inside a prefixed directory is not its own
-        # leftover, and recursing would report the same bytes twice.
-        (entry / f"{STAGING_PREFIX}nested").mkdir()
-    elif kind == "file":
-        entry.write_text("x", encoding="utf-8")
-    else:
-        entry.symlink_to(link_target, target_is_directory=True)
+    match kind:
+        case "directory":
+            entry.mkdir()
+            # A nested match, so the property also pins the one-level rule: a
+            # prefixed directory inside a prefixed directory is not its own
+            # leftover, and recursing would report the same bytes twice.
+            (entry / f"{STAGING_PREFIX}nested").mkdir()
+        case "file":
+            entry.write_text("x", encoding="utf-8")
+        case _:
+            entry.symlink_to(link_target, target_is_directory=True)
 
 
 @given(entries=_ENTRIES)

@@ -1,7 +1,5 @@
 """Publish plan validation error handling tests."""
 
-from __future__ import annotations
-
 import typing as typ
 
 import pytest
@@ -33,8 +31,10 @@ def test_plan_publication_rejects_incomplete_configured_order(tmp_path: Path) ->
         publish.plan_publication(workspace, configuration)
 
     message = str(excinfo.value)
-    assert "publish.order omits" in message
-    assert "beta" in message
+    assert "publish.order omits" in message, (
+        "the error must state that publish.order omits a publishable crate"
+    )
+    assert "beta" in message, "the error must name the omitted crate, beta"
 
 
 def test_plan_publication_rejects_unknown_configured_crates(tmp_path: Path) -> None:
@@ -46,7 +46,7 @@ def test_plan_publication_rejects_unknown_configured_crates(tmp_path: Path) -> N
 
     assert "publish.order references crates outside the publishable set" in str(
         excinfo.value
-    )
+    ), "the error must flag publish.order names outside the publishable set"
 
 
 def test_plan_publication_detects_dependency_cycles(tmp_path: Path) -> None:
@@ -60,4 +60,6 @@ def test_plan_publication_detects_dependency_cycles(tmp_path: Path) -> None:
     with pytest.raises(publish_plan.PublishPlanError) as excinfo:
         publish.plan_publication(workspace, configuration)
 
-    assert "dependency cycle" in str(excinfo.value)
+    assert "dependency cycle" in str(excinfo.value), (
+        "the error must report the detected dependency cycle"
+    )

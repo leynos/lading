@@ -1,7 +1,5 @@
 """Shared fixtures and helper factories for publish unit tests."""
 
-from __future__ import annotations
-
 import dataclasses as dc
 import logging
 import typing as typ
@@ -17,6 +15,10 @@ from lading.commands import (
     publish_preflight,
     publish_staging,
 )
+from lading.commands.publish_pipeline import _invoke as _real_invoke
+from lading.commands.publish_preflight import (
+    _run_preflight_checks as _real_preflight,
+)
 from lading.workspace import WorkspaceCrate, WorkspaceDependency, WorkspaceGraph
 
 if typ.TYPE_CHECKING:
@@ -29,10 +31,10 @@ __all__ = [
     "INDEX_MISSING_STDERR_BETA",
     "INDEX_MISSING_STDERR_EXTERNAL",
     "INDEX_MISSING_STDERR_UNPARSEABLE",
-    "ORIGINAL_INVOKE",
-    "ORIGINAL_PREFLIGHT",
     "CallTrackingRunner",
     "PhaseContext",
+    "_real_invoke",
+    "_real_preflight",
     "_warning_records",
     "invoke_phase",
     "make_config",
@@ -80,46 +82,69 @@ INDEX_MISSING_STDERR_EXTERNAL = (
 )
 
 
-def make_preflight_config(**overrides: object) -> config_module.PreflightConfig:
+class _PreflightOverrides(typ.TypedDict, total=False):
+    """Keyword overrides accepted by :func:`make_preflight_config`.
+
+    ``total=False`` because every field falls back to the ``PreflightConfig``
+    default. Enumerating the keys, rather than typing the parameter as a bare
+    mapping, is what keeps a mistyped keyword a type error instead of a
+    silently ignored entry.
+    """
+
+    skip: bool
+    test_exclude: tuple[str, ...]
+    unit_tests_only: bool
+    aux_build: tuple[tuple[str, ...], ...]
+    compiletest_externs: tuple[tuple[str, str], ...]
+    env_overrides: tuple[tuple[str, str], ...]
+    stderr_tail_lines: int
+
+
+def make_preflight_config(
+    **overrides: typ.Unpack[_PreflightOverrides],
+) -> config_module.PreflightConfig:
     """Build a :class:`PreflightConfig` with convenient defaults.
 
     Parameters
     ----------
-    **overrides : object
-        Keyword arguments passed to the ``PreflightConfig`` constructor.
-        Special handling: compiletest_externs as tuple of (name, path) pairs
-        are converted to ``CompiletestExtern`` objects.
+    **overrides : Unpack[_PreflightOverrides]
+        ``PreflightConfig`` fields to override. ``compiletest_externs`` is
+        the one field that is not passed through verbatim: callers supply
+        ``(crate, path)`` string pairs, which are converted to
+        ``CompiletestExtern`` objects here.
 
     Returns
     -------
-        A PreflightConfig with defaults merged with the provided overrides.
+    config_module.PreflightConfig
+        A configuration with the ``PreflightConfig`` defaults merged with the
+        supplied overrides.
 
     """
-    compiletest_externs_raw = overrides.pop("compiletest_externs", ())
     externs = tuple(
         config_module.CompiletestExtern(crate=name, path=path)
-        for name, path in compiletest_externs_raw
+        for name, path in overrides.get("compiletest_externs", ())
     )
-
-    defaults: dict[str, object] = {
-        "test_exclude": (),
-        "unit_tests_only": False,
-        "aux_build": (),
-        "compiletest_externs": externs,
-        "env_overrides": (),
-        "stderr_tail_lines": 40,
-    }
-    defaults.update(overrides)
-    return config_module.PreflightConfig(**defaults)
+    return config_module.PreflightConfig(
+        skip=overrides.get("skip", False),
+        test_exclude=overrides.get("test_exclude", ()),
+        unit_tests_only=overrides.get("unit_tests_only", False),
+        aux_build=overrides.get("aux_build", ()),
+        compiletest_externs=externs,
+        env_overrides=overrides.get("env_overrides", ()),
+        stderr_tail_lines=overrides.get("stderr_tail_lines", 40),
+    )
 
 
 def make_config(
     *,
     preflight: config_module.PreflightConfig | None = None,
-    **overrides: object,
+    exclude: tuple[str, ...] = (),
+    order: tuple[str, ...] = (),
 ) -> config_module.LadingConfig:
     """Return a configuration tailored for publish command tests."""
-    publish_table = config_module.PublishConfig(strip_patches="all", **overrides)
+    publish_table = config_module.PublishConfig(
+        strip_patches="all", exclude=exclude, order=order
+    )
     preflight_config = preflight if preflight is not None else make_preflight_config()
     return config_module.LadingConfig(
         publish=publish_table,
@@ -230,12 +255,14 @@ def make_n_crate_chain(root: Path, count: int) -> tuple[WorkspaceCrate, ...]:
 def plan_with_crates(
     tmp_path: Path,
     crates: tuple[WorkspaceCrate, ...],
-    **config_overrides: object,
+    *,
+    exclude: tuple[str, ...] = (),
+    order: tuple[str, ...] = (),
 ) -> publish_plan.PublishPlan:
     """Plan publication for ``crates`` using ``tmp_path`` as the workspace root."""
     root = tmp_path.resolve()
     workspace = make_workspace(root, *crates)
-    configuration = make_config(**config_overrides)
+    configuration = make_config(exclude=exclude, order=order)
     return publish.plan_publication(workspace, configuration)
 
 
@@ -250,7 +277,7 @@ def prepare_staging_root(plan: publish_plan.PublishPlan, base_dir: Path) -> Path
 
 def _warning_records(
     caplog: pytest.LogCaptureFixture,
-) -> tuple[tuple[str, tuple[object, ...]], ...]:
+) -> tuple[tuple[object, object], ...]:
     """Return captured warning format strings and arguments."""
     return tuple(
         (record.msg, record.args)
@@ -276,10 +303,6 @@ def publish_plan_and_prep(
     return plan, preparation, staging_root
 
 
-ORIGINAL_INVOKE = publish_pipeline._invoke
-ORIGINAL_PREFLIGHT = publish_preflight._run_preflight_checks
-
-
 @pytest.fixture(autouse=True)
 def disable_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
     """Stub publish pre-flight checks for tests unless explicitly restored."""
@@ -296,7 +319,7 @@ def disable_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture
 def use_real_invoke(monkeypatch: pytest.MonkeyPatch) -> None:
     """Restore the original _invoke helper for tests that exercise it."""
-    monkeypatch.setattr(publish_pipeline, "_invoke", ORIGINAL_INVOKE)
+    monkeypatch.setattr(publish_pipeline, "_invoke", _real_invoke)
 
 
 class CallTrackingRunner:
@@ -317,14 +340,15 @@ class CallTrackingRunner:
         *,
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
         """Record the invocation and return a successful result."""
-        del env
+        del env, echo_stdout
         self._calls.append((tuple(command), cwd))
         return 0, "", ""
 
 
-@dc.dataclass(frozen=True)
+@dc.dataclass(frozen=True, slots=True)
 class PhaseContext:
     """Execution context shared across both cargo phase dispatches."""
 
@@ -361,9 +385,10 @@ def make_failing_runner(
         *,
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
         """Execute the command and return a failing result."""
-        del command, cwd, env
+        del command, cwd, env, echo_stdout
         return 1, stdout, stderr
 
     return _runner

@@ -1,7 +1,5 @@
 """Subprocess-backed implementation of the command runner port."""
 
-from __future__ import annotations
-
 import codecs
 import collections.abc as cabc
 import dataclasses as dc
@@ -15,6 +13,7 @@ from pathlib import Path
 from lading.exceptions import LadingError
 from lading.utils.process import c_locale_env, log_command_invocation
 
+from .stream_relay import TextSink as _TextSink
 from .stream_relay import format_thread_name as _format_thread_name
 from .stream_relay import write_to_relay_sink as _write_to_relay_sink
 
@@ -270,7 +269,7 @@ def normalize_environment(
 
 def relay_stream(
     source: typ.IO[bytes] | None,
-    sink: typ.TextIO | None,
+    sink: _TextSink | None,
     buffer: list[str],
 ) -> None:
     """Forward ``source`` into ``sink`` while preserving captured output.
@@ -281,7 +280,7 @@ def relay_stream(
     ----------
     source : typ.IO[bytes] | None
         Byte stream to read from.
-    sink : typ.TextIO | None
+    sink : _TextSink | None
         Text stream to mirror decoded output to.
     buffer : list[str]
         Mutable list receiving decoded chunks.
@@ -330,19 +329,19 @@ def relay_stream(
                 )
         finally:
             source.close()
-    except (OSError, ValueError):  # pragma: no cover - defensive logging guard
+    except OSError, ValueError:  # pragma: no cover - defensive logging guard
         # Log first, then re-raise into threading.excepthook; join() may still
         # leave a partial buffer, which is preferable to hiding stream corruption.
         _LOGGER.exception("Stream relay thread failed")
         raise
 
 
-def write_to_sink(sink: typ.TextIO | None, payload: str) -> typ.TextIO | None:
+def write_to_sink(sink: _TextSink | None, payload: str) -> _TextSink | None:
     """Write ``payload`` to ``sink`` without corrupting Unicode output.
 
     Parameters
     ----------
-    sink : typ.TextIO | None
+    sink : _TextSink | None
         Text stream to write to, or :data:`None`.
     payload : str
         Text to write.

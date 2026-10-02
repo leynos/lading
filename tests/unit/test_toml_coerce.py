@@ -1,7 +1,5 @@
 """Property and snapshot tests for :mod:`lading.toml_coerce` (issue #108)."""
 
-from __future__ import annotations
-
 import dataclasses as dc
 import typing as typ
 
@@ -11,6 +9,7 @@ from hypothesis import given
 
 from lading import toml_coerce
 from lading.config import ConfigurationError
+from lading.exceptions import LadingError
 from lading.workspace.models import WorkspaceModelError
 
 if typ.TYPE_CHECKING:
@@ -31,14 +30,14 @@ class _IndexedRejectionCase:
     values: list[str]
     bad_index: int
     bad: object
-    error: type[Exception]
+    error: type[LadingError]
 
 
 def _assert_rejection(
     call: cabc.Callable[[], object],
     expected_prefix: str,
     bad_value: object,
-    error: type[Exception],
+    error: type[LadingError],
 ) -> None:
     """Assert *call* raises *error* with the expected message shape.
 
@@ -48,8 +47,12 @@ def _assert_rejection(
     with pytest.raises(error) as excinfo:
         call()
     message = str(excinfo.value)
-    assert expected_prefix in message
-    assert type(bad_value).__name__ in message
+    assert expected_prefix in message, (
+        "the rejection message must open with the field path and rule"
+    )
+    assert type(bad_value).__name__ in message, (
+        "the canonical rejection must name the offending type"
+    )
 
 
 def _assert_rejects_indexed_non_string(
@@ -74,39 +77,49 @@ class TestTomlCoerce:
 
     @given(value=_strings, error=_error_type)
     def test_expect_string_passes_strings_through(
-        self, value: str, error: type[Exception]
+        self, value: str, error: type[LadingError]
     ) -> None:
         """Well-typed strings pass through unchanged."""
-        assert toml_coerce.expect_string(value, "f", error=error) == value
+        assert toml_coerce.expect_string(value, "f", error=error) == value, (
+            "a str must pass through coercion unaltered"
+        )
 
     @given(value=_non_string, error=_error_type)
     def test_expect_string_rejects_with_canonical_shape(
-        self, value: object, error: type[Exception]
+        self, value: object, error: type[LadingError]
     ) -> None:
         """Ill-typed values raise the bound error with the canonical message."""
         with pytest.raises(error) as excinfo:
             toml_coerce.expect_string(value, "demo.field", error=error)
 
         message = str(excinfo.value)
-        assert message.startswith("demo.field must be a string; received ")
-        assert type(value).__name__ in message
+        assert message.startswith("demo.field must be a string; received "), (
+            "the rejection must name the field and the expected type"
+        )
+        assert type(value).__name__ in message, (
+            "the rejection must name the concrete type it received"
+        )
 
     @given(values=st.lists(_strings, max_size=6), error=_error_type)
     def test_string_tuple_round_trips_sequences(
-        self, values: list[str], error: type[Exception]
+        self, values: list[str], error: type[LadingError]
     ) -> None:
         """String sequences coerce to equal tuples; None yields empty."""
-        assert toml_coerce.string_tuple(values, "f", error=error) == tuple(values)
-        assert toml_coerce.string_tuple(None, "f", error=error) == ()
+        assert toml_coerce.string_tuple(values, "f", error=error) == tuple(values), (
+            "a list of strings must coerce to the equal tuple"
+        )
+        assert not toml_coerce.string_tuple(None, "f", error=error), (
+            "None must coerce to the empty tuple"
+        )
 
     @given(values=st.lists(_strings, max_size=6), error=_error_type)
     def test_validate_string_sequence_accepts_strings(
-        self, values: list[str], error: type[Exception]
+        self, values: list[str], error: type[LadingError]
     ) -> None:
         """A sequence of only strings returns them as a tuple."""
         assert toml_coerce.validate_string_sequence(values, "f", error=error) == tuple(
             values
-        )
+        ), "an all-string sequence must coerce to an equal tuple"
 
     @given(
         values=st.lists(_strings, max_size=3),
@@ -119,7 +132,7 @@ class TestTomlCoerce:
         values: list[str],
         bad_index: int,
         bad: object,
-        error: type[Exception],
+        error: type[LadingError],
     ) -> None:
         """A non-string entry is rejected with its index in the field name."""
         _assert_rejects_indexed_non_string(
@@ -139,7 +152,7 @@ class TestTomlCoerce:
         values: list[str],
         bad_index: int,
         bad: object,
-        error: type[Exception],
+        error: type[LadingError],
     ) -> None:
         """A non-string entry raises with its index in the field name."""
         _assert_rejects_indexed_non_string(
@@ -150,27 +163,31 @@ class TestTomlCoerce:
 
     @given(value=st.lists(_strings, max_size=6), error=_error_type)
     def test_expect_sequence_accepts_non_string_sequences(
-        self, value: list[str], error: type[Exception]
+        self, value: list[str], error: type[LadingError]
     ) -> None:
         """Non-string sequences pass through unchanged."""
-        assert toml_coerce.expect_sequence(value, "f", error=error) == value
+        assert toml_coerce.expect_sequence(value, "f", error=error) == value, (
+            "a non-string sequence must pass through coercion unchanged"
+        )
 
     @given(error=_error_type)
-    def test_expect_sequence_handles_none(self, error: type[Exception]) -> None:
+    def test_expect_sequence_handles_none(self, error: type[LadingError]) -> None:
         """``allow_none`` returns ``None``; otherwise ``None`` is rejected."""
         assert (
             toml_coerce.expect_sequence(None, "f", error=error, allow_none=True) is None
-        )
+        ), "allow_none must accept None and return it unchanged"
         with pytest.raises(error) as excinfo:
             toml_coerce.expect_sequence(None, "f", error=error)
-        assert str(excinfo.value) == "f must be a sequence; received NoneType."
+        assert str(excinfo.value) == "f must be a sequence; received NoneType.", (
+            "rejecting None must produce the canonical sequence message"
+        )
 
     @given(
         value=st.one_of(_strings, st.binary(max_size=6), _non_string),
         error=_error_type,
     )
     def test_expect_sequence_rejects_strings_and_scalars(
-        self, value: object, error: type[Exception]
+        self, value: object, error: type[LadingError]
     ) -> None:
         """Strings, bytes, and scalars raise the bound error type."""
         with pytest.raises(error):
@@ -179,7 +196,9 @@ class TestTomlCoerce:
     @given(value=st.lists(st.integers(), min_size=1, max_size=6))
     def test_is_non_empty_sequence_true_for_non_empty(self, value: list[int]) -> None:
         """Non-empty non-string sequences are recognised."""
-        assert toml_coerce.is_non_empty_sequence(value) is True
+        assert toml_coerce.is_non_empty_sequence(value) is True, (
+            "a non-empty list of ints must count as a non-empty sequence"
+        )
 
     @given(
         value=st.one_of(
@@ -192,23 +211,29 @@ class TestTomlCoerce:
     )
     def test_is_non_empty_sequence_false_otherwise(self, value: object) -> None:
         """Empty sequences, strings, bytes, and scalars are rejected."""
-        assert toml_coerce.is_non_empty_sequence(value) is False
+        assert toml_coerce.is_non_empty_sequence(value) is False, (
+            "strings, bytes, and scalars must never count as non-empty sequences"
+        )
 
     @given(
         value=st.lists(st.lists(_strings, max_size=4), max_size=4),
         error=_error_type,
     )
     def test_string_matrix_round_trips_nested_sequences(
-        self, value: list[list[str]], error: type[Exception]
+        self, value: list[list[str]], error: type[LadingError]
     ) -> None:
         """Nested string sequences coerce to a tuple of tuples; None yields empty."""
         expected = tuple(tuple(row) for row in value)
-        assert toml_coerce.string_matrix(value, "f", error=error) == expected
-        assert toml_coerce.string_matrix(None, "f", error=error) == ()
+        assert toml_coerce.string_matrix(value, "f", error=error) == expected, (
+            "nested string lists must coerce to the equal tuple of tuples"
+        )
+        assert not toml_coerce.string_matrix(None, "f", error=error), (
+            "None must coerce to the empty matrix"
+        )
 
     @given(value=st.one_of(_strings, _non_string), error=_error_type)
     def test_string_matrix_rejects_non_sequence_values(
-        self, value: object, error: type[Exception]
+        self, value: object, error: type[LadingError]
     ) -> None:
         """A scalar or string top-level value raises the bound error type."""
         _assert_rejection(
@@ -220,7 +245,7 @@ class TestTomlCoerce:
 
     @given(bad=_non_string, error=_error_type)
     def test_string_matrix_rejects_non_string_rows(
-        self, bad: object, error: type[Exception]
+        self, bad: object, error: type[LadingError]
     ) -> None:
         """A non-sequence row is rejected, naming its index in the field."""
         _assert_rejection(
@@ -237,25 +262,33 @@ class TestTomlCoerce:
         self,
         *,
         value: bool | None,
-        error: type[Exception],
+        error: type[LadingError],
     ) -> None:
         """Booleans pass through; None takes the default."""
         result = toml_coerce.boolean(value, "f", error=error, default=True)
-        assert result is (True if value is None else value)
+        assert result is (True if value is None else value), (
+            "a bool must pass through unchanged, while None takes the default"
+        )
 
     @given(value=st.integers(min_value=0, max_value=999), error=_error_type)
     def test_non_negative_int_accepts_valid_values(
-        self, value: int, error: type[Exception]
+        self, value: int, error: type[LadingError]
     ) -> None:
         """Non-negative ints and integer strings pass; None takes the default."""
-        assert toml_coerce.non_negative_int(value, "f", 7, error=error) == value
+        assert toml_coerce.non_negative_int(value, "f", 7, error=error) == value, (
+            "a non-negative int must pass through unchanged"
+        )
         # Integer-valued strings still parse (the config string path).
-        assert toml_coerce.non_negative_int(str(value), "f", 7, error=error) == value
-        assert toml_coerce.non_negative_int(None, "f", 7, error=error) == 7
+        assert toml_coerce.non_negative_int(str(value), "f", 7, error=error) == value, (
+            "an integer-valued config string must parse to the same int"
+        )
+        assert toml_coerce.non_negative_int(None, "f", 7, error=error) == 7, (
+            "None must take the supplied default"
+        )
 
     @given(value=st.integers(max_value=-1), error=_error_type)
     def test_non_negative_int_rejects_negative(
-        self, value: int, error: type[Exception]
+        self, value: int, error: type[LadingError]
     ) -> None:
         """Negative integers raise the bound error type."""
         with pytest.raises(error, match="must be non-negative"):
@@ -269,7 +302,7 @@ class TestTomlCoerce:
         error=_error_type,
     )
     def test_non_negative_int_rejects_non_integer_types(
-        self, *, value: bool | float, error: type[Exception]
+        self, *, value: bool | float, error: type[LadingError]
     ) -> None:
         """Booleans and floats (e.g. True, 3.9) are rejected, not coerced."""
         with pytest.raises(error, match="must be an integer"):
@@ -277,17 +310,23 @@ class TestTomlCoerce:
 
     @given(error=_error_type)
     def test_mapping_helpers_accept_and_reject_mappings(
-        self, error: type[Exception]
+        self, error: type[LadingError]
     ) -> None:
         """Mapping coercers pass valid mappings through and reject non-mappings."""
         mapping = {"key": "value"}
-        assert toml_coerce.expect_mapping(mapping, "f", error=error) is mapping
-        assert toml_coerce.optional_mapping(mapping, "f", error=error) is mapping
+        assert toml_coerce.expect_mapping(mapping, "f", error=error) is mapping, (
+            "expect_mapping must return the identical mapping object"
+        )
+        assert toml_coerce.optional_mapping(mapping, "f", error=error) is mapping, (
+            "optional_mapping must return the identical mapping object"
+        )
         with pytest.raises(error):
             toml_coerce.expect_mapping([1], "f", error=error)
         with pytest.raises(error):
             toml_coerce.optional_mapping([1], "f", error=error)
-        assert toml_coerce.optional_mapping(None, "f", error=error) is None
+        assert toml_coerce.optional_mapping(None, "f", error=error) is None, (
+            "None must be an accepted optional mapping"
+        )
 
     def test_coercion_error_messages_are_stable(
         self, snapshot: SnapshotAssertion
@@ -312,4 +351,6 @@ class TestTomlCoerce:
                 call()
             cases.append(str(excinfo.value))
 
-        assert snapshot == cases
+        assert snapshot == cases, (
+            "the canonical coercion messages must change only deliberately"
+        )

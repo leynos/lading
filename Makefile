@@ -10,11 +10,13 @@ MDTABLEFIX_SELECT = --git --include-untracked
 MDTABLEFIX_RULES = --wrap --renumber --breaks --ellipsis --fences
 UV ?= $(shell command -v uv 2>/dev/null || printf '%s/.local/bin/uv' "$$HOME")
 # Pin Ruff so `make` invokes the same version as the `ruff==` dev dependency
-# in pyproject.toml and the `uv tool install ruff==` step in
-# .github/workflows/ci.yml. Bump all three sites together: a version mismatch
-# causes version-skew lint failures because rule sets differ between Ruff
-# releases.
-RUFF_VERSION ?= 0.16.0
+# in pyproject.toml. Bump both together: a version mismatch causes version-skew
+# lint failures because rule sets differ between Ruff releases. The dev
+# dependency is what Continuous Integration runs, so this default follows it
+# on the `dependabot/uv/ruff-*` bump rather than moving independently. The
+# assertions in `tests/workflow_contracts/test_python_lint_gateway.py` hold
+# the two spellings equal.
+RUFF_VERSION ?= 0.16.9
 RUFF ?= $(UV) tool run --from ruff==$(RUFF_VERSION) ruff
 TYPOS_CONFIG_BUILDER_VERSION ?= v0.1.3
 TYPOS_CONFIG_BUILDER = $(UV) tool run --from \
@@ -28,25 +30,100 @@ TY_VERSION ?= 0.0.56
 TY ?= $(UV) tool run --from ty==$(TY_VERSION) ty
 UV_ENV = UV_CACHE_DIR=.uv-cache UV_TOOL_DIR=.uv-tools
 TOOLS = $(MDLINT) $(NIXIE) $(UV)
-PY_SOURCES := $(sort $(shell find lading scripts -type f -name '*.py' -print))
+# The single Python baseline every gateway derives from. Ruff's
+# `target-version`, Pylint's `py-version`, the managed interpreters behind
+# `uv tool run`, and `ty --python-version` all read this value, so bumping the
+# baseline is one edit here plus the mirrors that
+# tests/workflow_contracts/test_python_baseline_contract.py pins.
+PYTHON_BASELINE ?= 3.14
+# Every Python source in the repository, the installed package included. A
+# module under `lading`, `.github` or `benches` is linted and typechecked the
+# moment it lands: the roots are discovered rather than enumerated, so no new
+# tree can quietly escape the gate. `lading` is a root in its own right, not
+# something reached through another tree -- omitting it leaves the production
+# package entirely ungated while the suite still passes. The prune list keeps
+# dependency caches and build dropouts out; `-type d` prunes cost one directory
+# visit each, where a `-not -path` test would still descend into them.
+PYTHON_SOURCE_ROOTS ?= lading .github tests scripts benches benchmarks
+PYTHON_PRUNED_DIRECTORIES = \
+	.git .venv .uv-cache .uv-tools .hypothesis .pytest_cache .ruff_cache \
+	__pycache__ node_modules
+PYTHON_PRUNE_TESTS = $(foreach d,$(PYTHON_PRUNED_DIRECTORIES),-name $(d) -prune -o)
+PYTHON_EXISTING_SOURCE_ROOTS = $(wildcard $(PYTHON_SOURCE_ROOTS))
+# A `*.py` sweep alone is not the whole rule, and this is the one hole the file
+# list would otherwise leave. `scripts/publish-check/bin/cargo` is a Python
+# source with no extension, because `cargo` is the name that has to sit on
+# `PATH` for the shim to shadow the real binary; a suffix test cannot see it, so
+# the gate would report green while that file went unchecked. The second
+# predicate reads the file's shebang instead, which is precisely what makes it
+# Python and survives edits to the body.
+#
+# The test is deliberately spelled with `awk` rather than a `grep` on a `#!`
+# pattern. `#` opens a Make comment even inside quotes and needs escaping, and
+# the brace expression a shebang wants collides with `find`'s own `\( \)`. The
+# form below carries no `#`, no backslash and no bracket expression across the
+# Make-to-shell boundary, so there is nothing left for a quoting layer to eat.
+# Spelling the match `uv run python` rather than a bare `python` keeps an
+# unrelated shell or Perl script out of a Python lint run. `-o` plus `-print`
+# makes this a union: a `.py` file whose shebang matches is still listed once.
+PYTHON_SOURCES = $(strip $(shell find $(PYTHON_EXISTING_SOURCE_ROOTS) \
+	$(PYTHON_PRUNE_TESTS) -type f \( -name '*.py' -o -exec awk \
+	'NR == 1 && /uv run python/ { seen = 1 } END { exit !seen }' {} \; \) \
+	-print | sort))
+# No `--extra-search-path` is passed. Every import in the gated trees is either
+# absolute (`lading.…`, `tests.…`) or third-party, so the project root ty
+# already uses resolves them all; adding a root such as `lading` to the search
+# path turns it into a namespace package instead and breaks the package's own
+# relative imports (`from .cli import app` becomes an unresolved module).
+PYTHON_TYPE_PATHS ?=
 VENV_TOOLS = interrogate pytest
-PYLINT_PYTHON ?= pypy@3.12
+# Pylint runs on managed CPython at the project baseline. The source and the
+# df12 rules are both written to that baseline, so the interpreter Pylint parses
+# with is the same one the package declares support for.
+PYLINT_PYTHON ?= $(PYTHON_BASELINE)
 PYLINT_VERSION ?= 4.0.9
-PYLINT_TARGETS ?= lading scripts tests
+PYLINT_TARGETS ?= $(PYTHON_SOURCES)
 PYLINT = $(UV) tool run --managed-python --python $(PYLINT_PYTHON) --from 'pylint==$(PYLINT_VERSION)' pylint
-DF12_PYTHON_LINTS_REF ?= v0.1.0
+# The pin is a commit rather than a tag so a moved tag cannot silently change
+# what the gate runs. v0.3.0 registers C9102 (assert-missing-message); the
+# gate now reaches it because `PYLINT_TARGETS` is a file list, not a directory.
+DF12_PYTHON_LINTS_REF ?= 4cf41736cce2f7ba2778882a5c629c044568a0e5
 DF12_PYTHON_LINTS = git+https://github.com/leynos/df12-python-lints.git@$(DF12_PYTHON_LINTS_REF)
-DF12_PYTHON ?= 3.14
+DF12_PYTHON ?= $(PYTHON_BASELINE)
+# C9112 (redundant-future-annotations) is enabled here with the rest of the
+# family. It is not exempted anywhere: at the 3.14 baseline annotations are
+# evaluated lazily by default (PEP 649/749), so `from __future__ import
+# annotations` no longer changes how this repository's code runs and no module
+# keeps it. An annotation that names a `TYPE_CHECKING`-only import must import
+# that name at runtime instead.
+#
+# A pytest-bdd step module looks like it needs the exception and does not.
+# pytest-bdd calls `inspect.signature` while collecting, which resolves a step's
+# annotations through the *defining module's* globals, so a step annotation
+# naming a typing-only import would raise during collection. The step modules
+# therefore import those names at runtime, which is a real import and not a
+# suppression. The C9112 pass was briefly split out to carry an
+# `--ignore-paths` exemption for them, with only one pattern allowed per
+# invocation; that split is gone because the exemption had no subject left. The
+# rule itself stays enabled, rather than being dropped with the exemption, as
+# the only thing that would notice a typing-only import reappearing on a step
+# annotation. `pyproject.toml` lists `runtime-evaluated-decorators` for the
+# same hazard, so Ruff's `TC004` reports it first.
 DF12_PYLINT_MESSAGES = R9101,C9102,R9103,R9104,C9105,C9106,C9107,R9108,R9109,R9110,R9111,C9112
-DF12_PYLINT = $(UV_ENV) $(UV) run --isolated --python $(DF12_PYTHON) --with '$(DF12_PYTHON_LINTS)' pylint \
+# `--isolated` keeps this pass on a throwaway environment provisioned from the
+# pinned ref, so the lint result never depends on the state of `uv.lock`.
+DF12_PYLINT_BASE = $(UV_ENV) $(UV) run --isolated --python $(DF12_PYTHON) \
+	--with '$(DF12_PYTHON_LINTS)' pylint \
 	--disable=all --load-plugins=df12_python_lints \
-	--py-version=3.13 --enable=$(DF12_PYLINT_MESSAGES)
+	--py-version=$(PYTHON_BASELINE)
+DF12_PYLINT = $(DF12_PYLINT_BASE) --enable=$(DF12_PYLINT_MESSAGES)
 AMBRLEAKS = $(UV_ENV) $(UV) tool run --python $(DF12_PYTHON) \
 	--from '$(DF12_PYTHON_LINTS)' ambrleaks
 SKYLOS_VERSION ?= 4.33.2
-# Skylos parses source using its own Python AST, so Python 3.14 prevents
-# phantom dead-code findings from syntax older tool runtimes cannot parse.
-SKYLOS_CLI ?= $(UV_ENV) $(UV) tool run --python 3.14 --from 'skylos==$(SKYLOS_VERSION)' skylos
+# Skylos parses source using its own Python AST, so an interpreter at the
+# project baseline prevents phantom dead-code findings from syntax older tool
+# runtimes cannot parse.
+SKYLOS_CLI ?= $(UV_ENV) $(UV) tool run --python $(PYTHON_BASELINE) --from 'skylos==$(SKYLOS_VERSION)' skylos
 SKYLOS ?= $(SKYLOS_CLI) --config-file pyproject.toml
 SKYLOS_PRODUCTION_TARGETS ?= lading
 SKYLOS_EXCLUDE_FOLDERS ?= tests
@@ -130,7 +207,8 @@ skylos-allow: ## Document one named Skylos exception, not an entry point
 	flock "$(SKYLOS_WHITELIST_LOCK)" env $(SKYLOS_CLI) whitelist "$${SKYLOS_SYMBOL}" --reason "$${SKYLOS_REASON}"
 
 typecheck: build $(UV) ## Run typechecking
-	$(UV_ENV) $(TY) check --python-version 3.13 $(PY_SOURCES)
+	$(UV_ENV) $(TY) check --python-version $(PYTHON_BASELINE) \
+		$(PYTHON_TYPE_PATHS) $(PYTHON_SOURCES)
 
 markdownlint: spelling $(MDLINT) ## Lint Markdown files and enforce spelling
 	git ls-files -z '*.md' | \
@@ -154,8 +232,9 @@ test: build $(UV) pytest makeutil ## Run tests
 # Model-check the bump_output pure-helper contracts (issue #95). Only the
 # string/count helpers are enumerated: CrossHair 0.0.107 cannot build a symbolic
 # proxy for a `pathlib.Path` parameter (it raises in intersect_signatures on
-# both 3.13 and 3.14), so `_format_manifest_path` is excluded here and covered
-# instead by the Hypothesis property test in tests/unit.
+# 3.14, and on the 3.13 it was originally trialled under), so
+# `_format_manifest_path` is excluded here and covered instead by the
+# Hypothesis property test in tests/unit.
 crosshair: build $(UV) ## Model-check bump_output pure-helper contracts (issue #95)
 	$(UV) run crosshair check \
 	  lading.commands.bump_output._build_changes_description \

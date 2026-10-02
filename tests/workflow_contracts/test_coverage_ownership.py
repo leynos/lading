@@ -33,8 +33,6 @@ across the estate, and a bump there is meant to be read rather than waved
 through.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import json
 import re
@@ -143,14 +141,14 @@ def _job(workflow: Workflow, name: str) -> dict[str, YamlValue]:
     assert isinstance(jobs, dict), "workflow must declare a jobs mapping"
     job = jobs.get(name)
     assert isinstance(job, dict), f"workflow must declare the {name!r} job"
-    return typ.cast("dict[str, YamlValue]", job)
+    return job
 
 
 def _jobs(workflow: Workflow) -> dict[str, YamlValue]:
     """Return a workflow's jobs mapping."""
     jobs = workflow.get("jobs")
     assert isinstance(jobs, dict), "workflow must declare a jobs mapping"
-    return typ.cast("dict[str, YamlValue]", jobs)
+    return jobs
 
 
 def _step(job: dict[str, YamlValue], name: str) -> dict[str, YamlValue]:
@@ -168,11 +166,7 @@ def _steps(job: dict[str, YamlValue]) -> list[dict[str, YamlValue]]:
     """Return every mapping in a job's step list."""
     steps = job.get("steps")
     assert isinstance(steps, list), "job must declare a steps list"
-    return [
-        typ.cast("dict[str, YamlValue]", step)
-        for step in steps
-        if isinstance(step, dict)
-    ]
+    return [step for step in steps if isinstance(step, dict)]
 
 
 def _job_steps(
@@ -193,7 +187,7 @@ def _job_steps(
     for job_name, job in _jobs(workflow).items():
         if not isinstance(job, dict) or not isinstance(job.get("steps"), list):
             continue
-        for step in _steps(typ.cast("dict[str, YamlValue]", job)):
+        for step in _steps(job):
             yield job_name, step
 
 
@@ -208,7 +202,7 @@ def _step_inputs(step: dict[str, YamlValue]) -> dict[str, YamlValue]:
     """Return a step's ``with:`` mapping, defaulting to empty."""
     inputs = step.get("with") or {}
     assert isinstance(inputs, dict), "step inputs must be a mapping"
-    return typ.cast("dict[str, YamlValue]", inputs)
+    return inputs
 
 
 def _triggers(workflow: Workflow) -> list[str]:
@@ -574,7 +568,7 @@ def test_coverage_composites_do_not_reach_retired_action_revisions() -> None:
     assert all(isinstance(reference, str) for reference in retired), (
         "retired action references must be strings"
     )
-    retired_references = set(typ.cast("dict[str, object]", retired))
+    retired_references = set(retired)
 
     _assert_workflows_avoid_retired_references(retired)
     for action, revision in _coverage_action_revisions():

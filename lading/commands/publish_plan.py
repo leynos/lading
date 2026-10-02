@@ -28,8 +28,6 @@ a header, a bullet, or the ``Crates to publish: none`` empty state updates
 those snapshots and the publish-plan section of the users' guide.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import dataclasses as dc
 import typing as typ

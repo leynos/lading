@@ -8,8 +8,6 @@ another: a rename, or a move under a different collection rule, would otherwise
 break the BDD suite for no reason.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import re
 import tomllib

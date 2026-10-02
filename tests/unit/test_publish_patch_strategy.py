@@ -1,7 +1,5 @@
 """Unit tests for publish patch stripping behaviour."""
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import dataclasses as dc
 import typing as typ
@@ -16,10 +14,12 @@ if typ.TYPE_CHECKING:
 
     from tomlkit.toml_document import TOMLDocument
 
+    from lading.config import StripPatchesSetting
     from lading.workspace import WorkspaceCrate
+    from tests.unit.conftest import _CrateFactory
 
 
-@dc.dataclass(frozen=True)
+@dc.dataclass(frozen=True, slots=True)
 class _PatchStrategyTestSetup:
     """Parameters for patch strategy test setup."""
 
@@ -27,12 +27,12 @@ class _PatchStrategyTestSetup:
     make_plan_factory: cabc.Callable[[Path, tuple[str, ...]], publish_plan.PublishPlan]
     patch_entries: str
     publishable_names: tuple[str, ...]
-    strategy: str | bool
+    strategy: StripPatchesSetting
 
 
 @pytest.fixture
 def make_plan_factory(
-    make_crate: cabc.Callable[[Path, str, object | None], WorkspaceCrate],
+    make_crate: _CrateFactory,
 ) -> cabc.Callable[[Path, tuple[str, ...]], publish_plan.PublishPlan]:
     """Return a factory for building publish plans rooted at ``workspace_root``."""
 
@@ -98,7 +98,9 @@ def test_strip_patches_all_removes_patch_section(
             strategy="all",
         )
     )
-    assert "patch" not in document
+    assert "patch" not in document, (
+        "strategy 'all' must strip the whole [patch] table from the manifest"
+    )
 
 
 def test_strip_patches_per_crate_removes_publishable_only(
@@ -121,8 +123,10 @@ def test_strip_patches_per_crate_removes_publishable_only(
     )
     patch_table = document.get("patch", {})
     crates_io = patch_table.get("crates-io", {})
-    assert "alpha" not in crates_io
-    assert "serde" in crates_io
+    assert "alpha" not in crates_io, "the publishable alpha patch entry must be removed"
+    assert "serde" in crates_io, (
+        "the non-publishable serde patch entry must be preserved"
+    )
 
 
 def test_strip_patches_per_crate_removes_entire_table_when_empty(
@@ -143,7 +147,9 @@ def test_strip_patches_per_crate_removes_entire_table_when_empty(
             strategy="per-crate",
         )
     )
-    assert "patch" not in document
+    assert "patch" not in document, (
+        "an emptied [patch.crates-io] table must be cleaned up entirely"
+    )
 
 
 def test_strip_patches_disabled_keeps_section(
@@ -161,4 +167,6 @@ def test_strip_patches_disabled_keeps_section(
         )
     )
     patch_table = document.get("patch", {})
-    assert "crates-io" in patch_table
+    assert "crates-io" in patch_table, (
+        "a disabled strip strategy must leave the patch section untouched"
+    )

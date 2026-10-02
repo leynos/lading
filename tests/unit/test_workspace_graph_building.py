@@ -1,7 +1,5 @@
 """Tests for building workspace graphs from metadata."""
 
-from __future__ import annotations
-
 import dataclasses as dc
 import typing as typ
 
@@ -13,7 +11,11 @@ from lading.workspace import (
     WorkspaceModelError,
     build_workspace_graph,
 )
-from tests.helpers.workspace_metadata import build_test_package, create_test_manifest
+from tests.helpers.workspace_metadata import (
+    DependencyEntry,
+    build_test_package,
+    create_test_manifest,
+)
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
@@ -25,7 +27,7 @@ class DependencyResolutionScenario:
 
     crate_manifest: str
     dependent_manifests: tuple[tuple[str, str], ...]
-    dependencies: tuple[dict[str, typ.Any], ...]
+    dependencies: tuple[DependencyEntry, ...]
     workspace_members: tuple[str, ...]
     expected_dependencies: tuple[WorkspaceDependency, ...]
 
@@ -94,13 +96,23 @@ def test_build_workspace_graph_constructs_models(tmp_path: Path) -> None:
 
     graph = build_workspace_graph(metadata)
 
-    assert isinstance(graph, WorkspaceGraph)
-    assert graph.workspace_root == workspace_root.resolve()
+    assert isinstance(graph, WorkspaceGraph), (
+        "metadata must be converted into a WorkspaceGraph model"
+    )
+    assert graph.workspace_root == workspace_root.resolve(), (
+        "the graph root must be the resolved workspace root"
+    )
     crates = graph.crates_by_name
-    assert set(crates) == {"crate", "helper"}
+    assert set(crates) == {"crate", "helper"}, (
+        "the graph must index both workspace member crates by name"
+    )
     crate = crates["crate"]
-    assert crate.publish is False
-    assert crate.readme_is_workspace is True
+    assert crate.publish is False, (
+        "a crate with an empty publish list must be marked unpublished"
+    )
+    assert crate.readme_is_workspace is True, (
+        "a crate inheriting the workspace readme must be flagged accordingly"
+    )
     assert crate.dependencies == (
         WorkspaceDependency(
             package_id="helper-id",
@@ -113,8 +125,12 @@ def test_build_workspace_graph_constructs_models(tmp_path: Path) -> None:
         f"got {crate.dependencies!r}"
     )
     helper = crates["helper"]
-    assert helper.publish is True
-    assert helper.readme_is_workspace is False
+    assert helper.publish is True, (
+        "a crate published to crates-io must be marked publishable"
+    )
+    assert helper.readme_is_workspace is False, (
+        "a crate with its own readme must not inherit the workspace readme"
+    )
     assert helper.dependencies == (), (
         f"helper.dependencies should be empty; got {helper.dependencies!r}"
     )

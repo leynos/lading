@@ -1,6 +1,6 @@
 #!/usr/bin/env -S uv run python
 # /// script
-# requires-python = ">=3.13"
+# requires-python = ">=3.14"
 # dependencies = ["cuprum==0.2.0b1", "cyclopts>=3"]
 # ///
 """Attach the wheels built for a release tag to that GitHub release.
@@ -17,8 +17,6 @@ Examples
 scripts/upload_release_wheels.py --tag v1.2.3 --directory dist
 ```
 """
-
-from __future__ import annotations
 
 import os
 import sys

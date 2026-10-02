@@ -1,8 +1,5 @@
 """Shared helpers for pytest-bdd end-to-end steps."""
 
-from __future__ import annotations
-
-import collections.abc as cabc
 import json
 import os
 import sys
@@ -16,13 +13,6 @@ if typ.TYPE_CHECKING:  # pragma: no cover
     from cmd_mox import CmdMox
 
     from tests.e2e.helpers import workspace_builder
-
-
-class _CmdMoxInvocation(typ.Protocol):
-    """Shape of a command invocation recorded by cmd-mox doubles."""
-
-    args: cabc.Sequence[str]
-    env: cabc.Mapping[str, str]
 
 
 class _CliRunResult(typ.TypedDict):

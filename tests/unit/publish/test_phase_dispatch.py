@@ -13,8 +13,6 @@ Three parametrised scenarios (package phase and publish-dry-run phase) verify:
 Warning messages are verified via snapshot assertions backed by syrupy.
 """
 
-from __future__ import annotations
-
 import dataclasses as dc
 import logging
 import re
@@ -34,6 +32,7 @@ from lading.commands.cargo_output_adapter import CargoIndexLookupFailure
 from .conftest import (
     INDEX_MISSING_STDERR_BETA,
     INDEX_MISSING_STDERR_EXTERNAL,
+    CallTrackingRunner,
     PhaseContext,
     _warning_records,
     invoke_phase,
@@ -46,7 +45,9 @@ from .conftest import (
     prepare_staging_root,
 )
 
-_PHASE_IDS: list[pytest.mark.ParameterSet] = [
+# ``pytest.mark.ParameterSet`` names a ``MarkDecorator`` constructor rather
+# than a type, so the element type is left to inference.
+_PHASE_IDS = [
     pytest.param("package", publish.PublishPreflightError, id="packaging"),
     pytest.param("publish", publish_pipeline.PublishError, id="publish-dry-run"),
 ]
@@ -71,8 +72,9 @@ def test_missing_dep_in_plan_and_flag_continues(
         *,
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
-        del env, command
+        del env, command, echo_stdout
         crate_name = "" if cwd is None else cwd.name
         calls.append(crate_name)
         if crate_name == "beta":
@@ -93,8 +95,12 @@ def test_missing_dep_in_plan_and_flag_continues(
         ),
     )
 
-    assert calls == ["alpha", "beta", "gamma"]
-    assert _warning_records(caplog) == snapshot(name=phase_name)
+    assert calls == ["alpha", "beta", "gamma"], (
+        "the downgrade path must still package every crate in plan order"
+    )
+    assert _warning_records(caplog) == snapshot(name=phase_name), (
+        "the missing dependency must be downgraded to the recorded warning"
+    )
 
 
 @pytest.mark.parametrize(("phase_name", "exc_type"), _PHASE_IDS)
@@ -200,8 +206,9 @@ def test_missing_dep_in_plan_without_flag_raises(
         *,
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
-        del env, command
+        del env, command, echo_stdout
         crate_name = "" if cwd is None else cwd.name
         if crate_name == "beta":
             return (1, "", INDEX_MISSING_STDERR_BETA)
@@ -223,7 +230,9 @@ def test_missing_dep_in_plan_without_flag_raises(
         )
 
     message = str(excinfo.value)
-    assert "unpublished workspace dependency override" in message
+    assert "unpublished workspace dependency override" in message, (
+        "the fatal error must point at the unset unpublished-workspace-deps flag"
+    )
 
 
 @pytest.mark.parametrize(("phase_name", "exc_type"), _PHASE_IDS)
@@ -258,7 +267,9 @@ def test_missing_dep_not_in_plan_raises(
         )
 
     message = str(excinfo.value)
-    assert "not part of the current publish plan" in message
+    assert "not part of the current publish plan" in message, (
+        "an out-of-plan missing dependency must stay fatal with that reason"
+    )
 
 
 @pytest.mark.parametrize("phase_name", ["package", "publish"])
@@ -295,8 +306,9 @@ def test_hyphenated_dep_in_plan_matches_with_canonicalisation(
         *,
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
-        del command, env
+        del command, env, echo_stdout
         if cwd is not None and cwd.name == "dependent":
             return (1, "", hyphenated_stderr)
         return (0, "", "")
@@ -314,7 +326,9 @@ def test_hyphenated_dep_in_plan_matches_with_canonicalisation(
 
     invoke_phase(phase_name, ctx)
 
-    assert any("my-crate" in message for message in caplog.messages)
+    assert any("my-crate" in message for message in caplog.messages), (
+        "the hyphenated cargo name must be reported in the downgrade warning"
+    )
 
 
 def test_package_and_publish_dispatch_through_shared_helper(
@@ -339,17 +353,27 @@ def test_package_and_publish_dispatch_through_shared_helper(
     monkeypatch.setattr(publish_pipeline, "_for_each_publishable_crate", fake_for_each)
 
     options = publish_pipeline._PublishExecutionOptions(live=False, allow_dirty=True)
-    runner = object()
+    runner = CallTrackingRunner()
 
     state = publish_pipeline._PublicationPipelineState(plan, preparation, options)
     publish_pipeline._package_publishable_crates(state, runner=runner)
     publish_pipeline._publish_crates(state, runner=runner)
 
-    assert len(calls) == 2
-    assert calls[0]["action"] is publish_pipeline._package_crate
-    assert calls[1]["action"] is publish_pipeline._publish_crate
-    assert calls[0]["runner"] is runner
-    assert calls[1]["runner"] is runner
+    assert len(calls) == 2, (
+        "each wrapper must dispatch through the shared helper exactly once"
+    )
+    assert calls[0]["action"] is publish_pipeline._package_crate, (
+        "the packaging wrapper must dispatch the package action first"
+    )
+    assert calls[1]["action"] is publish_pipeline._publish_crate, (
+        "the publishing wrapper must dispatch the publish action"
+    )
+    assert calls[0]["runner"] is runner, (
+        "the injected runner must be forwarded to the packaging dispatch"
+    )
+    assert calls[1]["runner"] is runner, (
+        "the injected runner must be forwarded to the publishing dispatch"
+    )
 
 
 def test_run_dry_run_phase_normalises_packaging_preparation_failure(
@@ -367,8 +391,12 @@ def test_run_dry_run_phase_normalises_packaging_preparation_failure(
             lambda: (_ for _ in ()).throw(failure),
         )
 
-    assert excinfo.value.__cause__ is failure
-    assert caplog.messages == ["Dry-run pipeline: packaging phase failed"]
+    assert excinfo.value.__cause__ is failure, (
+        "the preflight error must chain the original preparation failure"
+    )
+    assert caplog.messages == ["Dry-run pipeline: packaging phase failed"], (
+        "the packaging failure must be logged with the phase named"
+    )
 
 
 def test_run_dry_run_phase_succeeds_without_logging(
@@ -380,8 +408,8 @@ def test_run_dry_run_phase_succeeds_without_logging(
 
     publish_pipeline._run_dry_run_phase("packaging", lambda: calls.append("ran"))
 
-    assert calls == ["ran"]
-    assert caplog.messages == []
+    assert calls == ["ran"], "the phase action must run exactly once"
+    assert caplog.messages == [], "a successful phase must emit no error-level messages"
 
 
 def test_run_dry_run_phase_reraises_publish_preflight_failure(
@@ -397,5 +425,9 @@ def test_run_dry_run_phase_reraises_publish_preflight_failure(
             lambda: (_ for _ in ()).throw(failure),
         )
 
-    assert excinfo.value is failure
-    assert caplog.messages == ["Dry-run pipeline: publish phase failed"]
+    assert excinfo.value is failure, (
+        "a publish preflight failure must propagate unchanged"
+    )
+    assert caplog.messages == ["Dry-run pipeline: publish phase failed"], (
+        "the publish failure must be logged with the phase named"
+    )

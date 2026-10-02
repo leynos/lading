@@ -11,11 +11,10 @@ refuses duplicate keys, finds what a pull request can start from each
 workflow's triggers, and follows local reusable-workflow calls from there.
 """
 
-from __future__ import annotations
-
 import typing as typ
 
 import yaml
+import yaml.resolver
 
 if typ.TYPE_CHECKING:
     import collections.abc as cabc
@@ -115,7 +114,14 @@ def read_workflows(directory: Path) -> dict[str, Workflow]:
         for path in sorted(directory.iterdir())
         if path.suffix in {".yml", ".yaml"}
     }
-    workflows = {name: doc for name, doc in found.items() if isinstance(doc, dict)}
+    # The cast is the parse boundary: ``SafeLoader`` has already built the
+    # mapping, so the check guards against a non-mapping document while the
+    # cast states the decoded shape the rest of the module works in.
+    workflows = {
+        name: typ.cast("Workflow", doc)
+        for name, doc in found.items()
+        if isinstance(doc, dict)
+    }
     if not workflows:
         message = f"no workflows under {directory}"
         raise ValueError(message)
@@ -134,7 +140,11 @@ def jobs(workflow: Workflow) -> dict[str, Job]:
     declared = workflow.get("jobs")
     if not isinstance(declared, dict):
         return {}
-    return {str(key): job for key, job in declared.items() if isinstance(job, dict)}
+    return {
+        str(key): typ.cast("Job", job)
+        for key, job in declared.items()
+        if isinstance(job, dict)
+    }
 
 
 def environment_name(job: Job) -> str | None:

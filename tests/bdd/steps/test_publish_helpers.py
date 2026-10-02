@@ -1,7 +1,5 @@
 """Helper utilities shared across publish BDD step modules."""
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import typing as typ
 from pathlib import Path
