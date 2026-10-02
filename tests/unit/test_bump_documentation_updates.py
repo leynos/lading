@@ -1,7 +1,5 @@
 """Integration tests for documentation updates in :mod:`lading.commands.bump`."""
 
-from __future__ import annotations
-
 import dataclasses as dc
 import logging
 import pathlib
@@ -11,6 +9,7 @@ import pytest
 
 from lading.commands import bump, bump_pipeline
 from lading.commands.bump_readme import ReadmeTranspositionError
+from tests.helpers.path_normalization import normalized
 from tests.helpers.workspace_builders import (
     _build_workspace_with_internal_deps,
     _CrateSpec,
@@ -53,7 +52,10 @@ def test_readme_transposition_failure_is_logged_at_pipeline_boundary(
     ):
         bump_pipeline._process_readme_transposition(context, dry_run=False)
 
-    assert caplog.messages == ["README transposition failed for crate 'alpha'"]
+    assert caplog.messages == ["README transposition failed for crate 'alpha'"], (
+        "the pipeline boundary must log the README failure once with the "
+        "affected crate name"
+    )
 
 
 def test_run_updates_documentation_snippets(
@@ -74,7 +76,7 @@ def test_run_updates_documentation_snippets(
         options=bump.BumpOptions(configuration=configuration, workspace=workspace),
     )
 
-    assert message == snapshot
+    assert message == snapshot, "the bump summary drifted from its recorded snapshot"
     updated_readme = readme_path.read_text(encoding="utf-8")
     assert 'alpha = "1.2.3"' in updated_readme, (
         f"expected README.md rewritten to the new version: {updated_readme!r}"
@@ -118,10 +120,15 @@ def test_run_transposes_workspace_readme_to_crates(
     )
 
     crate_readme = tmp_path / "crates" / "alpha" / "README.md"
-    assert message == snapshot
-    assert crate_readme.read_text(encoding="utf-8") == (
-        "# Sample\n\nSee [Guide](../../docs/guide.md).\n"
-    ), "expected crate README to rewrite relative links to the crate location"
+    assert message == snapshot, "the bump summary drifted from its recorded snapshot"
+    scrubbed = normalized(
+        crate_readme.read_text(encoding="utf-8"),
+        pathlib.Path("../../"),
+        placeholder="<link-prefix>",
+    )
+    assert scrubbed == snapshot(name="crate_readme"), (
+        "expected crate README to rewrite relative links to the crate location"
+    )
     if scenario.check_version_unchanged:
         assert (
             _load_version(tmp_path / "crates" / "alpha" / "Cargo.toml", ("package",))

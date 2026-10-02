@@ -8,8 +8,6 @@ per-crate execution to :mod:`lading.commands.publish_pipeline`; the latter uses
 :mod:`lading.commands.publish_execution` for its default subprocess runner.
 """
 
-from __future__ import annotations
-
 import dataclasses as dc
 import logging
 import typing as typ

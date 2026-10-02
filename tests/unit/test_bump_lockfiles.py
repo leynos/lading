@@ -1,7 +1,5 @@
 """Tests for Cargo lockfile regeneration after bump operations."""
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import dataclasses as dc
 import operator
@@ -17,6 +15,7 @@ from hypothesis import strategies as st
 
 from lading.commands import bump_lockfiles
 from lading.runtime import CommandSpawnError
+from tests.helpers.path_normalization import normalized
 
 if typ.TYPE_CHECKING:
     from syrupy.assertion import SnapshotAssertion
@@ -46,13 +45,18 @@ class _RecordingRunner:
         command: cabc.Sequence[str],
         *,
         cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
         """Record one command invocation."""
+        del env, echo_stdout
         self.invocations.append(_Invocation(command=tuple(command), cwd=cwd))
         return self.result
 
 
-def test_regenerate_lockfiles_includes_workspace_manifest(tmp_path: Path) -> None:
+def test_regenerate_lockfiles_includes_workspace_manifest(
+    tmp_path: Path, snapshot: SnapshotAssertion
+) -> None:
     """The workspace root manifest should always be regenerated."""
     runner = _RecordingRunner()
 
@@ -62,19 +66,12 @@ def test_regenerate_lockfiles_includes_workspace_manifest(tmp_path: Path) -> Non
         runner=runner,
     )
 
-    assert lockfiles == (tmp_path / "Cargo.lock",)
-    assert runner.invocations == [
-        _Invocation(
-            command=(
-                "cargo",
-                "update",
-                "--workspace",
-                "--manifest-path",
-                str(tmp_path / "Cargo.toml"),
-            ),
-            cwd=tmp_path,
-        )
-    ]
+    assert lockfiles == (tmp_path / "Cargo.lock",), (
+        "with no configured manifests only the workspace root Cargo.lock is built"
+    )
+    assert normalized(repr(runner.invocations), tmp_path) == snapshot, (
+        "the root manifest invocation must match the recorded snapshot"
+    )
 
 
 def test_regenerate_lockfiles_uses_configured_manifests(tmp_path: Path) -> None:
@@ -91,7 +88,7 @@ def test_regenerate_lockfiles_uses_configured_manifests(tmp_path: Path) -> None:
     assert lockfiles == (
         tmp_path / "Cargo.lock",
         tmp_path / "crates/nested/Cargo.lock",
-    )
+    ), "both the root and the configured nested manifest must produce lockfiles"
     assert runner.invocations[-1] == _Invocation(
         command=(
             "cargo",
@@ -101,10 +98,12 @@ def test_regenerate_lockfiles_uses_configured_manifests(tmp_path: Path) -> None:
             str(nested_manifest),
         ),
         cwd=tmp_path,
-    )
+    ), "the nested manifest must be regenerated with cargo update in the workspace root"
 
 
-def test_regenerate_lockfiles_deduplicates_root_manifest(tmp_path: Path) -> None:
+def test_regenerate_lockfiles_deduplicates_root_manifest(
+    tmp_path: Path, snapshot: SnapshotAssertion
+) -> None:
     """Explicit root manifest entries should not trigger duplicate rebuilds."""
     runner = _RecordingRunner()
 
@@ -117,23 +116,15 @@ def test_regenerate_lockfiles_deduplicates_root_manifest(tmp_path: Path) -> None
     assert lockfiles == (
         tmp_path / "Cargo.lock",
         tmp_path / "crates/nested/Cargo.lock",
+    ), "explicit root manifest entries must not produce a duplicate Cargo.lock"
+    commands = [invocation.command for invocation in runner.invocations]
+    # Scrub the nested crate root first; otherwise it collapses into the
+    # broader tmp prefix and the snapshot cannot show the two distinct roots.
+    nested_root = tmp_path / "crates" / "nested"
+    scrubbed = normalized(repr(commands), nested_root, placeholder="<nested-crate>")
+    assert normalized(scrubbed, tmp_path) == snapshot, (
+        "the deduplicated invocation list must match the recorded snapshot"
     )
-    assert [invocation.command for invocation in runner.invocations] == [
-        (
-            "cargo",
-            "update",
-            "--workspace",
-            "--manifest-path",
-            str(tmp_path / "Cargo.toml"),
-        ),
-        (
-            "cargo",
-            "update",
-            "--workspace",
-            "--manifest-path",
-            str(tmp_path / "crates/nested/Cargo.toml"),
-        ),
-    ]
 
 
 @pytest.mark.parametrize(
@@ -161,7 +152,9 @@ def test_regenerate_lockfiles_rejects_invalid_targets_without_running_cargo(
             runner=runner,
         )
 
-    assert runner.invocations == []
+    assert not runner.invocations, (
+        "an invalid configured manifest must be rejected before Cargo runs"
+    )
 
 
 def test_regenerate_lockfiles_surfaces_cargo_failure(tmp_path: Path) -> None:
@@ -194,7 +187,10 @@ def test_regenerate_lockfiles_partial_failure_updates_earlier_lockfiles(
         command: cabc.Sequence[str],
         *,
         cwd: pathlib.Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        del cwd, env, echo_stdout
         manifest = next((a for a in command if a.endswith("Cargo.toml")), None)
         invocations.append(str(manifest))
         # Fail only on the nested manifest invocation.
@@ -213,7 +209,10 @@ def test_regenerate_lockfiles_partial_failure_updates_earlier_lockfiles(
         )
 
     # Root manifest was successfully processed before the failure.
-    assert len(invocations) == 2
+    assert len(invocations) == 2, (
+        "the failing nested manifest must not stop the earlier root manifest "
+        "from being processed"
+    )
     assert any("crates" not in inv for inv in invocations), (
         "root manifest must have been invoked first"
     )
@@ -227,8 +226,10 @@ def test_regenerate_lockfiles_wraps_command_spawn_errors(tmp_path: Path) -> None
         command: cabc.Sequence[str],
         *,
         cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
-        del command, cwd
+        del command, cwd, env, echo_stdout
         raise spawn_error
 
     with pytest.raises(bump_lockfiles.LockfileRegenerationError) as exc_info:
@@ -260,8 +261,10 @@ def test_regenerate_lockfiles_propagates_unexpected_runner_defects(
         command: cabc.Sequence[str],
         *,
         cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
-        del command, cwd
+        del command, cwd, env, echo_stdout
         raise defect
 
     with pytest.raises(RuntimeError) as exc_info:
@@ -287,8 +290,9 @@ def _selective_failure_runner(
         command: cabc.Sequence[str],
         *,
         cwd: Path | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
-        del cwd
+        del cwd, echo_stdout
         manifest = Path(command[-1])
         attempted.append(manifest)
         if manifest in failing_manifests:
@@ -423,7 +427,9 @@ def test_regenerate_lockfiles_aggregates_multiple_failures(
         assert message.count(f"--manifest-path {manifest}") == 1, (
             f"each failed manifest should be listed exactly once; got: {message}"
         )
-    assert snapshot == message.replace(str(ab_workspace), "<workspace>")
+    assert snapshot == message.replace(str(ab_workspace), "<workspace>"), (
+        "the aggregated failure message must match the recorded snapshot"
+    )
 
 
 def test_regenerate_lockfiles_aggregate_chains_first_underlying_cause(
@@ -436,8 +442,10 @@ def test_regenerate_lockfiles_aggregate_chains_first_underlying_cause(
         command: cabc.Sequence[str],
         *,
         cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
-        del command, cwd
+        del command, cwd, env, echo_stdout
         raise boom
 
     with pytest.raises(bump_lockfiles.LockfileRegenerationError) as excinfo:

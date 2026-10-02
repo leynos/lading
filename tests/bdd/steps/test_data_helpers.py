@@ -1,7 +1,5 @@
 """Helper utilities for constructing behavioural test data."""
 
-from __future__ import annotations
-
 import textwrap
 import typing as typ
 

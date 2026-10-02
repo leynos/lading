@@ -1,4 +1,4 @@
-# Python 3.13 Code Style Guidelines (with Ruff, Pyright, and pytest)
+# Python 3.14 Code Style Guidelines (with Ruff, ty, and pytest)
 
 ## Naming Conventions
 
@@ -133,6 +133,6 @@ def test_login_failure():
 
 ______________________________________________________________________
 
-This style guide aims to foster clean, consistent, and maintainable Python 3.13
+This style guide aims to foster clean, consistent, and maintainable Python 3.14
 code with modern tooling. The priority is correctness, clarity, and developer
 empathy.

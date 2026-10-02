@@ -7,8 +7,6 @@ internals for them (issue #108). ``models`` defines the model types only;
 ``_coercion`` owns the error-bound coercion contract shared with the builders.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import functools
 import typing as typ

@@ -1,7 +1,5 @@
 """Unit tests for the publish pre-flight skip decision."""
 
-from __future__ import annotations
-
 import pytest
 
 from lading.commands.publish_skip import (

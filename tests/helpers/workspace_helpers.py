@@ -1,7 +1,5 @@
 """Shared test helpers for workspace metadata tests."""
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import os
 import typing as typ
@@ -42,5 +40,11 @@ def install_cargo_stub(cmd_mox: CmdMox, monkeypatch: pytest.MonkeyPatch) -> None
         runner_context.__exit__(None, None, None)
         undo()
 
-    monkeypatch.undo = undo_with_runner_context
+    # `setattr` rather than direct assignment: pytest's `undo` is typed as a
+    # bound method, which no callable we can supply satisfies, and `setattr` is
+    # the API that also restores the previous value at teardown. The first
+    # entry it pushes onto `_setattr` is `undo` itself, so the wrapper runs
+    # once and the original is restored before the remaining attributes are
+    # unwound.
+    monkeypatch.setattr(monkeypatch, "undo", undo_with_runner_context)
     monkeypatch.setenv("LADING_USE_CMD_MOX_STUB", "1")

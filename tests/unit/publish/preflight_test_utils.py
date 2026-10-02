@@ -1,14 +1,12 @@
 """Shared helpers for exercising publish preflight behaviour in tests."""
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import typing as typ
 from pathlib import Path
 
 from lading.commands import publish, publish_pipeline, publish_preflight
 
-from .conftest import ORIGINAL_PREFLIGHT, make_crate, make_workspace
+from .conftest import _real_preflight, make_crate, make_workspace
 
 if typ.TYPE_CHECKING:
     import pytest
@@ -27,7 +25,7 @@ def _setup_preflight_test(
     crate_names: cabc.Sequence[str] | None = None,
 ) -> tuple[Path, WorkspaceGraph, RecordedCommands]:
     """Execute ``publish.run`` with optional crates and capture command calls."""
-    monkeypatch.setattr(publish_preflight, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
+    monkeypatch.setattr(publish_preflight, "_run_preflight_checks", _real_preflight)
     root = tmp_path / "workspace"
     root.mkdir()
     selected_crates = ("alpha",) if crate_names is None else tuple(crate_names)
@@ -41,6 +39,7 @@ def _setup_preflight_test(
         *,
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
         """Record the invocation and return a successful result."""
         calls.append((tuple(command), cwd, env))

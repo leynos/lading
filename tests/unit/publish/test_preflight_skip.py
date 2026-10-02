@@ -1,7 +1,5 @@
 """Behaviour of the publish pre-flight when the build checks are skipped."""
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import dataclasses as dc
 import logging
@@ -16,7 +14,7 @@ from lading.commands.publish_skip import SkipPreflightDecision, SkipPreflightSou
 from lading.utils import metrics
 
 from .conftest import (
-    ORIGINAL_PREFLIGHT,
+    _real_preflight,
     make_config,
     make_crate,
     make_preflight_config,
@@ -104,7 +102,7 @@ def _run_preflight(
     scenario: _Scenario,
 ) -> list[tuple[str, ...]]:
     """Run the real pre-flight over a recording runner and return its commands."""
-    monkeypatch.setattr(publish_preflight, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
+    monkeypatch.setattr(publish_preflight, "_run_preflight_checks", _real_preflight)
     root = tmp_path / "workspace"
     root.mkdir()
     calls: list[tuple[str, ...]] = []
@@ -208,7 +206,7 @@ def test_skip_does_not_claim_an_opt_in_tree_check_ran(
     )
     assert all(
         "working-tree and Cargo.lock" not in message for message in skip_messages
-    )
+    ), "a default skip must not claim the opt-in working-tree guard ran"
 
 
 def test_skip_records_its_mode_and_source_as_metrics(
@@ -254,7 +252,7 @@ def test_executed_preflight_records_the_executed_mode(
             source=str(SkipPreflightSource.CONFIGURATION),
         )
         == 1
-    )
+    ), "an executed pre-flight must be counted once under the executed mode"
 
 
 def test_default_configuration_runs_the_build_checks(
@@ -295,7 +293,7 @@ def test_publish_run_forwards_the_skip_override(
     The packaging commands still run, so the skip removes only the duplicated
     verification and not the work the publish step exists to do.
     """
-    monkeypatch.setattr(publish_preflight, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
+    monkeypatch.setattr(publish_preflight, "_run_preflight_checks", _real_preflight)
     root = tmp_path / "workspace"
     root.mkdir()
     workspace = make_workspace(root, make_crate(root, "alpha"))

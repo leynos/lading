@@ -18,8 +18,7 @@ misses its baseline rather than comparing against the wrong one; this
 contract turns that silent restart into a failure.
 """
 
-from __future__ import annotations
-
+import collections.abc as cabc
 import itertools
 import typing as typ
 
@@ -136,12 +135,12 @@ def _coverage_calls(path: Path, python_version: str = "") -> list[CoverageCall]:
         One entry per call, with every source's version in the resolver's
         priority order (empty where a source declares nothing).
     """
-    workflow = typ.cast("Mapping", _load_workflow(path))
+    workflow = _load_workflow(path)
     return [
         call
         for name, job in _jobs(workflow).items()
         if isinstance(job, dict) and isinstance(job.get("steps"), list)
-        for call in _job_calls(name, typ.cast("Mapping", job), workflow, python_version)
+        for call in _job_calls(name, job, workflow, python_version)
     ]
 
 
@@ -187,8 +186,23 @@ def _setup(version: str, **extra: object) -> dict[str, object]:
     return {**_SETUP, "with": {"python-version": version}, **extra}
 
 
-def _write(tmp_path: Path, document: dict[str, object]) -> Path:
-    """Write a fixture workflow, keeping its jobs in the order given."""
+def _write(tmp_path: Path, document: cabc.Mapping[str, object]) -> Path:
+    """Write a fixture workflow, keeping its jobs in the order given.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        Directory to write the fixture workflow into.
+    document : Mapping[str, object]
+        Top-level workflow keys to merge after the trigger. Callers pass
+        deeply nested literals, so this is a mapping rather than a ``dict``:
+        ``dict`` is invariant in its value type and would reject them.
+
+    Returns
+    -------
+    Path
+        The path of the fixture workflow that was written.
+    """
     workflow = tmp_path / "coverage.yml"
     workflow.write_text(
         yaml.safe_dump({"on": "push", **document}, sort_keys=False), encoding="utf-8"

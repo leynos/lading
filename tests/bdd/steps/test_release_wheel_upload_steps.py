@@ -11,10 +11,8 @@ Each scenario is bound with its own ``@scenario`` decorator instead of the
 one. The beta has since been selected, and no scenario here is marked.
 """
 
-from __future__ import annotations
-
 import importlib.metadata
-import typing as typ
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -29,9 +27,6 @@ from tests.helpers.gh_stub import (
     isolated_environment,
     run_uploader,
 )
-
-if typ.TYPE_CHECKING:
-    import subprocess
 
 pytestmark = pytest.mark.timeout(60)
 
@@ -76,7 +71,7 @@ def _error_line(stderr: str) -> str:
     raise AssertionError(message)
 
 
-def _site_packages(virtual_env: str) -> list[Path]:
+def _site_packages(virtual_env: str) -> list[str]:
     """Return the ``site-packages`` directories of one environment.
 
     The interpreter version is part of the path, so it is discovered rather
@@ -85,11 +80,12 @@ def _site_packages(virtual_env: str) -> list[Path]:
 
     Returns
     -------
-    list[Path]
-        The matching ``site-packages`` directories. Empty if the environment
-        has none, which is left for the caller to report.
+    list[str]
+        The matching ``site-packages`` directories, as the strings
+        :func:`importlib.metadata.distributions` requires. Empty if the
+        environment has none, which is left for the caller to report.
     """
-    return list(Path(virtual_env).glob("lib/python*/site-packages"))
+    return [str(path) for path in Path(virtual_env).glob("lib/python*/site-packages")]
 
 
 def _cuprum_version_under(virtual_env: str) -> str:

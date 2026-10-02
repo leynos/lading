@@ -14,8 +14,6 @@ overwrote its record, which meant a second call was invisible and a stray
 ``release edit`` could never be observed.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import dataclasses as dc
 import json

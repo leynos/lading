@@ -7,8 +7,6 @@ helper that produces the canonical coercion message shape:
 ``{field} must be {expected}; received {type(value).__name__}.``
 """
 
-from __future__ import annotations
-
 import typing as typ
 
 if typ.TYPE_CHECKING:

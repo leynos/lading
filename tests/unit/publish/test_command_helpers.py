@@ -16,15 +16,19 @@ execution = importlib.import_module("lading.runtime.subprocess_runner")
 
 def test_normalize_environment_handles_none_and_values() -> None:
     """Environment normalization should coerce values to strings."""
-    assert execution.normalize_environment(None) is None
-    assert execution.normalize_environment({"ALPHA": 1}) == {"ALPHA": "1"}
+    assert execution.normalize_environment(None) is None, (
+        "a missing environment must normalize to None"
+    )
+    assert execution.normalize_environment({"ALPHA": 1}) == {"ALPHA": "1"}, (
+        "numeric environment values must be coerced to strings"
+    )
 
 
 def test_format_thread_name_sanitises_paths() -> None:
     """Thread names derived from program paths drop separators."""
     name = execution._format_thread_name(str(Path("foo") / "tools" / "cargo"), "stdout")
-    assert "stdout" in name
-    assert "/" not in name
+    assert "stdout" in name, "the thread name must identify the captured stream"
+    assert "/" not in name, "path separators must be stripped from thread names"
 
 
 def test_redact_environment_masks_sensitive_keys() -> None:
@@ -35,8 +39,12 @@ def test_redact_environment_masks_sensitive_keys() -> None:
         "harmless": "value",
     }
     redacted = execution._redact_environment(payload)
-    assert redacted[sensitive_key] == "<redacted>"
-    assert redacted["harmless"] == "value"
+    assert redacted[sensitive_key] == "<redacted>", (
+        "token-like environment values must be redacted"
+    )
+    assert redacted["harmless"] == "value", (
+        "non-sensitive environment values must pass through unchanged"
+    )
 
 
 def test_relay_stream_forwards_and_decodes_bytes() -> None:
@@ -47,30 +55,32 @@ def test_relay_stream_forwards_and_decodes_bytes() -> None:
 
     execution.relay_stream(source, sink, buffer)
 
-    assert buffer == ["alpha"]
-    assert sink.getvalue() == "alpha"
+    assert buffer == ["alpha"], "decoded lines must be appended to the buffer"
+    assert sink.getvalue() == "alpha", "relayed bytes must reach the sink verbatim"
 
 
 def test_write_to_sink_handles_broken_pipe() -> None:
     """Broken pipe errors should be swallowed and return ``None`` sink."""
 
     class _BrokenSink:
-        def write(self, payload: str) -> None:  # pragma: no cover - invoked
+        def write(self, payload: str, /) -> int:  # pragma: no cover - invoked
             raise BrokenPipeError
 
-        def flush(self) -> None:  # pragma: no cover - compatibility hook
+        def flush(self, /) -> None:  # pragma: no cover - compatibility hook
             return None
 
     result = execution.write_to_sink(_BrokenSink(), "data")
 
-    assert result is None
+    assert result is None, (
+        "a broken pipe must be swallowed and reported as a missing sink"
+    )
 
 
 def test_echo_buffered_output_skips_empty_payloads() -> None:
     """The echo helper should not write anything for empty payloads."""
     sink = io.StringIO()
     cmd_mox_runner._echo_buffered_output("", sink)
-    assert sink.getvalue() == ""
+    assert not sink.getvalue(), "empty payloads must not reach the sink"
 
 
 @pytest.mark.parametrize(
@@ -106,8 +116,12 @@ def test_normalize_cmd_mox_command_forwards_non_cargo_commands(
 
     rewritten_program, rewritten_args = normalize_cmd_mox_command(program, args)
 
-    assert rewritten_program == expected_program
-    assert rewritten_args == expected_args
+    assert rewritten_program == expected_program, (
+        f"cmd-mox must resolve this invocation to program {expected_program!r}"
+    )
+    assert rewritten_args == expected_args, (
+        f"cmd-mox must forward the expected arguments {expected_args!r}"
+    )
 
 
 @pytest.mark.parametrize("value", ["1", "true", "TRUE", "Yes", "on"])
@@ -117,7 +131,9 @@ def test_should_use_cmd_mox_stub_honours_truthy_values(
     """Environment values recognised as truthy enable cmd-mox stubbing."""
     monkeypatch.setenv(cli._CMD_MOX_STUB_ENV, value)
 
-    assert cli._select_runner() is cmd_mox_runner.cmd_mox_runner
+    assert cli._select_runner() is cmd_mox_runner.cmd_mox_runner, (
+        "every truthy stub toggle must select the cmd-mox runner"
+    )
 
 
 def test_should_use_cmd_mox_stub_returns_false_by_default(
@@ -126,4 +142,6 @@ def test_should_use_cmd_mox_stub_returns_false_by_default(
     """Missing environment values disable cmd-mox stubbing."""
     monkeypatch.delenv(cli._CMD_MOX_STUB_ENV, raising=False)
 
-    assert cli._select_runner() is subprocess_runner
+    assert cli._select_runner() is subprocess_runner, (
+        "a missing stub toggle must select the real subprocess runner"
+    )

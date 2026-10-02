@@ -1,7 +1,5 @@
 """Unit and property tests for :mod:`lading.utils.path`."""
 
-from __future__ import annotations
-
 import os
 import string
 from pathlib import Path
@@ -26,14 +24,18 @@ _relative_segments: st.SearchStrategy[list[str]] = st.lists(
 
 def test_none_defaults_to_cwd() -> None:
     """``None`` selects the resolved current working directory."""
-    assert normalize_workspace_root(None) == Path.cwd().resolve()
+    assert normalize_workspace_root(None) == Path.cwd().resolve(), (
+        "a None workspace root must default to the resolved cwd"
+    )
 
 
 def test_tilde_is_expanded() -> None:
     """A leading ``~`` expands to the user home directory."""
     result = normalize_workspace_root(str(Path("~", "workspace")))
 
-    assert result == Path.home().resolve() / "workspace"
+    assert result == Path.home().resolve() / "workspace", (
+        "a leading tilde must expand to the resolved home directory"
+    )
 
 
 def test_accepts_path_instances() -> None:
@@ -41,8 +43,12 @@ def test_accepts_path_instances() -> None:
     candidate = Path("~", "ws")
     result = normalize_workspace_root(candidate)
 
-    assert result == Path.home().resolve() / "ws"
-    assert result == normalize_workspace_root(str(candidate))
+    assert result == Path.home().resolve() / "ws", (
+        "a Path instance must expand its tilde exactly as a string would"
+    )
+    assert result == normalize_workspace_root(str(candidate)), (
+        "normalizing a Path must match normalizing its string form"
+    )
 
 
 @given(segments=_relative_segments)
@@ -55,11 +61,21 @@ def test_relative_inputs_resolve_to_absolute_paths(segments: list[str]) -> None:
     # the output is absolute, retains no unresolved ``.``/``..`` segments,
     # anchors relative inputs at the cwd, and is a fixed point of further
     # normalization.
-    assert result.is_absolute()
-    assert ".." not in result.parts
-    assert "." not in result.parts
-    assert result == normalize_workspace_root(Path.cwd() / value)
-    assert normalize_workspace_root(result) == result
+    assert result.is_absolute(), (
+        "a relative workspace root must resolve to an absolute path"
+    )
+    assert ".." not in result.parts, (
+        "the resolved path must retain no parent-directory segments"
+    )
+    assert "." not in result.parts, (
+        "the resolved path must retain no current-directory segments"
+    )
+    assert result == normalize_workspace_root(Path.cwd() / value), (
+        "a relative root must anchor at the cwd and resolve identically"
+    )
+    assert normalize_workspace_root(result) == result, (
+        "normalizing an already-resolved path must be a fixed point"
+    )
 
 
 @given(segments=_relative_segments)
@@ -68,7 +84,9 @@ def test_redundant_separators_are_normalized(segments: list[str]) -> None:
     value = str(Path(*segments))
     doubled = value.replace(os.sep, os.sep * 2)
 
-    assert normalize_workspace_root(doubled) == normalize_workspace_root(value)
+    assert normalize_workspace_root(doubled) == normalize_workspace_root(value), (
+        "doubling path separators must not change the resolved path"
+    )
 
 
 @given(segments=_relative_segments)
@@ -80,6 +98,12 @@ def test_tilde_prefix_expands_for_arbitrary_suffixes(segments: list[str]) -> Non
 
     # Independent invariants: the output is absolute, fully resolved, and the
     # ``~`` prefix expands to exactly the home directory.
-    assert result.is_absolute()
-    assert ".." not in result.parts
-    assert result == normalize_workspace_root(home_value)
+    assert result.is_absolute(), (
+        "a tilde-prefixed root must resolve to an absolute path"
+    )
+    assert ".." not in result.parts, (
+        "the expanded home path must retain no parent-directory segments"
+    )
+    assert result == normalize_workspace_root(home_value), (
+        "expanding a tilde must equal substituting the literal home path"
+    )

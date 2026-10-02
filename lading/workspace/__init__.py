@@ -1,7 +1,5 @@
 """Workspace discovery utilities for :mod:`lading`."""
 
-from __future__ import annotations
-
 from .graph_build import (
     build_workspace_graph,
     load_workspace,

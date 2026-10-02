@@ -1,7 +1,5 @@
 """Integration tests for manifest version updates in :mod:`lading.commands.bump`."""
 
-from __future__ import annotations
-
 import dataclasses as dc
 import pathlib
 import typing as typ
@@ -41,12 +39,33 @@ class _NoChangeScenario:
 
 def _extract_alpha_dependency_entries(
     manifest_path: pathlib.Path,
-) -> tuple[str, object, object]:
-    """Return the alpha dependency entries across manifest sections."""
+) -> tuple[tk_items.String, tk_items.InlineTable, tk_items.Table]:
+    """Return the alpha dependency entries across manifest sections.
+
+    The three sections spell the same dependency three different ways: a bare
+    version string, an inline table, and a dotted sub-table. Each declared
+    return type names the item ``tomlkit`` actually parses for that spelling,
+    which is what makes the subscripts in the assertions type-check.
+
+    Returns
+    -------
+    tuple[tk_items.String, tk_items.InlineTable, tk_items.Table]
+        The ``[dependencies]`` requirement, the ``[dev-dependencies]`` inline
+        table, and the ``[build-dependencies]`` sub-table, in that order.
+    """
     document = parse_toml(manifest_path.read_text(encoding="utf-8"))
-    dependency = document["dependencies"]["alpha"].value
+    dependency = document["dependencies"]["alpha"]
     dev_entry = document["dev-dependencies"]["alpha"]
     build_entry = document["build-dependencies"]["alpha"]
+    assert isinstance(dependency, tk_items.String), (
+        "[dependencies] alpha must be a version string"
+    )
+    assert isinstance(dev_entry, tk_items.InlineTable), (
+        "[dev-dependencies] alpha must be an inline table"
+    )
+    assert isinstance(build_entry, tk_items.Table), (
+        "[build-dependencies] alpha must be a sub-table"
+    )
     return dependency, dev_entry, build_entry
 
 
@@ -58,7 +77,9 @@ def test_run_updates_workspace_and_members(
     configuration = _make_config()
     options = bump.BumpOptions(configuration=configuration, workspace=workspace)
     message = bump.run(tmp_path, "1.2.3", options=options)
-    assert message == snapshot
+    assert message == snapshot, (
+        "the bump report must match the recorded summary for this workspace"
+    )
     assert (
         _load_version(tmp_path / "Cargo.toml", ("workspace", "package")) == "1.2.3"
     ), "root workspace.package version not updated"
@@ -124,10 +145,10 @@ def test_run_updates_internal_dependency_versions(tmp_path: pathlib.Path) -> Non
     beta_crate = _create_beta_crate_with_dependencies(tmp_path, alpha_package_id)
     _write_workspace_manifest(
         tmp_path,
-        [
+        (
             "crates/alpha",
             "crates/beta",
-        ],
+        ),
     )
     workspace = WorkspaceGraph(
         workspace_root=tmp_path, crates=(alpha_crate, beta_crate)
@@ -143,7 +164,7 @@ def test_run_updates_internal_dependency_versions(tmp_path: pathlib.Path) -> Non
     dependency_version, dev_entry, build_entry = _extract_alpha_dependency_entries(
         beta_crate.manifest_path
     )
-    assert dependency_version == "^1.2.3", "[dependencies] version requirement"
+    assert dependency_version.value == "^1.2.3", "[dependencies] version requirement"
     assert dev_entry["version"].value == "~1.2.3", "[dev-dependencies] version"
     assert dev_entry["path"].value == "../alpha", "[dev-dependencies] path"
     assert build_entry["version"].value == "1.2.3", "[build-dependencies] version"
@@ -275,7 +296,9 @@ def test_run_reports_when_versions_already_match(
             workspace=workspace,
         ),
     )
-    assert message == snapshot
+    assert message == snapshot, (
+        "both live and dry-run no-op bumps must report the canonical message"
+    )
 
 
 def test_run_dry_run_reports_changes_without_modifying_files(
@@ -303,7 +326,9 @@ def test_run_dry_run_reports_changes_without_modifying_files(
         ),
     )
 
-    assert message == snapshot
+    assert message == snapshot, (
+        "a dry run must report the same planned changes as a live bump"
+    )
     for path in manifest_paths:
         assert path.read_text(encoding="utf-8") == original_contents[path], (
             f"dry run must not modify manifest: {path}"

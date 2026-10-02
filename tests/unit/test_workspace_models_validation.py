@@ -1,7 +1,5 @@
 """Validation-focused tests for :mod:`lading.workspace.models`."""
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import typing as typ
 
@@ -22,7 +20,9 @@ def test_is_ordering_dependency_skips_unknown_crates() -> None:
         manifest_name="external",
     )
 
-    assert models._is_ordering_dependency(dependency, {}) is False
+    assert models._is_ordering_dependency(dependency, {}) is False, (
+        "a dependency absent from the workspace must not affect ordering"
+    )
 
 
 def test_build_workspace_graph_requires_workspace_root() -> None:
@@ -37,7 +37,9 @@ def test_index_workspace_packages_skips_non_members() -> None:
 
     index = graph_build._index_workspace_packages(packages, ["member"])
 
-    assert set(index) == {"member"}
+    assert set(index) == {"member"}, (
+        "the index must contain only workspace member packages"
+    )
 
 
 def test_collect_workspace_crates_builds_tuple_in_member_order(tmp_path: Path) -> None:
@@ -91,9 +93,15 @@ def test_collect_workspace_crates_builds_tuple_in_member_order(tmp_path: Path) -
         workspace_index=workspace_index,
     )
 
-    assert isinstance(crates, tuple)
-    assert [crate.name for crate in crates] == ["beta", "alpha", "beta"]
-    assert crates[0].publish is False
+    assert isinstance(crates, tuple), (
+        "the collected workspace crates must be returned as a tuple"
+    )
+    assert [crate.name for crate in crates] == ["beta", "alpha", "beta"], (
+        "crates must be collected once per member id, preserving request order"
+    )
+    assert crates[0].publish is False, (
+        "a package with an empty publish list must be marked unpublished"
+    )
     assert crates[0].dependencies == (
         models.WorkspaceDependency(
             package_id="alpha-id",
@@ -101,9 +109,14 @@ def test_collect_workspace_crates_builds_tuple_in_member_order(tmp_path: Path) -
             manifest_name="alpha",
             kind=None,
         ),
+    ), "beta must record its alpha dependency as a workspace dependency"
+    assert crates[1].readme_is_workspace is True, (
+        "a readme.workspace = true package must be flagged as using the "
+        "workspace readme"
     )
-    assert crates[1].readme_is_workspace is True
-    assert crates[2] == crates[0]
+    assert crates[2] == crates[0], (
+        "a member id listed twice must yield the same crate model"
+    )
 
 
 @pytest.mark.parametrize(
@@ -152,7 +165,9 @@ def test_build_dependencies_handles_missing_entries() -> None:
 
     dependencies = graph_build._build_dependencies(package, workspace_index)
 
-    assert dependencies == ()
+    assert not dependencies, (
+        "a package with no dependency entries must yield no dependencies"
+    )
 
 
 @pytest.mark.parametrize(
@@ -188,7 +203,9 @@ def test_lookup_workspace_target_handles_missing_entries() -> None:
     workspace_index = models.WorkspaceIndex(packages={}, members_by_name={})
     result = graph_build._lookup_workspace_target({}, workspace_index)
 
-    assert result is None
+    assert result is None, (
+        "a dependency target outside the workspace must resolve to nothing"
+    )
 
 
 def test_path_normalization_rejects_invalid_types() -> None:
@@ -201,7 +218,9 @@ def test_path_normalization_rejects_invalid_types() -> None:
 
 def test_expect_sequence_validation() -> None:
     """Sequence validation should honour allow_none and reject scalars."""
-    assert _coercion._expect_sequence(None, "field", allow_none=True) is None
+    assert _coercion._expect_sequence(None, "field", allow_none=True) is None, (
+        "an allowed None sequence must pass validation unchanged"
+    )
     with pytest.raises(models.WorkspaceModelError):
         _coercion._expect_sequence(None, "field")
     with pytest.raises(models.WorkspaceModelError):
@@ -212,16 +231,28 @@ def test_expect_string_and_non_empty_sequence_checks() -> None:
     """String and sequence coercion should reject invalid inputs."""
     with pytest.raises(models.WorkspaceModelError):
         _coercion._expect_string(123, "field")
-    assert _coercion._is_non_empty_sequence([]) is False
-    assert _coercion._is_non_empty_sequence("abc") is False
-    assert _coercion._is_non_empty_sequence(["a"]) is True
+    assert _coercion._is_non_empty_sequence([]) is False, (
+        "an empty sequence must not count as non-empty"
+    )
+    assert _coercion._is_non_empty_sequence("abc") is False, (
+        "a bare string must not be treated as a non-empty sequence"
+    )
+    assert _coercion._is_non_empty_sequence(["a"]) is True, (
+        "a populated sequence must count as non-empty"
+    )
 
 
 def test_coerce_publish_setting_allows_sequences_and_bools() -> None:
     """Publish setting coercion should support bools, lists, and None."""
-    assert graph_build._coerce_publish_setting(None, "crate") is True
-    assert graph_build._coerce_publish_setting(value=False, package_id="crate") is False
-    assert graph_build._coerce_publish_setting(["crates-io"], "crate") is True
+    assert graph_build._coerce_publish_setting(None, "crate") is True, (
+        "an absent publish setting must default to publishable"
+    )
+    assert (
+        graph_build._coerce_publish_setting(value=False, package_id="crate") is False
+    ), "an explicit False publish setting must disable publication"
+    assert graph_build._coerce_publish_setting(["crates-io"], "crate") is True, (
+        "a registry allowlist must mark the package as publishable"
+    )
 
 
 @pytest.mark.parametrize(
@@ -302,20 +333,28 @@ def test_topological_sort_dedupes_duplicate_dependencies(tmp_path: Path) -> None
     )
 
     ordered = [crate.name for crate in workspace.topologically_sorted_crates()]
-    assert ordered == ["core", "utils", "app"]
+    assert ordered == ["core", "utils", "app"], (
+        "duplicate dependency edges must not disturb topological ordering"
+    )
 
 
 def test_extract_readme_workspace_flag_handles_non_mappings(tmp_path: Path) -> None:
     """Non-mapping package tables should return False."""
-    assert graph_build._extract_readme_workspace_flag("invalid") is False
-    assert graph_build._extract_readme_workspace_flag({"readme": "README.md"}) is False
+    assert graph_build._extract_readme_workspace_flag("invalid") is False, (
+        "a non-mapping package table must not report a workspace readme"
+    )
+    assert (
+        graph_build._extract_readme_workspace_flag({"readme": "README.md"}) is False
+    ), "a plain readme string must not be mistaken for readme.workspace"
 
 
 def test_manifest_uses_workspace_readme_detects_flag(tmp_path: Path) -> None:
     """Manifest helper should detect readme.workspace usage."""
     manifest_path = tmp_path / "Cargo.toml"
     manifest_path.write_text("[package]\nname = 'demo'\nreadme.workspace = true\n")
-    assert graph_build._manifest_uses_workspace_readme(manifest_path) is True
+    assert graph_build._manifest_uses_workspace_readme(manifest_path) is True, (
+        "a manifest declaring readme.workspace must be detected"
+    )
 
 
 def test_manifest_uses_workspace_readme_reports_parse_errors(tmp_path: Path) -> None:

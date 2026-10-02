@@ -1,20 +1,22 @@
 """Documentation coverage tests for the end-user guide."""
 
-from __future__ import annotations
-
+import typing as typ
 from pathlib import Path
 
 from lading import config as config_module
 
+if typ.TYPE_CHECKING:
+    from syrupy.assertion import SnapshotAssertion
 
-def test_users_guide_includes_required_sections() -> None:
-    """Ensure the user guide exists and contains the Phase 4.2 requirements."""
+
+def test_users_guide_includes_required_sections(snapshot: SnapshotAssertion) -> None:
+    """Ensure the user guide exists and carries the top-level sections."""
     guide_path = Path("docs/users-guide.md")
     content = guide_path.read_text(encoding="utf-8")
 
-    assert "## Installation" in content
-    assert "## Tutorial" in content
-    assert "## Configuration reference (`lading.toml`)" in content
+    headings = [line for line in content.splitlines() if line.startswith("## ")]
+
+    assert headings == snapshot, "the guide's top-level headings must be unchanged"
 
 
 def test_users_guide_documents_all_supported_config_keys() -> None:

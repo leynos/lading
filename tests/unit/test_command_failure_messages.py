@@ -17,8 +17,6 @@ the shared helpers are snapshotted at their own functional boundaries:
   (driving ``_package_crate``/``_publish_crate``).
 """
 
-from __future__ import annotations
-
 import typing as typ
 from pathlib import Path
 
@@ -60,7 +58,9 @@ def test_lockfile_regeneration_failure_message(snapshot: SnapshotAssertion) -> N
             runner=_failing_runner("", "error: dependency conflict\n"),
         )
 
-    assert snapshot == str(excinfo.value)
+    assert snapshot == str(excinfo.value), (
+        "the lockfile regeneration failure must render the canonical message"
+    )
 
 
 @pytest.mark.parametrize(
@@ -80,4 +80,6 @@ def test_cargo_metadata_invocation_message(
             tmp_path, runner=_failing_runner(stdout, stderr, exit_code=2)
         )
 
-    assert snapshot == str(excinfo.value)
+    assert snapshot == str(excinfo.value), (
+        "the cargo metadata failure must render the canonical message for this case"
+    )

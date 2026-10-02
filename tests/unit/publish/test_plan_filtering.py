@@ -1,7 +1,5 @@
 """Publish plan filtering behaviour tests."""
 
-from __future__ import annotations
-
 import typing as typ
 
 import pytest
@@ -67,9 +65,15 @@ def test_plan_publication_filtering(
         crate.name for crate in plan.skipped_configuration
     )
 
-    assert actual_publishable_names == expected["publishable"]
-    assert actual_manifest_names == expected["manifest"]
-    assert actual_configuration_names == expected["configuration"]
+    assert actual_publishable_names == expected["publishable"], (
+        "publishable crates must match the expected names for this case"
+    )
+    assert actual_manifest_names == expected["manifest"], (
+        "crates skipped by the manifest publish flag must match the case"
+    )
+    assert actual_configuration_names == expected["configuration"], (
+        "crates skipped by configuration exclusions must match the case"
+    )
 
 
 def test_plan_publication_empty_workspace(tmp_path: Path) -> None:
@@ -80,9 +84,13 @@ def test_plan_publication_empty_workspace(tmp_path: Path) -> None:
 
     plan = publish.plan_publication(workspace, configuration)
 
-    assert plan.publishable == ()
-    assert plan.skipped_manifest == ()
-    assert plan.skipped_configuration == ()
+    assert not plan.publishable, "an empty workspace has nothing to publish"
+    assert not plan.skipped_manifest, (
+        "an empty workspace has no manifest-skipped crates"
+    )
+    assert not plan.skipped_configuration, (
+        "an empty workspace has no configuration-skipped crates"
+    )
 
 
 def test_plan_publication_empty_exclude_list(tmp_path: Path) -> None:
@@ -95,9 +103,15 @@ def test_plan_publication_empty_exclude_list(tmp_path: Path) -> None:
 
     plan = publish.plan_publication(workspace, configuration)
 
-    assert plan.publishable == (publishable,)
-    assert plan.skipped_manifest == (manifest_skipped,)
-    assert plan.skipped_configuration == ()
+    assert plan.publishable == (publishable,), (
+        "a publishable crate must appear in the publishable group"
+    )
+    assert plan.skipped_manifest == (manifest_skipped,), (
+        "a publish=false crate must be skipped by the manifest rule"
+    )
+    assert not plan.skipped_configuration, (
+        "an empty exclusion list must not skip any crate"
+    )
 
 
 def test_plan_publication_records_missing_exclusions(tmp_path: Path) -> None:
@@ -108,7 +122,9 @@ def test_plan_publication_records_missing_exclusions(tmp_path: Path) -> None:
 
     plan = publish.plan_publication(workspace, configuration)
 
-    assert plan.missing_configuration_exclusions == ("missing",)
+    assert plan.missing_configuration_exclusions == ("missing",), (
+        "an exclusion naming no workspace crate must be recorded as missing"
+    )
 
 
 def test_plan_publication_records_multiple_missing_exclusions(
@@ -125,7 +141,7 @@ def test_plan_publication_records_multiple_missing_exclusions(
         "missing1",
         "missing2",
         "missing3",
-    )
+    ), "unmatched exclusions must be recorded in configuration order"
 
 
 def test_plan_publication_sorts_crates_by_name(tmp_path: Path) -> None:
@@ -150,9 +166,16 @@ def test_plan_publication_sorts_crates_by_name(tmp_path: Path) -> None:
 
     plan = publish.plan_publication(workspace, configuration)
 
-    assert plan.publishable == (publishable_first, publishable_second)
-    assert plan.skipped_manifest == (manifest_skipped_early, manifest_skipped_late)
-    assert plan.skipped_configuration == (config_skipped_early, config_skipped_late)
+    assert plan.publishable == (publishable_first, publishable_second), (
+        "publishable crates must be sorted by name, not declaration order"
+    )
+    assert plan.skipped_manifest == (manifest_skipped_early, manifest_skipped_late), (
+        "manifest-skipped crates must be sorted by name"
+    )
+    assert plan.skipped_configuration == (
+        config_skipped_early,
+        config_skipped_late,
+    ), "configuration-skipped crates must be sorted by name"
 
 
 def test_plan_publication_multiple_configuration_skips(tmp_path: Path) -> None:
@@ -165,5 +188,7 @@ def test_plan_publication_multiple_configuration_skips(tmp_path: Path) -> None:
 
     plan = publish.plan_publication(workspace, configuration)
 
-    assert plan.publishable == ()
-    assert plan.skipped_configuration == (delta, gamma)
+    assert not plan.publishable, "excluding every crate must leave nothing publishable"
+    assert plan.skipped_configuration == (delta, gamma), (
+        "configuration-skipped crates must preserve configuration order"
+    )

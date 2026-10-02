@@ -6,12 +6,28 @@
   - crates/alpha/README.md (readme)
   '''
 # ---
+# name: test_run_transposes_workspace_readme_to_crates[excluded_crate][crate_readme]
+  '''
+  # Sample
+  
+  See [Guide](<link-prefix>/docs/guide.md).
+  
+  '''
+# ---
 # name: test_run_transposes_workspace_readme_to_crates[included_crate]
   '''
   Updated version to 1.2.3 in 2 manifest(s) and 1 readme file(s):
   - Cargo.toml
   - crates/alpha/Cargo.toml
   - crates/alpha/README.md (readme)
+  '''
+# ---
+# name: test_run_transposes_workspace_readme_to_crates[included_crate][crate_readme]
+  '''
+  # Sample
+  
+  See [Guide](<link-prefix>/docs/guide.md).
+  
   '''
 # ---
 # name: test_run_updates_documentation_snippets

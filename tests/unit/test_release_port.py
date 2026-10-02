@@ -8,8 +8,6 @@ looks harmless and quietly restores the coupling. A comment claiming the
 direction would not survive that; these tests would fail.
 """
 
-from __future__ import annotations
-
 import ast
 from pathlib import Path
 
@@ -33,10 +31,11 @@ def _imported_names(path: Path) -> set[str]:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     names: set[str] = set()
     for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            names.update(alias.name.split(".")[0] for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module is not None:
-            names.add(node.module.split(".")[0])
+        match node:
+            case ast.Import():
+                names.update(alias.name.split(".")[0] for alias in node.names)
+            case ast.ImportFrom() if node.module is not None:
+                names.add(node.module.split(".")[0])
     return names
 
 

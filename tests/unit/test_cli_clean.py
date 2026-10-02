@@ -9,8 +9,6 @@ deletes when nobody asked, and a `--location` that did not map is a run that
 deletes somewhere else.
 """
 
-from __future__ import annotations
-
 import tempfile
 import typing as typ
 

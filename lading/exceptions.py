@@ -13,8 +13,6 @@ from their local root exception, preserving precise handling within each
 component while keeping a consistent package-wide exception hierarchy.
 """
 
-from __future__ import annotations
-
 
 class LadingError(Exception):
     """Base class for all lading exceptions."""

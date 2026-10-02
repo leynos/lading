@@ -1,7 +1,5 @@
 """Shared step implementations for CLI behaviour tests."""
 
-from __future__ import annotations
-
 import dataclasses as dc
 import subprocess
 import sys
@@ -13,8 +11,7 @@ from tomlkit.items import InlineTable, Item, Table
 
 from lading.testing import toml_utils
 
-if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
-    from .cli_run_types import CliRunResult
+from .cli_run_types import CliRunResult
 
 _FEATURES_DIR = Path(__file__).resolve().parent.parent / "features"
 
@@ -53,13 +50,18 @@ def _run_cli(
 @then(parsers.parse("the CLI exits with code {expected:d}"))
 def then_cli_exit_code(cli_run: dict[str, typ.Any], expected: int) -> None:
     """Assert that the CLI terminated with ``expected`` exit code."""
-    assert cli_run["returncode"] == expected
+    assert cli_run["returncode"] == expected, (
+        f"the CLI must exit with code {expected}, "
+        f"but exited with {cli_run['returncode']}"
+    )
 
 
 @then(parsers.parse('the stderr contains "{expected}"'))
 def then_stderr_contains(cli_run: dict[str, typ.Any], expected: str) -> None:
     """Assert that ``expected`` appears in the captured stderr output."""
-    assert expected in cli_run["stderr"]
+    assert expected in cli_run["stderr"], (
+        f"stderr must mention {expected!r}, but captured:\n{cli_run['stderr']}"
+    )
 
 
 @then(parsers.parse('the stdout does not contain "{unexpected}"'))
@@ -97,7 +99,10 @@ def then_workspace_manifest_version(
     manifest_path = cli_run["workspace"] / "Cargo.toml"
     document = toml_utils.load_manifest(manifest_path)
     workspace_package = document["workspace"]["package"]
-    assert workspace_package["version"] == version
+    assert workspace_package["version"] == version, (
+        f"the workspace package version must be {version!r} after the bump, "
+        f"but is {workspace_package['version']!r}"
+    )
 
 
 @then(parsers.parse('the crate "{crate_name}" manifest version is "{version}"'))
@@ -109,20 +114,29 @@ def then_crate_manifest_version(
     """Validate the crate manifest was updated to ``version``."""
     manifest_path = cli_run["workspace"] / "crates" / crate_name / "Cargo.toml"
     document = toml_utils.load_manifest(manifest_path)
-    assert document["package"]["version"] == version
+    assert document["package"]["version"] == version, (
+        f"crate {crate_name!r} must record version {version!r} after the bump, "
+        f"but records {document['package']['version']!r}"
+    )
 
 
 def _extract_dependency_requirement(entry: object) -> str:
     """Return the version requirement string recorded in a dependency entry."""
-    if isinstance(entry, Item):
-        value = entry.value
-        if isinstance(value, str):
-            return value
-    if isinstance(entry, str):
-        return entry
-    if isinstance(entry, InlineTable | Table):
-        version_value = entry.get("version")
-        return _extract_dependency_requirement(version_value)
+    # ``tomlkit.Item`` is the base class of every parsed value, so it cannot
+    # head a ``match``: it would swallow the string and table arms below and
+    # the inline-table entry ``{version = "~1.2.3", path = "../alpha"}`` would
+    # never unwrap. Order the concrete types first and unwrap the item only
+    # once no more specific arm has matched.
+    match entry:
+        case InlineTable() | Table():
+            version_value = entry.get("version")
+            return _extract_dependency_requirement(version_value)
+        case Item():
+            value = entry.value
+            if isinstance(value, str):
+                return value
+        case str():
+            return entry
     message = f"Dependency version entry is not a string: {entry!r}"
     raise AssertionError(message)
 
@@ -174,7 +188,10 @@ def then_dependency_requirement(
         )
         raise AssertionError(message)
     requirement = _extract_dependency_requirement(entry)
-    assert requirement == expected
+    assert requirement == expected, (
+        f"the {dependency_name!r} dependency in {section!r} of {crate_name!r} "
+        f"must require {expected!r}, but requires {requirement!r}"
+    )
 
 
 @then(parsers.parse('the dependency "{dependency_spec}" has requirement "{expected}"'))

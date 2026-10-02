@@ -9,8 +9,6 @@ so discovery, classification, and remediation messaging are verified without
 touching git or cargo.
 """
 
-from __future__ import annotations
-
 import dataclasses as dc
 import logging
 import typing as typ
@@ -28,7 +26,7 @@ if typ.TYPE_CHECKING:
     from syrupy.assertion import SnapshotAssertion
 
 
-@dc.dataclass
+@dc.dataclass(slots=True)
 class _RecordingLockfileRepository:
     """In-memory ``LockfileInspectionRepository`` double for pre-flight tests."""
 
@@ -139,11 +137,13 @@ def test_validate_lockfile_freshness_passes_when_all_lockfiles_are_fresh(
         tmp_path, repository=repository
     )
 
-    assert repository.discovered_roots == [tmp_path]
+    assert repository.discovered_roots == [tmp_path], (
+        "discovery must be performed against the workspace root"
+    )
     assert repository.validated_manifests == [
         root_lockfile.parent / "Cargo.toml",
         nested_lockfile.parent / "Cargo.toml",
-    ]
+    ], "every tracked lockfile's manifest must be validated in discovery order"
 
 
 def test_validate_lockfile_freshness_reports_stale_lockfiles(tmp_path: Path) -> None:
@@ -152,16 +152,22 @@ def test_validate_lockfile_freshness_reports_stale_lockfiles(tmp_path: Path) -> 
     root_lockfile = tmp_path / "Cargo.lock"
     nested_lockfile = tmp_path / "tests" / "ui_lints" / "Cargo.lock"
 
-    assert str(root_lockfile) in message
-    assert str(nested_lockfile) in message
-    assert "lading bump" in message
+    assert str(root_lockfile) in message, (
+        "the root stale lockfile must be named in the aggregated error"
+    )
+    assert str(nested_lockfile) in message, (
+        "the nested stale lockfile must be named in the aggregated error"
+    )
+    assert "lading bump" in message, (
+        "the aggregated error must point at lading bump as a repair route"
+    )
     assert (
         f"cargo generate-lockfile --manifest-path {tmp_path / 'Cargo.toml'}" in message
-    )
+    ), "the aggregated error must give the root manifest's repair command"
     assert (
         "cargo generate-lockfile --manifest-path "
         f"{tmp_path / 'tests' / 'ui_lints' / 'Cargo.toml'}"
-    ) in message
+    ) in message, "the aggregated error must give the nested manifest's repair command"
 
 
 def test_validate_lockfile_freshness_error_snapshot(
@@ -208,7 +214,7 @@ def test_validate_lockfile_freshness_skips_non_git_workspaces(
         logging.WARNING, logger="lading.commands.publish_lockfile_preflight"
     )
 
-    @dc.dataclass
+    @dc.dataclass(slots=True)
     class _NonGitRepository:
         """Recording repository double that reports a non-git workspace."""
 
@@ -234,11 +240,13 @@ def test_validate_lockfile_freshness_skips_non_git_workspaces(
         tmp_path, repository=repository
     )
 
-    assert repository.discovered_roots == [tmp_path]
+    assert repository.discovered_roots == [tmp_path], (
+        "a non-git workspace must still be probed for lockfiles before skipping"
+    )
     assert any(
         "Skipping lockfile freshness validation" in message
         for message in caplog.messages
-    )
+    ), "a non-git workspace must be reported as skipping freshness validation"
 
 
 def test_validate_lockfile_freshness_classifies_every_lockfile(

@@ -1,25 +1,28 @@
 """Unit tests covering publish plan derivation."""
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import typing as typ
 
 import pytest
 
 from lading.commands import publish, publish_plan
-from tests.unit.conftest import PublishFixtures, _CrateSpec
+from tests.unit.conftest import (
+    PublishFixtures,
+    _CrateFactory,
+    _CrateSpec,
+    _WorkspaceFactory,
+)
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
 
     from lading import config as config_module
-    from lading.workspace import WorkspaceCrate, WorkspaceDependency, WorkspaceGraph
+    from lading.workspace import WorkspaceCrate, WorkspaceDependency
 
 
 def _plan_with_crates(
     tmp_path: Path,
-    make_workspace: cabc.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
+    make_workspace: _WorkspaceFactory,
     make_config: cabc.Callable[..., config_module.LadingConfig],
     crates: tuple[WorkspaceCrate, ...],
     **config_overrides: object,
@@ -34,7 +37,7 @@ def _plan_with_crates(
 def _make_dependency_chain(
     root: Path,
     *,
-    make_crate: cabc.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    make_crate: _CrateFactory,
     make_dependency: cabc.Callable[[str], WorkspaceDependency],
 ) -> tuple[WorkspaceCrate, WorkspaceCrate, WorkspaceCrate]:
     """Return crates that form a simple alpha→beta→gamma dependency chain."""
@@ -50,6 +53,18 @@ def _make_dependency_chain(
         _CrateSpec(dependencies=(make_dependency("beta"),)),
     )
     return alpha, beta, gamma
+
+
+class _CyclePublishFlags(typ.TypedDict, total=False):
+    """Which of a cycle's two crates should be publishable.
+
+    Typed rather than ``dict[str, bool]``: an unpacked bare mapping cannot be
+    checked against ``_create_cycle``'s other string keywords, so ty rejects
+    the call even though only these two keys are ever supplied.
+    """
+
+    publish_a: bool
+    publish_b: bool
 
 
 def _create_cycle(
@@ -134,9 +149,15 @@ def test_plan_publication_filtering(
         crate.name for crate in plan.skipped_configuration
     )
 
-    assert actual_publishable_names == expected["publishable"]
-    assert actual_manifest_names == expected["manifest"]
-    assert actual_configuration_names == expected["configuration"]
+    assert actual_publishable_names == expected["publishable"], (
+        "crates with publish enabled and no exclusion must be publishable"
+    )
+    assert actual_manifest_names == expected["manifest"], (
+        "crates whose manifest sets publish = false must be manifest-skipped"
+    )
+    assert actual_configuration_names == expected["configuration"], (
+        "crates named in publish.exclude must be configuration-skipped"
+    )
 
 
 def test_plan_publication_empty_workspace(
@@ -152,9 +173,15 @@ def test_plan_publication_empty_workspace(
 
     plan = publish.plan_publication(workspace, configuration)
 
-    assert plan.publishable == ()
-    assert plan.skipped_manifest == ()
-    assert plan.skipped_configuration == ()
+    assert not plan.publishable, (
+        "an empty workspace must leave the publishable group empty"
+    )
+    assert not plan.skipped_manifest, (
+        "an empty workspace must leave the manifest-skipped group empty"
+    )
+    assert not plan.skipped_configuration, (
+        "an empty workspace must leave the configuration-skipped group empty"
+    )
 
 
 def test_plan_publication_empty_exclude_list(
@@ -170,9 +197,16 @@ def test_plan_publication_empty_exclude_list(
 
     plan = publish.plan_publication(workspace, configuration)
 
-    assert plan.publishable == (publishable,)
-    assert plan.skipped_manifest == (manifest_skipped,)
-    assert plan.skipped_configuration == ()
+    assert plan.publishable == (publishable,), (
+        "an empty exclusion list must leave every eligible crate publishable"
+    )
+    assert plan.skipped_manifest == (manifest_skipped,), (
+        "a crate with publish = false must stay manifest-skipped when no "
+        "configuration exclusions are set"
+    )
+    assert not plan.skipped_configuration, (
+        "no crate may be configuration-skipped when publish.exclude is empty"
+    )
 
 
 @pytest.mark.parametrize(
@@ -199,7 +233,9 @@ def test_plan_publication_records_missing_exclusions(
 
     plan = publish.plan_publication(workspace, configuration)
 
-    assert plan.missing_configuration_exclusions == expected
+    assert plan.missing_configuration_exclusions == expected, (
+        "unknown publish.exclude entries must be reported in the configured order"
+    )
 
 
 def test_plan_publication_sorts_crates_by_name(
@@ -227,9 +263,15 @@ def test_plan_publication_sorts_crates_by_name(
 
     plan = publish.plan_publication(workspace, configuration)
 
-    assert plan.publishable == (publishable_first, publishable_second)
-    assert plan.skipped_manifest == (manifest_skipped_early, manifest_skipped_late)
-    assert plan.skipped_configuration == (config_skipped_early, config_skipped_late)
+    assert plan.publishable == (publishable_first, publishable_second), (
+        "publishable crates must be sorted alphabetically by name"
+    )
+    assert plan.skipped_manifest == (manifest_skipped_early, manifest_skipped_late), (
+        "manifest-skipped crates must be sorted alphabetically by name"
+    )
+    assert plan.skipped_configuration == (config_skipped_early, config_skipped_late), (
+        "configuration-skipped crates must be sorted alphabetically by name"
+    )
 
 
 def test_plan_publication_multiple_configuration_skips(
@@ -245,8 +287,13 @@ def test_plan_publication_multiple_configuration_skips(
 
     plan = publish.plan_publication(workspace, configuration)
 
-    assert plan.publishable == ()
-    assert plan.skipped_configuration == (delta, gamma)
+    assert not plan.publishable, (
+        "excluding every workspace crate must leave nothing publishable"
+    )
+    assert plan.skipped_configuration == (delta, gamma), (
+        "all publish.exclude matches must appear in the configuration-skipped "
+        "group in sorted order"
+    )
 
 
 def test_plan_publication_topologically_orders_dependencies(
@@ -266,7 +313,9 @@ def test_plan_publication_topologically_orders_dependencies(
         (gamma, beta, alpha),
     )
 
-    assert plan.publishable == (alpha, beta, gamma)
+    assert plan.publishable == (alpha, beta, gamma), (
+        "each crate must precede its dependent in the automatic publish order"
+    )
 
 
 def test_plan_publication_ignores_dev_dependency_cycles(
@@ -301,7 +350,9 @@ def test_plan_publication_ignores_dev_dependency_cycles(
 
     plan = publish.plan_publication(workspace, configuration)
 
-    assert plan.publishable == (alpha, beta)
+    assert plan.publishable == (alpha, beta), (
+        "a dev-only dependency edge must not change the publish order"
+    )
 
 
 def test_plan_publication_detects_dependency_cycles(
@@ -322,7 +373,9 @@ def test_plan_publication_detects_dependency_cycles(
             (alpha, beta),
         )
 
-    assert "dependency cycle" in str(excinfo.value)
+    assert "dependency cycle" in str(excinfo.value), (
+        "a mutual dependency must be reported as a dependency cycle"
+    )
 
 
 def test_publish_reexports_plan_error_for_public_callers(
@@ -373,7 +426,7 @@ def test_publish_reexports_plan_error_for_public_callers(
 )
 def test_plan_publication_ignores_cycles_in_skipped_crates(
     publish_fixtures: PublishFixtures,
-    cycle_publish_flags: dict[str, bool],
+    cycle_publish_flags: _CyclePublishFlags,
     excludes: tuple[str, ...],
     scenario: str,
 ) -> None:
@@ -391,7 +444,9 @@ def test_plan_publication_ignores_cycles_in_skipped_crates(
         exclude=excludes,
     )
 
-    assert plan.publishable == (alpha,)
+    assert plan.publishable == (alpha,), (
+        "a dependency cycle confined to skipped crates must not block alpha"
+    )
 
 
 def test_plan_publication_honours_configured_order(
@@ -413,7 +468,9 @@ def test_plan_publication_honours_configured_order(
         order=("gamma", "beta", "alpha"),
     )
 
-    assert plan.publishable == (gamma, beta, alpha)
+    assert plan.publishable == (gamma, beta, alpha), (
+        "publish.order must override the automatic dependency sort"
+    )
 
 
 def test_plan_publication_rejects_incomplete_configured_order(
@@ -431,8 +488,12 @@ def test_plan_publication_rejects_incomplete_configured_order(
         publish.plan_publication(workspace, configuration)
 
     message = str(excinfo.value)
-    assert "publish.order omits" in message
-    assert "beta" in message
+    assert "publish.order omits" in message, (
+        "an incomplete publish.order must be reported as omitting crates"
+    )
+    assert "beta" in message, (
+        "the omitted crate name must be named in the publish.order error"
+    )
 
 
 @pytest.mark.parametrize(
@@ -472,4 +533,6 @@ def test_plan_publication_order_validation_errors(
             order=order,
         )
 
-    assert expected_error in str(excinfo.value)
+    assert expected_error in str(excinfo.value), (
+        "the publish.order validation error must explain the offending entry"
+    )

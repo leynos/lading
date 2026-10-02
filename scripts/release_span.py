@@ -28,8 +28,6 @@ the package -- so a context field would be a value this code invented and no
 consumer could read.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import contextlib
 import dataclasses as dc

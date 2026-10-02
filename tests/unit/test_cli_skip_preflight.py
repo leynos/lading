@@ -5,8 +5,6 @@ covered here rather than in ``test_cli.py`` because the decision they produce
 carries a provenance label that the publish log prints verbatim.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import dataclasses as dc
 import typing as typ
@@ -134,7 +132,9 @@ def test_publish_cli_labels_the_skip_preflight_decision(
         options: publish_command.PublishOptions | None = None,
     ) -> str:
         del workspace_root, configuration, workspace_model
-        assert options is not None
+        assert options is not None, (
+            "publish must receive a PublishOptions instance from the CLI"
+        )
         captured_options["options"] = options
         return "publish"
 

@@ -1,26 +1,20 @@
 """When steps for publish BDD scenarios."""
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import shlex
 import shutil
-import typing as typ
+from pathlib import Path
 
 import pytest
 from pytest_bdd import parsers, when
 
+from .cli_run_types import CliRunResult
 from .test_publish_infrastructure import (
     PreflightTestContext,
     _CommandResponse,
     _invoke_publish_with_options,
     _is_cargo_publish_command,
 )
-
-if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
-    from pathlib import Path
-
-    from .cli_run_types import CliRunResult
 
 
 @when("I invoke lading publish with that workspace", target_fixture="cli_run")

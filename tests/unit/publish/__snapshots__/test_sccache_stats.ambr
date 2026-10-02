@@ -1,0 +1,9 @@
+# serializer version: 1
+# name: test_counters_subtraction_is_field_wise
+  dict({
+    'errors': 1,
+    'hits': 4,
+    'misses': 1,
+    'requests': 6,
+  })
+# ---

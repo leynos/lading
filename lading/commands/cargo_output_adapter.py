@@ -32,8 +32,6 @@ if failure is not None:
 ```
 """
 
-from __future__ import annotations
-
 import dataclasses as dc
 import logging
 import re

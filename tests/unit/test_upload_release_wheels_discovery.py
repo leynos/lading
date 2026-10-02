@@ -6,12 +6,10 @@ recursively, and it distinguishes an absent directory from an empty one and an
 unreadable one from either.
 """
 
-from __future__ import annotations
-
 import os
 import string
 import tempfile
-import typing as typ
+import types
 from pathlib import Path
 
 import pytest
@@ -19,9 +17,6 @@ from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 from tests.helpers.script_imports import import_script_module
-
-if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
-    import types
 
 
 @pytest.fixture(name="upload_module")
@@ -65,7 +60,9 @@ def test_discovery_returns_nothing_for_an_empty_directory(
     upload_module: types.ModuleType, tmp_path: Path
 ) -> None:
     """An empty directory yields no wheels rather than raising."""
-    assert upload_module.discover_wheels(tmp_path) == ()
+    assert upload_module.discover_wheels(tmp_path) == (), (
+        "an empty download directory must discover zero wheels"
+    )
 
 
 def test_missing_directory_is_a_distinct_failure(
@@ -117,7 +114,9 @@ def test_an_unreadable_subtree_is_an_error_not_an_empty_result(
     finally:
         locked.chmod(0o755)
 
-    assert raised.value.outcome == upload_module.Outcome.UNREADABLE_DIRECTORY
+    assert raised.value.outcome == upload_module.Outcome.UNREADABLE_DIRECTORY, (
+        "an unreadable subtree must report an unreadable directory, not an empty one"
+    )
     assert "Could not read" in str(raised.value), str(raised.value)
 
 
@@ -139,7 +138,9 @@ def test_an_unreadable_artefact_path_is_not_reported_as_absent(
     finally:
         parent.chmod(0o755)
 
-    assert raised.value.outcome == upload_module.Outcome.UNREADABLE_DIRECTORY
+    assert raised.value.outcome == upload_module.Outcome.UNREADABLE_DIRECTORY, (
+        "a permission error on stat must be reported as unreadable, not absent"
+    )
 
 
 @given(

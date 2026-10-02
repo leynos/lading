@@ -6,11 +6,10 @@ no-wrapper paths. The pipeline integration lives in
 ``test_sccache_dispatch``.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import json
 import logging
+import typing as typ
 from pathlib import Path
 
 import pytest
@@ -20,8 +19,8 @@ from lading.commands import (
     publish_sccache,
     publish_sccache_report,
 )
-from lading.commands.publish_sccache_stats import SccacheCounters
 from lading.utils import metrics
+from tests.helpers.path_normalization import normalized
 
 from .sccache_doubles import (
     JSON_QUERY,
@@ -30,6 +29,9 @@ from .sccache_doubles import (
     ScriptedRunner,
     payload,
 )
+
+if typ.TYPE_CHECKING:
+    from syrupy.assertion import SnapshotAssertion
 
 _WRITE_FAILURE_MESSAGE = "write refused"
 
@@ -69,77 +71,55 @@ def _run_two_invocation_session(
 
 
 def test_session_attributes_deltas_per_invocation(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    snapshot: SnapshotAssertion,
 ) -> None:
     """Each record differences against the previous snapshot and logs a line."""
     caplog.set_level(logging.INFO, logger=PIPELINE_LOGGER)
 
     session = _run_two_invocation_session(tmp_path, tmp_path / "sccache.json")
 
-    assert session.records == (
-        publish_sccache.SccacheCrateRecord(
-            "alpha", "package", 84.25, SccacheCounters(40, 38, 2, 0)
-        ),
-        publish_sccache.SccacheCrateRecord(
-            "alpha", "publish", 61.9, SccacheCounters(10, 2, 8, 1)
-        ),
+    assert session.records == snapshot(name="records"), (
+        "each invocation must be recorded with its differenced statistics"
     )
-    assert caplog.messages == [
-        f"Compiler cache statistics enabled via {WRAPPER}",
-        (
-            "Compiler cache for cargo package alpha: 84.2s, "
-            "requests=40 hits=38 misses=2 errors=0"
-        ),
-        (
-            "Compiler cache for cargo publish alpha: 61.9s, "
-            "requests=10 hits=2 misses=8 errors=1"
-        ),
-        (
-            "Compiler cache over the publish pipeline: "
-            "requests=50 hits=40 misses=10 errors=1"
-        ),
-        (
-            "sccache statistics (cumulative for the server's lifetime):\n"
-            "Compile requests   9\nCache location    ghac"
-        ),
-        f"Compiler cache report written to {tmp_path / 'sccache.json'}",
-    ]
+    messages = normalized(str(caplog.messages), tmp_path)
+    assert normalized(messages, WRAPPER, placeholder="<wrapper>") == snapshot(
+        name="messages"
+    ), "the session must log each record and the cumulative summary"
     # Three JSON snapshots plus the human-readable mirror.
-    assert metrics.counter_value(publish_sccache.QUERY_METRIC, outcome="success") == 4
-    assert metrics.counter_value(publish_sccache.QUERY_METRIC, outcome="failure") == 0
+    assert (
+        metrics.counter_value(publish_sccache.QUERY_METRIC, outcome="success") == 4
+    ), "three JSON queries and the text mirror must count as four successes"
+    assert (
+        metrics.counter_value(publish_sccache.QUERY_METRIC, outcome="failure") == 0
+    ), "a session in which every query succeeds must record no failures"
 
 
-def test_session_writes_report_atomically(tmp_path: Path) -> None:
+def test_session_writes_report_atomically(
+    tmp_path: Path, snapshot: SnapshotAssertion
+) -> None:
     """The report carries raw payloads, per-invocation records, and the delta."""
     report = tmp_path / "reports" / "sccache.json"
 
     _run_two_invocation_session(tmp_path, report)
 
     written = json.loads(report.read_text(encoding="utf-8"))
-    assert written["wrapper"] == str(WRAPPER)
-    assert written["baseline"]["stats"]["compile_requests"] == 100
-    assert written["final"]["stats"]["compile_requests"] == 150
-    assert written["delta"] == {"requests": 50, "hits": 40, "misses": 10, "errors": 1}
-    assert written["crates"] == [
-        {
-            "crate": "alpha",
-            "subcommand": "package",
-            "seconds": 84.25,
-            "requests": 40,
-            "hits": 38,
-            "misses": 2,
-            "errors": 0,
-        },
-        {
-            "crate": "alpha",
-            "subcommand": "publish",
-            "seconds": 61.9,
-            "requests": 10,
-            "hits": 2,
-            "misses": 8,
-            "errors": 1,
-        },
-    ]
+    assert written["wrapper"] == str(WRAPPER), (
+        "the report must name the wrapper the statistics came from"
+    )
+    assert written["baseline"]["stats"]["compile_requests"] == 100, (
+        "the report must carry the baseline query's raw payload"
+    )
+    assert written["final"]["stats"]["compile_requests"] == 150, (
+        "the report must carry the final query's raw payload"
+    )
+    assert written["delta"] == snapshot(name="delta"), (
+        "the report delta must match the committed snapshot"
+    )
+    assert written["crates"] == snapshot(name="crates"), (
+        "each invocation must contribute a per-crate record"
+    )
     assert [path.name for path in report.parent.iterdir()] == [report.name], (
         "the atomic write must leave no temporary file behind"
     )
@@ -154,7 +134,9 @@ def test_report_replaces_an_existing_file_atomically(tmp_path: Path) -> None:
 
     written = json.loads(report.read_text(encoding="utf-8"))
     assert "stale" not in written, "the previous report must be replaced"
-    assert written["delta"]["requests"] == 50
+    assert written["delta"]["requests"] == 50, (
+        "the delta must difference the final query against the baseline"
+    )
     assert sorted(path.name for path in tmp_path.iterdir()) == ["sccache.json"], (
         "no temporary file may survive a successful replacement"
     )
@@ -182,10 +164,12 @@ def test_report_replacement_failure_keeps_the_existing_file(
     assert sorted(path.name for path in tmp_path.iterdir()) == ["sccache.json"], (
         "the temporary file must be removed after a failed replacement"
     )
-    assert len(caplog.messages) == 1
+    assert len(caplog.messages) == 1, (
+        "a failed replacement must log exactly one warning"
+    )
     assert caplog.messages[0].startswith(
         f"Could not write compiler cache report to {report}: "
-    )
+    ), "the warning must name the report path that could not be replaced"
 
 
 def test_atomic_write_removes_temporary_file_after_write_failure(
@@ -233,17 +217,21 @@ def test_failed_baseline_disables_session_without_raising(
     session.record("alpha", "package", 1.0)
     session.finish()
 
-    assert not session.enabled
-    assert session.records == ()
+    assert not session.enabled, "a failed baseline query must disable the session"
+    assert not session.records, "a session disabled at baseline must hold no records"
     assert runner.calls == [JSON_QUERY], "no further queries after the failure"
     assert caplog.messages == [
         (
             "Compiler cache statistics unavailable (baseline); disabling: "
             f"{WRAPPER} --show-stats exited 2: sccache: error: server gone"
         )
-    ]
-    assert not (tmp_path / "report.json").exists()
-    assert metrics.counter_value(publish_sccache.QUERY_METRIC, outcome="failure") == 1
+    ], "the baseline failure must log a warning naming the wrapper and the error"
+    assert not (tmp_path / "report.json").exists(), (
+        "a session that never enabled must not write a report"
+    )
+    assert (
+        metrics.counter_value(publish_sccache.QUERY_METRIC, outcome="failure") == 1
+    ), "a failed baseline query must increment the failure counter once"
 
 
 def test_failed_query_mid_run_disables_further_queries(
@@ -262,10 +250,16 @@ def test_failed_query_mid_run_disables_further_queries(
     session.record("gamma", "package", 3.0)
     session.finish()
 
-    assert [record.crate for record in session.records] == ["alpha"]
-    assert runner.calls == [JSON_QUERY, JSON_QUERY, JSON_QUERY]
-    assert len(caplog.messages) == 1
-    assert "cargo package beta" in caplog.messages[0]
+    assert [record.crate for record in session.records] == ["alpha"], (
+        "the records taken before the failure must be retained"
+    )
+    assert runner.calls == [JSON_QUERY, JSON_QUERY, JSON_QUERY], (
+        "querying must stop after the mid-run failure"
+    )
+    assert len(caplog.messages) == 1, "a mid-run failure must log exactly one warning"
+    assert "cargo package beta" in caplog.messages[0], (
+        "the warning must name the invocation whose query failed"
+    )
 
 
 def test_text_query_failure_still_writes_report(
@@ -280,16 +274,22 @@ def test_text_query_failure_still_writes_report(
     session.begin()
     session.finish()
 
-    assert report.exists()
+    assert report.exists(), (
+        "the JSON report must still be written when the text mirror fails"
+    )
     assert caplog.messages == [
         (
             "Compiler cache statistics text unavailable: "
             f"{WRAPPER} --show-stats exited 1: Compile requests   9\n"
             "Cache location    ghac"
         )
-    ]
-    assert metrics.counter_value(publish_sccache.QUERY_METRIC, outcome="failure") == 1
-    assert metrics.counter_value(publish_sccache.QUERY_METRIC, outcome="success") == 1
+    ], "the text failure must log a warning naming the wrapper and the error"
+    assert (
+        metrics.counter_value(publish_sccache.QUERY_METRIC, outcome="failure") == 1
+    ), "the failed text query must count once as a failure"
+    assert (
+        metrics.counter_value(publish_sccache.QUERY_METRIC, outcome="success") == 1
+    ), "the successful JSON query must count once as a success"
 
 
 def test_unwritable_report_path_warns(
@@ -305,10 +305,12 @@ def test_unwritable_report_path_warns(
     session.begin()
     session.finish()
 
-    assert len(caplog.messages) == 1
+    assert len(caplog.messages) == 1, (
+        "an unwritable report path must log exactly one warning"
+    )
     assert caplog.messages[0].startswith(
         f"Could not write compiler cache report to {blocker / 'report.json'}: "
-    )
+    ), "the warning must name the unwritable report path"
 
 
 @pytest.mark.parametrize(
@@ -342,7 +344,9 @@ def test_create_session_treats_a_report_path_as_opting_in(
         env={"RUSTC_WRAPPER": str(WRAPPER)},
     )
 
-    assert (session is not None) is expects_session
+    assert (session is not None) is expects_session, (
+        "a report path must imply an enabled session and a lone flag must not"
+    )
     if session is not None and sccache_stats_json is not None:
         assert session.json_path == tmp_path / sccache_stats_json, (
             "the report path is resolved against the workspace root"
@@ -362,13 +366,15 @@ def test_create_session_warns_without_wrapper(
         options, runner=ScriptedRunner([]), workspace_root=tmp_path, env={}
     )
 
-    assert session is None
+    assert session is None, (
+        "a request for statistics without an sccache wrapper must create no session"
+    )
     assert caplog.messages == [
         (
             "Compiler cache statistics requested but RUSTC_WRAPPER does not name "
             "an sccache binary; skipping"
         )
-    ]
+    ], "a skipped session must warn that RUSTC_WRAPPER is not sccache"
 
 
 def test_create_session_binds_wrapper_root_and_report(tmp_path: Path) -> None:
@@ -385,8 +391,10 @@ def test_create_session_binds_wrapper_root_and_report(tmp_path: Path) -> None:
         env={"RUSTC_WRAPPER": str(WRAPPER)},
     )
 
-    assert session is not None
-    assert session.enabled
+    assert session is not None, (
+        "a wrapper plus a statistics request must create a session"
+    )
+    assert session.enabled, "a session created with a valid wrapper must be enabled"
     assert (session.wrapper, session.cwd, session.json_path) == (
         WRAPPER,
         tmp_path,
@@ -409,7 +417,7 @@ def test_create_session_resolves_a_relative_report_path(tmp_path: Path) -> None:
         env={"RUSTC_WRAPPER": str(WRAPPER)},
     )
 
-    assert session is not None
+    assert session is not None, "a relative report path must still create a session"
     assert session.json_path == tmp_path / "target" / "sccache.json", (
         "relative report paths must be resolved against the workspace root"
     )

@@ -6,8 +6,6 @@ out of ``test_bump_result_formatting`` to keep each module under the line cap
 and focused on a single responsibility.
 """
 
-from __future__ import annotations
-
 import typing as typ
 from pathlib import Path
 
@@ -114,13 +112,17 @@ def test_format_result_message_handles_changes(
         "4.5.6",
         dry_run=False,
         workspace_root=workspace_root,
-    ).splitlines() == snapshot(name="manifests_live")
+    ).splitlines() == snapshot(name="manifests_live"), (
+        "a live manifest-only message must render the pinned manifest lines"
+    )
     assert bump_output._format_result_message(
         bump_output.BumpChanges(manifests=manifest_paths),
         "4.5.6",
         dry_run=True,
         workspace_root=workspace_root,
-    ).splitlines() == snapshot(name="manifests_dry_run")
+    ).splitlines() == snapshot(name="manifests_dry_run"), (
+        "a dry-run manifest-only message must render the pinned would-update lines"
+    )
     assert bump_output._format_result_message(
         bump_output.BumpChanges(
             manifests=manifest_paths,
@@ -129,7 +131,9 @@ def test_format_result_message_handles_changes(
         "7.8.9",
         dry_run=False,
         workspace_root=workspace_root,
-    ).splitlines() == snapshot(name="manifests_and_docs")
+    ).splitlines() == snapshot(name="manifests_and_docs"), (
+        "a manifest-and-documentation message must render both categories"
+    )
     assert bump_output._format_result_message(
         bump_output.BumpChanges(
             manifests=manifest_paths,
@@ -139,7 +143,9 @@ def test_format_result_message_handles_changes(
         "7.8.9",
         dry_run=False,
         workspace_root=workspace_root,
-    ).splitlines() == snapshot(name="all_changes")
+    ).splitlines() == snapshot(name="all_changes"), (
+        "a message covering all change categories must render the pinned lines"
+    )
 
 
 def test_format_result_message_handles_readme_only_changes(
@@ -154,7 +160,9 @@ def test_format_result_message_handles_readme_only_changes(
         "1.2.3",
         dry_run=False,
         workspace_root=workspace_root,
-    ).splitlines() == snapshot(name="readme_only_live")
+    ).splitlines() == snapshot(name="readme_only_live"), (
+        "a README-only change must render an update message, not a no-op"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -271,8 +279,12 @@ def test_format_result_message_four_categories_snapshot(
         changes, "2.0.0", dry_run=True, workspace_root=root
     )
 
-    assert snapshot(name="live") == live.splitlines()
-    assert snapshot(name="dry_run") == dry.splitlines()
+    assert snapshot(name="live") == live.splitlines(), (
+        "the live four-category message must match the pinned snapshot"
+    )
+    assert snapshot(name="dry_run") == dry.splitlines(), (
+        "the dry-run four-category message must match the pinned snapshot"
+    )
 
 
 def test_format_result_message_lockfile_only(tmp_path: Path) -> None:

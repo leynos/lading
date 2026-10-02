@@ -1,25 +1,21 @@
 """Unit tests exercising publish staging utilities."""
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import dataclasses as dc
 import shutil
 import tempfile
 import typing as typ
+from pathlib import Path
 
 import pytest
 
-from lading.commands import publish, publish_staging, staging_lock
+from lading.commands import publish, publish_plan, publish_staging, staging_lock
 from tests.helpers.cwd import chdir_for_test
 from tests.unit.conftest import (
     PreparationFixtures,
     PrepareWorkspaceFixtures,
     _CrateSpec,
 )
-
-if typ.TYPE_CHECKING:
-    from pathlib import Path
 
 
 class _CopyWorkspaceFailureCase(typ.NamedTuple):
@@ -42,9 +38,15 @@ def test_normalize_build_directory_defaults_to_tempdir(tmp_path: Path) -> None:
 
     build_directory = publish_staging._normalize_build_directory(workspace_root, None)
     try:
-        assert build_directory.exists()
-        assert build_directory.is_absolute()
-        assert not build_directory.is_relative_to(workspace_root)
+        assert build_directory.exists(), (
+            "a default build directory must exist on disk after normalization"
+        )
+        assert build_directory.is_absolute(), (
+            "the build directory must be resolved to an absolute path"
+        )
+        assert not build_directory.is_relative_to(workspace_root), (
+            "an automatic build directory must not sit under the workspace root"
+        )
     finally:
         shutil.rmtree(build_directory, ignore_errors=True)
 
@@ -58,12 +60,16 @@ def test_normalize_build_directory_resolves_relative_paths(
     chdir_for_test(monkeypatch, tmp_path)
 
     build_directory = publish_staging._normalize_build_directory(
-        workspace_root, "staging"
+        workspace_root, Path("staging")
     )
 
     expected = (tmp_path / "staging").resolve()
-    assert build_directory == expected
-    assert build_directory.exists()
+    assert build_directory == expected, (
+        "a relative build directory must resolve against the current directory"
+    )
+    assert build_directory.exists(), (
+        "normalization must create the resolved build directory"
+    )
 
 
 def test_normalize_build_directory_rejects_workspace_descendants(
@@ -78,7 +84,10 @@ def test_normalize_build_directory_rejects_workspace_descendants(
     with pytest.raises(publish_staging.PublishPreparationError) as excinfo:
         publish_staging._normalize_build_directory(workspace_root, build_directory)
 
-    assert "cannot reside within the workspace root" in str(excinfo.value)
+    assert "cannot reside within the workspace root" in str(excinfo.value), (
+        "a build directory nested under the workspace must be rejected with the "
+        "documented reason"
+    )
 
 
 def test_normalize_build_directory_wraps_creation_failure(
@@ -97,8 +106,12 @@ def test_normalize_build_directory_wraps_creation_failure(
     with pytest.raises(publish_staging.PublishPreparationError) as excinfo:
         publish_staging._normalize_build_directory(workspace_root, tmp_path / "staging")
 
-    assert "Cannot create publish build directory" in str(excinfo.value)
-    assert isinstance(excinfo.value.__cause__, OSError)
+    assert "Cannot create publish build directory" in str(excinfo.value), (
+        "a failed mkdir must surface through the staging error boundary"
+    )
+    assert isinstance(excinfo.value.__cause__, OSError), (
+        "the original OSError must be preserved as the cause"
+    )
 
 
 def test_copy_workspace_tree_mirrors_workspace_contents(tmp_path: Path) -> None:
@@ -119,11 +132,15 @@ def test_copy_workspace_tree_mirrors_workspace_contents(tmp_path: Path) -> None:
         workspace_root, build_directory, preserve_symlinks=True
     )
 
-    assert staging_root == build_directory / workspace_root.name
-    assert (staging_root / "Cargo.toml").read_text(encoding="utf-8") == "[workspace]\n"
+    assert staging_root == build_directory / workspace_root.name, (
+        "the staged copy must live in a directory named after the workspace"
+    )
+    assert (staging_root / "Cargo.toml").read_text(encoding="utf-8") == (
+        "[workspace]\n"
+    ), "top-level workspace files must be copied into the staging tree"
     assert (staging_root / "crates" / "alpha" / "README.md").read_text(
         encoding="utf-8"
-    ) == "# README\n"
+    ) == "# README\n", "nested workspace files must be copied into the staging tree"
 
 
 def test_copy_workspace_tree_replaces_existing_clone(tmp_path: Path) -> None:
@@ -142,9 +159,15 @@ def test_copy_workspace_tree_replaces_existing_clone(tmp_path: Path) -> None:
         workspace_root, build_directory, preserve_symlinks=True
     )
 
-    assert staging_root == existing_clone
-    assert not stale_file.exists()
-    assert (staging_root / "marker.txt").read_text(encoding="utf-8") == "fresh"
+    assert staging_root == existing_clone, (
+        "a re-copy must reuse the same staging root as the existing clone"
+    )
+    assert not stale_file.exists(), (
+        "files from a previous clone must not survive the fresh copy"
+    )
+    assert (staging_root / "marker.txt").read_text(encoding="utf-8") == "fresh", (
+        "the fresh copy must carry the current workspace contents"
+    )
 
 
 @pytest.mark.parametrize(
@@ -190,8 +213,13 @@ def test_copy_workspace_tree_wraps_filesystem_failures(
             workspace_root, build_directory, preserve_symlinks=True
         )
 
-    assert "Cannot copy workspace into staging directory" in str(excinfo.value)
-    assert excinfo.value.__cause__ is failure
+    assert "Cannot copy workspace into staging directory" in str(excinfo.value), (
+        f"a {case.operation} failure must be reported through the staging error "
+        "boundary"
+    )
+    assert excinfo.value.__cause__ is failure, (
+        f"the OSError raised by {case.operation} must be preserved as the cause"
+    )
 
 
 def test_copy_workspace_tree_rejects_nested_clone(tmp_path: Path) -> None:
@@ -204,7 +232,9 @@ def test_copy_workspace_tree_rejects_nested_clone(tmp_path: Path) -> None:
             workspace_root, workspace_root, preserve_symlinks=True
         )
 
-    assert "cannot be nested inside the workspace root" in str(excinfo.value)
+    assert "cannot be nested inside the workspace root" in str(excinfo.value), (
+        "copying the workspace into itself must be refused with the documented reason"
+    )
 
 
 @pytest.mark.parametrize(
@@ -241,11 +271,19 @@ def test_copy_workspace_tree_symlink_handling(
     )
 
     staged_link = staging_root / "alias.txt"
-    assert staged_link.is_file()
-    assert staged_link.is_symlink() == expect_symlink
+    assert staged_link.is_file(), (
+        "the staged symlink must still resolve to a regular file"
+    )
+    assert staged_link.is_symlink() == expect_symlink, (
+        "preserve_symlinks must decide whether the staged link stays a symlink"
+    )
     if expect_symlink:
-        assert staged_link.resolve(strict=True) == staging_root / "data.txt"
-    assert staged_link.read_text(encoding="utf-8") == "payload"
+        assert staged_link.resolve(strict=True) == staging_root / "data.txt", (
+            "a preserved symlink must still point at the staged data file"
+        )
+    assert staged_link.read_text(encoding="utf-8") == "payload", (
+        "the staged link must expose the original file contents"
+    )
 
 
 def test_prepare_workspace_registers_cleanup(
@@ -263,6 +301,9 @@ def test_prepare_workspace_registers_cleanup(
     plan = publish.plan_publication(workspace, pf.make_config())
 
     build_directory = fx.publish_options.build_directory
+    assert build_directory is not None, (
+        "the publish_options fixture must supply a build directory"
+    )
     build_directory.mkdir(parents=True)
     marker = build_directory / "keep.txt"
     marker.write_text("keep", encoding="utf-8")
@@ -276,16 +317,28 @@ def test_prepare_workspace_registers_cleanup(
     options = publish.PublishOptions(build_directory=build_directory, cleanup=True)
     preparation = publish_staging.prepare_workspace(plan, options=options)
 
-    assert len(registered) == 1
+    assert len(registered) == 1, (
+        "cleanup-enabled staging must register exactly one atexit handler"
+    )
     cleanup = registered[0]
-    assert callable(cleanup)
-    assert preparation.staging_root.parent == build_directory
-    assert build_directory.exists()
+    assert callable(cleanup), "the registered atexit hook must be callable"
+    assert preparation.staging_root.parent == build_directory, (
+        "the staged copy must be placed inside the requested build directory"
+    )
+    assert build_directory.exists(), (
+        "a caller-supplied build directory must still exist after staging"
+    )
 
     cleanup()
-    assert build_directory.exists()
-    assert marker.read_text(encoding="utf-8") == "keep"
-    assert not preparation.staging_root.exists()
+    assert build_directory.exists(), (
+        "cleanup must keep a caller-supplied build directory in place"
+    )
+    assert marker.read_text(encoding="utf-8") == "keep", (
+        "cleanup must not remove files the caller put in the build directory"
+    )
+    assert not preparation.staging_root.exists(), (
+        "cleanup must remove the staged workspace copy"
+    )
 
 
 def test_prepare_workspace_cleanup_removes_auto_created_build_directory(
@@ -314,10 +367,14 @@ def test_prepare_workspace_cleanup_removes_auto_created_build_directory(
     )
     build_directory = preparation.staging_root.parent
 
-    assert len(registered) == 1
+    assert len(registered) == 1, (
+        "cleanup-enabled staging must register exactly one atexit handler"
+    )
     registered[0]()
 
-    assert not build_directory.exists()
+    assert not build_directory.exists(), (
+        "cleanup must remove the build directory staging created automatically"
+    )
 
 
 @pytest.mark.parametrize(
@@ -349,16 +406,20 @@ def test_prepare_workspace_copies_workspace_readme_without_adopting_it_for_crate
 
     preparation = publish_staging.prepare_workspace(plan, options=fx.publish_options)
 
-    assert preparation.staging_root.exists()
+    assert preparation.staging_root.exists(), (
+        "staging must leave a workspace copy on disk"
+    )
     assert (preparation.staging_root / readme.name).read_text(encoding="utf-8") == (
         "Workspace README"
-    )
+    ), "the workspace README must be copied into the staging tree verbatim"
     staged_crate_readme = (
         preparation.staging_root
         / crate.root_path.relative_to(workspace_root)
         / "README.md"
     )
-    assert not staged_crate_readme.exists()
+    assert not staged_crate_readme.exists(), (
+        "staging must not adopt the workspace README as a crate README"
+    )
 
 
 def test_prepare_workspace_does_not_register_cleanup_when_disabled(
@@ -390,17 +451,19 @@ def test_prepare_workspace_does_not_register_cleanup_when_disabled(
     options = dc.replace(fx.publish_options, cleanup=False)
     publish_staging.prepare_workspace(plan, options=options)
 
-    assert registered == []
+    assert not registered, (
+        "staging with cleanup disabled must not register an atexit handler"
+    )
 
 
 def _plan_for(
     fx: PrepareWorkspaceFixtures, pf: PreparationFixtures
-) -> publish.PublishPlan:
+) -> publish_plan.PublishPlan:
     """Return a publication plan for a one-crate workspace under ``fx``.
 
     Returns
     -------
-    publish.PublishPlan
+    publish_plan.PublishPlan
         The plan to stage.
     """
     workspace_root = fx.tmp_path / "workspace"
@@ -423,7 +486,9 @@ def test_staged_workspace_removes_the_tree_when_the_block_ends(
 
     with publish_staging.staged_workspace(plan) as preparation:
         staging_root = preparation.staging_root
-        assert staging_root.is_dir()
+        assert staging_root.is_dir(), (
+            "an active staged_workspace block must have a staged tree on disk"
+        )
         build_directory = staging_root.parent
 
     assert not build_directory.exists(), f"{build_directory} survived the block"
@@ -457,7 +522,9 @@ def test_staged_workspace_removes_the_tree_when_the_block_raises(
     with pytest.raises(raised):
         stage_then_fail()
 
-    assert build_directory is not None
+    assert build_directory is not None, (
+        "the block must record its build directory before the failure"
+    )
     assert not build_directory.exists(), f"{build_directory} survived {raised}"
 
 
@@ -541,9 +608,13 @@ def test_an_active_tree_is_tracked_for_the_signal_handler(
 
     with publish_staging.staged_workspace(plan) as preparation:
         build_directory = preparation.staging_root.parent
-        assert build_directory in publish_staging._ACTIVE_STAGING_ROOTS
+        assert build_directory in publish_staging._ACTIVE_STAGING_ROOTS, (
+            "an active staged tree must be tracked so the signal handler can remove it"
+        )
 
-    assert build_directory not in publish_staging._ACTIVE_STAGING_ROOTS
+    assert build_directory not in publish_staging._ACTIVE_STAGING_ROOTS, (
+        "a tree must be untracked once its block has ended"
+    )
 
 
 def test_a_failed_removal_stays_tracked_and_is_reported(
@@ -572,7 +643,9 @@ def test_a_failed_removal_stays_tracked_and_is_reported(
         with caplog.at_level("ERROR", logger="lading.commands.publish_staging"):
             removed = publish_staging._remove_staged_tree_or_report(cleanup_target)
 
-        assert removed is False
+        assert removed is False, (
+            "a failed removal must be reported as not removed, not raised"
+        )
         assert cleanup_target in publish_staging._ACTIVE_STAGING_ROOTS, (
             "a tree that could not be removed must stay tracked"
         )
@@ -614,11 +687,16 @@ def test_a_failed_removal_does_not_mask_the_publish_failure(
         with pytest.raises(RuntimeError) as raised:
             publish_then_fail()
 
-        assert raised.value is published
+        assert raised.value is published, (
+            "a failed cleanup must re-raise the publish failure, not the "
+            "filesystem error"
+        )
     finally:
         # The removal was made to fail, so the tree is still there and still
         # tracked. Clear both, or the leak detector attributes it to this test.
         monkeypatch.undo()
-        assert retained is not None
+        assert retained is not None, (
+            "the staged tree must be recorded before the publish failure"
+        )
         publish_staging._ACTIVE_STAGING_ROOTS.discard(retained)
         shutil.rmtree(retained, ignore_errors=True)

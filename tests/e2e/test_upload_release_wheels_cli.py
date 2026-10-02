@@ -12,8 +12,6 @@ because the standalone path has its own scenarios in
 same helper, so neither can reach a real ``gh`` or inherit a credential.
 """
 
-from __future__ import annotations
-
 import json
 from pathlib import Path
 

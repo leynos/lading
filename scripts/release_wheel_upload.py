@@ -24,8 +24,6 @@ imported its adapter would drag the process technology into every test that
 exercises it -- and is worth preserving when the upload path changes.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import dataclasses as dc
 import enum

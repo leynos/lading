@@ -1,7 +1,5 @@
 """Integration tests for the publish-check cargo shim CLI."""
 
-from __future__ import annotations
-
 import json
 import os
 import subprocess

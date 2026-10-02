@@ -1,7 +1,5 @@
 """Unit tests for publish formatting helpers."""
 
-from __future__ import annotations
-
 import typing as typ
 from pathlib import Path
 
@@ -110,9 +108,15 @@ def test_format_plan_formats_skipped_sections(tmp_path: Path) -> None:
     configuration_index = lines.index("Skipped via publish.exclude:")
     missing_index = lines.index("Configured exclusions not found in workspace:")
 
-    assert lines[manifest_index + 1] == "- beta"
-    assert lines[configuration_index + 1] == "- gamma"
-    assert lines[missing_index + 1] == "- missing"
+    assert lines[manifest_index + 1] == "- beta", (
+        "a manifest-skipped crate must be listed by name under its heading"
+    )
+    assert lines[configuration_index + 1] == "- gamma", (
+        "a configuration-skipped crate must be listed by name under its heading"
+    )
+    assert lines[missing_index + 1] == "- missing", (
+        "a configured exclusion absent from the workspace must still be listed"
+    )
 
 
 def test_render_section_renders_empty_message_when_empty() -> None:

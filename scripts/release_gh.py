@@ -11,8 +11,6 @@ change to how ``gh`` is invoked -- such as the move to a new cuprum release --
 touches one small module rather than the logic that decides what to upload.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import sys
 import typing as typ

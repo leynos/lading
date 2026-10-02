@@ -1,7 +1,5 @@
 """Tests for the publish index-lookup downgrade counter (issue #68)."""
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import json
 import logging
@@ -9,8 +7,11 @@ import typing as typ
 
 import pytest
 
-from lading.commands import publish, publish_index_check, publish_pipeline
+from lading.commands import publish, publish_pipeline
 from lading.commands.cargo_output_adapter import CargoIndexLookupFailure
+from lading.commands.publish_index_check import (
+    INDEX_LOOKUP_DOWNGRADE_METRIC as _METRIC,
+)
 from lading.utils import metrics
 
 from .conftest import (
@@ -24,7 +25,7 @@ from .conftest import (
 if typ.TYPE_CHECKING:
     from pathlib import Path
 
-_METRIC = publish_index_check.INDEX_LOOKUP_DOWNGRADE_METRIC
+    from lading.runtime import CommandRunner
 
 
 @pytest.fixture(autouse=True)
@@ -82,7 +83,7 @@ def test_downgrade_path_increments_counter(
 
     assert (
         metrics.counter_value(_METRIC, subcommand="package", missing_crate="alpha") == 1
-    )
+    ), "the in-plan downgrade must increment the counter exactly once"
 
 
 @pytest.mark.parametrize(
@@ -121,12 +122,12 @@ def test_raise_paths_do_not_increment_counter(
             allow_unpublished_workspace_deps=allow_unpublished_workspace_deps,
         )
 
-    assert metrics.snapshot() == {}
+    assert not metrics.snapshot(), (
+        "a publish run that raises must not record a downgrade metric"
+    )
 
 
-def _make_beta_package_index_failure_runner() -> cabc.Callable[
-    [cabc.Sequence[str]], tuple[int, str, str]
-]:
+def _make_beta_package_index_failure_runner() -> CommandRunner:
     """Return a runner whose ``cargo package`` for crate beta misses the index."""
 
     def runner(
@@ -134,8 +135,9 @@ def _make_beta_package_index_failure_runner() -> cabc.Callable[
         *,
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
-        del env
+        del env, echo_stdout
         is_package = tuple(command[:2]) == ("cargo", "package")
         is_beta = cwd is not None and cwd.name == "beta"
         if is_package and is_beta:
@@ -172,7 +174,7 @@ def test_full_publish_run_records_and_emits_downgrade_metric(
 
     assert (
         metrics.counter_value(_METRIC, subcommand="package", missing_crate="alpha") == 1
-    )
+    ), "the end-to-end downgrade must increment the counter exactly once"
 
     metrics.emit_summary()
 
@@ -181,10 +183,10 @@ def test_full_publish_run_records_and_emits_downgrade_metric(
         for record in caplog.records
         if "metrics summary" in record.getMessage()
     ]
-    assert len(summaries) == 1
+    assert len(summaries) == 1, "the run must surface exactly one metrics summary line"
     payload = json.loads(summaries[0].partition(": ")[2])
     assert {
         "metric": _METRIC,
         "labels": {"missing_crate": "alpha", "subcommand": "package"},
         "value": 1,
-    } in payload
+    } in payload, "the emitted summary must report the downgrade counter and labels"

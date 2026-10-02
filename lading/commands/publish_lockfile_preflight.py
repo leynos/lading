@@ -32,8 +32,6 @@ _validate_lockfile_freshness(Path("."), repository=repository)
 ```
 """
 
-from __future__ import annotations
-
 import logging
 import shlex
 import typing as typ

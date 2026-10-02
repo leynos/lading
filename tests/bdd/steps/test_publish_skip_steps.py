@@ -1,15 +1,9 @@
 """Steps for the publish pre-flight skip scenarios."""
 
-from __future__ import annotations
-
-import typing as typ
-
+import pytest
 from pytest_bdd import given, parsers, then
 
-if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
-    import pytest
-
-    from .test_publish_infrastructure import _PreflightInvocationRecorder
+from .test_publish_infrastructure import _PreflightInvocationRecorder
 
 _BUILD_CHECK_LABELS = ("cargo::check", "cargo::test")
 

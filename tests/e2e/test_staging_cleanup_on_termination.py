@@ -13,8 +13,6 @@ workspace finishes in milliseconds here and in minutes in production, and it
 is the production shape the signal has to survive.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import contextlib
 import os
@@ -123,7 +121,7 @@ def _staged_process(
     # the copy inside it is lading's to remove. That copy is what these tests
     # watch.
     staged_copy = build_directory / "workspace"
-    with subprocess.Popen(  # ruff: ignore[subprocess-without-shell-equals-true]
+    with subprocess.Popen(  # ruff: ignore[subprocess-without-shell-equals-true] - fixed shell-free argv list running the probe script
         [sys.executable, "-c", source],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,

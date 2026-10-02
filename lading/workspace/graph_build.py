@@ -8,8 +8,6 @@ module shares the coercion bindings defined in
 :mod:`lading.toml_coerce`.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import typing as typ
 from pathlib import Path
@@ -126,7 +124,7 @@ def build_workspace_graph(
 
 
 def _collect_workspace_crates(
-    package_lookup: dict[str, cabc.Mapping[str, typ.Any]],
+    package_lookup: cabc.Mapping[str, cabc.Mapping[str, typ.Any]],
     workspace_member_ids: cabc.Sequence[str],
     workspace_index: WorkspaceIndex,
 ) -> tuple[WorkspaceCrate, ...]:

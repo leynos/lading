@@ -1,7 +1,5 @@
 """Tests for loading cargo metadata payloads."""
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import json
 import textwrap
@@ -54,15 +52,22 @@ def test_load_cargo_metadata_handles_stdout_variants(
     """Successful invocations should return parsed JSON for text and byte streams."""
     install_cargo_stub(cmd_mox, monkeypatch)
     stdout_data, stderr_data = output_data
+    # cmd-mox's ``CommandDouble.returns`` declares text-only streams, but its
+    # in-process dispatch hands the stored object straight back from
+    # ``_handle_invocation``; the probe in this suite's history confirmed bytes
+    # survive that path unchanged. Asserting the annotation here is what lets
+    # the byte variant reach ``coerce_text``, which is the boundary under test.
     cmd_mox.mock("cargo").with_args("metadata", "--format-version", "1").returns(
         exit_code=0,
-        stdout=stdout_data,
-        stderr=stderr_data,
+        stdout=typ.cast("str", stdout_data),
+        stderr=typ.cast("str", stderr_data),
     )
 
     result = load_cargo_metadata(tmp_path)
 
-    assert result == _METADATA_PAYLOAD
+    assert result == _METADATA_PAYLOAD, (
+        "text and byte stdout must both decode to the same parsed metadata"
+    )
 
 
 def test_load_cargo_metadata_suppresses_stdout_echo(tmp_path: Path) -> None:
@@ -70,7 +75,7 @@ def test_load_cargo_metadata_suppresses_stdout_echo(tmp_path: Path) -> None:
     echo_flags: list[bool] = []
 
     def runner(
-        command: tuple[str, ...],
+        command: cabc.Sequence[str],
         *,
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
@@ -82,8 +87,12 @@ def test_load_cargo_metadata_suppresses_stdout_echo(tmp_path: Path) -> None:
 
     result = load_cargo_metadata(tmp_path, runner=runner)
 
-    assert result == _METADATA_PAYLOAD
-    assert echo_flags == [False]
+    assert result == _METADATA_PAYLOAD, (
+        "suppressing the stdout echo must not change the returned metadata"
+    )
+    assert echo_flags == [False], (
+        "the metadata runner must be invoked with echo_stdout disabled"
+    )
 
 
 def test_load_cargo_metadata_missing_executable(
@@ -92,7 +101,7 @@ def test_load_cargo_metadata_missing_executable(
     """Absent ``cargo`` binaries should raise ``CargoExecutableNotFoundError``."""
 
     def runner(
-        command: tuple[str, ...],
+        command: cabc.Sequence[str],
         *,
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
@@ -115,24 +124,33 @@ def test_load_cargo_metadata_error_decodes_byte_streams(
     install_cargo_stub(cmd_mox, monkeypatch)
     cmd_mox.mock("cargo").with_args("metadata", "--format-version", "1").returns(
         exit_code=101,
-        stdout=b"",
-        stderr=b"manifest missing",
+        # See ``test_load_cargo_metadata_handles_stdout_variants``: cmd-mox
+        # returns the stored object verbatim, so a byte stderr really does
+        # reach the loader's decode path despite the text-only annotation.
+        stdout=typ.cast("str", b""),
+        stderr=typ.cast("str", b"manifest missing"),
     )
 
     with pytest.raises(CargoMetadataError) as excinfo:
         load_cargo_metadata(tmp_path)
 
-    assert "manifest missing" in str(excinfo.value)
+    assert "manifest missing" in str(excinfo.value), (
+        "byte stderr must be decoded into the CargoMetadataError message"
+    )
 
 
 def test_metadata_coerce_text_decodes_bytes() -> None:
     """Binary output is decoded using UTF-8 with replacement semantics."""
     alpha = "\N{GREEK SMALL LETTER ALPHA}"
     encoded = alpha.encode()
-    assert coerce_text(encoded) == alpha
+    assert coerce_text(encoded) == alpha, (
+        "valid UTF-8 bytes must decode to their original text"
+    )
 
     binary = b"foo\xff"
-    assert coerce_text(binary) == "foo\ufffd"
+    assert coerce_text(binary) == "foo\ufffd", (
+        "undecodable bytes must be replaced rather than raising"
+    )
 
 
 @pytest.mark.parametrize(
@@ -193,7 +211,10 @@ def test_load_cargo_metadata_error_scenarios(
     with pytest.raises(CargoMetadataError) as excinfo:
         load_cargo_metadata(tmp_path)
 
-    assert scenario.expected_message in str(excinfo.value)
+    assert scenario.expected_message in str(excinfo.value), (
+        "the CargoMetadataError must carry the diagnostic for this "
+        "cargo metadata failure"
+    )
 
 
 def test_load_workspace_invokes_metadata(
@@ -239,8 +260,12 @@ def test_load_workspace_invokes_metadata(
 
     graph = load_workspace(tmp_path)
 
-    assert isinstance(graph, WorkspaceGraph)
-    assert graph.crates[0].name == "crate"
+    assert isinstance(graph, WorkspaceGraph), (
+        "load_workspace must return a WorkspaceGraph rather than raw metadata"
+    )
+    assert graph.crates[0].name == "crate", (
+        "the graph must expose the package name from the metadata payload"
+    )
 
 
 def test_load_cargo_metadata_passes_resolved_cwd(tmp_path: Path) -> None:
@@ -253,7 +278,7 @@ def test_load_cargo_metadata_passes_resolved_cwd(tmp_path: Path) -> None:
     recorded_cwd: list[Path | None] = []
 
     def runner(
-        command: tuple[str, ...],
+        command: cabc.Sequence[str],
         *,
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
@@ -265,5 +290,7 @@ def test_load_cargo_metadata_passes_resolved_cwd(tmp_path: Path) -> None:
 
     result = load_cargo_metadata(tmp_path, runner=runner)
 
-    assert result == payload
-    assert recorded_cwd == [tmp_path.resolve()]
+    assert result == payload, "the workspace-root payload must round-trip unchanged"
+    assert recorded_cwd == [tmp_path.resolve()], (
+        "cargo metadata must run from the resolved workspace root"
+    )
