@@ -287,7 +287,7 @@ unaffected.
 - Wiring: `make install-nose`, `make duplication`, `make duplication-test`,
   `make duplication-allow`, with the blocking check as the final stage of
   `make lint`.
-- Documentation: ADR-006, a developers-guide section, an `AGENTS.md` bullet, and
+- Documentation: ADR-007, a developers-guide section, an `AGENTS.md` bullet, and
   the documentation index.
 
 ### Adjudication outcome
