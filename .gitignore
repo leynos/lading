@@ -51,6 +51,12 @@ coverage.xml
 .pytest_cache/
 .uv-cache/
 .uv-tools/
+# Provisioned binaries, installed by target rather than committed: the
+# duplication gate's `make install-nose` fetches a pinned nose release into
+# .tools/nose. The directory is per-checkout, so a clean tree here says
+# nothing about whether it exists elsewhere; keeping it ignored stops a
+# local tool download from showing up as an uncommitted change.
+.tools/
 .typos-oxendict-base.json
 .typos-oxendict-base.toml
 cover/
