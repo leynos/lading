@@ -268,24 +268,32 @@ commit touches neither `lading/` nor `scripts/`, so the adjudication below is
 unaffected.
 
 The branch was then rebased onto `origin/main` at `eecd39e`, which had advanced
-by a further eighteen commits. Three conflicts and one collision followed.
+by a further eighteen commits. Five content conflicts followed, one of them the
+ADR collision below.
 
-- Main landed its own ADR-006 in [#285](https://github.com/leynos/lading/pull/285),
-  so this record was renumbered to ADR-007 and every local reference was
-  updated. The execplan's references to the upstream `episodic` ADR-021 were
-  deliberately left alone — those name another repository's record.
-- `ci.yml` conflicted because main's [#306](https://github.com/leynos/lading/pull/306)
-  removed the `MAKEUTIL_REVISION`/`MAKEUTIL_TOOLCHAIN` `env:` keys in favour of
-  the shared prebuilt installer action, and
+- `.github/workflows/ci.yml` conflicted because main's
+  [#306](https://github.com/leynos/lading/pull/306) removed the
+  `MAKEUTIL_REVISION`/`MAKEUTIL_TOOLCHAIN` `env:` keys in favour of the shared
+  prebuilt installer action, and
   `tests/workflow_contracts/test_skylos_lint_contract.py` now asserts their
-  absence. Only this branch's nose keys were kept.
+  absence. Main's deletion was accepted; only this branch's nose keys were kept.
+- `docs/contents.md` conflicted on the ADR list, where main had added its own
+  ADR-006 while this branch added a record that also claimed that number.
+  Main's cuprum record kept ADR-006 and this branch's was renumbered to
+  ADR-007, with every local reference updated. The execplan's references to the
+  upstream `episodic` ADR-021 were deliberately left alone — those name another
+  repository's record.
+- `docs/developers-guide.md` conflicted where both sides rewrote the lint-stage
+  list, and was resolved as described above.
+- `docs/execplans/adopt-nose-code-deduplication.md` conflicted on the plan's own
+  progress and outcome entries, which both sides had edited.
 - `typos.toml` conflicted, and the branch's earlier regenerated-typos commit
   became empty once main's own v0.1.3 builder bump
-  ([#307](https://github.com/leynos/lading/pull/307)) had landed. That the
-  commit was redundant rather than lost was verified, not assumed: regenerating
-  at the rebased head produces byte-identical output
-  (sha256 `acd0838c…`), so the post-turn hook's write-mode regeneration leaves
-  the tree clean.
+  ([#307](https://github.com/leynos/lading/pull/307)) had landed. The conflict
+  was resolved to main's side and the commit was dropped as redundant rather
+  than lost, which was verified rather than assumed: regenerating at the
+  rebased head produces byte-identical output (sha256 `acd0838c…`), so the
+  post-turn hook's write-mode regeneration leaves the tree clean.
 
 Two ADR-006 references survived that renumber by mistake — a broken relative
 link in ADR-003's amendment and a stale name in this plan — and were caught by
