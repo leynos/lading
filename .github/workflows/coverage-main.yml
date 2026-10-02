@@ -61,7 +61,7 @@ jobs:
         id: makeutil
         # A digest-verified prebuilt release rather than a from-source build:
         # the action's pinned table and the release's own sidecar must agree.
-        uses: leynos/shared-actions/.github/actions/install-makeutil@d57cb19b82281236088108f2ffb7e13bc00fc2f8
+        uses: leynos/shared-actions/.github/actions/install-makeutil@ff1dd759dfffc0db3459e30e833f52437ee62b57
 
       - name: Verify makeutil
         # Prove the installed binary runs, matches the release the action
