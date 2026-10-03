@@ -22,7 +22,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 _MAKEUTIL_COMMAND: typ.Final = ("makeutil", "parse", "Makefile")
 _INSTALL_MAKEUTIL_ACTION: typ.Final = (
     "leynos/shared-actions/.github/actions/install-makeutil"
-    "@d57cb19b82281236088108f2ffb7e13bc00fc2f8"
+    "@ebe2f3105334283441f4c915eb979a0f4b9f2c04"
 )
 _SKYLOS_VERSION_TOKENS: typ.Final = ("4.33.2",)
 _SKYLOS_CLI_TOKENS: typ.Final = (
