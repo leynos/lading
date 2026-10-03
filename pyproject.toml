@@ -443,6 +443,123 @@ do_not_mutate = ["lading/testing/*"]
 [tool.uv]
 package = true
 
+# Settings for the pinned `nose` duplication detector, read by
+# scripts/nose_detector.py. `version` is enforced against the Makefile's
+# NOSE_VERSION and the CI workflow by
+# tests/workflow_contracts/test_duplication_toolchain_contract.py; bump all
+# three together.
+#
+# `roots` are the maintained first-party Python roots a duplicated region may
+# be reported in. `tests/` is deliberately absent: nose reports 190 families
+# across it, almost all of them deliberately parallel scenario scaffolding, and
+# gating that tree would say nothing about production duplication. `scripts/`
+# is in scope because those helpers are maintained first-party code that ships
+# with the repository, and `exclude` applies the same tests-are-not-production
+# boundary to `scripts/tests/`, which is the gate's own suite rather than
+# shipped tooling. Excluding it is a scope decision, not a suppression: the
+# gate modules under `scripts/` are still gated, and a clone between two of
+# them still blocks.
+#
+# nose matches `exclude` globs relative to each `--root`, not to the repository
+# root, so `scripts/tests/**` matches nothing here and would silently exclude
+# no files. The `**/`-prefixed form below is anchored to the root-relative
+# tree, which is the form that actually excludes the tests.
+#
+# Every channel is pinned explicitly so a change to nose's own defaults cannot
+# silently widen or narrow the gate. `min-size` counts nose intermediate
+# language tokens, not Python lines or AST nodes. `surface = "all"` includes
+# families nose keeps off its dashboard, but it does not make `top = 30`
+# exhaustive: only the thirty highest-value families are adjudicated, and
+# allowed families still occupy places in that surface.
+[tool.nose]
+version = "0.20.0"
+roots = ["lading", "scripts"]
+mode = "syntax,semantic,near"
+min-size = 24
+surface = "all"
+top = 30
+exclude = ["**/tests/**"]
+
+# Reasoned exceptions to the duplication gate. Each entry silences one family
+# only when EVERY location it reports is covered by one of the entry's keys;
+# a new copy in an unlisted file blocks again. Prefer `unit` for a
+# single-location key and `members` for a family, and always record why the
+# parallel structure is intentional. See docs/adr/007-adopt-nose-duplication-gate.md.
+#
+# Entries are keyed by file, not by line span, because spans churn whenever
+# code above them moves. nose reports the regions below as fragments without a
+# unit name, so a `::name` key cannot match them; file granularity is therefore
+# the tightest key available. The consequence is recorded where it matters: an
+# entry covers its whole file, so a *new* family arising inside one of these
+# files would be silenced too. Removing an entry is manual and deliberate --
+# absence from the ranked surface means "unmatched in this scan", not proven
+# gone, and a lower-ranked family may simply have fallen below `top`.
+[tool.duplication_gate]
+
+[[tool.duplication_gate.allow]]
+members = [
+    "lading/toml_coerce/_mappings.py",
+    "lading/toml_coerce/_sequences.py",
+]
+reason = "Shared declaration scaffolding rather than shared logic. The matched regions are the module preamble, the mandated Numpydoc parameter/returns/raises blocks, and parallel coercer signatures. Replacing every function body in both modules with a distinct trivial statement still leaves a 230-token match, so what the detector reports is the documentation and signature convention these sibling coercers must follow. Extracting it would couple eight independent coercers to one docstring generator or signature wrapper."
+
+[[tool.duplication_gate.allow]]
+members = [
+    "lading/commands/bump_manifests.py",
+    "lading/commands/publish_plan.py",
+    "lading/testing/toml_utils.py",
+]
+reason = "Type-checking import blocks, each listing the types that module alone needs in the conventional grouped order. Merging them would create a shared typing module every command imports, which is the cross-layer coupling these blocks exist to avoid; the repetition is the import graph staying local."
+
+[[tool.duplication_gate.allow]]
+members = [
+    "lading/cli.py",
+    "lading/runtime/subprocess_runner.py",
+    "lading/toml_coerce/_mappings.py",
+]
+reason = "A one-statement guard idiom: a raw optional input is normalised to None before the function's real work. The guarded values are unrelated types (an environment-variable spelling, a skip-preflight flag, a subprocess environment mapping, a TOML value), so a shared helper would relocate one comparison while adding an indirection through which no behaviour is shared."
+
+[[tool.duplication_gate.allow]]
+members = [
+    "lading/commands/publish.py",
+    "lading/commands/publish_skip.py",
+    "lading/workspace/metadata.py",
+]
+reason = "Dependency-injection fallback at four independent seams: use the caller-supplied value, otherwise resolve from ambient state. Each seam resolves a different dependency through a different mechanism (module-global configuration, the workspace loader, a configuration default, a context-local command runner) and each sits at a different architectural layer. A shared helper would couple those layers to one resolution protocol."
+
+[[tool.duplication_gate.allow]]
+members = [
+    "lading/runtime/subprocess_runner.py",
+    "lading/testing/cmd_mox_runner.py",
+]
+reason = "The 'nothing to do' guard for an empty optional input at four call sites. The values are unrelated (a subprocess environment mapping, a PATH string, os.environ updates, buffered output), and two are closures over different sinks. A shared helper would have to accept the payload and the sink, which is more machinery than the guard it replaces."
+
+[[tool.duplication_gate.allow]]
+members = [
+    "scripts/release_wheel_upload.py",
+    "lading/commands/clean.py",
+]
+reason = "Two exception classes in unrelated subsystems that each record one diagnostic attribute before delegating to Exception.__init__. The attributes differ (an upload Outcome, a filesystem Path) and so do the classes' contracts; a shared base would couple release tooling to workspace cleanup."
+
+[[tool.duplication_gate.allow]]
+unit = "lading/config.py"
+reason = "The 'absent table yields defaults' contract that four sibling dataclasses implement for their own TOML section. Each guard is followed by that section's key whitelist and constructor call, and the guard is what makes the section optional. A shared helper would need the key set and constructor injected, trading four readable lines for a generic factory. NOTE: this key covers the whole file, so a new family inside config.py would also be silenced; re-adjudicate if config.py is restructured."
+
+[[tool.duplication_gate.allow]]
+members = [
+    "lading/config.py",
+    "lading/runtime/subprocess_runner.py",
+]
+reason = "An early return for an absent optional argument, reached by two unrelated functions: a key-whitelist validator and a stream-decoding loop. The bodies after the guard share no behaviour, so the guard is all the detector can compare."
+
+[[tool.duplication_gate.allow]]
+unit = "lading/commands/staging_lock.py"
+reason = "A deliberate cross-platform pair: the Windows (msvcrt) and POSIX (fcntl) bindings of take-and-release. They share a two-line shape because they discharge the same two obligations, but they call different platform APIs against a shared handle. Merging them would mean branching on sys.platform inside the primitive, which the module-level split exists to avoid. NOTE: this key covers the whole file."
+
+[[tool.duplication_gate.allow]]
+unit = "lading/toml_coerce/_scalars.py"
+reason = "Two single-statement rejection calls differing only in the expected-type noun ('a string' versus 'a boolean'). The shared helper, _reject, already exists; a further extraction would only rename the noun argument. NOTE: this key covers the whole file."
+
 [tool.skylos.gate]
 strict = true
 
