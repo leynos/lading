@@ -95,6 +95,7 @@ class _PassthroughProbe:
     """
 
     def __init__(self) -> None:
+        """Record the stub's invocations and any echo-fallback payloads."""
         self.calls: list[tuple[str, tuple[str, ...], str | None]] = []
         self.echo_payloads: list[str] = []
 
