@@ -92,6 +92,20 @@ def _record(sink: io.StringIO) -> dict[str, object]:
     return json.loads(_span_line(sink).removeprefix("release_span "))
 
 
+def _assert_status_unobserved(record: dict[str, object]) -> None:
+    """Assert the status is the empty string an unobserved exit carries.
+
+    Both halves are load-bearing. The type check rejects the ``0`` an unset
+    integer status would produce -- the exact defect the tests below exist to
+    catch -- and the emptiness check rejects a non-empty status. Falsiness
+    alone would accept ``0``, and a bare comparison would let the field drift
+    to another empty value, so the two are asserted together rather than one.
+    """
+    exit_code = record["exit_code"]
+    assert isinstance(exit_code, str), record
+    assert not exit_code, record
+
+
 def test_a_successful_invocation_reports_its_status_and_duration(
     span_module: types.ModuleType,
 ) -> None:
@@ -147,7 +161,7 @@ def test_an_exception_still_closes_the_span_and_propagates(
 
     record = _record(sink)
     assert record["failure_category"] == "raised", record
-    assert not record["exit_code"], record
+    _assert_status_unobserved(record)
 
 
 def test_a_missing_status_is_not_reported_as_success(
@@ -165,7 +179,7 @@ def test_a_missing_status_is_not_reported_as_success(
         pass
 
     record = _record(sink)
-    assert not record["exit_code"], record
+    _assert_status_unobserved(record)
     assert record["failure_category"] != "none", record
 
 

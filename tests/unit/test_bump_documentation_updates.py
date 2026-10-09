@@ -123,7 +123,7 @@ def test_run_transposes_workspace_readme_to_crates(
     assert message == snapshot, "the bump summary drifted from its recorded snapshot"
     scrubbed = normalized(
         crate_readme.read_text(encoding="utf-8"),
-        pathlib.Path("../../"),
+        "../../",
         placeholder="<link-prefix>",
     )
     assert scrubbed == snapshot(name="crate_readme"), (

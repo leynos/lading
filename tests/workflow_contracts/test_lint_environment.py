@@ -11,6 +11,83 @@ GITIGNORE_PATH = REPOSITORY_ROOT / ".gitignore"
 #: The extensionless Python source the discovery predicate exists to catch.
 EXTENSIONLESS_SOURCE = "scripts/publish-check/bin/cargo"
 
+#: Directories the discovery predicate prunes rather than descends into.
+PRUNED_DIRECTORIES = (
+    ".git",
+    ".venv",
+    ".uv-cache",
+    ".uv-tools",
+    ".hypothesis",
+    ".pytest_cache",
+    ".ruff_cache",
+    "__pycache__",
+    "node_modules",
+)
+
+
+def _makefile_variable(name: str) -> str:
+    """Return ``name``'s value as written in the Makefile.
+
+    Reads the assignment rather than the expansion so a roots list can be
+    compared against the repository without running ``make``.
+
+    Parameters
+    ----------
+    name : str
+        The variable to read.
+
+    Returns
+    -------
+    str
+        The assigned value with continuations joined and whitespace collapsed.
+
+    Raises
+    ------
+    AssertionError
+        If the Makefile assigns no variable of that name, which means the
+        contract is reading a variable that has been renamed or removed.
+    """
+    text = MAKEFILE_PATH.read_text(encoding="utf-8").replace("\\\n", " ")
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(f"{name} =") or stripped.startswith(f"{name} ?="):
+            return stripped.split("=", 1)[1].strip()
+    message = f"{name} is not assigned in the Makefile"
+    raise AssertionError(message)
+
+
+def _expanded_python_sources() -> list[str]:
+    """Return the discovered source list, as ``make`` renders it.
+
+    Returns
+    -------
+    list[str]
+        One entry per discovered Python source, in the order ``make`` holds
+        them.
+
+    Raises
+    ------
+    AssertionError
+        If ``make`` is absent, or if it renders no
+        ``PYTHON_SOURCES_UNSORTED`` assignment -- either way the discovery
+        contract can no longer be checked against a live expansion.
+    """
+    make = shutil.which("make")
+    assert make is not None, "make executable not found on PATH"
+    completed = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - fixed argv list using the PATH-resolved make binary
+        [make, "-p", "-n", "help"],
+        cwd=REPOSITORY_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    marker = "PYTHON_SOURCES_UNSORTED :="
+    for line in completed.stdout.splitlines():
+        if line.startswith(marker):
+            return line.split(marker, 1)[1].split()
+    message = "make did not render PYTHON_SOURCES_UNSORTED; has it been renamed?"
+    raise AssertionError(message)
+
 
 def _expanded_sources(target: str) -> str:
     """Return the file list ``make -n <target>`` passes to its tools.
@@ -54,6 +131,27 @@ def test_python_sources_are_discovered_by_suffix_or_shebang() -> None:
     )
 
 
+def _tool_command_lines(target: str, tool: str) -> list[str]:
+    """Return the expanded recipe lines for ``target`` that invoke ``tool``.
+
+    Parameters
+    ----------
+    target : str
+        Make target whose recipe is expanded with ``make -n``.
+    tool : str
+        Executable name to match at the start of a command word.
+
+    Returns
+    -------
+    list[str]
+        One entry per matching command, each already unwrapped from Make's
+        backslash continuations.
+    """
+    lines = _expanded_sources(target).splitlines()
+    marker = f"{tool} "
+    return [line for line in lines if marker in line]
+
+
 def test_the_extensionless_source_reaches_lint_and_typecheck() -> None:
     """The discovered file must actually appear on the gate command lines."""
     for target in ("lint", "typecheck"):
@@ -61,6 +159,37 @@ def test_the_extensionless_source_reaches_lint_and_typecheck() -> None:
             f"`make {target}` must lint and typecheck {EXTENSIONLESS_SOURCE}; "
             f"a file that is discovered but never passed to a tool is still "
             f"ungated"
+        )
+
+
+def test_ruff_commands_pass_their_discovered_sources_explicitly() -> None:
+    """Every Ruff invocation must name the file list, not rely on its default.
+
+    Ruff reads `.` when no path is given, and that default discovers by file
+    extension alone. The extensionless shim would be linted by Interrogate,
+    Pylint and ty -- every gate that receives ``PYTHON_SOURCES`` -- while Ruff
+    reported green over a file it never opened. The assertion is on the
+    rendered Ruff command rather than on the recipe text: the path already
+    appeared on the Pylint lines before the fix, so a whole-recipe containment
+    check passed while Ruff stayed unwired. The gate-specific assertion is what
+    fails when Ruff drops the list, which the control run confirms.
+    """
+    ruff_lines = _tool_command_lines("lint", "ruff") + _tool_command_lines(
+        "check-fmt", "ruff"
+    )
+    assert ruff_lines, "expected Ruff invocations in the lint and check-fmt recipes"
+    for line in ruff_lines:
+        assert EXTENSIONLESS_SOURCE in line, (
+            f"Ruff must receive the discovered source list, so that an "
+            f"extensionless source such as {EXTENSIONLESS_SOURCE} is actually "
+            f"linted; this invocation does not: {line.strip()}"
+        )
+        assert "--force-exclude" in line, (
+            f"Ruff must keep honouring the configured exclusions now that the "
+            f"gated paths are named explicitly; without this flag the "
+            f"`[tool.ruff.format]` exemption for "
+            f"`tests/bdd/steps/test_bump_steps.py` is bypassed and `check-fmt` "
+            f"fails: {line.strip()}"
         )
 
 
@@ -126,6 +255,81 @@ def test_df12_python_lints_pins_a_commit_not_a_tag() -> None:
         f"DF12_PYTHON_LINTS_REF must be a full commit SHA, found {ref!r}"
     )
     assert is_hex, f"DF12_PYTHON_LINTS_REF must be hexadecimal, found {ref!r}"
+
+
+def test_every_existing_source_root_contributes_its_python_files() -> None:
+    """Each declared root that holds Python must be represented in the list.
+
+    The roots are discovered rather than enumerated, so dropping one is not a
+    visible edit to the file list: the gates simply stop reading that tree
+    while every one of them stays green. A root with no Python in it yet is
+    legitimate -- ``.github`` and the benchmark trees are declared ahead of
+    the files they will hold -- so the assertion is per-root and only for
+    roots the repository actually has.
+    """
+    roots = _makefile_variable("PYTHON_SOURCE_ROOTS").split()
+    discovered = set(_expanded_python_sources())
+
+    assert roots, "the roots list must not be empty"
+    for root in roots:
+        directory = REPOSITORY_ROOT / root
+        if not directory.is_dir():
+            continue
+        expected = {
+            str(path.relative_to(REPOSITORY_ROOT))
+            for path in directory.rglob("*.py")
+            if not any(part in PRUNED_DIRECTORIES for part in path.parts)
+        }
+        missing = expected - discovered
+        assert not missing, (
+            f"the {root!r} root contains Python that discovery did not return; "
+            f"a root that reaches no files is a gate that reads nothing: "
+            f"{sorted(missing)[:5]}"
+        )
+
+
+def test_pruned_directories_are_excluded_from_the_discovered_list() -> None:
+    """No path under a pruned directory may reach a gate.
+
+    The prune list is what keeps cached dependencies and build dropouts out.
+    A tree that lost its prune would not fail anything -- it would simply hand
+    every gate thousands of files it has no business reading, and the lint
+    result would depend on whatever happens to be in the cache.
+    """
+    discovered = _expanded_python_sources()
+
+    leaked = [
+        path for path in discovered if set(Path(path).parts) & set(PRUNED_DIRECTORIES)
+    ]
+    assert not leaked, (
+        f"discovery returned files beneath a pruned directory: {leaked[:5]}"
+    )
+
+
+def test_python_sources_discovery_is_fail_closed() -> None:
+    """A discovery failure must stop the build, not silently trim the list.
+
+    Piping ``find`` into ``sort`` reports the status of ``sort``, so a
+    ``find`` that could not read a root exits zero and the gates run over
+    whatever survived. That is the failure this guard exists for: the list is
+    still non-empty, so nothing else in the build notices. The check is on
+    the Makefile's structure rather than on a triggered failure because
+    provoking a real one would mean making a directory unreadable during the
+    test.
+    """
+    makefile = MAKEFILE_PATH.read_text(encoding="utf-8")
+    assert "$(.SHELLSTATUS)" in makefile, (
+        "discovery must read find's exit status; without it a partial file "
+        "list is indistinguishable from a complete one"
+    )
+    assert "$(error" in makefile, (
+        "a non-zero discovery status must abort the build rather than be "
+        "reported as a warning"
+    )
+    assert "| sort" not in makefile, (
+        "discovery must not pipe find into sort: a pipeline reports only its "
+        "last command's status, which is what makes the failure invisible"
+    )
 
 
 def test_markdownlint_excludes_project_local_uv_directories() -> None:

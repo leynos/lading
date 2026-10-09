@@ -183,6 +183,30 @@ label = f"{crate.name} {crate.version}"  # replaces the removed `crate.id`
 
 ## Installation
 
+### Supported Python versions
+
+Lading requires CPython 3.14 or later. The requirement is declared in the
+package metadata as `requires-python = ">=3.14"`, so `pip` refuses to install a
+wheel into an older interpreter rather than installing one that cannot run:
+
+```console
+$ python3.13 -m pip install lading-0.3.1-py3-none-any.whl
+ERROR: Package 'lading' requires a different Python: 3.13.x not in '>=3.14'
+```
+
+No wheel is published for an older interpreter, and the release workflow builds
+the wheel under 3.14, so a download that succeeds is one this version supports.
+The previous release supported 3.13; if you are still on 3.13, either upgrade
+the interpreter or stay on the version you already have installed. The wheels
+tagged before the change keep working there: nothing in the earlier releases is
+retroactively affected, and the floor applies only to releases made from this
+version onwards.
+
+The floor is not only a packaging choice. The lint and typecheck gateways
+evaluate the source against 3.14 semantics, and the toolchain is pinned to a
+3.14 interpreter, so a lower floor would advertise support for a language
+version nothing in the project is checked against.
+
 ### Install from a tagged release
 
 A `v*.*.*` tag whose release workflow completes successfully publishes the pure

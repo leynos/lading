@@ -15,7 +15,7 @@ from hypothesis import strategies as st
 
 from lading.commands import bump_lockfiles
 from lading.runtime import CommandSpawnError
-from tests.helpers.path_normalization import normalized
+from tests.helpers.path_normalization import normalized, normalized_invocations
 
 if typ.TYPE_CHECKING:
     from syrupy.assertion import SnapshotAssertion
@@ -69,7 +69,7 @@ def test_regenerate_lockfiles_includes_workspace_manifest(
     assert lockfiles == (tmp_path / "Cargo.lock",), (
         "with no configured manifests only the workspace root Cargo.lock is built"
     )
-    assert normalized(repr(runner.invocations), tmp_path) == snapshot, (
+    assert normalized_invocations(runner.invocations, tmp_path) == snapshot, (
         "the root manifest invocation must match the recorded snapshot"
     )
 
@@ -120,6 +120,8 @@ def test_regenerate_lockfiles_deduplicates_root_manifest(
     commands = [invocation.command for invocation in runner.invocations]
     # Scrub the nested crate root first; otherwise it collapses into the
     # broader tmp prefix and the snapshot cannot show the two distinct roots.
+    # These are plain string tuples rather than recorded objects, so the
+    # rendering is already free of any native ``Path`` class name.
     nested_root = tmp_path / "crates" / "nested"
     scrubbed = normalized(repr(commands), nested_root, placeholder="<nested-crate>")
     assert normalized(scrubbed, tmp_path) == snapshot, (

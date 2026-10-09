@@ -66,10 +66,64 @@ PYTHON_EXISTING_SOURCE_ROOTS = $(wildcard $(PYTHON_SOURCE_ROOTS))
 # Spelling the match `uv run python` rather than a bare `python` keeps an
 # unrelated shell or Perl script out of a Python lint run. `-o` plus `-print`
 # makes this a union: a `.py` file whose shebang matches is still listed once.
-PYTHON_SOURCES = $(strip $(shell find $(PYTHON_EXISTING_SOURCE_ROOTS) \
+#
+# Discovery is fail-closed, and that costs three lines rather than one. The
+# obvious spelling pipes the output through `sort`, which silently discards
+# `find`'s status: a pipeline exits with the status of its *last* command, so a
+# `find` that could not read a root at all would be reported as a success by
+# the `sort` that ran after it and exited cleanly. Sorting with Make's own
+# `$(sort)` keeps `find` the only command in the shell call. `.SHELLSTATUS`
+# then has to be read on the very next line, because it reports only the most
+# recent `$(shell ...)` and any intervening call would overwrite it.
+#
+# This is the failure that matters: a list truncated by a failed `find` is not
+# empty, so every gate still runs and still reports green over the files that
+# survived, while the missing ones go unread by all of them at once.
+#
+# The test is `$(filter-out 0,...)` rather than an equality against zero so
+# that an *empty* status passes too. Make older than 4.2 has no
+# `.SHELLSTATUS`, and a guard that turned an older `make` into a hard build
+# failure would be a worse bug than the one it closes; the check is an extra
+# net beneath the modern `make` the CI image pins, not the only thing keeping
+# discovery correct. `-exec awk` returning non-zero for a non-matching file is
+# normal and does not affect `find`'s own status, so the union predicate does
+# not trip the guard.
+PYTHON_FIND_COMMAND = find $(PYTHON_EXISTING_SOURCE_ROOTS) \
 	$(PYTHON_PRUNE_TESTS) -type f \( -name '*.py' -o -exec awk \
 	'NR == 1 && /uv run python/ { seen = 1 } END { exit !seen }' {} \; \) \
-	-print | sort))
+	-print
+PYTHON_SOURCES_UNSORTED := $(shell $(PYTHON_FIND_COMMAND))
+PYTHON_DISCOVERY_STATUS := $(.SHELLSTATUS)
+ifneq ($(filter-out 0,$(PYTHON_DISCOVERY_STATUS)),)
+  $(error Python source discovery failed: find exited $(PYTHON_DISCOVERY_STATUS). Refusing to gate an incomplete file list; fix the discovery roots or the pruned paths before running any gate)
+endif
+PYTHON_SOURCES := $(strip $(sort $(PYTHON_SOURCES_UNSORTED)))
+# Ruff reads `.` as its default file list, and that sweep is wider than
+# `PYTHON_SOURCES` in one direction and narrower in another. It is wider
+# because Ruff's own `include` covers `**/pyproject.toml`, which
+# `PYTHON_SOURCES` does not list and which would silently lose coverage if the
+# variable replaced `.` outright. It is narrower because `.` discovers by file
+# extension only, exactly as `find -name '*.py'` does, so the extensionless
+# shim above is invisible to it. Passing both spellings is the union: `.` keeps
+# the TOML under the gate and the file list adds the shim. The discovery
+# predicate and the gate it feeds must agree on what "a Python source" means,
+# or the hole this variable exists to close reopens one layer further down.
+#
+# `--force-exclude` is load-bearing rather than tidy. Ruff applies an
+# `exclude` only while it walks a directory; a path named on the command line
+# bypasses it. `[tool.ruff.format]` lists `tests/bdd/steps/test_bump_steps.py`
+# because that module's deliberate formatting -- a blank line after
+# `if TYPE_CHECKING:` and multi-line assertion messages -- is what the file is
+# for, so passing the list above would otherwise reformat it and fail
+# `check-fmt`. The flag restores the configured exclusions for explicit paths
+# while leaving them in force for discovery, which is the behaviour the exclude
+# was written against. The lint `exclude` is `extend-exclude` for `.rules` and
+# `docs` only, so this does not narrow what `lint` reads. It is a per-subcommand
+# option, so it rides alongside each `check`/`format` verb below rather than on
+# `RUFF`, which stays the plain pinned invocation the gateway contract test
+# matches on.
+RUFF_TARGETS = . $(PYTHON_SOURCES)
+RUFF_FORCE_EXCLUDE = --force-exclude
 # No `--extra-search-path` is passed. Every import in the gated trees is either
 # absolute (`lading.…`, `tests.…`) or third-party, so the project root ty
 # already uses resolves them all; adding a root such as `lading` to the search
@@ -179,17 +233,17 @@ $(VENV_TOOLS): build ## Verify required CLI tools in venv
 endif
 
 fmt: $(UV) ## Format sources
-	$(RUFF) format
-	$(RUFF) check --select I --fix
+	$(RUFF) format $(RUFF_FORCE_EXCLUDE) $(RUFF_TARGETS)
+	$(RUFF) check --select I --fix $(RUFF_FORCE_EXCLUDE) $(RUFF_TARGETS)
 	$(MDTABLEFIX) --in-place $(MDTABLEFIX_SELECT) $(MDTABLEFIX_RULES)
 	@unset FORCE_COLOR; $(MDLINT) --fix "**/*.md"
 
 check-fmt: $(UV) ## Verify formatting
-	$(RUFF) format --check
+	$(RUFF) format --check $(RUFF_FORCE_EXCLUDE) $(RUFF_TARGETS)
 	$(MDTABLEFIX) --check $(MDTABLEFIX_SELECT) $(MDTABLEFIX_RULES)
 
 lint: build $(UV) interrogate ## Run linters
-	$(RUFF) check
+	$(RUFF) check $(RUFF_FORCE_EXCLUDE) $(RUFF_TARGETS)
 	$(UV) run interrogate --fail-under 100 lading
 	$(UV) run interrogate --fail-under 100 \
 		--ignore-nested-functions --ignore-nested-classes tests scripts

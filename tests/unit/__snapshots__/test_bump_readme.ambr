@@ -1,7 +1,7 @@
 # serializer version: 1
 # name: test_rewrite_relative_links_ignores_code_regions
   '''
-  See [Guide](<link-prefix>/docs/guide.md).
+  See [Guide](<link-prefix>docs/guide.md).
   `[Inline](docs/inline.md)`
   ```markdown
   [Fenced](docs/fenced.md)
@@ -21,7 +21,7 @@
   '''
   # Project
   
-  See [Guide](<link-prefix>/docs/guide.md).
+  See [Guide](<link-prefix>docs/guide.md).
   
   '''
 # ---

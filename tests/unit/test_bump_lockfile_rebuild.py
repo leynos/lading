@@ -8,7 +8,7 @@ import pytest
 
 from lading import config as config_module
 from lading.commands import bump
-from tests.helpers.path_normalization import normalized
+from tests.helpers.path_normalization import normalized_captured
 from tests.helpers.workspace_builders import _make_config, _make_workspace
 
 if typ.TYPE_CHECKING:
@@ -86,9 +86,9 @@ def test_run_rebuilds_lockfiles_when_enabled(
         ),
     )
 
-    assert normalized(repr(captured), tmp_path) == snapshot(name="captured"), (
-        "expected regenerate_lockfiles to receive the merged manifest tuple"
-    )
+    assert normalized_captured(captured.items(), tmp_path) == snapshot(
+        name="captured"
+    ), "expected regenerate_lockfiles to receive the merged manifest tuple"
     assert message == snapshot(name="message"), (
         "the bump summary should match the snapshot"
     )
@@ -219,9 +219,9 @@ def test_run_reports_lockfiles_in_dry_run(
         ),
     )
 
-    assert normalized(repr(captured), tmp_path) == snapshot(name="dry_run_captured"), (
-        "expected dry-run lockfile resolution for the merged manifest tuple"
-    )
+    assert normalized_captured(captured.items(), tmp_path) == snapshot(
+        name="dry_run_captured"
+    ), "expected dry-run lockfile resolution for the merged manifest tuple"
     assert message == snapshot(name="message"), (
         "the dry-run summary should match the snapshot"
     )

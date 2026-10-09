@@ -50,14 +50,22 @@ _OPTIONS_CONSUMING_VALUE = {
 _SHORT_OPTIONS_CONSUMING_VALUE = {"-F", "-Z", "-j"}
 
 
-def _option_consumes_next_argument(argument: str, *, has_next: bool) -> bool:
-    """Return whether ``argument`` swallows the token that follows it."""
+def _option_consumes_next_argument(args: cabc.Sequence[str], index: int) -> bool:
+    """Return whether ``args[index]`` swallows the token that follows it."""
+    argument = args[index]
+    if index + 1 >= len(args):
+        return False
+
     option_key = argument.split("=", maxsplit=1)[0]
-    if option_key in _OPTIONS_CONSUMING_VALUE:
-        return "=" not in argument and has_next
-    # Short options may bundle the value into the flag (``-j4``) or keep it
-    # separate (``-j 4``); only the separate spelling consumes the next token.
-    return argument in _SHORT_OPTIONS_CONSUMING_VALUE and has_next
+    consumes_next = (
+        "=" not in argument and option_key in _OPTIONS_CONSUMING_VALUE
+    ) or (argument in _SHORT_OPTIONS_CONSUMING_VALUE)
+    if not consumes_next:
+        return False
+    # A separator is never an option's value: Cargo reads ``--config --`` as a
+    # missing value rather than consuming the separator, so the walker must
+    # stop here and leave it for the caller to treat as the boundary it is.
+    return args[index + 1] != ARGUMENT_SEPARATOR
 
 
 def _find_target_subcommand_index(args: cabc.Sequence[str]) -> int | None:
@@ -84,10 +92,7 @@ def _find_target_subcommand_index(args: cabc.Sequence[str]) -> int | None:
             # are dealing with another subcommand (for example ``cargo run``).
             return None
 
-        consumes_next = _option_consumes_next_argument(
-            argument, has_next=index + 1 < len(args)
-        )
-        index += 2 if consumes_next else 1
+        index += 2 if _option_consumes_next_argument(args, index) else 1
 
     return None
 

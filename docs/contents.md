@@ -58,6 +58,8 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
 - [cuprum 0.2.0 migration guide](cuprum-v0-2-0-migration-guide.md) - imported
   `cuprum` 0.2.0-beta1 guide to the API changes from 0.1.x, including
   `ScopeConfig` and `RunOutputOptions`.
+- [Lading 0.4.0 migration guide](v0-4-0-migration-guide.md) - the interpreter
+  floor moving to CPython 3.14, who is affected, and how to upgrade or defer.
 - [Complexity antipatterns and refactoring
   strategies](complexity-antipatterns-and-refactoring-strategies.md) -
   reference on cyclomatic and cognitive complexity metrics, the bumpy road

@@ -125,3 +125,22 @@ def test_handles_global_flags_consuming_values(flag_and_value: tuple[str, str]) 
     assert result == [flag, value, "test", "--all-features", "--", "--nocapture"], (
         f"{flag} must keep its value and stay ahead of the inserted flag"
     )
+
+
+def test_a_value_taking_flag_does_not_swallow_the_separator() -> None:
+    """``--`` is never an option's value, so it still ends Cargo's arguments.
+
+    Cargo rejects ``cargo --config -- test`` outright -- ``--`` ends Cargo's
+    own argument list wherever it appears, so a global option immediately
+    before it has no value at all. A walker that skipped the separator as
+    though it were that option's value read the word after it as the target
+    subcommand and inserted the flag past the boundary, handing
+    ``--all-features`` to the test binary instead of to Cargo: the exact
+    failure this shim exists to prevent.
+    """
+    shim = load_cargo_shim()
+    result = shim.rewrite_args(["--config", "--", "bench"])
+    assert result == ["--config", "--", "bench"], (
+        "a separator after a value-taking flag must still end the rewrite, not "
+        "be consumed as that flag's value"
+    )

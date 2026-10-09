@@ -8,7 +8,15 @@
   '''
 # ---
 # name: test_run_rebuilds_lockfiles_when_enabled[captured]
-  "{'merge_workspace_root': PosixPath('<tmp>'), 'merge_lockfile_manifests': (), 'merge_runner': None, 'calls': 1, 'workspace_root': PosixPath('<tmp>'), 'lockfile_manifests': ('crates/ui/Cargo.toml',), 'runner': None}"
+  dict({
+    'calls': '1',
+    'lockfile_manifests': "('crates/ui/Cargo.toml',)",
+    'merge_lockfile_manifests': '()',
+    'merge_runner': 'None',
+    'merge_workspace_root': '<tmp>',
+    'runner': 'None',
+    'workspace_root': '<tmp>',
+  })
 # ---
 # name: test_run_rebuilds_lockfiles_when_enabled[message]
   '''
@@ -21,7 +29,12 @@
   '''
 # ---
 # name: test_run_reports_lockfiles_in_dry_run[dry_run_captured]
-  "{'merge_lockfile_manifests': ('crates/ui/Cargo.toml',), 'emit_discovery_observability': False, 'workspace_root': PosixPath('<tmp>'), 'lockfile_manifests': ('crates/ui/Cargo.toml', 'fixtures/minimal/Cargo.toml')}"
+  dict({
+    'emit_discovery_observability': 'False',
+    'lockfile_manifests': "('crates/ui/Cargo.toml', 'fixtures/minimal/Cargo.toml')",
+    'merge_lockfile_manifests': "('crates/ui/Cargo.toml',)",
+    'workspace_root': '<tmp>',
+  })
 # ---
 # name: test_run_reports_lockfiles_in_dry_run[message]
   '''

@@ -143,7 +143,10 @@ def test_rewrite_relative_links_ignores_code_regions(
 
     rewritten, changed = bump_readme.rewrite_relative_links(markdown, "../../")
 
-    scrubbed = normalized(rewritten, Path("../../"), placeholder="<link-prefix>")
+    # The prefix is Markdown link text, not a filesystem path: `str(Path(...))`
+    # would render it with backslashes on Windows, which is not the spelling
+    # the README carries.
+    scrubbed = normalized(rewritten, "../../", placeholder="<link-prefix>")
     assert scrubbed == snapshot, "only the prose link should be rewritten"
     assert changed is True, "a rewritten prose link must report that the text changed"
 
@@ -166,7 +169,7 @@ def test_transpose_readme_to_crate_writes_rewritten_workspace_readme(
     )
     scrubbed = normalized(
         target_readme.read_text(encoding="utf-8"),
-        Path("../../"),
+        "../../",
         placeholder="<link-prefix>",
     )
     assert scrubbed == snapshot, "the written README must carry the rewritten link"
