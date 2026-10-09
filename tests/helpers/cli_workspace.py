@@ -16,7 +16,7 @@ from lading.workspace import WorkspaceCrate, WorkspaceGraph
 
 
 @contextmanager
-def preserve_root_logger() -> cabc.Iterator[logging.Logger]:
+def preserve_root_logger() -> cabc.Generator[logging.Logger]:
     """Capture and restore the root logger configuration around a test.
 
     Yields

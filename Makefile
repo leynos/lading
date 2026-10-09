@@ -16,7 +16,7 @@ UV ?= $(shell command -v uv 2>/dev/null || printf '%s/.local/bin/uv' "$$HOME")
 # on the `dependabot/uv/ruff-*` bump rather than moving independently. The
 # assertions in `tests/workflow_contracts/test_python_lint_gateway.py` hold
 # the two spellings equal.
-RUFF_VERSION ?= 0.16.9
+RUFF_VERSION ?= 0.16.10
 RUFF ?= $(UV) tool run --from ruff==$(RUFF_VERSION) ruff
 TYPOS_CONFIG_BUILDER_VERSION ?= v0.1.3
 TYPOS_CONFIG_BUILDER = $(UV) tool run --from \

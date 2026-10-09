@@ -5,8 +5,9 @@ pytest-bdd, making them discoverable by the pytest runner without requiring
 individual step-function imports in this file.
 
 Step definitions live in the sibling ``test_publish_given_steps``,
-``test_publish_when_steps``, and ``test_publish_then_steps`` modules;
-shared step definitions are in ``test_common_steps``.
+``test_publish_when_steps``, and ``test_publish_*_then_steps`` modules, one
+module per assertion cluster; shared step definitions are in
+``test_common_steps``.
 
 Feature scenarios covered:
 - ``--allow-unpublished-workspace-deps`` accepted in dry-run mode,

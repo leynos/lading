@@ -119,20 +119,19 @@ def test_dispatch_brackets_every_cargo_invocation_with_a_query(
     ), "a query must bracket every cargo invocation in both pipeline modes"
 
 
-def test_dispatch_logs_one_summary_per_invocation_and_writes_report(
+# The summary line and the report are two separate observable surfaces, so the
+# log contract and the report contract are asserted by their own test. The
+# dry-run pipeline suffices for both: invocation order per mode is the ordering
+# test's concern, and the summary and report logic is shared.
+def test_dispatch_logs_one_summary_per_invocation(
     publish_plan_and_prep: tuple[
         publish_plan.PublishPlan, publish_staging.PublishPreparation, Path
     ],
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
-    snapshot: SnapshotAssertion,
 ) -> None:
-    """Every cargo invocation gets a summary line and a record in the report.
-
-    The dry-run pipeline is enough here: invocation order per mode is the
-    ordering test's concern, and the summary and report logic is shared.
-    """
+    """Every cargo invocation gets one rendered summary line."""
     caplog.set_level(logging.INFO, logger=PIPELINE_LOGGER)
     monkeypatch.setenv("RUSTC_WRAPPER", str(WRAPPER))
 
@@ -144,7 +143,6 @@ def test_dispatch_logs_one_summary_per_invocation_and_writes_report(
         for message in caplog.messages
         if message.startswith("Compiler cache for")
     ]
-    written = json.loads(run.report.read_text(encoding="utf-8"))
     assert len(summary_lines) == len(cargo_calls) == 2 * len(run.plan.publishable), (
         "one summary line and one cargo call per crate phase"
     )
@@ -152,6 +150,23 @@ def test_dispatch_logs_one_summary_per_invocation_and_writes_report(
         line.endswith("0.0s, requests=10 hits=8 misses=2 errors=0")
         for line in summary_lines
     ), summary_lines
+
+
+def test_dispatch_report_records_each_invocation(
+    publish_plan_and_prep: tuple[
+        publish_plan.PublishPlan, publish_staging.PublishPreparation, Path
+    ],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    snapshot: SnapshotAssertion,
+) -> None:
+    """Each report entry pairs a crate with the subcommand it was measured for."""
+    monkeypatch.setenv("RUSTC_WRAPPER", str(WRAPPER))
+
+    run = _run_instrumented_dispatch(publish_plan_and_prep, tmp_path, live=False)
+
+    cargo_calls = _cargo_calls(run.runner.calls)
+    written = json.loads(run.report.read_text(encoding="utf-8"))
     assert [
         (record["subcommand"], record["crate"]) for record in written["crates"]
     ] == [

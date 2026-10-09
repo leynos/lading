@@ -42,9 +42,19 @@ def test_index_workspace_packages_skips_non_members() -> None:
     )
 
 
-def test_collect_workspace_crates_builds_tuple_in_member_order(tmp_path: Path) -> None:
-    """Workspace crates should be built once per requested member ID."""
-    workspace_root = tmp_path
+def _alpha_beta_package_lookup(
+    workspace_root: Path,
+) -> dict[str, dict[str, typ.Any]]:
+    """Build the ``alpha``/``beta`` package lookup the ordering test asserts on.
+
+    ``beta`` depends on ``alpha`` and carries an empty publish list, so one
+    fixture serves the dependency, publish-flag, and readme assertions.
+
+    Returns
+    -------
+    dict[str, dict[str, typ.Any]]
+        Raw cargo package metadata keyed by package id.
+    """
     alpha_manifest = create_test_manifest(
         workspace_root,
         "alpha",
@@ -81,10 +91,12 @@ def test_collect_workspace_crates_builds_tuple_in_member_order(tmp_path: Path) -
         ],
         publish=[],
     )
-    package_lookup = {
-        "alpha-id": alpha_package,
-        "beta-id": beta_package,
-    }
+    return {"alpha-id": alpha_package, "beta-id": beta_package}
+
+
+def test_collect_workspace_crates_builds_tuple_in_member_order(tmp_path: Path) -> None:
+    """Workspace crates should be built once per requested member ID."""
+    package_lookup = _alpha_beta_package_lookup(tmp_path)
     workspace_index = graph_build._build_workspace_index(package_lookup)
 
     crates = graph_build._collect_workspace_crates(

@@ -173,7 +173,7 @@ def _environment_boolean(raw: str | None) -> bool | None:
 @contextmanager
 def _recorded_command_tokens(
     tokens: cabc.Sequence[str],
-) -> cabc.Iterator[None]:
+) -> cabc.Generator[None]:
     """Publish ``tokens`` for the duration of one dispatch.
 
     Cyclopts reports the value it resolved for an option but not the input it
@@ -357,7 +357,7 @@ def _configure_logging(stream: typ.TextIO | None = None) -> None:
 
 
 @contextmanager
-def _workspace_env(value: Path) -> cabc.Iterator[None]:
+def _workspace_env(value: Path) -> cabc.Generator[None]:
     """Temporarily set :data:`WORKSPACE_ROOT_ENV_VAR` to ``value``."""
     previous = os.environ.get(WORKSPACE_ROOT_ENV_VAR)
     os.environ[WORKSPACE_ROOT_ENV_VAR] = str(value)

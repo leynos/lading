@@ -7,7 +7,7 @@ metadata, inject cmd-mox command responses, and write scenario-specific
 `lading publish` CLI through the same process boundary as a user.
 
 The step definitions pair with `test_publish_when_steps` for command
-execution, `test_publish_then_steps` for assertions, and
+execution, the `test_publish_*_then_steps` modules for assertions, and
 `test_publish_infrastructure` for shared command-spy plumbing. Keeping setup
 steps here makes each feature scenario read as domain behaviour while the
 implementation remains explicit about which Cargo or git command is being

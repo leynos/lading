@@ -28,13 +28,10 @@ import typing as typ
 from pathlib import Path
 
 import pytest
-from cuprum import ProgramCatalogue, SafeCmd
+from cuprum import Program, ProgramCatalogue, SafeCmd
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from lading.utils.commands import CARGO, GIT, LADING_CATALOGUE
-
-if typ.TYPE_CHECKING:
-    from cuprum import Program
+from lading.utils.commands import LADING_CATALOGUE
 
 _FEATURES_DIR = Path(__file__).resolve().parent.parent / "features"
 
@@ -124,90 +121,62 @@ def given_catalogue_is_active() -> ProgramCatalogue:
     return LADING_CATALOGUE
 
 
-@then("cargo should be in the allowlist")
-def then_cargo_in_allowlist(catalogue: ProgramCatalogue) -> None:
-    """Assert that cargo is registered in the catalogue.
+def _assert_in_allowlist(catalogue: ProgramCatalogue, program: str) -> None:
+    """Assert that *program* is both allowed and present in the allowlist."""
+    assert catalogue.is_allowed(program), (
+        f"the lading catalogue must accept {program} as an allowed program"
+    )
+    assert program in catalogue.allowlist, (
+        f"{program} must appear in the catalogue's allowlist"
+    )
+
+
+# Cargo and git differ only in the program name; the step text is the parameter
+# through pytest-bdd's ``parsers.re``, so the two steps share one body.
+@then(parsers.re(r"(?P<program>cargo|git) should be in the allowlist"))
+def then_program_in_allowlist(catalogue: ProgramCatalogue, program: str) -> None:
+    """Assert that the named program is registered in the catalogue.
 
     Parameters
     ----------
     catalogue : ProgramCatalogue
         The catalogue fixture provided by a preceding Given step.
+    program : str
+        The program name captured from the step text.
 
     """
-    assert catalogue.is_allowed(CARGO), (
-        "the lading catalogue must accept cargo as an allowed program"
-    )
-    assert CARGO in catalogue.allowlist, (
-        "cargo must appear in the catalogue's allowlist"
-    )
-
-
-@then("git should be in the allowlist")
-def then_git_in_allowlist(catalogue: ProgramCatalogue) -> None:
-    """Assert that git is registered in the catalogue.
-
-    Parameters
-    ----------
-    catalogue : ProgramCatalogue
-        The catalogue fixture provided by a preceding Given step.
-
-    """
-    assert catalogue.is_allowed(GIT), (
-        "the lading catalogue must accept git as an allowed program"
-    )
-    assert GIT in catalogue.allowlist, "git must appear in the catalogue's allowlist"
+    _assert_in_allowlist(catalogue, program)
 
 
 @when(
-    parsers.re(r"I construct a cargo command with arguments (?P<args>.+)"),
+    parsers.re(
+        r"I construct a (?P<program>cargo|git) command with arguments (?P<args>.+)"
+    ),
     target_fixture="constructed_command",
 )
-def when_construct_cargo_command(
+def when_construct_program_command(
     catalogue_context: ProgramCatalogue,
+    program: str,
     args: str,
 ) -> SafeCmd:
-    """Construct a cargo command with the given arguments.
+    """Construct a command for the named program with the given arguments.
 
     Parameters
     ----------
     catalogue_context : ProgramCatalogue
         The catalogue fixture provided by a preceding Given step.
+    program : str
+        The program name captured from the step text.
     args : str
         Space-separated quoted arguments from the step text.
 
     Returns
     -------
     SafeCmd
-        The constructed command object with cargo as the program.
+        The constructed command object with the named program.
 
     """
-    return _construct_command_with_args(catalogue_context, CARGO, args)
-
-
-@when(
-    parsers.re(r"I construct a git command with arguments (?P<args>.+)"),
-    target_fixture="constructed_command",
-)
-def when_construct_git_command(
-    catalogue_context: ProgramCatalogue,
-    args: str,
-) -> SafeCmd:
-    """Construct a git command with the given arguments.
-
-    Parameters
-    ----------
-    catalogue_context : ProgramCatalogue
-        The catalogue fixture provided by a preceding Given step.
-    args : str
-        Space-separated quoted arguments from the step text.
-
-    Returns
-    -------
-    SafeCmd
-        The constructed command object with git as the program.
-
-    """
-    return _construct_command_with_args(catalogue_context, GIT, args)
+    return _construct_command_with_args(catalogue_context, Program(program), args)
 
 
 @when(

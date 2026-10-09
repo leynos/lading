@@ -48,7 +48,7 @@ jobs:
           # linter behaves identically across the uv tool, the synced
           # virtualenv, and developer PATH. All three sites move together, and
           # the `ruff==` dev dependency is what Dependabot bumps.
-          uv tool install ruff==0.16.9
+          uv tool install ruff==0.16.10
 
       - name: Install mdtablefix
         # `make check-fmt` runs `mdtablefix --check --git`; 0.6.0 is the

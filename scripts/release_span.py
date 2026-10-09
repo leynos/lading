@@ -121,7 +121,7 @@ def record_gh_span(
     *,
     operation: str = _OPERATION,
     clock: cabc.Callable[[], float] = time.monotonic,
-) -> cabc.Iterator[cabc.Callable[[int], None]]:
+) -> cabc.Generator[cabc.Callable[[int], None]]:
     """Time one ``gh`` invocation and always write a span record.
 
     Parameters

@@ -4,6 +4,7 @@ Covers ``cli.main`` selecting a command, rejecting a missing or invalid
 subcommand, and translating a rejected ``--log-level`` into an exit code.
 """
 
+import dataclasses as dc
 import logging
 import typing as typ
 from pathlib import Path
@@ -122,58 +123,73 @@ def test_main_handles_invalid_subcommand(
     )
 
 
-@pytest.mark.usefixtures("minimal_config")
-@pytest.mark.parametrize(
-    ("env_value", "sentinel_state"),
-    [
-        pytest.param(None, "present", id="default-info"),
-        pytest.param("INFO", "present", id="explicit-info"),
-        pytest.param("WARNING", "absent", id="suppress-info"),
-    ],
+@dc.dataclass(frozen=True, slots=True)
+class _LogLevelCase:
+    """One ``LADING_LOG_LEVEL`` input and the sentinel visibility it implies."""
+
+    env_value: str | None
+    sentinel_visible: bool
+
+
+_LOG_LEVEL_CASES = (
+    pytest.param(_LogLevelCase(None, sentinel_visible=True), id="default-info"),
+    pytest.param(_LogLevelCase("INFO", sentinel_visible=True), id="explicit-info"),
+    pytest.param(_LogLevelCase("WARNING", sentinel_visible=False), id="suppress-info"),
 )
-def test_main_emits_publish_command_logs(
-    capsys: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    env_value: str | None,
-    sentinel_state: typ.Literal["present", "absent"],
+
+
+def _fake_publish_run(
+    workspace_root: Path,
+    configuration: object,
+    workspace_model: object,
+    *,
+    options: object | None = None,
+) -> str:
+    """Stand in for ``publish.run`` and emit one INFO and one WARNING record."""
+    del workspace_root, configuration, workspace_model, options
+    logger = logging.getLogger("lading.commands.publish")
+    logger.info("Sentinel command log")
+    logger.warning("Elevated sentinel command log")
+    return "done"
+
+
+def _assert_log_level_visibility(
+    capsys: pytest.CaptureFixture[str], case: _LogLevelCase
 ) -> None:
-    """Ensure publish logging honours ``LADING_LOG_LEVEL``."""
-    workspace_graph = make_workspace(tmp_path.resolve())
-
-    def fake_run(
-        workspace_root: Path,
-        configuration: object,
-        workspace_model: object,
-        *,
-        options: object | None = None,
-    ) -> str:
-        logging.getLogger("lading.commands.publish").info("Sentinel command log")
-        logging.getLogger("lading.commands.publish").warning(
-            "Elevated sentinel command log"
-        )
-        return "done"
-
-    monkeypatch.setattr(publish_command, "run", fake_run)
-    monkeypatch.setattr(cli, "load_workspace", lambda _: workspace_graph)
+    """Assert the INFO sentinel follows the case, while the WARNING always shows."""
     sentinel = "Sentinel command log"
     elevated = "Elevated sentinel command log"
-
-    with preserve_root_logger():
-        if env_value is None:
-            monkeypatch.delenv(cli.LOG_LEVEL_ENV_VAR, raising=False)
-        else:
-            monkeypatch.setenv(cli.LOG_LEVEL_ENV_VAR, env_value)
-
-        exit_code = cli.main(["publish", "--workspace-root", str(tmp_path)])
-        assert exit_code == 0, "the publish invocation must exit cleanly"
-        captured = capsys.readouterr()
-
-    if sentinel_state == "present":
+    captured = capsys.readouterr()
+    if case.sentinel_visible:
         assert sentinel in captured.err, "the info log must be emitted at INFO level"
     else:
         assert sentinel not in captured.err, "the info log must stay hidden below INFO"
     assert elevated in captured.err, "the warning log must always be emitted"
+
+
+@pytest.mark.usefixtures("minimal_config")
+@pytest.mark.parametrize("case", _LOG_LEVEL_CASES)
+def test_main_emits_publish_command_logs(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    case: _LogLevelCase,
+) -> None:
+    """Ensure publish logging honours ``LADING_LOG_LEVEL``."""
+    workspace_graph = make_workspace(tmp_path.resolve())
+    monkeypatch.setattr(publish_command, "run", _fake_publish_run)
+    monkeypatch.setattr(cli, "load_workspace", lambda _: workspace_graph)
+
+    with preserve_root_logger():
+        if case.env_value is None:
+            monkeypatch.delenv(cli.LOG_LEVEL_ENV_VAR, raising=False)
+        else:
+            monkeypatch.setenv(cli.LOG_LEVEL_ENV_VAR, case.env_value)
+
+        exit_code = cli.main(["publish", "--workspace-root", str(tmp_path)])
+        assert exit_code == 0, "the publish invocation must exit cleanly"
+
+    _assert_log_level_visibility(capsys, case)
 
 
 def test_main_uses_defaults_when_configuration_missing(

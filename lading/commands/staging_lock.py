@@ -191,7 +191,7 @@ def _acquire_for_removal(root: Path) -> tuple[bool, io.BufferedRandom | None]:
 
 
 @contextlib.contextmanager
-def hold_for_removal(root: Path) -> cabc.Iterator[bool]:
+def hold_for_removal(root: Path) -> cabc.Generator[bool]:
     """Claim ``root`` for deletion, holding the claim for the block's life.
 
     Asking whether a tree is in use and then deleting it are two moments, and

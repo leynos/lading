@@ -16,6 +16,9 @@ if typ.TYPE_CHECKING:
     from lading.runtime import SubprocessContext
 
 
+_PROBE_SCRIPT = "print('unused')"
+
+
 def test_invoke_logs_command_with_cwd(
     tmp_path: Path, caplog: pytest.LogCaptureFixture, use_real_invoke: None
 ) -> None:
@@ -83,56 +86,44 @@ sys.stderr.flush()
     )
 
 
-def test_cmd_mox_passthrough_streams_output(
-    cmd_mox: CmdMox,
-    request: pytest.FixtureRequest,
-) -> None:
-    """cmd-mox passthrough should stream via the subprocess runner."""
-    capsys: pytest.CaptureFixture[str] = request.getfixturevalue("capsys")
-    caplog: pytest.LogCaptureFixture = request.getfixturevalue("caplog")
-    monkeypatch: pytest.MonkeyPatch = request.getfixturevalue("monkeypatch")
-    request.getfixturevalue("use_real_invoke")
-    caplog.set_level(logging.INFO, logger="lading.testing.cmd_mox_runner")
-    monkeypatch.setenv("LADING_USE_CMD_MOX_STUB", "1")
-    script = "print('unused')"
-    cmd_mox.spy(sys.executable).with_args("-c", script).passthrough()
+class _PassthroughProbe:
+    """Records what the passthrough path passed to its collaborators.
 
-    calls: list[tuple[str, tuple[str, ...], str | None]] = []
+    The stub runner mimics the child writing to the real streams, and the
+    echo double records any fallback rendering so the test can prove the
+    fallback stayed dormant.
+    """
 
-    def fake_invoke(
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, tuple[str, ...], str | None]] = []
+        self.echo_payloads: list[str] = []
+
+    def invoke(
+        self,
         program: str,
         args: tuple[str, ...],
         context: SubprocessContext,
     ) -> tuple[int, str, str]:
-        calls.append((program, args, context.stdin_data))
+        """Stand in for ``invoke_via_subprocess``, relaying the child's output."""
+        self.calls.append((program, args, context.stdin_data))
         sys.stdout.write("alpha")
         sys.stdout.flush()
         sys.stderr.write("beta")
         sys.stderr.flush()
         return 0, "alpha", "beta"
 
-    echo_payloads: list[str] = []
-
-    def fake_echo(payload: str, sink: typ.TextIO) -> None:
+    def echo(self, payload: str, sink: typ.TextIO) -> None:
+        """Stand in for ``_echo_buffered_output`` and record any invocation."""
         del sink
-        echo_payloads.append(payload)
+        self.echo_payloads.append(payload)
 
-    monkeypatch.setattr(
-        cmd_mox_runner,
-        "invoke_via_subprocess",
-        fake_invoke,
-    )
-    monkeypatch.setattr(cmd_mox_runner, "_echo_buffered_output", fake_echo)
 
-    exit_code, stdout, stderr = cmd_mox_runner.cmd_mox_runner((
-        sys.executable,
-        "-c",
-        script,
-    ))
-
-    assert exit_code == 0, "the passthrough stub must exit successfully"
-    assert stdout == "alpha", "the passthrough must return the stub's stdout"
-    assert stderr == "beta", "the passthrough must return the stub's stderr"
+def _assert_passthrough_streamed(
+    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+    probe: _PassthroughProbe,
+) -> None:
+    """Assert the passthrough relayed output and logged exactly once."""
     captured = capsys.readouterr()
     assert captured.out == "alpha", (
         "the stub's stdout must be streamed to the parent process"
@@ -140,14 +131,23 @@ def test_cmd_mox_passthrough_streams_output(
     assert captured.err == "beta", (
         "the stub's stderr must be streamed to the parent process"
     )
-    assert calls == [(sys.executable, ("-c", script), None)], (
-        "the runner must receive the stubbed argv with no stdin payload"
+    assert len(probe.calls) == 1, "the runner must be invoked exactly once for the stub"
+    program, args, stdin_data = probe.calls[0]
+    assert (program, args) == (sys.executable, ("-c", _PROBE_SCRIPT)), (
+        "the runner must receive the stubbed argv"
     )
-    assert not echo_payloads, (
+    assert stdin_data is None, "the stub must receive no stdin payload"
+    assert not probe.echo_payloads, (
         "the echo fallback must not run when the stub streams output itself"
     )
-    # The passthrough path bypasses ``subprocess_runner``, so it must emit the
-    # single INFO invocation record itself (regression for #104).
+
+
+# The passthrough path bypasses ``subprocess_runner``, so it must emit the
+# single INFO invocation record itself (regression for #104).
+def _assert_single_invocation_record(
+    caplog: pytest.LogCaptureFixture, script: str
+) -> None:
+    """Assert exactly one INFO invocation record naming the command line."""
     invocation_records = [
         record
         for record in caplog.records
@@ -166,3 +166,33 @@ def test_cmd_mox_passthrough_streams_output(
     assert "unused" in message, (
         "the logged command line must include the script payload"
     )
+
+
+def test_cmd_mox_passthrough_streams_output(
+    cmd_mox: CmdMox,
+    request: pytest.FixtureRequest,
+) -> None:
+    """cmd-mox passthrough should stream via the subprocess runner."""
+    capsys: pytest.CaptureFixture[str] = request.getfixturevalue("capsys")
+    caplog: pytest.LogCaptureFixture = request.getfixturevalue("caplog")
+    monkeypatch: pytest.MonkeyPatch = request.getfixturevalue("monkeypatch")
+    request.getfixturevalue("use_real_invoke")
+    caplog.set_level(logging.INFO, logger="lading.testing.cmd_mox_runner")
+    monkeypatch.setenv("LADING_USE_CMD_MOX_STUB", "1")
+    cmd_mox.spy(sys.executable).with_args("-c", _PROBE_SCRIPT).passthrough()
+
+    probe = _PassthroughProbe()
+    monkeypatch.setattr(cmd_mox_runner, "invoke_via_subprocess", probe.invoke)
+    monkeypatch.setattr(cmd_mox_runner, "_echo_buffered_output", probe.echo)
+
+    exit_code, stdout, stderr = cmd_mox_runner.cmd_mox_runner((
+        sys.executable,
+        "-c",
+        _PROBE_SCRIPT,
+    ))
+
+    assert exit_code == 0, "the passthrough stub must exit successfully"
+    assert stdout == "alpha", "the passthrough must return the stub's stdout"
+    assert stderr == "beta", "the passthrough must return the stub's stderr"
+    _assert_passthrough_streamed(capsys, caplog, probe)
+    _assert_single_invocation_record(caplog, _PROBE_SCRIPT)

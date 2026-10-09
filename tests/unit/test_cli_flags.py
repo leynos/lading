@@ -79,24 +79,46 @@ def test_publish_cli_logs_dry_run_default_flag_resolution(
     ) in caplog.messages, "the default resolution should be logged for the operator"
 
 
-@pytest.mark.parametrize(
-    ("flag", "live", "expected"),
-    [
-        pytest.param(None, True, False, id="none-live"),
-        pytest.param(None, False, True, id="none-dry-run"),
-        pytest.param(True, True, True, id="true-live"),
-        pytest.param(True, False, True, id="true-dry-run"),
-        pytest.param(False, True, False, id="false-live"),
-        pytest.param(False, False, False, id="false-dry-run"),
-    ],
+@dc.dataclass(frozen=True, slots=True)
+class _UnpublishedDepsCase:
+    """One ``--allow-unpublished-workspace-deps`` input and its resolution.
+
+    ``flag`` is the nullable CLI value, ``live`` selects the publish mode, and
+    ``expected`` is the boolean the resolution must produce.
+    """
+
+    flag: bool | None
+    live: bool
+    expected: bool
+
+
+_UNPUBLISHED_DEPS_CASES = (
+    pytest.param(
+        _UnpublishedDepsCase(flag=None, live=True, expected=False), id="none-live"
+    ),
+    pytest.param(
+        _UnpublishedDepsCase(flag=None, live=False, expected=True), id="none-dry-run"
+    ),
+    pytest.param(
+        _UnpublishedDepsCase(flag=True, live=True, expected=True), id="true-live"
+    ),
+    pytest.param(
+        _UnpublishedDepsCase(flag=True, live=False, expected=True), id="true-dry-run"
+    ),
+    pytest.param(
+        _UnpublishedDepsCase(flag=False, live=True, expected=False), id="false-live"
+    ),
+    pytest.param(
+        _UnpublishedDepsCase(flag=False, live=False, expected=False), id="false-dry-run"
+    ),
 )
+
+
+@pytest.mark.parametrize("case", _UNPUBLISHED_DEPS_CASES)
 def test_resolve_allow_unpublished_workspace_deps_matrix(
     caplog: pytest.LogCaptureFixture,
     snapshot: SnapshotAssertion,
-    *,
-    flag: bool | None,
-    live: bool,
-    expected: bool,
+    case: _UnpublishedDepsCase,
 ) -> None:
     """Each input combination resolves correctly and logs exactly once at DEBUG.
 
@@ -105,12 +127,13 @@ def test_resolve_allow_unpublished_workspace_deps_matrix(
     caplog.set_level(logging.DEBUG, logger="lading.cli")
 
     resolved = cli._resolve_allow_unpublished_workspace_deps(
-        live=live,
-        allow_unpublished_workspace_deps=flag,
+        live=case.live,
+        allow_unpublished_workspace_deps=case.flag,
     )
 
-    assert resolved is expected, (
-        f"flag={flag!r} live={live!r}: expected {expected!r}, got {resolved!r}"
+    assert resolved is case.expected, (
+        f"flag={case.flag!r} live={case.live!r}: expected {case.expected!r}, "
+        f"got {resolved!r}"
     )
     debug_records = [
         record
@@ -118,7 +141,7 @@ def test_resolve_allow_unpublished_workspace_deps_matrix(
         if record.levelno == logging.DEBUG and record.name == "lading.cli"
     ]
     assert len(debug_records) == 1, (
-        f"flag={flag!r} live={live!r}: expected one DEBUG record, "
+        f"flag={case.flag!r} live={case.live!r}: expected one DEBUG record, "
         f"got {len(debug_records)}"
     )
     assert debug_records[0].getMessage() == snapshot, (

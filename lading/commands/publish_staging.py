@@ -323,7 +323,7 @@ def staged_workspace(
     plan: PublishPlan,
     *,
     options: PublishOptions | None = None,
-) -> cabc.Iterator[StagedWorkspace]:
+) -> cabc.Generator[StagedWorkspace]:
     """Stage a workspace copy and remove it when the block ends.
 
     This is the form callers should prefer. The removal runs on success, on an

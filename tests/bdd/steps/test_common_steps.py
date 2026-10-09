@@ -234,4 +234,9 @@ def _then_dependency_requirement_step(
 from . import test_bump_steps as _bump_steps  # ruff: ignore[module-import-not-at-top-of-file, unused-import]  # isort: skip
 from . import test_publish_given_steps as _publish_given  # ruff: ignore[module-import-not-at-top-of-file, unused-import]  # isort: skip
 from . import test_publish_when_steps as _publish_when  # ruff: ignore[module-import-not-at-top-of-file, unused-import]  # isort: skip
-from . import test_publish_then_steps as _publish_then  # ruff: ignore[module-import-not-at-top-of-file, unused-import]  # isort: skip
+from . import test_publish_diagnostics_then_steps as _publish_diagnostics  # ruff: ignore[module-import-not-at-top-of-file, unused-import]  # isort: skip
+from . import test_publish_invocation_order_then_steps as _publish_invocation_order  # ruff: ignore[module-import-not-at-top-of-file, unused-import]  # isort: skip
+from . import test_publish_plan_then_steps as _publish_plan  # ruff: ignore[module-import-not-at-top-of-file, unused-import]  # isort: skip
+from . import test_publish_preflight_then_steps as _publish_preflight  # ruff: ignore[module-import-not-at-top-of-file, unused-import]  # isort: skip
+from . import test_publish_sccache_then_steps as _publish_sccache  # ruff: ignore[module-import-not-at-top-of-file, unused-import]  # isort: skip
+from . import test_publish_staged_manifest_then_steps as _publish_staged  # ruff: ignore[module-import-not-at-top-of-file, unused-import]  # isort: skip

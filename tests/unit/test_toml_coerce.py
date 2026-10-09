@@ -1,5 +1,6 @@
 """Property and snapshot tests for :mod:`lading.toml_coerce` (issue #108)."""
 
+import collections.abc as cabc
 import dataclasses as dc
 import typing as typ
 
@@ -13,14 +14,19 @@ from lading.exceptions import LadingError
 from lading.workspace.models import WorkspaceModelError
 
 if typ.TYPE_CHECKING:
-    import collections.abc as cabc
-
     from syrupy.assertion import SnapshotAssertion
 
 _ERRORS = (ConfigurationError, WorkspaceModelError)
 _error_type = st.sampled_from(_ERRORS)
 _non_string = st.one_of(st.integers(), st.booleans(), st.floats(allow_nan=False))
 _strings = st.text(max_size=12)
+
+# The flat sequence coercers share one accept/reject contract, so the property
+# tests below cover them through a single parametrized case each.
+_SEQUENCE_COERCERS = (
+    ("string_tuple", toml_coerce.string_tuple, "demo.list"),
+    ("validate_string_sequence", toml_coerce.validate_string_sequence, "demo.seq"),
+)
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -100,66 +106,77 @@ class TestTomlCoerce:
             "the rejection must name the concrete type it received"
         )
 
-    @given(values=st.lists(_strings, max_size=6), error=_error_type)
+    @given(value=st.lists(_strings, max_size=6), error=_error_type)
     def test_string_tuple_round_trips_sequences(
-        self, values: list[str], error: type[LadingError]
+        self, value: list[str], error: type[LadingError]
     ) -> None:
-        """String sequences coerce to equal tuples; None yields empty."""
-        assert toml_coerce.string_tuple(values, "f", error=error) == tuple(values), (
+        """Flat string sequences coerce to equal tuples; None yields empty."""
+        assert toml_coerce.string_tuple(value, "f", error=error) == tuple(value), (
             "a list of strings must coerce to the equal tuple"
         )
         assert not toml_coerce.string_tuple(None, "f", error=error), (
             "None must coerce to the empty tuple"
         )
 
+    @given(
+        value=st.lists(st.lists(_strings, max_size=4), max_size=4),
+        error=_error_type,
+    )
+    def test_string_matrix_round_trips_nested_sequences(
+        self, value: list[list[str]], error: type[LadingError]
+    ) -> None:
+        """Nested string sequences coerce to a tuple of tuples; None yields empty."""
+        expected = tuple(tuple(row) for row in value)
+        assert toml_coerce.string_matrix(value, "f", error=error) == expected, (
+            "nested string lists must coerce to the equal tuple of tuples"
+        )
+        assert not toml_coerce.string_matrix(None, "f", error=error), (
+            "None must coerce to the empty matrix"
+        )
+
+    @pytest.mark.parametrize(
+        "coercer",
+        [
+            pytest.param(coercer, id=label)
+            for label, coercer, _field in _SEQUENCE_COERCERS
+        ],
+    )
     @given(values=st.lists(_strings, max_size=6), error=_error_type)
     def test_validate_string_sequence_accepts_strings(
-        self, values: list[str], error: type[LadingError]
+        self,
+        coercer: cabc.Callable[..., object],
+        values: list[str],
+        error: type[LadingError],
     ) -> None:
         """A sequence of only strings returns them as a tuple."""
-        assert toml_coerce.validate_string_sequence(values, "f", error=error) == tuple(
-            values
-        ), "an all-string sequence must coerce to an equal tuple"
+        assert coercer(values, "f", error=error) == tuple(values), (
+            "an all-string sequence must coerce to an equal tuple"
+        )
 
-    @given(
-        values=st.lists(_strings, max_size=3),
-        bad_index=st.integers(min_value=0, max_value=3),
-        bad=_non_string,
-        error=_error_type,
+    @pytest.mark.parametrize(
+        ("coercer", "field_name"),
+        [
+            pytest.param(coercer, field, id=label)
+            for label, coercer, field in _SEQUENCE_COERCERS
+        ],
     )
-    def test_string_tuple_rejects_non_string_entries(
+    @given(
+        case=st.builds(
+            _IndexedRejectionCase,
+            values=st.lists(_strings, max_size=3),
+            bad_index=st.integers(min_value=0, max_value=3),
+            bad=_non_string,
+            error=_error_type,
+        )
+    )
+    def test_string_sequence_rejects_non_string_entries(
         self,
-        values: list[str],
-        bad_index: int,
-        bad: object,
-        error: type[LadingError],
+        coercer: cabc.Callable[..., object],
+        field_name: str,
+        case: _IndexedRejectionCase,
     ) -> None:
         """A non-string entry is rejected with its index in the field name."""
-        _assert_rejects_indexed_non_string(
-            toml_coerce.string_tuple,
-            "demo.list",
-            _IndexedRejectionCase(values, bad_index, bad, error),
-        )
-
-    @given(
-        values=st.lists(_strings, max_size=3),
-        bad_index=st.integers(min_value=0, max_value=3),
-        bad=_non_string,
-        error=_error_type,
-    )
-    def test_validate_string_sequence_rejects_non_strings(
-        self,
-        values: list[str],
-        bad_index: int,
-        bad: object,
-        error: type[LadingError],
-    ) -> None:
-        """A non-string entry raises with its index in the field name."""
-        _assert_rejects_indexed_non_string(
-            toml_coerce.validate_string_sequence,
-            "demo.seq",
-            _IndexedRejectionCase(values, bad_index, bad, error),
-        )
+        _assert_rejects_indexed_non_string(coercer, field_name, case)
 
     @given(value=st.lists(_strings, max_size=6), error=_error_type)
     def test_expect_sequence_accepts_non_string_sequences(
@@ -213,22 +230,6 @@ class TestTomlCoerce:
         """Empty sequences, strings, bytes, and scalars are rejected."""
         assert toml_coerce.is_non_empty_sequence(value) is False, (
             "strings, bytes, and scalars must never count as non-empty sequences"
-        )
-
-    @given(
-        value=st.lists(st.lists(_strings, max_size=4), max_size=4),
-        error=_error_type,
-    )
-    def test_string_matrix_round_trips_nested_sequences(
-        self, value: list[list[str]], error: type[LadingError]
-    ) -> None:
-        """Nested string sequences coerce to a tuple of tuples; None yields empty."""
-        expected = tuple(tuple(row) for row in value)
-        assert toml_coerce.string_matrix(value, "f", error=error) == expected, (
-            "nested string lists must coerce to the equal tuple of tuples"
-        )
-        assert not toml_coerce.string_matrix(None, "f", error=error), (
-            "None must coerce to the empty matrix"
         )
 
     @given(value=st.one_of(_strings, _non_string), error=_error_type)

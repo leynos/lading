@@ -91,13 +91,17 @@ def given_workspace_has_nested_tracked_lockfile(
 
 
 @when(
-    parsers.parse("I invoke lading bump {version} with that workspace"),
+    parsers.re(
+        r"I invoke lading bump (?P<version>\S+) with that workspace"
+        r"(?P<mode> using --dry-run)?"
+    ),
     target_fixture="cli_run",
 )
 def when_invoke_lading_bump(
     version: str,
     workspace_directory: Path,
     repo_root: Path,
+    mode: str | None,
 ) -> CliRunResult:
     """Execute the bump CLI via ``python -m`` and capture the result.
 
@@ -109,6 +113,8 @@ def when_invoke_lading_bump(
         The workspace root supplied via ``--workspace-root``.
     repo_root : Path
         The repository root used as the subprocess working directory.
+    mode : str or None
+        The optional ``using --dry-run`` suffix captured from the step text.
 
     Returns
     -------
@@ -116,36 +122,8 @@ def when_invoke_lading_bump(
         The captured CLI run details (return code, stdout, stderr, and the
         resolved workspace path).
     """
-    return _invoke_lading_bump(version, workspace_directory, repo_root)
-
-
-@when(
-    parsers.parse("I invoke lading bump {version} with that workspace using --dry-run"),
-    target_fixture="cli_run",
-)
-def when_invoke_lading_bump_dry_run(
-    version: str,
-    workspace_directory: Path,
-    repo_root: Path,
-) -> CliRunResult:
-    """Execute the bump CLI in dry-run mode via ``python -m``.
-
-    Parameters
-    ----------
-    version : str
-        The version argument passed to the ``bump`` subcommand.
-    workspace_directory : Path
-        The workspace root supplied via ``--workspace-root``.
-    repo_root : Path
-        The repository root used as the subprocess working directory.
-
-    Returns
-    -------
-    CliRunResult
-        The captured CLI run details (return code, stdout, stderr, and the
-        resolved workspace path).
-    """
-    return _invoke_lading_bump(version, workspace_directory, repo_root, "--dry-run")
+    extra = ("--dry-run",) if mode else ()
+    return _invoke_lading_bump(version, workspace_directory, repo_root, *extra)
 
 
 @then(parsers.parse('the bump command reports manifest updates for "{version}"'))
@@ -242,48 +220,30 @@ def then_cli_output_lists_manifest_paths(
     )
 
 
-@then(parsers.parse('the CLI output lists documentation path "{expected}"'))
-def then_cli_output_lists_documentation_path(
-    cli_run: dict[str, typ.Any], expected: str
+_LISTED_PATH_LABELS = {
+    "documentation": "changed documentation file",
+    "README": "transposed README",
+    "lockfile": "refreshed lockfile",
+}
+
+
+@then(
+    parsers.re(
+        r'the CLI output lists (?P<kind>documentation|README|lockfile) path'
+        r' "(?P<expected>[^"]+)"'
+    )
+)
+def then_cli_output_lists_path(
+    cli_run: dict[str, typ.Any], kind: str, expected: str
 ) -> None:
-    """Assert that the CLI output includes ``expected`` as a documentation line."""
+    """Assert that the CLI output includes ``expected`` as a ``kind`` path line."""
     assert cli_run["returncode"] == 0, (
-        "listing a documentation path requires a successful bump run; "
+        f"listing a {kind} path requires a successful bump run; "
         f"stderr:\n{cli_run['stderr']}"
     )
     stdout_lines = [line.strip() for line in cli_run["stdout"].splitlines()]
     assert expected in stdout_lines, (
-        f"the output must acknowledge the changed documentation file {expected!r}"
-    )
-
-
-@then(parsers.parse('the CLI output lists README path "{expected}"'))
-def then_cli_output_lists_readme_path(
-    cli_run: dict[str, typ.Any], expected: str
-) -> None:
-    """Assert that the CLI output includes ``expected`` as a README line."""
-    assert cli_run["returncode"] == 0, (
-        "listing a README path requires a successful bump run; "
-        f"stderr:\n{cli_run['stderr']}"
-    )
-    stdout_lines = [line.strip() for line in cli_run["stdout"].splitlines()]
-    assert expected in stdout_lines, (
-        f"the output must acknowledge the transposed README {expected!r}"
-    )
-
-
-@then(parsers.parse('the CLI output lists lockfile path "{expected}"'))
-def then_cli_output_lists_lockfile_path(
-    cli_run: dict[str, typ.Any], expected: str
-) -> None:
-    """Assert that the CLI output includes ``expected`` as a lockfile line."""
-    assert cli_run["returncode"] == 0, (
-        "listing a lockfile path requires a successful bump run; "
-        f"stderr:\n{cli_run['stderr']}"
-    )
-    stdout_lines = [line.strip() for line in cli_run["stdout"].splitlines()]
-    assert expected in stdout_lines, (
-        f"the output must acknowledge the refreshed lockfile {expected!r}"
+        f"the output must acknowledge the {_LISTED_PATH_LABELS[kind]} {expected!r}"
     )
 
 

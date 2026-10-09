@@ -389,7 +389,7 @@ def _build_env_restore_dict(var_name: str) -> dict[str, str]:
 
 
 @contextlib.contextmanager
-def _cmd_mox_stub_env_enabled() -> cabc.Iterator[None]:
+def _cmd_mox_stub_env_enabled() -> cabc.Generator[None]:
     """Temporarily enable the lading cmd-mox stub environment flag."""
     var_name = "LADING_USE_CMD_MOX_STUB"
     restore = _build_env_restore_dict(var_name)
