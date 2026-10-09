@@ -20,6 +20,9 @@ updates:
       semver-major-days: 14
   - package-ecosystem: "github-actions"
     groups:
+      shared-actions:
+        patterns:
+          - 'leynos/shared-actions*'
       github-actions:
         patterns:
           - '*'
