@@ -71,6 +71,17 @@ stop. Locally, `make fmt` calls `mdtablefix` and `markdownlint-cli2 --fix`
 directly, and `.markdownlint-cli2.jsonc` is the canonical configuration, so the
 rules the action applies are the rules a contributor sees.
 
+`make fmt` and `make check-fmt` run `mdtablefix` over the Markdown files Git
+tracks and the untracked files it does not ignore
+(`--git --include-untracked`), with
+`--wrap --renumber --breaks --ellipsis --fences`. They need mdtablefix 0.6.0 or
+later, the first release with `--check` and `--git`. CI installs 0.6.1 through
+the shared `install-mdtablefix` action, with the pin in
+`.github/workflows/ci.yml`. 0.6.1 fixes the 0.6.0 bugs that changed Markdown
+content: `--wrap` breaking text with no whitespace, Setext headings turned into
+rules, and `--renumber` changing a list's start. Install the same version
+locally with `cargo binstall mdtablefix@0.6.1`.
+
 `tests/workflow_contracts/test_coverage_ownership.py` holds all three shapes,
 and enumerates the workflow directory rather than naming files, in both the
 `.yml` and `.yaml` spellings, so a lane added later is covered the day it
