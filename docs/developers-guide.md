@@ -1085,8 +1085,8 @@ defaults are:
 - `build_directory=None` — create a fresh temporary directory for staging.
 - `preserve_symlinks=True` — preserve symbolic links in the staged workspace.
 - `cleanup=True` — remove the staged copy when publication ends, including
-  when it fails or is interrupted. This defaulted to `False` before issue
-  #269, so every run leaked a copy of the workspace.
+  when it fails or is interrupted. This defaulted to `False` before issue #269,
+  so every run leaked a copy of the workspace.
 - `sccache_stats=False` — query the sccache binary named by `RUSTC_WRAPPER`
   around every cargo build and log one compiler-cache line per invocation.
 - `sccache_stats_json=None` — also write the JSON report to this path
