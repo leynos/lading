@@ -87,9 +87,10 @@
 - **For Python files:**
   - **Testing:** Passes all relevant unit and behavioural tests (`make test`).
   - **Linting:** Passes the complete `make lint` pipeline: Ruff, Interrogate,
-    Pylint, and the blocking, strict, production-only Skylos dead-code scan.
-    Skylos runs under Python 3.14 because it parses source with its own runtime
-    AST; pinning that interpreter avoids phantom findings for newer syntax.
+    Pylint, the blocking, strict, production-only Skylos dead-code scan, and the
+    blocking code-duplication gate. Skylos runs under Python 3.14 because it
+    parses source with its own runtime AST; pinning that interpreter avoids
+    phantom findings for newer syntax.
     Investigate every Skylos finding and remove genuine dead code. After
     verifying a false positive,
     prefer a precise, typed entry-point rule in `[tool.skylos.dead_code]` with
@@ -100,6 +101,22 @@
     non-whitespace content; `NAME` is reserved by WSL for the host name and
     must not be used for Skylos symbols. Skylos records the symbol only, so
     retain the caller-specific rationale with the reviewing change.
+  - **Code duplication:** Passes the blocking nose duplication gate
+    (`make duplication`, run as the final stage of `make lint`). The objective
+    is to remove unjustified repeated logic and keep intentional parallels
+    explicitly reviewable, **not** to reach a low duplication count through
+    indiscriminate abstraction or suppression. Investigate every reported
+    family and extract the smallest coherent shared implementation at the
+    correct architectural layer when the repetition is genuine. When the
+    parallel structure is intentional, record it with `make duplication-allow`
+    (see the developer guide for its arguments), naming the specific
+    independent contracts or architectural boundary an extraction would wrongly
+    couple. Never reduce the ranking
+    budget, raise the size floor, or widen an exception merely to obtain a
+    green run. Never use a repository-wide wildcard, a mass-generated reason,
+    or automatic allowlisting. Run `make install-nose` first if the pinned
+    detector is absent. [ADR-007](docs/adr/007-adopt-nose-duplication-gate.md)
+    records the policy.
   - **Formatting:** Adheres to formatting standards (`make check-fmt`; use
     `make fmt` to apply fixes).
   - **Typechecking:** Passes type checking (`make typecheck`).

@@ -191,6 +191,11 @@ cython_debug/
 .skylos/contribution/
 .skylos-whitelist.lock
 
+# Pinned tool binaries installed by `make install-nose`, and the sidecar lock
+# held while `make duplication-allow` rewrites pyproject.toml:
+.tools/
+.pyproject.toml.duplication-gate.lock
+
 # PyPI configuration file
 .pypirc
 

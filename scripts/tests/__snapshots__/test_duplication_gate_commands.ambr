@@ -1,0 +1,10 @@
+# serializer version: 1
+# name: TestGateCommands.test_check_reports_blocking_findings
+  '''
+  duplicate code: 1 unsuppressed family/families
+    lading/a.py:1-20 ~ lading/b.py:30-49 beta (copy-paste, value 22.1)
+  Extract the shared logic into one helper, or record a considered exception:
+    make duplication-allow FIRST='<path[::name]>' [SECOND='<path[::name]>'] REASON='<why this stays>'
+  
+  '''
+# ---
