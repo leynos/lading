@@ -1798,16 +1798,16 @@ The record message is `relay observability event: %s`, with a frozen
 `RelayEvent` as its sole parameter. The event contains exactly these bounded
 fields:
 
-| Field | Stable values | Meaning |
-| --- | --- | --- |
-| `operation` | `relay_mirror` | Mirroring decoded child output to a parent stream. |
-| `stream` | `stdout`, `stderr` | The child stream whose mirror changed state. |
-| `transition` | `text_to_binary`, `disable_mirroring` | Select the parent binary buffer, or stop parent-stream mirroring. |
-| `error_category` | `unicode_encode`, `broken_pipe` | A parent encoding rejection, or a closed parent pipe. |
+| Field            | Stable values                         | Meaning                                                           |
+| ---------------- | ------------------------------------- | ----------------------------------------------------------------- |
+| `operation`      | `relay_mirror`                        | Mirroring decoded child output to a parent stream.                |
+| `stream`         | `stdout`, `stderr`                    | The child stream whose mirror changed state.                      |
+| `transition`     | `text_to_binary`, `disable_mirroring` | Select the parent binary buffer, or stop parent-stream mirroring. |
+| `error_category` | `unicode_encode`, `broken_pipe`       | A parent encoding rejection, or a closed parent pipe.             |
 
-Events never contain subprocess payloads, decoded output, command arguments,
-or other unbounded subprocess data. This per-decision contract is separate
-from the aggregate exit-time metrics in `lading.utils.metrics`; see
+Events never contain subprocess payloads, decoded output, command arguments, or
+other unbounded subprocess data. This per-decision contract is separate from
+the aggregate exit-time metrics in `lading.utils.metrics`; see
 [ADR-007](adr/007-relay-observability-events.md).
 
 The cmd-mox runner validates `CMOX_IPC_TIMEOUT` in `_resolve_cmd_mox_timeout`.
