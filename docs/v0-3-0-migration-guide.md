@@ -6,10 +6,11 @@ configuration.
 
 ## Review lockfile coverage
 
-In a Git workspace, `lading bump` discovers every Git-tracked `Cargo.lock`
-outside `target/` directories and includes each lockfile's adjacent
-`Cargo.toml` manifest in regeneration. The workspace root manifest remains
-included automatically.
+In a Git workspace, `lading bump` discovers Git-tracked `Cargo.lock` files
+outside `target/` directories only when they have an adjacent `Cargo.toml`
+manifest. It includes each adjacent manifest in regeneration; standalone
+tracked lockfiles are ignored. The workspace root manifest remains included
+automatically.
 
 `bump.lockfile_manifests` extends that automatic coverage. Keep manifests in
 this setting for untracked lockfiles, including ignored fixtures. In a
@@ -31,10 +32,17 @@ output format.
 
 ## Regenerate before publishing
 
-`lading bump --no-rebuild-lockfiles` remains the escape hatch for a run where
-automatic regeneration must be skipped. It also leaves lockfiles stale when
-manifests are modified directly. Regenerate every affected lockfile before
-publishing, then run `lading publish`; the publish pre-flight reports stale
-lockfiles and the repair commands for them. See
-[publishing with fresh lockfiles](users-guide.md#3-publish-in-dry-run-mode)
-for the recovery procedure.
+`lading bump <version> --no-rebuild-lockfiles` is the escape hatch when
+automatic regeneration must be skipped. For example, run
+`lading bump 1.2.3 --no-rebuild-lockfiles`, replacing `1.2.3` with the version
+you want to set. If you use this option or modify manifests directly,
+regenerate all affected lockfiles before publishing.
+
+For Git-tracked lockfiles, `lading publish` reports stale files with repair
+commands. Its pre-flight does not check configured lockfiles that Git does not
+track, so validate and repair those manually before publishing. Regenerate an
+untracked lockfile from its adjacent manifest with
+`cargo generate-lockfile --manifest-path path/to/Cargo.toml`, replacing the
+example path with that manifest's path. See
+[publishing with fresh lockfiles](users-guide.md#3-publish-in-dry-run-mode) for
+the tracked-lockfile recovery procedure.
