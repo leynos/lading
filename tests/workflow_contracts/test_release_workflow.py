@@ -114,9 +114,10 @@ def _upload_directory(tokens: list[str]) -> str:
             return argument.partition("=")[2]
         if argument != "--directory":
             continue
-        if index + 1 == len(tokens):
-            raise ValueError("--directory must have a value")
-        return tokens[index + 1]
+        try:
+            return tokens[index + 1]
+        except IndexError as error:
+            raise ValueError("--directory must have a value") from error
     return DEFAULT_UPLOAD_DIRECTORY
 
 
@@ -148,9 +149,7 @@ def _upload_tokens(step: WorkflowStep) -> list[str]:
     assert _is_upload_command(tokens), (
         f"upload must run the checked uploader, got {tokens}"
     )
-    assert not _shell_control_operators(step), (
-        "the upload command must fail when the uploader fails"
-    )
+    assert not _shell_control_operators(step), "upload command must fail closed"
     return tokens
 
 
