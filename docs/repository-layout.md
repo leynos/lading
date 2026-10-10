@@ -20,8 +20,7 @@ The tree below is a compact orientation sketch, not a complete file listing.
 │   ├── utils/
 │   └── workspace/
 ├── scripts/
-│   ├── publish-check/
-│   └── tests/
+│   └── publish-check/
 ├── tests/
 │   ├── bdd/
 │   ├── e2e/
@@ -52,12 +51,6 @@ The tree below is a compact orientation sketch, not a complete file listing.
 | `tests/`             | Unit, integration, behavioural, end-to-end, and shared test support code.                                                         |
 
 _Table 1: Responsibilities of the top-level repository paths._
-
-`scripts/check-markdown-format.sh` backs the `make check-fmt` gate for tracked
-Markdown: it stages copies, formats them with `mdtablefix`, and compares the
-results against the sources without touching the worktree. Its process-boundary
-tests live in `scripts/tests/` alongside a small controlled-repository helper
-module, and `make test-markdown-format` runs them.
 
 ## Source package
 
