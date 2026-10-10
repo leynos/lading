@@ -91,6 +91,7 @@ def test_the_repository_parameter_names_this_repository() -> None:
     """Hold ``.github/cv005.toml`` to this repository's name."""
     config = tomllib.loads((ROOT / ".github" / "cv005.toml").read_text("utf-8"))
     assert config.get("repository") == REPOSITORY, config
+    assert config.get("interpreter") == "3.14", config
 
 
 def test_make_all_includes_the_target() -> None:

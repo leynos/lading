@@ -15,10 +15,10 @@ trigger implies, so a trigger added later cannot reach an upload from a branch
 CodeScene does not analyse. Runs queue per ref rather than cancelling one
 another, because two pushes in quick succession would otherwise contend for the
 upload and for the ratchet baseline cache, and a cancelled run leaves main's
-coverage unpublished. Pull-request CI runs the suite and publishes its
-Cobertura report as a workflow artefact; it does not check coverage against
-CodeScene, and it no longer fetches full Git history, which existed only so the
-removed gate could reach a merge base.
+coverage unpublished. Pull-request CI runs the suite and measures coverage for
+its own ratchet only: it uploads no coverage artefact, does not check coverage
+against CodeScene, and no longer fetches full Git history, which existed only
+so the removed gate could reach a merge base.
 
 The token itself never enters an `env` on the publisher. A
 `Check CodeScene token availability` step (id `codescene_token`) runs exactly
@@ -326,9 +326,9 @@ registry's cmd-mox doubles.
 ## Coverage generation
 
 Both coverage lanes run the shared `generate-coverage` action from
-`leynos/shared-actions`: `ci.yml` on pull requests and pushes to main, and
-`coverage-main.yml` on pushes to main only. Neither invokes slipcover directly
-any more.
+`leynos/shared-actions`: `ci.yml` on pull requests only, for the ratchet, and
+`coverage-main.yml` on pushes to main only, which owns main-branch coverage
+generation and publication. Neither invokes slipcover directly any more.
 
 Three inputs carry the whole of what this repository needs.
 
