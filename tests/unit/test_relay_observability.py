@@ -8,6 +8,9 @@ from types import SimpleNamespace
 
 import pytest
 
+if typ.TYPE_CHECKING:
+    from syrupy.assertion import SnapshotAssertion
+
 from lading.runtime.relay_events import RelayEvent
 from lading.runtime.stream_relay import TextSink, write_to_relay_sink
 from lading.runtime.subprocess_runner import write_to_sink
@@ -59,20 +62,40 @@ def _assert_payload_free_event(
             RelayEvent("relay_mirror", "stdout", "text_to_binary", "unicode_encode"),
         ),
         (
+            _Cp1252Sink,
+            RelayEvent("relay_mirror", "stderr", "text_to_binary", "unicode_encode"),
+        ),
+        (
+            _TextOnlyCp1252Sink,
+            RelayEvent("relay_mirror", "stdout", "disable_mirroring", "unicode_encode"),
+        ),
+        (
             _TextOnlyCp1252Sink,
             RelayEvent("relay_mirror", "stderr", "disable_mirroring", "unicode_encode"),
+        ),
+        (
+            _BrokenPipeSink,
+            RelayEvent("relay_mirror", "stdout", "disable_mirroring", "broken_pipe"),
         ),
         (
             _BrokenPipeSink,
             RelayEvent("relay_mirror", "stderr", "disable_mirroring", "broken_pipe"),
         ),
     ],
-    ids=["unicode-binary-fallback", "text-only-disable", "broken-pipe"],
+    ids=[
+        "unicode-binary-fallback-stdout",
+        "unicode-binary-fallback-stderr",
+        "text-only-disable-stdout",
+        "text-only-disable-stderr",
+        "broken-pipe-stdout",
+        "broken-pipe-stderr",
+    ],
 )
 def test_single_decision_emits_one_payload_free_event(
     sink_factory: cabc.Callable[[], TextSink],
     expected: RelayEvent,
     caplog: pytest.LogCaptureFixture,
+    snapshot: SnapshotAssertion,
 ) -> None:
     """Each relay decision emits its one bounded event."""
     payload = "private child output: ś ń"
@@ -87,6 +110,10 @@ def test_single_decision_emits_one_payload_free_event(
     records = _relay_event_records(caplog)
     assert len(records) == 1, "each relay decision should emit one event"
     _assert_payload_free_event(records[0], expected, payload)
+    snapshot_name = f"{expected.transition}-{expected.error_category}-{expected.stream}"
+    assert records[0].getMessage() == snapshot(name=snapshot_name), (
+        "rendered relay event should match its stable named snapshot"
+    )
 
 
 def test_unicode_fallback_stays_in_binary_mode_without_duplicate_event(
@@ -122,6 +149,7 @@ def test_unicode_fallback_stays_in_binary_mode_without_duplicate_event(
 def test_binary_broken_pipe_disables_mirroring_and_emits_both_events(
     failure_stage: typ.Literal["write", "flush"],
     caplog: pytest.LogCaptureFixture,
+    snapshot: SnapshotAssertion,
 ) -> None:
     """A binary write or flush failure disables mirroring with bounded events."""
     payload = "private child output: ś"
@@ -142,6 +170,33 @@ def test_binary_broken_pipe_disables_mirroring_and_emits_both_events(
     )
     _assert_payload_free_event(
         records[1],
+        RelayEvent("relay_mirror", "stdout", "disable_mirroring", "broken_pipe"),
+        payload,
+    )
+    if failure_stage == "write":
+        assert [record.getMessage() for record in records] == snapshot(
+            name="fallback-then-broken-pipe"
+        ), "ordered relay decisions should match their stable snapshot"
+
+
+def test_text_flush_broken_pipe_after_successful_write_disables_mirroring(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A successful text write followed by a broken flush emits one event."""
+    payload = "accepted child output"
+    sink = _Cp1252Sink(text_flush_broken_pipe=True)
+    caplog.set_level(logging.INFO, logger=_EVENT_LOGGER)
+
+    result = write_to_sink(sink, payload, "stdout")
+
+    assert result is None, "a broken text flush should disable mirroring"
+    assert sink.buffer.getvalue() == payload.encode("cp1252"), (
+        "the successful text write should reach the sink before flush fails"
+    )
+    records = _relay_event_records(caplog)
+    assert len(records) == 1, "text flush failure should emit one event"
+    _assert_payload_free_event(
+        records[0],
         RelayEvent("relay_mirror", "stdout", "disable_mirroring", "broken_pipe"),
         payload,
     )

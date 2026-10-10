@@ -1,0 +1,25 @@
+# serializer version: 1
+# name: test_binary_broken_pipe_disables_mirroring_and_emits_both_events[write][fallback-then-broken-pipe]
+  list([
+    "relay observability event: RelayEvent(operation='relay_mirror', stream='stdout', transition='text_to_binary', error_category='unicode_encode')",
+    "relay observability event: RelayEvent(operation='relay_mirror', stream='stdout', transition='disable_mirroring', error_category='broken_pipe')",
+  ])
+# ---
+# name: test_single_decision_emits_one_payload_free_event[broken-pipe-stderr][disable_mirroring-broken_pipe-stderr]
+  "relay observability event: RelayEvent(operation='relay_mirror', stream='stderr', transition='disable_mirroring', error_category='broken_pipe')"
+# ---
+# name: test_single_decision_emits_one_payload_free_event[broken-pipe-stdout][disable_mirroring-broken_pipe-stdout]
+  "relay observability event: RelayEvent(operation='relay_mirror', stream='stdout', transition='disable_mirroring', error_category='broken_pipe')"
+# ---
+# name: test_single_decision_emits_one_payload_free_event[text-only-disable-stderr][disable_mirroring-unicode_encode-stderr]
+  "relay observability event: RelayEvent(operation='relay_mirror', stream='stderr', transition='disable_mirroring', error_category='unicode_encode')"
+# ---
+# name: test_single_decision_emits_one_payload_free_event[text-only-disable-stdout][disable_mirroring-unicode_encode-stdout]
+  "relay observability event: RelayEvent(operation='relay_mirror', stream='stdout', transition='disable_mirroring', error_category='unicode_encode')"
+# ---
+# name: test_single_decision_emits_one_payload_free_event[unicode-binary-fallback-stderr][text_to_binary-unicode_encode-stderr]
+  "relay observability event: RelayEvent(operation='relay_mirror', stream='stderr', transition='text_to_binary', error_category='unicode_encode')"
+# ---
+# name: test_single_decision_emits_one_payload_free_event[unicode-binary-fallback-stdout][text_to_binary-unicode_encode-stdout]
+  "relay observability event: RelayEvent(operation='relay_mirror', stream='stdout', transition='text_to_binary', error_category='unicode_encode')"
+# ---

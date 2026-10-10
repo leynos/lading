@@ -6,6 +6,12 @@ extended: the command-line interface, `lading.toml` keys, and the published
 Python surface are unchanged from 0.3.x. An environment already running 3.14
 needs no action beyond the version bump itself.
 
+Subprocess output relays also emit additive, privacy-safe `INFO` decision
+events with the prefix `relay observability event:`. They describe relay
+fallback and disablement decisions without including child-process output. This
+adds no configuration or invocation change; see
+[Observability](users-guide.md#observability) for the event contract.
+
 The number is derived rather than announced: 0.3.1 is the most recent release,
 and a breaking change under pre-1.0 semantic versioning advances the minor
 component, so the next tag from this tree is 0.4.0. If the floor change is
@@ -26,9 +32,10 @@ decision, recorded below.
 
 _Table 1: Required action by interpreter version._
 
-Only the interpreter changes. A project pinned to a Lading version through a
-lockfile keeps that version until the lockfile is regenerated, so the floor
-bites when the pin is moved rather than when this release is published.
+Only the interpreter-floor change requires an environment migration. A project
+pinned to a Lading version through a lockfile keeps that version until the
+lockfile is regenerated, so the floor bites when the pin is moved rather than
+when this release is published.
 
 ## What changed
 
