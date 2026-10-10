@@ -35,7 +35,7 @@ output format.
 `lading bump <version> --no-rebuild-lockfiles` is the escape hatch when
 automatic regeneration must be skipped. For example, run
 `lading bump 1.2.3 --no-rebuild-lockfiles`, replacing `1.2.3` with the version
-you want to set. If you use this option or modify manifests directly,
+the target version. After using this option or modifying manifests directly,
 regenerate all affected lockfiles before publishing.
 
 For Git-tracked lockfiles, `lading publish` reports stale files with repair
