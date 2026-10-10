@@ -22,6 +22,12 @@ looking for project guidance, then follow the link that matches the task.
 - [Cuprum beta assessment](cuprum-v0-2-0-beta1-adoption-assessment.md) -
   phase 5 compatibility, migration workarounds, and remaining upstream features.
 
+## Migration guides
+
+- [Migrate to lading 0.3.0](v0-3-0-migration-guide.md) -
+  explains lockfile discovery, configuration fallback, and regeneration before
+  publishing.
+
 ## Execution plans
 
 Execution plans are living delivery documents under `execplans/`, one per

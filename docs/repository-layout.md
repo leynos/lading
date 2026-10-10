@@ -96,6 +96,9 @@ Documentation belongs in `docs/` unless it is a short entry point such as
   implementation practices.
 - Use `docs/lading-design.md` for architecture, constraints, and design
   rationale.
+- Use versioned migration guides such as `docs/v0-3-0-migration-guide.md` for
+  release-specific upgrade guidance that signposts changed behaviour and
+  recovery steps.
 - Use `docs/roadmap.md` for delivery planning and task tracking.
 - Use `docs/execplans/` for per-branch execution plans (living
   design-and-delivery documents), named after the branch they guide.
