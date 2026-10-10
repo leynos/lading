@@ -6,7 +6,7 @@ Accepted.
 
 ## Date
 
-2026-09-15
+2026-10-10
 
 ## Context and problem statement
 
@@ -19,16 +19,34 @@ find dist/wheels-* -type f -name "*.whl" -print0 | \
   xargs -0 -r gh release upload "$TAG"
 ```
 
-Two properties of that arrangement combined into a silent failure. A pipeline
-reports the exit status of its last command, so `set -eu` never saw `find` fail
-when `dist/wheels-*` did not exist, and `xargs -r` then ran nothing and exited
-zero. Separately, `softprops/action-gh-release` publishes immediately by
-default, so the release was already visible before the upload ran at all.
+The artefact download layout explains why the search stopped finding the wheel.
+With `path: dist` and no `name`, v4 placed every downloaded artefact in
+`dist/<artifact-name>`, even when one artefact matched. The producer's artefact
+was named `wheels-pure`, so the wheel was at `dist/wheels-pure`. A named
+single-artefact download writes directly into `path` in both v4 and v8. In v8,
+an unnamed download also writes directly into `path` when exactly one artefact
+matches; when several match, per-artefact subdirectories are used if
+`merge-multiple` is false. The
+[v4 source](https://github.com/actions/download-artifact/blob/v4/src/download-artifact.ts)
+and
+[v8 source](https://github.com/actions/download-artifact/blob/v8/src/download-artifact.ts)
+show this layout change. The old `find dist/wheels-*` lookup therefore stopped
+matching when the v8 release job downloaded its single `wheels-pure` artefact
+without a name filter.
 
-Both `v0.3.0` and `v0.3.1` published with no wheel attached and a green job.
-Each was completed by hand afterwards (issue #266). A release that ships
-nothing has to be indistinguishable from no release at all, and the job that
-produced it has to fail.
+The pipeline then hid the empty match. Without `pipefail`, the pipeline
+reported the exit status of its last command: `find` failed when
+`dist/wheels-*` did not exist, while `xargs -r` ran nothing and exited zero.
+Consequently, `set -eu` did not fail the step. Separately,
+`softprops/action-gh-release` publishes immediately by default, so the release
+was already visible before the upload ran at all.
+
+Issue #256 reports that the `v0.3.0` release had no wheel and that the wheel
+was attached by hand; it also notes that `v0.2.0` retained its wheel. The
+workflow comments record that `v0.3.0` and `v0.3.1` were live without wheels.
+These are attributed release reports, not run-log details independently
+verified by this ADR. A release that ships nothing has to be indistinguishable
+from no release at all, and the job that produced it has to fail.
 
 ## Decision
 
@@ -39,11 +57,12 @@ fail runs in Python rather than in a shell.
   next. A final step clears the flag with
   `gh release edit "$GITHUB_REF_NAME" --draft=false`. A failure anywhere in
   between leaves a draft, which is not a release anyone can install from.
-- The download names the artefact (`name: wheels-pure`), so the wheel's
-  location does not depend on the action's default layout.
+- The download names the artefact (`name: wheels-pure`) and sets `path: dist`,
+  so the wheel's location does not depend on the action's default layout.
 - Wheel discovery, the empty case, and the upload move into
   `scripts/upload_release_wheels.py` and its sibling `release_wheel_upload`
-  module. The script exits non-zero when it finds no wheel. Per
+  module. The script exits non-zero when it finds no wheel, and its failure
+  reaches the step without a shell pipeline. Per
   [scripting standards](../scripting-standards.md) it uses a PEP 723 metadata
   block, cyclopts for the interface, cuprum for command execution, and
   `pathlib` for the search.
@@ -82,7 +101,9 @@ the job log and `GITHUB_OUTPUT` are the signals a consumer can actually read.
 - The uploader is the first script in this repository to run `gh`. Its cuprum
   catalogue allowlists `gh` alone, and that boundary covers the script, not the
   job, which also runs `uv` and its pinned actions.
-- `tests/workflow_contracts/test_release_workflow.py` holds the properties this
-  decision rests on: the named artefact, the script invocation, the absence of
-  a shell search, the draft flag, and the publish step's position after the
-  upload. Changing the order or dropping the draft fails those contracts.
+- The Phase 1 contract tests in
+  `tests/workflow_contracts/test_release_workflow.py` tie the producer's
+  artefact name and job dependency to the download name and path and the
+  uploader directory. They check that draft creation precedes download and
+  upload, that critical steps fail closed, and that publication follows upload.
+  Changing these contracts fails the tests.

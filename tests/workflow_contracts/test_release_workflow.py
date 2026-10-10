@@ -1,15 +1,4 @@
-"""Contract tests for the release workflow's wheel upload.
-
-The upload step used to be `find dist/wheels-* ... | xargs -0 -r gh release
-upload`. A pipeline reports the exit status of its last command, so the step
-passed while uploading nothing, and two releases published without their wheel.
-These tests hold the two properties that prevented it: the artefact is named on
-download, and the search and its empty case run in Python where a failure can
-fail the step.
-
-The assertions name exact values rather than accept any non-empty one: a
-contract that passes for any artefact name would also pass for the wrong one.
-"""
+"""Contract tests tie the wheel producer and uploader to safe publication."""
 
 from __future__ import annotations
 
@@ -91,11 +80,6 @@ def _release_steps() -> list[WorkflowStep]:
     return _job_steps("release")
 
 
-def _pure_wheel_steps() -> list[WorkflowStep]:
-    """Return the steps of the workflow's ``pure-wheel`` job."""
-    return _job_steps("pure-wheel")
-
-
 def _download_steps() -> list[WorkflowStep]:
     """Return the steps that download workflow artefacts."""
     return [
@@ -107,8 +91,11 @@ def _download_steps() -> list[WorkflowStep]:
 
 def _wheel_producer_steps() -> list[WorkflowStep]:
     """Return the steps that build the pure Python wheel artefact."""
-    steps = _pure_wheel_steps()
-    return [step for step in steps if step.get("uses") == PURE_WHEEL_ACTION]
+    return [
+        step
+        for step in _job_steps("pure-wheel")
+        if step.get("uses") == PURE_WHEEL_ACTION
+    ]
 
 
 def _upload_steps() -> list[WorkflowStep]:
@@ -116,35 +103,53 @@ def _upload_steps() -> list[WorkflowStep]:
     return [step for step in _release_steps() if step.get("name") == UPLOAD_STEP_NAME]
 
 
-def _shell_tokens(command: str) -> list[str]:
-    """Split shell words and control operators while respecting comments."""
+def _shell_tokens(command: str, step_name: str) -> list[str]:
+    """Tokenize a workflow command and identify malformed quoting clearly."""
+    # Punctuation-aware lexing separates operators even when adjacent to words.
     lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|")
     lexer.whitespace_split = True
     lexer.commenters = "#"
-    return list(lexer)
+    try:
+        return list(lexer)
+    except ValueError as error:
+        message = f"cannot parse shell command in step {step_name!r}: {error}"
+        raise ValueError(message) from error
 
 
-def _shell_control_operators(command: str) -> set[str]:
-    """Return control operators and multiple command lines in a shell step."""
-    operators = {
-        token
-        for token in _shell_tokens(command)
-        if token and set(token) <= SHELL_CONTROL_OPERATOR_CHARACTERS
-    }
-    command_lines = []
+def _try_shell_tokens(command: str, step_name: str) -> list[str] | None:
+    """Return parsed tokens, or ``None`` while a continued line is incomplete."""
+    try:
+        return _shell_tokens(command, step_name)
+    except ValueError:
+        return None
+
+
+def _shell_commands(command: str, step_name: str) -> list[list[str]]:
+    """Split a step into logical commands, preserving shell continuations."""
+    commands = []
     pending_line = ""
     for line in command.splitlines():
         pending_line = f"{pending_line}\n{line}" if pending_line else line
-        try:
-            tokens = shlex.split(pending_line, comments=True)
-        except ValueError:
+        tokens = _try_shell_tokens(pending_line, step_name)
+        if tokens is None:
             continue
-        if tokens:
-            command_lines.append(tokens)
+        commands.extend([tokens] if tokens else [])
         pending_line = ""
     if pending_line:
-        operators.add("incomplete command")
-    if len(command_lines) > 1:
+        _shell_tokens(pending_line, step_name)
+    return commands
+
+
+def _shell_control_operators(command: str, step_name: str) -> set[str]:
+    """Find shell control operators and multiple commands in one step."""
+    commands = _shell_commands(command, step_name)
+    tokens = (token for command_tokens in commands for token in command_tokens)
+    operators = {
+        token
+        for token in tokens
+        if token and set(token) <= SHELL_CONTROL_OPERATOR_CHARACTERS
+    }
+    if len(commands) > 1:
         operators.add("multiple commands")
     return operators
 
@@ -155,9 +160,23 @@ def _upload_directory(tokens: list[str]) -> str:
         if argument.startswith("--directory="):
             return argument.partition("=")[2]
         if argument == "--directory":
-            assert index + 1 < len(tokens), "--directory must have a value"
+            if index + 1 >= len(tokens):
+                message = "--directory must have a value"
+                raise ValueError(message)
             return tokens[index + 1]
     return DEFAULT_UPLOAD_DIRECTORY
+
+
+def _is_upload_command(tokens: tuple[str, ...]) -> bool:
+    """Return whether tokens match the uploader's supported CLI shape."""
+    if tokens[: len(UPLOAD_COMMAND)] != UPLOAD_COMMAND:
+        return False
+    arguments = tokens[len(UPLOAD_COMMAND) :]
+    return (
+        not arguments
+        or (len(arguments) == 2 and arguments[0] == "--directory")
+        or (len(arguments) == 1 and arguments[0].startswith("--directory="))
+    )
 
 
 def _creation_steps() -> list[WorkflowStep]:
@@ -174,7 +193,10 @@ def _publish_steps() -> list[WorkflowStep]:
     return [
         step
         for step in _release_steps()
-        if tuple(_shell_tokens(step.get("run", "")))[:3] == PUBLISH_COMMAND
+        if tuple(_shell_tokens(step.get("run", ""), str(step.get("name", "unnamed"))))[
+            : len(PUBLISH_COMMAND)
+        ]
+        == PUBLISH_COMMAND
     ]
 
 
@@ -183,19 +205,8 @@ def _index_of(step: WorkflowStep) -> int:
     return _release_steps().index(step)
 
 
-def test_the_pure_wheel_job_has_one_named_wheel_producer() -> None:
-    """The producer action publishes the expected wheel artefact."""
-    producers = _wheel_producer_steps()
-
-    assert len(producers) == 1, f"expected exactly one pure-wheel producer: {producers}"
-    artifact_name = producers[0].get("with_", {}).get("artifact-name")
-    assert artifact_name == "wheels-pure", (
-        f"the producer must name its artefact 'wheels-pure', got {artifact_name!r}"
-    )
-
-
-def test_the_release_download_names_the_producer_artefact() -> None:
-    """The release downloads the artefact named by its wheel producer."""
+def test_release_download_matches_the_named_wheel_producer() -> None:
+    """The release downloads the single artefact produced by pure-wheel."""
     producers = _wheel_producer_steps()
     downloads = _download_steps()
 
@@ -204,6 +215,9 @@ def test_the_release_download_names_the_producer_artefact() -> None:
     artifact_name = producers[0].get("with_", {}).get("artifact-name")
     download_name = downloads[0].get("with_", {}).get("name")
 
+    assert artifact_name == "wheels-pure", (
+        f"the producer must name its artefact 'wheels-pure', got {artifact_name!r}"
+    )
     assert download_name == artifact_name, (
         f"the download must name the producer artefact {artifact_name!r}, "
         f"got {download_name!r}"
@@ -211,7 +225,7 @@ def test_the_release_download_names_the_producer_artefact() -> None:
 
 
 def test_the_release_job_depends_on_the_wheel_producer() -> None:
-    """The release job cannot start before the pure wheel exists."""
+    """The release waits for its wheel producer to finish."""
     needs = _release_job().get("needs", [])
     dependencies = [needs] if isinstance(needs, str) else needs
 
@@ -224,7 +238,7 @@ def test_the_release_job_depends_on_the_wheel_producer() -> None:
 
 
 def test_the_download_path_is_the_uploader_directory() -> None:
-    """The uploader searches the directory where the artefact is extracted."""
+    """The uploader searches the artefact's extraction directory."""
     downloads = _download_steps()
     upload_steps = _upload_steps()
 
@@ -235,7 +249,7 @@ def test_the_download_path_is_the_uploader_directory() -> None:
         f"the artefact must download into dist, got {download_path!r}"
     )
 
-    tokens = shlex.split(upload_steps[0].get("run", ""), comments=True)
+    tokens = _shell_tokens(upload_steps[0].get("run", ""), UPLOAD_STEP_NAME)
     upload_directory = _upload_directory(tokens)
 
     assert upload_directory == download_path, (
@@ -245,31 +259,33 @@ def test_the_download_path_is_the_uploader_directory() -> None:
 
 
 def test_the_upload_runs_the_script_as_its_own_command() -> None:
-    """The upload runs the script, which fails when no wheel is found."""
+    """The upload invokes only the standalone wheel uploader."""
     upload_steps = _upload_steps()
 
     assert len(upload_steps) == 1, f"expected exactly one upload step: {upload_steps}"
-    tokens = tuple(shlex.split(upload_steps[0]["run"], comments=True))
-    assert tokens[: len(UPLOAD_COMMAND)] == UPLOAD_COMMAND, (
-        f"the upload must run {' '.join(UPLOAD_COMMAND)}, got {tokens}"
-    )
-    operators = _shell_control_operators(upload_steps[0]["run"])
+    tokens = tuple(_shell_tokens(upload_steps[0]["run"], UPLOAD_STEP_NAME))
+    operators = _shell_control_operators(upload_steps[0]["run"], UPLOAD_STEP_NAME)
     assert not operators, (
         f"the upload command must fail when the uploader fails, got {operators}"
+    )
+    assert _is_upload_command(tokens), (
+        "the upload may only run the uploader with its optional directory, "
+        f"got {tokens}"
     )
 
 
 @pytest.mark.parametrize("forbidden", ["xargs", "find"])
 def test_the_upload_is_not_a_shell_pipeline(forbidden: str) -> None:
-    """No release step may search for wheels through a shell pipeline.
-
-    The exit status of a pipeline is its last command's, so ``set -eu`` cannot
-    see the search fail. This assertion is what makes the regression loud.
-    """
+    """No release step may search for wheels through a shell pipeline."""
     offenders = [
         tokens
         for step in _release_steps()
-        if (tokens := _shell_tokens(step.get("run", ""))) and forbidden in tokens
+        if (
+            tokens := _shell_tokens(
+                step.get("run", ""), str(step.get("name", "unnamed"))
+            )
+        )
+        and forbidden in tokens
     ]
 
     assert not offenders, (
@@ -278,7 +294,7 @@ def test_the_upload_is_not_a_shell_pipeline(forbidden: str) -> None:
 
 
 def test_the_upload_step_receives_the_tag_and_a_token() -> None:
-    """The script needs the tag it uploads to and credentials to do it."""
+    """The uploader receives its release tag and GitHub token."""
     environment = _upload_steps()[0].get("env", {})
 
     assert environment.get("GITHUB_REF_NAME") == "${{ github.ref_name }}", (
@@ -289,23 +305,8 @@ def test_the_upload_step_receives_the_tag_and_a_token() -> None:
     )
 
 
-def test_the_release_is_created_as_a_draft() -> None:
-    """The release is a draft until its wheel is attached.
-
-    The action publishes by default, so a failure between creation and upload
-    would leave a visible release with nothing on it -- which is what v0.3.0
-    and v0.3.1 were.
-    """
-    creations = _creation_steps()
-
-    assert len(creations) == 1, f"expected one release-creation step: {creations}"
-    assert creations[0].get("with_", {}).get("draft") is True, (
-        f"the release must be created with draft: true, got {creations[0]}"
-    )
-
-
-def test_the_release_is_drafted_before_download_and_upload() -> None:
-    """A download or upload failure must leave the release as a draft."""
+def test_the_release_stays_draft_until_after_upload() -> None:
+    """Keep the release unpublished while the wheel is downloaded and uploaded."""
     creations = _creation_steps()
     downloads = _download_steps()
     uploads = _upload_steps()
@@ -313,6 +314,9 @@ def test_the_release_is_drafted_before_download_and_upload() -> None:
     assert len(creations) == 1, f"expected one release-creation step: {creations}"
     assert len(downloads) == 1, f"expected one artefact download: {downloads}"
     assert len(uploads) == 1, f"expected one upload step: {uploads}"
+    assert creations[0].get("with_", {}).get("draft") is True, (
+        f"the release must be created with draft: true, got {creations[0]}"
+    )
     creation_index = _index_of(creations[0])
 
     assert creation_index < _index_of(downloads[0]), (
@@ -324,11 +328,16 @@ def test_the_release_is_drafted_before_download_and_upload() -> None:
 
 
 def test_release_publication_steps_do_not_continue_after_failure() -> None:
-    """Critical release steps and the release job must fail closed."""
+    """Fail the job instead of skipping an unsuccessful publication step."""
+    uploads = _upload_steps()
+    assert len(uploads) == 1, f"expected one upload step: {uploads}"
+    assert uploads[0].get("if") is None, (
+        f"the upload step must not be conditional: {uploads[0]}"
+    )
     critical_steps = [
         *_creation_steps(),
         *_download_steps(),
-        *_upload_steps(),
+        *uploads,
         *_publish_steps(),
     ]
 
@@ -342,7 +351,7 @@ def test_release_publication_steps_do_not_continue_after_failure() -> None:
 
 
 def test_publication_has_no_failure_override_condition() -> None:
-    """Publication must retain the implicit success check after upload."""
+    """Publication must retain its implicit success condition."""
     publishes = _publish_steps()
 
     assert len(publishes) == 1, f"expected one publish step: {publishes}"
@@ -356,11 +365,7 @@ def test_publication_has_no_failure_override_condition() -> None:
 
 
 def test_the_release_is_published_only_after_the_upload() -> None:
-    """Publication is the last thing the job does.
-
-    Ordering is the whole point: a publish step that ran before the upload
-    would restore exactly the behaviour the draft is there to prevent.
-    """
+    """Publish the release only after its wheel upload succeeds."""
     publishes = _publish_steps()
 
     assert len(publishes) == 1, f"expected one publish step: {publishes}"
@@ -368,8 +373,8 @@ def test_the_release_is_published_only_after_the_upload() -> None:
         f"the publish command must use the {PUBLISH_STEP_NAME!r} step, "
         f"got {publishes[0]}"
     )
-    tokens = tuple(shlex.split(publishes[0]["run"], comments=True))
-    operators = _shell_control_operators(publishes[0]["run"])
+    tokens = tuple(_shell_tokens(publishes[0]["run"], PUBLISH_STEP_NAME))
+    operators = _shell_control_operators(publishes[0]["run"], PUBLISH_STEP_NAME)
     assert not operators, (
         f"the publish command must fail when gh release edit fails, got {operators}"
     )
