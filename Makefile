@@ -29,6 +29,13 @@ TYPOS_CONFIG_BUILDER = $(UV) tool run --from \
 TY_VERSION ?= 0.0.56
 TY ?= $(UV) tool run --from ty==$(TY_VERSION) ty
 UV_ENV = UV_CACHE_DIR=.uv-cache UV_TOOL_DIR=.uv-tools
+# The CV-005 CodeScene contracts live in shared-actions and run from a full
+# commit, so a fix is a pin bump. `.github/cv005.toml` holds this repository's
+# parameters.
+CV005_CONTRACTS_REF ?= 3754876bc4e94dc65c83af3def37828934f8f65e
+CV005_CONTRACTS = $(UV_ENV) $(UV) tool run --python $(PYTHON_BASELINE) \
+	--from 'git+https://github.com/leynos/shared-actions@$(CV005_CONTRACTS_REF)\#subdirectory=packages/cv005-contracts' \
+	cv005-contracts
 TOOLS = $(MDLINT) $(NIXIE) $(UV)
 # The single Python baseline every gateway derives from. Ruff's
 # `target-version`, Pylint's `py-version`, the managed interpreters behind
@@ -197,7 +204,7 @@ SKYLOS_PRODUCTION_TARGETS ?= lading
 SKYLOS_EXCLUDE_FOLDERS ?= tests
 SKYLOS_WHITELIST_LOCK ?= .skylos-whitelist.lock
 
-.PHONY: help all clean build build-release lint fmt check-fmt \
+.PHONY: help all clean build build-release lint fmt check-fmt test-workflow-contracts \
 	markdownlint nixie spelling test typecheck crosshair \
 	makeutil skylos-allow $(TOOLS) $(VENV_TOOLS)
 
@@ -291,7 +298,10 @@ nixie: $(NIXIE) ## Validate Mermaid diagrams
 makeutil: ## Verify the Makefile parser used by contract tests
 	$(call ensure_tool,$@)
 
-test: build $(UV) pytest makeutil ## Run tests
+test-workflow-contracts: $(UV) ## Check the CV-005 CodeScene workflow contracts
+	$(CV005_CONTRACTS) check --repository .
+
+test: build $(UV) pytest makeutil test-workflow-contracts ## Run tests
 	# --doctest-modules collects the examples in module and function
 	# docstrings. Without it they are documentation nobody checks: 342 example
 	# lines across 45 files were never run before this was added.

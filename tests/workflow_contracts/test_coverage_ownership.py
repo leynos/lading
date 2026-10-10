@@ -62,7 +62,7 @@ UPLOAD_CODESCENE_ACTION = (
 #: prefix: a pin that drifted to a branch or a tag would still start with the
 #: same path.
 UPLOAD_CODESCENE_PIN = (
-    f"{UPLOAD_CODESCENE_ACTION}@a5765019912a8ab6882b12db049c7cde635f3a85"
+    f"{UPLOAD_CODESCENE_ACTION}@7d751eded578e48dacf43ab173d5820e6437c474"
 )
 GENERATE_COVERAGE_ACTION = "leynos/shared-actions/.github/actions/generate-coverage"
 #: Any reference to the coverage action. Matching an unpinned form too is
@@ -682,9 +682,10 @@ def _assert_coverage_step_has_the_correct_ratchet(step: CoverageStep) -> None:
             f"got {ratchet!r}"
         )
     elif _runs_on_pull_requests(workflow):
-        assert ratchet in {None, PULL_REQUEST_RATCHET}, (
+        assert ratchet in {None, PULL_REQUEST_RATCHET, "true"}, (
             f"{step.path.name}: a pull-request lane must condition the ratchet "
-            f"on pull_request or omit it, got {ratchet!r}"
+            f"on pull_request, set it literally (the step itself runs on pull "
+            f"requests only) or omit it, got {ratchet!r}"
         )
 
 
