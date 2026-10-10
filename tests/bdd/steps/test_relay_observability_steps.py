@@ -1,27 +1,17 @@
 """BDD steps that pin relay observability at the CLI subprocess boundary."""
 
-from __future__ import annotations
-
 import sys
-import typing as typ
 from pathlib import Path
 
+import pytest
 from pytest_bdd import scenarios, then, when
 
+from .cli_run_types import CliRunResult
 from .test_publish_infrastructure import (
     PreflightTestContext,
     _CommandResponse,
     _invoke_publish_with_options,
 )
-
-if typ.TYPE_CHECKING:
-    import pytest
-
-    from .cli_run_types import CliRunResult
-
-    MonkeyPatch = pytest.MonkeyPatch
-else:  # pragma: no cover - typing helpers
-    MonkeyPatch = typ.Any
 
 _FEATURES_DIR = Path(__file__).resolve().parent.parent / "features"
 _PAYLOAD = "private child output: ś ń"
@@ -38,13 +28,16 @@ scenarios(str(_FEATURES_DIR / "relay_observability.feature"))
     target_fixture="cli_run",
 )
 def when_cli_relays_utf8_cargo_output(
-    workspace_directory: Path,
-    repo_root: Path,
-    preflight_test_context: PreflightTestContext,
-    monkeypatch: MonkeyPatch,
-    tmp_path: Path,
+    request: pytest.FixtureRequest,
 ) -> CliRunResult:
     """Run publish with one fixed UTF-8 result through cmd-mox passthrough."""
+    workspace_directory: Path = request.getfixturevalue("workspace_directory")
+    repo_root: Path = request.getfixturevalue("repo_root")
+    preflight_test_context: PreflightTestContext = request.getfixturevalue(
+        "preflight_test_context"
+    )
+    monkeypatch: pytest.MonkeyPatch = request.getfixturevalue("monkeypatch")
+    tmp_path: Path = request.getfixturevalue("tmp_path")
     producer = tmp_path / "cargo-output"
     marker = tmp_path / "payload-emitted"
     payload_bytes = _PAYLOAD.encode("utf-8")

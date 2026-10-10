@@ -13,8 +13,6 @@ The event deliberately excludes subprocess payloads, decoded output, command
 arguments, and every other unbounded value.
 """
 
-from __future__ import annotations
-
 import dataclasses as dc
 import logging
 import typing as typ

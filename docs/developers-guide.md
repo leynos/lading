@@ -318,6 +318,11 @@ The end-to-end suite in `tests/e2e/` keeps git interactions real while stubbing
 only `cargo` operations, using cmd-mox passthrough spies for `git status` when
 publish runs with stub mode enabled.
 
+The publish preflight registry preserves these passthrough spies when it adds
+its own command doubles. `_is_passthrough_spy` is private to
+`tests/bdd/steps/test_publish_infrastructure.py`; reuse it only for that
+registry's cmd-mox doubles.
+
 ## Coverage generation
 
 Both coverage lanes run the shared `generate-coverage` action from

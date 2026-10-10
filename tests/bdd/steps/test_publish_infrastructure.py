@@ -232,6 +232,13 @@ def _existing_static_stub_response(
     )
 
 
+def _is_passthrough_spy(double: object | None) -> bool:
+    """Check whether an existing cmd-mox double is a passthrough spy."""
+    return getattr(double, "kind", None) == "spy" and bool(
+        getattr(double, "passthrough_mode", False)
+    )
+
+
 def _create_stub_config(
     cmd_mox: CmdMox,
     preflight_overrides: dict[tuple[str, ...], ResponseProvider],
@@ -327,10 +334,7 @@ def _register_preflight_commands(
         for command, response in defaults.items()
         if command[0] != "git"
     }
-    if git_responses:
-        config.cmd_mox.stub("git").runs(
-            _make_git_handler(git_responses, config.recorder)
-        )
+    _register_git_preflight_commands(config, git_responses)
     grouped_responses: dict[str, list[tuple[tuple[str, ...], ResponseProvider]]] = {}
     for command, response in defaults.items():
         expectation_program, expectation_args = _resolve_preflight_expectation(command)
@@ -342,12 +346,9 @@ def _register_preflight_commands(
         existing_double = getattr(config.cmd_mox, "_doubles", {}).get(
             expectation_program
         )
-        if existing_double is not None:
-            is_passthrough_spy = getattr(
-                existing_double, "kind", None
-            ) == "spy" and getattr(existing_double, "passthrough_mode", False)
-            if is_passthrough_spy:
-                continue
+        # Passthrough spies execute the real command and must stay registered.
+        if _is_passthrough_spy(existing_double):
+            continue
         existing = _existing_static_stub_response(config.cmd_mox, expectation_program)
         if existing is not None:
             entries.insert(0, existing)
@@ -358,6 +359,20 @@ def _register_preflight_commands(
                 expectation_program,
             )
         )
+
+
+def _register_git_preflight_commands(
+    config: _PreflightStubConfig,
+    responses: dict[tuple[str, ...], ResponseProvider],
+) -> None:
+    """Register Git responses unless a passthrough spy is already active."""
+    if not responses:
+        return
+    existing_double = getattr(config.cmd_mox, "_doubles", {}).get("git")
+    # Passthrough spies execute the real command and must stay registered.
+    if _is_passthrough_spy(existing_double):
+        return
+    config.cmd_mox.stub("git").runs(_make_git_handler(responses, config.recorder))
 
 
 def _make_git_handler(

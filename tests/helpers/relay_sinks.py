@@ -1,7 +1,5 @@
 """Test doubles for parent streams used by the subprocess output relay."""
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import io
 
@@ -60,14 +58,14 @@ class _TextOnlyCp1252Sink(io.TextIOBase):
         """Accept flush requests without writing output."""
 
 
-class _BrokenPipeSink(io.TextIOBase):
+class _BrokenPipeSink:
     """Reject every parent-stream write with a broken pipe."""
 
-    def write(self, payload: str) -> int:
+    def write(self, payload: str, /) -> int:
         """Raise BrokenPipeError without retaining the relay payload."""
         del payload
         raise BrokenPipeError
 
-    def flush(self) -> None:
+    def flush(self, /) -> None:
         """Raise BrokenPipeError if the relay attempts a flush."""
         raise BrokenPipeError

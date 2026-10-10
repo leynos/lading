@@ -1,6 +1,5 @@
 """Regression tests for subprocess output encoding boundaries."""
 
-import collections.abc as cabc
 import io
 import sys
 import typing as typ

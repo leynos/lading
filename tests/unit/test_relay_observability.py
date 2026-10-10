@@ -1,7 +1,5 @@
 """Contract tests for privacy-safe subprocess relay observability."""
 
-from __future__ import annotations
-
 import dataclasses as dc
 import logging
 import typing as typ
@@ -17,14 +15,10 @@ from tests.helpers.relay_sinks import (
 if typ.TYPE_CHECKING:
     import pytest
 
-    LogCaptureFixture = pytest.LogCaptureFixture
-else:  # pragma: no cover - typing helpers
-    LogCaptureFixture = typ.Any
-
 _EVENT_LOGGER = "lading.runtime.relay_events"
 
 
-def _relay_event_records(caplog: LogCaptureFixture) -> list[logging.LogRecord]:
+def _relay_event_records(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
     """Return structured relay event records captured from the event logger."""
     return [record for record in caplog.records if record.name == _EVENT_LOGGER]
 
@@ -55,7 +49,7 @@ def _assert_payload_free_event(
 
 
 def test_unicode_fallback_emits_one_payload_free_event(
-    caplog: LogCaptureFixture,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Unicode fallback emits its one bounded stdout transition event."""
     payload = "private child output: ś ń"
@@ -74,7 +68,7 @@ def test_unicode_fallback_emits_one_payload_free_event(
 
 
 def test_text_only_disablement_emits_one_payload_free_event(
-    caplog: LogCaptureFixture,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """A text-only Unicode rejection emits its one stderr disablement event."""
     payload = "private child output: ś ń"
@@ -95,7 +89,7 @@ def test_text_only_disablement_emits_one_payload_free_event(
 
 
 def test_broken_pipe_emits_one_payload_free_event(
-    caplog: LogCaptureFixture,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """A broken parent pipe emits its one stderr disablement event."""
     payload = "private child output: do not log"
