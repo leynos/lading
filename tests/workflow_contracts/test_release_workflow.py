@@ -293,11 +293,16 @@ def test_pypi_order_uses_oidc_and_uv_simple_index_check() -> None:
 def test_github_release_is_uploaded_and_published_in_order() -> None:
     """Validate artifacts before draft creation, upload before publication."""
     steps = _job_steps("release")
-    for step in steps:
-        if step.get("run"):
-            assert not {"find", "xargs"}.intersection(_step_tokens(step)), (
-                f"release step {step.get('name')!r} must not search for artifacts"
-            )
+    run_steps = [step for step in steps if step.get("run")]
+    assert {step.get("name") for step in run_steps} == {
+        CREATE_RELEASE_STEP,
+        UPLOAD_STEP,
+        PUBLISH_STEP,
+    }, f"unexpected release shell steps: {run_steps}"
+    for step in run_steps:
+        assert not {"find", "xargs"}.intersection(_step_tokens(step)), (
+            f"release step {step.get('name')!r} must not search for artifacts"
+        )
     collector = _find_named_step(RELEASE_WORKFLOW, COLLECT_RELEASE_STEP, job="release")
     create = _find_named_step(RELEASE_WORKFLOW, CREATE_RELEASE_STEP, job="release")
     upload = _find_named_step(RELEASE_WORKFLOW, UPLOAD_STEP, job="release")
@@ -327,9 +332,7 @@ def test_github_release_is_uploaded_and_published_in_order() -> None:
     assert publish_tokens == [*PUBLISH_COMMAND, "$TAG", "--draft=false"], (
         f"publish must run the standalone gh release edit command, got {publish_tokens}"
     )
-    assert not _shell_control_operators(publish), (
-        "publication must fail when gh release edit fails"
-    )
+    assert not _shell_control_operators(publish), "no publish failure override"
     for step in (create, upload, publish):
         assert step["env"]["GH_REPO"] == "${{ github.repository }}", (
             "GitHub CLI operations should use an explicit repository context"
