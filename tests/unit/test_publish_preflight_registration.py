@@ -21,6 +21,6 @@ def test_register_preflight_commands_preserves_git_passthrough_spy(
 
     _register_preflight_commands(config)
 
-    assert cmd_mox._doubles["git"] is git_spy, (
+    assert cmd_mox.spies["git"] is git_spy, (
         "preflight setup must preserve the existing git passthrough spy"
     )

@@ -1771,9 +1771,12 @@ elapsed seconds on the success line.
 subprocess chunks to a parent stream. `format_thread_name(program, stream)`
 turns the executable path and stream name into the deterministic, filesystem-
 safe name used by relay threads.
-`write_to_relay_sink(sink, binary_sink, payload)` mirrors one decoded payload
-and returns the updated `(sink, binary_sink)` pair. Callers must retain both
-returned values as the active sink state for the next chunk.
+`write_to_relay_sink(sink, binary_sink, stream, payload)` mirrors one decoded
+payload and returns the updated `(sink, binary_sink)` pair. Callers must retain
+both returned values as the active sink state for the next chunk. The required
+`stream: StreamName` argument is `"stdout"` or `"stderr"` and identifies the
+child pipe. `relay_stream(source, sink, buffer, stream)` and
+`write_to_sink(sink, payload, stream)` take the same stream label.
 
 Before a fallback, payloads use the text sink's normal encoding. If that write
 raises `UnicodeEncodeError`, the helper flushes the text sink and writes the

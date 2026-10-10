@@ -63,3 +63,22 @@ def test_users_guide_documents_key_cli_flags_and_env_vars() -> None:
 
     assert not missing_cli, f"users guide missing CLI terms: {missing_cli}"
     assert not missing_env, f"users guide missing env var terms: {missing_env}"
+
+
+def test_users_guide_documents_relay_event_contract() -> None:
+    """The relay event contract should remain visible to lading users."""
+    content = Path("docs/users-guide.md").read_text(encoding="utf-8")
+
+    required_terms = (
+        "`relay observability event:`",
+        "`operation` is `relay_mirror`",
+        "`stream` is `stdout` or `stderr`",
+        "`text_to_binary`",
+        "`disable_mirroring`",
+        "`unicode_encode`",
+        "`broken_pipe`",
+        "no subprocess payload",
+    )
+    missing = [term for term in required_terms if term not in content]
+
+    assert not missing, f"users guide missing relay event terms: {missing}"

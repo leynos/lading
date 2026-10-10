@@ -343,9 +343,7 @@ def _register_preflight_commands(
             response,
         ))
     for expectation_program, entries in grouped_responses.items():
-        existing_double = getattr(config.cmd_mox, "_doubles", {}).get(
-            expectation_program
-        )
+        existing_double = config.cmd_mox.spies.get(expectation_program)
         # Passthrough spies execute the real command and must stay registered.
         if _is_passthrough_spy(existing_double):
             continue
@@ -368,7 +366,7 @@ def _register_git_preflight_commands(
     """Register Git responses unless a passthrough spy is already active."""
     if not responses:
         return
-    existing_double = getattr(config.cmd_mox, "_doubles", {}).get("git")
+    existing_double = config.cmd_mox.spies.get("git")
     # Passthrough spies execute the real command and must stay registered.
     if _is_passthrough_spy(existing_double):
         return

@@ -719,6 +719,20 @@ committing the bump.
 
 ### Observability
 
+Subprocess relay decisions also produce an `INFO` log whose stable prefix is
+`relay observability event:`. Each event has four bounded fields:
+
+- `operation` is `relay_mirror` for decoded child-output mirroring.
+- `stream` is `stdout` or `stderr` for the child pipe.
+- `transition` is `text_to_binary` when mirroring switches to the parent
+  stream's UTF-8 buffer, or `disable_mirroring` when mirroring stops.
+- `error_category` is `unicode_encode` when the text stream rejects Unicode,
+  or `broken_pipe` when the parent pipe closes.
+
+Events contain no subprocess payload, decoded output or command arguments.
+Lading continues capturing complete decoded output even when mirroring switches
+to binary mode or is disabled for a text-only stream.
+
 When `lading` runs, a structured JSON summary may appear in the log output at
 `INFO` level just before the process exits. The flush is process-wide — any
 command can emit it — and reports whichever metrics that run recorded. For

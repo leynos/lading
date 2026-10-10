@@ -2,6 +2,7 @@
 
 import collections.abc as cabc
 import io
+import typing as typ
 
 
 class _RecordingBuffer(io.BytesIO):
@@ -25,14 +26,49 @@ class _RecordingBuffer(io.BytesIO):
         super().flush()
 
 
+class _BrokenPipeRecordingBuffer(_RecordingBuffer):
+    """Raise a broken pipe at the selected binary relay operation."""
+
+    def __init__(
+        self, events: list[str], failure_stage: typ.Literal["write", "flush"]
+    ) -> None:
+        """Initialize the buffer with one selected broken-pipe stage."""
+        super().__init__(events)
+        self.failure_stage = failure_stage
+
+    def write(self, payload: cabc.Buffer) -> int:
+        """Raise at binary write when selected, otherwise record the payload."""
+        if self.failure_stage == "write":
+            self._events.append("binary_write")
+            raise BrokenPipeError
+        return super().write(payload)
+
+    def flush(self) -> None:
+        """Raise at binary flush when selected, otherwise flush normally."""
+        if self.failure_stage == "flush":
+            self._events.append("binary_flush")
+            raise BrokenPipeError
+        super().flush()
+
+
 class _Cp1252Sink(io.TextIOBase):
     """Reject Unicode text while exposing a writable binary buffer."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        binary_failure_stage: typ.Literal["write", "flush"] | None = None,
+        text_flush_broken_pipe: bool = False,
+    ) -> None:
         """Initialize the recording text sink and binary buffer."""
         self.events: list[str] = []
-        self.buffer = _RecordingBuffer(self.events)
+        self.buffer: _RecordingBuffer
+        if binary_failure_stage is None:
+            self.buffer = _RecordingBuffer(self.events)
+        else:
+            self.buffer = _BrokenPipeRecordingBuffer(self.events, binary_failure_stage)
         self.flush_count = 0
+        self.text_flush_broken_pipe = text_flush_broken_pipe
 
     def write(self, payload: str) -> int:
         """Encode accepted text as CP1252 bytes."""
@@ -45,6 +81,9 @@ class _Cp1252Sink(io.TextIOBase):
         """Record that the text sink was flushed."""
         self.events.append("text_flush")
         self.flush_count += 1
+        if self.text_flush_broken_pipe:
+            self.text_flush_broken_pipe = False
+            raise BrokenPipeError
 
 
 class _TextOnlyCp1252Sink(io.TextIOBase):
