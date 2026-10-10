@@ -309,16 +309,17 @@ lading bump <new_version> [--dry-run]
       operators (e.g., `^`, `~`). This prevents version drift between internal
       crates.
 
-4. **Handle Workspace READMEs:** For each crate where `readme_is_workspace` is
-   `true`:
+4. **Rewrite Configured Non-member Manifests:** For each opted-in standalone
+   manifest in `bump.manifest_rewrites`:
 
-    - Copy the `README.md` file from the workspace root to the crate's
-      directory, rewriting relative Markdown links for the crate directory and
-      overwriting any existing file when content changes. This action is part
-      of the versioning workflow, so the result can be reviewed and committed
-      before publishing.
+    - Plan dependency requirement and selected TOML string rewrites from the
+      original files. The root manifest and every workspace-member manifest
+      remain owned by the workspace and member stages and are skipped here.
+    - Apply the completed plans after workspace and member manifest updates,
+      before documentation, README transposition, and lockfile regeneration.
+      Planning errors stop the bump before any manifest write.
 
-5. **Update Documentation Files:** _(deferred to Step 2.2)_
+5. **Update Documentation Files:**
 
     - Introduce configuration-driven glob patterns for documentation files.
     - For each matching file, scan for TOML fenced code blocks (three backticks
@@ -327,8 +328,16 @@ lading bump <new_version> [--dry-run]
       dependency that is also a workspace member to `<new_version>`. This
       replaces the previous hardcoded logic.
 
-6. **Report Changes:** Output a summary of all files that were (or would be)
-   modified.
+6. **Handle Workspace READMEs:** For each crate where `readme_is_workspace` is
+   `true`, copy the workspace README into the crate directory, rewrite relative
+   Markdown links, and overwrite only when the content changes.
+
+7. **Regenerate Lockfiles:** When enabled and any manifest changed, regenerate
+   the root, discovered, and configured lockfiles. Non-member manifest
+   rewriting does not add lockfile targets.
+
+8. **Report Changes:** Output a summary of all files that were (or would be)
+   modified. Rewritten non-member manifests use the existing manifest category.
 
 ### Implementation notes (Step 2.1)
 
@@ -385,6 +394,19 @@ lading bump <new_version> [--dry-run]
   skips writing to disk. The CLI summary now reports both manifest and
   documentation counts, and documentation entries are suffixed with
   `(documentation)` for clarity.
+
+### Implementation notes (configured non-member rewrites)
+
+- `bump.manifest_rewrites` is an opt-in path/glob allowlist for standalone
+  Cargo manifests. It updates matching dependency requirements and explicit
+  TOML string selectors while leaving root and member manifest ownership with
+  the normal bump stages.
+- Every selected manifest is resolved, validated, read, and planned before the
+  workspace manifest stage writes. The plans are applied after member manifests
+  and before documentation, README transposition, and lockfile work.
+- Changed non-member manifests appear in the existing manifest report
+  category. Rewriting does not add lockfile targets; `bump.lockfile_manifests`
+  continues to control additional lockfile regeneration.
 
 ### Lockfile repository port (bump side)
 

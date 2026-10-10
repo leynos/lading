@@ -694,11 +694,13 @@ the match, so `rstest-bdd` does not match inside `rstest-bdd-harness`, and
 
 The root manifest and all workspace-member manifests are skipped even when a
 configured glob selects them. Repeated groups selecting the same non-member
-manifest combine their dependency flag and string selectors. Invalid selectors,
-empty globs, missing manifests, paths outside the workspace, and malformed TOML
-stop the bump. Planning completes before any manifest is written. During a dry
-run, the result lists each changed fixture manifest while its contents remain
-unchanged; configured lockfile projection still runs without invoking Cargo.
+manifest enable dependency rewrites if any group enables them and combine all
+string selectors. Invalid selectors, empty globs, missing manifests, paths
+outside the workspace, and malformed TOML stop the bump. Planning completes
+before any manifest is written; configured rewrites are applied after member
+manifests and before lockfile regeneration. During a dry run, the result lists
+each changed fixture manifest while its contents remain unchanged; configured
+lockfile projection still runs without invoking Cargo.
 
 For example, the `rstest-bdd` published GPUI fixture can opt into rewriting its
 dependency requirements and staged package patch paths:

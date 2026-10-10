@@ -1,9 +1,9 @@
 """Run the ordered stages of a version bump.
 
 The coordinator initializes shared context, then calls this module to update
-the workspace manifest, member manifests, documentation, readmes, and
-lockfiles. The resulting paths flow through :func:`_prepare_sorted_changes`
-before the coordinator renders the user-facing summary.
+the workspace manifest, member manifests, configured non-member manifests,
+documentation, readmes, and lockfiles. Non-member rewrites are planned before
+the first write and applied between member manifests and later stages.
 """
 
 from __future__ import annotations
@@ -14,7 +14,12 @@ import enum
 import logging
 import typing as typ
 
-from lading.commands import bump_docs, bump_lockfiles, bump_readme
+from lading.commands import (
+    bump_docs,
+    bump_lockfiles,
+    bump_manifest_rewrites,
+    bump_readme,
+)
 from lading.commands.bump_manifests import (
     _WORKSPACE_SELECTORS,
     _dependency_sections_for_crate,
@@ -59,8 +64,10 @@ class _BumpAuxiliaryChanges:
 def _run_pipeline(context: _BumpContext, target_version: str) -> BumpChanges:
     """Run update stages and return their ordered changes."""
     changed_manifests: set[Path] = set()
+    rewrite_plans = _plan_non_member_rewrites(context, target_version)
     _process_workspace_manifest(context, target_version, changed_manifests)
     _process_crate_manifests(context, target_version, changed_manifests)
+    _process_non_member_rewrites(context, rewrite_plans, changed_manifests)
     changed_documents = _process_documentation_files(context, target_version)
     changed_readmes = _process_readme_transposition(
         context, dry_run=context.base_options.dry_run
@@ -75,6 +82,46 @@ def _run_pipeline(context: _BumpContext, target_version: str) -> BumpChanges:
             lockfiles=changed_lockfiles,
         ),
     )
+
+
+def _plan_non_member_rewrites(
+    context: _BumpContext,
+    target_version: str,
+) -> tuple[bump_manifest_rewrites.ManifestRewritePlan, ...]:
+    """Plan configured fixture changes before any pipeline stage writes."""
+    rewrite_groups = context.configuration.bump.manifest_rewrites
+    if not rewrite_groups:
+        return ()
+    pre_bump_versions = {
+        crate.name: crate.version for crate in context.workspace.crates
+    }
+    member_manifest_paths = tuple(
+        crate.manifest_path for crate in context.workspace.crates
+    )
+    return bump_manifest_rewrites.plan_manifest_rewrites(
+        context.root_path,
+        rewrite_groups,
+        member_manifest_paths,
+        bump_manifest_rewrites.ManifestRewriteVersions(
+            updated_crate_names=context.updated_crate_names,
+            pre_bump_versions=pre_bump_versions,
+            target_version=target_version,
+        ),
+    )
+
+
+def _process_non_member_rewrites(
+    context: _BumpContext,
+    plans: cabc.Sequence[bump_manifest_rewrites.ManifestRewritePlan],
+    changed_manifests: set[Path],
+) -> None:
+    """Apply planned fixture rewrites and include their resolved paths."""
+    if not plans:
+        return
+    rewritten_paths = bump_manifest_rewrites.apply_manifest_rewrites(
+        plans, dry_run=context.base_options.dry_run
+    )
+    changed_manifests.update(path.resolve() for path in rewritten_paths)
 
 
 def _process_workspace_manifest(

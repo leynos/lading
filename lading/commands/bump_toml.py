@@ -13,7 +13,7 @@ from pathlib import Path
 from tomlkit import parse as parse_toml
 from tomlkit import string
 from tomlkit.container import OutOfOrderTableProxy
-from tomlkit.items import InlineTable, Item, Table
+from tomlkit.items import InlineTable, Item, String, StringType, Table
 
 if typ.TYPE_CHECKING:
     from tomlkit.toml_document import TOMLDocument
@@ -131,6 +131,26 @@ def prepare_version_replacement(
     if replacement_text == current:
         return None
     replacement = string(replacement_text)
+    if isinstance(value, Item):
+        with suppress(AttributeError):  # Preserve inline comments and whitespace trivia
+            replacement._trivia = value._trivia
+    return replacement
+
+
+def _prepare_string_value_replacement(
+    value: object,
+    replacement_text: str,
+) -> Item | None:
+    """Replace string content while retaining its TOML quote style and trivia."""
+    current = value_as_string(value)
+    if current is None or current == replacement_text:
+        return None
+    string_type = value.type if isinstance(value, String) else None
+    replacement = string(
+        replacement_text,
+        literal=string_type in {StringType.SLL, StringType.MLL},
+        multiline=string_type in {StringType.MLB, StringType.MLL},
+    )
     if isinstance(value, Item):
         with suppress(AttributeError):  # Preserve inline comments and whitespace trivia
             replacement._trivia = value._trivia
