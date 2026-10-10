@@ -20,27 +20,35 @@ def _write_manifest(
     return path
 
 
+def _versions(
+    names: frozenset[str] = frozenset({"alpha"}),
+    pre_bump_versions: dict[str, str] | None = None,
+    target_version: str = "2.0.0",
+) -> bump_manifest_rewrites.ManifestRewriteVersions:
+    """Build a compact version context for rewrite tests."""
+    return bump_manifest_rewrites.ManifestRewriteVersions(
+        updated_crate_names=names,
+        pre_bump_versions=(
+            pre_bump_versions
+            if pre_bump_versions is not None
+            else dict.fromkeys(names, "1.0.0")
+        ),
+        target_version=target_version,
+    )
+
+
 def _plan(
     root: pathlib.Path,
     groups: tuple[ManifestRewriteConfig, ...],
-    *,
+    versions: bump_manifest_rewrites.ManifestRewriteVersions | None = None,
     members: tuple[pathlib.Path, ...] = (),
-    names: frozenset[str] = frozenset({"alpha"}),
-    versions: dict[str, str] | None = None,
-    target: str = "2.0.0",
 ) -> tuple[bump_manifest_rewrites.ManifestRewritePlan, ...]:
     """Plan fixture changes using a compact default workspace context."""
     return bump_manifest_rewrites.plan_manifest_rewrites(
         root,
         groups,
         members,
-        bump_manifest_rewrites.ManifestRewriteVersions(
-            updated_crate_names=names,
-            pre_bump_versions=(
-                versions if versions is not None else dict.fromkeys(names, "1.0.0")
-            ),
-            target_version=target,
-        ),
+        versions if versions is not None else _versions(),
     )
 
 
@@ -123,6 +131,18 @@ def test_skips_workspace_and_member_manifests(tmp_path: pathlib.Path) -> None:
     assert root_manifest.read_text(encoding="utf-8").endswith('alpha = "1.0.0"\n')
 
 
+def test_skips_missing_member_manifest_before_file_validation(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Configured member paths remain skipped even if the file is absent."""
+    member_manifest = tmp_path / "crates/alpha/Cargo.toml"
+    group = ManifestRewriteConfig(paths=("crates/alpha/Cargo.toml",))
+
+    plans = _plan(tmp_path, (group,), members=(member_manifest,))
+
+    assert plans == ()
+
+
 def test_updates_dependency_sections_and_package_aliases(
     tmp_path: pathlib.Path,
 ) -> None:
@@ -164,9 +184,14 @@ rstest-bdd = { version = "0.6.0-beta4", path = "../patched" }
     (plan,) = _plan(
         tmp_path,
         (group,),
-        names=frozenset({"rstest-bdd", "rstest-bdd-harness"}),
-        versions={"rstest-bdd": "0.6.0-beta4", "rstest-bdd-harness": "0.6.0-beta4"},
-        target="0.6.0",
+        versions=_versions(
+            names=frozenset({"rstest-bdd", "rstest-bdd-harness"}),
+            pre_bump_versions={
+                "rstest-bdd": "0.6.0-beta4",
+                "rstest-bdd-harness": "0.6.0-beta4",
+            },
+            target_version="0.6.0",
+        ),
     )
 
     assert 'rstest-bdd = "^0.6.0"' in plan.new_text
@@ -213,7 +238,13 @@ literal = { path = '../../../target/rstest-bdd-0.6.0-beta4' }
     names = frozenset({"rstest-bdd", "rstest-bdd-harness", "rstest-bdd-harness-gpui"})
     versions = dict.fromkeys(names, "0.6.0-beta4")
 
-    (plan,) = _plan(tmp_path, (group,), names=names, versions=versions, target="0.6.0")
+    (plan,) = _plan(
+        tmp_path,
+        (group,),
+        versions=_versions(
+            names=names, pre_bump_versions=versions, target_version="0.6.0"
+        ),
+    )
 
     assert plan.path == manifest.resolve()
     assert "rstest-bdd-0.6.0'" in plan.new_text
@@ -262,8 +293,8 @@ def test_unchanged_manifest_is_omitted_and_dry_run_does_not_write(
     manifest = _write_manifest(tmp_path, "fixture/Cargo.toml", content)
     group = ManifestRewriteConfig(paths=("fixture/Cargo.toml",))
 
-    assert _plan(tmp_path, (group,), target="2.0.0") == ()
-    plans = _plan(tmp_path, (group,), target="3.0.0")
+    assert _plan(tmp_path, (group,), _versions(target_version="2.0.0")) == ()
+    plans = _plan(tmp_path, (group,), _versions(target_version="3.0.0"))
     original_bytes = manifest.read_bytes()
 
     changed_paths = bump_manifest_rewrites.apply_manifest_rewrites(plans, dry_run=True)
