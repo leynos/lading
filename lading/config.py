@@ -12,7 +12,14 @@ import typing as typ
 from cyclopts.config import Toml
 
 from lading import toml_coerce
-from lading.exceptions import LadingError
+from lading.config_manifest_rewrites import (
+    ManifestRewriteConfig,
+)
+from lading.config_manifest_rewrites import (
+    StringValueRewriteConfig as StringValueRewriteConfig,
+)
+from lading.config_validation import validate_mapping_keys as _validate_mapping_keys
+from lading.exceptions import ConfigurationError, ConfigurationNotLoadedError
 from lading.utils import normalize_workspace_root
 
 if typ.TYPE_CHECKING:  # pragma: no cover - type checking only
@@ -31,6 +38,7 @@ BUMP_TOML_KEYS: typ.Final[frozenset[str]] = frozenset({
     "exclude",
     "documentation",
     "lockfile_manifests",
+    "manifest_rewrites",
     "rebuild_lockfiles",
 })
 BUMP_DOCUMENTATION_TOML_KEYS: typ.Final[frozenset[str]] = frozenset({"globs"})
@@ -48,14 +56,6 @@ PREFLIGHT_TOML_KEYS: typ.Final[frozenset[str]] = frozenset({
     "env",
     "stderr_tail_lines",
 })
-
-
-class ConfigurationError(LadingError):
-    """Raised when the :mod:`lading` configuration is invalid."""
-
-
-class ConfigurationNotLoadedError(ConfigurationError):
-    """Raised when code accesses the configuration before it is loaded."""
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -112,6 +112,7 @@ class BumpConfig:
     lockfile_manifests: tuple[str, ...] = ()
     rebuild_lockfiles: bool = True
     documentation: DocumentationConfig = dc.field(default_factory=DocumentationConfig)
+    manifest_rewrites: tuple[ManifestRewriteConfig, ...] = ()
 
     @classmethod
     def from_mapping(cls, mapping: cabc.Mapping[str, typ.Any] | None) -> BumpConfig:
@@ -144,10 +145,28 @@ class BumpConfig:
         if mapping is None:
             return cls()
         _validate_mapping_keys(mapping, set(BUMP_TOML_KEYS), "bump")
+        raw_rewrites: cabc.Sequence[object] = ()
+        if "manifest_rewrites" in mapping:
+            raw_rewrites = toml_coerce.expect_sequence(
+                mapping["manifest_rewrites"],
+                "bump.manifest_rewrites",
+                error=ConfigurationError,
+            )
         return cls(
             exclude=_string_tuple(mapping.get("exclude"), "bump.exclude"),
             lockfile_manifests=_string_tuple(
                 mapping.get("lockfile_manifests"), "bump.lockfile_manifests"
+            ),
+            manifest_rewrites=tuple(
+                ManifestRewriteConfig.from_mapping(
+                    toml_coerce.expect_mapping(
+                        raw_rewrite,
+                        f"bump.manifest_rewrites[{index}]",
+                        error=ConfigurationError,
+                    ),
+                    f"bump.manifest_rewrites[{index}]",
+                )
+                for index, raw_rewrite in enumerate(raw_rewrites)
             ),
             rebuild_lockfiles=_boolean(
                 mapping.get("rebuild_lockfiles"),
@@ -354,24 +373,6 @@ class LadingConfig:
 _active_config: contextvars.ContextVar[LadingConfig] = contextvars.ContextVar(
     "lading_active_config"
 )
-
-
-def _validate_mapping_keys(
-    mapping: cabc.Mapping[str, typ.Any] | None,
-    allowed_keys: set[str],
-    context: str,
-) -> None:
-    """Validate that ``mapping`` contains only ``allowed_keys``."""
-    if mapping is None:
-        return
-    unknown = set(mapping) - allowed_keys
-    if unknown:
-        joined = ", ".join(sorted(unknown))
-        if context.endswith(" section"):
-            message = f"Unknown {context}(s): {joined}."
-        else:
-            message = f"Unknown {context} option(s): {joined}."
-        raise ConfigurationError(message)
 
 
 def build_loader(workspace_root: Path) -> Toml:

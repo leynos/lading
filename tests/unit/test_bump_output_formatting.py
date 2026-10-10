@@ -293,3 +293,31 @@ def test_format_result_message_lockfile_only(tmp_path: Path) -> None:
     assert lines[1] == f"- {lockfile.relative_to(root)} (lockfile)", (
         "body should list the lockfile path"
     )
+
+
+def test_format_result_message_lists_non_member_manifest_in_existing_category(
+    tmp_path: Path,
+) -> None:
+    """Live and dry-run reports use workspace-relative manifest entries."""
+    root = tmp_path
+    changes = bump_output.BumpChanges(
+        manifests=(root / "Cargo.toml", root / "tests/fixtures/standalone/Cargo.toml")
+    )
+
+    live = bump_output._format_result_message(
+        changes, "1.2.3", dry_run=False, workspace_root=root
+    )
+    dry_run = bump_output._format_result_message(
+        changes, "1.2.3", dry_run=True, workspace_root=root
+    )
+
+    assert live.splitlines() == [
+        "Updated version to 1.2.3 in 2 manifest(s):",
+        "- Cargo.toml",
+        "- tests/fixtures/standalone/Cargo.toml",
+    ]
+    assert dry_run.splitlines() == [
+        "Dry run; would update version to 1.2.3 in 2 manifest(s):",
+        "- Cargo.toml",
+        "- tests/fixtures/standalone/Cargo.toml",
+    ]

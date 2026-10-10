@@ -11,7 +11,7 @@ from lading.commands import bump_readme
 # Keep direct fixture imports for BDD collection even though conftest.py
 # registers the modules as pytest plugins.
 from . import config_fixtures as _config_fixtures  # ruff: ignore[unused-import]
-from . import manifest_fixtures as _manifest_fixtures  # ruff: ignore[unused-import]
+from . import manifest_fixtures as _manifest_fixtures
 from . import metadata_fixtures as _metadata_fixtures  # ruff: ignore[unused-import]
 
 if typ.TYPE_CHECKING:
@@ -51,21 +51,7 @@ def given_workspace_has_nested_tracked_lockfile(
     monkeypatch: pytest.MonkeyPatch,
     workspace_directory: Path,
 ) -> None:
-    """Track a nested standalone package lockfile alongside the root lockfile.
-
-    The nested package is not listed in ``bump.lockfile_manifests``; bump must
-    discover it from the git index and refresh it anyway.
-
-    Parameters
-    ----------
-    cmd_mox : CmdMox
-        Command-double fixture used to stub Git, Cargo, and metadata commands.
-    monkeypatch : pytest.MonkeyPatch
-        Fixture used to install the Cargo command shim for the scenario.
-    workspace_directory : Path
-        Temporary workspace containing the root and nested lockfiles.
-
-    """
+    """Track a nested standalone lockfile for discovered regeneration."""
     from tests.helpers.workspace_helpers import install_cargo_stub
 
     install_cargo_stub(cmd_mox, monkeypatch)
@@ -98,23 +84,7 @@ def when_invoke_lading_bump(
     workspace_directory: Path,
     repo_root: Path,
 ) -> CliRunResult:
-    """Execute the bump CLI via ``python -m`` and capture the result.
-
-    Parameters
-    ----------
-    version : str
-        The version argument passed to the ``bump`` subcommand.
-    workspace_directory : Path
-        The workspace root supplied via ``--workspace-root``.
-    repo_root : Path
-        The repository root used as the subprocess working directory.
-
-    Returns
-    -------
-    CliRunResult
-        The captured CLI run details (return code, stdout, stderr, and the
-        resolved workspace path).
-    """
+    """Run the bump CLI and capture its output."""
     return _invoke_lading_bump(version, workspace_directory, repo_root)
 
 
@@ -127,23 +97,7 @@ def when_invoke_lading_bump_dry_run(
     workspace_directory: Path,
     repo_root: Path,
 ) -> CliRunResult:
-    """Execute the bump CLI in dry-run mode via ``python -m``.
-
-    Parameters
-    ----------
-    version : str
-        The version argument passed to the ``bump`` subcommand.
-    workspace_directory : Path
-        The workspace root supplied via ``--workspace-root``.
-    repo_root : Path
-        The repository root used as the subprocess working directory.
-
-    Returns
-    -------
-    CliRunResult
-        The captured CLI run details (return code, stdout, stderr, and the
-        resolved workspace path).
-    """
+    """Run the bump CLI in dry-run mode and capture its output."""
     return _invoke_lading_bump(version, workspace_directory, repo_root, "--dry-run")
 
 
@@ -212,6 +166,62 @@ def then_cli_output_lists_manifest_paths(
     assert manifest_lines == expected_lines
 
 
+@then(parsers.parse('the CLI output lists manifest path "{expected}"'))
+def then_cli_output_lists_one_manifest_path(
+    cli_run: dict[str, typ.Any], expected: str
+) -> None:
+    """Assert that one configured manifest appears in the report."""
+    assert cli_run["returncode"] == 0, cli_run["stdout"]
+    assert (
+        expected in [line.strip() for line in cli_run["stdout"].splitlines()]
+    ), f"{expected!r} missing from CLI output:\n{cli_run['stdout']}"
+
+
+@given(
+    "cargo metadata describes the rstest-bdd workspace and published fixture",
+    target_fixture="published_fixture_original",
+)
+def given_published_fixture_workspace(
+    cmd_mox: CmdMox,
+    monkeypatch: pytest.MonkeyPatch,
+    workspace_directory: Path,
+) -> bytes:
+    """Create the beta4 workspace and configured standalone fixture."""
+    return _manifest_fixtures._prepare_published_gpui_e2e_fixture(
+        cmd_mox, monkeypatch, workspace_directory
+    )
+
+
+@then("the published fixture manifest references only 0.6.0")
+def then_published_fixture_versions_updated(cli_run: CliRunResult) -> None:
+    """Assert dependency and staged-path prerelease values were rewritten."""
+    fixture = cli_run["workspace"] / "tests/fixtures/published-gpui-e2e/Cargo.toml"
+    contents = fixture.read_text(encoding="utf-8")
+    assert "0.6.0-beta4" not in contents, f"prerelease remains:\n{contents}"
+    assert contents.count("0.6.0") == 6, f"unexpected rewrite count:\n{contents}"
+
+
+@then("the published fixture manifest remains unchanged")
+def then_published_fixture_unchanged(
+    cli_run: CliRunResult,
+    published_fixture_original: bytes,
+) -> None:
+    """Assert dry-run preserved the fixture's exact bytes."""
+    fixture = cli_run["workspace"] / "tests/fixtures/published-gpui-e2e/Cargo.toml"
+    actual = fixture.read_bytes()
+    assert actual == published_fixture_original, f"fixture changed: {actual!r}"
+
+
+@then("the bump made no Cargo lockfile update invocations")
+def then_no_cargo_lockfile_updates(cmd_mox: CmdMox) -> None:
+    """Assert dry-run projection did not invoke Cargo lockfile updates."""
+    updates = [
+        invocation for invocation in cmd_mox.journal
+        if invocation.command == "cargo::update"
+    ]
+    assert updates == [], f"unexpected Cargo updates: {updates!r}"
+
+
 @then(parsers.parse('the CLI output lists documentation path "{expected}"'))
 def then_cli_output_lists_documentation_path(
     cli_run: dict[str, typ.Any], expected: str
@@ -256,18 +266,7 @@ def then_bump_refreshed_workspace_and_nested_lockfiles(
     cmd_mox: CmdMox,
     workspace_directory: Path,
 ) -> None:
-    """Assert Cargo refreshed the root and discovered nested lockfiles.
-
-    Parameters
-    ----------
-    cli_run : CliRunResult
-        Captured result of the completed ``lading bump`` invocation.
-    cmd_mox : CmdMox
-        Command-double fixture whose journal records Cargo update calls.
-    workspace_directory : Path
-        Temporary workspace used to derive the expected manifest paths.
-
-    """
+    """Assert Cargo refreshed the root and discovered nested lockfiles."""
     assert cli_run["returncode"] == 0, (
         f"stdout:\n{cli_run['stdout']}\nstderr:\n{cli_run['stderr']}"
     )
