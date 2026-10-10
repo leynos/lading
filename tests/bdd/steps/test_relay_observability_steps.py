@@ -1,93 +1,111 @@
-"""BDD steps that pin the externally observable relay event contract."""
+"""BDD steps that pin relay observability at the CLI subprocess boundary."""
 
 from __future__ import annotations
 
-import dataclasses as dc
-import logging
+import sys
 import typing as typ
 from pathlib import Path
 
-from pytest_bdd import given, scenarios, then, when
+from pytest_bdd import scenarios, then, when
 
-from lading.runtime.relay_events import RelayEvent
-from lading.runtime.subprocess_runner import write_to_sink
-from tests.helpers.relay_sinks import _Cp1252Sink
+from .test_publish_infrastructure import (
+    PreflightTestContext,
+    _CommandResponse,
+    _invoke_publish_with_options,
+)
 
 if typ.TYPE_CHECKING:
     import pytest
 
-    LogCaptureFixture = pytest.LogCaptureFixture
-else:  # pragma: no cover - typing helpers
-    LogCaptureFixture = typ.Any
+    from .cli_run_types import CliRunResult
 
-_EVENT_LOGGER = "lading.runtime.relay_events"
+    MonkeyPatch = pytest.MonkeyPatch
+else:  # pragma: no cover - typing helpers
+    MonkeyPatch = typ.Any
+
 _FEATURES_DIR = Path(__file__).resolve().parent.parent / "features"
 _PAYLOAD = "private child output: ś ń"
+_EVENT = (
+    "RelayEvent(operation='relay_mirror', stream='stdout', "
+    "transition='text_to_binary', error_category='unicode_encode')"
+)
 
 scenarios(str(_FEATURES_DIR / "relay_observability.feature"))
 
 
-def _event_record(records: list[logging.LogRecord]) -> logging.LogRecord:
-    """Return the sole relay observability record from a scenario."""
-    relay_records = [record for record in records if record.name == _EVENT_LOGGER]
-    assert len(relay_records) == 1, "expected one relay event for the scenario"
-    return relay_records[0]
-
-
-@given(
-    "a parent relay sink that cannot encode Unicode",
-    target_fixture="relay_sink",
-)
-def given_cp1252_relay_sink() -> _Cp1252Sink:
-    """Provide a parent sink that selects the UTF-8 binary fallback."""
-    return _Cp1252Sink()
-
-
 @when(
-    "the stdout relay mirrors Unicode output",
-    target_fixture="relay_event_records",
+    "the CLI relays UTF-8 cargo output through a cp1252 text stream",
+    target_fixture="cli_run",
 )
-def when_stdout_relay_mirrors_unicode(
-    caplog: LogCaptureFixture,
-    relay_sink: _Cp1252Sink,
-) -> list[logging.LogRecord]:
-    """Mirror child output while capturing relay observability records."""
-    caplog.set_level(logging.INFO, logger=_EVENT_LOGGER)
-    write_to_sink(relay_sink, _PAYLOAD, "stdout")
-    return caplog.records
-
-
-@then("one Unicode fallback relay event is emitted")
-def then_unicode_fallback_event_is_emitted(
-    relay_event_records: list[logging.LogRecord],
-) -> None:
-    """Assert the fallback transition has exactly the stable field values."""
-    record = _event_record(relay_event_records)
-    expected = RelayEvent("relay_mirror", "stdout", "text_to_binary", "unicode_encode")
-    assert record.levelno == logging.INFO, "relay decision should log at INFO level"
-    assert record.msg == "relay observability event: %s", (
-        "relay decision should use the stable parameterized message"
+def when_cli_relays_utf8_cargo_output(
+    workspace_directory: Path,
+    repo_root: Path,
+    preflight_test_context: PreflightTestContext,
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> CliRunResult:
+    """Run publish with one fixed UTF-8 result through cmd-mox passthrough."""
+    producer = tmp_path / "cargo-output"
+    marker = tmp_path / "payload-emitted"
+    payload_bytes = _PAYLOAD.encode("utf-8")
+    producer.write_text(
+        f"#!{sys.executable}\n"
+        "import os\n"
+        "from pathlib import Path\n"
+        f"marker = Path({str(marker)!r})\n"
+        "if not marker.exists():\n"
+        "    marker.touch()\n"
+        f"    os.write(1, {payload_bytes!r})\n",
+        encoding="utf-8",
     )
-    assert record.args == (expected,), "relay decision should carry the stable event"
-    assert dc.asdict(expected) == {
-        "operation": "relay_mirror",
-        "stream": "stdout",
-        "transition": "text_to_binary",
-        "error_category": "unicode_encode",
-    }, "relay event fields should match the stdout fallback contract"
+    producer.chmod(0o755)
+
+    monkeypatch.setenv("PYTHONIOENCODING", "cp1252")
+    monkeypatch.setenv("CMOX_REAL_COMMAND_cargo::package", str(producer))
+    preflight_test_context.cmd_mox.spy("cargo::package").passthrough()
+    preflight_test_context.overrides["cargo", "publish"] = _CommandResponse(exit_code=0)
+    stub_config = preflight_test_context.create_stub_config()
+    return _invoke_publish_with_options(
+        repo_root,
+        workspace_directory,
+        stub_config,
+        "--live",
+    )
+
+
+@then("the CLI emits one Unicode fallback relay event for stdout")
+def then_cli_emits_one_stdout_fallback_event(
+    cli_run: CliRunResult,
+    preflight_test_context: PreflightTestContext,
+) -> None:
+    """Assert the real CLI emits the exact bounded fallback event once."""
+    assert cli_run["returncode"] == 0, (
+        f"publish CLI should succeed, stderr was:\n{cli_run['stderr']}"
+    )
+    event_message = f"relay observability event: {_EVENT}"
+    assert cli_run["stderr"].count("relay observability event:") == 1, (
+        "CLI stderr should contain exactly one relay observability event"
+    )
+    assert event_message in cli_run["stderr"], (
+        "CLI stderr should report the stable stdout Unicode fallback fields"
+    )
+    preflight_test_context.cmd_mox.spy("cargo::package").assert_called()
+
+
+@then("the CLI preserves the exact child output")
+def then_cli_preserves_exact_child_output(cli_run: CliRunResult) -> None:
+    """Assert the child's exact UTF-8 bytes lead the captured CLI output."""
+    assert cli_run["stdout"].encode("utf-8").startswith(_PAYLOAD.encode("utf-8")), (
+        "CLI stdout should begin with the child's exact UTF-8 bytes"
+    )
+    assert cli_run["stdout"].count(_PAYLOAD) == 1, (
+        "the child payload should be captured once across publish invocations"
+    )
 
 
 @then("the relay event excludes the child output")
-def then_relay_event_excludes_child_output(
-    relay_event_records: list[logging.LogRecord],
-) -> None:
-    """Assert the rendered event and structured fields omit the child payload."""
-    record = _event_record(relay_event_records)
-    event = record.args[0]
-    assert isinstance(event, RelayEvent), "relay log should carry a RelayEvent value"
-    assert _PAYLOAD not in record.getMessage(), (
-        "rendered log must not expose child output"
-    )
-    assert _PAYLOAD not in str(dc.asdict(event)), (
-        "event fields must not expose child output"
+def then_relay_event_excludes_child_output(cli_run: CliRunResult) -> None:
+    """Assert the child payload is absent from the CLI's event log."""
+    assert _PAYLOAD not in cli_run["stderr"], (
+        "CLI event logs must not expose child output"
     )

@@ -339,6 +339,15 @@ def _register_preflight_commands(
             response,
         ))
     for expectation_program, entries in grouped_responses.items():
+        existing_double = getattr(config.cmd_mox, "_doubles", {}).get(
+            expectation_program
+        )
+        if existing_double is not None:
+            is_passthrough_spy = getattr(
+                existing_double, "kind", None
+            ) == "spy" and getattr(existing_double, "passthrough_mode", False)
+            if is_passthrough_spy:
+                continue
         existing = _existing_static_stub_response(config.cmd_mox, expectation_program)
         if existing is not None:
             entries.insert(0, existing)
