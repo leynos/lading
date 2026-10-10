@@ -159,11 +159,13 @@ def _upload_directory(tokens: list[str]) -> str:
     for index, argument in enumerate(tokens):
         if argument.startswith("--directory="):
             return argument.partition("=")[2]
-        if argument == "--directory":
-            if index + 1 >= len(tokens):
-                message = "--directory must have a value"
-                raise ValueError(message)
+        if argument != "--directory":
+            continue
+        try:
             return tokens[index + 1]
+        except IndexError as error:
+            message = "--directory must have a value"
+            raise ValueError(message) from error
     return DEFAULT_UPLOAD_DIRECTORY
 
 
