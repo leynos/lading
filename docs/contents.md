@@ -51,6 +51,8 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
   the standalone script path.
 - [ADR-007: Emit bounded per-event relay observability logs][adr-007] - accepted
   contract for privacy-safe subprocess relay decision events.
+- [ADR-008: Adopt the shared CV-005 contract library][adr-008] - accepted
+  decision to run the pinned shared checker instead of local copies.
 
 ## Reference documents
 
@@ -78,4 +80,5 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
 [adr-005]: adr/005-release-wheel-publication.md
 [adr-006]: adr/006-align-cuprum-selection-across-dependency-paths.md
 [adr-007]: adr/007-relay-observability-events.md
+[adr-008]: adr/008-adopt-the-shared-cv005-contract-library.md
 [execplan-regenerate-lockfiles]: execplans/regenerate-lockfiles.md
