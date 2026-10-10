@@ -190,14 +190,7 @@ def _creation_steps() -> list[WorkflowStep]:
 
 def _publish_steps() -> list[WorkflowStep]:
     """Return the steps that take the release out of draft."""
-    return [
-        step
-        for step in _release_steps()
-        if tuple(_shell_tokens(step.get("run", ""), str(step.get("name", "unnamed"))))[
-            : len(PUBLISH_COMMAND)
-        ]
-        == PUBLISH_COMMAND
-    ]
+    return [step for step in _release_steps() if step.get("name") == PUBLISH_STEP_NAME]
 
 
 def _index_of(step: WorkflowStep) -> int:
@@ -277,9 +270,15 @@ def test_the_upload_runs_the_script_as_its_own_command() -> None:
 @pytest.mark.parametrize("forbidden", ["xargs", "find"])
 def test_the_upload_is_not_a_shell_pipeline(forbidden: str) -> None:
     """No release step may search for wheels through a shell pipeline."""
+    run_steps = [step for step in _release_steps() if step.get("run")]
+    run_step_names = {step.get("name") for step in run_steps}
+    assert len(run_steps) == 2, f"expected two release shell steps: {run_steps}"
+    assert run_step_names == {UPLOAD_STEP_NAME, PUBLISH_STEP_NAME}, (
+        f"release shell steps must be the named upload and publish steps: {run_steps}"
+    )
     offenders = [
         tokens
-        for step in _release_steps()
+        for step in run_steps
         if (
             tokens := _shell_tokens(
                 step.get("run", ""), str(step.get("name", "unnamed"))
