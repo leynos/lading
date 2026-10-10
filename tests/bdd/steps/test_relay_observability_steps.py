@@ -30,7 +30,7 @@ scenarios(str(_FEATURES_DIR / "relay_observability.feature"))
 def _event_record(records: list[logging.LogRecord]) -> logging.LogRecord:
     """Return the sole relay observability record from a scenario."""
     relay_records = [record for record in records if record.name == _EVENT_LOGGER]
-    assert len(relay_records) == 1
+    assert len(relay_records) == 1, "expected one relay event for the scenario"
     return relay_records[0]
 
 
@@ -64,15 +64,17 @@ def then_unicode_fallback_event_is_emitted(
     """Assert the fallback transition has exactly the stable field values."""
     record = _event_record(relay_event_records)
     expected = RelayEvent("relay_mirror", "stdout", "text_to_binary", "unicode_encode")
-    assert record.levelno == logging.INFO
-    assert record.msg == "relay observability event: %s"
-    assert record.args == (expected,)
+    assert record.levelno == logging.INFO, "relay decision should log at INFO level"
+    assert record.msg == "relay observability event: %s", (
+        "relay decision should use the stable parameterized message"
+    )
+    assert record.args == (expected,), "relay decision should carry the stable event"
     assert dc.asdict(expected) == {
         "operation": "relay_mirror",
         "stream": "stdout",
         "transition": "text_to_binary",
         "error_category": "unicode_encode",
-    }
+    }, "relay event fields should match the stdout fallback contract"
 
 
 @then("the relay event excludes the child output")
@@ -82,6 +84,10 @@ def then_relay_event_excludes_child_output(
     """Assert the rendered event and structured fields omit the child payload."""
     record = _event_record(relay_event_records)
     event = record.args[0]
-    assert isinstance(event, RelayEvent)
-    assert _PAYLOAD not in record.getMessage()
-    assert _PAYLOAD not in str(dc.asdict(event))
+    assert isinstance(event, RelayEvent), "relay log should carry a RelayEvent value"
+    assert _PAYLOAD not in record.getMessage(), (
+        "rendered log must not expose child output"
+    )
+    assert _PAYLOAD not in str(dc.asdict(event)), (
+        "event fields must not expose child output"
+    )
