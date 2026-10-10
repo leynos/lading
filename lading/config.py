@@ -7,6 +7,8 @@ import contextlib
 import contextvars
 import dataclasses as dc
 import functools
+import pathlib
+import string
 import typing as typ
 
 from cyclopts.config import Toml
@@ -31,9 +33,20 @@ BUMP_TOML_KEYS: typ.Final[frozenset[str]] = frozenset({
     "exclude",
     "documentation",
     "lockfile_manifests",
+    "manifest_rewrites",
     "rebuild_lockfiles",
 })
 BUMP_DOCUMENTATION_TOML_KEYS: typ.Final[frozenset[str]] = frozenset({"globs"})
+BUMP_MANIFEST_REWRITE_TOML_KEYS: typ.Final[frozenset[str]] = frozenset({
+    "paths",
+    "dependencies",
+    "string_values",
+})
+BUMP_STRING_VALUE_REWRITE_TOML_KEYS: typ.Final[frozenset[str]] = frozenset({
+    "table",
+    "field",
+    "template",
+})
 PUBLISH_TOML_KEYS: typ.Final[frozenset[str]] = frozenset({
     "exclude",
     "order",
@@ -105,6 +118,178 @@ class DocumentationConfig:
 
 
 @dc.dataclass(frozen=True, slots=True)
+class StringValueRewriteConfig:
+    """Describe string values to rewrite in a selected TOML table.
+
+    Attributes
+    ----------
+    table : tuple[str, ...]
+        Literal TOML table segments selected for replacement.
+    field : str | None, default None
+        Sub-table field to visit, or ``None`` to visit direct string values.
+    template : str, default "{crate}-{version}"
+        Old and new text pattern, using only ``{crate}`` and ``{version}``.
+    """
+
+    table: tuple[str, ...]
+    field: str | None = None
+    template: str = "{crate}-{version}"
+
+    @classmethod
+    def from_mapping(
+        cls,
+        mapping: cabc.Mapping[str, typ.Any],
+        field_name: str = "bump.manifest_rewrites[0].string_values[0]",
+    ) -> StringValueRewriteConfig:
+        """Create a validated string rewrite from a TOML table mapping.
+
+        Parameters
+        ----------
+        mapping : cabc.Mapping[str, typ.Any]
+            Parsed selector settings.
+        field_name : str, default "bump.manifest_rewrites[0].string_values[0]"
+            Configuration path used in validation errors.
+
+        Returns
+        -------
+        StringValueRewriteConfig
+            Validated immutable selector settings.
+
+        Raises
+        ------
+        ConfigurationError
+            If a key, selector, or template is invalid.
+        """
+        _validate_mapping_keys(
+            mapping, set(BUMP_STRING_VALUE_REWRITE_TOML_KEYS), field_name
+        )
+        table_name = f"{field_name}.table"
+        raw_table = toml_coerce.expect_sequence(
+            mapping.get("table"), table_name, error=ConfigurationError
+        )
+        table = toml_coerce.validate_string_sequence(
+            raw_table, table_name, error=ConfigurationError
+        )
+        _reject_blank_segments(table, table_name)
+        if not table:
+            message = f"{table_name} must contain at least one segment."
+            raise ConfigurationError(message)
+
+        selected_field = (
+            None
+            if "field" not in mapping
+            else toml_coerce.expect_string(
+                mapping["field"], f"{field_name}.field", error=ConfigurationError
+            )
+        )
+        if selected_field is not None and not selected_field.strip():
+            message = f"{field_name}.field must not be blank."
+            raise ConfigurationError(message)
+
+        raw_template = mapping.get("template", "{crate}-{version}")
+        template = toml_coerce.expect_string(
+            raw_template, f"{field_name}.template", error=ConfigurationError
+        )
+        _validate_rewrite_template(template, f"{field_name}.template")
+        return cls(table=table, field=selected_field, template=template)
+
+
+@dc.dataclass(frozen=True, slots=True)
+class ManifestRewriteConfig:
+    """Allow version rewrites in selected non-member Cargo manifests.
+
+    Attributes
+    ----------
+    paths : tuple[str, ...]
+        Relative manifest paths or globs within the workspace.
+    dependencies : bool, default True
+        Whether matching dependency requirements should be updated.
+    string_values : tuple[StringValueRewriteConfig, ...], default ()
+        Explicit TOML string selectors and rewrite templates.
+    """
+
+    paths: tuple[str, ...]
+    dependencies: bool = True
+    string_values: tuple[StringValueRewriteConfig, ...] = ()
+
+    @classmethod
+    def from_mapping(
+        cls,
+        mapping: cabc.Mapping[str, typ.Any],
+        field_name: str = "bump.manifest_rewrites[0]",
+    ) -> ManifestRewriteConfig:
+        """Create a validated manifest rewrite group from a TOML mapping.
+
+        Parameters
+        ----------
+        mapping : cabc.Mapping[str, typ.Any]
+            Parsed manifest rewrite settings.
+        field_name : str, default "bump.manifest_rewrites[0]"
+            Configuration path used in validation errors.
+
+        Returns
+        -------
+        ManifestRewriteConfig
+            Validated immutable manifest rewrite settings.
+
+        Raises
+        ------
+        ConfigurationError
+            If the allowlist, rewrite rules, or dependency flag is invalid.
+        """
+        _validate_mapping_keys(
+            mapping, set(BUMP_MANIFEST_REWRITE_TOML_KEYS), field_name
+        )
+        paths_name = f"{field_name}.paths"
+        raw_paths = toml_coerce.expect_sequence(
+            mapping.get("paths"), paths_name, error=ConfigurationError
+        )
+        paths = toml_coerce.validate_string_sequence(
+            raw_paths, paths_name, error=ConfigurationError
+        )
+        if not paths:
+            message = f"{paths_name} must contain at least one path."
+            raise ConfigurationError(message)
+        for index, path in enumerate(paths):
+            indexed_name = f"{paths_name}[{index}]"
+            if not path.strip():
+                message = f"{indexed_name} must not be blank."
+                raise ConfigurationError(message)
+            if (
+                pathlib.Path(path).is_absolute()
+                or pathlib.PureWindowsPath(path).is_absolute()
+            ):
+                message = f"{indexed_name} must be relative to the workspace."
+                raise ConfigurationError(message)
+
+        dependencies = _boolean(
+            mapping.get("dependencies"), f"{field_name}.dependencies", default=True
+        )
+        raw_values: cabc.Sequence[object] = ()
+        if "string_values" in mapping:
+            raw_values = toml_coerce.expect_sequence(
+                mapping["string_values"],
+                f"{field_name}.string_values",
+                error=ConfigurationError,
+            )
+        string_values = tuple(
+            StringValueRewriteConfig.from_mapping(
+                toml_coerce.expect_mapping(
+                    raw_value,
+                    f"{field_name}.string_values[{index}]",
+                    error=ConfigurationError,
+                ),
+                f"{field_name}.string_values[{index}]",
+            )
+            for index, raw_value in enumerate(raw_values)
+        )
+        if not dependencies and not string_values:
+            message = f"{field_name} must enable dependencies or define string_values."
+            raise ConfigurationError(message)
+        return cls(paths=paths, dependencies=dependencies, string_values=string_values)
+
+
+@dc.dataclass(frozen=True, slots=True)
 class BumpConfig:
     """Settings for the ``bump`` command."""
 
@@ -112,6 +297,7 @@ class BumpConfig:
     lockfile_manifests: tuple[str, ...] = ()
     rebuild_lockfiles: bool = True
     documentation: DocumentationConfig = dc.field(default_factory=DocumentationConfig)
+    manifest_rewrites: tuple[ManifestRewriteConfig, ...] = ()
 
     @classmethod
     def from_mapping(cls, mapping: cabc.Mapping[str, typ.Any] | None) -> BumpConfig:
@@ -144,10 +330,28 @@ class BumpConfig:
         if mapping is None:
             return cls()
         _validate_mapping_keys(mapping, set(BUMP_TOML_KEYS), "bump")
+        raw_rewrites: cabc.Sequence[object] = ()
+        if "manifest_rewrites" in mapping:
+            raw_rewrites = toml_coerce.expect_sequence(
+                mapping["manifest_rewrites"],
+                "bump.manifest_rewrites",
+                error=ConfigurationError,
+            )
         return cls(
             exclude=_string_tuple(mapping.get("exclude"), "bump.exclude"),
             lockfile_manifests=_string_tuple(
                 mapping.get("lockfile_manifests"), "bump.lockfile_manifests"
+            ),
+            manifest_rewrites=tuple(
+                ManifestRewriteConfig.from_mapping(
+                    toml_coerce.expect_mapping(
+                        raw_rewrite,
+                        f"bump.manifest_rewrites[{index}]",
+                        error=ConfigurationError,
+                    ),
+                    f"bump.manifest_rewrites[{index}]",
+                )
+                for index, raw_rewrite in enumerate(raw_rewrites)
             ),
             rebuild_lockfiles=_boolean(
                 mapping.get("rebuild_lockfiles"),
@@ -371,6 +575,40 @@ def _validate_mapping_keys(
             message = f"Unknown {context}(s): {joined}."
         else:
             message = f"Unknown {context} option(s): {joined}."
+        raise ConfigurationError(message)
+
+
+def _reject_blank_segments(segments: tuple[str, ...], field_name: str) -> None:
+    """Reject blank path or selector segments with their indexed field name."""
+    for index, segment in enumerate(segments):
+        if not segment.strip():
+            message = f"{field_name}[{index}] must not be blank."
+            raise ConfigurationError(message)
+
+
+def _validate_rewrite_template(template: str, field_name: str) -> None:
+    """Allow only crate/version placeholders and require a version field."""
+    formatter = string.Formatter()
+    has_version = False
+    try:
+        parsed = formatter.parse(template)
+        for _, field, format_spec, conversion in parsed:
+            if field is None:
+                continue
+            if field not in {"crate", "version"}:
+                message = (
+                    f"{field_name} only supports {{crate}} and {{version}} fields."
+                )
+                raise ConfigurationError(message)
+            if format_spec or conversion is not None:
+                message = f"{field_name} does not support format specs or conversions."
+                raise ConfigurationError(message)
+            has_version |= field == "version"
+    except ValueError as exc:
+        message = f"{field_name} is not a valid format template."
+        raise ConfigurationError(message) from exc
+    if not has_version:
+        message = f"{field_name} must contain {{version}}."
         raise ConfigurationError(message)
 
 

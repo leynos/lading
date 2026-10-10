@@ -610,6 +610,13 @@ exclude = ["some-private-crate"]
 lockfile_manifests = ["crates/nested/Cargo.toml"]
 rebuild_lockfiles = true
 
+[[bump.manifest_rewrites]]
+paths = ["tests/fixtures/published-gpui-e2e/Cargo.toml"]
+dependencies = true
+string_values = [
+  { table = ["patch", "crates-io"], field = "path" },
+]
+
 [bump.documentation]
 globs = ["README.md", "docs/**/*.md"]
 
@@ -648,6 +655,65 @@ stderr_tail_lines = 40
   `--no-rebuild-lockfiles` to skip regeneration for a single run, or
   `--rebuild-lockfiles` to force regeneration when `rebuild_lockfiles` is
   configured as `false`.
+- `manifest_rewrites`: array of `[[bump.manifest_rewrites]]` tables, default
+  `[]`. Each table opts selected non-member manifests into dependency and
+  string-value rewrites. Configure relative `paths` or globs and, when needed,
+  `string_values` selectors. The rewrite stage does not add lockfile targets;
+  use `lockfile_manifests` for an untracked fixture lockfile.
+
+#### Rewriting configured non-member manifests
+
+`manifest_rewrites` is an explicit allowlist for standalone fixture manifests.
+Each group accepts these fields:
+
+- `paths`: non-empty array of workspace-relative manifest paths or globs.
+  Globs must match at least one file. Every match must resolve inside the
+  workspace, name a `Cargo.toml` file, and refer to a regular file.
+- `dependencies`: boolean, default `true`. Matching Cargo dependency
+  requirements are updated by package name, including renamed dependency keys
+  whose `package` value names an updated workspace crate. The rewrite visits
+  top-level, target-specific, and workspace dependency sections. Path-only
+  entries and entries with `workspace = true` are left alone.
+- `string_values`: array of selector tables, default `[]`. Each selector has a
+  non-empty literal `table` path, an optional `field`, and an optional
+  `template`. With `field` set, the selected field is visited in each inline or
+  standard sub-table entry. Without it, direct string values in the selected
+  table are visited. A missing table or field and a non-string value are no-ops.
+
+The default template is `"{crate}-{version}"`. It may use only `{crate}` and
+`{version}`, and must include `{version}`. Format specifications, conversions,
+positional fields, and unknown placeholders are configuration errors. The old
+version comes from workspace metadata; the new version is the requested bump
+version. A template starting with `{crate}` requires a crate-name boundary
+before the match. A template ending with `{version}` requires a boundary after
+the match, so `rstest-bdd` does not match inside `rstest-bdd-harness`, and
+`0.6.0-beta4` does not match the prefix of `0.6.0-beta40`.
+
+The root manifest and all workspace-member manifests are skipped even when a
+configured glob selects them. Repeated groups selecting the same non-member
+manifest combine their dependency flag and string selectors. Invalid selectors,
+empty globs, missing manifests, paths outside the workspace, and malformed TOML
+stop the bump. Planning completes before any manifest is written. During a dry
+run, the result lists each changed fixture manifest while its contents remain
+unchanged; configured lockfile projection still runs without invoking Cargo.
+
+For example, the `rstest-bdd` published GPUI fixture can opt into rewriting its
+dependency requirements and staged package patch paths:
+
+```toml
+[[bump.manifest_rewrites]]
+paths = ["tests/fixtures/published-gpui-e2e/Cargo.toml"]
+dependencies = true
+string_values = [
+  { table = ["patch", "crates-io"], field = "path" },
+]
+```
+
+Before `lading bump 0.6.0`, that fixture may refer to `rstest-bdd-0.6.0-beta4`
+in dependency requirements and staged package paths. The bump changes those
+configured references to `0.6.0` and reports the fixture manifest. Lockfiles
+beside tracked manifests are discovered as usual; for a fixture `Cargo.lock`
+that Git does not track, also list its manifest in `bump.lockfile_manifests`.
 
 Lockfile regeneration runs
 `cargo update --workspace --manifest-path <manifest>` for the workspace root,

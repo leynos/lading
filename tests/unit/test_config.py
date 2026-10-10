@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import textwrap
 import typing as typ
 
@@ -217,6 +218,251 @@ def test_bump_config_from_mapping_defaults_lockfile_fields() -> None:
 
     assert configuration.lockfile_manifests == ()
     assert configuration.rebuild_lockfiles is True
+    assert configuration.manifest_rewrites == ()
+
+
+def test_bump_config_from_mapping_parses_manifest_rewrites() -> None:
+    """Manifest rewrite configuration defaults and selectors are immutable."""
+    configuration = config_module.BumpConfig.from_mapping({
+        "manifest_rewrites": [
+            {
+                "paths": ["tests/fixtures/published-gpui-e2e/Cargo.toml"],
+                "string_values": [
+                    {
+                        "table": ["patch", "crates-io"],
+                        "field": "path",
+                    }
+                ],
+            }
+        ],
+    })
+
+    assert configuration.manifest_rewrites == (
+        config_module.ManifestRewriteConfig(
+            paths=("tests/fixtures/published-gpui-e2e/Cargo.toml",),
+            dependencies=True,
+            string_values=(
+                config_module.StringValueRewriteConfig(
+                    table=("patch", "crates-io"),
+                    field="path",
+                    template="{crate}-{version}",
+                ),
+            ),
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    ("mapping", "error_message"),
+    [
+        pytest.param(
+            {"manifest_rewrites": "tests/fixture/Cargo.toml"},
+            "bump.manifest_rewrites must be a sequence; received str.",
+            id="bare_string",
+        ),
+        pytest.param(
+            {"manifest_rewrites": {"paths": ["tests/fixture/Cargo.toml"]}},
+            "bump.manifest_rewrites must be a sequence; received dict.",
+            id="bare_table",
+        ),
+        pytest.param(
+            {"manifest_rewrites": [{}]},
+            "bump.manifest_rewrites[0].paths must be a sequence; received NoneType.",
+            id="missing_paths",
+        ),
+        pytest.param(
+            {"manifest_rewrites": [{"paths": []}]},
+            "bump.manifest_rewrites[0].paths must contain at least one path.",
+            id="empty_paths",
+        ),
+        pytest.param(
+            {"manifest_rewrites": [{"paths": ["  "]}]},
+            "bump.manifest_rewrites[0].paths[0] must not be blank.",
+            id="blank_path",
+        ),
+        pytest.param(
+            {"manifest_rewrites": [{"paths": ["/workspace/Cargo.toml"]}]},
+            "bump.manifest_rewrites[0].paths[0] must be relative to the workspace.",
+            id="absolute_path",
+        ),
+        pytest.param(
+            {"manifest_rewrites": [{"paths": ["C:\\tmp\\Cargo.toml"]}]},
+            "bump.manifest_rewrites[0].paths[0] must be relative to the workspace.",
+            id="windows_absolute_path",
+        ),
+        pytest.param(
+            {"manifest_rewrites": [{"paths": ["tests/Cargo.toml"], "extra": True}]},
+            "Unknown bump.manifest_rewrites[0] option(s): extra.",
+            id="unknown_group_key",
+        ),
+        pytest.param(
+            {
+                "manifest_rewrites": [
+                    {"paths": ["tests/Cargo.toml"], "dependencies": "yes"}
+                ]
+            },
+            "bump.manifest_rewrites[0].dependencies must be a boolean; received str.",
+            id="invalid_dependencies_boolean",
+        ),
+        pytest.param(
+            {
+                "manifest_rewrites": [
+                    {"paths": ["tests/Cargo.toml"], "dependencies": False}
+                ]
+            },
+            "bump.manifest_rewrites[0] must enable dependencies "
+            "or define string_values.",
+            id="dependencies_disabled_without_string_rules",
+        ),
+        pytest.param(
+            {
+                "manifest_rewrites": [
+                    {
+                        "paths": ["tests/Cargo.toml"],
+                        "string_values": {"table": ["patch"]},
+                    }
+                ],
+            },
+            "bump.manifest_rewrites[0].string_values must be a sequence; "
+            "received dict.",
+            id="string_values_bare_table",
+        ),
+        pytest.param(
+            {
+                "manifest_rewrites": [
+                    {
+                        "paths": ["tests/Cargo.toml"],
+                        "string_values": [{"table": "patch"}],
+                    }
+                ],
+            },
+            "bump.manifest_rewrites[0].string_values[0].table must be a sequence; "
+            "received str.",
+            id="table_bare_string",
+        ),
+        pytest.param(
+            {
+                "manifest_rewrites": [
+                    {
+                        "paths": ["tests/Cargo.toml"],
+                        "dependencies": False,
+                        "string_values": [{"table": []}],
+                    }
+                ],
+            },
+            "bump.manifest_rewrites[0].string_values[0].table must contain "
+            "at least one segment.",
+            id="empty_table_selector",
+        ),
+        pytest.param(
+            {
+                "manifest_rewrites": [
+                    {
+                        "paths": ["tests/Cargo.toml"],
+                        "string_values": [{"table": ["patch", " "]}],
+                    }
+                ],
+            },
+            "bump.manifest_rewrites[0].string_values[0].table[1] must not be blank.",
+            id="blank_table_segment",
+        ),
+        pytest.param(
+            {
+                "manifest_rewrites": [
+                    {
+                        "paths": ["tests/Cargo.toml"],
+                        "string_values": [{"table": ["patch"], "unknown": True}],
+                    }
+                ],
+            },
+            "Unknown bump.manifest_rewrites[0].string_values[0] option(s): unknown.",
+            id="unknown_string_rule_key",
+        ),
+        pytest.param(
+            {
+                "manifest_rewrites": [
+                    {
+                        "paths": ["tests/Cargo.toml"],
+                        "string_values": [{"table": ["patch"], "field": None}],
+                    }
+                ],
+            },
+            "bump.manifest_rewrites[0].string_values[0].field must be a string; "
+            "received NoneType.",
+            id="explicit_null_field",
+        ),
+    ],
+)
+def test_bump_config_rejects_invalid_manifest_rewrites(
+    mapping: dict[str, object],
+    error_message: str,
+) -> None:
+    """Reject invalid allowlist structures and selector fields."""
+    with pytest.raises(
+        config_module.ConfigurationError, match=re.escape(error_message)
+    ):
+        config_module.BumpConfig.from_mapping(mapping)
+
+
+@pytest.mark.parametrize(
+    ("template", "error_message"),
+    [
+        pytest.param(
+            "{crate}",
+            "bump.manifest_rewrites[0].string_values[0].template must contain "
+            "{version}.",
+            id="missing_version",
+        ),
+        pytest.param(
+            "{crate}-{version:>8}",
+            "bump.manifest_rewrites[0].string_values[0].template does not support "
+            "format specs or conversions.",
+            id="format_spec",
+        ),
+        pytest.param(
+            "{crate!r}-{version}",
+            "bump.manifest_rewrites[0].string_values[0].template does not support "
+            "format specs or conversions.",
+            id="conversion",
+        ),
+        pytest.param(
+            "{0}-{version}",
+            "bump.manifest_rewrites[0].string_values[0].template only supports "
+            "{crate} and {version} fields.",
+            id="positional_field",
+        ),
+        pytest.param(
+            "{crate}-{unknown}",
+            "bump.manifest_rewrites[0].string_values[0].template only supports "
+            "{crate} and {version} fields.",
+            id="unknown_field",
+        ),
+        pytest.param(
+            "{crate-{version}",
+            "bump.manifest_rewrites[0].string_values[0].template is not a valid "
+            "format template.",
+            id="malformed_field",
+        ),
+    ],
+)
+def test_bump_config_rejects_invalid_manifest_rewrite_templates(
+    template: str,
+    error_message: str,
+) -> None:
+    """Only crate and version placeholders without formatting are accepted."""
+    mapping = {
+        "manifest_rewrites": [
+            {
+                "paths": ["tests/Cargo.toml"],
+                "string_values": [{"table": ["patch"], "template": template}],
+            }
+        ],
+    }
+
+    with pytest.raises(
+        config_module.ConfigurationError, match=re.escape(error_message)
+    ):
+        config_module.BumpConfig.from_mapping(mapping)
 
 
 def test_preflight_config_from_mapping_trims_and_deduplicates_entries() -> None:
