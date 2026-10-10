@@ -667,8 +667,10 @@ stderr_tail_lines = 40
 Each group accepts these fields:
 
 - `paths`: non-empty array of workspace-relative manifest paths or globs.
-  Globs must match at least one file. Every match must resolve inside the
-  workspace, name a `Cargo.toml` file, and refer to a regular file.
+  Absolute or drive/rooted paths, parent-directory segments, and leading or
+  trailing whitespace are rejected. Globs must match at least one file. Every
+  match must resolve inside the workspace, name a `Cargo.toml` file, and refer
+  to a regular file.
 - `dependencies`: boolean, default `true`. Matching Cargo dependency
   requirements are updated by package name, including renamed dependency keys
   whose `package` value names an updated workspace crate. The rewrite visits
@@ -676,7 +678,8 @@ Each group accepts these fields:
   entries and entries with `workspace = true` are left alone.
 - `string_values`: array of selector tables, default `[]`. Each selector has a
   non-empty literal `table` path, an optional `field`, and an optional
-  `template`. With `field` set, the selected field is visited in each inline or
+  `template`. Table segments and fields cannot have leading or trailing
+  whitespace. With `field` set, the selected field is visited in each inline or
   standard sub-table entry. Without it, direct string values in the selected
   table are visited. A missing table or field and a non-string value are no-ops.
 

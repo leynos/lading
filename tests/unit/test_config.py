@@ -277,18 +277,45 @@ def test_bump_config_from_mapping_parses_manifest_rewrites() -> None:
         ),
         pytest.param(
             {"manifest_rewrites": [{"paths": ["  "]}]},
-            "bump.manifest_rewrites[0].paths[0] must not be blank.",
+            "bump.manifest_rewrites[0].paths[0] must be non-blank and have no "
+            "leading or trailing whitespace.",
             id="blank_path",
         ),
         pytest.param(
+            {"manifest_rewrites": [{"paths": [" tests/Cargo.toml"]}]},
+            "bump.manifest_rewrites[0].paths[0] must be non-blank and have no "
+            "leading or trailing whitespace.",
+            id="padded_path",
+        ),
+        pytest.param(
             {"manifest_rewrites": [{"paths": ["/workspace/Cargo.toml"]}]},
-            "bump.manifest_rewrites[0].paths[0] must be relative to the workspace.",
+            "bump.manifest_rewrites[0].paths[0] must be a safe "
+            "workspace-relative path.",
             id="absolute_path",
         ),
         pytest.param(
             {"manifest_rewrites": [{"paths": ["C:\\tmp\\Cargo.toml"]}]},
-            "bump.manifest_rewrites[0].paths[0] must be relative to the workspace.",
+            "bump.manifest_rewrites[0].paths[0] must be a safe "
+            "workspace-relative path.",
             id="windows_absolute_path",
+        ),
+        pytest.param(
+            {"manifest_rewrites": [{"paths": ["C:Cargo.toml"]}]},
+            "bump.manifest_rewrites[0].paths[0] must be a safe "
+            "workspace-relative path.",
+            id="windows_drive_relative_path",
+        ),
+        pytest.param(
+            {"manifest_rewrites": [{"paths": ["\\tmp\\Cargo.toml"]}]},
+            "bump.manifest_rewrites[0].paths[0] must be a safe "
+            "workspace-relative path.",
+            id="windows_rooted_path",
+        ),
+        pytest.param(
+            {"manifest_rewrites": [{"paths": ["../outside/Cargo.toml"]}]},
+            "bump.manifest_rewrites[0].paths[0] must be a safe "
+            "workspace-relative path.",
+            id="parent_directory_path",
         ),
         pytest.param(
             {"manifest_rewrites": [{"paths": ["tests/Cargo.toml"], "extra": True}]},
@@ -363,8 +390,22 @@ def test_bump_config_from_mapping_parses_manifest_rewrites() -> None:
                     }
                 ],
             },
-            "bump.manifest_rewrites[0].string_values[0].table[1] must not be blank.",
+            "bump.manifest_rewrites[0].string_values[0].table[1] must be non-blank "
+            "and have no leading or trailing whitespace.",
             id="blank_table_segment",
+        ),
+        pytest.param(
+            {
+                "manifest_rewrites": [
+                    {
+                        "paths": ["tests/Cargo.toml"],
+                        "string_values": [{"table": ["patch "]}],
+                    }
+                ],
+            },
+            "bump.manifest_rewrites[0].string_values[0].table[0] must be non-blank "
+            "and have no leading or trailing whitespace.",
+            id="padded_table_segment",
         ),
         pytest.param(
             {
@@ -390,6 +431,19 @@ def test_bump_config_from_mapping_parses_manifest_rewrites() -> None:
             "bump.manifest_rewrites[0].string_values[0].field must be a string; "
             "received NoneType.",
             id="explicit_null_field",
+        ),
+        pytest.param(
+            {
+                "manifest_rewrites": [
+                    {
+                        "paths": ["tests/Cargo.toml"],
+                        "string_values": [{"table": ["patch"], "field": " path"}],
+                    }
+                ],
+            },
+            "bump.manifest_rewrites[0].string_values[0].field must be non-blank "
+            "and have no leading or trailing whitespace.",
+            id="padded_field",
         ),
     ],
 )

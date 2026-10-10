@@ -170,7 +170,7 @@ class StringValueRewriteConfig:
         table = toml_coerce.validate_string_sequence(
             raw_table, table_name, error=ConfigurationError
         )
-        _reject_blank_segments(table, table_name)
+        _validate_segments(table, table_name)
         if not table:
             message = f"{table_name} must contain at least one segment."
             raise ConfigurationError(message)
@@ -182,9 +182,10 @@ class StringValueRewriteConfig:
                 mapping["field"], f"{field_name}.field", error=ConfigurationError
             )
         )
-        if selected_field is not None and not selected_field.strip():
-            message = f"{field_name}.field must not be blank."
-            raise ConfigurationError(message)
+        if selected_field is not None:
+            _validate_segments(
+                (selected_field,), f"{field_name}.field", is_indexed=False
+            )
 
         raw_template = mapping.get("template", "{crate}-{version}")
         template = toml_coerce.expect_string(
@@ -250,16 +251,15 @@ class ManifestRewriteConfig:
         if not paths:
             message = f"{paths_name} must contain at least one path."
             raise ConfigurationError(message)
+        _validate_segments(paths, paths_name)
         for index, path in enumerate(paths):
-            indexed_name = f"{paths_name}[{index}]"
-            if not path.strip():
-                message = f"{indexed_name} must not be blank."
-                raise ConfigurationError(message)
-            if (
-                pathlib.Path(path).is_absolute()
-                or pathlib.PureWindowsPath(path).is_absolute()
+            if any(
+                candidate.anchor or ".." in candidate.parts
+                for candidate in (pathlib.Path(path), pathlib.PureWindowsPath(path))
             ):
-                message = f"{indexed_name} must be relative to the workspace."
+                message = (
+                    f"{paths_name}[{index}] must be a safe workspace-relative path."
+                )
                 raise ConfigurationError(message)
 
         dependencies = _boolean(
@@ -578,11 +578,17 @@ def _validate_mapping_keys(
         raise ConfigurationError(message)
 
 
-def _reject_blank_segments(segments: tuple[str, ...], field_name: str) -> None:
-    """Reject blank path or selector segments with their indexed field name."""
+def _validate_segments(
+    segments: tuple[str, ...], field_name: str, *, is_indexed: bool = True
+) -> None:
+    """Reject blank or whitespace-padded path and selector segments."""
     for index, segment in enumerate(segments):
-        if not segment.strip():
-            message = f"{field_name}[{index}] must not be blank."
+        if not segment.strip() or segment != segment.strip():
+            location = f"{field_name}[{index}]" if is_indexed else field_name
+            message = (
+                f"{location} must be non-blank and have no leading or "
+                "trailing whitespace."
+            )
             raise ConfigurationError(message)
 
 
