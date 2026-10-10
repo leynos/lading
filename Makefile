@@ -85,13 +85,27 @@ PYTHON_EXISTING_SOURCE_ROOTS = $(wildcard $(PYTHON_SOURCE_ROOTS))
 # `.SHELLSTATUS`, and a guard that turned an older `make` into a hard build
 # failure would be a worse bug than the one it closes; the check is an extra
 # net beneath the modern `make` the CI image pins, not the only thing keeping
-# discovery correct. `-exec awk` returning non-zero for a non-matching file is
-# normal and does not affect `find`'s own status, so the union predicate does
-# not trip the guard.
+# discovery correct.
+#
+# The guard is only as good as what `find` reports, and the two `-exec` forms
+# differ in exactly that. With the per-file `\;` terminator `find` discards the
+# child's status: an unreadable extensionless script makes `awk` exit 2, the
+# file is dropped from the list, and `find` still exits zero -- the same status
+# a non-match produces, so the guard cannot see the failure it exists for. The
+# batch `+` terminator folds a non-zero child status back into `find`'s own.
+# The predicate has to change shape with the terminator, because `+` runs the
+# utility once per batch rather than once per file and `awk`'s exit result can
+# no longer stand in for a per-file test: the `*.py` branch prints the name
+# itself, and `awk` prints the name it matched.
+#
+# That shape carries one trap of its own. A program that exited non-zero on a
+# batch with no match would now trip the guard on every run, since a declared
+# but empty root such as `benches` has no extensionless match at all, so the
+# program prints and falls off the end. The batch's status then reports a read
+# or syntax failure and nothing else, which is what the guard is for.
 PYTHON_FIND_COMMAND = find $(PYTHON_EXISTING_SOURCE_ROOTS) \
-	$(PYTHON_PRUNE_TESTS) -type f \( -name '*.py' -o -exec awk \
-	'NR == 1 && /uv run python/ { seen = 1 } END { exit !seen }' {} \; \) \
-	-print
+	$(PYTHON_PRUNE_TESTS) -type f \( -name '*.py' -print -o -exec awk \
+	'FNR == 1 && /uv run python/ { print FILENAME }' {} + \)
 PYTHON_SOURCES_UNSORTED := $(shell $(PYTHON_FIND_COMMAND))
 PYTHON_DISCOVERY_STATUS := $(.SHELLSTATUS)
 ifneq ($(filter-out 0,$(PYTHON_DISCOVERY_STATUS)),)

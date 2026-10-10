@@ -192,7 +192,17 @@ The relevant Makefile variables are:
   `tests/workflow_contracts/test_lint_environment.py` cases hold the rule: one
   asserts the shebang predicate is present, the other expands `make -n lint` and
   `make -n typecheck` and asserts the extensionless file is on both command
-  lines, so a file that is discovered but never passed to a tool fails too.
+  lines, so a file that is discovered but never passed to a tool fails too. The
+  two predicates are matched by one batched `find` walk, which is fail-closed:
+  `$(.SHELLSTATUS)` is read on the line after the `$(shell ...)`, and a
+  non-zero status aborts the build rather than trimming the list. The shebang
+  reader is batched with `-exec ... {} +` rather than `\;` because a per-file
+  child's exit status is discarded by `find`, which would hide an unreadable
+  file behind the same zero a non-match produces.
+  `tests/workflow_contracts/test_python_source_discovery.py` covers the
+  behaviour: it runs the discovery command over a controlled fixture tree and
+  asserts exact inclusion and exclusion, and it proves the guard stops the
+  build before any gate command is rendered when the reader fails.
 - `PYLINT_TARGETS` — files passed to Pylint; defaults to `PYTHON_SOURCES`. It
   is a file list rather than a directory list on purpose: Pylint treats a
   directory containing an `__init__.py` as a package and does not recurse into

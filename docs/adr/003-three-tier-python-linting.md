@@ -190,6 +190,19 @@ wants collides with `find`'s own `\( \)` grouping; the `awk` form carries no
 `#`, no backslash and no bracket expression across the Make-to-shell boundary,
 so no quoting layer can silently eat part of the pattern.
 
+The reader is batched with `-exec ... {} +` rather than terminated per file with
+`\;`. The two forms differ in the thing the whole guard rests on: with the
+per-file terminator `find` discards the child's status, so an `awk` that cannot
+read an operand drops the file from the list and leaves the walk at zero -- the
+same status a legitimate non-match produces, and therefore a failure the
+`$(.SHELLSTATUS)` guard cannot see. The batch terminator folds a non-zero
+utility status back into `find`'s own. The predicate changes shape with it,
+because `+` runs the utility once per batch and `awk`'s exit result can no
+longer stand in for a per-file test: the `*.py` branch prints the name itself,
+and `awk` prints the name it matched. The program deliberately never exits
+non-zero on a no-match batch, or a declared-but-empty root such as `benches`
+would trip the guard on every run.
+
 `PYLINT_TARGETS` is that file list, not a directory. Pylint treats a directory
 containing an `__init__.py` as a package and does not recurse into it, so
 directory targeting under-reports: `tests/` stops at `tests/` whenever
@@ -201,6 +214,18 @@ its own diagnostics on standard error, and it runs in a recipe whose output is
 already consumed; the roots are therefore filtered to those that currently
 exist, so a missing optional root cannot turn into a build error or, worse, a
 silently truncated list.
+
+A truncated list is the failure the guard exists for, and it is worse than a
+missing root. Discovery runs at parse time and feeds every gate from one
+variable, so a walk that lost a file reports green over everything that
+survived while the lost file goes unread by all of them at once. That is why
+the guard aborts the build rather than warning, and why the batching above
+matters: the failure it must catch includes a reader error on a single
+unreadable operand, not only a `find` that could not read a whole root.
+`tests/workflow_contracts/test_python_source_discovery.py` holds the
+behavioural half -- it runs the real command over a controlled fixture whose
+shebang reader is replaced by one that always fails, and asserts that make
+exits non-zero and renders no gate command at all.
 
 ### The df12 stages
 
@@ -265,7 +290,11 @@ linted, typechecked, and counted for docstrings the moment it lands.
 `tests/workflow_contracts/test_lint_environment.py` pins the df12 enable-list
 and the commit pin, and holds the discovery rule -- that the shebang predicate
 exists, and that the extensionless source it exists for reaches both `lint` and
-`typecheck`; `tests/workflow_contracts/test_python_baseline_contract.py` pins
-the baseline and its mirrors. Between them, a baseline bump, a narrowed
-predicate, a re-widened exemption, or a floating plugin revision fails a test
-rather than passing quietly.
+`typecheck`; `tests/workflow_contracts/test_python_source_discovery.py` runs
+the discovery command itself over a controlled fixture, asserting exact
+inclusion and exclusion and proving that a failing shebang reader aborts the
+build before any gate is rendered;
+`tests/workflow_contracts/test_python_baseline_contract.py` pins the baseline
+and its mirrors. Between them, a baseline bump, a narrowed predicate, a
+re-widened exemption, a per-file `find` terminator, or a floating plugin
+revision fails a test rather than passing quietly.
