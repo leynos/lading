@@ -252,6 +252,26 @@ def test_bump_config_from_mapping_parses_manifest_rewrites() -> None:
     )
 
 
+def test_manifest_rewrite_template_allows_escaped_placeholder_text() -> None:
+    """Escaped braces remain literal while the actual version field is valid."""
+    configuration = config_module.BumpConfig.from_mapping({
+        "manifest_rewrites": [
+            {
+                "paths": ["tests/fixtures/Cargo.toml"],
+                "string_values": [
+                    {
+                        "table": ["patch"],
+                        "template": "{{version:}}-{version}",
+                    }
+                ],
+            }
+        ],
+    })
+
+    rule = configuration.manifest_rewrites[0].string_values[0]
+    assert rule.template == "{{version:}}-{version}"
+
+
 @pytest.mark.parametrize(
     ("mapping", "error_message"),
     [
@@ -472,6 +492,12 @@ def test_bump_config_rejects_invalid_manifest_rewrites(
             "bump.manifest_rewrites[0].string_values[0].template does not support "
             "format specs or conversions.",
             id="format_spec",
+        ),
+        pytest.param(
+            "{crate}-{version:}",
+            "bump.manifest_rewrites[0].string_values[0].template does not support "
+            "format specs or conversions.",
+            id="empty_format_spec",
         ),
         pytest.param(
             "{crate!r}-{version}",

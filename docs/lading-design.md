@@ -401,6 +401,9 @@ lading bump <new_version> [--dry-run]
   Cargo manifests. It updates matching dependency requirements and explicit
   TOML string selectors while leaving root and member manifest ownership with
   the normal bump stages.
+- `bump_manifest_rewrite_dependencies` owns dependency-section traversal for
+  direct, target, and workspace requirements; `bump_toml` handles requirement
+  composition and TOML value replacement.
 - Every selected manifest is resolved, validated, read, and planned before the
   workspace manifest stage writes. The plans are applied after member manifests
   and before documentation, README transposition, and lockfile work.

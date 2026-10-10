@@ -1,4 +1,19 @@
-"""Plan and apply opted-in rewrites in non-member Cargo manifests."""
+"""Plan and apply opted-in rewrites in non-member Cargo manifests.
+
+The bump pipeline resolves configured manifests and prepares their changes
+before any write, then applies the plans after member manifests and before
+lockfile regeneration. This keeps configuration failures fail-fast and dry
+runs write-free.
+
+Usage
+-----
+Call :func:`plan_manifest_rewrites` to prepare changes, then pass the returned
+plans to :func:`apply_manifest_rewrites` when the pipeline reaches its rewrite
+stage::
+
+    plans = plan_manifest_rewrites(root, groups, members, versions)
+    changed_paths = apply_manifest_rewrites(plans, dry_run=dry_run)
+"""
 
 from __future__ import annotations
 
@@ -11,9 +26,12 @@ from pathlib import Path
 
 from tomlkit.container import OutOfOrderTableProxy
 from tomlkit.exceptions import ParseError
-from tomlkit.items import InlineTable, Item, Table
+from tomlkit.items import InlineTable, Table
 
 from lading.commands import bump_lockfile_paths, bump_toml
+from lading.commands.bump_manifest_rewrite_dependencies import (
+    rewrite_dependency_requirements,
+)
 from lading.exceptions import LadingError
 
 if typ.TYPE_CHECKING:
@@ -82,6 +100,15 @@ class _RewriteSelection:
     string_values: list[StringValueRewriteConfig] = dc.field(default_factory=list)
 
 
+@dc.dataclass(slots=True)
+class _RewriteSelectionContext:
+    """Track paths and merged rules while resolving configured groups."""
+
+    workspace_root: Path
+    skipped_manifests: set[Path]
+    selections: dict[Path, _RewriteSelection] = dc.field(default_factory=dict)
+
+
 def plan_manifest_rewrites(
     workspace_root: Path,
     rewrite_groups: cabc.Sequence[ManifestRewriteConfig],
@@ -132,7 +159,7 @@ def plan_manifest_rewrites(
             raise ManifestRewriteError(message) from exc
         original_text = document.as_string()
         if selection.dependencies:
-            _rewrite_dependency_requirements(
+            rewrite_dependency_requirements(
                 document, versions.updated_crate_names, versions.target_version
             )
         for rule in selection.string_values:
@@ -175,34 +202,58 @@ def _resolve_rewrite_selections(
     member_manifest_paths: cabc.Collection[Path],
 ) -> dict[Path, _RewriteSelection]:
     """Resolve allowlisted paths and merge rules for each non-member manifest."""
-    root_manifest = (workspace_root / "Cargo.toml").resolve()
-    skipped_manifests = {root_manifest}
-    skipped_manifests.update(
-        (workspace_root / path).resolve() for path in member_manifest_paths
-    )
-    selections: dict[Path, _RewriteSelection] = {}
+    skipped = {
+        (workspace_root / "Cargo.toml").resolve(),
+        *((workspace_root / path).resolve() for path in member_manifest_paths),
+    }
+    context = _RewriteSelectionContext(workspace_root, skipped)
     for group in rewrite_groups:
-        for configured_path in group.paths:
-            candidates = _expand_path(workspace_root, configured_path)
-            for candidate in candidates:
-                manifest_path = bump_lockfile_paths.resolve_manifest_candidate(
-                    workspace_root,
-                    candidate,
-                    error_type=ManifestRewriteError,
-                    label="Manifest rewrite",
-                )
-                if not manifest_path.is_file():
-                    message = (
-                        "Manifest rewrite path must point to a regular file: "
-                        f"{configured_path}"
-                    )
-                    raise ManifestRewriteError(message)
-                if manifest_path in skipped_manifests:
-                    continue
-                selection = selections.setdefault(manifest_path, _RewriteSelection())
-                selection.dependencies |= group.dependencies
-                selection.string_values.extend(group.string_values)
-    return selections
+        _select_rewrite_group(context, group)
+    return context.selections
+
+
+def _select_rewrite_group(
+    context: _RewriteSelectionContext, group: ManifestRewriteConfig
+) -> None:
+    """Resolve every path selected by one configuration group."""
+    for configured_path in group.paths:
+        _select_configured_path(context, group, configured_path)
+
+
+def _select_configured_path(
+    context: _RewriteSelectionContext,
+    group: ManifestRewriteConfig,
+    configured_path: str,
+) -> None:
+    """Resolve and merge every candidate matched by one configured path."""
+    candidates = _expand_path(context.workspace_root, configured_path)
+    for candidate in candidates:
+        _merge_rewrite_candidate(context, group, configured_path, candidate)
+
+
+def _merge_rewrite_candidate(
+    context: _RewriteSelectionContext,
+    group: ManifestRewriteConfig,
+    configured_path: str,
+    candidate: Path,
+) -> None:
+    """Validate one candidate and merge its dependency and string rules."""
+    manifest_path = bump_lockfile_paths.resolve_manifest_candidate(
+        context.workspace_root,
+        candidate,
+        error_type=ManifestRewriteError,
+        label="Manifest rewrite",
+    )
+    if manifest_path in context.skipped_manifests:
+        return
+    if not manifest_path.is_file():
+        message = (
+            f"Manifest rewrite path must point to a regular file: {configured_path}"
+        )
+        raise ManifestRewriteError(message)
+    selection = context.selections.setdefault(manifest_path, _RewriteSelection())
+    selection.dependencies |= group.dependencies
+    selection.string_values.extend(group.string_values)
 
 
 def _expand_path(workspace_root: Path, configured_path: str) -> tuple[Path, ...]:
@@ -220,73 +271,6 @@ def _expand_path(workspace_root: Path, configured_path: str) -> tuple[Path, ...]
     return matches
 
 
-def _rewrite_dependency_requirements(
-    document: TOMLDocument,
-    updated_crate_names: cabc.Collection[str],
-    target_version: str,
-) -> bool:
-    """Rewrite matching dependency requirements in Cargo dependency tables."""
-    changed = False
-    for section in bump_toml.DEPENDENCY_SECTIONS:
-        changed |= _rewrite_dependency_section(
-            document, (section,), updated_crate_names, target_version
-        )
-        changed |= _rewrite_dependency_section(
-            document,
-            ("workspace", section),
-            updated_crate_names,
-            target_version,
-        )
-    target_table = bump_toml.select_table(document, ("target",))
-    if target_table is not None:
-        for selector in tuple(target_table):
-            for section in bump_toml.DEPENDENCY_SECTIONS:
-                changed |= _rewrite_dependency_section(
-                    document,
-                    ("target", selector, section),
-                    updated_crate_names,
-                    target_version,
-                )
-    return changed
-
-
-def _rewrite_dependency_section(
-    document: TOMLDocument,
-    path: tuple[str, ...],
-    updated_crate_names: cabc.Collection[str],
-    target_version: str,
-) -> bool:
-    """Match dependency keys and package aliases, then reuse section updates."""
-    table = bump_toml.select_table(document, path)
-    if table is None:
-        return False
-    matching_names = {
-        name
-        for name, entry in tuple(table.items())
-        if _is_matching_dependency(name, entry, updated_crate_names)
-    }
-    if not matching_names:
-        return False
-    return bump_toml.update_section(document, path, matching_names, target_version)
-
-
-def _is_matching_dependency(
-    name: str,
-    entry: object,
-    updated_crate_names: cabc.Collection[str],
-) -> bool:
-    """Return whether a dependency key or package alias is safe to update."""
-    if isinstance(entry, _TABLE_TYPES):
-        workspace_flag = entry.get("workspace")
-        if isinstance(workspace_flag, Item):
-            workspace_flag = workspace_flag.value
-        if workspace_flag is True:
-            return False
-        package_name = bump_toml.value_as_string(entry.get("package"))
-        return name in updated_crate_names or package_name in updated_crate_names
-    return name in updated_crate_names and bump_toml.value_as_string(entry) is not None
-
-
 def _rewrite_string_values(
     document: TOMLDocument,
     rule: StringValueRewriteConfig,
@@ -299,16 +283,34 @@ def _rewrite_string_values(
     table = bump_toml.select_table(document, rule.table)
     if table is None:
         return False
-    changed = False
     if rule.field is None:
-        for key, value in tuple(table.items()):
-            changed |= _replace_string_item(table, key, value, replacement)
-        return changed
+        return _rewrite_direct_string_values(table, replacement)
+    return _rewrite_selected_fields(table, rule.field, replacement)
+
+
+def _rewrite_direct_string_values(
+    table: Table | InlineTable | OutOfOrderTableProxy,
+    replacement: cabc.Callable[[str], str],
+) -> bool:
+    """Rewrite direct string values in a selected table."""
+    changed = False
+    for key, value in tuple(table.items()):
+        changed |= _replace_string_item(table, key, value, replacement)
+    return changed
+
+
+def _rewrite_selected_fields(
+    table: Table | InlineTable | OutOfOrderTableProxy,
+    field: str,
+    replacement: cabc.Callable[[str], str],
+) -> bool:
+    """Rewrite one field in each inline or standard sub-table."""
+    changed = False
     for _, entry in tuple(table.items()):
         if not isinstance(entry, _TABLE_TYPES):
             continue
-        value = entry.get(rule.field)
-        changed |= _replace_string_item(entry, rule.field, value, replacement)
+        value = entry.get(field)
+        changed |= _replace_string_item(entry, field, value, replacement)
     return changed
 
 
@@ -317,6 +319,18 @@ def _compile_string_rewrite(
     versions: ManifestRewriteVersions,
 ) -> cabc.Callable[[str], str] | None:
     """Build a one-pass replacement callable for the configured template."""
+    replacements = _string_replacements(rule, versions)
+    if not replacements:
+        return None
+    pattern = _string_replacement_pattern(rule, replacements)
+    return lambda value: pattern.sub(lambda match: replacements[match.group()], value)
+
+
+def _string_replacements(
+    rule: StringValueRewriteConfig,
+    versions: ManifestRewriteVersions,
+) -> dict[str, str]:
+    """Render distinct old and new strings for updated workspace crates."""
     replacements: dict[str, str] = {}
     for crate_name in versions.updated_crate_names:
         old_version = versions.pre_bump_versions.get(crate_name)
@@ -328,8 +342,14 @@ def _compile_string_rewrite(
         )
         if old_text != new_text:
             replacements[old_text] = new_text
-    if not replacements:
-        return None
+    return replacements
+
+
+def _string_replacement_pattern(
+    rule: StringValueRewriteConfig,
+    replacements: cabc.Mapping[str, str],
+) -> re.Pattern[str]:
+    """Compile longest-first alternatives with template-specific boundaries."""
     alternatives = "|".join(
         re.escape(old_text)
         for old_text in sorted(replacements, key=lambda item: (-len(item), item))
@@ -344,8 +364,7 @@ def _compile_string_rewrite(
         if rule.template.endswith("{version}")
         else ""
     )
-    pattern = re.compile(f"{prefix}(?:{alternatives}){suffix}")
-    return lambda value: pattern.sub(lambda match: replacements[match.group()], value)
+    return re.compile(f"{prefix}(?:{alternatives}){suffix}")
 
 
 def _replace_string_item(
@@ -358,7 +377,7 @@ def _replace_string_item(
     current = bump_toml.value_as_string(value)
     if current is None:
         return False
-    replacement_item = bump_toml._prepare_string_value_replacement(
+    replacement_item = bump_toml.prepare_string_value_replacement(
         value, replacement(current)
     )
     if replacement_item is None:

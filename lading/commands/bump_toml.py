@@ -137,11 +137,38 @@ def prepare_version_replacement(
     return replacement
 
 
-def _prepare_string_value_replacement(
+def prepare_string_value_replacement(
     value: object,
     replacement_text: str,
 ) -> Item | None:
-    """Replace string content while retaining its TOML quote style and trivia."""
+    """Return string content with its TOML style and trivia preserved.
+
+    Parameters
+    ----------
+    value : object
+        The current TOML value, either a tomlkit :class:`~tomlkit.items.Item`
+        or a raw Python value.
+    replacement_text : str
+        The complete string value to store.
+
+    Returns
+    -------
+    Item | None
+        The replacement item, or ``None`` when ``value`` is not a string or
+        already contains ``replacement_text``.
+
+    Examples
+    --------
+    >>> from tomlkit import parse
+    >>> document = parse("path = 'old' # keep")
+    >>> document["path"] = prepare_string_value_replacement(
+    ...     document["path"], "new"
+    ... )
+    >>> document.as_string()
+    "path = 'new' # keep"
+    >>> prepare_string_value_replacement(42, "new") is None
+    True
+    """
     current = value_as_string(value)
     if current is None or current == replacement_text:
         return None
