@@ -49,6 +49,8 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
 - [ADR-006: Align cuprum selection across dependency paths][adr-006] - accepted
   policy for pinning, locking, and bumping cuprum on both the repository and
   the standalone script path.
+- [ADR-007: Emit bounded per-event relay observability logs][adr-007] - accepted
+  contract for privacy-safe subprocess relay decision events.
 
 ## Reference documents
 
@@ -75,4 +77,5 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
 [adr-004]: adr/004-in-process-metrics-backend.md
 [adr-005]: adr/005-release-wheel-publication.md
 [adr-006]: adr/006-align-cuprum-selection-across-dependency-paths.md
+[adr-007]: adr/007-relay-observability-events.md
 [execplan-regenerate-lockfiles]: execplans/regenerate-lockfiles.md

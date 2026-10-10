@@ -16,6 +16,7 @@ The tree below is a compact orientation sketch, not a complete file listing.
 ├── docs/
 ├── lading/
 │   ├── commands/
+│   ├── runtime/
 │   ├── testing/
 │   ├── utils/
 │   └── workspace/
@@ -61,6 +62,8 @@ The `lading/` package is grouped by feature and operational boundary:
 - `lading/commands/` contains command implementations and command-specific
   helpers for version bumping and publishing.
 - `lading/config.py` owns configuration loading and validation.
+- `lading/runtime/` owns command-runner adapters and subprocess stream relay
+  support, including the bounded `relay_events.py` observability contract.
 - `lading/testing/` contains reusable test-facing helpers that are part of the
   project support surface.
 - `lading/utils/` contains shared infrastructure helpers for command

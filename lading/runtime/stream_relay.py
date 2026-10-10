@@ -15,6 +15,8 @@ import re
 import typing as typ
 from pathlib import Path
 
+from .relay_events import StreamName, emit_relay_event
+
 _THREAD_NAME_PATTERN = re.compile(r"[^A-Za-z0-9_.-]+")
 
 
@@ -44,15 +46,15 @@ class TextSink(typ.Protocol):
         ...
 
 
-def format_thread_name(program: str, stream: str) -> str:
+def format_thread_name(program: str, stream: StreamName) -> str:
     """Return a deterministic, filesystem-safe relay thread name.
 
     Parameters
     ----------
     program : str
         Program path or name associated with the subprocess stream.
-    stream : str
-        Stream label, such as ``"stdout"`` or ``"stderr"``.
+    stream : StreamName
+        ``"stdout"`` or ``"stderr"`` label for the child stream.
 
     Returns
     -------
@@ -73,6 +75,7 @@ def format_thread_name(program: str, stream: str) -> str:
 def write_to_relay_sink(
     sink: TextSink | None,
     binary_sink: typ.BinaryIO | None,
+    stream: StreamName,
     payload: str,
 ) -> tuple[TextSink | None, typ.BinaryIO | None]:
     """Mirror one decoded relay payload and return the next sink state.
@@ -84,6 +87,8 @@ def write_to_relay_sink(
     binary_sink : typ.BinaryIO | None
         Active parent binary stream after an earlier encoding fallback, or
         :data:`None` while text mirroring remains active.
+    stream : StreamName
+        ``"stdout"`` or ``"stderr"`` label for the relayed child stream.
     payload : str
         Decoded UTF-8 text to mirror.
 
@@ -99,20 +104,23 @@ def write_to_relay_sink(
     --------
     >>> import io
     >>> sink = io.StringIO()
-    >>> active_sink, binary_sink = write_to_relay_sink(sink, None, "hello")
+    >>> active_sink, binary_sink = write_to_relay_sink(
+    ...     sink, None, "stdout", "hello"
+    ... )
     >>> active_sink is sink and binary_sink is None
     True
     """
     if sink is None or not payload:
         return sink, binary_sink
     if binary_sink is not None:
-        return _write_to_binary_sink(sink, binary_sink, payload)
-    return _write_to_text_sink(sink, payload)
+        return _write_to_binary_sink(sink, binary_sink, stream, payload)
+    return _write_to_text_sink(sink, stream, payload)
 
 
 def _write_to_binary_sink(
     sink: TextSink,
     binary_sink: typ.BinaryIO,
+    stream: StreamName,
     payload: str,
 ) -> tuple[TextSink | None, typ.BinaryIO | None]:
     """Write a relay payload through an already-selected binary buffer."""
@@ -120,12 +128,14 @@ def _write_to_binary_sink(
         binary_sink.write(payload.encode("utf-8"))
         binary_sink.flush()
     except BrokenPipeError:
+        emit_relay_event("relay_mirror", stream, "disable_mirroring", "broken_pipe")
         return None, None
     return sink, binary_sink
 
 
 def _write_to_text_sink(
     sink: TextSink,
+    stream: StreamName,
     payload: str,
 ) -> tuple[TextSink | None, typ.BinaryIO | None]:
     """Write text and select the binary buffer after an encoding failure."""
@@ -133,16 +143,22 @@ def _write_to_text_sink(
         sink.write(payload)
         sink.flush()
     except BrokenPipeError:
+        emit_relay_event("relay_mirror", stream, "disable_mirroring", "broken_pipe")
         return None, None
     except UnicodeEncodeError:
         selected_binary_sink = typ.cast(
             "typ.BinaryIO | None", getattr(sink, "buffer", None)
         )
         if selected_binary_sink is None:
+            emit_relay_event(
+                "relay_mirror", stream, "disable_mirroring", "unicode_encode"
+            )
             return None, None
         try:
             sink.flush()
         except BrokenPipeError:
+            emit_relay_event("relay_mirror", stream, "disable_mirroring", "broken_pipe")
             return None, None
-        return _write_to_binary_sink(sink, selected_binary_sink, payload)
+        emit_relay_event("relay_mirror", stream, "text_to_binary", "unicode_encode")
+        return _write_to_binary_sink(sink, selected_binary_sink, stream, payload)
     return sink, None

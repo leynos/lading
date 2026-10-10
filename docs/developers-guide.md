@@ -318,6 +318,11 @@ The end-to-end suite in `tests/e2e/` keeps git interactions real while stubbing
 only `cargo` operations, using cmd-mox passthrough spies for `git status` when
 publish runs with stub mode enabled.
 
+The publish preflight registry preserves these passthrough spies when it adds
+its own command doubles. `_is_passthrough_spy` is private to
+`tests/bdd/steps/test_publish_infrastructure.py`; reuse it only for that
+registry's cmd-mox doubles.
+
 ## Coverage generation
 
 Both coverage lanes run the shared `generate-coverage` action from
@@ -1766,9 +1771,12 @@ elapsed seconds on the success line.
 subprocess chunks to a parent stream. `format_thread_name(program, stream)`
 turns the executable path and stream name into the deterministic, filesystem-
 safe name used by relay threads.
-`write_to_relay_sink(sink, binary_sink, payload)` mirrors one decoded payload
-and returns the updated `(sink, binary_sink)` pair. Callers must retain both
-returned values as the active sink state for the next chunk.
+`write_to_relay_sink(sink, binary_sink, stream, payload)` mirrors one decoded
+payload and returns the updated `(sink, binary_sink)` pair. Callers must retain
+both returned values as the active sink state for the next chunk. The required
+`stream: StreamName` argument is `"stdout"` or `"stderr"` and identifies the
+child pipe. `relay_stream(source, sink, buffer, stream)` and
+`write_to_sink(sink, payload, stream)` take the same stream label.
 
 Before a fallback, payloads use the text sink's normal encoding. If that write
 raises `UnicodeEncodeError`, the helper flushes the text sink and writes the
@@ -1790,6 +1798,25 @@ need a binary-buffer fallback; use `typing.TextIO` where a real text stream is
 required. It lives in `lading.runtime.stream_relay` and is imported directly
 from there by `lading.runtime.subprocess_runner` and
 `lading.testing.cmd_mox_runner`.
+
+#### Relay observability
+
+`lading.runtime.relay_events` emits one `INFO` record for each relay decision.
+The record message is `relay observability event: %s`, with a frozen
+`RelayEvent` as its sole parameter. The event contains exactly these bounded
+fields:
+
+| Field            | Stable values                         | Meaning                                                           |
+| ---------------- | ------------------------------------- | ----------------------------------------------------------------- |
+| `operation`      | `relay_mirror`                        | Mirroring decoded child output to a parent stream.                |
+| `stream`         | `stdout`, `stderr`                    | The child stream whose mirror changed state.                      |
+| `transition`     | `text_to_binary`, `disable_mirroring` | Select the parent binary buffer, or stop parent-stream mirroring. |
+| `error_category` | `unicode_encode`, `broken_pipe`       | A parent encoding rejection, or a closed parent pipe.             |
+
+Events never contain subprocess payloads, decoded output, command arguments, or
+other unbounded subprocess data. This per-decision contract is separate from
+the aggregate exit-time metrics in `lading.utils.metrics`; see
+[ADR-007](adr/007-relay-observability-events.md).
 
 The cmd-mox runner validates `CMOX_IPC_TIMEOUT` in `_resolve_cmd_mox_timeout`.
 The two operator-facing messages it raises live as a single source of truth in

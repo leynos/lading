@@ -17,6 +17,9 @@ from .stream_relay import TextSink as _TextSink
 from .stream_relay import format_thread_name as _format_thread_name
 from .stream_relay import write_to_relay_sink as _write_to_relay_sink
 
+if typ.TYPE_CHECKING:
+    from .relay_events import StreamName
+
 _LOGGER = logging.getLogger(__name__)
 _ENV_REDACTION_TOKENS = (
     "TOKEN",
@@ -219,13 +222,14 @@ def invoke_via_subprocess(
                 process.stdout,
                 sys.stdout if context.echo_stdout else None,
                 stdout_chunks,
+                "stdout",
             ),
             name=_format_thread_name(program, "stdout"),
             daemon=True,
         ),
         threading.Thread(
             target=relay_stream,
-            args=(process.stderr, sys.stderr, stderr_chunks),
+            args=(process.stderr, sys.stderr, stderr_chunks, "stderr"),
             name=_format_thread_name(program, "stderr"),
             daemon=True,
         ),
@@ -271,6 +275,7 @@ def relay_stream(
     source: typ.IO[bytes] | None,
     sink: _TextSink | None,
     buffer: list[str],
+    stream: StreamName,
 ) -> None:
     """Forward ``source`` into ``sink`` while preserving captured output.
 
@@ -284,6 +289,8 @@ def relay_stream(
         Text stream to mirror decoded output to.
     buffer : list[str]
         Mutable list receiving decoded chunks.
+    stream : StreamName
+        ``"stdout"`` or ``"stderr"`` label for the relayed child stream.
 
     Raises
     ------
@@ -298,7 +305,7 @@ def relay_stream(
     >>> source = io.BytesIO(b"hello")
     >>> sink = io.StringIO()
     >>> buffer: list[str] = []
-    >>> relay_stream(source, sink, buffer)
+    >>> relay_stream(source, sink, buffer, "stdout")
     >>> buffer
     ['hello']
     >>> sink.getvalue()
@@ -319,13 +326,13 @@ def relay_stream(
                 if text:
                     buffer.append(text)
                     active_sink, binary_sink = _write_to_relay_sink(
-                        active_sink, binary_sink, text
+                        active_sink, binary_sink, stream, text
                     )
             tail = decoder.decode(b"", final=True)
             if tail:
                 buffer.append(tail)
                 active_sink, binary_sink = _write_to_relay_sink(
-                    active_sink, binary_sink, tail
+                    active_sink, binary_sink, stream, tail
                 )
         finally:
             source.close()
@@ -336,7 +343,11 @@ def relay_stream(
         raise
 
 
-def write_to_sink(sink: _TextSink | None, payload: str) -> _TextSink | None:
+def write_to_sink(
+    sink: _TextSink | None,
+    payload: str,
+    stream: StreamName,
+) -> _TextSink | None:
     """Write ``payload`` to ``sink`` without corrupting Unicode output.
 
     Parameters
@@ -345,6 +356,8 @@ def write_to_sink(sink: _TextSink | None, payload: str) -> _TextSink | None:
         Text stream to write to, or :data:`None`.
     payload : str
         Text to write.
+    stream : StreamName
+        ``"stdout"`` or ``"stderr"`` label for the relayed child stream.
 
     Returns
     -------
@@ -363,12 +376,12 @@ def write_to_sink(sink: _TextSink | None, payload: str) -> _TextSink | None:
     --------
     >>> import io
     >>> sink = io.StringIO()
-    >>> write_to_sink(sink, "hello") is sink
+    >>> write_to_sink(sink, "hello", "stdout") is sink
     True
     >>> sink.getvalue()
     'hello'
     """
-    active_sink, _binary_sink = _write_to_relay_sink(sink, None, payload)
+    active_sink, _binary_sink = _write_to_relay_sink(sink, None, stream, payload)
     return active_sink
 
 

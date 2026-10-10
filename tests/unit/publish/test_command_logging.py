@@ -14,6 +14,7 @@ if typ.TYPE_CHECKING:
     from cmd_mox.controller import CmdMox
 
     from lading.runtime import SubprocessContext
+    from lading.runtime.relay_events import StreamName
 
 
 _PROBE_SCRIPT = "print('unused')"
@@ -113,9 +114,9 @@ class _PassthroughProbe:
         sys.stderr.flush()
         return 0, "alpha", "beta"
 
-    def echo(self, payload: str, sink: typ.TextIO) -> None:
+    def echo(self, payload: str, sink: typ.TextIO, stream: StreamName) -> None:
         """Stand in for ``_echo_buffered_output`` and record any invocation."""
-        del sink
+        del sink, stream
         self.echo_payloads.append(payload)
 
 
