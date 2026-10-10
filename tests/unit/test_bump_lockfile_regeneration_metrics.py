@@ -1,7 +1,5 @@
 """Tests for Cargo lockfile-regeneration metrics."""
 
-from __future__ import annotations
-
 import collections.abc as cabc
 from pathlib import Path
 
@@ -11,47 +9,60 @@ from lading.commands import bump_lockfile_regeneration, bump_lockfiles
 from lading.runtime import CommandSpawnError
 from lading.utils import metrics
 
-
-def _successful_runner(
-    command: cabc.Sequence[str],
-    *,
-    cwd: Path | None = None,
-) -> tuple[int, str, str]:
-    """Return one successful command result."""
-    del command, cwd
-    return 0, "", ""
+RunnerDouble = cabc.Callable[..., tuple[int, str, str]]
 
 
-def _cargo_failure_runner(
-    command: cabc.Sequence[str],
-    *,
-    cwd: Path | None = None,
-) -> tuple[int, str, str]:
-    """Return one non-zero Cargo result."""
-    del command, cwd
-    return 101, "", "dependency conflict"
+def _result_runner(exit_code: int, stderr: str = "") -> RunnerDouble:
+    """Build a runner double that reports one fixed command result.
+
+    Every ``regenerate_lockfiles`` runner shares one keyword-only signature, so
+    the doubles are produced from a single factory rather than repeating it.
+
+    Returns
+    -------
+    RunnerDouble
+        A runner reporting ``exit_code`` and ``stderr`` for every call.
+    """
+
+    def runner(
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
+    ) -> tuple[int, str, str]:
+        del command, cwd, env, echo_stdout
+        return exit_code, "", stderr
+
+    return runner
 
 
-def _spawn_failure_runner(
-    command: cabc.Sequence[str],
-    *,
-    cwd: Path | None = None,
-) -> tuple[int, str, str]:
-    """Raise the expected command-spawn failure."""
-    del command, cwd
+def _raising_runner(failure: cabc.Callable[[], BaseException]) -> RunnerDouble:
+    """Build a runner double that raises a freshly built failure on each call."""
+
+    def runner(
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
+    ) -> tuple[int, str, str]:
+        del command, cwd, env, echo_stdout
+        raise failure()
+
+    return runner
+
+
+def _cargo_spawn_failure() -> CommandSpawnError:
+    """Build the command-spawn failure raised by a missing Cargo executable."""
     command_name = "cargo"
-    raise CommandSpawnError(command_name, FileNotFoundError(command_name))
+    return CommandSpawnError(command_name, FileNotFoundError(command_name))
 
 
-def _runner_value_failure(
-    command: cabc.Sequence[str],
-    *,
-    cwd: Path | None = None,
-) -> tuple[int, str, str]:
-    """Raise an expected runner value error."""
-    del command, cwd
-    message = "invalid command value"
-    raise ValueError(message)
+_successful_runner = _result_runner(0)
+_cargo_failure_runner = _result_runner(101, "dependency conflict")
+_spawn_failure_runner = _raising_runner(_cargo_spawn_failure)
+_runner_value_failure = _raising_runner(lambda: ValueError("invalid command value"))
 
 
 @pytest.fixture(autouse=True)
@@ -167,8 +178,10 @@ def test_regenerate_lockfiles_records_partial_success_and_failure(
         command: cabc.Sequence[str],
         *,
         cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
-        del cwd
+        del cwd, env, echo_stdout
         return (
             (101, "", "dependency conflict") if "nested" in command[-1] else (0, "", "")
         )

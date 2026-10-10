@@ -8,3 +8,11 @@
     cargo update --workspace --manifest-path <workspace>/b/Cargo.toml
   '''
 # ---
+# name: test_regenerate_lockfiles_deduplicates_root_manifest
+  "[('cargo', 'update', '--workspace', '--manifest-path', '<tmp>/Cargo.toml'), ('cargo', 'update', '--workspace', '--manifest-path', '<nested-crate>/Cargo.toml')]"
+# ---
+# name: test_regenerate_lockfiles_includes_workspace_manifest
+  list([
+    'cargo update --workspace --manifest-path <tmp>/Cargo.toml (cwd=<tmp>)',
+  ])
+# ---

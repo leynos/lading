@@ -1,7 +1,5 @@
 """Integration tests for lockfile rebuild behaviour in :mod:`lading.commands.bump`."""
 
-from __future__ import annotations
-
 import dataclasses as dc
 import pathlib
 import typing as typ
@@ -10,6 +8,7 @@ import pytest
 
 from lading import config as config_module
 from lading.commands import bump
+from tests.helpers.path_normalization import normalized_captured
 from tests.helpers.workspace_builders import _make_config, _make_workspace
 
 if typ.TYPE_CHECKING:
@@ -56,7 +55,11 @@ def test_run_rebuilds_lockfiles_when_enabled(
         *,
         runner: object | None = None,
     ) -> tuple[pathlib.Path, ...]:
-        captured["calls"] = int(captured.get("calls", 0)) + 1
+        # ``captured`` is shared with the other doubles, so the counter is
+        # read back through a narrow that states the value it must hold.
+        previous_calls = captured.get("calls", 0)
+        assert isinstance(previous_calls, int), "the call counter must stay an int"
+        captured["calls"] = previous_calls + 1
         captured["workspace_root"] = workspace_root
         captured["lockfile_manifests"] = lockfile_manifests
         captured["runner"] = runner
@@ -83,16 +86,12 @@ def test_run_rebuilds_lockfiles_when_enabled(
         ),
     )
 
-    assert captured == {
-        "merge_workspace_root": tmp_path,
-        "merge_lockfile_manifests": (),
-        "merge_runner": None,
-        "calls": 1,
-        "workspace_root": tmp_path,
-        "lockfile_manifests": merged_manifests,
-        "runner": None,
-    }, "expected regenerate_lockfiles to receive the merged manifest tuple"
-    assert message == snapshot
+    assert normalized_captured(captured.items(), tmp_path) == snapshot(
+        name="captured"
+    ), "expected regenerate_lockfiles to receive the merged manifest tuple"
+    assert message == snapshot(name="message"), (
+        "the bump summary should match the snapshot"
+    )
 
 
 def test_run_skips_lockfiles_when_disabled(
@@ -121,7 +120,9 @@ def test_run_skips_lockfiles_when_disabled(
         ),
     )
 
-    assert message == snapshot
+    assert message == snapshot, (
+        "a disabled rebuild must report the bump summary without any lockfile entries"
+    )
 
 
 def test_run_inherits_lockfile_rebuild_configuration(
@@ -150,7 +151,9 @@ def test_run_inherits_lockfile_rebuild_configuration(
         options=bump.BumpOptions(configuration=configuration, workspace=workspace),
     )
 
-    assert message == snapshot
+    assert message == snapshot, (
+        "a programmatic bump must inherit rebuild_lockfiles from the configuration"
+    )
 
 
 def test_run_reports_lockfiles_in_dry_run(
@@ -216,13 +219,12 @@ def test_run_reports_lockfiles_in_dry_run(
         ),
     )
 
-    assert captured == {
-        "merge_lockfile_manifests": ("crates/ui/Cargo.toml",),
-        "emit_discovery_observability": False,
-        "workspace_root": tmp_path,
-        "lockfile_manifests": merged_manifests,
-    }, "expected dry-run lockfile resolution for the merged manifest tuple"
-    assert message == snapshot
+    assert normalized_captured(captured.items(), tmp_path) == snapshot(
+        name="dry_run_captured"
+    ), "expected dry-run lockfile resolution for the merged manifest tuple"
+    assert message == snapshot(name="message"), (
+        "the dry-run summary should match the snapshot"
+    )
 
 
 @pytest.mark.parametrize(
@@ -274,4 +276,6 @@ def test_run_skips_lockfile_rebuild(
         ),
     )
 
-    assert message == snapshot
+    assert message == snapshot, (
+        "a skipped lockfile rebuild must leave the bump summary unchanged"
+    )

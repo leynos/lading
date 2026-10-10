@@ -1,0 +1,48 @@
+# serializer version: 1
+# name: test_create_nontrivial_workspace_metadata_payload_is_json_serialisable
+  dict({
+    'app': set({
+      tuple(
+        'core',
+        'core-id',
+        'build',
+      ),
+      tuple(
+        'core',
+        'core-id',
+        None,
+      ),
+      tuple(
+        'utils',
+        'utils-id',
+        None,
+      ),
+    }),
+    'utils': set({
+      tuple(
+        'core',
+        'core-id',
+        'dev',
+      ),
+      tuple(
+        'core',
+        'core-id',
+        None,
+      ),
+    }),
+  })
+# ---
+# name: test_create_nontrivial_workspace_writes_expected_structure
+  dict({
+    'bump': dict({
+      'documentation': dict({
+        'globs': list([
+          'README.md',
+        ]),
+      }),
+    }),
+    'publish': dict({
+      'strip_patches': 'all',
+    }),
+  })
+# ---

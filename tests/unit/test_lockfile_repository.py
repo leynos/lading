@@ -5,8 +5,6 @@ cargo-backed adapter (issue #82): that it binds its runner and environment,
 and forwards each call through to the domain operations unchanged.
 """
 
-from __future__ import annotations
-
 import typing as typ
 from pathlib import Path
 
@@ -140,7 +138,7 @@ class TestCargoLockfileInspectionRepositoryAdapter:
 
         result = repository.discover_tracked_lockfiles(tmp_path)
 
-        assert result == (), "injected predicate should exclude the lockfile"
+        assert not result, "injected predicate should exclude the lockfile"
         assert probed == [tmp_path / "Cargo.toml"], "predicate probed the manifest"
 
     def test_adapter_bound_runner_forwards_echo_stdout(self, tmp_path: Path) -> None:

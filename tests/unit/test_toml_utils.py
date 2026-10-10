@@ -1,7 +1,5 @@
 """Tests for ``lading.testing.toml_utils``."""
 
-from __future__ import annotations
-
 import typing as typ
 
 import pytest
@@ -19,7 +17,9 @@ def test_load_or_create_document_initialises_empty_document(tmp_path: Path) -> N
 
     document_obj = toml_utils.load_or_create_document(config_path)
 
-    assert not list(document_obj)
+    assert not list(document_obj), (
+        "a document created for a missing config file must start empty"
+    )
 
 
 def test_ensure_table_rejects_non_table_values() -> None:
@@ -37,9 +37,15 @@ def test_ensure_table_creates_and_returns_table() -> None:
 
     table_obj = toml_utils.ensure_table(doc, "publish")
 
-    assert "publish" in doc
-    assert doc["publish"] is table_obj
-    assert isinstance(table_obj, type(table()))
+    assert "publish" in doc, (
+        "ensure_table must record the requested key in the document"
+    )
+    assert doc["publish"] is table_obj, (
+        "ensure_table must return the table it stored under the key"
+    )
+    assert isinstance(table_obj, type(table())), (
+        "ensure_table must create a TOML table for a missing key"
+    )
 
 
 def test_ensure_array_field_rejects_non_array_values() -> None:
@@ -57,9 +63,13 @@ def test_ensure_array_field_creates_empty_array_when_missing() -> None:
 
     array_obj = toml_utils.ensure_array_field(parent_table, "exclude")
 
-    assert "exclude" in parent_table
-    assert parent_table["exclude"] is array_obj
-    assert list(array_obj) == []
+    assert "exclude" in parent_table, (
+        "ensure_array_field must record the requested key in the parent table"
+    )
+    assert parent_table["exclude"] is array_obj, (
+        "ensure_array_field must return the array it stored under the key"
+    )
+    assert not list(array_obj), "a newly created array field must start empty"
 
 
 def test_append_if_absent_does_not_duplicate_values() -> None:
@@ -70,7 +80,9 @@ def test_append_if_absent_does_not_duplicate_values() -> None:
     toml_utils.append_if_absent(excludes, "alpha")
     toml_utils.append_if_absent(excludes, "alpha")
 
-    assert list(excludes) == ["alpha"]
+    assert list(excludes) == ["alpha"], (
+        "append_if_absent must store a duplicate value only once"
+    )
 
 
 def test_load_manifest_raises_when_missing(tmp_path: Path) -> None:
@@ -92,5 +104,9 @@ def test_load_workspace_and_crate_manifests(tmp_path: Path) -> None:
     workspace_doc = toml_utils.load_workspace_manifest(tmp_path)
     crate_doc = toml_utils.load_crate_manifest(tmp_path, "alpha")
 
-    assert "workspace" in workspace_doc
-    assert crate_doc["package"]["name"] == "alpha"
+    assert "workspace" in workspace_doc, (
+        "the loaded workspace document must retain its workspace table"
+    )
+    assert crate_doc["package"]["name"] == "alpha", (
+        "the crate manifest must be loaded from the crate directory, not the root"
+    )

@@ -28,8 +28,6 @@ the package -- so a context field would be a value this code invented and no
 consumer could read.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import contextlib
 import dataclasses as dc
@@ -123,7 +121,7 @@ def record_gh_span(
     *,
     operation: str = _OPERATION,
     clock: cabc.Callable[[], float] = time.monotonic,
-) -> cabc.Iterator[cabc.Callable[[int], None]]:
+) -> cabc.Generator[cabc.Callable[[int], None]]:
     """Time one ``gh`` invocation and always write a span record.
 
     Parameters

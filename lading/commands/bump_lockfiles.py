@@ -4,8 +4,6 @@ The implementation is split by responsibility while this module retains the
 established public imports and the bump-side repository port and adapter.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import dataclasses as dc
 import typing as typ

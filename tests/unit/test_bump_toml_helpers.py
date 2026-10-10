@@ -1,7 +1,5 @@
 """Unit tests for low-level bump TOML table and version helpers."""
 
-from __future__ import annotations
-
 from tomlkit import parse as parse_toml
 
 from lading.commands import bump_toml
@@ -97,6 +95,7 @@ def test_assign_version_works_with_out_of_order_table() -> None:
         "all-features = true\n"
     )
     table = bump_toml.select_table(document, ("package",))
+    assert table is not None, "the package table must resolve for this document"
     assert bump_toml.assign_version(table, "2.0.0") is True, (
         "assigning to an out-of-order table should report a change"
     )

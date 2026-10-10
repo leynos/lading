@@ -1,7 +1,5 @@
 """Unit tests for Cargo lockfile helper functions."""
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import logging
 import string
@@ -54,20 +52,27 @@ def test_discover_tracked_lockfiles_returns_empty_result(tmp_path: Path) -> None
         *,
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
         """Stub runner returning a successful git result with empty stdout."""
-        assert command == ("git", "ls-files", "**/Cargo.lock", "Cargo.lock")
-        assert cwd == tmp_path
+        assert command == ("git", "ls-files", "**/Cargo.lock", "Cargo.lock"), (
+            "discovery must invoke git ls-files on the expected pathspec"
+        )
+        assert cwd == tmp_path, "git ls-files must run in the workspace root"
         return 0, "", ""
 
     result = lockfile.discover_tracked_lockfiles(tmp_path, runner)
-    assert result == (), (
+    assert not result, (
         "git repo with no tracked lockfiles should return an empty tuple; "
         f"got {result!r}"
     )
     # A zero-count discovery must not record a counter, so quiet runs stay quiet.
-    assert metrics.counter_value(lockfile.DISCOVERED_LOCKFILES_METRIC) == 0
-    assert metrics.snapshot() == {}
+    assert metrics.counter_value(lockfile.DISCOVERED_LOCKFILES_METRIC) == 0, (
+        "an empty discovery must leave the lockfile counter at zero"
+    )
+    assert not metrics.snapshot(), (
+        "an empty discovery must record no metric series at all"
+    )
 
 
 def test_discover_tracked_lockfiles_filters_missing_manifests(tmp_path: Path) -> None:
@@ -89,10 +94,13 @@ def test_discover_tracked_lockfiles_filters_missing_manifests(tmp_path: Path) ->
         *,
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
-        assert command == ("git", "ls-files", "**/Cargo.lock", "Cargo.lock")
-        assert cwd == tmp_path
-        assert env is None
+        assert command == ("git", "ls-files", "**/Cargo.lock", "Cargo.lock"), (
+            "discovery must query git for both root and glob lockfile paths"
+        )
+        assert cwd == tmp_path, "git ls-files must run in the workspace root"
+        assert env is None, "discovery must not inject a custom git environment"
         return (
             0,
             (
@@ -140,6 +148,7 @@ def test_discover_tracked_lockfiles_ignores_untracked_on_disk(
         *,
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
         """Report only the git-tracked lockfile, omitting the untracked one."""
         assert command == ("git", "ls-files", "**/Cargo.lock", "Cargo.lock"), (
@@ -169,6 +178,7 @@ def test_discover_tracked_lockfiles_accepts_manifest_probe(
         *,
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
         return 0, "Cargo.lock\nnested/Cargo.lock\n", ""
 
@@ -184,8 +194,12 @@ def test_discover_tracked_lockfiles_accepts_manifest_probe(
         manifest_exists=manifest_exists,
     )
 
-    assert result == (tmp_path / "Cargo.lock",)
-    assert probed == [tmp_path / "Cargo.toml", tmp_path / "nested" / "Cargo.toml"]
+    assert result == (tmp_path / "Cargo.lock",), (
+        "the probe-accepted lockfile must be the only result"
+    )
+    assert probed == [tmp_path / "Cargo.toml", tmp_path / "nested" / "Cargo.toml"], (
+        "the probe must be consulted for each candidate's adjacent manifest"
+    )
 
 
 @pytest.mark.parametrize("emit_observability", [True, False])
@@ -208,6 +222,7 @@ def test_discover_tracked_lockfiles_raises_for_non_git_directory(
         *,
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
         return 128, "", "fatal: not a git repository"
 
@@ -232,6 +247,7 @@ def test_discover_tracked_lockfiles_raises_on_git_failure(tmp_path: Path) -> Non
         *,
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
         return 128, "", "fatal: bad revision"
 
@@ -259,8 +275,10 @@ def _validate_lockfile_freshness_for_result(
             "--manifest-path",
             str(manifest),
             "--format-version=1",
+        ), "freshness validation must run cargo metadata --locked on the manifest"
+        assert cwd == manifest.parent, (
+            "cargo metadata must run in the manifest's directory"
         )
-        assert cwd == manifest.parent
         # The probe's stdout is the full metadata document (megabytes on one
         # line); mirroring it to the console breaks CI log capture (#251).
         assert echo_stdout is False, "metadata JSON must not be echoed"
@@ -303,7 +321,9 @@ def test_validate_lockfile_freshness_parametrized(
     """Cargo metadata output determines the lockfile freshness state."""
     exit_code, stderr, expected = case
     actual = _validate_lockfile_freshness_for_result(tmp_path, exit_code, stderr)
-    assert actual == expected
+    assert actual == expected, (
+        "cargo metadata exit code and stderr must map to the expected freshness state"
+    )
 
 
 @given(stdout=_hypothesis_stdout)
@@ -383,9 +403,12 @@ def _stub_git_runner(stdout: str) -> cabc.Callable[..., tuple[int, str, str]]:
         *,
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
         del cwd, env
-        assert command[:2] == ("git", "ls-files")
+        assert command[:2] == ("git", "ls-files"), (
+            "discovery must drive the git ls-files command"
+        )
         return 0, stdout, ""
 
     return runner
@@ -426,10 +449,18 @@ def _assert_output_invariants(
     """Assert every returned path satisfies the four filtering invariants."""
     for path in result:
         relative = path.relative_to(workspace_root)
-        assert path.name == "Cargo.lock"
-        assert "target" not in relative.parts
-        assert (path.parent / "Cargo.toml").exists()
-        assert str(relative) in tracked_lines
+        assert path.name == "Cargo.lock", (
+            f"discovery must return lockfiles only; got {path}"
+        )
+        assert "target" not in relative.parts, (
+            f"a target subtree must be filtered out; got {path}"
+        )
+        assert (path.parent / "Cargo.toml").exists(), (
+            f"every returned lockfile needs an adjacent manifest; got {path}"
+        )
+        assert str(relative) in tracked_lines, (
+            f"every returned lockfile must appear in git output; got {path}"
+        )
 
 
 def _expected_lockfiles(
@@ -466,7 +497,9 @@ def test_discover_tracked_lockfiles_invariants(
             workspace_root, _stub_git_runner("\n".join(tracked_lines))
         )
         _assert_output_invariants(result, workspace_root, tracked_lines)
-        assert set(result) == _expected_lockfiles(workspace_root, seen_dirs)
+        assert set(result) == _expected_lockfiles(workspace_root, seen_dirs), (
+            "discovery must return exactly the tracked manifest-adjacent lockfiles"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -508,7 +541,9 @@ def test_discovery_records_lockfile_count(tmp_path: Path) -> None:
 
     lockfile.discover_tracked_lockfiles(tmp_path, _static_runner(0, "Cargo.lock\n", ""))
 
-    assert metrics.counter_value(lockfile.DISCOVERED_LOCKFILES_METRIC) == 1
+    assert metrics.counter_value(lockfile.DISCOVERED_LOCKFILES_METRIC) == 1, (
+        "discovering one lockfile must increment the counter exactly once"
+    )
 
 
 @pytest.mark.usefixtures("_metrics_registry")
@@ -559,8 +594,12 @@ def test_validation_records_outcome_and_duration(
         tmp_path / "Cargo.toml", _static_runner(exit_code, "", stderr)
     )
 
-    assert metrics.counter_value(lockfile.VALIDATE_METRIC, outcome=expected_state) == 1
-    assert metrics.duration_stats(lockfile.VALIDATE_DURATION_METRIC).count == 1
+    assert (
+        metrics.counter_value(lockfile.VALIDATE_METRIC, outcome=expected_state) == 1
+    ), f"the {expected_state!r} outcome must be counted exactly once"
+    assert metrics.duration_stats(lockfile.VALIDATE_DURATION_METRIC).count == 1, (
+        "validation must record exactly one duration observation"
+    )
 
 
 @pytest.mark.usefixtures("_metrics_registry")
@@ -581,6 +620,7 @@ def test_discovery_failures_record_bounded_outcome(
         *,
         cwd: Path | None = None,
         env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
         return 128, "", stderr
 

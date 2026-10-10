@@ -1,7 +1,5 @@
 """Ports for runtime dependencies used by command workflows."""
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import typing as typ
 from pathlib import Path

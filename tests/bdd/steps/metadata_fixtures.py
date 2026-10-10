@@ -1,12 +1,13 @@
 """Cargo metadata fixtures used by behavioural CLI tests."""
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import json
 import textwrap
 import typing as typ
+from pathlib import Path
 
+import pytest
+from cmd_mox import CmdMox
 from pytest_bdd import given
 
 from tests.bdd.steps.test_data_helpers import (
@@ -14,12 +15,6 @@ from tests.bdd.steps.test_data_helpers import (
     _create_test_crate,
 )
 from tests.helpers.workspace_helpers import install_cargo_stub
-
-if typ.TYPE_CHECKING:
-    from pathlib import Path
-
-    import pytest
-    from cmd_mox import CmdMox
 
 
 def _write_workspace_manifest(

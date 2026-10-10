@@ -5,8 +5,6 @@ and every cargo command with success, recording each call in order, so a
 test can assert the exact query sequence around the pipeline.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import dataclasses as dc
 import json
@@ -32,7 +30,7 @@ def payload(requests: int, hits: int, misses: int, errors: int = 0) -> str:
     })
 
 
-@dc.dataclass
+@dc.dataclass(slots=True)
 class ScriptedRunner:
     """Runner double answering sccache queries from a script and cargo with 0.
 

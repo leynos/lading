@@ -13,8 +13,6 @@ workspace finishes in milliseconds here and in minutes in production, and it
 is the production shape the signal has to survive.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import contextlib
 import os
@@ -91,7 +89,7 @@ def _workspace(tmp_path: Path) -> Path:
 @contextlib.contextmanager
 def _staged_process(
     tmp_path: Path, *, install: bool, during_copy: bool = False
-) -> cabc.Iterator[tuple[subprocess.Popen[str], Path]]:
+) -> cabc.Generator[tuple[subprocess.Popen[str], Path]]:
     """Run a process holding a staged tree, and yield it with that tree.
 
     Parameters
@@ -123,7 +121,7 @@ def _staged_process(
     # the copy inside it is lading's to remove. That copy is what these tests
     # watch.
     staged_copy = build_directory / "workspace"
-    with subprocess.Popen(  # ruff: ignore[subprocess-without-shell-equals-true]
+    with subprocess.Popen(  # ruff: ignore[subprocess-without-shell-equals-true] - fixed shell-free argv list running the probe script
         [sys.executable, "-c", source],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,

@@ -5,8 +5,6 @@ dependency is allowed only when it appears strictly before the current crate in
 ``PublishPlan.publishable``.
 """
 
-from __future__ import annotations
-
 import re
 import tempfile
 from pathlib import Path

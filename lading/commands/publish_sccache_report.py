@@ -8,8 +8,6 @@ report. Keeping those pure bookkeeping concerns apart lets the session module
 remain responsible solely for the sccache query lifecycle.
 """
 
-from __future__ import annotations
-
 import dataclasses as dc
 import tempfile
 from pathlib import Path

@@ -1,7 +1,6 @@
 """Regression tests for subprocess output encoding boundaries."""
 
-from __future__ import annotations
-
+import collections.abc as cabc
 import io
 import sys
 import typing as typ
@@ -31,7 +30,7 @@ class _RecordingBuffer(io.BytesIO):
         self._events = events
         self.is_flushed = False
 
-    def write(self, payload: bytes) -> int:
+    def write(self, payload: cabc.Buffer) -> int:
         """Record and write binary payload bytes."""
         self._events.append("binary_write")
         return super().write(payload)
@@ -175,7 +174,7 @@ class TestSubprocessRunnerEncoding:
 
         assert exit_code == 0, "child process should exit successfully"
         assert stdout == payload, "subprocess boundary should return complete stdout"
-        assert stderr == "", "child process should not emit stderr"
+        assert not stderr, "child process should not emit stderr"
         assert sink.buffer.getvalue() == payload.encode("utf-8"), (
             "subprocess relay should mirror exact UTF-8 bytes"
         )

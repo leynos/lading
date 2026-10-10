@@ -18,8 +18,6 @@ done: a tree a running publish still holds is skipped and reported rather than
 deleted, and one that is free cannot be claimed while it is going.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import dataclasses as dc
 import logging

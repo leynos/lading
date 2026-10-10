@@ -6,8 +6,6 @@ elapsed seconds and every invocation, successful or not, records one
 observation under :data:`lading.commands.publish_execution.CARGO_DURATION_METRIC`.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import itertools
 import logging

@@ -1,7 +1,5 @@
 """Unit tests for publish output formatting helpers."""
 
-from __future__ import annotations
-
 import typing as typ
 
 from lading.commands import publish_staging
@@ -23,7 +21,7 @@ def test_format_preparation_summary_reports_bump_readme_handling(
     assert lines == (
         f"Staged workspace at: {staging_root}",
         "Workspace READMEs are handled by lading bump.",
-    )
+    ), "a retained staging tree must be reported without a removal note"
 
 
 def test_format_preparation_summary_says_a_removed_tree_has_gone(
@@ -44,4 +42,4 @@ def test_format_preparation_summary_says_a_removed_tree_has_gone(
     assert lines == (
         f"Staged workspace at: {staging_root} (removed)",
         "Workspace READMEs are handled by lading bump.",
-    )
+    ), "a deleted staging tree must be reported as removed"

@@ -8,8 +8,6 @@ whenever a removal fails. The plan snapshot cannot do this: it redacts the
 whole line, so it passes whichever state the line reports.
 """
 
-from __future__ import annotations
-
 import shutil
 import typing as typ
 

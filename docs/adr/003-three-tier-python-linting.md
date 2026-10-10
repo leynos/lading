@@ -133,3 +133,168 @@ disabled, any module the PyPy runtime could not parse produced no messages at
 all, so the lint passed without linting it. Nine modules in this repository
 were skipped that way under PyPy 3.11. PyPy 3.12 parses all of them, and they
 lint clean. A parse failure now fails the lint.
+
+## Amendment (2026-10-02): one Python 3.14 baseline, four gated trees
+
+Adopted 2026-10-02. This amendment supersedes the interpreter sentences in the
+decision above and the PyPy 3.12 amendment of 2026-09-25. The rest of this ADR
+is unchanged.
+
+### A single baseline
+
+Python 3.14 is now the project's baseline: the version `requires-python`
+declares, the version Continuous Integration (CI) installs, and the version
+every gateway parses with. `PYTHON_BASELINE` in the Makefile is the one place
+that version is written; Ruff's `target-version`, Pylint's `py-version` and
+`--py-version`, the interpreters behind `uv tool run`, and
+`ty --python-version` all read from it. Bumping the baseline is one edit in the
+Makefile plus the two `pyproject.toml` mirrors, and
+`tests/workflow_contracts/test_python_baseline_contract.py` derives its
+expectations from the baseline itself, so those assertions do not need
+rewriting.
+
+The baseline moved together with the `leynos/episodic` exemplar, whose lint
+gateways this repository now follows.
+
+### The gate reaches every Python tree
+
+The third stage no longer runs on PyPy. It runs on the managed CPython at the
+baseline, through `uv tool run --managed-python --python $(PYLINT_PYTHON)`, with
+`PYLINT_PYTHON` defaulting to `$(PYTHON_BASELINE)`. The source and the df12
+rules are both written to that baseline, so the interpreter Pylint parses with
+is the same one the package declares support for, and no grammar boundary
+remains between the stages.
+
+The set of linted and typechecked files is now discovered rather than
+enumerated. `PYTHON_SOURCE_ROOTS` names `lading`, `.github`, `tests`, `scripts`,
+`benches`, and `benchmarks`; the roots that exist are walked, and dependency
+caches and build dropouts are pruned. `lading` is a root in its own right, not
+something reached through another tree: omitting it left the production package
+entirely ungated while the suite still passed.
+
+The walk has two predicates, not one. A `*.py` suffix test alone leaves a real
+hole: `scripts/publish-check/bin/cargo` is a Python program with no extension,
+because `cargo` is the name it must carry to shadow the real binary on `PATH`.
+A suffix-only sweep cannot see it, and because `PYTHON_SOURCES` is a plain
+variable the omission is silent -- the gate reports green over a file it never
+read. The second predicate matches the executable's `uv run python` shebang,
+which is what makes the file Python in the first place and survives edits to
+its body. `tests/workflow_contracts/test_lint_environment.py` holds the rule:
+one test asserts the shebang predicate exists, another expands `make -n lint`
+and `make -n typecheck` and asserts the extensionless file is on both command
+lines, so a file that is discovered but never passed to a tool also fails.
+
+The predicate is spelled with `awk` rather than `grep`. Make opens a comment at
+an unescaped `#` even inside quotes, and the brace expression a shebang match
+wants collides with `find`'s own `\( \)` grouping; the `awk` form carries no
+`#`, no backslash and no bracket expression across the Make-to-shell boundary,
+so no quoting layer can silently eat part of the pattern.
+
+The reader is batched with `-exec ... {} +` rather than terminated per file with
+`\;`. The two forms differ in the thing the whole guard rests on: with the
+per-file terminator `find` discards the child's status, so an `awk` that cannot
+read an operand drops the file from the list and leaves the walk at zero -- the
+same status a legitimate non-match produces, and therefore a failure the
+`$(.SHELLSTATUS)` guard cannot see. The batch terminator folds a non-zero
+utility status back into `find`'s own. The predicate changes shape with it,
+because `+` runs the utility once per batch and `awk`'s exit result can no
+longer stand in for a per-file test: the `*.py` branch prints the name itself,
+and `awk` prints the name it matched. The program deliberately never exits
+non-zero on a no-match batch, or a declared-but-empty root such as `benches`
+would trip the guard on every run.
+
+`PYLINT_TARGETS` is that file list, not a directory. Pylint treats a directory
+containing an `__init__.py` as a package and does not recurse into it, so
+directory targeting under-reports: `tests/` stops at `tests/` whenever
+`tests/__init__.py` exists. The file list also makes the gate reach every
+module, including the ones this module's own contract tests live in.
+
+One find caveat is load-bearing. The `find` that builds `PYTHON_SOURCES` emits
+its own diagnostics on standard error, and it runs in a recipe whose output is
+already consumed; the roots are therefore filtered to those that currently
+exist, so a missing optional root cannot turn into a build error or, worse, a
+silently truncated list.
+
+A truncated list is the failure the guard exists for, and it is worse than a
+missing root. Discovery runs at parse time and feeds every gate from one
+variable, so a walk that lost a file reports green over everything that
+survived while the lost file goes unread by all of them at once. That is why
+the guard aborts the build rather than warning, and why the batching above
+matters: the failure it must catch includes a reader error on a single
+unreadable operand, not only a `find` that could not read a whole root.
+`tests/workflow_contracts/test_python_source_discovery.py` holds the
+behavioural half -- it runs the real command over a controlled fixture whose
+shebang reader is replaced by one that always fails, and asserts that make
+exits non-zero and renders no gate command at all.
+
+### The df12 stages
+
+`df12-python-lints` is pinned to commit
+`4cf41736cce2f7ba2778882a5c629c044568a0e5` in both the Makefile
+(`DF12_PYTHON_LINTS_REF`) and `pyproject.toml`, so a moved tag cannot change
+what the gate runs. The plugin is provisioned by `uv run --isolated`, which
+keeps its environment independent of `uv.lock`: a lint result must not depend
+on the state of the project lock file.
+
+A single df12 invocation enables the structural, assertion, suppression, and
+annotation families -- `R9101`, `C9102`, `R9103`, `R9104`, `C9105`, `C9106`,
+`C9107`, `R9108`, `R9109`, `R9110`, `R9111`, and `C9112`. `C9102`
+(`assert-missing-message`) fires on an `assert` with no failure message; it was
+registered by v0.3.0 of the plugin and is reached now because the targets are a
+file list.
+
+Suppressions are the last resort. Every finding so far has been fixed by
+changing the code: a `TYPE_CHECKING`-only import that an annotation genuinely
+needs at runtime is imported at runtime, an alias that the plugin rejects as a
+re-export-by-assignment is spelled as a `from ... import ... as ...`, and the
+alias name itself is lower-cased so Ruff's `N812` does not fire. No repository-
+wide wildcard or mass-generated allowance exists.
+
+### `C9112` and the withdrawn pytest-bdd exemption
+
+At the 3.14 baseline, annotations are evaluated lazily by default (PEP 649 and
+PEP 749), so `from __future__ import annotations` no longer changes how this
+repository's code runs. It is removed from every module.
+
+For a while the rule ran on its own recipe line, carrying an `--ignore-paths`
+exemption for the pytest-bdd step modules. The hazard it guarded against is
+real: pytest-bdd calls `inspect.signature` while collecting, and PEP 649/749
+resolves a step's annotations through the *defining module's* globals rather
+than the module doing the resolving, so a step annotation naming a
+`TYPE_CHECKING`-only import raises during collection -- removing the future
+import from `tests/bdd/steps/config_fixtures.py` alone failed the suite with
+`NameError: name 'Path' is not defined`.
+
+The exemption was still wrong, because the step modules do not keep the future
+import; they import the names they annotate with at runtime. Running the rule
+over the whole tree with no exemption reports nothing, which is the direct
+evidence: the exemption had no subject, and the second pass over the same file
+list bought nothing. The split is therefore gone and `C9112` sits in the shared
+enable-list with the rest of the family.
+
+The reason to keep the rule armed rather than drop it is that it is the only
+thing that would notice a typing-only import reappearing on a step annotation.
+`pyproject.toml` lists `runtime-evaluated-decorators` for the same hazard, so
+in practice Ruff's `TC004` reports it first; `C9112` is the backstop. A bare
+`python` shebang is not the only thing the file-list change had to account for,
+and this is the other half of the same lesson: a gate is only as good as its
+ability to see the file.
+
+### Consequences of the widened gateway
+
+Adding a Python tree to the repository is no longer enough to gate it, but
+adding it to `PYTHON_SOURCE_ROOTS` is. A module under any listed root is
+linted, typechecked, and counted for docstrings the moment it lands.
+
+`tests/test_pylint_tier_contract.py` pins the interpreter and the release;
+`tests/workflow_contracts/test_lint_environment.py` pins the df12 enable-list
+and the commit pin, and holds the discovery rule -- that the shebang predicate
+exists, and that the extensionless source it exists for reaches both `lint` and
+`typecheck`; `tests/workflow_contracts/test_python_source_discovery.py` runs
+the discovery command itself over a controlled fixture, asserting exact
+inclusion and exclusion and proving that a failing shebang reader aborts the
+build before any gate is rendered;
+`tests/workflow_contracts/test_python_baseline_contract.py` pins the baseline
+and its mirrors. Between them, a baseline bump, a narrowed predicate, a
+re-widened exemption, a per-file `find` terminator, or a floating plugin
+revision fails a test rather than passing quietly.

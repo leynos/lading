@@ -14,8 +14,6 @@ exists to prevent. This module therefore imports nothing but the standard
 library, and must continue to.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import dataclasses as dc
 import typing as typ

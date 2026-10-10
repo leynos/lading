@@ -7,37 +7,22 @@ metadata, inject cmd-mox command responses, and write scenario-specific
 `lading publish` CLI through the same process boundary as a user.
 
 The step definitions pair with `test_publish_when_steps` for command
-execution, `test_publish_then_steps` for assertions, and
+execution, the `test_publish_*_then_steps` modules for assertions, and
 `test_publish_infrastructure` for shared command-spy plumbing. Keeping setup
 steps here makes each feature scenario read as domain behaviour while the
 implementation remains explicit about which Cargo or git command is being
 simulated.
 """
 
-from __future__ import annotations
-
 import json
-import typing as typ
 from pathlib import Path
 
+import pytest
+from cmd_mox import CmdMox, Invocation
 from pytest_bdd import given, parsers
 
 from .metadata_fixtures import given_cargo_metadata_with_dependency_chain
-from .test_publish_infrastructure import (
-    CmdMox,
-    ResponseProvider,
-    _CmdInvocation,
-    _CommandResponse,
-)
-
-if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
-    import pytest
-
-try:
-    from cmd_mox import CmdMox as _ImportedCmdMox
-except ModuleNotFoundError:  # pragma: no cover - runtime fallback
-    _ImportedCmdMox = CmdMox  # type: ignore[misc]
-
+from .test_publish_infrastructure import ResponseProvider, _CommandResponse
 
 _INDEX_MISSING_STDERR_ALPHA = (
     "error: failed to prepare local package for uploading\n"
@@ -183,8 +168,8 @@ def given_cargo_publish_already_uploaded(
 ) -> None:
     """Simulate cargo publish returning an already-uploaded error for ``crate_name``."""
 
-    def _handler(invocation: _CmdInvocation) -> _CommandResponse:
-        env_mapping = dict(getattr(invocation, "env", {}))
+    def _handler(invocation: Invocation) -> _CommandResponse:
+        env_mapping = dict(invocation.env)
         if "PWD" not in env_mapping:
             message = (
                 "cargo publish pre-flight stub expected PWD in the invocation "
@@ -211,8 +196,8 @@ def given_sibling_dependency_is_not_indexed(
 ) -> None:
     """Make cargo package fail for beta because alpha is not indexed yet."""
 
-    def _handler(invocation: _CmdInvocation) -> _CommandResponse:
-        env_mapping = dict(getattr(invocation, "env", {}))
+    def _handler(invocation: Invocation) -> _CommandResponse:
+        env_mapping = dict(invocation.env)
         cwd = Path(env_mapping.get("PWD", ""))
         if cwd.name == "beta":
             return _CommandResponse(exit_code=1, stderr=_INDEX_MISSING_STDERR_ALPHA)
@@ -304,7 +289,7 @@ def given_rustc_wrapper_names_stub_sccache(
     monkeypatch.setenv("RUSTC_WRAPPER", "sccache")
     queries = 0
 
-    def _json_stats(_invocation: _CmdInvocation) -> _CommandResponse:
+    def _json_stats(_invocation: Invocation) -> _CommandResponse:
         nonlocal queries
         queries += 1
         payload = json.dumps({
@@ -332,7 +317,7 @@ def given_rustc_wrapper_unset(monkeypatch: pytest.MonkeyPatch) -> None:
 @given("a valid lading workspace", target_fixture="workspace_directory")
 def given_valid_lading_workspace(
     tmp_path: Path,
-    cmd_mox: _ImportedCmdMox,
+    cmd_mox: CmdMox,
     monkeypatch: pytest.MonkeyPatch,
 ) -> Path:
     """Create a configured workspace with a publish dependency chain.

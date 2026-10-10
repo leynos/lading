@@ -1,0 +1,25 @@
+# serializer version: 1
+# name: test_dispatch_report_records_each_invocation[delta]
+  dict({
+    'errors': 0,
+    'hits': 48,
+    'misses': 12,
+    'requests': 60,
+  })
+# ---
+# name: test_dispatch_reports_what_it_measured_when_a_crate_fails[crate_counters]
+  dict({
+    'alpha': dict({
+      'errors': 0,
+      'hits': 8,
+      'misses': 2,
+      'requests': 10,
+    }),
+    'beta': dict({
+      'errors': 0,
+      'hits': 8,
+      'misses': 2,
+      'requests': 10,
+    }),
+  })
+# ---

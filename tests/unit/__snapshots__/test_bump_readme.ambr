@@ -1,7 +1,27 @@
 # serializer version: 1
+# name: test_rewrite_relative_links_ignores_code_regions
+  '''
+  See [Guide](<link-prefix>docs/guide.md).
+  `[Inline](docs/inline.md)`
+  ```markdown
+  [Fenced](docs/fenced.md)
+  ```
+      [Indented](docs/indented.md)
+  	[Tabbed](docs/tabbed.md)
+  
+  '''
+# ---
 # name: test_transpose_readme_to_crate_rejects_external_crate_root
   "Crate 'alpha' is outside the workspace root; cannot transpose README"
 # ---
 # name: test_transpose_readme_to_crate_requires_workspace_readme
   'Workspace README.md is required by crates that set readme.workspace = true'
+# ---
+# name: test_transpose_readme_to_crate_writes_rewritten_workspace_readme
+  '''
+  # Project
+  
+  See [Guide](<link-prefix>docs/guide.md).
+  
+  '''
 # ---

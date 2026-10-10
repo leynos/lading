@@ -149,26 +149,28 @@ that invocation on the command line in the Makefile. They exempt nested test
 closures and test-local stub classes. The `lading` pass carries no exemptions,
 and every module-level definition in `tests` and `scripts` still requires a
 docstring. If `interrogate` passes, the third stage runs the pinned Pylint
-release under the `pypy@3.12` managed interpreter through `uv tool run`. That
-stage is focused on rule families that complement Ruff, especially logging
+release under managed CPython at the project baseline through `uv tool run`.
+That stage is focused on rule families that complement Ruff, especially logging
 format safety, pattern matching checks, selected simplification checks,
 deprecated standard-library usage, file hygiene, and design-size limits. The
-fourth stage runs all `df12-python-lints` checks under CPython 3.14, while
-retaining Lading's Python 3.13 semantic baseline for version-gated diagnostics.
-The fifth stage runs `ambrleaks`, which scans Syrupy snapshots under `tests`
-for values that should have been redacted. Finally, Skylos runs a blocking,
-strict, production-only dead-code scan across `lading`, after which the lint
-gate is complete. [ADR-003](adr/003-three-tier-python-linting.md) records the
-policy decision, including the
+fourth stage runs a selected allow-list of `df12-python-lints` checks under
+CPython at the baseline, evaluating version-gated diagnostics against that same
+baseline. The fifth stage runs `ambrleaks`, which scans Syrupy snapshots under
+`tests` for values that should have been redacted. Finally, Skylos runs a
+blocking, strict, production-only dead-code scan across `lading`, after which
+the lint gate is complete. [ADR-003](adr/003-three-tier-python-linting.md)
+records the policy decision, including the
 [2026-09-07 addendum](adr/003-three-tier-python-linting.md#addendum-docstring-coverage-for-tests-and-scripts-2026-09-07)
 extending Interrogate coverage to `tests` and `scripts`.
 
 The relevant Makefile variables are:
 
-- `RUFF_VERSION` — pinned Ruff version; defaults to `0.16.0`. Keep it in sync
+- `RUFF_VERSION` — pinned Ruff version; defaults to `0.16.10`. Keep it in sync
   with the `ruff==` dev dependency in `pyproject.toml` and the
   `uv tool install ruff==` step in `.github/workflows/ci.yml`, bumping all
-  three together to avoid version-skew lint failures.
+  three together to avoid version-skew lint failures. Dependabot moves the dev
+  dependency, so the other two follow it;
+  `tests/workflow_contracts/test_python_lint_gateway.py` fails if they drift.
 - `RUFF` — the pinned Ruff command
   (`uv tool run --from ruff==$(RUFF_VERSION) ruff`) that the `fmt`,
   `check-fmt`, and `lint` targets invoke.
@@ -178,32 +180,71 @@ The relevant Makefile variables are:
   install ty separately; it runs whatever `TY_VERSION` pins.
 - `TY` — the pinned ty command (`uv tool run --from ty==$(TY_VERSION) ty`)
   that the `typecheck` target invokes.
+- `PYTHON_BASELINE` — the single Python baseline every gateway derives from;
+  defaults to `3.14`. Ruff's `target-version`, Pylint's `py-version`, the
+  managed interpreters behind `uv tool run`, and `ty --python-version` all read
+  this value, so a baseline bump is one edit in the Makefile plus the mirrors
+  the workflow-contract tests pin.
 - `PYLINT_PYTHON` — Python executable used by `uv tool run`; defaults to
-  `pypy@3.12`. The interpreter is pinned to the `3.12` release line, not bare
-  `pypy`, so a new PyPy release cannot silently change the parsed grammar.
+  `$(PYTHON_BASELINE)`. The interpreter is pinned to the baseline release
+  rather than the bare `3` alias, so a new minor release cannot silently change
+  the parsed grammar.
 - `PYLINT_VERSION` — pinned Pylint release; defaults to `4.0.9`.
-- `PYLINT_TARGETS` — directories passed to Pylint; defaults to
-  `lading scripts tests`.
+- `PYTHON_SOURCE_ROOTS` — the trees walked for Python source; the roots that
+  exist are discovered with `$(wildcard …)` so a missing optional root cannot
+  truncate the list or turn into a build error.
+- `PYTHON_SOURCES` — the file list every row of the gateway runs over. It is
+  built from two predicates, not one: a `*.py` suffix test, plus a match on an
+  executable's `uv run python` shebang. The second exists because
+  `scripts/publish-check/bin/cargo` is a Python program with no extension --
+  `cargo` is the name it must carry to shadow the real binary on `PATH`, so
+  renaming it is not an option, and a suffix-only sweep would leave it ungated
+  while the lint still reported green. Two
+  `tests/workflow_contracts/test_lint_environment.py` cases hold the rule: one
+  asserts the shebang predicate is present, the other expands `make -n lint` and
+  `make -n typecheck` and asserts the extensionless file is on both command
+  lines, so a file that is discovered but never passed to a tool fails too. The
+  two predicates are matched by one batched `find` walk, which is fail-closed:
+  `$(.SHELLSTATUS)` is read on the line after the `$(shell ...)`, and a
+  non-zero status aborts the build rather than trimming the list. The shebang
+  reader is batched with `-exec ... {} +` rather than `\;` because a per-file
+  child's exit status is discarded by `find`, which would hide an unreadable
+  file behind the same zero a non-match produces.
+  `tests/workflow_contracts/test_python_source_discovery.py` covers the
+  behaviour: it runs the discovery command over a controlled fixture tree and
+  asserts exact inclusion and exclusion, and it proves the guard stops the
+  build before any gate command is rendered when the reader fails.
+- `PYLINT_TARGETS` — files passed to Pylint; defaults to `PYTHON_SOURCES`. It
+  is a file list rather than a directory list on purpose: Pylint treats a
+  directory containing an `__init__.py` as a package and does not recurse into
+  it, so `tests/` stops at `tests/` and every module beneath it goes unlinted
+  while the gate still passes.
 - `PYLINT` — full
   `uv tool run --managed-python --python $(PYLINT_PYTHON)` with
   `--from 'pylint==$(PYLINT_VERSION)' pylint` invocation.
-- `DF12_PYTHON_LINTS_REF` — pinned `df12-python-lints` release used by the
-  separately provisioned `ambrleaks` command; defaults to `v0.1.0` and must
-  remain aligned with the development dependency in `pyproject.toml`.
+- `DF12_PYTHON_LINTS_REF` — pinned `df12-python-lints` revision used by the
+  df12 Pylint and `ambrleaks` stages; defaults to
+  `4cf41736cce2f7ba2778882a5c629c044568a0e5` (tag `v0.3.0`) and must remain
+  aligned with the development dependency in `pyproject.toml`.
 - `DF12_PYTHON` — CPython interpreter used by the df12 Pylint and `ambrleaks`
-  stages; defaults to `3.14`.
+  stages; defaults to `$(PYTHON_BASELINE)`.
 - `DF12_PYLINT_MESSAGES` — explicit allow-list of enabled df12 Pylint message
-  IDs.
+  IDs, including `C9112` (`redundant-future-annotations`). There is no
+  `--ignore-paths` exemption anywhere in the Makefile: the rule runs over every
+  gated file. The pytest-bdd step modules look like they need one and do not --
+  they import the names they annotate with, because collection resolves a
+  step's annotations through the defining module's globals.
 - `DF12_PYLINT` — isolated Pylint invocation that loads the df12 plug-in under
-  CPython 3.14 and evaluates version-gated checks against Lading's Python 3.13
-  baseline without replacing the project's `.venv` interpreter.
+  managed CPython at the baseline and evaluates version-gated checks against
+  that same baseline without replacing the project's `.venv` interpreter.
 - `AMBRLEAKS` — isolated `df12-python-lints` tool invocation used to scan
   Syrupy snapshots under `tests`.
 - `SKYLOS_VERSION` — the pinned Skylos release used by the command-only CLI
   macro; defaults to `4.33.2`.
-- `SKYLOS_CLI` — the Python 3.14 Skylos CLI invocation. Skylos parses source
-  using its own runtime AST; pinning Python 3.14 prevents phantom findings when
-  newer Python syntax is present.
+- `SKYLOS_CLI` — the Skylos CLI invocation, pinned to `$(PYTHON_BASELINE)`.
+  Skylos parses source using its own runtime AST; pinning the interpreter to
+  the project baseline prevents phantom findings when newer Python syntax is
+  present.
 - `SKYLOS` — the configured Skylos scan command used by `make lint`; global
   scan options such as `--config-file` are kept separate from the CLI macro.
 - `SKYLOS_EXCLUDE_FOLDERS` — folders excluded from the production Skylos scan;
@@ -229,15 +270,15 @@ from the release the `install-makeutil` action defaults to, listed at
 `.sha256` file, and put it on `PATH` as `makeutil`.
 
 Ruff, Pylint, and Skylos policy live in `pyproject.toml`. The Ruff
-configuration enables preview rules, targets Python 3.13, imports the selected
+configuration enables preview rules, targets Python 3.14, imports the selected
 `episodic` rule set, and bans deprecated `typing` aliases in favour of built-in
 collection types, `collections.abc`, `collections`, `contextlib`, or `re` as
-appropriate. The Pylint configuration keeps both passes opt-in. The existing
-PyPy pass uses the chosen built-in checks, while the CPython 3.14 pass disables
-built-in messages and enables every diagnostic shipped by `df12-python-lints`
-v0.1.0. Local ignores and thresholds document existing codebase constraints
-that should be addressed as focused cleanup work rather than incidental
-lint-gate churn.
+appropriate. The Pylint configuration keeps both passes opt-in. The built-in
+pass uses the chosen checks, while the df12 pass disables built-in messages and
+enables a fixed allow-list of `df12-python-lints` diagnostics under managed
+CPython at the baseline. Local ignores and thresholds document existing
+codebase constraints that should be addressed as focused cleanup work rather
+than incidental lint-gate churn.
 
 Skylos runs with concise, non-interactive output, dead-code analysis only, no
 uploads or provenance collection, and no repository-wide grep verification. The
@@ -958,9 +999,10 @@ intended for targeted verification when the formatting helpers change.
 
 `_format_manifest_path` keeps its `pre:`/`post:` contract but is intentionally
 excluded from the `make crosshair` run. CrossHair 0.0.107 cannot construct a
-symbolic `pathlib.Path` proxy — it raises in `intersect_signatures` on both
-CPython 3.13 and 3.14. Its behaviour is instead covered by the Hypothesis
-property test in `tests/unit/test_bump_command_internals.py`, which exercises
+symbolic `pathlib.Path` proxy — it raises in `intersect_signatures` on CPython
+3.14, the project baseline and the version every gateway now uses. Its
+behaviour is instead covered by the Hypothesis property test in
+`tests/unit/test_bump_command_internals.py`, which exercises
 `_format_result_message` across a wide range of path inputs.
 
 ## Workspace discovery helpers
@@ -1735,6 +1777,19 @@ selects persistent binary mode, so all later chunks use UTF-8 bytes rather than
 switching back to text encoding. If the text sink has no binary buffer, the
 helper returns a disabled `(None, None)` state; subprocess capture continues
 independently and retains the complete decoded output.
+
+The relay states its text parameter as `TextSink`, a `Protocol` declaring only
+`write` and `flush`. `typing.TextIO` names the concrete `io.TextIOWrapper` in
+typeshed and is nominal, so a stream that wraps its own binary buffer — the
+streams the relay is designed to fall back through — would not be assignable to
+it. The protocol deliberately omits the optional `buffer`; the fallback
+discovers that attribute dynamically and treats its absence as "disable
+mirroring for this stream", so requiring it would forbid the very sinks the
+relay must tolerate. Use `TextSink` for parameters that only write text and may
+need a binary-buffer fallback; use `typing.TextIO` where a real text stream is
+required. It lives in `lading.runtime.stream_relay` and is imported directly
+from there by `lading.runtime.subprocess_runner` and
+`lading.testing.cmd_mox_runner`.
 
 The cmd-mox runner validates `CMOX_IPC_TIMEOUT` in `_resolve_cmd_mox_timeout`.
 The two operator-facing messages it raises live as a single source of truth in

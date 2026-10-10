@@ -28,8 +28,6 @@ then rewrites the version entries in those files and returns the ones it
 changed.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import logging
 import re

@@ -30,8 +30,6 @@ A tree with no lock file was left by a release predating this and stays
 removable. The lock is advisory: deleting the file by hand defeats it.
 """
 
-from __future__ import annotations
-
 import contextlib
 import logging
 import sys
@@ -193,7 +191,7 @@ def _acquire_for_removal(root: Path) -> tuple[bool, io.BufferedRandom | None]:
 
 
 @contextlib.contextmanager
-def hold_for_removal(root: Path) -> cabc.Iterator[bool]:
+def hold_for_removal(root: Path) -> cabc.Generator[bool]:
     """Claim ``root`` for deletion, holding the claim for the block's life.
 
     Asking whether a tree is in use and then deleting it are two moments, and

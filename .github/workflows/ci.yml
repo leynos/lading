@@ -15,7 +15,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
-          python-version: '3.13'
+          python-version: '3.14'
 
       - name: Install uv
         uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
@@ -46,8 +46,9 @@ jobs:
           # Makefile is the sole ty version declaration; update it there.
           # Pin ruff to the version the Makefile invokes (RUFF_VERSION) so the
           # linter behaves identically across the uv tool, the synced
-          # virtualenv, and developer PATH; bump both sites together.
-          uv tool install ruff==0.16.0
+          # virtualenv, and developer PATH. All three sites move together, and
+          # the `ruff==` dev dependency is what Dependabot bumps.
+          uv tool install ruff==0.16.10
 
       - name: Install mdtablefix
         # `make check-fmt` runs `mdtablefix --check --git`; 0.6.0 is the

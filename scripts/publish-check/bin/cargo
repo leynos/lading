@@ -1,6 +1,6 @@
 #!/usr/bin/env -S uv run python
 # /// script
-# requires-python = ">=3.13"
+# requires-python = ">=3.14"
 # ///
 """Cargo wrapper used by publish-check workflows.
 
@@ -15,12 +15,11 @@ any ``--`` separator and deduplicates stray occurrences that would otherwise be
 ignored by Cargo.
 """
 
-from __future__ import annotations
-
+import collections.abc as cabc
 import os
 import shutil
 import sys
-from typing import NoReturn, Sequence
+import typing as typ
 
 ALL_FEATURES_FLAG = "--all-features"
 ARGUMENT_SEPARATOR = "--"
@@ -51,9 +50,26 @@ _OPTIONS_CONSUMING_VALUE = {
 _SHORT_OPTIONS_CONSUMING_VALUE = {"-F", "-Z", "-j"}
 
 
-def _find_target_subcommand_index(args: Sequence[str]) -> int | None:
-    """Return the index of the targeted cargo subcommand if present."""
+def _option_consumes_next_argument(args: cabc.Sequence[str], index: int) -> bool:
+    """Return whether ``args[index]`` swallows the token that follows it."""
+    argument = args[index]
+    if index + 1 >= len(args):
+        return False
 
+    option_key = argument.split("=", maxsplit=1)[0]
+    consumes_next = (
+        "=" not in argument and option_key in _OPTIONS_CONSUMING_VALUE
+    ) or (argument in _SHORT_OPTIONS_CONSUMING_VALUE)
+    if not consumes_next:
+        return False
+    # A separator is never an option's value: Cargo reads ``--config --`` as a
+    # missing value rather than consuming the separator, so the walker must
+    # stop here and leave it for the caller to treat as the boundary it is.
+    return args[index + 1] != ARGUMENT_SEPARATOR
+
+
+def _find_target_subcommand_index(args: cabc.Sequence[str]) -> int | None:
+    """Return the index of the targeted cargo subcommand if present."""
     index = 0
     while index < len(args):
         argument = args[index]
@@ -64,39 +80,25 @@ def _find_target_subcommand_index(args: Sequence[str]) -> int | None:
             continue
 
         if argument == ARGUMENT_SEPARATOR:
+            # Everything after the separator belongs to the test binary, so no
+            # target subcommand is reachable from here.
             return None
 
         if argument in TARGET_SUBCOMMANDS:
             return index
 
-        if argument.startswith("-"):
-            option_key = argument.split("=", maxsplit=1)[0]
-            if option_key in _OPTIONS_CONSUMING_VALUE:
-                index += 2 if "=" not in argument and index + 1 < len(args) else 1
-                continue
-            if any(
-                argument.startswith(short_option)
-                for short_option in _SHORT_OPTIONS_CONSUMING_VALUE
-            ):
-                # "-j4" embeds the value whereas "-j" stores it separately.
-                if argument in _SHORT_OPTIONS_CONSUMING_VALUE and index + 1 < len(args):
-                    index += 2
-                else:
-                    index += 1
-                continue
-            index += 1
-            continue
+        if not argument.startswith("-"):
+            # First positional argument that is not one of our targets means we
+            # are dealing with another subcommand (for example ``cargo run``).
+            return None
 
-        # First positional argument that is not one of our targets means we are
-        # dealing with another subcommand (for example ``cargo run``).
-        return None
+        index += 2 if _option_consumes_next_argument(args, index) else 1
 
     return None
 
 
-def _insertion_index(args: Sequence[str], start_index: int) -> int:
+def _insertion_index(args: cabc.Sequence[str], start_index: int) -> int:
     """Return the index before which ``--all-features`` should be inserted."""
-
     tail = list(args[start_index + 1 :])
     try:
         separator_offset = tail.index(ARGUMENT_SEPARATOR)
@@ -105,9 +107,8 @@ def _insertion_index(args: Sequence[str], start_index: int) -> int:
     return start_index + 1 + separator_offset
 
 
-def rewrite_args(argv: Sequence[str]) -> list[str]:
+def rewrite_args(argv: cabc.Sequence[str]) -> list[str]:
     """Return ``argv`` with ``--all-features`` inserted for targeted commands."""
-
     args = list(argv)
     subcommand_index = _find_target_subcommand_index(args)
     if subcommand_index is None:
@@ -129,9 +130,8 @@ def rewrite_args(argv: Sequence[str]) -> list[str]:
     return [*before_separator, ALL_FEATURES_FLAG, *after_separator]
 
 
-def main(argv: Sequence[str] | None = None) -> NoReturn:
+def main(argv: cabc.Sequence[str] | None = None) -> typ.NoReturn:
     """Execute cargo with rewritten arguments."""
-
     if argv is None:
         argv = sys.argv[1:]
 
@@ -141,7 +141,10 @@ def main(argv: Sequence[str] | None = None) -> NoReturn:
         message = "cargo executable not found on PATH"
         raise SystemExit(message)
 
-    os.execvp(cargo, ["cargo", *rewritten_args])
+    # Replacing this process is the point: the shim must not leave a wrapper in
+    # the process tree, and an extra shell would be a second thing for a signal
+    # or exit status to get lost in, so no `shell=True` is wanted here.
+    os.execvp(cargo, ["cargo", *rewritten_args])  # ruff: ignore[start-process-with-no-shell] - execvp replaces this process, which is the shim's purpose; an argv list needs no shell
 
 
 if __name__ == "__main__":  # pragma: no cover - CLI entry point

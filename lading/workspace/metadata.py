@@ -16,8 +16,6 @@ the same calls through the cmd-mox adapter in
 :mod:`lading.testing.cmd_mox_runner` without touching the call sites.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import contextlib
 import contextvars
@@ -81,7 +79,7 @@ _COMMAND_RUNNER: contextvars.ContextVar[CommandRunner | None] = contextvars.Cont
 
 
 @contextlib.contextmanager
-def use_command_runner(runner: CommandRunner) -> cabc.Iterator[None]:
+def use_command_runner(runner: CommandRunner) -> cabc.Generator[None]:
     """Temporarily route workspace metadata commands through ``runner``."""
     token = _COMMAND_RUNNER.set(runner)
     try:

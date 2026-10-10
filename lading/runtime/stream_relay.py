@@ -11,13 +11,37 @@ Typical use is to derive deterministic thread names with
 :func:`write_to_relay_sink` while relaying a subprocess stream.
 """
 
-from __future__ import annotations
-
 import re
 import typing as typ
 from pathlib import Path
 
 _THREAD_NAME_PATTERN = re.compile(r"[^A-Za-z0-9_.-]+")
+
+
+class TextSink(typ.Protocol):
+    """A writable text stream the relay can mirror output into.
+
+    ``typing.TextIO`` names the concrete ``io.TextIOWrapper`` in typeshed and
+    is nominal, so a sink that wraps a binary buffer itself -- a logging
+    stream, a test double, a captured pipe -- is not assignable to it even
+    though the relay only calls ``write`` and ``flush``. The relay is also
+    stated to fall back to ``sink.buffer``, so the stream it accepts cannot be
+    limited to the concrete wrapper anyway.
+
+    The optional binary ``buffer`` is deliberately absent from this protocol.
+    Declaring it would require every conforming stream to expose one, and the
+    relay already discovers it dynamically in :func:`_write_to_text_sink`;
+    that lookup is what makes a text-only sink degrade to disabled mirroring
+    rather than fail.
+    """
+
+    def write(self, payload: str, /) -> int:
+        """Write text and return the number of characters written."""
+        ...
+
+    def flush(self, /) -> None:
+        """Flush any pending output."""
+        ...
 
 
 def format_thread_name(program: str, stream: str) -> str:
@@ -47,15 +71,15 @@ def format_thread_name(program: str, stream: str) -> str:
 
 
 def write_to_relay_sink(
-    sink: typ.TextIO | None,
+    sink: TextSink | None,
     binary_sink: typ.BinaryIO | None,
     payload: str,
-) -> tuple[typ.TextIO | None, typ.BinaryIO | None]:
+) -> tuple[TextSink | None, typ.BinaryIO | None]:
     """Mirror one decoded relay payload and return the next sink state.
 
     Parameters
     ----------
-    sink : typ.TextIO | None
+    sink : TextSink | None
         Active parent text stream, or :data:`None` when mirroring is disabled.
     binary_sink : typ.BinaryIO | None
         Active parent binary stream after an earlier encoding fallback, or
@@ -65,7 +89,7 @@ def write_to_relay_sink(
 
     Returns
     -------
-    tuple[typ.TextIO | None, typ.BinaryIO | None]
+    tuple[TextSink | None, typ.BinaryIO | None]
         The active text stream and persistent binary stream for the next relay
         payload. A Unicode encoding failure selects ``sink.buffer`` and writes
         this and later payloads as exact UTF-8 bytes. A text-only sink returns
@@ -87,10 +111,10 @@ def write_to_relay_sink(
 
 
 def _write_to_binary_sink(
-    sink: typ.TextIO,
+    sink: TextSink,
     binary_sink: typ.BinaryIO,
     payload: str,
-) -> tuple[typ.TextIO | None, typ.BinaryIO | None]:
+) -> tuple[TextSink | None, typ.BinaryIO | None]:
     """Write a relay payload through an already-selected binary buffer."""
     try:
         binary_sink.write(payload.encode("utf-8"))
@@ -101,9 +125,9 @@ def _write_to_binary_sink(
 
 
 def _write_to_text_sink(
-    sink: typ.TextIO,
+    sink: TextSink,
     payload: str,
-) -> tuple[typ.TextIO | None, typ.BinaryIO | None]:
+) -> tuple[TextSink | None, typ.BinaryIO | None]:
     """Write text and select the binary buffer after an encoding failure."""
     try:
         sink.write(payload)

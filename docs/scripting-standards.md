@@ -25,7 +25,7 @@ as a default.
 
 ## Language and runtime
 
-- Target Python 3.13 for all new scripts. Older versions may only be used when
+- Target Python 3.14 for all new scripts. Older versions may only be used when
   integration constraints require them, and any exception must be documented
   inline.
 - Each script starts with an `uv` script block so runtime and dependency
@@ -40,6 +40,45 @@ as a default.
 - File‑system interactions use `pathlib.Path`. Higher‑level operations (for
   example, copying or removing trees) go through the `shutil` standard library
   module.
+
+### The lint and typecheck gateways
+
+Python 3.14 is the single baseline for every Python tree in this repository: the
+`lading` package, `tests`, `scripts`, and any module used by a GitHub Actions
+workflow or action. `PYTHON_BASELINE` in the Makefile is the one place that
+version is written, and Ruff's `target-version`, Pylint's `py-version`, the
+interpreters behind `uv tool run`, and `ty --python-version` all read from it.
+Say `>=3.14` in a script block for the same reason: a script that pins its own
+older floor is a second source of truth that drifts.
+
+The same gate covers scripts as it covers the package, so a new helper script
+is expected to satisfy `make check-fmt`, `make lint`, and `make typecheck`
+before it is committed:
+
+- Ruff, Interrogate, Pylint (built-in checks) and a df12 Pylint pass run over
+  every listed source. A script outside those roots is not linted, so add the
+  tree to `PYTHON_SOURCE_ROOTS` rather than leaving it ungated.
+- Interrogate requires a docstring on every public definition under `tests`
+  and `scripts`; only nested test closures and test-local stub classes are
+  exempt, and only by structure.
+- The df12 `C9102` rule requires an `assert` to carry a failure message that
+  names the violated expectation. Write the message for a tired teammate
+  reading the failure at 3am:
+  `assert exit_code == 0, "the uploader must report success after gh exits zero"`,
+  never `"failed"`.
+- `C9112` requires `from __future__ import annotations` to be absent, because
+  annotations are already lazy at the 3.14 baseline. There is no exemption: a
+  pytest-bdd step module that annotates a parameter with a typing-only import
+  imports that name at runtime instead, because collection resolves a step's
+  annotations through the defining module's globals and a `TYPE_CHECKING`-only
+  name would raise `NameError` before the step ever runs.
+
+Suppressions are the last resort. A `TYPE_CHECKING`-only import that an
+annotation genuinely needs at runtime is imported at runtime instead; a
+re-export spelled as an assignment is spelled as a `from … import … as …`.
+Narrow, reasoned configuration in `pyproject.toml` or the Makefile is
+acceptable where a rule cannot model the boundary; a blanket `# noqa` or a
+repository-wide allowance is not.
 
 ### Cyclopts CLI pattern (environment‑first)
 
@@ -417,7 +456,7 @@ except FileNotFoundError:
 ```python
 #!/usr/bin/env -S uv run python
 # /// script
-# requires-python = ">=3.13"
+# requires-python = ">=3.14"
 # dependencies = ["cyclopts>=2.9", "cuprum", "cmd-mox"]
 # ///
 

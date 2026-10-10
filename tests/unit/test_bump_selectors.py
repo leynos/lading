@@ -1,7 +1,5 @@
 """Unit tests for bump crate-selector and skip helpers."""
 
-from __future__ import annotations
-
 import pytest
 
 from lading.commands import bump_manifests
@@ -9,7 +7,7 @@ from lading.commands import bump_manifests
 
 def test_determine_package_selectors_respects_exclusions() -> None:
     """Excluded crates produce no package selectors."""
-    assert bump_manifests._determine_package_selectors("beta", {"beta"}) == (), (
+    assert not bump_manifests._determine_package_selectors("beta", {"beta"}), (
         "an excluded crate should yield no package selectors"
     )
 

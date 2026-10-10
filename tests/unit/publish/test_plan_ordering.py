@@ -1,7 +1,5 @@
 """Publish plan ordering behaviour tests."""
 
-from __future__ import annotations
-
 import typing as typ
 
 from lading.commands import publish
@@ -26,7 +24,9 @@ def test_plan_publication_topologically_orders_dependencies(tmp_path: Path) -> N
 
     plan = plan_with_crates(tmp_path, (gamma, beta, alpha))
 
-    assert plan.publishable == (alpha, beta, gamma)
+    assert plan.publishable == (alpha, beta, gamma), (
+        "a crate must publish only after the dependencies it needs"
+    )
 
 
 def test_plan_publication_ignores_dev_dependency_cycles(tmp_path: Path) -> None:
@@ -50,7 +50,9 @@ def test_plan_publication_ignores_dev_dependency_cycles(tmp_path: Path) -> None:
 
     plan = publish.plan_publication(workspace, configuration)
 
-    assert plan.publishable == (alpha, beta)
+    assert plan.publishable == (alpha, beta), (
+        "a dev-only dependency edge must not exclude a crate from the plan"
+    )
 
 
 def test_plan_publication_ignores_cycles_in_non_publishable_crates(
@@ -74,7 +76,10 @@ def test_plan_publication_ignores_cycles_in_non_publishable_crates(
 
     plan = plan_with_crates(tmp_path, (alpha, cycle_a, cycle_b))
 
-    assert plan.publishable == (alpha,)
+    assert plan.publishable == (alpha,), (
+        "a cycle among crates that are not publishable must not block "
+        "the publishable crates"
+    )
 
 
 def test_plan_publication_configuration_skips_ignore_cycles(tmp_path: Path) -> None:
@@ -90,7 +95,9 @@ def test_plan_publication_configuration_skips_ignore_cycles(tmp_path: Path) -> N
         exclude=("cycle-a", "cycle-b"),
     )
 
-    assert plan.publishable == (alpha,)
+    assert plan.publishable == (alpha,), (
+        "crates excluded by configuration must not block or join the publishable set"
+    )
 
 
 def test_plan_publication_honours_configured_order(tmp_path: Path) -> None:
@@ -103,4 +110,6 @@ def test_plan_publication_honours_configured_order(tmp_path: Path) -> None:
         order=("gamma", "beta", "alpha"),
     )
 
-    assert plan.publishable == (gamma, beta, alpha)
+    assert plan.publishable == (gamma, beta, alpha), (
+        "publish.order must be honoured verbatim when it lists every crate"
+    )

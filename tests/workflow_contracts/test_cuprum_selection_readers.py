@@ -7,8 +7,6 @@ that a broken reader is reported against the reader itself, rather than against
 whichever assertion it happened to break.
 """
 
-from __future__ import annotations
-
 import pytest
 
 from tests.helpers.cuprum_pin import SelectionError, declared_pin, names_cuprum
@@ -66,7 +64,10 @@ def test_a_requirement_that_is_not_an_exact_pin_is_reported(requirement: str) ->
 
 def test_a_requirement_with_a_marker_is_reported() -> None:
     """A marker would let the two paths resolve differently per environment."""
-    text = _pyproject_with('cuprum==0.2.0b1; python_version >= "3.13"')
+    # Any marker defeats the comparison; the baseline is written to match the
+    # package's own floor so the case stays a marker test rather than reading
+    # as an out-of-range environment.
+    text = _pyproject_with('cuprum==0.2.0b1; python_version >= "3.14"')
 
     with pytest.raises(SelectionError):
         declared_pin(text)

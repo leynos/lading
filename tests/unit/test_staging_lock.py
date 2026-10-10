@@ -20,8 +20,6 @@ made is reported rather than swallowed, and that a sweep judging a tree never
 plants a lock of its own in it.
 """
 
-from __future__ import annotations
-
 import shutil
 import subprocess
 import sys
@@ -117,7 +115,9 @@ def _start_holder(tree: Path) -> subprocess.Popen[str]:
     subprocess.Popen
         The holding process, still running.
     """
-    holder = subprocess.Popen(  # ruff: ignore[subprocess-without-shell-equals-true] - explicit shell-free argv list
+    # Ownership passes to the caller, which terminates the process once the
+    # sweep under test has run, so `with` cannot manage this handle.
+    holder = subprocess.Popen(  # pylint: disable=consider-using-with  # ruff: ignore[subprocess-without-shell-equals-true] - explicit shell-free argv list
         [sys.executable, "-c", _HOLDER, str(tree), staging_lock.__file__],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
@@ -246,10 +246,10 @@ def test_the_claim_is_still_held_while_the_tree_is_deleted(
     seen: list[bool] = []
     remove = shutil.rmtree
 
-    def _observe(path: Path, *args: object, **kwargs: object) -> None:
+    def _observe(path: Path) -> None:
         """Record what another process sees, then remove the tree for real."""
         seen.append(_probe_in_use(path))
-        remove(path, *args, **kwargs)  # type: ignore[arg-type]
+        remove(path)
 
     monkeypatch.setattr(shutil, "rmtree", _observe)
 

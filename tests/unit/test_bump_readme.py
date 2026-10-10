@@ -1,7 +1,5 @@
 """Unit tests for workspace README transposition during version bumps."""
 
-from __future__ import annotations
-
 import typing as typ
 from pathlib import Path
 
@@ -12,6 +10,7 @@ from hypothesis import strategies as st
 from lading.commands import bump_readme
 from lading.commands.bump_readme import ReadmeTranspositionError
 from lading.workspace import WorkspaceCrate
+from tests.helpers.path_normalization import normalized
 
 if typ.TYPE_CHECKING:
     from syrupy.assertion import SnapshotAssertion
@@ -66,7 +65,9 @@ def test_compute_link_prefix_matches_crate_depth(
     relative_path: str, expected: str
 ) -> None:
     """The prefix walks from the crate root back to the workspace root."""
-    assert bump_readme.compute_link_prefix(Path(relative_path)) == expected
+    assert bump_readme.compute_link_prefix(Path(relative_path)) == expected, (
+        "the prefix must climb from the crate root to the workspace root"
+    )
 
 
 @pytest.mark.parametrize(
@@ -96,8 +97,12 @@ def test_rewrite_relative_links_updates_markdown_targets(
 ) -> None:
     """Inline links and image targets receive the crate-to-root prefix."""
     rewritten, changed = bump_readme.rewrite_relative_links(markdown, "../../")
-    assert rewritten == expected
-    assert changed is True
+    assert rewritten == expected, (
+        "each markdown target must gain the crate-to-root prefix"
+    )
+    assert changed is True, (
+        "rewriting a relative target must report that the text changed"
+    )
 
 
 @pytest.mark.parametrize(
@@ -119,10 +124,12 @@ def test_rewrite_relative_links_preserves_non_relative_targets(markdown: str) ->
     assert bump_readme.rewrite_relative_links(markdown, "../../") == (
         markdown,
         False,
-    )
+    ), "non-relative targets must be returned verbatim and left unchanged"
 
 
-def test_rewrite_relative_links_ignores_code_regions() -> None:
+def test_rewrite_relative_links_ignores_code_regions(
+    snapshot: SnapshotAssertion,
+) -> None:
     """Markdown examples inside code regions are preserved verbatim."""
     markdown = (
         "See [Guide](docs/guide.md).\n"
@@ -136,20 +143,16 @@ def test_rewrite_relative_links_ignores_code_regions() -> None:
 
     rewritten, changed = bump_readme.rewrite_relative_links(markdown, "../../")
 
-    assert rewritten == (
-        "See [Guide](../../docs/guide.md).\n"
-        "`[Inline](docs/inline.md)`\n"
-        "```markdown\n"
-        "[Fenced](docs/fenced.md)\n"
-        "```\n"
-        "    [Indented](docs/indented.md)\n"
-        "\t[Tabbed](docs/tabbed.md)\n"
-    )
-    assert changed is True
+    # The prefix is Markdown link text, not a filesystem path: `str(Path(...))`
+    # would render it with backslashes on Windows, which is not the spelling
+    # the README carries.
+    scrubbed = normalized(rewritten, "../../", placeholder="<link-prefix>")
+    assert scrubbed == snapshot, "only the prose link should be rewritten"
+    assert changed is True, "a rewritten prose link must report that the text changed"
 
 
 def test_transpose_readme_to_crate_writes_rewritten_workspace_readme(
-    tmp_path: Path,
+    tmp_path: Path, snapshot: SnapshotAssertion
 ) -> None:
     """Transposition writes adopted README content into the crate root."""
     crate = _make_crate(tmp_path)
@@ -161,10 +164,15 @@ def test_transpose_readme_to_crate_writes_rewritten_workspace_readme(
     changed_path = bump_readme.transpose_readme_to_crate(tmp_path, crate, dry_run=False)
 
     target_readme = tmp_path / "crates" / "alpha" / "README.md"
-    assert changed_path == target_readme
-    assert target_readme.read_text(encoding="utf-8") == (
-        "# Project\n\nSee [Guide](../../docs/guide.md).\n"
+    assert changed_path == target_readme, (
+        "transposition must report the crate README it wrote"
     )
+    scrubbed = normalized(
+        target_readme.read_text(encoding="utf-8"),
+        "../../",
+        placeholder="<link-prefix>",
+    )
+    assert scrubbed == snapshot, "the written README must carry the rewritten link"
 
 
 def test_transpose_readme_to_crate_reports_dry_run_without_writing(
@@ -176,8 +184,12 @@ def test_transpose_readme_to_crate_reports_dry_run_without_writing(
 
     changed_path = bump_readme.transpose_readme_to_crate(tmp_path, crate, dry_run=True)
 
-    assert changed_path == tmp_path / "crates" / "alpha" / "README.md"
-    assert not (tmp_path / "crates" / "alpha" / "README.md").exists()
+    assert changed_path == tmp_path / "crates" / "alpha" / "README.md", (
+        "a dry run must still report the crate README it would write"
+    )
+    assert not (tmp_path / "crates" / "alpha" / "README.md").exists(), (
+        "a dry run must leave the crate README untouched"
+    )
 
 
 def test_transpose_readme_to_crate_skips_matching_target(tmp_path: Path) -> None:
@@ -187,7 +199,9 @@ def test_transpose_readme_to_crate_skips_matching_target(tmp_path: Path) -> None
     (tmp_path / "README.md").write_text(content, encoding="utf-8")
     (tmp_path / "crates" / "alpha" / "README.md").write_text(content, encoding="utf-8")
 
-    assert bump_readme.transpose_readme_to_crate(tmp_path, crate, dry_run=False) is None
+    assert (
+        bump_readme.transpose_readme_to_crate(tmp_path, crate, dry_run=False) is None
+    ), "an already-adopted README must report no change"
 
 
 def test_transpose_readme_to_crate_requires_workspace_readme(
@@ -200,7 +214,9 @@ def test_transpose_readme_to_crate_requires_workspace_readme(
     with pytest.raises(ReadmeTranspositionError) as excinfo:
         bump_readme.transpose_readme_to_crate(tmp_path, crate, dry_run=False)
 
-    assert snapshot == str(excinfo.value)
+    assert snapshot == str(excinfo.value), (
+        "a missing workspace README must raise the canonical transposition error"
+    )
 
 
 def test_transpose_readme_to_crate_rejects_external_crate_root(
@@ -214,7 +230,9 @@ def test_transpose_readme_to_crate_rejects_external_crate_root(
     with pytest.raises(ReadmeTranspositionError) as excinfo:
         bump_readme.transpose_readme_to_crate(tmp_path, crate, dry_run=False)
 
-    assert snapshot == str(excinfo.value)
+    assert snapshot == str(excinfo.value), (
+        "an out-of-workspace crate root must be rejected with the canonical error"
+    )
 
 
 @given(parts=st.lists(_PATH_COMPONENT, min_size=1, max_size=8))
@@ -223,9 +241,13 @@ def test_compute_link_prefix_depth_matches_parts(parts: list[str]) -> None:
     """Prefix length in '../' units equals the number of path components."""
     path = Path(*parts)
     prefix = bump_readme.compute_link_prefix(path)
-    assert prefix == "../" * len(path.parts)
-    assert prefix.endswith("/")
-    assert not prefix.startswith("/")
+    assert prefix == "../" * len(path.parts), (
+        "each path component must contribute exactly one level of traversal"
+    )
+    assert prefix.endswith("/"), (
+        "the prefix must end with a separator so it joins cleanly"
+    )
+    assert not prefix.startswith("/"), "the prefix must stay relative to the crate root"
 
 
 @given(text=st.text(max_size=400), prefix=st.just("../../"))
@@ -235,7 +257,9 @@ def test_rewrite_relative_links_changed_flag_is_consistent(
 ) -> None:
     """Changed is False if and only if the returned text equals the input."""
     rewritten, changed = bump_readme.rewrite_relative_links(text, prefix)
-    assert changed == (rewritten != text)
+    assert changed == (rewritten != text), (
+        "the changed flag must match whether the text was altered"
+    )
 
 
 @given(
@@ -259,8 +283,10 @@ def test_rewrite_relative_links_preserves_uri_scheme_links(
     target = f"{scheme}:{rest}"
     markdown = f"[{label}]({target})"
     rewritten, changed = bump_readme.rewrite_relative_links(markdown, "../../")
-    assert not changed
-    assert rewritten == markdown
+    assert not changed, "a target carrying a URI scheme must never be rewritten"
+    assert rewritten == markdown, (
+        "a scheme-bearing link must survive rewriting verbatim"
+    )
 
 
 _FENCE_HEADER = st.tuples(
@@ -302,4 +328,6 @@ def test_rewrite_relative_links_preserves_fenced_code_blocks(
     fence = fence_header[:3]
     markdown = f"{body}\n{fence_header}\n{fenced_link}\n{fence}\n"
     rewritten, _ = bump_readme.rewrite_relative_links(markdown, "../../")
-    assert fenced_link in rewritten
+    assert fenced_link in rewritten, (
+        "a relative link inside a fenced code block must be left untouched"
+    )

@@ -19,8 +19,6 @@ for lockfile_path in lockfiles:
 ```
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import dataclasses as dc
 import typing as typ

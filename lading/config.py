@@ -1,7 +1,5 @@
 """Configuration loading for the :mod:`lading` toolkit."""
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import contextlib
 import contextvars
@@ -469,7 +467,7 @@ def load_configuration(workspace_root: Path) -> LadingConfig:
 
 
 @contextlib.contextmanager
-def use_configuration(configuration: LadingConfig) -> cabc.Iterator[None]:
+def use_configuration(configuration: LadingConfig) -> cabc.Generator[None]:
     """Set ``configuration`` as the active configuration for the current context.
 
     Parameters

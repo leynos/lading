@@ -7,7 +7,18 @@
   - crates/beta/Cargo.toml
   '''
 # ---
-# name: test_run_rebuilds_lockfiles_when_enabled
+# name: test_run_rebuilds_lockfiles_when_enabled[captured]
+  dict({
+    'calls': '1',
+    'lockfile_manifests': "('crates/ui/Cargo.toml',)",
+    'merge_lockfile_manifests': '()',
+    'merge_runner': 'None',
+    'merge_workspace_root': '<tmp>',
+    'runner': 'None',
+    'workspace_root': '<tmp>',
+  })
+# ---
+# name: test_run_rebuilds_lockfiles_when_enabled[message]
   '''
   Updated version to 1.2.3 in 3 manifest(s) and 2 lockfile(s):
   - Cargo.toml
@@ -17,7 +28,15 @@
   - crates/ui/Cargo.lock (lockfile)
   '''
 # ---
-# name: test_run_reports_lockfiles_in_dry_run
+# name: test_run_reports_lockfiles_in_dry_run[dry_run_captured]
+  dict({
+    'emit_discovery_observability': 'False',
+    'lockfile_manifests': "('crates/ui/Cargo.toml', 'fixtures/minimal/Cargo.toml')",
+    'merge_lockfile_manifests': "('crates/ui/Cargo.toml',)",
+    'workspace_root': '<tmp>',
+  })
+# ---
+# name: test_run_reports_lockfiles_in_dry_run[message]
   '''
   Dry run; would update version to 1.2.3 in 3 manifest(s) and 2 lockfile(s):
   - Cargo.toml

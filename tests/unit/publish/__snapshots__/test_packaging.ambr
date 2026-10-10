@@ -5,3 +5,51 @@
 # name: test_crate_helper_error_message_snapshot[publish]
   'cargo publish failed for crate alpha with exit code 1: publish failed'
 # ---
+# name: test_execute_live_publication_pipeline_stops_after_partial_publish[calls]
+  list([
+    tuple(
+      tuple(
+        'cargo',
+        'package',
+        '--allow-dirty',
+      ),
+      '<staging>/alpha',
+    ),
+    tuple(
+      tuple(
+        'cargo',
+        'publish',
+        '--allow-dirty',
+      ),
+      '<staging>/alpha',
+    ),
+    tuple(
+      tuple(
+        'cargo',
+        'package',
+        '--allow-dirty',
+      ),
+      '<staging>/beta',
+    ),
+  ])
+# ---
+# name: test_execute_live_publication_pipeline_wraps_preparation_errors[calls]
+  list([
+    tuple(
+      tuple(
+        'cargo',
+        'package',
+        '--allow-dirty',
+      ),
+      '<staging>/alpha',
+    ),
+    tuple(
+      tuple(
+        'cargo',
+        'publish',
+        '--allow-dirty',
+      ),
+      '<staging>/alpha',
+    ),
+  ])
+# ---

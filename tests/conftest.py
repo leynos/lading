@@ -1,7 +1,5 @@
 """Pytest configuration for the lading test-suite."""
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import os
 import textwrap
@@ -18,7 +16,12 @@ pytest_plugins = (
     "tests.bdd.steps.test_publish_fixtures",
     "tests.bdd.steps.test_publish_given_steps",
     "tests.bdd.steps.test_publish_when_steps",
-    "tests.bdd.steps.test_publish_then_steps",
+    "tests.bdd.steps.test_publish_diagnostics_then_steps",
+    "tests.bdd.steps.test_publish_invocation_order_then_steps",
+    "tests.bdd.steps.test_publish_plan_then_steps",
+    "tests.bdd.steps.test_publish_preflight_then_steps",
+    "tests.bdd.steps.test_publish_sccache_then_steps",
+    "tests.bdd.steps.test_publish_staged_manifest_then_steps",
     "tests.bdd.steps.test_publish_skip_steps",
     "tests.e2e.steps.test_e2e_steps",
 )

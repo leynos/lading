@@ -9,8 +9,6 @@ by canonical name resolves regardless of the separator styling used to query
 it.
 """
 
-from __future__ import annotations
-
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
@@ -27,9 +25,13 @@ _arbitrary_names = st.from_regex(r"[A-Za-z0-9_-]+", fullmatch=True)
 def test_canonical_crate_name_removes_all_hyphens(name: str) -> None:
     """Canonicalisation drops every hyphen, preserves length, and is idempotent."""
     canonical = _canonical_crate_name(name)
-    assert "-" not in canonical
-    assert len(canonical) == len(name)
-    assert _canonical_crate_name(canonical) == canonical
+    assert "-" not in canonical, "a canonical crate name must not retain any hyphen"
+    assert len(canonical) == len(name), (
+        "replacing hyphens with underscores must leave the name length unchanged"
+    )
+    assert _canonical_crate_name(canonical) == canonical, (
+        "canonicalisation must be idempotent for an already canonical name"
+    )
 
 
 @given(segments=st.lists(_canonical_names, min_size=1, max_size=4))
@@ -38,8 +40,12 @@ def test_canonical_crate_name_unifies_separators(segments: list[str]) -> None:
     """Hyphen- and underscore-joined spellings of the segments canonicalise equal."""
     hyphenated = "-".join(segments)
     underscored = "_".join(segments)
-    assert _canonical_crate_name(hyphenated) == _canonical_crate_name(underscored)
-    assert _canonical_crate_name(hyphenated) == underscored
+    assert _canonical_crate_name(hyphenated) == _canonical_crate_name(underscored), (
+        "hyphen- and underscore-joined spellings must canonicalise to the same name"
+    )
+    assert _canonical_crate_name(hyphenated) == underscored, (
+        "canonicalisation must restore the underscore spelling of the segments"
+    )
 
 
 @given(
@@ -66,4 +72,6 @@ def test_canonicalisation_enables_restyled_publish_order_lookup(
             data.draw(st.sampled_from(("-", "_"))) if char == "_" else char
             for char in canonical
         )
-        assert index_by_canonical[_canonical_crate_name(restyled)] == position
+        assert index_by_canonical[_canonical_crate_name(restyled)] == position, (
+            "a restyled crate query must resolve to its planned publish position"
+        )

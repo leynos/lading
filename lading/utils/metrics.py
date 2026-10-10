@@ -19,8 +19,6 @@ Examples
 1
 """
 
-from __future__ import annotations
-
 import atexit
 import collections
 import dataclasses as dc

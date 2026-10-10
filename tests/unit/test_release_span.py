@@ -18,8 +18,6 @@ path, filename, tag, or captured output appears in a record to be leaked into
 the snapshot.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import io
 import json
@@ -34,8 +32,6 @@ if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
     import types
 
     from syrupy.assertion import SnapshotAssertion
-else:  # pragma: no cover - typing helpers
-    SnapshotAssertion = typ.Any
 
 SPAN_PATH = Path(__file__).resolve().parents[2] / "scripts" / "release_span.py"
 
@@ -96,6 +92,20 @@ def _record(sink: io.StringIO) -> dict[str, object]:
     return json.loads(_span_line(sink).removeprefix("release_span "))
 
 
+def _assert_status_unobserved(record: dict[str, object]) -> None:
+    """Assert the status is the empty string an unobserved exit carries.
+
+    Both halves are load-bearing. The type check rejects the ``0`` an unset
+    integer status would produce -- the exact defect the tests below exist to
+    catch -- and the emptiness check rejects a non-empty status. Falsiness
+    alone would accept ``0``, and a bare comparison would let the field drift
+    to another empty value, so the two are asserted together rather than one.
+    """
+    exit_code = record["exit_code"]
+    assert isinstance(exit_code, str), record
+    assert not exit_code, record
+
+
 def test_a_successful_invocation_reports_its_status_and_duration(
     span_module: types.ModuleType,
 ) -> None:
@@ -151,7 +161,7 @@ def test_an_exception_still_closes_the_span_and_propagates(
 
     record = _record(sink)
     assert record["failure_category"] == "raised", record
-    assert record["exit_code"] == "", record
+    _assert_status_unobserved(record)
 
 
 def test_a_missing_status_is_not_reported_as_success(
@@ -169,7 +179,7 @@ def test_a_missing_status_is_not_reported_as_success(
         pass
 
     record = _record(sink)
-    assert record["exit_code"] == "", record
+    _assert_status_unobserved(record)
     assert record["failure_category"] != "none", record
 
 
@@ -239,8 +249,12 @@ def test_a_successful_invocation_serializes_to_the_expected_line(
         set_exit(0)
 
     line = _span_line(sink)
-    assert line == snapshot()
-    assert line.startswith("release_span {"), line
+    assert line == snapshot(), (
+        "a successful invocation must serialize to the pinned span line"
+    )
+    assert line.startswith("release_span {"), (
+        "every span line must open with the release_span prefix"
+    )
 
 
 def test_an_unobserved_status_serializes_as_an_empty_string(
@@ -261,5 +275,9 @@ def test_an_unobserved_status_serializes_as_an_empty_string(
         pass
 
     line = _span_line(sink)
-    assert line == snapshot()
-    assert '"exit_code": ""' in line, line
+    assert line == snapshot(), (
+        "an unobserved status must serialize to the pinned span line"
+    )
+    assert '"exit_code": ""' in line, (
+        "an unobserved status must serialize as an empty string, not null"
+    )
