@@ -17,7 +17,13 @@ import typing as typ
 from pathlib import Path
 
 import pytest
-import yaml
+
+from tests.workflow_contracts.codescene_environment_rules import (
+    DuplicateKeyError,
+)
+from tests.workflow_contracts.codescene_environment_rules import (
+    _load as _load_yaml,
+)
 
 WORKFLOW_PATH = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "ci.yml"
 
@@ -26,7 +32,9 @@ _USES_RE = re.compile(r"^leynos/shared-actions/.+@(?P<sha>[0-9a-f]{40})$")
 
 def _load() -> dict[str, object]:
     """Parse the CI workflow file."""
-    return yaml.safe_load(WORKFLOW_PATH.read_text(encoding="utf-8"))
+    return typ.cast(
+        "dict[str, object]", _load_yaml(WORKFLOW_PATH.read_text(encoding="utf-8"))
+    )
 
 
 def _job(workflow: dict[str, object], name: str) -> dict[str, object]:
@@ -80,8 +88,11 @@ def _shared_action_uses() -> list[tuple[str, str]]:
     """Return every shared-actions reference across the workflow files."""
     references: list[tuple[str, str]] = []
     for workflow in sorted(WORKFLOW_PATH.parent.glob("*.yml")):
-        document = yaml.safe_load(workflow.read_text(encoding="utf-8"))
-        for job in (document.get("jobs") or {}).values():
+        document = typ.cast(
+            "dict[str, object]", _load_yaml(workflow.read_text(encoding="utf-8"))
+        )
+        jobs = typ.cast("dict[str, object]", document.get("jobs") or {})
+        for job in jobs.values():
             references.extend(
                 (workflow.name, uses) for uses in _job_shared_action_uses(job)
             )
@@ -180,3 +191,25 @@ jobs:
         ("a.yml", "leynos/shared-actions/.github/workflows/reusable.yml@job"),
         ("a.yml", "leynos/shared-actions/.github/actions/lint@step"),
     ], "the collector must retain valid job and step references in sorted workflows"
+
+
+def test_workflow_loaders_reject_duplicate_mapping_keys(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Both workflow parsing paths reject duplicate mapping keys."""
+    workflow_path = tmp_path / "ci.yml"
+    workflow_path.write_text(
+        """\
+jobs:
+  lint-test: {}
+  lint-test: {}
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(__name__ + ".WORKFLOW_PATH", workflow_path)
+
+    with pytest.raises(DuplicateKeyError, match="duplicate key"):
+        _load()
+    with pytest.raises(DuplicateKeyError, match="duplicate key"):
+        _shared_action_uses()
