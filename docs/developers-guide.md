@@ -82,17 +82,19 @@ content: `--wrap` breaking text with no whitespace, Setext headings turned into
 rules, and `--renumber` changing a list's start. Install the same version
 locally with `cargo binstall mdtablefix@0.6.1`.
 
-`tests/workflow_contracts/test_coverage_ownership.py` holds all three shapes,
-and enumerates the workflow directory rather than naming files, in both the
-`.yml` and `.yaml` spellings, so a lane added later is covered the day it
-appears. Every clause was proved by putting the forbidden thing back: the
-CodeScene check step, a bare `cs-coverage` command, the full-history checkout,
-the publisher switched to `check`, the publisher also triggered on pull
-requests, its ref guard and its concurrency block removed, the uploader
-repinned to the unpinned-CLI commit, `installer-checksum`, `setup-uv` moved to
-a tag or drifted apart between the lanes, the bespoke slipcover invocation,
-each coverage input in turn, the Markdown tag-object pin, and a `run:` step
-invoking the linter each fail one case and no other.
+`tests/workflow_contracts/test_coverage_ownership.py` holds the shapes the
+shared CV-005 checker does not, and enumerates the workflow directory rather
+than naming files, in both the `.yml` and `.yaml` spellings, so a lane added
+later is covered the day it appears. It keeps: the pull-request lane's refusal
+to fetch full history, the uploader's approved revision and its pin, the
+retired-input and nested-action checks, `setup-uv` pinned to one commit across
+the lanes, the ban on a hand-rolled slipcover invocation, each shared coverage
+input in turn, and the Markdown lint pin. Each was proved by putting the
+forbidden thing back, and fails one case and no other. The checker
+(`make test-workflow-contracts`) holds the rest: the CodeScene contact and the
+single uploader, the upload mode and guard, the publisher's concurrency block,
+the baseline writer, the lane's report archive, the token's scope, the
+`codescene` environment and the interpreter.
 
 ## Spelling policy
 
@@ -377,9 +379,9 @@ The old invocation also ran pytest under `pytest-forked`. Nothing in the suite
 depends on forking -- `make test` has always run plain pytest -- and the shared
 action runs pytest through xdist instead.
 
-`tests/workflow_contracts/test_coverage_ownership.py` pins this shape alongside
-the ownership rules, since the two describe one lane apiece and a reader
-checking either needs both.
+`tests/workflow_contracts/test_coverage_ownership.py` pins the generation
+inputs of this shape alongside the rules it still holds, since the two describe
+one lane apiece and a reader checking either needs both.
 
 Both lanes measure on one Python. The shared action chooses its interpreter
 from its `python-version` input, then `UV_PYTHON`, then `.python-version`, then
