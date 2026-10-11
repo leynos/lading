@@ -30,11 +30,11 @@ no process. The upload's condition reads
 guards, and the upload takes `access-token: ${{ secrets.CS_ACCESS_TOKEN }}`
 directly. The upload is a composite action, and a composite action's nested
 steps inherit the calling step's environment, so a token bound in the step's
-`env` reached every one of them.
-`tests/workflow_contracts/test_codescene_token.py` holds the shape. Its
-positive half requires the token to be named exactly in the check's command and
-the upload's input, because deleting the token would otherwise pass for keeping
-it out of an `env` while the upload skipped forever. A merge made by the
+`env` reached every one of them. The shared CV-005 checker
+(`make test-workflow-contracts`) holds the shape (`token.scope`). Its positive
+half requires the token to be named exactly in the check's command and the
+upload's input, because deleting the token would otherwise pass for keeping it
+out of an `env` while the upload skipped forever. A merge made by the
 Dependabot automerge workflow's `GITHUB_TOKEN` fires no push event, so such a
 merge publishes no coverage until the next push to main; that is a known
 exception (see
@@ -384,15 +384,15 @@ checking either needs both.
 Both lanes measure on one Python. The shared action chooses its interpreter
 from its `python-version` input, then `UV_PYTHON`, then `.python-version`, then
 the `python3` on `PATH`, which is the most recent `setup-python` step before
-the call in its job. `tests/workflow_contracts/test_coverage_python_parity.py`
-requires every coverage call in `ci.yml` and `coverage-main.yml` to declare at
-least one of those sources, every declared source to name the same version, and
-both lanes to measure on that one version. A `setup-python` step guarded by
-`if:` or allowed to fail with `continue-on-error` declares nothing. The ratchet
-baseline key already carries the interpreter
-(`ratchet-baseline-<os>-py<major.minor>-`), so a lane on another Python would
-miss its baseline rather than compare against the wrong one; the contract turns
-that silent restart into a failure.
+the call in its job. The shared CV-005 checker (`coverage.interpreter`, with
+`interpreter = "3.14"` in `.github/cv005.toml`) requires every coverage call in
+`ci.yml` and `coverage-main.yml` to pin `UV_PYTHON` to that version, no other
+source to name another, and the version to sit inside `requires-python`. A
+`setup-python` step guarded by `if:` or allowed to fail with
+`continue-on-error` declares nothing. The ratchet baseline key already carries
+the interpreter (`ratchet-baseline-<os>-py<major.minor>-`), so a lane on
+another Python would miss its baseline rather than compare against the wrong
+one; the contract turns that silent restart into a failure.
 
 ## Workflow pins and Dependabot
 

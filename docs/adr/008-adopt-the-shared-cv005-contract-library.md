@@ -45,3 +45,17 @@ retiring the ones the library holds is a separate change.
 - Until the local modules are retired, a clause is checked twice.
 - The lane's `coverage-report` artefact is gone; nothing in the repository
   downloaded it.
+
+## Addendum, 2026-10-11: the local modules the checker holds are retired
+
+The environment-placement rules and test, the token test and the Python-parity
+test are removed, with five tests of `test_coverage_ownership.py` (the
+pull-request surface, the single uploader, the publisher's queue per ref, the
+baseline writer and the report archive). The shared checker holds each: it
+refuses them on `environment.placement`, `token.scope`, `coverage.interpreter`,
+the one-workflow-may-contact-CodeScene rule, `publisher.concurrency`,
+`coverage.second-writer` and `coverage.pull-request-lane`. The strict workflow
+loader that one remaining test reads through moves to
+`tests/workflow_contracts/strict_workflow_loader.py`, with its own tests. The
+uploader's approved-revision record, the full-history rule and the Markdown
+lint contract stay.
