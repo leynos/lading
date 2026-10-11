@@ -6,8 +6,6 @@ its version, and running one ``nose query``. The report schema lives in
 ``scripts/nose_schema.py``.
 """
 
-from __future__ import annotations
-
 import dataclasses as dc
 import json
 import os

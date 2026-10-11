@@ -19,8 +19,6 @@ virtualenv: it is tooling, and must not need to import ``lading`` or its
 dependencies to lint the repository.
 """
 
-from __future__ import annotations
-
 import sys
 import tomllib
 from collections import abc as cabc

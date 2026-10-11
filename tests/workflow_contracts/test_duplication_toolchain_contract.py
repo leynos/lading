@@ -12,8 +12,6 @@ prebuilt release is a provisioning failure, never permission to compile the
 detector from source or to accept a binary from an unapproved source.
 """
 
-from __future__ import annotations
-
 import re
 import shutil
 import subprocess

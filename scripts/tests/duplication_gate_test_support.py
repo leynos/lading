@@ -1,7 +1,5 @@
 """Shared support for the duplication-gate script tests."""
 
-from __future__ import annotations
-
 import json
 import os
 import shutil
