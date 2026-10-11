@@ -18,10 +18,10 @@ from pathlib import Path
 
 import pytest
 
-from tests.workflow_contracts.codescene_environment_rules import (
+from tests.workflow_contracts.strict_workflow_loader import (
     DuplicateKeyError,
 )
-from tests.workflow_contracts.codescene_environment_rules import (
+from tests.workflow_contracts.strict_workflow_loader import (
     _load as _load_yaml,
 )
 

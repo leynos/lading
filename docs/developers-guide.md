@@ -30,11 +30,11 @@ no process. The upload's condition reads
 guards, and the upload takes `access-token: ${{ secrets.CS_ACCESS_TOKEN }}`
 directly. The upload is a composite action, and a composite action's nested
 steps inherit the calling step's environment, so a token bound in the step's
-`env` reached every one of them.
-`tests/workflow_contracts/test_codescene_token.py` holds the shape. Its
-positive half requires the token to be named exactly in the check's command and
-the upload's input, because deleting the token would otherwise pass for keeping
-it out of an `env` while the upload skipped forever. A merge made by the
+`env` reached every one of them. The shared CV-005 checker
+(`make test-workflow-contracts`) holds the shape (`token.scope`). Its positive
+half requires the token to be named exactly in the check's command and the
+upload's input, because deleting the token would otherwise pass for keeping it
+out of an `env` while the upload skipped forever. A merge made by the
 Dependabot automerge workflow's `GITHUB_TOKEN` fires no push event, so such a
 merge publishes no coverage until the next push to main; that is a known
 exception (see
@@ -82,17 +82,19 @@ content: `--wrap` breaking text with no whitespace, Setext headings turned into
 rules, and `--renumber` changing a list's start. Install the same version
 locally with `cargo binstall mdtablefix@0.6.1`.
 
-`tests/workflow_contracts/test_coverage_ownership.py` holds all three shapes,
-and enumerates the workflow directory rather than naming files, in both the
-`.yml` and `.yaml` spellings, so a lane added later is covered the day it
-appears. Every clause was proved by putting the forbidden thing back: the
-CodeScene check step, a bare `cs-coverage` command, the full-history checkout,
-the publisher switched to `check`, the publisher also triggered on pull
-requests, its ref guard and its concurrency block removed, the uploader
-repinned to the unpinned-CLI commit, `installer-checksum`, `setup-uv` moved to
-a tag or drifted apart between the lanes, the bespoke slipcover invocation,
-each coverage input in turn, the Markdown tag-object pin, and a `run:` step
-invoking the linter each fail one case and no other.
+`tests/workflow_contracts/test_coverage_ownership.py` holds the shapes the
+shared CV-005 checker does not, and enumerates the workflow directory rather
+than naming files, in both the `.yml` and `.yaml` spellings, so a lane added
+later is covered the day it appears. It keeps: the pull-request lane's refusal
+to fetch full history, the uploader's approved revision and its pin, the
+retired-input and nested-action checks, `setup-uv` pinned to one commit across
+the lanes, the ban on a hand-rolled slipcover invocation, each shared coverage
+input in turn, and the Markdown lint pin. Each was proved by putting the
+forbidden thing back, and fails one case and no other. The checker
+(`make test-workflow-contracts`) holds the rest: the CodeScene contact and the
+single uploader, the upload mode and guard, the publisher's concurrency block,
+the baseline writer, the lane's report archive, the token's scope, the
+`codescene` environment and the interpreter.
 
 ## Spelling policy
 
@@ -377,22 +379,22 @@ The old invocation also ran pytest under `pytest-forked`. Nothing in the suite
 depends on forking -- `make test` has always run plain pytest -- and the shared
 action runs pytest through xdist instead.
 
-`tests/workflow_contracts/test_coverage_ownership.py` pins this shape alongside
-the ownership rules, since the two describe one lane apiece and a reader
-checking either needs both.
+`tests/workflow_contracts/test_coverage_ownership.py` pins the generation
+inputs of this shape alongside the rules it still holds, since the two describe
+one lane apiece and a reader checking either needs both.
 
 Both lanes measure on one Python. The shared action chooses its interpreter
 from its `python-version` input, then `UV_PYTHON`, then `.python-version`, then
 the `python3` on `PATH`, which is the most recent `setup-python` step before
-the call in its job. `tests/workflow_contracts/test_coverage_python_parity.py`
-requires every coverage call in `ci.yml` and `coverage-main.yml` to declare at
-least one of those sources, every declared source to name the same version, and
-both lanes to measure on that one version. A `setup-python` step guarded by
-`if:` or allowed to fail with `continue-on-error` declares nothing. The ratchet
-baseline key already carries the interpreter
-(`ratchet-baseline-<os>-py<major.minor>-`), so a lane on another Python would
-miss its baseline rather than compare against the wrong one; the contract turns
-that silent restart into a failure.
+the call in its job. The shared CV-005 checker (`coverage.interpreter`, with
+`interpreter = "3.14"` in `.github/cv005.toml`) requires every coverage call in
+`ci.yml` and `coverage-main.yml` to pin `UV_PYTHON` to that version, no other
+source to name another, and the version to sit inside `requires-python`. A
+`setup-python` step guarded by `if:` or allowed to fail with
+`continue-on-error` declares nothing. The ratchet baseline key already carries
+the interpreter (`ratchet-baseline-<os>-py<major.minor>-`), so a lane on
+another Python would miss its baseline rather than compare against the wrong
+one; the contract turns that silent restart into a failure.
 
 ## Workflow pins and Dependabot
 

@@ -76,7 +76,6 @@ UPLOAD_GUARD = (
     "github.event_name == 'push' && github.ref == 'refs/heads/main' && "
     "steps.codescene_token.outputs.available == 'true'"
 )
-PULL_REQUEST_RATCHET = "${{ github.event_name == 'pull_request' }}"
 #: The upstream Markdown linter, pinned to the commit `v24.2.0` points at
 #: rather than to the annotated tag object of the same name.
 MARKDOWNLINT_ACTION = (
@@ -251,26 +250,6 @@ def _is_publisher(workflow: Workflow) -> bool:
     return isinstance(branches, list) and "main" in branches
 
 
-def _pull_request_workflows() -> list[Path]:
-    """Return every workflow that runs on a pull request.
-
-    Enumerated rather than named, so a workflow added later is covered the
-    day it appears instead of the day somebody remembers to list it.
-
-    Returns
-    -------
-    list of Path
-        The workflow files whose triggers include `pull_request`.
-    """
-    found = [
-        path
-        for path in _workflow_paths()
-        if _runs_on_pull_requests(_load_workflow(path))
-    ]
-    assert found, "no workflow runs on pull requests, so this proves nothing"
-    return found
-
-
 def _coverage_steps() -> list[CoverageStep]:
     """Return every shared-action coverage step across all workflows.
 
@@ -297,94 +276,11 @@ def _coverage_steps() -> list[CoverageStep]:
     return found
 
 
-def _codescene_contact_steps(
-    workflow: Workflow,
-) -> cabc.Iterator[tuple[str, dict[str, YamlValue]]]:
-    """Yield every step that could contact CodeScene.
-
-    A step is selected by its behaviour: calling the shared uploader or
-    invoking ``cs-coverage``. The caller's label is not evidence, since it can
-    change without changing what the step does.
-
-    Yields
-    ------
-    tuple[str, dict[str, YamlValue]]
-        The job name and one CodeScene-contacting step.
-    """
-    for job_name, step in _job_steps(workflow):
-        uses = str(step.get("uses", ""))
-        run = str(step.get("run", ""))
-        if UPLOAD_CODESCENE_ACTION in uses or "cs-coverage" in run:
-            yield job_name, step
-
-
 def _approved_action_revisions() -> dict[str, object]:
     """Return the offline record of approved composite-action revisions."""
     fixture = json.loads(APPROVED_ACTION_REVISIONS_PATH.read_text(encoding="utf-8"))
     assert isinstance(fixture, dict), "the approved action revisions must map keys"
     return typ.cast("dict[str, object]", fixture)
-
-
-def test_no_pull_request_workflow_touches_codescene() -> None:
-    """Keep CodeScene off every pull-request lane, by any of its three doors.
-
-    The token, the service and the command are checked separately because
-    each alone reintroduces the failure this rule exists to prevent: a lane
-    holding the credential can upload, a lane naming the project can reach
-    it, and a lane running `cs-coverage` fails on whatever CLI the runner
-    resolved. Every pull-request workflow is enumerated rather than named.
-    """
-    for path in _pull_request_workflows():
-        text = path.read_text(encoding="utf-8")
-        workflow = _load_workflow(path)
-
-        assert "CS_ACCESS_TOKEN" not in text, (
-            f"{path.name} must not carry the CodeScene access token"
-        )
-        assert "codescene.io" not in text, (
-            f"{path.name} must not name a CodeScene endpoint"
-        )
-        assert "cs-coverage" not in text, (
-            f"{path.name} must not invoke the CodeScene CLI"
-        )
-
-        contacts = list(_codescene_contact_steps(workflow))
-        assert not contacts, (
-            f"{path.name} must not contact CodeScene: "
-            f"{[f'{job}:{step.get("name")}' for job, step in contacts]}"
-        )
-
-
-def test_the_publisher_is_the_only_workflow_using_the_uploader() -> None:
-    """No workflow but the publisher may reach for the uploader action.
-
-    The pull-request rule above forbids it on lanes that serve pull requests.
-    This one closes the remaining door: a scheduled or dispatch-only workflow
-    is neither a pull-request lane nor the publisher, and could otherwise
-    upload from any ref without failing a single assertion.
-    """
-    offenders: list[str] = []
-    for path in _workflow_paths():
-        if path == MAIN_COVERAGE_WORKFLOW_PATH:
-            continue
-        workflow = _load_workflow(path)
-        offenders.extend(
-            f"{path.name}:{job_name}"
-            for job_name, step in _job_steps(workflow)
-            if UPLOAD_CODESCENE_ACTION in str(step.get("uses", ""))
-        )
-        # A job calling a reusable workflow has no steps of its own, so its
-        # own `uses:` is the only place the uploader could hide there.
-        offenders.extend(
-            f"{path.name}:{job_name}"
-            for job_name, job in _jobs(workflow).items()
-            if isinstance(job, dict)
-            and UPLOAD_CODESCENE_ACTION in str(job.get("uses", ""))
-        )
-    assert not offenders, (
-        "only coverage-main.yml may use the CodeScene uploader, but it is "
-        f"also used by: {', '.join(sorted(offenders))}"
-    )
 
 
 def test_the_pull_request_lane_does_not_fetch_full_history() -> None:
@@ -440,28 +336,11 @@ def test_main_is_the_only_uploader_and_is_pinned() -> None:
     )
     assert "env" not in upload, (
         "the upload is a composite action whose nested steps inherit its env, "
-        "so it takes the token as an input instead; see test_codescene_token"
+        "so it takes the token as an input instead; the shared CV-005 checker "
+        "holds the rest"
     )
     assert upload.get("if") == UPLOAD_GUARD, (
         "the upload step must be limited to an authenticated push to main"
-    )
-
-
-def test_the_publisher_queues_runs_per_ref() -> None:
-    """Queue pushes to main rather than racing or cancelling them.
-
-    Two pushes in quick succession would otherwise contend for the CodeScene
-    upload and for the ratchet baseline cache, and a cancelled run would leave
-    main's coverage unpublished, so runs queue instead.
-    """
-    concurrency = _load_workflow(MAIN_COVERAGE_WORKFLOW_PATH).get("concurrency")
-    assert isinstance(concurrency, dict), "the publisher must declare concurrency"
-    assert "github.ref" in str(concurrency.get("group")), (
-        f"concurrency.group must key on the ref, got {concurrency.get('group')!r}"
-    )
-    assert concurrency.get("cancel-in-progress") is False, (
-        "a cancelled publisher leaves main's coverage unpublished, so runs "
-        f"must queue, got {concurrency.get('cancel-in-progress')!r}"
     )
 
 
@@ -670,54 +549,6 @@ def test_every_coverage_step_scopes_the_metric_to_the_package() -> None:
             "python-source: ./lading, or the metric widens to tests and "
             f"fixtures. Got {step.inputs.get('python-source')!r}"
         )
-
-
-def _assert_coverage_step_has_the_correct_ratchet(step: CoverageStep) -> None:
-    """Assert one coverage step has the baseline role its workflow permits."""
-    ratchet = step.inputs.get("with-ratchet")
-    workflow = _load_workflow(step.path)
-    if _is_publisher(workflow):
-        assert ratchet == "true", (
-            f"{step.path.name}: the publisher must enable its literal ratchet, "
-            f"got {ratchet!r}"
-        )
-    elif _runs_on_pull_requests(workflow):
-        assert ratchet in {None, PULL_REQUEST_RATCHET, "true"}, (
-            f"{step.path.name}: a pull-request lane must condition the ratchet "
-            f"on pull_request, set it literally (the step itself runs on pull "
-            f"requests only) or omit it, got {ratchet!r}"
-        )
-
-
-def test_only_the_publisher_writes_the_ratchet_baseline() -> None:
-    """Keep pushes to main from creating a second baseline writer."""
-    for step in _coverage_steps():
-        _assert_coverage_step_has_the_correct_ratchet(step)
-
-
-def test_only_the_publisher_archives_the_action_report() -> None:
-    """The pull-request lane declines the archive; the publisher keeps it.
-
-    The pull-request lane uploads its report through a step of its own, and a
-    second archive of the same file would be redundant. The publisher's
-    archive is the report the CodeScene upload reads, so suppressing it there
-    would leave the upload with nothing.
-    """
-    for step in _coverage_steps():
-        publish = step.inputs.get("publish-artefact")
-        workflow = _load_workflow(step.path)
-        if _runs_on_pull_requests(workflow):
-            assert publish in {False, "false"}, (
-                f"{step.path.name}: the {step.name!r} step serves pull "
-                "requests and must pass publish-artefact: 'false', got "
-                f"{publish!r}"
-            )
-        elif _is_publisher(workflow):
-            assert publish is None, (
-                f"{step.path.name}: the {step.name!r} step is the publisher "
-                "and must leave publish-artefact unset so the action archives "
-                f"the report the upload reads, got {publish!r}"
-            )
 
 
 def test_markdown_is_linted_only_through_the_pinned_action() -> None:
