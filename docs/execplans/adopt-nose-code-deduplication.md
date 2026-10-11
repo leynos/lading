@@ -30,10 +30,13 @@ take precedence. This plan records every deliberate deviation.
 
 ## Constraints
 
-- Application Python floor (`requires-python = ">=3.13"`), interpreter matrix
-  and runtime dependencies in `pyproject.toml` must not change. The gate is
-  tooling: it runs on an explicitly selected CPython 3.14 and must not require
-  importing `lading`, building native extensions, or starting services.
+- Application Python floor, interpreter matrix and runtime dependencies in
+  `pyproject.toml` must not change. At the time this plan was written the floor
+  was `>=3.13`; main has since raised it to `>=3.14` in
+  [#322](https://github.com/leynos/lading/pull/322), and this branch neither
+  made nor depends on that change. The gate is tooling: it runs on an
+  explicitly selected CPython 3.14 and must not require importing `lading`,
+  building native extensions, or starting services.
 - `nose` stays pinned at `0.20.0`. No unpinned upstream main, no newer release,
   no PyChase, no pyscn. `cargo install`, floating installers and curl-to-shell
   bootstraps are prohibited; `cargo-binstall` must be run with
@@ -89,15 +92,19 @@ take precedence. This plan records every deliberate deviation.
   at all.
 - Risk: `make test` runs `pytest --doctest-modules` from the repository root
   with no `testpaths`, so new `scripts/**/*.py` docstrings with `>>>` examples
-  are collected as doctests in the application venv (Python 3.13), where the
-  gate's cyclopts-dependent modules are not importable. Severity: high
+  are collected as doctests in the application venv (then Python 3.13), where
+  the gate's cyclopts-dependent modules are not importable. Severity: high
   Likelihood: medium Mitigation: keep `>>>` examples only in modules whose
   imports resolve in the application venv, and confirm with a collection run.
-- Risk: the gate's modules land in `scripts/`, which `PY_SOURCES` typechecks on
+  Resolved by main's baseline raise to 3.14 in
+  [#322](https://github.com/leynos/lading/pull/322): the application suite and
+  the gate now share one floor.
+- Risk: the gate's modules land in `scripts/`, which was typechecked on
   Python 3.13 while the modules are written for 3.14. Severity: medium
   Likelihood: high Mitigation: keep the modules to syntax that parses under 3.13
   (`type` alias statements are 3.12+, fine) and confirm `make typecheck`
-  passes.
+  passes. Obviated by the same baseline raise; the gate's modules are
+  typechecked on 3.14 by the unmodified `typecheck` target.
 
 ## Progress
 
@@ -202,8 +209,8 @@ take precedence. This plan records every deliberate deviation.
   `requires-python = ">=3.14"` and uses PEP 695 `type` alias statements;
   running it in the project venv would couple the lint gate to the
   application's dependency set and would let a change to `requires-python`
-  break linting. The application floor stays `>=3.13` and is untouched.
-  Date/Author: 2026-09-26, implementing agent.
+  break linting. The application floor stays `>=3.13` and is untouched by this
+  branch. Date/Author: 2026-09-26, implementing agent.
 - Decision: do not reuse an application atomic-write helper in the gate.
   Rationale: both existing helpers live under `lading.commands` and are
   unreachable from the gate's isolated environment, which installs only
@@ -271,6 +278,21 @@ The branch was then rebased onto `origin/main` at `eecd39e`, which had advanced
 by a further eighteen commits. Five content conflicts followed, one of them the
 ADR collision below.
 
+Main has since advanced again, to `2b6b8de`. The second rebase — onto that head
+— raised no content conflicts, but it did force a second ADR renumber, which is
+recorded here because the first account above stops short of it. Main landed
+`efbafb1` ("Add relay observability events",
+[#264](https://github.com/leynos/lading/pull/264)) on 2026-10-10, taking
+ADR-007 for `007-relay-observability-events.md`. This branch's record had held
+ADR-007 since the first renumber, so it moved to ADR-008 and every local
+reference followed. The two-number history is the reason the pointers below are
+008 while the first collision is described as 006→007: both statements are true
+of their own rebase, and only the final number names a file that exists.
+
+Main also raised `requires-python` from `>=3.13` to `>=3.14` in the same period
+([#322](https://github.com/leynos/lading/pull/322)), which obviates two of the
+risks recorded above rather than invalidating them.
+
 - `.github/workflows/ci.yml` conflicted because main's
   [#306](https://github.com/leynos/lading/pull/306) removed the
   `MAKEUTIL_REVISION`/`MAKEUTIL_TOOLCHAIN` `env:` keys in favour of the shared
@@ -291,15 +313,24 @@ ADR collision below.
   became empty once main's own v0.1.3 builder bump
   ([#307](https://github.com/leynos/lading/pull/307)) had landed. The conflict
   was resolved to main's side and the commit was dropped as redundant rather
-  than lost, which was verified rather than assumed: regenerating at the
-  rebased head produces byte-identical output (sha256 `acd0838c…`), so the
-  post-turn hook's write-mode regeneration leaves the tree clean.
+  than lost, which was verified rather than assumed: regenerating at that
+  rebased head produced byte-identical output (sha256 `acd0838c…`), so the
+  post-turn hook's write-mode regeneration left the tree clean. That hash no
+  longer describes the file: main's gateway adoption
+  ([#322](https://github.com/leynos/lading/pull/322)) subsequently refined the
+  `--color…` ignore pattern, and the second rebase took main's version, giving
+  `4e8c3f9b…`. The regeneration check was re-run at the new head with the same
+  outcome, and `typos.toml` is absent from this branch's diff against
+  `origin/main` — the branch neither adds nor depends on a typos entry.
 
 Two ADR-006 references survived that renumber by mistake — a broken relative
 link in ADR-003's amendment and a stale name in this plan — and were caught by
 a grep across the tree rather than by any gate. Markdownlint and the spelling
 gate do not resolve relative links, so a renumbering rename has no automated
-backstop in this repository.
+backstop in this repository. The second renumber (007→008) was swept the same
+way, and this plan and the pull-request description had both gone stale in it:
+they still named `docs/adr/007-adopt-nose-duplication-gate.md`, a path the
+rename deleted, and the pull request also linked that dead path twice.
 
 ### What shipped
 
@@ -338,23 +369,34 @@ repository-wide wildcard, and none was mass-generated.
 
 ### Validation actually run
 
-Run at `8560757` on the rebased head, sequentially:
+Run at `edc88ef`, the code head this document's repairs were then written onto,
+sequentially. That hash names the commit carrying every gate-relevant change;
+the documentation commit layered above it adds only this file's prose and was
+re-gated with the same commands before publication, so the figures below are
+reproducible from either:
 
-| Gate                    | Result                                                         |
-| ----------------------- | -------------------------------------------------------------- |
-| `make check-fmt`        | pass — 241 Python files formatted, 31 Markdown files unchanged |
-| `make lint`             | pass — all seven stages, exit 0                                |
-| `make typecheck`        | pass — `ty check --python-version 3.13`, "All checks passed!"  |
-| `make test`             | pass — 1652 passed, 30 skipped, 82 snapshots passed            |
-| `make markdownlint`     | pass — 31 files, 0 errors                                      |
-| `make duplication-test` | pass — 140 passed, 3 snapshots passed                          |
-| `make nixie`            | pass — all diagrams validated                                  |
+| Gate                    | Result                                                                      |
+| ----------------------- | --------------------------------------------------------------------------- |
+| `make check-fmt`        | pass — Ruff 0.16.10 formatted 527 files; mdtablefix left 34 files unchanged |
+| `make lint`             | pass — all seven stages, exit 0                                             |
+| `make typecheck`        | pass — `ty` 0.0.56, `--python-version 3.14`, "All checks passed!"           |
+| `make test`             | pass — 1712 passed, 30 skipped, 110 snapshots passed                        |
+| `make markdownlint`     | pass — 34 files, 0 issues                                                   |
+| `make duplication-test` | pass — 140 passed, 3 snapshots passed                                       |
+| `make nixie`            | pass — all diagrams validated                                               |
+
+An earlier figure in this table was superseded, and the correction is worth
+naming rather than quietly overwriting: the first full run was made at
+`8560757`, a commit that the later rebase onto `2b6b8de` replayed away. Those
+results described a candidate that was never published.
 
 Within `make lint`, the previously-unexercised stages all executed and passed:
-Ambrleaks (clean on `tests/`), Skylos (`dead_code` gate clean on `lading`), and
-the duplication gate itself, reporting
-`duplication gate passed; 10 allowed by reasoned exceptions`. Pylint scored
-10.00/10 on both tiers.
+Ambrleaks (clean on `tests/`), Skylos (4.33.2, `dead_code` gate clean on
+`lading`), and the duplication gate itself, reporting
+`duplication gate passed; 10 allowed by reasoned exceptions`. Interrogate
+reported 100.0% on both invocations, and Pylint 4.0.9 scored 10.00/10 on both
+tiers — plain Pylint under `--managed-python --python 3.14`, and df12-pylint at
+revision `4cf41736…` under the same baseline.
 
 ### Lessons
 
@@ -380,11 +422,11 @@ the duplication gate itself, reporting
 
 ## Context and orientation
 
-`lading` is a Python 3.13+ CLI for Cargo workspace maintenance. Production code
-lives in the `lading/` package (59 modules, ~12,700 lines) with entry point
+`lading` is a Python 3.14+ CLI for Cargo workspace maintenance. Production code
+lives in the `lading/` package (60 modules, 12,781 lines) with entry point
 `lading = "lading.cli:main"`. Repository tooling lives in `scripts/`
 (`release_wheel_upload.py`, `upload_release_wheels.py`, and an extensionless
-`publish-check/bin/cargo` shim). Tests live in `tests/` (142 files, ~30,400
+`publish-check/bin/cargo` shim). Tests live in `tests/` (182 files, 37,931
 lines) with `tests/workflow_contracts/` holding the repository's existing
 convention for contract tests over the Makefile, CI workflows and
 `pyproject.toml`.
@@ -432,7 +474,7 @@ The governing artefacts are:
 Trace: reference ADR-021 -> `EP-M1` (provisioning) -> `make install-nose` prints
 `nose 0.20.0`; -> `EP-M2` (gate core) -> `scripts/tests/*` green; -> `EP-M3`
 (integration) -> `make lint` fails on a planted clone; -> `EP-M4`
-(documentation) -> `docs/adr/007-*.md` indexed from `docs/contents.md`.
+(documentation) -> `docs/adr/008-*.md` indexed from `docs/contents.md`.
 
 ## Verification plan
 
@@ -593,7 +635,7 @@ and an atomic replacement.
 The reference revision, the deliberate omissions, the scan scope and ranking
 policy, the adjudication record and the exact validation outcomes are recorded
 in the pull request description. Per-family adjudication reasons live beside
-the exceptions in `[tool.duplication_gate]` and in `docs/adr/007-*.md`.
+the exceptions in `[tool.duplication_gate]` and in `docs/adr/008-*.md`.
 
 ## Interfaces and dependencies
 
@@ -665,8 +707,9 @@ def partition_findings(
 
 Dependencies of the gate environment, pinned in the PEP 723 header and in the
 `duplication-test` target: `cyclopts==4.25.2`, `tomlkit==0.15.1`, plus
-`pytest==9.0.2` and `hypothesis[asyncio]==6.165.6` for the tests. Nothing is
-added to the application's runtime or dev dependency groups.
+`pytest==9.1.1` and `hypothesis[asyncio]==6.163.0` for the tests, with
+`syrupy==5.5.3` for the shortcut snapshots. Nothing is added to the
+application's runtime or dev dependency groups.
 
 ## Revision note
 
