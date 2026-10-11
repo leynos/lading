@@ -158,9 +158,17 @@ def test_shared_action_uses_handles_yaml_job_and_step_values(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Job and step references survive non-mapping YAML entries."""
+    """Collect sorted job and step references from supported YAML values."""
     workflows = tmp_path / "workflows"
     workflows.mkdir()
+    (workflows / "b.yml").write_text(
+        """\
+jobs:
+  later:
+    uses: leynos/shared-actions/.github/workflows/later.yml@workflow
+""",
+        encoding="utf-8",
+    )
     (workflows / "a.yml").write_text(
         """\
 jobs:
@@ -171,17 +179,9 @@ jobs:
       - uses: leynos/shared-actions/.github/actions/lint@step
       - invalid-step
       - run: true
+      - uses: 42
   invalid-job: invalid-job
   invalid-list: []
-""",
-        encoding="utf-8",
-    )
-    (workflows / "b.yml").write_text(
-        """\
-jobs:
-  no-reference:
-    steps:
-      - uses: actions/checkout@v7
 """,
         encoding="utf-8",
     )
@@ -190,6 +190,7 @@ jobs:
     assert _shared_action_uses() == [
         ("a.yml", "leynos/shared-actions/.github/workflows/reusable.yml@job"),
         ("a.yml", "leynos/shared-actions/.github/actions/lint@step"),
+        ("b.yml", "leynos/shared-actions/.github/workflows/later.yml@workflow"),
     ], "the collector must retain valid job and step references in sorted workflows"
 
 
