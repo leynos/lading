@@ -299,7 +299,7 @@ def _same_allow_target(left: tuple[str, ...], right: tuple[str, ...]) -> bool:
 
 
 @contextmanager
-def _locked_file(path: Path) -> cabc.Iterator[None]:
+def _locked_file(path: Path) -> cabc.Generator[None]:
     """Hold an advisory cross-process lock while replacing ``path``.
 
     The lock is a sidecar file next to the destination, so a reader that does

@@ -184,6 +184,12 @@ def _placement_wording(
     crate itself, or it is ordered after that crate. Keeping the prose here
     separates "which words" from "resolve the indexes and raise", so the
     caller reads as control flow rather than as nested string assembly.
+
+    Returns
+    -------
+    _MissingDependencyWording
+        The wording for the condition ``missing_index`` selects: absent from
+        the plan, the same crate as its own dependency, or ordered later.
     """
     if missing_index is None:
         return _MissingDependencyWording(
@@ -216,8 +222,7 @@ def _placement_wording(
             "publish.order and rely on dependency-derived topological sorting."
         ),
         detail=(
-            "which appears after the current crate in publish order; "
-            "cannot continue"
+            "which appears after the current crate in publish order; cannot continue"
         ),
     )
 
