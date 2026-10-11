@@ -35,7 +35,7 @@ _DEFAULT_OPTIONS = AtomicWriteOptions()
 
 
 @contextlib.contextmanager
-def _open_directory(directory: pathlib.Path) -> cabc.Iterator[int]:
+def _open_directory(directory: pathlib.Path) -> cabc.Generator[int]:
     """Open a directory descriptor for a scoped operation.
 
     Reading a directory needs O_RDONLY, which is not portable to Python's

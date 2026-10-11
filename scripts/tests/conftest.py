@@ -27,18 +27,17 @@ if str(SCRIPT_DIRECTORY) not in sys.path:
 def _tooling_environment_is_available() -> bool:
     """Report whether this interpreter can run the duplication-gate suite.
 
-    The suite imports the pinned cyclopts and tomlkit the wrapper declares,
-    needs syrupy for the shortcut snapshots, and the wrapper itself requires
-    Python 3.14.
+    The suite imports the pinned cyclopts and tomlkit the wrapper declares
+    and needs syrupy for the shortcut snapshots. The interpreter floor is
+    enforced by the wrapper's own ``requires-python`` rather than checked
+    here, so only the dependency set can actually be missing.
 
     Returns
     -------
     bool
-        ``True`` when the interpreter is new enough and every dependency the
-        suite needs at import or fixture time is importable.
+        ``True`` when every dependency the suite needs at import or fixture
+        time is importable.
     """
-    if sys.version_info < (3, 14):
-        return False
     return all(
         _module_is_importable(name)
         for name in ("cyclopts", "hypothesis", "syrupy", "tomlkit")
@@ -49,7 +48,7 @@ def _module_is_importable(name: str) -> bool:
     """Report whether ``name`` resolves without importing it."""
     try:
         return importlib.util.find_spec(name) is not None
-    except (ImportError, ValueError):  # pragma: no cover - defensive
+    except ImportError, ValueError:  # pragma: no cover - defensive
         return False
 
 

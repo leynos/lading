@@ -47,12 +47,27 @@ def _pyproject() -> dict[str, object]:
     return tomllib.loads(PYPROJECT_PATH.read_text(encoding="utf-8"))
 
 
+def _table(value: object, *, subject: str) -> dict[str, object]:
+    """Return one TOML table, naming the unexpected ``subject``.
+
+    The cast is what makes a subscript usable: type checkers narrow
+    ``isinstance(value, dict)`` from ``object`` to a synthetic top type whose
+    ``__getitem__`` accepts ``Never``, so the narrowed value can be compared
+    and passed on but never indexed by a literal key.
+
+    Returns
+    -------
+    dict[str, object]
+        The same table, widened to a mapping indexable by a literal key.
+    """
+    assert isinstance(value, dict), f"{subject} must be a TOML table."
+    return typ.cast("dict[str, object]", value)
+
+
 def _nose_version() -> str:
     """Return the detector version pinned in ``[tool.nose]``."""
-    tool = _pyproject()["tool"]
-    assert isinstance(tool, dict), "The pyproject must expose a [tool] table."
-    nose = tool["nose"]
-    assert isinstance(nose, dict), "[tool.nose] must be a TOML table."
+    tool = _table(_pyproject()["tool"], subject="[tool]")
+    nose = _table(tool["nose"], subject="[tool.nose]")
     version = nose["version"]
     assert isinstance(version, str), "[tool.nose].version must be a string."
     return version
@@ -275,10 +290,8 @@ def test_the_helper_tests_are_not_collected_by_the_application_suite() -> None:
 
 def test_configured_roots_exist_and_are_not_empty() -> None:
     """Every configured scan root must be a real, non-empty source tree."""
-    tool = _pyproject()["tool"]
-    assert isinstance(tool, dict), "The pyproject must expose a [tool] table."
-    nose = tool["nose"]
-    assert isinstance(nose, dict), "[tool.nose] must be a TOML table."
+    tool = _table(_pyproject()["tool"], subject="[tool]")
+    nose = _table(tool["nose"], subject="[tool.nose]")
     roots = nose["roots"]
     assert isinstance(roots, list), "[tool.nose].roots must be a TOML array."
     assert roots, "[tool.nose].roots must not be empty."
@@ -294,10 +307,8 @@ def test_configured_roots_exist_and_are_not_empty() -> None:
 
 def test_the_scan_never_targets_the_whole_checkout() -> None:
     """A repository-wide root would gate vendored and generated code."""
-    tool = _pyproject()["tool"]
-    assert isinstance(tool, dict), "The pyproject must expose a [tool] table."
-    nose = tool["nose"]
-    assert isinstance(nose, dict), "[tool.nose] must be a TOML table."
+    tool = _table(_pyproject()["tool"], subject="[tool]")
+    nose = _table(tool["nose"], subject="[tool.nose]")
     roots = nose["roots"]
     assert isinstance(roots, list), "[tool.nose].roots must be a TOML array."
 
@@ -309,10 +320,8 @@ def test_the_scan_never_targets_the_whole_checkout() -> None:
 
 def test_the_ranking_bound_stays_bounded() -> None:
     """`top` must bound the adjudicated surface rather than disabling it."""
-    tool = _pyproject()["tool"]
-    assert isinstance(tool, dict), "The pyproject must expose a [tool] table."
-    nose = tool["nose"]
-    assert isinstance(nose, dict), "[tool.nose] must be a TOML table."
+    tool = _table(_pyproject()["tool"], subject="[tool]")
+    nose = _table(tool["nose"], subject="[tool.nose]")
 
     assert nose["top"], "`top` must be set so the graded surface stays bounded."
     assert nose["top"] != 0, (
@@ -322,11 +331,8 @@ def test_the_ranking_bound_stays_bounded() -> None:
 
 def _nose_table() -> dict[str, object]:
     """Return the ``[tool.nose]`` table from the repository pyproject."""
-    tool = _pyproject()["tool"]
-    assert isinstance(tool, dict), "The pyproject must expose a [tool] table."
-    nose = tool["nose"]
-    assert isinstance(nose, dict), "[tool.nose] must be a TOML table."
-    return nose
+    tool = _table(_pyproject()["tool"], subject="[tool]")
+    return _table(tool["nose"], subject="[tool.nose]")
 
 
 def test_configured_exclusions_actually_exclude_something() -> None:
