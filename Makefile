@@ -335,6 +335,7 @@ duplication: install-nose ## Run the blocking code-duplication gate
 # application suite must not collect these tests, and they run here instead.
 duplication-test: ## Run the duplication-gate helper tests
 	@$(UV_ENV) NOSE_BIN=$(NOSE_BIN) $(UV) run --no-project \
+		--python $(PYTHON_BASELINE) \
 		--with pytest==9.1.1 --with cyclopts==4.25.2 \
 		--with tomlkit==0.15.1 --with syrupy==5.5.3 \
 		--with 'hypothesis[asyncio]==6.163.0' \
