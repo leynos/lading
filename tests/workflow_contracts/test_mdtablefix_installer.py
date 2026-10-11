@@ -11,8 +11,7 @@ developers' guide), so the installer reference is checked for its path and
 full-SHA shape rather than against a hard-coded revision.
 """
 
-from __future__ import annotations
-
+import collections.abc as cabc
 import re
 import typing as typ
 from pathlib import Path
@@ -36,7 +35,7 @@ def _job(workflow: dict[str, object], name: str) -> dict[str, object]:
     assert isinstance(jobs, dict), "ci.yml must declare a jobs mapping"
     job = jobs.get(name)
     assert isinstance(job, dict), f"ci.yml must declare the {name} job"
-    return job
+    return typ.cast("dict[str, object]", job)
 
 
 def _step(job: dict[str, object], name: str) -> dict[str, object]:
@@ -45,7 +44,7 @@ def _step(job: dict[str, object], name: str) -> dict[str, object]:
     assert isinstance(steps, list), "the CI job must declare steps"
     for step in steps:
         if isinstance(step, dict) and step.get("name") == name:
-            return step
+            return typ.cast("dict[str, object]", step)
     message = f"the CI job must declare a {name!r} step"
     pytest.fail(message)
     raise AssertionError(message)
@@ -61,12 +60,14 @@ def _job_shared_action_uses(job: object) -> list[str]:
     if not isinstance(job, dict):
         return []
 
+    job_mapping = typ.cast("dict[str, object]", job)
     references: list[str] = []
-    job_uses = job.get("uses")
+    job_uses = job_mapping.get("uses")
     if _is_shared_actions_uses_value(job_uses):
         references.append(job_uses)
 
-    for step in job.get("steps") or []:
+    steps = typ.cast("cabc.Iterable[object]", job_mapping.get("steps") or [])
+    for step in steps:
         if not isinstance(step, dict):
             continue
         step_uses = step.get("uses")
