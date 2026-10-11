@@ -170,6 +170,58 @@ class _DependencyPlacement(typ.NamedTuple):
     missing_canonical_name: str
 
 
+def _placement_wording(
+    crate_name: str,
+    missing_name: str,
+    *,
+    current_index: int,
+    missing_index: int | None,
+) -> _MissingDependencyWording:
+    """Return the operator prose for one fatal dependency-placement condition.
+
+    Placement fails in three ways, and they differ only in the words they
+    carry: the dependency is absent from the plan, it resolves to the failing
+    crate itself, or it is ordered after that crate. Keeping the prose here
+    separates "which words" from "resolve the indexes and raise", so the
+    caller reads as control flow rather than as nested string assembly.
+    """
+    if missing_index is None:
+        return _MissingDependencyWording(
+            missing_name=missing_name,
+            reason=(
+                "is not part of the current publish plan, so the unpublished "
+                "workspace dependency override cannot help"
+            ),
+            guidance="Publish or index the dependency first.",
+            detail="which is not in the current publish plan; cannot continue",
+        )
+    if missing_index == current_index:
+        return _MissingDependencyWording(
+            missing_name=missing_name,
+            reason=(
+                f"is the same crate as {crate_name!r}, so the "
+                "publish plan cannot make it available before itself"
+            ),
+            guidance="Remove the self-dependency from the crate manifest.",
+            detail="which is the current crate; cannot continue",
+        )
+    return _MissingDependencyWording(
+        missing_name=missing_name,
+        reason=(
+            f"appears after crate {crate_name!r} in publish "
+            "order, so it will not be available when this crate is published"
+        ),
+        guidance=(
+            "Adjust publish.order so the dependency comes first, or omit "
+            "publish.order and rely on dependency-derived topological sorting."
+        ),
+        detail=(
+            "which appears after the current crate in publish order; "
+            "cannot continue"
+        ),
+    )
+
+
 def _validate_dependency_placement(
     context: _IndexMissingVersionFailure,
     handling: _IndexMissingVersionHandling,
@@ -205,49 +257,14 @@ def _validate_dependency_placement(
         missing_name,
         missing_index if missing_index is not None else "<not in plan>",
     )
-    if missing_index is None:
+    if missing_index is None or missing_index >= current_index:
         _raise_missing_dependency(
             context,
-            _MissingDependencyWording(
-                missing_name=missing_name,
-                reason=(
-                    "is not part of the current publish plan, so the unpublished "
-                    "workspace dependency override cannot help"
-                ),
-                guidance="Publish or index the dependency first.",
-                detail="which is not in the current publish plan; cannot continue",
-            ),
-        )
-    if missing_index == current_index:
-        _raise_missing_dependency(
-            context,
-            _MissingDependencyWording(
-                missing_name=missing_name,
-                reason=(
-                    f"is the same crate as {context.failure.crate_name!r}, so the "
-                    "publish plan cannot make it available before itself"
-                ),
-                guidance="Remove the self-dependency from the crate manifest.",
-                detail="which is the current crate; cannot continue",
-            ),
-        )
-    if missing_index > current_index:
-        _raise_missing_dependency(
-            context,
-            _MissingDependencyWording(
-                missing_name=missing_name,
-                reason=(
-                    f"appears after crate {context.failure.crate_name!r} in publish "
-                    "order, so it will not be available when this crate is published"
-                ),
-                guidance=(
-                    "Adjust publish.order so the dependency comes first, or omit "
-                    "publish.order and rely on dependency-derived topological sorting."
-                ),
-                detail=(
-                    "which appears after the current crate in publish order; "
-                    "cannot continue"
-                ),
+            _placement_wording(
+                context.failure.crate_name,
+                missing_name,
+                current_index=current_index,
+                missing_index=missing_index,
             ),
         )
     return _DependencyPlacement(current_index, missing_index, missing_canonical_name)
