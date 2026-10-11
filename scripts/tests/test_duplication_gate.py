@@ -5,8 +5,6 @@ allowlist, matching, and partitioning logic without invoking it. The
 ``make duplication-test`` target runs them on the tooling interpreter.
 """
 
-from __future__ import annotations
-
 import re
 import textwrap
 import typing as typ

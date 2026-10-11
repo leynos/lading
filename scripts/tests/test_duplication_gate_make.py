@@ -1,7 +1,5 @@
 """Make-target contract tests for recording duplication exceptions."""
 
-from __future__ import annotations
-
 import dataclasses as dc
 import shutil
 import subprocess

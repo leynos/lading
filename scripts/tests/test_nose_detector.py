@@ -1,7 +1,5 @@
 """Tests for the pinned nose detector wrapper used by the duplication gate."""
 
-from __future__ import annotations
-
 import copy
 import dataclasses as dc
 import re

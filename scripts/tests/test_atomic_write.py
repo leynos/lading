@@ -6,8 +6,6 @@ rather than through that caller: default parent creation, mode preservation
 only when a destination exists, and the descriptor discipline around fsync.
 """
 
-from __future__ import annotations
-
 import dataclasses as dc
 import inspect
 import os
@@ -86,7 +84,7 @@ def test_default_options_are_shared_rather_than_rebuilt() -> None:
     )
 
 
-@dc.dataclass
+@dc.dataclass(slots=True)
 class _OsSpy:
     """Record what ``atomic_write`` fsyncs, delegating the rest to ``os``.
 
@@ -115,7 +113,7 @@ class _OsSpy:
         os.close(descriptor)
 
 
-@dc.dataclass
+@dc.dataclass(slots=True)
 class _FailingDirectorySync:
     """Fail the directory sync, recording which descriptors get closed.
 

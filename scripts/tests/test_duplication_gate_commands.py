@@ -6,8 +6,6 @@ the orchestration, diagnostics, and exit statuses without the pinned binary.
 detector.
 """
 
-from __future__ import annotations
-
 import subprocess
 import sys
 import textwrap

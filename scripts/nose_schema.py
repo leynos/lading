@@ -6,8 +6,6 @@ types, and the validation of the ``nose query --format json`` report.
 ``scripts/duplication_gate.py`` owns the reasoned allowlist and CLI.
 """
 
-from __future__ import annotations
-
 import dataclasses as dc
 import typing as typ
 from collections import abc as cabc
