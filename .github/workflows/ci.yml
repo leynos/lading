@@ -8,6 +8,8 @@ on:
 jobs:
   lint-test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -90,6 +92,9 @@ jobs:
       - name: Run typechecker
         run: make typecheck
 
+      - name: Check the CV-005 contracts
+        run: make test-workflow-contracts
+
       # `language: python` is what makes the shared action usable here.
       # lading commits a synthetic root Cargo.toml as a fixture for its own
       # workspace-release test scenarios (see docs/repository-layout.md); it
@@ -107,28 +112,22 @@ jobs:
       # it; nothing in the suite depends on forking, and `make test` has
       # always run plain pytest.
       - name: Generate coverage
-        uses: leynos/shared-actions/.github/actions/generate-coverage@2a910bfcfd1ea4216419f9290331785f05b33320
+        # A pull request only: a push to main is coverage-main.yml's, the one
+        # writer of the ratchet baseline and the CodeScene upload.
+        if: github.event_name == 'pull_request'
+        env:
+          UV_PYTHON: '3.14'
+        uses: leynos/shared-actions/.github/actions/generate-coverage@7d751eded578e48dacf43ab173d5820e6437c474
         with:
           language: python
           output-path: coverage.xml
           python-source: ./lading
           # Pull requests compare against the baseline coverage-main.yml
-          # writes. Pushes still generate and upload the artefact, but must
-          # not become a second writer in the shared baseline cache family.
-          with-ratchet: ${{ github.event_name == 'pull_request' }}
+          # writes.
+          with-ratchet: 'true'
           # This lane measures and compares; it does not publish. The action
           # archives the report under a step of its own, which no scanner over
           # this file's steps can see, so declining that archive is the only
           # way the boundary is observable here. The report stays on the
-          # runner for the upload step below.
+          # runner and is uploaded nowhere.
           publish-artefact: 'false'
-
-      # The only publisher of this file in this workflow, and the only one
-      # that can be: the coverage action above declines its own archive. The
-      # CodeScene gate that used to upload a second copy under the name
-      # "coverage" has gone; coverage-main.yml owns every upload now.
-      - name: Upload coverage artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: coverage-report
-          path: coverage.xml

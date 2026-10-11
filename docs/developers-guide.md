@@ -15,10 +15,10 @@ trigger implies, so a trigger added later cannot reach an upload from a branch
 CodeScene does not analyse. Runs queue per ref rather than cancelling one
 another, because two pushes in quick succession would otherwise contend for the
 upload and for the ratchet baseline cache, and a cancelled run leaves main's
-coverage unpublished. Pull-request CI runs the suite and publishes its
-Cobertura report as a workflow artefact; it does not check coverage against
-CodeScene, and it no longer fetches full Git history, which existed only so the
-removed gate could reach a merge base.
+coverage unpublished. Pull-request CI runs the suite and measures coverage for
+its own ratchet only: it uploads no coverage artefact, does not check coverage
+against CodeScene, and no longer fetches full Git history, which existed only
+so the removed gate could reach a merge base.
 
 The token itself never enters an `env` on the publisher. A
 `Check CodeScene token availability` step (id `codescene_token`) runs exactly
@@ -326,9 +326,9 @@ registry's cmd-mox doubles.
 ## Coverage generation
 
 Both coverage lanes run the shared `generate-coverage` action from
-`leynos/shared-actions`: `ci.yml` on pull requests and pushes to main, and
-`coverage-main.yml` on pushes to main only. Neither invokes slipcover directly
-any more.
+`leynos/shared-actions`: `ci.yml` on pull requests only, for the ratchet, and
+`coverage-main.yml` on pushes to main only, which owns main-branch coverage
+generation and publication. Neither invokes slipcover directly any more.
 
 Three inputs carry the whole of what this repository needs.
 
@@ -349,18 +349,29 @@ report the same 58 files at the same rates, so the ratchet baseline did not
 move on adoption. The value is passed to slipcover unchanged as a single
 `--source` argument.
 
-`ci.yml` enables `with-ratchet` only for pull requests, which compare each run
-against a baseline held in the Actions cache. Its pushes to main still generate
-and publish the artefact, but do not save a baseline. `coverage-main.yml` alone
-enables the ratchet unconditionally, so its sole push-to-main trigger is the
-only writer in the cache family. Caches saved on main are readable by every
-pull-request run. A drop of more than one percentage point fails the run; a
-change within one point is treated as noise and holds the baseline.
+`ci.yml` runs `generate-coverage` on pull requests only, with the ratchet on,
+so they compare each run against a baseline held in the Actions cache. A push
+to main is `coverage-main.yml`'s, which alone writes the baseline and uploads
+to CodeScene, so its sole push-to-main trigger is the only writer in the cache
+family. Caches saved on main are readable by every pull-request run. A drop of
+more than one percentage point fails the run; a change within one point is
+treated as noise and holds the baseline.
 
 Artefact publication is split between the lanes. `ci.yml` passes
-`publish-artefact: 'false'` and uploads the report itself, keeping the name
-`coverage-report` it has always had. `coverage-main.yml` leaves the input
-unset, so the action archives the report that lane's upload step reads.
+`publish-artefact: 'false'` and uploads nothing: the report stays on the runner.
+`coverage-main.yml` leaves the input unset, so the action archives the report
+that lane's upload step reads.
+
+`make test-workflow-contracts` holds this by running `cv005-contracts check`,
+the shared contract library in `leynos/shared-actions`, from the full commit
+named by `CV005_CONTRACTS_REF` in the Makefile; `make test` depends on it and
+CI runs it in its own step. A fix to a rule reaches this repository as a pin
+bump. The target needs `uv`, which fetches the Python the library runs under,
+and `.github/cv005.toml` holds `repository` and `interpreter = "3.14"`, which
+makes every `generate-coverage` call pin `UV_PYTHON` to the repository's
+baseline. `tests/workflow_contracts/test_cv005_wiring.py` holds the local
+wiring, and [ADR-008](adr/008-adopt-the-shared-cv005-contract-library.md)
+records the decision.
 
 The old invocation also ran pytest under `pytest-forked`. Nothing in the suite
 depends on forking -- `make test` has always run plain pytest -- and the shared
