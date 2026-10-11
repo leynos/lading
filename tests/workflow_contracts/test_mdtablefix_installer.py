@@ -150,7 +150,7 @@ def test_install_mdtablefix_uses_the_shared_prebuilt_action() -> None:
 def test_shared_action_references_are_full_commit_shas() -> None:
     """Shared-actions references stay pinned to full 40-hex commit SHAs."""
     for _workflow_name, uses in _shared_action_uses():
-        ref = uses.split("@", 1)[1]
+        ref = uses.partition("@")[2]
         assert _USES_RE.match(uses), f"expected a 40-hex commit SHA, got {ref!r}"
 
 
