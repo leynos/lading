@@ -65,12 +65,13 @@ def partition_findings(
     allowed: list[Finding] = []
     used: set[int] = set()
     for finding in findings:
-        matched = False
-        for position, entry in enumerate(allowlist):
-            if entry.matches(finding):
-                used.add(position)
-                matched = True
-        (allowed if matched else blocking).append(finding)
+        covered = {
+            position
+            for position, entry in enumerate(allowlist)
+            if entry.matches(finding)
+        }
+        used |= covered
+        (allowed if covered else blocking).append(finding)
     stale = [entry for position, entry in enumerate(allowlist) if position not in used]
     return blocking, allowed, stale
 
@@ -124,9 +125,10 @@ def _read_allowlist(allowlist_reader: AllowlistReader) -> tuple[AllowEntry, ...]
     """Read the reasoned allowlist, naming unreadable configuration."""
     try:
         return allowlist_reader(PYPROJECT)
-    except GateConfigError:
-        raise
     except (OSError, tomllib.TOMLDecodeError) as error:
+        # GateConfigError needs no re-raise guard here: it is a ValueError
+        # *sibling* of TOMLDecodeError rather than a subclass, so this clause
+        # never intercepts it and the reader's own diagnostic propagates.
         msg = f"cannot load duplication allowlist: {error}"
         raise GateExecutionError(msg) from error
 

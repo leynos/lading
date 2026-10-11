@@ -111,19 +111,22 @@ def require_string(value: object, *, context: str) -> str:
     Parameters
     ----------
     value : object
-        Candidate configuration value.
+        Candidate TOML value; empty strings are rejected because the
+        configuration has no use for a blank name, key, or mode.
     context : str
-        Configuration path used in an invalid-value diagnostic.
+        Dotted path such as ``tool.nose.version``, quoted verbatim when
+        the value is rejected.
 
     Returns
     -------
     str
-        The validated string.
+        The same object, narrowed for the type checker to a non-empty
+        :class:`str` so callers need no second emptiness check.
 
     Raises
     ------
     GateConfigError
-        If ``value`` is not a non-empty string.
+        If the value is not a string, or is the empty string.
     """
     if not _is_non_empty_string(value):
         msg = f"{context} must be a non-empty string"
@@ -207,19 +210,22 @@ def require_positive_int(value: object, *, context: str) -> int:
     Parameters
     ----------
     value : object
-        Candidate configuration value.
+        Candidate TOML value. ``bool`` is rejected even though it is an
+        ``int`` subclass, because ``true`` is not a usable line count.
     context : str
-        Configuration path used in an invalid-value diagnostic.
+        Dotted path such as ``tool.nose.top``, quoted verbatim in the
+        rejected-value diagnostic.
 
     Returns
     -------
     int
-        The validated positive integer.
+        The same object, narrowed to a non-boolean integer of one or
+        more, ready for range and ordering comparisons.
 
     Raises
     ------
     GateConfigError
-        If ``value`` is not a positive integer.
+        If the value is a bool, a non-integer, or below one.
     """
     if not _is_integer(value) or value < 1:
         msg = f"{context} must be a positive integer"
