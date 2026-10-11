@@ -185,6 +185,37 @@ def test_the_nose_install_is_not_a_floating_latest_installer() -> None:
     )
 
 
+def test_the_helper_suite_selects_the_interpreter_it_requires() -> None:
+    """`make duplication-test` must pin the interpreter its own gate declares.
+
+    The suite's ``conftest.py`` deliberately ignores every module when the
+    interpreter is older than the gate's floor, because the application
+    suite shares this directory and runs on an interpreter without the
+    pinned tooling. That guard is correct, but it converts a missing
+    interpreter pin into a silent zero-collection run: pytest exits 5, and
+    the recipe fails with no diagnostic pointing at the interpreter. The
+    recipe therefore has to name the baseline itself rather than inherit
+    whatever interpreter the surrounding environment happens to expose.
+    """
+    assert MAKE_BINARY is not None, "make executable not found on PATH"
+    completed = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - fixed target in the repository root.
+        [MAKE_BINARY, "--dry-run", "--no-print-directory", "duplication-test"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    recipe = completed.stdout
+
+    baseline = _make_variable("PYTHON_BASELINE")
+    assert baseline is not None, "The Makefile must declare PYTHON_BASELINE."
+    assert f"--python {baseline}" in recipe, (
+        "`make duplication-test` must select the gate's declared interpreter "
+        f"baseline ({baseline}); otherwise the conftest guard silently "
+        "collects nothing and the suite fails with pytest's exit code 5."
+    )
+
+
 def test_the_gate_is_wired_into_the_lint_target() -> None:
     """The blocking gate must run as part of the canonical lint pipeline."""
     assert MAKE_BINARY is not None, "make executable not found on PATH"
