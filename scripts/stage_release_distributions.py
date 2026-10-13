@@ -1,5 +1,38 @@
 #!/usr/bin/env python3
-"""Remove local release files that already exist on a PEP 691 index."""
+r"""Stage release distributions against the PyPI project index.
+
+This standard-library-only command removes local distributions whose
+filenames already appear in the project's PEP 691 index. The caller then uses
+``uv publish`` with Trusted Publishing. A missing project page (HTTP 404) is
+treated as an empty index so the first release can be published.
+
+Configuration
+-------------
+DISTRIBUTION_DIRECTORY : str, optional
+    Directory containing distributions. Defaults to ``dist/publish``.
+PYPI_PROJECT : str, optional
+    Project slug in the index URL. Defaults to ``lading``.
+PYPI_INDEX_URL : str, optional
+    Index root URL. Defaults to ``https://pypi.org``.
+INDEX_RETRIES : int, optional
+    Maximum attempts for transient failures. Defaults to ``6``.
+INDEX_RETRY_DELAY : float, optional
+    Delay between attempts, in seconds. Defaults to ``2.0``.
+GITHUB_OUTPUT : str, optional
+    Output file to which ``remaining=true`` or ``remaining=false`` is appended.
+
+Examples
+--------
+Run from the repository root using the default project and staging directory:
+
+    python scripts/stage_release_distributions.py
+
+Exercise the command against a local Simple index:
+
+    PYPI_INDEX_URL=http://127.0.0.1:8080 PYPI_PROJECT=demo \\
+        DISTRIBUTION_DIRECTORY=build/dist \\
+        python scripts/stage_release_distributions.py
+"""
 
 import json
 import os
