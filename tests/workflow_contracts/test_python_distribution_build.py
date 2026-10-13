@@ -98,6 +98,9 @@ def test_ci_builds_distributions_on_pull_requests_and_main_pushes() -> None:
     assert re.fullmatch(r"[0-9a-f]{40}", checkout_reference), (
         "the checkout action must use an immutable commit reference"
     )
+    assert action_steps[0].get("with", {}).get("persist-credentials") is False, (
+        "the CI build must not persist its checkout token for build steps"
+    )
     assert action_steps[1]["uses"] == "./.github/actions/pure-python-wheel", (
         "the CI build must exercise the release distribution action"
     )

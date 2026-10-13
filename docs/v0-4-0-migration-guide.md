@@ -8,9 +8,9 @@ needs no action beyond the version bump itself.
 
 Tagged 0.4.0 releases are also published to PyPI as a source distribution and
 pure-Python wheel. GitHub Releases retain both files for direct download. Use
-PyPI for a normal package installation; choose the matching GitHub release when
-you need to download an artefact directly. No project configuration changes are
-needed to move an existing install to PyPI.
+PyPI for a normal package installation; choose the matching GitHub release to
+download an artefact directly. No project configuration changes are needed to
+move an existing install to PyPI.
 
 Subprocess output relays also emit additive, privacy-safe `INFO` decision
 events with the prefix `relay observability event:`. They describe relay

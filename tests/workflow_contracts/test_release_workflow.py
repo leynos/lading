@@ -209,3 +209,17 @@ def test_shared_build_action_produces_the_named_release_artefact() -> None:
     assert steps[1]["with"]["python-version"] == "3.14", (
         "the release build should match the project's Python baseline"
     )
+
+
+def test_release_jobs_do_not_persist_checkout_credentials() -> None:
+    """Release jobs should not pass checkout credentials to later commands."""
+    for job_name in ("build-dist", "publish-pypi", "release"):
+        checkout = next(
+            step
+            for step in _steps(job_name)
+            if step.get("uses", "").startswith("actions/checkout@")
+        )
+        assert checkout.get("with", {}).get("persist-credentials") is False, (
+            job_name,
+            "release checkouts must not persist credentials in .git/config",
+        )

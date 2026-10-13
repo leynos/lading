@@ -279,7 +279,7 @@ def _request_index(
             return project_files
         write_log(
             f"::notice::Retrying project index lookup after {retry_reason} "
-            f"(attempt={attempt + 1}/{retries - 1}, delay_seconds={retry_delay})"
+            f"(attempt={attempt + 1}/{retries}, delay_seconds={retry_delay})"
         )
         if retry_delay:
             sleep(retry_delay)

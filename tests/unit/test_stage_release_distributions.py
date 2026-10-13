@@ -218,7 +218,7 @@ def test_transient_status_retries_then_logs_bounded_success_telemetry(
     assert delays == [1], "a transient failure should wait before its retry"
     assert (
         "Retrying project index lookup after HTTP 503 "
-        "(attempt=1/1, delay_seconds=1)" in messages[0]
+        "(attempt=1/2, delay_seconds=1)" in messages[0]
     ), "the retry notice should include its attempt and delay"
     assert "outcome=success, attempts=2, retries=1" in messages[1], (
         "the successful index query should report its bounded outcome summary"
