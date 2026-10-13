@@ -157,6 +157,10 @@ def test_github_release_is_reused_uploaded_and_published_in_order() -> None:
     assert upload_step["env"]["TAG"] == "${{ github.ref_name }}", (
         "the release tag should be supplied through step environment"
     )
+    for step in (steps[create], upload_step, steps[publish]):
+        assert step["env"]["GH_REPO"] == "${{ github.repository }}", (
+            "GitHub CLI operations should use an explicit repository context"
+        )
     token_reference = upload_step["env"]["GH_TOKEN"]
     assert token_reference.startswith("${{ secrets."), (
         "GitHub credentials should be referenced as a secret"

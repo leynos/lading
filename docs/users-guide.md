@@ -218,8 +218,12 @@ python -m pip install lading
 To select a particular release, pin its version:
 
 ```bash
-python -m pip install lading==0.4.0
+python -m pip install lading==0.2.0
 ```
+
+The existing 0.2.0 release is available on PyPI. The sdist-and-wheel release
+process described here applies to later tags, beginning with 0.4.0 after its
+cuprum release gate is met.
 
 Tagged releases publish a source distribution and every pure-Python wheel to
 PyPI. The release job builds the wheel from the sdist, so the source archive is
