@@ -544,19 +544,21 @@ The GitHub uploader keeps its process boundary separate from publication policy.
 `scripts/upload_release_wheels.py` is the PEP 723 command-line edge and
 composition root. `scripts/release_wheel_upload.py` discovers wheels and
 sdists, skips attached names, and reports outcomes. `scripts/release_port.py`
-holds `CommandOutcome` and the `UploadRunner` protocol. `scripts/release_gh.py`
-is the driven adapter: its cuprum catalogue allows only `gh`, and `run_gh` is
-the only place the uploader starts that process. `scripts/release_span.py`
-records bounded per-invocation telemetry. The staging script is separate and
-uses only the Python standard library; it has no third-party credential-time
-dependency.
+defines the domain-facing `ReleaseAssetStore` protocol and
+`ReleaseOperationError`. `scripts/release_gh.py` provides the
+`GitHubReleaseAssets` adapter. It owns `gh` argument construction, JSON
+decoding, process-result handling, and translation to `ReleaseOperationError`;
+its cuprum catalogue allows only `gh`. `scripts/release_span.py` records
+bounded per-invocation telemetry. The staging script is separate and uses only
+the Python standard library; it has no third-party credential-time dependency.
 
-The policy imports the runner protocol, not the adapter. The adapter translates
-cuprum results into `CommandOutcome`, and the composition root binds both:
+The policy depends on `ReleaseAssetStore`, while the composition root binds
+`GitHubReleaseAssets` to the upload operation:
 
 ```python
+_ASSETS = GitHubReleaseAssets()
 _PRODUCTION = Dependencies(
-    upload=partial(upload_distributions, run=run_gh)
+    upload=partial(upload_distributions, assets=_ASSETS)
 )
 ```
 
