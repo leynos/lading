@@ -222,7 +222,7 @@ GH = Program("gh")
 _RELEASE_PROJECT = ProjectSettings(
     name="lading-release",
     programs=(GH,),
-    documentation_locations=("docs/developers-guide.md#release-workflow",),
+    documentation_locations=("docs/developers-guide.md#publishing-a-release",),
     noise_rules=(),
 )
 RELEASE_CATALOGUE = ProgramCatalogue(projects=(_RELEASE_PROJECT,))

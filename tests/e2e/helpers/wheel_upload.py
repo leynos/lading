@@ -64,3 +64,11 @@ def make_wheel(directory: Path, name: str) -> Path:
     wheel = directory / name
     wheel.write_bytes(b"")
     return wheel
+
+
+def make_sdist(directory: Path, name: str) -> Path:
+    """Create an empty source archive with the supplied distribution name."""
+    directory.mkdir(parents=True, exist_ok=True)
+    sdist = directory / name
+    sdist.write_bytes(b"")
+    return sdist

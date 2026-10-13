@@ -11,7 +11,7 @@ Feature: Standalone release wheel upload through the cuprum beta
     Given a recording gh stub that exits 0
     When the uploader runs standalone for tag "v0.0.0-stub"
     Then the uploader exits 0
-    And gh was called exactly once with "release upload v0.0.0-stub" and the wheel and "--clobber"
+    And gh inspected assets before uploading the missing wheel without clobbering
     And the environment that ran holds the cuprum version pinned in pyproject.toml
 
   Scenario: A rejected upload reports gh's diagnostic

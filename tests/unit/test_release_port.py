@@ -123,23 +123,24 @@ def _function(path: Path, name: str) -> ast.FunctionDef:
 def test_the_policy_defaults_no_process_dependency() -> None:
     """Production wiring is bound at the composition root, not in the policy.
 
-    A default runner in ``upload_wheels`` would name the adapter in this
+    A default runner in ``upload_distributions`` would name the adapter in this
     module's namespace, which is the coupling the port removes -- and it would
     do so in the one place a structural import check cannot see, since a
-    default is not an import. The same holds one level up: an ``attach_wheels``
+    default is not an import. The same holds one level up: an ``attach_distributions``
     that defaulted a whole ``Dependencies`` would put the runner back, since
     only the composition root can build one.
     """
-    upload = _function(POLICY_PATH, "upload_wheels")
+    upload = _function(POLICY_PATH, "upload_distributions")
     defaults = dict(zip(upload.args.kwonlyargs, upload.args.kw_defaults, strict=True))
     runner = next(arg for arg in upload.args.kwonlyargs if arg.arg == "run")
 
     assert runner.annotation is not None, "the runner parameter must be annotated"
     assert defaults[runner] is None, (
-        "upload_wheels must not default its runner; bind it at the composition root"
+        "upload_distributions must not default its runner; bind it at the "
+        "composition root"
     )
 
-    attach = _function(POLICY_PATH, "attach_wheels")
+    attach = _function(POLICY_PATH, "attach_distributions")
     optional = dict(
         zip(
             [arg.arg for arg in attach.args.args],
@@ -150,7 +151,7 @@ def test_the_policy_defaults_no_process_dependency() -> None:
     )
 
     assert optional["dependencies"] is None, (
-        "attach_wheels must require its dependencies; a default would have to "
+        "attach_distributions must require its dependencies; a default would have to "
         "name a runner"
     )
 
@@ -183,7 +184,7 @@ def test_the_composition_root_binds_the_production_runner() -> None:
     The check above is only safe because this one holds: the removal of the
     default is a move, not a deletion. The binding is read out of the call
     rather than searched for as text, because a substring match for
-    ``upload_wheels`` would still pass if the runner were dropped.
+    ``upload_distributions`` would still pass if the runner were dropped.
     """
     imported = _imported_names(ENTRYPOINT_PATH)
     bound = _partial_bindings(ENTRYPOINT_PATH).get("run")
@@ -192,7 +193,7 @@ def test_the_composition_root_binds_the_production_runner() -> None:
         "the entrypoint must import the production adapter to bind it"
     )
     assert bound is not None, (
-        "the composition root must bind the runner into upload_wheels"
+        "the composition root must bind the runner into upload_distributions"
     )
     assert isinstance(bound, ast.Name), (
         f"the runner must be named directly, not built: {ast.dump(bound)}"

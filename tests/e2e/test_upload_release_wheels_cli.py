@@ -17,14 +17,18 @@ from pathlib import Path
 
 import pytest
 
-from tests.e2e.helpers.wheel_upload import make_wheel, run_repository_upload
-from tests.helpers.gh_stub import STUB_TAG, GhStub, install_gh_stub
+from tests.e2e.helpers.wheel_upload import (
+    make_sdist,
+    make_wheel,
+    run_repository_upload,
+)
+from tests.helpers.gh_stub import STUB_TAG, GhStub, GhStubConfig, install_gh_stub
 
 pytestmark = pytest.mark.timeout(60)
 
 
 def test_an_empty_directory_exits_non_zero(tmp_path: Path, stub: GhStub) -> None:
-    """The step fails when the build produced no wheel.
+    """The step fails when the build produced no distribution.
 
     This is the regression: the shell pipeline it replaced exited zero here,
     so the release published with nothing attached and the job stayed green.
@@ -40,17 +44,51 @@ def test_an_empty_directory_exits_non_zero(tmp_path: Path, stub: GhStub) -> None
     )
 
     assert result.returncode == 1, f"expected failure, got {result.returncode}"
-    assert "No wheel found" in result.stderr, result.stderr
-    assert stub.calls() == (), "gh must not be invoked when there is no wheel"
+    assert "No distributions found" in result.stderr, result.stderr
+    assert stub.calls() == (), "gh must not run when there is no distribution"
 
 
 def test_every_wheel_reaches_gh_with_the_tag_from_the_environment(
     tmp_path: Path, stub: GhStub
 ) -> None:
-    """The tag comes from ``GITHUB_REF_NAME`` and every wheel is uploaded once."""
+    """The tag comes from the environment and every distribution is uploaded."""
     dist = tmp_path / "dist"
     first = make_wheel(dist, "a-1.0-py3-none-any.whl")
     second = make_wheel(dist / "nested", "b-1.0-py3-none-any.whl")
+
+    source = make_sdist(dist / "sdist", "a-1.0.tar.gz")
+    result = run_repository_upload(
+        stub, "--directory", str(dist), environment={"GITHUB_REF_NAME": "v9.9.9"}
+    )
+    assert result.returncode == 0, result.stderr
+    calls = stub.calls()
+    assert calls[0].argv == (
+        "release",
+        "view",
+        "v9.9.9",
+        "--json",
+        "assets",
+        "--jq",
+        ".assets[].name",
+    ), calls[0]
+    assert calls[1].argv[:3] == ("release", "upload", "v9.9.9"), (
+        "the uploader should attach to the requested release tag"
+    )
+    assert calls[1].argv[3:] == (str(first), str(second), str(source)), (
+        "every wheel and the source distribution should be uploaded"
+    )
+
+
+def test_a_rerun_skips_every_distribution_already_attached(
+    tmp_path: Path,
+) -> None:
+    """A repeated tag succeeds without sending any existing filename again."""
+    wheel = "a-1.0-py3-none-any.whl"
+    sdist = "a-1.0.tar.gz"
+    stub = install_gh_stub(tmp_path, GhStubConfig(release_assets=(wheel, sdist)))
+    dist = tmp_path / "dist"
+    make_wheel(dist, wheel)
+    make_sdist(dist, sdist)
 
     result = run_repository_upload(
         stub,
@@ -60,10 +98,12 @@ def test_every_wheel_reaches_gh_with_the_tag_from_the_environment(
     )
 
     assert result.returncode == 0, result.stderr
-    calls = stub.calls()
-    assert len(calls) == 1, f"expected one call, recorded {calls}"
-    expected = ("release", "upload", "v9.9.9", str(first), str(second), "--clobber")
-    assert calls[0].argv == expected, f"gh received {calls[0].argv}"
+    assert "Skipping already-attached distribution" in result.stdout, (
+        "the retry should report each asset already attached"
+    )
+    assert [call.argv[:2] for call in stub.calls()] == [("release", "view")], (
+        "an all-attached retry should inspect assets without uploading"
+    )
 
 
 def _error_line(stderr: str) -> str:
@@ -95,9 +135,13 @@ def test_a_failing_gh_fails_the_step(tmp_path: Path) -> None:
     discarded it.
     """
     diagnostic = "HTTP 422: release asset already exists"
-    rejecting = install_gh_stub(tmp_path, exit_code=1, stderr=f"{diagnostic}\n")
+    rejecting = install_gh_stub(
+        tmp_path,
+        GhStubConfig(exit_code=1, stderr=f"{diagnostic}\n"),
+    )
     dist = tmp_path / "dist"
     make_wheel(dist, "a-1.0-py3-none-any.whl")
+    make_sdist(dist, "a-1.0.tar.gz")
 
     result = run_repository_upload(
         rejecting,
@@ -201,6 +245,7 @@ def test_a_successful_step_reports_its_outcome(tmp_path: Path, stub: GhStub) -> 
     """A success names itself, counts its wheels, and times both phases."""
     dist = tmp_path / "dist"
     make_wheel(dist, "a-1.0-py3-none-any.whl")
+    make_sdist(dist, "a-1.0.tar.gz")
     output = tmp_path / "github-output"
     output.touch()
 
@@ -217,7 +262,7 @@ def test_a_successful_step_reports_its_outcome(tmp_path: Path, stub: GhStub) -> 
     assert result.returncode == 0, result.stderr
     summary = _outcome_line(result.stderr)
     assert summary["outcome"] == "success", summary
-    assert summary["wheels"] == 1, summary
+    assert summary["distributions"] == 2, summary
     assert {"discovery_seconds", "upload_seconds"} <= set(summary), summary
     written = output.read_text(encoding="utf-8")
     assert "outcome=success" in written, written
@@ -226,7 +271,7 @@ def test_a_successful_step_reports_its_outcome(tmp_path: Path, stub: GhStub) -> 
 @pytest.mark.parametrize(
     ("scenario", "expected"),
     [
-        ("empty", "no-wheel"),
+        ("empty", "no-distributions"),
         ("absent", "missing-directory"),
         ("file", "not-a-directory"),
         ("rejected", "upload-failed"),
@@ -240,7 +285,10 @@ def test_each_failure_reports_its_own_outcome(
     One shared failure label would make the release log unable to tell a build
     that produced nothing from an upload GitHub rejected.
     """
-    stub = install_gh_stub(tmp_path, exit_code=1 if scenario == "rejected" else 0)
+    stub = install_gh_stub(
+        tmp_path,
+        GhStubConfig(exit_code=1 if scenario == "rejected" else 0),
+    )
     directory = _prepare_scenario(tmp_path, scenario)
 
     result = run_repository_upload(
@@ -253,7 +301,7 @@ def test_each_failure_reports_its_own_outcome(
     assert result.returncode == 1, result.stderr
     summary = _outcome_line(result.stderr)
     assert summary["outcome"] == expected, summary
-    assert summary["wheels"] == 0, summary
+    assert summary["distributions"] == 0, summary
 
 
 def _prepare_scenario(tmp_path: Path, scenario: str) -> Path:

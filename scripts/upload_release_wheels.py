@@ -3,7 +3,7 @@
 # requires-python = ">=3.14"
 # dependencies = ["cuprum==0.2.0b1", "cyclopts>=3"]
 # ///
-"""Attach the wheels built for a release tag to that GitHub release.
+"""Attach the sdist and wheels built for a release tag to GitHub.
 
 The step this replaced could not fail: it searched for wheels through a shell
 pipeline, whose exit status is its last command's, so a release published with
@@ -33,21 +33,21 @@ from release_wheel_upload import (
     Sinks,
     Timings,
     UploadError,
-    attach_wheels,
+    attach_distributions,
     build_summary,
     report_outcome,
-    upload_wheels,
+    upload_distributions,
 )
 
 #: The production wiring of the upload port. It is bound here, at the one
 #: place that knows both the policy and the adapter, rather than defaulted in
 #: the policy module -- which is what lets the policy be imported, and tested,
 #: with no cuprum present at all.
-_PRODUCTION = Dependencies(upload=partial(upload_wheels, run=run_gh))
+_PRODUCTION = Dependencies(upload=partial(upload_distributions, run=run_gh))
 
 app = App(
     name="upload-release-wheels",
-    help="Upload the wheels in a directory to a GitHub release.",
+    help="Upload the sdist and wheels in a directory to a GitHub release.",
     config=cyclopts.config.Env("INPUT_", command=False),
 )
 
@@ -66,7 +66,7 @@ def main(
     tag: typ.Annotated[str, Parameter(required=True, env_var="GITHUB_REF_NAME")],
     directory: Path = Path("dist"),
 ) -> None:
-    """Upload every wheel under ``directory`` to the release for ``tag``.
+    """Attach each built distribution not already on the release for ``tag``.
 
     This is the composition root: it binds the production clock, runner, and
     sinks, and every other function takes them as parameters.
@@ -74,30 +74,35 @@ def main(
     Parameters
     ----------
     tag : str
-        The release tag to attach the wheels to. Defaults to the tag the
+        The release tag to attach the distributions to. Defaults to the tag the
         workflow was triggered by.
     directory : Path
-        Directory to search for wheels. Defaults to ``dist``.
+        Directory to search for wheels and the source archive. Defaults to
+        ``dist``.
 
     Raises
     ------
     UploadError
-        If the directory holds no wheel, or the upload fails. An empty result
-        is an error rather than a no-op: a release that silently ships nothing
-        is indistinguishable from one that shipped the right artefact. Every
-        exit, successful or not, reports its outcome first.
+        If the directory holds no distribution, or release inspection or
+        upload fails. An empty local result is an error rather than a no-op;
+        every exit reports its outcome first.
     """
     timings = Timings()
     sinks = _environment_sinks()
     try:
-        wheels = attach_wheels(tag, directory, timings, _PRODUCTION)
+        distributions = attach_distributions(tag, directory, timings, _PRODUCTION)
     except UploadError as error:
-        report_outcome(build_summary(error.outcome, wheels=0, timings=timings), sinks)
+        report_outcome(
+            build_summary(error.outcome, distributions=0, timings=timings), sinks
+        )
         raise
     report_outcome(
-        build_summary(Outcome.SUCCESS, wheels=len(wheels), timings=timings), sinks
+        build_summary(
+            Outcome.SUCCESS, distributions=len(distributions), timings=timings
+        ),
+        sinks,
     )
-    print(f"Attached {len(wheels)} wheel(s) to {tag}")
+    print(f"Attached {len(distributions)} distribution(s) to {tag}")
 
 
 if __name__ == "__main__":  # pragma: no cover - convenience entry point

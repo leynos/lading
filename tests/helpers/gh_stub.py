@@ -76,8 +76,10 @@ import pathlib
 import sys
 
 record = pathlib.Path({record!r})
+argv = sys.argv[1:]
+is_view = argv[:2] == ["release", "view"]
 call = {{
-    "argv": sys.argv[1:],
+    "argv": argv,
     "saw_gh_token": "GH_TOKEN" in os.environ,
     "saw_github_token": "GITHUB_TOKEN" in os.environ,
     "sentinel": os.environ.get({sentinel!r}),
@@ -86,6 +88,10 @@ call = {{
 }}
 with record.open("a", encoding="utf-8") as handle:
     handle.write(json.dumps(call) + "\\n")
+if is_view:
+    sys.stdout.write({release_assets!r})
+    sys.stderr.write({view_stderr!r})
+    sys.exit({view_exit_code})
 sys.stdout.write({stdout!r})
 sys.stderr.write({stderr!r})
 sys.exit({exit_code})
@@ -148,26 +154,27 @@ class GhStub:
         )
 
 
-def install_gh_stub(
-    directory: Path,
-    *,
-    exit_code: int = 0,
-    stdout: str = "",
-    stderr: str = "",
-) -> GhStub:
+@dc.dataclass(frozen=True, slots=True)
+class GhStubConfig:
+    """Responses the recording ``gh`` stub returns to each command."""
+
+    exit_code: int = 0
+    stdout: str = ""
+    stderr: str = ""
+    release_assets: tuple[str, ...] = ()
+    view_exit_code: int = 0
+    view_stderr: str = ""
+
+
+def install_gh_stub(directory: Path, config: GhStubConfig | None = None) -> GhStub:
     """Write a recording ``gh`` into ``directory`` and return it.
 
     Parameters
     ----------
     directory : Path
         Scratch directory to create the stub tree under.
-    exit_code : int
-        The status the stub exits with.
-    stdout : str
-        Text the stub writes to stdout.
-    stderr : str
-        Text the stub writes to stderr, which is where ``gh`` puts its
-        diagnostic for an upload it rejected.
+    config : GhStubConfig | None
+        Stub responses. Defaults to a successful release inspection and upload.
 
     Returns
     -------
@@ -178,13 +185,17 @@ def install_gh_stub(
     bin_directory.mkdir(parents=True, exist_ok=True)
     record = directory / "gh-calls.jsonl"
     stub = bin_directory / "gh"
+    responses = config or GhStubConfig()
     stub.write_text(
         _STUB_SOURCE.format(
             python=sys.executable,
             record=str(record),
-            exit_code=exit_code,
-            stdout=stdout,
-            stderr=stderr,
+            exit_code=responses.exit_code,
+            stdout=responses.stdout,
+            stderr=responses.stderr,
+            release_assets="".join(f"{name}\n" for name in responses.release_assets),
+            view_exit_code=responses.view_exit_code,
+            view_stderr=responses.view_stderr,
             sentinel=SENTINEL_VARIABLE,
         ),
         encoding="utf-8",
@@ -229,9 +240,22 @@ def isolated_environment(
         so the check is made here rather than trusted.
     """
     environment = dict(os.environ)
-    environment["PATH"] = f"{stub.bin_directory}{os.pathsep}{environment['PATH']}"
     for variable in _CREDENTIAL_VARIABLES + _UV_VARIABLES + _ACTIONS_STEP_VARIABLES:
         environment.pop(variable, None)
+    for variable in list(environment):
+        if variable.startswith("GIT_CONFIG_") or variable in {
+            "BASH_ENV",
+            "GIT_SSH",
+            "GIT_SSH_COMMAND",
+        }:
+            environment.pop(variable)
+    lody_directory = str(Path.home() / ".lody")
+    environment["PATH"] = os.pathsep.join(
+        part
+        for part in environment["PATH"].split(os.pathsep)
+        if part != lody_directory and not part.startswith(lody_directory + os.sep)
+    )
+    environment["PATH"] = f"{stub.bin_directory}{os.pathsep}{environment['PATH']}"
     environment["GH_CONFIG_DIR"] = str(_empty_config_directory(stub))
     environment["GH_HOST"] = "stub.invalid"
     environment["GH_PROMPT_DISABLED"] = "1"

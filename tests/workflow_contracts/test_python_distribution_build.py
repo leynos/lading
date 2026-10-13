@@ -59,6 +59,10 @@ def test_build_action_builds_from_the_sdist_and_uploads_both_formats() -> None:
     assert upload.get("with_", {}).get("if-no-files-found") == "error", (
         "the action must fail when either distribution is absent"
     )
+    assert all(
+        not step.get("uses", "").startswith("actions/checkout")
+        for step in yaml.safe_load(ACTION.read_text(encoding="utf-8"))["runs"]["steps"]
+    ), "the caller must own checkout before loading this local action"
 
 
 def test_ci_builds_distributions_on_pull_requests_and_main_pushes() -> None:

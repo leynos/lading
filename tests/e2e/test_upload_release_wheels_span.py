@@ -26,7 +26,7 @@ from pathlib import Path
 import pytest
 
 from tests.e2e.helpers.wheel_upload import make_wheel, run_repository_upload
-from tests.helpers.gh_stub import GhStub, install_gh_stub
+from tests.helpers.gh_stub import GhStub, GhStubConfig, install_gh_stub
 
 pytestmark = pytest.mark.timeout(60)
 
@@ -40,10 +40,8 @@ def _span_line(stderr: str) -> dict[str, object] | None:
         The decoded record, or ``None`` when the step emitted none.
     """
     prefix = "release_span "
-    for line in stderr.splitlines():
-        if line.startswith(prefix):
-            return json.loads(line[len(prefix) :])
-    return None
+    lines = [line for line in stderr.splitlines() if line.startswith(prefix)]
+    return json.loads(lines[-1][len(prefix) :]) if lines else None
 
 
 def test_a_real_invocation_emits_a_bounded_span_record(
@@ -120,7 +118,10 @@ def test_a_failed_invocation_still_emits_a_span(tmp_path: Path) -> None:
     The interesting path for a trace is the one that failed; a span emitted
     only on success would be missing exactly when it is read.
     """
-    stub = install_gh_stub(tmp_path, exit_code=1, stderr="release not found\n")
+    stub = install_gh_stub(
+        tmp_path,
+        GhStubConfig(exit_code=1, stderr="release not found\n"),
+    )
     dist = tmp_path / "dist"
     make_wheel(dist, "a-1.0-py3-none-any.whl")
 

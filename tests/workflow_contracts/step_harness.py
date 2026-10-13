@@ -79,6 +79,23 @@ def _find_step(path: Path, name: str, *, job: str | None = None) -> WorkflowStep
     return found
 
 
+def install_recording_command(directory: Path, command: str) -> Path:
+    """Put a command stub on ``PATH`` and return its argv record path."""
+    binary = directory / "bin"
+    binary.mkdir(parents=True, exist_ok=True)
+    record = directory / f"{command}-calls.json"
+    executable = binary / command
+    executable.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, os, pathlib, sys\n"
+        "pathlib.Path(os.environ['COMMAND_RECORD']).write_text("
+        "json.dumps(sys.argv[1:]), encoding='utf-8')\n",
+        encoding="utf-8",
+    )
+    executable.chmod(0o755)
+    return record
+
+
 def _run_step(
     step: WorkflowStep,
     directory: Path,
@@ -95,11 +112,25 @@ def _run_step(
         raise ValueError(message)
     script_path = directory / "workflow-step.sh"
     script_path.write_text(script, encoding="utf-8")
+    environment = {**os.environ, **step.get("env", {}), **(env or {})}
+    for variable in list(environment):
+        if variable.startswith("GIT_CONFIG_") or variable in {
+            "BASH_ENV",
+            "GIT_SSH",
+            "GIT_SSH_COMMAND",
+        }:
+            environment.pop(variable)
+    lody_directory = str(Path.home() / ".lody")
+    environment["PATH"] = os.pathsep.join(
+        part
+        for part in environment.get("PATH", "").split(os.pathsep)
+        if part != lody_directory and not part.startswith(lody_directory + os.sep)
+    )
     return subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - runs an inspected, checked-in workflow script using a fixed interpreter and argv
         ["/bin/bash", "-e", str(script_path)],
         check=False,
         capture_output=True,
         cwd=directory,
-        env={**os.environ, **step.get("env", {}), **(env or {})},
+        env=environment,
         text=True,
     )

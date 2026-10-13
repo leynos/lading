@@ -23,6 +23,7 @@ from tests.helpers.gh_stub import (
     SENTINEL_VARIABLE,
     STUB_TAG,
     GhStub,
+    GhStubConfig,
     install_gh_stub,
     isolated_environment,
     run_uploader,
@@ -223,7 +224,10 @@ def test_an_empty_record_reports_no_calls(tmp_path: Path) -> None:
 
 def test_the_stub_can_fail_with_a_chosen_diagnostic(tmp_path: Path) -> None:
     """The exit status and stderr are settable, which the failure tests rely on."""
-    stub = install_gh_stub(tmp_path, exit_code=1, stderr="HTTP 422: asset exists\n")
+    stub = install_gh_stub(
+        tmp_path,
+        GhStubConfig(exit_code=1, stderr="HTTP 422: asset exists\n"),
+    )
 
     completed = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - fixed argv, no shell
         [sys.executable, str(stub.bin_directory / "gh"), "release", "upload"],
@@ -293,5 +297,15 @@ def test_the_uploader_runs_the_script_through_the_chosen_interpreter(
 
     assert completed.returncode == 0, completed.stderr
     calls = stub.calls()
-    assert len(calls) == 1, calls
-    assert calls[0].argv[:3] == ("release", "upload", _IMPOSSIBLE_TAG), calls[0]
+    assert len(calls) == 2, calls
+    assert calls[0].argv[:3] == ("release", "view", _IMPOSSIBLE_TAG), calls[0]
+    assert calls[0].argv[3:] == (
+        "--json",
+        "assets",
+        "--jq",
+        ".assets[].name",
+    ), "the release inspection should return attached asset filenames"
+    assert calls[1].argv[:3] == ("release", "upload", _IMPOSSIBLE_TAG), calls[1]
+    assert calls[1].argv[3:] == (str(dist / "lading-0.0.0-py3-none-any.whl"),), (
+        "the selected interpreter should upload the built wheel after inspection"
+    )

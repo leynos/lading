@@ -1,19 +1,13 @@
-"""Discover, upload, and report on the wheels for a GitHub release.
+"""Reconcile and report the distributions attached to a GitHub release.
 
-This is the logic behind ``scripts/upload_release_wheels.py``; that script is
-the command-line edge. The release workflow previously attached wheels with
-``find dist/wheels-* -name '*.whl' -print0 | xargs -0 -r gh release upload``.
-A pipeline takes its exit status from the last command, so ``set -eu`` never
-saw ``find`` fail when the directory did not exist, ``xargs -r`` then ran
-nothing, and the step reported success having uploaded no wheel. Both v0.3.0
-and v0.3.1 published without their wheel as a result, and a human attached it
-afterwards.
+This module is the policy behind ``scripts/upload_release_wheels.py``. It
+discovers the sdist and wheels, compares their filenames with the release
+assets, and uploads only missing names. An empty local directory is a release
+failure, while a run with every name already attached succeeds without an
+upload. The process still runs through cuprum's allowlist.
 
-This module is the replacement: it decides what to upload in Python, treats an
-empty result as the failure it is, and reaches ``gh`` through cuprum's
-allowlist rather than a shell. Its process dependencies -- the ``gh`` runner,
-the clock, and the two output sinks -- are parameters, so tests drive the
-command path explicitly rather than by intercepting the environment.
+The ``gh`` runner, clock, and output sinks are injected, so tests drive the
+release decision without intercepting the environment.
 
 This module imports no cuprum and does not import the adapter that does. The
 port it depends on, ``UploadRunner``, and the record that crosses it,
@@ -24,9 +18,11 @@ imported its adapter would drag the process technology into every test that
 exercises it -- and is worth preserving when the upload path changes.
 """
 
+import collections
 import collections.abc as cabc
 import dataclasses as dc
 import enum
+import io
 import json
 import os
 import stat
@@ -36,8 +32,6 @@ import typing as typ
 from pathlib import Path
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
-    import io
-
     # Only the port protocol is named here. The record that crosses it is part
     # of the protocol's signature, not of this module's vocabulary: importing
     # it would be an import this module does not use, and the port is the one
@@ -54,7 +48,7 @@ class Outcome(enum.StrEnum):
     """
 
     SUCCESS = "success"
-    NO_WHEEL = "no-wheel"
+    NO_DISTRIBUTIONS = "no-distributions"
     MISSING_DIRECTORY = "missing-directory"
     NOT_A_DIRECTORY = "not-a-directory"
     UNREADABLE_DIRECTORY = "unreadable-directory"
@@ -62,12 +56,12 @@ class Outcome(enum.StrEnum):
 
 
 class UploadError(RuntimeError):
-    """Raised when the release's wheels cannot be uploaded.
+    """Raised when the release's distributions cannot be reconciled.
 
     Every cause is a failure of the release rather than a condition to report
-    and continue: a build that produced no wheel, an artefact directory that
-    cannot be read, and an upload the GitHub CLI rejected. The workflow step
-    turns any of them into a non-zero exit.
+    and continue: a build that produced no distribution, an artefact directory
+    that cannot be read, or a GitHub CLI request that failed. The workflow
+    step turns any of them into a non-zero exit.
 
     Parameters
     ----------
@@ -79,10 +73,13 @@ class UploadError(RuntimeError):
 
     Examples
     --------
-    >>> raise UploadError("No wheel found under dist", outcome=Outcome.NO_WHEEL)
+    >>> raise UploadError(
+    ...     "No distributions found under dist",
+    ...     outcome=Outcome.NO_DISTRIBUTIONS,
+    ... )
     Traceback (most recent call last):
         ...
-    release_wheel_upload.UploadError: No wheel found under dist
+    release_wheel_upload.UploadError: No distributions found under dist
     """
 
     def __init__(
@@ -128,12 +125,12 @@ def _raise_scan_error(error: OSError) -> typ.NoReturn:
     raise error
 
 
-def _walk_wheels(directory: Path) -> cabc.Iterator[Path]:
-    """Yield every ``.whl`` file beneath ``directory``."""
+def _walk_distributions(directory: Path) -> cabc.Iterator[Path]:
+    """Yield every wheel and source archive beneath ``directory``."""
     for root, _directories, files in os.walk(directory, onerror=_raise_scan_error):
         parent = Path(root)
         for name in files:
-            if name.endswith(".whl"):
+            if name.endswith((".whl", ".tar.gz")):
                 yield parent / name
 
 
@@ -162,8 +159,8 @@ def _require_directory(directory: Path) -> None:
         raise UploadError(message, outcome=Outcome.NOT_A_DIRECTORY)
 
 
-def discover_wheels(directory: Path) -> tuple[Path, ...]:
-    """Return every wheel under ``directory``, in a stable order.
+def discover_distributions(directory: Path) -> tuple[Path, ...]:
+    """Return every wheel and source distribution under ``directory``.
 
     Parameters
     ----------
@@ -175,7 +172,7 @@ def discover_wheels(directory: Path) -> tuple[Path, ...]:
     Returns
     -------
     tuple[Path, ...]
-        The wheels found, sorted by path.
+        The distributions found, sorted by path.
 
     Raises
     ------
@@ -192,60 +189,90 @@ def discover_wheels(directory: Path) -> tuple[Path, ...]:
     >>> import pathlib, tempfile
     >>> directory = pathlib.Path(tempfile.mkdtemp())
     >>> _ = (directory / "one-1.0-py3-none-any.whl").write_bytes(b"")
-    >>> [path.name for path in discover_wheels(directory)]
+    >>> [path.name for path in discover_distributions(directory)]
     ['one-1.0-py3-none-any.whl']
     """
     _require_directory(directory)
     try:
-        return tuple(sorted(_walk_wheels(directory)))
+        return tuple(sorted(_walk_distributions(directory)))
     except OSError as error:
         message = f"Could not read artefact directory {directory}: {error}"
         raise UploadError(message, outcome=Outcome.UNREADABLE_DIRECTORY) from error
 
 
-def upload_wheels(tag: str, wheels: cabc.Sequence[Path], *, run: UploadRunner) -> None:
-    """Attach ``wheels`` to the release for ``tag``.
-
-    ``--clobber`` is passed because the release is created as a draft and
-    reused: a run that failed after uploading would otherwise meet its own
-    asset on the retry and fail again.
+def upload_distributions(
+    tag: str,
+    distributions: cabc.Sequence[Path],
+    log: io.TextIOBase | typ.TextIO,
+    *,
+    run: UploadRunner,
+) -> tuple[Path, ...]:
+    """Attach distributions not already present on the release for ``tag``.
 
     Parameters
     ----------
     tag : str
         The release tag, which must already exist.
-    wheels : cabc.Sequence[Path]
-        The wheels to upload; never empty by the time this is called.
+    distributions : cabc.Sequence[Path]
+        Wheels and source archives to reconcile with the release assets.
     run : UploadRunner
         How to invoke ``gh``. Bound to the production adapter at the
         composition root rather than defaulted here, so this module never
         imports the module that imports cuprum.
+    log : io.TextIOBase | typ.TextIO
+        Where per-file skip notices are written.
+
+    Returns
+    -------
+    tuple[Path, ...]
+        The distributions uploaded during this invocation.
 
     Raises
     ------
     UploadError
-        If ``gh release upload`` exits non-zero.
+        If release inspection or upload fails.
     """
-    arguments = (
-        "release",
-        "upload",
-        tag,
-        *(str(wheel) for wheel in wheels),
-        "--clobber",
+    filename_counts = collections.Counter(
+        distribution.name for distribution in distributions
     )
+    duplicate_names = sorted(
+        name for name, count in filename_counts.items() if count > 1
+    )
+    if duplicate_names:
+        message = f"Duplicate distribution filenames: {', '.join(duplicate_names)}"
+        raise UploadError(message, outcome=Outcome.UPLOAD_FAILED)
+
+    result = run(("release", "view", tag, "--json", "assets", "--jq", ".assets[].name"))
+    if result.exit_code != 0:
+        detail = result.stderr.strip() or result.stdout.strip()
+        message = f"gh release view failed with exit code {result.exit_code}: {detail}"
+        raise UploadError(message, outcome=Outcome.UPLOAD_FAILED)
+    existing = set(result.stdout.splitlines())
+    pending: list[Path] = []
+    for distribution in distributions:
+        if distribution.name in existing:
+            print(
+                f"::notice::Skipping already-attached distribution {distribution.name}",
+                file=log,
+            )
+        else:
+            pending.append(distribution)
+    if not pending:
+        return ()
+
+    arguments = ("release", "upload", tag, *(str(path) for path in pending))
     result = run(arguments)
     if result.exit_code != 0:
-        # Prefer stderr and fall back so a failure never reports an empty
-        # reason; both streams are optional on a command result.
         detail = result.stderr.strip() or result.stdout.strip()
         message = (
             f"gh release upload failed with exit code {result.exit_code}: {detail}"
         )
         raise UploadError(message, outcome=Outcome.UPLOAD_FAILED)
+    return tuple(pending)
 
 
 def build_summary(
-    outcome: Outcome, *, wheels: int, timings: Timings
+    outcome: Outcome, *, distributions: int, timings: Timings
 ) -> dict[str, object]:
     """Return the step's outcome as a reportable mapping.
 
@@ -253,8 +280,9 @@ def build_summary(
     ----------
     outcome : Outcome
         Which outcome to report.
-    wheels : int
-        How many wheels were uploaded; zero on every failure.
+    distributions : int
+        How many distributions were uploaded during this invocation. This is
+        zero when no upload was needed or when the run failed.
     timings : Timings
         The per-phase durations to report.
 
@@ -265,7 +293,7 @@ def build_summary(
     """
     return {
         "outcome": str(outcome),
-        "wheels": wheels,
+        "distributions": distributions,
         "discovery_seconds": round(timings.discovery, 3),
         "upload_seconds": round(timings.upload, 3),
     }
@@ -275,8 +303,8 @@ def report_outcome(summary: cabc.Mapping[str, object], sinks: Sinks) -> None:
     """Write ``summary`` to the step's sinks.
 
     A short-lived workflow step has no collector to push to, so the signal is
-    the line itself, which the job log keeps, plus ``outcome`` and ``wheels``
-    on ``GITHUB_OUTPUT`` for a later step or a workflow contract to read.
+    the line itself, which the job log keeps, plus ``outcome`` and
+    ``distributions`` on ``GITHUB_OUTPUT`` for a later step or contract.
 
     Parameters
     ----------
@@ -292,12 +320,14 @@ def report_outcome(summary: cabc.Mapping[str, object], sinks: Sinks) -> None:
     if sinks.github_output is None:
         return
     with sinks.github_output.open("a", encoding="utf-8") as handle:
-        handle.write(f"outcome={summary['outcome']}\nwheels={summary['wheels']}\n")
+        handle.write(
+            f"outcome={summary['outcome']}\ndistributions={summary['distributions']}\n"
+        )
 
 
 @dc.dataclass(frozen=True, slots=True)
 class Dependencies:
-    """What ``attach_wheels`` needs from outside itself.
+    """What ``attach_distributions`` needs from outside itself.
 
     Gathering the upload, the clock, and the progress sink into one record
     keeps them injectable without giving the function a parameter list nobody
@@ -309,25 +339,28 @@ class Dependencies:
     this module exists not to have. The composition root supplies it.
     """
 
-    upload: cabc.Callable[[str, cabc.Sequence[Path]], None]
+    upload: cabc.Callable[
+        [str, cabc.Sequence[Path], io.TextIOBase | typ.TextIO],
+        cabc.Sequence[Path],
+    ]
     clock: cabc.Callable[[], float] = time.monotonic
     log: io.TextIOBase | typ.TextIO = dc.field(default_factory=lambda: sys.stdout)
 
 
-def attach_wheels(
+def attach_distributions(
     tag: str,
     directory: Path,
     timings: Timings,
     dependencies: Dependencies,
 ) -> tuple[Path, ...]:
-    """Upload every wheel under ``directory`` to ``tag`` and return them.
+    """Reconcile every wheel and source archive under ``directory`` with ``tag``.
 
     Parameters
     ----------
     tag : str
         The release tag to attach the wheels to.
     directory : Path
-        Directory to search for wheels.
+        Directory to search for distributions.
     timings : Timings
         Filled in with the duration of each phase, whether or not it succeeds.
     dependencies : Dependencies
@@ -338,28 +371,30 @@ def attach_wheels(
     Returns
     -------
     tuple[Path, ...]
-        The wheels uploaded.
+        The distributions uploaded during this invocation.
 
     Raises
     ------
     UploadError
-        If the directory holds no wheel, or the upload fails.
+        If the directory holds no distribution, or inspection/upload fails.
     """
     bound = dependencies
     clock = bound.clock
     started = clock()
     try:
-        wheels = discover_wheels(directory)
+        distributions = discover_distributions(directory)
     finally:
         timings.discovery = clock() - started
-    if not wheels:
-        message = f"No wheel found under {directory}; nothing to attach to {tag}"
-        raise UploadError(message, outcome=Outcome.NO_WHEEL)
-    for wheel in wheels:
-        print(f"Uploading {wheel} to {tag}", file=bound.log)
+    if not distributions:
+        message = (
+            f"No distributions found under {directory}; nothing to attach to {tag}"
+        )
+        raise UploadError(message, outcome=Outcome.NO_DISTRIBUTIONS)
+    for distribution in distributions:
+        print(f"Reconciling {distribution} with {tag}", file=bound.log)
     started = clock()
     try:
-        bound.upload(tag, wheels)
+        uploaded = bound.upload(tag, distributions, bound.log)
     finally:
         timings.upload = clock() - started
-    return wheels
+    return tuple(uploaded)

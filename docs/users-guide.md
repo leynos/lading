@@ -207,22 +207,40 @@ evaluate the source against 3.14 semantics, and the toolchain is pinned to a
 3.14 interpreter, so a lower floor would advertise support for a language
 version nothing in the project is checked against.
 
-### Install from a tagged release
+### Install from PyPI
 
-A `v*.*.*` tag whose release workflow completes successfully publishes the pure
-Python wheel as an asset on the matching
-[GitHub release](https://github.com/leynos/lading/releases). Download it and
-install it with `pip`:
+Install the latest published release from PyPI:
 
 ```bash
-gh release download v0.3.1 --pattern '*.whl'
+python -m pip install lading
+```
+
+To select a particular release, pin its version:
+
+```bash
+python -m pip install lading==0.3.1
+```
+
+Tagged releases publish a source distribution and every pure-Python wheel to
+PyPI. The release job builds the wheel from the sdist, so the source archive is
+also checked on every build.
+
+### Install from a GitHub release
+
+GitHub Releases remain available for direct downloads. Download the wheel and
+sdist from the matching
+[GitHub release](https://github.com/leynos/lading/releases), then install the
+wheel:
+
+```bash
+gh release download v0.3.1 --pattern '*.whl' --pattern '*.tar.gz'
 python -m pip install lading-*.whl
 ```
 
-A release is created as a draft and becomes visible only once its wheel has
-been attached, so a release you can see always has its wheel. If a build
-produces no wheel, or the upload is rejected, the release stays a draft and the
-workflow fails.
+A visible release contains one sdist and every wheel from its build. The
+release stays a draft until PyPI publication succeeds and all missing files
+have been attached. If the GitHub upload fails, rerunning the same tag skips
+files already attached and retries the remaining ones.
 
 ### Install from a wheel (recommended for internal distribution)
 

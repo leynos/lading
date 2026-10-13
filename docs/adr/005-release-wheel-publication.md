@@ -2,7 +2,10 @@
 
 ## Status
 
-Accepted.
+Accepted, amended by [ADR-009](009-pypi-first-distribution-publication.md).
+
+The wheel-only GitHub publication process below is historical. ADR-009 records
+the current PyPI-first workflow and the idempotent GitHub Release target.
 
 ## Date
 
@@ -76,7 +79,7 @@ the job log and `GITHUB_OUTPUT` are the signals a consumer can actually read.
 ## Consequences
 
 - A visible release always has its wheel. This is now a user-facing guarantee,
-  stated in the [users' guide](../users-guide.md#install-from-a-tagged-release).
+  stated in the [users' guide](../users-guide.md#install-from-a-github-release).
 - A failed release leaves a draft that a maintainer must delete or rerun the
   tag against. That is deliberate: the draft is the evidence of what failed.
 - The uploader is the first script in this repository to run `gh`. Its cuprum
