@@ -6,6 +6,21 @@ on:
   pull_request:
 
 jobs:
+  build-dist:
+    # The release artifact needs an sdist as well as a wheel. Run the shared
+    # build on every pull request and main push so a missing sdist fails early.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Build Python distributions
+        uses: ./.github/actions/pure-python-wheel
+        with:
+          python-version: '3.14'
+          artifact-name: wheels-pure-ci
+
   lint-test:
     runs-on: ubuntu-latest
     permissions:

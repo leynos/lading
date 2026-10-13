@@ -1,11 +1,13 @@
-name: Build Pure Python Wheel
-description: Builds a pure Python wheel using UV and uploads it as an artifact.
+name: Build Pure Python Wheel and Sdist
+description: >-
+  Builds the source distribution and, from it, the pure Python wheel using uv,
+  then uploads both as an artefact.
 inputs:
   python-version:
     description: Python version to set up
     required: true
   out-dir:
-    description: Directory to place built wheel
+    description: Directory to place the built sdist and wheel
     required: false
     default: dist
   artifact-name:
@@ -23,11 +25,38 @@ runs:
         python-version: ${{ inputs.python-version }}
     - name: Install uv
       uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
-    - name: Build wheel
+    - name: Build sdist and wheel
       shell: bash
-      run: uv build --wheel --out-dir ${{ inputs.out-dir }}
-    - name: Upload wheel artifact
+      env:
+        OUT_DIR: ${{ inputs.out-dir }}
+      run: |
+        set -euo pipefail
+        # Plain `uv build` builds the sdist first, then the wheel from it.
+        uv build --out-dir "${OUT_DIR}"
+    - name: Check build outputs
+      shell: bash
+      env:
+        OUT_DIR: ${{ inputs.out-dir }}
+      run: |
+        set -euo pipefail
+        shopt -s nullglob
+        sdists=("${OUT_DIR}"/*.tar.gz)
+        wheels=("${OUT_DIR}"/*.whl)
+        if [ "${#sdists[@]}" -ne 1 ]; then
+          echo "Expected exactly one source distribution." >&2
+          ls -al "${OUT_DIR}" >&2 || true
+          exit 1
+        fi
+        if [ "${#wheels[@]}" -lt 1 ]; then
+          echo "Expected at least one wheel." >&2
+          ls -al "${OUT_DIR}" >&2 || true
+          exit 1
+        fi
+    - name: Upload sdist and wheel artefact
       uses: actions/upload-artifact@v7
       with:
         name: ${{ inputs.artifact-name }}
-        path: ${{ inputs.out-dir }}/*.whl
+        path: |
+          ${{ inputs.out-dir }}/*.whl
+          ${{ inputs.out-dir }}/*.tar.gz
+        if-no-files-found: error
