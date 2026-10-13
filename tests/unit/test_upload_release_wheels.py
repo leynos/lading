@@ -22,7 +22,6 @@ if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
     import collections.abc as cabc
     import types
 
-    from cmd_mox import CmdMox
 
 SCRIPT_DIRECTORY = Path(__file__).resolve().parents[2] / "scripts"
 CLI_PATH = SCRIPT_DIRECTORY / "upload_release_wheels.py"
@@ -32,24 +31,9 @@ PORT_PATH = SCRIPT_DIRECTORY / "release_port.py"
 SPAN_PATH = SCRIPT_DIRECTORY / "release_span.py"
 
 
-@pytest.fixture(name="release_gh")
-def release_gh_fixture(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
-    """Import the uploader's ``gh`` adapter.
-
-    Unlike the port fixture, this one exists for the two tests that genuinely
-    cross the process boundary and so must name the production runner.
-
-    Returns
-    -------
-    types.ModuleType
-        The imported ``release_gh`` module.
-    """
-    return import_script_module(monkeypatch, "release_gh")
-
-
 @pytest.fixture(name="release_port")
 def release_port_fixture(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
-    """Import the uploader's process port.
+    """Import the uploader's domain port.
 
     Returns
     -------
@@ -59,9 +43,8 @@ def release_port_fixture(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
     Note
     ----
     The port is imported rather than the ``gh`` adapter on purpose. These
-    tests exercise the policy, and the policy's dependency points at the
-    port: reaching through the adapter would re-import cuprum to construct a
-    two-integer record, which is the coupling the port exists to remove.
+    tests exercise filename reconciliation and should not depend on the
+    adapter's command or JSON representation.
     """
     return import_script_module(monkeypatch, "release_port")
 
@@ -80,27 +63,82 @@ def upload_module_fixture(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
 
 def _recorder(
     uploaded: list[tuple[str, tuple[Path, ...]]],
-) -> cabc.Callable[[str, cabc.Sequence[Path]], None]:
+) -> cabc.Callable[[str, cabc.Sequence[Path], object], cabc.Sequence[Path]]:
     """Return an upload that records its arguments instead of running ``gh``.
 
     Returns
     -------
-    cabc.Callable[[str, cabc.Sequence[Path]], None]
+    cabc.Callable[[str, cabc.Sequence[Path], object], cabc.Sequence[Path]]
         The recording upload.
     """
 
-    def record(tag: str, wheels: cabc.Sequence[Path]) -> None:
-        uploaded.append((tag, tuple(wheels)))
+    def record(
+        tag: str, distributions: cabc.Sequence[Path], _log: object
+    ) -> cabc.Sequence[Path]:
+        uploaded.append((tag, tuple(distributions)))
+        return distributions
 
     return record
 
 
-def _make_wheel(directory: Path, name: str) -> Path:
-    """Create an empty file named like a wheel and return its path."""
+def _make_distribution(directory: Path, name: str) -> Path:
+    """Create an empty file named like a distribution and return its path."""
     directory.mkdir(parents=True, exist_ok=True)
-    wheel = directory / name
-    wheel.write_bytes(b"")
-    return wheel
+    distribution = directory / name
+    distribution.write_bytes(b"")
+    return distribution
+
+
+class _AssetStore:
+    """Small domain-port double that records release reconciliation calls."""
+
+    def __init__(
+        self,
+        attached: tuple[str, ...] = (),
+        inspection_error: Exception | None = None,
+        upload_error: Exception | None = None,
+    ) -> None:
+        """Seed one release response and optional operation failures.
+
+        Recorded calls let policy tests assert the reconciliation boundary.
+        """
+        self.attached = attached
+        self.inspection_error = inspection_error
+        self.upload_error = upload_error
+        self.inspected: list[str] = []
+        self.uploads: list[tuple[str, tuple[Path, ...]]] = []
+
+    def attached_names(self, tag: str) -> tuple[str, ...]:
+        """Return configured asset names and record the release lookup.
+
+        An injected inspection error models a failed asset query.
+
+        Returns
+        -------
+        tuple[str, ...]
+            The filenames attached to the configured release.
+        """
+        self.inspected.append(tag)
+        if self.inspection_error is not None:
+            raise self.inspection_error
+        return self.attached
+
+    def upload_missing(
+        self, tag: str, distributions: cabc.Sequence[Path]
+    ) -> tuple[Path, ...]:
+        """Record distribution paths passed to the upload operation.
+
+        An injected upload error models GitHub rejecting those paths.
+
+        Returns
+        -------
+        tuple[Path, ...]
+            The paths accepted by the fake release operation.
+        """
+        self.uploads.append((tag, tuple(distributions)))
+        if self.upload_error is not None:
+            raise self.upload_error
+        return tuple(distributions)
 
 
 @pytest.mark.parametrize(
@@ -159,16 +197,18 @@ def test_empty_directory_fails_the_step(
     """
     uploaded: list[tuple[str, tuple[Path, ...]]] = []
 
-    with pytest.raises(upload_module.UploadError, match="No wheel found") as raised:
-        upload_module.attach_wheels(
+    with pytest.raises(
+        upload_module.UploadError, match="No distributions found"
+    ) as raised:
+        upload_module.attach_distributions(
             "v1.2.3",
             tmp_path,
             upload_module.Timings(),
             upload_module.Dependencies(upload=_recorder(uploaded)),
         )
 
-    assert raised.value.outcome == upload_module.Outcome.NO_WHEEL, (
-        "an empty wheel directory must be reported as the NO_WHEEL outcome"
+    assert raised.value.outcome == upload_module.Outcome.NO_DISTRIBUTIONS, (
+        "an empty artefact directory must report NO_DISTRIBUTIONS"
     )
     assert not uploaded, "nothing may be uploaded when no wheel was built"
 
@@ -181,11 +221,11 @@ def test_every_wheel_is_uploaded_against_the_tag(
     The upload is injected rather than patched onto the module, so the test
     states the dependency it is exercising.
     """
-    first = _make_wheel(tmp_path, "a-1.0-py3-none-any.whl")
-    second = _make_wheel(tmp_path / "nested", "b-1.0-py3-none-any.whl")
+    first = _make_distribution(tmp_path, "a-1.0-py3-none-any.whl")
+    second = _make_distribution(tmp_path / "nested", "b-1.0-py3-none-any.whl")
     uploaded: list[tuple[str, tuple[Path, ...]]] = []
 
-    upload_module.attach_wheels(
+    upload_module.attach_distributions(
         "v1.2.3",
         tmp_path,
         upload_module.Timings(),
@@ -205,11 +245,11 @@ def test_each_phase_is_timed_by_the_injected_clock(
     A single duration could not distinguish a slow artefact tree from a slow
     GitHub, which are the two things the number is read for.
     """
-    _make_wheel(tmp_path, "a-1.0-py3-none-any.whl")
+    _make_distribution(tmp_path, "a-1.0-py3-none-any.whl")
     ticks = iter([0.0, 2.0, 10.0, 17.0])
     timings = upload_module.Timings()
 
-    upload_module.attach_wheels(
+    upload_module.attach_distributions(
         "v1.2.3",
         tmp_path,
         timings,
@@ -222,40 +262,98 @@ def test_each_phase_is_timed_by_the_injected_clock(
     assert timings.upload == 7.0, timings
 
 
-def test_the_upload_runner_is_an_injectable_dependency(
+def test_existing_assets_are_not_uploaded_again(
     upload_module: types.ModuleType, release_port: types.ModuleType, tmp_path: Path
 ) -> None:
-    """``upload_wheels`` states its process dependency as a parameter.
+    """A filename already attached to the release is skipped successfully."""
+    wheel = _make_distribution(tmp_path, "a-1.0-py3-none-any.whl")
+    assets = _AssetStore(attached=(wheel.name,))
 
-    The argv can therefore be asserted without intercepting a process, and
-    ``--clobber`` is part of it: the release is a reused draft, so a rerun
-    after a failed publish would otherwise meet its own asset.
-    """
-    wheel = _make_wheel(tmp_path, "a-1.0-py3-none-any.whl")
-    seen: list[tuple[str, ...]] = []
-
-    def run(arguments: cabc.Sequence[str]) -> object:
-        seen.append(tuple(arguments))
-        return release_port.CommandOutcome(exit_code=0)
-
-    upload_module.upload_wheels("v1.2.3", (wheel,), run=run)
-
-    assert seen == [("release", "upload", "v1.2.3", str(wheel), "--clobber")], (
-        "the upload must run as one clobbering gh release upload for the tag"
+    uploaded = upload_module.upload_distributions(
+        "v1.2.3", (wheel,), assets=assets, log=io.StringIO()
     )
+
+    assert uploaded == (), "an already-attached distribution should not be uploaded"
+    assert assets.inspected == ["v1.2.3"], "the release assets should be inspected once"
+    assert assets.uploads == [("v1.2.3", ())], "no paths should be sent for upload"
+
+
+def test_release_inspection_failure_prevents_distribution_upload(
+    upload_module: types.ModuleType, release_port: types.ModuleType, tmp_path: Path
+) -> None:
+    """A failed release query stops before any upload command is issued."""
+    wheel = _make_distribution(tmp_path, "a-1.0-py3-none-any.whl")
+    assets = _AssetStore(
+        inspection_error=release_port.ReleaseOperationError("permission denied")
+    )
+
+    with pytest.raises(upload_module.UploadError, match="permission denied") as raised:
+        upload_module.upload_distributions(
+            "v1.2.3", (wheel,), io.StringIO(), assets=assets
+        )
+
+    assert raised.value.outcome == upload_module.Outcome.UPLOAD_FAILED, (
+        "release inspection failures should have the bounded upload outcome"
+    )
+    assert assets.inspected == ["v1.2.3"], "inspection should fail after one query"
+    assert not assets.uploads, "the failed inspection must prevent an upload"
+
+
+def test_only_missing_distribution_names_are_uploaded(
+    upload_module: types.ModuleType, release_port: types.ModuleType, tmp_path: Path
+) -> None:
+    """A release retry uploads only local filenames absent from its assets."""
+    present = _make_distribution(tmp_path, "a-1.0-py3-none-any.whl")
+    missing = _make_distribution(tmp_path, "b-1.0.tar.gz")
+    assets = _AssetStore(attached=(present.name,))
+
+    uploaded = upload_module.upload_distributions(
+        "v1.2.3", (present, missing), assets=assets, log=io.StringIO()
+    )
+
+    assert uploaded == (missing,), "only the absent distribution should be uploaded"
+    assert assets.uploads == [("v1.2.3", (missing,))], (
+        "only the distribution absent from GitHub should be uploaded"
+    )
+
+
+def test_duplicate_distribution_names_fail_before_release_inspection(
+    upload_module: types.ModuleType,
+    release_port: types.ModuleType,
+    tmp_path: Path,
+) -> None:
+    """Same-named files in different folders cannot map to unique assets."""
+    first = _make_distribution(tmp_path / "first", "lading-1.0-py3-none-any.whl")
+    second = _make_distribution(tmp_path / "second", first.name)
+    assets = _AssetStore()
+
+    with pytest.raises(
+        upload_module.UploadError,
+        match=re.escape(
+            "Duplicate distribution filenames: lading-1.0-py3-none-any.whl"
+        ),
+    ):
+        upload_module.upload_distributions(
+            "v1.2.3", (first, second), io.StringIO(), assets=assets
+        )
+
+    assert not assets.inspected, "duplicate names should fail before querying GitHub"
 
 
 def test_a_rejected_upload_names_the_reason(
     upload_module: types.ModuleType, release_port: types.ModuleType, tmp_path: Path
 ) -> None:
     """A runner that reports failure fails the step with gh's own reason."""
-    wheel = _make_wheel(tmp_path, "a-1.0-py3-none-any.whl")
+    wheel = _make_distribution(tmp_path, "a-1.0-py3-none-any.whl")
 
-    def run(arguments: cabc.Sequence[str]) -> object:
-        return release_port.CommandOutcome(exit_code=1, stderr="release not found")
+    assets = _AssetStore(
+        upload_error=release_port.ReleaseOperationError("release not found")
+    )
 
     with pytest.raises(upload_module.UploadError, match="release not found") as raised:
-        upload_module.upload_wheels("v1.2.3", (wheel,), run=run)
+        upload_module.upload_distributions(
+            "v1.2.3", (wheel,), assets=assets, log=io.StringIO()
+        )
 
     assert raised.value.outcome == upload_module.Outcome.UPLOAD_FAILED, (
         "a non-zero gh exit must be reported as the UPLOAD_FAILED outcome"
@@ -269,7 +367,7 @@ def test_the_outcome_is_written_to_the_sinks_it_is_given(
     log = io.StringIO()
     destination = tmp_path / "github-output"
     summary = upload_module.build_summary(
-        upload_module.Outcome.SUCCESS, wheels=2, timings=upload_module.Timings()
+        upload_module.Outcome.SUCCESS, distributions=2, timings=upload_module.Timings()
     )
 
     upload_module.report_outcome(
@@ -278,44 +376,7 @@ def test_the_outcome_is_written_to_the_sinks_it_is_given(
 
     assert '"outcome": "success"' in log.getvalue(), log.getvalue()
     written = destination.read_text(encoding="utf-8")
-    assert written == "outcome=success\nwheels=2\n", written
-
-
-def test_upload_invokes_gh_with_the_tag_and_wheels(
-    upload_module: types.ModuleType,
-    release_gh: types.ModuleType,
-    tmp_path: Path,
-    cmd_mox: CmdMox,
-) -> None:
-    """The upload crosses the process boundary as one ``gh release upload``.
-
-    Asserted through cmd-mox rather than a stubbed function so the argv the
-    release actually runs is the thing under test. The production adapter is
-    named at the call site because that binding now lives at the composition
-    root rather than in the policy module's signature.
-    """
-    wheel = _make_wheel(tmp_path, "a-1.0-py3-none-any.whl")
-    cmd_mox.mock("gh").with_args(
-        "release", "upload", "v1.2.3", str(wheel), "--clobber"
-    ).returns(exit_code=0)
-
-    upload_module.upload_wheels("v1.2.3", (wheel,), run=release_gh.run_gh)
-
-
-def test_failed_upload_raises(
-    upload_module: types.ModuleType,
-    release_gh: types.ModuleType,
-    tmp_path: Path,
-    cmd_mox: CmdMox,
-) -> None:
-    """A non-zero ``gh`` exit fails the step with the reason attached."""
-    wheel = _make_wheel(tmp_path, "a-1.0-py3-none-any.whl")
-    cmd_mox.mock("gh").with_args(
-        "release", "upload", "v1.2.3", str(wheel), "--clobber"
-    ).returns(exit_code=1, stderr="release not found")
-
-    with pytest.raises(upload_module.UploadError, match="release not found"):
-        upload_module.upload_wheels("v1.2.3", (wheel,), run=release_gh.run_gh)
+    assert written == "outcome=success\ndistributions=2\n", written
 
 
 def test_every_outcome_is_drawn_from_the_bounded_set(

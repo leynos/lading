@@ -49,18 +49,21 @@ def test_discovery_finds_wheels_in_nested_directories(
     """
     nested = _make_wheel(tmp_path / "wheels-pure", "b-1.0-py3-none-any.whl")
     top_level = _make_wheel(tmp_path, "a-1.0-py3-none-any.whl")
+    source = _make_wheel(tmp_path / "sdist", "a-1.0.tar.gz")
     _make_wheel(tmp_path, "notes.txt")
 
-    found = upload_module.discover_wheels(tmp_path)
+    found = upload_module.discover_distributions(tmp_path)
 
-    assert found == (top_level, nested), f"expected both wheels in order: {found}"
+    assert found == (top_level, source, nested), (
+        f"expected every wheel and source archive in order: {found}"
+    )
 
 
 def test_discovery_returns_nothing_for_an_empty_directory(
     upload_module: types.ModuleType, tmp_path: Path
 ) -> None:
     """An empty directory yields no wheels rather than raising."""
-    assert upload_module.discover_wheels(tmp_path) == (), (
+    assert upload_module.discover_distributions(tmp_path) == (), (
         "an empty download directory must discover zero wheels"
     )
 
@@ -75,7 +78,7 @@ def test_missing_directory_is_a_distinct_failure(
     apart.
     """
     with pytest.raises(upload_module.UploadError, match="does not exist"):
-        upload_module.discover_wheels(tmp_path / "absent")
+        upload_module.discover_distributions(tmp_path / "absent")
 
 
 def test_a_file_in_place_of_the_directory_is_rejected(
@@ -86,7 +89,7 @@ def test_a_file_in_place_of_the_directory_is_rejected(
     path.write_text("not a directory", encoding="utf-8")
 
     with pytest.raises(upload_module.UploadError, match="not a directory"):
-        upload_module.discover_wheels(path)
+        upload_module.discover_distributions(path)
 
 
 requires_unprivileged = pytest.mark.skipif(
@@ -110,7 +113,7 @@ def test_an_unreadable_subtree_is_an_error_not_an_empty_result(
     locked.chmod(0o000)
     try:
         with pytest.raises(upload_module.UploadError) as raised:
-            upload_module.discover_wheels(tmp_path)
+            upload_module.discover_distributions(tmp_path)
     finally:
         locked.chmod(0o755)
 
@@ -134,7 +137,7 @@ def test_an_unreadable_artefact_path_is_not_reported_as_absent(
     parent.chmod(0o000)
     try:
         with pytest.raises(upload_module.UploadError) as raised:
-            upload_module.discover_wheels(parent / "dist")
+            upload_module.discover_distributions(parent / "dist")
     finally:
         parent.chmod(0o755)
 
@@ -191,11 +194,12 @@ def test_discovery_returns_exactly_the_wheels(
             if path.is_dir():
                 continue
             path.write_bytes(b"")
-            if suffix == ".whl":
+            if suffix in {".whl", ".tar.gz"}:
                 expected.append(path)
 
-        found = upload_module.discover_wheels(root)
+        found = upload_module.discover_distributions(root)
 
     assert found == tuple(sorted(expected)), (
-        f"expected exactly the wheels in path order: {found} != {sorted(expected)}"
+        "expected exactly the distributions in path order: "
+        f"{found} != {sorted(expected)}"
     )

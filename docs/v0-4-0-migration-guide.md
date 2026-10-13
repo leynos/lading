@@ -6,6 +6,12 @@ extended: the command-line interface, `lading.toml` keys, and the published
 Python surface are unchanged from 0.3.x. An environment already running 3.14
 needs no action beyond the version bump itself.
 
+When 0.4.0 is released, its tagged build will also be published to PyPI as a
+source distribution and pure-Python wheel. GitHub Releases will retain both
+files for direct download. Use PyPI for a normal package installation; choose
+the matching GitHub release to download an artefact directly. No project
+configuration changes are needed to move an existing install to PyPI.
+
 Subprocess output relays also emit additive, privacy-safe `INFO` decision
 events with the prefix `relay observability event:`. They describe relay
 fallback and disablement decisions without including child-process output. This

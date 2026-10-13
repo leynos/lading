@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted.
+Accepted. Amended by [ADR-009](009-pypi-first-distribution-publication.md).
 
 ## Date
 
@@ -86,3 +86,11 @@ the job log and `GITHUB_OUTPUT` are the signals a consumer can actually read.
   decision rests on: the named artefact, the script invocation, the absence of
   a shell search, the draft flag, and the publish step's position after the
   upload. Changing the order or dropping the draft fails those contracts.
+
+## Addendum, 2026-10-13: PyPI-first publication
+
+[ADR-009](009-pypi-first-distribution-publication.md) amends this release
+process. Tagged releases now publish an sdist and every wheel to PyPI through
+Trusted Publishing before attaching any missing filenames to the GitHub
+Release. The GitHub-only wheel process above remains the historical decision;
+ADR-009 records the current order, retry rules, and trade-offs.

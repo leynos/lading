@@ -23,6 +23,7 @@ from tests.helpers.gh_stub import (
     SENTINEL_VARIABLE,
     STUB_TAG,
     GhStub,
+    GhStubConfig,
     install_gh_stub,
     isolated_environment,
     run_uploader,
@@ -39,6 +40,13 @@ PYPROJECT = Path(__file__).resolve().parents[3] / "pyproject.toml"
 #: the single successful call must carry.
 _WHEEL_NAME = "lading-0.0.0-py3-none-any.whl"
 _RELEASE_PREFIX = ("release", "upload", STUB_TAG)
+_VIEW_COMMAND = (
+    "release",
+    "view",
+    STUB_TAG,
+    "--json",
+    "assets",
+)
 
 #: The value the ``Given`` plants in the parent for the child to inherit. It is
 #: named once so the ``Given`` and the ``Then`` cannot drift apart, and it is
@@ -146,7 +154,10 @@ def given_a_recording_stub(tmp_path: Path) -> GhStub:
 )
 def given_a_rejecting_stub(tmp_path: Path) -> GhStub:
     """Install a stub ``gh`` that rejects the upload with GitHub's diagnostic."""
-    return install_gh_stub(tmp_path, exit_code=1, stderr="HTTP 422: asset exists\n")
+    return install_gh_stub(
+        tmp_path,
+        GhStubConfig(exit_code=1, stderr="HTTP 422: asset exists\n"),
+    )
 
 
 @given(
@@ -198,21 +209,15 @@ def then_the_uploader_fails(completed: subprocess.CompletedProcess[str]) -> None
     assert completed.returncode == 1, completed.stderr
 
 
-@then(
-    'gh was called exactly once with "release upload v0.0.0-stub" and the wheel '
-    'and "--clobber"'
-)
-def then_gh_was_called_once(gh_stub: GhStub, dist_directory: Path) -> None:
-    """Assert the exact argv list of the single recorded call.
-
-    The whole list is compared rather than its prefix, so a second upload of
-    the same asset -- which GitHub would reject, and ``--clobber`` would hide
-    -- cannot pass unnoticed.
-    """
+@then("gh inspected assets before uploading the missing wheel without clobbering")
+def then_gh_skips_attached_assets(gh_stub: GhStub, dist_directory: Path) -> None:
+    """Assert the uploader checks names and uploads without replacement."""
     calls = gh_stub.calls()
-    assert len(calls) == 1, f"expected one call, recorded {calls}"
-    expected = (*_RELEASE_PREFIX, str(dist_directory / _WHEEL_NAME), "--clobber")
-    assert calls[0].argv == expected, f"gh received {calls[0].argv}"
+    assert len(calls) == 2, f"expected inspection and upload calls, recorded {calls}"
+    assert calls[0].argv == _VIEW_COMMAND, calls[0]
+    assert calls[1].argv == (*_RELEASE_PREFIX, str(dist_directory / _WHEEL_NAME)), (
+        "the uploader should send only the unattached wheel without clobbering"
+    )
 
 
 @then("the environment that ran holds the cuprum version pinned in pyproject.toml")
@@ -286,8 +291,8 @@ def then_no_call_mutates_a_release(gh_stub: GhStub) -> None:
     """Assert the uploader never changed the release itself.
 
     ``release create`` and ``release edit`` are the two calls that would
-    publish, re-target, or annotate a real release. ``--clobber`` on a real
-    host is the other half of the same hazard, which is why the stub exists.
+    publish, re-target, or annotate a real release. An unsafe replacement
+    upload is the other half of the same hazard, which is why the stub exists.
     """
     mutations = [call for call in gh_stub.calls() if call.is_release_mutation]
     assert not mutations, f"the uploader mutated a release: {mutations}"

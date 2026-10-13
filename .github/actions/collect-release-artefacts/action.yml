@@ -1,0 +1,52 @@
+name: Collect Release Artefacts
+description: Collect the release sdist and every wheel into dist/publish.
+runs:
+  using: composite
+  steps:
+    - name: Download pure Python distributions
+      uses: actions/download-artifact@v8
+      with:
+        name: wheels-pure
+        path: dist
+    - name: Collect and validate release distributions
+      shell: bash
+      env:
+        DIST_DIRECTORY: dist
+      run: |
+        set -euo pipefail
+        publish_directory="${DIST_DIRECTORY}/publish"
+        rm -rf "${publish_directory}"
+        mkdir -p "${publish_directory}"
+
+        manifest=$(mktemp "${publish_directory}/.release-files.XXXXXX")
+        trap 'rm -f "${manifest}"' EXIT
+        if ! find "${DIST_DIRECTORY}" -path "${publish_directory}" -prune -o \
+          -type f \( -name '*.whl' -o -name '*.tar.gz' \) -print0 > "${manifest}"; then
+          echo "Could not scan release artefacts under ${DIST_DIRECTORY}." >&2
+          exit 1
+        fi
+        mapfile -d '' -t artefacts < "${manifest}"
+
+        sdists=()
+        wheels=()
+        for artefact in "${artefacts[@]}"; do
+          case "${artefact}" in
+            *.tar.gz) sdists+=("${artefact}") ;;
+            *.whl) wheels+=("${artefact}") ;;
+          esac
+        done
+
+        if [ "${#sdists[@]}" -ne 1 ]; then
+          echo "Expected exactly one source distribution." >&2
+          ls -alR "${DIST_DIRECTORY}" >&2 || true
+          exit 1
+        fi
+        if [ "${#wheels[@]}" -lt 1 ]; then
+          echo "Expected at least one wheel." >&2
+          ls -alR "${DIST_DIRECTORY}" >&2 || true
+          exit 1
+        fi
+
+        for artefact in "${wheels[@]}" "${sdists[@]}"; do
+          cp "${artefact}" "${publish_directory}/"
+        done

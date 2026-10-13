@@ -44,8 +44,8 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
 - [ADR-004: In-process metrics accumulator flushed at exit][adr-004] - accepted
   design for the `lading.utils.metrics` backend and metric contracts.
 - [ADR-005: Draft-then-publish releases with a standalone wheel
-  uploader][adr-005] - accepted design for the release workflow's publication
-  order and the uploader script.
+  uploader][adr-005] - original GitHub-only publication design, with a dated
+  addendum linking to the current process in ADR-009.
 - [ADR-006: Align cuprum selection across dependency paths][adr-006] - accepted
   policy for pinning, locking, and bumping cuprum on both the repository and
   the standalone script path.
@@ -53,6 +53,9 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
   contract for privacy-safe subprocess relay decision events.
 - [ADR-008: Adopt the shared CV-005 contract library][adr-008] - accepted
   decision to run the pinned shared checker instead of local copies.
+- [ADR-009: Publish Python distributions to PyPI first][adr-009] - accepted
+  decision for PyPI Trusted Publishing, idempotent filename checks, and the
+  GitHub Release as a second target.
 
 ## Reference documents
 
@@ -69,7 +72,7 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
   `cuprum` 0.2.0-beta1 guide to the API changes from 0.1.x, including
   `ScopeConfig` and `RunOutputOptions`.
 - [Lading 0.4.0 migration guide](v0-4-0-migration-guide.md) - the interpreter
-  floor moving to CPython 3.14, who is affected, and how to upgrade or defer.
+  floor moving to CPython 3.14, PyPI publication, and how to upgrade or defer.
 - [Complexity antipatterns and refactoring
   strategies](complexity-antipatterns-and-refactoring-strategies.md) -
   reference on cyclomatic and cognitive complexity metrics, the bumpy road
@@ -81,4 +84,5 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
 [adr-006]: adr/006-align-cuprum-selection-across-dependency-paths.md
 [adr-007]: adr/007-relay-observability-events.md
 [adr-008]: adr/008-adopt-the-shared-cv005-contract-library.md
+[adr-009]: adr/009-pypi-first-distribution-publication.md
 [execplan-regenerate-lockfiles]: execplans/regenerate-lockfiles.md

@@ -1,4 +1,4 @@
-name: Release Wheels
+name: Release Distributions
 
 on:
   push:
@@ -6,60 +6,110 @@ on:
       - 'v*.*.*'
 
 concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: true
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
 
 
 jobs:
 
-  pure-wheel:
+  build-dist:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          fetch-depth: 0
+          persist-credentials: false
       - uses: ./.github/actions/pure-python-wheel
         with:
           python-version: '3.14'
           artifact-name: wheels-pure
 
-  release:
-    # This project has no C or Rust extensions, so cross-platform
-    # builds are unnecessary. Only the pure Python wheel is published.
+  publish-pypi:
     needs:
-      - pure-wheel
+      - build-dist
     runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/lading/
+    permissions:
+      contents: read
+      id-token: write
     steps:
-      - uses: actions/checkout@v7
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          fetch-depth: 0
-      - uses: softprops/action-gh-release@v3.0.3
-        # Created as a draft so that a failure between here and the upload
-        # leaves nothing published: v0.3.0 and v0.3.1 were live with no wheel.
+          persist-credentials: false
+      - name: Collect release artefacts
+        uses: ./.github/actions/collect-release-artefacts
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
-          draft: true
-          generate_release_notes: true
-      - uses: actions/download-artifact@v8
-        with:
-          name: wheels-pure
-          path: dist
+          python-version: '3.14'
       - name: Install uv
         uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-      - name: Upload wheels to release
-        # The wheel search and its empty case live in the script: a shell
-        # pipeline reports the exit status of its last command, which is how
-        # this step used to pass having uploaded nothing.
-        run: uv run --script scripts/upload_release_wheels.py --directory dist
+      - name: Skip distributions already published to PyPI
+        run: python scripts/stage_release_distributions.py
         env:
-          GITHUB_REF_NAME: ${{ github.ref_name }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Publish release
-        # Last step in the job: the release becomes visible only once its
-        # wheel is attached.
-        run: gh release edit "$GITHUB_REF_NAME" --draft=false
+          PYPI_INDEX_URL: https://pypi.org
+      - name: Publish distributions to PyPI
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(dist/publish/*)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::notice::No unpublished distributions remain; skipping PyPI upload."
+            exit 0
+          fi
+          uv publish --trusted-publishing always --check-url "${PYPI_INDEX_URL}/simple/" "${files[@]}"
         env:
+          PYPI_INDEX_URL: https://pypi.org
+
+  release:
+    needs:
+      - publish-pypi
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Collect release artefacts
+        uses: ./.github/actions/collect-release-artefacts
+      - name: Install uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - name: Create draft release if absent
+        run: |
+          set -euo pipefail
+          status=0
+          gh_error=$(gh release view "$TAG" 2>&1) || status=$?
+          if (( status == 0 )); then
+            echo "::notice::Release ${TAG} already exists; reusing it."
+          else
+            if [[ "${gh_error}" == *"release not found"* ]]; then
+              gh release create "$TAG" --draft --generate-notes
+            else
+              echo "::error::Could not inspect release ${TAG}: ${gh_error}" >&2
+              exit "${status}"
+            fi
+          fi
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload distributions to GitHub release
+        run: uv run --locked --script scripts/upload_release_wheels.py --tag "$TAG" --directory dist/publish
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish GitHub release
+        run: gh release edit "$TAG" --draft=false
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1129,14 +1129,22 @@ these outcomes.
 
 ## 8. Release Publication
 
-Tagged releases publish the pure Python wheel as a GitHub release asset. The
-release is created as a draft, the wheel is attached by
-`scripts/upload_release_wheels.py`, and only then is the draft cleared, so a
-visible release always carries its wheel. The uploader is a standalone PEP 723
-script rather than a shell pipeline, because the pipeline it replaced could not
-fail: two releases published with nothing attached while the job stayed green.
+Every tagged build uses plain `uv build` to create one source distribution and
+build all pure-Python wheels from it. Pull-request CI requires exactly one
+sdist and at least one wheel; release collection repeats the sdist check before
+publication. The artefact is published to PyPI through Trusted Publishing, then
+attached to a GitHub Release as a second target.
 
-[ADR-005](adr/005-release-wheel-publication.md) records the decision, the
-alternatives weighed, and the workflow contracts that hold it. The operational
-detail, including the bounded outcome the step reports, is in the
-[developers' guide](developers-guide.md#release-workflow).
+Each target skips exact filenames it already contains, so rerunning a tag
+completes without replacing assets. PyPI names are read from its PEP 691 simple
+index, with `uv publish --check-url` as a second check during upload. GitHub
+asset names are read through the cuprum `gh` allowlist, and the release remains
+a draft until missing files are attached. This is filename idempotency; a
+rebuilt distribution may have different bytes under an existing filename, and
+this workflow does not reconcile those bytes across targets. The process
+uploads no PEP 740 attestations.
+
+[ADR-009](adr/009-pypi-first-distribution-publication.md) records the decision
+and trade-offs; [ADR-005](adr/005-release-wheel-publication.md) records the
+original GitHub-only flow it amends. Operational detail is in the
+[developers' guide](developers-guide.md#publishing-a-release).
