@@ -193,7 +193,9 @@ def install_gh_stub(directory: Path, config: GhStubConfig | None = None) -> GhSt
             exit_code=responses.exit_code,
             stdout=responses.stdout,
             stderr=responses.stderr,
-            release_assets="".join(f"{name}\n" for name in responses.release_assets),
+            release_assets=json.dumps({
+                "assets": [{"name": name} for name in responses.release_assets]
+            }),
             view_exit_code=responses.view_exit_code,
             view_stderr=responses.view_stderr,
             sentinel=SENTINEL_VARIABLE,

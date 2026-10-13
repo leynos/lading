@@ -20,11 +20,7 @@ import time
 import typing as typ
 from pathlib import Path
 
-_ASSET_QUERY_ARGUMENTS = ("--json", "assets", "--jq", ".assets[].name")
-
-if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
-    # Depend only on the process port; its signature owns the result record.
-    from release_port import CommandOutcome, UploadRunner
+from release_port import ReleaseAssetStore, ReleaseOperationError
 
 
 class Outcome(enum.StrEnum):
@@ -189,15 +185,6 @@ def _duplicate_filenames(distributions: cabc.Sequence[Path]) -> tuple[str, ...]:
     return tuple(sorted(name for name, count in counts.items() if count > 1))
 
 
-def _release_command_error(verb: str, result: CommandOutcome) -> UploadError | None:
-    """Describe an unsuccessful release command without raising it."""
-    if result.exit_code == 0:
-        return None
-    detail = result.stderr.strip() or result.stdout.strip()
-    message = f"gh release {verb} failed with exit code {result.exit_code}: {detail}"
-    return UploadError(message, outcome=Outcome.UPLOAD_FAILED)
-
-
 def _pending_distributions(
     distributions: cabc.Sequence[Path],
     attached: cabc.Set[str],
@@ -216,22 +203,12 @@ def _pending_distributions(
     return tuple(pending)
 
 
-def _publish_pending_distributions(
-    tag: str, pending: cabc.Sequence[Path], run: UploadRunner
-) -> UploadError | None:
-    """Upload pending distributions and return any command failure."""
-    if not pending:
-        return None
-    arguments = ("release", "upload", tag, *(str(path) for path in pending))
-    return _release_command_error("upload", run(arguments))
-
-
 def upload_distributions(
     tag: str,
     distributions: cabc.Sequence[Path],
     log: io.TextIOBase | typ.TextIO,
     *,
-    run: UploadRunner,
+    assets: ReleaseAssetStore,
 ) -> tuple[Path, ...]:
     """Attach distributions not already present on the release for ``tag``.
 
@@ -241,8 +218,8 @@ def upload_distributions(
         The release tag, which must already exist.
     distributions : cabc.Sequence[Path]
         Wheels and source archives to reconcile with the release assets.
-    run : UploadRunner
-        The composition root's ``gh`` adapter.
+    assets : ReleaseAssetStore
+        The release asset operation supplied by the composition root.
     log : io.TextIOBase | typ.TextIO
         Where per-file skip notices are written.
 
@@ -260,16 +237,12 @@ def upload_distributions(
         message = f"Duplicate distribution filenames: {', '.join(duplicate_names)}"
         raise UploadError(message)
 
-    view_arguments = ("release", "view", tag, *_ASSET_QUERY_ARGUMENTS)
-    view_result = run(view_arguments)
-    if view_error := _release_command_error("view", view_result):
-        raise view_error
-    existing = set(view_result.stdout.splitlines())
-    pending = _pending_distributions(distributions, existing, log)
-    upload_error = _publish_pending_distributions(tag, pending, run)
-    if upload_error is not None:
-        raise upload_error
-    return pending
+    try:
+        attached = assets.attached_names(tag)
+        pending = _pending_distributions(distributions, set(attached), log)
+        return assets.upload_missing(tag, pending)
+    except ReleaseOperationError as error:
+        raise UploadError(str(error), outcome=Outcome.UPLOAD_FAILED) from error
 
 
 def build_summary(
@@ -334,10 +307,9 @@ class Dependencies:
     keeps them injectable without giving the function a parameter list nobody
     can read.
 
-    The clock and the sink are defaulted, because production and test want the
-    same ones. ``upload`` is not: it carries the process port, and defaulting
-    it here would mean naming a runner in this module, which is the dependency
-    this module exists not to have. The composition root supplies it.
+    The clock and sink are defaulted, because production and tests use the same
+    defaults. ``upload`` is supplied by the composition root after the release
+    asset port has been bound to its GitHub adapter.
     """
 
     upload: cabc.Callable[

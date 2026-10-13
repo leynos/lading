@@ -46,8 +46,6 @@ _VIEW_COMMAND = (
     STUB_TAG,
     "--json",
     "assets",
-    "--jq",
-    ".assets[].name",
 )
 
 #: The value the ``Given`` plants in the parent for the child to inherit. It is

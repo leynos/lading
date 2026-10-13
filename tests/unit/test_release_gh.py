@@ -5,15 +5,16 @@ ones that cross the command boundary: the argv the release actually runs, and
 the capture that carries ``gh``'s diagnostic back to its caller.
 """
 
+import collections.abc as cabc
+import types
 import typing as typ
+from pathlib import Path
 
 import pytest
 
 from tests.helpers.script_imports import import_script_module
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
-    import types
-
     from cmd_mox import CmdMox
 
 
@@ -60,3 +61,78 @@ def test_the_catalogue_admits_gh_alone(release_gh: types.ModuleType) -> None:
 
     assert str(release_gh.GH) == "gh", f"the programme is {release_gh.GH}"
     assert set(allowlist) == {release_gh.GH}, f"the catalogue admits {allowlist}"
+
+
+def test_release_asset_adapter_reads_names_from_json(
+    release_gh: types.ModuleType,
+) -> None:
+    """GitHub JSON parsing and command construction stay in the adapter."""
+    calls: list[tuple[str, ...]] = []
+
+    def run(arguments: cabc.Sequence[str]) -> types.SimpleNamespace:
+        calls.append(tuple(arguments))
+        return types.SimpleNamespace(
+            exit_code=0,
+            stdout='{"assets":[{"name":"one.whl"},{"name":"two.tar.gz"}]}',
+            stderr="",
+        )
+
+    assets = release_gh.GitHubReleaseAssets(run=run)
+
+    assert assets.attached_names("v1.2.3") == {"one.whl", "two.tar.gz"}, (
+        "the adapter must return every asset filename"
+    )
+    assert calls == [("release", "view", "v1.2.3", "--json", "assets")], (
+        "asset inspection must request JSON asset records"
+    )
+
+
+def test_release_asset_adapter_uploads_only_the_given_paths(
+    release_gh: types.ModuleType, tmp_path: Path
+) -> None:
+    """The GitHub adapter owns upload argv and returns uploaded paths."""
+    wheel = tmp_path / "one.whl"
+    sdist = tmp_path / "two.tar.gz"
+    calls: list[tuple[str, ...]] = []
+
+    def run(arguments: cabc.Sequence[str]) -> types.SimpleNamespace:
+        calls.append(tuple(arguments))
+        return types.SimpleNamespace(exit_code=0, stdout="", stderr="")
+
+    assets = release_gh.GitHubReleaseAssets(run=run)
+
+    assert assets.upload_missing("v1.2.3", (wheel, sdist)) == (wheel, sdist), (
+        "successful upload must return the attached paths"
+    )
+    assert calls == [("release", "upload", "v1.2.3", str(wheel), str(sdist))], (
+        "GitHub upload must contain only the supplied paths"
+    )
+
+
+@pytest.mark.parametrize(
+    "stdout",
+    ["not-json", "{}", '{"assets":[{}]}'],
+    ids=["invalid-json", "missing-assets", "missing-name"],
+)
+def test_release_asset_adapter_rejects_malformed_asset_responses(
+    release_gh: types.ModuleType, stdout: str
+) -> None:
+    """Malformed GitHub responses fail at the adapter boundary."""
+    result = types.SimpleNamespace(exit_code=0, stdout=stdout, stderr="")
+    assets = release_gh.GitHubReleaseAssets(run=lambda _arguments: result)
+
+    with pytest.raises(release_gh.ReleaseOperationError):
+        assets.attached_names("v1.2.3")
+
+
+def test_release_asset_adapter_translates_command_failures(
+    release_gh: types.ModuleType,
+) -> None:
+    """A failed ``gh`` command becomes the domain operation error."""
+    result = types.SimpleNamespace(
+        exit_code=1, stdout="", stderr="HTTP 404: release not found"
+    )
+    assets = release_gh.GitHubReleaseAssets(run=lambda _arguments: result)
+
+    with pytest.raises(release_gh.ReleaseOperationError, match="release not found"):
+        assets.attached_names("v1.2.3")

@@ -33,7 +33,7 @@ SPAN_PATH = SCRIPT_DIRECTORY / "release_span.py"
 
 @pytest.fixture(name="release_port")
 def release_port_fixture(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
-    """Import the uploader's process port.
+    """Import the uploader's domain port.
 
     Returns
     -------
@@ -43,9 +43,8 @@ def release_port_fixture(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
     Note
     ----
     The port is imported rather than the ``gh`` adapter on purpose. These
-    tests exercise the policy, and the policy's dependency points at the
-    port: reaching through the adapter would re-import cuprum to construct a
-    two-integer record, which is the coupling the port exists to remove.
+    tests exercise filename reconciliation and should not depend on the
+    adapter's command or JSON representation.
     """
     return import_script_module(monkeypatch, "release_port")
 
@@ -88,6 +87,58 @@ def _make_distribution(directory: Path, name: str) -> Path:
     distribution = directory / name
     distribution.write_bytes(b"")
     return distribution
+
+
+class _AssetStore:
+    """Small domain-port double that records release reconciliation calls."""
+
+    def __init__(
+        self,
+        attached: tuple[str, ...] = (),
+        inspection_error: Exception | None = None,
+        upload_error: Exception | None = None,
+    ) -> None:
+        """Seed one release response and optional operation failures.
+
+        Recorded calls let policy tests assert the reconciliation boundary.
+        """
+        self.attached = attached
+        self.inspection_error = inspection_error
+        self.upload_error = upload_error
+        self.inspected: list[str] = []
+        self.uploads: list[tuple[str, tuple[Path, ...]]] = []
+
+    def attached_names(self, tag: str) -> tuple[str, ...]:
+        """Return configured asset names and record the release lookup.
+
+        An injected inspection error models a failed asset query.
+
+        Returns
+        -------
+        tuple[str, ...]
+            The filenames attached to the configured release.
+        """
+        self.inspected.append(tag)
+        if self.inspection_error is not None:
+            raise self.inspection_error
+        return self.attached
+
+    def upload_missing(
+        self, tag: str, distributions: cabc.Sequence[Path]
+    ) -> tuple[Path, ...]:
+        """Record distribution paths passed to the upload operation.
+
+        An injected upload error models GitHub rejecting those paths.
+
+        Returns
+        -------
+        tuple[Path, ...]
+            The paths accepted by the fake release operation.
+        """
+        self.uploads.append((tag, tuple(distributions)))
+        if self.upload_error is not None:
+            raise self.upload_error
+        return tuple(distributions)
 
 
 @pytest.mark.parametrize(
@@ -216,23 +267,15 @@ def test_existing_assets_are_not_uploaded_again(
 ) -> None:
     """A filename already attached to the release is skipped successfully."""
     wheel = _make_distribution(tmp_path, "a-1.0-py3-none-any.whl")
-    seen: list[tuple[str, ...]] = []
-
-    def run(arguments: cabc.Sequence[str]) -> object:
-        seen.append(tuple(arguments))
-        return release_port.CommandOutcome(
-            exit_code=0,
-            stdout=(wheel.name + "\n" if arguments[1] == "view" else ""),
-        )
+    assets = _AssetStore(attached=(wheel.name,))
 
     uploaded = upload_module.upload_distributions(
-        "v1.2.3", (wheel,), run=run, log=io.StringIO()
+        "v1.2.3", (wheel,), assets=assets, log=io.StringIO()
     )
 
     assert uploaded == (), "an already-attached distribution should not be uploaded"
-    assert seen == [
-        ("release", "view", "v1.2.3", "--json", "assets", "--jq", ".assets[].name")
-    ], "the asset query should use the cuprum-backed release-view port"
+    assert assets.inspected == ["v1.2.3"], "the release assets should be inspected once"
+    assert assets.uploads == [("v1.2.3", ())], "no paths should be sent for upload"
 
 
 def test_release_inspection_failure_prevents_distribution_upload(
@@ -240,21 +283,20 @@ def test_release_inspection_failure_prevents_distribution_upload(
 ) -> None:
     """A failed release query stops before any upload command is issued."""
     wheel = _make_distribution(tmp_path, "a-1.0-py3-none-any.whl")
-    seen: list[tuple[str, ...]] = []
-
-    def run(arguments: cabc.Sequence[str]) -> object:
-        seen.append(tuple(arguments))
-        return release_port.CommandOutcome(exit_code=1, stderr="permission denied")
+    assets = _AssetStore(
+        inspection_error=release_port.ReleaseOperationError("permission denied")
+    )
 
     with pytest.raises(upload_module.UploadError, match="permission denied") as raised:
-        upload_module.upload_distributions("v1.2.3", (wheel,), io.StringIO(), run=run)
+        upload_module.upload_distributions(
+            "v1.2.3", (wheel,), io.StringIO(), assets=assets
+        )
 
     assert raised.value.outcome == upload_module.Outcome.UPLOAD_FAILED, (
         "release inspection failures should have the bounded upload outcome"
     )
-    assert seen == [
-        ("release", "view", "v1.2.3", "--json", "assets", "--jq", ".assets[].name")
-    ], "the failed inspection must not be followed by an upload"
+    assert assets.inspected == ["v1.2.3"], "inspection should fail after one query"
+    assert not assets.uploads, "the failed inspection must prevent an upload"
 
 
 def test_only_missing_distribution_names_are_uploaded(
@@ -263,20 +305,15 @@ def test_only_missing_distribution_names_are_uploaded(
     """A release retry uploads only local filenames absent from its assets."""
     present = _make_distribution(tmp_path, "a-1.0-py3-none-any.whl")
     missing = _make_distribution(tmp_path, "b-1.0.tar.gz")
-    seen: list[tuple[str, ...]] = []
-
-    def run(arguments: cabc.Sequence[str]) -> object:
-        seen.append(tuple(arguments))
-        output = present.name + "\n" if arguments[1] == "view" else ""
-        return release_port.CommandOutcome(exit_code=0, stdout=output)
+    assets = _AssetStore(attached=(present.name,))
 
     uploaded = upload_module.upload_distributions(
-        "v1.2.3", (present, missing), run=run, log=io.StringIO()
+        "v1.2.3", (present, missing), assets=assets, log=io.StringIO()
     )
 
     assert uploaded == (missing,), "only the absent distribution should be uploaded"
-    assert seen[-1] == ("release", "upload", "v1.2.3", str(missing)), (
-        "the upload command should contain only the remaining filename"
+    assert assets.uploads == [("v1.2.3", (missing,))], (
+        "only the distribution absent from GitHub should be uploaded"
     )
 
 
@@ -288,11 +325,7 @@ def test_duplicate_distribution_names_fail_before_release_inspection(
     """Same-named files in different folders cannot map to unique assets."""
     first = _make_distribution(tmp_path / "first", "lading-1.0-py3-none-any.whl")
     second = _make_distribution(tmp_path / "second", first.name)
-    seen: list[tuple[str, ...]] = []
-
-    def run(arguments: cabc.Sequence[str]) -> object:
-        seen.append(tuple(arguments))
-        return release_port.CommandOutcome(exit_code=0)
+    assets = _AssetStore()
 
     with pytest.raises(
         upload_module.UploadError,
@@ -301,10 +334,10 @@ def test_duplicate_distribution_names_fail_before_release_inspection(
         ),
     ):
         upload_module.upload_distributions(
-            "v1.2.3", (first, second), io.StringIO(), run=run
+            "v1.2.3", (first, second), io.StringIO(), assets=assets
         )
 
-    assert not seen, "duplicate names should fail before querying GitHub"
+    assert not assets.inspected, "duplicate names should fail before querying GitHub"
 
 
 def test_a_rejected_upload_names_the_reason(
@@ -313,14 +346,13 @@ def test_a_rejected_upload_names_the_reason(
     """A runner that reports failure fails the step with gh's own reason."""
     wheel = _make_distribution(tmp_path, "a-1.0-py3-none-any.whl")
 
-    def run(arguments: cabc.Sequence[str]) -> object:
-        if arguments[1] == "view":
-            return release_port.CommandOutcome(exit_code=0, stdout="")
-        return release_port.CommandOutcome(exit_code=1, stderr="release not found")
+    assets = _AssetStore(
+        upload_error=release_port.ReleaseOperationError("release not found")
+    )
 
     with pytest.raises(upload_module.UploadError, match="release not found") as raised:
         upload_module.upload_distributions(
-            "v1.2.3", (wheel,), run=run, log=io.StringIO()
+            "v1.2.3", (wheel,), assets=assets, log=io.StringIO()
         )
 
     assert raised.value.outcome == upload_module.Outcome.UPLOAD_FAILED, (

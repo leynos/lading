@@ -68,8 +68,6 @@ def test_every_wheel_reaches_gh_with_the_tag_from_the_environment(
         "v9.9.9",
         "--json",
         "assets",
-        "--jq",
-        ".assets[].name",
     ), calls[0]
     assert calls[1].argv[:3] == ("release", "upload", "v9.9.9"), (
         "the uploader should attach to the requested release tag"

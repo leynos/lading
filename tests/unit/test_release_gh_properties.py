@@ -1,12 +1,10 @@
 """Capture-fidelity properties for the release uploader's ``gh`` adapter.
 
-``run_gh`` maps a cuprum command result onto the uploader's own
-``CommandOutcome``. That mapping is the repository's code, and everything
-downstream -- the failure message, the log a maintainer reads at 3 a.m. -- sees
-only its output. So the property is stated over arbitrary payloads rather than
-the one ASCII line an example would cover: streams may be empty, may hold
-invalid UTF-8, CRLF, or NUL, and the status may be any value a process can
-report.
+``run_gh`` maps a cuprum command result onto a captured result. That mapping is
+the repository's code, and everything downstream sees only its output. The
+property is stated over arbitrary payloads rather than the one ASCII line an
+example would cover: streams may be empty, may hold invalid UTF-8, CRLF, or
+NUL, and the status may be any value a process can report.
 
 The test drives the real adapter against a real child process. A mocked
 ``CommandResult`` would test the mock, not the contract.
@@ -124,10 +122,9 @@ class _Payload(typ.NamedTuple):
 class _CommandOutcome(typ.Protocol):
     """The adapter's return contract, as the tests read it.
 
-    ``release_gh`` imports ``CommandOutcome`` from ``release_port``, but the
-    script pair is only importable with ``scripts`` on ``sys.path``. Declaring
-    the three fields here keeps a field access from being an attribute error on
-    ``object`` without reaching into another module's import machinery.
+    ``run_gh`` returns this small captured result, while release-specific JSON
+    parsing stays in the adapter. Declaring the fields here keeps a field
+    access from being an attribute error on ``object``.
     """
 
     exit_code: int

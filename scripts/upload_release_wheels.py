@@ -26,7 +26,7 @@ from pathlib import Path
 
 import cyclopts
 from cyclopts import App, Parameter
-from release_gh import run_gh
+from release_gh import GitHubReleaseAssets
 from release_wheel_upload import (
     Dependencies,
     Outcome,
@@ -39,11 +39,10 @@ from release_wheel_upload import (
     upload_distributions,
 )
 
-#: The production wiring of the upload port. It is bound here, at the one
-#: place that knows both the policy and the adapter, rather than defaulted in
-#: the policy module -- which is what lets the policy be imported, and tested,
-#: with no cuprum present at all.
-_PRODUCTION = Dependencies(upload=partial(upload_distributions, run=run_gh))
+#: The production wiring of the domain port is bound here, at the one place
+#: that knows both the policy and its GitHub adapter.
+_ASSETS = GitHubReleaseAssets()
+_PRODUCTION = Dependencies(upload=partial(upload_distributions, assets=_ASSETS))
 
 app = App(
     name="upload-release-wheels",
@@ -68,8 +67,8 @@ def main(
 ) -> None:
     """Attach each built distribution not already on the release for ``tag``.
 
-    This is the composition root: it binds the production clock, runner, and
-    sinks, and every other function takes them as parameters.
+    This is the composition root: it binds the GitHub asset adapter, clock,
+    and sinks, and every other function takes them as parameters.
 
     Parameters
     ----------

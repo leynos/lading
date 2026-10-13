@@ -302,8 +302,6 @@ def test_the_uploader_runs_the_script_through_the_chosen_interpreter(
     assert calls[0].argv[3:] == (
         "--json",
         "assets",
-        "--jq",
-        ".assets[].name",
     ), "the release inspection should return attached asset filenames"
     assert calls[1].argv[:3] == ("release", "upload", _IMPOSSIBLE_TAG), calls[1]
     assert calls[1].argv[3:] == (str(dist / "lading-0.0.0-py3-none-any.whl"),), (
