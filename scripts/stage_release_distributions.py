@@ -236,7 +236,7 @@ def _index_request_attempt(
     except (OSError, TimeoutError) as error:
         if attempt + 1 == retries:
             _raise_network_error(error, retries)
-    return None, "network error"
+        return None, "network error"
 
 
 def _request_index(

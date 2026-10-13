@@ -68,13 +68,7 @@ def _find_named_step(path: Path, name: str, *, job: str | None = None) -> Workfl
 def _find_step(path: Path, name: str, *, job: str | None = None) -> WorkflowStep:
     """Find a named run step without interpolated GitHub expressions."""
     found = _find_named_step(path, name, job=job)
-    script = found.get("run")
-    if not isinstance(script, str):
-        message = f"step {name!r} must have a run block"
-        raise TypeError(message)
-    if "${{" in script:
-        message = f"step {name!r} must not interpolate expressions into its run block"
-        raise ValueError(message)
+    _checked_script(found)
     return found
 
 
