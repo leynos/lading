@@ -150,6 +150,39 @@ def test_collector_fails_when_the_sdist_is_missing(tmp_path: Path) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("filenames", "diagnostic"),
+    [
+        (("lading-1.0.tar.gz",), "Expected at least one wheel."),
+        (
+            (
+                "lading-1.0.tar.gz",
+                "lading-2.0.tar.gz",
+                "lading-1.0-py3-none-any.whl",
+            ),
+            "Expected exactly one source distribution.",
+        ),
+    ],
+    ids=["no-wheels", "multiple-sdists"],
+)
+def test_collector_rejects_missing_wheels_and_multiple_sdists(
+    tmp_path: Path, filenames: tuple[str, ...], diagnostic: str
+) -> None:
+    """Release collection requires at least one wheel and exactly one sdist."""
+    dist = tmp_path / "dist"
+    for filename in filenames:
+        _make_distribution(dist, filename)
+    step = _find_step(COLLECT_ACTION, "Collect and validate release distributions")
+
+    completed = _run_step(step, tmp_path, env={"DIST_DIRECTORY": str(dist)})
+
+    assert completed.returncode == 1, "invalid collection counts must fail"
+    assert diagnostic in completed.stderr, completed.stderr
+    assert all(filename in completed.stderr for filename in filenames), (
+        "the failure should list all downloaded artefacts"
+    )
+
+
 def test_staging_skips_published_names_and_keeps_new_files(tmp_path: Path) -> None:
     """The checked-in stage step compares exact filenames and records output."""
     dist = tmp_path / "dist/publish"

@@ -218,7 +218,7 @@ python -m pip install lading
 To select a particular release, pin its version:
 
 ```bash
-python -m pip install lading==0.3.1
+python -m pip install lading==0.2.0
 ```
 
 Tagged releases publish a source distribution and every pure-Python wheel to

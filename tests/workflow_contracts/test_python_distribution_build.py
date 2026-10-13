@@ -18,18 +18,30 @@ CI_WORKFLOW = REPOSITORY_ROOT / ".github" / "workflows" / "ci.yml"
 
 
 @pytest.mark.parametrize(
-    ("files", "status"),
+    ("files", "status", "diagnostic"),
     [
-        (("lading-1.0.tar.gz", "lading-1.0-py3-none-any.whl"), 0),
-        (("lading-1.0-py3-none-any.whl",), 1),
-        (("lading-1.0.tar.gz", "lading-2.0.tar.gz", "lading-1.0.whl"), 1),
+        (("lading-1.0.tar.gz", "lading-1.0-py3-none-any.whl"), 0, None),
+        (
+            ("lading-1.0-py3-none-any.whl",),
+            1,
+            "Expected exactly one source distribution.",
+        ),
+        (
+            ("lading-1.0.tar.gz", "lading-2.0.tar.gz", "lading-1.0.whl"),
+            1,
+            "Expected exactly one source distribution.",
+        ),
+        (("lading-1.0.tar.gz",), 1, "Expected at least one wheel."),
     ],
-    ids=["one-sdist", "missing-sdist", "two-sdists"],
+    ids=["valid", "missing-sdist", "two-sdists", "missing-wheel"],
 )
 def test_build_output_check_requires_exactly_one_sdist(
-    tmp_path: Path, files: tuple[str, ...], status: int
+    tmp_path: Path,
+    files: tuple[str, ...],
+    status: int,
+    diagnostic: str | None,
 ) -> None:
-    """The action rejects a missing or duplicated source distribution."""
+    """The action rejects invalid sdist and wheel counts with clear errors."""
     output = tmp_path / "dist"
     output.mkdir()
     for filename in files:
@@ -39,9 +51,9 @@ def test_build_output_check_requires_exactly_one_sdist(
     completed = _run_step(step, tmp_path, env={"OUT_DIR": str(output)})
 
     assert completed.returncode == status, completed.stderr
-    if status:
-        assert "Expected exactly one source distribution." in completed.stderr, (
-            "the output check must explain a missing or duplicated sdist"
+    if diagnostic:
+        assert diagnostic in completed.stderr, (
+            "the output check must explain the invalid distribution count"
         )
 
 

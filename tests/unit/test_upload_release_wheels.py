@@ -235,6 +235,28 @@ def test_existing_assets_are_not_uploaded_again(
     ], "the asset query should use the cuprum-backed release-view port"
 
 
+def test_release_inspection_failure_prevents_distribution_upload(
+    upload_module: types.ModuleType, release_port: types.ModuleType, tmp_path: Path
+) -> None:
+    """A failed release query stops before any upload command is issued."""
+    wheel = _make_distribution(tmp_path, "a-1.0-py3-none-any.whl")
+    seen: list[tuple[str, ...]] = []
+
+    def run(arguments: cabc.Sequence[str]) -> object:
+        seen.append(tuple(arguments))
+        return release_port.CommandOutcome(exit_code=1, stderr="permission denied")
+
+    with pytest.raises(upload_module.UploadError, match="permission denied") as raised:
+        upload_module.upload_distributions("v1.2.3", (wheel,), io.StringIO(), run=run)
+
+    assert raised.value.outcome == upload_module.Outcome.UPLOAD_FAILED, (
+        "release inspection failures should have the bounded upload outcome"
+    )
+    assert seen == [
+        ("release", "view", "v1.2.3", "--json", "assets", "--jq", ".assets[].name")
+    ], "the failed inspection must not be followed by an upload"
+
+
 def test_only_missing_distribution_names_are_uploaded(
     upload_module: types.ModuleType, release_port: types.ModuleType, tmp_path: Path
 ) -> None:

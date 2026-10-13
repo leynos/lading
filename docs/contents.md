@@ -44,8 +44,8 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
 - [ADR-004: In-process metrics accumulator flushed at exit][adr-004] - accepted
   design for the `lading.utils.metrics` backend and metric contracts.
 - [ADR-005: Draft-then-publish releases with a standalone wheel
-  uploader][adr-005] - original GitHub-only publication design, amended by
-  ADR-009.
+  uploader][adr-005] - original GitHub-only publication design, with a dated
+  addendum linking to the current process in ADR-009.
 - [ADR-006: Align cuprum selection across dependency paths][adr-006] - accepted
   policy for pinning, locking, and bumping cuprum on both the repository and
   the standalone script path.
@@ -72,7 +72,7 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
   `cuprum` 0.2.0-beta1 guide to the API changes from 0.1.x, including
   `ScopeConfig` and `RunOutputOptions`.
 - [Lading 0.4.0 migration guide](v0-4-0-migration-guide.md) - the interpreter
-  floor moving to CPython 3.14, who is affected, and how to upgrade or defer.
+  floor moving to CPython 3.14, PyPI publication, and how to upgrade or defer.
 - [Complexity antipatterns and refactoring
   strategies](complexity-antipatterns-and-refactoring-strategies.md) -
   reference on cyclomatic and cognitive complexity metrics, the bumpy road

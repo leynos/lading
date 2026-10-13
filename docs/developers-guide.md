@@ -535,9 +535,10 @@ procedure: no final lading 0.x release until cuprum 0.2.0 final is available.
 and trade-offs. It amends [ADR-005](adr/005-release-wheel-publication.md),
 which documents the original GitHub-only wheel uploader. The workflow contracts
 are in `tests/workflow_contracts/test_release_workflow.py`; checked-in
-collection, staging, publication, and draft-creation steps run against scratch
-directories and stand-in tools from
-`tests/workflow_contracts/test_release_steps.py`. `make test` runs both sets.
+collection, staging, and publication steps run against scratch directories and
+stand-in tools from `tests/workflow_contracts/test_release_steps.py`, and the
+draft-creation step from `tests/workflow_contracts/test_release_gh_steps.py`.
+`make test` runs all three sets.
 
 The GitHub uploader keeps its process boundary separate from publication policy.
 `scripts/upload_release_wheels.py` is the PEP 723 command-line edge and
@@ -558,6 +559,11 @@ _PRODUCTION = Dependencies(
     upload=partial(upload_distributions, run=run_gh)
 )
 ```
+
+The PyPI index query writes a notice for each retry with its attempt and delay,
+then a bounded outcome summary with attempts, retries, elapsed milliseconds,
+and a failure category or HTTP status. It omits the index URL, response body,
+and distribution names.
 
 Tests inject the runner, clock, and output sink. The step writes a bounded
 summary to stderr and `GITHUB_OUTPUT`:
