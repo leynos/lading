@@ -87,10 +87,11 @@ jobs:
       - name: Create draft release if absent
         run: |
           set -euo pipefail
-          if gh_error=$(gh release view "$TAG" 2>&1); then
+          status=0
+          gh_error=$(gh release view "$TAG" 2>&1) || status=$?
+          if (( status == 0 )); then
             echo "::notice::Release ${TAG} already exists; reusing it."
           else
-            status=$?
             if [[ "${gh_error}" == *"release not found"* ]]; then
               gh release create "$TAG" --draft --generate-notes
             else
