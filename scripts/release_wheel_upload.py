@@ -1,21 +1,10 @@
-"""Reconcile and report the distributions attached to a GitHub release.
+"""Reconcile sdist and wheel assets on a GitHub release.
 
-This module is the policy behind ``scripts/upload_release_wheels.py``. It
-discovers the sdist and wheels, compares their filenames with the release
-assets, and uploads only missing names. An empty local directory is a release
-failure, while a run with every name already attached succeeds without an
-upload. The process still runs through cuprum's allowlist.
+Discover distributions recursively, skip attached names, and upload the rest
+through cuprum's allowlist. Empty input and upload failures fail the release.
 
-The ``gh`` runner, clock, and output sinks are injected, so tests drive the
-release decision without intercepting the environment.
-
-This module imports no cuprum and does not import the adapter that does. The
-port it depends on, ``UploadRunner``, and the record that crosses it,
-``CommandOutcome``, live in ``release_port``; the cuprum process edge lives in
-``release_gh``; and the two are bound together at the composition root in
-``upload_release_wheels``. That direction is deliberate -- a policy module that
-imported its adapter would drag the process technology into every test that
-exercises it -- and is worth preserving when the upload path changes.
+The policy uses ``release_port``'s protocol; ``release_gh`` owns the cuprum
+adapter bound by ``upload_release_wheels`` at the composition root.
 """
 
 import collections
@@ -31,20 +20,17 @@ import time
 import typing as typ
 from pathlib import Path
 
+_ASSET_QUERY_ARGUMENTS = ("--json", "assets", "--jq", ".assets[].name")
+
 if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
-    # Only the port protocol is named here. The record that crosses it is part
-    # of the protocol's signature, not of this module's vocabulary: importing
-    # it would be an import this module does not use, and the port is the one
-    # thing it genuinely depends on.
-    from release_port import UploadRunner
+    # Depend only on the process port; its signature owns the result record.
+    from release_port import CommandOutcome, UploadRunner
 
 
 class Outcome(enum.StrEnum):
-    """Every outcome the step can report.
+    """Bounded string outcomes for release metrics.
 
-    The set is closed so that a counter built from it stays bounded however
-    the release fails, and so that no path, tag, or message text can reach a
-    metric label. Members are strings, so they serialize as themselves.
+    The closed set keeps paths, tags, and diagnostics out of metric labels.
     """
 
     SUCCESS = "success"
@@ -94,8 +80,7 @@ class UploadError(RuntimeError):
 class Sinks:
     """Where the step's outcome is reported.
 
-    Both are injected rather than read from the environment at the point of
-    use, so a test states the sinks it expects to be written.
+    Both are injected so each caller states the expected destinations.
     """
 
     log: io.TextIOBase | typ.TextIO
@@ -106,9 +91,7 @@ class Sinks:
 class Timings:
     """Seconds spent in each phase of the step.
 
-    Discovery and upload are timed apart because they fail for unrelated
-    reasons: a slow discovery is a large artefact tree, a slow upload is
-    GitHub.
+    Discovery and upload are separate phases with distinct failure modes.
     """
 
     discovery: float = 0.0
@@ -200,6 +183,49 @@ def discover_distributions(directory: Path) -> tuple[Path, ...]:
         raise UploadError(message, outcome=Outcome.UNREADABLE_DIRECTORY) from error
 
 
+def _duplicate_filenames(distributions: cabc.Sequence[Path]) -> tuple[str, ...]:
+    """Return duplicate local basenames in stable order."""
+    counts = collections.Counter(path.name for path in distributions)
+    return tuple(sorted(name for name, count in counts.items() if count > 1))
+
+
+def _release_command_error(verb: str, result: CommandOutcome) -> UploadError | None:
+    """Describe an unsuccessful release command without raising it."""
+    if result.exit_code == 0:
+        return None
+    detail = result.stderr.strip() or result.stdout.strip()
+    message = f"gh release {verb} failed with exit code {result.exit_code}: {detail}"
+    return UploadError(message, outcome=Outcome.UPLOAD_FAILED)
+
+
+def _pending_distributions(
+    distributions: cabc.Sequence[Path],
+    attached: cabc.Set[str],
+    log: io.TextIOBase | typ.TextIO,
+) -> tuple[Path, ...]:
+    """Log attached names and return the local distributions still to upload."""
+    pending: list[Path] = []
+    for distribution in distributions:
+        if distribution.name in attached:
+            print(
+                f"::notice::Skipping already-attached distribution {distribution.name}",
+                file=log,
+            )
+        else:
+            pending.append(distribution)
+    return tuple(pending)
+
+
+def _publish_pending_distributions(
+    tag: str, pending: cabc.Sequence[Path], run: UploadRunner
+) -> UploadError | None:
+    """Upload pending distributions and return any command failure."""
+    if not pending:
+        return None
+    arguments = ("release", "upload", tag, *(str(path) for path in pending))
+    return _release_command_error("upload", run(arguments))
+
+
 def upload_distributions(
     tag: str,
     distributions: cabc.Sequence[Path],
@@ -216,9 +242,7 @@ def upload_distributions(
     distributions : cabc.Sequence[Path]
         Wheels and source archives to reconcile with the release assets.
     run : UploadRunner
-        How to invoke ``gh``. Bound to the production adapter at the
-        composition root rather than defaulted here, so this module never
-        imports the module that imports cuprum.
+        The composition root's ``gh`` adapter.
     log : io.TextIOBase | typ.TextIO
         Where per-file skip notices are written.
 
@@ -232,43 +256,20 @@ def upload_distributions(
     UploadError
         If release inspection or upload fails.
     """
-    filename_counts = collections.Counter(
-        distribution.name for distribution in distributions
-    )
-    duplicate_names = sorted(
-        name for name, count in filename_counts.items() if count > 1
-    )
-    if duplicate_names:
+    if duplicate_names := _duplicate_filenames(distributions):
         message = f"Duplicate distribution filenames: {', '.join(duplicate_names)}"
-        raise UploadError(message, outcome=Outcome.UPLOAD_FAILED)
+        raise UploadError(message)
 
-    result = run(("release", "view", tag, "--json", "assets", "--jq", ".assets[].name"))
-    if result.exit_code != 0:
-        detail = result.stderr.strip() or result.stdout.strip()
-        message = f"gh release view failed with exit code {result.exit_code}: {detail}"
-        raise UploadError(message, outcome=Outcome.UPLOAD_FAILED)
-    existing = set(result.stdout.splitlines())
-    pending: list[Path] = []
-    for distribution in distributions:
-        if distribution.name in existing:
-            print(
-                f"::notice::Skipping already-attached distribution {distribution.name}",
-                file=log,
-            )
-        else:
-            pending.append(distribution)
-    if not pending:
-        return ()
-
-    arguments = ("release", "upload", tag, *(str(path) for path in pending))
-    result = run(arguments)
-    if result.exit_code != 0:
-        detail = result.stderr.strip() or result.stdout.strip()
-        message = (
-            f"gh release upload failed with exit code {result.exit_code}: {detail}"
-        )
-        raise UploadError(message, outcome=Outcome.UPLOAD_FAILED)
-    return tuple(pending)
+    view_arguments = ("release", "view", tag, *_ASSET_QUERY_ARGUMENTS)
+    view_result = run(view_arguments)
+    if view_error := _release_command_error("view", view_result):
+        raise view_error
+    existing = set(view_result.stdout.splitlines())
+    pending = _pending_distributions(distributions, existing, log)
+    upload_error = _publish_pending_distributions(tag, pending, run)
+    if upload_error is not None:
+        raise upload_error
+    return pending
 
 
 def build_summary(
@@ -364,9 +365,7 @@ def attach_distributions(
     timings : Timings
         Filled in with the duration of each phase, whether or not it succeeds.
     dependencies : Dependencies
-        The upload, clock, and progress sink to use. There is no default: the
-        upload carries the process port, and only the composition root knows
-        which runner to bind to it.
+        The upload, clock, and progress sink to use.
 
     Returns
     -------

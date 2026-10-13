@@ -88,9 +88,8 @@ def _build_index_request(url: str) -> urllib.request.Request:
     )
 
 
-def _project_filenames(response: typ.IO[bytes]) -> set[str]:
-    """Decode file names from one successful PEP 691 response."""
-    body = json.load(response)
+def _project_file_entries(body: object) -> list[object]:
+    """Return the file entries from a structurally valid index response."""
     if not isinstance(body, dict):
         message = "Project index response is not an object"
         raise ProjectIndexError(message)
@@ -98,10 +97,26 @@ def _project_filenames(response: typ.IO[bytes]) -> set[str]:
     if not isinstance(files, list):
         message = "Project index response has no files list"
         raise ProjectIndexError(message)
+    return typ.cast("list[object]", files)
+
+
+def _project_filename(entry: object) -> str | None:
+    """Return one valid distribution filename from an index entry."""
+    if not isinstance(entry, dict):
+        return None
+    filename = entry.get("filename")
+    if isinstance(filename, str):
+        return filename
+    return None
+
+
+def _project_filenames(response: typ.IO[bytes]) -> set[str]:
+    """Decode file names from one successful PEP 691 response."""
+    body = json.load(response)
     return {
-        entry["filename"]
-        for entry in files
-        if isinstance(entry, dict) and isinstance(entry.get("filename"), str)
+        filename
+        for entry in _project_file_entries(body)
+        if (filename := _project_filename(entry)) is not None
     }
 
 
@@ -138,24 +153,66 @@ def _raise_network_error(error: OSError, retries: int) -> typ.NoReturn:
     raise ProjectIndexError(message) from error
 
 
+def _index_request_attempt(
+    request: urllib.request.Request, *, attempt: int, retries: int
+) -> set[str] | None:
+    """Return one request result, retrying only eligible transient errors."""
+    try:
+        return _read_index_request(request)
+    except urllib.error.HTTPError as error:
+        return _handle_http_error(error, attempt=attempt, retries=retries)
+    except (OSError, TimeoutError) as error:
+        if attempt + 1 == retries:
+            _raise_network_error(error, retries)
+    return None
+
+
 def _request_index(url: str, *, retries: int, retry_delay: float) -> set[str]:
     """Return names present in the project index, retrying transient failures."""
     _validate_retry_policy(retries, retry_delay)
     request = _build_index_request(url)
     for attempt in range(retries):
-        try:
-            return _read_index_request(request)
-        except urllib.error.HTTPError as error:
-            project_files = _handle_http_error(error, attempt=attempt, retries=retries)
-            if project_files is not None:
-                return project_files
-        except (OSError, TimeoutError) as error:
-            if attempt + 1 == retries:
-                _raise_network_error(error, retries)
+        project_files = _index_request_attempt(
+            request, attempt=attempt, retries=retries
+        )
+        if project_files is not None:
+            return project_files
         if retry_delay:
             time.sleep(retry_delay)
     message = "Index request retry loop ended unexpectedly"
     raise AssertionError(message)
+
+
+def _staging_paths(directory: Path) -> list[Path]:
+    """Read staging paths in stable order."""
+    try:
+        return sorted(directory.iterdir())
+    except OSError as error:
+        message = f"Could not read staging directory {directory}: {error}"
+        raise OSError(message) from error
+
+
+def _remove_published_file(path: Path) -> None:
+    """Remove one published file after reporting its skip notice."""
+    print(f"::notice::Skipping already-published distribution {path.name}")
+    try:
+        path.unlink()
+    except OSError as error:
+        message = f"Could not remove already-published file {path}: {error}"
+        raise OSError(message) from error
+
+
+def _remaining_distributions(paths: list[Path], names: set[str]) -> list[Path]:
+    """Remove published paths and return the new distributions."""
+    remaining: list[Path] = []
+    for path in paths:
+        if not path.is_file():
+            continue
+        if path.name in names:
+            _remove_published_file(path)
+        else:
+            remaining.append(path)
+    return remaining
 
 
 def stage_distributions(
@@ -197,22 +254,11 @@ def stage_distributions(
     except ProjectIndexError as error:
         message = f"Could not stage project distributions: {error}"
         raise ProjectIndexError(message) from error
-    remaining: list[Path] = []
     try:
-        paths = sorted(directory.iterdir())
+        paths = _staging_paths(directory)
+        remaining = _remaining_distributions(paths, names)
     except OSError as error:
-        message = f"Could not read staging directory {directory}: {error}"
-        raise OSError(message) from error
-    for path in paths:
-        if path.is_file() and path.name in names:
-            print(f"::notice::Skipping already-published distribution {path.name}")
-            try:
-                path.unlink()
-            except OSError as error:
-                message = f"Could not remove already-published file {path}: {error}"
-                raise OSError(message) from error
-        elif path.is_file():
-            remaining.append(path)
+        raise OSError(str(error)) from error
     return tuple(remaining)
 
 

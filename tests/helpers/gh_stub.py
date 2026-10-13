@@ -204,6 +204,34 @@ def install_gh_stub(directory: Path, config: GhStubConfig | None = None) -> GhSt
     return GhStub(bin_directory=bin_directory, record=record)
 
 
+def _remove_inherited_configuration(environment: dict[str, str]) -> None:
+    """Remove inherited credentials, Actions outputs, and process-routing hooks."""
+    for variable in _CREDENTIAL_VARIABLES + _UV_VARIABLES + _ACTIONS_STEP_VARIABLES:
+        environment.pop(variable, None)
+    for variable in list(environment):
+        if variable.startswith("GIT_CONFIG_") or variable in {
+            "BASH_ENV",
+            "GIT_SSH",
+            "GIT_SSH_COMMAND",
+        }:
+            environment.pop(variable)
+    lody_directory = str(Path.home() / ".lody")
+    environment["PATH"] = os.pathsep.join(
+        part
+        for part in environment["PATH"].split(os.pathsep)
+        if part != lody_directory and not part.startswith(lody_directory + os.sep)
+    )
+
+
+def _stub_path_error(stub: GhStub, environment: dict[str, str]) -> str | None:
+    """Describe whether the final child environment resolves the recording stub."""
+    resolved = shutil.which("gh", path=environment["PATH"])
+    expected = stub.bin_directory / "gh"
+    if resolved is None or Path(resolved) != expected:
+        return f"the stub must be the gh on PATH, but gh resolves to {resolved}"
+    return None
+
+
 def isolated_environment(
     stub: GhStub,
     *,
@@ -240,32 +268,16 @@ def isolated_environment(
         so the check is made here rather than trusted.
     """
     environment = dict(os.environ)
-    for variable in _CREDENTIAL_VARIABLES + _UV_VARIABLES + _ACTIONS_STEP_VARIABLES:
-        environment.pop(variable, None)
-    for variable in list(environment):
-        if variable.startswith("GIT_CONFIG_") or variable in {
-            "BASH_ENV",
-            "GIT_SSH",
-            "GIT_SSH_COMMAND",
-        }:
-            environment.pop(variable)
-    lody_directory = str(Path.home() / ".lody")
-    environment["PATH"] = os.pathsep.join(
-        part
-        for part in environment["PATH"].split(os.pathsep)
-        if part != lody_directory and not part.startswith(lody_directory + os.sep)
-    )
+    _remove_inherited_configuration(environment)
     environment["PATH"] = f"{stub.bin_directory}{os.pathsep}{environment['PATH']}"
     environment["GH_CONFIG_DIR"] = str(_empty_config_directory(stub))
     environment["GH_HOST"] = "stub.invalid"
     environment["GH_PROMPT_DISABLED"] = "1"
     if extra is not None:
         environment.update(extra)
-    resolved = shutil.which("gh", path=environment["PATH"])
-    expected = stub.bin_directory / "gh"
-    if resolved is None or Path(resolved) != expected:
-        message = f"the stub must be the gh on PATH, but gh resolves to {resolved}"
-        raise AssertionError(message)
+    path_error = _stub_path_error(stub, environment)
+    if path_error is not None:
+        raise AssertionError(path_error)
     return environment
 
 
