@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run python
 # /// script
 # requires-python = ">=3.14"
-# dependencies = ["cuprum==0.2.0b1", "cyclopts>=3"]
+# dependencies = ["cuprum==0.2.0b2", "cyclopts>=3"]
 # ///
 """Attach the sdist and wheels built for a release tag to GitHub.
 
