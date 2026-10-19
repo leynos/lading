@@ -20,7 +20,8 @@ looking for project guidance, then follow the link that matches the task.
 - [Roadmap](roadmap.md) - phased delivery plan and tracked implementation
   tasks.
 - [Cuprum beta assessment](cuprum-v0-2-0-beta1-adoption-assessment.md) -
-  phase 5 compatibility, migration workarounds, and remaining upstream features.
+  phase 5 compatibility, migration workarounds, remaining upstream features,
+  and the beta2 follow-up that retires the environment and broken-pipe shims.
 
 ## Migration guides
 

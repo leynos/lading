@@ -459,6 +459,9 @@ tasks rather than cuprum defects.
 
 ### 7.1. Executed probe results
 
+The table below records the original 0.2.0-beta1 snapshot, not the current
+release; §8 supersedes rows 4, 5, and 6 for 0.2.0-beta2.
+
 | Probe against inspected cuprum source                            | Observed result                                                                 |
 | ---------------------------------------------------------------- | ------------------------------------------------------------------------------- |
 | Capture plus stdin plus independent echo, child exits 7          | Status 7; stdout `hello\n`; stderr `err\n`; only stderr echoed                  |
@@ -473,6 +476,73 @@ tasks rather than cuprum defects.
 | Legacy `scoped(allowlist=...)` and `run_sync(capture=True)`      | Each raised `TypeError` for an unexpected keyword argument                      |
 
 *Table 5: Focused runtime evidence; timings are illustrative, not benchmarks.*
+
+## 8. Follow-up: 0.2.0-beta2 resolves the two blockers
+
+Added 2026-10-19. The findings in sections 1 to 7 remain the record of the
+0.2.0-beta1 inspection; this section records what the published `0.2.0b2`
+changes about them. It does not rewrite them.
+
+**Selection.** Both dependency paths now pin `cuprum==0.2.0b2`: the
+`pyproject.toml` dependency and the PEP 723 block in
+`scripts/upload_release_wheels.py`, with both lockfiles regenerated. The pin is
+exact rather than the brief's `>=0.2.0b2`, because the repository's pin helper
+and [ADR-006](adr/006-align-cuprum-selection-across-dependency-paths.md) both
+require an exact pre-release pin, and an exact pin selects the tested release
+without admitting a later beta. No call site needed a change: the beta1 forms
+remain correct in beta2.
+
+**Blockers resolved natively.** beta2 supplies the two capabilities §6.1 and
+§6.2 asked for, so each blocker becomes an opt-in rather than a shim.
+
+| beta1 blocker (§)                    | beta2 answer                                                                                                        | Workaround retired                                |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| Exact environment replacement (§3.2) | `ExecutionContext(env_mode=EnvMode.REPLACE)` starts from an empty environment and applies only the supplied mapping | `os.execve` bootstrap; `os.environ` clearing      |
+| Broken-pipe relay (§3.3)             | `RunOutputOptions(broken_pipe_policy=BrokenPipePolicy.BEST_EFFORT)` stops echoing a failed stream, keeps capture    | Stateful relay sink suppressing `BrokenPipeError` |
+
+*Table 6: beta1 blockers and their beta2 native answers.*
+
+The environment contract is preserved as §3.2 required. `EnvMode` lives in
+`cuprum.context`, beside the `UNSET` singleton; `EnvMode.REPLACE` composes
+exactly as `Popen(env=...)` does, so the existing
+`c_locale_env(normalize_environment(...))` result can be passed unchanged, and
+`normalize_environment(None)` still means inherit. The omission semantics the
+uploader test relies on therefore survive: a child started under `REPLACE` from
+a parent that sets `GITHUB_REF_NAME` and `GITHUB_OUTPUT` sees neither when the
+run does not supply them. `BrokenPipePolicy` is exported from the package root,
+and `BEST_EFFORT` reproduces lading's relay policy: the failed write is not
+retried, that stream's echo stops, capture and line observation continue, the
+session still closes, and the result records a `RelayFallback` carrying
+`EchoStream.STDOUT` and `EchoErrorCategory.BROKEN_PIPE`. The default remains
+`STRICT`, so a caller must opt in deliberately.
+
+**Evidence.** `tests/unit/test_cuprum_policies.py` pins both opt-ins. It
+composes lading's real `normalize_environment` and `c_locale_env` functions with
+`EnvMode.REPLACE` and asserts the child's environment key set is exactly the
+supplied keys plus the C-locale pins, with a parent sentinel and both Actions
+variables set first so inheritance would be visible; an `OVERLAY` counterpart
+asserts those variables do leak, which keeps the replacement test falsifiable.
+A second pair drives a text-only sink whose `write` raises `BrokenPipeError`:
+`BEST_EFFORT` yields exit 0, full capture of both streams, one fallback record,
+one write attempt, and a closed session, while `STRICT` raises. All four tests
+fail on the 0.1.x surface and pass on 0.2.0b2.
+
+**Remaining gaps.** Nothing above changes the deferred features in §6.3 to
+§6.6; they are still absent from the released API. Within the two resolved
+areas, one behavioural difference survives. Cuprum's echo writes raw bytes to a
+sink attribute named `buffer` when present, taking that path in preference to
+the text path, so a compatibility sink must not expose one; and on a decode
+failure cuprum stops echoing rather than writing the original bytes to a binary
+buffer as `write_to_relay_sink` does. The adapter in §7.5 therefore uses the
+text path and selects `BEST_EFFORT`, which is the behaviour lading's callers
+need; the binary fallback has no consumer in the production runner. Neither is
+an upstream defect, and neither blocks a faithful migration.
+
+**Validation.** The full gate suite passes sequentially on the beta2 pin, and
+the uploader runs end to end against a stub `gh` in both entry modes with no
+publication, checking that `0.2.0b2` is the cuprum the isolated environment
+resolves. The beta1 findings remain the reference for the initial snapshot and
+for the still-deferred features.
 
 [^1]: Inspected
       [lading revision](https://github.com/leynos/lading/tree/c0dda6821de1ac097ce89be96003a051aa11ac99)

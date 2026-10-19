@@ -456,10 +456,10 @@ the solver performs:
 
 ```text
 # pyproject.toml, [project] dependencies
-"cuprum==0.2.0b1",
+"cuprum==0.2.0b2",
 
 # scripts/upload_release_wheels.py, PEP 723 block
-# dependencies = ["cuprum==0.2.0b1", "cyclopts>=3"]
+# dependencies = ["cuprum==0.2.0b2", "cyclopts>=3"]
 ```
 
 then regenerate both locks:
