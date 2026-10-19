@@ -979,8 +979,8 @@ now travel in a `RunOutputOptions` instance passed as `output=`.
 
 #### Implementation notes (Step 5.1.4)
 
-Step 5.1.4 selects the published `cuprum==0.2.0b1` on both dependency paths and
-migrates the call sites that the beta broke. The pin later moved to
+Step 5.1.4 selects the published `cuprum` beta on both dependency paths and
+migrates the call sites that the beta broke. The pin has since moved to
 `cuprum==0.2.0b2`, which adds the environment and broken-pipe policies §7.5
 relies on, without further call-site changes. The selection policy -- an exact
 pin on each path, a lock per path, cross-path alignment enforced by a contract
