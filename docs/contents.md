@@ -65,12 +65,12 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
   scripts, secure command execution, and command mocking.
 - [cmd-mox usage guide](cmd-mox-usage-guide.md) - testing guidance for command
   spies, fixtures, and process-boundary assertions.
-- [cuprum users' guide](cuprum-users-guide.md) - imported `cuprum`
-  0.2.0-beta1 guide to catalogues, program allowlists, execution scopes, output
-  options, and hooks.
-- [cuprum 0.2.0 migration guide](cuprum-v0-2-0-migration-guide.md) - imported
-  `cuprum` 0.2.0-beta1 guide to the API changes from 0.1.x, including
-  `ScopeConfig` and `RunOutputOptions`.
+- [cuprum users' guide](cuprum-users-guide.md) - vendored reference copy of
+  the `cuprum` 0.2.0-beta2 guide to catalogues, program allowlists, execution
+  scopes, output options, and hooks.
+- [cuprum 0.2.0 migration guide](cuprum-v0-2-0-migration-guide.md) - vendored
+  reference copy of the `cuprum` 0.2.0-beta2 guide to the API changes from
+  0.1.x, including `ScopeConfig` and `RunOutputOptions`.
 - [Lading 0.4.0 migration guide](v0-4-0-migration-guide.md) - the interpreter
   floor moving to CPython 3.14, PyPI publication, and how to upgrade or defer.
 - [Complexity antipatterns and refactoring

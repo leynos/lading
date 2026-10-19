@@ -69,18 +69,25 @@ invokes `markdownlint-cli2` from a `run:` line: that would resolve whatever
 version the runner happened to carry, which is the drift the pin exists to
 stop. Locally, `make fmt` calls `mdtablefix` and `markdownlint-cli2 --fix`
 directly, and `.markdownlint-cli2.jsonc` is the canonical configuration, so the
-rules the action applies are the rules a contributor sees.
+rules the action applies are the rules a contributor sees. The two vendored
+cuprum guides carry a narrow `overrides` entry that disables MD013 and MD034
+for them alone; their lines are upstream's, and repairing them would break the
+"imported unchanged" contract described under
+[Reference documents](contents.md).
 
 `make fmt` and `make check-fmt` run `mdtablefix` over the Markdown files Git
-tracks and the untracked files it does not ignore
-(`--git --include-untracked`), with
-`--wrap --renumber --breaks --ellipsis --fences`. They need mdtablefix 0.6.0 or
-later, the first release with `--check` and `--git`. CI installs 0.6.1 through
-the shared `install-mdtablefix` action, with the pin in
-`.github/workflows/ci.yml`. 0.6.1 fixes the 0.6.0 bugs that changed Markdown
-content: `--wrap` breaking text with no whitespace, Setext headings turned into
-rules, and `--renumber` changing a list's start. Install the same version
-locally with `cargo binstall mdtablefix@0.6.1`.
+tracks and the untracked files it does not ignore. The file list is the one
+`--git --include-untracked` selects, expanded through `git ls-files` so the
+vendored `docs/cuprum-*.md` guides can be filtered out: they are imported
+verbatim and must keep upstream's wrapping. `mdtablefix` has no exclusion
+option of its own, and `--git` refuses to be combined with an explicit file
+list. The formatter runs with `--wrap --renumber --breaks --ellipsis --fences`.
+It needs mdtablefix 0.6.0 or later, the first release with `--check` and
+`--git`. CI installs 0.6.1 through the shared `install-mdtablefix` action, with
+the pin in `.github/workflows/ci.yml`. 0.6.1 fixes the 0.6.0 bugs that changed
+Markdown content: `--wrap` breaking text with no whitespace, Setext headings
+turned into rules, and `--renumber` changing a list's start. Install the same
+version locally with `cargo binstall mdtablefix@0.6.1`.
 
 `tests/workflow_contracts/test_coverage_ownership.py` holds the shapes the
 shared CV-005 checker does not, and enumerates the workflow directory rather
