@@ -36,6 +36,9 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
 - [Regenerate discovered nested lockfiles][execplan-regenerate-lockfiles] -
   completed plan for discovery-driven lockfile regeneration in the bump command.
 
+- [Record adapter compatibility policy](execplans/5-1-5-record-adapter-compatibility-policy.md)
+  - draft plan for roadmap 5.1.5, targeting cuprum beta2.
+
 ## Decision records
 
 - [ADR-003: Use multi-stage Python linting][adr-003] - accepted linting policy
