@@ -67,27 +67,52 @@ same name. The tag object's SHA is immutable but is not a commit, so a pin
 naming it names a different kind of object than a commit pin does. No CI step
 invokes `markdownlint-cli2` from a `run:` line: that would resolve whatever
 version the runner happened to carry, which is the drift the pin exists to
-stop. Locally, `make fmt` calls `mdtablefix` and `markdownlint-cli2 --fix`
-directly, and `.markdownlint-cli2.jsonc` is the canonical configuration, so the
-rules the action applies are the rules a contributor sees. The two vendored
-cuprum guides carry a narrow `overrides` entry that disables MD013 and MD034
-for them alone; their lines are upstream's, and repairing them would break the
-"imported unchanged" contract described under
+stop. Locally, `make fmt` calls `scripts/format_markdown.py` and
+`markdownlint-cli2 --fix`, and `.markdownlint-cli2.jsonc` is the canonical
+configuration, so the rules the action applies are the rules a contributor
+sees. The two vendored cuprum guides carry a narrow `overrides` entry that
+disables MD013 and MD034 for them alone; their lines are upstream's, and
+repairing them would break the "imported unchanged" contract described under
 [Reference documents](contents.md).
 
-`make fmt` and `make check-fmt` run `mdtablefix` over the Markdown files Git
-tracks and the untracked files it does not ignore. The file list is the one
-`--git --include-untracked` selects, expanded through `git ls-files` so the
-vendored `docs/cuprum-*.md` guides can be filtered out: they are imported
-verbatim and must keep upstream's wrapping. `mdtablefix` has no exclusion
-option of its own, and `--git` refuses to be combined with an explicit file
-list. The formatter runs with `--wrap --renumber --breaks --ellipsis --fences`.
-It needs mdtablefix 0.6.0 or later, the first release with `--check` and
-`--git`. CI installs 0.6.1 through the shared `install-mdtablefix` action, with
-the pin in `.github/workflows/ci.yml`. 0.6.1 fixes the 0.6.0 bugs that changed
-Markdown content: `--wrap` breaking text with no whitespace, Setext headings
-turned into rules, and `--renumber` changing a list's start. Install the same
-version locally with `cargo binstall mdtablefix@0.6.1`.
+`make fmt` and `make check-fmt` run `scripts/format_markdown.py`, which asks
+`mdtablefix` for its own `--git --include-untracked --list-files` selection and
+removes the two vendored `docs/cuprum-*.md` guides before formatting what
+remains. The selection is deliberately the formatter's rather than a copy of it
+in the Makefile: `mdtablefix` folds `md`, `mdc`, and `markdown` to lower case,
+skips an index entry whose file has gone, refuses symbolic links and paths
+outside the tree, deduplicates hard links by canonical name, and reports a
+failed Git query as a failure. An earlier Makefile spelling rebuilt that
+selection with `git ls-files` and a case-sensitive pathspec, piped through
+`xargs -r`, which lost all three of the last behaviours: a failed `git` exited
+zero, an uppercase `.MD` file was never selected, and a tracked-but-deleted
+file reached the formatter positionally. The wrapper has no exclude option to
+offer either, so it takes the vendored names out of the list the formatter
+reported and passes the rest as explicit files.
+
+Listing files reads none of them, so the guard `mdtablefix --in-place` applies
+against a file carrying conflict markers during a paused merge, rebase, revert,
+or cherry-pick is never reached on that path. The wrapper applies that one rule
+itself, and only where the formatter would: it probes the file with the
+formatter's own `--check` and refuses only a file that would actually be
+rewritten, printing the same refusal sentence. `--allow-conflicted` is consumed
+rather than forwarded, because `mdtablefix` defines it only for a selection it
+made itself, and it means the same thing here: skip the guard.
+
+The formatter runs with `--wrap --renumber --breaks --ellipsis --fences`. It
+needs mdtablefix 0.6.1 or later, the first release whose `--git` selection has
+the behaviours above. CI installs 0.6.1 through the shared `install-mdtablefix`
+action, with the pin in `.github/workflows/ci.yml`. 0.6.1 also fixes the 0.6.0
+bugs that changed Markdown content: `--wrap` breaking text with no whitespace,
+Setext headings turned into rules, and `--renumber` changing a list's start.
+Install the same version locally with `cargo binstall mdtablefix@0.6.1`.
+
+The wrapper is a PEP 723 script under `scripts/`, so it is gated like the rest
+of that tree: Ruff, Interrogate, Pylint, and `ty` all read it, and its
+`scripts/format_markdown.py.lock` is committed and checked for freshness the
+same way the uploader's is. `make check-fmt` runs it through
+`uv run --locked --script`, so a stale lock fails the gate rather than being
+re-resolved on the fly.
 
 `tests/workflow_contracts/test_coverage_ownership.py` holds the shapes the
 shared CV-005 checker does not, and enumerates the workflow directory rather
@@ -450,9 +475,9 @@ as a test assertion on the SHA string.
 
 ## Changing the cuprum version
 
-Unlike the workflow pins above, the cuprum pin is exact on both dependency
-paths, so a bump is a deliberate edit in four places rather than a resolution
-the solver performs:
+Unlike the workflow pins above, the cuprum pin is exact on every dependency
+path, so a bump is a deliberate edit in six places rather than a resolution the
+solver performs. Three sites declare it:
 
 ```text
 # pyproject.toml, [project] dependencies
@@ -460,19 +485,29 @@ the solver performs:
 
 # scripts/upload_release_wheels.py, PEP 723 block
 # dependencies = ["cuprum==0.2.0b2", "cyclopts>=3"]
+
+# scripts/format_markdown.py, PEP 723 block
+# dependencies = ["cuprum==0.2.0b2", "cyclopts>=3"]
 ```
 
-then regenerate both locks:
+and three locks record it:
 
 ```bash
 uv lock
 uv lock --script scripts/upload_release_wheels.py
+uv lock --script scripts/format_markdown.py
 ```
 
+Each `uv run --script` entry point resolves its dependencies from its own PEP
+723 block, independently of the project, so a script that is left behind keeps
+running the old release while everything else moves. That is why both scripts
+carry the pin and both locks are committed, rather than one standing in for the
+other.
+
 `tests/workflow_contracts/test_cuprum_selection.py` reads the expected version
-from `pyproject.toml` and contains no version literal, so all four sites must
+from `pyproject.toml` and contains no version literal, so all six sites must
 agree or the suite fails. Its freshness checks read the Git index rather than
-the working tree, because `make build` and the standalone BDD scenario both
+the working tree, because `make build` and the standalone script runs all
 re-lock silently: a stale lock is repaired before the suite sees it, so the
 check can only fail against indexed state. Stage the lockfiles, then verify
 with the test rather than assuming the tree is fresh: the check reads the

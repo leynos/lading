@@ -53,28 +53,67 @@ PYPROJECT = REPOSITORY_ROOT / "pyproject.toml"
 LOCKFILE = REPOSITORY_ROOT / "uv.lock"
 UPLOAD_SCRIPT = REPOSITORY_ROOT / "scripts" / "upload_release_wheels.py"
 SCRIPT_LOCKFILE = REPOSITORY_ROOT / "scripts" / "upload_release_wheels.py.lock"
+FORMAT_SCRIPT = REPOSITORY_ROOT / "scripts" / "format_markdown.py"
+FORMAT_LOCKFILE = REPOSITORY_ROOT / "scripts" / "format_markdown.py.lock"
 
 pytestmark = pytest.mark.timeout(60)
 
 
+def _assert_script_path_pins(expected: str, script: Path) -> None:
+    """Assert one PEP 723 script and its adjacent lock pin ``expected``.
+
+    Parameters
+    ----------
+    expected : str
+        The version ``pyproject.toml`` declares.
+    script : Path
+        The script whose inline metadata and adjacent lock are checked.
+
+    Raises
+    ------
+    AssertionError
+        If either the metadata or the lock disagrees with ``expected``, or the
+        lock is missing.
+    """  # ruff: ignore[docstring-extraneous-exception]  # raised by the asserts below
+    relative = script.relative_to(REPOSITORY_ROOT).as_posix()
+    declared = pin_from(
+        script_requirements(script.read_text(encoding="utf-8")),
+        site=f"{relative} PEP 723 block",
+    )
+    assert declared == expected, (
+        f"{relative}'s inline metadata pins cuprum {declared}, but "
+        f"pyproject.toml pins {expected}"
+    )
+
+    lockfile = script.with_name(f"{script.name}.lock")
+    assert lockfile.exists(), (
+        f"{relative} needs its own lock at {lockfile.name}; "
+        f"run 'uv lock --script {relative}'"
+    )
+    lock = lockfile.read_text(encoding="utf-8")
+    assert lock_pin(lock, site=lockfile.name) == expected, (
+        f"{lockfile.name} resolves cuprum to a version other than {expected}"
+    )
+    specifier = lock_specifier(lock, site=lockfile.name, origin="script")
+    assert specifier == expected, (
+        f"{lockfile.name}'s recorded requirement disagrees with "
+        f"pyproject.toml ({expected})"
+    )
+
+
 def test_every_site_declares_the_same_exact_cuprum_pin() -> None:
-    """All five requirement sites name one exact version, and it is installed.
+    """Every requirement site names one exact version, and it is installed.
 
     The expected value comes from ``pyproject.toml`` rather than a literal, so
     this test states alignment rather than a particular version: a bump that
-    edits four sites out of five fails, and the message names the one that
-    lagged.
+    misses one site fails, and the message names the one that lagged. The two
+    ``uv run --script`` entry points resolve independently of the project, so
+    each needs its own check rather than one standing in for both.
     """
     expected = declared_pin(PYPROJECT.read_text(encoding="utf-8"))
 
-    script = pin_from(
-        script_requirements(UPLOAD_SCRIPT.read_text(encoding="utf-8")),
-        site="scripts/upload_release_wheels.py PEP 723 block",
-    )
-    assert script == expected, (
-        f"the uploader's inline metadata pins cuprum {script}, but "
-        f"pyproject.toml pins {expected}"
-    )
+    _assert_script_path_pins(expected, UPLOAD_SCRIPT)
+    _assert_script_path_pins(expected, FORMAT_SCRIPT)
 
     lock = LOCKFILE.read_text(encoding="utf-8")
     assert lock_pin(lock, site="uv.lock") == expected, (
@@ -82,22 +121,6 @@ def test_every_site_declares_the_same_exact_cuprum_pin() -> None:
     )
     assert lock_specifier(lock, site="uv.lock", origin="project") == expected, (
         f"uv.lock's recorded requirement disagrees with pyproject.toml ({expected})"
-    )
-
-    assert SCRIPT_LOCKFILE.exists(), (
-        f"the standalone path needs its own lock at {SCRIPT_LOCKFILE.name}; "
-        "run 'uv lock --script scripts/upload_release_wheels.py'"
-    )
-    script_lock = SCRIPT_LOCKFILE.read_text(encoding="utf-8")
-    assert lock_pin(script_lock, site=SCRIPT_LOCKFILE.name) == expected, (
-        f"{SCRIPT_LOCKFILE.name} resolves cuprum to a version other than {expected}"
-    )
-    assert (
-        lock_specifier(script_lock, site=SCRIPT_LOCKFILE.name, origin="script")
-        == expected
-    ), (
-        f"{SCRIPT_LOCKFILE.name}'s recorded requirement disagrees with "
-        f"pyproject.toml ({expected})"
     )
 
     installed = installed_version()
@@ -218,24 +241,22 @@ def test_the_project_lock_is_fresh(tmp_path: Path) -> None:
     not (REPOSITORY_ROOT / ".git").exists(),
     reason=_NO_GIT_CHECKOUT,
 )
-def test_the_script_lock_is_fresh(tmp_path: Path) -> None:
-    """``scripts/upload_release_wheels.py.lock`` matches the script metadata.
+@pytest.mark.parametrize("script", [UPLOAD_SCRIPT, FORMAT_SCRIPT], ids=lambda p: p.name)
+def test_the_script_locks_are_fresh(tmp_path: Path, script: Path) -> None:
+    """Each script's lock matches the metadata it was resolved from.
 
-    The same reconstruction as the project check, and for the same reason: the
-    standalone BDD scenario runs ``uv run --script``, which re-locks a stale
-    script lock. The script and its lock are written into a scratch directory
-    under their committed names, because ``uv lock --script`` looks for
-    ``<script>.lock`` beside the script.
+    The same reconstruction as the project check, and for the same reason: both
+    entry points run through ``uv run --script``, which re-locks a stale script
+    lock, so a tree-based check could never fail. The script and its lock are
+    written into a scratch directory under their committed names, because
+    ``uv lock --script`` looks for ``<script>.lock`` beside the script.
     """
-    (tmp_path / UPLOAD_SCRIPT.name).write_text(
-        _committed(UPLOAD_SCRIPT), encoding="utf-8"
-    )
-    (tmp_path / SCRIPT_LOCKFILE.name).write_text(
-        _committed(SCRIPT_LOCKFILE), encoding="utf-8"
-    )
+    lockfile = script.with_name(f"{script.name}.lock")
+    (tmp_path / script.name).write_text(_committed(script), encoding="utf-8")
+    (tmp_path / lockfile.name).write_text(_committed(lockfile), encoding="utf-8")
     _uv_lock_in(
         tmp_path,
-        ("--script", UPLOAD_SCRIPT.name),
-        site=f"{SCRIPT_LOCKFILE.name}",
+        ("--script", script.name),
+        site=lockfile.name,
         cwd=tmp_path,
     )

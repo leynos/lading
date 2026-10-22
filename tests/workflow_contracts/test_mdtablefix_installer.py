@@ -1,10 +1,10 @@
 """Contract tests for CI's shared mdtablefix installer.
 
 ``make check-fmt`` validates tracked Markdown against canonical ``mdtablefix``
-output, so CI must provide the formatter at the version the checker and
-``make fmt`` agree on. These tests parse ``ci.yml`` with PyYAML and verify the
-stable installer contract: its shared-action path, formatter version, and full
-commit SHA.
+output through ``scripts/format_markdown.py``, so CI must provide the formatter
+at a version whose ``--git`` selection behaves as that wrapper expects. These
+tests parse ``ci.yml`` with PyYAML and verify the stable installer contract: its
+shared-action path, formatter version, and full commit SHA.
 
 Dependabot owns the upgrade of GitHub Actions and reusable workflows (see the
 developers' guide), so the installer reference is checked for its path and
