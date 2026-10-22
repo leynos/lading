@@ -43,7 +43,7 @@ jobs:
         id: makeutil
         # A digest-verified prebuilt release rather than a from-source build:
         # the action's pinned table and the release's own sidecar must agree.
-        uses: leynos/shared-actions/.github/actions/install-makeutil@ebe2f3105334283441f4c915eb979a0f4b9f2c04
+        uses: leynos/shared-actions/.github/actions/install-makeutil@d26e53630893c942af44eb3db7efd4fcbe0c8093
 
       - name: Verify makeutil
         # Prove the installed binary runs, matches the release the action
@@ -73,7 +73,7 @@ jobs:
         # `make check-fmt` runs `scripts/format_markdown.py`, which asks the
         # formatter for its `--git --include-untracked --list-files` selection;
         # 0.6.1 is the release whose selection behaves as the wrapper expects.
-        uses: leynos/shared-actions/.github/actions/install-mdtablefix@7d751eded578e48dacf43ab173d5820e6437c474
+        uses: leynos/shared-actions/.github/actions/install-mdtablefix@d26e53630893c942af44eb3db7efd4fcbe0c8093
         with:
           version: "0.6.1"
 
@@ -135,7 +135,7 @@ jobs:
         if: github.event_name == 'pull_request'
         env:
           UV_PYTHON: '3.14'
-        uses: leynos/shared-actions/.github/actions/generate-coverage@7d751eded578e48dacf43ab173d5820e6437c474
+        uses: leynos/shared-actions/.github/actions/generate-coverage@d26e53630893c942af44eb3db7efd4fcbe0c8093
         with:
           language: python
           output-path: coverage.xml
