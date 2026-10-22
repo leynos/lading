@@ -1,12 +1,12 @@
-"""Contract tests for cuprum's version selection across both dependency paths.
+"""Contract tests for cuprum's version selection across every dependency path.
 
-Cuprum reaches lading two ways: the repository (``pyproject.toml`` and
-``uv.lock``) and the standalone release uploader, which runs through
-``uv run --script`` and reads the script's PEP 723 metadata and its own
-adjacent lockfile. The two paths resolve independently, so nothing but a test
-keeps them on the same cuprum -- and a partial bump is not hypothetical:
-Dependabot edits only ``pyproject.toml`` and ``uv.lock``, and its pull
-requests auto-merge.
+Cuprum reaches lading three ways: the repository (``pyproject.toml`` and
+``uv.lock``), the standalone release uploader, and the Markdown formatting
+wrapper. The scripts run through ``uv run --script`` and read their PEP 723
+metadata and their own adjacent lockfiles, so every path resolves
+independently and nothing but a test keeps them on the same cuprum -- and a
+partial bump is not hypothetical: Dependabot edits only ``pyproject.toml`` and
+``uv.lock``, and its pull requests auto-merge.
 
 The alignment test reads the expected version from ``pyproject.toml`` and
 contains no version literal of its own, so a bump moves every site together or

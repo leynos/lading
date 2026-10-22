@@ -987,12 +987,13 @@ pin on each path, a lock per path, cross-path alignment enforced by a contract
 test, and manual bumps -- is
 [ADR-006](adr/006-align-cuprum-selection-across-dependency-paths.md).
 
-- The repository path is `pyproject.toml` plus `uv.lock`. The standalone path is
-  the PEP 723 metadata block in `scripts/upload_release_wheels.py` plus
-  `scripts/upload_release_wheels.py.lock`. Four places must name the same
-  version; `tests/workflow_contracts/test_cuprum_selection.py` reads the
-  expected version from `pyproject.toml` and fails if any site disagrees, so a
-  bump moves them together or fails.
+- The repository path is `pyproject.toml` plus `uv.lock`. The standalone paths
+  are the PEP 723 metadata blocks in `scripts/upload_release_wheels.py` and
+  `scripts/format_markdown.py`, each with its own adjacent lock. Six places
+  must name the same version;
+  `tests/workflow_contracts/test_cuprum_selection.py` reads the expected
+  version from `pyproject.toml` and fails if any site disagrees, so a bump
+  moves them together or fails.
 - The same test checks that each lock is fresh, reading the Git index rather
   than the working tree: `make build` and the standalone BDD scenario both
   re-lock silently before the suite runs, so a tree-reading check cannot fail.

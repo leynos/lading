@@ -64,7 +64,16 @@ _OMITTED_VARIABLES = ("GITHUB_REF_NAME", "GITHUB_OUTPUT")
 _ENVIRONMENT_CHILD = (
     "import json, os; print(json.dumps(dict(os.environ), sort_keys=True))"
 )
-_ECHO_CHILD = "import sys; sys.stdout.write('out\\n'); sys.stderr.write('err\\n')"
+#: Two flushed chunks per stream, because one chunk cannot distinguish "echo
+#: was disabled after its first failed write" from "there was nothing more to
+#: write". A later chunk is what a re-mirroring implementation would attempt.
+_ECHO_CHILD = (
+    "import sys\n"
+    "sys.stdout.write('out-1\\n'); sys.stdout.flush()\n"
+    "sys.stdout.write('out-2\\n'); sys.stdout.flush()\n"
+    "sys.stderr.write('err-1\\n'); sys.stderr.flush()\n"
+    "sys.stderr.write('err-2\\n'); sys.stderr.flush()\n"
+)
 
 
 class _BrokenPipeWriter(io.TextIOBase):
@@ -163,13 +172,16 @@ def _read_child_environment(
 
 
 def _broken_pipe_output(
-    sink: _BrokenPipeSink, policy: BrokenPipePolicy
+    sink: _BrokenPipeSink,
+    policy: BrokenPipePolicy,
+    *,
+    echo_stderr: bool = False,
 ) -> RunOutputOptions:
     """Return the output options for echoing into a closed destination."""
     return RunOutputOptions(
         capture=True,
         echo=True,
-        echo_stderr=False,
+        echo_stderr=echo_stderr,
         sink=sink,
         broken_pipe_policy=policy,
     )
@@ -223,6 +235,12 @@ def test_best_effort_keeps_capture_when_the_sink_breaks() -> None:
     This is lading's relay policy expressed natively: one failed write
     disables that stream's mirroring, later chunks are not retried, and the
     child's full output still returns in the result.
+
+    The child writes two flushed chunks per stream. A single chunk would pass
+    against an implementation that reports the fallback and keeps echoing, so
+    the second chunk is what makes "this stream is now unmirrored" falsifiable:
+    exactly one write is attempted, and both chunks of both streams are still
+    captured.
     """
     sink = _BrokenPipeSink()
 
@@ -232,8 +250,8 @@ def test_best_effort_keeps_capture_when_the_sink_breaks() -> None:
     )
 
     assert result.exit_code == 0, result.stderr
-    assert result.stdout == "out\n", result.stdout
-    assert result.stderr == "err\n", result.stderr
+    assert result.stdout == "out-1\nout-2\n", result.stdout
+    assert result.stderr == "err-1\nerr-2\n", result.stderr
     assert result.relay_fallbacks == (
         RelayFallback(
             stream=EchoStream.STDOUT,
@@ -245,12 +263,52 @@ def test_best_effort_keeps_capture_when_the_sink_breaks() -> None:
     assert sink.session.is_closed, "the session must be closed on every path"
 
 
+def test_best_effort_disables_only_the_stream_that_broke() -> None:
+    """One broken destination does not silence the other stream.
+
+    ``echo_stderr`` mirrors both streams through the same sink, so the stdout
+    write fails and the stderr write fails with it. Each failing stream
+    reports its own fallback, and each is attempted exactly once: the first
+    write per stream is the one that fails, and the second chunk is what a
+    stream that kept echoing would have added.
+    """
+    sink = _BrokenPipeSink()
+
+    result = _run_child(
+        _ECHO_CHILD,
+        output=_broken_pipe_output(
+            sink, BrokenPipePolicy.BEST_EFFORT, echo_stderr=True
+        ),
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert result.stdout == "out-1\nout-2\n", result.stdout
+    assert result.stderr == "err-1\nerr-2\n", result.stderr
+    assert result.relay_fallbacks == (
+        RelayFallback(
+            stream=EchoStream.STDOUT,
+            error_category=EchoErrorCategory.BROKEN_PIPE,
+        ),
+        RelayFallback(
+            stream=EchoStream.STDERR,
+            error_category=EchoErrorCategory.BROKEN_PIPE,
+        ),
+    ), result.relay_fallbacks
+    assert sink.writer.write_attempts == 2, (
+        "each stream must attempt exactly one write before it is unmirrored"
+    )
+
+
 def test_strict_broken_pipe_policy_propagates() -> None:
     """The default policy is strict, which is why the opt-in is load-bearing.
 
     A future reader might reasonably assume BEST_EFFORT is the default; the
     raise here records that it is not, and that the neighbouring test proves
     the opt-in rather than an unchanged default.
+
+    ``write_attempts`` is one rather than two even though the child writes two
+    chunks, because strict mode stops the run at the first failure instead of
+    unmirroring the stream and continuing.
     """
     sink = _BrokenPipeSink()
 
