@@ -1,11 +1,11 @@
 """Read the cuprum version each dependency path resolves to.
 
-Both paths record their requirement in a lockfile, but not in the same place.
+Every path records its requirement in a lockfile, but not in the same place.
 A ``uv lock --script`` lock resolves the script's dependencies alone, so it
 holds no package entry for the script at all and its requirement sits in a
 top-level manifest; a project lock resolves the project itself, so the
-requirement is in the ``lading`` package's metadata. Reading either with the
-other's rule reports a correct lock as broken, which is why the shape is a
+requirement is in the ``lading`` package's metadata. Reading one shape with
+the other's rule reports a correct lock as broken, which is why the shape is a
 parameter rather than something guessed.
 
 The readers live here rather than in the contract test for the reason

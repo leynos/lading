@@ -20,7 +20,8 @@ looking for project guidance, then follow the link that matches the task.
 - [Roadmap](roadmap.md) - phased delivery plan and tracked implementation
   tasks.
 - [Cuprum beta assessment](cuprum-v0-2-0-beta1-adoption-assessment.md) -
-  phase 5 compatibility, migration workarounds, and remaining upstream features.
+  phase 5 compatibility, migration workarounds, remaining upstream features,
+  and the beta2 follow-up that retires the environment and broken-pipe shims.
 
 ## Migration guides
 
@@ -65,12 +66,12 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
   scripts, secure command execution, and command mocking.
 - [cmd-mox usage guide](cmd-mox-usage-guide.md) - testing guidance for command
   spies, fixtures, and process-boundary assertions.
-- [cuprum users' guide](cuprum-users-guide.md) - imported `cuprum`
-  0.2.0-beta1 guide to catalogues, program allowlists, execution scopes, output
-  options, and hooks.
-- [cuprum 0.2.0 migration guide](cuprum-v0-2-0-migration-guide.md) - imported
-  `cuprum` 0.2.0-beta1 guide to the API changes from 0.1.x, including
-  `ScopeConfig` and `RunOutputOptions`.
+- [cuprum users' guide](cuprum-users-guide.md) - vendored reference copy of
+  the `cuprum` 0.2.0-beta2 guide to catalogues, program allowlists, execution
+  scopes, output options, and hooks.
+- [cuprum 0.2.0 migration guide](cuprum-v0-2-0-migration-guide.md) - vendored
+  reference copy of the `cuprum` 0.2.0-beta2 guide to the API changes from
+  0.1.x, including `ScopeConfig` and `RunOutputOptions`.
 - [Lading 0.4.0 migration guide](v0-4-0-migration-guide.md) - the interpreter
   floor moving to CPython 3.14, PyPI publication, and how to upgrade or defer.
 - [Complexity antipatterns and refactoring

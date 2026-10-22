@@ -979,18 +979,21 @@ now travel in a `RunOutputOptions` instance passed as `output=`.
 
 #### Implementation notes (Step 5.1.4)
 
-Step 5.1.4 selects the published `cuprum==0.2.0b1` on both dependency paths and
-migrates the call sites that the beta broke. The selection policy -- an exact
+Step 5.1.4 selects the published `cuprum` beta on both dependency paths and
+migrates the call sites that the beta broke. The pin has since moved to
+`cuprum==0.2.0b2`, which adds the environment and broken-pipe policies §7.5
+relies on, without further call-site changes. The selection policy -- an exact
 pin on each path, a lock per path, cross-path alignment enforced by a contract
 test, and manual bumps -- is
 [ADR-006](adr/006-align-cuprum-selection-across-dependency-paths.md).
 
-- The repository path is `pyproject.toml` plus `uv.lock`. The standalone path is
-  the PEP 723 metadata block in `scripts/upload_release_wheels.py` plus
-  `scripts/upload_release_wheels.py.lock`. Four places must name the same
-  version; `tests/workflow_contracts/test_cuprum_selection.py` reads the
-  expected version from `pyproject.toml` and fails if any site disagrees, so a
-  bump moves them together or fails.
+- The repository path is `pyproject.toml` plus `uv.lock`. The standalone paths
+  are the PEP 723 metadata blocks in `scripts/upload_release_wheels.py` and
+  `scripts/format_markdown.py`, each with its own adjacent lock. Six places
+  must name the same version;
+  `tests/workflow_contracts/test_cuprum_selection.py` reads the expected
+  version from `pyproject.toml` and fails if any site disagrees, so a bump
+  moves them together or fails.
 - The same test checks that each lock is fresh, reading the Git index rather
   than the working tree: `make build` and the standalone BDD scenario both
   re-lock silently before the suite runs, so a tree-reading check cannot fail.
@@ -1107,17 +1110,22 @@ and returns the command result to the Lading caller._
 1. The streaming requirement is already met by cuprum's live stdout/stderr
    relay, so no line-iteration API is required for lading's publish streaming
    requirement.
-2. Two demonstrated differences block a direct behaviour-preserving
-   substitution and need shims: cuprum's `ExecutionContext.env` always overlays
-   the live parent environment, whereas lading's runner replaces the
-   environment; and an equivalent broken text sink raises `BrokenPipeError`,
-   whereas lading's relay policy disables a failed relay while preserving
-   capture.
-3. Relay is preserved through a text-facade sink that reuses lading's existing
-   relay policy (UTF-8 replacement decoding, binary fallback, broken-pipe
-   suppression) and does not expose a raw `.buffer` that would bypass the
-   wrapper; `max_echo_line_bytes=None` is selected for current unbounded relay
-   parity.
+2. Two differences recorded against 0.2.0-beta1 now have native answers, so
+   neither needs a shim. `ExecutionContext(env_mode=EnvMode.REPLACE)` starts
+   the child from an empty environment and applies only the supplied mapping,
+   which reproduces the runner's existing `Popen(env=...)` contract; the
+   default remains an overlay.
+   `RunOutputOptions(broken_pipe_policy= BrokenPipePolicy.BEST_EFFORT)` stops
+   echoing a stream whose reader has gone away while capture and child reaping
+   continue, which reproduces lading's relay policy. The default stays strict.
+3. The adapter therefore passes `c_locale_env(normalize_environment(...))` as
+   a `REPLACE` environment and selects `BEST_EFFORT` on the output options,
+   rather than wrapping the sink or bootstrapping an `os.execve` child. A sink
+   must still avoid exposing a raw `.buffer`, because cuprum writes raw bytes
+   to that attribute instead of taking the text path; lading's relay policy
+   keeps its UTF-8 replacement decoding for the text path.
+   `max_echo_line_bytes=None` is selected for current unbounded relay parity.
+   `tests/unit/test_cuprum_policies.py` pins both opt-ins.
 4. Cargo output continues to be relayed as it is produced, not buffered until
    completion, and recorded output remains complete.
 

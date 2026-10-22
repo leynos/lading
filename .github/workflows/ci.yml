@@ -70,8 +70,9 @@ jobs:
           uv tool install ruff==0.16.10
 
       - name: Install mdtablefix
-        # `make check-fmt` runs `mdtablefix --check --git`; 0.6.0 is the
-        # first release with `--check` and `--git`.
+        # `make check-fmt` runs `scripts/format_markdown.py`, which asks the
+        # formatter for its `--git --include-untracked --list-files` selection;
+        # 0.6.1 is the release whose selection behaves as the wrapper expects.
         uses: leynos/shared-actions/.github/actions/install-mdtablefix@7d751eded578e48dacf43ab173d5820e6437c474
         with:
           version: "0.6.1"

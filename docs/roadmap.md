@@ -298,9 +298,10 @@ The [beta adoption assessment](cuprum-v0-2-0-beta1-adoption-assessment.md)
 defines the compatibility requirements and acceptance gates. 5.1.4 has since
 selected and validated the published beta on both dependency paths and migrated
 the release uploader, so the release artefact is certified and a release path
-runs on the beta. The production migration below remains open: the catalogue,
-the pathlib conversion, the source-level assessment, and the uploader are
-complete, and every other execution migration task is not.
+runs on the beta. The pin has since moved to `0.2.0b2`. The production
+migration below remains open: the catalogue, the pathlib conversion, the
+source-level assessment, and the uploader are complete, and every other
+execution migration task is not.
 
 Scope includes the production runner and every caller, real cmd-mox
 passthrough, six test files importing `subprocess`, two plumbum test helpers,
@@ -332,6 +333,9 @@ production execution. See the assessment §§1-3 and §7.
   - Replaced the cuprum 0.1.0 lock with an explicit beta selection in
     `pyproject.toml` and `uv.lock`, and aligned the inline dependency metadata
     in `scripts/upload_release_wheels.py`; each path carries its own lockfile.
+  - The pin has since moved to `cuprum==0.2.0b2` on both paths, which resolved
+    the 0.2.0-beta1 environment-replacement and broken-pipe blockers natively;
+    `tests/unit/test_cuprum_policies.py` pins both opt-ins.
   - Moved the uploader's cuprum boundary into `scripts/release_gh.py`, which
     uses `scoped(catalogue=…)`, `sh.make(program, catalogue=…)`, and
     `run_sync(output=RunOutputOptions(capture=True))`, replacing the removed
@@ -346,9 +350,13 @@ production execution. See the assessment §§1-3 and §7.
 - [ ] 5.1.5. Record the adapter compatibility policy in the design document.
   - Preserve the existing `CommandRunner` tuple and exception contracts;
     separate catalogue rejection from actual spawn `OSError`.
-  - Specify environment inheritance versus exact replacement, an exec shim
-    where necessary, validated executable-path registration, and text-first
-    relay compatibility without exposing a bypassing raw buffer.
+  - Specify environment inheritance versus exact replacement, validated
+    executable-path registration, and text-first relay compatibility without
+    exposing a bypassing raw buffer.
+  - beta2 changes two inputs to this decision: exact replacement is
+    `EnvMode.REPLACE`, which replaces the beta1 plan's `os.execve` bootstrap,
+    and broken-pipe relay is `BrokenPipePolicy.BEST_EFFORT`, so neither needs
+    a compatibility shim. §7.5 of the design document records both.
   - Success: the decision is recorded in `docs/lading-design.md` §7 and an
     ADR where substantive; no global `os.environ` mutation or retained
     subprocess backend is needed to implement it.
@@ -375,9 +383,12 @@ and §7.
   - Requires 5.2.1.
   - Capture both streams, keep metadata stdout silent and stderr live, and
     select `max_echo_line_bytes=None` for current unbounded relay parity.
-  - Reuse the relay policy in a sink facade for UTF-8 boundaries, narrow
-    encodings, binary fallback, and broken-pipe suppression; remove redundant
-    pipe-draining threads once cuprum owns draining.
+  - Select `BrokenPipePolicy.BEST_EFFORT` for the relay contract instead of
+    building a broken-pipe-suppressing sink facade, and reuse the text path's
+    UTF-8 replacement decoding for narrow encodings; the binary fallback has
+    no production consumer, because cuprum bypasses any sink exposing a
+    `.buffer` to write raw bytes. Remove redundant pipe-draining threads once
+    cuprum owns draining.
   - Success: output arrives before exit, including partial lines; capture
     survives rejected sinks and lines over 64 KiB without truncation.
 - [ ] 5.2.3. Route every production caller through the cuprum adapter.

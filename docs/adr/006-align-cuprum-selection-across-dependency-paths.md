@@ -3,7 +3,9 @@
 ## Status
 
 Accepted, 2026-09-25. `cuprum` is pinned exactly, to the same version, on both
-dependency paths, and a contract test enforces the alignment.
+dependency paths, and a contract test enforces the alignment. Amended by the
+[2026-10-19 addendum](#addendum-2026-10-19-cuprum-moved-to-020b2) and the
+[2026-10-22 addendum](#addendum-2026-10-22-a-third-dependency-path).
 
 ## Date
 
@@ -98,3 +100,49 @@ enforced by a contract test.
   script contract. ADR-005 made the uploader a PEP 723 script that does not
   import the package; this ADR adds that the resulting second dependency path
   must be pinned and locked like the first. Nothing in ADR-005 is reversed.
+
+## Addendum, 2026-10-19: cuprum moved to 0.2.0b2
+
+Adopted 2026-10-19. This addendum moves the pin the decision above fixed; the
+accepted body of this ADR is unchanged.
+
+Cuprum `0.2.0b2` is the tested release, and the pin moves to it on both paths:
+`pyproject.toml` and the PEP 723 block in `scripts/upload_release_wheels.py`
+now name `cuprum==0.2.0b2`, and both lockfiles were regenerated for it
+(`uv lock` and `uv lock --script scripts/upload_release_wheels.py`). `0.2.0b1`
+is superseded. The version is not repeated here as a live literal: the contract
+test reads it from `pyproject.toml`.
+
+The decision's reasoning is what selects the new beta, not an exception to it.
+The exactness rule was accepted because a range would admit an untested beta;
+`0.2.0b2` is the beta the repository actually tests, and it is the release that
+supplies the two behaviours the subprocess adapter needs -- exact environment
+replacement and a best-effort broken-pipe relay -- which `0.2.0b1` could not
+express. The migration was therefore a pin change with no call-site rewrite.
+
+Validation: the whole gate set passed on the committing branch --
+`make check-fmt`, `make lint`, `make typecheck`, `make test`,
+`make markdownlint`, and `make nixie` -- and the distribution smoke recorded in
+the [beta1 assessment](../cuprum-v0-2-0-beta1-adoption-assessment.md) ran the
+uploader against a stub `gh` on both execution paths without publishing a
+release. The procedures above are unchanged; the developers' guide's bump
+procedure is the one that moved the pin.
+
+## Addendum, 2026-10-22: a third dependency path
+
+Adopted 2026-10-22. This addendum applies the rule above to one more path; the
+accepted body and the 2026-10-19 addendum are otherwise unchanged.
+
+The Markdown formatting gate added `scripts/format_markdown.py`, which runs as
+`uv run --locked --script`. That entry point resolves its own environment and
+ignores the project, which is exactly the hazard the decision was written for:
+left unpinned it would keep resolving an old cuprum however the project pin
+moved. It therefore carries the same exact pin in its PEP 723 block and its own
+committed lock, `scripts/format_markdown.py.lock`, generated with
+`uv lock --script scripts/format_markdown.py`.
+
+The decision generalizes rather than needing an exception: a `uv run --script`
+entry point is a dependency path, whoever owns it. Amended by this addendum,
+the alignment now spans six places -- three requirement sites and three
+lockfiles -- and `tests/workflow_contracts/test_cuprum_selection.py` reads
+every one of them, with the freshness check parametrized over both script locks.

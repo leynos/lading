@@ -190,10 +190,13 @@ Cuprum provides allowlist-based command execution with built-in observability.
 Programs must be registered in a catalogue before they can be executed,
 preventing accidental shell access.
 
-These examples are written against `cuprum==0.2.0b1`, which is what the
+These examples are written against `cuprum==0.2.0b2`, which is what the
 repository pins and what `scripts/release_gh.py` uses. Every form below was
 measured against that installed version; the earlier `Catalogue` class and the
-`sh.scoped(CATALOGUE)` positional form do not exist in it.
+`sh.scoped(CATALOGUE)` positional form do not exist in it. The
+[vendored users' guide](cuprum-users-guide.md) documents the whole published
+surface, and the [vendored migration guide](cuprum-v0-2-0-migration-guide.md)
+lists what changed from 0.1.x.
 
 ### Shared vs local catalogues
 

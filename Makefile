@@ -1,14 +1,25 @@
 MDLINT ?= $(shell command -v markdownlint-cli2 2>/dev/null || printf '%s' "$$HOME/.bun/bin/markdownlint-cli2")
 NIXIE ?= $(shell which nixie)
-# `make fmt` and `make check-fmt` call mdtablefix directly. `--git` selects the
-# Markdown files Git tracks and `--include-untracked` adds the untracked files
-# Git does not ignore, so a new document is formatted before it is staged.
-# Both modes need mdtablefix 0.6.0 or later; CI pins the version in
-# .github/workflows/ci.yml.
+# `make fmt` and `make check-fmt` run `scripts/format_markdown.py`, which asks
+# mdtablefix for its own `--git --include-untracked --list-files` selection and
+# drops the vendored guides before formatting what remains. The file list is
+# therefore the formatter's, not a copy of it: case-insensitive extensions, the
+# skip for an index entry whose file has gone, and a selection failure that
+# fails the gate all stay mdtablefix's own behaviour. Both modes need
+# mdtablefix 0.6.1 or later, the first release that pins this selection's
+# behaviour; CI pins the version in .github/workflows/ci.yml.
 MDTABLEFIX ?= mdtablefix
-MDTABLEFIX_SELECT = --git --include-untracked
 MDTABLEFIX_RULES = --wrap --renumber --breaks --ellipsis --fences
+# The vendored cuprum guides are imported verbatim under a "change nothing"
+# rule: their line wrapping is upstream's, and rewriting it would make the
+# lading copy diverge from the tag it cites. `mdtablefix` has no ignore or
+# exclude option and `--git` refuses an explicit file list, so the wrapper
+# takes them out of the selection the formatter reported.
+VENDORED_MARKDOWN = docs/cuprum-users-guide.md docs/cuprum-v0-2-0-migration-guide.md
 UV ?= $(shell command -v uv 2>/dev/null || printf '%s/.local/bin/uv' "$$HOME")
+MARKDOWN_FORMATTER = $(UV) run --locked --script scripts/format_markdown.py \
+	--formatter $(MDTABLEFIX) \
+	$(foreach f,$(VENDORED_MARKDOWN),--vendor $(f))
 # Pin Ruff so `make` invokes the same version as the `ruff==` dev dependency
 # in pyproject.toml. Bump both together: a version mismatch causes version-skew
 # lint failures because rule sets differ between Ruff releases. The dev
@@ -256,12 +267,12 @@ endif
 fmt: $(UV) ## Format sources
 	$(RUFF) format $(RUFF_FORCE_EXCLUDE) $(RUFF_TARGETS)
 	$(RUFF) check --select I --fix $(RUFF_FORCE_EXCLUDE) $(RUFF_TARGETS)
-	$(MDTABLEFIX) --in-place $(MDTABLEFIX_SELECT) $(MDTABLEFIX_RULES)
+	$(MARKDOWN_FORMATTER) --mode in-place -- $(MDTABLEFIX_RULES)
 	@unset FORCE_COLOR; $(MDLINT) --fix "**/*.md"
 
 check-fmt: $(UV) ## Verify formatting
 	$(RUFF) format --check $(RUFF_FORCE_EXCLUDE) $(RUFF_TARGETS)
-	$(MDTABLEFIX) --check $(MDTABLEFIX_SELECT) $(MDTABLEFIX_RULES)
+	$(MARKDOWN_FORMATTER) --mode check -- $(MDTABLEFIX_RULES)
 
 lint: build $(UV) interrogate ## Run linters
 	$(RUFF) check $(RUFF_FORCE_EXCLUDE) $(RUFF_TARGETS)

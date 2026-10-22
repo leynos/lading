@@ -21,5 +21,25 @@
     ".uv-cache/**",
     "memories/**",
     "CRUSH.md"
+  ],
+  // The two vendored cuprum guides are imported verbatim from the upstream
+  // tag. Their prose is wrapped to upstream's line length, and some lines
+  // carry absolute links pinned to that tag, so MD013 and MD034 are disabled
+  // for exactly these two files rather than repaired in the text. `filter`
+  // plus `combine: "merge"` narrows the override to them: `files` is the
+  // override key that markdownlint-cli2 ignores. Everything else keeps the
+  // rules above, and a third vendored file needs its own entry here.
+  "overrides": [
+    {
+      "filter": [
+        "docs/cuprum-users-guide.md",
+        "docs/cuprum-v0-2-0-migration-guide.md"
+      ],
+      "combine": "merge",
+      "config": {
+        "MD013": false,
+        "MD034": false
+      }
+    }
   ]
 }

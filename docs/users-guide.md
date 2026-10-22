@@ -265,12 +265,12 @@ uv run lading --help
 ```
 
 Lading currently depends on the Cuprum 0.2.0 beta, pinned exactly as
-`cuprum==0.2.0b1`. An environment that already pins a different Cuprum will
+`cuprum==0.2.0b2`. An environment that already pins a different Cuprum will
 refuse to resolve against this requirement and must be reconciled first.
 
 The pin is declared in the project's own dependencies, so it is not limited to
 the development environment: **a wheel built from this tree records
-`cuprum==0.2.0b1` as a requirement**, and installing that wheel pulls the beta
+`cuprum==0.2.0b2` as a requirement**, and installing that wheel pulls the beta
 into the target environment. An exact `==` pin on a pre-release is deliberate —
 it keeps every install, however it was made, on the version this tree was
 validated against.
