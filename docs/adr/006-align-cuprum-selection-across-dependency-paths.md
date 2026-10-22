@@ -83,8 +83,8 @@ enforced by a contract test.
 
 - Both paths run the same cuprum, and a divergence fails a gate rather than
   surfacing in a release job.
-- A dependency change now touches up to six places that must agree: three
-  requirement sites and three lockfiles. That cost is what the contract test
+- A dependency change now touches up to four places that must agree: two
+  requirement sites and two lockfiles. That cost is what the contract test
   buys, and the developers' guide gives the procedure.
 - Dependabot will not refresh the script lock. An unrefreshed lock stays valid
   and pinned, which is the safe direction; a cuprum bump is manual anyway.
@@ -142,7 +142,7 @@ committed lock, `scripts/format_markdown.py.lock`, generated with
 `uv lock --script scripts/format_markdown.py`.
 
 The decision generalizes rather than needing an exception: a `uv run --script`
-entry point is a dependency path, whoever owns it. The consequences above now
-read as "up to six places" -- three requirement sites and three lockfiles -- and
-`tests/workflow_contracts/test_cuprum_selection.py` reads every one of them,
-with the freshness check parametrized over both script locks.
+entry point is a dependency path, whoever owns it. Amended by this addendum,
+the alignment now spans six places -- three requirement sites and three
+lockfiles -- and `tests/workflow_contracts/test_cuprum_selection.py` reads
+every one of them, with the freshness check parametrized over both script locks.
