@@ -240,6 +240,66 @@ def _mutable_entries(value: object) -> cabc.MutableSequence[object]:
     return typ.cast("cabc.MutableSequence[object]", value)
 
 
+def _mutable_allow_entries(
+    document: tomlkit.TOMLDocument,
+) -> cabc.MutableSequence[object]:
+    """Validate or create the nested tables and array used by the writer."""
+    tool_value = document.get("tool")
+    tool = (
+        tomlkit.table(is_super_table=True)
+        if tool_value is None
+        else _mutable_table(tool_value, context="pyproject.tool")
+    )
+    gate_value = tool.get("duplication_gate")
+    gate = (
+        tomlkit.table()
+        if gate_value is None
+        else _mutable_table(
+            gate_value,
+            context="pyproject.tool.duplication_gate",
+        )
+    )
+    entries_value = gate.get("allow")
+    entries = (
+        tomlkit.aot() if entries_value is None else _mutable_entries(entries_value)
+    )
+
+    if tool_value is None:
+        document["tool"] = tool
+    if gate_value is None:
+        tool["duplication_gate"] = gate
+    if entries_value is None:
+        gate["allow"] = entries
+    return entries
+
+
+def _validated_allow_entries(
+    entries: cabc.Sequence[object],
+) -> list[tuple[cabc.MutableMapping[str, object], AllowEntry]]:
+    """Validate every existing entry before the writer mutates any of them."""
+    return [
+        (
+            _mutable_table(raw_entry, context=f"duplication_gate.allow[{index}]"),
+            _allow_entry(raw_entry, index=index),
+        )
+        for index, raw_entry in enumerate(entries)
+    ]
+
+
+def _update_allow_reason(
+    entries: cabc.Sequence[tuple[cabc.MutableMapping[str, object], AllowEntry]],
+    *,
+    keys: tuple[str, ...],
+    reason: str,
+) -> bool:
+    """Update the reason for an existing key set, reporting whether it matched."""
+    for raw_entry, existing in entries:
+        if _same_allow_target(existing.keys, keys):
+            raw_entry["reason"] = reason
+            return True
+    return False
+
+
 def append_allow_entry(
     pyproject_path: Path,
     *,
@@ -273,49 +333,14 @@ def append_allow_entry(
             # configuration error.
             msg = f"cannot parse {pyproject_path}: {error}"
             raise GateConfigError(msg) from error
-        tool_value = document.get("tool")
-        tool = (
-            tomlkit.table(is_super_table=True)
-            if tool_value is None
-            else _mutable_table(tool_value, context="pyproject.tool")
-        )
-        gate_value = tool.get("duplication_gate")
-        gate = (
-            tomlkit.table()
-            if gate_value is None
-            else _mutable_table(
-                gate_value,
-                context="pyproject.tool.duplication_gate",
-            )
-        )
-        entries_value = gate.get("allow")
-        entries = (
-            tomlkit.aot() if entries_value is None else _mutable_entries(entries_value)
-        )
-        validated_entries = [
-            (
-                _mutable_table(
-                    raw_entry,
-                    context=f"duplication_gate.allow[{index}]",
-                ),
-                _allow_entry(raw_entry, index=index),
-            )
-            for index, raw_entry in enumerate(entries)
-        ]
-
-        if tool_value is None:
-            document["tool"] = tool
-        if gate_value is None:
-            tool["duplication_gate"] = gate
-        if entries_value is None:
-            gate["allow"] = entries
-
-        for raw_entry, existing in validated_entries:
-            if _same_allow_target(existing.keys, target):
-                raw_entry["reason"] = reason
-                _write_document(pyproject_path, document)
-                return
-        entries.append(_new_entry(target, reason))
+        entries = _mutable_allow_entries(document)
+        validated_entries = _validated_allow_entries(entries)
+        if not _update_allow_reason(
+            validated_entries,
+            keys=target,
+            reason=reason,
+        ):
+            entries.append(_new_entry(target, reason))
         _write_document(pyproject_path, document)
 
 

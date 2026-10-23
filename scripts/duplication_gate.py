@@ -41,6 +41,28 @@ type AllowlistReader = cabc.Callable[[Path], tuple[AllowEntry, ...]]
 type FindingDetector = cabc.Callable[[], list[Finding]]
 
 
+def _matching_allow_positions(
+    finding: Finding,
+    allowlist: cabc.Sequence[AllowEntry],
+) -> set[int]:
+    """Return the indexes of allow entries covering one finding."""
+    return {
+        position for position, entry in enumerate(allowlist) if entry.matches(finding)
+    }
+
+
+def _stale_allow_entries(
+    allowlist: cabc.Sequence[AllowEntry],
+    used_positions: set[int],
+) -> list[AllowEntry]:
+    """Return entries that did not match any finding in the scan."""
+    return [
+        entry
+        for position, entry in enumerate(allowlist)
+        if position not in used_positions
+    ]
+
+
 def partition_findings(
     findings: cabc.Sequence[Finding],
     allowlist: cabc.Sequence[AllowEntry],
@@ -57,21 +79,17 @@ def partition_findings(
     Returns
     -------
     tuple[list[Finding], list[Finding], list[AllowEntry]]
-        Blocking findings, silenced findings, and allow entries that no
-        longer cover any finding.
+        Blocking findings, covered findings, and entries that no longer match
+        any finding in the selected scan surface.
     """
     blocking: list[Finding] = []
     allowed: list[Finding] = []
-    used: set[int] = set()
+    used_positions: set[int] = set()
     for finding in findings:
-        covered = {
-            position
-            for position, entry in enumerate(allowlist)
-            if entry.matches(finding)
-        }
-        used |= covered
-        (allowed if covered else blocking).append(finding)
-    stale = [entry for position, entry in enumerate(allowlist) if position not in used]
+        matches = _matching_allow_positions(finding, allowlist)
+        used_positions.update(matches)
+        (allowed if matches else blocking).append(finding)
+    stale = _stale_allow_entries(allowlist, used_positions)
     return blocking, allowed, stale
 
 
@@ -94,14 +112,29 @@ def detect_findings() -> list[Finding]:
 def _report(
     blocking: list[Finding], allowed: list[Finding], stale: list[AllowEntry]
 ) -> None:
-    """Print the gate outcome in a concise, actionable form."""
+    """Print stale, blocking, or passing sections in a stable order."""
+    _report_stale_entries(stale)
+    if blocking:
+        _report_blocking_findings(blocking)
+        return
+    _report_passed(allowed)
+
+
+def _report_stale_entries(stale: list[AllowEntry]) -> None:
+    """Print unmatched entries with the ranked-surface qualification."""
     for entry in stale:
         joined = " ~ ".join(entry.keys)
         print(f"stale allow entry ({joined}): unmatched in this scan ({_SURFACE_HINT})")
-    if not blocking:
-        suffix = f"; {len(allowed)} allowed by reasoned exceptions" if allowed else ""
-        print(f"duplication gate passed{suffix}")
-        return
+
+
+def _report_passed(allowed: list[Finding]) -> None:
+    """Print the passing result and the number of reviewed exceptions."""
+    suffix = f"; {len(allowed)} allowed by reasoned exceptions" if allowed else ""
+    print(f"duplication gate passed{suffix}")
+
+
+def _report_blocking_findings(blocking: list[Finding]) -> None:
+    """Print blocking families with the extraction or exception guidance."""
     print(f"duplicate code: {len(blocking)} unsuppressed family/families")
     for finding in blocking:
         print(f"  {finding.label} ({finding.witness}, value {finding.value:.1f})")
@@ -187,13 +220,20 @@ def _decode_second_keys(
     second_keys_json: str | None,
 ) -> tuple[str, ...]:
     """Resolve repeated CLI keys or one JSON-array key argument."""
-    if second is not None and second_keys_json is not None:
-        msg = "SECOND and SECOND_KEYS_JSON cannot be supplied together"
-        raise GateConfigError(msg)
+    if second is not None:
+        if second_keys_json is not None:
+            msg = "SECOND and SECOND_KEYS_JSON cannot be supplied together"
+            raise GateConfigError(msg)
+        return tuple(second)
     if second_keys_json is None:
-        return tuple(second or ())
+        return ()
+    return _decode_json_key_array(second_keys_json)
+
+
+def _decode_json_key_array(encoded: str) -> tuple[str, ...]:
+    """Decode and validate the JSON form of additional location keys."""
     try:
-        decoded = json.loads(second_keys_json)
+        decoded = json.loads(encoded)
     except json.JSONDecodeError as error:
         msg = "SECOND_KEYS_JSON must be a JSON array of strings"
         raise GateConfigError(msg) from error

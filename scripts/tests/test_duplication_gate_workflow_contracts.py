@@ -52,57 +52,52 @@ class TestGateWorkflowContracts:
             "CLI must retain the supplied reason."
         )
 
-    def test_allow_cli_repeats_second_for_larger_families(
+    @pytest.mark.parametrize(
+        ("additional_arguments", "expected_keys"),
+        [
+            pytest.param(
+                (
+                    "--second",
+                    "lading/b.py::beta",
+                    "--second",
+                    "lading/c.py::gamma",
+                ),
+                ("lading/a.py", "lading/b.py::beta", "lading/c.py::gamma"),
+                id="repeated-second-options",
+            ),
+            pytest.param(
+                (
+                    "--second-keys-json",
+                    '["lading/b.py::beta", "lading/c.py::gamma"]',
+                ),
+                ("lading/a.py", "lading/b.py::beta", "lading/c.py::gamma"),
+                id="json-array-option",
+            ),
+        ],
+    )
+    def test_allow_cli_records_larger_families(
         self,
         tmp_path: Path,
+        additional_arguments: tuple[str, ...],
+        expected_keys: tuple[str, ...],
     ) -> None:
-        """A family of more than two members is recorded through repeated --second."""
+        """Each supported member-key form records the complete family."""
         _workspace, script = copied_gate_workspace(tmp_path)
         result = run_gate_command(
             script,
             "allow",
             "--first",
             "lading/a.py",
-            "--second",
-            "lading/b.py::beta",
-            "--second",
-            "lading/c.py::gamma",
+            *additional_arguments,
             "--reason",
             "three parallel contracts",
         )
 
         assert result.returncode == 0, result.stderr
         entries = allowlist.load_allowlist(script.parent.parent / "pyproject.toml")
-        assert entries[0].keys == (
-            "lading/a.py",
-            "lading/b.py::beta",
-            "lading/c.py::gamma",
-        ), "Every repeated --second key must be recorded."
-
-    def test_allow_cli_accepts_json_array_of_additional_keys(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """A safely quoted JSON array records every additional family member."""
-        _workspace, script = copied_gate_workspace(tmp_path)
-        result = run_gate_command(
-            script,
-            "allow",
-            "--first",
-            "lading/a.py",
-            "--second-keys-json",
-            '["lading/b.py::beta", "lading/c.py::gamma"]',
-            "--reason",
-            "three parallel contracts",
+        assert entries[0].keys == expected_keys, (
+            "Every supplied member key must be recorded in order."
         )
-
-        assert result.returncode == 0, result.stderr
-        entries = allowlist.load_allowlist(script.parent.parent / "pyproject.toml")
-        assert entries[0].keys == (
-            "lading/a.py",
-            "lading/b.py::beta",
-            "lading/c.py::gamma",
-        ), "The JSON CLI option must retain every additional key."
 
     @pytest.mark.parametrize(
         ("json_value", "expected_diagnostic"),

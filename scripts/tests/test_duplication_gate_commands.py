@@ -8,6 +8,7 @@ detector.
 
 import tomllib
 import typing as typ
+from collections import abc as cabc
 from pathlib import Path
 
 import pytest
@@ -28,6 +29,11 @@ _STALE_LINE = (
     "(verify the source before removing it; the ranked view is capped, so "
     "absence here is not proof the duplication is gone)\n"
 )
+
+
+def _raise(error: Exception) -> typ.Never:
+    """Raise the supplied failure from an injected test boundary."""
+    raise error
 
 
 def _finding() -> detector.Finding:
@@ -137,75 +143,59 @@ class TestGateCommands:
         )
 
     @pytest.mark.parametrize(
-        ("error", "expected_type", "expected_message"),
+        ("invoke", "error", "expected_type", "expected_message"),
         [
             pytest.param(
+                lambda error: gate._read_allowlist(
+                    lambda _path: _raise(error),
+                ),
                 OSError("unreadable configuration"),
                 gate.GateExecutionError,
                 "cannot load duplication allowlist: unreadable configuration",
-                id="os-error",
+                id="allowlist-os-error",
             ),
             pytest.param(
+                lambda error: gate._read_allowlist(
+                    lambda _path: _raise(error),
+                ),
                 tomllib.TOMLDecodeError("bad table", "", 0),
                 gate.GateExecutionError,
                 "cannot load duplication allowlist: bad table (at end of document)",
-                id="toml-error",
+                id="allowlist-toml-error",
             ),
-        ],
-    )
-    def test_read_allowlist_translates_environment_failures(
-        self,
-        error: Exception,
-        expected_type: type[Exception],
-        expected_message: str,
-    ) -> None:
-        """Unreadable configuration becomes an explicit execution error."""
-
-        def reader(_path: object) -> tuple[allowlist.AllowEntry, ...]:
-            raise error
-
-        with pytest.raises(expected_type) as raised:
-            gate._read_allowlist(reader)
-
-        assert str(raised.value) == expected_message, "Diagnostic must name the cause."
-        assert raised.value.__cause__ is error, "The original error must be the cause."
-
-    @pytest.mark.parametrize(
-        ("error", "expected_type", "expected_message"),
-        [
             pytest.param(
+                lambda error: gate._detect_findings(lambda: _raise(error)),
                 OSError("detector executable unavailable"),
                 gate.GateExecutionError,
                 "nose detector failed: detector executable unavailable",
-                id="os-error",
+                id="detector-os-error",
             ),
             pytest.param(
+                lambda error: gate._detect_findings(lambda: _raise(error)),
                 TypeError("families must be an array"),
                 gate.GateConfigError,
                 "families must be an array",
-                id="type-error",
+                id="detector-type-error",
             ),
             pytest.param(
+                lambda error: gate._detect_findings(lambda: _raise(error)),
                 ValueError("value must be a number"),
                 gate.GateConfigError,
                 "value must be a number",
-                id="value-error",
+                id="detector-value-error",
             ),
         ],
     )
-    def test_detect_findings_translates_detector_failures(
+    def test_gate_boundaries_translate_expected_failures(
         self,
+        invoke: cabc.Callable[[Exception], object],
         error: Exception,
         expected_type: type[Exception],
         expected_message: str,
     ) -> None:
-        """Execution failures and schema violations use distinct gate errors."""
-
-        def detect() -> list[detector.Finding]:
-            raise error
-
+        """Injected boundary failures retain their type-specific diagnostics."""
         with pytest.raises(expected_type) as raised:
-            gate._detect_findings(detect)
+            invoke(error)
 
         assert str(raised.value) == expected_message, "Diagnostic must name the cause."
         assert raised.value.__cause__ is error, "The original error must be the cause."

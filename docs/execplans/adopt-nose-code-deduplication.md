@@ -744,3 +744,20 @@ snapshots in `make duplication-test`, and 11 allowed with zero blocking or
 stale families in `make lint`. The documentation updates also passed
 `make check-fmt`, `make markdownlint` (36 files, zero issues), and `make nixie`
 before commit.
+
+2026-10-23: hosted CodeScene review of published head
+`3ab529b36324b383d3e95e11c2772d011e835b59` found complexity in the key-array
+decoder and allowlist writer, plus repeated assertions in two test pairs. The
+decoder now separates JSON decoding from repeated-option handling; the writer
+separates TOML parsing, mutable-table preparation, entry validation and upsert;
+the matching test cases are parameterized; and the gate's report and family
+partitioning use small responsibility-specific helpers. These changes preserve
+the five-module limit and leave diagnostics and report ordering unchanged. The
+TOML parse translation remains at the public writer boundary so its documented
+`GateConfigError` is explicit. Local `cs review` reports 10.0 with no findings
+for all four affected files, and `cs delta origin/main` reports no issues. The
+corrected candidate passed the full sequential gates: `make check-fmt`,
+`make lint`, `make typecheck`, `make test` (1517 passed, 30 skipped, 110
+snapshots), `make markdownlint` (36 files, zero issues), `make nixie`, and
+`make duplication-test` (155 passed, three snapshots). Hosted re-review remains
+pending publication of this candidate.
