@@ -25,11 +25,10 @@ that artefact under `path`, even when only one artefact matches. In v8, a sole
 match is extracted directly into `path`; per-artefact directories are used when
 several artefacts match and `merge-multiple` is false. A named single-artefact
 download goes directly into `path` in both versions. These rules are visible in
-[v4.1.8 implementation][download-artifact-v4],
-[v4 documentation][download-artifact-v4-readme], and
-[v8 implementation][download-artifact-v8]. The unnamed v4 download therefore
-put the wheel in `dist/wheels-pure`, where the old glob matched it. Under v8,
-with only `wheels-pure` matching, the wheel was placed directly in `dist`, so
+[v4.1.8 implementation][^1], [v4 documentation][^2], and
+[v8 implementation][^3]. The unnamed v4 download therefore put the wheel in
+`dist/wheels-pure`, where the old glob matched it. Under v8, with only
+`wheels-pure` matching, the wheel was placed directly in `dist`, so
 `find dist/wheels-*` found no match.
 
 The pipeline then hid that empty match. Without `pipefail`, it reported the
@@ -113,6 +112,6 @@ Trusted Publishing before attaching any missing filenames to the GitHub
 Release. The GitHub-only wheel process above remains the historical decision;
 ADR-009 records the current order, retry rules, and trade-offs.
 
-[download-artifact-v4]: https://github.com/actions/download-artifact/blob/v4.1.8/src/download-artifact.ts
-[download-artifact-v4-readme]: https://github.com/actions/download-artifact/blob/v4/README.md
-[download-artifact-v8]: https://github.com/actions/download-artifact/blob/v8/src/download-artifact.ts
+[^1]: <https://github.com/actions/download-artifact/blob/v4.1.8/src/download-artifact.ts>
+[^2]: <https://github.com/actions/download-artifact/blob/v4/README.md>
+[^3]: <https://github.com/actions/download-artifact/blob/v8/src/download-artifact.ts>
