@@ -1,0 +1,997 @@
+# Adopt the episodic nose duplication gate
+
+This ExecPlan (execution plan) is a living document. The sections `Constraints`,
+`Tolerances`, `Risks`, `Progress`, `Surprises & discoveries`, `Decision log`,
+`Outcomes & retrospective`, `Conformance basis`, and `Verification plan` must
+be kept up to date as work proceeds.
+
+Status: IN REVIEW — PR #292; addressing review feedback.
+
+## Purpose / big picture
+
+`lading` has no automated defence against duplicated logic. Ruff, Interrogate,
+Pylint, the df12 house rules and Skylos between them cover formatting, imports,
+complexity, docstrings, logging and dead code, but no gate notices when the
+same twenty-line routine is written twice in two modules. Reviewers catch it by
+eye or not at all.
+
+After this change, `make lint` fails when `nose` — a Rust-built multi-language
+clone detector — reports a duplication family inside `lading/` that no reasoned
+exception covers. A developer sees the offending spans, extracts the genuinely
+shared logic, or records a reviewable exception with `make duplication-allow`.
+Success is observable by planting a deliberate clone in a scratch copy of the
+repository and watching the gate block it, then recording an exception and
+watching the same run pass.
+
+The gate is adopted from `leynos/episodic` PR #276 at immutable revision
+`d9e5ac0d254f375e2986f52d91a3b88c117c833b`, which is the authority for the
+implementation. Its opening description is stale; the merged code and ADR-021
+take precedence. This plan records every deliberate deviation.
+
+## Constraints
+
+- Application Python floor, interpreter matrix and runtime dependencies in
+  `pyproject.toml` must not change. At the time this plan was written the floor
+  was `>=3.13`; main has since raised it to `>=3.14` in
+  [#322](https://github.com/leynos/lading/pull/322), and this branch neither
+  made nor depends on that change. The gate is tooling: it runs on an
+  explicitly selected CPython 3.14 and must not require importing `lading`,
+  building native extensions, or starting services.
+- `nose` stays pinned at `0.20.0`. No unpinned upstream main, no newer release,
+  no PyChase, no pyscn. Source builds, floating installers and curl-to-shell
+  bootstraps are prohibited. `make install-nose` verifies committed
+  per-platform archive and executable digests; a missing release, digest
+  mismatch or unsupported platform is a provisioning failure.
+- No benchmark material may be copied from the reference: no
+  `benchmarks/duplication/**`, no `benchmarks/score_support.py`, no
+  `tests/test_duplication_benchmark*.py`, no detector competition, no
+  benchmarking CI jobs. Do not claim episodic's precision, recall or timings.
+- Do not import episodic's application fixes, exception entries, package names,
+  database fixtures, PGlite/npm caching, Skylos or Pylint migrations, coverage
+  changes, or unrelated dependencies. No shared multi-repository tooling
+  framework.
+- Do not add compatibility facades, shims, aliases or forwarding wrappers. Every
+  caller is updated directly.
+- Do not reduce the ranking budget or raise the size floor to obtain green CI.
+- `surface = "all"` widens the reported surface; it does not make `top = 30`
+  exhaustive. Only the top 30 ranked families are adjudicated.
+- Comments and documentation use en-GB-oxendict spelling (`-ize`, not `-ise`).
+  `make spelling` is a hard gate.
+- No code file may exceed 400 lines.
+
+## Tolerances (exception triggers)
+
+- Scope: if the port needs more than the five gate modules plus their focused
+  tests, the `Makefile`/`pyproject.toml`/CI wiring, the ADR, the developer
+  guide section and the adjudication record, stop and escalate.
+- Interface: if the application's public API, CLI surface or configuration
+  schema must change, stop and escalate.
+- Dependencies: if a new *runtime* dependency is required, stop and escalate.
+  Tooling-only pins inside the gate's isolated environment are in scope.
+- Behaviour: if adjudication of a blocking family would require changing
+  observable behaviour, error messages, validation order or side-effect
+  ordering, stop and escalate rather than refactor under pressure.
+- Iterations: if the gate still fails after three adjudication passes, stop and
+  escalate with the remaining families listed.
+
+## Risks
+
+- Risk: the gate's own modules become findings once `scripts/` is a scan root,
+  creating a bootstrap loop where the first commit must except code it just
+  wrote. Severity: medium Likelihood: medium Mitigation: measure the self-scan
+  before committing to a roots list; if the gate's own modules form a family,
+  scope roots to shipped production Python as the reference does and record the
+  omission.
+- Risk: `tests/conftest.py` registers ten plugin modules and two autouse
+  fixtures, and `tests/` carries an `__init__.py`. The reference conftest
+  relies on `tests/` being a PEP 420 namespace package, which does not hold
+  here, so a mechanical copy could pull the whole BDD/e2e plugin stack into the
+  helper tests. Severity: high Likelihood: high Mitigation: run the helper
+  tests with `python -m pytest -c /dev/null --rootdir=. -p no:cacheprovider`
+  from an isolated tooling environment, so no repository conftest is discovered
+  at all.
+- Risk: `make test` runs `pytest --doctest-modules` from the repository root
+  with no `testpaths`, so new `scripts/**/*.py` docstrings with `>>>` examples
+  are collected as doctests in the application venv (then Python 3.13), where
+  the gate's cyclopts-dependent modules are not importable. Severity: high
+  Likelihood: medium Mitigation: keep `>>>` examples only in modules whose
+  imports resolve in the application venv, and confirm with a collection run.
+  Resolved by main's baseline raise to 3.14 in
+  [#322](https://github.com/leynos/lading/pull/322): the application suite and
+  the gate now share one floor.
+- Risk: the gate's modules land in `scripts/`, which was typechecked on
+  Python 3.13 while the modules are written for 3.14. Severity: medium
+  Likelihood: high Mitigation: keep the modules to syntax that parses under 3.13
+  (`type` alias statements are 3.12+, fine) and confirm `make typecheck`
+  passes. Obviated by the same baseline raise; the gate's modules are
+  typechecked on 3.14 by the unmodified `typecheck` target.
+
+## Progress
+
+- [x] (2026-09-26) Reconnaissance: reference modules, tests, ADR-021, episodic
+      Makefile/CI/pyproject, nose 0.20.0 upstream docs.
+- [x] (2026-09-26) Rename branch to `adopt-nose-code-deduplication`; push with
+      upstream tracking.
+- [x] (2026-09-26) Provision `nose 0.20.0` into `.tools/nose` with
+      `cargo-binstall --disable-strategies compile,quick-install`.
+- [x] (2026-09-26) Baseline scan: `--root lading` yields 10 families, `--root
+      lading --root scripts` yields 11, `--root lading --root tests --root
+      scripts` yields 190.
+- [x] (2026-09-26) ExecPlan drafted and committed (`5319799`).
+- [x] (2026-09-26) `.gitignore` entries; `[tool.nose]` and
+      `[tool.duplication_gate]` configuration.
+- [x] (2026-09-26) Five gate modules ported to `scripts/`.
+- [x] (2026-09-26) Focused tests ported and green in isolation: 140 passed.
+- [x] (2026-09-26) Makefile targets and `lint` wiring.
+- [x] (2026-09-26) CI caching and gate steps; `NOSE_VERSION` pin agreement
+      enforced by `tests/workflow_contracts/test_duplication_toolchain_contract.py`.
+- [x] (2026-09-26) Adjudication of every blocking family; gate green with 10
+      reasoned exceptions, 0 blocking, 0 stale.
+- [x] (2026-09-26) Canary demonstration in a scratch workspace: clean case,
+      planted clone blocking, narrow exception allowing, and an out-of-scope
+      third copy blocking again. No planted clone or temporary exception was
+      left behind.
+- [x] (2026-09-26) Documentation: ADR-010, developer guide, AGENTS.md,
+      `docs/contents.md`.
+- [x] (2026-09-27) Full gate run green: all seven gates pass, including the
+      Ambrleaks, Skylos and duplication stages reached for the first time.
+- [x] (2026-09-27) Draft PR [#292](https://github.com/leynos/lading/pull/292)
+      opened against `main`, carrying the whole branch.
+- [x] (2026-09-26) `scripts/tests` scan-scope decision: excluded, with the
+      glob-form hazard recorded and guarded (see Surprises).
+
+## Surprises & discoveries
+
+- Observation: `tests/` carries an `__init__.py`, so it is a regular package,
+  not the PEP 420 namespace package the reference conftest assumes. Evidence:
+  `tests/__init__.py` is 26 bytes; the reference comment explains the
+  append-not-prepend ordering exists because `tests.conftest` would otherwise
+  resolve to the gate's conftest. Impact: `scripts/tests/` cannot be a sibling
+  namespace member; the helper suite must be isolated from repository conftest
+  discovery explicitly.
+- Observation: including `tests/` in the scan produces 190 families, dominated
+  by test scaffolding, against 11 for the production and tooling roots.
+  Evidence: `nose query --root lading --root tests --root scripts ... top=0`
+  reports `{"families": 190}`. Impact: the scan must not include `tests/`; a
+  30,000-line test tree with deliberately parallel scenario structure would
+  make the gate meaningless.
+- Observation: `lading/` already contains two independent atomic-write helpers,
+  `write_atomic_text` in `lading/commands/bump_toml.py` and `write_atomically`
+  in `lading/commands/publish_sccache_report.py`, and `nose` does not flag them
+  as a family. Evidence: both appear in the baseline scan output only as
+  unrelated families. Impact: the gate's own persistence helper is not a
+  duplicate of either; the two application helpers differ in mode preservation
+  and parent creation, and neither is importable from the gate's isolated
+  interpreter.
+
+- Observation: the `scripts` root initially reported 30 families against 11 for
+  `lading` alone, because the ported helper tests sit under `scripts/tests/`
+  and duplicate each other's fixtures. Evidence: the top family was
+  `test_duplication_gate.py:151-253 ~ test_nose_detector.py:41-115`
+  (copy-paste, 115.7). Impact: the same tests-are-not-production boundary that
+  excludes `tests/` must apply to `scripts/tests/`.
+- Observation: `--exclude` globs are anchored to each `--root`, **not** to the
+  repository root. The repository-relative spelling `scripts/tests/**` matched
+  nothing and excluded no files, leaving the gate reporting 30 families from a
+  tree the configuration claimed to have skipped. Evidence:
+  `--exclude scripts/tests/**` returned 30 families with 19 involving
+  `scripts/tests`; `--exclude tests/**` returned 11 with 0, and `**/tests/**`
+  returned 11 with
+  0. Impact: the exclusion is written `**/tests/**`, and a contract test now
+  rejects any exclusion glob that is not `**/`-prefixed or that names a
+  directory no configured root contains. This is exactly the "empty or mistyped
+  scope masquerading as a clean result" failure the task warns about, and it
+  was silent: had the glob excluded *more* than intended, nothing would have
+  reported it either.
+- Observation: the `toml_coerce/_mappings.py ~ _sequences.py` family
+  (copy-paste, 40.3) is shared *declaration* scaffolding, not shared logic.
+  Evidence: a controlled experiment replacing every function body in both
+  modules with a distinct trivial statement left a 230.1-token match (against
+  284.7 with bodies intact), so the match survives the removal of all
+  behaviour. Impact: adjudicated as an intentional parallel and recorded as an
+  exception rather than extracted; extracting it would couple eight independent
+  coercers to one docstring/signature generator.
+- Observation: `top = 30` does not currently truncate this repository's
+  surface. Evidence: an uncapped `top=0` scan at the configured settings
+  returns exactly the same 10 families. Impact: the recorded exceptions cannot
+  be hiding a lower-ranked family *today*, but that will change as the codebase
+  grows, so stale-entry wording is kept qualified and `top=0` is documented as
+  the confirmation scan.
+
+## Decision log
+
+- Decision: adopt the reference at `d9e5ac0d254f375e2986f52d91a3b88c117c833b`,
+  not the PR's opening description. Rationale: the description describes the
+  superseded ADR-020 approach; the merged code and ADR-021 are authoritative.
+  Date/Author: 2026-09-26, implementing agent.
+- Decision: keep the gate as isolated CPython 3.14 tooling rather than folding
+  it into the application venv. Rationale: the reference wrapper declares
+  `requires-python = ">=3.14"` and uses PEP 695 `type` alias statements;
+  running it in the project venv would couple the lint gate to the
+  application's dependency set and would let a change to `requires-python`
+  break linting. The application floor stays `>=3.13` and is untouched by this
+  branch. Date/Author: 2026-09-26, implementing agent.
+- Decision: do not reuse an application atomic-write helper in the gate.
+  Rationale: both existing helpers live under `lading.commands` and are
+  unreachable from the gate's isolated environment, which installs only
+  `cyclopts` and `tomlkit`. Consolidating them is a separate refactor with its
+  own behavioural risk. The gate's helper is the tooling-side implementation
+  the reference also ships in `scripts/`. Date/Author: 2026-09-26, implementing
+  agent.
+- Decision: extract `_raise_missing_dependency` in
+  `lading/commands/publish_index_check.py` rather than record an exception for
+  the 59.0 family. Rationale: the four dependency-index paths were identical
+  logic -- build message, log warning, raise -- differing only in prose, which
+  is unjustified repetition rather than intentional parallelism. The extraction
+  leaves the wording at each call site, so all 31 message snapshots stay
+  byte-identical; that is the evidence the change is behaviour-preserving.
+  Date/Author: 2026-09-26, implementing agent.
+- Decision: record the remaining ten families as reasoned exceptions rather
+  than extract them. Rationale: nine are shared idioms (optional-input guards,
+  DI fallbacks, type-checking import blocks, the absent-table-yields-defaults
+  contract, two attribute-recording exception classes, and the Windows/POSIX
+  bindings of one lock primitive) whose "shared" content is a single statement
+  or a platform-independent obligation. Extracting them would mean generic
+  helpers, injected key sets, or platform branches inside primitives -- exactly
+  the manufactured abstractions the adoption criteria exclude. The tenth is the
+  declaration-scaffolding family described above. Date/Author: 2026-09-26,
+  implementing agent.
+- Decision: revert `skylos-allow` to its original `$(value ...)` form instead
+  of routing it through the new `cli_value` macro, even though the macro was
+  already written. Rationale:
+  `tests/workflow_contracts/test_skylos_whitelist_boundary.py` pins the
+  existing behaviour by injecting `SYMBOL`/`REASON` through the environment, and
+  `cli_value` requires a value to come from the `make` command line. The
+  change broke that contract, and the Skylos target is outside this task's
+  scope. `cli_value` now applies only to the duplication targets, which is what
+  the task requires. Date/Author: 2026-09-26, implementing agent.
+- Decision: make `duplication-test` run the whole `scripts/tests/` directory
+  rather than an explicit file list. Rationale: the reference's explicit list
+  already drifted -- it omitted `test_duplication_gate_e2e.py`, split out of
+  the 596-line reference file to satisfy the 400-line limit in `AGENTS.md`.
+  Directory collection cannot silently skip a newly added test file.
+  Date/Author: 2026-09-26, implementing agent.
+- Decision: key the named exceptions at file granularity where nose reports
+  unnamed fragments. Rationale: a `::name` key cannot match a location that
+  carries no unit name, and nose reports these regions as fragments, so file
+  granularity is the tightest available key. Each affected entry records that
+  its key covers the whole file, so a future family arising inside it is
+  understood to be silenced and re-adjudicated. Date/Author: 2026-09-26,
+  implementing agent.
+
+## Outcomes & retrospective
+
+Delivered on `adopt-nose-code-deduplication` and opened as ready-for-review PR
+[#292](https://github.com/leynos/lading/pull/292). The branch changes 31 files
+against `origin/main`, the overwhelming majority of them additions.
+
+Main's [#291](https://github.com/leynos/lading/pull/291) landed while this
+branch was in review and rewrote the Pylint tier, so the branch was rebased
+onto it. The one conflict was in the developer guide's lint-stage list; main's
+newer Pylint wording and this branch's account of the gate running last were
+both kept, the stage count was corrected from six to seven, and ADR-003 — which
+still called Skylos the final blocking check — gained a dated amendment. Main's
+commit touches neither `lading/` nor `scripts/`, so the adjudication below is
+unaffected.
+
+The branch was then rebased onto `origin/main` at `eecd39e`, which had advanced
+by a further eighteen commits. Five content conflicts followed, one of them the
+ADR collision below.
+
+Main has since advanced again, to `2b6b8de`. The second rebase — onto that head
+— raised no content conflicts, but it did force a second ADR renumber, which is
+recorded here because the first account above stops short of it. Main landed
+`efbafb1` ("Add relay observability events",
+[#264](https://github.com/leynos/lading/pull/264)) on 2026-10-10, taking
+ADR-007 for `007-relay-observability-events.md`. This branch's record had held
+ADR-007 since the first renumber, so it moved to ADR-008 and every local
+reference followed. The two-number history is the reason the pointers at that
+rebase were 008 while the first collision is described as 006→007: both
+statements are true of their own rebase.
+
+Main later landed ADR-008 for the shared CV-005 contract library and ADR-009
+for PyPI-first publication. The rebase onto `origin/main` at
+`ec5597e78097126dcea5784f97acde7872a180f6` therefore moved this decision from
+ADR-008 to ADR-010. The ADR index kept main's ADR-008 and ADR-009 entries, and
+the nose decision's local links now resolve to
+`docs/adr/010-adopt-nose-duplication-gate.md`.
+
+Main also raised `requires-python` from `>=3.13` to `>=3.14` in the same period
+([#322](https://github.com/leynos/lading/pull/322)), which obviates two of the
+risks recorded above rather than invalidating them.
+
+- `.github/workflows/ci.yml` conflicted because main's
+  [#306](https://github.com/leynos/lading/pull/306) removed the
+  `MAKEUTIL_REVISION`/`MAKEUTIL_TOOLCHAIN` `env:` keys in favour of the shared
+  prebuilt installer action, and
+  `tests/workflow_contracts/test_skylos_lint_contract.py` now asserts their
+  absence. Main's deletion was accepted; only this branch's nose keys were kept.
+- `docs/contents.md` conflicted on the ADR list, where main had added its own
+  ADR-006 while this branch added a record that also claimed that number.
+  Main's cuprum record kept ADR-006 and this branch's was renumbered to
+  ADR-007, with every local reference updated. The execplan's references to the
+  upstream `episodic` ADR-021 were deliberately left alone — those name another
+  repository's record.
+- `docs/developers-guide.md` conflicted where both sides rewrote the lint-stage
+  list, and was resolved as described above.
+- `docs/execplans/adopt-nose-code-deduplication.md` conflicted on the plan's own
+  progress and outcome entries, which both sides had edited.
+- `typos.toml` conflicted, and the branch's earlier regenerated-typos commit
+  became empty once main's own v0.1.3 builder bump
+  ([#307](https://github.com/leynos/lading/pull/307)) had landed. The conflict
+  was resolved to main's side and the commit was dropped as redundant rather
+  than lost, which was verified rather than assumed: regenerating at that
+  rebased head produced byte-identical output (sha256 `acd0838c…`), so the
+  post-turn hook's write-mode regeneration left the tree clean. That hash no
+  longer describes the file: main's gateway adoption
+  ([#322](https://github.com/leynos/lading/pull/322)) subsequently refined the
+  `--color…` ignore pattern, and the second rebase took main's version, giving
+  `4e8c3f9b…`. The regeneration check was re-run at the new head with the same
+  outcome, and `typos.toml` is absent from this branch's diff against
+  `origin/main` — the branch neither adds nor depends on a typos entry.
+
+Two ADR-006 references survived that renumber by mistake — a broken relative
+link in ADR-003's amendment and a stale name in this plan — and were caught by
+a grep across the tree rather than by any gate. Markdownlint and the spelling
+gate do not resolve relative links, so a renumbering rename has no automated
+backstop in this repository. The second renumber (007→008) was swept the same
+way, and this plan and the pull-request description had both gone stale in it:
+they still named `docs/adr/007-adopt-nose-duplication-gate.md`, a path the
+rename deleted, and the pull request also linked that dead path twice.
+
+### What shipped
+
+- The gate itself: `scripts/nose_detector.py` (detector execution),
+  `scripts/nose_schema.py` (report validation),
+  `scripts/duplication_allowlist.py` (family matching, persistence),
+  `scripts/duplication_gate.py` (CLI), plus `scripts/atomic_write.py` as the
+  persistence primitive.
+- Focused tests: 155 passing cases and three snapshots under `scripts/tests/`,
+  including end-to-end canary tests against the real pinned binary and property
+  tests for whole-family matching.
+- A toolchain contract at
+  `tests/workflow_contracts/test_duplication_toolchain_contract.py`, which
+  fails on version drift between `Makefile`, `.github/workflows/ci.yml` and
+  `pyproject.toml`, on a re-enabled compile strategy, and on an inert exclusion
+  glob.
+- Configuration in `pyproject.toml`: `[tool.nose]` over the `lading` and
+  `scripts` roots, and `[tool.duplication_gate]` with eleven reasoned
+  exceptions after the post-rebase review follow-up.
+- Wiring: `make install-nose`, `make duplication`, `make duplication-test`,
+  `make duplication-allow`, with the blocking check as the final stage of
+  `make lint`.
+- Documentation: ADR-010, a developers-guide section, an `AGENTS.md` bullet, and
+  the documentation index.
+
+### Adjudication outcome
+
+The initial scan of this repository's own code produced the families recorded
+in the decision log above. One was a genuine extraction, at the correct layer:
+the five-argument fatal-index-miss helper in
+`lading/commands/publish_index_check.py` collapsed to two parameters by
+bundling four co-travelling strings into a frozen dataclass, removing repeated
+call-site logic without inventing an abstraction. The remaining ten are
+intentional parallel structure, each recorded with a reason naming the
+independent contracts an extraction would wrongly couple. No exception is a
+repository-wide wildcard, and none was mass-generated.
+
+### Validation actually run
+
+The full candidate gates ran sequentially after the review repairs, including
+the test proxy's write, flush, and file-sync failure coverage. The final edit
+to this plan and the ADR below changes documentation only; formatting, Markdown
+lint, and Mermaid validation are run again after that edit.
+
+| Gate                    | Result                                                            |
+| ----------------------- | ----------------------------------------------------------------- |
+| `make check-fmt`        | pass                                                              |
+| `make lint`             | pass — all seven stages; 11 allowed, 0 blocking, 0 stale families |
+| `make typecheck`        | pass — `ty` 0.0.56, Python 3.14                                   |
+| `make test`             | pass — 1517 passed, 30 skipped, 110 snapshots passed              |
+| `make markdownlint`     | pass — 36 files, 0 issues                                         |
+| `make nixie`            | pass — all diagrams validated                                     |
+| `make duplication-test` | pass — 155 passed, 3 snapshots passed                             |
+
+The accepted run reports 11 reasoned exceptions after the rebase surfaced the
+additional unnamed Cuprum import family. Lower-ranked and below-floor families
+remain outside the enforced ranked surface as described above.
+
+### Lessons
+
+- The gate's helper suite and the application suite are separate interpreters
+  with separate dependency sets. Reaching for the application venv's `syrupy`
+  from `scripts/tests/` looked free but was not: the tooling invocation is
+  `--no-project`, so `syrupy` had to be added to the `duplication-test` recipe
+  and to the conftest availability guard in the same change. The guard would
+  otherwise have collected the suite and failed on import.
+- `mdtablefix --ellipsis` rewrites ASCII `...` to a literal ellipsis, including
+  inside inline code spans. A placeholder such as `REASON='...'` therefore
+  cannot survive formatting; prose that points at the real command is both
+  stable and clearer than a spawn of the command that drifts from it.
+- The repository's three-tier lint is cumulative, and each tier is only reached
+  once the previous one is clean. Fixing Ruff exposed seven Pylint findings;
+  fixing those exposed twenty-seven df12 findings. Gate the whole chain, not
+  the first stage, before believing a change is lint-clean.
+- Renumbering an ADR is a rename with no automated backstop here. Markdownlint
+  checks syntax and the spelling gate checks words; neither resolves a relative
+  link, so a stale `006-adopt-nose-duplication-gate.md` path stays green while
+  pointing at a file the rename deleted. After any ADR renumber, grep for the
+  old number across the tree rather than trusting the gates.
+
+## Context and orientation
+
+`lading` is a Python 3.14+ CLI for Cargo workspace maintenance. Production code
+lives in the `lading/` package (60 modules, 12,781 lines) with entry point
+`lading = "lading.cli:main"`. Repository tooling lives in `scripts/`
+(`release_wheel_upload.py`, `upload_release_wheels.py`, and an extensionless
+`publish-check/bin/cargo` shim). Tests live in `tests/` (182 files, 37,931
+lines) with `tests/workflow_contracts/` holding the repository's existing
+convention for contract tests over the Makefile, CI workflows and
+`pyproject.toml`.
+
+`nose` (`corca-ai/nose`) is a Rust-built clone detector whose executable is
+named `nose`. It reports *families*: sets of two or more source regions that
+share structure. This is unrelated to the abandoned Python `nose` test
+framework, whose only trace here is a `nosetests.xml` line in the standard
+`.gitignore` template.
+
+A "family" is a group of matched regions. A "witness" is nose's evidence kind
+(`exact`, `copy-paste`, `similar`, and others). The "surface" is nose's
+visibility classification (`default`, `hidden`, `shallow`, `divergence`, …).
+`min-size` counts nose's intermediate-language tokens, not Python lines or AST
+nodes. `top = 30` bounds the ranked view to the thirty highest-value families;
+`surface = "all"` widens which families are eligible to be ranked but does not
+make the bound exhaustive.
+
+The gate separates into five modules:
+
+- `scripts/nose_detector.py` — reads `[tool.nose]`, resolves and version-checks
+  the pinned binary, builds the argument vector, runs one query.
+- `scripts/nose_schema.py` — the error vocabulary, `Location`/`Finding`, and
+  report validation.
+- `scripts/duplication_allowlist.py` — reasoned exception entries, key matching,
+  and locked atomic persistence.
+- `scripts/atomic_write.py` — the tooling-side atomic replacement helper.
+- `scripts/duplication_gate.py` — the cyclopts CLI: `check` and `allow`.
+
+## Conformance basis
+
+No Terms of Reference or technical-design document exists for this repository.
+The governing artefacts are:
+
+- `leynos/episodic` PR #276, merged revision
+  `d9e5ac0d254f375e2986f52d91a3b88c117c833b`, specifically
+  `docs/adr/adr-021-adopt-nose-duplication-gate.md`.
+- `corca-ai/nose` at `v0.20.0`, the pinned detector.
+- Repository governance: `AGENTS.md` (quality gates, refactoring heuristics,
+  400-line limit, en-GB-oxendict spelling), `docs/documentation-style-guide.md`
+  (ADR-010 shape), `docs/scripting-standards.md` (`scripts/tests/` layout).
+- This repository's existing quality gates in `Makefile`: `check-fmt`, `lint`,
+  `test`, `typecheck`, `spelling`.
+
+Trace: reference ADR-021 -> `EP-M1` (provisioning) -> `make install-nose` prints
+`nose 0.20.0`; -> `EP-M2` (gate core) -> `scripts/tests/*` green; -> `EP-M3`
+(integration) -> `make lint` fails on a planted clone; -> `EP-M4`
+(documentation) -> `docs/adr/010-*.md` indexed from `docs/contents.md`.
+
+## Verification plan
+
+Invariants the port must preserve, and how each is discharged:
+
+- Obligation: `V1 whole-family matching` — an exception silences a family only
+  when *every* reported location matches one of its keys. Method: property test
+  plus named examples. Rationale: whole-family coverage is the entire safety
+  property; a partial-cover regression would silently hide new clones. Domain:
+  generated findings of two to five locations over four paths and three names;
+  explicit cases for unnamed fragments and `::name` mismatches. Artefact:
+  `scripts/tests/test_duplication_gate_properties.py`,
+  `scripts/tests/test_duplication_gate.py`. Evidence: a property comparing
+  `AllowEntry.matches` against an independently computed all/any coverage
+  predicate; the seeded negative control is an entry covering only one of two
+  locations, which must not match. Non-vacuity: generated keys include globs,
+  exact paths, and `::name` suffixes; the negative control asserts `matches` is
+  `False`.
+- Obligation: `V2 added member blocks` — an entry listing the current members
+  must still block when nose reports a further location. Method: named pytest
+  example over a three-location family. Rationale: this is the failure mode the
+  reference's key design exists to prevent. Domain: one entry over two of three
+  locations. Artefact: `scripts/tests/test_duplication_gate.py`. Evidence:
+  `partition_findings` places the family in `blocking`.
+- Obligation: `V3 fail-closed execution` — a missing binary, version mismatch,
+  timeout, non-zero exit, malformed JSON or invalid report raises rather than
+  returning an empty finding list. Method: parameterized pytest with injected
+  runners and real subprocess boundaries. Rationale: a gate that degrades to
+  "clean" on error is worse than no gate. Domain: the enumerated failure modes
+  above. Artefact: `scripts/tests/test_nose_detector.py`. Evidence: each case
+  raises `GateConfigError`/`GateExecutionError` with an actionable message.
+- Obligation: `V4 exit status contract` — 0 clean or fully allowed, 1 for
+  unsuppressed families, 2 for configuration or execution errors. Method:
+  end-to-end subprocess tests of the copied gate against a stub detector.
+  Rationale: CI branches on the status. Domain: clean report, blocking report,
+  malformed configuration. Artefact:
+  `scripts/tests/test_duplication_gate_commands.py`.
+- Obligation: `V5 atomic, idempotent persistence` — a repeated `allow` for the
+  same key set updates the reason instead of appending; concurrent writers
+  serialize on the sidecar lock and both entries survive; a failed replacement
+  leaves the original file, its mode, and no temporary sibling. Method: named
+  examples plus a real two-process contention test. Rationale: exceptions are
+  edited by hand and by tooling, sometimes at once. Domain: reordered keys,
+  unparsable input, injected replacement failure. Artefact:
+  `scripts/tests/test_duplication_gate_persistence.py`.
+- Obligation: `V6 pin agreement` — the version in `Makefile`, the CI workflow
+  and `[tool.nose]` are identical. Method: contract test parsing all three
+  sources. Rationale: a drifted pin reintroduces the version-skew failure the
+  repository already documents for Ruff and ty. Domain: the three files.
+  Artefact: `tests/workflow_contracts/test_duplication_toolchain_contract.py`.
+- Obligation: `V7 provisioning discipline` — `make install-nose` is a no-op
+  only for a matching version and executable digest; otherwise it verifies the
+  pinned archive and binary digests before installation. Method: named pytest
+  examples running the real Make target against stub download and archive
+  tools, plus a real pinned-artefact canary. Rationale: a source build or an
+  unpinned download would be a supply-chain regression. Domain: missing,
+  mismatched, tampered and matching cached detectors. Artefact:
+  `scripts/tests/test_make_install_nose.py`.
+- Obligation: `V8 end-to-end blocking` — a substantial planted clone makes the
+  gate exit 1; an added unlisted member re-breaks it. Method: integration test
+  in a scratch copy of the repository with the real pinned binary, plus a
+  manual canary transcript. Rationale: proves the wiring, not just the units.
+  Domain: a small unsaturated workspace so the ranking cap cannot hide the
+  canary. Artefact: `scripts/tests/test_duplication_gate_commands.py` and the
+  `Validation and acceptance` transcript. Evidence: exits 1, then 0 after
+  `duplication-allow`, then 1 after the third member appears.
+
+Axioms relied on (not verified here): nose 0.20.0's own report schema and
+ranking behaviour are taken as given; the pinned binary's correctness and
+provenance are established by checksum on the installer, not by this plan.
+Residual gaps: the semantic channel is a witness-backed check, not a general
+Type-4 guarantee, and no ranking budget makes lower-ranked duplication enforced.
+
+## Plan of work
+
+Stage A (understand and propose): reconnaissance of the reference and this
+repository. Complete.
+
+Stage B (configuration and provisioning): add `.tools/` and the sidecar lock to
+`.gitignore`; add `[tool.nose]` and an empty `[tool.duplication_gate]` to
+`pyproject.toml`; add `NOSE_VERSION`, `NOSE_TOOLS_DIR`, `NOSE_BIN`, the
+per-platform archive and executable digests, the `cli_value` macro,
+`install-nose`, `duplication`, `duplication-test` and `duplication-allow` to the
+`Makefile`, and wire `install-nose` plus the gate into `lint`.
+
+Stage C (port): write the five modules under `scripts/`, adapting imports, root
+placeholders and the PEP 723 header to this repository. Validate each with a
+direct run before writing tests.
+
+Stage D (tests): port the focused tests into `scripts/tests/`, splitting the
+two files that exceed the 400-line limit, replacing episode-specific fixtures,
+and providing a conftest that does not inherit `tests/conftest.py`.
+
+Stage E (adjudication): run the configured gate, inspect every blocking family,
+extract genuinely shared logic where it exists, and record reasoned exceptions
+where the parallel is intentional. Re-run until green.
+
+Stage F (canary): in a scratch copy, plant a clone, watch the gate fail, record
+an exception, watch it pass, add an out-of-scope member, watch it fail again.
+Check the normalized output is byte-identical across repeated runs.
+
+Stage G (documentation and delivery): ADR-010, a developer-guide section,
+`AGENTS.md` gate list, `docs/contents.md` index entry, then the full gate run
+and the ready-for-review PR.
+
+## Milestones and plateaus
+
+- `EP-M1` provisioning: `make install-nose` places a verified `nose 0.20.0` in
+  `.tools/nose` and is a no-op when it is already there. Acceptance:
+  `scripts/tests/test_make_install_nose.py` green; the target prints
+  `already installed` on a second run. Recovery: delete `.tools/nose` and
+  re-run. Compatibility decision: none; tooling only.
+- `EP-M2` gate core: the five modules and their tests pass in isolation.
+  Acceptance: `make duplication-test` green. Recovery: revert `scripts/` and
+  `scripts/tests/`.
+- `EP-M3` integration: `make lint` runs the gate and honours its exit status.
+  Acceptance: a planted clone in a scratch workspace makes `make duplication`
+  exit 1. Recovery: remove the planted clone.
+- `EP-M4` documentation: ADR-010 accepted and indexed; developer guide documents
+  roots, channels, budget, exception review and stale-entry limits. Acceptance:
+  `make markdownlint`, `make nixie` and `make check-fmt` green.
+
+## Concrete steps
+
+All commands run from the worktree root
+`/home/leynos/.lody/repos/github---leynos---lading/worktrees/<id>`.
+
+```plaintext
+make install-nose          # -> nose 0.20.0 in .tools/nose
+make duplication-test      # -> focused helper suite green
+make duplication           # -> duplication gate passed
+make lint                  # -> full lint including the gate
+```
+
+## Validation and acceptance
+
+- `make duplication-test` passes with the isolated interpreter.
+- `make duplication` exits 0 on the adjudicated repository.
+- In a scratch copy: planting a clone makes it exit 1 with the family listed;
+  `make duplication-allow FIRST=... SECOND=... REASON=...` makes it exit 0; a
+  third location added outside the exception makes it exit 1 again.
+- `make check-fmt`, `make lint`, `make typecheck`, `make spelling` and
+  `make markdownlint` pass.
+- `make test` passes; the pre-existing suite is unchanged.
+
+## Idempotence and recovery
+
+`make install-nose` is idempotent by construction: it compares both the
+installed binary's reported version and SHA-256 against the pins, and only
+downloads on a mismatch. The archive and extracted executable are verified
+before replacement, and the installed executable is checked again afterwards.
+`make duplication-allow` is idempotent for a repeated key set: it updates the
+reason in place rather than appending a second entry. Deleting `.tools/nose/`
+and re-running the installer is always safe. No step mutates tracked files
+except `duplication-allow`, which edits `pyproject.toml` under an advisory lock
+and an atomic replacement.
+
+## Artefacts and notes
+
+The reference revision, the deliberate omissions, the scan scope and ranking
+policy, the adjudication record and the exact validation outcomes are recorded
+in the pull request description. Per-family adjudication reasons live beside
+the exceptions in `[tool.duplication_gate]` and in `docs/adr/010-*.md`.
+
+## Interfaces and dependencies
+
+In `scripts/nose_schema.py`:
+
+```python
+class GateConfigError(ValueError): ...
+class GateExecutionError(GateConfigError): ...
+
+@dc.dataclass(frozen=True, slots=True)
+class Location:
+    file: str
+    start: int
+    end: int
+    name: str | None
+
+@dc.dataclass(frozen=True, slots=True)
+class Finding:
+    witness: str
+    value: float
+    locations: tuple[Location, ...]
+
+def normalize_findings(report: object) -> list[Finding]: ...
+```
+
+In `scripts/duplication_allowlist.py`:
+
+```python
+@dc.dataclass(frozen=True, slots=True)
+class AllowEntry:
+    keys: tuple[str, ...]
+    reason: str
+    def matches(self, finding: Finding) -> bool: ...
+
+def key_matches(key: str, location: Location) -> bool: ...
+def validate_key(key: str, *, context: str) -> str: ...
+def load_allowlist(pyproject_path: Path) -> tuple[AllowEntry, ...]: ...
+def append_allow_entry(pyproject_path: Path, *, keys: Sequence[str], reason: str) -> None: ...
+```
+
+In `scripts/nose_detector.py`:
+
+```python
+@dc.dataclass(frozen=True, slots=True)
+class NoseSettings:
+    version: str
+    roots: tuple[str, ...]
+    mode: str
+    min_size: int
+    surface: str
+    top: int | None
+    exclude: tuple[str, ...]
+
+type CommandRunner = cabc.Callable[[cabc.Sequence[str]], str]
+
+@dc.dataclass(frozen=True, slots=True)
+class NoseEnvironment:
+    repository_root: Path
+    binary_override: str | None
+    search_directories: tuple[str, ...]
+
+type BinaryFinder = cabc.Callable[[NoseEnvironment], str | None]
+
+def load_settings(pyproject_path: Path) -> NoseSettings: ...
+def resolve_binary(
+    settings: NoseSettings,
+    *,
+    environment: NoseEnvironment,
+    binary_finder: BinaryFinder,
+    runner: CommandRunner,
+) -> str: ...
+def build_command(binary: str, settings: NoseSettings) -> list[str]: ...
+def run_detector(
+    settings: NoseSettings,
+    *,
+    environment: NoseEnvironment,
+    binary_finder: BinaryFinder,
+    runner: CommandRunner,
+) -> list[Finding]: ...
+```
+
+The CLI adapter constructs `NoseEnvironment` from `NOSE_BIN`, `PATH`, and the
+repository root. The default process runner uses that root as its working
+directory; binary discovery searches the repository-local install and the
+explicit `PATH` only.
+
+In `scripts/duplication_gate.py`:
+
+```python
+def partition_findings(
+    findings: cabc.Sequence[Finding], allowlist: cabc.Sequence[AllowEntry]
+) -> tuple[list[Finding], list[Finding], list[AllowEntry]]: ...
+
+def allow(
+    *, first: str, second: list[str] | None = None,
+    second_keys_json: str | None = None, reason: str
+) -> None: ...
+```
+
+Dependencies of the gate environment, pinned in the PEP 723 header and in the
+`duplication-test` target: `cyclopts==4.25.2`, `tomlkit==0.15.1`, plus
+`pytest==9.1.1` and `hypothesis[asyncio]==6.163.0` for the tests, with
+`syrupy==5.5.3` for the shortcut snapshots. Nothing is added to the
+application's runtime or dev dependency groups.
+
+## Revision note
+
+2026-09-26: initial draft, recording reconnaissance, the four open design
+decisions (roots, isolation, atomic-write reuse, exceptions) and the full
+verification plan before implementation began.
+
+2026-10-23: rebased PR #292 onto `origin/main` at
+`ec5597e78097126dcea5784f97acde7872a180f6` and preserved the target's ADR-008
+and ADR-009 by moving the nose decision to ADR-010. Applied the five valid
+CodeRabbit assessment findings from the previously published head: temporary
+file write, flush, and fsync failures now clean up under the same `finally`;
+the allow command validates existing TOML table and array shapes before any
+write; Make accepts additional member keys as a JSON array and tests a
+three-key exception at the Make boundary; the property oracle now exercises
+exact paths, globs, and optional unit names independently; and oversized test
+modules were split by responsibility while the application module returned
+below 400 lines. The two vendored Cuprum guides now use reference links where
+long inline links broke markdown line length, and the ineffective CLI2
+`overrides` block was removed so those guides pass the configured Markdown
+rules without an exemption. A post-rebase scan also surfaced an unnamed
+fragment family in the Cuprum imports of the Markdown formatter and release
+adapter; the modules keep separate catalogues, so the import-block family is
+recorded with the required file-level qualification. The review follow-up adds
+tests for malformed-root TOML, cleans test-double typing and lint, and restores
+the split detector suite's runner import. The final sequential run passed all
+seven gates: 1517 passed and 30 skipped in `make test`, 155 passed with three
+snapshots in `make duplication-test`, and 11 allowed with zero blocking or
+stale families in `make lint`. The documentation updates also passed
+`make check-fmt`, `make markdownlint` (36 files, zero issues), and `make nixie`
+before commit.
+
+2026-10-23: hosted CodeScene review of published head
+`3ab529b36324b383d3e95e11c2772d011e835b59` found complexity in the key-array
+decoder and allowlist writer, plus repeated assertions in two test pairs. The
+decoder now separates JSON decoding from repeated-option handling; the writer
+separates TOML parsing, mutable-table preparation, entry validation and upsert;
+the matching test cases are parameterized; and the gate's report and family
+partitioning use small responsibility-specific helpers. These changes preserve
+the five-module limit and leave diagnostics and report ordering unchanged. The
+TOML parse translation remains at the public writer boundary so its documented
+`GateConfigError` is explicit. Local `cs review` reports 10.0 with no findings
+for all four affected files, and `cs delta origin/main` reports no issues. The
+corrected candidate passed the full sequential gates: `make check-fmt`,
+`make lint`, `make typecheck`, `make test` (1517 passed, 30 skipped, 110
+snapshots), `make markdownlint` (36 files, zero issues), `make nixie`, and
+`make duplication-test` (155 passed, three snapshots). The code candidate
+`ae648ee0a91a59a587813cceb439e99c74a388fd` passed hosted CI:
+[run 39953791615, attempt 1](https://github.com/leynos/lading/actions/runs/39953791615/attempts/1),
+with both `lint-test` and `build-dist` successful. The docs-only head
+`5d4bd98b15e44e5ccb650770753acc516c63bbb7` passed hosted CI:
+[run 39954440651, attempt 1](https://github.com/leynos/lading/actions/runs/39954440651/attempts/1).
+Its hosted CodeScene review also passed:
+[check 120416620329](https://codescene.io/projects/72980/delta/results/8097079).
+
+2026-10-23: a CodeRabbit assessment of
+`5d4bd98b15e44e5ccb650770753acc516c63bbb7` confirmed the five earlier findings
+were resolved and identified four description errors: conftest implied
+unconditional exclusion, the Makefile said the application suite must not
+collect the tests, the contract test's name implied unconditional exclusion
+while its assertion checked only for a ``collect_ignore_glob`` string, and the
+plan applied the 400-line limit to every tracked file. The conftest and
+Makefile comments now describe the conditional behaviour, the workflow contract
+verifies that the ignore assignment is inside the missing-dependency guard, and
+the plan states the code-file limit accurately. All seven local gates passed
+after these corrections: `make check-fmt`, `make markdownlint` (36 files, zero
+issues), `make nixie`, `make typecheck`, `make lint` (11 allowed, zero blocking
+or stale families), `make test` (1517 passed, 30 skipped, 110 snapshots), and
+`make duplication-test` (155 passed, three snapshots). Hosted validation and
+CodeRabbit follow-up for this corrected candidate remain pending.
+
+2026-10-23: reviewed head `e09874e5f6d8041d4a9c3857547a9b3e9b1412bb` passed
+hosted CI [run 39958260207, attempt 1][review-ci-run], with both `lint-test` and
+`build-dist` successful. Its hosted CodeScene review passed at
+[result 8097637](https://codescene.io/projects/72980/delta/results/8097637).
+The incremental CodeRabbit reassessment confirmed the four description fixes
+above. It did not start a formal PR review, submit approval, or change review
+thread state. A subsequent formal review of this same head posted nine
+actionable inline comments; this revision addresses them. The repaired
+candidate moves host environment reads to the CLI adapter, injects binary
+discovery and command execution dependencies, and binds default execution to
+the supplied repository root. Missing or empty `PATH` no longer falls back to
+the process environment. ADR-003 again states the accepted six-stage order,
+with its dated amendment documenting the seventh-stage update. The exported
+`BinaryFinder` alias and this plan now reflect the injected API and current PR
+state. The additional open allowlist finding is addressed by rejecting
+unanchored recursive globs such as `**` and `**/*.py`; rooted patterns remain
+available, and focused tests cover both rejected forms. Those two regression
+cases failed against the committed validator, then passed with the fix. The CI
+reference is also formatted to the Markdown line-width guidance.
+
+The repaired candidate passed all seven sequential local gates:
+`make check-fmt`, `make markdownlint` (36 files, zero issues), `make nixie`,
+`make typecheck`, `make lint` (11 allowed by reasoned exceptions), `make test`,
+and `make duplication-test`. The full suite had 1525 passed, 30 skipped, and
+110 snapshots; the focused suite had 162 passed and three snapshots. Hosted
+validation and CodeRabbit follow-up for the resulting commit remain pending.
+
+2026-10-23: hosted CodeScene review of
+`245cc0d760d1bf361e0d593a16b5fddf14304817` reported mean cyclomatic complexity
+of 4.29 in `nose_detector.py`, just above the threshold of 4. The detector now
+receives ordered search directories and a required command runner from the CLI
+adapter. The adapter keeps repository-local binary precedence and excludes
+ambient `PATH` when no configured search path is present; tests pin both
+behaviours. Local `cs delta origin/main --file scripts/nose_detector.py`
+reports no issues. A mixed-state gate run found one missing assertion message
+and a timeout in the lockfile bump scenario. The assertion was fixed; the
+timeout did not recur in the frozen-candidate run, so no timeout was changed.
+All seven gates then passed on the repaired candidate: `make check-fmt`,
+`make markdownlint` (36 files, zero issues), `make nixie`, `make typecheck`,
+`make lint` (11 allowed, zero blocking), `make test` (1529 passed, 30 skipped,
+110 snapshots), and `make duplication-test` (165 passed, three snapshots). The
+hosted review of this repair remains pending.
+
+[review-ci-run]: https://github.com/leynos/lading/actions/runs/39958260207/attempts/1
+
+## Review amendment: pin release bytes (2026-10-23)
+
+CodeRabbit identified that the first installer pinned a nose version label but
+allowed a mutable Git tag to select the source metadata. The package does not
+publish the signature metadata required for `cargo-binstall --only-signed`.
+That left the detector bytes unbound even though the installed binary reported
+the expected version.
+
+`make install-nose` now downloads the official v0.20.0 archive and checks
+committed archive and executable SHA-256 pins for Linux x86-64, Linux ARM64,
+macOS Intel and Apple Silicon. It verifies cache hits against the executable
+digest, and CI now calls the same Make target. The cache key includes the
+Makefile, forcing old version-only cache entries to miss. Missing releases,
+digest mismatches and unsupported platforms fail closed.
+
+The focused regression contract failed before the installer change (four
+failures, ten passes). A real Linux x86-64 install verified archive digest
+`ae28f5fdd845570c1e9d4d2b2149d25c80952bea0a5ddbe9396b28880c1f4717` and binary
+digest `05d2a2df2a9f0a1ab92ed91c0032e5cbd1e2098ab5b25f85dfefaa5329956a69`. The
+other three published archives also matched their release-side checksums, and
+their executable hashes were computed from those verified bytes. A subsequent
+cache check reused the verified Linux binary, and a deliberately altered cached
+binary was downloaded and repaired.
+
+The final working-tree candidate passed all seven sequential gates:
+`make check-fmt`, `make markdownlint` (36 files, zero issues), `make nixie`,
+`make typecheck`, `make lint` (11 allowed, zero blocking or stale families),
+`make test` (1532 passed, 30 skipped, 113 snapshots), and
+`make duplication-test` (167 passed, four snapshots). The hosted CodeScene
+review of this pushed candidate identified the repeated test structure noted
+below.
+
+2026-10-23: hosted CodeScene review of
+`24cef816339a9cd634bd55df3f55376d37645072` found duplicated failure assertions
+in the new installer contract tests. The archive-digest and executable-digest
+cases now share one parameterized test; each case retains its own scenario,
+diagnostic assertion and pytest id. This removes repeated test logic without
+weakening either fail-closed contract. Local `cs review` reports a score of
+10.0, and `cs delta origin/main --file scripts/tests/test_make_install_nose.py`
+reports no issues. All seven sequential gates passed on the repaired working
+tree: `make check-fmt`, `make markdownlint` (36 files, zero issues),
+`make nixie`, `make typecheck`, `make lint` (11 allowed, zero blocking or stale
+families), `make test` (1532 passed, 30 skipped, 113 snapshots), and
+`make duplication-test` (167 passed, four snapshots). Hosted validation and the
+formal CodeRabbit review of the pushed repair remain pending.
+
+2026-10-23: the formal CodeRabbit review of
+`24cef816339a9cd634bd55df3f55376d37645072` raised six further findings. The
+cached installer now verifies a digest before executing a cached binary, with a
+regression test proving a tampered script is not run. Allowlist validation
+rejects `.` and `./` with a configuration error, and detector discovery
+resolves relative PATH results to absolute paths. A session-scoped pytest
+fixture now shares the real-binary resolution setup while the workflow contract
+still invokes the CLI with its normal environment. The release URL contract
+derives its version from the Makefile, and the ADR now uses the correct article
+before “SHA-256”. The focused duplication suite passed with 170 tests and four
+snapshots after these changes.
+
+2026-10-23: candidate-bound validation for
+`ddd6b850087f6c9271eb2960717ba4a825f94f56`, based on
+`ec5597e78097126dcea5784f97acde7872a180f6`, passed all seven sequential local
+gates. `make test` reported 1535 passed, 30 skipped and 113 snapshots;
+`make duplication-test` reported 170 passed and four snapshots. Hosted CI run
+39985325915 passed both `lint-test` and `build-dist`, and CodeScene result
+8100639 passed. The six CodeRabbit inline findings were answered, and all six
+threads are resolved.
+
+The latest CodeRabbit walkthrough still flags the unchanged
+`docs/users-guide.md`. That warning is under reconciliation: the relevant lint
+and duplication commands are contributor workflows already documented in
+`docs/developers-guide.md`; `docs/users-guide.md` covers Lading CLI and
+configuration workflows, and this change adds no application user behaviour.
+The walkthrough also says automatic reviews paused during active development
+and that `ddd6b850087f6c9271eb2960717ba4a825f94f56` was not formally reviewed.
+Current-head formal review therefore remains pending. A proof-specific
+assessment is not applicable because this change introduced or altered no
+formal proof artefact or verifier obligation.
+
+The ExecPlan-only review amendment was formatted with `make fmt` and passed
+`make check-fmt`, `make markdownlint` (36 files, zero issues), and `make nixie`
+(all diagrams validated). Its first Markdown gate caught a spelling error; the
+text was corrected to the repository spelling “artefact” before the passing run.
+
+2026-10-23: the CodeRabbit assessment of
+`39faca753b53cb5c2b565e4a2835724fe5eade2c` found that
+`scripts/tests/test_duplication_gate_commands.py` exceeded the 400-line file
+limit and that the developer guide overstated when helper tests are excluded
+from application-suite collection. The environment-adapter test and its three
+`PATH` cases were moved intact to
+`scripts/tests/test_duplication_gate_environment.py`; the original module is
+now 363 lines. The guide now describes exclusion only when required tooling
+dependencies are unavailable. The assessment confirmed the unchanged
+`docs/users-guide.md` is not applicable because these are contributor commands,
+and found no further functional defect. The review-fix working tree passed all
+seven sequential local gates: `make check-fmt`, `make markdownlint`,
+`make nixie`, `make typecheck`, `make lint` (11 reasoned exceptions),
+`make test` (1535 passed, 30 skipped, 113 snapshots), and
+`make duplication-test` (170 passed, four snapshots). Final candidate CI and
+formal review remain pending publication.
+
+## Review repair: real-detector fixture failures (2026-10-23)
+
+The exact-head CodeRabbit review of `bd67055ffcd600416c3b8f0a3923306f923cb835`
+identified that `real_nose_binary` converted every `GateExecutionError` into a
+skip. The new regression failed against that candidate: an installed detector
+reporting `nose 0.19.0` was skipped instead of failing version verification.
+The fixture now skips only when discovery finds no binary and no `NOSE_BIN`
+override is set. Version and execution errors from discovered binaries and
+explicit overrides propagate. The focused regression passed with three cases:
+absent detector, invalid discovered binary, and invalid explicit override.
+
+The review walkthrough also found that the developer guide still described the
+removed per-path raise helpers. Its index-missing-version section now matches
+the current `_MissingDependencyWording`, `_raise_missing_dependency`,
+`_placement_wording`, and `_validate_dependency_placement` flow.
+
+The PR target was fetched and confirmed at
+`ec5597e78097126dcea5784f97acde7872a180f6`, already the branch's merge base;
+`git rebase origin/main` reported the branch up to date. Full candidate gates
+and publication of this repair remain pending.
+
+The first sequential gate run found 14 lint diagnostics in the new test's
+imports, dynamic attribute access, assertion construction, and regex literal.
+After those were corrected, the next run found two `runtime-cast-value`
+diagnostics; quoting the `typing.cast` type expression exposed two more
+`assert-missing-message` diagnostics in the following run. The assertions now
+explain the expected import spec and loader. The other six gates passed on each
+run.
+
+The final sequential candidate run passed all seven gates: `make check-fmt`
+(559 Python files formatted, 34 Markdown files unchanged), `make markdownlint`
+(36 files, zero issues; `typos.toml` current), `make nixie` (all diagrams
+validated), `make typecheck` (all checks passed), `make lint` (all stages
+passed; the duplication gate reported 11 reasoned exceptions), `make test`
+(1,538 passed, 30 skipped, 113 snapshots), and `make duplication-test` (173
+passed, four snapshots). Logs are under `/tmp` with the
+`*-adopt-nose-code-deduplication-adopt-nose-code-deduplication-4.out` suffix.
+At the time of this amendment, the candidate was unpublished; a fresh
+exact-head review is required after publication.

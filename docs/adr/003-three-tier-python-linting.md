@@ -134,6 +134,23 @@ all, so the lint passed without linting it. Nine modules in this repository
 were skipped that way under PyPy 3.11. PyPy 3.12 parses all of them, and they
 lint clean. A parse failure now fails the lint.
 
+## Amendment (2026-09-27): the duplication gate is the seventh stage
+
+Adopted 2026-09-27. This amendment supersedes the six-stage ordering in the
+decision above by adding a seventh stage; the other six stages are unchanged.
+
+The accepted decision above states that Skylos is the final, blocking check.
+[ADR-010](010-adopt-nose-duplication-gate.md) adopts a blocking
+code-duplication gate, and `make lint` runs it after Skylos as its seventh and
+last stage. The gate is the only stage that inspects the repository as a whole
+for repetition rather than checking each module on its own, so it has to
+observe the tree in the state the other six stages have already accepted.
+
+Nothing about the three-tier structure changes: the new stage is tooling, it
+resolves its own pinned environment, and it does not alter the application's
+interpreter matrix or runtime dependencies. The stage count in the decision
+above is superseded by this amendment.
+
 ## Amendment (2026-10-02): one Python 3.14 baseline, four gated trees
 
 Adopted 2026-10-02. This amendment supersedes the interpreter sentences in the

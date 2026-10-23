@@ -27,9 +27,16 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      # The pinned nose duplication detector. Bump alongside NOSE_VERSION in
+      # the Makefile and [tool.nose].version in pyproject.toml; the contract
+      # test checks all three sites. The Makefile pins artifact digests too.
+      NOSE_VERSION: "0.20.0"
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -79,6 +86,36 @@ jobs:
 
       - name: Validate Makefile
         run: mbake validate Makefile
+
+      # The Makefile scopes uv to repo-local cache and tool directories, so
+      # caching them preserves the duplication gate's script environment (its
+      # PEP 723 cyclopts/tomlkit resolution) and the Skylos tool environment
+      # between runs. The Makefile and the gate scripts pin those versions, so
+      # they key the cache alongside the project lockfile.
+      - name: Cache uv tool and script environments
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            .uv-cache
+            .uv-tools
+          key: uv-envs-${{ runner.os }}-${{ hashFiles('uv.lock', 'Makefile', 'scripts/*.py') }}
+          restore-keys: |
+            uv-envs-${{ runner.os }}-
+
+      # Cache only a binary that `make install-nose` verified against the
+      # committed archive and executable digests. Including the Makefile in
+      # the key invalidates binaries cached by the earlier version-only gate.
+      - name: Cache the pinned nose duplication detector
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .tools/nose
+          key: nose-${{ runner.os }}-${{ env.NOSE_VERSION }}-${{ hashFiles('Makefile') }}
+
+      - name: Install nose duplication detector
+        run: make install-nose
+
+      - name: Run duplication gate tests
+        run: make duplication-test
 
       - name: Install code
         run: make build

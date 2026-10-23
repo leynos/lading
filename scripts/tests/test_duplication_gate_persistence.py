@@ -1,0 +1,326 @@
+"""Persistence and contention tests for duplication-gate allow entries."""
+
+import subprocess
+import tomllib
+from pathlib import Path
+
+import pytest
+import tomlkit.exceptions
+from duplication_gate_test_support import (
+    allowlist,
+    copied_gate_workspace,
+    gate_command,
+    gate_environment,
+)
+
+
+class TestLoadAllowEntry:
+    """Reading reasoned entries without touching the file."""
+
+    def test_loader_never_reaches_the_writer(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Reading the allowlist must not open, lock, or replace the file."""
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text(
+            "[[tool.duplication_gate.allow]]\n"
+            'unit = "lading/a.py"\n'
+            'reason = "reviewed"\n',
+            encoding="utf-8",
+        )
+        before = pyproject.stat()
+
+        def refuse(*_args: object, **_kwargs: object) -> None:
+            msg = "the read-only loader must not write"
+            raise AssertionError(msg)
+
+        monkeypatch.setattr(allowlist, "atomic_write", refuse)
+        monkeypatch.setattr(allowlist, "_locked_file", refuse)
+
+        entries = allowlist.load_allowlist(pyproject)
+
+        assert [entry.keys for entry in entries] == [("lading/a.py",)], (
+            "The loader must return the parsed entries."
+        )
+        after = pyproject.stat()
+        assert (after.st_mtime_ns, after.st_size) == (
+            before.st_mtime_ns,
+            before.st_size,
+        ), "Loading must leave the file untouched."
+        assert not list(tmp_path.glob(".pyproject.toml.*")), (
+            "Loading must not leave a lock or temporary sibling behind."
+        )
+
+    def test_loader_creates_no_file_when_the_document_is_absent(
+        self, tmp_path: Path
+    ) -> None:
+        """An absent allowlist loads as empty rather than being created."""
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text('[project]\nname = "x"\n', encoding="utf-8")
+
+        assert not allowlist.load_allowlist(pyproject), (
+            "A document without an allow table must load no entries."
+        )
+        assert list(tmp_path.iterdir()) == [pyproject], (
+            "Loading must not create sibling files."
+        )
+
+
+class TestAppendAllowEntry:
+    """Persisting reasoned entries to ``pyproject.toml``."""
+
+    @pytest.mark.parametrize(
+        ("configuration", "diagnostic"),
+        [
+            pytest.param("tool = false\n", "pyproject.tool must be a table", id="tool"),
+            pytest.param(
+                "[tool]\nduplication_gate = false\n",
+                "pyproject.tool.duplication_gate must be a table",
+                id="gate",
+            ),
+            pytest.param(
+                "[tool.duplication_gate]\nallow = false\n",
+                "duplication_gate.allow must be an array",
+                id="allow",
+            ),
+        ],
+    )
+    def test_rejects_invalid_table_shapes_without_editing_the_document(
+        self,
+        tmp_path: Path,
+        configuration: str,
+        diagnostic: str,
+    ) -> None:
+        """Malformed existing tables report config errors and retain source bytes."""
+        pyproject = tmp_path / "pyproject.toml"
+        original = f'{configuration}\n[project]\nname = "x"\n'
+        pyproject.write_text(original, encoding="utf-8")
+
+        with pytest.raises(allowlist.GateConfigError, match=diagnostic):
+            allowlist.append_allow_entry(
+                pyproject,
+                keys=("lading/a.py",),
+                reason="unit reason",
+            )
+
+        assert pyproject.read_text(encoding="utf-8") == original, (
+            "A malformed configuration must not be rewritten."
+        )
+
+    def test_validates_all_existing_entries_before_updating_a_match(
+        self, tmp_path: Path
+    ) -> None:
+        """A later malformed entry cannot leave an earlier reason half-updated."""
+        pyproject = tmp_path / "pyproject.toml"
+        original = (
+            "[[tool.duplication_gate.allow]]\n"
+            'unit = "lading/a.py"\n'
+            'reason = "old reason"\n'
+            "\n"
+            "[[tool.duplication_gate.allow]]\n"
+            "unit = false\n"
+            'reason = "invalid key"\n'
+        )
+        pyproject.write_text(original, encoding="utf-8")
+
+        with pytest.raises(allowlist.GateConfigError):
+            allowlist.append_allow_entry(
+                pyproject,
+                keys=("lading/a.py",),
+                reason="new reason",
+            )
+
+        assert pyproject.read_text(encoding="utf-8") == original, (
+            "Entry validation must finish before any existing entry is changed."
+        )
+
+    def test_round_trips_unit_and_pair_entries(self, tmp_path: Path) -> None:
+        """Appended entries load again and preserve existing TOML content."""
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text('[project]\nname = "x"\nversion = "0"\n', encoding="utf-8")
+        allowlist.append_allow_entry(
+            pyproject,
+            keys=("lading/a.py",),
+            reason="unit reason",
+        )
+        allowlist.append_allow_entry(
+            pyproject,
+            keys=("lading/b.py::beta", "lading/c.py::gamma"),
+            reason="members reason",
+        )
+        allowlist.append_allow_entry(
+            pyproject,
+            keys=("lading/c.py::gamma", "lading/b.py::beta"),
+            reason="updated members reason",
+        )
+
+        entries = allowlist.load_allowlist(pyproject)
+        assert entries[0].keys == ("lading/a.py",), "Unit entry must retain its target."
+        assert entries[1].keys == ("lading/b.py::beta", "lading/c.py::gamma"), (
+            "Members entry must retain both targets."
+        )
+        assert entries[1].reason == "updated members reason", (
+            "A repeated member set must update its reason."
+        )
+        assert len(entries) == 2, "A repeated member set must not add an entry."
+        data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+        assert data["project"]["name"] == "x", (
+            "Appending must preserve existing TOML content."
+        )
+
+    def test_appending_preserves_unrelated_configuration(self, tmp_path: Path) -> None:
+        """Existing tables and comments outside the gate table survive a write."""
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text(
+            '[project]\nname = "x"\nversion = "0"\n'
+            "\n"
+            "[tool.nose]\n"
+            'version = "0.20.0"\n'
+            'roots = ["lading"]\n'
+            "\n"
+            "# A comment a maintainer would miss if the rewrite dropped it.\n"
+            "[tool.skylos.gate]\n"
+            'mode = "strict"\n',
+            encoding="utf-8",
+        )
+
+        allowlist.append_allow_entry(
+            pyproject,
+            keys=("lading/a.py",),
+            reason="unit reason",
+        )
+
+        text = pyproject.read_text(encoding="utf-8")
+        assert "# A comment a maintainer would miss" in text, (
+            "Comments outside the gate table must survive the rewrite."
+        )
+        assert 'mode = "strict"' in text, (
+            "Unrelated tool configuration must survive the rewrite."
+        )
+
+    def test_unparsable_document_raises_a_configuration_error(
+        self, tmp_path: Path
+    ) -> None:
+        """An unparsable manifest is a configuration error, not a traceback."""
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text("this is not = = valid toml\n", encoding="utf-8")
+
+        with pytest.raises(allowlist.GateConfigError) as raised:
+            allowlist.append_allow_entry(
+                pyproject,
+                keys=("lading/a.py",),
+                reason="unit reason",
+            )
+
+        assert isinstance(raised.value.__cause__, tomlkit.exceptions.ParseError), (
+            "The parse failure must be preserved as the cause."
+        )
+        assert pyproject.read_text(encoding="utf-8") == (
+            "this is not = = valid toml\n"
+        ), "A rejected document must be left untouched."
+
+    def test_atomic_write_preserves_mode_and_original_on_failure(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Failed replacement retains contents, mode, and a usable lock."""
+        pyproject = tmp_path / "pyproject.toml"
+        original = '[project]\nname = "x"\nversion = "0"\n'
+        pyproject.write_text(original, encoding="utf-8")
+        pyproject.chmod(0o640)
+        original_replace = Path.replace
+
+        def fail_replace(_source: Path, _destination: Path) -> None:
+            msg = "replacement failed"
+            raise OSError(msg)
+
+        monkeypatch.setattr(Path, "replace", fail_replace)
+        with pytest.raises(OSError, match="replacement failed"):
+            allowlist.append_allow_entry(
+                pyproject,
+                keys=("lading/a.py",),
+                reason="unit reason",
+            )
+        monkeypatch.setattr(Path, "replace", original_replace)
+
+        assert pyproject.read_text(encoding="utf-8") == original, (
+            "Failed replacement must preserve the original TOML."
+        )
+        temporary_siblings = [
+            path
+            for path in tmp_path.glob(".pyproject.toml.*")
+            if path.name != ".pyproject.toml.duplication-gate.lock"
+        ]
+        assert temporary_siblings == [], (
+            "Failed replacement must remove its temporary sibling."
+        )
+        allowlist.append_allow_entry(
+            pyproject,
+            keys=("lading/a.py",),
+            reason="unit reason",
+        )
+        assert pyproject.stat().st_mode & 0o777 == 0o640, (
+            "Replacement must preserve the destination mode."
+        )
+
+    def test_concurrent_allow_commands_preserve_both_entries(
+        self, tmp_path: Path
+    ) -> None:
+        """Two blocked writers retain both exceptions after the lock releases."""
+        _, script = copied_gate_workspace(tmp_path)
+        writers: list[subprocess.Popen[str]] = []
+        try:
+            with allowlist._locked_file(script.parent.parent / "pyproject.toml"):
+                first = subprocess.Popen(  # ruff: ignore[subprocess-without-shell-equals-true] # pylint: disable=consider-using-with  # must outlive the lock scope; reaped below
+                    gate_command(
+                        script,
+                        "allow",
+                        "--first",
+                        "lading/a.py",
+                        "--reason",
+                        "first writer",
+                    ),
+                    cwd=script.parent.parent,
+                    env=gate_environment(),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+                writers.append(first)
+                second = subprocess.Popen(  # ruff: ignore[subprocess-without-shell-equals-true] # pylint: disable=consider-using-with  # must outlive the lock scope; reaped below
+                    gate_command(
+                        script,
+                        "allow",
+                        "--first",
+                        "lading/b.py",
+                        "--reason",
+                        "second writer",
+                    ),
+                    cwd=script.parent.parent,
+                    env=gate_environment(),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+                writers.append(second)
+                for writer in writers:
+                    with pytest.raises(subprocess.TimeoutExpired):
+                        writer.wait(timeout=5)
+
+            for index, writer in enumerate(writers, start=1):
+                assert writer.wait(timeout=10) == 0, (
+                    f"Writer {index} must exit successfully."
+                )
+        finally:
+            # Always reap children, including when a bounded lock check fails.
+            for writer in writers:
+                if writer.poll() is None:
+                    writer.kill()
+                writer.wait(timeout=10)
+
+        entries = tomllib.loads(
+            (script.parent.parent / "pyproject.toml").read_text(encoding="utf-8")
+        )["tool"]["duplication_gate"]["allow"]
+        recorded_units = {entry["unit"] for entry in entries}
+        assert recorded_units == {"lading/a.py", "lading/b.py"}, (
+            "Concurrent commands must preserve both independently added entries."
+        )

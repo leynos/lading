@@ -532,8 +532,8 @@ scoped to the byte-exact mode. Text mode keeps its policy: `run()`,
 
 Callers who previously worked around decoding by round-tripping through a
 surrogate encoding can now drop it and request the byte mode directly. See the
-[binary output section in the users' guide](cuprum-users-guide.md#binary-output) for
-the full contract and a worked example.
+[binary output section in the users' guide][binary-output] for the full
+contract and a worked example.
 
 ### Executable bindings
 
@@ -588,8 +588,7 @@ paths, but the file at the bound path may be replaced between the check and the
 remain the operator's responsibility. And `resolved_path` is a _string_ the run
 reports, not a hash or a descriptor: it names the executable that was started,
 but it does not attest to the bytes at that path. See
-[§5.1.2 of the design document](https://github.com/leynos/cuprum/blob/v0.2.0-beta2/docs/cuprum-design.md#512-executable-bindings) for
-the full boundary.
+[§5.1.2 of the design document][executable-bindings] for the full boundary.
 
 ### Environment policies
 
@@ -824,10 +823,9 @@ they were absent. Passing anything but a `bool` for either flag raises
 `ValueError`. Capture, echo destinations, exit codes, and the returned
 `CommandResult` are unchanged in every case. The flags are a spelling of the
 adapter decision in
-[ADR-013](https://github.com/leynos/cuprum/blob/v0.2.0-beta2/docs/adr-013-opt-in-github-actions-presentation-sink.md), which records
-why they construct the sink instead of teaching the execution layer workflow
-commands. For custom destinations and titles, and deliberate local activation,
-see the
+[ADR-013][adr-013-github-presentation], which records why they construct the
+sink instead of teaching the execution layer workflow commands. For custom
+destinations and titles, and deliberate local activation, see the
 [GitHub Actions presentation section](cuprum-users-guide.md#present-output-in-github-actions)
 in the users' guide, which covers the
 [group and annotate flags](cuprum-users-guide.md#group-and-annotate-flags) and
@@ -1057,7 +1055,12 @@ are pinned to the defaults in `benchmarks/ratchet_history.py` by a CI contract
 test, so a reproduction should not need to pass them explicitly.
 
 For the full description, see
-[the CI ratchet workload](https://github.com/leynos/cuprum/blob/v0.2.0-beta2/docs/developers-guide.md#the-ci-ratchet-workload) in the
-developers' guide and `docs/cuprum-design.md` (§13.9), which also links
-[the noise measurements](https://github.com/leynos/cuprum/blob/v0.2.0-beta2/docs/debugging/debugging-plan-2026-09-16-ratchet-overhead-noise.md)
-behind the change.
+[the CI ratchet workload][ci-ratchet-workload] in the developers' guide and
+`docs/cuprum-design.md` (§13.9), which also links
+[the noise measurements][noise-measurements] behind the change.
+
+[binary-output]: cuprum-users-guide.md#binary-output
+[executable-bindings]: https://github.com/leynos/cuprum/blob/v0.2.0-beta2/docs/cuprum-design.md#512-executable-bindings
+[adr-013-github-presentation]: https://github.com/leynos/cuprum/blob/v0.2.0-beta2/docs/adr-013-opt-in-github-actions-presentation-sink.md
+[ci-ratchet-workload]: https://github.com/leynos/cuprum/blob/v0.2.0-beta2/docs/developers-guide.md#the-ci-ratchet-workload
+[noise-measurements]: https://github.com/leynos/cuprum/blob/v0.2.0-beta2/docs/debugging/debugging-plan-2026-09-16-ratchet-overhead-noise.md

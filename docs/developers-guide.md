@@ -173,7 +173,7 @@ Run the Python lint gate with:
 make lint
 ```
 
-The target is deliberately six-stage. Ruff runs first because it is fast,
+The target is deliberately seven-stage. Ruff runs first because it is fast,
 handles broad style and correctness checks, and imports the stricter lint
 policy used by `leynos/episodic`. If Ruff passes, the target runs `interrogate`
 with `--fail-under 100` twice to enforce **100% docstring coverage**: once
@@ -190,12 +190,144 @@ deprecated standard-library usage, file hygiene, and design-size limits. The
 fourth stage runs a selected allow-list of `df12-python-lints` checks under
 CPython at the baseline, evaluating version-gated diagnostics against that same
 baseline. The fifth stage runs `ambrleaks`, which scans Syrupy snapshots under
-`tests` for values that should have been redacted. Finally, Skylos runs a
-blocking, strict, production-only dead-code scan across `lading`, after which
-the lint gate is complete. [ADR-003](adr/003-three-tier-python-linting.md)
-records the policy decision, including the
+`tests` for values that should have been redacted. The sixth stage is Skylos, a
+blocking, strict, production-only dead-code scan across `lading`. The seventh
+and final stage is the code-duplication gate, after which the lint gate is
+complete. [ADR-003](adr/003-three-tier-python-linting.md) records the policy
+decision, including the
 [2026-09-07 addendum](adr/003-three-tier-python-linting.md#addendum-docstring-coverage-for-tests-and-scripts-2026-09-07)
 extending Interrogate coverage to `tests` and `scripts`.
+
+## Code-duplication gate
+
+The final stage of `make lint` is a blocking code-duplication gate, which can
+also be run on its own:
+
+```bash
+make duplication
+```
+
+It runs the pinned [nose](https://github.com/corca-ai/nose) detector over the
+maintained first-party roots (`lading` and `scripts`) and reports duplication
+families ranked by refactoring value. Every family must then be either
+extracted or recorded as a reasoned exception. The objective is to remove
+unjustified repeated logic and to keep intentional parallels explicitly
+reviewable, **not** to drive the duplication count down through indiscriminate
+abstraction or suppression. [ADR-010](adr/010-adopt-nose-duplication-gate.md)
+records the decision, the scan scope, and the adjudication of this repository's
+initial findings.
+
+Install the detector before the first run, and after a version bump:
+
+```bash
+make install-nose
+```
+
+The target is idempotent: it reuses a binary only when both its reported
+version and SHA-256 match the committed pins. Otherwise it downloads the
+official prebuilt release for Linux x86-64 or ARM64, or macOS Intel or Apple
+Silicon, and checks the archive and executable digests before installing it into
+`.tools/nose`. The hashes in the Makefile are the trust boundary; a published
+checksum sidecar does not authenticate itself. Missing or mismatched bytes and
+unsupported platforms fail provisioning. CI uses the same installer, and its
+cache key includes the Makefile so binaries from the earlier version-only
+installer cannot be reused. `NOSE_BIN` overrides the binary location; a
+relative value resolves against the repository root, so the override works from
+any working directory. The CLI adapter reads `NOSE_BIN` and `PATH` and passes
+them with the repository root in a `NoseEnvironment` value. The detector
+wrapper receives a binary finder callable, while unit tests supply environment
+values and finders directly instead of patching process globals. The default
+process runner uses that supplied root as its working directory, and an absent
+or empty `PATH` does not fall back to a host search path.
+
+The detector version is pinned in three places -- `NOSE_VERSION` in the
+Makefile, the `NOSE_VERSION` environment in `.github/workflows/ci.yml`, and
+`[tool.nose].version` in `pyproject.toml` -- and
+`tests/workflow_contracts/test_duplication_toolchain_contract.py` fails when
+they disagree. Bump all three together.
+
+### Recording an exception
+
+When a reported family is intentional parallel structure, record why:
+
+```bash
+make duplication-allow \
+  FIRST='lading/commands/example.py' \
+  SECOND='lading/commands/other.py' \
+  REASON='Why these two must remain separate.'
+```
+
+For a family with several additional members, pass one JSON array through
+`SECOND_KEYS_JSON`:
+
+```bash
+make duplication-allow \
+  FIRST='lading/commands/example.py' \
+  SECOND_KEYS_JSON='["lading/commands/other.py", "lading/commands/third.py"]' \
+  REASON='Why these contracts must remain separate.'
+```
+
+`FIRST` and `REASON` are required. Use either one `SECOND` value or a
+`SECOND_KEYS_JSON` array, not both. Values are accepted only when supplied on
+the `make` command line, so exported environment values cannot record an
+exception nobody asked for. They are passed through literally, so a reason
+containing spaces, quotes, dollar signs, or command-substitution-looking text
+is stored exactly as written rather than being re-expanded as Make or shell
+program text. Direct calls to `scripts/duplication_gate.py allow` can still
+repeat `--second` and also accept the same JSON array through
+`--second-keys-json`. Recursive globs must start at a named repository
+directory; unanchored patterns such as `**/*.py` are rejected because they
+could silence every reported source file.
+
+An entry silences a family only when **every** location it reports is covered
+by one of the entry's keys, so adding a copy in an unlisted file blocks the
+gate again. A `unit = "path[::name]"` entry supplies a single key;
+`members = [...]` supplies two or more. Keys are repository-relative paths,
+optionally suffixed with `::name` to require the detector's unit name; they are
+never line numbers or detector IDs, both of which churn. A non-blank reason is
+mandatory.
+
+Edits go through an atomic read-modify-write under a sidecar lock, so comments
+and unrelated configuration survive and repeating the same command is
+idempotent. The lock coordinates writers following that protocol; it does not
+coordinate unrelated editors that do not.
+
+### Reading the report
+
+Exclusions and the ranking budget have consequences worth knowing before
+concluding that a clean run means the codebase is duplication-free:
+
+- `exclude` globs are anchored to each scan **root**, not to the repository
+  root, so a repository-relative glob such as `scripts/tests/**` matches
+  nothing and excludes no files. Write them `**/`-prefixed; a contract test
+  rejects the silently-inert form.
+- `top = 30` bounds the adjudicated surface rather than describing the scan.
+  Allowed families still occupy places in it, and lower-ranked families are
+  measured but not enforced.
+- Stale-entry reporting means "unmatched in this scan", not "proven gone". A
+  family can fall below the ranking bound and be reported as unmatched while
+  its duplication is intact. Confirm a removal by inspecting the source or by
+  running a deliberately widened `top=0` scan before deleting an entry.
+
+The gate fails **closed**. A missing or wrong-version binary, a timeout, a
+failed command, malformed JSON, or an invalid report shape raises with a
+diagnostic rather than being treated as an empty findings list, so a gate that
+could not run never reports success.
+
+### Running the helper tests
+
+```bash
+make duplication-test
+```
+
+The gate modules and their tests are pinned PEP 723 tooling: `uv` reads the
+inline script metadata and resolves `cyclopts` and `tomlkit` on its own
+interpreter, so the gate never imports `lading` and never touches the project
+virtualenv. The helper tests run on their own interpreter for the same reason.
+When any required tooling dependency is unavailable,
+`scripts/tests/conftest.py` excludes the helper tests from application-suite
+collection. When all required tooling dependencies are available, the
+application suite can collect them.
 
 The relevant Makefile variables are:
 
@@ -1596,36 +1728,33 @@ these helpers rather than re-implementing the idiom inline.
 
 ### Shared message helpers
 
-`_format_missing_dependency_failure(failure, *,`
-`missing_name, reason, guidance) -> str` Builds the human-readable fatal error
-string from the pre-formatted cargo failure text, the extracted dependency
-name, a domain-language reason clause, and an operator guidance sentence. All
-fatal-path helpers delegate message construction here, centralizing the text
-format.
+`_MissingDependencyWording` carries the dependency name, reason, operator
+guidance, and warning detail for one fatal index-missing-version path.
+`_format_missing_dependency_failure` combines its reason and guidance with the
+pre-formatted cargo failure. `_log_missing_dependency_failure` emits the
+matching warning with a stable prefix.
 
-`_log_missing_dependency_failure(logger, lookup_failure, *, missing_name, detail)`
--> `None` Emits a WARNING-level log entry for fatal index-missing-version
-paths, providing consistent phrasing across all raise helpers so log
-aggregation can match on a stable prefix.
+`_raise_missing_dependency(context, wording)` owns that common sequence: it
+formats the fatal message, logs the warning, and raises the exception class
+selected by the caller. The per-path wording remains at the decision point.
 
-### Fatal-path helpers
+### Fatal-path decisions
 
-Each of the following accepts an `_IndexMissingVersionFailure` context object
-and a keyword-only `missing_name` argument, then raises unconditionally (return
-type `typ.NoReturn`):
+`_raise_name_extraction_failure(context)` handles a Cargo diagnostic whose
+missing dependency name could not be parsed. For a parsed name,
+`_validate_dependency_placement(context, handling, missing_name)` resolves the
+current crate and dependency against the canonical publish order. It returns a
+`_DependencyPlacement` when the dependency precedes the current crate, and
+routes an absent, self, or later dependency through `_raise_missing_dependency`
+using `_placement_wording` for the path-specific message.
 
-- `_raise_name_extraction_failure(context)` — invoked when the dependency name
-  cannot be parsed from the cargo diagnostic output.
-- `_raise_out_of_plan_dependency(context, *, missing_name)` — invoked when the
-  missing dependency is absent from the publish plan entirely.
-- `_raise_self_dependency(context, *, missing_name)` — invoked when the failing
-  crate's unresolved dependency resolves to itself after name canonicalization.
-- `_raise_out_of_order_dependency(context, *, missing_name)` — invoked when the
-  missing dependency is in the plan but at a higher publish-order index than
-  the current crate.
-- `_raise_unpublished_dependency_override_required(context, *, missing_name)`
-  — invoked when the dependency is in the plan and ordered correctly but the
-  unpublished workspace dependency override is disabled.
+`_downgrade_or_raise` then applies the caller's override setting. With the
+unpublished workspace dependency override enabled, it records the downgrade
+metric and logs the continuation; otherwise it calls
+`_raise_missing_dependency` with wording for a dependency that is scheduled
+correctly but not yet available on crates.io. `_placement_wording` keeps the
+absent, self, and later-dependency messages together; `_downgrade_or_raise`
+supplies the override-disabled wording.
 
 #### Crate-name canonicalization
 
