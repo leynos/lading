@@ -1,4 +1,4 @@
-# ADR-008: Adopt the nose duplication gate
+# ADR-010: Adopt the nose duplication gate
 
 ## Status
 
@@ -165,6 +165,20 @@ inside a covered file is understood to be silenced and re-adjudicated.
 
 Instrumentation reports 10 allowed and 0 blocking families, with 0 stale
 entries.
+
+#### Review follow-up (2026-10-23)
+
+After the rebase onto current `main`, the ranked scan surfaced one additional
+fragment-level family in the Cuprum import blocks of
+`scripts/format_markdown.py` and `scripts/release_gh.py`. These modules are
+separate command adapters with different catalogues and documentation
+boundaries; their common imports name the narrow execution primitives each
+adapter independently needs. Moving those imports behind a shared module would
+add an indirection without sharing behaviour. The family is recorded in the
+allowlist with the file-granularity qualification above. The current candidate
+therefore has 11 allowed families; the full gate rerun confirmed 11 allowed, 0
+blocking, and 0 stale families. All seven candidate gates passed; the ExecPlan
+records their results.
 
 ## Consequences
 

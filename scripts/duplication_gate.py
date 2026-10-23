@@ -19,6 +19,7 @@ virtualenv: it is tooling, and must not need to import ``lading`` or its
 dependencies to lint the repository.
 """
 
+import json
 import sys
 import tomllib
 from collections import abc as cabc
@@ -181,11 +182,35 @@ def check() -> None:
         raise SystemExit(1)
 
 
+def _decode_second_keys(
+    second: list[str] | None,
+    second_keys_json: str | None,
+) -> tuple[str, ...]:
+    """Resolve repeated CLI keys or one JSON-array key argument."""
+    if second is not None and second_keys_json is not None:
+        msg = "SECOND and SECOND_KEYS_JSON cannot be supplied together"
+        raise GateConfigError(msg)
+    if second_keys_json is None:
+        return tuple(second or ())
+    try:
+        decoded = json.loads(second_keys_json)
+    except json.JSONDecodeError as error:
+        msg = "SECOND_KEYS_JSON must be a JSON array of strings"
+        raise GateConfigError(msg) from error
+    if not isinstance(decoded, list) or not all(
+        isinstance(key, str) for key in decoded
+    ):
+        msg = "SECOND_KEYS_JSON must be a JSON array of strings"
+        raise GateConfigError(msg)
+    return tuple(decoded)
+
+
 @app.command
 def allow(
     *,
     first: str,
     second: list[str] | None = None,
+    second_keys_json: str | None = None,
     reason: str,
 ) -> None:
     """Record one reasoned exception in ``[tool.duplication_gate]``.
@@ -197,6 +222,9 @@ def allow(
     second : list[str] | None
         Further location keys; when supplied, the entry silences only families
         whose every location matches one of the listed keys.
+    second_keys_json : str | None
+        A JSON array of further location keys for callers such as Make that
+        need to pass several keys through one safely quoted argument.
     reason : str
         Reviewable justification for keeping the duplication.
 
@@ -208,8 +236,8 @@ def allow(
     if not reason.strip():
         print("REASON must not be empty", file=sys.stderr)
         raise SystemExit(2)
-    keys = (first, *(second or ()))
     try:
+        keys = (first, *_decode_second_keys(second, second_keys_json))
         for key in keys:
             validate_key(key, context=f"'{key}'")
         append_allow_entry(PYPROJECT, keys=keys, reason=reason)

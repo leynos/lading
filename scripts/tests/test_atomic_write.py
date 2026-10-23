@@ -6,6 +6,8 @@ rather than through that caller: default parent creation, mode preservation
 only when a destination exists, and the descriptor discipline around fsync.
 """
 
+import collections.abc as cabc
+import contextlib
 import dataclasses as dc
 import inspect
 import os
@@ -81,6 +83,90 @@ def test_default_options_are_shared_rather_than_rebuilt() -> None:
     default = inspect.signature(atomic_write.atomic_write).parameters["options"].default
     assert default is atomic_write._DEFAULT_OPTIONS, (
         "The default options must come from the module-level singleton."
+    )
+
+
+class _FailingTemporaryStream:
+    """Inject a write or flush failure while retaining the real temp file."""
+
+    def __init__(self, stream: typ.IO[bytes], failure_stage: str) -> None:
+        """Store the real stream and the operation that should fail."""
+        self._stream = stream
+        self._failure_stage = failure_stage
+        self.name = stream.name
+
+    def write(self, content: bytes) -> int:
+        """Write a prefix before failing, leaving cleanup observable."""
+        if self._failure_stage == "write":
+            self._stream.write(content[:1])
+            raise _InjectedTemporaryError
+        return self._stream.write(content)
+
+    def flush(self) -> None:
+        """Fail before the temporary file's buffered contents are flushed."""
+        if self._failure_stage == "flush":
+            raise _InjectedTemporaryError
+        self._stream.flush()
+
+    def __getattr__(self, name: str) -> cabc.Callable[[], int]:
+        """Expose descriptor lookup needed by the sync-file path."""
+        if name == "fileno":
+            return self._stream.fileno
+        raise AttributeError(name)
+
+
+class _InjectedTemporaryError(OSError):
+    """Signal an intentional failure at one temporary-file operation."""
+
+
+@pytest.mark.parametrize(
+    "failure_stage",
+    [
+        pytest.param("write", id="write"),
+        pytest.param("flush", id="flush"),
+        pytest.param("fsync", id="fsync"),
+    ],
+)
+def test_failed_temporary_file_stages_preserve_destination_and_clean_sibling(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_stage: str,
+) -> None:
+    """A failed write, flush, or file sync leaves neither partial output nor temp."""
+    destination = tmp_path / "config.toml"
+    destination.write_bytes(b"original\n")
+    original_temporary_file = atomic_write.tempfile.NamedTemporaryFile
+
+    @contextlib.contextmanager
+    def temporary_file(
+        *, delete: bool = True, prefix: str | None = None, **options: object
+    ) -> cabc.Generator[_FailingTemporaryStream]:
+        directory = typ.cast("Path", options["dir"])
+        with original_temporary_file(
+            delete=delete, dir=directory, prefix=prefix
+        ) as stream:
+            yield _FailingTemporaryStream(stream, failure_stage)
+
+    monkeypatch.setattr(atomic_write.tempfile, "NamedTemporaryFile", temporary_file)
+    if failure_stage == "fsync":
+
+        def fail_fsync(_descriptor: int) -> typ.NoReturn:
+            raise _InjectedTemporaryError
+
+        monkeypatch.setattr(atomic_write.os, "fsync", fail_fsync)
+
+    with pytest.raises(_InjectedTemporaryError):
+        atomic_write.atomic_write(
+            destination,
+            b"replacement\n",
+            options=atomic_write.AtomicWriteOptions(sync_file=failure_stage == "fsync"),
+        )
+
+    assert destination.read_bytes() == b"original\n", (
+        "A failed temp-file stage must leave the destination unchanged."
+    )
+    assert not list(tmp_path.glob(f".{destination.name}.*")), (
+        "A failed temp-file stage must remove its temporary sibling."
     )
 
 

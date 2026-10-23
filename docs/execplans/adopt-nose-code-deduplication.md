@@ -131,7 +131,7 @@ take precedence. This plan records every deliberate deviation.
       planted clone blocking, narrow exception allowing, and an out-of-scope
       third copy blocking again. No planted clone or temporary exception was
       left behind.
-- [x] (2026-09-26) Documentation: ADR-008, developer guide, AGENTS.md,
+- [x] (2026-09-26) Documentation: ADR-010, developer guide, AGENTS.md,
       `docs/contents.md`.
 - [x] (2026-09-27) Full gate run green: all seven gates pass, including the
       Ambrleaks, Skylos and duplication stages reached for the first time.
@@ -285,9 +285,16 @@ recorded here because the first account above stops short of it. Main landed
 [#264](https://github.com/leynos/lading/pull/264)) on 2026-10-10, taking
 ADR-007 for `007-relay-observability-events.md`. This branch's record had held
 ADR-007 since the first renumber, so it moved to ADR-008 and every local
-reference followed. The two-number history is the reason the pointers below are
-008 while the first collision is described as 006→007: both statements are true
-of their own rebase, and only the final number names a file that exists.
+reference followed. The two-number history is the reason the pointers at that
+rebase were 008 while the first collision is described as 006→007: both
+statements are true of their own rebase.
+
+Main later landed ADR-008 for the shared CV-005 contract library and ADR-009
+for PyPI-first publication. The rebase onto `origin/main` at
+`ec5597e78097126dcea5784f97acde7872a180f6` therefore moved this decision from
+ADR-008 to ADR-010. The ADR index kept main's ADR-008 and ADR-009 entries, and
+the nose decision's local links now resolve to
+`docs/adr/010-adopt-nose-duplication-gate.md`.
 
 Main also raised `requires-python` from `>=3.13` to `>=3.14` in the same period
 ([#322](https://github.com/leynos/lading/pull/322)), which obviates two of the
@@ -339,7 +346,7 @@ rename deleted, and the pull request also linked that dead path twice.
   `scripts/duplication_allowlist.py` (family matching, persistence),
   `scripts/duplication_gate.py` (CLI), plus `scripts/atomic_write.py` as the
   persistence primitive.
-- Focused tests: 140 passing cases across nine modules under `scripts/tests/`,
+- Focused tests: 155 passing cases and three snapshots under `scripts/tests/`,
   including end-to-end canary tests against the real pinned binary and property
   tests for whole-family matching.
 - A toolchain contract at
@@ -348,11 +355,12 @@ rename deleted, and the pull request also linked that dead path twice.
   `pyproject.toml`, on a re-enabled compile strategy, and on an inert exclusion
   glob.
 - Configuration in `pyproject.toml`: `[tool.nose]` over the `lading` and
-  `scripts` roots, and `[tool.duplication_gate]` with ten reasoned exceptions.
+  `scripts` roots, and `[tool.duplication_gate]` with eleven reasoned
+  exceptions after the post-rebase review follow-up.
 - Wiring: `make install-nose`, `make duplication`, `make duplication-test`,
   `make duplication-allow`, with the blocking check as the final stage of
   `make lint`.
-- Documentation: ADR-008, a developers-guide section, an `AGENTS.md` bullet, and
+- Documentation: ADR-010, a developers-guide section, an `AGENTS.md` bullet, and
   the documentation index.
 
 ### Adjudication outcome
@@ -369,34 +377,24 @@ repository-wide wildcard, and none was mass-generated.
 
 ### Validation actually run
 
-Run at `edc88ef`, the code head this document's repairs were then written onto,
-sequentially. That hash names the commit carrying every gate-relevant change;
-the documentation commit layered above it adds only this file's prose and was
-re-gated with the same commands before publication, so the figures below are
-reproducible from either:
+The full candidate gates ran sequentially after the review repairs, including
+the test proxy's write, flush, and file-sync failure coverage. The final edit
+to this plan and the ADR below changes documentation only; formatting, Markdown
+lint, and Mermaid validation are run again after that edit.
 
-| Gate                    | Result                                                                      |
-| ----------------------- | --------------------------------------------------------------------------- |
-| `make check-fmt`        | pass — Ruff 0.16.10 formatted 527 files; mdtablefix left 34 files unchanged |
-| `make lint`             | pass — all seven stages, exit 0                                             |
-| `make typecheck`        | pass — `ty` 0.0.56, `--python-version 3.14`, "All checks passed!"           |
-| `make test`             | pass — 1712 passed, 30 skipped, 110 snapshots passed                        |
-| `make markdownlint`     | pass — 34 files, 0 issues                                                   |
-| `make duplication-test` | pass — 140 passed, 3 snapshots passed                                       |
-| `make nixie`            | pass — all diagrams validated                                               |
+| Gate                    | Result                                                            |
+| ----------------------- | ----------------------------------------------------------------- |
+| `make check-fmt`        | pass                                                              |
+| `make lint`             | pass — all seven stages; 11 allowed, 0 blocking, 0 stale families |
+| `make typecheck`        | pass — `ty` 0.0.56, Python 3.14                                   |
+| `make test`             | pass — 1517 passed, 30 skipped, 110 snapshots passed              |
+| `make markdownlint`     | pass — 36 files, 0 issues                                         |
+| `make nixie`            | pass — all diagrams validated                                     |
+| `make duplication-test` | pass — 155 passed, 3 snapshots passed                             |
 
-An earlier figure in this table was superseded, and the correction is worth
-naming rather than quietly overwriting: the first full run was made at
-`8560757`, a commit that the later rebase onto `2b6b8de` replayed away. Those
-results described a candidate that was never published.
-
-Within `make lint`, the previously-unexercised stages all executed and passed:
-Ambrleaks (clean on `tests/`), Skylos (4.33.2, `dead_code` gate clean on
-`lading`), and the duplication gate itself, reporting
-`duplication gate passed; 10 allowed by reasoned exceptions`. Interrogate
-reported 100.0% on both invocations, and Pylint 4.0.9 scored 10.00/10 on both
-tiers — plain Pylint under `--managed-python --python 3.14`, and df12-pylint at
-revision `4cf41736…` under the same baseline.
+The accepted run reports 11 reasoned exceptions after the rebase surfaced the
+additional unnamed Cuprum import family. Lower-ranked and below-floor families
+remain outside the enforced ranked surface as described above.
 
 ### Lessons
 
@@ -467,14 +465,14 @@ The governing artefacts are:
 - `corca-ai/nose` at `v0.20.0`, the pinned detector.
 - Repository governance: `AGENTS.md` (quality gates, refactoring heuristics,
   400-line limit, en-GB-oxendict spelling), `docs/documentation-style-guide.md`
-  (ADR-008 shape), `docs/scripting-standards.md` (`scripts/tests/` layout).
+  (ADR-010 shape), `docs/scripting-standards.md` (`scripts/tests/` layout).
 - This repository's existing quality gates in `Makefile`: `check-fmt`, `lint`,
   `test`, `typecheck`, `spelling`.
 
 Trace: reference ADR-021 -> `EP-M1` (provisioning) -> `make install-nose` prints
 `nose 0.20.0`; -> `EP-M2` (gate core) -> `scripts/tests/*` green; -> `EP-M3`
 (integration) -> `make lint` fails on a planted clone; -> `EP-M4`
-(documentation) -> `docs/adr/008-*.md` indexed from `docs/contents.md`.
+(documentation) -> `docs/adr/010-*.md` indexed from `docs/contents.md`.
 
 ## Verification plan
 
@@ -576,7 +574,7 @@ Stage F (canary): in a scratch copy, plant a clone, watch the gate fail, record
 an exception, watch it pass, add an out-of-scope member, watch it fail again.
 Check the normalized output is byte-identical across repeated runs.
 
-Stage G (documentation and delivery): ADR-008, a developer-guide section,
+Stage G (documentation and delivery): ADR-010, a developer-guide section,
 `AGENTS.md` gate list, `docs/contents.md` index entry, then the full gate run
 and the draft PR.
 
@@ -593,7 +591,7 @@ and the draft PR.
 - `EP-M3` integration: `make lint` runs the gate and honours its exit status.
   Acceptance: a planted clone in a scratch workspace makes `make duplication`
   exit 1. Recovery: remove the planted clone.
-- `EP-M4` documentation: ADR-008 accepted and indexed; developer guide documents
+- `EP-M4` documentation: ADR-010 accepted and indexed; developer guide documents
   roots, channels, budget, exception review and stale-entry limits. Acceptance:
   `make markdownlint`, `make nixie` and `make check-fmt` green.
 
@@ -635,7 +633,7 @@ and an atomic replacement.
 The reference revision, the deliberate omissions, the scan scope and ranking
 policy, the adjudication record and the exact validation outcomes are recorded
 in the pull request description. Per-family adjudication reasons live beside
-the exceptions in `[tool.duplication_gate]` and in `docs/adr/008-*.md`.
+the exceptions in `[tool.duplication_gate]` and in `docs/adr/010-*.md`.
 
 ## Interfaces and dependencies
 
@@ -703,6 +701,11 @@ In `scripts/duplication_gate.py`:
 def partition_findings(
     findings: cabc.Sequence[Finding], allowlist: cabc.Sequence[AllowEntry]
 ) -> tuple[list[Finding], list[Finding], list[AllowEntry]]: ...
+
+def allow(
+    *, first: str, second: list[str] | None = None,
+    second_keys_json: str | None = None, reason: str
+) -> None: ...
 ```
 
 Dependencies of the gate environment, pinned in the PEP 723 header and in the
@@ -716,3 +719,28 @@ application's runtime or dev dependency groups.
 2026-09-26: initial draft, recording reconnaissance, the four open design
 decisions (roots, isolation, atomic-write reuse, exceptions) and the full
 verification plan before implementation began.
+
+2026-10-23: rebased PR #292 onto `origin/main` at
+`ec5597e78097126dcea5784f97acde7872a180f6` and preserved the target's ADR-008
+and ADR-009 by moving the nose decision to ADR-010. Applied the five valid
+CodeRabbit assessment findings from the previously published head: temporary
+file write, flush, and fsync failures now clean up under the same `finally`;
+the allow command validates existing TOML table and array shapes before any
+write; Make accepts additional member keys as a JSON array and tests a
+three-key exception at the Make boundary; the property oracle now exercises
+exact paths, globs, and optional unit names independently; and oversized test
+modules were split by responsibility while the application module returned
+below 400 lines. The two vendored Cuprum guides now use reference links where
+long inline links broke markdown line length, and the ineffective CLI2
+`overrides` block was removed so those guides pass the configured Markdown
+rules without an exemption. A post-rebase scan also surfaced an unnamed
+fragment family in the Cuprum imports of the Markdown formatter and release
+adapter; the modules keep separate catalogues, so the import-block family is
+recorded with the required file-level qualification. The review follow-up adds
+tests for malformed-root TOML, cleans test-double typing and lint, and restores
+the split detector suite's runner import. The final sequential run passed all
+seven gates: 1517 passed and 30 skipped in `make test`, 155 passed with three
+snapshots in `make duplication-test`, and 11 allowed with zero blocking or
+stale families in `make lint`. The documentation updates also passed
+`make check-fmt`, `make markdownlint` (36 files, zero issues), and `make nixie`
+before commit.

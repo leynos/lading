@@ -213,7 +213,7 @@ families ranked by refactoring value. Every family must then be either
 extracted or recorded as a reasoned exception. The objective is to remove
 unjustified repeated logic and to keep intentional parallels explicitly
 reviewable, **not** to drive the duplication count down through indiscriminate
-abstraction or suppression. [ADR-008](adr/008-adopt-nose-duplication-gate.md)
+abstraction or suppression. [ADR-010](adr/010-adopt-nose-duplication-gate.md)
 records the decision, the scan scope, and the adjudication of this repository's
 initial findings.
 
@@ -248,13 +248,25 @@ make duplication-allow \
   REASON='Why these two must remain separate.'
 ```
 
-`FIRST` and `REASON` are required, and `SECOND` is repeated for a family with
-more members. Values are accepted only when supplied on the `make` command
-line, so an exported `FIRST` or `REASON` in the environment cannot record an
+For a family with several additional members, pass one JSON array through
+`SECOND_KEYS_JSON`:
+
+```bash
+make duplication-allow \
+  FIRST='lading/commands/example.py' \
+  SECOND_KEYS_JSON='["lading/commands/other.py", "lading/commands/third.py"]' \
+  REASON='Why these contracts must remain separate.'
+```
+
+`FIRST` and `REASON` are required. Use either one `SECOND` value or a
+`SECOND_KEYS_JSON` array, not both. Values are accepted only when supplied on
+the `make` command line, so exported environment values cannot record an
 exception nobody asked for. They are passed through literally, so a reason
 containing spaces, quotes, dollar signs, or command-substitution-looking text
 is stored exactly as written rather than being re-expanded as Make or shell
-program text.
+program text. Direct calls to `scripts/duplication_gate.py allow` can still
+repeat `--second` and also accept the same JSON array through
+`--second-keys-json`.
 
 An entry silences a family only when **every** location it reports is covered
 by one of the entry's keys, so adding a copy in an unlisted file blocks the

@@ -177,20 +177,7 @@ def _placement_wording(
     current_index: int,
     missing_index: int | None,
 ) -> _MissingDependencyWording:
-    """Return the operator prose for one fatal dependency-placement condition.
-
-    Placement fails in three ways, and they differ only in the words they
-    carry: the dependency is absent from the plan, it resolves to the failing
-    crate itself, or it is ordered after that crate. Keeping the prose here
-    separates "which words" from "resolve the indexes and raise", so the
-    caller reads as control flow rather than as nested string assembly.
-
-    Returns
-    -------
-    _MissingDependencyWording
-        The wording for the condition ``missing_index`` selects: absent from
-        the plan, the same crate as its own dependency, or ordered later.
-    """
+    """Keep the three placement failures' distinct operator wording together."""
     if missing_index is None:
         return _MissingDependencyWording(
             missing_name=missing_name,
@@ -351,7 +338,6 @@ def _handle_index_missing_version(
         )
         return
     _raise_name_extraction_failure(context)
-    return
 
 
 def _downgrade_or_raise(
@@ -400,4 +386,3 @@ def _downgrade_or_raise(
             ),
         ),
     )
-    return

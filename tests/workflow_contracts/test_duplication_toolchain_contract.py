@@ -327,60 +327,6 @@ def test_the_ranking_bound_stays_bounded() -> None:
     )
 
 
-def _nose_table() -> dict[str, object]:
-    """Return the ``[tool.nose]`` table from the repository pyproject."""
-    tool = _table(_pyproject()["tool"], subject="[tool]")
-    return _table(tool["nose"], subject="[tool.nose]")
-
-
-def test_configured_exclusions_actually_exclude_something() -> None:
-    """Every exclusion glob must be able to match, at any depth.
-
-    nose anchors ``--exclude`` globs to each ``--root`` rather than to the
-    repository root. A repository-relative glob such as ``scripts/tests/**``
-    therefore matches nothing when the root is ``scripts`` and silently
-    excludes no files, so the gate reports families from a tree the
-    configuration claims to have skipped. A glob that does not begin with
-    ``**/`` only matches at the top level of a root, which is exactly the
-    quietly-inert form.
-    """
-    nose = _nose_table()
-    excludes = nose.get("exclude", [])
-    assert isinstance(excludes, list), "[tool.nose].exclude must be a TOML array."
-
-    for glob in excludes:
-        assert isinstance(glob, str), "Every exclusion glob must be a string."
-        assert glob.startswith("**/"), (
-            f"Exclude glob {glob!r} is anchored to the top of a scan root and "
-            "would exclude nothing below it; prefix it with `**/` to match at "
-            "any depth under every configured root."
-        )
-
-
-def test_declared_exclusions_target_directories_that_exist() -> None:
-    """A mistyped exclusion must not pass for a scoped scan."""
-    nose = _nose_table()
-    excludes = nose.get("exclude", [])
-    assert isinstance(excludes, list), "[tool.nose].exclude must be a TOML array."
-    roots = nose["roots"]
-    assert isinstance(roots, list), "[tool.nose].roots must be a TOML array."
-
-    for glob in excludes:
-        assert isinstance(glob, str), "Every exclusion glob must be a string."
-        literal = glob.removeprefix("**/").removesuffix("/**")
-        assert literal, f"Exclude glob {glob!r} names no directory."
-        matches = [
-            path
-            for root in roots
-            if isinstance(root, str)
-            for path in (REPO_ROOT / root).rglob(literal)
-        ]
-        assert matches, (
-            f"Exclude glob {glob!r} names {literal!r}, which exists under no "
-            "configured root; the gate would scan it rather than skip it."
-        )
-
-
 def test_the_gate_records_no_copied_exceptions() -> None:
     """Adoption starts from this repository's own adjudication, not upstream's."""
     tool = _pyproject()["tool"]

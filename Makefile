@@ -299,13 +299,13 @@ lint: build $(UV) interrogate install-nose ## Run linters
 		--format concise --no-upload --no-provenance --no-grep-verify
 	$(DUPLICATION_GATE) check
 
-# Accept FIRST/SECOND/REASON only from the make command line. Ambient values
-# must not satisfy the duplication targets: `FIRST` and `REASON` are common
-# enough names that an exported environment could otherwise record an exception
-# nobody asked for. `cli_value` therefore reads a variable only when the
-# command line set it. Values travel to the recipes through `export`, so a
-# reason containing quotes, `$`, or `$(...)` is passed through literally rather
-# than re-expanded as Make or shell text.
+# Accept FIRST/SECOND/SECOND_KEYS_JSON/REASON only from the make command line.
+# Ambient values must not satisfy the duplication targets: `FIRST` and
+# `REASON` are common enough names that an exported environment could
+# otherwise record an exception nobody asked for. `cli_value` therefore reads
+# a variable only when the command line set it. Values travel to the recipes
+# through `export`, so quoted JSON and reasons containing `$` or `$(...)` are
+# passed through literally rather than re-expanded as Make or shell text.
 cli_value = $(if $(filter command line,$(origin $(1))),$(value $(1)))
 
 skylos-allow: export SKYLOS_SYMBOL = $(value SYMBOL)
@@ -343,12 +343,15 @@ duplication-test: ## Run the duplication-gate helper tests
 
 duplication-allow: export DUPLICATION_FIRST = $(call cli_value,FIRST)
 duplication-allow: export DUPLICATION_SECOND = $(call cli_value,SECOND)
+duplication-allow: export DUPLICATION_SECOND_KEYS_JSON = $(call cli_value,SECOND_KEYS_JSON)
 duplication-allow: export DUPLICATION_REASON = $(call cli_value,REASON)
 duplication-allow: ## Record one reasoned duplication exception
 	@test -n "$${DUPLICATION_FIRST}" || { printf "Error: FIRST is required (path[::name])\\n" >&2; exit 2; }
 	@test -n "$${DUPLICATION_REASON}" || { printf "Error: REASON is required for a duplication exception\\n" >&2; exit 2; }
+	@test -z "$${DUPLICATION_SECOND}" || test -z "$${DUPLICATION_SECOND_KEYS_JSON}" || { printf "Error: use SECOND or SECOND_KEYS_JSON, not both\\n" >&2; exit 2; }
 	$(DUPLICATION_GATE) allow --first "$${DUPLICATION_FIRST}" \
 		$(if $(call cli_value,SECOND),--second "$${DUPLICATION_SECOND}",) \
+		$(if $(call cli_value,SECOND_KEYS_JSON),--second-keys-json "$${DUPLICATION_SECOND_KEYS_JSON}",) \
 		--reason "$${DUPLICATION_REASON}"
 
 typecheck: build $(UV) ## Run typechecking

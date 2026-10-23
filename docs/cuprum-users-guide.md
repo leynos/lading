@@ -1006,9 +1006,9 @@ For the optional native extension, see
 [Troubleshooting the native extension](#troubleshooting-the-native-extension).
 Benchmarking and the implementation's verification are maintainer topics,
 covered in the
-[developers' guide](https://github.com/leynos/cuprum/blob/v0.2.0-beta2/docs/developers-guide.md), [Rust boundary verification](https://github.com/leynos/cuprum/blob/v0.2.0-beta2/docs/rust-boundary-verification.md),
-and the [Cuprum design](https://github.com/leynos/cuprum/blob/v0.2.0-beta2/docs/cuprum-design.md); none of them is needed to run
-commands.
+[developers' guide][maintainer-guide],
+[Rust boundary verification][rust-boundary-verification],
+and the [Cuprum design][cuprum-design]; none is needed to run commands.
 
 ## Going further
 
@@ -1712,9 +1712,8 @@ The flags carry no `force` and are validated: anything but a `bool` raises
 `ValueError`. The default sink does not serialize overlapping sessions, so run
 grouped commands sequentially when they share the parent's stderr; otherwise
 their workflow frames can interleave.
-[ADR-013](https://github.com/leynos/cuprum/blob/v0.2.0-beta2/docs/adr-013-opt-in-github-actions-presentation-sink.md) records why the
-flags construct the sink rather than teach the execution layer workflow
-commands.
+[ADR-013][adr-013-github-presentation] records why the flags construct the
+sink rather than teach the execution layer workflow commands.
 
 #### Configure the sink directly
 
@@ -2432,8 +2431,7 @@ macOS uses a read and write loop. For small outputs the difference is usually
 negligible, because the saving is per chunk and small payloads have few chunks.
 Measure a representative workload before standardizing on `rust`: from a source
 checkout, `make benchmark-e2e` runs the end-to-end throughput suite, and the
-[developers' guide](https://github.com/leynos/cuprum/blob/v0.2.0-beta2/docs/developers-guide.md#running-the-benchmark-suite) explains
-its scenarios.
+[developers' guide][benchmark-suite] explains its scenarios.
 
 ### Checking the native extension
 
@@ -2856,8 +2854,8 @@ Small payloads show little difference between the backends, because the
 overhead the Rust pump avoids is per chunk. `splice()` acceleration is
 Linux-only. Benchmark comparisons report speed-up as `python_mean / rust_mean`,
 so values above `1.0x` mean Rust was faster. The
-[developers' guide](https://github.com/leynos/cuprum/blob/v0.2.0-beta2/docs/developers-guide.md#reading-benchmark-results) explains how
-to read the full benchmark output.
+[developers' guide][benchmark-results] explains how to read the full
+benchmark output.
 
 ## Glossary
 
@@ -2917,3 +2915,10 @@ to read the full benchmark output.
   descriptor the caller owns.
 - **Stdin stream:** a `StdinStream`, which feeds a child's stdin from an async
   producer one chunk at a time.
+
+[maintainer-guide]: https://github.com/leynos/cuprum/blob/v0.2.0-beta2/docs/developers-guide.md
+[rust-boundary-verification]: https://github.com/leynos/cuprum/blob/v0.2.0-beta2/docs/rust-boundary-verification.md
+[cuprum-design]: https://github.com/leynos/cuprum/blob/v0.2.0-beta2/docs/cuprum-design.md
+[adr-013-github-presentation]: https://github.com/leynos/cuprum/blob/v0.2.0-beta2/docs/adr-013-opt-in-github-actions-presentation-sink.md
+[benchmark-suite]: https://github.com/leynos/cuprum/blob/v0.2.0-beta2/docs/developers-guide.md#running-the-benchmark-suite
+[benchmark-results]: https://github.com/leynos/cuprum/blob/v0.2.0-beta2/docs/developers-guide.md#reading-benchmark-results

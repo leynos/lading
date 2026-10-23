@@ -69,6 +69,71 @@ class TestLoadAllowEntry:
 class TestAppendAllowEntry:
     """Persisting reasoned entries to ``pyproject.toml``."""
 
+    @pytest.mark.parametrize(
+        ("configuration", "diagnostic"),
+        [
+            pytest.param("tool = false\n", "pyproject.tool must be a table", id="tool"),
+            pytest.param(
+                "[tool]\nduplication_gate = false\n",
+                "pyproject.tool.duplication_gate must be a table",
+                id="gate",
+            ),
+            pytest.param(
+                "[tool.duplication_gate]\nallow = false\n",
+                "duplication_gate.allow must be an array",
+                id="allow",
+            ),
+        ],
+    )
+    def test_rejects_invalid_table_shapes_without_editing_the_document(
+        self,
+        tmp_path: Path,
+        configuration: str,
+        diagnostic: str,
+    ) -> None:
+        """Malformed existing tables report config errors and retain source bytes."""
+        pyproject = tmp_path / "pyproject.toml"
+        original = f'{configuration}\n[project]\nname = "x"\n'
+        pyproject.write_text(original, encoding="utf-8")
+
+        with pytest.raises(allowlist.GateConfigError, match=diagnostic):
+            allowlist.append_allow_entry(
+                pyproject,
+                keys=("lading/a.py",),
+                reason="unit reason",
+            )
+
+        assert pyproject.read_text(encoding="utf-8") == original, (
+            "A malformed configuration must not be rewritten."
+        )
+
+    def test_validates_all_existing_entries_before_updating_a_match(
+        self, tmp_path: Path
+    ) -> None:
+        """A later malformed entry cannot leave an earlier reason half-updated."""
+        pyproject = tmp_path / "pyproject.toml"
+        original = (
+            "[[tool.duplication_gate.allow]]\n"
+            'unit = "lading/a.py"\n'
+            'reason = "old reason"\n'
+            "\n"
+            "[[tool.duplication_gate.allow]]\n"
+            "unit = false\n"
+            'reason = "invalid key"\n'
+        )
+        pyproject.write_text(original, encoding="utf-8")
+
+        with pytest.raises(allowlist.GateConfigError):
+            allowlist.append_allow_entry(
+                pyproject,
+                keys=("lading/a.py",),
+                reason="new reason",
+            )
+
+        assert pyproject.read_text(encoding="utf-8") == original, (
+            "Entry validation must finish before any existing entry is changed."
+        )
+
     def test_round_trips_unit_and_pair_entries(self, tmp_path: Path) -> None:
         """Appended entries load again and preserve existing TOML content."""
         pyproject = tmp_path / "pyproject.toml"

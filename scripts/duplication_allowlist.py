@@ -223,6 +223,23 @@ def _is_key_list(value: object) -> typ.TypeIs[cabc.Sequence[str]]:
     return len(value) >= _MINIMUM_MEMBER_COUNT
 
 
+def _mutable_table(value: object, *, context: str) -> cabc.MutableMapping[str, object]:
+    """Validate a TOML table that the writer can update in place."""
+    table = require_table(value, context=context)
+    if not isinstance(table, cabc.MutableMapping):
+        msg = f"{context} must be a mutable TOML table"
+        raise GateConfigError(msg)
+    return typ.cast("cabc.MutableMapping[str, object]", table)
+
+
+def _mutable_entries(value: object) -> cabc.MutableSequence[object]:
+    """Validate the allow-entry array before the writer appends to it."""
+    if not isinstance(value, cabc.MutableSequence) or isinstance(value, (str, bytes)):
+        msg = "duplication_gate.allow must be an array"
+        raise GateConfigError(msg)
+    return typ.cast("cabc.MutableSequence[object]", value)
+
+
 def append_allow_entry(
     pyproject_path: Path,
     *,
@@ -256,11 +273,44 @@ def append_allow_entry(
             # configuration error.
             msg = f"cannot parse {pyproject_path}: {error}"
             raise GateConfigError(msg) from error
-        tool = document.setdefault("tool", tomlkit.table(is_super_table=True))
-        gate = tool.setdefault("duplication_gate", tomlkit.table())
-        entries = gate.setdefault("allow", tomlkit.aot())
-        for index, raw_entry in enumerate(entries):
-            existing = _allow_entry(raw_entry, index=index)
+        tool_value = document.get("tool")
+        tool = (
+            tomlkit.table(is_super_table=True)
+            if tool_value is None
+            else _mutable_table(tool_value, context="pyproject.tool")
+        )
+        gate_value = tool.get("duplication_gate")
+        gate = (
+            tomlkit.table()
+            if gate_value is None
+            else _mutable_table(
+                gate_value,
+                context="pyproject.tool.duplication_gate",
+            )
+        )
+        entries_value = gate.get("allow")
+        entries = (
+            tomlkit.aot() if entries_value is None else _mutable_entries(entries_value)
+        )
+        validated_entries = [
+            (
+                _mutable_table(
+                    raw_entry,
+                    context=f"duplication_gate.allow[{index}]",
+                ),
+                _allow_entry(raw_entry, index=index),
+            )
+            for index, raw_entry in enumerate(entries)
+        ]
+
+        if tool_value is None:
+            document["tool"] = tool
+        if gate_value is None:
+            tool["duplication_gate"] = gate
+        if entries_value is None:
+            gate["allow"] = entries
+
+        for raw_entry, existing in validated_entries:
             if _same_allow_target(existing.keys, target):
                 raw_entry["reason"] = reason
                 _write_document(pyproject_path, document)

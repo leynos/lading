@@ -20,11 +20,12 @@ if typ.TYPE_CHECKING:
 
 @dc.dataclass(frozen=True, slots=True)
 class _MakeAllowRequest:
-    """The ``FIRST``, ``SECOND``, and ``REASON`` inputs for one Make target run."""
+    """The Make command-line inputs for one duplication exception."""
 
     first: str | None
     second: str | None
     reason: str | None
+    second_keys_json: str | None = None
 
 
 def _make_allow(
@@ -50,6 +51,8 @@ def _make_allow(
         command.append(f"SECOND={request.second}")
     if request.reason is not None:
         command.append(f"REASON={request.reason}")
+    if request.second_keys_json is not None:
+        command.append(f"SECOND_KEYS_JSON={request.second_keys_json}")
     return subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - fixed Make target and copied workspace.
         command,
         cwd=workspace,
@@ -83,6 +86,7 @@ class TestMakeDuplicationAllow:
             **gate_environment(),
             "FIRST": "lading/ambient.py",
             "SECOND": "lading/ambient_second.py",
+            "SECOND_KEYS_JSON": '["lading/ambient_second.py"]',
             "REASON": "ambient reason",
         }
         result = _make_allow(
@@ -148,6 +152,49 @@ class TestMakeDuplicationAllow:
         entries = allowlist.load_allowlist(workspace / "pyproject.toml")
         assert entries[0].reason == reason, (
             "Make must not interpolate or re-split the supplied reason."
+        )
+
+    def test_make_duplication_allow_records_three_keys_from_json(
+        self, tmp_path: Path
+    ) -> None:
+        """A JSON array carries several additional keys through one Make value."""
+        workspace, _script = copied_gate_workspace(tmp_path)
+        result = _make_allow(
+            workspace,
+            request=_MakeAllowRequest(
+                first="lading/a.py",
+                second=None,
+                reason="three independent contracts",
+                second_keys_json='["lading/b.py::beta", "lading/c.py::gamma"]',
+            ),
+        )
+
+        assert result.returncode == 0, result.stderr
+        entries = allowlist.load_allowlist(workspace / "pyproject.toml")
+        assert entries[0].keys == (
+            "lading/a.py",
+            "lading/b.py::beta",
+            "lading/c.py::gamma",
+        ), "Make must forward every JSON array key in order."
+
+    def test_make_duplication_allow_rejects_both_second_forms(
+        self, tmp_path: Path
+    ) -> None:
+        """A Make call chooses repeated SECOND or SECOND_KEYS_JSON."""
+        workspace, _script = copied_gate_workspace(tmp_path)
+        result = _make_allow(
+            workspace,
+            request=_MakeAllowRequest(
+                first="lading/a.py",
+                second="lading/b.py",
+                reason="ambiguous inputs",
+                second_keys_json='["lading/c.py"]',
+            ),
+        )
+
+        assert result.returncode == 2, result.stderr
+        assert "use SECOND or SECOND_KEYS_JSON, not both" in result.stderr, (
+            "Make must reject ambiguous member-key inputs."
         )
 
 

@@ -522,7 +522,7 @@ exclude = ["**/tests/**"]
 # only when EVERY location it reports is covered by one of the entry's keys;
 # a new copy in an unlisted file blocks again. Prefer `unit` for a
 # single-location key and `members` for a family, and always record why the
-# parallel structure is intentional. See docs/adr/008-adopt-nose-duplication-gate.md.
+# parallel structure is intentional. See docs/adr/010-adopt-nose-duplication-gate.md.
 #
 # Entries are keyed by file, not by line span, because spans churn whenever
 # code above them moves. nose reports the regions below as fragments without a
@@ -597,6 +597,13 @@ reason = "A deliberate cross-platform pair: the Windows (msvcrt) and POSIX (fcnt
 [[tool.duplication_gate.allow]]
 unit = "lading/toml_coerce/_scalars.py"
 reason = "Two single-statement rejection calls differing only in the expected-type noun ('a string' versus 'a boolean'). The shared helper, _reject, already exists; a further extraction would only rename the noun argument. NOTE: this key covers the whole file."
+
+[[tool.duplication_gate.allow]]
+members = [
+    "scripts/format_markdown.py",
+    "scripts/release_gh.py",
+]
+reason = "Fragment-level overlap in the Cuprum import blocks for two independent command adapters. The formatter and release adapter need the same narrow execution primitives, while their program catalogues, documentation boundaries and command contracts remain distinct. A shared import or catalogue module would add a cross-command dependency without sharing behaviour. nose reports this as unnamed fragments, so the file keys are broader than the import blocks; re-adjudicate if either script is reorganised."
 
 [tool.skylos.gate]
 strict = true

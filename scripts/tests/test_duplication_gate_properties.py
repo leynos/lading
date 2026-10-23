@@ -1,5 +1,7 @@
 """Property tests for duplication-gate matching and normalization invariants."""
 
+import fnmatch
+
 from duplication_gate_test_support import allowlist, detector, gate
 from hypothesis import given
 from hypothesis import strategies as st
@@ -9,6 +11,12 @@ _PATHS = st.sampled_from((
     "lading/b.py",
     "lading/c.py",
     "lading/d.py",
+))
+_PATH_KEYS = st.sampled_from((
+    "lading/a.py",
+    "lading/b.py",
+    "lading/*.py",
+    "lading/a*.py",
 ))
 _NAMES = st.sampled_from(("alpha", "beta", None))
 
@@ -38,13 +46,30 @@ def _findings(draw: st.DrawFn) -> detector.Finding:
 @st.composite
 def _allow_entries(draw: st.DrawFn) -> allowlist.AllowEntry:
     """Build one valid unit or members allow entry."""
+    key = _keys()
     keys = draw(
         st.one_of(
-            st.tuples(_PATHS),
-            st.lists(_PATHS, min_size=2, max_size=3, unique=True).map(tuple),
+            st.tuples(key),
+            st.lists(key, min_size=2, max_size=3, unique=True).map(tuple),
         )
     )
     return allowlist.AllowEntry(keys=keys, reason="property")
+
+
+@st.composite
+def _keys(draw: st.DrawFn) -> str:
+    """Build an exact or glob path key, optionally constrained by unit name."""
+    path = draw(_PATH_KEYS)
+    name = draw(_NAMES)
+    return path if name is None else f"{path}::{name}"
+
+
+def _reference_key_matches(key: str, location: detector.Location) -> bool:
+    """Apply the path and optional-name contract independently of the gate."""
+    path_glob, separator, name = key.partition("::")
+    return fnmatch.fnmatchcase(location.file, path_glob) and (
+        not separator or location.name == name
+    )
 
 
 @given(finding=_findings(), entry=_allow_entries())
@@ -54,7 +79,7 @@ def test_entries_allow_only_fully_covered_families(
 ) -> None:
     """An entry silences a family exactly when it covers every location."""
     covered = all(
-        any(allowlist.key_matches(key, location) for key in entry.keys)
+        any(_reference_key_matches(key, location) for key in entry.keys)
         for location in finding.locations
     )
     assert entry.matches(finding) is covered, (
