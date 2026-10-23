@@ -223,19 +223,22 @@ Install the detector before the first run, and after a version bump:
 make install-nose
 ```
 
-The target is idempotent: it reuses a binary that already reports
-`NOSE_VERSION`, and otherwise installs the pinned release into `.tools/nose`
-with `cargo-binstall`. Source compilation and third-party binary mirrors are
-disabled through `--disable-strategies compile,quick-install`, so a missing
-trusted prebuilt release is a provisioning failure rather than a silent local
-build. `NOSE_BIN` overrides the binary location; a relative value resolves
-against the repository root, so the override works from any working directory.
-The CLI adapter reads `NOSE_BIN` and `PATH` and passes them with the repository
-root in a `NoseEnvironment` value. The detector wrapper receives a binary
-finder callable, while unit tests supply environment values and finders
-directly instead of patching process globals. The default process runner uses
-that supplied root as its working directory, and an absent or empty `PATH` does
-not fall back to a host search path.
+The target is idempotent: it reuses a binary only when both its reported
+version and SHA-256 match the committed pins. Otherwise it downloads the
+official prebuilt release for Linux x86-64 or ARM64, or macOS Intel or Apple
+Silicon, and checks the archive and executable digests before installing it into
+`.tools/nose`. The hashes in the Makefile are the trust boundary; a published
+checksum sidecar does not authenticate itself. Missing or mismatched bytes and
+unsupported platforms fail provisioning. CI uses the same installer, and its
+cache key includes the Makefile so binaries from the earlier version-only
+installer cannot be reused. `NOSE_BIN` overrides the binary location; a
+relative value resolves against the repository root, so the override works from
+any working directory. The CLI adapter reads `NOSE_BIN` and `PATH` and passes
+them with the repository root in a `NoseEnvironment` value. The detector
+wrapper receives a binary finder callable, while unit tests supply environment
+values and finders directly instead of patching process globals. The default
+process runner uses that supplied root as its working directory, and an absent
+or empty `PATH` does not fall back to a host search path.
 
 The detector version is pinned in three places -- `NOSE_VERSION` in the
 Makefile, the `NOSE_VERSION` environment in `.github/workflows/ci.yml`, and

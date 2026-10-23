@@ -1,12 +1,13 @@
-"""Contract tests for the ``make install-nose`` detector installer.
+"""Contract tests for the checksum-pinned `make install-nose` installer.
 
-The target decides between a cached binary and a fresh ``cargo-binstall``
-clone-and-install by comparing ``nose --version`` against the pinned
-``NOSE_VERSION``. These tests exercise it without a network download: a stub
-``nose`` reports whatever version the test needs, and a stub ``cargo-binstall``
-records how it was called.
+The target reuses a binary only when its version and executable digest match
+the committed pins. Otherwise it downloads the official archive, checks its
+digest, checks the executable extracted from it, and installs that exact file.
+These tests replace the network and archive tools with deterministic stubs.
 """
 
+import dataclasses as dc
+import hashlib
 import os
 import shutil
 import subprocess
@@ -18,12 +19,10 @@ import pytest
 SCRIPT_DIRECTORY = Path(__file__).resolve().parents[1]
 REPOSITORY_ROOT = SCRIPT_DIRECTORY.parent
 MAKEFILE = REPOSITORY_ROOT / "Makefile"
-
-#: The detector pin these tests assume.
-#: ``tests/workflow_contracts/test_duplication_toolchain_contract.py`` owns
-#: pin-drift enforcement across the Makefile, CI, and ``[tool.nose]``; this
-#: value only names the version the stubs report.
 NOSE_VERSION = "0.20.0"
+TARGET = "x86_64-unknown-linux-gnu"
+VARIABLE_SUFFIX = "X86_64_UNKNOWN_LINUX_GNU"
+ARCHIVE_BYTES = b"deterministic test archive"
 
 pytestmark = pytest.mark.skipif(
     shutil.which("make") is None,
@@ -32,141 +31,197 @@ pytestmark = pytest.mark.skipif(
 
 
 class InstallerInvocation(typ.NamedTuple):
-    """The recorded effects of one ``make install-nose`` run."""
+    """The recorded effects of one `make install-nose` run."""
 
     result: subprocess.CompletedProcess[str]
     """The completed Make process."""
 
-    binstall_arguments: list[str]
-    """The argument vector the stub ``cargo-binstall`` received, if any."""
+    curl_arguments: list[str]
+    """The arguments the stub `curl` received, if a download was attempted."""
 
 
-def _write_executable(path: Path, body: str) -> Path:
-    """Write an executable stub script.
+@dc.dataclass(frozen=True, slots=True, kw_only=True)
+class InstallerScenario:
+    """Inputs that vary across installer contract tests."""
 
-    Returns
-    -------
-    pathlib.Path
-        The executable stub.
-    """
-    path.write_text(body, encoding="utf-8")
+    installed_version: str | None = None
+    tamper_cached_binary: bool = False
+    archive_checksum: str | None = None
+    binary_checksum: str | None = None
+    system: str = "Linux"
+    architecture: str = "x86_64"
+
+
+def _nose_bytes(version: str) -> bytes:
+    """Return a small executable that reports one nose version."""
+    return f"#!/bin/sh\nprintf 'nose %s\\n' '{version}'\n".encode()
+
+
+def _write_executable(path: Path, body: str | bytes) -> Path:
+    """Write an executable stub script or binary fixture."""
+    if isinstance(body, bytes):
+        path.write_bytes(body)
+    else:
+        path.write_text(body, encoding="utf-8")
     path.chmod(0o755)
     return path
 
 
-def _stub_nose(directory: Path, version: str) -> Path:
-    """Write a stub detector reporting ``version`` for ``--version``."""
+def _stub_curl(directory: Path) -> Path:
+    """Write a downloader stub that records its URL and copies a fixture."""
     return _write_executable(
-        directory / "nose",
-        f"#!/bin/sh\nprintf 'nose %s\\n' '{version}'\n",
-    )
-
-
-def _stub_binstall(directory: Path, log: Path, detonator: Path) -> Path:
-    """Write a stub installer that records its arguments and installs nose.
-
-    cargo-binstall is invoked with ``--install-path <dir>`` before the crate
-    spec, so the stub mirrors that shape: it logs its argv and copies the
-    already-written pinned detector into the requested install path.
-
-    Returns
-    -------
-    pathlib.Path
-        The executable stub.
-    """
-    return _write_executable(
-        directory / "cargo-binstall",
+        directory / "curl",
         "#!/bin/sh\n"
-        f'printf "%s\\n" "$*" > "{log}"\n'
+        'printf "%s\\n" "$*" >> "$FAKE_CURL_LOG"\n'
         'while [ "$#" -gt 0 ]; do\n'
         '  case "$1" in\n'
-        '    --install-path) install_path="$2"; shift 2 ;;\n'
+        '    -o) output="$2"; shift 2 ;;\n'
         "    *) shift ;;\n"
         "  esac\n"
         "done\n"
-        f'cp "{detonator}" "$install_path/nose"\n'
-        'chmod +x "$install_path/nose"\n',
+        'cp "$FAKE_ARCHIVE" "$output"\n',
+    )
+
+
+def _stub_tar(directory: Path) -> Path:
+    """Write an extractor stub that emits the pinned executable fixture."""
+    return _write_executable(
+        directory / "tar",
+        '#!/bin/sh\nprintf "%s\\n" "$*" >> "$FAKE_TAR_LOG"\ncat "$FAKE_NOSE_BINARY"\n',
+    )
+
+
+def _stub_uname(directory: Path) -> Path:
+    """Write a platform probe stub controlled by the test environment."""
+    return _write_executable(
+        directory / "uname",
+        "#!/bin/sh\n"
+        'case "$1" in\n'
+        '  -s) printf "%s\\n" "$FAKE_UNAME_SYSTEM" ;;\n'
+        '  -m) printf "%s\\n" "$FAKE_UNAME_ARCH" ;;\n'
+        "  *) exit 2 ;;\n"
+        "esac\n",
+    )
+
+
+def _stub_sha256sum(directory: Path) -> Path:
+    """Write a portable hash command that reads the piped or redirected bytes."""
+    return _write_executable(
+        directory / "sha256sum",
+        "#!/usr/bin/env python3\n"
+        "import hashlib\n"
+        "import sys\n"
+        "print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest(), '-', sep='  ')\n",
     )
 
 
 def _run_install_nose(
     tmp_path: Path,
-    *,
-    installed_version: str | None,
+    scenario: InstallerScenario | None = None,
 ) -> InstallerInvocation:
-    """Run the real target against stubbed detector and installer binaries.
-
-    Parameters
-    ----------
-    tmp_path : pathlib.Path
-        Scratch directory the stub environment is built in.
-    installed_version : str | None
-        The version the cached detector reports, or ``None`` to simulate a
-        binary that is absent altogether.
-
-    Returns
-    -------
-    InstallerInvocation
-        The Make result and the installer's recorded arguments.
-    """
+    """Run the real installer with deterministic network and archive stubs."""
+    if scenario is None:
+        scenario = InstallerScenario()
     make = shutil.which("make")
     assert make is not None, (
-        "The module-level skipif must have kept this test from running, so "
-        "reaching here without a make executable means that guard is broken."
+        "The module-level skipif should have excluded this test without make."
     )
 
     tools = tmp_path / "tools"
     tools.mkdir()
-    (tmp_path / "payload").mkdir()
     nose_bin = tools / "nose"
-    if installed_version is not None:
-        _stub_nose(tools, installed_version)
+    if scenario.installed_version is not None:
+        _write_executable(nose_bin, _nose_bytes(scenario.installed_version))
+        if scenario.tamper_cached_binary:
+            nose_bin.write_bytes(nose_bin.read_bytes() + b"tampered")
 
-    binstall_log = tmp_path / "binstall-arguments"
-    # The installer stub copies this template, so a reinstall necessarily
-    # leaves a detector at the pinned version.
-    detonator = _stub_nose(tmp_path / "payload", NOSE_VERSION)
-    binstall = _stub_binstall(tmp_path, binstall_log, detonator)
+    archive_path = tmp_path / "archive.fixture"
+    archive_path.write_bytes(ARCHIVE_BYTES)
+    nose_payload = tmp_path / "nose.fixture"
+    nose_payload.write_bytes(_nose_bytes(NOSE_VERSION))
+    curl_log = tmp_path / "curl-arguments"
+    tar_log = tmp_path / "tar-arguments"
 
+    _stub_curl(tmp_path)
+    _stub_tar(tmp_path)
+    _stub_uname(tmp_path)
+    _stub_sha256sum(tmp_path)
+
+    expected_archive = hashlib.sha256(ARCHIVE_BYTES).hexdigest()
+    expected_binary = hashlib.sha256(_nose_bytes(NOSE_VERSION)).hexdigest()
+    archive_checksum = scenario.archive_checksum or expected_archive
+    binary_checksum = scenario.binary_checksum or expected_binary
+    command = [
+        make,
+        "--no-print-directory",
+        "-f",
+        str(MAKEFILE),
+        "install-nose",
+        f"NOSE_BIN={nose_bin}",
+        f"NOSE_ARCHIVE_SHA256_{VARIABLE_SUFFIX}={archive_checksum}",
+        f"NOSE_BINARY_SHA256_{VARIABLE_SUFFIX}={binary_checksum}",
+    ]
+    environment = {
+        **os.environ,
+        "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}",
+        "FAKE_ARCHIVE": str(archive_path),
+        "FAKE_CURL_LOG": str(curl_log),
+        "FAKE_NOSE_BINARY": str(nose_payload),
+        "FAKE_TAR_LOG": str(tar_log),
+        "FAKE_UNAME_SYSTEM": scenario.system,
+        "FAKE_UNAME_ARCH": scenario.architecture,
+    }
     result = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - fixed target and stubbed tools.
-        [
-            make,
-            "--no-print-directory",
-            "-f",
-            str(MAKEFILE),
-            "install-nose",
-            f"NOSE_BIN={nose_bin}",
-            f"NOSE_TOOLS_DIR={tools}",
-            f"CARGO_BINSTALL={binstall}",
-        ],
+        command,
         cwd=REPOSITORY_ROOT,
-        env={**os.environ, "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}"},
+        env=environment,
         check=False,
         capture_output=True,
         text=True,
     )
-    arguments = (
-        binstall_log.read_text(encoding="utf-8").split()
-        if binstall_log.exists()
-        else []
+    curl_arguments = (
+        curl_log.read_text(encoding="utf-8").splitlines() if curl_log.exists() else []
     )
-    return InstallerInvocation(result=result, binstall_arguments=arguments)
+    return InstallerInvocation(result=result, curl_arguments=curl_arguments)
 
 
 class TestMakeInstallNose:
-    """The cached-versus-install decision in ``make install-nose``."""
+    """The cached-versus-download decision in `make install-nose`."""
 
-    def test_matching_cached_binary_skips_installation(self, tmp_path: Path) -> None:
-        """A detector already at the pinned version is reused untouched."""
-        invocation = _run_install_nose(tmp_path, installed_version=NOSE_VERSION)
+    def test_matching_cached_binary_skips_download(self, tmp_path: Path) -> None:
+        """A binary with the pinned version and digest is reused."""
+        invocation = _run_install_nose(
+            tmp_path, InstallerScenario(installed_version=NOSE_VERSION)
+        )
 
         assert invocation.result.returncode == 0, invocation.result.stderr
-        assert "already installed" in invocation.result.stdout, (
-            "A matching detector must be reported as already installed."
+        assert "Verified nose" in invocation.result.stdout, (
+            "A trusted cached detector must be reported as verified."
         )
-        assert invocation.binstall_arguments == [], (
-            "A matching cached detector must not invoke the installer."
+        assert invocation.curl_arguments == [], (
+            "A trusted cached detector must not trigger a release download."
         )
+
+    def test_same_version_with_wrong_digest_is_reinstalled(
+        self, tmp_path: Path
+    ) -> None:
+        """Matching version text cannot make altered executable bytes trusted."""
+        invocation = _run_install_nose(
+            tmp_path,
+            InstallerScenario(
+                installed_version=NOSE_VERSION,
+                tamper_cached_binary=True,
+            ),
+        )
+
+        assert invocation.result.returncode == 0, invocation.result.stderr
+        assert "Installed verified nose" in invocation.result.stdout, (
+            "A cached detector with altered bytes must be replaced."
+        )
+        assert (
+            "v0.20.0/nose-cli-x86_64-unknown-linux-gnu.tar.xz"
+            in (invocation.curl_arguments[0])
+        ), "Reinstallation must download the pinned release archive."
 
     @pytest.mark.parametrize(
         ("installed_version", "case"),
@@ -175,65 +230,82 @@ class TestMakeInstallNose:
             pytest.param("0.19.0", "mismatched", id="mismatched-version"),
         ],
     )
-    def test_missing_or_mismatched_binary_invokes_the_pinned_installer(
+    def test_missing_or_stale_binary_downloads_the_pinned_release(
         self,
         tmp_path: Path,
         installed_version: str | None,
         case: str,
     ) -> None:
-        """A missing or stale detector triggers a pinned reinstall."""
-        invocation = _run_install_nose(tmp_path, installed_version=installed_version)
+        """A missing or stale detector triggers a digest-checked download."""
+        invocation = _run_install_nose(
+            tmp_path, InstallerScenario(installed_version=installed_version)
+        )
 
         assert invocation.result.returncode == 0, invocation.result.stderr
-        assert f"Installing nose {NOSE_VERSION}" in invocation.result.stdout, (
+        assert "Installed verified nose" in invocation.result.stdout, (
             f"A {case} detector must trigger an install."
         )
-        assert "--no-confirm" in invocation.binstall_arguments, (
-            "Installation must run non-interactively."
+        assert invocation.curl_arguments, (
+            f"A {case} detector must download the pinned release archive."
         )
-        assert "--git" in invocation.binstall_arguments, (
-            "The crate is not on crates.io, so the install must use git mode."
-        )
-        assert f"nose-cli@{NOSE_VERSION}" in invocation.binstall_arguments, (
-            "Installation must request the pinned detector version."
-        )
+        assert (
+            "v0.20.0/nose-cli-x86_64-unknown-linux-gnu.tar.xz"
+            in (invocation.curl_arguments[0])
+        ), "Installation must download the pinned detector release."
 
-    def test_reinstall_disables_source_compilation(self, tmp_path: Path) -> None:
-        """The installer never falls back to building the detector from source."""
-        invocation = _run_install_nose(tmp_path, installed_version="0.19.0")
-
-        assert invocation.result.returncode == 0, invocation.result.stderr
-        arguments = invocation.binstall_arguments
-        assert "--disable-strategies" in arguments, (
-            "The installer must refuse unapproved installation strategies."
-        )
-        disabled = arguments[arguments.index("--disable-strategies") + 1]
-        assert "compile" in disabled.split(","), (
-            "A missing trusted binary must not start a costly source build."
-        )
-        assert "quick-install" in disabled.split(","), (
-            "The installer must not accept an unapproved third-party binary source."
-        )
-
-    def test_reinstall_leaves_a_detector_at_the_pinned_version(
+    def test_archive_digest_mismatch_fails_before_installing(
         self, tmp_path: Path
     ) -> None:
-        """After a stale reinstall the detector verifies against the pin."""
-        invocation = _run_install_nose(tmp_path, installed_version="0.19.0")
+        """A changed release archive is rejected before extraction."""
+        invocation = _run_install_nose(
+            tmp_path,
+            InstallerScenario(archive_checksum="0" * 64),
+        )
 
-        assert invocation.result.returncode == 0, invocation.result.stderr
-        assert ".tools/nose/nose --version" not in invocation.result.stdout, (
-            "The recipe must verify through the configured NOSE_BIN."
+        assert invocation.result.returncode != 0, (
+            "An archive with an unexpected digest must fail installation."
         )
-        assert (tmp_path / "tools" / "nose").exists(), (
-            "Installation must place the detector at NOSE_TOOLS_DIR."
+        assert "archive digest mismatch" in invocation.result.stderr, (
+            "The installer must identify an archive digest mismatch."
         )
-        verified = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - the stub written by this test.
-            [str(tmp_path / "tools" / "nose"), "--version"],
-            check=False,
-            capture_output=True,
-            text=True,
+        assert not (tmp_path / "tools" / "nose").exists(), (
+            "An unverified archive must not install a detector."
         )
-        assert verified.stdout.strip() == f"nose {NOSE_VERSION}", (
-            "The installed detector must report the pinned version."
+
+    def test_executable_digest_mismatch_fails_before_installing(
+        self, tmp_path: Path
+    ) -> None:
+        """An archive carrying unexpected executable bytes is rejected."""
+        invocation = _run_install_nose(
+            tmp_path,
+            InstallerScenario(binary_checksum="0" * 64),
+        )
+
+        assert invocation.result.returncode != 0, (
+            "An executable with an unexpected digest must fail installation."
+        )
+        assert "executable digest mismatch" in invocation.result.stderr, (
+            "The installer must identify an executable digest mismatch."
+        )
+        assert not (tmp_path / "tools" / "nose").exists(), (
+            "An unverified executable must not be installed."
+        )
+
+    def test_unsupported_platform_fails_without_downloading(
+        self, tmp_path: Path
+    ) -> None:
+        """The installer has no source-build fallback for unpinned platforms."""
+        invocation = _run_install_nose(
+            tmp_path,
+            InstallerScenario(system="FreeBSD"),
+        )
+
+        assert invocation.result.returncode != 0, (
+            "An unsupported platform must fail closed."
+        )
+        assert "Unsupported nose release platform" in invocation.result.stderr, (
+            "The installer must explain which platform it cannot verify."
+        )
+        assert invocation.curl_arguments == [], (
+            "An unsupported platform must fail before downloading."
         )

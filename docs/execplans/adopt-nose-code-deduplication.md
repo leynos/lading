@@ -5,7 +5,7 @@ This ExecPlan (execution plan) is a living document. The sections `Constraints`,
 `Outcomes & retrospective`, `Conformance basis`, and `Verification plan` must
 be kept up to date as work proceeds.
 
-Status: COMPLETE — implementation submitted for review as PR #292.
+Status: IN REVIEW — PR #292; addressing review feedback.
 
 ## Purpose / big picture
 
@@ -38,10 +38,10 @@ take precedence. This plan records every deliberate deviation.
   explicitly selected CPython 3.14 and must not require importing `lading`,
   building native extensions, or starting services.
 - `nose` stays pinned at `0.20.0`. No unpinned upstream main, no newer release,
-  no PyChase, no pyscn. `cargo install`, floating installers and curl-to-shell
-  bootstraps are prohibited; `cargo-binstall` must be run with
-  `--disable-strategies compile,quick-install` so a missing trusted binary is a
-  provisioning failure rather than a source build.
+  no PyChase, no pyscn. Source builds, floating installers and curl-to-shell
+  bootstraps are prohibited. `make install-nose` verifies committed
+  per-platform archive and executable digests; a missing release, digest
+  mismatch or unsupported platform is a provisioning failure.
 - No benchmark material may be copied from the reference: no
   `benchmarks/duplication/**`, no `benchmarks/score_support.py`, no
   `tests/test_duplication_benchmark*.py`, no detector competition, no
@@ -523,13 +523,14 @@ Invariants the port must preserve, and how each is discharged:
   sources. Rationale: a drifted pin reintroduces the version-skew failure the
   repository already documents for Ruff and ty. Domain: the three files.
   Artefact: `tests/workflow_contracts/test_duplication_toolchain_contract.py`.
-- Obligation: `V7 provisioning discipline` — `make install-nose` is a no-op for
-  a matching cached binary, and otherwise invokes cargo-binstall with the
-  pinned version and compilation disabled from an approved source. Method:
-  named pytest examples running the real Make target against stub binaries.
-  Rationale: a source build or an unpinned download would be a supply-chain
-  regression. Domain: missing, mismatched and matching cached detectors.
-  Artefact: `scripts/tests/test_make_install_nose.py`.
+- Obligation: `V7 provisioning discipline` — `make install-nose` is a no-op
+  only for a matching version and executable digest; otherwise it verifies the
+  pinned archive and binary digests before installation. Method: named pytest
+  examples running the real Make target against stub download and archive
+  tools, plus a real pinned-artefact canary. Rationale: a source build or an
+  unpinned download would be a supply-chain regression. Domain: missing,
+  mismatched, tampered and matching cached detectors. Artefact:
+  `scripts/tests/test_make_install_nose.py`.
 - Obligation: `V8 end-to-end blocking` — a substantial planted clone makes the
   gate exit 1; an added unlisted member re-breaks it. Method: integration test
   in a scratch copy of the repository with the real pinned binary, plus a
@@ -552,11 +553,10 @@ repository. Complete.
 
 Stage B (configuration and provisioning): add `.tools/` and the sidecar lock to
 `.gitignore`; add `[tool.nose]` and an empty `[tool.duplication_gate]` to
-`pyproject.toml`; add `NOSE_VERSION`, `NOSE_TOOLS_DIR`, `NOSE_BIN`,
-`CARGO_BINSTALL`, `NOSE_BINSTALL_VERSION`, `NOSE_BINSTALL_SHA256`, the
-`cli_value` macro, `install-nose`, `duplication`, `duplication-test` and
-`duplication-allow` to the `Makefile`, and wire `install-nose` plus the gate
-into `lint`.
+`pyproject.toml`; add `NOSE_VERSION`, `NOSE_TOOLS_DIR`, `NOSE_BIN`, the
+per-platform archive and executable digests, the `cli_value` macro,
+`install-nose`, `duplication`, `duplication-test` and `duplication-allow` to the
+`Makefile`, and wire `install-nose` plus the gate into `lint`.
 
 Stage C (port): write the five modules under `scripts/`, adapting imports, root
 placeholders and the PEP 723 header to this repository. Validate each with a
@@ -620,8 +620,10 @@ make lint                  # -> full lint including the gate
 
 ## Idempotence and recovery
 
-`make install-nose` is idempotent by construction: it compares the installed
-binary's reported version against the pin and only installs on a mismatch.
+`make install-nose` is idempotent by construction: it compares both the
+installed binary's reported version and SHA-256 against the pins, and only
+downloads on a mismatch. The archive and extracted executable are verified
+before replacement, and the installed executable is checked again afterwards.
 `make duplication-allow` is idempotent for a repeated key set: it updates the
 reason in place rather than appending a second entry. Deleting `.tools/nose/`
 and re-running the installer is always safe. No step mutates tracked files
@@ -853,3 +855,34 @@ All seven gates then passed on the repaired candidate: `make check-fmt`,
 hosted review of this repair remains pending.
 
 [review-ci-run]: https://github.com/leynos/lading/actions/runs/39958260207/attempts/1
+
+## Review amendment: pin release bytes (2026-10-23)
+
+CodeRabbit identified that the first installer pinned a nose version label but
+allowed a mutable Git tag to select the source metadata. The package does not
+publish the signature metadata required for `cargo-binstall --only-signed`.
+That left the detector bytes unbound even though the installed binary reported
+the expected version.
+
+`make install-nose` now downloads the official v0.20.0 archive and checks
+committed archive and executable SHA-256 pins for Linux x86-64, Linux ARM64,
+macOS Intel and Apple Silicon. It verifies cache hits against the executable
+digest, and CI now calls the same Make target. The cache key includes the
+Makefile, forcing old version-only cache entries to miss. Missing releases,
+digest mismatches and unsupported platforms fail closed.
+
+The focused regression contract failed before the installer change (four
+failures, ten passes). A real Linux x86-64 install verified archive digest
+`ae28f5fdd845570c1e9d4d2b2149d25c80952bea0a5ddbe9396b28880c1f4717` and binary
+digest `05d2a2df2a9f0a1ab92ed91c0032e5cbd1e2098ab5b25f85dfefaa5329956a69`. The
+other three published archives also matched their release-side checksums, and
+their executable hashes were computed from those verified bytes. A subsequent
+cache check reused the verified Linux binary, and a deliberately altered cached
+binary was downloaded and repaired.
+
+The final working-tree candidate passed all seven sequential gates:
+`make check-fmt`, `make markdownlint` (36 files, zero issues), `make nixie`,
+`make typecheck`, `make lint` (11 allowed, zero blocking or stale families),
+`make test` (1532 passed, 30 skipped, 113 snapshots), and
+`make duplication-test` (167 passed, four snapshots). Hosted validation and
+CodeRabbit review of the pushed candidate remain pending.

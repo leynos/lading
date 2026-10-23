@@ -50,13 +50,20 @@ and `[tool.nose].version` -- and
 drift, because a detector that installs cleanly and then rejects its own
 version is the failure mode drift produces.
 
-`make install-nose` provisions the binary into `.tools/nose` from a trusted
-prebuilt release via `cargo-binstall`, with
-`--disable-strategies compile,quick-install`. A missing trusted binary is a
-provisioning failure; it is never permission to start a costly source build, and
-`cargo install`, floating `latest` installers, and curl-to-shell bootstraps
-are excluded by the same rule. CI downloads `cargo-binstall` itself, verifies
-its published SHA-256 digest, and only then unpacks it.
+`make install-nose` downloads the prebuilt `nose` release for Linux x86-64,
+Linux ARM64, macOS Intel, or Apple Silicon. The Makefile pins both the archive
+and executable SHA-256 for each target. The installer verifies the downloaded
+archive, the executable extracted from it, and any existing cached executable
+before use. A missing release, digest mismatch, or unsupported platform is a
+provisioning failure; it is never permission to start a source build or accept
+other bytes. CI invokes this same installer, and its cache key includes the
+Makefile so version-only binaries from the earlier installer cannot be reused.
+
+This amends the initial provisioning implementation after review found that a
+versioned Git tag did not bind the source commit or release bytes, and nose
+does not publish the signing metadata required by `cargo-binstall` signature
+verification. The committed digests, rather than the release's mutable checksum
+sidecars, now establish the bytes used by the gate.
 
 `NOSE_BIN` overrides the binary location, and a relative override resolves
 against the repository root rather than the caller's working directory, so an
@@ -190,13 +197,13 @@ and why, which is the outcome that matters: the exceptions are the reviewable
 artefact, not an absence of findings.
 
 The costs are real. The detector is a Rust binary, so a new contributor needs
-`make install-nose` and a working `cargo-binstall`, and native Windows is not
-supported by the unchanged helper, which uses `fcntl.flock` and POSIX directory
-operations. The size floor and ranking budget mean lower-ranked duplication is
-measured but not enforced, and the file-granular keys noted above make an
-exception slightly wider than the family it was written for. Those limitations
-are recorded here rather than resolved by widening the gate, because a gate
-that reports everything is one nobody adjudicates.
+`make install-nose`, `curl`, `tar`, and a SHA-256 utility. Native Windows is
+not supported by the unchanged helper, which uses `fcntl.flock` and POSIX
+directory operations. The size floor and ranking budget mean lower-ranked
+duplication is measured but not enforced, and the file-granular keys noted
+above make an exception slightly wider than the family it was written for.
+Those limitations are recorded here rather than resolved by widening the gate,
+because a gate that reports everything is one nobody adjudicates.
 
 ## Alternatives considered
 

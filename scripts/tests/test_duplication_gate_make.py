@@ -17,6 +17,8 @@ from duplication_gate_test_support import (
 if typ.TYPE_CHECKING:
     from pathlib import Path
 
+    from syrupy.assertion import SnapshotAssertion
+
 MAKE_BINARY = shutil.which("make")
 pytestmark = pytest.mark.skipif(
     MAKE_BINARY is None,
@@ -250,29 +252,37 @@ class TestMakeGateWiring:
     def test_duplication_installs_the_pinned_detector_first(self) -> None:
         """The standalone target ensures the pinned detector before gating."""
         result = _make_dry_run("duplication")
-        install = result.stdout.find("nose-cli@")
+        install = result.stdout.find("curl -fsSL")
         check = result.stdout.find("scripts/duplication_gate.py check")
 
         assert install != -1, "`make duplication` must ensure the pinned detector."
         assert install < check, "The detector must be installed before the gate runs."
 
-    def test_install_nose_refuses_to_compile_from_source(self) -> None:
-        """The installer never falls back to a local source build."""
+    def test_install_nose_verifies_committed_artifact_digests(
+        self, snapshot: SnapshotAssertion
+    ) -> None:
+        """The installer verifies pinned archive and executable bytes."""
         result = _make_dry_run("install-nose")
 
-        assert "--disable-strategies compile,quick-install" in result.stdout, (
-            "The installer must disable the compile and quick-install strategies."
-        )
-        assert "cargo install" not in result.stdout, (
-            "A source build must not be an installation strategy."
+        contract = {
+            "archive digest is checked": "archive_checksum" in result.stdout,
+            "executable digest is checked": "binary_checksum" in result.stdout,
+            "platform hash helper is used": "sha256_file" in result.stdout,
+            "source installer is absent": "cargo-binstall" not in result.stdout,
+        }
+        assert contract == snapshot, (
+            "The installer must verify pinned release archive and executable bytes."
         )
 
-    def test_install_nose_is_idempotent_by_version(self) -> None:
-        """The installer compares the installed version before reinstalling."""
+    def test_install_nose_is_idempotent_by_version_and_digest(self) -> None:
+        """The installer checks cached binary version and digest before reuse."""
         result = _make_dry_run("install-nose")
 
         assert "--version" in result.stdout, (
             "The installer must check the installed detector's version."
+        )
+        assert "installed_checksum" in result.stdout, (
+            "The installer must check cached detector bytes before reuse."
         )
 
     @pytest.mark.parametrize("target", ["duplication", "duplication-test"])

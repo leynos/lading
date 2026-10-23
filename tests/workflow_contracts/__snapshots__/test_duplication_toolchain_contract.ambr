@@ -1,4 +1,13 @@
 # serializer version: 1
+# name: test_installer_fails_closed_on_missing_or_mismatched_bytes
+  dict({
+    'archive mismatch aborts': True,
+    'download fails on HTTP errors': True,
+    'executable mismatch aborts': True,
+    'mismatch path exits nonzero': True,
+    'shell exits on command failure': True,
+  })
+# ---
 # name: test_the_gate_does_not_require_the_application_environment
   dict({
     'dependencies': list([
@@ -6,5 +15,17 @@
       'tomlkit==0.15.1',
     ]),
     'requires-python': '>=3.14',
+  })
+# ---
+# name: test_the_installer_downloads_and_checks_the_pinned_release
+  dict({
+    'Linux archive hashing is available': True,
+    'cargo-binstall is absent': True,
+    'curl fails on download errors': True,
+    'executable bytes are verified': True,
+    'macOS archive hashing is available': True,
+    'mutable crate references are absent': True,
+    'official release URL is pinned': True,
+    'redirects remain HTTPS': True,
   })
 # ---

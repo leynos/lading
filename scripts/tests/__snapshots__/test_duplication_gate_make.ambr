@@ -1,0 +1,9 @@
+# serializer version: 1
+# name: TestMakeGateWiring.test_install_nose_verifies_committed_artifact_digests
+  dict({
+    'archive digest is checked': True,
+    'executable digest is checked': True,
+    'platform hash helper is used': True,
+    'source installer is absent': True,
+  })
+# ---

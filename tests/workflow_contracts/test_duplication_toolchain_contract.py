@@ -7,9 +7,10 @@ gate verifies the installed binary against ``[tool.nose].version`` while the
 Makefile and CI are what install it. Drift between them produces a detector
 that installs cleanly and then fails its own version check.
 
-The other pin that must not drift is the installation strategy: a missing
-prebuilt release is a provisioning failure, never permission to compile the
-detector from source or to accept a binary from an unapproved source.
+The detector's release archive and executable are pinned by digest for every
+supported platform. A missing release, a mismatched digest, or an unsupported
+platform is a provisioning failure rather than permission to accept other
+bytes.
 """
 
 import re
@@ -36,8 +37,12 @@ pytestmark = pytest.mark.skipif(
     reason="make executable not found on PATH",
 )
 
-#: The strategies that must never run for this gate.
-FORBIDDEN_INSTALL_STRATEGIES = ("compile", "quick-install")
+NOSE_TARGETS = (
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-unknown-linux-gnu",
+)
 
 
 def _pyproject() -> dict[str, object]:
@@ -148,45 +153,85 @@ def install_nose_recipe() -> str:
     return completed.stdout
 
 
-def test_the_installer_refuses_unapproved_installation_strategies(
+def test_each_supported_release_and_executable_has_a_sha256_pin(
     install_nose_recipe: str,
 ) -> None:
-    """The recipe disables source compilation and third-party binary mirrors."""
-    recipe = install_nose_recipe
+    """Every supported artifact has immutable archive and executable pins."""
+    for target in NOSE_TARGETS:
+        variable_suffix = target.upper().replace("-", "_")
+        for digest_kind in ("ARCHIVE", "BINARY"):
+            variable = f"NOSE_{digest_kind}_SHA256_{variable_suffix}"
+            digest = _make_variable(variable)
+            assert digest is not None, f"{variable} must be declared."
+            assert re.fullmatch(r"[0-9a-f]{64}", digest), (
+                f"{variable} must contain a full lowercase SHA-256 digest."
+            )
 
-    assert "cargo-binstall" in recipe, "The installer must use cargo-binstall."
-    strategies = _disabled_strategies(recipe)
-    for strategy in FORBIDDEN_INSTALL_STRATEGIES:
-        assert strategy in strategies, (
-            f"The installer must disable the {strategy!r} strategy so a missing "
-            "trusted binary fails provisioning instead of building from source."
+        assert target in install_nose_recipe, (
+            f"The installer must support its pinned {target} release."
         )
 
 
-def _disabled_strategies(recipe: str) -> tuple[str, ...]:
-    """Return the strategy names the install recipe disables."""
-    match = re.search(r"--disable-strategies\s+(?P<value>\S+)", recipe)
-    assert match is not None, "--disable-strategies is missing from the recipe."
-    return tuple(match.group("value").split(","))
-
-
-def test_the_installer_runs_non_interactively(install_nose_recipe: str) -> None:
-    """Installation must never wait for a prompt on a developer machine."""
-    assert "--no-confirm" in install_nose_recipe, "The installer must not prompt."
-
-
-def test_the_nose_install_is_not_a_floating_latest_installer(
+def test_the_installer_downloads_and_checks_the_pinned_release(
     install_nose_recipe: str,
+    snapshot: SnapshotAssertion,
 ) -> None:
-    """The recipe requests an exact crate version rather than a floating ref."""
-    assert f"nose-cli@{_nose_version()}" in install_nose_recipe, (
-        "The installer must request the pinned detector release."
+    """The installer checks the official archive and executable bytes."""
+    recipe = install_nose_recipe
+
+    contract = {
+        "official release URL is pinned": (
+            "https://github.com/corca-ai/nose/releases/download/v0.20.0/" in recipe
+        ),
+        "curl fails on download errors": "curl -fsSL" in recipe,
+        "redirects remain HTTPS": (
+            "--proto '=https' --proto-redir '=https' --tlsv1.2" in recipe
+        ),
+        "Linux archive hashing is available": "sha256sum | cut" in recipe,
+        "macOS archive hashing is available": "shasum -a 256 | cut" in recipe,
+        "executable bytes are verified": "binary_checksum" in recipe,
+        "cargo-binstall is absent": "cargo-binstall" not in recipe,
+        "mutable crate references are absent": "nose-cli@" not in recipe,
+    }
+    assert contract == snapshot, (
+        "The installer must use the pinned HTTPS release and verify both artifacts."
     )
-    assert "corca-ai/nose" in install_nose_recipe, (
-        "The crate must come from its upstream repo."
+
+
+def test_installer_fails_closed_on_missing_or_mismatched_bytes(
+    install_nose_recipe: str,
+    snapshot: SnapshotAssertion,
+) -> None:
+    """Missing downloads and digest mismatches must fail installation."""
+    contract = {
+        "shell exits on command failure": "set -eu" in install_nose_recipe,
+        "download fails on HTTP errors": "curl -fsSL" in install_nose_recipe,
+        "archive mismatch aborts": "archive digest mismatch" in install_nose_recipe,
+        "executable mismatch aborts": (
+            "executable digest mismatch" in install_nose_recipe
+        ),
+        "mismatch path exits nonzero": "exit 1" in install_nose_recipe,
+    }
+    assert contract == snapshot, (
+        "Missing or mismatched release bytes must prevent detector installation."
     )
-    assert re.search(r"nose-cli@(latest|main|master)\b", install_nose_recipe) is None, (
-        "A floating version would silently change the gate between runs."
+
+
+def test_ci_uses_the_shared_installer_and_invalidates_old_binary_caches() -> None:
+    """CI must install through the digest verifier and bypass old cache entries."""
+    workflow = CI_WORKFLOW_PATH.read_text(encoding="utf-8")
+
+    assert "run: make install-nose" in workflow, (
+        "CI must use the shared nose installer."
+    )
+    assert "hashFiles('Makefile')" in workflow, (
+        "The nose cache key must invalidate version-only cached binaries."
+    )
+    assert "BINSTALL_VERSION" not in workflow, (
+        "CI must not retain a separate cargo-binstall version pin."
+    )
+    assert "cargo-binstall" not in workflow, (
+        "CI must not install an unverified cargo-binstall binary."
     )
 
 

@@ -221,7 +221,16 @@ SKYLOS_WHITELIST_LOCK ?= .skylos-whitelist.lock
 NOSE_VERSION ?= 0.20.0
 NOSE_TOOLS_DIR ?= .tools/nose
 NOSE_BIN ?= $(NOSE_TOOLS_DIR)/nose
-CARGO_BINSTALL ?= cargo-binstall
+# Pin both the published archive and its executable. The release checksum
+# files are informative; these committed values are the trust boundary.
+NOSE_ARCHIVE_SHA256_AARCH64_APPLE_DARWIN ?= c737cb0e571f1a9b91020d7610443b8d3c885a552f690375315d1ce29330e6a5
+NOSE_BINARY_SHA256_AARCH64_APPLE_DARWIN ?= 8ee79b8be2ba84893daad563776165d192ab2717ac3fa24e24d6cc03e6df77da
+NOSE_ARCHIVE_SHA256_X86_64_APPLE_DARWIN ?= a2fd52a09dcfdb1ae84cada859d4b5a824af8e8dd93a37809ff1c61336134505
+NOSE_BINARY_SHA256_X86_64_APPLE_DARWIN ?= 445e75bb5a84eb1a3efbb6fbe299570b985e567e4613e6bb65ce9d336e534e42
+NOSE_ARCHIVE_SHA256_AARCH64_UNKNOWN_LINUX_GNU ?= d98f95398655bdcadfd849c71088361358058b660d7f702b5ac8bd12db205454
+NOSE_BINARY_SHA256_AARCH64_UNKNOWN_LINUX_GNU ?= d6e4b57dce8f9bb698de23165b63a418bf844ee5b53047f7bcebe25aca00f27e
+NOSE_ARCHIVE_SHA256_X86_64_UNKNOWN_LINUX_GNU ?= ae28f5fdd845570c1e9d4d2b2149d25c80952bea0a5ddbe9396b28880c1f4717
+NOSE_BINARY_SHA256_X86_64_UNKNOWN_LINUX_GNU ?= 05d2a2df2a9f0a1ab92ed91c0032e5cbd1e2098ab5b25f85dfefaa5329956a69
 # The gate wrapper is PEP 723 tooling: `uv run` reads its inline metadata and
 # resolves cyclopts/tomlkit on its own interpreter, so the gate never imports
 # lading or touches the project virtualenv.
@@ -316,15 +325,71 @@ skylos-allow: ## Document one named Skylos exception, not an entry point
 	flock "$(SKYLOS_WHITELIST_LOCK)" env $(SKYLOS_CLI) whitelist "$${SKYLOS_SYMBOL}" --reason "$${SKYLOS_REASON}"
 
 install-nose: ## Install the pinned nose duplication detector
-	@if [ "$$($(NOSE_BIN) --version 2>/dev/null)" = "nose $(NOSE_VERSION)" ]; then \
-	  printf "nose %s already installed at %s\\n" "$(NOSE_VERSION)" "$(NOSE_BIN)"; \
-	else \
-	  printf "Installing nose %s into %s\\n" "$(NOSE_VERSION)" "$(NOSE_TOOLS_DIR)"; \
-	  mkdir -p "$(NOSE_TOOLS_DIR)"; \
-	  $(CARGO_BINSTALL) --no-confirm --install-path "$(NOSE_TOOLS_DIR)" \
-	    --disable-strategies compile,quick-install \
-	    --git https://github.com/corca-ai/nose 'nose-cli@$(NOSE_VERSION)'; \
-	fi
+	@set -eu; \
+	os="$$(uname -s)"; \
+	arch="$$(uname -m)"; \
+	case "$$os:$$arch" in \
+	  Linux:x86_64) \
+	    target=x86_64-unknown-linux-gnu; \
+	    archive_checksum=$(NOSE_ARCHIVE_SHA256_X86_64_UNKNOWN_LINUX_GNU); \
+	    binary_checksum=$(NOSE_BINARY_SHA256_X86_64_UNKNOWN_LINUX_GNU) ;; \
+	  Linux:aarch64|Linux:arm64) \
+	    target=aarch64-unknown-linux-gnu; \
+	    archive_checksum=$(NOSE_ARCHIVE_SHA256_AARCH64_UNKNOWN_LINUX_GNU); \
+	    binary_checksum=$(NOSE_BINARY_SHA256_AARCH64_UNKNOWN_LINUX_GNU) ;; \
+	  Darwin:x86_64) \
+	    target=x86_64-apple-darwin; \
+	    archive_checksum=$(NOSE_ARCHIVE_SHA256_X86_64_APPLE_DARWIN); \
+	    binary_checksum=$(NOSE_BINARY_SHA256_X86_64_APPLE_DARWIN) ;; \
+	  Darwin:arm64|Darwin:aarch64) \
+	    target=aarch64-apple-darwin; \
+	    archive_checksum=$(NOSE_ARCHIVE_SHA256_AARCH64_APPLE_DARWIN); \
+	    binary_checksum=$(NOSE_BINARY_SHA256_AARCH64_APPLE_DARWIN) ;; \
+	  *) printf 'Unsupported nose release platform: %s:%s\n' "$$os" "$$arch" >&2; exit 2 ;; \
+	esac; \
+	sha256_stdin() { \
+	  if [ "$$os" = Darwin ]; then shasum -a 256 | cut -d ' ' -f 1; \
+	  else sha256sum | cut -d ' ' -f 1; fi; \
+	}; \
+	sha256_file() { sha256_stdin < "$$1"; }; \
+	nose_bin="$(NOSE_BIN)"; \
+	if [ -x "$$nose_bin" ]; then \
+	  installed_version="$$( "$$nose_bin" --version 2>/dev/null || true )"; \
+	  installed_checksum="$$(sha256_file "$$nose_bin" || true)"; \
+	  if [ "$$installed_version" = "nose $(NOSE_VERSION)" ] && \
+	     [ "$$installed_checksum" = "$$binary_checksum" ]; then \
+	    printf 'Verified nose %s at %s\n' "$(NOSE_VERSION)" "$$nose_bin"; \
+	    exit 0; \
+	  fi; \
+	fi; \
+	archive="$$(mktemp)"; \
+	nose_tmp=; \
+	trap 'unlink "$$archive" 2>/dev/null || true; if [ -n "$$nose_tmp" ]; then unlink "$$nose_tmp" 2>/dev/null || true; fi' EXIT; \
+	curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 -o "$$archive" \
+	  "https://github.com/corca-ai/nose/releases/download/v$(NOSE_VERSION)/nose-cli-$$target.tar.xz"; \
+	actual_archive_checksum="$$(sha256_file "$$archive")"; \
+	if [ "$$actual_archive_checksum" != "$$archive_checksum" ]; then \
+	  printf 'nose %s archive digest mismatch for %s\n' "$(NOSE_VERSION)" "$$target" >&2; exit 1; \
+	fi; \
+	archive_binary="nose-cli-$$target/nose"; \
+	actual_binary_checksum="$$(tar -xJOf "$$archive" "$$archive_binary" | sha256_stdin)"; \
+	if [ "$$actual_binary_checksum" != "$$binary_checksum" ]; then \
+	  printf 'nose %s executable digest mismatch for %s\n' "$(NOSE_VERSION)" "$$target" >&2; exit 1; \
+	fi; \
+	mkdir -p "$(dir $(NOSE_BIN))"; \
+	nose_tmp="$$(mktemp "$(NOSE_BIN).tmp.XXXXXX")"; \
+	tar -xJOf "$$archive" "$$archive_binary" > "$$nose_tmp"; \
+	chmod 755 "$$nose_tmp"; \
+	mv -f "$$nose_tmp" "$$nose_bin"; \
+	actual_installed_checksum="$$(sha256_file "$$nose_bin")"; \
+	if [ "$$actual_installed_checksum" != "$$binary_checksum" ]; then \
+	  printf 'Installed nose %s executable digest mismatch\n' "$(NOSE_VERSION)" >&2; exit 1; \
+	fi; \
+	installed_version="$$( "$$nose_bin" --version 2>/dev/null )"; \
+	if [ "$$installed_version" != "nose $(NOSE_VERSION)" ]; then \
+	  printf 'Installed nose reports %s, expected nose %s\n' "$$installed_version" "$(NOSE_VERSION)" >&2; exit 1; \
+	fi; \
+	printf 'Installed verified nose %s at %s\n' "$(NOSE_VERSION)" "$$nose_bin"
 
 duplication: install-nose ## Run the blocking code-duplication gate
 	$(DUPLICATION_GATE) check
