@@ -57,7 +57,7 @@ take precedence. This plan records every deliberate deviation.
   exhaustive. Only the top 30 ranked families are adjudicated.
 - Comments and documentation use en-GB-oxendict spelling (`-ize`, not `-ise`).
   `make spelling` is a hard gate.
-- No tracked file may exceed 400 lines.
+- No code file may exceed 400 lines.
 
 ## Tolerances (exception triggers)
 
@@ -759,8 +759,27 @@ for all four affected files, and `cs delta origin/main` reports no issues. The
 corrected candidate passed the full sequential gates: `make check-fmt`,
 `make lint`, `make typecheck`, `make test` (1517 passed, 30 skipped, 110
 snapshots), `make markdownlint` (36 files, zero issues), `make nixie`, and
-`make duplication-test` (155 passed, three snapshots). Hosted re-review remains
-The code candidate `ae648ee0a91a59a587813cceb439e99c74a388fd` passed hosted CI:
+`make duplication-test` (155 passed, three snapshots). The code candidate
+`ae648ee0a91a59a587813cceb439e99c74a388fd` passed hosted CI:
 [run 39953791615, attempt 1](https://github.com/leynos/lading/actions/runs/39953791615/attempts/1),
-with both `lint-test` and `build-dist` successful. The candidate-bound
-CodeRabbit assessment and formal review remain pending.
+with both `lint-test` and `build-dist` successful. The docs-only head
+`5d4bd98b15e44e5ccb650770753acc516c63bbb7` passed hosted CI:
+[run 39954440651, attempt 1](https://github.com/leynos/lading/actions/runs/39954440651/attempts/1).
+Its hosted CodeScene review also passed:
+[check 120416620329](https://codescene.io/projects/72980/delta/results/8097079).
+
+2026-10-23: a CodeRabbit assessment of
+`5d4bd98b15e44e5ccb650770753acc516c63bbb7` confirmed the five earlier findings
+were resolved and identified four description errors: conftest implied
+unconditional exclusion, the Makefile said the application suite must not
+collect the tests, the contract test's name implied unconditional exclusion
+while its assertion checked only for a ``collect_ignore_glob`` string, and the
+plan applied the 400-line limit to every tracked file. The conftest and
+Makefile comments now describe the conditional behaviour, the workflow contract
+verifies that the ignore assignment is inside the missing-dependency guard, and
+the plan states the code-file limit accurately. All seven local gates passed
+after these corrections: `make check-fmt`, `make markdownlint` (36 files, zero
+issues), `make nixie`, `make typecheck`, `make lint` (11 allowed, zero blocking
+or stale families), `make test` (1517 passed, 30 skipped, 110 snapshots), and
+`make duplication-test` (155 passed, three snapshots). Hosted validation and
+CodeRabbit follow-up for this corrected candidate remain pending.

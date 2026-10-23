@@ -1,12 +1,14 @@
-"""Make the gate modules importable and keep this suite off the app run.
+"""Make the gate modules importable and skip this suite when tooling is missing.
 
 The gate wrapper runs on an explicitly selected CPython 3.14 with pinned
 tooling dependencies (``make duplication-test``). The application suite runs
 on the project virtualenv, a different interpreter with a different dependency
 set, and it recurses the whole repository because neither ``testpaths`` nor
-``norecursedirs`` is configured. These modules are therefore not collectable
-there: the guard below asks that run to skip the directory instead of failing
-while importing a module it cannot interpret.
+``norecursedirs`` is configured. If that interpreter lacks a tooling dependency,
+the guard below asks pytest to skip these files instead of failing while
+importing a module it cannot interpret. When the dependencies are available,
+the application suite may collect these tests; ``make duplication-test`` runs
+them with their pinned tooling in either case.
 """
 
 import importlib.util

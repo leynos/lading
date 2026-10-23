@@ -12,6 +12,7 @@ prebuilt release is a provisioning failure, never permission to compile the
 detector from source or to accept a binary from an unapproved source.
 """
 
+import ast
 import re
 import shutil
 import subprocess
@@ -274,16 +275,37 @@ def test_the_gate_does_not_require_the_application_environment(
         )
 
 
-def test_the_helper_tests_are_not_collected_by_the_application_suite() -> None:
-    """The tooling suite runs on its own interpreter, not the project venv."""
+def test_helper_tests_are_skipped_when_tooling_dependencies_are_unavailable() -> None:
+    """The app skips helper tests only when their tooling dependencies are missing."""
     source = (REPO_ROOT / "scripts" / "tests" / "conftest.py").read_text(
         encoding="utf-8"
     )
-
-    assert "collect_ignore_glob" in source, (
-        "The scripts tests must opt out of the application suite's collection, "
-        "which runs on an interpreter without the pinned tooling."
+    module = ast.parse(source)
+    dependency_guard = next(
+        (
+            node
+            for node in module.body
+            if isinstance(node, ast.If)
+            and isinstance(node.test, ast.UnaryOp)
+            and isinstance(node.test.op, ast.Not)
+            and isinstance(node.test.operand, ast.Call)
+            and isinstance(node.test.operand.func, ast.Name)
+            and node.test.operand.func.id == "_tooling_environment_is_available"
+        ),
+        None,
     )
+
+    assert dependency_guard is not None, (
+        "The helper-test collection guard must check whether tooling is unavailable."
+    )
+    assert any(
+        isinstance(statement, ast.Assign)
+        and any(
+            isinstance(target, ast.Name) and target.id == "collect_ignore_glob"
+            for target in statement.targets
+        )
+        for statement in dependency_guard.body
+    ), "The helper tests must be ignored inside the unavailable-tooling guard."
 
 
 def test_configured_roots_exist_and_are_not_empty() -> None:

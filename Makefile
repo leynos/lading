@@ -332,7 +332,9 @@ duplication: install-nose ## Run the blocking code-duplication gate
 # The gate wrapper and its helper tests run on their own tooling environment,
 # not the project virtualenv: `uv run --no-project` ignores pyproject.toml and
 # resolves the pinned dependencies from the inline script metadata. The
-# application suite must not collect these tests, and they run here instead.
+# application suite may collect them when those dependencies are available;
+# the helper conftest skips them when any are missing. This target always runs
+# them in the pinned, isolated environment.
 duplication-test: ## Run the duplication-gate helper tests
 	@$(UV_ENV) NOSE_BIN=$(NOSE_BIN) $(UV) run --no-project \
 		--python $(PYTHON_BASELINE) \
