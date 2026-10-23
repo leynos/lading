@@ -178,10 +178,13 @@ def test_the_installer_downloads_and_checks_the_pinned_release(
 ) -> None:
     """The installer checks the official archive and executable bytes."""
     recipe = install_nose_recipe
+    nose_version = _make_variable("NOSE_VERSION")
+    assert nose_version is not None, "The Makefile must pin NOSE_VERSION."
 
     contract = {
         "official release URL is pinned": (
-            "https://github.com/corca-ai/nose/releases/download/v0.20.0/" in recipe
+            f"https://github.com/corca-ai/nose/releases/download/v{nose_version}/"
+            in recipe
         ),
         "curl fails on download errors": "curl -fsSL" in recipe,
         "redirects remain HTTPS": (

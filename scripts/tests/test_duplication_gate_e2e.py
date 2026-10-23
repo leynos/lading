@@ -11,12 +11,10 @@ cannot hide the planted family behind the ranking bound.
 
 import dataclasses as dc
 import json
-import os
 import subprocess
 import textwrap
 from pathlib import Path
 
-import pytest
 from duplication_gate_test_support import (
     REPOSITORY_ROOT,
     copied_gate_workspace,
@@ -73,33 +71,6 @@ _FILED_EXCEPTION = textwrap.dedent(
 )
 
 
-def _resolved_binary() -> str:
-    """Return the pinned detector path, skipping when it is unavailable."""
-    settings = detector.load_settings(REPOSITORY_ROOT / "pyproject.toml")
-    try:
-        binary = detector.resolve_binary(
-            settings,
-            environment=detector.NoseEnvironment(
-                repository_root=REPOSITORY_ROOT,
-                binary_override=os.environ.get("NOSE_BIN"),
-                search_directories=(
-                    str(REPOSITORY_ROOT / detector.DEFAULT_NOSE_RELATIVE_PATH.parent),
-                    *(
-                        os.environ["PATH"].split(os.pathsep)
-                        if os.environ.get("PATH")
-                        else ()
-                    ),
-                ),
-            ),
-            binary_finder=detector.discover_binary,
-            runner=detector.repository_runner(REPOSITORY_ROOT),
-        )
-    except detector.GateExecutionError as error:  # pragma: no cover
-        pytest.skip(str(error))
-        raise  # Unreachable; keeps the return paths symmetric for Pylint.
-    return binary
-
-
 def _write_planted_package(workspace: Path, bodies: dict[str, str]) -> None:
     """Write one package whose modules hold ``bodies`` verbatim."""
     package = workspace / "planted"
@@ -148,19 +119,23 @@ def _planted_workspace(
     return workspace
 
 
-def _run_check(workspace: Path) -> subprocess.CompletedProcess[str]:
+def _run_check(
+    workspace: Path, real_nose_binary: str
+) -> subprocess.CompletedProcess[str]:
     """Run the copied gate's real ``check`` against the pinned detector."""
     return run_gate_command(
         workspace / "scripts" / "duplication_gate.py",
         "check",
-        environment=gate_environment(NOSE_BIN=_resolved_binary()),
+        environment=gate_environment(NOSE_BIN=real_nose_binary),
     )
 
 
 class TestCleanWorkspace:
     """The gate's clean case against the real detector."""
 
-    def test_workspace_without_clones_passes(self, tmp_path: Path) -> None:
+    def test_workspace_without_clones_passes(
+        self, tmp_path: Path, real_nose_binary: str
+    ) -> None:
         """A small workspace with no duplicate passes through the real gate."""
         workspace, _script = copied_gate_workspace(tmp_path)
         _write_planted_package(
@@ -169,7 +144,7 @@ class TestCleanWorkspace:
         )
         (workspace / "pyproject.toml").write_text(_PLANTED_PYPROJECT, encoding="utf-8")
 
-        result = _run_check(workspace)
+        result = _run_check(workspace, real_nose_binary)
 
         assert result.returncode == 0, (
             f"A clone-free workspace must pass.\n{result.stdout}{result.stderr}"
@@ -182,10 +157,11 @@ class TestCleanWorkspace:
 class TestPlantedDuplicate:
     """A real planted clone driven through the real gate."""
 
-    def test_reports_a_planted_verbatim_copy(self, tmp_path: Path) -> None:
+    def test_reports_a_planted_verbatim_copy(
+        self, tmp_path: Path, real_nose_binary: str
+    ) -> None:
         """The pinned detector reports a planted copy through normalization."""
         settings = detector.load_settings(REPOSITORY_ROOT / "pyproject.toml")
-        binary = _resolved_binary()
         (tmp_path / "mod.py").write_text(
             _DUPLICATE_BODY.replace("NAME", "first_total")
             + "\n\n"
@@ -193,7 +169,7 @@ class TestPlantedDuplicate:
             encoding="utf-8",
         )
         command = detector.build_command(
-            binary, dc.replace(settings, roots=(".",), min_size=8)
+            real_nose_binary, dc.replace(settings, roots=(".",), min_size=8)
         )
         result = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - pinned, repository-owned binary.
             command,
@@ -210,9 +186,11 @@ class TestPlantedDuplicate:
             for finding in findings
         ), "The planted copy must name both duplicated functions."
 
-    def test_planted_duplicate_blocks_the_gate(self, tmp_path: Path) -> None:
+    def test_planted_duplicate_blocks_the_gate(
+        self, tmp_path: Path, real_nose_binary: str
+    ) -> None:
         """A genuine duplicate fails ``check`` and names both copies."""
-        result = _run_check(_planted_workspace(tmp_path))
+        result = _run_check(_planted_workspace(tmp_path), real_nose_binary)
 
         assert result.returncode == 1, (
             f"A planted duplicate must fail the gate.\n{result.stdout}{result.stderr}"
@@ -225,10 +203,12 @@ class TestPlantedDuplicate:
         )
 
     def test_reasoned_exception_unblocks_the_planted_duplicate(
-        self, tmp_path: Path
+        self, tmp_path: Path, real_nose_binary: str
     ) -> None:
         """The same duplicate passes once a reasoned allow entry covers it."""
-        result = _run_check(_planted_workspace(tmp_path, allow=_FILED_EXCEPTION))
+        result = _run_check(
+            _planted_workspace(tmp_path, allow=_FILED_EXCEPTION), real_nose_binary
+        )
 
         assert result.returncode == 0, (
             f"A covered duplicate must pass.\n{result.stdout}{result.stderr}"
@@ -238,11 +218,12 @@ class TestPlantedDuplicate:
         )
 
     def test_a_new_member_outside_the_exception_blocks_again(
-        self, tmp_path: Path
+        self, tmp_path: Path, real_nose_binary: str
     ) -> None:
         """A third, unlisted copy reopens the family that exception covered."""
         result = _run_check(
-            _planted_workspace(tmp_path, allow=_FILED_EXCEPTION, extra_clone=True)
+            _planted_workspace(tmp_path, allow=_FILED_EXCEPTION, extra_clone=True),
+            real_nose_binary,
         )
 
         assert result.returncode == 1, (
@@ -253,11 +234,13 @@ class TestPlantedDuplicate:
             "The report must name the newly added member."
         )
 
-    def test_repeated_runs_report_identical_output(self, tmp_path: Path) -> None:
+    def test_repeated_runs_report_identical_output(
+        self, tmp_path: Path, real_nose_binary: str
+    ) -> None:
         """Normalized gate output is stable across repeated runs."""
         workspace = _planted_workspace(tmp_path)
-        first = _run_check(workspace)
-        second = _run_check(workspace)
+        first = _run_check(workspace, real_nose_binary)
+        second = _run_check(workspace, real_nose_binary)
 
         assert first.returncode == second.returncode == 1, (
             "Both runs must reach the same verdict."

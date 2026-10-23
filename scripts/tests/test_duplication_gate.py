@@ -123,6 +123,16 @@ class TestValidateKey:
                 id="empty-name",
             ),
             pytest.param(
+                ".",
+                "must be a repository-relative path key",
+                id="dot-path",
+            ),
+            pytest.param(
+                "./",
+                "must be a repository-relative path key",
+                id="dot-slash-path",
+            ),
+            pytest.param(
                 "/lading/a.py",
                 "must be a repository-relative path key",
                 id="absolute",

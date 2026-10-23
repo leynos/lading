@@ -901,3 +901,15 @@ tree: `make check-fmt`, `make markdownlint` (36 files, zero issues),
 families), `make test` (1532 passed, 30 skipped, 113 snapshots), and
 `make duplication-test` (167 passed, four snapshots). Hosted validation and the
 formal CodeRabbit review of the pushed repair remain pending.
+
+2026-10-23: the formal CodeRabbit review of
+`24cef816339a9cd634bd55df3f55376d37645072` raised six further findings. The
+cached installer now verifies a digest before executing a cached binary, with a
+regression test proving a tampered script is not run. Allowlist validation
+rejects `.` and `./` with a configuration error, and detector discovery
+resolves relative PATH results to absolute paths. A session-scoped pytest
+fixture now shares the real-binary resolution setup while the workflow contract
+still invokes the CLI with its normal environment. The release URL contract
+derives its version from the Makefile, and the ADR now uses the correct article
+before “SHA-256”. The focused duplication suite passed with 170 tests and four
+snapshots after these changes.

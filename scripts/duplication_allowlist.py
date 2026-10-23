@@ -108,6 +108,9 @@ def _validate_key_shape(
 def _validate_repository_relative_path(path_glob: str, *, context: str) -> None:
     """Reject absolute, escaping, or unanchored recursive path globs."""
     path = PurePosixPath(path_glob)
+    if not path.parts:
+        msg = f"{context} must be a repository-relative path key"
+        raise GateConfigError(msg)
     if path_glob.startswith("/") or ".." in path.parts:
         msg = f"{context} must be a repository-relative path key"
         raise GateConfigError(msg)

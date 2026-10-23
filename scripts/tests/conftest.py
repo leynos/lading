@@ -12,8 +12,11 @@ them with their pinned tooling in either case.
 """
 
 import importlib.util
+import os
 import sys
 from pathlib import Path
+
+import pytest
 
 SCRIPT_DIRECTORY = Path(__file__).resolve().parents[1]
 
@@ -56,3 +59,29 @@ def _module_is_importable(name: str) -> bool:
 
 if not _tooling_environment_is_available():  # pragma: no cover - app venv only
     collect_ignore_glob = ["*.py"]
+
+
+@pytest.fixture(scope="session")
+def real_nose_binary() -> str:
+    """Resolve the pinned detector once for real-binary integration tests."""
+    from duplication_gate_test_support import REPOSITORY_ROOT, detector
+
+    settings = detector.load_settings(REPOSITORY_ROOT / "pyproject.toml")
+    environment = detector.NoseEnvironment(
+        repository_root=REPOSITORY_ROOT,
+        binary_override=os.environ.get("NOSE_BIN"),
+        search_directories=(
+            str(REPOSITORY_ROOT / detector.DEFAULT_NOSE_RELATIVE_PATH.parent),
+            *(os.environ["PATH"].split(os.pathsep) if os.environ.get("PATH") else ()),
+        ),
+    )
+    try:
+        return detector.resolve_binary(
+            settings,
+            environment=environment,
+            binary_finder=detector.discover_binary,
+            runner=detector.repository_runner(REPOSITORY_ROOT),
+        )
+    except detector.GateExecutionError as error:  # pragma: no cover
+        pytest.skip(str(error))
+        raise  # Unreachable; keeps the fixture's return paths explicit.

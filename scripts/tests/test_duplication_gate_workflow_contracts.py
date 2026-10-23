@@ -1,6 +1,5 @@
 """End-to-end contracts for the duplication gate CLI and Make boundary."""
 
-import os
 import subprocess
 import sys
 import textwrap
@@ -11,7 +10,6 @@ from duplication_gate_test_support import (
     REPOSITORY_ROOT,
     allowlist,
     copied_gate_workspace,
-    detector,
     gate_environment,
     run_gate_command,
     write_stub_nose,
@@ -247,31 +245,11 @@ class TestGateWorkflowContracts:
             "A missing detector must never report a passing gate."
         )
 
-    def test_real_check_cli_passes(self) -> None:
+    def test_real_check_cli_passes(self, real_nose_binary: str) -> None:
         """The checked-in gate runs successfully through its real CLI boundary."""
-        settings = detector.load_settings(REPOSITORY_ROOT / "pyproject.toml")
-        try:
-            detector.resolve_binary(
-                settings,
-                environment=detector.NoseEnvironment(
-                    repository_root=REPOSITORY_ROOT,
-                    binary_override=os.environ.get("NOSE_BIN"),
-                    search_directories=(
-                        str(
-                            REPOSITORY_ROOT / detector.DEFAULT_NOSE_RELATIVE_PATH.parent
-                        ),
-                        *(
-                            os.environ["PATH"].split(os.pathsep)
-                            if os.environ.get("PATH")
-                            else ()
-                        ),
-                    ),
-                ),
-                binary_finder=detector.discover_binary,
-                runner=detector.repository_runner(REPOSITORY_ROOT),
-            )
-        except detector.GateExecutionError as error:  # pragma: no cover
-            pytest.skip(str(error))
+        assert Path(real_nose_binary).is_file(), (
+            "The shared fixture must resolve the installed detector."
+        )
         result = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - fixed repository gate command.
             [
                 sys.executable,

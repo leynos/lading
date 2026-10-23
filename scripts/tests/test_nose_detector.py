@@ -193,6 +193,30 @@ class TestResolveBinary:
             "The finder must search only the supplied PATH value."
         )
 
+    def test_resolves_a_binary_found_in_a_relative_search_directory(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A discovered binary is absolute even when a PATH entry is relative."""
+        search_path = tmp_path / "bin"
+        search_path.mkdir()
+        stub = write_stub_nose(search_path)
+        monkeypatch.chdir(tmp_path)
+
+        binary = detector.resolve_binary(
+            stub_settings(),
+            environment=detector.NoseEnvironment(
+                repository_root=tmp_path,
+                binary_override=None,
+                search_directories=("bin",),
+            ),
+            binary_finder=detector.discover_binary,
+            runner=stub_runner(),
+        )
+
+        assert binary == str(stub.resolve()), (
+            "A binary found through a relative search directory must be absolute."
+        )
+
     def test_prefers_the_repository_binary_to_the_supplied_path(
         self, tmp_path: Path
     ) -> None:

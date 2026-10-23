@@ -133,12 +133,16 @@ def _run_install_nose(
     if scenario.installed_version is not None:
         _write_executable(nose_bin, _nose_bytes(scenario.installed_version))
         if scenario.tamper_cached_binary:
-            nose_bin.write_bytes(nose_bin.read_bytes() + b"tampered")
+            _write_executable(
+                nose_bin,
+                '#!/bin/sh\nprintf "executed\\n" >> "$FAKE_CACHED_NOSE_EXECUTIONS"\n',
+            )
 
     archive_path = tmp_path / "archive.fixture"
     archive_path.write_bytes(ARCHIVE_BYTES)
     nose_payload = tmp_path / "nose.fixture"
     nose_payload.write_bytes(_nose_bytes(NOSE_VERSION))
+    cached_execution_log = tmp_path / "cached-nose-executions.log"
     curl_log = tmp_path / "curl-arguments"
     tar_log = tmp_path / "tar-arguments"
 
@@ -165,6 +169,7 @@ def _run_install_nose(
         **os.environ,
         "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}",
         "FAKE_ARCHIVE": str(archive_path),
+        "FAKE_CACHED_NOSE_EXECUTIONS": str(cached_execution_log),
         "FAKE_CURL_LOG": str(curl_log),
         "FAKE_NOSE_BINARY": str(nose_payload),
         "FAKE_TAR_LOG": str(tar_log),
@@ -217,6 +222,9 @@ class TestMakeInstallNose:
         assert invocation.result.returncode == 0, invocation.result.stderr
         assert "Installed verified nose" in invocation.result.stdout, (
             "A cached detector with altered bytes must be replaced."
+        )
+        assert not (tmp_path / "cached-nose-executions.log").exists(), (
+            "An unverified cached detector must not be executed."
         )
         assert (
             "v0.20.0/nose-cli-x86_64-unknown-linux-gnu.tar.xz"

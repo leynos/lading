@@ -227,7 +227,8 @@ def resolve_binary(
 
 def discover_binary(environment: NoseEnvironment) -> str | None:
     """Find the repository-local nose binary, else one on the supplied path."""
-    return shutil.which("nose", path=os.pathsep.join(environment.search_directories))
+    binary = shutil.which("nose", path=os.pathsep.join(environment.search_directories))
+    return str(Path(binary).resolve()) if binary is not None else None
 
 
 def build_command(binary: str, settings: NoseSettings) -> list[str]:

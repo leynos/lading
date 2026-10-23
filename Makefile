@@ -354,12 +354,13 @@ install-nose: ## Install the pinned nose duplication detector
 	sha256_file() { sha256_stdin < "$$1"; }; \
 	nose_bin="$(NOSE_BIN)"; \
 	if [ -x "$$nose_bin" ]; then \
-	  installed_version="$$( "$$nose_bin" --version 2>/dev/null || true )"; \
 	  installed_checksum="$$(sha256_file "$$nose_bin" || true)"; \
-	  if [ "$$installed_version" = "nose $(NOSE_VERSION)" ] && \
-	     [ "$$installed_checksum" = "$$binary_checksum" ]; then \
-	    printf 'Verified nose %s at %s\n' "$(NOSE_VERSION)" "$$nose_bin"; \
-	    exit 0; \
+	  if [ "$$installed_checksum" = "$$binary_checksum" ]; then \
+	    installed_version="$$( "$$nose_bin" --version 2>/dev/null || true )"; \
+	    if [ "$$installed_version" = "nose $(NOSE_VERSION)" ]; then \
+	      printf 'Verified nose %s at %s\n' "$(NOSE_VERSION)" "$$nose_bin"; \
+	      exit 0; \
+	    fi; \
 	  fi; \
 	fi; \
 	archive="$$(mktemp)"; \

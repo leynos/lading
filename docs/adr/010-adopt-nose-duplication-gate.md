@@ -197,7 +197,7 @@ and why, which is the outcome that matters: the exceptions are the reviewable
 artefact, not an absence of findings.
 
 The costs are real. The detector is a Rust binary, so a new contributor needs
-`make install-nose`, `curl`, `tar`, and a SHA-256 utility. Native Windows is
+`make install-nose`, `curl`, `tar`, and an SHA-256 utility. Native Windows is
 not supported by the unchanged helper, which uses `fcntl.flock` and POSIX
 directory operations. The size floor and ranking budget mean lower-ranked
 duplication is measured but not enforced, and the file-granular keys noted
