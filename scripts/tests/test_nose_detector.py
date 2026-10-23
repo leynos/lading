@@ -125,7 +125,9 @@ class TestResolveBinary:
             environment=detector.NoseEnvironment(
                 repository_root=tmp_path,
                 binary_override=str(stub),
-                search_path=None,
+                search_directories=(
+                    str(tmp_path / detector.DEFAULT_NOSE_RELATIVE_PATH.parent),
+                ),
             ),
             binary_finder=detector.discover_binary,
             runner=stub_runner(),
@@ -141,7 +143,11 @@ class TestResolveBinary:
             environment=detector.NoseEnvironment(
                 repository_root=detector.REPO_ROOT,
                 binary_override="lading",
-                search_path=None,
+                search_directories=(
+                    str(
+                        detector.REPO_ROOT / detector.DEFAULT_NOSE_RELATIVE_PATH.parent
+                    ),
+                ),
             ),
             binary_finder=detector.discover_binary,
             runner=stub_runner(),
@@ -161,7 +167,9 @@ class TestResolveBinary:
                 environment=detector.NoseEnvironment(
                     repository_root=tmp_path,
                     binary_override=str(stub),
-                    search_path=None,
+                    search_directories=(
+                        str(tmp_path / detector.DEFAULT_NOSE_RELATIVE_PATH.parent),
+                    ),
                 ),
                 binary_finder=detector.discover_binary,
                 runner=stub_runner(version="nose 0.19.0"),
@@ -176,25 +184,53 @@ class TestResolveBinary:
         environment = detector.NoseEnvironment(
             repository_root=tmp_path,
             binary_override=None,
-            search_path=str(search_path),
+            search_directories=(
+                str(tmp_path / detector.DEFAULT_NOSE_RELATIVE_PATH.parent),
+                str(search_path),
+            ),
         )
         assert detector.discover_binary(environment) == str(stub), (
             "The finder must search only the supplied PATH value."
         )
 
-    @pytest.mark.parametrize("search_path", [None, ""])
-    def test_does_not_search_when_the_supplied_path_is_empty(
-        self, tmp_path: Path, search_path: str | None
+    def test_prefers_the_repository_binary_to_the_supplied_path(
+        self, tmp_path: Path
     ) -> None:
-        """An absent or empty PATH does not fall back to host search paths."""
+        """The repository installation precedes other supplied binaries."""
+        local_directory = tmp_path / detector.DEFAULT_NOSE_RELATIVE_PATH.parent
+        local_directory.mkdir(parents=True)
+        local_stub = write_stub_nose(local_directory)
+        supplied_path = tmp_path / "bin"
+        supplied_path.mkdir()
+        write_stub_nose(supplied_path)
+
         environment = detector.NoseEnvironment(
             repository_root=tmp_path,
             binary_override=None,
-            search_path=search_path,
+            search_directories=(str(local_directory), str(supplied_path)),
+        )
+        assert detector.discover_binary(environment) == str(local_stub), (
+            "The installed repository binary must retain precedence."
+        )
+
+    def test_does_not_search_process_path_when_not_supplied(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An ambient PATH cannot replace the explicitly supplied directories."""
+        local_directory = tmp_path / detector.DEFAULT_NOSE_RELATIVE_PATH.parent
+        local_directory.mkdir(parents=True)
+        process_path = tmp_path / "process-path"
+        process_path.mkdir()
+        write_stub_nose(process_path)
+        monkeypatch.setenv("PATH", str(process_path))
+        environment = detector.NoseEnvironment(
+            repository_root=tmp_path,
+            binary_override=None,
+            search_directories=(str(local_directory),),
         )
 
         assert detector.discover_binary(environment) is None, (
-            "No explicit search path means no binary lookup outside the repository."
+            "The finder must not fall back to the process PATH."
         )
 
     def test_reports_a_missing_binary(self, tmp_path: Path) -> None:
@@ -207,7 +243,10 @@ class TestResolveBinary:
                 environment=detector.NoseEnvironment(
                     repository_root=tmp_path,
                     binary_override=None,
-                    search_path=str(search_path),
+                    search_directories=(
+                        str(tmp_path / detector.DEFAULT_NOSE_RELATIVE_PATH.parent),
+                        str(search_path),
+                    ),
                 ),
                 binary_finder=detector.discover_binary,
                 runner=stub_runner(),

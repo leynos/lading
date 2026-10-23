@@ -35,7 +35,7 @@ class TestRunDetector:
             )
 
         monkeypatch.setattr(detector.subprocess, "run", run)
-        assert detector._default_runner(tmp_path)(["nose", "--version"]) == (
+        assert detector.repository_runner(tmp_path)(["nose", "--version"]) == (
             "nose 0.20.0\n"
         ), "The default runner returns the detector's standard output."
         assert observed["working_directory"] == tmp_path, (
@@ -49,7 +49,11 @@ class TestRunDetector:
             environment=detector.NoseEnvironment(
                 repository_root=detector.REPO_ROOT,
                 binary_override="/stub/nose",
-                search_path=None,
+                search_directories=(
+                    str(
+                        detector.REPO_ROOT / detector.DEFAULT_NOSE_RELATIVE_PATH.parent
+                    ),
+                ),
             ),
             binary_finder=detector.discover_binary,
             runner=stub_runner(),
@@ -288,7 +292,12 @@ class TestRunDetector:
                 environment=detector.NoseEnvironment(
                     repository_root=detector.REPO_ROOT,
                     binary_override="/stub/nose",
-                    search_path=None,
+                    search_directories=(
+                        str(
+                            detector.REPO_ROOT
+                            / detector.DEFAULT_NOSE_RELATIVE_PATH.parent
+                        ),
+                    ),
                 ),
                 binary_finder=detector.discover_binary,
                 runner=runner,

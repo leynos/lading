@@ -836,4 +836,20 @@ and `make duplication-test`. The full suite had 1525 passed, 30 skipped, and
 110 snapshots; the focused suite had 162 passed and three snapshots. Hosted
 validation and CodeRabbit follow-up for the resulting commit remain pending.
 
+2026-10-23: hosted CodeScene review of
+`245cc0d760d1bf361e0d593a16b5fddf14304817` reported mean cyclomatic complexity
+of 4.29 in `nose_detector.py`, just above the threshold of 4. The detector now
+receives ordered search directories and a required command runner from the CLI
+adapter. The adapter keeps repository-local binary precedence and excludes
+ambient `PATH` when no configured search path is present; tests pin both
+behaviours. Local `cs delta origin/main --file scripts/nose_detector.py`
+reports no issues. A mixed-state gate run found one missing assertion message
+and a timeout in the lockfile bump scenario. The assertion was fixed; the
+timeout did not recur in the frozen-candidate run, so no timeout was changed.
+All seven gates then passed on the repaired candidate: `make check-fmt`,
+`make markdownlint` (36 files, zero issues), `make nixie`, `make typecheck`,
+`make lint` (11 allowed, zero blocking), `make test` (1529 passed, 30 skipped,
+110 snapshots), and `make duplication-test` (165 passed, three snapshots). The
+hosted review of this repair remains pending.
+
 [review-ci-run]: https://github.com/leynos/lading/actions/runs/39958260207/attempts/1

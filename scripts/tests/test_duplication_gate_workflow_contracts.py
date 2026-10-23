@@ -256,9 +256,19 @@ class TestGateWorkflowContracts:
                 environment=detector.NoseEnvironment(
                     repository_root=REPOSITORY_ROOT,
                     binary_override=os.environ.get("NOSE_BIN"),
-                    search_path=os.environ.get("PATH"),
+                    search_directories=(
+                        str(
+                            REPOSITORY_ROOT / detector.DEFAULT_NOSE_RELATIVE_PATH.parent
+                        ),
+                        *(
+                            os.environ["PATH"].split(os.pathsep)
+                            if os.environ.get("PATH")
+                            else ()
+                        ),
+                    ),
                 ),
                 binary_finder=detector.discover_binary,
+                runner=detector.repository_runner(REPOSITORY_ROOT),
             )
         except detector.GateExecutionError as error:  # pragma: no cover
             pytest.skip(str(error))

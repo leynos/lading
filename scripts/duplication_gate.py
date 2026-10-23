@@ -34,10 +34,12 @@ from duplication_allowlist import (
     validate_key,
 )
 from nose_detector import (
+    DEFAULT_NOSE_RELATIVE_PATH,
     PYPROJECT,
     NoseEnvironment,
     discover_binary,
     load_settings,
+    repository_runner,
     run_detector,
 )
 from nose_schema import Finding, GateConfigError, GateExecutionError
@@ -113,14 +115,20 @@ def detect_findings() -> list[Finding]:
     Configuration and execution errors from the settings loader and detector
     propagate to the CLI boundary.
     """
+    repository_root = PYPROJECT.parent
+    search_directories = [str(repository_root / DEFAULT_NOSE_RELATIVE_PATH.parent)]
+    configured_path = os.environ.get("PATH")
+    if configured_path:
+        search_directories.extend(configured_path.split(os.pathsep))
     return run_detector(
         load_settings(PYPROJECT),
         environment=NoseEnvironment(
-            repository_root=PYPROJECT.parent,
+            repository_root=repository_root,
             binary_override=os.environ.get("NOSE_BIN"),
-            search_path=os.environ.get("PATH"),
+            search_directories=tuple(search_directories),
         ),
         binary_finder=discover_binary,
+        runner=repository_runner(repository_root),
     )
 
 

@@ -8,6 +8,7 @@ its version, and running one ``nose query``. The report schema lives in
 
 import dataclasses as dc
 import json
+import os
 import shutil
 import subprocess
 import tomllib
@@ -76,27 +77,29 @@ class NoseEnvironment:
     Attributes
     ----------
     repository_root : pathlib.Path
-        Repository root used for relative overrides and local installation
-        lookup, and as the detector process working directory.
+        Repository root used for relative overrides and detector execution,
+        and for the missing-binary diagnostic.
     binary_override : str | None
         Value of ``NOSE_BIN`` when the caller selects a specific executable.
-    search_path : str | None
-        Value of ``PATH`` available for finding an installed ``nose`` binary.
+    search_directories : tuple[str, ...]
+        Ordered directories available for finding ``nose``. The repository's
+        local installation directory comes first, followed by explicit
+        ``PATH`` entries when present.
 
     Examples
     --------
     >>> environment = NoseEnvironment(
     ...     repository_root=Path("/repo"),
     ...     binary_override=None,
-    ...     search_path="/usr/bin",
+    ...     search_directories=("/repo/.tools/nose", "/usr/bin"),
     ... )
-    >>> environment.search_path
-    '/usr/bin'
+    >>> environment.search_directories[0]
+    '/repo/.tools/nose'
     """
 
     repository_root: Path
     binary_override: str | None
-    search_path: str | None
+    search_directories: tuple[str, ...]
 
 
 type BinaryFinder = cabc.Callable[[NoseEnvironment], str | None]
@@ -114,6 +117,7 @@ __all__ = [
     "discover_binary",
     "load_settings",
     "normalize_findings",
+    "repository_runner",
     "resolve_binary",
     "run_detector",
 ]
@@ -170,7 +174,7 @@ def resolve_binary(
     *,
     environment: NoseEnvironment,
     binary_finder: BinaryFinder,
-    runner: CommandRunner | None = None,
+    runner: CommandRunner,
 ) -> str:
     """Locate the pinned nose binary and verify its version.
 
@@ -182,8 +186,8 @@ def resolve_binary(
         Explicit host inputs read by the CLI adapter.
     binary_finder : BinaryFinder
         Injected lookup for the repository-local or PATH-installed binary.
-    runner : CommandRunner | None
-        Injected command runner; defaults to a real subprocess call.
+    runner : CommandRunner
+        Injected command runner supplied by the CLI adapter.
 
     Returns
     -------
@@ -195,7 +199,6 @@ def resolve_binary(
     GateExecutionError
         If no binary is found or the reported version does not match.
     """
-    run = _default_runner(environment.repository_root) if runner is None else runner
     # Resolve against the repository root so a relative NOSE_BIN keeps
     # working for callers that run the detector from another directory.
     if environment.binary_override:
@@ -211,7 +214,7 @@ def resolve_binary(
             f"or on PATH: {INSTALL_HINT}"
         )
         raise GateExecutionError(msg)
-    reported = run([candidate, "--version"]).strip()
+    reported = runner([candidate, "--version"]).strip()
     expected = f"nose {settings.version}"
     if reported != expected:
         msg = (
@@ -224,12 +227,7 @@ def resolve_binary(
 
 def discover_binary(environment: NoseEnvironment) -> str | None:
     """Find the repository-local nose binary, else one on the supplied path."""
-    repository_binary = environment.repository_root / DEFAULT_NOSE_RELATIVE_PATH
-    if repository_binary.is_file():
-        return str(repository_binary)
-    if not environment.search_path:
-        return None
-    return shutil.which("nose", path=environment.search_path)
+    return shutil.which("nose", path=os.pathsep.join(environment.search_directories))
 
 
 def build_command(binary: str, settings: NoseSettings) -> list[str]:
@@ -270,7 +268,7 @@ def run_detector(
     *,
     environment: NoseEnvironment,
     binary_finder: BinaryFinder,
-    runner: CommandRunner | None = None,
+    runner: CommandRunner,
 ) -> list[Finding]:
     """Run the pinned detector and normalize its report.
 
@@ -282,8 +280,8 @@ def run_detector(
         Explicit host inputs read by the CLI adapter.
     binary_finder : BinaryFinder
         Injected lookup for the repository-local or PATH-installed binary.
-    runner : CommandRunner | None
-        Injected command runner; defaults to a real subprocess call.
+    runner : CommandRunner
+        Injected command runner supplied by the CLI adapter.
 
     Returns
     -------
@@ -297,14 +295,13 @@ def run_detector(
         schema violations propagate as ``GateConfigError`` from
         :func:`normalize_findings`.
     """
-    run = _default_runner(environment.repository_root) if runner is None else runner
     binary = resolve_binary(
         settings,
         environment=environment,
         binary_finder=binary_finder,
-        runner=run,
+        runner=runner,
     )
-    output = run(build_command(binary, settings))
+    output = runner(build_command(binary, settings))
     try:
         report = json.loads(output)
     except json.JSONDecodeError as error:
@@ -313,8 +310,25 @@ def run_detector(
     return normalize_findings(report)
 
 
-def _default_runner(repository_root: Path) -> CommandRunner:
-    """Bind detector execution to the supplied repository root."""
+def repository_runner(repository_root: Path) -> CommandRunner:
+    """Create the default command runner for one repository.
+
+    Parameters
+    ----------
+    repository_root : pathlib.Path
+        Working directory used for detector version checks and scans.
+
+    Returns
+    -------
+    CommandRunner
+        A runner that executes commands from ``repository_root``.
+
+    Examples
+    --------
+    >>> runner = repository_runner(Path("/repo"))
+    >>> callable(runner)
+    True
+    """
 
     def run(command: cabc.Sequence[str]) -> str:
         return _run_command(command, working_directory=repository_root)
