@@ -12,7 +12,6 @@ prebuilt release is a provisioning failure, never permission to compile the
 detector from source or to accept a binary from an unapproved source.
 """
 
-import ast
 import re
 import shutil
 import subprocess
@@ -280,32 +279,15 @@ def test_helper_tests_are_skipped_when_tooling_dependencies_are_unavailable() ->
     source = (REPO_ROOT / "scripts" / "tests" / "conftest.py").read_text(
         encoding="utf-8"
     )
-    module = ast.parse(source)
-    dependency_guard = next(
-        (
-            node
-            for node in module.body
-            if isinstance(node, ast.If)
-            and isinstance(node.test, ast.UnaryOp)
-            and isinstance(node.test.op, ast.Not)
-            and isinstance(node.test.operand, ast.Call)
-            and isinstance(node.test.operand.func, ast.Name)
-            and node.test.operand.func.id == "_tooling_environment_is_available"
-        ),
-        None,
+    conditional_skip = re.search(
+        r"(?m)^if not _tooling_environment_is_available\(\):[^\n]*\n"
+        r"[ \t]+collect_ignore_glob[ \t]*=",
+        source,
     )
 
-    assert dependency_guard is not None, (
-        "The helper-test collection guard must check whether tooling is unavailable."
+    assert conditional_skip is not None, (
+        "The helper ignore assignment must be inside the unavailable-tooling guard."
     )
-    assert any(
-        isinstance(statement, ast.Assign)
-        and any(
-            isinstance(target, ast.Name) and target.id == "collect_ignore_glob"
-            for target in statement.targets
-        )
-        for statement in dependency_guard.body
-    ), "The helper tests must be ignored inside the unavailable-tooling guard."
 
 
 def test_configured_roots_exist_and_are_not_empty() -> None:
