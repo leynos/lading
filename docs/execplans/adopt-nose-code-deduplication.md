@@ -955,3 +955,43 @@ seven sequential local gates: `make check-fmt`, `make markdownlint`,
 `make test` (1535 passed, 30 skipped, 113 snapshots), and
 `make duplication-test` (170 passed, four snapshots). Final candidate CI and
 formal review remain pending publication.
+
+## Review repair: real-detector fixture failures (2026-10-23)
+
+The exact-head CodeRabbit review of `bd67055ffcd600416c3b8f0a3923306f923cb835`
+identified that `real_nose_binary` converted every `GateExecutionError` into a
+skip. The new regression failed against that candidate: an installed detector
+reporting `nose 0.19.0` was skipped instead of failing version verification.
+The fixture now skips only when discovery finds no binary and no `NOSE_BIN`
+override is set. Version and execution errors from discovered binaries and
+explicit overrides propagate. The focused regression passed with three cases:
+absent detector, invalid discovered binary, and invalid explicit override.
+
+The review walkthrough also found that the developer guide still described the
+removed per-path raise helpers. Its index-missing-version section now matches
+the current `_MissingDependencyWording`, `_raise_missing_dependency`,
+`_placement_wording`, and `_validate_dependency_placement` flow.
+
+The PR target was fetched and confirmed at
+`ec5597e78097126dcea5784f97acde7872a180f6`, already the branch's merge base;
+`git rebase origin/main` reported the branch up to date. Full candidate gates
+and publication of this repair remain pending.
+
+The first sequential gate run found 14 lint diagnostics in the new test's
+imports, dynamic attribute access, assertion construction, and regex literal.
+After those were corrected, the next run found two `runtime-cast-value`
+diagnostics; quoting the `typing.cast` type expression exposed two more
+`assert-missing-message` diagnostics in the following run. The assertions now
+explain the expected import spec and loader. The other six gates passed on each
+run.
+
+The final sequential candidate run passed all seven gates: `make check-fmt`
+(559 Python files formatted, 34 Markdown files unchanged), `make markdownlint`
+(36 files, zero issues; `typos.toml` current), `make nixie` (all diagrams
+validated), `make typecheck` (all checks passed), `make lint` (all stages
+passed; the duplication gate reported 11 reasoned exceptions), `make test`
+(1,538 passed, 30 skipped, 113 snapshots), and `make duplication-test` (173
+passed, four snapshots). Logs are under `/tmp` with the
+`*-adopt-nose-code-deduplication-adopt-nose-code-deduplication-4.out` suffix.
+At the time of this amendment, the candidate was unpublished; a fresh
+exact-head review is required after publication.

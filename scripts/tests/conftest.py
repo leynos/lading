@@ -75,13 +75,14 @@ def real_nose_binary() -> str:
             *(os.environ["PATH"].split(os.pathsep) if os.environ.get("PATH") else ()),
         ),
     )
-    try:
-        return detector.resolve_binary(
-            settings,
-            environment=environment,
-            binary_finder=detector.discover_binary,
-            runner=detector.repository_runner(REPOSITORY_ROOT),
-        )
-    except detector.GateExecutionError as error:  # pragma: no cover
-        pytest.skip(str(error))
-        raise  # Unreachable; keeps the fixture's return paths explicit.
+    if (
+        not environment.binary_override
+        and detector.discover_binary(environment) is None
+    ):
+        pytest.skip(f"nose is not installed; {detector.INSTALL_HINT}")
+    return detector.resolve_binary(
+        settings,
+        environment=environment,
+        binary_finder=detector.discover_binary,
+        runner=detector.repository_runner(REPOSITORY_ROOT),
+    )

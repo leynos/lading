@@ -1728,36 +1728,33 @@ these helpers rather than re-implementing the idiom inline.
 
 ### Shared message helpers
 
-`_format_missing_dependency_failure(failure, *,`
-`missing_name, reason, guidance) -> str` Builds the human-readable fatal error
-string from the pre-formatted cargo failure text, the extracted dependency
-name, a domain-language reason clause, and an operator guidance sentence. All
-fatal-path helpers delegate message construction here, centralizing the text
-format.
+`_MissingDependencyWording` carries the dependency name, reason, operator
+guidance, and warning detail for one fatal index-missing-version path.
+`_format_missing_dependency_failure` combines its reason and guidance with the
+pre-formatted cargo failure. `_log_missing_dependency_failure` emits the
+matching warning with a stable prefix.
 
-`_log_missing_dependency_failure(logger, lookup_failure, *, missing_name, detail)`
--> `None` Emits a WARNING-level log entry for fatal index-missing-version
-paths, providing consistent phrasing across all raise helpers so log
-aggregation can match on a stable prefix.
+`_raise_missing_dependency(context, wording)` owns that common sequence: it
+formats the fatal message, logs the warning, and raises the exception class
+selected by the caller. The per-path wording remains at the decision point.
 
-### Fatal-path helpers
+### Fatal-path decisions
 
-Each of the following accepts an `_IndexMissingVersionFailure` context object
-and a keyword-only `missing_name` argument, then raises unconditionally (return
-type `typ.NoReturn`):
+`_raise_name_extraction_failure(context)` handles a Cargo diagnostic whose
+missing dependency name could not be parsed. For a parsed name,
+`_validate_dependency_placement(context, handling, missing_name)` resolves the
+current crate and dependency against the canonical publish order. It returns a
+`_DependencyPlacement` when the dependency precedes the current crate, and
+routes an absent, self, or later dependency through `_raise_missing_dependency`
+using `_placement_wording` for the path-specific message.
 
-- `_raise_name_extraction_failure(context)` — invoked when the dependency name
-  cannot be parsed from the cargo diagnostic output.
-- `_raise_out_of_plan_dependency(context, *, missing_name)` — invoked when the
-  missing dependency is absent from the publish plan entirely.
-- `_raise_self_dependency(context, *, missing_name)` — invoked when the failing
-  crate's unresolved dependency resolves to itself after name canonicalization.
-- `_raise_out_of_order_dependency(context, *, missing_name)` — invoked when the
-  missing dependency is in the plan but at a higher publish-order index than
-  the current crate.
-- `_raise_unpublished_dependency_override_required(context, *, missing_name)`
-  — invoked when the dependency is in the plan and ordered correctly but the
-  unpublished workspace dependency override is disabled.
+`_downgrade_or_raise` then applies the caller's override setting. With the
+unpublished workspace dependency override enabled, it records the downgrade
+metric and logs the continuation; otherwise it calls
+`_raise_missing_dependency` with wording for a dependency that is scheduled
+correctly but not yet available on crates.io. `_placement_wording` keeps the
+absent, self, and later-dependency messages together; `_downgrade_or_raise`
+supplies the override-disabled wording.
 
 #### Crate-name canonicalization
 
