@@ -695,7 +695,7 @@ type CommandRunner = cabc.Callable[[cabc.Sequence[str]], str]
 class NoseEnvironment:
     repository_root: Path
     binary_override: str | None
-    search_path: str | None
+    search_directories: tuple[str, ...]
 
 type BinaryFinder = cabc.Callable[[NoseEnvironment], str | None]
 
@@ -705,7 +705,7 @@ def resolve_binary(
     *,
     environment: NoseEnvironment,
     binary_finder: BinaryFinder,
-    runner: CommandRunner | None = None,
+    runner: CommandRunner,
 ) -> str: ...
 def build_command(binary: str, settings: NoseSettings) -> list[str]: ...
 def run_detector(
@@ -713,7 +713,7 @@ def run_detector(
     *,
     environment: NoseEnvironment,
     binary_finder: BinaryFinder,
-    runner: CommandRunner | None = None,
+    runner: CommandRunner,
 ) -> list[Finding]: ...
 ```
 
