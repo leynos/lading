@@ -26,10 +26,10 @@ was named `wheels-pure`, so the wheel was at `dist/wheels-pure`. A named
 single-artefact download writes directly into `path` in both v4 and v8. In v8,
 an unnamed download also writes directly into `path` when exactly one artefact
 matches; when several match, per-artefact subdirectories are used if
-`merge-multiple` is false. The [v4 source][^1] and [v8 source][^2] show this
-layout change. The old `find dist/wheels-*` lookup therefore stopped matching
-when the v8 release job downloaded its single `wheels-pure` artefact without a
-name filter.
+`merge-multiple` is false. The v4 source[^1] and v8 source[^2] show this layout
+change. The old `find dist/wheels-*` lookup therefore stopped matching when the
+v8 release job downloaded its single `wheels-pure` artefact without a name
+filter.
 
 The pipeline then hid the empty match. Without `pipefail`, the pipeline
 reported the exit status of its last command: `find` failed when

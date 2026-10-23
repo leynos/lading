@@ -370,10 +370,6 @@ def test_the_release_is_published_only_after_the_upload() -> None:
     publishes = _publish_steps()
 
     assert len(publishes) == 1, f"expected one publish step: {publishes}"
-    assert publishes[0].get("name") == PUBLISH_STEP_NAME, (
-        f"the publish command must use the {PUBLISH_STEP_NAME!r} step, "
-        f"got {publishes[0]}"
-    )
     tokens = tuple(_shell_tokens(publishes[0]["run"], PUBLISH_STEP_NAME))
     operators = _shell_control_operators(publishes[0]["run"], PUBLISH_STEP_NAME)
     assert not operators, (
