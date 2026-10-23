@@ -913,3 +913,28 @@ still invokes the CLI with its normal environment. The release URL contract
 derives its version from the Makefile, and the ADR now uses the correct article
 before “SHA-256”. The focused duplication suite passed with 170 tests and four
 snapshots after these changes.
+
+2026-10-23: candidate-bound validation for
+`ddd6b850087f6c9271eb2960717ba4a825f94f56`, based on
+`ec5597e78097126dcea5784f97acde7872a180f6`, passed all seven sequential local
+gates. `make test` reported 1535 passed, 30 skipped and 113 snapshots;
+`make duplication-test` reported 170 passed and four snapshots. Hosted CI run
+39985325915 passed both `lint-test` and `build-dist`, and CodeScene result
+8100639 passed. The six CodeRabbit inline findings were answered, and all six
+threads are resolved.
+
+The latest CodeRabbit walkthrough still flags the unchanged
+`docs/users-guide.md`. That warning is under reconciliation: the relevant lint
+and duplication commands are contributor workflows already documented in
+`docs/developers-guide.md`; `docs/users-guide.md` covers Lading CLI and
+configuration workflows, and this change adds no application user behaviour.
+The walkthrough also says automatic reviews paused during active development
+and that `ddd6b850087f6c9271eb2960717ba4a825f94f56` was not formally reviewed.
+Current-head formal review therefore remains pending. A proof-specific
+assessment is not applicable because this change introduced or altered no
+formal proof artefact or verifier obligation.
+
+The ExecPlan-only review amendment was formatted with `make fmt` and passed
+`make check-fmt`, `make markdownlint` (36 files, zero issues), and `make nixie`
+(all diagrams validated). Its first Markdown gate caught a spelling error; the
+text was corrected to the repository spelling “artefact” before the passing run.
