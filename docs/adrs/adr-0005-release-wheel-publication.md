@@ -25,11 +25,10 @@ that artefact under `path`, even when only one artefact matches. In v8, a sole
 match is extracted directly into `path`; per-artefact directories are used when
 several artefacts match and `merge-multiple` is false. A named single-artefact
 download goes directly into `path` in both versions. These rules are visible in
-[v4.1.8 implementation][^1], [v4 documentation][^2], and
-[v8 implementation][^3]. The unnamed v4 download therefore put the wheel in
-`dist/wheels-pure`, where the old glob matched it. Under v8, with only
-`wheels-pure` matching, the wheel was placed directly in `dist`, so
-`find dist/wheels-*` found no match.
+the v4.1.8 source[^1], v4 documentation[^2], and v8 source[^3]. The unnamed v4
+download therefore put the wheel in `dist/wheels-pure`, where the old glob
+matched it. Under v8, with only `wheels-pure` matching, the wheel was placed
+directly in `dist`, so `find dist/wheels-*` found no match.
 
 The pipeline then hid that empty match. Without `pipefail`, it reported the
 exit status of the last command: `find` failed when `dist/wheels-*` did not
