@@ -760,4 +760,7 @@ corrected candidate passed the full sequential gates: `make check-fmt`,
 `make lint`, `make typecheck`, `make test` (1517 passed, 30 skipped, 110
 snapshots), `make markdownlint` (36 files, zero issues), `make nixie`, and
 `make duplication-test` (155 passed, three snapshots). Hosted re-review remains
-pending publication of this candidate.
+The code candidate `ae648ee0a91a59a587813cceb439e99c74a388fd` passed hosted CI:
+[run 39953791615, attempt 1](https://github.com/leynos/lading/actions/runs/39953791615/attempts/1),
+with both `lint-test` and `build-dist` successful. The candidate-bound
+CodeRabbit assessment and formal review remain pending.
