@@ -72,6 +72,18 @@ def _reference_key_matches(key: str, location: detector.Location) -> bool:
     )
 
 
+def _expected_stale_entries(
+    findings: list[detector.Finding],
+    entries: list[allowlist.AllowEntry],
+) -> list[allowlist.AllowEntry]:
+    """Return allowlist entries that match none of the generated findings."""
+    return [
+        entry
+        for entry in entries
+        if not any(entry.matches(finding) for finding in findings)
+    ]
+
+
 @given(finding=_findings(), entry=_allow_entries())
 def test_entries_allow_only_fully_covered_families(
     finding: detector.Finding,
@@ -119,12 +131,7 @@ def test_partition_conserves_findings_and_identifies_stale_entries(
     assert all(
         not any(entry.matches(finding) for entry in allowlist) for finding in blocking
     ), "Blocking findings must have no matching allow entry."
-    expected_stale = [
-        entry
-        for entry in allowlist
-        if not any(entry.matches(finding) for finding in findings)
-    ]
-    assert stale == expected_stale, (
+    assert stale == _expected_stale_entries(findings, allowlist), (
         "Every allow entry unmatched by the current findings must be reported stale."
     )
     assert all(
