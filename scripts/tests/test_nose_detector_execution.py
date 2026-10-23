@@ -288,18 +288,33 @@ class TestRunDetector:
         ):
             detector._run_command(("nose", "query"))
 
+    @pytest.mark.parametrize(
+        ("error", "expected_message"),
+        [
+            pytest.param(
+                PermissionError(13, "Permission denied"),
+                r"cannot run nose: .*Permission denied.*make install-nose",
+                id="permission-denied",
+            ),
+            pytest.param(
+                FileNotFoundError(2, "No such file or directory"),
+                r"cannot run nose: .*No such file or directory.*make install-nose",
+                id="missing-executable",
+            ),
+        ],
+    )
     def test_run_command_reports_an_execution_failure(
-        self, monkeypatch: pytest.MonkeyPatch
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        error: OSError,
+        expected_message: str,
     ) -> None:
         """An unrunnable detector points at the install remediation."""
 
         def unrunnable(*_args: object, **_kwargs: object) -> typ.NoReturn:
-            raise OSError(13, "Permission denied")
+            raise error
 
         monkeypatch.setattr(detector.subprocess, "run", unrunnable)
 
-        with pytest.raises(
-            detector.GateExecutionError,
-            match=r"cannot run nose: .*Permission denied.*make install-nose",
-        ):
+        with pytest.raises(detector.GateExecutionError, match=expected_message):
             detector._run_command(("nose", "query"))

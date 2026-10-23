@@ -267,48 +267,52 @@ class TestAppendAllowEntry:
     ) -> None:
         """Two blocked writers retain both exceptions after the lock releases."""
         _, script = copied_gate_workspace(tmp_path)
-        with allowlist._locked_file(script.parent.parent / "pyproject.toml"):
-            first = subprocess.Popen(  # ruff: ignore[subprocess-without-shell-equals-true] # pylint: disable=consider-using-with  # must outlive the lock scope; reaped below
-                gate_command(
-                    script,
-                    "allow",
-                    "--first",
-                    "lading/a.py",
-                    "--reason",
-                    "first writer",
-                ),
-                cwd=script.parent.parent,
-                env=gate_environment(),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-            second = subprocess.Popen(  # ruff: ignore[subprocess-without-shell-equals-true] # pylint: disable=consider-using-with  # must outlive the lock scope; reaped below
-                gate_command(
-                    script,
-                    "allow",
-                    "--first",
-                    "lading/b.py",
-                    "--reason",
-                    "second writer",
-                ),
-                cwd=script.parent.parent,
-                env=gate_environment(),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-            assert first.poll() is None, "First writer must wait for the lock."
-            assert second.poll() is None, "Second writer must wait for the lock."
-
+        writers: list[subprocess.Popen[str]] = []
         try:
-            assert first.wait(timeout=10) == 0, "First writer must exit successfully."
-            assert second.wait(timeout=10) == 0, "Second writer must exit successfully."
+            with allowlist._locked_file(script.parent.parent / "pyproject.toml"):
+                first = subprocess.Popen(  # ruff: ignore[subprocess-without-shell-equals-true] # pylint: disable=consider-using-with  # must outlive the lock scope; reaped below
+                    gate_command(
+                        script,
+                        "allow",
+                        "--first",
+                        "lading/a.py",
+                        "--reason",
+                        "first writer",
+                    ),
+                    cwd=script.parent.parent,
+                    env=gate_environment(),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+                writers.append(first)
+                second = subprocess.Popen(  # ruff: ignore[subprocess-without-shell-equals-true] # pylint: disable=consider-using-with  # must outlive the lock scope; reaped below
+                    gate_command(
+                        script,
+                        "allow",
+                        "--first",
+                        "lading/b.py",
+                        "--reason",
+                        "second writer",
+                    ),
+                    cwd=script.parent.parent,
+                    env=gate_environment(),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+                writers.append(second)
+                for writer in writers:
+                    with pytest.raises(subprocess.TimeoutExpired):
+                        writer.wait(timeout=5)
+
+            for index, writer in enumerate(writers, start=1):
+                assert writer.wait(timeout=10) == 0, (
+                    f"Writer {index} must exit successfully."
+                )
         finally:
-            # A timed-out writer blocks on the lock holding its stdout and
-            # stderr pipes open. Reap both on the way out so a failure here
-            # cannot leak processes or descriptors into the rest of the run.
-            for writer in (first, second):
+            # Always reap children, including when a bounded lock check fails.
+            for writer in writers:
                 if writer.poll() is None:
                     writer.kill()
                 writer.wait(timeout=10)

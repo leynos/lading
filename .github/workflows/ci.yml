@@ -40,7 +40,9 @@ jobs:
       BINSTALL_SHA256: "df2921254924066627685ee09f6c8b9acd7acef68a338668f879d2b033c09458"
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@v7

@@ -17,6 +17,12 @@ from duplication_gate_test_support import (
 if typ.TYPE_CHECKING:
     from pathlib import Path
 
+MAKE_BINARY = shutil.which("make")
+pytestmark = pytest.mark.skipif(
+    MAKE_BINARY is None,
+    reason="make executable not found on PATH",
+)
+
 
 @dc.dataclass(frozen=True, slots=True)
 class _MakeAllowRequest:
@@ -35,10 +41,8 @@ def _make_allow(
     environment: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run the real Make target against a copied, writable gate workspace."""
-    make = shutil.which("make")
-    assert make is not None, "Expected make to be available for contract tests."
     command = [
-        make,
+        MAKE_BINARY or "make",
         "--no-print-directory",
         "-f",
         str(REPOSITORY_ROOT / "Makefile"),
@@ -200,11 +204,9 @@ class TestMakeDuplicationAllow:
 
 def _make_dry_run(target: str) -> subprocess.CompletedProcess[str]:
     """Expand a Make target's recipe without running it."""
-    make = shutil.which("make")
-    assert make is not None, "Expected make to be available for contract tests."
     return subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - fixed Make target in the repository root.
         [
-            make,
+            MAKE_BINARY or "make",
             "--dry-run",
             "--no-print-directory",
             "-f",
@@ -277,11 +279,9 @@ class TestMakeGateWiring:
     def test_help_lists_the_duplication_targets(self, target: str) -> None:
         """The documented targets are discoverable through `make help`."""
         # `help` is a recipe that prints; it has to run rather than dry-run.
-        make = shutil.which("make")
-        assert make is not None, "Expected make to be available for contract tests."
         result = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - fixed target in the repository root.
             [
-                make,
+                MAKE_BINARY or "make",
                 "--no-print-directory",
                 "-f",
                 str(REPOSITORY_ROOT / "Makefile"),

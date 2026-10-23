@@ -135,17 +135,24 @@ def test_every_declaration_site_agrees_on_the_detector_version() -> None:
     )
 
 
-def test_the_installer_refuses_unapproved_installation_strategies() -> None:
-    """The recipe disables source compilation and third-party binary mirrors."""
-    assert MAKE_BINARY is not None, "make executable not found on PATH"
+@pytest.fixture(scope="module")
+def install_nose_recipe() -> str:
+    """Return the expanded recipe used by all installer contract checks."""
     completed = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - fixed target in the repository root.
-        [MAKE_BINARY, "--dry-run", "--no-print-directory", "install-nose"],
+        [MAKE_BINARY or "make", "--dry-run", "--no-print-directory", "install-nose"],
         cwd=REPO_ROOT,
         check=True,
         capture_output=True,
         text=True,
     )
-    recipe = completed.stdout
+    return completed.stdout
+
+
+def test_the_installer_refuses_unapproved_installation_strategies(
+    install_nose_recipe: str,
+) -> None:
+    """The recipe disables source compilation and third-party binary mirrors."""
+    recipe = install_nose_recipe
 
     assert "cargo-binstall" in recipe, "The installer must use cargo-binstall."
     strategies = _disabled_strategies(recipe)
@@ -163,37 +170,22 @@ def _disabled_strategies(recipe: str) -> tuple[str, ...]:
     return tuple(match.group("value").split(","))
 
 
-def test_the_installer_runs_non_interactively() -> None:
+def test_the_installer_runs_non_interactively(install_nose_recipe: str) -> None:
     """Installation must never wait for a prompt on a developer machine."""
-    assert MAKE_BINARY is not None, "make executable not found on PATH"
-    completed = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - fixed target in the repository root.
-        [MAKE_BINARY, "--dry-run", "--no-print-directory", "install-nose"],
-        cwd=REPO_ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-
-    assert "--no-confirm" in completed.stdout, "The installer must not prompt."
+    assert "--no-confirm" in install_nose_recipe, "The installer must not prompt."
 
 
-def test_the_nose_install_is_not_a_floating_latest_installer() -> None:
+def test_the_nose_install_is_not_a_floating_latest_installer(
+    install_nose_recipe: str,
+) -> None:
     """The recipe requests an exact crate version rather than a floating ref."""
-    assert MAKE_BINARY is not None, "make executable not found on PATH"
-    completed = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - fixed target in the repository root.
-        [MAKE_BINARY, "--dry-run", "--no-print-directory", "install-nose"],
-        cwd=REPO_ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    recipe = completed.stdout
-
-    assert f"nose-cli@{_nose_version()}" in recipe, (
+    assert f"nose-cli@{_nose_version()}" in install_nose_recipe, (
         "The installer must request the pinned detector release."
     )
-    assert "corca-ai/nose" in recipe, "The crate must come from its upstream repo."
-    assert re.search(r"nose-cli@(latest|main|master)\b", recipe) is None, (
+    assert "corca-ai/nose" in install_nose_recipe, (
+        "The crate must come from its upstream repo."
+    )
+    assert re.search(r"nose-cli@(latest|main|master)\b", install_nose_recipe) is None, (
         "A floating version would silently change the gate between runs."
     )
 
@@ -201,14 +193,10 @@ def test_the_nose_install_is_not_a_floating_latest_installer() -> None:
 def test_the_helper_suite_selects_the_interpreter_it_requires() -> None:
     """`make duplication-test` must pin the interpreter its own gate declares.
 
-    The suite's ``conftest.py`` deliberately ignores every module when the
-    interpreter is older than the gate's floor, because the application
-    suite shares this directory and runs on an interpreter without the
-    pinned tooling. That guard is correct, but it converts a missing
-    interpreter pin into a silent zero-collection run: pytest exits 5, and
-    the recipe fails with no diagnostic pointing at the interpreter. The
-    recipe therefore has to name the baseline itself rather than inherit
-    whatever interpreter the surrounding environment happens to expose.
+    The suite's ``conftest.py`` ignores these modules when the application
+    interpreter lacks a tooling dependency. ``make duplication-test`` provides
+    those tools in an isolated environment, but it must also select the gate's
+    declared Python baseline rather than inherit the ambient interpreter.
     """
     assert MAKE_BINARY is not None, "make executable not found on PATH"
     completed = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - fixed target in the repository root.
@@ -223,9 +211,8 @@ def test_the_helper_suite_selects_the_interpreter_it_requires() -> None:
     baseline = _make_variable("PYTHON_BASELINE")
     assert baseline is not None, "The Makefile must declare PYTHON_BASELINE."
     assert f"--python {baseline}" in recipe, (
-        "`make duplication-test` must select the gate's declared interpreter "
-        f"baseline ({baseline}); otherwise the conftest guard silently "
-        "collects nothing and the suite fails with pytest's exit code 5."
+        "`make duplication-test` must run the helper suite under the declared "
+        f"baseline ({baseline}), not the ambient interpreter."
     )
 
 

@@ -107,7 +107,7 @@ def test_partition_conserves_findings_and_identifies_stale_entries(
     findings: list[detector.Finding],
     allowlist: list[allowlist.AllowEntry],
 ) -> None:
-    """Every finding is exactly blocking or allowed and stale entries match none."""
+    """Every finding is partitioned and every unmatched entry is stale."""
     blocking, allowed, stale = gate.partition_findings(findings, allowlist)
 
     assert len(blocking) + len(allowed) == len(findings), (
@@ -119,6 +119,14 @@ def test_partition_conserves_findings_and_identifies_stale_entries(
     assert all(
         not any(entry.matches(finding) for entry in allowlist) for finding in blocking
     ), "Blocking findings must have no matching allow entry."
+    expected_stale = [
+        entry
+        for entry in allowlist
+        if not any(entry.matches(finding) for finding in findings)
+    ]
+    assert stale == expected_stale, (
+        "Every allow entry unmatched by the current findings must be reported stale."
+    )
     assert all(
         not any(entry.matches(finding) for finding in findings) for entry in stale
     ), "Stale entries must not match any current finding."

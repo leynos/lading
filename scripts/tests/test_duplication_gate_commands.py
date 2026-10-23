@@ -86,32 +86,34 @@ class TestGateCommands:
         )
 
     @pytest.mark.parametrize(
-        "error",
+        ("allowlist_reader", "finding_detector", "error_message"),
         [
-            pytest.param(OSError("unreadable configuration"), id="allowlist-io"),
-            pytest.param(OSError("detector executable unavailable"), id="detector-io"),
+            pytest.param(
+                lambda _path: _raise(OSError("unreadable configuration")),
+                lambda: [],
+                "unreadable configuration",
+                id="allowlist-io",
+            ),
+            pytest.param(
+                lambda _path: (),
+                lambda: _raise(OSError("detector executable unavailable")),
+                "detector executable unavailable",
+                id="detector-io",
+            ),
         ],
     )
-    def test_check_inputs_wrap_environment_failures(self, error: Exception) -> None:
+    def test_check_inputs_wrap_environment_failures(
+        self,
+        allowlist_reader: cabc.Callable[[object], tuple[allowlist.AllowEntry, ...]],
+        finding_detector: cabc.Callable[[], list[detector.Finding]],
+        error_message: str,
+    ) -> None:
         """Injected reader and detector failures become explicit gate errors."""
-        if str(error).startswith("unreadable"):
-
-            def reader(_path: object) -> tuple[allowlist.AllowEntry, ...]:
-                raise error
-
-            def detect() -> list[detector.Finding]:
-                return []
-
-        else:
-
-            def reader(_path: object) -> tuple[allowlist.AllowEntry, ...]:
-                return ()
-
-            def detect() -> list[detector.Finding]:
-                raise error
-
-        with pytest.raises(gate.GateExecutionError, match=str(error)):
-            gate._check_inputs(allowlist_reader=reader, detector=detect)
+        with pytest.raises(gate.GateExecutionError, match=error_message):
+            gate._check_inputs(
+                allowlist_reader=allowlist_reader,
+                detector=finding_detector,
+            )
 
     def test_read_allowlist_returns_the_reader_result(self) -> None:
         """A successful reader result reaches the caller unchanged."""

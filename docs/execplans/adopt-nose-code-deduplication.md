@@ -783,3 +783,15 @@ issues), `make nixie`, `make typecheck`, `make lint` (11 allowed, zero blocking
 or stale families), `make test` (1517 passed, 30 skipped, 110 snapshots), and
 `make duplication-test` (155 passed, three snapshots). Hosted validation and
 CodeRabbit follow-up for this corrected candidate remain pending.
+
+2026-10-23: reviewed head `e09874e5f6d8041d4a9c3857547a9b3e9b1412bb` passed
+hosted CI:
+[run 39958260207, attempt 1](https://github.com/leynos/lading/actions/runs/39958260207/attempts/1),
+with both `lint-test` and `build-dist` successful. Its hosted CodeScene review
+passed at
+[result 8097637](https://codescene.io/projects/72980/delta/results/8097637).
+The incremental CodeRabbit reassessment confirmed the four description fixes
+above. It did not start a formal PR review, submit approval, or change review
+thread state. A subsequent formal review of this same head posted nine
+actionable inline comments; this revision addresses them, and hosted validation
+must be rerun for the resulting commit.
