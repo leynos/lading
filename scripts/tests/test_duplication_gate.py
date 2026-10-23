@@ -137,6 +137,16 @@ class TestValidateKey:
                 "must be a repository-relative path key",
                 id="interior-parent-escape",
             ),
+            pytest.param(
+                "**",
+                "must anchor recursive globs to a repository directory",
+                id="repository-wide-recursive-glob",
+            ),
+            pytest.param(
+                "**/*.py",
+                "must anchor recursive globs to a repository directory",
+                id="repository-wide-python-glob",
+            ),
         ],
     )
     def test_rejects_malformed_keys(self, key: str, diagnostic: str) -> None:

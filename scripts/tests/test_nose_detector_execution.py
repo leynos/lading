@@ -3,6 +3,7 @@
 import copy
 import re
 import typing as typ
+from pathlib import Path
 
 import pytest
 from duplication_gate_test_support import (
@@ -19,10 +20,40 @@ if typ.TYPE_CHECKING:
 class TestRunDetector:
     """Report parsing and finding normalization."""
 
-    def test_normalizes_a_stub_report(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_default_runner_uses_the_supplied_repository_root(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The process boundary receives its working directory explicitly."""
+        observed: dict[str, object] = {}
+
+        def run(
+            command: list[str], **kwargs: object
+        ) -> detector.subprocess.CompletedProcess[str]:
+            observed["working_directory"] = kwargs["cwd"]
+            return detector.subprocess.CompletedProcess(
+                args=command, returncode=0, stdout="nose 0.20.0\n", stderr=""
+            )
+
+        monkeypatch.setattr(detector.subprocess, "run", run)
+        assert detector._default_runner(tmp_path)(["nose", "--version"]) == (
+            "nose 0.20.0\n"
+        ), "The default runner returns the detector's standard output."
+        assert observed["working_directory"] == tmp_path, (
+            "Detector execution uses the repository root supplied by the caller."
+        )
+
+    def test_normalizes_a_stub_report(self) -> None:
         """A stub report becomes one ordered finding with both locations."""
-        monkeypatch.setenv("NOSE_BIN", "/stub/nose")
-        findings = detector.run_detector(stub_settings(), runner=stub_runner())
+        findings = detector.run_detector(
+            stub_settings(),
+            environment=detector.NoseEnvironment(
+                repository_root=detector.REPO_ROOT,
+                binary_override="/stub/nose",
+                search_path=None,
+            ),
+            binary_finder=detector.discover_binary,
+            runner=stub_runner(),
+        )
         assert len(findings) == 1, "The stub report contains one family."
         assert findings[0].label == "lading/a.py:1-20 ~ lading/b.py:30-49", (
             "Findings must report both spans."
@@ -245,15 +276,23 @@ class TestRunDetector:
         with pytest.raises(detector.GateConfigError, match=re.escape(diagnostic)):
             detector.normalize_findings(report)
 
-    def test_rejects_unreadable_output(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_rejects_unreadable_output(self) -> None:
         """Non-JSON detector output fails with an execution error."""
-        monkeypatch.setenv("NOSE_BIN", "/stub/nose")
 
         def runner(command: cabc.Sequence[str]) -> str:
             return "nose 0.20.0\n" if "--version" in command else "not json"
 
         with pytest.raises(detector.GateExecutionError, match="not valid JSON"):
-            detector.run_detector(stub_settings(), runner=runner)
+            detector.run_detector(
+                stub_settings(),
+                environment=detector.NoseEnvironment(
+                    repository_root=detector.REPO_ROOT,
+                    binary_override="/stub/nose",
+                    search_path=None,
+                ),
+                binary_finder=detector.discover_binary,
+                runner=runner,
+            )
 
     def test_run_command_reports_timeout(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """A slow detector becomes an actionable execution error."""
@@ -266,7 +305,9 @@ class TestRunDetector:
         with pytest.raises(
             detector.GateExecutionError, match="timed out after 120 seconds"
         ):
-            detector._run_command(("nose", "query"))
+            detector._run_command(
+                ("nose", "query"), working_directory=detector.REPO_ROOT
+            )
 
     def test_run_command_reports_a_non_zero_exit(
         self, monkeypatch: pytest.MonkeyPatch
@@ -286,7 +327,9 @@ class TestRunDetector:
             detector.GateExecutionError,
             match=r"nose exited with status 2: bad query",
         ):
-            detector._run_command(("nose", "query"))
+            detector._run_command(
+                ("nose", "query"), working_directory=detector.REPO_ROOT
+            )
 
     @pytest.mark.parametrize(
         ("error", "expected_message"),
@@ -317,4 +360,6 @@ class TestRunDetector:
         monkeypatch.setattr(detector.subprocess, "run", unrunnable)
 
         with pytest.raises(detector.GateExecutionError, match=expected_message):
-            detector._run_command(("nose", "query"))
+            detector._run_command(
+                ("nose", "query"), working_directory=detector.REPO_ROOT
+            )

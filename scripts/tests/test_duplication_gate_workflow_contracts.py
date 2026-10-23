@@ -1,5 +1,6 @@
 """End-to-end contracts for the duplication gate CLI and Make boundary."""
 
+import os
 import subprocess
 import sys
 import textwrap
@@ -250,7 +251,15 @@ class TestGateWorkflowContracts:
         """The checked-in gate runs successfully through its real CLI boundary."""
         settings = detector.load_settings(REPOSITORY_ROOT / "pyproject.toml")
         try:
-            detector.resolve_binary(settings)
+            detector.resolve_binary(
+                settings,
+                environment=detector.NoseEnvironment(
+                    repository_root=REPOSITORY_ROOT,
+                    binary_override=os.environ.get("NOSE_BIN"),
+                    search_path=os.environ.get("PATH"),
+                ),
+                binary_finder=detector.discover_binary,
+            )
         except detector.GateExecutionError as error:  # pragma: no cover
             pytest.skip(str(error))
         result = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - fixed repository gate command.

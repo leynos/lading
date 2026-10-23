@@ -117,49 +117,101 @@ class TestLoadSettings:
 class TestResolveBinary:
     """Discovery and version verification of the pinned binary."""
 
-    def test_accepts_the_pinned_version(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_accepts_the_pinned_version(self, tmp_path: Path) -> None:
         """A binary reporting the pinned version is accepted."""
         stub = write_stub_nose(tmp_path)
-        monkeypatch.setenv("NOSE_BIN", str(stub))
-        assert detector.resolve_binary(stub_settings(), runner=stub_runner()) == str(
-            stub
-        ), "The pinned binary must be returned unchanged."
+        assert detector.resolve_binary(
+            stub_settings(),
+            environment=detector.NoseEnvironment(
+                repository_root=tmp_path,
+                binary_override=str(stub),
+                search_path=None,
+            ),
+            binary_finder=detector.discover_binary,
+            runner=stub_runner(),
+        ) == str(stub), "The pinned binary must be returned unchanged."
 
-    def test_resolves_a_relative_override_against_the_repository_root(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_resolves_a_relative_override_against_the_repository_root(self) -> None:
         """A relative NOSE_BIN is resolved from the repository, not the caller."""
         repo_stub = detector.REPO_ROOT / "lading"
         assert repo_stub.is_dir(), "The repository root must contain the package."
-        monkeypatch.setenv("NOSE_BIN", "lading")
-        monkeypatch.chdir(tmp_path)
 
-        assert detector.resolve_binary(stub_settings(), runner=stub_runner()) == str(
-            repo_stub.resolve()
-        ), "A relative override must resolve against the repository root."
+        assert detector.resolve_binary(
+            stub_settings(),
+            environment=detector.NoseEnvironment(
+                repository_root=detector.REPO_ROOT,
+                binary_override="lading",
+                search_path=None,
+            ),
+            binary_finder=detector.discover_binary,
+            runner=stub_runner(),
+        ) == str(repo_stub.resolve()), (
+            "A relative override must resolve against the supplied repository root."
+        )
 
-    def test_rejects_a_version_mismatch(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_rejects_a_version_mismatch(self, tmp_path: Path) -> None:
         """A different installed version fails with a remediation hint."""
         stub = write_stub_nose(tmp_path, version="nose 0.19.0")
-        monkeypatch.setenv("NOSE_BIN", str(stub))
         with pytest.raises(
             detector.GateExecutionError,
             match=r"reports 'nose 0\.19\.0'.*make install-nose",
         ):
             detector.resolve_binary(
-                stub_settings(), runner=stub_runner(version="nose 0.19.0")
+                stub_settings(),
+                environment=detector.NoseEnvironment(
+                    repository_root=tmp_path,
+                    binary_override=str(stub),
+                    search_path=None,
+                ),
+                binary_finder=detector.discover_binary,
+                runner=stub_runner(version="nose 0.19.0"),
             )
 
-    def test_reports_a_missing_binary(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_discovers_a_binary_from_the_supplied_path(self, tmp_path: Path) -> None:
+        """Binary discovery uses the explicit search path, not process PATH."""
+        search_path = tmp_path / "bin"
+        search_path.mkdir()
+        stub = write_stub_nose(search_path)
+
+        environment = detector.NoseEnvironment(
+            repository_root=tmp_path,
+            binary_override=None,
+            search_path=str(search_path),
+        )
+        assert detector.discover_binary(environment) == str(stub), (
+            "The finder must search only the supplied PATH value."
+        )
+
+    @pytest.mark.parametrize("search_path", [None, ""])
+    def test_does_not_search_when_the_supplied_path_is_empty(
+        self, tmp_path: Path, search_path: str | None
+    ) -> None:
+        """An absent or empty PATH does not fall back to host search paths."""
+        environment = detector.NoseEnvironment(
+            repository_root=tmp_path,
+            binary_override=None,
+            search_path=search_path,
+        )
+
+        assert detector.discover_binary(environment) is None, (
+            "No explicit search path means no binary lookup outside the repository."
+        )
+
+    def test_reports_a_missing_binary(self, tmp_path: Path) -> None:
         """A missing detector fails with the install remediation."""
-        monkeypatch.delenv("NOSE_BIN", raising=False)
-        monkeypatch.setattr(detector, "_discover_binary", lambda: None)
+        search_path = tmp_path / "empty-path"
+        search_path.mkdir()
         with pytest.raises(detector.GateExecutionError, match="make install-nose"):
-            detector.resolve_binary(stub_settings(), runner=stub_runner())
+            detector.resolve_binary(
+                stub_settings(),
+                environment=detector.NoseEnvironment(
+                    repository_root=tmp_path,
+                    binary_override=None,
+                    search_path=str(search_path),
+                ),
+                binary_finder=detector.discover_binary,
+                runner=stub_runner(),
+            )
 
 
 class TestBuildCommand:

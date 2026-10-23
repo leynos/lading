@@ -20,6 +20,7 @@ dependencies to lint the repository.
 """
 
 import json
+import os
 import sys
 import tomllib
 from collections import abc as cabc
@@ -32,7 +33,13 @@ from duplication_allowlist import (
     load_allowlist,
     validate_key,
 )
-from nose_detector import PYPROJECT, load_settings, run_detector
+from nose_detector import (
+    PYPROJECT,
+    NoseEnvironment,
+    discover_binary,
+    load_settings,
+    run_detector,
+)
 from nose_schema import Finding, GateConfigError, GateExecutionError
 
 app = cyclopts.App(help="Run or configure the code-duplication gate.")
@@ -106,7 +113,15 @@ def detect_findings() -> list[Finding]:
     Configuration and execution errors from the settings loader and detector
     propagate to the CLI boundary.
     """
-    return run_detector(load_settings(PYPROJECT))
+    return run_detector(
+        load_settings(PYPROJECT),
+        environment=NoseEnvironment(
+            repository_root=PYPROJECT.parent,
+            binary_override=os.environ.get("NOSE_BIN"),
+            search_path=os.environ.get("PATH"),
+        ),
+        binary_finder=discover_binary,
+    )
 
 
 def _report(

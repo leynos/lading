@@ -5,7 +5,7 @@ This ExecPlan (execution plan) is a living document. The sections `Constraints`,
 `Outcomes & retrospective`, `Conformance basis`, and `Verification plan` must
 be kept up to date as work proceeds.
 
-Status: COMPLETE — implemented and opened as draft PR #292.
+Status: COMPLETE — implementation submitted for review as PR #292.
 
 ## Purpose / big picture
 
@@ -261,7 +261,7 @@ take precedence. This plan records every deliberate deviation.
 
 ## Outcomes & retrospective
 
-Delivered on `adopt-nose-code-deduplication` and opened as draft PR
+Delivered on `adopt-nose-code-deduplication` and opened as ready-for-review PR
 [#292](https://github.com/leynos/lading/pull/292). The branch changes 31 files
 against `origin/main`, the overwhelming majority of them additions.
 
@@ -576,7 +576,7 @@ Check the normalized output is byte-identical across repeated runs.
 
 Stage G (documentation and delivery): ADR-010, a developer-guide section,
 `AGENTS.md` gate list, `docs/contents.md` index entry, then the full gate run
-and the draft PR.
+and the ready-for-review PR.
 
 ## Milestones and plateaus
 
@@ -689,11 +689,36 @@ class NoseSettings:
 
 type CommandRunner = cabc.Callable[[cabc.Sequence[str]], str]
 
+@dc.dataclass(frozen=True, slots=True)
+class NoseEnvironment:
+    repository_root: Path
+    binary_override: str | None
+    search_path: str | None
+
+type BinaryFinder = cabc.Callable[[NoseEnvironment], str | None]
+
 def load_settings(pyproject_path: Path) -> NoseSettings: ...
-def resolve_binary(settings: NoseSettings, *, runner: CommandRunner | None = None) -> str: ...
+def resolve_binary(
+    settings: NoseSettings,
+    *,
+    environment: NoseEnvironment,
+    binary_finder: BinaryFinder,
+    runner: CommandRunner | None = None,
+) -> str: ...
 def build_command(binary: str, settings: NoseSettings) -> list[str]: ...
-def run_detector(settings: NoseSettings, *, runner: CommandRunner | None = None) -> list[Finding]: ...
+def run_detector(
+    settings: NoseSettings,
+    *,
+    environment: NoseEnvironment,
+    binary_finder: BinaryFinder,
+    runner: CommandRunner | None = None,
+) -> list[Finding]: ...
 ```
+
+The CLI adapter constructs `NoseEnvironment` from `NOSE_BIN`, `PATH`, and the
+repository root. The default process runner uses that root as its working
+directory; binary discovery searches the repository-local install and the
+explicit `PATH` only.
 
 In `scripts/duplication_gate.py`:
 
@@ -785,13 +810,30 @@ or stale families), `make test` (1517 passed, 30 skipped, 110 snapshots), and
 CodeRabbit follow-up for this corrected candidate remain pending.
 
 2026-10-23: reviewed head `e09874e5f6d8041d4a9c3857547a9b3e9b1412bb` passed
-hosted CI:
-[run 39958260207, attempt 1](https://github.com/leynos/lading/actions/runs/39958260207/attempts/1),
-with both `lint-test` and `build-dist` successful. Its hosted CodeScene review
-passed at
+hosted CI [run 39958260207, attempt 1][review-ci-run], with both `lint-test` and
+`build-dist` successful. Its hosted CodeScene review passed at
 [result 8097637](https://codescene.io/projects/72980/delta/results/8097637).
 The incremental CodeRabbit reassessment confirmed the four description fixes
 above. It did not start a formal PR review, submit approval, or change review
 thread state. A subsequent formal review of this same head posted nine
-actionable inline comments; this revision addresses them, and hosted validation
-must be rerun for the resulting commit.
+actionable inline comments; this revision addresses them. The repaired
+candidate moves host environment reads to the CLI adapter, injects binary
+discovery and command execution dependencies, and binds default execution to
+the supplied repository root. Missing or empty `PATH` no longer falls back to
+the process environment. ADR-003 again states the accepted six-stage order,
+with its dated amendment documenting the seventh-stage update. The exported
+`BinaryFinder` alias and this plan now reflect the injected API and current PR
+state. The additional open allowlist finding is addressed by rejecting
+unanchored recursive globs such as `**` and `**/*.py`; rooted patterns remain
+available, and focused tests cover both rejected forms. Those two regression
+cases failed against the committed validator, then passed with the fix. The CI
+reference is also formatted to the Markdown line-width guidance.
+
+The repaired candidate passed all seven sequential local gates:
+`make check-fmt`, `make markdownlint` (36 files, zero issues), `make nixie`,
+`make typecheck`, `make lint` (11 allowed by reasoned exceptions), `make test`,
+and `make duplication-test`. The full suite had 1525 passed, 30 skipped, and
+110 snapshots; the focused suite had 162 passed and three snapshots. Hosted
+validation and CodeRabbit follow-up for the resulting commit remain pending.
+
+[review-ci-run]: https://github.com/leynos/lading/actions/runs/39958260207/attempts/1

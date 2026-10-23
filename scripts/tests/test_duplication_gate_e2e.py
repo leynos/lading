@@ -11,6 +11,7 @@ cannot hide the planted family behind the ranking bound.
 
 import dataclasses as dc
 import json
+import os
 import subprocess
 import textwrap
 from pathlib import Path
@@ -76,7 +77,15 @@ def _resolved_binary() -> str:
     """Return the pinned detector path, skipping when it is unavailable."""
     settings = detector.load_settings(REPOSITORY_ROOT / "pyproject.toml")
     try:
-        binary = detector.resolve_binary(settings)
+        binary = detector.resolve_binary(
+            settings,
+            environment=detector.NoseEnvironment(
+                repository_root=REPOSITORY_ROOT,
+                binary_override=os.environ.get("NOSE_BIN"),
+                search_path=os.environ.get("PATH"),
+            ),
+            binary_finder=detector.discover_binary,
+        )
     except detector.GateExecutionError as error:  # pragma: no cover
         pytest.skip(str(error))
         raise  # Unreachable; keeps the return paths symmetric for Pylint.

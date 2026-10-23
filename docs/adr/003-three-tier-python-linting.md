@@ -24,10 +24,7 @@ as application liveness.
 
 ## Decision
 
-`make lint` is the canonical Python lint gate and runs six stages in order (see
-the
-[2026-09-27 amendment](#amendment-2026-09-27-the-duplication-gate-is-the-seventh-stage)
-for the seventh stage adopted since):
+`make lint` is the canonical Python lint gate and runs six stages in order:
 
 1. Ruff checks formatting-adjacent style and broad correctness rules.
 2. Interrogate runs with `--fail-under 100` against `lading` and requires 100%
@@ -43,8 +40,7 @@ for the seventh stage adopted since):
    scans Syrupy snapshots under `tests`.
 6. Skylos runs separately through a pinned `uv tool run` environment against
    `lading`, with dead-code analysis only, no uploads or provenance collection,
-   and no repository-wide grep verification. It is a blocking check, though no
-   longer the final one; see the amendment below.
+   and no repository-wide grep verification. It is the final, blocking check.
 
 The Makefile keeps lint tooling wired as prerequisites as well as recipe
 commands. `lint` depends on `build` before checking `interrogate`, so
@@ -140,11 +136,11 @@ lint clean. A parse failure now fails the lint.
 
 ## Amendment (2026-09-27): the duplication gate is the seventh stage
 
-Adopted 2026-09-27. This amendment appends a stage to the decision above; the
-other six stages are unchanged.
+Adopted 2026-09-27. This amendment supersedes the six-stage ordering in the
+decision above by adding a seventh stage; the other six stages are unchanged.
 
-The decision above states that Skylos "is the final, blocking check". It is no
-longer final. [ADR-010](010-adopt-nose-duplication-gate.md) adopts a blocking
+The accepted decision above states that Skylos is the final, blocking check.
+[ADR-010](010-adopt-nose-duplication-gate.md) adopts a blocking
 code-duplication gate, and `make lint` runs it after Skylos as its seventh and
 last stage. The gate is the only stage that inspects the repository as a whole
 for repetition rather than checking each module on its own, so it has to

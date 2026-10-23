@@ -230,6 +230,12 @@ disabled through `--disable-strategies compile,quick-install`, so a missing
 trusted prebuilt release is a provisioning failure rather than a silent local
 build. `NOSE_BIN` overrides the binary location; a relative value resolves
 against the repository root, so the override works from any working directory.
+The CLI adapter reads `NOSE_BIN` and `PATH` and passes them with the repository
+root in a `NoseEnvironment` value. The detector wrapper receives a binary
+finder callable, while unit tests supply environment values and finders
+directly instead of patching process globals. The default process runner uses
+that supplied root as its working directory, and an absent or empty `PATH` does
+not fall back to a host search path.
 
 The detector version is pinned in three places -- `NOSE_VERSION` in the
 Makefile, the `NOSE_VERSION` environment in `.github/workflows/ci.yml`, and
@@ -266,7 +272,9 @@ containing spaces, quotes, dollar signs, or command-substitution-looking text
 is stored exactly as written rather than being re-expanded as Make or shell
 program text. Direct calls to `scripts/duplication_gate.py allow` can still
 repeat `--second` and also accept the same JSON array through
-`--second-keys-json`.
+`--second-keys-json`. Recursive globs must start at a named repository
+directory; unanchored patterns such as `**/*.py` are rejected because they
+could silence every reported source file.
 
 An entry silences a family only when **every** location it reports is covered
 by one of the entry's keys, so adding a copy in an unlisted file blocks the
