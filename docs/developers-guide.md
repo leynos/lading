@@ -323,9 +323,11 @@ make duplication-test
 The gate modules and their tests are pinned PEP 723 tooling: `uv` reads the
 inline script metadata and resolves `cyclopts` and `tomlkit` on its own
 interpreter, so the gate never imports `lading` and never touches the project
-virtualenv. The helper tests run on their own interpreter for the same reason,
-and `scripts/tests/conftest.py` opts them out of the application suite's
-collection.
+virtualenv. The helper tests run on their own interpreter for the same reason.
+When any required tooling dependency is unavailable,
+`scripts/tests/conftest.py` excludes the helper tests from application-suite
+collection. When all required tooling dependencies are available, the
+application suite can collect them.
 
 The relevant Makefile variables are:
 

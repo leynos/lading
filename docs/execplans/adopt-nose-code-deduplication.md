@@ -938,3 +938,20 @@ The ExecPlan-only review amendment was formatted with `make fmt` and passed
 `make check-fmt`, `make markdownlint` (36 files, zero issues), and `make nixie`
 (all diagrams validated). Its first Markdown gate caught a spelling error; the
 text was corrected to the repository spelling “artefact” before the passing run.
+
+2026-10-23: the CodeRabbit assessment of
+`39faca753b53cb5c2b565e4a2835724fe5eade2c` found that
+`scripts/tests/test_duplication_gate_commands.py` exceeded the 400-line file
+limit and that the developer guide overstated when helper tests are excluded
+from application-suite collection. The environment-adapter test and its three
+`PATH` cases were moved intact to
+`scripts/tests/test_duplication_gate_environment.py`; the original module is
+now 363 lines. The guide now describes exclusion only when required tooling
+dependencies are unavailable. The assessment confirmed the unchanged
+`docs/users-guide.md` is not applicable because these are contributor commands,
+and found no further functional defect. The review-fix working tree passed all
+seven sequential local gates: `make check-fmt`, `make markdownlint`,
+`make nixie`, `make typecheck`, `make lint` (11 reasoned exceptions),
+`make test` (1535 passed, 30 skipped, 113 snapshots), and
+`make duplication-test` (170 passed, four snapshots). Final candidate CI and
+formal review remain pending publication.
