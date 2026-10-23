@@ -253,42 +253,41 @@ class TestMakeInstallNose:
             in (invocation.curl_arguments[0])
         ), "Installation must download the pinned detector release."
 
-    def test_archive_digest_mismatch_fails_before_installing(
-        self, tmp_path: Path
+    @pytest.mark.parametrize(
+        ("scenario", "diagnostic"),
+        [
+            pytest.param(
+                InstallerScenario(archive_checksum="0" * 64),
+                "archive digest mismatch",
+                id="archive-digest-mismatch",
+            ),
+            pytest.param(
+                InstallerScenario(binary_checksum="0" * 64),
+                "executable digest mismatch",
+                id="executable-digest-mismatch",
+            ),
+        ],
+    )
+    def test_digest_mismatch_fails_before_installing(
+        self,
+        tmp_path: Path,
+        scenario: InstallerScenario,
+        diagnostic: str,
     ) -> None:
-        """A changed release archive is rejected before extraction."""
+        """Unexpected release or executable bytes are rejected before install."""
         invocation = _run_install_nose(
             tmp_path,
-            InstallerScenario(archive_checksum="0" * 64),
+            scenario,
         )
 
         assert invocation.result.returncode != 0, (
-            "An archive with an unexpected digest must fail installation."
+            "An input with an unexpected digest must fail installation."
         )
-        assert "archive digest mismatch" in invocation.result.stderr, (
-            "The installer must identify an archive digest mismatch."
-        )
-        assert not (tmp_path / "tools" / "nose").exists(), (
-            "An unverified archive must not install a detector."
-        )
-
-    def test_executable_digest_mismatch_fails_before_installing(
-        self, tmp_path: Path
-    ) -> None:
-        """An archive carrying unexpected executable bytes is rejected."""
-        invocation = _run_install_nose(
-            tmp_path,
-            InstallerScenario(binary_checksum="0" * 64),
-        )
-
-        assert invocation.result.returncode != 0, (
-            "An executable with an unexpected digest must fail installation."
-        )
-        assert "executable digest mismatch" in invocation.result.stderr, (
-            "The installer must identify an executable digest mismatch."
+        assert diagnostic in invocation.result.stderr, (
+            "The installer must identify the mismatched digest."
         )
         assert not (tmp_path / "tools" / "nose").exists(), (
-            "An unverified executable must not be installed."
+            "Unverified bytes must not install a detector."
         )
 
     def test_unsupported_platform_fails_without_downloading(

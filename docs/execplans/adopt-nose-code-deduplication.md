@@ -884,5 +884,20 @@ The final working-tree candidate passed all seven sequential gates:
 `make check-fmt`, `make markdownlint` (36 files, zero issues), `make nixie`,
 `make typecheck`, `make lint` (11 allowed, zero blocking or stale families),
 `make test` (1532 passed, 30 skipped, 113 snapshots), and
-`make duplication-test` (167 passed, four snapshots). Hosted validation and
-CodeRabbit review of the pushed candidate remain pending.
+`make duplication-test` (167 passed, four snapshots). The hosted CodeScene
+review of this pushed candidate identified the repeated test structure noted
+below.
+
+2026-10-23: hosted CodeScene review of
+`24cef816339a9cd634bd55df3f55376d37645072` found duplicated failure assertions
+in the new installer contract tests. The archive-digest and executable-digest
+cases now share one parameterized test; each case retains its own scenario,
+diagnostic assertion and pytest id. This removes repeated test logic without
+weakening either fail-closed contract. Local `cs review` reports a score of
+10.0, and `cs delta origin/main --file scripts/tests/test_make_install_nose.py`
+reports no issues. All seven sequential gates passed on the repaired working
+tree: `make check-fmt`, `make markdownlint` (36 files, zero issues),
+`make nixie`, `make typecheck`, `make lint` (11 allowed, zero blocking or stale
+families), `make test` (1532 passed, 30 skipped, 113 snapshots), and
+`make duplication-test` (167 passed, four snapshots). Hosted validation and the
+formal CodeRabbit review of the pushed repair remain pending.
