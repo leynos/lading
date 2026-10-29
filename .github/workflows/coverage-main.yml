@@ -57,7 +57,7 @@ jobs:
         # The same commit ci.yml pins, so the two workflows install the same
         # uv. A third-party action moves under a tag; the first-party
         # `actions/*` steps above stay on their major tag, as they do there.
-        uses: astral-sh/setup-uv@18d369b23da25a81e9458561248e1aafff6a70fa # v10.3.1
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
 
       - name: Install makeutil
         id: makeutil
