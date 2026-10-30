@@ -467,12 +467,28 @@ per_condition_timeout = 30
 source_paths = ["lading/"]
 pytest_add_cli_args_test_selection = ["tests/"]
 # mutmut copies only tests/, pyproject.toml, setup.cfg, and root test*.py
-# into its mutants/ working copy. The suite also reads docs/users-guide.md
-# and scripts/publish-check/bin/cargo relative to the repository root, so
-# copy those trees as well or the baseline run fails.
-# uv.lock joined the list with task 5.1.4: the selection contract reads it, and
-# the standalone path's lockfile lives under scripts/, which is already copied.
-also_copy = ["docs/", "scripts/", "uv.lock"]
+# into its mutants/ working copy. Contract tests also read repository-root
+# inputs relative to that working copy, so every input they consume is
+# declared here; a missing entry fails the baseline before mutmut writes any
+# mutant statistics. Consumers of each entry:
+# - docs/: tests/unit/test_users_guide.py reads docs/users-guide.md.
+# - scripts/: the lint-environment contract reads
+#   scripts/publish-check/bin/cargo, and the cuprum and release contracts
+#   read the scripts' PEP 723 locks.
+# - uv.lock: the cuprum-selection contract checks it against pyproject.toml.
+# - .github/: workflow contracts read .github/workflows/*.yml,
+#   .github/actions/*/action.yml, and .github/cv005.toml.
+# - Makefile: the lint-target, lint-environment, pylint-tier, CV-005 wiring,
+#   source-discovery, and duplication-toolchain contracts run `make -n`.
+# - .gitignore: the lint-environment contract reads its ignore entries.
+also_copy = [
+    "docs/",
+    "scripts/",
+    "uv.lock",
+    ".github/",
+    "Makefile",
+    ".gitignore",
+]
 # lading/testing/ is test scaffolding (the cmd-mox command-runner adapter
 # and TOML assertion helpers used by the suite itself); mutating it wastes
 # cycles and can poison the very helpers the tests assert with.

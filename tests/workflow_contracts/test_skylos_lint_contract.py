@@ -9,15 +9,28 @@ and recipe contracts rather than incidental formatting. Run this suite with:
 import json
 import re
 import shlex
+import shutil
 import subprocess
 import tomllib
 import typing as typ
 from pathlib import Path
 
+import pytest
 import yaml
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 _MAKEUTIL_COMMAND: typ.Final = ("makeutil", "parse", "Makefile")
+_MAKEUTIL_BINARY = shutil.which("makeutil")
+# `make test` and CI provision and verify makeutil, but the mutation
+# workflow runs pytest directly with no makeutil step, so only the tests
+# that execute the parser are gated.
+_requires_makeutil = pytest.mark.skipif(
+    _MAKEUTIL_BINARY is None,
+    reason=(
+        "makeutil is provisioned by `make test` and CI, but the mutation "
+        "workflow's sandbox does not install it"
+    ),
+)
 _INSTALL_MAKEUTIL_ACTION: typ.Final = (
     "leynos/shared-actions/.github/actions/install-makeutil"
     "@ebe2f3105334283441f4c915eb979a0f4b9f2c04"
@@ -251,6 +264,7 @@ def _assert_verification_follows_install(workflow_path: str, job_name: str) -> N
     )
 
 
+@_requires_makeutil
 def test_makefile_defines_the_strict_production_skylos_gate() -> None:
     """Keep the pinned baseline scan separate from its scan-only options."""
     test_prerequisites = _text_sequence(
@@ -286,6 +300,7 @@ def test_makefile_defines_the_strict_production_skylos_gate() -> None:
     )
 
 
+@_requires_makeutil
 def test_whitelist_recipe_dispatches_before_reason() -> None:
     """Keep whitelist subcommand arguments separate from scan-only options."""
     assert _variable_tokens("SKYLOS_WHITELIST_LOCK") == _SKYLOS_WHITELIST_LOCK_TOKENS, (

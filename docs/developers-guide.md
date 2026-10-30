@@ -935,6 +935,89 @@ that changes the process working directory. This keeps
 current-working-directory behaviour covered without causing mutmut's baseline
 run to fail before it can generate mutants.
 
+## mutmut sandbox inputs (`[tool.mutmut] also_copy`)
+
+mutmut runs the suite from a copied `mutants/` tree. It copies the source, the
+test suite, `pyproject.toml`, `setup.cfg`, and root `test*.py` files by
+default; anything else a test reads relative to the repository root must be
+declared in `[tool.mutmut] also_copy`. A missing input fails the baseline
+before mutmut writes `mutants/mutmut-stats.json`, which is why the contract
+below asserts the real copied tree rather than trusting the TOML list.
+
+| Input        | Consumer                                                                                                      |
+| ------------ | ------------------------------------------------------------------------------------------------------------- |
+| `docs/`      | `tests/unit/test_users_guide.py` reads `docs/users-guide.md`                                                  |
+| `scripts/`   | lint-environment reads `scripts/publish-check/bin/cargo`; cuprum and release contracts read the script locks  |
+| `uv.lock`    | the cuprum-selection contract checks it against `pyproject.toml`                                              |
+| `.github/`   | workflow contracts read `.github/workflows`, `.github/actions`, and `.github/cv005.toml`                      |
+| `Makefile`   | lint-target, lint-environment, pylint-tier, CV-005, source-discovery, and duplication contracts run `make -n` |
+| `.gitignore` | the lint-environment contract reads its ignore entries                                                        |
+
+Add a new root-relative reader to both `[tool.mutmut] also_copy` and the
+`INPUT_CONSUMERS` mapping in
+`tests/workflow_contracts/test_mutmut_sandbox_inputs.py`. The test asserts
+membership and existence in whichever tree pytest runs from, so it fails in the
+checkout when the declaration is missing and in the sandbox when the copy did
+not happen.
+
+To verify a change to this list, build a fresh sandbox with mutmut 3.6.0. Delete
+`mutants/` and `.mutmut-cache` first: mutmut skips copy targets that already
+exist, so a stale sandbox can hide a missing input.
+
+```sh
+rm -rf mutants .mutmut-cache
+uv run --with mutmut==3.6.0 mutmut run 'lading.utils.path.*'
+```
+
+Compare the copied tree before running anything else; no output means the
+sandbox carries the revision under test.
+
+```sh
+diff -r .github mutants/.github
+cmp Makefile mutants/Makefile
+cmp .gitignore mutants/.gitignore
+```
+
+Then collect and run the named contract from inside `mutants/` with an empty
+`MUTANT_UNDER_TEST`, followed by the full unchanged baseline. The copied source
+carries mutmut's trampolines, so the sandbox run needs mutmut importable; pass
+it as an overlay with `--with` rather than relying on the project environment.
+
+```sh
+(
+  cd mutants
+  MUTANT_UNDER_TEST= uv run --with mutmut==3.6.0 pytest \
+    tests/workflow_contracts/test_mutmut_sandbox_inputs.py
+  make -n lint
+  MUTANT_UNDER_TEST= uv run --with mutmut==3.6.0 pytest \
+    tests/test_pylint_tier_contract.py
+)
+```
+
+The subshell keeps the caller in the checkout: the last two commands must run
+inside the sandbox to read its copied `Makefile`, while the checks below read
+the sandbox by relative path. The last two confirm the copied `Makefile` still
+expands and parses. The full baseline is the `mutmut run` above. Confirm
+`mutants/mutmut-stats.json` exists and `mutmut results --all true` lists at
+least one mutant for the targeted glob.
+
+To prove an entry is load-bearing, remove it from `also_copy`, delete the
+sandbox, and run the baseline again. The statistics pass must stop with the
+missing path named, for example a `FileNotFoundError` for `mutants/Makefile`,
+and `mutants/mutmut-stats.json` must not be written. Running
+`test_mutmut_sandbox_inputs.py` inside that sandbox then names the input, its
+consumer, and the `[tool.mutmut] also_copy` declaration to fix.
+
+Baseline-failure diagnostics currently live only in the step log; there is no
+artefact retention for a run that fails before statistics are written, and no
+preflight that reports which declared input is absent. Both are tracked in
+[shared-actions#590](https://github.com/leynos/shared-actions/issues/590) and
+[shared-actions#591](https://github.com/leynos/shared-actions/issues/591). The
+mutation workflow also does not install `makeutil`, so the two Makefile-parser
+tests skip there; `make test` and CI still provision and verify it, and
+provisioning it in the mutation environment is part of
+[shared-actions#591](https://github.com/leynos/shared-actions/issues/591).
+
 ## Publish test infrastructure (`tests/unit/publish/conftest.py`)
 
 The publish unit-test conftest exports the following shared helpers:
