@@ -984,17 +984,22 @@ carries mutmut's trampolines, so the sandbox run needs mutmut importable; pass
 it as an overlay with `--with` rather than relying on the project environment.
 
 ```sh
-cd mutants && MUTANT_UNDER_TEST= \
-  uv run --with mutmut==3.6.0 pytest \
-  tests/workflow_contracts/test_mutmut_sandbox_inputs.py
-make -n lint
-MUTANT_UNDER_TEST= uv run --with mutmut==3.6.0 pytest \
-  tests/test_pylint_tier_contract.py
+(
+  cd mutants
+  MUTANT_UNDER_TEST= uv run --with mutmut==3.6.0 pytest \
+    tests/workflow_contracts/test_mutmut_sandbox_inputs.py
+  make -n lint
+  MUTANT_UNDER_TEST= uv run --with mutmut==3.6.0 pytest \
+    tests/test_pylint_tier_contract.py
+)
 ```
 
-The last two confirm the copied `Makefile` still expands and parses. The full
-baseline is the `mutmut run` above. Confirm `mutants/mutmut-stats.json` exists
-and `mutmut results --all true` lists at least one mutant for the targeted glob.
+The subshell keeps the caller in the checkout: the last two commands must run
+inside the sandbox to read its copied `Makefile`, while the checks below read
+the sandbox by relative path. The last two confirm the copied `Makefile` still
+expands and parses. The full baseline is the `mutmut run` above. Confirm
+`mutants/mutmut-stats.json` exists and `mutmut results --all true` lists at
+least one mutant for the targeted glob.
 
 To prove an entry is load-bearing, remove it from `also_copy`, delete the
 sandbox, and run the baseline again. The statistics pass must stop with the
