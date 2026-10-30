@@ -922,6 +922,62 @@ Property-based tests in the publish suite use
 to keep continuous integration (CI) fast while still exercising a range of
 inputs.
 
+### Deadlines for filesystem-backed properties
+
+Hypothesis measures each example against a 200 ms deadline by default. Keep
+that deadline for properties whose work is computation: it is the check that
+turns a newly slow implementation into a failure.
+
+A property may opt out only when every example performs real filesystem I/O:
+creating, rewriting, scanning, resolving, or removing files or directories. For
+those properties the elapsed time measures disk latency and cold import cost
+rather than the invariant. On a loaded machine a single example can take
+several times the deadline, so the failure says nothing about the code under
+test. The manifest-selection property took 281 ms on a cold first example and
+51 ms on a warm rerun.
+
+Express that decision per property through
+`tests.helpers.hypothesis_settings.filesystem_property_settings`:
+
+```python
+from tests.helpers.hypothesis_settings import filesystem_property_settings
+
+@given(data=st.data())
+@filesystem_property_settings(
+    max_examples=20,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
+def test_manifest_selection_matches_naive_reference(tmp_path, data):
+    ...
+```
+
+The factory sets `max_examples`, `deadline=None`, and the suppressions the
+caller passes. It does not change `settings.default`, register or load a
+profile, or alter any other setting. Do not raise the deadline for a single
+test, and do not set it globally: a blanket bump would hide a real regression
+in the in-memory properties that the default deadline is meant to catch.
+
+Building `Path` objects under `tmp_path` without touching the disk does not
+qualify. `tmp_path` alone does not establish filesystem work; the property must
+actually read or write through it in each example.
+
+Opting out of the deadline does not opt out of health checks. Filesystem access
+alone does not need `HealthCheck.function_scoped_fixture`. Pass that
+suppression only when the property reuses a function-scoped fixture such as
+`tmp_path` across examples, because suppression silences the warning without
+resetting any state.
+
+Example isolation remains the property's responsibility. Use one of these
+patterns, and keep the chosen pattern visible in the test:
+
+- Create a `tempfile.TemporaryDirectory()` inside each example.
+- Reset a shared `tmp_path` explicitly at the start of every example.
+- Write idempotently, so a repeated example overwrites the same paths rather
+  than accumulating stale state.
+
+Subprocess-bound properties are exempted outside this policy; their cost is
+process startup rather than ordinary filesystem latency.
+
 ## Working-directory test helper (`tests/helpers/cwd.py`)
 
 Tests that change the process working directory must call
