@@ -197,6 +197,10 @@ def _stage(
     # manifest makes the publish impossible, and it should say so without
     # first copying tens of gigabytes to find out.
     _validate_stage_exclude(plan, stage_exclude)
+    # Recorded because the effective list decides what the staged tree holds,
+    # and it may come from the default, `lading.toml`, or a programmatic
+    # caller. Without this, a file missing from staging has no visible cause.
+    LOGGER.info("Staging workspace with stage_exclude=%s", tuple(stage_exclude))
     auto_created_build_directory = active_options.build_directory is None
     build_directory = _normalize_build_directory(
         plan.workspace_root, active_options.build_directory

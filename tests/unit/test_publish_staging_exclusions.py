@@ -8,6 +8,7 @@ manifest the publication cannot proceed without.
 """
 
 import dataclasses as dc
+import logging
 import tempfile
 from pathlib import Path
 
@@ -199,6 +200,28 @@ def test_staged_workspace_omits_git_by_default(
         assert (staged.staging_root / "target" / "artifact").is_file(), (
             "default staging must retain target/"
         )
+
+
+def test_staging_logs_the_effective_exclusions(
+    preparation_fixtures: PreparationFixtures,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The exclusion actually applied is recorded when staging begins."""
+    plan = _plan_with_roles(preparation_fixtures)
+    options = publish.PublishOptions(build_directory=tmp_path / "staging")
+
+    with (
+        caplog.at_level(logging.INFO, logger="lading.commands.publish_staging"),
+        publish_staging.staged_workspace(
+            plan, options=options, stage_exclude=("venv",)
+        ),
+    ):
+        pass
+
+    assert "Staging workspace with stage_exclude=('venv',)" in caplog.text, (
+        "the log must name the patterns that shaped the staged tree"
+    )
 
 
 def test_leading_double_star_matches_at_any_depth(tmp_path: Path) -> None:
