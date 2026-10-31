@@ -7,11 +7,20 @@ default applied at the staging boundary, and the refusal to exclude a
 manifest the publication cannot proceed without.
 """
 
+import dataclasses as dc
+import tempfile
 from pathlib import Path
 
 import pytest
+from hypothesis import HealthCheck, given, settings
+from hypothesis import strategies as st
 
-from lading.commands import publish, publish_plan, publish_staging
+from lading.commands import (
+    publish,
+    publish_plan,
+    publish_stage_exclude,
+    publish_staging,
+)
 from tests.unit.conftest import (
     PreparationFixtures,
     PrepareWorkspaceFixtures,
@@ -190,6 +199,119 @@ def test_staged_workspace_omits_git_by_default(
         assert (staged.staging_root / "target" / "artifact").is_file(), (
             "default staging must retain target/"
         )
+
+
+def test_leading_double_star_matches_at_any_depth(tmp_path: Path) -> None:
+    """A ``**/`` prefix means "any depth", including the workspace root."""
+    staging_root = _copy_with_exclusions(tmp_path, ("**/venv",))
+
+    assert not (staging_root / "venv").exists(), (
+        "a top-level venv must match the any-depth spelling"
+    )
+    assert not (staging_root / "crates" / "alpha" / "venv").exists(), (
+        "a nested venv must match the same pattern"
+    )
+    assert (staging_root / "target" / "debug" / "artifact").is_file(), (
+        "the any-depth spelling must not remove unrelated entries"
+    )
+
+
+def test_stage_exclude_rejects_a_pattern_matching_an_ancestor_directory(
+    preparation_fixtures: PreparationFixtures,
+) -> None:
+    """Naming a crate's parent directory removes its manifest too."""
+    root = preparation_fixtures.tmp_path / "workspace"
+    root.mkdir()
+    (root / "Cargo.toml").write_text("[workspace]\n", encoding="utf-8")
+    crate = preparation_fixtures.make_crate(root / "crates", "alpha")
+    workspace = preparation_fixtures.make_workspace(root, crate)
+    plan = publish.plan_publication(workspace, preparation_fixtures.make_config())
+
+    with pytest.raises(publish_staging.PublishPreparationError) as excinfo:
+        publish_stage_exclude._validate_stage_exclude(plan, ("crates",))
+
+    assert "crate 'alpha' manifest 'crates/alpha/Cargo.toml'" in str(excinfo.value), (
+        "the rejection must name the nested manifest the ancestor pattern removes"
+    )
+
+
+def test_stage_exclude_allows_a_manifest_outside_the_workspace_root(
+    preparation_fixtures: PreparationFixtures,
+) -> None:
+    """A member outside the workspace root cannot be removed by staging."""
+    plan = _plan_with_roles(preparation_fixtures)
+    external = preparation_fixtures.make_crate(
+        preparation_fixtures.tmp_path / "external", "delta"
+    )
+    plan = dc.replace(plan, publishable=(*plan.publishable, external))
+
+    publish_stage_exclude._validate_stage_exclude(plan, ("delta",))
+
+
+_CANDIDATE_PATTERNS = (
+    "Cargo.toml",
+    "alpha",
+    "crates",
+    "crates/alpha",
+    "crates/*",
+    "src",
+    "venv",
+    "**/alpha",
+    "*",
+)
+_REQUIRED_MANIFESTS = ("Cargo.toml", "crates/alpha/Cargo.toml")
+
+
+def _validation_rejects(
+    plan: publish_plan.PublishPlan, patterns: tuple[str, ...]
+) -> bool:
+    """Return whether the pre-copy check refuses ``patterns``."""
+    try:
+        publish_stage_exclude._validate_stage_exclude(plan, patterns)
+    except publish_staging.PublishPreparationError:
+        return True
+    return False
+
+
+@settings(max_examples=20, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@given(patterns=st.lists(st.sampled_from(_CANDIDATE_PATTERNS), max_size=3))
+def test_validation_rejects_exactly_the_patterns_that_remove_a_manifest(
+    preparation_fixtures: PreparationFixtures,
+    tmp_path: Path,
+    patterns: list[str],
+) -> None:
+    """The pre-copy check agrees with what the copy actually leaves out."""
+    # Hypothesis reuses ``tmp_path`` for every example, so each one needs its
+    # own directory rather than inheriting the previous example's tree.
+    workspace_root = Path(tempfile.mkdtemp(dir=tmp_path, prefix="workspace-"))
+    staging_parent = Path(tempfile.mkdtemp(dir=tmp_path, prefix="staging-"))
+    (workspace_root / "Cargo.toml").write_text("[workspace]\n", encoding="utf-8")
+    crate = preparation_fixtures.make_crate(workspace_root / "crates", "alpha")
+    for relative in ("crates/alpha/src/lib.rs", "venv/marker"):
+        path = workspace_root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("marker\n", encoding="utf-8")
+    plan = publish.plan_publication(
+        preparation_fixtures.make_workspace(workspace_root, crate),
+        preparation_fixtures.make_config(),
+    )
+    stage_exclude = tuple(patterns)
+
+    rejected = _validation_rejects(plan, stage_exclude)
+    staging_root = publish_staging._copy_workspace_tree(
+        workspace_root,
+        staging_parent,
+        preserve_symlinks=False,
+        stage_exclude=stage_exclude,
+    )
+    removed = any(
+        not (staging_root / relative).is_file() for relative in _REQUIRED_MANIFESTS
+    )
+
+    assert rejected is removed, (
+        f"patterns {stage_exclude!r} must be refused exactly when the copy "
+        f"would remove a required manifest (refused: {rejected}, removed: {removed})"
+    )
 
 
 def _enter_staged_workspace(

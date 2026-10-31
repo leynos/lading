@@ -1294,6 +1294,44 @@ Examples:
 - `PublishOptions(allow_dirty=False)` — require a clean git working tree before
   proceeding with publish preparation.
 
+### Staging exclusions (`stage_exclude`)
+
+`staged_workspace`, `prepare_workspace` and the internal `_copy_workspace_tree`
+each take a keyword-only `stage_exclude` sequence of workspace-relative path
+patterns. The parameter is separate from `PublishOptions` because it comes from
+configuration (`PublishConfig.stage_exclude`) rather than from the command
+line, and `publish.run` forwards `active_configuration.publish.stage_exclude`
+on every call. Both public entry points default to
+`lading.config.DEFAULT_STAGE_EXCLUDE`, currently `(".git",)`, so a programmatic
+caller gets the same behaviour as the CLI without repeating the default.
+
+The policy lives in `lading.commands.publish_stage_exclude` rather than in
+`publish_staging`, which keeps the copy/cleanup lifecycle free of pattern
+matching. That module owns three things:
+
+- `_match_stage_exclude`, the single predicate every call site uses. A pattern
+  without `/` matches a basename at any depth; a leading `**/` is stripped
+  first, so `**/venv` also matches a top-level `venv`. A pattern containing `/`
+  is matched against the whole `PurePosixPath`, and `fnmatch.fnmatchcase` lets
+  its `*` span separators.
+- `_stage_exclude_ignore`, which adapts the predicate to
+  `shutil.copytree(ignore=...)`. Returning a directory name prunes it before
+  `copytree` descends, so excluding `target/` costs nothing rather than copying
+  and discarding it. The callback matches lexically against the root passed to
+  `copytree`, because its recursive `src` arguments are that root joined with
+  each entry name.
+- `_validate_stage_exclude`, called by `_stage` before the temporary directory
+  is created or anything is copied. It checks the workspace manifest and every
+  planned crate manifest, including crates skipped by `publish = false` or
+  `publish.exclude`, against the pattern and each of its ancestor directories,
+  and raises `PublishPreparationError` naming both the pattern and the manifest
+  it would remove. A member whose manifest resolves outside the workspace root
+  is skipped, since staging never copies it.
+
+When adding a pattern spelling, change `_match_stage_exclude` and cover it in
+`tests/unit/test_publish_staging_exclusions.py`; it is the only place the
+semantics are decided, so the validator and the copy cannot diverge.
+
 ## Publish command internals
 
 `PublishOptions.allow_unpublished_workspace_deps` is a dry-run-only override
@@ -1500,9 +1538,12 @@ then joins the resulting lines. All three helpers are public exports of
 `publish_plan`.
 
 `publish_staging.py` owns workspace preparation types and helpers that copy the
-workspace tree. `publish_manifest.py` owns the `publish.strip_patches`
-staging-time manifest mutation. These operations run before any `cargo package`
-or `cargo publish` command, so the command runner works against a prepared
+workspace tree. Its exclusion policy — pattern matching, the `copytree` ignore
+callback, and the pre-copy manifest check — lives in `publish_stage_exclude.py`
+(issue #262) so the copy and cleanup lifecycle does not also own pattern
+semantics. `publish_manifest.py` owns the `publish.strip_patches` staging-time
+manifest mutation. These operations run before any `cargo package` or
+`cargo publish` command, so the command runner works against a prepared
 snapshot rather than the source workspace. Workspace README adoption is not
 performed here; the `lading bump` command transposes the workspace README into
 each opted-in crate before publication.
