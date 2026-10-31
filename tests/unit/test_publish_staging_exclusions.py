@@ -260,6 +260,31 @@ def test_stage_exclude_allows_a_manifest_outside_the_workspace_root(
     publish_stage_exclude._validate_stage_exclude(plan, ("delta",))
 
 
+def test_stage_exclude_rejects_a_symlinked_manifest(
+    preparation_fixtures: PreparationFixtures, tmp_path: Path
+) -> None:
+    """A manifest is checked at the path staging copies, not its target."""
+    root = preparation_fixtures.tmp_path / "workspace"
+    root.mkdir()
+    (root / "Cargo.toml").write_text("[workspace]\n", encoding="utf-8")
+    crate = preparation_fixtures.make_crate(root, "alpha")
+    target = tmp_path / "shared-Cargo.toml"
+    target.write_text(crate.manifest_path.read_text(encoding="utf-8"), encoding="utf-8")
+    crate.manifest_path.unlink()
+    crate.manifest_path.symlink_to(target)
+    plan = publish.plan_publication(
+        preparation_fixtures.make_workspace(root, crate),
+        preparation_fixtures.make_config(),
+    )
+
+    with pytest.raises(publish_staging.PublishPreparationError) as excinfo:
+        publish_stage_exclude._validate_stage_exclude(plan, ("alpha",))
+
+    assert "crate 'alpha' manifest 'alpha/Cargo.toml'" in str(excinfo.value), (
+        "the rejection must name the link path rather than its target"
+    )
+
+
 _CANDIDATE_PATTERNS = (
     "Cargo.toml",
     "alpha",

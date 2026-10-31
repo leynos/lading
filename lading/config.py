@@ -382,5 +382,3 @@ def current_configuration() -> LadingConfig:
     except LookupError as exc:  # pragma: no cover - defensive guard
         message = "Configuration has not been loaded yet."
         raise ConfigurationNotLoadedError(message) from exc
-
-
