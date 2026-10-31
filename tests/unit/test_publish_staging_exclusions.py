@@ -180,16 +180,12 @@ def _plan_with_roles(
 
 def _stage_capturing_logs(
     plan: publish_plan.PublishPlan,
-    fixtures: PreparationFixtures,
+    options: publish.PublishOptions,
     caplog: pytest.LogCaptureFixture,
     *,
     stage_exclude: cabc.Sequence[str],
-    live: bool = False,
 ) -> Path:
     """Stage ``plan`` under log capture and return the staged root."""
-    options = publish.PublishOptions(
-        build_directory=fixtures.tmp_path / "staging", live=live
-    )
     with (
         # DEBUG keeps every record the staging module emits, so a caller's
         # assertion decides which level mattered.
@@ -228,12 +224,10 @@ def test_staging_logs_the_effective_exclusions(
 ) -> None:
     """The exclusion actually applied is recorded when staging begins."""
     plan = _plan_with_roles(preparation_fixtures)
-    _stage_capturing_logs(
-        plan,
-        preparation_fixtures,
-        caplog,
-        stage_exclude=("venv",),
+    options = publish.PublishOptions(
+        build_directory=preparation_fixtures.tmp_path / "staging"
     )
+    _stage_capturing_logs(plan, options, caplog, stage_exclude=("venv",))
 
     assert "Staging workspace with stage_exclude=('venv',)" in caplog.text, (
         "the log must name the patterns that shaped the staged tree"
@@ -249,11 +243,11 @@ def test_staged_workspace_strips_a_trailing_slash(
     target = plan.workspace_root / "target"
     target.mkdir()
     (target / "artifact").write_text("", encoding="utf-8")
+    options = publish.PublishOptions(
+        build_directory=preparation_fixtures.tmp_path / "staging"
+    )
     staging_root = _stage_capturing_logs(
-        plan,
-        preparation_fixtures,
-        caplog,
-        stage_exclude=("target/",),
+        plan, options, caplog, stage_exclude=("target/",)
     )
 
     assert not (staging_root / "target").exists(), (
@@ -342,13 +336,10 @@ def test_live_publish_warns_only_when_git_is_excluded(
 ) -> None:
     """An irreversible upload without a checkout is flagged before copying."""
     plan = _plan_with_roles(preparation_fixtures)
-    _stage_capturing_logs(
-        plan,
-        preparation_fixtures,
-        caplog,
-        stage_exclude=stage_exclude,
-        live=True,
+    options = publish.PublishOptions(
+        build_directory=preparation_fixtures.tmp_path / "staging", live=True
     )
+    _stage_capturing_logs(plan, options, caplog, stage_exclude=stage_exclude)
 
     assert (".gitignore" in caplog.text) is should_warn, (
         "the warning must appear exactly when the upload loses gitignore selection"
