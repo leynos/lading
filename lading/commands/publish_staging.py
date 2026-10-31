@@ -218,8 +218,8 @@ def _warn_if_live_publish_loses_git_selection(
     LOGGER.warning(
         "Live publish staging excludes .git, so cargo will not apply "
         ".gitignore when selecting package files; a file Git ignores whose "
-        "name does not start with a dot can be uploaded. Set "
-        "publish.stage_exclude = [] to keep Git-aware selection."
+        "name does not start with a dot can be uploaded. A live upload cannot "
+        "be undone. Set publish.stage_exclude = [] to keep Git-aware selection."
     )
 
 
