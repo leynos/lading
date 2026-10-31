@@ -32,19 +32,29 @@ The 0.1.0 release also changes workspace README adoption:
 
 ## Where a publish stages the workspace
 
-`lading publish` copies the whole workspace before packaging it, so packaging
-and publication never read the working tree. The pre-flight is the exception:
-its `cargo check` and `cargo test` run in the workspace root, before staging
+`lading publish` copies the workspace before packaging it, so packaging and
+publication never read the working tree. The pre-flight is the exception: its
+`cargo check` and `cargo test` run in the workspace root, before staging
 begins, though into a throwaway target directory. The copy goes under the
 system temporary directory, honouring `TMPDIR`, in a directory named
 `lading-publish-*`. Set `TMPDIR` to put it somewhere else; there is no
 command-line option for the location, and the programmatic
 `PublishOptions.build_directory` is the only way to name one directly.
 
-That copy is the entire workspace plus its verify build, which is tens of
-gigabytes for a large one. It is removed when the publish ends: on success, on
-failure, on `Ctrl-C`, and on `SIGTERM`. A `SIGKILL` cannot be handled, so that
-one case still leaves the copy behind. Nothing else accumulates between runs.
+Staging omits `.git` by default, and `publish.stage_exclude` names anything
+else to leave out. `target/`, virtual environments and tool caches are still
+copied unless the configuration excludes them, and a populated `target/` can
+make the copy tens of gigabytes. Staging time then tracks what happens to be in
+the tree rather than the sources being packaged. Excluding `target/` is usually
+the largest saving, but it is not the default because some workspaces package
+artefacts from it: rstest-bdd, for example, stages packaged crates under
+`target/published-gpui-e2e/` and patches crates.io names in its published-GPUI
+end-to-end fixture manifest to point at them, so excluding `target/` breaks its
+publish check.
+
+The copy is removed when the publish ends: on success, on failure, on `Ctrl-C`,
+and on `SIGTERM`. A `SIGKILL` cannot be handled, so that one case still leaves
+the copy behind. Nothing else accumulates between runs.
 
 Pass `--keep-staging` to retain it while debugging a staging problem. The
 retained path is logged, and removing it is then a manual step:
@@ -54,6 +64,35 @@ lading publish --keep-staging
 ```
 
 `LADING_KEEP_STAGING=1` has the same effect.
+
+### Staging exclusions
+
+`publish.stage_exclude` is an array of gitignore-style patterns relative to the
+workspace root. A pattern without `/` matches a file or directory name at any
+depth, so the default `.git` removes every `.git` directory in the tree. A
+pattern with `/` matches the whole workspace-relative path, so
+`crates/app/venv` removes only that one directory while leaving `venv` beside
+the workspace root alone. `*` can span `/` in an anchored pattern, so
+`crates/*/venv` matches a virtual environment in any nested crate. A configured
+list replaces the default rather than adding to it, and an explicit
+`stage_exclude = []` restores copying everything.
+
+Staging refuses a pattern that would remove a manifest the publication needs:
+the workspace `Cargo.toml` and the manifest of every planned crate, including
+crates skipped by `publish = false` or `publish.exclude`. The error names the
+pattern and the affected manifest, and it is raised before the copy starts, so
+a typo does not first copy a large tree and then fail. Patterns are filesystem
+paths, not crate names; use `publish.exclude` to skip a crate from publication.
+
+Because staging omits `.git` by default, the staged tree is not a Git checkout,
+and `cargo package` selects files accordingly. It skips every hidden file and
+directory whose name starts with a dot, does not consult the repository's
+`.gitignore` rules, and writes no `.cargo_vcs_info.json` into the package, so
+the published crate carries no source-commit provenance. A dot-named file the
+package needs must be named in its `include` list. To keep the old Git-aware
+selection, including gitignore handling and VCS provenance, set
+`stage_exclude = []`. `--forbid-dirty` is unaffected either way: it inspects
+the source workspace's Git status before staging begins.
 
 ## Reclaiming space from earlier versions
 
@@ -662,6 +701,7 @@ globs = ["README.md", "docs/**/*.md"]
 [publish]
 exclude = ["some-internal-tooling-crate"]
 order = ["core", "utils", "app"]
+stage_exclude = [".git", "target", "venv"]
 strip_patches = "per-crate" # "all" | "per-crate" | false
 
 [preflight]
@@ -686,8 +726,11 @@ stderr_tail_lines = 40
   regenerated automatically. Configured manifests are needed for lockfiles that
   git does not track (for example, generated fixtures listed in `.gitignore`),
   and for all nested lockfiles when the workspace is outside a Git repository,
-  where tracked-lockfile discovery cannot run at all. The workspace root
-  `Cargo.toml` is always included and should not be listed.
+  where tracked-lockfile discovery cannot run at all. Staging copies such
+  fixtures into the staged workspace regardless of `.gitignore`, because it
+  filters only by `publish.stage_exclude`; see
+  [staging exclusions](#staging-exclusions). The workspace root `Cargo.toml` is
+  always included and should not be listed.
 - `rebuild_lockfiles`: boolean, default `true`. Controls whether `lading bump`
   regenerates the workspace lockfile, discovered tracked lockfiles, and
   configured nested lockfiles after manifest updates. Pass
@@ -735,6 +778,13 @@ committing the bump.
   publication.
 - `order`: array of strings, default `[]`. Explicit publish order; overrides
   dependency-derived ordering when present.
+- `stage_exclude`: array of strings, default `[".git"]`. Paths omitted from the
+  staged workspace copy, as gitignore-style patterns relative to the workspace
+  root. A pattern without `/` matches a name at any depth; a pattern with `/`
+  matches the whole workspace-relative path, and its `*` can span `/`. A
+  configured list replaces the default, and `[]` copies everything. Staging
+  refuses a pattern that would remove a required manifest. See
+  [staging exclusions](#staging-exclusions).
 - `strip_patches`: one of `"all"`, `"per-crate"`, or `false`; default
   `"per-crate"`. Controls how `[patch.crates-io]` is edited in the staged
   workspace before packaging.
