@@ -8,6 +8,7 @@ manifest the publication cannot proceed without.
 """
 
 import collections.abc as cabc
+import contextlib
 import dataclasses as dc
 import logging
 import tempfile
@@ -178,14 +179,15 @@ def _plan_with_roles(
     return publish.plan_publication(workspace, fixtures.make_config(exclude=("gamma",)))
 
 
+@contextlib.contextmanager
 def _stage_capturing_logs(
     plan: publish_plan.PublishPlan,
     options: publish.PublishOptions,
     caplog: pytest.LogCaptureFixture,
     *,
     stage_exclude: cabc.Sequence[str],
-) -> Path:
-    """Stage ``plan`` under log capture and return the staged root."""
+) -> cabc.Generator[publish_staging.StagedWorkspace]:
+    """Stage ``plan`` under log capture and yield the staged workspace."""
     with (
         # DEBUG keeps every record the staging module emits, so a caller's
         # assertion decides which level mattered.
@@ -194,7 +196,7 @@ def _stage_capturing_logs(
             plan, options=options, stage_exclude=stage_exclude
         ) as staged,
     ):
-        return staged.staging_root
+        yield staged
 
 
 def test_staged_workspace_omits_git_by_default(
@@ -227,7 +229,8 @@ def test_staging_logs_the_effective_exclusions(
     options = publish.PublishOptions(
         build_directory=preparation_fixtures.tmp_path / "staging"
     )
-    _stage_capturing_logs(plan, options, caplog, stage_exclude=("venv",))
+    with _stage_capturing_logs(plan, options, caplog, stage_exclude=("venv",)):
+        pass
 
     assert "Staging workspace with stage_exclude=('venv',)" in caplog.text, (
         "the log must name the patterns that shaped the staged tree"
@@ -246,13 +249,15 @@ def test_staged_workspace_strips_a_trailing_slash(
     options = publish.PublishOptions(
         build_directory=preparation_fixtures.tmp_path / "staging"
     )
-    staging_root = _stage_capturing_logs(
+    with _stage_capturing_logs(
         plan, options, caplog, stage_exclude=("target/",)
-    )
-
-    assert not (staging_root / "target").exists(), (
-        "a trailing slash must be stripped before the pattern is matched"
-    )
+    ) as staged:
+        # Checked inside the block: cleanup removes the tree on exit, so a
+        # later absence assertion would hold whether or not the copy honoured
+        # the pattern.
+        assert not (staged.staging_root / "target").exists(), (
+            "a trailing slash must be stripped before the pattern is matched"
+        )
     assert "stage_exclude=('target',)" in caplog.text, (
         "the log must name the normalized pattern rather than the raw spelling"
     )
@@ -339,7 +344,8 @@ def test_live_publish_warns_only_when_git_is_excluded(
     options = publish.PublishOptions(
         build_directory=preparation_fixtures.tmp_path / "staging", live=True
     )
-    _stage_capturing_logs(plan, options, caplog, stage_exclude=stage_exclude)
+    with _stage_capturing_logs(plan, options, caplog, stage_exclude=stage_exclude):
+        pass
 
     assert (".gitignore" in caplog.text) is should_warn, (
         "the warning must appear exactly when the upload loses gitignore selection"
