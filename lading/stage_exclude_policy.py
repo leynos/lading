@@ -4,9 +4,15 @@
 file, and a direct call to :func:`lading.commands.publish_staging.
 staged_workspace` or
 :func:`~lading.commands.publish_staging.prepare_workspace`. Both routes apply
-the rules here, so a pattern is accepted or rejected the same way whichever
-one it arrives by, and a spelling that can never match a copied path is
+the spelling rules here, so a spelling that can never match a copied path is
 reported instead of silently excluding nothing.
+
+The routes differ on one input. A file is read through
+:func:`lading.toml_coerce.string_tuple`, which turns a bare string into a
+one-pattern list, so ``stage_exclude = "target"`` means one pattern. A direct
+caller reaches :func:`normalize_stage_exclude` unchanged, where a bare string
+is rejected: a ``str`` is a sequence of characters, and iterating it would
+splinter the pattern instead of applying it.
 
 This module depends on neither the configuration nor the command layer, so
 both can use it without an import cycle. The configuration loader translates
