@@ -52,7 +52,7 @@ decision, recorded below.
 
 | Your environment                                                       | Action required                                             |
 | ---------------------------------------------------------------------- | ----------------------------------------------------------- |
-| CPython 3.14 or later, confined workspace                              | None; upgrade as usual.                                     |
+| CPython 3.14 or later, confined workspace                              | None, unless a crate needs Git-aware selection.             |
 | CPython 3.14 or later, script reads diagnostics from stdout            | Required: read diagnostics from stderr instead.             |
 | CPython 3.14 or later, symlinked member or escaping documentation glob | Required: make the member or glob real, or remain on 0.3.1. |
 | CPython 3.14 or later, unreadable documentation file                   | Required: make the file readable and decodable.             |
@@ -73,10 +73,11 @@ documentation glob must be corrected, as described under
 such a workspace fails the same way on any interpreter. A script that reads
 diagnostics from stdout should read stderr instead, because diagnostics moved
 there. The staging default is a behaviour change instead: a project whose
-packaged files must keep Git-aware selection sets `stage_exclude = []`. A
-project pinned to a Lading version through a lockfile keeps that version until
-the lockfile is regenerated, so the floor bites when the pin is moved rather
-than when this release is published.
+packaged files must keep Git-aware selection sets `stage_exclude = []`.
+[Publish staging exclusions](#publish-staging-exclusions) describes the
+consequence for packaged files. A project pinned to a Lading version through a
+lockfile keeps that version until the lockfile is regenerated, so the floor
+bites when the pin is moved rather than when this release is published.
 
 ## 1. Make bump write targets confined and regular
 
