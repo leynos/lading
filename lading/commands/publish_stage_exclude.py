@@ -145,6 +145,22 @@ def _workspace_relative_prefixes(
     return (*ancestors, relative_path)
 
 
+def _manifest_exclusion(
+    manifest: Path,
+    workspace_root: Path,
+    patterns: cabc.Sequence[str],
+) -> tuple[PurePosixPath, str] | None:
+    """Return the excluded manifest path and the pattern that excludes it."""
+    relative = _manifest_relative_path(manifest, workspace_root)
+    if relative is None:
+        return None
+    for candidate in _workspace_relative_prefixes(relative):
+        pattern = _match_stage_exclude(candidate, patterns)
+        if pattern is not None:
+            return relative, pattern
+    return None
+
+
 def _validate_stage_exclude(
     plan: PublishPlan, stage_exclude: cabc.Sequence[str]
 ) -> None:
@@ -162,16 +178,14 @@ def _validate_stage_exclude(
     if not stage_exclude:
         return
     for label, manifest in _required_manifests(plan):
-        relative = _manifest_relative_path(manifest, plan.workspace_root)
-        if relative is None:
-            # A member outside the workspace root is not copied into staging at
-            # all, so a workspace-relative pattern cannot remove it.
+        exclusion = _manifest_exclusion(manifest, plan.workspace_root, stage_exclude)
+        if exclusion is None:
+            # Either the manifest has no spelling below the workspace root, so
+            # staging never copies it, or no pattern matches it or an ancestor.
             continue
-        for candidate in _workspace_relative_prefixes(relative):
-            pattern = _match_stage_exclude(candidate, stage_exclude)
-            if pattern is not None:
-                message = (
-                    f"publish.stage_exclude pattern {pattern!r} would exclude "
-                    f"{label} manifest {relative.as_posix()!r}"
-                )
-                raise PublishPreparationError(message)
+        relative, pattern = exclusion
+        message = (
+            f"publish.stage_exclude pattern {pattern!r} would exclude "
+            f"{label} manifest {relative.as_posix()!r}"
+        )
+        raise PublishPreparationError(message)

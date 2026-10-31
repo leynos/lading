@@ -574,10 +574,10 @@ _optional_mapping = functools.partial(
 )
 
 
-def _validate_stage_exclude_pattern(
+def _reject_unusable_stage_exclude(
     candidate: str, field_name: str, original: str
 ) -> None:
-    """Reject a staging exclusion that cannot describe a workspace path."""
+    """Reject a spelling no relative workspace path can have."""
     if not candidate.strip():
         message = f"{field_name} must not be blank; received {original!r}."
         raise ConfigurationError(message)
@@ -599,6 +599,12 @@ def _validate_stage_exclude_pattern(
     if "\\" in candidate:
         message = f"{field_name} must use '/' separators; received {original!r}."
         raise ConfigurationError(message)
+
+
+def _reject_non_workspace_stage_exclude(
+    candidate: str, field_name: str, original: str
+) -> None:
+    """Reject segments that would load but never match a copied entry."""
     path = PurePosixPath(candidate)
     if ".." in path.parts:
         message = f"{field_name} must not contain '..'; received {original!r}."
@@ -611,6 +617,14 @@ def _validate_stage_exclude_pattern(
             f"received {original!r}."
         )
         raise ConfigurationError(message)
+
+
+def _validate_stage_exclude_pattern(
+    candidate: str, field_name: str, original: str
+) -> None:
+    """Reject a staging exclusion that cannot describe a workspace path."""
+    _reject_unusable_stage_exclude(candidate, field_name, original)
+    _reject_non_workspace_stage_exclude(candidate, field_name, original)
 
 
 def _stage_exclude(value: object) -> tuple[str, ...]:
