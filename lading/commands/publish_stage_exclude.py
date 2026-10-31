@@ -13,6 +13,11 @@ as a spelling of that same intent. A pattern with ``/`` matches the whole
 workspace-relative path, where ``*`` may span separators; a leading ``**/``
 lifts that anchoring so the remainder matches at any depth, including the
 workspace root.
+
+Only a *leading* ``**/`` is special. An interior ``**`` is a ``*`` like any
+other, so it still needs a separator on each side: ``crates/**/venv`` matches
+``crates/app/venv`` but not ``crates/venv``. Writing ``**/venv``, or ``venv``,
+is how a reader asks for any depth.
 """
 
 import collections.abc as cabc
@@ -37,7 +42,8 @@ def _match_stage_exclude(
     A pattern with a slash is matched against the whole workspace-relative
     path, and its ``*`` may span separators. A leading ``**/`` lifts that
     anchoring: the remainder matches at any depth, including the workspace
-    root.
+    root. An interior ``**`` is not special, so it still needs a separator on
+    each side and does not make the segment it names optional.
 
     Returns
     -------
@@ -161,31 +167,70 @@ def _manifest_exclusion(
     return None
 
 
+def _link_target_exclusion(
+    manifest: Path, workspace_root: Path, patterns: cabc.Sequence[str]
+) -> tuple[PurePosixPath, str] | None:
+    """Return the excluded target of a preserved manifest symlink, if any."""
+    if not manifest.is_symlink() or not manifest.exists():
+        # A broken link has no target staging could have copied, and a pattern
+        # is not what broke it.
+        return None
+    return _manifest_exclusion(manifest.resolve(strict=False), workspace_root, patterns)
+
+
 def _validate_stage_exclude(
-    plan: PublishPlan, stage_exclude: cabc.Sequence[str]
+    plan: PublishPlan,
+    stage_exclude: cabc.Sequence[str],
+    *,
+    preserve_symlinks: bool,
 ) -> None:
     """Reject exclusions that would remove a manifest staging must package.
 
     Checked before any staging directory exists, so a configuration that
     cannot work fails without creating or copying a tree first.
 
+    Parameters
+    ----------
+    plan : PublishPlan
+        The publication whose manifests staging must retain.
+    stage_exclude : cabc.Sequence[str]
+        Normalized exclusion patterns.
+    preserve_symlinks : bool
+        Whether staging copies symbolic links as links. When it does, a
+        required manifest that is a link is unusable if a pattern removes the
+        link's target inside the workspace: the staged link would dangle.
+
     Raises
     ------
     PublishPreparationError
-        If a pattern matches a required manifest or one of its ancestor
-        directories.
+        If a pattern matches a required manifest, one of its ancestor
+        directories, or the in-workspace target of a preserved link to it.
     """
     if not stage_exclude:
         return
     for label, manifest in _required_manifests(plan):
-        exclusion = _manifest_exclusion(manifest, plan.workspace_root, stage_exclude)
-        if exclusion is None:
-            # Either the manifest has no spelling below the workspace root, so
-            # staging never copies it, or no pattern matches it or an ancestor.
+        relative = _manifest_relative_path(manifest, plan.workspace_root)
+        if relative is None:
+            # No spelling of the workspace root contains the manifest, so
+            # staging never copies it and no pattern can remove it.
             continue
-        relative, pattern = exclusion
+        exclusion = _manifest_exclusion(manifest, plan.workspace_root, stage_exclude)
+        if exclusion is not None:
+            pattern = exclusion[1]
+            message = (
+                f"publish.stage_exclude pattern {pattern!r} would exclude "
+                f"{label} manifest {relative.as_posix()!r}"
+            )
+            raise PublishPreparationError(message)
+        if not preserve_symlinks:
+            continue
+        target = _link_target_exclusion(manifest, plan.workspace_root, stage_exclude)
+        if target is None:
+            continue
+        target_relative, pattern = target
         message = (
             f"publish.stage_exclude pattern {pattern!r} would exclude "
-            f"{label} manifest {relative.as_posix()!r}"
+            f"{label} manifest {relative.as_posix()!r}, whose symlink target "
+            f"{target_relative.as_posix()!r} staging would not copy"
         )
         raise PublishPreparationError(message)

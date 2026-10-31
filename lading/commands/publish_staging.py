@@ -249,7 +249,9 @@ def _stage(
     # Before the temporary directory is created: a pattern that removes a
     # manifest makes the publish impossible, and it should say so without
     # first copying tens of gigabytes to find out.
-    _validate_stage_exclude(plan, stage_exclude)
+    _validate_stage_exclude(
+        plan, stage_exclude, preserve_symlinks=active_options.preserve_symlinks
+    )
     _warn_if_live_publish_loses_git_selection(active_options, stage_exclude)
     # Recorded because the effective list decides what the staged tree holds,
     # and it may come from the default, `lading.toml`, or a programmatic

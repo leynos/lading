@@ -32,6 +32,7 @@ _POPULATED_PATHS = (
     "target/debug/artifact",
     "venv/marker",
     "crates/alpha/venv/marker",
+    "crates/venv/marker",
 )
 
 
@@ -377,4 +378,16 @@ def test_leading_double_star_matches_a_path_at_any_depth(tmp_path: Path) -> None
     )
     assert (staging_root / "venv" / "marker").is_file(), (
         "the any-depth spelling must not remove a top-level venv"
+    )
+
+
+def test_interior_double_star_still_needs_a_separator(tmp_path: Path) -> None:
+    """An interior ``**`` is a plain ``*``: it does not span zero segments."""
+    staging_root = _copy_with_exclusions(tmp_path, ("crates/**/venv",))
+
+    assert not (staging_root / "crates" / "alpha" / "venv").exists(), (
+        "the pattern must match a venv one directory below crates"
+    )
+    assert (staging_root / "crates" / "venv" / "marker").is_file(), (
+        "an interior '**' must not match when no segment sits beneath it"
     )

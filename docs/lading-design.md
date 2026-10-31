@@ -379,20 +379,25 @@ lading bump <new_version> [--dry-run]
   directory is pruned before `copytree` walks it rather than traversed and
   discarded. Patterns are matched by one shared predicate: a pattern without
   `/` against each entry's basename at any depth, a pattern with `/` against
-  the workspace-relative path, both with `fnmatch.fnmatchcase`. The configured
-  list comes from the resolved configuration and is forwarded by `publish.run`
-  into `staged_workspace`, so an explicit `PublishOptions.configuration` and
-  the active configuration reach staging the same way.
+  the workspace-relative path, both with `fnmatch.fnmatchcase`. Only a leading
+  `**/` is special; an interior `**` is an ordinary `*`, so it still needs a
+  separator on each side. The configured list comes from the resolved
+  configuration and is forwarded by `publish.run` into `staged_workspace`, so
+  an explicit `PublishOptions.configuration` and the active configuration reach
+  staging the same way.
 - Before the temporary directory is created, `_validate_stage_exclude` matches
   the plan's required manifests — the workspace `Cargo.toml` and every planned
   crate manifest, publishable or skipped — together with their ancestor
   prefixes, against the same predicate. A pattern that would remove any of them
   raises `PublishPreparationError`, naming the pattern and manifest, rather
-  than copying the tree and failing afterwards. The default is `(".git",)`: it
-  is the largest entry no packaging step needs, and omitting it changes how
-  Cargo selects package files, as the user's guide describes. `target/` is
-  deliberately retained by default, because some workspaces package artefacts
-  from it — rstest-bdd stages packaged crates under
+  than copying the tree and failing afterwards. When symlinks are preserved, a
+  required manifest that is itself a link is checked against the same predicate
+  through its in-workspace target as well: the link is copied as written, so
+  pruning the target would leave the staged manifest dangling. The default is
+  `(".git",)`: it is the largest entry no packaging step needs, and omitting it
+  changes how Cargo selects package files, as the user's guide describes.
+  `target/` is deliberately retained by default, because some workspaces
+  package artefacts from it — rstest-bdd stages packaged crates under
   `target/published-gpui-e2e/` and patches crates.io names in a fixture
   manifest to point at them, so excluding `target/` breaks its publish check.
 - Crates that opt into `readme.workspace = true` must already have adopted

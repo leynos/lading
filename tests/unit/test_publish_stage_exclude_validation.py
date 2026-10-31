@@ -38,7 +38,9 @@ def test_stage_exclude_rejects_a_pattern_matching_an_ancestor_directory(
     plan = publish.plan_publication(workspace, preparation_fixtures.make_config())
 
     with pytest.raises(publish_staging.PublishPreparationError) as excinfo:
-        publish_stage_exclude._validate_stage_exclude(plan, ("crates",))
+        publish_stage_exclude._validate_stage_exclude(
+            plan, ("crates",), preserve_symlinks=True
+        )
 
     assert "crate 'alpha' manifest 'crates/alpha/Cargo.toml'" in str(excinfo.value), (
         "the rejection must name the nested manifest the ancestor pattern removes"
@@ -56,11 +58,15 @@ def test_stage_exclude_allows_a_manifest_outside_the_workspace_root(
     plan = dc.replace(plan, publishable=(*plan.publishable, external))
 
     with pytest.raises(publish_staging.PublishPreparationError):
-        publish_stage_exclude._validate_stage_exclude(plan, ("alpha",))
+        publish_stage_exclude._validate_stage_exclude(
+            plan, ("alpha",), preserve_symlinks=True
+        )
 
     # Passing for the external crate alone proves the exemption is specific to
     # it, not that validation returned early for every pattern.
-    publish_stage_exclude._validate_stage_exclude(plan, ("delta",))
+    publish_stage_exclude._validate_stage_exclude(
+        plan, ("delta",), preserve_symlinks=True
+    )
 
 
 def test_stage_exclude_rejects_a_symlinked_manifest(
@@ -81,10 +87,47 @@ def test_stage_exclude_rejects_a_symlinked_manifest(
     )
 
     with pytest.raises(publish_staging.PublishPreparationError) as excinfo:
-        publish_stage_exclude._validate_stage_exclude(plan, ("alpha",))
+        publish_stage_exclude._validate_stage_exclude(
+            plan, ("alpha",), preserve_symlinks=True
+        )
 
     assert "crate 'alpha' manifest 'alpha/Cargo.toml'" in str(excinfo.value), (
         "the rejection must name the link path rather than its target"
+    )
+
+
+def test_stage_exclude_rejects_a_preserved_link_into_an_excluded_directory(
+    preparation_fixtures: PreparationFixtures,
+) -> None:
+    """A kept link dangles when staging would prune the file it points at."""
+    root = preparation_fixtures.tmp_path / "workspace"
+    root.mkdir()
+    (root / "Cargo.toml").write_text("[workspace]\n", encoding="utf-8")
+    crate = preparation_fixtures.make_crate(root, "alpha")
+    shared = root / "shared"
+    shared.mkdir()
+    (shared / "Cargo.toml").write_text(
+        crate.manifest_path.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    crate.manifest_path.unlink()
+    crate.manifest_path.symlink_to("../shared/Cargo.toml")
+    plan = publish.plan_publication(
+        preparation_fixtures.make_workspace(root, crate),
+        preparation_fixtures.make_config(),
+    )
+
+    with pytest.raises(publish_staging.PublishPreparationError) as excinfo:
+        publish_stage_exclude._validate_stage_exclude(
+            plan, ("shared",), preserve_symlinks=True
+        )
+
+    assert "symlink target 'shared/Cargo.toml'" in str(excinfo.value), (
+        "the rejection must name the target staging would not copy"
+    )
+    # Copying through the link puts a real file in the staged tree, so the
+    # same pattern is harmless and must not be refused.
+    publish_stage_exclude._validate_stage_exclude(
+        plan, ("shared",), preserve_symlinks=False
     )
 
 
@@ -107,7 +150,9 @@ def _validation_rejects(
 ) -> bool:
     """Return whether the pre-copy check refuses ``patterns``."""
     try:
-        publish_stage_exclude._validate_stage_exclude(plan, patterns)
+        publish_stage_exclude._validate_stage_exclude(
+            plan, patterns, preserve_symlinks=False
+        )
     except publish_staging.PublishPreparationError:
         return True
     return False

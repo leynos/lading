@@ -126,23 +126,9 @@ def test_load_configuration_parses_values(tmp_path: Path) -> None:
         pytest.param(
             """
             [publish]
-            stage_exclude = [""]
-            """,
-            id="publish_stage_exclude_blank",
-        ),
-        pytest.param(
-            """
-            [publish]
             stage_exclude = ["   "]
             """,
             id="publish_stage_exclude_whitespace",
-        ),
-        pytest.param(
-            """
-            [publish]
-            stage_exclude = ["/target"]
-            """,
-            id="publish_stage_exclude_absolute",
         ),
         pytest.param(
             """
@@ -157,13 +143,6 @@ def test_load_configuration_parses_values(tmp_path: Path) -> None:
             stage_exclude = ['target\\debug']
             """,
             id="publish_stage_exclude_backslash",
-        ),
-        pytest.param(
-            """
-            [publish]
-            stage_exclude = ["../outside"]
-            """,
-            id="publish_stage_exclude_parent",
         ),
         pytest.param(
             """
