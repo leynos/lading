@@ -22,10 +22,11 @@ CONFIG_FILENAME = "lading.toml"
 StripPatchesSetting = typ.Literal["all", "per-crate"] | bool
 
 #: Paths staging omits when ``publish.stage_exclude`` is not configured.
-#: ``.git`` is large, and no packaging step reads the copy: Cargo only uses a
-#: checkout for provenance, which the published crate records as
-#: ``.cargo_vcs_info.json`` (issue #262). ``target`` is deliberately not
-#: excluded: some workspaces package artefacts from it.
+#: ``.git`` is large, and no lading step reads the copy. Cargo does read a
+#: checkout, so omitting it changes file selection: without one, ``cargo
+#: package`` skips dot-named entries, ignores ``.gitignore``, and records no
+#: ``.cargo_vcs_info.json`` provenance (issue #262). ``target`` is deliberately
+#: not excluded: some workspaces package artefacts from it.
 DEFAULT_STAGE_EXCLUDE: typ.Final[tuple[str, ...]] = (".git",)
 
 CONFIG_ROOT_TOML_KEYS: typ.Final[frozenset[str]] = frozenset({

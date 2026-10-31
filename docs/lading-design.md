@@ -390,7 +390,7 @@ lading bump <new_version> [--dry-run]
   raises `PublishPreparationError`, naming the pattern and manifest, rather
   than copying the tree and failing afterwards. The default is `(".git",)`: it
   is the largest entry no packaging step needs, and omitting it changes how
-  Cargo selects package files, as the users' guide describes. `target/` is
+  Cargo selects package files, as the user's guide describes. `target/` is
   deliberately retained by default, because some workspaces package artefacts
   from it — rstest-bdd stages packaged crates under
   `target/published-gpui-e2e/` and patches crates.io names in a fixture

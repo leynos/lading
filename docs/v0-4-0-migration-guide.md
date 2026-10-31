@@ -34,7 +34,7 @@ decision, recorded below.
 
 | Your environment        | Action required                                    |
 | ----------------------- | -------------------------------------------------- |
-| CPython 3.14 or later   | None; upgrade as usual.                            |
+| CPython 3.14 or later   | None, unless a crate needs Git-aware selection.    |
 | CPython 3.13            | Upgrade the interpreter, or remain on 0.3.1.       |
 | CPython 3.12 or earlier | Upgrade the interpreter; 0.3.1 also required 3.13. |
 
@@ -45,7 +45,8 @@ default is a behaviour change instead: a project whose packaged files must keep
 Git-aware selection sets `stage_exclude = []`. A project pinned to a Lading
 version through a lockfile keeps that version until the lockfile is
 regenerated, so the floor bites when the pin is moved rather than when this
-release is published.
+release is published. [Publish staging exclusions](#publish-staging-exclusions)
+describes the consequence for packaged files.
 
 ## What changed
 
