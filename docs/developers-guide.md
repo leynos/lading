@@ -1343,6 +1343,14 @@ temporary directory exists, translating it into `PublishPreparationError` and
 logging the normalized tuple. The predicate here therefore only ever sees
 relative, normalized paths.
 
+`_stage` also calls `_warn_if_live_publish_loses_git_selection` before copying.
+It logs a `WARNING` when `PublishOptions.live` is set and the effective
+patterns match `.git`, because Cargo then selects package files without a
+checkout: `.gitignore` no longer applies, and a live upload cannot be undone.
+The warning exists for the default `(".git",)` case, so removing the default
+from `DEFAULT_STAGE_EXCLUDE` must revisit it rather than leave a message that
+never fires.
+
 When adding a pattern spelling, change `_match_stage_exclude` and cover it in
 `tests/unit/test_publish_staging_exclusions.py`; it is the only place the
 semantics are decided, so the validator and the copy cannot diverge.

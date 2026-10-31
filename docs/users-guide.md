@@ -102,8 +102,10 @@ ignores whose name does not start with a dot is included unless the crate's
 `include` list or `stage_exclude` keeps it out, so audit for such files in a
 publishable crate before relying on the default. To keep the old Git-aware
 selection, including gitignore handling and VCS provenance, set
-`stage_exclude = []`. `--forbid-dirty` is unaffected either way: it inspects
-the source workspace's Git status before staging begins.
+`stage_exclude = []`. A live publish whose effective exclusions remove `.git`
+logs a warning before it copies, because an upload cannot be undone: a yanked
+version still holds the files it published. `--forbid-dirty` is unaffected
+either way: it inspects the source workspace's Git status before staging begins.
 
 ## Reclaiming space from earlier versions
 

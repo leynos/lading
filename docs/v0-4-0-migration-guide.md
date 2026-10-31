@@ -102,7 +102,8 @@ but it also changes how Cargo selects files for a package. With no Git metadata,
 without a leading dot — a local database, or a settings module — is therefore
 packaged unless the crate names it in `include` or the configuration excludes
 it. Audit any such file that sits inside a publishable crate before relying on
-the default.
+the default. A live publish that stages without `.git` logs a warning before
+copying, because an upload cannot be undone.
 
 Projects that do not publish are unaffected. To keep the 0.3.x behaviour for a
 workspace that depends on Git-aware selection, set:
