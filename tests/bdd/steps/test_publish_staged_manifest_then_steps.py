@@ -71,20 +71,19 @@ def then_staged_workspace_copy_removed(cli_run: CliRunResult) -> None:
     cli_run : CliRunResult
         The captured publish run whose plan names the staging path.
     """
-    _assert_cli_run_succeeded(cli_run)
-    staging_root = _extract_staging_root_from_plan(_publish_plan_lines(cli_run))
+    staging_root = _staging_root(cli_run)
     assert not staging_root.exists(), f"{staging_root} survived the publish"
 
 
-def _retained_staging_root(cli_run: CliRunResult) -> Path:
-    """Return the staging root the retained-copy plan names."""
+def _staging_root(cli_run: CliRunResult) -> Path:
+    """Return the staging root a successful run's plan names."""
     _assert_cli_run_succeeded(cli_run)
     return _extract_staging_root_from_plan(_publish_plan_lines(cli_run))
 
 
 def _assert_staging_paths(cli_run: CliRunResult, paths: str, *, retained: bool) -> None:
     """Assert each comma-separated path's presence matches ``retained``."""
-    staging_root = _retained_staging_root(cli_run)
+    staging_root = _staging_root(cli_run)
     for relative in _split_names(paths):
         present = (staging_root / relative).exists()
         assert present is retained, (
@@ -93,13 +92,11 @@ def _assert_staging_paths(cli_run: CliRunResult, paths: str, *, retained: bool) 
         )
 
 
-@then(parsers.parse('the retained staging tree omits paths "{paths}"'))
-def then_retained_staging_omits_paths(cli_run: CliRunResult, paths: str) -> None:
-    """Assert that every comma-separated path was excluded from staging."""
-    _assert_staging_paths(cli_run, paths, retained=False)
-
-
-@then(parsers.parse('the retained staging tree retains paths "{paths}"'))
-def then_retained_staging_retains_paths(cli_run: CliRunResult, paths: str) -> None:
-    """Assert that every comma-separated path survived staging."""
-    _assert_staging_paths(cli_run, paths, retained=True)
+@then(
+    parsers.re(
+        r'the retained staging tree (?P<verb>omits|retains) paths "(?P<paths>[^"]*)"'
+    )
+)
+def then_retained_staging_paths(cli_run: CliRunResult, verb: str, paths: str) -> None:
+    """Assert that every comma-separated path's presence matches the verb."""
+    _assert_staging_paths(cli_run, paths, retained=verb == "retains")
