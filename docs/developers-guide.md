@@ -1351,9 +1351,13 @@ The warning exists for the default `(".git",)` case, so removing the default
 from `DEFAULT_STAGE_EXCLUDE` must revisit it rather than leave a message that
 never fires.
 
-When adding a pattern spelling, change `_match_stage_exclude` and cover it in
-`tests/unit/test_publish_staging_exclusions.py`; it is the only place the
-semantics are decided, so the validator and the copy cannot diverge.
+When adding a pattern spelling, change `lading.stage_exclude_policy` if the
+spelling must be accepted or rejected, and change `_match_stage_exclude` if it
+must match differently. Cover the copy filter and the staging boundary in
+`tests/unit/test_publish_staging_exclusions.py`, and manifest protection in
+`tests/unit/test_publish_stage_exclude_validation.py`. `_match_stage_exclude`
+is the only predicate that decides matching, so the validator and the copy
+cannot diverge.
 
 ## Publish command internals
 
