@@ -7,6 +7,7 @@ default applied at the staging boundary, and the refusal to exclude a
 manifest the publication cannot proceed without.
 """
 
+import collections.abc as cabc
 import dataclasses as dc
 import logging
 import tempfile
@@ -177,6 +178,29 @@ def _plan_with_roles(
     return publish.plan_publication(workspace, fixtures.make_config(exclude=("gamma",)))
 
 
+def _stage_capturing_logs(
+    plan: publish_plan.PublishPlan,
+    fixtures: PreparationFixtures,
+    caplog: pytest.LogCaptureFixture,
+    *,
+    stage_exclude: cabc.Sequence[str],
+    live: bool = False,
+) -> Path:
+    """Stage ``plan`` under log capture and return the staged root."""
+    options = publish.PublishOptions(
+        build_directory=fixtures.tmp_path / "staging", live=live
+    )
+    with (
+        # DEBUG keeps every record the staging module emits, so a caller's
+        # assertion decides which level mattered.
+        caplog.at_level(logging.DEBUG, logger="lading.commands.publish_staging"),
+        publish_staging.staged_workspace(
+            plan, options=options, stage_exclude=stage_exclude
+        ) as staged,
+    ):
+        return staged.staging_root
+
+
 def test_staged_workspace_omits_git_by_default(
     preparation_fixtures: PreparationFixtures,
     tmp_path: Path,
@@ -200,20 +224,16 @@ def test_staged_workspace_omits_git_by_default(
 
 def test_staging_logs_the_effective_exclusions(
     preparation_fixtures: PreparationFixtures,
-    tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """The exclusion actually applied is recorded when staging begins."""
     plan = _plan_with_roles(preparation_fixtures)
-    options = publish.PublishOptions(build_directory=tmp_path / "staging")
-
-    with (
-        caplog.at_level(logging.INFO, logger="lading.commands.publish_staging"),
-        publish_staging.staged_workspace(
-            plan, options=options, stage_exclude=("venv",)
-        ),
-    ):
-        pass
+    _stage_capturing_logs(
+        plan,
+        preparation_fixtures,
+        caplog,
+        stage_exclude=("venv",),
+    )
 
     assert "Staging workspace with stage_exclude=('venv',)" in caplog.text, (
         "the log must name the patterns that shaped the staged tree"
@@ -229,23 +249,45 @@ def test_staged_workspace_strips_a_trailing_slash(
     target = plan.workspace_root / "target"
     target.mkdir()
     (target / "artifact").write_text("", encoding="utf-8")
-    options = publish.PublishOptions(
-        build_directory=preparation_fixtures.tmp_path / "staging"
+    staging_root = _stage_capturing_logs(
+        plan,
+        preparation_fixtures,
+        caplog,
+        stage_exclude=("target/",),
     )
 
-    with (
-        caplog.at_level(logging.INFO, logger="lading.commands.publish_staging"),
-        publish_staging.staged_workspace(
-            plan, options=options, stage_exclude=("target/",)
-        ) as staged,
-    ):
-        assert not (staged.staging_root / "target").exists(), (
-            "a trailing slash must be stripped before the pattern is matched"
-        )
-
+    assert not (staging_root / "target").exists(), (
+        "a trailing slash must be stripped before the pattern is matched"
+    )
     assert "stage_exclude=('target',)" in caplog.text, (
         "the log must name the normalized pattern rather than the raw spelling"
     )
+
+
+def _staging_rejection(
+    fixtures: PreparationFixtures,
+    *,
+    stage_exclude: cabc.Sequence[str],
+) -> str:
+    """Stage with an unusable pattern and return the rejection message."""
+    plan = _plan_with_roles(fixtures)
+    build_directory = fixtures.tmp_path / "staging"
+    with (
+        pytest.raises(publish_staging.PublishPreparationError) as excinfo,
+        publish_staging.staged_workspace(
+            plan,
+            options=publish.PublishOptions(build_directory=build_directory),
+            stage_exclude=stage_exclude,
+        ),
+    ):
+        pass
+
+    # Every rejection must happen before staging creates a directory, so the
+    # invariant is asserted with the setup that makes it observable.
+    assert not build_directory.exists(), (
+        "an unusable pattern must not create a staging directory"
+    )
+    return str(excinfo.value)
 
 
 @pytest.mark.parametrize(
@@ -279,24 +321,10 @@ def test_staged_workspace_rejects_unusable_patterns(
     expected_fragment: str,
 ) -> None:
     """The staging boundary applies the same spelling rules as the file."""
-    plan = _plan_with_roles(preparation_fixtures)
-    build_directory = preparation_fixtures.tmp_path / "staging"
+    message = _staging_rejection(preparation_fixtures, stage_exclude=stage_exclude)
 
-    with (
-        pytest.raises(publish_staging.PublishPreparationError) as excinfo,
-        publish_staging.staged_workspace(
-            plan,
-            options=publish.PublishOptions(build_directory=build_directory),
-            stage_exclude=stage_exclude,
-        ),
-    ):
-        pass
-
-    assert expected_fragment in str(excinfo.value), (
+    assert expected_fragment in message, (
         "the rejection must name the pattern's position and the reason"
-    )
-    assert not build_directory.exists(), (
-        "an unusable pattern must not create a staging directory"
     )
 
 
@@ -314,17 +342,13 @@ def test_live_publish_warns_only_when_git_is_excluded(
 ) -> None:
     """An irreversible upload without a checkout is flagged before copying."""
     plan = _plan_with_roles(preparation_fixtures)
-    options = publish.PublishOptions(
-        build_directory=preparation_fixtures.tmp_path / "staging", live=True
+    _stage_capturing_logs(
+        plan,
+        preparation_fixtures,
+        caplog,
+        stage_exclude=stage_exclude,
+        live=True,
     )
-
-    with (
-        caplog.at_level(logging.WARNING, logger="lading.commands.publish_staging"),
-        publish_staging.staged_workspace(
-            plan, options=options, stage_exclude=stage_exclude
-        ),
-    ):
-        pass
 
     assert (".gitignore" in caplog.text) is should_warn, (
         "the warning must appear exactly when the upload loses gitignore selection"
@@ -345,24 +369,10 @@ def test_staged_workspace_rejects_a_bare_string(
     preparation_fixtures: PreparationFixtures,
 ) -> None:
     """A caller passing one pattern rather than a list is refused, not split."""
-    plan = _plan_with_roles(preparation_fixtures)
-    build_directory = preparation_fixtures.tmp_path / "staging"
+    message = _staging_rejection(preparation_fixtures, stage_exclude="target")
 
-    with (
-        pytest.raises(publish_staging.PublishPreparationError) as excinfo,
-        publish_staging.staged_workspace(
-            plan,
-            options=publish.PublishOptions(build_directory=build_directory),
-            stage_exclude="target",
-        ),
-    ):
-        pass
-
-    assert "not a single string" in str(excinfo.value), (
+    assert "not a single string" in message, (
         "the boundary must report the same rejection as the policy module"
-    )
-    assert not build_directory.exists(), (
-        "a bare string must not create a staging directory"
     )
 
 

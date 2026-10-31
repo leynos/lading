@@ -29,31 +29,23 @@ def then_publish_manifest_has_no_patch_section(cli_run: CliRunResult) -> None:
     assert entries == {}, "the staged manifest must not carry any patch entries"
 
 
-@then(parsers.parse('the publish staging manifest omits patch entries "{crate_names}"'))
-def then_publish_manifest_omits_entries(
-    cli_run: CliRunResult, crate_names: str
-) -> None:
-    """Assert that ``crate_names`` are absent from the staged patch table."""
-    document = _load_staged_manifest(cli_run)
-    entries = _get_patch_entries(document)
-    for name in _split_names(crate_names):
-        assert name not in entries, (
-            f"crate {name} must be stripped from the staged patch table"
-        )
-
-
 @then(
-    parsers.parse('the publish staging manifest retains patch entries "{crate_names}"')
+    parsers.re(
+        r"the publish staging manifest (?P<verb>omits|retains) patch entries "
+        r'"(?P<crate_names>[^"]*)"'
+    )
 )
-def then_publish_manifest_retains_entries(
-    cli_run: CliRunResult, crate_names: str
+def then_publish_manifest_patch_entries(
+    cli_run: CliRunResult, verb: str, crate_names: str
 ) -> None:
-    """Assert that ``crate_names`` remain in the staged patch table."""
+    """Assert each crate's presence in the staged patch table matches the verb."""
     document = _load_staged_manifest(cli_run)
     entries = _get_patch_entries(document)
+    retained = verb == "retains"
     for name in _split_names(crate_names):
-        assert name in entries, (
-            f"crate {name} must be retained in the staged patch table"
+        assert (name in entries) is retained, (
+            f"crate {name} must be {'retained in' if retained else 'stripped from'} "
+            "the staged patch table"
         )
 
 
