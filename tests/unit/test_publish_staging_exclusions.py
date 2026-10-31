@@ -224,6 +224,86 @@ def test_staging_logs_the_effective_exclusions(
     )
 
 
+def test_staged_workspace_strips_a_trailing_slash(
+    preparation_fixtures: PreparationFixtures,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A programmatic caller may spell a directory the way a file is spelled."""
+    plan = _plan_with_roles(preparation_fixtures)
+    target = plan.workspace_root / "target"
+    target.mkdir()
+    (target / "artifact").write_text("", encoding="utf-8")
+    options = publish.PublishOptions(
+        build_directory=preparation_fixtures.tmp_path / "staging"
+    )
+
+    with (
+        caplog.at_level(logging.INFO, logger="lading.commands.publish_staging"),
+        publish_staging.staged_workspace(
+            plan, options=options, stage_exclude=("target/",)
+        ) as staged,
+    ):
+        assert not (staged.staging_root / "target").exists(), (
+            "a trailing slash must be stripped before the pattern is matched"
+        )
+
+    assert "stage_exclude=('target',)" in caplog.text, (
+        "the log must name the normalized pattern rather than the raw spelling"
+    )
+
+
+@pytest.mark.parametrize(
+    ("stage_exclude", "expected_fragment"),
+    [
+        pytest.param(
+            ("./target",),
+            "publish.stage_exclude[0] must not contain '.'",
+            id="current_directory",
+        ),
+        pytest.param(
+            ("/target",),
+            "publish.stage_exclude[0] must be relative",
+            id="absolute",
+        ),
+        pytest.param(
+            ("crates//venv",),
+            "publish.stage_exclude[0] must not contain '.'",
+            id="empty_segment",
+        ),
+        pytest.param(
+            ("!keep",),
+            "publish.stage_exclude[0] must not start with '!'",
+            id="negation",
+        ),
+    ],
+)
+def test_staged_workspace_rejects_unusable_patterns(
+    preparation_fixtures: PreparationFixtures,
+    stage_exclude: tuple[str, ...],
+    expected_fragment: str,
+) -> None:
+    """The staging boundary applies the same spelling rules as the file."""
+    plan = _plan_with_roles(preparation_fixtures)
+    build_directory = preparation_fixtures.tmp_path / "staging"
+
+    with (
+        pytest.raises(publish_staging.PublishPreparationError) as excinfo,
+        publish_staging.staged_workspace(
+            plan,
+            options=publish.PublishOptions(build_directory=build_directory),
+            stage_exclude=stage_exclude,
+        ),
+    ):
+        pass
+
+    assert expected_fragment in str(excinfo.value), (
+        "the rejection must name the pattern's position and the reason"
+    )
+    assert not build_directory.exists(), (
+        "an unusable pattern must not create a staging directory"
+    )
+
+
 def test_leading_double_star_matches_at_any_depth(tmp_path: Path) -> None:
     """A ``**/`` prefix means "any depth", including the workspace root."""
     staging_root = _copy_with_exclusions(tmp_path, ("**/venv",))

@@ -47,6 +47,7 @@ from lading.commands.publish_stage_exclude import (
     _validate_stage_exclude,
 )
 from lading.config import DEFAULT_STAGE_EXCLUDE
+from lading.stage_exclude_policy import StageExcludeError, normalize_stage_exclude
 
 if typ.TYPE_CHECKING:
     from lading.commands.publish import PublishOptions
@@ -173,6 +174,32 @@ def _copy_workspace_tree(
     return staging_root
 
 
+def _normalize_stage_exclude(
+    stage_exclude: cabc.Sequence[str],
+) -> tuple[str, ...]:
+    """Apply the spelling rules, reporting failures as staging errors.
+
+    Callers of :func:`staged_workspace` and :func:`prepare_workspace` never
+    pass through ``lading.toml``, so the rules are applied here too. Otherwise
+    a spelling such as ``target/`` would match nothing and the copy would
+    silently keep the tree the caller asked to omit.
+
+    Returns
+    -------
+    tuple[str, ...]
+        The patterns, each with one trailing slash removed.
+
+    Raises
+    ------
+    PublishPreparationError
+        If a pattern cannot describe a workspace path.
+    """
+    try:
+        return normalize_stage_exclude(stage_exclude)
+    except StageExcludeError as exc:
+        raise PublishPreparationError(str(exc)) from exc
+
+
 def _stage(
     plan: PublishPlan,
     options: PublishOptions | None,
@@ -193,6 +220,9 @@ def _stage(
         active_options = PublishOptions()
     else:
         active_options = options
+    # Normalized before the temporary directory is created, so a caller's
+    # unusable spelling fails as cheaply as a manifest-removing one.
+    stage_exclude = _normalize_stage_exclude(stage_exclude)
     # Before the temporary directory is created: a pattern that removes a
     # manifest makes the publish impossible, and it should say so without
     # first copying tens of gigabytes to find out.
