@@ -329,6 +329,11 @@ def test_publish_config_stage_exclude_accepts_a_single_string() -> None:
             "publish.stage_exclude[0] must not contain '.' or empty path segments",
             id="empty_segment",
         ),
+        pytest.param(
+            'stage_exclude = ["."]',
+            "publish.stage_exclude[0] must not contain '.' or empty path segments",
+            id="bare_current_directory",
+        ),
     ],
 )
 def test_publish_config_stage_exclude_rejects_invalid_patterns(
