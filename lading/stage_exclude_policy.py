@@ -95,9 +95,9 @@ def normalize_stage_exclude(
     Raises
     ------
     StageExcludeError
-        If a pattern is not a string, is blank, starts with ``!``, is
-        absolute, uses backslashes, or contains ``..``, ``.`` or an empty
-        segment.
+        If ``patterns`` is a bare string, or a pattern is not a string, is
+        blank, starts with ``!``, is absolute, uses backslashes, or contains
+        ``..``, ``.`` or an empty segment.
 
     Examples
     --------
@@ -106,6 +106,14 @@ def normalize_stage_exclude(
     >>> normalize_stage_exclude([])
     ()
     """
+    if isinstance(patterns, str):
+        # A str is a Sequence[str], so a type checker accepts a single pattern
+        # here; iterating it would turn "target" into one pattern per letter.
+        message = (
+            f"{field_name} must be a sequence of patterns, not a single "
+            f"string; received {patterns!r}."
+        )
+        raise StageExcludeError(message)
     normalized: list[str] = []
     for index, pattern in enumerate(patterns):
         entry_name = f"{field_name}[{index}]"

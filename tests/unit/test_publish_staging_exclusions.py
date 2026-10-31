@@ -16,6 +16,7 @@ import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
+from lading import stage_exclude_policy
 from lading.commands import (
     publish,
     publish_plan,
@@ -301,6 +302,41 @@ def test_staged_workspace_rejects_unusable_patterns(
     )
     assert not build_directory.exists(), (
         "an unusable pattern must not create a staging directory"
+    )
+
+
+def test_normalize_stage_exclude_rejects_a_bare_string() -> None:
+    """A single string is a character sequence, not one pattern."""
+    with pytest.raises(stage_exclude_policy.StageExcludeError) as excinfo:
+        stage_exclude_policy.normalize_stage_exclude("target")
+
+    assert "not a single string" in str(excinfo.value), (
+        "the rejection must explain that a sequence is required"
+    )
+
+
+def test_staged_workspace_rejects_a_bare_string(
+    preparation_fixtures: PreparationFixtures,
+) -> None:
+    """A caller passing one pattern rather than a list is refused, not split."""
+    plan = _plan_with_roles(preparation_fixtures)
+    build_directory = preparation_fixtures.tmp_path / "staging"
+
+    with (
+        pytest.raises(publish_staging.PublishPreparationError) as excinfo,
+        publish_staging.staged_workspace(
+            plan,
+            options=publish.PublishOptions(build_directory=build_directory),
+            stage_exclude="target",
+        ),
+    ):
+        pass
+
+    assert "not a single string" in str(excinfo.value), (
+        "the boundary must report the same rejection as the policy module"
+    )
+    assert not build_directory.exists(), (
+        "a bare string must not create a staging directory"
     )
 
 
