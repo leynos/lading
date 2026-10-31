@@ -374,11 +374,32 @@ lading bump <new_version> [--dry-run]
   inline trivia remain intact.
 - The publish workflow stages a clean workspace copy in a temporary directory
   before packaging. The staging directory must live outside the source tree to
-  avoid recursive copies. Crates that opt into `readme.workspace = true` must
-  already have adopted READMEs from the preceding `bump` workflow, so operators
-  can review the packaged assets before publishing. Symbolic links remain links
-  by default to avoid cloning large external trees; callers can opt into
-  dereferencing by disabling `preserve_symlinks` via `PublishOptions`. Likewise,
+  avoid recursive copies. `_copy_workspace_tree` passes `shutil.copytree` an
+  `ignore` callback built from `publish.stage_exclude`, so an excluded
+  directory is pruned before `copytree` walks it rather than traversed and
+  discarded. Patterns are matched by one shared predicate: a pattern without
+  `/` against each entry's basename at any depth, a pattern with `/` against
+  the workspace-relative path, both with `fnmatch.fnmatchcase`. The configured
+  list comes from the resolved configuration and is forwarded by `publish.run`
+  into `staged_workspace`, so an explicit `PublishOptions.configuration` and
+  the active configuration reach staging the same way.
+- Before the temporary directory is created, `_validate_stage_exclude` matches
+  the plan's required manifests — the workspace `Cargo.toml` and every planned
+  crate manifest, publishable or skipped — together with their ancestor
+  prefixes, against the same predicate. A pattern that would remove any of them
+  raises `PublishPreparationError`, naming the pattern and manifest, rather
+  than copying the tree and failing afterwards. The default is `(".git",)`: it
+  is the largest entry no packaging step needs, and omitting it changes how
+  Cargo selects package files, as the users' guide describes. `target/` is
+  deliberately retained by default, because some workspaces package artefacts
+  from it — rstest-bdd stages packaged crates under
+  `target/published-gpui-e2e/` and patches crates.io names in a fixture
+  manifest to point at them, so excluding `target/` breaks its publish check.
+- Crates that opt into `readme.workspace = true` must already have adopted
+  READMEs from the preceding `bump` workflow, so operators can review the
+  packaged assets before publishing. Symbolic links remain links by default to
+  avoid cloning large external trees; callers can opt into dereferencing by
+  disabling `preserve_symlinks` via `PublishOptions`. Likewise,
   `PublishOptions(cleanup=True)` registers an `atexit` hook that removes the
   temporary build directory after the process exits.
 - Documentation rewrites honour `--dry-run`; the command reports the files but
