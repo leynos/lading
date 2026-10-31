@@ -1335,10 +1335,10 @@ come from `lading.toml` or from a direct call to the public staging functions,
 and neither route may silently accept a pattern that can never match.
 `lading.stage_exclude_policy` owns those rules so it depends on neither the
 configuration nor the command layer: `normalize_stage_exclude` strips one
-trailing slash from each pattern and rejects blank, `!`-prefixed, absolute,
-backslash-separated, and `.`, `..` or empty-segment spellings.
-`lading.config._stage_exclude` translates its `StageExcludeError` into
-`ConfigurationError` for a bad file, and `_stage` applies it before the
+trailing slash from each pattern and rejects a bare string, blank,
+`!`-prefixed, absolute, backslash-separated, and `.`, `..` or empty-segment
+spellings. `lading.config._stage_exclude` translates its `StageExcludeError`
+into `ConfigurationError` for a bad file, and `_stage` applies it before the
 temporary directory exists, translating it into `PublishPreparationError` and
 logging the normalized tuple. The predicate here therefore only ever sees
 relative, normalized paths.
