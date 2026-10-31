@@ -581,6 +581,15 @@ def _validate_stage_exclude_pattern(
     if not candidate.strip():
         message = f"{field_name} must not be blank; received {original!r}."
         raise ConfigurationError(message)
+    if candidate.startswith("!"):
+        # A gitignore habit rather than a request staging can honour: the
+        # pattern would load, match only a file literally named '!…', and
+        # exclude nothing while the reader believes it re-included a path.
+        message = (
+            f"{field_name} must not start with '!' because negation is not "
+            f"supported; received {original!r}."
+        )
+        raise ConfigurationError(message)
     if candidate.startswith("/") or PureWindowsPath(candidate).drive:
         message = (
             f"{field_name} must be relative to the workspace root; "
