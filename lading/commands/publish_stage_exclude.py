@@ -178,6 +178,47 @@ def _link_target_exclusion(
     return _manifest_exclusion(manifest.resolve(strict=False), workspace_root, patterns)
 
 
+def _excluded_manifest_message(
+    label: str,
+    manifest: Path,
+    patterns: cabc.Sequence[str],
+    workspace_root: Path,
+) -> str | None:
+    """Return why ``patterns`` would remove ``manifest``, if they would."""
+    relative = _manifest_relative_path(manifest, workspace_root)
+    if relative is None:
+        # No spelling of the workspace root contains the manifest, so staging
+        # never copies it and no pattern can remove it.
+        return None
+    exclusion = _manifest_exclusion(manifest, workspace_root, patterns)
+    if exclusion is None:
+        return None
+    pattern = exclusion[1]
+    return (
+        f"publish.stage_exclude pattern {pattern!r} would exclude "
+        f"{label} manifest {relative.as_posix()!r}"
+    )
+
+
+def _dangling_link_message(
+    label: str,
+    manifest: Path,
+    patterns: cabc.Sequence[str],
+    workspace_root: Path,
+) -> str | None:
+    """Return why a preserved link's excluded target breaks ``manifest``."""
+    relative = _manifest_relative_path(manifest, workspace_root)
+    target = _link_target_exclusion(manifest, workspace_root, patterns)
+    if relative is None or target is None:
+        return None
+    target_relative, pattern = target
+    return (
+        f"publish.stage_exclude pattern {pattern!r} would exclude "
+        f"{label} manifest {relative.as_posix()!r}, whose symlink target "
+        f"{target_relative.as_posix()!r} staging would not copy"
+    )
+
+
 def _validate_stage_exclude(
     plan: PublishPlan,
     stage_exclude: cabc.Sequence[str],
@@ -209,28 +250,12 @@ def _validate_stage_exclude(
     if not stage_exclude:
         return
     for label, manifest in _required_manifests(plan):
-        relative = _manifest_relative_path(manifest, plan.workspace_root)
-        if relative is None:
-            # No spelling of the workspace root contains the manifest, so
-            # staging never copies it and no pattern can remove it.
-            continue
-        exclusion = _manifest_exclusion(manifest, plan.workspace_root, stage_exclude)
-        if exclusion is not None:
-            pattern = exclusion[1]
-            message = (
-                f"publish.stage_exclude pattern {pattern!r} would exclude "
-                f"{label} manifest {relative.as_posix()!r}"
-            )
-            raise PublishPreparationError(message)
-        if not preserve_symlinks:
-            continue
-        target = _link_target_exclusion(manifest, plan.workspace_root, stage_exclude)
-        if target is None:
-            continue
-        target_relative, pattern = target
-        message = (
-            f"publish.stage_exclude pattern {pattern!r} would exclude "
-            f"{label} manifest {relative.as_posix()!r}, whose symlink target "
-            f"{target_relative.as_posix()!r} staging would not copy"
+        message = _excluded_manifest_message(
+            label, manifest, stage_exclude, plan.workspace_root
         )
-        raise PublishPreparationError(message)
+        if message is None and preserve_symlinks:
+            message = _dangling_link_message(
+                label, manifest, stage_exclude, plan.workspace_root
+            )
+        if message is not None:
+            raise PublishPreparationError(message)
