@@ -10,7 +10,9 @@ Patterns are filesystem paths relative to the workspace root, not crate names;
 ``publish.exclude`` is the way to skip a crate from publication. A pattern
 without ``/`` matches a basename at any depth, and a leading ``**/`` is accepted
 as a spelling of that same intent. A pattern with ``/`` matches the whole
-workspace-relative path, where ``*`` may span separators.
+workspace-relative path, where ``*`` may span separators; a leading ``**/``
+lifts that anchoring so the remainder matches at any depth, including the
+workspace root.
 """
 
 import collections.abc as cabc
@@ -34,7 +36,9 @@ def _match_stage_exclude(
     gitignore entry without a slash does, and a leading ``**/`` is accepted as
     the same intent rather than as a pattern that requires a leading directory.
     A pattern with a slash is matched against the whole workspace-relative
-    path, and its ``*`` may span separators.
+    path, and its ``*`` may span separators. A leading ``**/`` lifts that
+    anchoring: the remainder matches at any depth, including the workspace
+    root.
 
     Returns
     -------
@@ -45,8 +49,15 @@ def _match_stage_exclude(
     rendered = relative_path.as_posix()
     for pattern in patterns:
         effective = pattern.removeprefix("**/")
-        candidate = rendered if "/" in effective else relative_path.name
-        if fnmatch.fnmatchcase(candidate, effective):
+        if "/" not in effective:
+            matched = fnmatch.fnmatchcase(relative_path.name, effective)
+        else:
+            # ``*`` spans separators, so this covers every ancestor depth the
+            # remainder may sit below; the anchored spelling covers the root.
+            matched = fnmatch.fnmatchcase(rendered, effective) or (
+                effective != pattern and fnmatch.fnmatchcase(rendered, f"*/{effective}")
+            )
+        if matched:
             return pattern
     return None
 

@@ -319,6 +319,16 @@ def test_publish_config_stage_exclude_accepts_a_single_string() -> None:
             "publish.stage_exclude[0] must not contain '..'",
             id="parent_segment",
         ),
+        pytest.param(
+            'stage_exclude = ["./target"]',
+            "publish.stage_exclude[0] must not contain '.' or empty path segments",
+            id="current_directory_segment",
+        ),
+        pytest.param(
+            'stage_exclude = ["crates//venv"]',
+            "publish.stage_exclude[0] must not contain '.' or empty path segments",
+            id="empty_segment",
+        ),
     ],
 )
 def test_publish_config_stage_exclude_rejects_invalid_patterns(

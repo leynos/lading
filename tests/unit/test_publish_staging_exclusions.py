@@ -216,6 +216,18 @@ def test_leading_double_star_matches_at_any_depth(tmp_path: Path) -> None:
     )
 
 
+def test_leading_double_star_matches_a_path_at_any_depth(tmp_path: Path) -> None:
+    """A ``**/`` prefix lifts the anchoring of the whole remainder."""
+    staging_root = _copy_with_exclusions(tmp_path, ("**/alpha/venv",))
+
+    assert not (staging_root / "crates" / "alpha" / "venv").exists(), (
+        "the remainder must match below an ancestor it does not name"
+    )
+    assert (staging_root / "venv" / "marker").is_file(), (
+        "the any-depth spelling must not remove a top-level venv"
+    )
+
+
 def test_stage_exclude_rejects_a_pattern_matching_an_ancestor_directory(
     preparation_fixtures: PreparationFixtures,
 ) -> None:

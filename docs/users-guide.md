@@ -67,16 +67,23 @@ lading publish --keep-staging
 
 ### Staging exclusions
 
-`publish.stage_exclude` is an array of path patterns relative to the workspace
+`publish.stage_exclude` is an array of glob patterns relative to the workspace
 root. A pattern without `/` matches a file or directory name at any depth, so
 the default `.git` removes every `.git` directory in the tree. A leading `**/`
-names the same intent and matches at any depth, including the workspace root, so
-`**/venv` behaves exactly as `venv` does. A pattern with `/` matches the whole
+makes the rest of the pattern match at any depth, including the workspace root,
+so `**/venv` behaves exactly as `venv` does, and `**/crates/app/venv` also
+matches `tools/crates/app/venv`. A pattern with `/` matches the whole
 workspace-relative path, so `crates/app/venv` removes only that one directory
 while leaving `venv` beside the workspace root alone. `*` can span `/` in an
 anchored pattern, so `crates/*/venv` matches a virtual environment in any
 nested crate. A configured list replaces the default rather than adding to it,
 and an explicit `stage_exclude = []` restores copying everything.
+
+Patterns are not gitignore entries. There is no `!` negation, a trailing `/` is
+stripped rather than making the pattern directory-only, and a pattern must be
+relative, use `/` separators, and contain no `.`, `..` or empty segments;
+configuration that breaks those rules fails to load rather than silently
+excluding nothing.
 
 Staging refuses a pattern that would remove a manifest the publication needs:
 the workspace `Cargo.toml` and the manifest of every planned crate, including
@@ -780,12 +787,12 @@ committing the bump.
 - `order`: array of strings, default `[]`. Explicit publish order; overrides
   dependency-derived ordering when present.
 - `stage_exclude`: array of strings, default `[".git"]`. Paths omitted from the
-  staged workspace copy, as gitignore-style patterns relative to the workspace
-  root. A pattern without `/` matches a name at any depth; a pattern with `/`
-  matches the whole workspace-relative path, and its `*` can span `/`. A
-  configured list replaces the default, and `[]` copies everything. Staging
-  refuses a pattern that would remove a required manifest. See
-  [staging exclusions](#staging-exclusions).
+  staged workspace copy, as glob patterns relative to the workspace root. A
+  pattern without `/` matches a name at any depth; a pattern with `/` matches
+  the whole workspace-relative path, and its `*` can span `/`. A leading `**/`
+  makes the remainder match at any depth. A configured list replaces the
+  default, and `[]` copies everything. Staging refuses a pattern that would
+  remove a required manifest. See [staging exclusions](#staging-exclusions).
 - `strip_patches`: one of `"all"`, `"per-crate"`, or `false`; default
   `"per-crate"`. Controls how `[patch.crates-io]` is edited in the staged
   workspace before packaging.
