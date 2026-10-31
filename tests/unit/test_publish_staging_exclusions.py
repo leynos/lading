@@ -23,11 +23,7 @@ from lading.commands import (
     publish_stage_exclude,
     publish_staging,
 )
-from tests.unit.conftest import (
-    PreparationFixtures,
-    PrepareWorkspaceFixtures,
-    _CrateSpec,
-)
+from tests.unit.conftest import PreparationFixtures, _CrateSpec
 
 _POPULATED_PATHS = (
     "Cargo.toml",
@@ -182,7 +178,6 @@ def _plan_with_roles(
 
 
 def test_staged_workspace_omits_git_by_default(
-    prepare_workspace_fixtures: PrepareWorkspaceFixtures,
     preparation_fixtures: PreparationFixtures,
     tmp_path: Path,
 ) -> None:
@@ -438,6 +433,11 @@ def test_stage_exclude_allows_a_manifest_outside_the_workspace_root(
     )
     plan = dc.replace(plan, publishable=(*plan.publishable, external))
 
+    with pytest.raises(publish_staging.PublishPreparationError):
+        publish_stage_exclude._validate_stage_exclude(plan, ("alpha",))
+
+    # Passing for the external crate alone proves the exemption is specific to
+    # it, not that validation returned early for every pattern.
     publish_stage_exclude._validate_stage_exclude(plan, ("delta",))
 
 
