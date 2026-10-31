@@ -73,6 +73,16 @@ def _reject_non_workspace_segments(
         raise StageExcludeError(message)
 
 
+def _coerce_pattern(pattern: object, entry_name: str) -> str:
+    """Return ``pattern`` as a string, rejecting any other type."""
+    match pattern:
+        case str():
+            return pattern
+        case _:
+            message = f"{entry_name} must be a string; received {pattern!r}."
+            raise StageExcludeError(message)
+
+
 def normalize_stage_exclude(
     patterns: cabc.Sequence[object], *, field_name: str = _FIELD_NAME
 ) -> tuple[str, ...]:
@@ -106,21 +116,19 @@ def normalize_stage_exclude(
     >>> normalize_stage_exclude([])
     ()
     """
-    if isinstance(patterns, str):
-        # A str is a Sequence[str], so a type checker accepts a single pattern
-        # here; iterating it would turn "target" into one pattern per letter.
-        message = (
-            f"{field_name} must be a sequence of patterns, not a single "
-            f"string; received {patterns!r}."
-        )
-        raise StageExcludeError(message)
+    match patterns:
+        case str():
+            # A str is a Sequence[str], so a type checker accepts a single
+            # pattern here; iterating it would splinter "target" per letter.
+            message = (
+                f"{field_name} must be a sequence of patterns, not a single "
+                f"string; received {patterns!r}."
+            )
+            raise StageExcludeError(message)
     normalized: list[str] = []
     for index, pattern in enumerate(patterns):
         entry_name = f"{field_name}[{index}]"
-        if not isinstance(pattern, str):
-            message = f"{entry_name} must be a string; received {pattern!r}."
-            raise StageExcludeError(message)
-        candidate = pattern.removesuffix("/")
+        candidate = _coerce_pattern(pattern, entry_name).removesuffix("/")
         _reject_unusable_spelling(candidate, entry_name, pattern)
         _reject_non_workspace_segments(candidate, entry_name, pattern)
         normalized.append(candidate)
