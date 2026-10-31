@@ -1,5 +1,8 @@
 """Publish run workspace-root and configuration test coverage."""
 
+import collections.abc as cabc
+import contextlib
+import dataclasses as dc
 import re
 import typing as typ
 from pathlib import Path
@@ -137,6 +140,81 @@ def test_run_reports_no_publishable_crates(
 
     assert _normalize_summary(message, root) == snapshot, (
         "no-publishable-crates summary should match snapshot"
+    )
+
+
+def _capture_stage_exclude(
+    monkeypatch: pytest.MonkeyPatch, staging_root: Path
+) -> dict[str, object]:
+    """Replace staging with a fake that records the exclusion it receives."""
+    captured: dict[str, object] = {}
+
+    @contextlib.contextmanager
+    def fake_staged_workspace(
+        _plan: object,
+        *,
+        options: object | None = None,
+        stage_exclude: cabc.Sequence[str] = (),
+    ) -> cabc.Generator[publish_staging.StagedWorkspace]:
+        del options
+        captured["stage_exclude"] = tuple(stage_exclude)
+        yield publish_staging.StagedWorkspace(
+            preparation=publish_staging.PublishPreparation(staging_root=staging_root)
+        )
+
+    monkeypatch.setattr(publish_staging, "staged_workspace", fake_staged_workspace)
+    return captured
+
+
+def test_run_forwards_stage_exclude_from_explicit_configuration(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An explicit configuration's exclusions take precedence over the others."""
+    root = tmp_path.resolve()
+    workspace = make_workspace(root, make_crate(root, "alpha"))
+    monkeypatch.setattr("lading.workspace.load_workspace", lambda _: workspace)
+    explicit = dc.replace(
+        make_config(),
+        publish=dc.replace(make_config().publish, stage_exclude=("explicit",)),
+    )
+    from_options = dc.replace(
+        make_config(),
+        publish=dc.replace(make_config().publish, stage_exclude=("from-options",)),
+    )
+    active = dc.replace(
+        make_config(),
+        publish=dc.replace(make_config().publish, stage_exclude=("active",)),
+    )
+    monkeypatch.setattr(config_module, "current_configuration", lambda: active)
+    options = publish.PublishOptions(configuration=from_options)
+    captured = _capture_stage_exclude(monkeypatch, root)
+
+    publish.run(root, explicit, workspace, options=options)
+
+    assert captured["stage_exclude"] == ("explicit",), (
+        "the explicit configuration must win over options.configuration and the "
+        "active configuration"
+    )
+
+
+def test_run_forwards_stage_exclude_from_active_configuration(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``run`` forwards the active configuration's exclusions to staging."""
+    root = tmp_path.resolve()
+    workspace = make_workspace(root, make_crate(root, "alpha"))
+    monkeypatch.setattr("lading.workspace.load_workspace", lambda _: workspace)
+    active = dc.replace(
+        make_config(),
+        publish=dc.replace(make_config().publish, stage_exclude=("venv", "target")),
+    )
+    monkeypatch.setattr(config_module, "current_configuration", lambda: active)
+    captured = _capture_stage_exclude(monkeypatch, root)
+
+    publish.run(root)
+
+    assert captured["stage_exclude"] == ("venv", "target"), (
+        "the active configuration's stage_exclude must reach staging"
     )
 
 

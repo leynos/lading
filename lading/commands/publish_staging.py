@@ -33,15 +33,18 @@ import atexit
 import collections.abc as cabc
 import contextlib
 import dataclasses as dc
+import fnmatch
 import logging
+import os
 import shutil
 import signal
 import tempfile
 import typing as typ
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from lading.commands import staging_lock
 from lading.commands.publish_manifest import PublishPreparationError
+from lading.config import DEFAULT_STAGE_EXCLUDE
 
 if typ.TYPE_CHECKING:
     from lading.commands.publish import PublishOptions
@@ -115,8 +118,68 @@ def _normalize_build_directory(
     return candidate
 
 
+def _match_stage_exclude(
+    relative_path: PurePosixPath, patterns: cabc.Sequence[str]
+) -> str | None:
+    """Return the first exclusion pattern matching ``relative_path``, if any.
+
+    A pattern without a slash names a basename at any depth, the way a
+    gitignore entry without a slash does. A pattern with a slash is matched
+    against the whole workspace-relative path, and its ``*`` may span
+    separators.
+
+    Returns
+    -------
+    str | None
+        The matching pattern, or :data:`None` when no pattern matches.
+    """
+    rendered = relative_path.as_posix()
+    for pattern in patterns:
+        candidate = rendered if "/" in pattern else relative_path.name
+        if fnmatch.fnmatchcase(candidate, pattern):
+            return pattern
+    return None
+
+
+def _stage_exclude_ignore(
+    workspace_root: Path, patterns: cabc.Sequence[str]
+) -> cabc.Callable[[str, list[str]], set[str]]:
+    """Build a :func:`shutil.copytree` ``ignore`` callback for ``patterns``.
+
+    The callback returns the entries of each visited directory that match an
+    exclusion. Returning a directory's name prunes it before ``copytree``
+    enters it, so an excluded build tree is never walked.
+
+    Paths are matched lexically against the root handed to ``copytree``,
+    because its recursive ``src`` arguments are that root joined with each
+    entry name. Resolving either side could only misalign them.
+
+    Returns
+    -------
+    cabc.Callable[[str, list[str]], set[str]]
+        An ``ignore`` callback suitable for :func:`shutil.copytree`.
+    """
+    root = os.fspath(workspace_root)
+
+    def ignore(directory: str, names: list[str]) -> set[str]:
+        """Return the entries of ``directory`` that ``patterns`` exclude."""
+        relative_directory = Path(os.path.relpath(directory, root)).as_posix()
+        return {
+            name
+            for name in names
+            if _match_stage_exclude(PurePosixPath(relative_directory, name), patterns)
+            is not None
+        }
+
+    return ignore
+
+
 def _copy_workspace_tree(
-    workspace_root: Path, build_directory: Path, *, preserve_symlinks: bool
+    workspace_root: Path,
+    build_directory: Path,
+    *,
+    preserve_symlinks: bool,
+    stage_exclude: cabc.Sequence[str] = (),
 ) -> Path:
     """Copy ``workspace_root`` into ``build_directory`` and return the clone.
 
@@ -124,6 +187,10 @@ def _copy_workspace_tree(
     links instead of dereferencing them. This avoids unexpectedly copying large
     directories outside the workspace while still allowing callers to opt into
     dereferencing if required.
+
+    ``stage_exclude`` names entries, relative to the workspace root, that the
+    copy leaves out. Directories are pruned rather than walked and discarded,
+    which is what makes excluding a large build tree cheap.
 
     Returns
     -------
@@ -143,15 +210,90 @@ def _copy_workspace_tree(
     try:
         if staging_root.exists():
             shutil.rmtree(staging_root)
-        shutil.copytree(workspace_root, staging_root, symlinks=preserve_symlinks)
+        ignore = (
+            _stage_exclude_ignore(workspace_root, stage_exclude)
+            if stage_exclude
+            else None
+        )
+        shutil.copytree(
+            workspace_root,
+            staging_root,
+            symlinks=preserve_symlinks,
+            ignore=ignore,
+        )
     except OSError as exc:
         message = f"Cannot copy workspace into staging directory: {staging_root}"
         raise PublishPreparationError(message) from exc
     return staging_root
 
 
+def _required_manifests(plan: PublishPlan) -> tuple[tuple[str, Path], ...]:
+    """Return each manifest staging must retain, labelled for error messages."""
+    manifests: list[tuple[str, Path]] = [
+        ("the workspace", plan.workspace_root / "Cargo.toml")
+    ]
+    manifests.extend(
+        (f"crate {crate.name!r}", crate.manifest_path)
+        for crate in (
+            *plan.publishable,
+            *plan.skipped_manifest,
+            *plan.skipped_configuration,
+        )
+    )
+    return tuple(manifests)
+
+
+def _workspace_relative_prefixes(
+    relative_path: PurePosixPath,
+) -> tuple[PurePosixPath, ...]:
+    """Return ``relative_path`` and every ancestor below the workspace root."""
+    ancestors = tuple(
+        parent for parent in reversed(relative_path.parents) if parent.parts
+    )
+    return (*ancestors, relative_path)
+
+
+def _validate_stage_exclude(
+    plan: PublishPlan, stage_exclude: cabc.Sequence[str]
+) -> None:
+    """Reject exclusions that would remove a manifest staging must package.
+
+    Checked before any staging directory exists, so a configuration that
+    cannot work fails without creating or copying a tree first.
+
+    Raises
+    ------
+    PublishPreparationError
+        If a pattern matches a required manifest or one of its ancestor
+        directories.
+    """
+    if not stage_exclude:
+        return
+    workspace_root = plan.workspace_root.resolve(strict=False)
+    for label, manifest in _required_manifests(plan):
+        try:
+            relative = PurePosixPath(
+                manifest.resolve(strict=False).relative_to(workspace_root).as_posix()
+            )
+        except ValueError:
+            # A member outside the workspace root is not copied into staging at
+            # all, so a workspace-relative pattern cannot remove it.
+            continue
+        for candidate in _workspace_relative_prefixes(relative):
+            pattern = _match_stage_exclude(candidate, stage_exclude)
+            if pattern is not None:
+                message = (
+                    f"publish.stage_exclude pattern {pattern!r} would exclude "
+                    f"{label} manifest {relative.as_posix()!r}"
+                )
+                raise PublishPreparationError(message)
+
+
 def _stage(
-    plan: PublishPlan, options: PublishOptions | None
+    plan: PublishPlan,
+    options: PublishOptions | None,
+    *,
+    stage_exclude: cabc.Sequence[str] = DEFAULT_STAGE_EXCLUDE,
 ) -> tuple[PublishPreparation, Path, bool]:
     """Copy the workspace and report what, if anything, must be removed later.
 
@@ -167,6 +309,10 @@ def _stage(
         active_options = PublishOptions()
     else:
         active_options = options
+    # Before the temporary directory is created: a pattern that removes a
+    # manifest makes the publish impossible, and it should say so without
+    # first copying tens of gigabytes to find out.
+    _validate_stage_exclude(plan, stage_exclude)
     auto_created_build_directory = active_options.build_directory is None
     build_directory = _normalize_build_directory(
         plan.workspace_root, active_options.build_directory
@@ -193,6 +339,7 @@ def _stage(
             plan.workspace_root,
             build_directory,
             preserve_symlinks=active_options.preserve_symlinks,
+            stage_exclude=stage_exclude,
         )
     except BaseException:
         # Staging failed part way through, so no caller will ever be handed a
@@ -323,6 +470,7 @@ def staged_workspace(
     plan: PublishPlan,
     *,
     options: PublishOptions | None = None,
+    stage_exclude: cabc.Sequence[str] = DEFAULT_STAGE_EXCLUDE,
 ) -> cabc.Generator[StagedWorkspace]:
     """Stage a workspace copy and remove it when the block ends.
 
@@ -336,6 +484,9 @@ def staged_workspace(
         Publication plan containing the workspace root.
     options:
         Staging options. Defaults to :class:`PublishOptions` values.
+    stage_exclude:
+        Workspace-relative entries the copy leaves out. Defaults to
+        :data:`~lading.config.DEFAULT_STAGE_EXCLUDE`.
 
     Yields
     ------
@@ -345,7 +496,9 @@ def staged_workspace(
     """
     # `_stage` has already registered the target, from before it began
     # copying, so there is nothing to add here.
-    preparation, cleanup_target, cleanup = _stage(plan, options)
+    preparation, cleanup_target, cleanup = _stage(
+        plan, options, stage_exclude=stage_exclude
+    )
     staged = StagedWorkspace(preparation=preparation)
     try:
         yield staged
@@ -368,6 +521,7 @@ def prepare_workspace(
     plan: PublishPlan,
     *,
     options: PublishOptions | None = None,
+    stage_exclude: cabc.Sequence[str] = DEFAULT_STAGE_EXCLUDE,
 ) -> PublishPreparation:
     """Stage a workspace copy for publishing, removing it at process exit.
 
@@ -382,6 +536,9 @@ def prepare_workspace(
         Publication plan containing the workspace root.
     options:
         Staging options. Defaults to :class:`PublishOptions` values.
+    stage_exclude:
+        Workspace-relative entries the copy leaves out. Defaults to
+        :data:`~lading.config.DEFAULT_STAGE_EXCLUDE`.
 
     Returns
     -------
@@ -389,7 +546,9 @@ def prepare_workspace(
         The staged workspace location.
     """
     # Registered by `_stage`; this form adds only the exit hook.
-    preparation, cleanup_target, cleanup = _stage(plan, options)
+    preparation, cleanup_target, cleanup = _stage(
+        plan, options, stage_exclude=stage_exclude
+    )
     if cleanup:
         atexit.register(_remove_staged_tree_or_report, cleanup_target)
     return preparation
