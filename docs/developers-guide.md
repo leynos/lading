@@ -1313,7 +1313,9 @@ matching. That module owns three things:
   without `/` matches a basename at any depth; a leading `**/` is stripped
   first, so `**/venv` also matches a top-level `venv`. A pattern containing `/`
   is matched against the whole `PurePosixPath`, and `fnmatch.fnmatchcase` lets
-  its `*` span separators.
+  its `*` span separators. A leading `**/` lifts that anchoring: the stripped
+  remainder also matches below any ancestor, so `**/crates/app/venv` matches
+  `tools/crates/app/venv`.
 - `_stage_exclude_ignore`, which adapts the predicate to
   `shutil.copytree(ignore=...)`. Returning a directory name prunes it before
   `copytree` descends, so excluding `target/` costs nothing rather than copying
@@ -1327,6 +1329,12 @@ matching. That module owns three things:
   and raises `PublishPreparationError` naming both the pattern and the manifest
   it would remove. A member whose manifest resolves outside the workspace root
   is skipped, since staging never copies it.
+
+Configuration validation happens earlier and elsewhere:
+`lading.config._validate_stage_exclude_pattern` rejects blank, absolute,
+backslash-separated, and `.`, `..` or empty-segment patterns as the file loads,
+because those spellings would otherwise be accepted and then match nothing. The
+predicate here therefore only ever sees relative, normalized paths.
 
 When adding a pattern spelling, change `_match_stage_exclude` and cover it in
 `tests/unit/test_publish_staging_exclusions.py`; it is the only place the

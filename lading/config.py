@@ -590,8 +590,18 @@ def _validate_stage_exclude_pattern(
     if "\\" in candidate:
         message = f"{field_name} must use '/' separators; received {original!r}."
         raise ConfigurationError(message)
-    if ".." in candidate.split("/"):
+    segments = candidate.split("/")
+    if ".." in segments:
         message = f"{field_name} must not contain '..'; received {original!r}."
+        raise ConfigurationError(message)
+    if "." in segments or "" in segments:
+        # Anchored patterns are compared with ``PurePosixPath.as_posix()``,
+        # which never renders these segments, so such a pattern would be
+        # accepted and then match nothing.
+        message = (
+            f"{field_name} must not contain '.' or empty path segments; "
+            f"received {original!r}."
+        )
         raise ConfigurationError(message)
 
 
