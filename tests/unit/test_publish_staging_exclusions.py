@@ -417,15 +417,13 @@ def _enter_staged_workspace(
     ],
 )
 def test_stage_exclude_rejects_removing_required_manifests(
-    prepare_workspace_fixtures: PrepareWorkspaceFixtures,
     preparation_fixtures: PreparationFixtures,
-    tmp_path: Path,
     pattern: str,
     expected_fragment: str,
 ) -> None:
     """An exclusion that removes a manifest is refused before staging begins."""
     plan = _plan_with_roles(preparation_fixtures)
-    build_directory = tmp_path / "staging"
+    build_directory = preparation_fixtures.tmp_path / "staging"
     options = publish.PublishOptions(build_directory=build_directory)
 
     with pytest.raises(publish_staging.PublishPreparationError) as excinfo:

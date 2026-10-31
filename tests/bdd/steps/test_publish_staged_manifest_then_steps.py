@@ -82,21 +82,24 @@ def _retained_staging_root(cli_run: CliRunResult) -> Path:
     return _extract_staging_root_from_plan(_publish_plan_lines(cli_run))
 
 
+def _assert_staging_paths(cli_run: CliRunResult, paths: str, *, retained: bool) -> None:
+    """Assert each comma-separated path's presence matches ``retained``."""
+    staging_root = _retained_staging_root(cli_run)
+    for relative in _split_names(paths):
+        present = (staging_root / relative).exists()
+        assert present is retained, (
+            f"{relative} must be {'retained in' if retained else 'omitted from'} "
+            "the staged tree"
+        )
+
+
 @then(parsers.parse('the retained staging tree omits paths "{paths}"'))
 def then_retained_staging_omits_paths(cli_run: CliRunResult, paths: str) -> None:
     """Assert that every comma-separated path was excluded from staging."""
-    staging_root = _retained_staging_root(cli_run)
-    for relative in _split_names(paths):
-        assert not (staging_root / relative).exists(), (
-            f"{relative} must be omitted from the staged tree"
-        )
+    _assert_staging_paths(cli_run, paths, retained=False)
 
 
 @then(parsers.parse('the retained staging tree retains paths "{paths}"'))
 def then_retained_staging_retains_paths(cli_run: CliRunResult, paths: str) -> None:
     """Assert that every comma-separated path survived staging."""
-    staging_root = _retained_staging_root(cli_run)
-    for relative in _split_names(paths):
-        assert (staging_root / relative).exists(), (
-            f"{relative} must be retained in the staged tree"
-        )
+    _assert_staging_paths(cli_run, paths, retained=True)
