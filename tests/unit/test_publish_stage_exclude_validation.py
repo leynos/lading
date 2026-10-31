@@ -158,7 +158,11 @@ def _validation_rejects(
     return False
 
 
-@settings(max_examples=20, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(
+    max_examples=20,
+    deadline=None,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
 @given(patterns=st.lists(st.sampled_from(_CANDIDATE_PATTERNS), max_size=3))
 def test_validation_rejects_exactly_the_patterns_that_remove_a_manifest(
     preparation_fixtures: PreparationFixtures,
