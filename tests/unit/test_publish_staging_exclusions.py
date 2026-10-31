@@ -305,6 +305,48 @@ def test_staged_workspace_rejects_unusable_patterns(
     )
 
 
+def test_live_publish_warns_when_git_is_excluded(
+    preparation_fixtures: PreparationFixtures,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """An irreversible upload without a checkout is flagged before copying."""
+    plan = _plan_with_roles(preparation_fixtures)
+    options = publish.PublishOptions(
+        build_directory=preparation_fixtures.tmp_path / "staging", live=True
+    )
+
+    with (
+        caplog.at_level(logging.WARNING, logger="lading.commands.publish_staging"),
+        publish_staging.staged_workspace(plan, options=options),
+    ):
+        pass
+
+    assert ".gitignore" in caplog.text, (
+        "the warning must name the selection rule the live upload loses"
+    )
+
+
+def test_live_publish_keeps_git_silent_when_nothing_is_excluded(
+    preparation_fixtures: PreparationFixtures,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A live publish that copies the checkout needs no warning."""
+    plan = _plan_with_roles(preparation_fixtures)
+    options = publish.PublishOptions(
+        build_directory=preparation_fixtures.tmp_path / "staging", live=True
+    )
+
+    with (
+        caplog.at_level(logging.WARNING, logger="lading.commands.publish_staging"),
+        publish_staging.staged_workspace(plan, options=options, stage_exclude=()),
+    ):
+        pass
+
+    assert ".gitignore" not in caplog.text, (
+        "a checkout-preserving copy must not warn about lost selection"
+    )
+
+
 def test_normalize_stage_exclude_rejects_a_bare_string() -> None:
     """A single string is a character sequence, not one pattern."""
     with pytest.raises(stage_exclude_policy.StageExcludeError) as excinfo:

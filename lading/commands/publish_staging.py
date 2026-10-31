@@ -38,11 +38,12 @@ import shutil
 import signal
 import tempfile
 import typing as typ
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from lading.commands import staging_lock
 from lading.commands.publish_manifest import PublishPreparationError
 from lading.commands.publish_stage_exclude import (
+    _match_stage_exclude,
     _stage_exclude_ignore,
     _validate_stage_exclude,
 )
@@ -200,6 +201,28 @@ def _normalize_stage_exclude(
         raise PublishPreparationError(str(exc)) from exc
 
 
+def _warn_if_live_publish_loses_git_selection(
+    active_options: PublishOptions, stage_exclude: cabc.Sequence[str]
+) -> None:
+    """Warn when a live publish stages without the repository's ``.git``.
+
+    A live upload cannot be undone: a yanked version still holds its files.
+    Without a checkout, Cargo stops consulting ``.gitignore``, so a file Git
+    ignores whose name does not start with a dot can enter the package. The
+    warning is the last chance to see that before the copy is made.
+    """
+    if not active_options.live:
+        return
+    if _match_stage_exclude(PurePosixPath(".git"), stage_exclude) is None:
+        return
+    LOGGER.warning(
+        "Live publish staging excludes .git, so cargo will not apply "
+        ".gitignore when selecting package files; a file Git ignores whose "
+        "name does not start with a dot can be uploaded. Set "
+        "publish.stage_exclude = [] to keep Git-aware selection."
+    )
+
+
 def _stage(
     plan: PublishPlan,
     options: PublishOptions | None,
@@ -227,6 +250,7 @@ def _stage(
     # manifest makes the publish impossible, and it should say so without
     # first copying tens of gigabytes to find out.
     _validate_stage_exclude(plan, stage_exclude)
+    _warn_if_live_publish_loses_git_selection(active_options, stage_exclude)
     # Recorded because the effective list decides what the staged tree holds,
     # and it may come from the default, `lading.toml`, or a programmatic
     # caller. Without this, a file missing from staging has no visible cause.
