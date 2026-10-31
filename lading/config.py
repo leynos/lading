@@ -6,7 +6,7 @@ import contextvars
 import dataclasses as dc
 import functools
 import typing as typ
-from pathlib import PureWindowsPath
+from pathlib import PurePosixPath, PureWindowsPath
 
 from cyclopts.config import Toml
 
@@ -590,14 +590,13 @@ def _validate_stage_exclude_pattern(
     if "\\" in candidate:
         message = f"{field_name} must use '/' separators; received {original!r}."
         raise ConfigurationError(message)
-    segments = candidate.split("/")
-    if ".." in segments:
+    path = PurePosixPath(candidate)
+    if ".." in path.parts:
         message = f"{field_name} must not contain '..'; received {original!r}."
         raise ConfigurationError(message)
-    if "." in segments or "" in segments:
-        # Anchored patterns are compared with ``PurePosixPath.as_posix()``,
-        # which never renders these segments, so such a pattern would be
-        # accepted and then match nothing.
+    if candidate == "." or candidate != path.as_posix():
+        # ``as_posix()`` never renders a bare '.' or an empty segment, so such
+        # a pattern would load and then match nothing.
         message = (
             f"{field_name} must not contain '.' or empty path segments; "
             f"received {original!r}."

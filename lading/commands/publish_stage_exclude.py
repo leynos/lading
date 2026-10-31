@@ -17,7 +17,6 @@ workspace root.
 
 import collections.abc as cabc
 import fnmatch
-import os
 import typing as typ
 from pathlib import Path, PurePosixPath
 
@@ -80,11 +79,10 @@ def _stage_exclude_ignore(
     cabc.Callable[[str, list[str]], set[str]]
         An ``ignore`` callback suitable for :func:`shutil.copytree`.
     """
-    root = os.fspath(workspace_root)
 
     def ignore(directory: str, names: list[str]) -> set[str]:
         """Return the entries of ``directory`` that ``patterns`` exclude."""
-        relative_directory = Path(os.path.relpath(directory, root)).as_posix()
+        relative_directory = Path(directory).relative_to(workspace_root).as_posix()
         return {
             name
             for name in names
@@ -109,6 +107,32 @@ def _required_manifests(plan: PublishPlan) -> tuple[tuple[str, Path], ...]:
         )
     )
     return tuple(manifests)
+
+
+def _manifest_relative_path(
+    manifest: Path, workspace_root: Path
+) -> PurePosixPath | None:
+    """Return the manifest's path as staging copies it, or :data:`None`.
+
+    The lexical path is used rather than the manifest's resolved target:
+    ``copytree`` excludes an entry by the name it walks, so a pattern must be
+    checked against that spelling. A symlinked ``Cargo.toml`` resolves
+    elsewhere, and matching the target would let a pattern remove the link
+    after validation had cleared it.
+
+    Returns
+    -------
+    PurePosixPath | None
+        The workspace-relative manifest path, or :data:`None` when no spelling
+        of the workspace root contains the manifest, in which case staging
+        never copies it.
+    """
+    for root in (workspace_root, workspace_root.resolve(strict=False)):
+        try:
+            return PurePosixPath(manifest.relative_to(root).as_posix())
+        except ValueError:
+            continue
+    return None
 
 
 def _workspace_relative_prefixes(
@@ -137,13 +161,9 @@ def _validate_stage_exclude(
     """
     if not stage_exclude:
         return
-    workspace_root = plan.workspace_root.resolve(strict=False)
     for label, manifest in _required_manifests(plan):
-        try:
-            relative = PurePosixPath(
-                manifest.resolve(strict=False).relative_to(workspace_root).as_posix()
-            )
-        except ValueError:
+        relative = _manifest_relative_path(manifest, plan.workspace_root)
+        if relative is None:
             # A member outside the workspace root is not copied into staging at
             # all, so a workspace-relative pattern cannot remove it.
             continue
