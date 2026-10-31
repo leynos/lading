@@ -1330,11 +1330,18 @@ matching. That module owns three things:
   it would remove. A member whose manifest resolves outside the workspace root
   is skipped, since staging never copies it.
 
-Configuration validation happens earlier and elsewhere:
-`lading.config._validate_stage_exclude_pattern` rejects blank, absolute,
-backslash-separated, and `.`, `..` or empty-segment patterns as the file loads,
-because those spellings would otherwise be accepted and then match nothing. The
-predicate here therefore only ever sees relative, normalized paths.
+Spelling rules are shared by both entry routes. `publish.stage_exclude` can
+come from `lading.toml` or from a direct call to the public staging functions,
+and neither route may silently accept a pattern that can never match.
+`lading.stage_exclude_policy` owns those rules so it depends on neither the
+configuration nor the command layer: `normalize_stage_exclude` strips one
+trailing slash from each pattern and rejects blank, `!`-prefixed, absolute,
+backslash-separated, and `.`, `..` or empty-segment spellings.
+`lading.config._stage_exclude` translates its `StageExcludeError` into
+`ConfigurationError` for a bad file, and `_stage` applies it before the
+temporary directory exists, translating it into `PublishPreparationError` and
+logging the normalized tuple. The predicate here therefore only ever sees
+relative, normalized paths.
 
 When adding a pattern spelling, change `_match_stage_exclude` and cover it in
 `tests/unit/test_publish_staging_exclusions.py`; it is the only place the
@@ -1549,12 +1556,14 @@ then joins the resulting lines. All three helpers are public exports of
 workspace tree. Its exclusion policy — pattern matching, the `copytree` ignore
 callback, and the pre-copy manifest check — lives in `publish_stage_exclude.py`
 (issue #262) so the copy and cleanup lifecycle does not also own pattern
-semantics. `publish_manifest.py` owns the `publish.strip_patches` staging-time
-manifest mutation. These operations run before any `cargo package` or
-`cargo publish` command, so the command runner works against a prepared
-snapshot rather than the source workspace. Workspace README adoption is not
-performed here; the `lading bump` command transposes the workspace README into
-each opted-in crate before publication.
+semantics. The spelling rules those patterns must satisfy live one layer lower,
+in `lading.stage_exclude_policy`, because configuration loading enforces them
+too and must not depend on the command layer. `publish_manifest.py` owns the
+`publish.strip_patches` staging-time manifest mutation. These operations run
+before any `cargo package` or `cargo publish` command, so the command runner
+works against a prepared snapshot rather than the source workspace. Workspace
+README adoption is not performed here; the `lading bump` command transposes the
+workspace README into each opted-in crate before publication.
 
 `publish_diagnostics.py` owns compiletest failure enrichment. When a cargo
 pre-flight test failure mentions compiletest-style `*.stderr` artefacts, the
