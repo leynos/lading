@@ -5,9 +5,13 @@ also makes the command-line boundary explicit: diagnostics that an earlier
 dependency rendered on stdout are now written to stderr, and command summaries
 are printed once, unwrapped and without colour. Existing flags and
 `lading.toml` keys keep their meaning; the release adds the opt-in
-`[[bump.manifest_rewrites]]` allowlist and additive Python modules. An
+`[[bump.manifest_rewrites]]` allowlist and `publish.stage_exclude`, plus
+additive Python modules. `publish.stage_exclude` changes what a staged publish
+tree contains and therefore which files `cargo package` may publish. An
 environment already running 3.14 that only reads successful output needs no
-action beyond the version bump itself.
+action beyond the version bump itself, unless a published crate relies on the
+old Git-aware file selection; see
+[Publish staging exclusions](#publish-staging-exclusions).
 
 When 0.4.0 is released, its tagged build will also be published to PyPI as a
 source distribution and pure-Python wheel. GitHub Releases will retain both
@@ -68,9 +72,11 @@ documentation glob must be corrected, as described under
 [Bump confinement preflight](#1-make-bump-write-targets-confined-and-regular);
 such a workspace fails the same way on any interpreter. A script that reads
 diagnostics from stdout should read stderr instead, because diagnostics moved
-there. A project pinned to a Lading version through a lockfile keeps that
-version until the lockfile is regenerated, so the floor bites when the pin is
-moved rather than when this release is published.
+there. The staging default is a behaviour change instead: a project whose
+packaged files must keep Git-aware selection sets `stage_exclude = []`. A
+project pinned to a Lading version through a lockfile keeps that version until
+the lockfile is regenerated, so the floor bites when the pin is moved rather
+than when this release is published.
 
 ## 1. Make bump write targets confined and regular
 
@@ -273,6 +279,38 @@ version nothing in the project verifies.
 guide records how the baseline is declared and mirrored;
 [Supported Python versions](users-guide.md#supported-python-versions) states
 the floor for users.
+
+## Publish staging exclusions
+
+`lading publish` copies the workspace into a staging directory before
+packaging. 0.4.0 adds the optional `publish.stage_exclude` key: an array of
+workspace-relative glob patterns naming entries the copy leaves out. Its
+default is `[".git"]`, so the staged tree is no longer a Git checkout.
+
+Leaving `.git` behind removes most of the cost of staging a large repository,
+but it also changes how Cargo selects files for a package. With no Git metadata,
+`cargo package` skips every dot-named entry, does not consult the repository's
+`.gitignore`, and writes no `.cargo_vcs_info.json`. A file that Git ignores
+without a leading dot — a local database, or a settings module — is therefore
+packaged unless the crate names it in `include` or the configuration excludes
+it. Audit any such file that sits inside a publishable crate before relying on
+the default.
+
+Projects that do not publish are unaffected. To keep the 0.3.x behaviour for a
+workspace that depends on Git-aware selection, set:
+
+```toml
+[publish]
+stage_exclude = []
+```
+
+An empty list copies `.git` and every other file again, restoring Git-based
+file selection and VCS provenance, at the cost of the copy time the default
+avoids. Excluding a path that would remove a required manifest is rejected
+before staging begins.
+
+See [Staging exclusions](users-guide.md#staging-exclusions) for the pattern
+rules.
 
 ## Staying on 0.3.1
 
