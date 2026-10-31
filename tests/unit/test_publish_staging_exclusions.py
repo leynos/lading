@@ -300,9 +300,17 @@ def test_staged_workspace_rejects_unusable_patterns(
     )
 
 
-def test_live_publish_warns_when_git_is_excluded(
+@pytest.mark.parametrize(
+    ("stage_exclude", "should_warn"),
+    [((".git",), True), ((), False)],
+    ids=("excludes-git", "keeps-git"),
+)
+def test_live_publish_warns_only_when_git_is_excluded(
     preparation_fixtures: PreparationFixtures,
     caplog: pytest.LogCaptureFixture,
+    stage_exclude: tuple[str, ...],
+    *,
+    should_warn: bool,
 ) -> None:
     """An irreversible upload without a checkout is flagged before copying."""
     plan = _plan_with_roles(preparation_fixtures)
@@ -312,33 +320,14 @@ def test_live_publish_warns_when_git_is_excluded(
 
     with (
         caplog.at_level(logging.WARNING, logger="lading.commands.publish_staging"),
-        publish_staging.staged_workspace(plan, options=options),
+        publish_staging.staged_workspace(
+            plan, options=options, stage_exclude=stage_exclude
+        ),
     ):
         pass
 
-    assert ".gitignore" in caplog.text, (
-        "the warning must name the selection rule the live upload loses"
-    )
-
-
-def test_live_publish_keeps_git_silent_when_nothing_is_excluded(
-    preparation_fixtures: PreparationFixtures,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """A live publish that copies the checkout needs no warning."""
-    plan = _plan_with_roles(preparation_fixtures)
-    options = publish.PublishOptions(
-        build_directory=preparation_fixtures.tmp_path / "staging", live=True
-    )
-
-    with (
-        caplog.at_level(logging.WARNING, logger="lading.commands.publish_staging"),
-        publish_staging.staged_workspace(plan, options=options, stage_exclude=()),
-    ):
-        pass
-
-    assert ".gitignore" not in caplog.text, (
-        "a checkout-preserving copy must not warn about lost selection"
+    assert (".gitignore" in caplog.text) is should_warn, (
+        "the warning must appear exactly when the upload loses gitignore selection"
     )
 
 

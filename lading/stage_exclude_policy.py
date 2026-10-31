@@ -28,31 +28,47 @@ class StageExcludeError(ValueError):
     """A staging exclusion pattern cannot describe a workspace path."""
 
 
+def _is_blank(candidate: str) -> bool:
+    """Return whether the pattern is empty or whitespace only."""
+    return not candidate.strip()
+
+
+def _is_negated(candidate: str) -> bool:
+    """Return whether the pattern uses gitignore's ``!`` negation."""
+    # A gitignore habit rather than a request staging can honour: the pattern
+    # would load, match only a file literally named '!…', and exclude nothing
+    # while the reader believes it re-included a path.
+    return candidate.startswith("!")
+
+
+def _is_absolute(candidate: str) -> bool:
+    """Return whether the pattern is rooted in either path flavour."""
+    return candidate.startswith("/") or bool(PureWindowsPath(candidate).drive)
+
+
+def _uses_backslashes(candidate: str) -> bool:
+    """Return whether the pattern separates segments with a backslash."""
+    return "\\" in candidate
+
+
+#: Spellings that would load but never match a copied entry, with the reason
+#: reported. Order decides which reason a multi-fault pattern reports.
+_SPELLING_REJECTIONS: tuple[tuple[cabc.Callable[[str], bool], str], ...] = (
+    (_is_blank, "must not be blank"),
+    (_is_negated, "must not start with '!' because negation is not supported"),
+    (_is_absolute, "must be relative to the workspace root"),
+    (_uses_backslashes, "must use '/' separators"),
+)
+
+
 def _reject_unusable_spelling(
     candidate: str, field_name: str, original: object
 ) -> None:
     """Reject a spelling no relative workspace path can have."""
-    if not candidate.strip():
-        message = f"{field_name} must not be blank; received {original!r}."
-        raise StageExcludeError(message)
-    if candidate.startswith("!"):
-        # A gitignore habit rather than a request staging can honour: the
-        # pattern would load, match only a file literally named '!…', and
-        # exclude nothing while the reader believes it re-included a path.
-        message = (
-            f"{field_name} must not start with '!' because negation is not "
-            f"supported; received {original!r}."
-        )
-        raise StageExcludeError(message)
-    if candidate.startswith("/") or PureWindowsPath(candidate).drive:
-        message = (
-            f"{field_name} must be relative to the workspace root; "
-            f"received {original!r}."
-        )
-        raise StageExcludeError(message)
-    if "\\" in candidate:
-        message = f"{field_name} must use '/' separators; received {original!r}."
-        raise StageExcludeError(message)
+    for is_unusable, reason in _SPELLING_REJECTIONS:
+        if is_unusable(candidate):
+            message = f"{field_name} {reason}; received {original!r}."
+            raise StageExcludeError(message)
 
 
 def _reject_non_workspace_segments(
