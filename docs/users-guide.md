@@ -97,7 +97,10 @@ and `cargo package` selects files accordingly. It skips every hidden file and
 directory whose name starts with a dot, does not consult the repository's
 `.gitignore` rules, and writes no `.cargo_vcs_info.json` into the package, so
 the published crate carries no source-commit provenance. A dot-named file the
-package needs must be named in its `include` list. To keep the old Git-aware
+package needs must be named in its `include` list. Conversely, a file that Git
+ignores whose name does not start with a dot is included unless the crate's
+`include` list or `stage_exclude` keeps it out, so audit for such files in a
+publishable crate before relying on the default. To keep the old Git-aware
 selection, including gitignore handling and VCS provenance, set
 `stage_exclude = []`. `--forbid-dirty` is unaffected either way: it inspects
 the source workspace's Git status before staging begins.
