@@ -20,6 +20,10 @@ from pathlib import Path
 import pytest
 from cmd_mox import CmdMox, Invocation
 from pytest_bdd import given, parsers
+from tomlkit import array
+
+from lading import config as config_module
+from lading.testing import toml_utils
 
 from .metadata_fixtures import given_cargo_metadata_with_dependency_chain
 from .test_publish_infrastructure import ResponseProvider, _CommandResponse
@@ -336,11 +340,33 @@ def given_valid_lading_workspace(
     Path
         The workspace root directory.
     """
-    from lading import config as config_module
-
     config_path = tmp_path / config_module.CONFIG_FILENAME
     config_path.write_text(
         '[bump]\n\n[publish]\nstrip_patches = "all"\n', encoding="utf-8"
     )
     given_cargo_metadata_with_dependency_chain(cmd_mox, monkeypatch, tmp_path)
     return tmp_path
+
+
+@given("the workspace contains staging markers")
+def given_workspace_contains_staging_markers(workspace_directory: Path) -> None:
+    """Add entries that a staging exclusion can remove or must retain."""
+    markers = (".git/config", "venv/marker", "target/fixture/Cargo.toml")
+    for relative in markers:
+        path = workspace_directory / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("marker\n", encoding="utf-8")
+
+
+@given(parsers.parse('publish.stage_exclude is "{patterns}"'))
+def given_publish_stage_exclude(workspace_directory: Path, patterns: str) -> None:
+    """Set ``publish.stage_exclude`` from a comma-separated list."""
+    config_path = workspace_directory / config_module.CONFIG_FILENAME
+    document = toml_utils.load_or_create_document(config_path)
+    publish_table = toml_utils.ensure_table(document, "publish")
+    entries = array()
+    for pattern in patterns.split(","):
+        if trimmed := pattern.strip():
+            entries.append(trimmed)
+    publish_table["stage_exclude"] = entries
+    config_path.write_text(document.as_string(), encoding="utf-8")

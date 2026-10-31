@@ -380,6 +380,25 @@ Feature: Lading CLI scaffolding
     Then the publish command prints the publish plan for "alpha"
     And the staged workspace copy has been removed
 
+  Scenario: Staging omits configured paths from the retained copy
+    Given a workspace directory with configuration
+    And cargo metadata describes a sample workspace
+    And the workspace contains staging markers
+    And publish.stage_exclude is ".git, venv"
+    When I invoke lading publish with that workspace, retaining the staged copy
+    Then the publish command prints the publish plan for "alpha"
+    And the retained staging tree omits paths ".git, venv"
+    And the retained staging tree retains paths "target/fixture/Cargo.toml"
+
+  Scenario: Staging omits .git by default
+    Given a workspace directory with configuration
+    And cargo metadata describes a sample workspace
+    And the workspace contains staging markers
+    When I invoke lading publish with that workspace, retaining the staged copy
+    Then the publish command prints the publish plan for "alpha"
+    And the retained staging tree omits paths ".git"
+    And the retained staging tree retains paths "venv/marker, target/fixture/Cargo.toml"
+
   Scenario: Publish command strips all patch entries when configured
     Given a workspace directory with configuration
     And cargo metadata describes a sample workspace

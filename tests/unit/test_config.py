@@ -34,6 +34,7 @@ def test_load_configuration_parses_values(tmp_path: Path) -> None:
         [publish]
         exclude = ["examples"]
         order = ["core"]
+        stage_exclude = [".git", "venv/"]
         strip_patches = "all"
 
         [preflight]
@@ -63,6 +64,9 @@ def test_load_configuration_parses_values(tmp_path: Path) -> None:
     )
     assert configuration.publish.order == ("core",), (
         "publish.order must load as a tuple of crate names"
+    )
+    assert configuration.publish.stage_exclude == (".git", "venv"), (
+        "stage_exclude must load as tuples with one trailing slash removed"
     )
     assert configuration.publish.strip_patches == "all", (
         'strip_patches = "all" must be accepted as a valid mode'
@@ -118,6 +122,55 @@ def test_load_configuration_parses_values(tmp_path: Path) -> None:
             unknown = "value"
             """,
             id="documentation_unknown",
+        ),
+        pytest.param(
+            """
+            [publish]
+            stage_exclude = [""]
+            """,
+            id="publish_stage_exclude_blank",
+        ),
+        pytest.param(
+            """
+            [publish]
+            stage_exclude = ["   "]
+            """,
+            id="publish_stage_exclude_whitespace",
+        ),
+        pytest.param(
+            """
+            [publish]
+            stage_exclude = ["/target"]
+            """,
+            id="publish_stage_exclude_absolute",
+        ),
+        pytest.param(
+            """
+            [publish]
+            stage_exclude = ["C:/target"]
+            """,
+            id="publish_stage_exclude_drive",
+        ),
+        pytest.param(
+            """
+            [publish]
+            stage_exclude = ['target\\debug']
+            """,
+            id="publish_stage_exclude_backslash",
+        ),
+        pytest.param(
+            """
+            [publish]
+            stage_exclude = ["../outside"]
+            """,
+            id="publish_stage_exclude_parent",
+        ),
+        pytest.param(
+            """
+            [publish]
+            stage_exclude = [1]
+            """,
+            id="publish_stage_exclude_invalid_type",
         ),
         pytest.param(
             """
@@ -182,6 +235,9 @@ def test_load_configuration_applies_defaults(tmp_path: Path) -> None:
     assert configuration.publish.strip_patches == "per-crate", (
         "strip_patches must default to per-crate when unset"
     )
+    assert configuration.publish.stage_exclude == (".git",), (
+        "stage_exclude must default to omitting .git"
+    )
     assert not configuration.bump.lockfile_manifests, (
         "lockfile_manifests must default to an empty tuple"
     )
@@ -202,6 +258,100 @@ def test_load_configuration_defaults_without_file(tmp_path: Path) -> None:
 
     assert configuration == config_module.LadingConfig(), (
         "a missing lading.toml must yield the default configuration"
+    )
+
+
+def test_publish_config_stage_exclude_defaults_when_key_is_absent() -> None:
+    """An absent key keeps the ``.git`` default even when other keys are set."""
+    configuration = config_module.PublishConfig.from_mapping({"exclude": ["internal"]})
+
+    assert configuration.stage_exclude == (".git",), (
+        "omitting stage_exclude must leave the default exclusion in place"
+    )
+
+
+def test_publish_config_stage_exclude_replaces_the_default() -> None:
+    """A configured list replaces the default rather than extending it."""
+    configuration = config_module.PublishConfig.from_mapping({
+        "stage_exclude": ["venv", "target/"]
+    })
+
+    assert configuration.stage_exclude == ("venv", "target"), (
+        "a configured list must replace the default and drop one trailing slash"
+    )
+
+
+def test_publish_config_stage_exclude_empty_list_copies_everything() -> None:
+    """An explicit empty list opts out of every exclusion."""
+    configuration = config_module.PublishConfig.from_mapping({"stage_exclude": []})
+
+    assert not configuration.stage_exclude, (
+        "an explicit empty list must discard the .git default"
+    )
+
+
+def test_publish_config_stage_exclude_accepts_a_single_string() -> None:
+    """A bare string is accepted as a one-pattern exclusion list."""
+    configuration = config_module.PublishConfig.from_mapping({
+        "stage_exclude": "target/"
+    })
+
+    assert configuration.stage_exclude == ("target",), (
+        "a single string must normalize to a one-element tuple"
+    )
+
+
+@pytest.mark.parametrize(
+    ("body", "expected_fragment"),
+    [
+        pytest.param(
+            'stage_exclude = [""]',
+            "publish.stage_exclude[0] must not be blank",
+            id="blank",
+        ),
+        pytest.param(
+            'stage_exclude = ["/target"]',
+            "publish.stage_exclude[0] must be relative to the workspace root",
+            id="absolute",
+        ),
+        pytest.param(
+            'stage_exclude = ["crates/../target"]',
+            "publish.stage_exclude[0] must not contain '..'",
+            id="parent_segment",
+        ),
+        pytest.param(
+            'stage_exclude = ["./target"]',
+            "publish.stage_exclude[0] must not contain '.' or empty path segments",
+            id="current_directory_segment",
+        ),
+        pytest.param(
+            'stage_exclude = ["crates//venv"]',
+            "publish.stage_exclude[0] must not contain '.' or empty path segments",
+            id="empty_segment",
+        ),
+        pytest.param(
+            'stage_exclude = ["."]',
+            "publish.stage_exclude[0] must not contain '.' or empty path segments",
+            id="bare_current_directory",
+        ),
+        pytest.param(
+            'stage_exclude = ["!target/keep"]',
+            "publish.stage_exclude[0] must not start with '!'",
+            id="negation",
+        ),
+    ],
+)
+def test_publish_config_stage_exclude_rejects_invalid_patterns(
+    tmp_path: Path, body: str, expected_fragment: str
+) -> None:
+    """Each rejected pattern names its position and the reason."""
+    _write_config(tmp_path, f"[publish]\n{body}\n")
+
+    with pytest.raises(config_module.ConfigurationError) as excinfo:
+        config_module.load_configuration(tmp_path)
+
+    assert expected_fragment in str(excinfo.value), (
+        "the rejection must name the pattern's position and the reason"
     )
 
 

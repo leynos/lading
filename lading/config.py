@@ -6,6 +6,7 @@ import contextvars
 import dataclasses as dc
 import functools
 import typing as typ
+from pathlib import PurePosixPath, PureWindowsPath
 
 from cyclopts.config import Toml
 
@@ -19,6 +20,13 @@ if typ.TYPE_CHECKING:  # pragma: no cover - type checking only
 CONFIG_FILENAME = "lading.toml"
 
 StripPatchesSetting = typ.Literal["all", "per-crate"] | bool
+
+#: Paths staging omits when ``publish.stage_exclude`` is not configured.
+#: ``.git`` is large, and no packaging step reads the copy: Cargo only uses a
+#: checkout for provenance, which the published crate records as
+#: ``.cargo_vcs_info.json`` (issue #262). ``target`` is deliberately not
+#: excluded: some workspaces package artefacts from it.
+DEFAULT_STAGE_EXCLUDE: typ.Final[tuple[str, ...]] = (".git",)
 
 CONFIG_ROOT_TOML_KEYS: typ.Final[frozenset[str]] = frozenset({
     "bump",
@@ -35,6 +43,7 @@ BUMP_DOCUMENTATION_TOML_KEYS: typ.Final[frozenset[str]] = frozenset({"globs"})
 PUBLISH_TOML_KEYS: typ.Final[frozenset[str]] = frozenset({
     "exclude",
     "order",
+    "stage_exclude",
     "strip_patches",
 })
 PREFLIGHT_TOML_KEYS: typ.Final[frozenset[str]] = frozenset({
@@ -164,6 +173,7 @@ class PublishConfig:
 
     exclude: tuple[str, ...] = ()
     order: tuple[str, ...] = ()
+    stage_exclude: tuple[str, ...] = DEFAULT_STAGE_EXCLUDE
     strip_patches: StripPatchesSetting = "per-crate"
 
     @classmethod
@@ -193,13 +203,25 @@ class PublishConfig:
         ('a', 'b')
         >>> PublishConfig.from_mapping(None).strip_patches
         'per-crate'
+        >>> PublishConfig.from_mapping(None).stage_exclude
+        ('.git',)
+        >>> PublishConfig.from_mapping({"stage_exclude": []}).stage_exclude
+        ()
         """  # ruff: ignore[docstring-extraneous-exception]  # propagated from the shared mapping validators
         if mapping is None:
             return cls()
         _validate_mapping_keys(mapping, set(PUBLISH_TOML_KEYS), "publish")
+        # A present key replaces the default rather than adding to it, so an
+        # explicit ``[]`` can restore the old copy-everything behaviour.
+        stage_exclude = (
+            DEFAULT_STAGE_EXCLUDE
+            if "stage_exclude" not in mapping
+            else _stage_exclude(mapping.get("stage_exclude"))
+        )
         return cls(
             exclude=_string_tuple(mapping.get("exclude"), "publish.exclude"),
             order=_string_tuple(mapping.get("order"), "publish.order"),
+            stage_exclude=stage_exclude,
             strip_patches=_strip_patches(mapping.get("strip_patches")),
         )
 
@@ -550,3 +572,74 @@ _non_negative_int = functools.partial(
 _optional_mapping = functools.partial(
     toml_coerce.optional_mapping, error=ConfigurationError
 )
+
+
+def _reject_unusable_stage_exclude(
+    candidate: str, field_name: str, original: str
+) -> None:
+    """Reject a spelling no relative workspace path can have."""
+    if not candidate.strip():
+        message = f"{field_name} must not be blank; received {original!r}."
+        raise ConfigurationError(message)
+    if candidate.startswith("!"):
+        # A gitignore habit rather than a request staging can honour: the
+        # pattern would load, match only a file literally named '!…', and
+        # exclude nothing while the reader believes it re-included a path.
+        message = (
+            f"{field_name} must not start with '!' because negation is not "
+            f"supported; received {original!r}."
+        )
+        raise ConfigurationError(message)
+    if candidate.startswith("/") or PureWindowsPath(candidate).drive:
+        message = (
+            f"{field_name} must be relative to the workspace root; "
+            f"received {original!r}."
+        )
+        raise ConfigurationError(message)
+    if "\\" in candidate:
+        message = f"{field_name} must use '/' separators; received {original!r}."
+        raise ConfigurationError(message)
+
+
+def _reject_non_workspace_stage_exclude(
+    candidate: str, field_name: str, original: str
+) -> None:
+    """Reject segments that would load but never match a copied entry."""
+    path = PurePosixPath(candidate)
+    if ".." in path.parts:
+        message = f"{field_name} must not contain '..'; received {original!r}."
+        raise ConfigurationError(message)
+    if candidate == "." or candidate != path.as_posix():
+        # ``as_posix()`` never renders a bare '.' or an empty segment, so such
+        # a pattern would load and then match nothing.
+        message = (
+            f"{field_name} must not contain '.' or empty path segments; "
+            f"received {original!r}."
+        )
+        raise ConfigurationError(message)
+
+
+def _validate_stage_exclude_pattern(
+    candidate: str, field_name: str, original: str
+) -> None:
+    """Reject a staging exclusion that cannot describe a workspace path."""
+    _reject_unusable_stage_exclude(candidate, field_name, original)
+    _reject_non_workspace_stage_exclude(candidate, field_name, original)
+
+
+def _stage_exclude(value: object) -> tuple[str, ...]:
+    """Normalize the ``publish.stage_exclude`` patterns.
+
+    Returns
+    -------
+    tuple[str, ...]
+        The configured patterns, each with one trailing slash removed.
+    """
+    patterns = _string_tuple(value, "publish.stage_exclude")
+    normalized: list[str] = []
+    for index, pattern in enumerate(patterns):
+        field_name = f"publish.stage_exclude[{index}]"
+        candidate = pattern.removesuffix("/")
+        _validate_stage_exclude_pattern(candidate, field_name, pattern)
+        normalized.append(candidate)
+    return tuple(normalized)
