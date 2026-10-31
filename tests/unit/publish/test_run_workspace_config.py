@@ -166,6 +166,14 @@ def _capture_stage_exclude(
     return captured
 
 
+def _config_with_stage_exclude(
+    patterns: tuple[str, ...],
+) -> config_module.LadingConfig:
+    """Return a publish test configuration carrying ``patterns``."""
+    base = make_config()
+    return dc.replace(base, publish=dc.replace(base.publish, stage_exclude=patterns))
+
+
 def test_run_forwards_stage_exclude_from_explicit_configuration(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -173,18 +181,9 @@ def test_run_forwards_stage_exclude_from_explicit_configuration(
     root = tmp_path.resolve()
     workspace = make_workspace(root, make_crate(root, "alpha"))
     monkeypatch.setattr("lading.workspace.load_workspace", lambda _: workspace)
-    explicit = dc.replace(
-        make_config(),
-        publish=dc.replace(make_config().publish, stage_exclude=("explicit",)),
-    )
-    from_options = dc.replace(
-        make_config(),
-        publish=dc.replace(make_config().publish, stage_exclude=("from-options",)),
-    )
-    active = dc.replace(
-        make_config(),
-        publish=dc.replace(make_config().publish, stage_exclude=("active",)),
-    )
+    explicit = _config_with_stage_exclude(("explicit",))
+    from_options = _config_with_stage_exclude(("from-options",))
+    active = _config_with_stage_exclude(("active",))
     monkeypatch.setattr(config_module, "current_configuration", lambda: active)
     options = publish.PublishOptions(configuration=from_options)
     captured = _capture_stage_exclude(monkeypatch, root)
@@ -204,10 +203,7 @@ def test_run_forwards_stage_exclude_from_active_configuration(
     root = tmp_path.resolve()
     workspace = make_workspace(root, make_crate(root, "alpha"))
     monkeypatch.setattr("lading.workspace.load_workspace", lambda _: workspace)
-    active = dc.replace(
-        make_config(),
-        publish=dc.replace(make_config().publish, stage_exclude=("venv", "target")),
-    )
+    active = _config_with_stage_exclude(("venv", "target"))
     monkeypatch.setattr(config_module, "current_configuration", lambda: active)
     captured = _capture_stage_exclude(monkeypatch, root)
 

@@ -67,15 +67,16 @@ lading publish --keep-staging
 
 ### Staging exclusions
 
-`publish.stage_exclude` is an array of gitignore-style patterns relative to the
-workspace root. A pattern without `/` matches a file or directory name at any
-depth, so the default `.git` removes every `.git` directory in the tree. A
-pattern with `/` matches the whole workspace-relative path, so
-`crates/app/venv` removes only that one directory while leaving `venv` beside
-the workspace root alone. `*` can span `/` in an anchored pattern, so
-`crates/*/venv` matches a virtual environment in any nested crate. A configured
-list replaces the default rather than adding to it, and an explicit
-`stage_exclude = []` restores copying everything.
+`publish.stage_exclude` is an array of path patterns relative to the workspace
+root. A pattern without `/` matches a file or directory name at any depth, so
+the default `.git` removes every `.git` directory in the tree. A leading `**/`
+names the same intent and matches at any depth, including the workspace root, so
+`**/venv` behaves exactly as `venv` does. A pattern with `/` matches the whole
+workspace-relative path, so `crates/app/venv` removes only that one directory
+while leaving `venv` beside the workspace root alone. `*` can span `/` in an
+anchored pattern, so `crates/*/venv` matches a virtual environment in any
+nested crate. A configured list replaces the default rather than adding to it,
+and an explicit `stage_exclude = []` restores copying everything.
 
 Staging refuses a pattern that would remove a manifest the publication needs:
 the workspace `Cargo.toml` and the manifest of every planned crate, including
