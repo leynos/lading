@@ -171,6 +171,42 @@ def test_stage_exclude_rejects_an_excluded_intermediate_link(
     )
 
 
+def test_stage_exclude_rejects_a_link_through_an_excluded_directory(
+    preparation_fixtures: PreparationFixtures,
+) -> None:
+    """A pruned directory named by a link in the path breaks the manifest too."""
+    root = preparation_fixtures.tmp_path / "workspace"
+    root.mkdir()
+    (root / "Cargo.toml").write_text("[workspace]\n", encoding="utf-8")
+    crate = preparation_fixtures.make_crate(root, "alpha")
+    (root / "manifests").mkdir()
+    (root / "manifests" / "workspace.toml").write_text(
+        crate.manifest_path.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    (root / "alias").symlink_to("manifests")
+    crate.manifest_path.unlink()
+    crate.manifest_path.symlink_to("../alias/workspace.toml")
+    plan = publish.plan_publication(
+        preparation_fixtures.make_workspace(root, crate),
+        preparation_fixtures.make_config(),
+    )
+
+    # ``alias/workspace.toml`` is not itself a link, so only following the
+    # directory link shows that staging would prune what it names.
+    with pytest.raises(publish_staging.PublishPreparationError) as excinfo:
+        publish_stage_exclude._validate_stage_exclude(
+            plan, ("manifests",), preserve_symlinks=True
+        )
+
+    assert "symlink target 'manifests'" in str(excinfo.value), (
+        "the rejection must name the directory the link in the path names"
+    )
+    # An unrelated pattern still passes.
+    publish_stage_exclude._validate_stage_exclude(
+        plan, ("src",), preserve_symlinks=True
+    )
+
+
 _CANDIDATE_PATTERNS = (
     "Cargo.toml",
     "alpha",

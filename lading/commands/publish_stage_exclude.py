@@ -168,39 +168,57 @@ def _manifest_exclusion(
     return None
 
 
-def _link_chain_targets(manifest: Path) -> cabc.Iterator[Path]:
-    """Yield each path named by the link chain starting at ``manifest``.
+def _link_target(path: Path) -> Path:
+    """Return the path ``path`` names, without resolving it further."""
+    return Path(os.path.normpath(path.parent / path.readlink()))
 
-    The chain is walked link by link rather than with :meth:`Path.resolve`,
-    because staging copies each link as it finds it. If an intermediate link is
-    excluded, the staged manifest dangles even when the final target is copied.
-    A cycle is abandoned: it never reaches a file staging could copy.
+
+def _preserved_dependencies(path: Path, workspace_root: Path) -> cabc.Iterator[Path]:
+    """Yield ``path`` and every path staging must copy to preserve it.
+
+    Staging copies each symbolic link as a link, so preserving ``path`` needs
+    both the link itself and its target to be copied. Walking the links one at
+    a time, rather than using :meth:`Path.resolve`, shows each intermediate
+    path that staging could prune.
+
+    A link in a parent component counts as much as a link to the file:
+    ``alias/workspace.toml`` still depends on whatever ``alias`` names. A cycle
+    is abandoned, because it never reaches a file staging could copy.
 
     Yields
     ------
     Path
-        The target named by each link, ending with the final non-link target.
+        ``path``, then each path reached by a symbolic link in it or in one of
+        its ancestors.
     """
+    pending = [path]
     seen: set[Path] = set()
-    current = manifest
-    while current.is_symlink():
+    while pending:
+        current = pending.pop()
         if current in seen:
-            return
+            continue
         seen.add(current)
-        current = Path(os.path.normpath(current.parent / current.readlink()))
         yield current
+        relative = _manifest_relative_path(current, workspace_root)
+        if relative is None:
+            # Outside the workspace, staging copies nothing for this path.
+            continue
+        for prefix in _workspace_relative_prefixes(relative):
+            component = workspace_root / prefix
+            if component.is_symlink():
+                pending.append(_link_target(component))
 
 
-def _link_target_exclusion(
+def _preserved_link_exclusion(
     manifest: Path, workspace_root: Path, patterns: cabc.Sequence[str]
 ) -> tuple[PurePosixPath, str] | None:
-    """Return the excluded link-chain path of a preserved manifest, if any."""
-    if not manifest.is_symlink() or not manifest.exists():
-        # A broken link has no target staging could have copied, and a pattern
+    """Return the excluded dependency of a preserved manifest, if any."""
+    if not manifest.exists():
+        # A broken chain has no target staging could have copied, and a pattern
         # is not what broke it.
         return None
-    for target in _link_chain_targets(manifest):
-        exclusion = _manifest_exclusion(target, workspace_root, patterns)
+    for dependency in _preserved_dependencies(manifest, workspace_root):
+        exclusion = _manifest_exclusion(dependency, workspace_root, patterns)
         if exclusion is not None:
             return exclusion
     return None
@@ -234,16 +252,17 @@ def _dangling_link_message(
     patterns: cabc.Sequence[str],
     workspace_root: Path,
 ) -> str | None:
-    """Return why a preserved link's excluded target breaks ``manifest``."""
+    """Return why an excluded link dependency breaks ``manifest``."""
     relative = _manifest_relative_path(manifest, workspace_root)
-    target = _link_target_exclusion(manifest, workspace_root, patterns)
+    target = _preserved_link_exclusion(manifest, workspace_root, patterns)
     if relative is None or target is None:
         return None
     target_relative, pattern = target
     return (
         f"publish.stage_exclude pattern {pattern!r} would exclude "
-        f"{label} manifest {relative.as_posix()!r}, whose symlink target "
-        f"{target_relative.as_posix()!r} staging would not copy"
+        f"{label} manifest {relative.as_posix()!r}, which depends on "
+        f"symlink target {target_relative.as_posix()!r} that staging would "
+        f"not copy"
     )
 
 

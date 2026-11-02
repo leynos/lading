@@ -1329,12 +1329,12 @@ matching. That module owns three things:
   and raises `PublishPreparationError` naming both the pattern and the manifest
   it would remove. A member whose manifest resolves outside the workspace root
   is skipped, since staging never copies it. When
-  `PublishOptions.preserve_symlinks` is set, a manifest that is itself a
-  symbolic link is checked a second time through each link in its chain and
-  through its final in-workspace target: every link is copied as written, so
-  pruning any of them would leave a dangling staged manifest. A target outside
-  the workspace is not checked, because dereferencing it still finds the
-  original file.
+  `PublishOptions.preserve_symlinks` is set, a manifest is checked a second
+  time through each symbolic link in its path, including a link in a parent
+  directory, and through each in-workspace target those links name: every link
+  is copied as written, so pruning any of them would leave a dangling staged
+  manifest. A target outside the workspace is not checked, because
+  dereferencing it still finds the original file.
 
 Spelling rules are shared by both entry routes. `publish.stage_exclude` can
 come from `lading.toml` or from a direct call to the public staging functions,
