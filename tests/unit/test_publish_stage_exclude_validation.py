@@ -131,6 +131,46 @@ def test_stage_exclude_rejects_a_preserved_link_into_an_excluded_directory(
     )
 
 
+def test_stage_exclude_rejects_an_excluded_intermediate_link(
+    preparation_fixtures: PreparationFixtures,
+) -> None:
+    """A pruned link in the chain breaks the preserved manifest too."""
+    root = preparation_fixtures.tmp_path / "workspace"
+    root.mkdir()
+    (root / "Cargo.toml").write_text("[workspace]\n", encoding="utf-8")
+    crate = preparation_fixtures.make_crate(root, "alpha")
+    (root / "manifests").mkdir()
+    (root / "manifests" / "workspace.toml").write_text(
+        crate.manifest_path.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    (root / "intermediate.toml").symlink_to("manifests/workspace.toml")
+    crate.manifest_path.unlink()
+    crate.manifest_path.symlink_to("../intermediate.toml")
+    plan = publish.plan_publication(
+        preparation_fixtures.make_workspace(root, crate),
+        preparation_fixtures.make_config(),
+    )
+
+    # ``resolve()`` reaches the final target, so only walking the chain shows
+    # that staging would prune the link the manifest names directly.
+    with pytest.raises(publish_staging.PublishPreparationError) as excinfo:
+        publish_stage_exclude._validate_stage_exclude(
+            plan, ("intermediate.toml",), preserve_symlinks=True
+        )
+
+    assert "symlink target 'intermediate.toml'" in str(excinfo.value), (
+        "the rejection must name the intermediate link staging would not copy"
+    )
+    # The final target is still checked, and an unrelated pattern still passes.
+    with pytest.raises(publish_staging.PublishPreparationError):
+        publish_stage_exclude._validate_stage_exclude(
+            plan, ("manifests",), preserve_symlinks=True
+        )
+    publish_stage_exclude._validate_stage_exclude(
+        plan, ("src",), preserve_symlinks=True
+    )
+
+
 _CANDIDATE_PATTERNS = (
     "Cargo.toml",
     "alpha",
