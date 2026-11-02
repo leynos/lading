@@ -207,6 +207,44 @@ def test_stage_exclude_rejects_a_link_through_an_excluded_directory(
     )
 
 
+def test_stage_exclude_follows_a_parent_link_before_a_dotdot_target(
+    preparation_fixtures: PreparationFixtures,
+) -> None:
+    """A ``..`` in a link's text is applied to the physical parent directory."""
+    root = preparation_fixtures.tmp_path / "workspace"
+    root.mkdir()
+    (root / "Cargo.toml").write_text("[workspace]\n", encoding="utf-8")
+    (root / "crates" / "a").mkdir(parents=True)
+    (root / "crates" / "shared").mkdir()
+    (root / "alias").symlink_to("crates/a")
+    crate = preparation_fixtures.make_crate(root, "alias")
+    (root / "crates" / "shared" / "Cargo.toml").write_text(
+        crate.manifest_path.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    crate.manifest_path.unlink()
+    # The kernel resolves this to ``crates/shared/Cargo.toml`` because
+    # ``alias`` names ``crates/a``; a lexical join would say ``shared``.
+    crate.manifest_path.symlink_to("../shared/Cargo.toml")
+    plan = publish.plan_publication(
+        preparation_fixtures.make_workspace(root, crate),
+        preparation_fixtures.make_config(),
+    )
+
+    with pytest.raises(publish_staging.PublishPreparationError) as excinfo:
+        publish_stage_exclude._validate_stage_exclude(
+            plan, ("crates/shared",), preserve_symlinks=True
+        )
+
+    assert "symlink target 'crates/shared/Cargo.toml'" in str(excinfo.value), (
+        "the rejection must name the target the kernel resolves, not a "
+        "lexical join through the link's parent"
+    )
+    # An unrelated pattern still passes.
+    publish_stage_exclude._validate_stage_exclude(
+        plan, ("src",), preserve_symlinks=True
+    )
+
+
 _CANDIDATE_PATTERNS = (
     "Cargo.toml",
     "alpha",

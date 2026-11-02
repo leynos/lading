@@ -44,6 +44,7 @@ from pathlib import Path, PurePosixPath
 from lading.commands import staging_lock
 from lading.commands.publish_manifest import PublishPreparationError
 from lading.commands.publish_stage_exclude import (
+    StageExcludeInspectionError,
     _match_stage_exclude,
     _stage_exclude_ignore,
     _validate_stage_exclude,
@@ -332,8 +333,21 @@ def _stage(
     options: PublishOptions | None,
     *,
     stage_exclude: cabc.Sequence[str] = DEFAULT_STAGE_EXCLUDE,
+    clock: cabc.Callable[[], float] = time.perf_counter,
 ) -> tuple[PublishPreparation, Path, bool]:
     """Copy the workspace and record the staging time and outcome.
+
+    Parameters
+    ----------
+    plan : PublishPlan
+        The publication to stage.
+    options : PublishOptions | None
+        Staging options, or :data:`None` for the defaults.
+    stage_exclude : cabc.Sequence[str]
+        Workspace-relative entries the copy leaves out.
+    clock : cabc.Callable[[], float]
+        Monotonic time source for the duration metric. Tests inject a
+        deterministic clock; production uses :func:`time.perf_counter`.
 
     Returns
     -------
@@ -345,8 +359,12 @@ def _stage(
     ------
     PublishPreparationError
         If an exclusion cannot be used or the workspace cannot be copied.
+    StageExcludeInspectionError
+        If the workspace cannot be read while checking an exclusion. It is a
+        :class:`PublishPreparationError` subclass, counted separately from a
+        refused pattern.
     """
-    started_at = time.perf_counter()
+    started_at = clock()
     outcome = "failed"
     try:
         active_options = _active_stage_options(options)
@@ -354,6 +372,11 @@ def _stage(
             stage_exclude = _validated_stage_exclude(
                 plan, active_options, stage_exclude
             )
+        except StageExcludeInspectionError:
+            # The pattern may be sound and the workspace unreadable, so this
+            # is counted apart from a refused pattern and from a failed copy.
+            outcome = "inspection_failed"
+            raise
         except PublishPreparationError:
             # A refused exclusion is a configuration problem with its own
             # remedy, so it is counted apart from a copy that failed.
@@ -377,9 +400,7 @@ def _stage(
             active_options.cleanup,
         )
     finally:
-        metrics.observe_duration(
-            STAGING_DURATION_METRIC, time.perf_counter() - started_at
-        )
+        metrics.observe_duration(STAGING_DURATION_METRIC, clock() - started_at)
         metrics.increment_counter(STAGING_METRIC, outcome=outcome)
 
 

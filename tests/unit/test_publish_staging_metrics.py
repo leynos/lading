@@ -6,11 +6,17 @@ make a slow or refused staging attributable in the run's metric summary.
 """
 
 import collections.abc as cabc
+import shutil
 import typing as typ
 
 import pytest
 
-from lading.commands import publish, publish_plan, publish_staging
+from lading.commands import (
+    publish,
+    publish_plan,
+    publish_stage_exclude,
+    publish_staging,
+)
 from lading.utils import metrics
 
 if typ.TYPE_CHECKING:
@@ -52,6 +58,60 @@ def test_staging_records_duration_and_success(
     ), "a completed staging must be counted as a success"
     assert metrics.duration_stats(publish_staging.STAGING_DURATION_METRIC).count == 1, (
         "a completed staging must record its duration"
+    )
+
+
+def test_staging_uses_the_injected_clock(
+    preparation_fixtures: PreparationFixtures,
+) -> None:
+    """The duration metric is measured with the clock seam, not wall time."""
+    plan = _plan(preparation_fixtures)
+    build_directory = preparation_fixtures.tmp_path / "build"
+    options = publish.PublishOptions(build_directory=build_directory, cleanup=False)
+    ticks = iter([100.0, 102.5])
+
+    preparation, _, _ = publish_staging._stage(plan, options, clock=lambda: next(ticks))
+    try:
+        assert metrics.duration_stats(
+            publish_staging.STAGING_DURATION_METRIC
+        ).total_seconds == pytest.approx(2.5), (
+            "the duration metric must use the injected clock"
+        )
+    finally:
+        shutil.rmtree(preparation.staging_root)
+
+
+def test_staging_records_an_inspection_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    preparation_fixtures: PreparationFixtures,
+) -> None:
+    """A workspace that cannot be read is counted apart from a refusal."""
+    plan = _plan(preparation_fixtures)
+    build_directory = preparation_fixtures.tmp_path / "build"
+
+    def unreadable(*_args: object, **_kwargs: object) -> None:
+        message = "cannot read link"
+        raise PermissionError(message)
+
+    monkeypatch.setattr(publish_stage_exclude, "_reject_excluded_manifests", unreadable)
+    options = publish.PublishOptions(build_directory=build_directory)
+
+    with (
+        pytest.raises(publish_staging.StageExcludeInspectionError),
+        publish_staging.staged_workspace(
+            plan, options=options, stage_exclude=(".git",)
+        ),
+    ):
+        pass
+
+    assert (
+        metrics.counter_value(
+            publish_staging.STAGING_METRIC, outcome="inspection_failed"
+        )
+        == 1
+    ), "an unreadable workspace must be counted apart from a refused pattern"
+    assert metrics.duration_stats(publish_staging.STAGING_DURATION_METRIC).count == 1, (
+        "an inspection failure must still record its duration"
     )
 
 
