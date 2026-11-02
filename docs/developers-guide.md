@@ -1924,6 +1924,8 @@ Defined metrics:
 | `lockfile.validate.duration`     | (none)                        | Duration observation around each `cargo metadata --locked` probe.                                                                                                                                                                                |
 | `publish.cargo.duration`         | `subcommand`, `crate`         | One duration observation per `cargo package` or `cargo publish` invocation in the publish pipeline, successful or not (issue #251).                                                                                                              |
 | `publish.sccache.query`          | `outcome`                     | One increment per sccache statistics query while instrumentation is on (`--sccache-stats`, or a `--sccache-stats-json` path, which implies it); `outcome` is `success` or `failure` (issue [#252](https://github.com/leynos/lading/issues/252)). |
+| `publish.staging`                | `outcome`                     | One increment per `_stage` attempt; `outcome` is `success`, `rejected` when the exclusions cannot be used, or `failed` for any other error.                                                                                                      |
+| `publish.staging.duration`       | (none)                        | Duration observation around each `_stage` attempt, from exclusion validation to a finished copy, successful or not.                                                                                                                              |
 
 Duration metrics aggregate a count and total seconds per label set via
 `observe_duration` / `duration_stats` and appear in the exit summary with
