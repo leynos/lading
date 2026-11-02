@@ -7,8 +7,12 @@ are printed once, unwrapped and without colour. Existing flags and
 `lading.toml` keys keep their meaning; the release adds the opt-in
 `[[bump.manifest_rewrites]]` allowlist and `publish.stage_exclude`, plus
 additive Python modules. `publish.stage_exclude` changes what a staged publish
-tree contains and therefore which files `cargo package` may publish. An
-environment already running 3.14 that only reads successful output needs no
+tree contains and therefore which files `cargo package` may publish. On the
+published Python surface, `staged_workspace` and `prepare_workspace` gain a
+keyword-only `stage_exclude` parameter that defaults to `(".git",)`, so
+programmatic staging no longer copies `.git` unless the caller passes
+`stage_exclude=()`. An environment already running 3.14 that only reads
+successful output needs no
 action beyond the version bump itself, unless a published crate relies on the
 old Git-aware file selection; see
 [Publish staging exclusions](#publish-staging-exclusions).
@@ -308,8 +312,11 @@ stage_exclude = []
 
 An empty list copies `.git` and every other file again, restoring Git-based
 file selection and VCS provenance, at the cost of the copy time the default
-avoids. Excluding a path that would remove a required manifest is rejected
-before staging begins.
+avoids. Programmatic callers of `staged_workspace` or `prepare_workspace` opt
+out the same way, by passing `stage_exclude=()`; see
+[Programmatic publish staging](users-guide.md#programmatic-publish-staging).
+Excluding a path that would remove a required manifest is rejected before
+staging begins.
 
 See [Staging exclusions](users-guide.md#staging-exclusions) for the pattern
 rules.
