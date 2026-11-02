@@ -32,6 +32,18 @@ if typ.TYPE_CHECKING:
     from lading.commands.publish_plan import PublishPlan
 
 
+class StageExcludeInspectionError(PublishPreparationError):
+    """The workspace could not be inspected to check an exclusion.
+
+    Raised when reading the workspace to decide whether a pattern removes a
+    required manifest fails, for example because a link cannot be read or a
+    link cycle cannot be resolved. It is a
+    :class:`~lading.commands.publish_manifest.PublishPreparationError` so
+    callers handle it as a staging failure, but it is counted apart from a
+    refused pattern: the configuration may be sound and the filesystem not.
+    """
+
+
 def _match_stage_exclude(
     relative_path: PurePosixPath, patterns: cabc.Sequence[str]
 ) -> str | None:
@@ -169,8 +181,19 @@ def _manifest_exclusion(
 
 
 def _link_target(path: Path) -> Path:
-    """Return the path ``path`` names, without resolving it further."""
-    return Path(os.path.normpath(path.parent / path.readlink()))
+    """Return the path ``path`` names, resolving only its parent directory.
+
+    The kernel applies a ``..`` in the link text to the physical parent, so the
+    parent is resolved before the text is joined. Resolving the whole path
+    would collapse the link chain that :func:`_link_targets_in_path` walks.
+
+    Returns
+    -------
+    Path
+        The path the link text names, with its parent already resolved.
+    """
+    parent = path.parent.resolve(strict=False)
+    return Path(os.path.normpath(parent / path.readlink()))
 
 
 def _link_targets_in_path(path: Path, workspace_root: Path) -> cabc.Iterator[Path]:
@@ -285,6 +308,25 @@ def _dangling_link_message(
     )
 
 
+def _reject_excluded_manifests(
+    plan: PublishPlan,
+    stage_exclude: cabc.Sequence[str],
+    *,
+    preserve_symlinks: bool,
+) -> None:
+    """Raise for the first required manifest ``stage_exclude`` would remove."""
+    for label, manifest in _required_manifests(plan):
+        message = _excluded_manifest_message(
+            label, manifest, stage_exclude, plan.workspace_root
+        )
+        if message is None and preserve_symlinks:
+            message = _dangling_link_message(
+                label, manifest, stage_exclude, plan.workspace_root
+            )
+        if message is not None:
+            raise PublishPreparationError(message)
+
+
 def _validate_stage_exclude(
     plan: PublishPlan,
     stage_exclude: cabc.Sequence[str],
@@ -309,19 +351,26 @@ def _validate_stage_exclude(
 
     Raises
     ------
-    PublishPreparationError
-        If a pattern matches a required manifest, one of its ancestor
-        directories, or the in-workspace target of a preserved link to it.
+    StageExcludeInspectionError
+        If the workspace cannot be read to decide the question. It is a
+        :class:`PublishPreparationError`, so callers still see a staging
+        failure, but it is reported apart from a refused pattern.
     """
     if not stage_exclude:
         return
-    for label, manifest in _required_manifests(plan):
-        message = _excluded_manifest_message(
-            label, manifest, stage_exclude, plan.workspace_root
+    try:
+        # A pattern matching a required manifest raises a
+        # `PublishPreparationError` from here; this function only adds the
+        # translation of an unreadable workspace around it.
+        _reject_excluded_manifests(
+            plan, stage_exclude, preserve_symlinks=preserve_symlinks
         )
-        if message is None and preserve_symlinks:
-            message = _dangling_link_message(
-                label, manifest, stage_exclude, plan.workspace_root
-            )
-        if message is not None:
-            raise PublishPreparationError(message)
+    except OSError as error:
+        # A link that cannot be read, or a cycle that cannot be resolved, is an
+        # environment failure rather than a bad pattern. Translating it here
+        # keeps raw filesystem errors from escaping the staging boundary.
+        message = (
+            "could not inspect the workspace to validate "
+            f"publish.stage_exclude: {error}"
+        )
+        raise StageExcludeInspectionError(message) from error

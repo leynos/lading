@@ -8,6 +8,7 @@ crate README.
 
 import collections.abc as cabc
 import dataclasses as dc
+import shutil
 
 import pytest
 
@@ -152,6 +153,70 @@ def test_prepare_workspace_copies_workspace_readme_without_adopting_it_for_crate
     )
     assert not staged_crate_readme.exists(), (
         "staging must not adopt the workspace README as a crate README"
+    )
+
+
+def test_prepare_workspace_applies_stage_exclude(
+    prepare_workspace_fixtures: PrepareWorkspaceFixtures,
+    preparation_fixtures: PreparationFixtures,
+) -> None:
+    """The one-shot entry point forwards its exclusions to the copy."""
+    fx = prepare_workspace_fixtures
+    pf = preparation_fixtures
+    workspace_root = fx.tmp_path / "workspace"
+    workspace_root.mkdir()
+    crate = pf.make_crate(workspace_root, "alpha")
+    excluded = workspace_root / "venv" / "marker"
+    excluded.parent.mkdir()
+    excluded.write_text("excluded\n", encoding="utf-8")
+    kept = workspace_root / "src" / "keep.txt"
+    kept.parent.mkdir()
+    kept.write_text("kept\n", encoding="utf-8")
+    plan = publish.plan_publication(
+        pf.make_workspace(workspace_root, crate), pf.make_config()
+    )
+
+    options = dc.replace(fx.publish_options, cleanup=False)
+    preparation = publish_staging.prepare_workspace(
+        plan, options=options, stage_exclude=("venv",)
+    )
+
+    try:
+        assert not (preparation.staging_root / "venv").exists(), (
+            "prepare_workspace must forward stage_exclude to the copy"
+        )
+        assert (preparation.staging_root / "src" / "keep.txt").is_file(), (
+            "an unexcluded path must still be copied"
+        )
+    finally:
+        shutil.rmtree(preparation.staging_root)
+
+
+def test_prepare_workspace_rejects_an_exclusion_before_staging(
+    prepare_workspace_fixtures: PrepareWorkspaceFixtures,
+    preparation_fixtures: PreparationFixtures,
+) -> None:
+    """A manifest-removing exclusion fails before a staging tree exists."""
+    fx = prepare_workspace_fixtures
+    pf = preparation_fixtures
+    workspace_root = fx.tmp_path / "workspace"
+    workspace_root.mkdir()
+    crate = pf.make_crate(workspace_root, "alpha")
+    plan = publish.plan_publication(
+        pf.make_workspace(workspace_root, crate), pf.make_config()
+    )
+    build_directory = fx.publish_options.build_directory
+    assert build_directory is not None, (
+        "the publish_options fixture must supply a build directory"
+    )
+
+    with pytest.raises(publish_staging.PublishPreparationError):
+        publish_staging.prepare_workspace(
+            plan, options=fx.publish_options, stage_exclude=("alpha",)
+        )
+
+    assert not build_directory.exists(), (
+        "a refused exclusion must not create the staging directory"
     )
 
 

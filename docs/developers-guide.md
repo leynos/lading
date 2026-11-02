@@ -1334,7 +1334,14 @@ matching. That module owns three things:
   directory, and through each in-workspace target those links name: every link
   is copied as written, so pruning any of them would leave a dangling staged
   manifest. A target outside the workspace is not checked, because
-  dereferencing it still finds the original file.
+  dereferencing it still finds the original file. A link's target is resolved
+  the way the kernel resolves it: the parent directory is resolved first, then
+  the link text is joined, so a `..` inside the text applies to the physical
+  parent rather than the lexical one. Each link in the parent chain is still
+  walked separately, so that resolution loses no dependency. If the workspace
+  cannot be read to answer the question at all, `_validate_stage_exclude` raises
+  `StageExcludeInspectionError`, a `PublishPreparationError` subclass that
+  `_stage` counts apart from a refused pattern.
 
 Spelling rules are shared by both entry routes. `publish.stage_exclude` can
 come from `lading.toml` or from a direct call to the public staging functions,
@@ -1348,6 +1355,10 @@ into `ConfigurationError` for a bad file, and `_stage` applies it before the
 temporary directory exists, translating it into `PublishPreparationError` and
 logging the normalized tuple. The predicate here therefore only ever sees
 relative, normalized paths.
+
+`_stage` takes a keyword-only `clock` defaulting to `time.perf_counter`, the
+same seam the other publish timings use, so a test can supply a deterministic
+duration for `publish.staging.duration` instead of measuring wall time.
 
 `_stage` also calls `_warn_if_live_publish_loses_git_selection` before copying.
 It logs a `WARNING` when `PublishOptions.live` is set and the effective
@@ -1924,7 +1935,7 @@ Defined metrics:
 | `lockfile.validate.duration`     | (none)                        | Duration observation around each `cargo metadata --locked` probe.                                                                                                                                                                                |
 | `publish.cargo.duration`         | `subcommand`, `crate`         | One duration observation per `cargo package` or `cargo publish` invocation in the publish pipeline, successful or not (issue #251).                                                                                                              |
 | `publish.sccache.query`          | `outcome`                     | One increment per sccache statistics query while instrumentation is on (`--sccache-stats`, or a `--sccache-stats-json` path, which implies it); `outcome` is `success` or `failure` (issue [#252](https://github.com/leynos/lading/issues/252)). |
-| `publish.staging`                | `outcome`                     | One increment per `_stage` attempt; `outcome` is `success`, `rejected` when the exclusions cannot be used, or `failed` for any other error.                                                                                                      |
+| `publish.staging`                | `outcome`                     | One increment per `_stage` attempt; `outcome` is `success`, `rejected` when the exclusions cannot be used, `inspection_failed` when the workspace cannot be read to check them, or `failed` for any other error.                                 |
 | `publish.staging.duration`       | (none)                        | Duration observation around each `_stage` attempt, from exclusion validation to a finished copy, successful or not.                                                                                                                              |
 
 Duration metrics aggregate a count and total seconds per label set via
