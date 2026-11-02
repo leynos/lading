@@ -232,6 +232,101 @@ def _warn_if_live_publish_loses_git_selection(
     )
 
 
+class _StagingDestination(typ.NamedTuple):
+    """Where the staged copy is written and what removal must delete."""
+
+    build_directory: Path
+    cleanup_target: Path
+
+
+def _active_stage_options(options: PublishOptions | None) -> PublishOptions:
+    """Return ``options``, or a fresh default when the caller passed none."""
+    if options is None:
+        from lading.commands.publish import PublishOptions
+
+        return PublishOptions()
+    return options
+
+
+def _validated_stage_exclude(
+    plan: PublishPlan,
+    active_options: PublishOptions,
+    stage_exclude: cabc.Sequence[str],
+) -> tuple[str, ...]:
+    """Normalize and check exclusions before any staging directory exists."""
+    # A caller's unusable spelling should fail as cheaply as a
+    # manifest-removing one, and neither should wait for tens of gigabytes to
+    # be copied before it is reported.
+    normalized = _normalize_stage_exclude(stage_exclude)
+    _validate_stage_exclude(
+        plan, normalized, preserve_symlinks=active_options.preserve_symlinks
+    )
+    return normalized
+
+
+def _begin_staging(
+    plan: PublishPlan,
+    active_options: PublishOptions,
+    stage_exclude: cabc.Sequence[str],
+) -> _StagingDestination:
+    """Log the effective exclusions and register the clean-up target.
+
+    Returns
+    -------
+    _StagingDestination
+        The directory the copy goes under and the path whose removal cleans
+        it up.
+    """
+    _warn_if_live_publish_loses_git_selection(active_options, stage_exclude)
+    # Recorded because the effective list decides what the staged tree holds,
+    # and it may come from the default, `lading.toml`, or a programmatic
+    # caller. Without this, a file missing from staging has no visible cause.
+    LOGGER.info("Staging workspace with stage_exclude=%s", tuple(stage_exclude))
+    build_directory = _normalize_build_directory(
+        plan.workspace_root, active_options.build_directory
+    )
+    LOGGER.info(
+        "Preparing staged workspace for publication under %s",
+        build_directory,
+    )
+    # An automatically created build directory is ours entirely, so it goes.
+    # A caller-supplied one may hold their files, so only the copy goes.
+    cleanup_target = (
+        build_directory
+        if active_options.build_directory is None
+        else _staging_root_for(plan.workspace_root, build_directory)
+    )
+    # Tracked before the copy starts, not after it finishes. Copying a
+    # workspace takes minutes, and a SIGTERM arriving inside that window is
+    # exactly what issue #269 is about; a target registered afterwards would
+    # leave the partial tree behind.
+    if active_options.cleanup:
+        _ACTIVE_STAGING_ROOTS.add(cleanup_target)
+    return _StagingDestination(build_directory, cleanup_target)
+
+
+def _copy_staged_workspace(
+    plan: PublishPlan,
+    active_options: PublishOptions,
+    destination: _StagingDestination,
+    stage_exclude: cabc.Sequence[str],
+) -> Path:
+    """Copy the workspace, removing a partial tree when the copy fails."""
+    try:
+        return _copy_workspace_tree(
+            plan.workspace_root,
+            destination.build_directory,
+            preserve_symlinks=active_options.preserve_symlinks,
+            stage_exclude=stage_exclude,
+        )
+    except BaseException:
+        # Staging failed part way through, so no caller will ever be handed a
+        # block to leave. Whatever was written goes now.
+        if active_options.cleanup:
+            _remove_staged_tree_or_report(destination.cleanup_target)
+        raise
+
+
 def _stage(
     plan: PublishPlan,
     options: PublishOptions | None,
@@ -254,81 +349,31 @@ def _stage(
     started_at = time.perf_counter()
     outcome = "failed"
     try:
-        if options is None:
-            from lading.commands.publish import PublishOptions
-
-            active_options = PublishOptions()
-        else:
-            active_options = options
+        active_options = _active_stage_options(options)
         try:
-            # Normalized before the temporary directory is created, so a
-            # caller's unusable spelling fails as cheaply as a
-            # manifest-removing one.
-            stage_exclude = _normalize_stage_exclude(stage_exclude)
-            # Before the temporary directory is created: a pattern that removes
-            # a manifest makes the publish impossible, and it should say so
-            # without first copying tens of gigabytes to find out.
-            _validate_stage_exclude(
-                plan,
-                stage_exclude,
-                preserve_symlinks=active_options.preserve_symlinks,
+            stage_exclude = _validated_stage_exclude(
+                plan, active_options, stage_exclude
             )
         except PublishPreparationError:
             # A refused exclusion is a configuration problem with its own
             # remedy, so it is counted apart from a copy that failed.
             outcome = "rejected"
             raise
-        _warn_if_live_publish_loses_git_selection(active_options, stage_exclude)
-        # Recorded because the effective list decides what the staged tree
-        # holds, and it may come from the default, `lading.toml`, or a
-        # programmatic caller. Without this, a file missing from staging has
-        # no visible cause.
-        LOGGER.info("Staging workspace with stage_exclude=%s", tuple(stage_exclude))
-        auto_created_build_directory = active_options.build_directory is None
-        build_directory = _normalize_build_directory(
-            plan.workspace_root, active_options.build_directory
+        destination = _begin_staging(plan, active_options, stage_exclude)
+        staging_root = _copy_staged_workspace(
+            plan, active_options, destination, stage_exclude
         )
-        LOGGER.info(
-            "Preparing staged workspace for publication under %s",
-            build_directory,
-        )
-        # An automatically created build directory is ours entirely, so it goes.
-        # A caller-supplied one may hold their files, so only the copy goes.
-        cleanup_target = (
-            build_directory
-            if auto_created_build_directory
-            else _staging_root_for(plan.workspace_root, build_directory)
-        )
-        # Tracked before the copy starts, not after it finishes. Copying a
-        # workspace takes minutes, and a SIGTERM arriving inside that window is
-        # exactly what issue #269 is about; a target registered afterwards
-        # would leave the partial tree behind.
-        if active_options.cleanup:
-            _ACTIVE_STAGING_ROOTS.add(cleanup_target)
-        try:
-            staging_root = _copy_workspace_tree(
-                plan.workspace_root,
-                build_directory,
-                preserve_symlinks=active_options.preserve_symlinks,
-                stage_exclude=stage_exclude,
-            )
-        except BaseException:
-            # Staging failed part way through, so no caller will ever be handed
-            # a block to leave. Whatever was written goes now.
-            if active_options.cleanup:
-                _remove_staged_tree_or_report(cleanup_target)
-            raise
         LOGGER.info("Staged workspace created at %s", staging_root)
         LOGGER.info("Workspace README staging skipped; handled by lading bump")
         if not active_options.cleanup:
             LOGGER.info(
                 "Retaining staged workspace at %s; remove it when you are done",
-                cleanup_target,
+                destination.cleanup_target,
             )
         outcome = "success"
         return (
             PublishPreparation(staging_root=staging_root),
-            cleanup_target,
+            destination.cleanup_target,
             active_options.cleanup,
         )
     finally:

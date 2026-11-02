@@ -173,6 +173,35 @@ def _link_target(path: Path) -> Path:
     return Path(os.path.normpath(path.parent / path.readlink()))
 
 
+def _link_targets_in_path(path: Path, workspace_root: Path) -> cabc.Iterator[Path]:
+    """Yield what each symbolic link in ``path`` or an ancestor names.
+
+    Yields
+    ------
+    Path
+        The target of a link in ``path`` or one of its parent directories, in
+        path order. A path outside the workspace names nothing staging copies,
+        so it yields no targets.
+    """
+    relative = _manifest_relative_path(path, workspace_root)
+    if relative is None:
+        return
+    for prefix in _workspace_relative_prefixes(relative):
+        component = workspace_root / prefix
+        if component.is_symlink():
+            yield _link_target(component)
+
+
+def _unseen_link_targets(
+    path: Path, workspace_root: Path, seen: set[Path]
+) -> tuple[Path, ...]:
+    """Return and record each link target of ``path`` not already walked."""
+    targets = set(_link_targets_in_path(path, workspace_root)) - seen
+    seen.update(targets)
+    # Sorted so a rejection names its dependency in a stable order.
+    return tuple(sorted(targets))
+
+
 def _preserved_dependencies(path: Path, workspace_root: Path) -> cabc.Iterator[Path]:
     """Yield ``path`` and every path staging must copy to preserve it.
 
@@ -192,21 +221,11 @@ def _preserved_dependencies(path: Path, workspace_root: Path) -> cabc.Iterator[P
         its ancestors.
     """
     pending = [path]
-    seen: set[Path] = set()
+    seen: set[Path] = {path}
     while pending:
         current = pending.pop()
-        if current in seen:
-            continue
-        seen.add(current)
         yield current
-        relative = _manifest_relative_path(current, workspace_root)
-        if relative is None:
-            # Outside the workspace, staging copies nothing for this path.
-            continue
-        for prefix in _workspace_relative_prefixes(relative):
-            component = workspace_root / prefix
-            if component.is_symlink():
-                pending.append(_link_target(component))
+        pending.extend(_unseen_link_targets(current, workspace_root, seen))
 
 
 def _preserved_link_exclusion(
