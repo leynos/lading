@@ -395,14 +395,14 @@ lading bump <new_version> [--dry-run]
   link in its path, including a link in a parent directory, and through each
   in-workspace target those links name too, because every link is copied as
   written: pruning any of them would leave the staged manifest dangling. Each
-  link's target is joined the way the kernel resolves it — through the physical
-  parent directory, so a `..` in the link text does not escape the directory a
-  parent link names. An unreadable workspace is reported as its own staging
-  outcome rather than as an invalid pattern. The default is `(".git",)`: it is
-  the largest entry no packaging step needs, and omitting it changes how Cargo
-  selects package files, as the user's guide describes. `target/` is
-  deliberately retained by default, because some workspaces package artefacts
-  from it — rstest-bdd stages packaged crates under
+  link's target is joined the way the kernel resolves it: the link's parent
+  directory is resolved first, so a `..` in the link text applies to the
+  physical parent, not the lexical one. An unreadable workspace is reported as
+  its own staging outcome rather than as an invalid pattern. The default is
+  `(".git",)`: it is the largest entry no packaging step needs, and omitting it
+  changes how Cargo selects package files, as the user's guide describes.
+  `target/` is deliberately retained by default, because some workspaces
+  package artefacts from it — rstest-bdd stages packaged crates under
   `target/published-gpui-e2e/` and patches crates.io names in a fixture
   manifest to point at them, so excluding `target/` breaks its publish check.
 - Crates that opt into `readme.workspace = true` must already have adopted

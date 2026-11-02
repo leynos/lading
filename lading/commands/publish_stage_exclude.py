@@ -36,8 +36,7 @@ class StageExcludeInspectionError(PublishPreparationError):
     """The workspace could not be inspected to check an exclusion.
 
     Raised when reading the workspace to decide whether a pattern removes a
-    required manifest fails, for example because a link cannot be read or a
-    link cycle cannot be resolved. It is a
+    required manifest fails, for example because a link cannot be read. It is a
     :class:`~lading.commands.publish_manifest.PublishPreparationError` so
     callers handle it as a staging failure, but it is counted apart from a
     refused pattern: the configuration may be sound and the filesystem not.
@@ -338,6 +337,9 @@ def _validate_stage_exclude(
     Checked before any staging directory exists, so a configuration that
     cannot work fails without creating or copying a tree first.
 
+    If an exclusion removes a required manifest, the delegated
+    `_reject_excluded_manifests` call raises `PublishPreparationError`.
+
     Parameters
     ----------
     plan : PublishPlan
@@ -366,9 +368,9 @@ def _validate_stage_exclude(
             plan, stage_exclude, preserve_symlinks=preserve_symlinks
         )
     except OSError as error:
-        # A link that cannot be read, or a cycle that cannot be resolved, is an
-        # environment failure rather than a bad pattern. Translating it here
-        # keeps raw filesystem errors from escaping the staging boundary.
+        # A link that cannot be read is an environment failure rather than a
+        # bad pattern. Translating it here keeps raw filesystem errors from
+        # escaping the staging boundary.
         message = (
             "could not inspect the workspace to validate "
             f"publish.stage_exclude: {error}"

@@ -245,6 +245,28 @@ def test_stage_exclude_follows_a_parent_link_before_a_dotdot_target(
     )
 
 
+def test_stage_exclude_ignores_a_self_referencing_manifest_link(
+    preparation_fixtures: PreparationFixtures,
+) -> None:
+    """A looping manifest link is absent, not an unreadable workspace."""
+    root = preparation_fixtures.tmp_path / "workspace"
+    root.mkdir()
+    (root / "Cargo.toml").write_text("[workspace]\n", encoding="utf-8")
+    crate = preparation_fixtures.make_crate(root, "alpha")
+    crate.manifest_path.unlink()
+    crate.manifest_path.symlink_to("Cargo.toml")
+    plan = publish.plan_publication(
+        preparation_fixtures.make_workspace(root, crate),
+        preparation_fixtures.make_config(),
+    )
+
+    # ``Path.exists`` reports a looping link as absent, so the walk never
+    # follows it and no inspection failure is raised.
+    publish_stage_exclude._validate_stage_exclude(
+        plan, ("shared",), preserve_symlinks=True
+    )
+
+
 _CANDIDATE_PATTERNS = (
     "Cargo.toml",
     "alpha",
