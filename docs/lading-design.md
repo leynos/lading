@@ -392,14 +392,15 @@ lading bump <new_version> [--dry-run]
   raises `PublishPreparationError`, naming the pattern and manifest, rather
   than copying the tree and failing afterwards. When symlinks are preserved, a
   required manifest that is itself a link is checked against the same predicate
-  through its in-workspace target as well: the link is copied as written, so
-  pruning the target would leave the staged manifest dangling. The default is
-  `(".git",)`: it is the largest entry no packaging step needs, and omitting it
-  changes how Cargo selects package files, as the user's guide describes.
-  `target/` is deliberately retained by default, because some workspaces
-  package artefacts from it — rstest-bdd stages packaged crates under
-  `target/published-gpui-e2e/` and patches crates.io names in a fixture
-  manifest to point at them, so excluding `target/` breaks its publish check.
+  through each link in its chain and through its final in-workspace target as
+  well: every link is copied as written, so pruning any of them would leave the
+  staged manifest dangling. The default is `(".git",)`: it is the largest entry
+  no packaging step needs, and omitting it changes how Cargo selects package
+  files, as the user's guide describes. `target/` is deliberately retained by
+  default, because some workspaces package artefacts from it — rstest-bdd
+  stages packaged crates under `target/published-gpui-e2e/` and patches
+  crates.io names in a fixture manifest to point at them, so excluding
+  `target/` breaks its publish check.
 - Crates that opt into `readme.workspace = true` must already have adopted
   READMEs from the preceding `bump` workflow, so operators can review the
   packaged assets before publishing. Symbolic links remain links by default to

@@ -22,6 +22,7 @@ is how a reader asks for any depth.
 
 import collections.abc as cabc
 import fnmatch
+import os
 import typing as typ
 from pathlib import Path, PurePosixPath
 
@@ -167,15 +168,42 @@ def _manifest_exclusion(
     return None
 
 
+def _link_chain_targets(manifest: Path) -> cabc.Iterator[Path]:
+    """Yield each path named by the link chain starting at ``manifest``.
+
+    The chain is walked link by link rather than with :meth:`Path.resolve`,
+    because staging copies each link as it finds it. If an intermediate link is
+    excluded, the staged manifest dangles even when the final target is copied.
+    A cycle is abandoned: it never reaches a file staging could copy.
+
+    Yields
+    ------
+    Path
+        The target named by each link, ending with the final non-link target.
+    """
+    seen: set[Path] = set()
+    current = manifest
+    while current.is_symlink():
+        if current in seen:
+            return
+        seen.add(current)
+        current = Path(os.path.normpath(current.parent / current.readlink()))
+        yield current
+
+
 def _link_target_exclusion(
     manifest: Path, workspace_root: Path, patterns: cabc.Sequence[str]
 ) -> tuple[PurePosixPath, str] | None:
-    """Return the excluded target of a preserved manifest symlink, if any."""
+    """Return the excluded link-chain path of a preserved manifest, if any."""
     if not manifest.is_symlink() or not manifest.exists():
         # A broken link has no target staging could have copied, and a pattern
         # is not what broke it.
         return None
-    return _manifest_exclusion(manifest.resolve(strict=False), workspace_root, patterns)
+    for target in _link_chain_targets(manifest):
+        exclusion = _manifest_exclusion(target, workspace_root, patterns)
+        if exclusion is not None:
+            return exclusion
+    return None
 
 
 def _excluded_manifest_message(

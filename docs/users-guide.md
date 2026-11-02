@@ -93,10 +93,11 @@ the workspace `Cargo.toml` and the manifest of every planned crate, including
 crates skipped by `publish = false` or `publish.exclude`. The error names the
 pattern and the affected manifest, and it is raised before the copy starts, so
 a typo does not first copy a large tree and then fail. A required manifest that
-is a symbolic link is also checked through its target inside the workspace:
-symlinks are preserved by default, so a pattern that prunes the target would
-leave the staged manifest dangling. Patterns are filesystem paths, not crate
-names; use `publish.exclude` to skip a crate from publication.
+is a symbolic link is also checked through every link in its chain and through
+its final target inside the workspace: symlinks are preserved by default, so a
+pattern that prunes any link on the way would leave the staged manifest
+dangling. Patterns are filesystem paths, not crate names; use `publish.exclude`
+to skip a crate from publication.
 
 Because staging omits `.git` by default, the staged tree is not a Git checkout,
 and `cargo package` selects files accordingly. It skips every hidden file and
