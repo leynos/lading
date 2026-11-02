@@ -187,9 +187,16 @@ whether to mark the path `(removed)`. Read either only after the block, since
 the removal happens as it exits.
 
 The tree is removed when the block ends, including when the body raises or is
-interrupted. `prepare_workspace(plan, *, options=None)` remains for callers
-that cannot express that scope; its cleanup runs from `atexit`, which a
+interrupted.
+`prepare_workspace(plan, *, options=None, stage_exclude=(".git",))` remains for
+callers that cannot express that scope; its cleanup runs from `atexit`, which a
 terminated process never reaches, so prefer the context manager.
+
+Both functions take the keyword-only `stage_exclude`, which defaults to
+`(".git",)` and follows the pattern rules described in
+[Staging exclusions](#staging-exclusions). Pass `stage_exclude=()` to copy
+`.git` again and keep Git-aware file selection, or pass other patterns to trim
+more of the workspace.
 
 The `workspace` argument accepted by older releases is no longer part of the
 contract; the plan supplies the workspace root. When no
