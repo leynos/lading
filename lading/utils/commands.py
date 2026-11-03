@@ -20,20 +20,12 @@ keyword form above is the one that holds; the interface reference is §7 of
 ``docs/lading-design.md``.
 """
 
-from cuprum import Program, ProgramCatalogue, ProjectSettings
+from cuprum import Program, ProgramCatalogue
 
 # Programme objects for allowed executables
 CARGO = Program("cargo")
 GIT = Program("git")
 SCCACHE = Program("sccache")
-
-# Project settings for the lading package
-_LADING_PROJECT = ProjectSettings(
-    name="lading",
-    programs=(CARGO, GIT, SCCACHE),
-    documentation_locations=("docs/lading-design.md#command-execution-migration",),
-    noise_rules=(),
-)
 
 # Shared catalogue for all lading modules. External executables must be
 # registered here before they can be invoked via cuprum's ``sh.make()``.
@@ -46,6 +38,12 @@ _LADING_PROJECT = ProjectSettings(
 # - sccache: Queried for compiler-cache statistics by
 #   ``lading publish --sccache-stats`` (issue #252); the binary invoked is the
 #   one ``RUSTC_WRAPPER`` names.
-LADING_CATALOGUE = ProgramCatalogue(projects=(_LADING_PROJECT,))
+LADING_CATALOGUE = ProgramCatalogue.from_programs(
+    CARGO,
+    GIT,
+    SCCACHE,
+    name="lading",
+    documentation_locations=("docs/lading-design.md#command-execution-migration",),
+)
 
 __all__ = ["CARGO", "GIT", "LADING_CATALOGUE", "SCCACHE"]

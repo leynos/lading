@@ -215,40 +215,41 @@ with scoped(catalogue=LADING_CATALOGUE):
 
 For standalone scripts and tests, define a local catalogue scoped to that
 file's requirements. This keeps scripts self-contained and avoids coupling to
-the main application. Build it from programs and settings rather than strings:
+the main application. Build it with `Program` objects, an explicit project name
+and, where one exists, a documentation pointer:
 
 ```python
 # In a standalone script or test file
-from cuprum import Program, ProgramCatalogue, ProjectSettings
+from cuprum import Program, ProgramCatalogue
 
 GH = Program("gh")
-_RELEASE_PROJECT = ProjectSettings(
+RELEASE_CATALOGUE = ProgramCatalogue.from_programs(
+    GH,
     name="lading-release",
-    programs=(GH,),
     documentation_locations=("docs/developers-guide.md#publishing-a-release",),
-    noise_rules=(),
 )
-RELEASE_CATALOGUE = ProgramCatalogue(projects=(_RELEASE_PROJECT,))
 ```
 
-`ProgramCatalogue.from_programs("git", "cargo")` also works when there is
-nothing else to declare, but it registers the same programs with no project
-name or documentation pointer, so prefer the explicit form in tracked code.
+Prefer `ProgramCatalogue.from_programs` with `Program` objects, `name=` and
+`documentation_locations=` over bare string program names with a derived
+project name: the objects are checkable at the call site, and the explicit
+metadata survives the factory call. `noise_rules` defaults to `()` and is
+omitted unless a logger must drop matching output lines.
 
 ### Catalogue and allowlisting
 
 ```python
-from cuprum import Program, ProgramCatalogue, ProjectSettings, scoped, sh
+from cuprum import Program, ProgramCatalogue, scoped, sh
 
 # Define allowed programs for this script
-_GIT_PROJECT = ProjectSettings(name="script", programs=(Program("git"),))
-CATALOGUE = ProgramCatalogue(projects=(_GIT_PROJECT,))
+GIT = Program("git")
+CATALOGUE = ProgramCatalogue.from_programs(GIT, name="script")
 
 # Commands can only be constructed within a scoped catalogue, and the
 # catalogue must be named -- the first positional parameter of scoped() is a
 # ScopeConfig, not a catalogue.
 with scoped(catalogue=CATALOGUE):
-    git = sh.make(Program("git"), catalogue=CATALOGUE)
+    git = sh.make(GIT, catalogue=CATALOGUE)
     result = git("--no-pager", "log", "-1", "--pretty=%H").run_sync()
     last_commit = result.stdout.strip()
 ```

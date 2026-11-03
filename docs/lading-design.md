@@ -916,11 +916,11 @@ streaming, catalogue, and compatibility details follow in §7.3, §7.4, and §7.
 ### 7.3. Catalogue Definition
 
 A project catalogue registers allowed executables. The catalogue is defined in
-`lading/utils/commands.py` using Cuprum's `ProgramCatalogue` and
-`ProjectSettings`:
+`lading/utils/commands.py` using Cuprum's `ProgramCatalogue.from_programs`
+factory:
 
 ```python
-from cuprum import Program, ProgramCatalogue, ProjectSettings
+from cuprum import Program, ProgramCatalogue
 
 # Program objects for allowed executables
 CARGO = Program("cargo")
@@ -929,16 +929,14 @@ GIT = Program("git")
 # the binary invoked is the one RUSTC_WRAPPER names.
 SCCACHE = Program("sccache")
 
-# Project settings for the lading package
-_LADING_PROJECT = ProjectSettings(
+# Shared one-project catalogue for all lading modules
+LADING_CATALOGUE = ProgramCatalogue.from_programs(
+    CARGO,
+    GIT,
+    SCCACHE,
     name="lading",
-    programs=(CARGO, GIT, SCCACHE),
     documentation_locations=("docs/lading-design.md#command-execution-migration",),
-    noise_rules=(),
 )
-
-# Shared catalogue for all lading modules
-LADING_CATALOGUE = ProgramCatalogue(projects=(_LADING_PROJECT,))
 ```
 
 Command construction uses cuprum's scoped context manager, naming the catalogue
@@ -969,8 +967,9 @@ now travel in a `RunOutputOptions` instance passed as `output=`.
   `lading.utils.LADING_CATALOGUE` for convenient access across the codebase.
 - `CARGO` and `GIT` program constants are also exported, enabling type-safe
   command construction without string literals.
-- The `ProjectSettings` includes a reference to this design document section for
-  discoverability when debugging catalogue-related issues.
+- `from_programs` stores the project name and the reference to this design
+  document section in the single `ProjectSettings` object it creates, so the
+  metadata stays discoverable when debugging catalogue-related issues.
 - Unit tests verify catalogue construction, program registration, and
   `UnknownProgramError` handling for unregistered programs.
 - Behaviour-driven development (BDD) scenarios document the expected behaviour
