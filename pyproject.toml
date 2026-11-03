@@ -601,10 +601,10 @@ reason = "The 'absent table yields defaults' contract that four sibling dataclas
 
 [[tool.duplication_gate.allow]]
 members = [
-    "lading/config.py",
+    "lading/config_validation.py",
     "lading/runtime/subprocess_runner.py",
 ]
-reason = "An early return for an absent optional argument, reached by two unrelated functions: a key-whitelist validator and a stream-decoding loop. The bodies after the guard share no behaviour, so the guard is all the detector can compare."
+reason = "An early return for an absent optional argument, reached by two unrelated functions: the shared key-whitelist validator (moved to config_validation.py during schema extraction) and a stream-decoding loop. The bodies after the guard share no behaviour, so the guard is all the detector can compare."
 
 [[tool.duplication_gate.allow]]
 unit = "lading/commands/staging_lock.py"

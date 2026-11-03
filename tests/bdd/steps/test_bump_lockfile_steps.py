@@ -8,6 +8,7 @@ from pytest_bdd import given, parsers, then
 
 from .cli_run_types import CliRunResult
 
+
 @given(parsers.parse('a nested lockfile manifest is configured at "{manifest}"'))
 def given_nested_lockfile_manifest(
     cmd_mox: CmdMox,

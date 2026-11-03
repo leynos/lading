@@ -1,0 +1,21 @@
+# serializer version: 1
+# name: test_bump_config_from_mapping_parses_manifest_rewrites[manifest_rewrites_config]
+  tuple(
+    ManifestRewriteConfig(
+      dependencies=True,
+      paths=tuple(
+        'tests/fixtures/published-gpui-e2e/Cargo.toml',
+      ),
+      string_values=tuple(
+        StringValueRewriteConfig(
+          field='path',
+          table=tuple(
+            'patch',
+            'crates-io',
+          ),
+          template='{crate}-{version}',
+        ),
+      ),
+    ),
+  )
+# ---

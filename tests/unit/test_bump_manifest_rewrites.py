@@ -1,13 +1,16 @@
 """Tests for configured non-member manifest rewrites."""
 
-from __future__ import annotations
-
 import pathlib
+import typing as typ
 
 import pytest
+from tomlkit import parse as parse_toml
 
 from lading.commands import bump_manifest_rewrites
 from lading.config import ManifestRewriteConfig, StringValueRewriteConfig
+
+if typ.TYPE_CHECKING:
+    from syrupy.assertion import SnapshotAssertion
 
 
 def _write_manifest(
@@ -75,10 +78,18 @@ def test_resolves_globs_deduplicates_and_merges_groups(tmp_path: pathlib.Path) -
 
     plans = _plan(root, groups)
 
-    assert [plan.path for plan in plans] == [first.resolve(), second.resolve()]
-    assert 'alpha = "^2.0.0"' in plans[0].new_text
-    assert 'path = "alpha-2.0.0"' in plans[0].new_text
-    assert 'alpha = "2.0.0"' in plans[1].new_text
+    assert [plan.path for plan in plans] == [first.resolve(), second.resolve()], (
+        "glob expansion must de-duplicate paths and preserve sorted candidates"
+    )
+    assert 'alpha = "^2.0.0"' in plans[0].new_text, (
+        "the first selected dependency must use the target version"
+    )
+    assert 'path = "alpha-2.0.0"' in plans[0].new_text, (
+        "the selected string value must use the target version"
+    )
+    assert 'alpha = "2.0.0"' in plans[1].new_text, (
+        "the second glob match must receive dependency rewrites"
+    )
 
 
 @pytest.mark.parametrize(
@@ -127,8 +138,10 @@ def test_skips_workspace_and_member_manifests(tmp_path: pathlib.Path) -> None:
 
     plans = _plan(tmp_path, (group,), members=(member_manifest,))
 
-    assert plans == ()
-    assert root_manifest.read_text(encoding="utf-8").endswith('alpha = "1.0.0"\n')
+    assert not plans, "workspace and member manifests must be skipped"
+    assert root_manifest.read_text(encoding="utf-8").endswith('alpha = "1.0.0"\n'), (
+        "the rewrite planner must leave the root manifest to its owner stage"
+    )
 
 
 def test_skips_missing_member_manifest_before_file_validation(
@@ -140,11 +153,11 @@ def test_skips_missing_member_manifest_before_file_validation(
 
     plans = _plan(tmp_path, (group,), members=(member_manifest,))
 
-    assert plans == ()
+    assert not plans, "missing member manifests must be skipped before validation"
 
 
 def test_updates_dependency_sections_and_package_aliases(
-    tmp_path: pathlib.Path,
+    tmp_path: pathlib.Path, snapshot: SnapshotAssertion
 ) -> None:
     """Dependency keys, package aliases, target, and workspace tables update."""
     _write_manifest(
@@ -194,24 +207,47 @@ rstest-bdd = { version = "0.6.0-beta4", path = "../patched" }
         ),
     )
 
-    assert 'rstest-bdd = "^0.6.0"' in plan.new_text
-    assert 'version = "~0.6.0"' in plan.new_text
-    assert 'rstest-bdd = "0.6.0"' in plan.new_text
-    assert 'rstest-bdd-harness = "0.6.0"' in plan.new_text
-    assert (
-        'path-only = { package = "rstest-bdd", path = "../rstest-bdd" }'
-        in plan.new_text
+    assert plan.new_text == snapshot(name="dependency_rewrites"), (
+        "the rendered dependency manifest must match its focused snapshot"
+    )
+    document = parse_toml(plan.new_text)
+    assert document["dependencies"]["rstest-bdd"] == "^0.6.0", (
+        "the main dependency requirement must retain its compatible operator"
+    )
+    assert document["dependencies"]["renamed"]["version"] == "~0.6.0", (
+        "an aliased dependency must retain its compatible operator"
+    )
+    assert document["target"]["cfg(unix)"]["dependencies"]["rstest-bdd"] == "0.6.0", (
+        "the target dependency section must be rewritten"
+    )
+    assert document["build-dependencies"]["rstest-bdd-harness"] == "0.6.0", (
+        "the harness build dependency must be rewritten"
     )
     assert (
-        'workspace-ref = { package = "rstest-bdd", '
-        'version = "0.6.0-beta4", workspace = true }' in plan.new_text
+        document["target"]["x86_64_unknown_linux_gnu"]["dev-dependencies"][
+            "rstest-bdd-harness"
+        ]
+        == "0.6.0"
+    ), "the harness target dependency must be rewritten"
+    assert document["workspace"]["dependencies"]["rstest-bdd"] == "0.6.0", (
+        "the workspace dependency section must be rewritten"
     )
-    assert 'unrelated = "0.6.0-beta4"' in plan.new_text
-    assert 'version = "0.6.0-beta4", path = "../patched"' in plan.new_text
+    assert document["dependencies"]["path-only"]["path"] == "../rstest-bdd", (
+        "path-only dependencies must remain unchanged"
+    )
+    assert document["dependencies"]["workspace-ref"]["version"] == "0.6.0-beta4", (
+        "workspace-inherited dependency versions must remain unchanged"
+    )
+    assert document["dependencies"]["unrelated"] == "0.6.0-beta4", (
+        "dependencies for crates outside the updated workspace must remain unchanged"
+    )
+    assert document["patch"]["crates-io"]["rstest-bdd"]["version"] == "0.6.0-beta4", (
+        "path dependencies must remain unchanged"
+    )
 
 
 def test_rewrites_selected_strings_once_and_preserves_literal_style(
-    tmp_path: pathlib.Path,
+    tmp_path: pathlib.Path, snapshot: SnapshotAssertion
 ) -> None:
     """Template replacement respects crate/version boundaries and TOML trivia."""
     manifest = _write_manifest(
@@ -246,14 +282,35 @@ literal = { path = '../../../target/rstest-bdd-0.6.0-beta4' }
         ),
     )
 
-    assert plan.path == manifest.resolve()
-    assert "rstest-bdd-0.6.0'" in plan.new_text
-    assert "rstest-bdd-harness-0.6.0'" in plan.new_text
-    assert "rstest-bdd-harness-gpui-0.6.0'" in plan.new_text
-    assert "rstest-bdd-0.6.0-beta40" in plan.new_text
-    assert "xrstest-bdd-0.6.0-beta4" in plan.new_text
-    assert "# keep comment" in plan.new_text
-    assert "literal = { path = '../../../target/rstest-bdd-0.6.0' }" in plan.new_text
+    assert plan.path == manifest.resolve(), (
+        "the rewrite plan must identify its manifest"
+    )
+    snapshot_text = plan.new_text.replace("../../../target/", "$STAGING_")
+    assert snapshot_text == snapshot(name="selected_string_rewrites"), (
+        "the rendered manifest must preserve its selected string contract"
+    )
+    document = parse_toml(plan.new_text)
+    patch_paths = {
+        key: value["path"] for key, value in document["patch"]["crates-io"].items()
+    }
+    assert patch_paths["rstest-bdd"] == "../../../target/rstest-bdd-0.6.0", (
+        "the main crate path must receive the new version"
+    )
+    assert patch_paths["rstest-bdd-harness"] == (
+        "../../../target/rstest-bdd-harness-0.6.0"
+    ), "the harness path must receive the new version"
+    assert patch_paths["rstest-bdd-harness-gpui"] == (
+        "../../../target/rstest-bdd-harness-gpui-0.6.0"
+    ), "the longer crate prefix must receive the new version"
+    assert patch_paths["longer-version"] == (
+        "../../../target/rstest-bdd-0.6.0-beta40"
+    ), "a longer prerelease version must not be partially replaced"
+    assert patch_paths["x-prefixed"] == "../../../target/xrstest-bdd-0.6.0-beta4", (
+        "a crate-name character before the match must prevent replacement"
+    )
+    assert patch_paths["literal"] == "../../../target/rstest-bdd-0.6.0", (
+        "the literal path value must receive the new version"
+    )
 
 
 def test_direct_string_values_and_missing_selectors_are_noops(
@@ -280,9 +337,13 @@ def test_direct_string_values_and_missing_selectors_are_noops(
 
     (plan,) = _plan(tmp_path, groups)
 
-    assert 'artifact = "alpha-2.0.0"' in plan.new_text
-    assert "number = 42" in plan.new_text
-    assert manifest.read_text(encoding="utf-8") == plan.original_text
+    assert 'artifact = "alpha-2.0.0"' in plan.new_text, (
+        "direct string values must be rewritten when no field is selected"
+    )
+    assert "number = 42" in plan.new_text, "non-string values must remain unchanged"
+    assert manifest.read_text(encoding="utf-8") == plan.original_text, (
+        "planning must not write the selected manifest"
+    )
 
 
 def test_unchanged_manifest_is_omitted_and_dry_run_does_not_write(
@@ -293,14 +354,20 @@ def test_unchanged_manifest_is_omitted_and_dry_run_does_not_write(
     manifest = _write_manifest(tmp_path, "fixture/Cargo.toml", content)
     group = ManifestRewriteConfig(paths=("fixture/Cargo.toml",))
 
-    assert _plan(tmp_path, (group,), _versions(target_version="2.0.0")) == ()
+    assert not _plan(tmp_path, (group,), _versions(target_version="2.0.0")), (
+        "an unchanged target version must produce no rewrite plan"
+    )
     plans = _plan(tmp_path, (group,), _versions(target_version="3.0.0"))
     original_bytes = manifest.read_bytes()
 
     changed_paths = bump_manifest_rewrites.apply_manifest_rewrites(plans, dry_run=True)
 
-    assert changed_paths == (manifest.resolve(),)
-    assert manifest.read_bytes() == original_bytes
+    assert changed_paths == (manifest.resolve(),), (
+        "dry-run must return the planned manifest path"
+    )
+    assert manifest.read_bytes() == original_bytes, (
+        "dry-run must preserve manifest bytes"
+    )
 
 
 def test_wraps_malformed_manifest_errors_with_path(tmp_path: pathlib.Path) -> None:

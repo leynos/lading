@@ -1,13 +1,16 @@
 """Manifest-related behavioural fixtures for CLI scenarios."""
 
+import typing as typ
 from pathlib import Path
 
-import pytest
-from cmd_mox import CmdMox
 from pytest_bdd import given, parsers
 from tomlkit import inline_table, table
 
 from lading.testing import toml_utils
+
+if typ.TYPE_CHECKING:
+    import pytest
+    from cmd_mox import CmdMox
 
 
 def _update_manifest_version(
@@ -43,7 +46,6 @@ def _update_crate_manifests(crates_root: Path, version: str) -> None:
             version,
             ("package", "version"),
         )
-
 
 
 def _prepare_published_gpui_e2e_fixture(

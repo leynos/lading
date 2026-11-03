@@ -12,9 +12,7 @@ from lading.commands import bump_readme
 # Keep direct fixture imports for BDD collection even though conftest.py
 # registers the modules as pytest plugins.
 from . import config_fixtures as _config_fixtures  # ruff: ignore[unused-import]
-from . import (
-    manifest_fixtures as _manifest_fixtures,  # ruff: ignore[unused-import] - direct import keeps the manifest step module collected
-)
+from . import manifest_fixtures as _manifest_fixtures
 from . import (
     metadata_fixtures as _metadata_fixtures,  # ruff: ignore[unused-import] - direct import keeps the metadata step module collected
 )
@@ -367,7 +365,6 @@ def given_crate_readme_matches_workspace(
         bump_readme.compute_link_prefix(crate_root.relative_to(workspace_directory)),
     )
     crate_readme.write_text(rewritten_text, encoding="utf-8")
-
 
 
 def _invoke_lading_bump(
