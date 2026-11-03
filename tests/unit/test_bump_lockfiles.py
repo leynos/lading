@@ -10,11 +10,12 @@ import typing as typ
 from pathlib import Path
 
 import pytest
-from hypothesis import given, settings
+from hypothesis import given
 from hypothesis import strategies as st
 
 from lading.commands import bump_lockfiles
 from lading.runtime import CommandSpawnError
+from tests.helpers.hypothesis_settings import filesystem_property_settings
 from tests.helpers.path_normalization import normalized, normalized_invocations
 
 if typ.TYPE_CHECKING:
@@ -499,7 +500,7 @@ def test_regenerate_lockfiles_single_manifest_reraises_unchanged(
         ),
     ),
 )
-@settings(max_examples=50, deadline=None)
+@filesystem_property_settings(max_examples=50)
 def test_regenerate_lockfiles_attempts_all_and_reports_each_failure_once(
     spec: tuple[bool, list[tuple[str, bool]]],
 ) -> None:
