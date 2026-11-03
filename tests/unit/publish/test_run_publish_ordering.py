@@ -6,10 +6,11 @@ import typing as typ
 from pathlib import Path
 
 import pytest
-from hypothesis import HealthCheck, given, settings
+from hypothesis import HealthCheck, given
 from hypothesis import strategies as st
 
 from lading.commands import publish
+from tests.helpers.hypothesis_settings import filesystem_property_settings
 
 if typ.TYPE_CHECKING:
     from lading.runtime import CommandRunner
@@ -206,7 +207,10 @@ def test_run_keeps_live_publication_interleaved(
 
 
 @given(st.integers(min_value=1, max_value=10))
-@settings(max_examples=20, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@filesystem_property_settings(
+    max_examples=20,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
 def test_dry_run_batching_invariant_property(tmp_path: Path, crate_count: int) -> None:
     """Dry-run publication packages every crate before publishing any crate."""
     root = tmp_path / f"workspace_{crate_count}"
@@ -245,7 +249,10 @@ def test_dry_run_batching_invariant_property(tmp_path: Path, crate_count: int) -
 
 
 @given(st.integers(min_value=1, max_value=10))
-@settings(max_examples=20, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@filesystem_property_settings(
+    max_examples=20,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
 def test_live_interleaving_invariant_property(tmp_path: Path, crate_count: int) -> None:
     """Live publication packages and publishes each crate before advancing."""
     root = tmp_path / f"workspace_{crate_count}"

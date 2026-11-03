@@ -6,11 +6,12 @@ import tempfile
 from unittest import mock
 
 import pytest
-from hypothesis import given, settings
+from hypothesis import given
 from hypothesis import strategies as st
 
 from lading import config as config_module
 from lading.commands import bump
+from tests.helpers.hypothesis_settings import filesystem_property_settings
 from tests.helpers.workspace_builders import _make_workspace
 
 
@@ -142,7 +143,7 @@ def test_run_resolves_rebuild_lockfiles_through_public_api(
 
 
 @given(flag=st.sampled_from([None, True, False]), configured=st.booleans())
-@settings(max_examples=30)
+@filesystem_property_settings(max_examples=30)
 def test_run_rebuild_lockfiles_single_source_of_truth(
     *,
     flag: bool | None,
