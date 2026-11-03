@@ -1,0 +1,47 @@
+# serializer version: 1
+# name: test_rewrites_selected_strings_once_and_preserves_literal_style[selected_string_rewrites]
+  '''
+  [patch.crates-io]
+  rstest-bdd = { path = '$STAGING_rstest-bdd-0.6.0' } # keep comment
+  rstest-bdd-harness = { path = '$STAGING_rstest-bdd-harness-0.6.0' }
+  rstest-bdd-harness-gpui = {
+      path = '$STAGING_rstest-bdd-harness-gpui-0.6.0'
+  }
+  longer-version = { path = '$STAGING_rstest-bdd-0.6.0-beta40' }
+  x-prefixed = { path = '$STAGING_xrstest-bdd-0.6.0-beta4' }
+  literal = { path = '$STAGING_rstest-bdd-0.6.0' }
+  
+  '''
+# ---
+# name: test_updates_dependency_sections_and_package_aliases[dependency_rewrites]
+  '''
+  [dependencies]
+  rstest-bdd = "^0.6.0"
+  renamed = { package = "rstest-bdd-harness", version = "~0.6.0" }
+  path-only = { package = "rstest-bdd", path = "../rstest-bdd" }
+  workspace-ref = { package = "rstest-bdd", version = "0.6.0-beta4", workspace = true }
+  unrelated = "0.6.0-beta4"
+  
+  [dev-dependencies]
+  rstest-bdd = "0.6.0"
+  
+  [build-dependencies]
+  rstest-bdd-harness = "0.6.0"
+  
+  [target.'cfg(unix)'.dependencies]
+  rstest-bdd = "0.6.0"
+  
+  [target.x86_64_unknown_linux_gnu.dev-dependencies]
+  rstest-bdd-harness = "0.6.0"
+  
+  [workspace.dependencies]
+  rstest-bdd = "0.6.0"
+  
+  [patch.crates-io]
+  rstest-bdd = { version = "0.6.0-beta4", path = "../patched" }
+  
+  [replace]
+  "rstest-bdd:0.1.0" = { path = "../replaced" }
+  
+  '''
+# ---

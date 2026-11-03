@@ -5,8 +5,6 @@ The bump planner uses :func:`rewrite_dependency_requirements` after selecting
 an allowlisted non-member manifest.
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import typing as typ
 

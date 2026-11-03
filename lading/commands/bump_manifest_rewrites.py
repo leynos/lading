@@ -15,8 +15,6 @@ stage::
     changed_paths = apply_manifest_rewrites(plans, dry_run=dry_run)
 """
 
-from __future__ import annotations
-
 import collections.abc as cabc
 import dataclasses as dc
 import glob
@@ -319,18 +317,6 @@ def _compile_string_rewrite(
     versions: ManifestRewriteVersions,
 ) -> cabc.Callable[[str], str] | None:
     """Build a one-pass replacement callable for the configured template."""
-    replacements = _string_replacements(rule, versions)
-    if not replacements:
-        return None
-    pattern = _string_replacement_pattern(rule, replacements)
-    return lambda value: pattern.sub(lambda match: replacements[match.group()], value)
-
-
-def _string_replacements(
-    rule: StringValueRewriteConfig,
-    versions: ManifestRewriteVersions,
-) -> dict[str, str]:
-    """Render distinct old and new strings for updated workspace crates."""
     replacements: dict[str, str] = {}
     for crate_name in versions.updated_crate_names:
         old_version = versions.pre_bump_versions.get(crate_name)
@@ -342,7 +328,10 @@ def _string_replacements(
         )
         if old_text != new_text:
             replacements[old_text] = new_text
-    return replacements
+    if not replacements:
+        return None
+    pattern = _string_replacement_pattern(rule, replacements)
+    return lambda value: pattern.sub(lambda match: replacements[match.group()], value)
 
 
 def _string_replacement_pattern(

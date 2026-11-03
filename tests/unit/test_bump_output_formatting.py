@@ -327,9 +327,9 @@ def test_format_result_message_lists_non_member_manifest_in_existing_category(
         "Updated version to 1.2.3 in 2 manifest(s):",
         "- Cargo.toml",
         "- tests/fixtures/standalone/Cargo.toml",
-    ]
+    ], "live output must list root and fixture manifests in the manifest category"
     assert dry_run.splitlines() == [
         "Dry run; would update version to 1.2.3 in 2 manifest(s):",
         "- Cargo.toml",
         "- tests/fixtures/standalone/Cargo.toml",
-    ]
+    ], "dry-run output must list the same manifest paths with its dry-run header"

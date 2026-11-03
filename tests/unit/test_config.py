@@ -11,6 +11,8 @@ from lading import config as config_module
 if typ.TYPE_CHECKING:
     from pathlib import Path
 
+    from syrupy.assertion import SnapshotAssertion
+
 
 def _write_config(tmp_path: Path, body: str) -> Path:
     """Write a lading.toml with *body* into *tmp_path*."""
@@ -262,38 +264,41 @@ def test_bump_config_from_mapping_defaults_lockfile_fields() -> None:
     assert configuration.rebuild_lockfiles is True, (
         "a missing bump table must leave lockfile rebuilding enabled"
     )
-    assert configuration.manifest_rewrites == ()
+    assert not configuration.manifest_rewrites, (
+        "manifest_rewrites must default to an empty tuple"
+    )
 
 
-def test_bump_config_from_mapping_parses_manifest_rewrites() -> None:
+def test_bump_config_from_mapping_parses_manifest_rewrites(
+    snapshot: SnapshotAssertion,
+) -> None:
     """Manifest rewrite configuration defaults and selectors are immutable."""
+    rewrite_group = {
+        "paths": ["tests/fixtures/published-gpui-e2e/Cargo.toml"],
+        "string_values": [{"table": ["patch", "crates-io"], "field": "path"}],
+    }
     configuration = config_module.BumpConfig.from_mapping({
-        "manifest_rewrites": [
-            {
-                "paths": ["tests/fixtures/published-gpui-e2e/Cargo.toml"],
-                "string_values": [
-                    {
-                        "table": ["patch", "crates-io"],
-                        "field": "path",
-                    }
-                ],
-            }
-        ],
+        "manifest_rewrites": [rewrite_group]
     })
 
-    assert configuration.manifest_rewrites == (
-        config_module.ManifestRewriteConfig(
-            paths=("tests/fixtures/published-gpui-e2e/Cargo.toml",),
-            dependencies=True,
-            string_values=(
-                config_module.StringValueRewriteConfig(
-                    table=("patch", "crates-io"),
-                    field="path",
-                    template="{crate}-{version}",
-                ),
-            ),
-        ),
-    )
+    (rewrite,) = configuration.manifest_rewrites
+    (selector,) = rewrite.string_values
+    assert (
+        rewrite.paths,
+        rewrite.dependencies,
+        selector.table,
+        selector.field,
+        selector.template,
+    ) == (
+        ("tests/fixtures/published-gpui-e2e/Cargo.toml",),
+        True,
+        ("patch", "crates-io"),
+        "path",
+        "{crate}-{version}",
+    ), "the fixture path, enabled dependencies, and default selector must parse"
+    assert configuration.manifest_rewrites == snapshot(
+        name="manifest_rewrites_config"
+    ), "the parsed immutable records must match the configuration snapshot"
 
 
 def test_manifest_rewrite_template_allows_escaped_placeholder_text() -> None:
@@ -313,7 +318,9 @@ def test_manifest_rewrite_template_allows_escaped_placeholder_text() -> None:
     })
 
     rule = configuration.manifest_rewrites[0].string_values[0]
-    assert rule.template == "{{version:}}-{version}"
+    assert rule.template == "{{version:}}-{version}", (
+        "escaped placeholder text must remain literal in a valid template"
+    )
 
 
 @pytest.mark.parametrize(

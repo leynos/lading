@@ -1,7 +1,5 @@
 """Pipeline integration for configured non-member manifest rewrites."""
 
-from __future__ import annotations
-
 import pathlib
 
 import pytest
@@ -58,11 +56,21 @@ def test_rewrites_fixture_before_lockfile_regeneration(
         ),
     )
 
-    assert 'alpha = "^1.2.3"' in observed_fixture_text[0]
-    assert 'path = "../alpha-1.2.3"' in observed_fixture_text[0]
-    assert repository.regenerated == [(tmp_path.resolve(), ("nested/Cargo.toml",))]
-    assert repository.resolved == []
-    assert message.count("- tests/fixtures/standalone/Cargo.toml") == 1
+    assert 'alpha = "^1.2.3"' in observed_fixture_text[0], (
+        "dependency rewrites must be visible before lockfile regeneration"
+    )
+    assert 'path = "../alpha-1.2.3"' in observed_fixture_text[0], (
+        "selected path strings must be rewritten before lockfile regeneration"
+    )
+    assert repository.regenerated == [(tmp_path.resolve(), ("nested/Cargo.toml",))], (
+        "the live pipeline must regenerate the configured lockfile target"
+    )
+    assert not repository.resolved, (
+        "a live bump must not project lockfile paths without regenerating"
+    )
+    assert message.count("- tests/fixtures/standalone/Cargo.toml") == 1, (
+        "the changed fixture must appear exactly once in the result"
+    )
 
 
 def test_dry_run_reports_fixture_and_projects_lockfiles_without_writes(
@@ -95,10 +103,16 @@ def test_dry_run_reports_fixture_and_projects_lockfiles_without_writes(
         ),
     )
 
-    assert fixture.read_bytes() == original_bytes
-    assert "- tests/fixtures/standalone/Cargo.toml" in message
-    assert repository.resolved == [(tmp_path.resolve(), ("nested/Cargo.toml",))]
-    assert repository.regenerated == []
+    assert fixture.read_bytes() == original_bytes, (
+        "dry-run must leave the configured fixture bytes unchanged"
+    )
+    assert "- tests/fixtures/standalone/Cargo.toml" in message, (
+        "dry-run must report the configured fixture manifest"
+    )
+    assert repository.resolved == [(tmp_path.resolve(), ("nested/Cargo.toml",))], (
+        "dry-run must project the configured lockfile target"
+    )
+    assert not repository.regenerated, "dry-run must not regenerate lockfiles"
 
 
 def test_manifest_rewrite_overlap_with_member_is_reported_once(
@@ -125,8 +139,12 @@ def test_manifest_rewrite_overlap_with_member_is_reported_once(
         ),
     )
 
-    assert message.count("- crates/alpha/Cargo.toml") == 1
-    assert 'version = "1.2.3"' in member_manifest.read_text(encoding="utf-8")
+    assert message.count("- crates/alpha/Cargo.toml") == 1, (
+        "a configured member must be reported once by its owning stage"
+    )
+    assert 'version = "1.2.3"' in member_manifest.read_text(encoding="utf-8"), (
+        "the regular member stage must update the overlapping member manifest"
+    )
 
 
 def test_missing_rewrite_manifest_fails_before_any_workspace_write(
@@ -165,4 +183,6 @@ def test_missing_rewrite_manifest_fails_before_any_workspace_write(
             ),
         )
 
-    assert {path: path.read_bytes() for path in original_bytes} == original_bytes
+    assert {path: path.read_bytes() for path in original_bytes} == original_bytes, (
+        "a planning error must occur before any workspace manifest is written"
+    )
