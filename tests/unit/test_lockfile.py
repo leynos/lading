@@ -9,10 +9,11 @@ from pathlib import Path
 
 import hypothesis.strategies as st
 import pytest
-from hypothesis import given, settings
+from hypothesis import given
 
 from lading.commands import lockfile
 from lading.utils import metrics
+from tests.helpers.hypothesis_settings import filesystem_property_settings
 
 if typ.TYPE_CHECKING:
     from _pytest.logging import LogCaptureFixture
@@ -476,7 +477,7 @@ def _expected_lockfiles(
 
 
 @given(entries=st.lists(_tree_entry, max_size=8))
-@settings(max_examples=40, deadline=None)
+@filesystem_property_settings(max_examples=40)
 def test_discover_tracked_lockfiles_invariants(
     entries: list[tuple[list[str], bool, bool]],
 ) -> None:

@@ -5,10 +5,11 @@ import dataclasses as dc
 import tempfile
 from pathlib import Path
 
-from hypothesis import given, settings
+from hypothesis import given
 from hypothesis import strategies as st
 
 from lading.commands import bump_lockfiles
+from tests.helpers.hypothesis_settings import filesystem_property_settings
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -170,7 +171,7 @@ def test_merge_discovered_manifests_returns_configured_outside_git(
 
 
 @given(case=_manifest_merge_cases())
-@settings(max_examples=80, deadline=None)
+@filesystem_property_settings(max_examples=80)
 def test_merge_discovered_manifests_preserves_order_and_deduplicates(
     case: tuple[tuple[str, ...], tuple[str, ...]],
 ) -> None:
@@ -213,7 +214,7 @@ def test_merge_discovered_manifests_preserves_order_and_deduplicates(
         max_size=8,
     ).map(tuple)
 )
-@settings(max_examples=50, deadline=None)
+@filesystem_property_settings(max_examples=50)
 def test_merge_discovered_manifests_non_git_fallback_is_identity(
     configured: tuple[str, ...],
 ) -> None:

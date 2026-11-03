@@ -16,10 +16,11 @@ import tempfile
 from pathlib import Path
 
 import hypothesis.strategies as st
-from hypothesis import HealthCheck, given, settings
+from hypothesis import HealthCheck, given
 
 from lading.commands import clean
 from lading.commands.publish_staging import STAGING_PREFIX
+from tests.helpers.hypothesis_settings import filesystem_property_settings
 
 #: Entry names are short and drawn from a small alphabet so that collisions
 #: between the prefixed and unprefixed variants actually occur: the property
@@ -59,9 +60,8 @@ def _create(location: Path, name: str, kind: str, link_target: Path) -> None:
 
 
 @given(entries=_ENTRIES)
-@settings(
+@filesystem_property_settings(
     max_examples=60,
-    deadline=None,
     suppress_health_check=[HealthCheck.function_scoped_fixture],
 )
 def test_discovery_returns_exactly_the_prefixed_real_directories(
