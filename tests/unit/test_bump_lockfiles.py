@@ -499,7 +499,7 @@ def test_regenerate_lockfiles_single_manifest_reraises_unchanged(
         ),
     ),
 )
-@settings(max_examples=50, deadline=None)
+@settings(max_examples=50)
 def test_regenerate_lockfiles_attempts_all_and_reports_each_failure_once(
     spec: tuple[bool, list[tuple[str, bool]]],
 ) -> None:

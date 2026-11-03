@@ -24,15 +24,14 @@ _FAILURE_DETAIL = st.text(
 
 
 @given(detail=_FAILURE_DETAIL)
-# No deadline: each example builds a real crate manifest under ``tmp_path`` and
-# drives ``publish.run`` to an aborted preflight, so its cost is the host's
-# filesystem and interpreter time rather than the property. The invariant is
-# that a failure transition reaches neither staging nor dispatch; it is not a
-# cost budget. A larger deadline would only move the point at which a busy
-# host reddens the suite.
+# The suite-wide `deadline=None` profile in `tests/conftest.py` applies here:
+# each example builds a real crate manifest under ``tmp_path`` and drives
+# ``publish.run`` to an aborted preflight, so its cost is the host's filesystem
+# and interpreter time rather than the property. The invariant is that a
+# failure transition reaches neither staging nor dispatch; it is not a cost
+# budget.
 @settings(
     max_examples=20,
-    deadline=None,
     suppress_health_check=[HealthCheck.function_scoped_fixture],
 )
 def test_run_never_stages_or_dispatches_after_preflight_failure(

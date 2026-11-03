@@ -61,7 +61,6 @@ def _create(location: Path, name: str, kind: str, link_target: Path) -> None:
 @given(entries=_ENTRIES)
 @settings(
     max_examples=60,
-    deadline=None,
     suppress_health_check=[HealthCheck.function_scoped_fixture],
 )
 def test_discovery_returns_exactly_the_prefixed_real_directories(

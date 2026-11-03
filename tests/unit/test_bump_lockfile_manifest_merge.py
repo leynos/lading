@@ -170,7 +170,7 @@ def test_merge_discovered_manifests_returns_configured_outside_git(
 
 
 @given(case=_manifest_merge_cases())
-@settings(max_examples=80, deadline=None)
+@settings(max_examples=80)
 def test_merge_discovered_manifests_preserves_order_and_deduplicates(
     case: tuple[tuple[str, ...], tuple[str, ...]],
 ) -> None:
@@ -213,7 +213,7 @@ def test_merge_discovered_manifests_preserves_order_and_deduplicates(
         max_size=8,
     ).map(tuple)
 )
-@settings(max_examples=50, deadline=None)
+@settings(max_examples=50)
 def test_merge_discovered_manifests_non_git_fallback_is_identity(
     configured: tuple[str, ...],
 ) -> None:

@@ -476,7 +476,7 @@ def _expected_lockfiles(
 
 
 @given(entries=st.lists(_tree_entry, max_size=8))
-@settings(max_examples=40, deadline=None)
+@settings(max_examples=40)
 def test_discover_tracked_lockfiles_invariants(
     entries: list[tuple[list[str], bool, bool]],
 ) -> None:

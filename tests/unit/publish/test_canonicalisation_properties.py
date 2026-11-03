@@ -21,7 +21,7 @@ _arbitrary_names = st.from_regex(r"[A-Za-z0-9_-]+", fullmatch=True)
 
 
 @given(name=_arbitrary_names)
-@settings(max_examples=100, deadline=None)
+@settings(max_examples=100)
 def test_canonical_crate_name_removes_all_hyphens(name: str) -> None:
     """Canonicalisation drops every hyphen, preserves length, and is idempotent."""
     canonical = _canonical_crate_name(name)
@@ -35,7 +35,7 @@ def test_canonical_crate_name_removes_all_hyphens(name: str) -> None:
 
 
 @given(segments=st.lists(_canonical_names, min_size=1, max_size=4))
-@settings(max_examples=100, deadline=None)
+@settings(max_examples=100)
 def test_canonical_crate_name_unifies_separators(segments: list[str]) -> None:
     """Hyphen- and underscore-joined spellings of the segments canonicalise equal."""
     hyphenated = "-".join(segments)
@@ -52,7 +52,7 @@ def test_canonical_crate_name_unifies_separators(segments: list[str]) -> None:
     canonical_names=st.lists(_canonical_names, min_size=1, max_size=6, unique=True),
     data=st.data(),
 )
-@settings(max_examples=100, deadline=None)
+@settings(max_examples=100)
 def test_canonicalisation_enables_restyled_publish_order_lookup(
     canonical_names: list[str], data: st.DataObject
 ) -> None:

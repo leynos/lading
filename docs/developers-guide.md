@@ -922,6 +922,17 @@ Property-based tests in the publish suite use
 to keep continuous integration (CI) fast while still exercising a range of
 inputs.
 
+`tests/conftest.py` registers and loads a `lading` Hypothesis profile with
+`deadline=None` for every local and CI run. No property in this suite asserts
+how long its work takes, so Hypothesis's 200 ms per-example deadline would only
+turn host load into false `DeadlineExceeded` failures (issue #270). Do not
+repeat `deadline=None` in a test; the suite profile already supplies it. A
+deliberate local deadline needs a comment stating why that test's duration is
+the property under test, and a genuine performance bound should be asserted
+explicitly rather than through Hypothesis's deadline. An explicit
+`--hypothesis-profile` replaces the suite profile, and the separate 30-second
+`pytest-timeout` limit in `pyproject.toml` still applies.
+
 ## Working-directory test helper (`tests/helpers/cwd.py`)
 
 Tests that change the process working directory must call

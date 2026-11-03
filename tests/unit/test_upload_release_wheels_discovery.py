@@ -161,7 +161,6 @@ def test_an_unreadable_artefact_path_is_not_reported_as_absent(
 )
 @settings(
     max_examples=40,
-    deadline=None,
     # The module is stateless, so re-importing it per example changes nothing.
     # The fixture is suppressed rather than hoisted to module scope, because a
     # module-scoped import would leak the scripts directory onto ``sys.path``

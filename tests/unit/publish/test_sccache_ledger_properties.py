@@ -63,7 +63,7 @@ def _snapshot(counters: SccacheCounters) -> SccacheSnapshot:
 
 
 @given(invocations=_invocations, data=st.data())
-@settings(max_examples=150, deadline=None)
+@settings(max_examples=150)
 def test_ledger_attributes_consecutive_differences(
     invocations: list[tuple[str, str, float]], data: st.DataObject
 ) -> None:
@@ -144,7 +144,7 @@ def _payload_stats(counters: SccacheCounters) -> dict[str, object]:
 
 
 @given(invocations=_invocations, data=st.data())
-@settings(max_examples=150, deadline=None)
+@settings(max_examples=150)
 def test_session_queries_bracket_invocations_and_stop_on_failure(
     invocations: list[tuple[str, str, float]], data: st.DataObject
 ) -> None:
