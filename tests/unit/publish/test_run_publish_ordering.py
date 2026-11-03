@@ -6,10 +6,11 @@ import typing as typ
 from pathlib import Path
 
 import pytest
-from hypothesis import HealthCheck, given, settings
+from hypothesis import HealthCheck, given
 from hypothesis import strategies as st
 
 from lading.commands import publish
+from tests.helpers.hypothesis_settings import filesystem_property_settings
 
 if typ.TYPE_CHECKING:
     from lading.runtime import CommandRunner
@@ -206,15 +207,14 @@ def test_run_keeps_live_publication_interleaved(
 
 
 @given(st.integers(min_value=1, max_value=10))
-# No deadline: each example creates up to ten real crate directories and copies
-# them into staging with ``shutil.copytree``, so its cost is the host's
+# Filesystem-backed: each example creates up to ten real crate directories and
+# copies them into staging with ``shutil.copytree``, so its cost is the host's
 # filesystem and interpreter time rather than the property.
 # ``CallTrackingRunner`` simulates Cargo, and the call counts assert
-# exactly-once ordering; they are not a cost budget. A larger deadline would
-# only move the point at which a busy host reddens the suite.
-@settings(
+# exactly-once ordering; they are not a cost budget. See
+# tests/helpers/hypothesis_settings.py for the deadline policy.
+@filesystem_property_settings(
     max_examples=20,
-    deadline=None,
     suppress_health_check=[HealthCheck.function_scoped_fixture],
 )
 def test_dry_run_batching_invariant_property(tmp_path: Path, crate_count: int) -> None:
@@ -255,7 +255,10 @@ def test_dry_run_batching_invariant_property(tmp_path: Path, crate_count: int) -
 
 
 @given(st.integers(min_value=1, max_value=10))
-@settings(max_examples=20, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@filesystem_property_settings(
+    max_examples=20,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
 def test_live_interleaving_invariant_property(tmp_path: Path, crate_count: int) -> None:
     """Live publication packages and publishes each crate before advancing."""
     root = tmp_path / f"workspace_{crate_count}"
