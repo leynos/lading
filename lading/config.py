@@ -16,7 +16,7 @@ from lading.config_manifest_rewrites import (
 from lading.config_manifest_rewrites import (
     StringValueRewriteConfig as StringValueRewriteConfig,
 )
-from lading.config_validation import validate_mapping_keys as _validate_mapping_keys
+from lading.config_validation import validate_mapping_keys
 from lading.exceptions import ConfigurationError, ConfigurationNotLoadedError
 from lading.utils import normalize_workspace_root
 
@@ -94,7 +94,7 @@ class DocumentationConfig:
         """  # ruff: ignore[docstring-extraneous-exception]  # propagated from the shared mapping validators
         if mapping is None:
             return cls()
-        _validate_mapping_keys(
+        validate_mapping_keys(
             mapping, set(BUMP_DOCUMENTATION_TOML_KEYS), "bump.documentation"
         )
         return cls(
@@ -142,7 +142,7 @@ class BumpConfig:
         """  # ruff: ignore[docstring-extraneous-exception]  # propagated from the shared mapping validators
         if mapping is None:
             return cls()
-        _validate_mapping_keys(mapping, set(BUMP_TOML_KEYS), "bump")
+        validate_mapping_keys(mapping, set(BUMP_TOML_KEYS), "bump")
         raw_rewrites: cabc.Sequence[object] = ()
         if "manifest_rewrites" in mapping:
             raw_rewrites = toml_coerce.expect_sequence(
@@ -215,7 +215,7 @@ class PublishConfig:
         """  # ruff: ignore[docstring-extraneous-exception]  # propagated from the shared mapping validators
         if mapping is None:
             return cls()
-        _validate_mapping_keys(mapping, set(PUBLISH_TOML_KEYS), "publish")
+        validate_mapping_keys(mapping, set(PUBLISH_TOML_KEYS), "publish")
         return cls(
             exclude=_string_tuple(mapping.get("exclude"), "publish.exclude"),
             order=_string_tuple(mapping.get("order"), "publish.order"),
@@ -284,7 +284,7 @@ class PreflightConfig:
         """  # ruff: ignore[docstring-extraneous-exception]  # propagated from the shared mapping validators
         if mapping is None:
             return cls()
-        _validate_mapping_keys(mapping, set(PREFLIGHT_TOML_KEYS), "preflight")
+        validate_mapping_keys(mapping, set(PREFLIGHT_TOML_KEYS), "preflight")
         raw_excludes = _string_tuple(
             mapping.get("test_exclude"), "preflight.test_exclude"
         )
@@ -352,7 +352,7 @@ class LadingConfig:
         >>> config.bump.exclude
         ('crate-a',)
         """  # ruff: ignore[docstring-extraneous-exception]  # propagated from the shared mapping validators
-        _validate_mapping_keys(
+        validate_mapping_keys(
             mapping, set(CONFIG_ROOT_TOML_KEYS), "configuration section"
         )
         return cls(

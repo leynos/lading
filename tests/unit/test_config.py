@@ -254,14 +254,14 @@ def test_validate_mapping_keys_reports_unknown_section() -> None:
         config_module.ConfigurationError,
         match=r"Unknown configuration section\(s\): unexpected.",
     ):
-        config_module._validate_mapping_keys(
+        config_module.validate_mapping_keys(
             {"unexpected": True}, set(), "configuration section"
         )
 
 
 def test_validate_mapping_keys_allows_none_mapping() -> None:
     """A missing mapping should be treated as valid and skipped."""
-    config_module._validate_mapping_keys(None, set(), "section")
+    config_module.validate_mapping_keys(None, set(), "section")
 
 
 def test_string_tuple_and_matrix_validation() -> None:
