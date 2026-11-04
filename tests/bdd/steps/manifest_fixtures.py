@@ -1,11 +1,16 @@
 """Manifest-related behavioural fixtures for CLI scenarios."""
 
+import typing as typ
 from pathlib import Path
 
 from pytest_bdd import given, parsers
 from tomlkit import inline_table, table
 
 from lading.testing import toml_utils
+
+if typ.TYPE_CHECKING:
+    import pytest
+    from cmd_mox import CmdMox
 
 
 def _update_manifest_version(
@@ -41,6 +46,69 @@ def _update_crate_manifests(crates_root: Path, version: str) -> None:
             version,
             ("package", "version"),
         )
+
+
+def _prepare_published_gpui_e2e_fixture(
+    cmd_mox: CmdMox,
+    monkeypatch: pytest.MonkeyPatch,
+    workspace_directory: Path,
+) -> bytes:
+    """Build the prerelease workspace and return the fixture's original bytes."""
+    from tests.helpers.workspace_helpers import install_cargo_stub
+
+    from .metadata_fixtures import _mock_cargo_metadata, _write_workspace_manifest
+    from .test_data_helpers import _build_package_metadata, _create_test_crate
+
+    version = "0.6.0-beta4"
+    crate_names = (
+        "rstest-bdd",
+        "rstest-bdd-harness",
+        "rstest-bdd-harness-gpui",
+        "rstest-bdd-macros",
+    )
+    install_cargo_stub(cmd_mox, monkeypatch)
+    manifests = [
+        _create_test_crate(workspace_directory, name, version) for name in crate_names
+    ]
+    _write_workspace_manifest(
+        workspace_directory,
+        [f"crates/{name}" for name in crate_names],
+        version=version,
+    )
+    _mock_cargo_metadata(
+        cmd_mox,
+        workspace_directory,
+        packages=[
+            _build_package_metadata(name, manifest, version=version)
+            for name, manifest in zip(crate_names, manifests, strict=True)
+        ],
+        member_ids=[f"{name}-id" for name in crate_names],
+    )
+    fixture = workspace_directory / "tests/fixtures/published-gpui-e2e/Cargo.toml"
+    fixture.parent.mkdir(parents=True, exist_ok=True)
+    fixture_lines = [
+        "[dependencies]",
+        *(f'{name} = "{version}"' for name in crate_names),
+        "",
+        "[patch.crates-io]",
+    ]
+    for name in crate_names[:2]:
+        patch_path = f"../../../target/published-gpui-e2e/{name}-{version}"
+        fixture_lines.append(f'{name} = {{ path = "{patch_path}" }}')
+    fixture_lines.append("")
+    fixture.write_text("\n".join(fixture_lines), encoding="utf-8")
+    config_path = workspace_directory / "lading.toml"
+    config_text = config_path.read_text(encoding="utf-8")
+    config_text += (
+        "\n[[bump.manifest_rewrites]]\n"
+        'paths = ["tests/fixtures/published-gpui-e2e/Cargo.toml"]\n'
+        "\n[[bump.manifest_rewrites.string_values]]\n"
+        'table = ["patch", "crates-io"]\n'
+        'field = "path"\n'
+        'template = "{crate}-{version}"\n'
+    )
+    config_path.write_text(config_text, encoding="utf-8")
+    return fixture.read_bytes()
 
 
 @given(parsers.parse('the workspace manifests record version "{version}"'))

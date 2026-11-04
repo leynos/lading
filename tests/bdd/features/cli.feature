@@ -17,6 +17,23 @@ Feature: Lading CLI scaffolding
     And the workspace manifest version is "0.1.0"
     And the crate "alpha" manifest version is "0.1.0"
 
+  Scenario: Bump updates prerelease references in the configured GPUI fixture
+    Given a workspace directory with configuration
+    And cargo metadata describes the rstest-bdd workspace and published fixture
+    When I invoke lading bump 0.6.0 with that workspace
+    Then the bump command reports manifest updates for "0.6.0"
+    And the CLI output lists manifest path "- tests/fixtures/published-gpui-e2e/Cargo.toml"
+    And the published fixture manifest references only 0.6.0
+
+  Scenario: Dry-run previews prerelease rewrites in the configured GPUI fixture
+    Given a workspace directory with configuration
+    And cargo metadata describes the rstest-bdd workspace and published fixture
+    When I invoke lading bump 0.6.0 with that workspace using --dry-run
+    Then the bump command reports a dry-run plan for "0.6.0"
+    And the CLI output lists manifest path "- tests/fixtures/published-gpui-e2e/Cargo.toml"
+    And the published fixture manifest remains unchanged
+    And the bump made no Cargo lockfile update invocations
+
   Scenario: Bump refreshes tracked Cargo.lock files
     Given a workspace directory with configuration
     And cargo metadata describes a sample workspace
@@ -56,6 +73,14 @@ Feature: Lading CLI scaffolding
     Given a workspace directory with configuration
     When I invoke lading bump 1.2 with that workspace
     Then the bump command reports an invalid version error for "1.2"
+
+  Scenario: Bumping labels errors from configured manifest rewrites
+    Given a workspace directory with configuration
+    And cargo metadata describes a sample workspace
+    And bump.manifest_rewrites selects an unmatched fixture glob
+    When I invoke lading bump 1.2.3 with that workspace
+    Then the CLI exits with code 1
+    And the stderr contains "Manifest rewrite error: Manifest rewrite glob matched no files"
 
   Scenario: Bumping workspace versions skips excluded crates
     Given a workspace directory with configuration

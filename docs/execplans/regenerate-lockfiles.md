@@ -205,6 +205,11 @@ fixture lockfile and seeing that lockfile listed in the bump output with a
   `--no-rebuild-lockfiles` remains the escape hatch. Rewriting dependency
   requirements in non-member manifests is a possible future enhancement, out of
   scope here.
+- Addendum (2026-11-04): issue #260 delivered the non-member manifest follow-up
+  through the opt-in `bump.manifest_rewrites` allowlist. It rewrites configured
+  dependency requirements and version-bearing TOML strings before lockfile
+  regeneration, while keeping fixture rewriting separate from lockfile target
+  selection.
 - Historical observation from 2026-07-07: the then-unpinned ty installation
   resolved to ty 0.0.8, which failed `make typecheck` on the clean tree with
   six diagnostics in `lading/commands/bump_toml.py` and
@@ -309,6 +314,11 @@ telemetry; non-Git warnings and discovery failures remain observable.
 
 Follow-up candidates (not in scope): rewrite version requirements in non-member
 nested manifests that depend on bumped crates.
+
+Addendum (2026-11-04): issue #260 delivered this follow-up through
+`bump.manifest_rewrites`. The allowlist keeps fixture rewriting separate from
+lockfile target selection and leaves workspace-member manifests under their
+existing update stage.
 
 ## Context and orientation
 
@@ -683,7 +693,9 @@ remained in the original feature scope.
 at the user's request. The Makefile defines `TY_VERSION ?= 0.0.56` and invokes
 the checker through `uv tool run --from ty==$(TY_VERSION) ty`; CI runs
 `make typecheck` and no longer installs ty separately. Ty 0.0.56 passes with no
-new diagnostics. The non-member manifest rewriting follow-up remains open.
+new diagnostics. The non-member manifest rewriting follow-up remained open at
+the time of this note. Issue #260 later delivered it through
+`bump.manifest_rewrites`.
 
 2026-07-14: rebasing onto `origin/main` incorporated issue #82's
 `LockfileRepository` port. Discovery now occurs inside the

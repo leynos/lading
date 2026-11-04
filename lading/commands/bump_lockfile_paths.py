@@ -17,6 +17,7 @@ resolve_lockfile_paths(workspace_root, ("fixtures/example/Cargo.toml",))
 import collections.abc as cabc
 from pathlib import Path
 
+from lading.commands.manifest_paths import resolve_manifest_candidate
 from lading.exceptions import LadingError
 
 
@@ -112,25 +113,17 @@ def resolve_manifest_paths(
     # ["/workspace/Cargo.toml", "/workspace/fixtures/minimal/Cargo.toml"]
     ```
 
-    """
-    resolved_root = workspace_root.resolve()
+    """  # ruff: ignore[docstring-extraneous-exception]  # shared candidate validator raises this error
     root_manifest = (workspace_root / "Cargo.toml").resolve()
     seen_manifests: set[Path] = {root_manifest}
     manifests = [root_manifest]
     for manifest in lockfile_manifests:
-        candidate = (workspace_root / manifest).resolve()
-        try:
-            candidate.relative_to(resolved_root)
-        except ValueError as exc:
-            message = (
-                f"Lockfile manifest path must stay within the workspace: {manifest}"
-            )
-            raise LockfileRegenerationError(message) from exc
-        if candidate.name != "Cargo.toml":
-            message = (
-                f"Lockfile manifest path must point to a Cargo.toml file: {manifest}"
-            )
-            raise LockfileRegenerationError(message)
+        candidate = resolve_manifest_candidate(
+            workspace_root,
+            manifest,
+            error_type=LockfileRegenerationError,
+            label="Lockfile manifest",
+        )
         if candidate in seen_manifests:
             continue
         seen_manifests.add(candidate)

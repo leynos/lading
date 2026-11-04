@@ -16,3 +16,11 @@ component while keeping a consistent package-wide exception hierarchy.
 
 class LadingError(Exception):
     """Base class for all lading exceptions."""
+
+
+class ConfigurationError(LadingError):
+    """Raised when the :mod:`lading` configuration is invalid."""
+
+
+class ConfigurationNotLoadedError(ConfigurationError):
+    """Raised when code accesses the configuration before it is loaded."""

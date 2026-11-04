@@ -137,6 +137,17 @@ def given_documentation_glob(workspace_directory: Path, pattern: str) -> None:
     config_path.write_text(document.as_string(), encoding="utf-8")
 
 
+@given("bump.manifest_rewrites selects an unmatched fixture glob")
+def given_unmatched_manifest_rewrite_glob(workspace_directory: Path) -> None:
+    """Configure a fixture glob that cannot match a manifest."""
+    config_path = workspace_directory / config_module.CONFIG_FILENAME
+    original = config_path.read_text(encoding="utf-8")
+    rewrite_group = (
+        '\n[[bump.manifest_rewrites]]\npaths = ["fixtures/no-match-*/Cargo.toml"]\n'
+    )
+    config_path.write_text(f"{original}{rewrite_group}", encoding="utf-8")
+
+
 @given(parsers.parse('bump.exclude contains "{crate_name}"'))
 def given_bump_exclude_contains(
     workspace_directory: Path,

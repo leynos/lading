@@ -8,6 +8,7 @@ branches.
 
 import collections.abc as cabc
 import dataclasses as dc
+import logging
 import os
 import typing as typ
 from pathlib import Path
@@ -18,6 +19,7 @@ from lading import cli
 from lading import config as config_module
 from lading.commands import bump as bump_command
 from lading.commands import publish as publish_command
+from lading.commands.bump_manifest_rewrites import ManifestRewriteError
 from tests.helpers.cli_workspace import make_workspace
 
 if typ.TYPE_CHECKING:
@@ -68,6 +70,59 @@ def test_main_handles_exceptions(
     captured = capsys.readouterr()
     assert case.expected_message in captured.err, (
         f"stderr should report {case.expected_message!r}"
+    )
+
+
+def test_manifest_rewrite_write_failure_is_reported_once(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Write failures use one structured CLI event with progress details."""
+    error = ManifestRewriteError(
+        "Could not write selected fixture manifest",
+        completed_writes=1,
+        planned_writes=2,
+        failed_path=Path("tests/fixtures/standalone/Cargo.toml"),
+    )
+
+    with caplog.at_level(logging.ERROR, logger=cli.__name__):
+        cli._print_expected_command_error(error)
+
+    assert len(caplog.records) == 1, "the CLI should report the failure only once"
+    message = caplog.records[0].getMessage()
+    assert "manifest_rewrite failed:" in message, "the event should have a stable label"
+    assert "completed=1 planned=2" in message, (
+        "the event should report completed and planned writes"
+    )
+    assert str(error.failed_path) in message, (
+        "the event should identify the failed path"
+    )
+
+
+def test_manifest_rewrite_write_failure_is_visible_when_errors_are_disabled(
+    caplog: pytest.LogCaptureFixture,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """CRITICAL-only logging still prints write failures to standard error."""
+    failed_path = Path("tests/fixtures/standalone/Cargo.toml")
+    error = ManifestRewriteError(
+        f"Could not write manifest rewrite target {failed_path} after 1 of 2 "
+        "write(s): permission denied",
+        completed_writes=1,
+        planned_writes=2,
+        failed_path=failed_path,
+    )
+
+    with caplog.at_level(logging.CRITICAL, logger=cli.__name__):
+        cli._print_expected_command_error(error)
+
+    assert not caplog.records, "ERROR events must remain suppressed at CRITICAL"
+    message = capsys.readouterr().err
+    assert "Manifest rewrite error:" in message, (
+        "the CLI should print a fallback error message"
+    )
+    assert str(failed_path) in message, "the fallback should identify the failed path"
+    assert "after 1 of 2 write(s)" in message, (
+        "the fallback should preserve the completed and planned write count"
     )
 
 

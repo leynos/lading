@@ -13,6 +13,7 @@ pytest_plugins = (
     "tests.bdd.steps.manifest_fixtures",
     "tests.bdd.steps.metadata_fixtures",
     "tests.bdd.steps.test_bump_steps",
+    "tests.bdd.steps.test_bump_lockfile_steps",
     "tests.bdd.steps.test_publish_fixtures",
     "tests.bdd.steps.test_publish_given_steps",
     "tests.bdd.steps.test_publish_when_steps",
@@ -125,6 +126,32 @@ def write_config(tmp_path: Path) -> cabc.Callable[[str], Path]:
         return config_path
 
     return _write
+
+
+@pytest.fixture
+def write_fixture_manifest() -> cabc.Callable[[Path, str, str], Path]:
+    """Return a writer for temporary Cargo manifests used by unit tests.
+
+    Returns
+    -------
+    cabc.Callable[[Path, str, str], Path]
+        Callable accepting a workspace root, relative manifest path, and TOML
+        content, then returning the written path.
+
+    Examples
+    --------
+    >>> def test_fixture_manifest(tmp_path, write_fixture_manifest):  # doctest: +SKIP
+    ...     path = write_fixture_manifest(tmp_path, "fixture/Cargo.toml", "[package]")
+    ...     assert path.read_text() == "[package]"
+    """
+
+    def write(root: Path, relative_path: str, content: str) -> Path:
+        path = root / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+        return path
+
+    return write
 
 
 @pytest.fixture

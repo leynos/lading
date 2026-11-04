@@ -12,9 +12,7 @@ from lading.commands import bump_readme
 # Keep direct fixture imports for BDD collection even though conftest.py
 # registers the modules as pytest plugins.
 from . import config_fixtures as _config_fixtures  # ruff: ignore[unused-import]
-from . import (
-    manifest_fixtures as _manifest_fixtures,  # ruff: ignore[unused-import] - direct import keeps the manifest step module collected
-)
+from . import manifest_fixtures as _manifest_fixtures
 from . import (
     metadata_fixtures as _metadata_fixtures,  # ruff: ignore[unused-import] - direct import keeps the metadata step module collected
 )
@@ -220,7 +218,54 @@ def then_cli_output_lists_manifest_paths(
     )
 
 
+@given(
+    "cargo metadata describes the rstest-bdd workspace and published fixture",
+    target_fixture="published_fixture_original",
+)
+def given_published_fixture_workspace(
+    cmd_mox: CmdMox,
+    monkeypatch: pytest.MonkeyPatch,
+    workspace_directory: Path,
+) -> bytes:
+    """Create the beta4 workspace and configured standalone fixture."""
+    return _manifest_fixtures._prepare_published_gpui_e2e_fixture(
+        cmd_mox, monkeypatch, workspace_directory
+    )
+
+
+@then("the published fixture manifest references only 0.6.0")
+def then_published_fixture_versions_updated(cli_run: CliRunResult) -> None:
+    """Assert dependency and staged-path prerelease values were rewritten."""
+    fixture = cli_run["workspace"] / "tests/fixtures/published-gpui-e2e/Cargo.toml"
+    contents = fixture.read_text(encoding="utf-8")
+    assert "0.6.0-beta4" not in contents, f"prerelease remains:\n{contents}"
+    assert contents.count("0.6.0") == 6, f"unexpected rewrite count:\n{contents}"
+
+
+@then("the published fixture manifest remains unchanged")
+def then_published_fixture_unchanged(
+    cli_run: CliRunResult,
+    published_fixture_original: bytes,
+) -> None:
+    """Assert dry-run preserved the fixture's exact bytes."""
+    fixture = cli_run["workspace"] / "tests/fixtures/published-gpui-e2e/Cargo.toml"
+    actual = fixture.read_bytes()
+    assert actual == published_fixture_original, f"fixture changed: {actual!r}"
+
+
+@then("the bump made no Cargo lockfile update invocations")
+def then_no_cargo_lockfile_updates(cmd_mox: CmdMox) -> None:
+    """Assert dry-run projection did not invoke Cargo lockfile updates."""
+    updates = [
+        invocation
+        for invocation in cmd_mox.journal
+        if invocation.command == "cargo::update"
+    ]
+    assert not updates, f"unexpected Cargo updates: {updates!r}"
+
+
 _LISTED_PATH_LABELS = {
+    "manifest": "updated manifest",
     "documentation": "changed documentation file",
     "README": "transposed README",
     "lockfile": "refreshed lockfile",
@@ -229,7 +274,7 @@ _LISTED_PATH_LABELS = {
 
 @then(
     parsers.re(
-        r'the CLI output lists (?P<kind>documentation|README|lockfile) path'
+        r'the CLI output lists (?P<kind>manifest|documentation|README|lockfile) path'
         r' "(?P<expected>[^"]+)"'
     )
 )
@@ -244,76 +289,6 @@ def then_cli_output_lists_path(
     stdout_lines = [line.strip() for line in cli_run["stdout"].splitlines()]
     assert expected in stdout_lines, (
         f"the output must acknowledge the {_LISTED_PATH_LABELS[kind]} {expected!r}"
-    )
-
-
-@then("the bump command refreshed tracked lockfiles")
-def then_bump_refreshed_lockfiles(cli_run: dict[str, typ.Any]) -> None:
-    """Assert the live bump lockfile scenario completed successfully."""
-    assert cli_run["returncode"] == 0, (
-        f"the live lockfile bump must succeed; stderr:\n{cli_run['stderr']}"
-    )
-    output = f"{cli_run['stdout']}\n{cli_run['stderr']}"
-    assert "cargo update --workspace" in output, (
-        "the bump must refresh the tracked lockfiles via cargo update --workspace"
-    )
-
-
-@then("the bump command refreshed workspace and nested tracked lockfiles")
-def then_bump_refreshed_workspace_and_nested_lockfiles(
-    cli_run: CliRunResult,
-    cmd_mox: CmdMox,
-    workspace_directory: Path,
-) -> None:
-    """Assert Cargo refreshed the root and discovered nested lockfiles.
-
-    Parameters
-    ----------
-    cli_run : CliRunResult
-        Captured result of the completed ``lading bump`` invocation.
-    cmd_mox : CmdMox
-        Command-double fixture whose journal records Cargo update calls.
-    workspace_directory : Path
-        Temporary workspace used to derive the expected manifest paths.
-
-    """
-    assert cli_run["returncode"] == 0, (
-        f"stdout:\n{cli_run['stdout']}\nstderr:\n{cli_run['stderr']}"
-    )
-    update_args = [
-        tuple(invocation.args)
-        for invocation in cmd_mox.journal
-        if invocation.command == "cargo::update"
-    ]
-    expected_args = [
-        (
-            "--workspace",
-            "--manifest-path",
-            str(workspace_directory / "Cargo.toml"),
-        ),
-        (
-            "--workspace",
-            "--manifest-path",
-            str(workspace_directory / "fixtures/minimal/Cargo.toml"),
-        ),
-    ]
-    assert update_args == expected_args, (
-        f"expected distinct root and nested Cargo updates; got {update_args!r}"
-    )
-
-
-@then("the bump command did not refresh tracked lockfiles")
-def then_bump_did_not_refresh_lockfiles(cli_run: dict[str, typ.Any]) -> None:
-    """Assert the dry-run lockfile scenario completed without refresh."""
-    assert cli_run["returncode"] == 0, (
-        f"the dry-run lockfile bump must succeed; stderr:\n{cli_run['stderr']}"
-    )
-    output = f"{cli_run['stdout']}\n{cli_run['stderr']}"
-    assert "cargo::update" not in output, (
-        "a dry run must not invoke the cargo update shim"
-    )
-    assert "cargo update --workspace" not in output, (
-        "a dry run must not refresh lockfiles"
     )
 
 
@@ -376,38 +351,6 @@ def given_crate_readme_matches_workspace(
         bump_readme.compute_link_prefix(crate_root.relative_to(workspace_directory)),
     )
     crate_readme.write_text(rewritten_text, encoding="utf-8")
-
-
-@given(parsers.parse('a nested lockfile manifest is configured at "{manifest}"'))
-def given_nested_lockfile_manifest(
-    cmd_mox: CmdMox,
-    workspace_directory: Path,
-    manifest: str,
-) -> None:
-    """Configure ``bump.lockfile_manifests`` and stub its cargo rebuild."""
-    from pathlib import Path as _Path
-
-    from lading import config as config_module
-    from lading.testing import toml_utils
-
-    config_path = workspace_directory / config_module.CONFIG_FILENAME
-    document = toml_utils.load_or_create_document(config_path)
-    bump_table = toml_utils.ensure_table(document, "bump")
-    manifests = toml_utils.ensure_array_field(bump_table, "lockfile_manifests")
-    toml_utils.append_if_absent(manifests, manifest)
-    config_path.write_text(document.as_string(), encoding="utf-8")
-
-    nested_manifest = workspace_directory / _Path(manifest)
-    nested_manifest.parent.mkdir(parents=True, exist_ok=True)
-    nested_manifest.write_text(
-        '[package]\nname = "nested"\nversion = "0.1.0"\n', encoding="utf-8"
-    )
-    (nested_manifest.parent / "Cargo.lock").write_text(
-        "# nested lock\n", encoding="utf-8"
-    )
-    cmd_mox.stub("cargo::update").with_args(
-        "--workspace", "--manifest-path", str(nested_manifest.resolve())
-    ).returns(exit_code=0, stdout="cargo update --workspace\n", stderr="")
 
 
 def _invoke_lading_bump(
