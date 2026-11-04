@@ -1,15 +1,71 @@
 """Pipeline integration for configured non-member manifest rewrites."""
 
+import collections.abc as cabc
+import logging
 import pathlib
 
 import pytest
 
 from lading import config as config_module
-from lading.commands import bump
+from lading.commands import (
+    bump,
+    bump_manifest_rewrite_application,
+    bump_manifest_rewrite_metrics,
+)
 from lading.commands.bump_manifest_rewrites import ManifestRewriteError
 from lading.config import ManifestRewriteConfig, StringValueRewriteConfig
+from lading.utils import metrics
 from tests.helpers.recording_lockfile_repository import RecordingLockfileRepository
 from tests.helpers.workspace_builders import _make_workspace
+
+
+@pytest.fixture(autouse=True)
+def _metrics_registry() -> cabc.Iterator[None]:
+    """Reset process-local metrics around each test."""
+    metrics.reset()
+    yield
+    metrics.reset()
+
+
+def _assert_single_rewrite_counter(**labels: str) -> None:
+    """Assert one rewrite counter sample has the supplied bounded labels."""
+    value = metrics.counter_value(
+        bump_manifest_rewrite_metrics.MANIFEST_REWRITE_RUN_METRIC,
+        **labels,
+    )
+    assert value == 1, f"expected one rewrite counter sample for {labels}"
+
+
+def _assert_single_rewrite_duration(**labels: str) -> None:
+    """Assert one rewrite duration sample has the supplied bounded labels."""
+    sample = metrics.duration_stats(
+        bump_manifest_rewrite_metrics.MANIFEST_REWRITE_DURATION_METRIC,
+        **labels,
+    )
+    assert sample.count == 1, f"expected one rewrite duration sample for {labels}"
+
+
+def _assert_partial_write_failure(
+    error: ManifestRewriteError,
+    failed_path: pathlib.Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Assert the failing path, completed count, and stable log details."""
+    assert error.failed_path == failed_path, (
+        "the exception should identify the manifest whose write failed"
+    )
+    assert error.completed_writes == 1, (
+        "the exception should expose the number of completed fixture writes"
+    )
+    assert "manifest_rewrite failed:" in caplog.text, (
+        "the failure should emit a stable operator-facing event"
+    )
+    assert str(failed_path) in caplog.text, (
+        "the failure event should name the manifest that could not be written"
+    )
+    assert "completed=1 planned=2" in caplog.text, (
+        "the failure event should name the completed-write count"
+    )
 
 
 def test_rewrites_fixture_before_lockfile_regeneration(
@@ -71,6 +127,15 @@ def test_rewrites_fixture_before_lockfile_regeneration(
     assert message.count("- tests/fixtures/standalone/Cargo.toml") == 1, (
         "the changed fixture must appear exactly once in the result"
     )
+    _assert_single_rewrite_counter(
+        phase="planning", outcome="planned", dry_run="false", error_category="none"
+    )
+    _assert_single_rewrite_counter(
+        phase="application", outcome="applied", dry_run="false", error_category="none"
+    )
+    _assert_single_rewrite_duration(
+        outcome="applied", dry_run="false", error_category="none"
+    )
 
 
 def test_dry_run_reports_fixture_and_projects_lockfiles_without_writes(
@@ -113,6 +178,9 @@ def test_dry_run_reports_fixture_and_projects_lockfiles_without_writes(
         "dry-run must project the configured lockfile target"
     )
     assert not repository.regenerated, "dry-run must not regenerate lockfiles"
+    _assert_single_rewrite_counter(
+        phase="application", outcome="skipped", dry_run="true", error_category="none"
+    )
 
 
 def test_manifest_rewrite_overlap_with_member_is_reported_once(
@@ -185,4 +253,76 @@ def test_missing_rewrite_manifest_fails_before_any_workspace_write(
 
     assert {path: path.read_bytes() for path in original_bytes} == original_bytes, (
         "a planning error must occur before any workspace manifest is written"
+    )
+    _assert_single_rewrite_counter(
+        phase="planning", outcome="failed", dry_run="false", error_category="planning"
+    )
+    _assert_single_rewrite_duration(
+        outcome="failed", dry_run="false", error_category="planning"
+    )
+
+
+def test_partial_write_failure_names_path_and_completed_count(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A write failure reports its path and counts completed fixture writes."""
+    workspace = _make_workspace(tmp_path)
+    fixtures = tuple(
+        tmp_path / f"tests/fixtures/{name}/Cargo.toml" for name in ("first", "second")
+    )
+    for fixture in fixtures:
+        fixture.parent.mkdir(parents=True)
+        fixture.write_text('[dependencies]\nalpha = "0.1.0"\n', encoding="utf-8")
+    second_original = fixtures[1].read_bytes()
+    configuration = config_module.LadingConfig(
+        bump=config_module.BumpConfig(
+            manifest_rewrites=(
+                ManifestRewriteConfig(
+                    paths=tuple(
+                        path.relative_to(tmp_path).as_posix() for path in fixtures
+                    )
+                ),
+            )
+        )
+    )
+    write_atomic_text = bump_manifest_rewrite_application.bump_toml.write_atomic_text
+    message = "simulated write failure"
+
+    def fail_second_write(path: pathlib.Path, text: str) -> None:
+        if path == fixtures[1].resolve():
+            raise OSError(message)
+        write_atomic_text(path, text)
+
+    monkeypatch.setattr(
+        bump_manifest_rewrite_application.bump_toml,
+        "write_atomic_text",
+        fail_second_write,
+    )
+    caplog.set_level(logging.ERROR)
+
+    with pytest.raises(ManifestRewriteError, match="1 of 2") as failure:
+        bump.run(
+            tmp_path,
+            "1.2.3",
+            options=bump.BumpOptions(
+                rebuild_lockfiles=False,
+                configuration=configuration,
+                workspace=workspace,
+            ),
+        )
+
+    assert fixtures[0].read_text(encoding="utf-8").endswith('alpha = "1.2.3"\n'), (
+        "the first manifest should reflect its completed atomic write"
+    )
+    assert fixtures[1].read_bytes() == second_original, (
+        "the failed manifest should retain its original bytes"
+    )
+    _assert_partial_write_failure(failure.value, fixtures[1].resolve(), caplog)
+    _assert_single_rewrite_counter(
+        phase="application", outcome="failed", dry_run="false", error_category="write"
+    )
+    _assert_single_rewrite_duration(
+        outcome="failed", dry_run="false", error_category="write"
     )

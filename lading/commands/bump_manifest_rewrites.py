@@ -28,10 +28,22 @@ from tomlkit.exceptions import TOMLKitError
 from tomlkit.items import InlineTable, Table
 
 from lading.commands import bump_toml, manifest_paths
+from lading.commands.bump_manifest_rewrite_application import (
+    ManifestRewriteError,
+    ManifestRewritePlan,
+    apply_manifest_rewrites,
+)
 from lading.commands.bump_manifest_rewrite_dependencies import (
     rewrite_dependency_requirements,
 )
-from lading.exceptions import LadingError
+
+__all__ = [
+    "ManifestRewriteError",
+    "ManifestRewritePlan",
+    "ManifestRewriteVersions",
+    "apply_manifest_rewrites",
+    "plan_manifest_rewrites",
+]
 
 _log = logging.getLogger(__name__)
 
@@ -51,29 +63,6 @@ _TRAILING_BOUNDARIES: typ.Final[tuple[tuple[str, str], ...]] = (
     ("{version}", rf"(?![{_VERSION_SUFFIX_CHARACTER}])"),
     ("{crate}", rf"(?![{_CRATE_NAME_CHARACTER}])"),
 )
-
-
-class ManifestRewriteError(LadingError):
-    """Report that configured manifest rewrites cannot be prepared."""
-
-
-@dc.dataclass(frozen=True, slots=True)
-class ManifestRewritePlan:
-    """A non-member manifest's original and planned TOML content.
-
-    Attributes
-    ----------
-    path : Path
-        Resolved path to the selected Cargo manifest.
-    original_text : str
-        TOML content read before any rewrite was applied.
-    new_text : str
-        Planned TOML content, preserving tomlkit comments and formatting.
-    """
-
-    path: Path
-    original_text: str
-    new_text: str
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -171,38 +160,6 @@ def plan_manifest_rewrites(
         if new_text != original_text:
             plans.append(ManifestRewritePlan(manifest_path, original_text, new_text))
     return tuple(plans)
-
-
-def apply_manifest_rewrites(
-    plans: cabc.Sequence[ManifestRewritePlan],
-    *,
-    dry_run: bool,
-) -> tuple[Path, ...]:
-    """Write each planned manifest atomically unless this is a dry run.
-
-    Parameters
-    ----------
-    plans : Sequence[ManifestRewritePlan]
-        Changed non-member manifest plans returned by
-        :func:`plan_manifest_rewrites`.
-    dry_run : bool
-        When true, report planned paths without writing any files.
-
-    Returns
-    -------
-    tuple[Path, ...]
-        Paths represented by the plans, including during dry runs.
-
-    Notes
-    -----
-    Each call to :func:`bump_toml.write_atomic_text` makes one manifest write
-    atomic. An ``OSError`` from that helper propagates; writes completed before
-    the failure remain in place, so the sequence is not atomic as a whole.
-    """
-    if plans and not dry_run:
-        for plan in plans:
-            bump_toml.write_atomic_text(plan.path, plan.new_text)
-    return tuple(plan.path for plan in plans)
 
 
 def _resolve_rewrite_selections(
