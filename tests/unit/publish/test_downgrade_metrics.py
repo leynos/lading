@@ -139,6 +139,7 @@ def _make_beta_package_index_failure_runner() -> CommandRunner:
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Fail ``cargo package`` for beta with the index-miss transcript."""
         del env, echo_stdout
         is_package = tuple(command[:2]) == ("cargo", "package")
         is_beta = cwd is not None and cwd.name == "beta"

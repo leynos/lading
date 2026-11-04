@@ -194,6 +194,7 @@ def test_missing_dep_in_plan_without_flag_raises(
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Fail cargo for the beta crate with the supplied diagnostic."""
         del env, command, echo_stdout
         crate_name = "" if cwd is None else cwd.name
         if crate_name == "beta":
@@ -294,6 +295,7 @@ def test_hyphenated_dep_in_plan_matches_with_canonicalisation(
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Fail the dependent crate's cargo call with the hyphenated diagnostic."""
         del command, env, echo_stdout
         if cwd is not None and cwd.name == "dependent":
             return (1, "", stderr)

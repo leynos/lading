@@ -65,6 +65,7 @@ def test_missing_dep_in_plan_and_flag_continues(
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Record each crate invocation, failing beta with the transcript."""
         del env, command, echo_stdout
         crate_name = "" if cwd is None else cwd.name
         calls.append(crate_name)

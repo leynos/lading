@@ -180,6 +180,7 @@ def given_cargo_publish_already_uploaded(
     """Simulate cargo publish returning an already-uploaded error for ``crate_name``."""
 
     def _handler(invocation: Invocation) -> _CommandResponse:
+        """Fail the publish invocation for ``crate_name`` only."""
         env_mapping = dict(invocation.env)
         if "PWD" not in env_mapping:
             message = (
@@ -205,6 +206,7 @@ def _fail_beta_package_with(stderr: str) -> ResponseProvider:
     """Return a cargo package handler that fails for the beta crate."""
 
     def _handler(invocation: Invocation) -> _CommandResponse:
+        """Fail cargo package for the beta crate and succeed otherwise."""
         env_mapping = dict(invocation.env)
         cwd = Path(env_mapping.get("PWD", ""))
         if cwd.name == "beta":
@@ -318,6 +320,7 @@ def given_rustc_wrapper_names_stub_sccache(
     queries = 0
 
     def _json_stats(_invocation: Invocation) -> _CommandResponse:
+        """Report increasing sccache counters on each successive query."""
         nonlocal queries
         queries += 1
         payload = json.dumps({
