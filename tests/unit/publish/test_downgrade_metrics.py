@@ -15,11 +15,13 @@ from lading.commands.publish_index_check import (
 from lading.utils import metrics
 
 from .conftest import (
-    INDEX_MISSING_STDERR_BETA,
-    INDEX_MISSING_STDERR_EXTERNAL,
     make_config,
     make_dependency_chain,
     make_workspace,
+)
+from .index_missing_outputs import (
+    INDEX_MISSING_STDERR_BETA,
+    INDEX_MISSING_STDERR_EXTERNAL,
 )
 
 if typ.TYPE_CHECKING:

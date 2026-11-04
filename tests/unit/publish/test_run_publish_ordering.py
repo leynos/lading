@@ -18,13 +18,13 @@ from .conftest import (
     CARGO_PACKAGE,
     CARGO_PUBLISH,
     CARGO_PUBLISH_DRY_RUN,
-    INDEX_MISSING_STDERR_BETA,
     CallTrackingRunner,
     make_config,
     make_dependency_chain,
     make_n_crate_chain,
     make_workspace,
 )
+from .index_missing_outputs import INDEX_MISSING_STDERR_BETA
 
 
 def _make_beta_package_index_failure_runner() -> CommandRunner:

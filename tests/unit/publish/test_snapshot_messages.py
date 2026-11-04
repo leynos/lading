@@ -39,14 +39,16 @@ from lading.commands.cargo_output_adapter import (
 )
 
 from .conftest import (
-    INDEX_MISSING_STDERR_BETA,
-    INDEX_MISSING_STDERR_EXTERNAL,
-    INDEX_MISSING_STDERR_UNPARSEABLE,
     CallTrackingRunner,
     _warning_records,
     make_config,
     make_dependency_chain,
     make_workspace,
+)
+from .index_missing_outputs import (
+    INDEX_MISSING_STDERR_BETA,
+    INDEX_MISSING_STDERR_EXTERNAL,
+    INDEX_MISSING_STDERR_UNPARSEABLE,
 )
 
 _PIPELINE_INFO_MESSAGES = frozenset({

@@ -1,101 +1,20 @@
 """Unit tests for adapting cargo output into structured index failures."""
 
-import re
-import typing as typ
-
 import pytest
-from hypothesis import given, settings
-from hypothesis import strategies as st
 
 from lading.commands.cargo_output_adapter import (
     CargoAlreadyPublishedFailure,
     CargoIndexLookupFailure,
     CargoSubprocessResult,
     parse_already_published_failure,
-    parse_index_lookup_failure,
 )
 
-from .conftest import (
+from .adapter_test_helpers import parse_publish_failure
+from .index_missing_outputs import (
     INDEX_MISSING_PACKAGE_STDERR_BETA,
     INDEX_MISSING_STDERR_BETA,
     INDEX_MISSING_STDERR_UNPARSEABLE,
 )
-
-_MARKER_VERSION = "failed to select a version for the requirement"
-_MARKER_PACKAGE = "no matching package named"
-_MARKER_INDEX = "location searched: crates.io index"
-_VALID_CRATE_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
-
-_crate_names = st.from_regex(r"[A-Za-z_][A-Za-z0-9_-]*", fullmatch=True)
-_quote_pairs = st.sampled_from([
-    ("backtick", "`", "`"),
-    ("single", "'", "'"),
-    ("double", '"', '"'),
-])
-
-
-@st.composite
-def _both_markers_stderr(
-    draw: st.DrawFn,
-) -> tuple[str, str]:
-    """Generate ``(crate_name, stderr)`` with both index-miss markers present."""
-    name = draw(_crate_names)
-    _label, open_q, close_q = draw(_quote_pairs)
-    version = draw(st.from_regex(r"\^[0-9]+(\.[0-9]+){0,2}", fullmatch=True))
-    prefix = draw(st.text(max_size=40))
-    suffix = draw(st.text(max_size=40))
-    stderr = (
-        f"{prefix}"
-        f'{_MARKER_VERSION} {open_q}{name} = "{version}"{close_q}\n'
-        f"{_MARKER_INDEX}\n"
-        f"{suffix}"
-    )
-    return name, stderr
-
-
-@st.composite
-def _absent_package_stderr(
-    draw: st.DrawFn,
-) -> tuple[str, str]:
-    """Generate ``(crate_name, stderr)`` for the absent-package diagnostic."""
-    name = draw(_crate_names)
-    _label, open_q, close_q = draw(_quote_pairs)
-    prefix = draw(st.text(max_size=40))
-    suffix = draw(st.text(max_size=40))
-    stderr = (
-        f"{prefix}"
-        f"{_MARKER_PACKAGE} {open_q}{name}{close_q} found\n"
-        f"{_MARKER_INDEX}\n"
-        f"{suffix}"
-    )
-    return name, stderr
-
-
-def _randomly_cased(text: str) -> st.SearchStrategy[str]:
-    """Return a strategy selecting each character's case independently."""
-    return st.lists(st.booleans(), min_size=len(text), max_size=len(text)).map(
-        lambda flags: "".join(
-            char.upper() if flag else char.lower()
-            for char, flag in zip(text, flags, strict=True)
-        )
-    )
-
-
-def _parse_index_lookup_failure(
-    exit_code: int,
-    stdout: str,
-    stderr: str,
-) -> CargoIndexLookupFailure | None:
-    """Parse a fixed publish failure fixture through the adapter."""
-    return parse_index_lookup_failure(
-        crate_name="beta",
-        subcommand="publish",
-        result=CargoSubprocessResult(
-            exit_code=exit_code,
-            stdout=stdout,
-            stderr=stderr,
-        ),
-    )
 
 
 @pytest.mark.parametrize(
@@ -134,7 +53,7 @@ def test_parse_index_lookup_failure_returns_none_for_non_index_errors(
     exit_code: int, stdout: str, stderr: str
 ) -> None:
     """Non-index failures do not produce structured lookup failures."""
-    assert _parse_index_lookup_failure(exit_code, stdout, stderr) is None, (
+    assert parse_publish_failure(exit_code, stdout, stderr) is None, (
         "a result without both index-miss markers must not classify"
     )
 
@@ -253,7 +172,7 @@ def test_parse_index_lookup_failure_returns_structured_failure(
     stdout: str, stderr: str, expected_name: str | None
 ) -> None:
     """Cargo index failures retain command context and parsed dependency names."""
-    failure = _parse_index_lookup_failure(101, stdout, stderr)
+    failure = parse_publish_failure(101, stdout, stderr)
 
     assert failure == CargoIndexLookupFailure(
         crate_name="beta",
@@ -263,204 +182,3 @@ def test_parse_index_lookup_failure_returns_structured_failure(
         stderr=stderr,
         missing_dependency_name=expected_name,
     ), "the parsed failure must retain the command context and dependency name"
-
-
-# Verbatim transcripts as cargo emits them on a crates.io index miss, including
-# the full diagnostic preamble and trailing context lines. These guard the
-# adapter's markers and name regex against drift from real cargo output.
-_REAL_CARGO_PACKAGE_STDERR = (
-    "error: failed to prepare local package for uploading\n"
-    "\n"
-    "Caused by:\n"
-    '  failed to select a version for the requirement `alpha = "^0.1.0"`\n'
-    "  candidate versions found which didn't match: 0.0.1\n"
-    "  location searched: crates.io index\n"
-    "  required by package `beta v0.1.0`\n"
-)
-_REAL_CARGO_PUBLISH_STDERR = (
-    "error: failed to verify package tarball\n"
-    "\n"
-    "Caused by:\n"
-    '  failed to select a version for the requirement `alpha = "^0.1.0"`\n'
-    "  candidate versions found which didn't match: 0.0.1\n"
-    "  location searched: crates.io index\n"
-    "  required by package `beta v0.1.0 (/work/beta)`\n"
-)
-# Verbatim transcript for a dependency that has never been published, as
-# produced by a first-publication release train (issue #367).
-_REAL_CARGO_ABSENT_PACKAGE_STDERR = (
-    "error: failed to prepare local package for uploading\n"
-    "\n"
-    "Caused by:\n"
-    "  no matching package named `ortho_l10n` found\n"
-    "  location searched: crates.io index\n"
-    "  required by package `ortho_config_macros v0.9.0 (/work/ortho_config_macros)`\n"
-)
-
-
-@pytest.mark.parametrize(
-    ("subcommand", "stderr"),
-    [
-        pytest.param("package", _REAL_CARGO_PACKAGE_STDERR, id="cargo-package"),
-        pytest.param("publish", _REAL_CARGO_PUBLISH_STDERR, id="cargo-publish"),
-    ],
-)
-def test_parse_index_lookup_failure_parses_real_cargo_transcript(
-    subcommand: typ.Literal["package", "publish"], stderr: str
-) -> None:
-    """Authentic full cargo index-miss transcripts parse through the adapter."""
-    failure = parse_index_lookup_failure(
-        crate_name="beta",
-        subcommand=subcommand,
-        result=CargoSubprocessResult(exit_code=101, stdout="", stderr=stderr),
-    )
-
-    assert failure == CargoIndexLookupFailure(
-        crate_name="beta",
-        subcommand=subcommand,
-        exit_code=101,
-        stdout="",
-        stderr=stderr,
-        missing_dependency_name="alpha",
-    ), "a real cargo index-miss transcript must parse to the expected failure"
-
-
-def test_parse_index_lookup_failure_parses_real_absent_package_transcript() -> None:
-    """A real first-publication transcript parses through the adapter."""
-    failure = parse_index_lookup_failure(
-        crate_name="ortho_config_macros",
-        subcommand="package",
-        result=CargoSubprocessResult(
-            exit_code=101,
-            stdout="",
-            stderr=_REAL_CARGO_ABSENT_PACKAGE_STDERR,
-        ),
-    )
-
-    assert failure == CargoIndexLookupFailure(
-        crate_name="ortho_config_macros",
-        subcommand="package",
-        exit_code=101,
-        stdout="",
-        stderr=_REAL_CARGO_ABSENT_PACKAGE_STDERR,
-        missing_dependency_name="ortho_l10n",
-    ), "a real absent-package transcript must parse to the expected failure"
-
-
-@given(stdout=st.text(), stderr=st.text())
-@settings(max_examples=100, deadline=None)
-def test_parse_index_lookup_failure_success_always_returns_none(
-    stdout: str, stderr: str
-) -> None:
-    """A zero exit code always produces None regardless of output content."""
-    assert _parse_index_lookup_failure(0, stdout, stderr) is None, (
-        "a zero exit code must never classify as an index-lookup failure"
-    )
-
-
-@given(case=_both_markers_stderr(), exit_code=st.integers(min_value=1, max_value=255))
-@settings(max_examples=80, deadline=None)
-def test_parse_index_lookup_failure_both_markers_nonzero_returns_failure(
-    case: tuple[str, str], exit_code: int
-) -> None:
-    """Both index-miss markers with a non-zero exit code produce a failure."""
-    _name, stderr = case
-    result = _parse_index_lookup_failure(exit_code, "", stderr)
-    assert result is not None, (
-        "both index-miss markers with a non-zero exit code must classify"
-    )
-
-
-@given(
-    case=_absent_package_stderr(),
-    exit_code=st.integers(min_value=1, max_value=255),
-)
-@settings(max_examples=80, deadline=None)
-def test_parse_index_lookup_failure_absent_package_markers_return_failure(
-    case: tuple[str, str], exit_code: int
-) -> None:
-    """The absent-package diagnostic with a non-zero exit code classifies."""
-    name, stderr = case
-    result = _parse_index_lookup_failure(exit_code, "", stderr)
-    assert result is not None, (
-        "the absent-package diagnostic with a non-zero exit code must classify"
-    )
-    assert result.missing_dependency_name == name, (
-        "the absent-package diagnostic must yield the parsed dependency name"
-    )
-
-
-@given(
-    stdout=st.text().filter(lambda s: _MARKER_INDEX.lower() not in s.lower()),
-    stderr=st.text().filter(lambda s: _MARKER_INDEX.lower() not in s.lower()),
-    exit_code=st.integers(min_value=1, max_value=255),
-)
-@settings(max_examples=80, deadline=None)
-def test_parse_index_lookup_failure_missing_index_marker_returns_none(
-    stdout: str, stderr: str, exit_code: int
-) -> None:
-    """Absence of the crates.io index marker always produces None."""
-    assert _parse_index_lookup_failure(exit_code, stdout, stderr) is None, (
-        "output lacking the crates.io index marker must not classify"
-    )
-
-
-@given(case=_both_markers_stderr(), exit_code=st.integers(min_value=1, max_value=255))
-@settings(max_examples=80, deadline=None)
-def test_parse_index_lookup_failure_extracted_name_matches_crate_name_pattern(
-    case: tuple[str, str], exit_code: int
-) -> None:
-    """When a name is extracted it always matches the valid crate-name pattern."""
-    _name, stderr = case
-    result = _parse_index_lookup_failure(exit_code, "", stderr)
-    if result is not None and result.missing_dependency_name is not None:
-        assert _VALID_CRATE_NAME_RE.match(result.missing_dependency_name), (
-            "an extracted dependency name must match the crate-name pattern"
-        )
-
-
-@given(
-    version_marker=_randomly_cased(_MARKER_VERSION),
-    index_marker=_randomly_cased(_MARKER_INDEX),
-    name=_crate_names,
-    exit_code=st.integers(min_value=1, max_value=255),
-)
-@settings(max_examples=80, deadline=None)
-def test_parse_index_lookup_failure_matches_markers_case_insensitively(
-    version_marker: str, index_marker: str, name: str, exit_code: int
-) -> None:
-    """Marker matching and name extraction honour the re.IGNORECASE contract.
-
-    The production markers are matched case-insensitively, so cargo output with
-    arbitrarily cased markers must still classify as an index-lookup failure and
-    yield the parsed dependency name.
-    """
-    stderr = f'{version_marker} `{name} = "^1.0"`\n{index_marker}'
-    result = _parse_index_lookup_failure(exit_code, "", stderr)
-    assert result is not None, (
-        "arbitrarily cased markers must still classify as an index-lookup failure"
-    )
-    assert result.missing_dependency_name == name, (
-        "the dependency name must be extracted despite marker casing"
-    )
-
-
-@given(
-    package_marker=_randomly_cased(_MARKER_PACKAGE),
-    index_marker=_randomly_cased(_MARKER_INDEX),
-    name=_crate_names,
-    exit_code=st.integers(min_value=1, max_value=255),
-)
-@settings(max_examples=80, deadline=None)
-def test_parse_index_lookup_failure_absent_package_matches_case_insensitively(
-    package_marker: str, index_marker: str, name: str, exit_code: int
-) -> None:
-    """The absent-package diagnostic also honours the re.IGNORECASE contract."""
-    stderr = f"{package_marker} `{name}` found\n{index_marker}"
-    result = _parse_index_lookup_failure(exit_code, "", stderr)
-    assert result is not None, (
-        "arbitrarily cased absent-package markers must still classify"
-    )
-    assert result.missing_dependency_name == name, (
-        "the dependency name must be extracted despite marker casing"
-    )

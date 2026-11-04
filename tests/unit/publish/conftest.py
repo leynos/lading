@@ -28,10 +28,6 @@ __all__ = [
     "CARGO_PACKAGE",
     "CARGO_PUBLISH",
     "CARGO_PUBLISH_DRY_RUN",
-    "INDEX_MISSING_PACKAGE_STDERR_BETA",
-    "INDEX_MISSING_STDERR_BETA",
-    "INDEX_MISSING_STDERR_EXTERNAL",
-    "INDEX_MISSING_STDERR_UNPARSEABLE",
     "CallTrackingRunner",
     "PhaseContext",
     "_real_invoke",
@@ -56,43 +52,6 @@ __all__ = [
 CARGO_PACKAGE = ("cargo", "package", "--allow-dirty")
 CARGO_PUBLISH = ("cargo", "publish", "--allow-dirty")
 CARGO_PUBLISH_DRY_RUN = ("cargo", "publish", "--allow-dirty", "--dry-run")
-
-INDEX_MISSING_STDERR_BETA = (
-    "error: failed to prepare local package for uploading\n"
-    "\n"
-    "Caused by:\n"
-    '  failed to select a version for the requirement `alpha = "^0.1.0"`\n'
-    "  candidate versions found which didn't match: 0.0.1\n"
-    "  location searched: crates.io index\n"
-    "  required by package `beta v0.1.0`\n"
-)
-
-# Cargo's diagnostic when the dependency is absent from the index entirely,
-# rather than present at a non-matching version. This is the first-publication
-# case for a newly extracted crate (issue #367).
-INDEX_MISSING_PACKAGE_STDERR_BETA = (
-    "error: failed to prepare local package for uploading\n"
-    "\n"
-    "Caused by:\n"
-    "  no matching package named `alpha` found\n"
-    "  location searched: crates.io index\n"
-    "  required by package `beta v0.1.0`\n"
-)
-
-INDEX_MISSING_STDERR_UNPARSEABLE = (
-    "error: failed to prepare local package for uploading\n"
-    "\n"
-    "Caused by:\n"
-    "  failed to select a version for the requirement without a quoted name\n"
-    "  location searched: crates.io index\n"
-)
-
-INDEX_MISSING_STDERR_EXTERNAL = (
-    "error: failed to prepare local package for uploading\n"
-    "Caused by:\n"
-    '  failed to select a version for the requirement `external_crate = "^1"`\n'
-    "  location searched: crates.io index\n"
-)
 
 
 class _PreflightOverrides(typ.TypedDict, total=False):
