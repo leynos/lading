@@ -752,7 +752,9 @@ Each group accepts these fields:
   the package name. This supports renamed dependency keys whose `package` value
   names an updated workspace crate. The rewrite visits top-level,
   target-specific, and workspace dependency sections. Path-only entries and
-  entries with `workspace = true` are left alone.
+  entries with `workspace = true` are left alone. Setting
+  `dependencies = false` requires at least one `string_values` selector in the
+  same group; otherwise configuration loading fails.
 - `string_values`: array of selector tables, default `[]`. Each selector has a
   non-empty literal `table` path, an optional `field`, and an optional
   `template`. Table segments and fields cannot have leading or trailing
@@ -772,12 +774,13 @@ the match, so `rstest-bdd` does not match inside `rstest-bdd-harness`, and
 The root manifest and all workspace-member manifests are skipped even when a
 configured glob selects them. Repeated groups selecting the same non-member
 manifest enable dependency rewrites if any group enables them and combine all
-string selectors. Invalid selectors, empty globs, missing manifests, paths
-outside the workspace, and malformed TOML stop the bump. Planning completes
-before any manifest is written; configured rewrites are applied after member
-manifests and before lockfile regeneration. During a dry run, the result lists
-each changed fixture manifest while its contents remain unchanged; configured
-lockfile projection still runs without invoking Cargo.
+string selectors. Invalid selectors, groups with `dependencies = false` and no
+`string_values`, empty globs, missing manifests, paths outside the workspace,
+and malformed TOML stop the bump. Planning completes before any manifest is
+written; configured rewrites are applied after member manifests and before
+lockfile regeneration. During a dry run, the result lists each changed fixture
+manifest while its contents remain unchanged; configured lockfile projection
+still runs without invoking Cargo.
 
 For example, the `rstest-bdd` published GPUI fixture can opt into rewriting its
 dependency requirements and staged package patch paths:

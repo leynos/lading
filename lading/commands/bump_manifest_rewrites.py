@@ -23,7 +23,7 @@ import typing as typ
 from pathlib import Path
 
 from tomlkit.container import OutOfOrderTableProxy
-from tomlkit.exceptions import ParseError
+from tomlkit.exceptions import TOMLKitError
 from tomlkit.items import InlineTable, Table
 
 from lading.commands import bump_toml, manifest_paths
@@ -142,7 +142,7 @@ def plan_manifest_rewrites(
     for manifest_path, selection in selections.items():
         try:
             document = bump_toml.parse_manifest(manifest_path)
-        except (OSError, UnicodeError, ParseError) as exc:
+        except (OSError, UnicodeError, TOMLKitError) as exc:
             message = (
                 "Could not read or parse manifest rewrite target "
                 f"{manifest_path}: {exc}"
