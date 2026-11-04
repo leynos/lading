@@ -196,12 +196,25 @@ fixture lockfile and seeing that lockfile listed in the bump output with a
   returns the existing double. Impact: the nested-lockfile given step registers
   `cargo::update` without `with_args` so one response serves both the root and
   nested manifest invocations.
-- Observation: the original lockfile work exposed that versioned path
-  dependencies in non-member manifests stayed stale after a bump. Issue #260
-  delivered the opt-in `bump.manifest_rewrites` follow-up: configured
-  dependency requirements and version-bearing TOML strings are rewritten before
-  lockfile regeneration. The explicit allowlist preserves the member manifest
-  ownership boundary and does not expand lockfile targets.
+- Observation: a real end-to-end run surfaced an edge the mocked tests cannot:
+  `lading bump` does not rewrite manifests of non-member nested packages, so a
+  nested fixture that pins a *versioned* path dependency on a bumped crate
+  (`alpha = { path = ..., version = "0.1.0" }`) makes
+  `cargo update --workspace` fail at bump time with cargo's clear "failed to
+  select a version for the requirement" error. Evidence: prototype run of the
+  real CLI against the Stage A repository with a versioned path dependency; the
+  same repository with a path-only dependency (the common fixture pattern)
+  bumps cleanly end-to-end. Impact: acceptable — such a repository was already
+  broken at publish time (the freshness probe fails with the same cargo error),
+  and the failure now surfaces earlier with an actionable message;
+  `--no-rebuild-lockfiles` remains the escape hatch. Rewriting dependency
+  requirements in non-member manifests is a possible future enhancement, out of
+  scope here.
+- Addendum (2026-11-04): issue #260 delivered the non-member manifest follow-up
+  through the opt-in `bump.manifest_rewrites` allowlist. It rewrites configured
+  dependency requirements and version-bearing TOML strings before lockfile
+  regeneration, while keeping fixture rewriting separate from lockfile target
+  selection.
 - Historical observation from 2026-07-07: the then-unpinned ty installation
   resolved to ty 0.0.8, which failed `make typecheck` on the clean tree with
   six diagnostics in `lading/commands/bump_toml.py` and
@@ -304,10 +317,13 @@ duration through an injected monotonic clock. Dry-run performs the Git query
 needed to project the same manifest set, but suppresses successful discovery
 telemetry; non-Git warnings and discovery failures remain observable.
 
-The non-member manifest rewriting follow-up is delivered by
-`bump.manifest_rewrites` (issue #260). Its allowlist keeps fixture rewriting
-separate from lockfile target selection and leaves workspace-member manifests
-under their existing update stage.
+Follow-up candidates (not in scope): rewrite version requirements in non-member
+nested manifests that depend on bumped crates.
+
+Addendum (2026-11-04): issue #260 delivered this follow-up through
+`bump.manifest_rewrites`. The allowlist keeps fixture rewriting separate from
+lockfile target selection and leaves workspace-member manifests under their
+existing update stage.
 
 ## Context and orientation
 
