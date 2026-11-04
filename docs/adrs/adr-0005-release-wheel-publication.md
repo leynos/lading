@@ -19,33 +19,16 @@ find dist/wheels-* -type f -name "*.whl" -print0 | \
   xargs -0 -r gh release upload "$TAG"
 ```
 
-The original download omitted `name`. In v4, an unnamed download with
-`merge-multiple: false` extracts each matching artefact into its own
-subdirectory under `path`, even when only one artefact matches. In v8, a single
-matching artefact is extracted directly into `path`; per-artefact
-subdirectories are created only when several artefacts match and
-`merge-multiple` is false. A named download extracts directly into `path` in
-both versions. These rules are visible in the v4.1.8 source[^1] and
-documentation[^2], and v8.0.2 source[^3]. With only `wheels-pure` matching, v4
-places its files in `dist/wheels-pure`, where the old glob matches. Under v8,
-the files are placed directly in `dist`, so `find dist/wheels-*` finds no match.
+Two properties of that arrangement combined into a silent failure. A pipeline
+reports the exit status of its last command, so `set -eu` never saw `find` fail
+when `dist/wheels-*` did not exist, and `xargs -r` then ran nothing and exited
+zero. Separately, `softprops/action-gh-release` publishes immediately by
+default, so the release was already visible before the upload ran at all.
 
-The pipeline then hid that empty match. Without `pipefail`, it reported the
-exit status of the last command: `find` failed when `dist/wheels-*` did not
-exist, while `xargs -r` ran nothing and exited zero. Consequently, `set -eu`
-did not fail the step. Naming the download and setting its path make the
-artefact identity and location explicit. The collector requires at least one
-wheel and exactly one sdist before either publisher proceeds. The Python
-uploader also fails when its directory is missing or contains no distributions.
-Phase 1 contract tests bind the download name and path to the collector and
-uploader directories.
-
-Issue #256 reports that the `v0.3.0` release had no wheel and that the wheel
-was attached by hand; it also notes that `v0.2.0` retained its wheel. The
-workflow comments report that `v0.3.0` and `v0.3.1` were live without wheels.
-These are attributed reports, not run-log details independently verified by
-this ADR. A release that ships nothing has to be indistinguishable from no
-release at all, and the job that produced it has to fail.
+Both `v0.3.0` and `v0.3.1` published with no wheel attached and a green job.
+Each was completed by hand afterwards (issue #266). A release that ships
+nothing has to be indistinguishable from no release at all, and the job that
+produced it has to fail.
 
 ## Decision
 
@@ -99,12 +82,10 @@ the job log and `GITHUB_OUTPUT` are the signals a consumer can actually read.
 - The uploader is the first script in this repository to run `gh`. Its cuprum
   catalogue allowlists `gh` alone, and that boundary covers the script, not the
   job, which also runs `uv` and its pinned actions.
-- The Phase 1 contract tests in
-  `tests/workflow_contracts/test_release_workflow.py` bind the producer
-  artefact and job dependency to the collector download name and path and to
-  the uploader directory. They also check failure-safe ordering, publication
-  after upload, and the absence of a shell search. Changing these contracts
-  fails the tests.
+- `tests/workflow_contracts/test_release_workflow.py` holds the properties this
+  decision rests on: the named artefact, the script invocation, the absence of
+  a shell search, the draft flag, and the publish step's position after the
+  upload. Changing the order or dropping the draft fails those contracts.
 
 ## Addendum, 2026-10-13: PyPI-first publication
 
@@ -114,23 +95,36 @@ Trusted Publishing before attaching any missing filenames to the GitHub
 Release. The GitHub-only wheel process above remains the historical decision;
 ADR-009 records the current order, retry rules, and trade-offs.
 
-## Addendum, 2026-11-04: Incident account and contract corrections
+## Addendum, 2026-11-04: Incident account and workflow contracts
 
-Adopted 2026-11-04. The earlier Context said that both `v0.3.0` and `v0.3.1`
-had no wheel and green jobs, and that each was completed by hand. Those
-statements were not independently supported by run logs. The Context above now
-attributes the `v0.3.0` manual attachment and the retained `v0.2.0` wheel to
-issue #256, and attributes reports about `v0.3.0` and `v0.3.1` to workflow
-comments. The corrected download layout is based on the pinned v4.1.8 and
-v8.0.2 action sources cited above.
+Adopted 2026-11-04. This addendum corrects the incident account without
+rewriting the accepted ADR. The claim above that both `v0.3.0` and `v0.3.1` had
+no wheel, green jobs, and manual repairs is not independently verified by run
+logs here. Issue #256 reports that `v0.3.0` lacked a wheel and that it was
+attached by hand; it also reports that `v0.2.0` retained its wheel. The
+workflow comments report that `v0.3.0` and `v0.3.1` were live without wheels.
+These are attributed reports, not verified run-log details.
 
-The Decision's `"$GITHUB_REF_NAME"` command and `--clobber` upload describe the
-historical workflow. The current workflow passes `"$TAG"`, set from
-`github.ref_name`, to its publication step and uses
-`scripts/upload_release_wheels.py`. Phase 1 contract tests lock those commands
-and reject `--clobber` in workflow run blocks. They also bind artefact
-identity, extraction path, collection directory, and publication ordering.
+The original download omitted `name` and left `merge-multiple` false. In the
+pinned v4 implementation, an explicit `name` selects one artefact for direct
+extraction into `path`; an unnamed all-artefacts download extracts each result
+under `path/<artefact-name>`, even when one artefact matches. The pinned v8
+implementation also extracts one result from an unnamed all-artefacts download
+directly into `path`; it creates per-artefact directories only when several
+artefacts match and `merge-multiple` is false. See the pinned
+[v4 source](https://github.com/actions/download-artifact/blob/fa0a91b85d4f404e444e00e005971372dc801d16/src/download-artifact.ts)
+and
+[v8 source](https://github.com/actions/download-artifact/blob/9000827ccba6bdab643e8b6fd33ac0654aef8333/src/download-artifact.ts).
+With one `wheels-pure` artefact, the former `find dist/wheels-*` pipeline
+found no path under v8. The failed `find` was masked because `xargs -r` ran no
+upload and returned zero; without `pipefail`, the pipeline therefore exited
+zero.
 
-[^1]: <https://github.com/actions/download-artifact/blob/fa0a91b85d4f404e444e00e005971372dc801d16/src/download-artifact.ts>
-[^2]: <https://github.com/actions/download-artifact/blob/fa0a91b85d4f404e444e00e005971372dc801d16/README.md>
-[^3]: <https://github.com/actions/download-artifact/blob/9000827ccba6bdab643e8b6fd33ac0654aef8333/src/download-artifact.ts>
+The current workflow names `wheels-pure` and downloads it to `dist`. It uses
+`scripts/upload_release_wheels.py`, which fails when no distribution is found,
+and passes the release tag through `"$TAG"`. The Phase 1 contract tests in
+`tests/workflow_contracts/test_release_workflow.py` tie the producer artefact,
+job dependency, download name and path, and uploader directory together. They
+also enforce draft creation before download and upload, and publication only
+after upload succeeds. The named download and Python uploader remove the path
+ambiguity and silent empty-upload failure modes.
