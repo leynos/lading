@@ -11,7 +11,23 @@ MANIFEST_REWRITE_DURATION_METRIC = "bump.manifest_rewrite.duration"
 
 @dc.dataclass(frozen=True, slots=True)
 class ManifestRewriteMetricLabels:
-    """Bounded labels describing one manifest rewrite outcome."""
+    """Bounded labels describing one manifest rewrite outcome.
+
+    Attributes
+    ----------
+    phase : str
+        Rewrite stage: ``"planning"`` or ``"application"``.
+    outcome : str
+        Result: ``"planned"``, ``"failed"``, ``"applied"``, or
+        ``"skipped"``. Planning records use ``"planned"`` or ``"failed"``;
+        application records use ``"applied"``, ``"skipped"``, or
+        ``"failed"``.
+    dry_run : bool
+        Whether the bump command is running without writes. Recorded as the
+        bounded string labels ``"true"`` and ``"false"``.
+    error_category : str
+        Failure category: ``"none"``, ``"planning"``, or ``"write"``.
+    """
 
     phase: str
     outcome: str
@@ -23,7 +39,20 @@ def record_manifest_rewrite_metrics(
     started_at: float,
     labels: ManifestRewriteMetricLabels,
 ) -> None:
-    """Record one bounded rewrite outcome and its plan-to-apply time."""
+    """Record one rewrite outcome and its plan-to-application duration.
+
+    The counter and duration use the bounded values documented by
+    :class:`ManifestRewriteMetricLabels`. The duration includes planning and
+    application, measured from the supplied monotonic start time.
+
+    Parameters
+    ----------
+    started_at : float
+        Start time returned by :func:`time.perf_counter` before planning
+        begins.
+    labels : ManifestRewriteMetricLabels
+        Phase, outcome, dry-run state, and error category for this run.
+    """
     dry_run_label = str(labels.dry_run).lower()
     metrics.increment_counter(
         MANIFEST_REWRITE_RUN_METRIC,
@@ -42,7 +71,17 @@ def record_manifest_rewrite_metrics(
 
 
 def record_manifest_rewrite_planned(*, dry_run: bool) -> None:
-    """Count one successfully prepared rewrite plan."""
+    """Count a successfully prepared rewrite plan.
+
+    Records one ``planning`` / ``planned`` counter with the ``none`` error
+    category. The dry-run label is the bounded string ``"true"`` or
+    ``"false"``; this function does not record a duration.
+
+    Parameters
+    ----------
+    dry_run : bool
+        Whether the bump command is running without writes.
+    """
     metrics.increment_counter(
         MANIFEST_REWRITE_RUN_METRIC,
         phase="planning",
