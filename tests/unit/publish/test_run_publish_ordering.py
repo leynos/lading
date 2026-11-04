@@ -206,15 +206,14 @@ def test_run_keeps_live_publication_interleaved(
 
 
 @given(st.integers(min_value=1, max_value=10))
-# No deadline: each example creates up to ten real crate directories and copies
-# them into staging with ``shutil.copytree``, so its cost is the host's
-# filesystem and interpreter time rather than the property.
-# ``CallTrackingRunner`` simulates Cargo, and the call counts assert
-# exactly-once ordering; they are not a cost budget. A larger deadline would
-# only move the point at which a busy host reddens the suite.
+# The suite-wide `deadline=None` profile in `tests/conftest.py` applies here:
+# each example creates up to ten real crate directories and copies them into
+# staging with ``shutil.copytree``, so its cost is the host's filesystem and
+# interpreter time rather than the property. ``CallTrackingRunner`` simulates
+# Cargo, and the call counts assert exactly-once ordering; they are not a cost
+# budget.
 @settings(
     max_examples=20,
-    deadline=None,
     suppress_health_check=[HealthCheck.function_scoped_fixture],
 )
 def test_dry_run_batching_invariant_property(tmp_path: Path, crate_count: int) -> None:

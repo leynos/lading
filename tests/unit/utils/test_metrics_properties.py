@@ -48,7 +48,7 @@ _label_pairs = st.lists(
 
 
 @given(pairs=_label_pairs, data=st.data())
-@settings(max_examples=100, deadline=None)
+@settings(max_examples=100)
 def test_label_order_does_not_affect_counter_identity(
     pairs: list[tuple[str, str]], data: st.DataObject
 ) -> None:
@@ -73,7 +73,7 @@ def test_label_order_does_not_affect_counter_identity(
         max_size=30,
     )
 )
-@settings(max_examples=100, deadline=None)
+@settings(max_examples=100)
 def test_increments_accumulate_per_label(
     increments: list[tuple[str, int]],
 ) -> None:
@@ -92,7 +92,7 @@ def test_increments_accumulate_per_label(
 
 
 @given(pairs=_label_pairs)
-@settings(max_examples=100, deadline=None)
+@settings(max_examples=100)
 def test_snapshot_is_an_isolated_copy(pairs: list[tuple[str, str]]) -> None:
     """A snapshot is unaffected by later increments and registry resets."""
     metrics.reset()

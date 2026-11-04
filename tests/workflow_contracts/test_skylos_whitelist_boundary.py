@@ -64,7 +64,7 @@ def _whitelist_command(directory: Path, *, cli: str) -> tuple[str, ...]:
     )
 
 
-@hyp.settings(max_examples=25, deadline=None)
+@hyp.settings(max_examples=25)
 @hyp.given(value=st.text(alphabet=" \t", min_size=1, max_size=8))
 def test_skylos_allow_rejects_missing_or_whitespace_values(value: str) -> None:
     """Reject absent input and input that contains whitespace only."""
@@ -87,7 +87,6 @@ def test_skylos_allow_rejects_missing_or_whitespace_values(value: str) -> None:
 
 @hyp.settings(
     max_examples=25,
-    deadline=None,
     suppress_health_check=[HealthCheck.function_scoped_fixture],
 )
 @hyp.example(symbol=" $(handler);* ", reason=' Loaded "$plugin" | registry ')

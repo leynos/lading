@@ -83,7 +83,7 @@ def _manifest_string(components: list[str]) -> str:
 
 
 @given(dirs=st.lists(_INSIDE_DIR, max_size=6))
-@settings(max_examples=60, deadline=None)
+@settings(max_examples=60)
 def test_inside_manifests_resolve_to_sibling_lockfiles(
     dirs: list[list[str]],
 ) -> None:
@@ -132,7 +132,7 @@ def test_inside_manifests_resolve_to_sibling_lockfiles(
 
 
 @given(spellings=st.lists(st.sampled_from(["Cargo.toml", "./Cargo.toml"]), max_size=4))
-@settings(max_examples=20, deadline=None)
+@settings(max_examples=20)
 def test_root_manifest_spellings_deduplicate_to_one_invocation(
     spellings: list[str],
 ) -> None:
@@ -151,7 +151,7 @@ def test_root_manifest_spellings_deduplicate_to_one_invocation(
     escape_depth=st.integers(min_value=1, max_value=3),
     suffix=st.lists(_SEGMENT, max_size=2),
 )
-@settings(max_examples=30, deadline=None)
+@settings(max_examples=30)
 def test_escaping_manifests_are_rejected(
     escape_depth: int,
     suffix: list[str],
