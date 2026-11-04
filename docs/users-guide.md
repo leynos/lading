@@ -707,6 +707,12 @@ stderr_tail_lines = 40
   `string_values` selectors. The rewrite stage does not add lockfile targets;
   use `lockfile_manifests` for an untracked fixture lockfile.
 
+When a bump updates a dependency requirement, it replaces the version in the
+first comparator and keeps later comma-separated comparators verbatim. Check
+that the target version still satisfies those retained bounds. For example,
+`>=0.6.0-beta4, <0.7` becomes `>=0.6.0, <0.7`; targeting `0.7.0` instead would
+leave an unsatisfiable requirement.
+
 Lockfile regeneration runs
 `cargo update --workspace --manifest-path <manifest>` for the workspace root,
 each configured nested manifest, and each manifest adjacent to a discovered
