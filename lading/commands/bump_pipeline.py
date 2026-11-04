@@ -20,9 +20,9 @@ from lading.commands import (
     bump_readme,
 )
 from lading.commands.bump_manifest_rewrite_metrics import (
-    _ManifestRewriteMetricLabels,
-    _record_manifest_rewrite_metrics,
-    _record_manifest_rewrite_planned,
+    ManifestRewriteMetricLabels,
+    record_manifest_rewrite_metrics,
+    record_manifest_rewrite_planned,
 )
 from lading.commands.bump_manifests import (
     _WORKSPACE_SELECTORS,
@@ -127,9 +127,9 @@ def _plan_non_member_rewrites(
         )
     except bump_manifest_rewrites.ManifestRewriteError:
         if started_at is not None:
-            _record_manifest_rewrite_metrics(
+            record_manifest_rewrite_metrics(
                 started_at,
-                _ManifestRewriteMetricLabels(
+                ManifestRewriteMetricLabels(
                     phase="planning",
                     outcome="failed",
                     dry_run=context.base_options.dry_run,
@@ -138,7 +138,7 @@ def _plan_non_member_rewrites(
             )
         raise
     if started_at is not None:
-        _record_manifest_rewrite_planned(dry_run=context.base_options.dry_run)
+        record_manifest_rewrite_planned(dry_run=context.base_options.dry_run)
     return plans
 
 
@@ -162,9 +162,9 @@ def _process_non_member_rewrites(
         )
     except bump_manifest_rewrites.ManifestRewriteError:
         if started_at is not None:
-            _record_manifest_rewrite_metrics(
+            record_manifest_rewrite_metrics(
                 started_at,
-                _ManifestRewriteMetricLabels(
+                ManifestRewriteMetricLabels(
                     phase="application",
                     outcome="failed",
                     dry_run=dry_run,
@@ -175,9 +175,9 @@ def _process_non_member_rewrites(
     changed_manifests.update(path.resolve() for path in rewritten_paths)
     if started_at is not None:
         outcome = "skipped" if dry_run or not plans else "applied"
-        _record_manifest_rewrite_metrics(
+        record_manifest_rewrite_metrics(
             started_at,
-            _ManifestRewriteMetricLabels(
+            ManifestRewriteMetricLabels(
                 phase="application",
                 outcome=outcome,
                 dry_run=dry_run,

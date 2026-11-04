@@ -1101,11 +1101,11 @@ string-value edits before any pipeline write.
 `lading.commands.bump_manifest_rewrite_application` owns `ManifestRewritePlan`,
 `ManifestRewriteError`, and the atomic per-manifest write stage. It applies
 plans after the workspace and member manifest stages, then documentation,
-README, and lockfile stages run. A write failure reports its path and the count
-of writes that completed first. `lading.commands.bump_manifest_rewrite_metrics`
-records bounded outcome counters and the plan-to-application duration.
-`bump.lockfile_manifests` remains a separate setting that adds
-lockfile-regeneration targets.
+README, and lockfile stages run. A write failure carries its path and completed
+and planned counts; the CLI reports it in one structured error event.
+`lading.commands.bump_manifest_rewrite_metrics` records bounded outcome
+counters and the plan-to-application duration. `bump.lockfile_manifests`
+remains a separate setting that adds lockfile-regeneration targets.
 
 `lading.commands.bump_manifest_rewrite_dependencies` owns traversal of direct,
 target-specific, and workspace dependency sections. When a dependency entry sets

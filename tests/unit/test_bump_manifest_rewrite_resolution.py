@@ -1,5 +1,6 @@
 """Tests for configured manifest rewrite path resolution."""
 
+import collections.abc as cabc
 import logging
 import pathlib
 
@@ -7,47 +8,26 @@ import pytest
 
 from lading.commands import bump_manifest_rewrites
 from lading.config import ManifestRewriteConfig, StringValueRewriteConfig
+from tests.helpers.manifest_rewrites import (
+    plan_fixture_rewrites,
+)
+
+type _ManifestWriter = cabc.Callable[[pathlib.Path, str, str], pathlib.Path]
 
 
-def _write_manifest(
-    root: pathlib.Path, relative_path: str, content: str
-) -> pathlib.Path:
-    """Write a fixture manifest and return its path."""
-    path = root / relative_path
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
-    return path
-
-
-def _plan(
-    root: pathlib.Path,
-    groups: tuple[ManifestRewriteConfig, ...],
-    members: tuple[pathlib.Path, ...] = (),
-) -> tuple[bump_manifest_rewrites.ManifestRewritePlan, ...]:
-    """Plan fixture changes for the default alpha version transition."""
-    versions = bump_manifest_rewrites.ManifestRewriteVersions(
-        updated_crate_names=frozenset({"alpha"}),
-        pre_bump_versions={"alpha": "1.0.0"},
-        target_version="2.0.0",
-    )
-    return bump_manifest_rewrites.plan_manifest_rewrites(
-        root,
-        groups,
-        members,
-        versions,
-    )
-
-
-def test_resolves_globs_deduplicates_and_merges_groups(tmp_path: pathlib.Path) -> None:
+def test_resolves_globs_deduplicates_and_merges_groups(
+    tmp_path: pathlib.Path,
+    write_fixture_manifest: _ManifestWriter,
+) -> None:
     """Glob matches are sorted and overlapping groups merge their rules."""
     root = tmp_path
-    _write_manifest(root, "Cargo.toml", "[workspace]\nmembers = []\n")
-    first = _write_manifest(
+    write_fixture_manifest(root, "Cargo.toml", "[workspace]\nmembers = []\n")
+    first = write_fixture_manifest(
         root,
         "fixtures/a/Cargo.toml",
         '[dependencies]\nalpha = "^1.0.0"\n[metadata]\npath = "alpha-1.0.0"\n',
     )
-    second = _write_manifest(
+    second = write_fixture_manifest(
         root, "fixtures/b/Cargo.toml", '[dependencies]\nalpha = "1.0.0"\n'
     )
     groups = (
@@ -59,7 +39,7 @@ def test_resolves_globs_deduplicates_and_merges_groups(tmp_path: pathlib.Path) -
         ),
     )
 
-    plans = _plan(root, groups)
+    plans = plan_fixture_rewrites(root, groups)
 
     assert [plan.path for plan in plans] == [first.resolve(), second.resolve()], (
         "glob expansion must de-duplicate paths and preserve sorted candidates"
@@ -93,7 +73,7 @@ def test_rejects_invalid_configured_paths(
     group = ManifestRewriteConfig(paths=(configured_path,))
 
     with pytest.raises(bump_manifest_rewrites.ManifestRewriteError, match=message):
-        _plan(tmp_path, (group,))
+        plan_fixture_rewrites(tmp_path, (group,))
 
 
 def test_rejects_glob_matches_that_are_not_regular_files(
@@ -106,24 +86,25 @@ def test_rejects_glob_matches_that_are_not_regular_files(
     with pytest.raises(
         bump_manifest_rewrites.ManifestRewriteError, match="regular file"
     ):
-        _plan(tmp_path, (group,))
+        plan_fixture_rewrites(tmp_path, (group,))
 
 
 def test_skips_workspace_and_member_manifests(
     tmp_path: pathlib.Path,
     caplog: pytest.LogCaptureFixture,
+    write_fixture_manifest: _ManifestWriter,
 ) -> None:
     """Configured root and member paths remain owned by the regular stages."""
-    root_manifest = _write_manifest(
+    root_manifest = write_fixture_manifest(
         tmp_path, "Cargo.toml", '[dependencies]\nalpha = "1.0.0"\n'
     )
-    member_manifest = _write_manifest(
+    member_manifest = write_fixture_manifest(
         tmp_path, "crates/alpha/Cargo.toml", '[dependencies]\nalpha = "1.0.0"\n'
     )
     group = ManifestRewriteConfig(paths=("Cargo.toml", "crates/alpha/Cargo.toml"))
 
     with caplog.at_level(logging.DEBUG, logger=bump_manifest_rewrites.__name__):
-        plans = _plan(tmp_path, (group,), members=(member_manifest,))
+        plans = plan_fixture_rewrites(tmp_path, (group,), members=(member_manifest,))
 
     assert not plans, "workspace and member manifests must be skipped"
     assert [record.getMessage() for record in caplog.records] == [
@@ -148,6 +129,6 @@ def test_skips_missing_member_manifest_before_file_validation(
     member_manifest = tmp_path / "crates/alpha/Cargo.toml"
     group = ManifestRewriteConfig(paths=("crates/alpha/Cargo.toml",))
 
-    plans = _plan(tmp_path, (group,), members=(member_manifest,))
+    plans = plan_fixture_rewrites(tmp_path, (group,), members=(member_manifest,))
 
     assert not plans, "missing member manifests must be skipped before validation"

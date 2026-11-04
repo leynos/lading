@@ -1,5 +1,6 @@
 """Tests for configured non-member manifest rewrites."""
 
+import collections.abc as cabc
 import pathlib
 import typing as typ
 
@@ -7,58 +8,23 @@ from tomlkit import parse as parse_toml
 
 from lading.commands import bump_manifest_rewrites
 from lading.config import ManifestRewriteConfig, StringValueRewriteConfig
+from tests.helpers.manifest_rewrites import (
+    manifest_rewrite_versions,
+    plan_fixture_rewrites,
+)
+
+type _ManifestWriter = cabc.Callable[[pathlib.Path, str, str], pathlib.Path]
 
 if typ.TYPE_CHECKING:
     from syrupy.assertion import SnapshotAssertion
 
 
-def _write_manifest(
-    root: pathlib.Path, relative_path: str, content: str
-) -> pathlib.Path:
-    """Write a fixture manifest and return its path."""
-    path = root / relative_path
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
-    return path
-
-
-def _versions(
-    names: frozenset[str] = frozenset({"alpha"}),
-    pre_bump_versions: dict[str, str] | None = None,
-    target_version: str = "2.0.0",
-) -> bump_manifest_rewrites.ManifestRewriteVersions:
-    """Build a compact version context for rewrite tests."""
-    return bump_manifest_rewrites.ManifestRewriteVersions(
-        updated_crate_names=names,
-        pre_bump_versions=(
-            pre_bump_versions
-            if pre_bump_versions is not None
-            else dict.fromkeys(names, "1.0.0")
-        ),
-        target_version=target_version,
-    )
-
-
-def _plan(
-    root: pathlib.Path,
-    groups: tuple[ManifestRewriteConfig, ...],
-    versions: bump_manifest_rewrites.ManifestRewriteVersions | None = None,
-    members: tuple[pathlib.Path, ...] = (),
-) -> tuple[bump_manifest_rewrites.ManifestRewritePlan, ...]:
-    """Plan fixture changes using a compact default workspace context."""
-    return bump_manifest_rewrites.plan_manifest_rewrites(
-        root,
-        groups,
-        members,
-        versions if versions is not None else _versions(),
-    )
-
-
 def _rstest_bdd_dependency_plan(
     root: pathlib.Path,
+    write_fixture_manifest: _ManifestWriter,
 ) -> bump_manifest_rewrites.ManifestRewritePlan:
     """Build a rewrite plan for a multi-section prerelease manifest."""
-    _write_manifest(
+    write_fixture_manifest(
         root,
         "fixtures/standalone/Cargo.toml",
         """[dependencies]
@@ -90,10 +56,10 @@ rstest-bdd = { version = "0.6.0-beta4", path = "../patched" }
 "rstest-bdd:0.1.0" = { path = "../replaced" }
 """,
     )
-    return _plan(
+    return plan_fixture_rewrites(
         root,
         (ManifestRewriteConfig(paths=("fixtures/standalone/Cargo.toml",)),),
-        versions=_versions(
+        versions=manifest_rewrite_versions(
             names=frozenset({"rstest-bdd", "rstest-bdd-harness"}),
             pre_bump_versions={
                 "rstest-bdd": "0.6.0-beta4",
@@ -105,10 +71,12 @@ rstest-bdd = { version = "0.6.0-beta4", path = "../patched" }
 
 
 def test_updates_dependency_sections_and_package_aliases(
-    tmp_path: pathlib.Path, snapshot: SnapshotAssertion
+    tmp_path: pathlib.Path,
+    snapshot: SnapshotAssertion,
+    write_fixture_manifest: _ManifestWriter,
 ) -> None:
     """Dependency keys, package aliases, target, and workspace tables update."""
-    plan = _rstest_bdd_dependency_plan(tmp_path)
+    plan = _rstest_bdd_dependency_plan(tmp_path, write_fixture_manifest)
     assert plan.new_text == snapshot(name="dependency_rewrites"), (
         "the rendered dependency manifest must match its focused snapshot"
     )
@@ -141,9 +109,12 @@ def test_updates_dependency_sections_and_package_aliases(
 
 def test_leaves_unsupported_dependency_entries_unchanged(
     tmp_path: pathlib.Path,
+    write_fixture_manifest: _ManifestWriter,
 ) -> None:
     """Path-only, inherited, unrelated, and patch entries remain untouched."""
-    document = parse_toml(_rstest_bdd_dependency_plan(tmp_path).new_text)
+    document = parse_toml(
+        _rstest_bdd_dependency_plan(tmp_path, write_fixture_manifest).new_text
+    )
     assert document["dependencies"]["path-only"]["path"] == "../rstest-bdd", (
         "path-only dependencies must remain unchanged"
     )
@@ -162,10 +133,12 @@ def test_leaves_unsupported_dependency_entries_unchanged(
 
 
 def test_rewrites_selected_strings_once_and_preserves_literal_style(
-    tmp_path: pathlib.Path, snapshot: SnapshotAssertion
+    tmp_path: pathlib.Path,
+    snapshot: SnapshotAssertion,
+    write_fixture_manifest: _ManifestWriter,
 ) -> None:
     """Template replacement respects crate/version boundaries and TOML trivia."""
-    manifest = _write_manifest(
+    manifest = write_fixture_manifest(
         tmp_path,
         "tests/fixtures/Cargo.toml",
         """[patch.crates-io]
@@ -189,10 +162,10 @@ literal = { path = '../../../target/rstest-bdd-0.6.0-beta4' }
     names = frozenset({"rstest-bdd", "rstest-bdd-harness", "rstest-bdd-harness-gpui"})
     versions = dict.fromkeys(names, "0.6.0-beta4")
 
-    (plan,) = _plan(
+    (plan,) = plan_fixture_rewrites(
         tmp_path,
         (group,),
-        versions=_versions(
+        versions=manifest_rewrite_versions(
             names=names, pre_bump_versions=versions, target_version="0.6.0"
         ),
     )
@@ -230,9 +203,10 @@ literal = { path = '../../../target/rstest-bdd-0.6.0-beta4' }
 
 def test_direct_string_values_and_missing_selectors_are_noops(
     tmp_path: pathlib.Path,
+    write_fixture_manifest: _ManifestWriter,
 ) -> None:
     """Rules without a field visit direct values and absent selectors do nothing."""
-    manifest = _write_manifest(
+    manifest = write_fixture_manifest(
         tmp_path,
         "fixture/Cargo.toml",
         '[metadata]\nartifact = "alpha-1.0.0"\nnumber = 42\n',
@@ -250,7 +224,7 @@ def test_direct_string_values_and_missing_selectors_are_noops(
         ),
     )
 
-    (plan,) = _plan(tmp_path, groups)
+    (plan,) = plan_fixture_rewrites(tmp_path, groups)
 
     assert 'artifact = "alpha-2.0.0"' in plan.new_text, (
         "direct string values must be rewritten when no field is selected"
@@ -263,9 +237,10 @@ def test_direct_string_values_and_missing_selectors_are_noops(
 
 def test_rewrites_direct_and_nested_inline_string_tables(
     tmp_path: pathlib.Path,
+    write_fixture_manifest: _ManifestWriter,
 ) -> None:
     """Selected inline tables support direct and field-based string rewrites."""
-    _write_manifest(
+    write_fixture_manifest(
         tmp_path,
         "fixture/Cargo.toml",
         '[package]\nname = "fixture"\n'
@@ -281,7 +256,7 @@ def test_rewrites_direct_and_nested_inline_string_tables(
         ),
     )
 
-    (plan,) = _plan(tmp_path, (group,))
+    (plan,) = plan_fixture_rewrites(tmp_path, (group,))
 
     document = parse_toml(plan.new_text)
     assert document["package"]["metadata"]["artifact"] == "alpha-2.0.0", (
@@ -294,16 +269,23 @@ def test_rewrites_direct_and_nested_inline_string_tables(
 
 def test_unchanged_manifest_is_omitted_and_dry_run_does_not_write(
     tmp_path: pathlib.Path,
+    write_fixture_manifest: _ManifestWriter,
 ) -> None:
     """No-op plans are empty and applying a plan in dry-run preserves bytes."""
     content = '[dependencies]\nalpha = "2.0.0"\n'
-    manifest = _write_manifest(tmp_path, "fixture/Cargo.toml", content)
+    manifest = write_fixture_manifest(tmp_path, "fixture/Cargo.toml", content)
     group = ManifestRewriteConfig(paths=("fixture/Cargo.toml",))
 
-    assert not _plan(tmp_path, (group,), _versions(target_version="2.0.0")), (
-        "an unchanged target version must produce no rewrite plan"
+    assert not plan_fixture_rewrites(
+        tmp_path,
+        (group,),
+        manifest_rewrite_versions(target_version="2.0.0"),
+    ), "an unchanged target version must produce no rewrite plan"
+    plans = plan_fixture_rewrites(
+        tmp_path,
+        (group,),
+        manifest_rewrite_versions(target_version="3.0.0"),
     )
-    plans = _plan(tmp_path, (group,), _versions(target_version="3.0.0"))
     original_bytes = manifest.read_bytes()
 
     changed_paths = bump_manifest_rewrites.apply_manifest_rewrites(plans, dry_run=True)

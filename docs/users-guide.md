@@ -867,8 +867,8 @@ One duration observation covers manifest resolution, planning, and application
 for each configured rewrite run, including failures. Its labels are `outcome`,
 `dry_run`, and `error_category`, with the values documented above. Runs with no
 `bump.manifest_rewrites` configuration emit no rewrite metrics. A failed write
-also emits a `manifest_rewrite failed:` log event naming the path and the
-number of completed writes, and the command error repeats that count.
+emits one `manifest_rewrite failed:` error event naming the path and reporting
+completed and planned writes.
 
 #### `publish.cargo.duration`
 

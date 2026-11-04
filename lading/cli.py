@@ -393,7 +393,17 @@ def _dispatch_and_print(tokens: cabc.Sequence[str]) -> int:
 def _print_expected_command_error(
     error: ManifestRewriteError | WorkspaceModelError,
 ) -> None:
-    """Print the established label for an expected domain failure."""
+    """Report one expected domain failure with its event or error label."""
+    if isinstance(error, ManifestRewriteError) and error.failed_path is not None:
+        LOGGER.error(
+            "manifest_rewrite failed: path=%s completed=%d planned=%d "
+            "error_category=write: %s",
+            error.failed_path,
+            error.completed_writes,
+            error.planned_writes,
+            error,
+        )
+        return
     match error:
         case ManifestRewriteError():
             label = "Manifest rewrite error"

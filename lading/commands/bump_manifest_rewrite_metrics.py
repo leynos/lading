@@ -10,7 +10,7 @@ MANIFEST_REWRITE_DURATION_METRIC = "bump.manifest_rewrite.duration"
 
 
 @dc.dataclass(frozen=True, slots=True)
-class _ManifestRewriteMetricLabels:
+class ManifestRewriteMetricLabels:
     """Bounded labels describing one manifest rewrite outcome."""
 
     phase: str
@@ -19,9 +19,9 @@ class _ManifestRewriteMetricLabels:
     error_category: str
 
 
-def _record_manifest_rewrite_metrics(
+def record_manifest_rewrite_metrics(
     started_at: float,
-    labels: _ManifestRewriteMetricLabels,
+    labels: ManifestRewriteMetricLabels,
 ) -> None:
     """Record one bounded rewrite outcome and its plan-to-apply time."""
     dry_run_label = str(labels.dry_run).lower()
@@ -41,7 +41,7 @@ def _record_manifest_rewrite_metrics(
     )
 
 
-def _record_manifest_rewrite_planned(*, dry_run: bool) -> None:
+def record_manifest_rewrite_planned(*, dry_run: bool) -> None:
     """Count one successfully prepared rewrite plan."""
     metrics.increment_counter(
         MANIFEST_REWRITE_RUN_METRIC,
