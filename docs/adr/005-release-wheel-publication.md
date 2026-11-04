@@ -19,20 +19,21 @@ find dist/wheels-* -type f -name "*.whl" -print0 | \
   xargs -0 -r gh release upload "$TAG"
 ```
 
-The original download omitted `name`. In both v4 and v8, a download that
-selects a single artefact extracts its files directly into `path`. When several
-artefacts match and `merge-multiple` is false, the action creates a
-subdirectory for each artefact under `path`. These rules are visible in the
-v4.1.8 source[^1] and documentation[^2], and v8.0.2 source[^3]. Therefore,
-whenever only `wheels-pure` matched, its files were placed directly in `dist`
-and `find dist/wheels-*` found no match. The v4-to-v8 version change alone does
-not explain the empty glob; a named download makes the intended artefact and
-destination explicit.
+The original download omitted `name`. In v4, an unnamed download with
+`merge-multiple: false` extracts each matching artefact into its own
+subdirectory under `path`, even when only one artefact matches. In v8, a single
+matching artefact is extracted directly into `path`; per-artefact
+subdirectories are created only when several artefacts match and
+`merge-multiple` is false. A named download extracts directly into `path` in
+both versions. These rules are visible in the v4.1.8 source[^1] and
+documentation[^2], and v8.0.2 source[^3]. With only `wheels-pure` matching, v4
+places its files in `dist/wheels-pure`, where the old glob matches. Under v8,
+the files are placed directly in `dist`, so `find dist/wheels-*` finds no match.
 
 The pipeline then hid that empty match. Without `pipefail`, it reported the
 exit status of the last command: `find` failed when `dist/wheels-*` did not
 exist, while `xargs -r` ran nothing and exited zero. Consequently, `set -eu`
-did not fail the step. Naming the download and setting its path makes the
+did not fail the step. Naming the download and setting its path make the
 artefact identity and location explicit. The collector requires at least one
 wheel and exactly one sdist before either publisher proceeds. The Python
 uploader also fails when its directory is missing or contains no distributions.
