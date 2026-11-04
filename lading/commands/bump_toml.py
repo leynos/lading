@@ -66,21 +66,21 @@ def value_as_string(value: object) -> str | None:
 
 
 def compose_requirement(existing: str, target_version: str) -> str:
-    """Prefix ``target_version`` with any non-numeric operator from ``existing``.
+    """Replace the first requirement version and retain later constraints.
 
     Parameters
     ----------
     existing : str
         The current requirement string, possibly carrying an operator prefix
-        such as ``^`` or ``~``.
+        such as ``^`` or ``~`` and comma-separated additional constraints.
     target_version : str
         The bare target version to apply.
 
     Returns
     -------
     str
-        ``target_version`` carrying the operator prefix of ``existing`` when
-        one is present.
+        ``target_version`` carrying the first requirement's operator, followed
+        by any additional constraints from ``existing``.
 
     Examples
     --------
@@ -88,14 +88,28 @@ def compose_requirement(existing: str, target_version: str) -> str:
     '^2.0.0'
     >>> compose_requirement("1.0.0", "2.0.0")
     '2.0.0'
+    >>> compose_requirement(">=0.6.0-beta4, <0.7", "0.6.0")
+    '>=0.6.0, <0.7'
     """
-    match = NON_DIGIT_PREFIX.match(existing)
+    first_constraint, separator, remaining_constraints = existing.partition(",")
+    trailing_whitespace = ""
+    if separator:
+        trimmed_constraint = first_constraint.rstrip()
+        trailing_whitespace = first_constraint[len(trimmed_constraint) :]
+    else:
+        trimmed_constraint = first_constraint
+
+    match = NON_DIGIT_PREFIX.match(trimmed_constraint)
     if not match:
-        return target_version
-    prefix = match.group(1)
-    if not prefix or prefix == existing:
-        return target_version
-    return f"{prefix}{target_version}"
+        replacement = target_version
+    else:
+        prefix = match.group(1)
+        if not prefix or prefix == trimmed_constraint:
+            replacement = target_version
+        else:
+            replacement = f"{prefix}{target_version}"
+
+    return f"{replacement}{trailing_whitespace}{separator}{remaining_constraints}"
 
 
 def prepare_version_replacement(
