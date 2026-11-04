@@ -767,9 +767,12 @@ The default template is `"{crate}-{version}"`. It may use only `{crate}` and
 positional fields, and unknown placeholders are configuration errors. The old
 version comes from workspace metadata; the new version is the requested bump
 version. A template starting with `{crate}` requires a crate-name boundary
-before the match. A template ending with `{version}` requires a boundary after
-the match, so `rstest-bdd` does not match inside `rstest-bdd-harness`, and
-`0.6.0-beta4` does not match the prefix of `0.6.0-beta40`.
+before the match; one starting with `{version}` requires a boundary before the
+version that rejects letters, digits, and periods while allowing hyphens. A
+template ending with `{crate}` requires a crate-name boundary after the match;
+one ending with `{version}` requires a version boundary after it. These rules
+keep `rstest-bdd` from matching inside `rstest-bdd-harness` and prevent
+`0.6.0-beta4` matching the prefix of `0.6.0-beta40`.
 
 The root manifest and all workspace-member manifests are skipped even when a
 configured glob selects them. Repeated groups selecting the same non-member

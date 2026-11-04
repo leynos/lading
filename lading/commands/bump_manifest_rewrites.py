@@ -38,6 +38,7 @@ if typ.TYPE_CHECKING:
     from lading.config import ManifestRewriteConfig, StringValueRewriteConfig
 
 _CRATE_NAME_CHARACTER: typ.Final[str] = r"A-Za-z0-9_-"
+_VERSION_PREFIX_CHARACTER: typ.Final[str] = r"A-Za-z0-9."
 _VERSION_SUFFIX_CHARACTER: typ.Final[str] = r"A-Za-z0-9.+-"
 
 
@@ -342,16 +343,18 @@ def _string_replacement_pattern(
         re.escape(old_text)
         for old_text in sorted(replacements, key=lambda item: (-len(item), item))
     )
-    prefix = (
-        rf"(?<![{_CRATE_NAME_CHARACTER}])"
-        if rule.template.startswith("{crate}")
-        else ""
-    )
-    suffix = (
-        rf"(?![{_VERSION_SUFFIX_CHARACTER}])"
-        if rule.template.endswith("{version}")
-        else ""
-    )
+    if rule.template.startswith("{crate}"):
+        prefix = rf"(?<![{_CRATE_NAME_CHARACTER}])"
+    elif rule.template.startswith("{version}"):
+        prefix = rf"(?<![{_VERSION_PREFIX_CHARACTER}])"
+    else:
+        prefix = ""
+    if rule.template.endswith("{version}"):
+        suffix = rf"(?![{_VERSION_SUFFIX_CHARACTER}])"
+    elif rule.template.endswith("{crate}"):
+        suffix = rf"(?![{_CRATE_NAME_CHARACTER}])"
+    else:
+        suffix = ""
     return re.compile(f"{prefix}(?:{alternatives}){suffix}")
 
 
