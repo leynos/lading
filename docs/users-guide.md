@@ -569,7 +569,9 @@ not name an `sccache` binary, or an sccache query fails part-way through,
 `cargo package` validates dependency versions against the live crates.io index,
 even in dry-run mode. When two or more workspace crates are released together
 for the first time and one depends on another at a version that is not yet on
-crates.io, `cargo package` will fail with an error similar to:
+crates.io, `cargo package` will fail. Cargo reports two variants of this
+failure. When the dependency exists on the index but not at the required
+version, the diagnostic names the requirement:
 
 ```plaintext
 error: failed to prepare local package for uploading
@@ -580,6 +582,21 @@ Caused by:
   location searched: crates.io index
   required by package `outer_crate v0.8.0`
 ```
+
+When the dependency has never been published at all — the first-publication
+case for a newly extracted crate — Cargo instead reports:
+
+```plaintext
+error: failed to prepare local package for uploading
+
+Caused by:
+  no matching package named `inner_crate` found
+  location searched: crates.io index
+  required by package `outer_crate v0.8.0`
+```
+
+`lading` recognizes both variants and applies the same publish-order guard to
+each.
 
 This affects dry-run release trains that introduce a new shared version across
 multiple workspace crates. `lading publish --live` avoids the limitation by

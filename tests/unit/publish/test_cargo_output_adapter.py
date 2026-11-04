@@ -16,11 +16,13 @@ from lading.commands.cargo_output_adapter import (
 )
 
 from .conftest import (
+    INDEX_MISSING_PACKAGE_STDERR_BETA,
     INDEX_MISSING_STDERR_BETA,
     INDEX_MISSING_STDERR_UNPARSEABLE,
 )
 
 _MARKER_VERSION = "failed to select a version for the requirement"
+_MARKER_PACKAGE = "no matching package named"
 _MARKER_INDEX = "location searched: crates.io index"
 _VALID_CRATE_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
 
@@ -45,6 +47,24 @@ def _both_markers_stderr(
     stderr = (
         f"{prefix}"
         f'{_MARKER_VERSION} {open_q}{name} = "{version}"{close_q}\n'
+        f"{_MARKER_INDEX}\n"
+        f"{suffix}"
+    )
+    return name, stderr
+
+
+@st.composite
+def _absent_package_stderr(
+    draw: st.DrawFn,
+) -> tuple[str, str]:
+    """Generate ``(crate_name, stderr)`` for the absent-package diagnostic."""
+    name = draw(_crate_names)
+    _label, open_q, close_q = draw(_quote_pairs)
+    prefix = draw(st.text(max_size=40))
+    suffix = draw(st.text(max_size=40))
+    stderr = (
+        f"{prefix}"
+        f"{_MARKER_PACKAGE} {open_q}{name}{close_q} found\n"
         f"{_MARKER_INDEX}\n"
         f"{suffix}"
     )
@@ -94,6 +114,19 @@ def _parse_index_lookup_failure(
             "",
             "location searched: crates.io index",
             id="missing-version-marker",
+        ),
+        pytest.param(
+            1,
+            "",
+            "no matching package named `alpha` found",
+            id="absent-package-without-index-marker",
+        ),
+        pytest.param(
+            1,
+            "",
+            "no matching package named `alpha` found\n"
+            "location searched: another registry",
+            id="absent-package-on-another-registry",
         ),
     ],
 )
@@ -168,6 +201,26 @@ def test_parse_already_published_failure_returns_typed_failure(
         ),
         pytest.param(
             "",
+            INDEX_MISSING_PACKAGE_STDERR_BETA,
+            "alpha",
+            id="absent-package",
+        ),
+        pytest.param(
+            "",
+            "no matching package named 'inner_crate' found\n"
+            "location searched: crates.io index",
+            "inner_crate",
+            id="absent-package-single-quotes",
+        ),
+        pytest.param(
+            "no matching package named `foo-bar` found\n"
+            "location searched: crates.io index",
+            "",
+            "foo-bar",
+            id="absent-package-hyphenated-on-stdout",
+        ),
+        pytest.param(
+            "",
             INDEX_MISSING_STDERR_UNPARSEABLE,
             None,
             id="unparseable-name",
@@ -183,6 +236,16 @@ def test_parse_already_published_failure_returns_typed_failure(
             ),
             "stderr_dep",
             id="stderr-precedence",
+        ),
+        pytest.param(
+            (
+                'failed to select a version for the requirement `stdout_dep = "^1"`\n'
+                "location searched: crates.io index"
+            ),
+            "no matching package named `stderr_dep` found\n"
+            "location searched: crates.io index",
+            "stderr_dep",
+            id="stderr-precedence-across-shapes",
         ),
     ],
 )
@@ -223,6 +286,16 @@ _REAL_CARGO_PUBLISH_STDERR = (
     "  location searched: crates.io index\n"
     "  required by package `beta v0.1.0 (/work/beta)`\n"
 )
+# Verbatim transcript for a dependency that has never been published, as
+# produced by a first-publication release train (issue #367).
+_REAL_CARGO_ABSENT_PACKAGE_STDERR = (
+    "error: failed to prepare local package for uploading\n"
+    "\n"
+    "Caused by:\n"
+    "  no matching package named `ortho_l10n` found\n"
+    "  location searched: crates.io index\n"
+    "  required by package `ortho_config_macros v0.9.0 (/work/ortho_config_macros)`\n"
+)
 
 
 @pytest.mark.parametrize(
@@ -252,6 +325,28 @@ def test_parse_index_lookup_failure_parses_real_cargo_transcript(
     ), "a real cargo index-miss transcript must parse to the expected failure"
 
 
+def test_parse_index_lookup_failure_parses_real_absent_package_transcript() -> None:
+    """A real first-publication transcript parses through the adapter."""
+    failure = parse_index_lookup_failure(
+        crate_name="ortho_config_macros",
+        subcommand="package",
+        result=CargoSubprocessResult(
+            exit_code=101,
+            stdout="",
+            stderr=_REAL_CARGO_ABSENT_PACKAGE_STDERR,
+        ),
+    )
+
+    assert failure == CargoIndexLookupFailure(
+        crate_name="ortho_config_macros",
+        subcommand="package",
+        exit_code=101,
+        stdout="",
+        stderr=_REAL_CARGO_ABSENT_PACKAGE_STDERR,
+        missing_dependency_name="ortho_l10n",
+    ), "a real absent-package transcript must parse to the expected failure"
+
+
 @given(stdout=st.text(), stderr=st.text())
 @settings(max_examples=100, deadline=None)
 def test_parse_index_lookup_failure_success_always_returns_none(
@@ -273,6 +368,25 @@ def test_parse_index_lookup_failure_both_markers_nonzero_returns_failure(
     result = _parse_index_lookup_failure(exit_code, "", stderr)
     assert result is not None, (
         "both index-miss markers with a non-zero exit code must classify"
+    )
+
+
+@given(
+    case=_absent_package_stderr(),
+    exit_code=st.integers(min_value=1, max_value=255),
+)
+@settings(max_examples=80, deadline=None)
+def test_parse_index_lookup_failure_absent_package_markers_return_failure(
+    case: tuple[str, str], exit_code: int
+) -> None:
+    """The absent-package diagnostic with a non-zero exit code classifies."""
+    name, stderr = case
+    result = _parse_index_lookup_failure(exit_code, "", stderr)
+    assert result is not None, (
+        "the absent-package diagnostic with a non-zero exit code must classify"
+    )
+    assert result.missing_dependency_name == name, (
+        "the absent-package diagnostic must yield the parsed dependency name"
     )
 
 
@@ -325,6 +439,27 @@ def test_parse_index_lookup_failure_matches_markers_case_insensitively(
     result = _parse_index_lookup_failure(exit_code, "", stderr)
     assert result is not None, (
         "arbitrarily cased markers must still classify as an index-lookup failure"
+    )
+    assert result.missing_dependency_name == name, (
+        "the dependency name must be extracted despite marker casing"
+    )
+
+
+@given(
+    package_marker=_randomly_cased(_MARKER_PACKAGE),
+    index_marker=_randomly_cased(_MARKER_INDEX),
+    name=_crate_names,
+    exit_code=st.integers(min_value=1, max_value=255),
+)
+@settings(max_examples=80, deadline=None)
+def test_parse_index_lookup_failure_absent_package_matches_case_insensitively(
+    package_marker: str, index_marker: str, name: str, exit_code: int
+) -> None:
+    """The absent-package diagnostic also honours the re.IGNORECASE contract."""
+    stderr = f"{package_marker} `{name}` found\n{index_marker}"
+    result = _parse_index_lookup_failure(exit_code, "", stderr)
+    assert result is not None, (
+        "arbitrarily cased absent-package markers must still classify"
     )
     assert result.missing_dependency_name == name, (
         "the dependency name must be extracted despite marker casing"

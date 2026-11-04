@@ -1667,17 +1667,22 @@ visible in the registry.
 The index-lookup handling is split across the adapter and decision helper:
 
 - `parse_index_lookup_failure(*, crate_name, subcommand, result: CargoSubprocessResult)`
-  checks for both Cargo's version-selection failure marker and the crates.io
-  index marker after confirming the command failed. It accepts a
-  `CargoSubprocessResult` value object (carrying `exit_code`, `stdout`, and
-  `stderr`) and returns a `CargoIndexLookupFailure` or `None`. Requiring both
-  markers minimizes false positives from unrelated resolver, registry, or
-  command failures.
-- The adapter parses the missing crate name from Cargo's requirement line. The
-  regex accepts Cargo's backtick, single-quote, and double-quote delimiters
-  around the requirement, captures the dependency name before `=`, and searches
-  `stderr` before `stdout` because Cargo normally reports this failure on the
-  error stream.
+  checks for one of Cargo's two crates.io index-miss diagnostic shapes after
+  confirming the command failed. The version-selection shape pairs
+  `failed to select a version for the requirement` with
+  `location searched: crates.io index`; the absent-package shape pairs
+  `no matching package named` with the same index marker. The second shape is
+  the first-publication case for a newly extracted crate (issue #367). It
+  accepts a `CargoSubprocessResult` value object (carrying `exit_code`,
+  `stdout`, and `stderr`) and returns a `CargoIndexLookupFailure` or `None`.
+  Requiring both markers of a shape minimizes false positives from unrelated
+  resolver, registry, or command failures.
+- The adapter parses the missing crate name from Cargo's diagnostic. The
+  version-selection regex accepts Cargo's backtick, single-quote, and
+  double-quote delimiters around the requirement and captures the dependency
+  name before `=`; the absent-package regex captures the name between the
+  delimiters and `found`. Both search `stderr` before `stdout` because Cargo
+  normally reports these failures on the error stream.
 - `_handle_index_missing_version(failure, *, handling, error_cls)` applies the
   decision tree. If name extraction fails, the original Cargo failure stays
   fatal. If the parsed name is not in the publish plan, the failure is fatal

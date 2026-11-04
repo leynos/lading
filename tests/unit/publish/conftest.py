@@ -28,6 +28,7 @@ __all__ = [
     "CARGO_PACKAGE",
     "CARGO_PUBLISH",
     "CARGO_PUBLISH_DRY_RUN",
+    "INDEX_MISSING_PACKAGE_STDERR_BETA",
     "INDEX_MISSING_STDERR_BETA",
     "INDEX_MISSING_STDERR_EXTERNAL",
     "INDEX_MISSING_STDERR_UNPARSEABLE",
@@ -62,6 +63,18 @@ INDEX_MISSING_STDERR_BETA = (
     "Caused by:\n"
     '  failed to select a version for the requirement `alpha = "^0.1.0"`\n'
     "  candidate versions found which didn't match: 0.0.1\n"
+    "  location searched: crates.io index\n"
+    "  required by package `beta v0.1.0`\n"
+)
+
+# Cargo's diagnostic when the dependency is absent from the index entirely,
+# rather than present at a non-matching version. This is the first-publication
+# case for a newly extracted crate (issue #367).
+INDEX_MISSING_PACKAGE_STDERR_BETA = (
+    "error: failed to prepare local package for uploading\n"
+    "\n"
+    "Caused by:\n"
+    "  no matching package named `alpha` found\n"
     "  location searched: crates.io index\n"
     "  required by package `beta v0.1.0`\n"
 )
