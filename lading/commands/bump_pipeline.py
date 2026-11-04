@@ -98,6 +98,29 @@ def _run_pipeline(context: _BumpContext, target_version: str) -> BumpChanges:
     )
 
 
+def _record_rewrite_failure(
+    started_at: float | None,
+    *,
+    phase: typ.Literal["planning", "application"],
+    error_category: typ.Literal["planning", "write"],
+    dry_run: bool,
+) -> None:
+    """Record a rewrite failure when metrics timing is enabled."""
+    match started_at:
+        case None:
+            return
+        case float() as rewrite_started_at:
+            record_manifest_rewrite_metrics(
+                rewrite_started_at,
+                ManifestRewriteMetricLabels(
+                    phase=phase,
+                    outcome="failed",
+                    dry_run=dry_run,
+                    error_category=error_category,
+                ),
+            )
+
+
 def _plan_non_member_rewrites(
     context: _BumpContext,
     target_version: str,
@@ -126,16 +149,12 @@ def _plan_non_member_rewrites(
             ),
         )
     except bump_manifest_rewrites.ManifestRewriteError:
-        if started_at is not None:
-            record_manifest_rewrite_metrics(
-                started_at,
-                ManifestRewriteMetricLabels(
-                    phase="planning",
-                    outcome="failed",
-                    dry_run=context.base_options.dry_run,
-                    error_category="planning",
-                ),
-            )
+        _record_rewrite_failure(
+            started_at,
+            phase="planning",
+            error_category="planning",
+            dry_run=context.base_options.dry_run,
+        )
         raise
     if started_at is not None:
         record_manifest_rewrite_planned(dry_run=context.base_options.dry_run)
@@ -161,16 +180,12 @@ def _process_non_member_rewrites(
             plans, dry_run=dry_run
         )
     except bump_manifest_rewrites.ManifestRewriteError:
-        if started_at is not None:
-            record_manifest_rewrite_metrics(
-                started_at,
-                ManifestRewriteMetricLabels(
-                    phase="application",
-                    outcome="failed",
-                    dry_run=dry_run,
-                    error_category="write",
-                ),
-            )
+        _record_rewrite_failure(
+            started_at,
+            phase="application",
+            error_category="write",
+            dry_run=dry_run,
+        )
         raise
     changed_manifests.update(path.resolve() for path in rewritten_paths)
     if started_at is not None:
