@@ -1,10 +1,12 @@
 # Lading 0.4.0 migration guide
 
 Lading 0.4.0 raises the interpreter floor from CPython 3.13 to CPython 3.14.
-Nothing else in this release changes how Lading is invoked, configured, or
-extended: the command-line interface, `lading.toml` keys, and the published
-Python surface are unchanged from 0.3.x. An environment already running 3.14
-needs no action beyond the version bump itself.
+It also makes the command-line boundary explicit: diagnostics that an earlier
+dependency rendered on stdout are now written to stderr, and command summaries
+are printed once, unwrapped and without colour. The flags, `lading.toml` keys,
+and published Python surface are unchanged from 0.3.x. An environment already
+running 3.14 that only reads successful output needs no action beyond the
+version bump itself.
 
 When 0.4.0 is released, its tagged build will also be published to PyPI as a
 source distribution and pure-Python wheel. GitHub Releases will retain both
@@ -38,7 +40,9 @@ decision, recorded below.
 
 _Table 1: Required action by interpreter version._
 
-Only the interpreter-floor change requires an environment migration. A project
+Only the interpreter-floor change requires an environment migration. The
+command-line stream change described below needs no environment work, though a
+script that reads diagnostics from stdout must read stderr instead. A project
 pinned to a Lading version through a lockfile keeps that version until the
 lockfile is regenerated, so the floor bites when the pin is moved rather than
 when this release is published.
@@ -66,6 +70,25 @@ ERROR: Package 'lading' requires a different Python: 3.13.x not in '>=3.14'
 That refusal is the intended behaviour rather than a packaging accident. It
 replaces the alternative — installing successfully and then failing at import
 or during a run — with a message that names the constraint.
+
+## Command-line output streams
+
+Lading constructs its command-line application with an explicit result action,
+so its own dispatcher owns printing and exit codes instead of delegating them
+to the argument parser. Two observable consequences matter to scripts:
+
+- Error diagnostics — an unknown subcommand, an invalid argument value, or a
+  missing required option — are written to **stderr**. Earlier releases
+  rendered these panels on stdout.
+- A command summary stays on **stdout** and is printed once as plain text,
+  unwrapped by the terminal width and without colour codes.
+
+A script that captured both streams together sees no change in meaning. A
+script that read error text from stdout must read stderr instead. The complete
+contract, including the exit-status table, is in
+[Output streams and exit codes](users-guide.md#output-streams-and-exit-codes);
+the decision is recorded in
+[ADR-011](adr/011-cyclopts-4-cli-result-and-diagnostic-boundary.md).
 
 ## Why the floor moved
 
