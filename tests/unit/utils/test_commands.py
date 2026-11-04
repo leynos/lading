@@ -65,6 +65,23 @@ class TestLadingCatalogue:
         with pytest.raises(UnknownProgramError):
             LADING_CATALOGUE.lookup(unregistered)
 
+    def test_catalogue_preserves_project_metadata(self) -> None:
+        """The factory call must keep the lading project metadata intact."""
+        project = LADING_CATALOGUE.project_for(GIT)
+
+        assert project.name == "lading", (
+            "the shared catalogue must keep the lading project name"
+        )
+        assert project.programs == (CARGO, GIT, SCCACHE), (
+            "the catalogue must register cargo, git and sccache in order"
+        )
+        assert project.documentation_locations == (
+            "docs/lading-design.md#command-execution-migration",
+        ), "the catalogue must keep its design documentation pointer"
+        assert project.noise_rules == (), (
+            "the catalogue must keep the default empty noise rules"
+        )
+
 
 class TestProgramConstants:
     """Tests for the exported program constants."""

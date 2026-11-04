@@ -10,7 +10,6 @@ from pathlib import Path
 from cuprum import (
     Program,
     ProgramCatalogue,
-    ProjectSettings,
     RunOutputOptions,
     scoped,
     sh,
@@ -19,13 +18,11 @@ from release_port import ReleaseAssetStore, ReleaseOperationError
 from release_span import record_gh_span
 
 GH = Program("gh")
-_RELEASE_PROJECT = ProjectSettings(
+RELEASE_CATALOGUE = ProgramCatalogue.from_programs(
+    GH,
     name="lading-release",
-    programs=(GH,),
     documentation_locations=("docs/developers-guide.md#publishing-a-release",),
-    noise_rules=(),
 )
-RELEASE_CATALOGUE = ProgramCatalogue(projects=(_RELEASE_PROJECT,))
 
 if typ.TYPE_CHECKING:
     import io
