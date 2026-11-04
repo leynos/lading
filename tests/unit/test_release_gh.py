@@ -63,6 +63,31 @@ def test_the_catalogue_admits_gh_alone(release_gh: types.ModuleType) -> None:
     assert set(allowlist) == {release_gh.GH}, f"the catalogue admits {allowlist}"
 
 
+def test_the_catalogue_preserves_release_project_metadata(
+    release_gh: types.ModuleType,
+) -> None:
+    """The factory call must keep the release project's metadata intact.
+
+    The allowlist proves which programme is admitted; this covers the project
+    name and documentation pointer that the refactor must preserve and that the
+    allowlist alone cannot see.
+    """
+    project = release_gh.RELEASE_CATALOGUE.project_for(release_gh.GH)
+    metadata = (
+        project.name,
+        tuple(map(str, project.programs)),
+        project.documentation_locations,
+        project.noise_rules,
+    )
+
+    assert metadata == (
+        "lading-release",
+        ("gh",),
+        ("docs/developers-guide.md#publishing-a-release",),
+        (),
+    ), metadata
+
+
 def test_release_asset_adapter_reads_names_from_json(
     release_gh: types.ModuleType,
 ) -> None:
