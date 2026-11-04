@@ -29,31 +29,31 @@ from .index_missing_outputs import (
     INDEX_MISSING_STDERR_BETA,
 )
 
-_DIAGNOSTIC_SHAPES = [
-    pytest.param(
-        ("version-selection", INDEX_MISSING_STDERR_BETA),
-        id="version-selection",
-    ),
-    pytest.param(
-        ("absent-package", INDEX_MISSING_PACKAGE_STDERR_BETA),
-        id="absent-package",
-    ),
+_SHAPES_AND_STDERR = (
+    ("version-selection", INDEX_MISSING_STDERR_BETA),
+    ("absent-package", INDEX_MISSING_PACKAGE_STDERR_BETA),
+)
+# One case per (phase, diagnostic shape) pair keeps the test signature small
+# enough to satisfy the advisory argument-count rule while preserving a
+# readable id for each combination.
+_PHASE_DIAGNOSTIC_CASES = [
+    pytest.param((phase_name, shape, stderr), id=f"{phase_name}-{shape}")
+    for phase_name in ("package", "publish")
+    for shape, stderr in _SHAPES_AND_STDERR
 ]
 
 
-@pytest.mark.parametrize("phase_name", ["package", "publish"])
-@pytest.mark.parametrize("diagnostic", _DIAGNOSTIC_SHAPES)
+@pytest.mark.parametrize("case", _PHASE_DIAGNOSTIC_CASES)
 def test_missing_dep_in_plan_and_flag_continues(
     publish_plan_and_prep: tuple[
         publish_plan.PublishPlan, publish_staging.PublishPreparation, Path
     ],
     caplog: pytest.LogCaptureFixture,
     snapshot: SnapshotAssertion,
-    phase_name: str,
-    diagnostic: tuple[str, str],
+    case: tuple[str, str, str],
 ) -> None:
     """Flag downgrades either missing-index shape to a warning and proceeds."""
-    shape, beta_stderr = diagnostic
+    phase_name, _shape, beta_stderr = case
     caplog.set_level(logging.WARNING, logger=publish_pipeline.LOGGER.name)
     plan, preparation, _staging_root = publish_plan_and_prep
     calls: list[str] = []
@@ -89,7 +89,7 @@ def test_missing_dep_in_plan_and_flag_continues(
     assert calls == ["alpha", "beta", "gamma"], (
         "the downgrade path must still package every crate in plan order"
     )
-    assert _warning_records(caplog) == snapshot(name=f"{phase_name}-{shape}"), (
+    assert _warning_records(caplog) == snapshot, (
         "the missing dependency must be downgraded to the recorded warning"
     )
 

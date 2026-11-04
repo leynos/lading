@@ -46,21 +46,20 @@ _PHASE_IDS = [
     pytest.param("package", publish.PublishPreflightError, id="packaging"),
     pytest.param("publish", publish_pipeline.PublishError, id="publish-dry-run"),
 ]
+_BETA_SHAPES_AND_STDERR = (
+    ("version-selection", INDEX_MISSING_STDERR_BETA),
+    ("absent-package", INDEX_MISSING_PACKAGE_STDERR_BETA),
+)
+_EXTERNAL_SHAPES_AND_STDERR = (
+    ("version-selection", INDEX_MISSING_STDERR_EXTERNAL),
+    ("absent-package", INDEX_MISSING_PACKAGE_STDERR_EXTERNAL),
+)
 _BETA_DIAGNOSTICS = [
-    pytest.param(
-        ("version-selection", INDEX_MISSING_STDERR_BETA), id="version-selection"
-    ),
-    pytest.param(
-        ("absent-package", INDEX_MISSING_PACKAGE_STDERR_BETA), id="absent-package"
-    ),
+    pytest.param((shape, stderr), id=shape) for shape, stderr in _BETA_SHAPES_AND_STDERR
 ]
 _EXTERNAL_DIAGNOSTICS = [
-    pytest.param(
-        ("version-selection", INDEX_MISSING_STDERR_EXTERNAL), id="version-selection"
-    ),
-    pytest.param(
-        ("absent-package", INDEX_MISSING_PACKAGE_STDERR_EXTERNAL), id="absent-package"
-    ),
+    pytest.param((shape, stderr), id=shape)
+    for shape, stderr in _EXTERNAL_SHAPES_AND_STDERR
 ]
 _HYPHENATED_STDERR = {
     "version-selection": (
@@ -156,30 +155,36 @@ def test_missing_dep_in_plan_allows_cargo_name_normalization(
     ), "expected canonicalised in-plan dependency to be downgraded to a warning"
 
 
-@pytest.mark.parametrize(
-    ("phase_name", "exc_type", "expected_fragment"),
-    [
-        pytest.param("package", publish.PublishPreflightError, "alpha", id="packaging"),
-        pytest.param(
-            "publish",
-            publish_pipeline.PublishError,
-            "cargo publish failed for crate beta",
-            id="publish-dry-run",
-        ),
-    ],
+_FLAGLESS_PHASES = (
+    ("packaging", "package", publish.PublishPreflightError, "alpha"),
+    (
+        "publish-dry-run",
+        "publish",
+        publish_pipeline.PublishError,
+        "cargo publish failed for crate beta",
+    ),
 )
-@pytest.mark.parametrize("diagnostic", _BETA_DIAGNOSTICS)
+# Bundling the phase and diagnostic into one case keeps the signature within
+# the advisory argument-count rule without losing per-combination test ids.
+_FLAGLESS_CASES = [
+    pytest.param(
+        (phase_name, exc_type, expected_fragment, stderr),
+        id=f"{phase_id}-{shape}",
+    )
+    for phase_id, phase_name, exc_type, expected_fragment in _FLAGLESS_PHASES
+    for shape, stderr in _BETA_SHAPES_AND_STDERR
+]
+
+
+@pytest.mark.parametrize("case", _FLAGLESS_CASES)
 def test_missing_dep_in_plan_without_flag_raises(
     publish_plan_and_prep: tuple[
         publish_plan.PublishPlan, publish_staging.PublishPreparation, Path
     ],
-    phase_name: str,
-    exc_type: type[Exception],
-    expected_fragment: str,
-    diagnostic: tuple[str, str],
+    case: tuple[str, type[Exception], str, str],
 ) -> None:
     """Without the override, either index lookup error remains fatal."""
-    _shape, beta_stderr = diagnostic
+    phase_name, exc_type, expected_fragment, beta_stderr = case
     plan, preparation, _staging_root = publish_plan_and_prep
 
     def runner(
