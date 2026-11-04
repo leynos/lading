@@ -16,10 +16,6 @@ from lading.commands import bump_toml
 if typ.TYPE_CHECKING:
     from tomlkit.toml_document import TOMLDocument
 
-_TABLE_TYPES: typ.Final[
-    tuple[type[InlineTable], type[Table], type[OutOfOrderTableProxy]]
-] = (InlineTable, Table, OutOfOrderTableProxy)
-
 
 def rewrite_dependency_requirements(
     document: TOMLDocument,
@@ -129,15 +125,28 @@ def _is_matching_dependency(
     updated_crate_names: cabc.Collection[str],
 ) -> bool:
     """Return whether a dependency key or package alias is safe to update."""
-    if isinstance(entry, _TABLE_TYPES):
-        workspace_flag = entry.get("workspace")
-        if isinstance(workspace_flag, Item):
-            workspace_flag = workspace_flag.value
-        if workspace_flag is True:
-            return False
-        package_item = entry.get("package")
-        if package_item is None:
-            return name in updated_crate_names
-        package_name = bump_toml.value_as_string(package_item)
-        return package_name is not None and package_name in updated_crate_names
-    return name in updated_crate_names and bump_toml.value_as_string(entry) is not None
+    match entry:
+        case (InlineTable() | Table() | OutOfOrderTableProxy()) as table:
+            if _inherits_workspace_version(table):
+                return False
+            package_item = table.get("package")
+            if package_item is None:
+                return name in updated_crate_names
+            package_name = bump_toml.value_as_string(package_item)
+            return package_name is not None and package_name in updated_crate_names
+        case _:
+            return (
+                name in updated_crate_names
+                and bump_toml.value_as_string(entry) is not None
+            )
+
+
+def _inherits_workspace_version(
+    entry: InlineTable | Table | OutOfOrderTableProxy,
+) -> bool:
+    """Return whether a dependency table sets ``workspace = true``."""
+    match entry.get("workspace"):
+        case Item() as item:
+            return item.value is True
+        case flag:
+            return flag is True

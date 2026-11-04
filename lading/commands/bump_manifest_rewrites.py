@@ -173,7 +173,7 @@ def apply_manifest_rewrites(
     *,
     dry_run: bool,
 ) -> tuple[Path, ...]:
-    """Write planned manifests atomically unless this is a dry run.
+    """Write each planned manifest atomically unless this is a dry run.
 
     Parameters
     ----------
@@ -187,6 +187,12 @@ def apply_manifest_rewrites(
     -------
     tuple[Path, ...]
         Paths represented by the plans, including during dry runs.
+
+    Notes
+    -----
+    Each call to :func:`bump_toml.write_atomic_text` makes one manifest write
+    atomic. An ``OSError`` from that helper propagates; writes completed before
+    the failure remain in place, so the sequence is not atomic as a whole.
     """
     if plans and not dry_run:
         for plan in plans:
