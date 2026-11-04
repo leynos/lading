@@ -86,21 +86,17 @@ def _prepare_published_gpui_e2e_fixture(
     )
     fixture = workspace_directory / "tests/fixtures/published-gpui-e2e/Cargo.toml"
     fixture.parent.mkdir(parents=True, exist_ok=True)
-    fixture.write_text(
-        """[dependencies]
-rstest-bdd = "0.6.0-beta4"
-rstest-bdd-harness = "0.6.0-beta4"
-rstest-bdd-harness-gpui = "0.6.0-beta4"
-rstest-bdd-macros = "0.6.0-beta4"
-
-[patch.crates-io]
-rstest-bdd = { path = "../../../target/published-gpui-e2e/rstest-bdd-0.6.0-beta4" }
-"""
-        """rstest-bdd-harness = { path = "../../../target/published-gpui-e2e/"""
-        """rstest-bdd-harness-0.6.0-beta4" }
-""",
-        encoding="utf-8",
-    )
+    fixture_lines = [
+        "[dependencies]",
+        *(f'{name} = "{version}"' for name in crate_names),
+        "",
+        "[patch.crates-io]",
+    ]
+    for name in crate_names[:2]:
+        patch_path = f"../../../target/published-gpui-e2e/{name}-{version}"
+        fixture_lines.append(f'{name} = {{ path = "{patch_path}" }}')
+    fixture_lines.append("")
+    fixture.write_text("\n".join(fixture_lines), encoding="utf-8")
     config_path = workspace_directory / "lading.toml"
     config_text = config_path.read_text(encoding="utf-8")
     config_text += (
