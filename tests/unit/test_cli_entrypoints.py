@@ -98,6 +98,34 @@ def test_manifest_rewrite_write_failure_is_reported_once(
     )
 
 
+def test_manifest_rewrite_write_failure_is_visible_when_errors_are_disabled(
+    caplog: pytest.LogCaptureFixture,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """CRITICAL-only logging still prints write failures to standard error."""
+    failed_path = Path("tests/fixtures/standalone/Cargo.toml")
+    error = ManifestRewriteError(
+        f"Could not write manifest rewrite target {failed_path} after 1 of 2 "
+        "write(s): permission denied",
+        completed_writes=1,
+        planned_writes=2,
+        failed_path=failed_path,
+    )
+
+    with caplog.at_level(logging.CRITICAL, logger=cli.__name__):
+        cli._print_expected_command_error(error)
+
+    assert not caplog.records, "ERROR events must remain suppressed at CRITICAL"
+    message = capsys.readouterr().err
+    assert "Manifest rewrite error:" in message, (
+        "the CLI should print a fallback error message"
+    )
+    assert str(failed_path) in message, "the fallback should identify the failed path"
+    assert "after 1 of 2 write(s)" in message, (
+        "the fallback should preserve the completed and planned write count"
+    )
+
+
 @pytest.mark.usefixtures("minimal_config")
 def test_bump_command_validates_version(
     capsys: pytest.CaptureFixture[str],

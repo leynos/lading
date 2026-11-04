@@ -403,6 +403,8 @@ def _print_expected_command_error(
             error.planned_writes,
             error,
         )
+        if not LOGGER.isEnabledFor(logging.ERROR):
+            print(f"Manifest rewrite error: {error}", file=sys.stderr)
         return
     match error:
         case ManifestRewriteError():
