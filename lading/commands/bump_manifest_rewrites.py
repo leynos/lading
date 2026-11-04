@@ -18,6 +18,7 @@ stage::
 import collections.abc as cabc
 import dataclasses as dc
 import glob
+import logging
 import re
 import typing as typ
 from pathlib import Path
@@ -31,6 +32,8 @@ from lading.commands.bump_manifest_rewrite_dependencies import (
     rewrite_dependency_requirements,
 )
 from lading.exceptions import LadingError
+
+_log = logging.getLogger(__name__)
 
 if typ.TYPE_CHECKING:
     from tomlkit.toml_document import TOMLDocument
@@ -251,6 +254,12 @@ def _merge_rewrite_candidate(
         label="Manifest rewrite",
     )
     if manifest_path in context.skipped_manifests:
+        _log.debug(
+            "Skipping configured manifest rewrite %s because it resolves to a "
+            "workspace-owned manifest at %s",
+            configured_path,
+            manifest_path,
+        )
         return
     if not manifest_path.is_file():
         message = (

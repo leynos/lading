@@ -768,10 +768,12 @@ positional fields, and unknown placeholders are configuration errors. The old
 version comes from workspace metadata; the new version is the requested bump
 version. A template starting with `{crate}` requires a crate-name boundary
 before the match; one starting with `{version}` requires a boundary before the
-version that rejects letters, digits, and periods while allowing hyphens. A
-template ending with `{crate}` requires a crate-name boundary after the match;
-one ending with `{version}` requires a version boundary after it. These rules
-keep `rstest-bdd` from matching inside `rstest-bdd-harness` and prevent
+version that rejects letters, digits, and periods while allowing plus signs and
+hyphens. A template ending with `{crate}` requires a crate-name boundary after
+the match; one ending with `{version}` requires a boundary after the match that
+rejects letters, digits, periods, plus signs, and hyphens. An adjacent `.crate`
+extension or `-extra` suffix therefore blocks the match. These rules keep
+`rstest-bdd` from matching inside `rstest-bdd-harness` and prevent
 `0.6.0-beta4` matching the prefix of `0.6.0-beta40`.
 
 The root manifest and all workspace-member manifests are skipped even when a
