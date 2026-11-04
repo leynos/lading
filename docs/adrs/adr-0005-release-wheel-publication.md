@@ -19,23 +19,25 @@ find dist/wheels-* -type f -name "*.whl" -print0 | \
   xargs -0 -r gh release upload "$TAG"
 ```
 
-The original download omitted `name`. With `actions/download-artifact@v4`, an
-unnamed download extracts every matching artefact into a directory named for
-that artefact under `path`, even when only one artefact matches. In v8, a sole
-match is extracted directly into `path`; per-artefact directories are used when
-several artefacts match and `merge-multiple` is false. A named single-artefact
-download goes directly into `path` in both versions. These rules are visible in
-the v4.1.8 source[^1] and documentation[^2], and v8.0.2 source[^3]. The unnamed
-v4 download therefore put the wheel in `dist/wheels-pure`, where the old glob
-matched it. Under v8, with only `wheels-pure` matching, the wheel was placed
-directly in `dist`, so `find dist/wheels-*` found no match.
+The original download omitted `name`. In both v4 and v8, a download that
+selects a single artefact extracts its files directly into `path`. When several
+artefacts match and `merge-multiple` is false, the action creates a
+subdirectory for each artefact under `path`. These rules are visible in the
+v4.1.8 source[^1] and documentation[^2], and v8.0.2 source[^3]. Therefore,
+whenever only `wheels-pure` matched, its files were placed directly in `dist`
+and `find dist/wheels-*` found no match. The v4-to-v8 version change alone does
+not explain the empty glob; a named download makes the intended artefact and
+destination explicit.
 
 The pipeline then hid that empty match. Without `pipefail`, it reported the
 exit status of the last command: `find` failed when `dist/wheels-*` did not
 exist, while `xargs -r` ran nothing and exited zero. Consequently, `set -eu`
 did not fail the step. Naming the download and setting its path makes the
-artefact identity and location explicit; the Python uploader fails when it
-finds no wheel, so both mismatch and silent-empty failure modes are covered.
+artefact identity and location explicit. The collector requires at least one
+wheel and exactly one sdist before either publisher proceeds. The Python
+uploader also fails when its directory is missing or contains no distributions.
+Phase 1 contract tests bind the download name and path to the collector and
+uploader directories.
 
 Issue #256 reports that the `v0.3.0` release had no wheel and that the wheel
 was attached by hand; it also notes that `v0.2.0` retained its wheel. The
@@ -110,6 +112,23 @@ process. Tagged releases now publish an sdist and every wheel to PyPI through
 Trusted Publishing before attaching any missing filenames to the GitHub
 Release. The GitHub-only wheel process above remains the historical decision;
 ADR-009 records the current order, retry rules, and trade-offs.
+
+## Addendum, 2026-11-04: Incident account and contract corrections
+
+Adopted 2026-11-04. The earlier Context said that both `v0.3.0` and `v0.3.1`
+had no wheel and green jobs, and that each was completed by hand. Those
+statements were not independently supported by run logs. The Context above now
+attributes the `v0.3.0` manual attachment and the retained `v0.2.0` wheel to
+issue #256, and attributes reports about `v0.3.0` and `v0.3.1` to workflow
+comments. The corrected download layout is based on the pinned v4.1.8 and
+v8.0.2 action sources cited above.
+
+The Decision's `"$GITHUB_REF_NAME"` command and `--clobber` upload describe the
+historical workflow. The current workflow passes `"$TAG"`, set from
+`github.ref_name`, to its publication step and uses
+`scripts/upload_release_wheels.py`. Phase 1 contract tests lock those commands
+and reject `--clobber` in workflow run blocks. They also bind artefact
+identity, extraction path, collection directory, and publication ordering.
 
 [^1]: <https://github.com/actions/download-artifact/blob/fa0a91b85d4f404e444e00e005971372dc801d16/src/download-artifact.ts>
 [^2]: <https://github.com/actions/download-artifact/blob/fa0a91b85d4f404e444e00e005971372dc801d16/README.md>
