@@ -135,6 +135,9 @@ def _is_matching_dependency(
             workspace_flag = workspace_flag.value
         if workspace_flag is True:
             return False
-        package_name = bump_toml.value_as_string(entry.get("package"))
-        return name in updated_crate_names or package_name in updated_crate_names
+        package_item = entry.get("package")
+        if package_item is None:
+            return name in updated_crate_names
+        package_name = bump_toml.value_as_string(package_item)
+        return package_name is not None and package_name in updated_crate_names
     return name in updated_crate_names and bump_toml.value_as_string(entry) is not None

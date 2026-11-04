@@ -150,18 +150,6 @@ class ManifestRewriteConfig(_MappingConfigRecord):
     _default_field_name: typ.ClassVar[str] = "bump.manifest_rewrites[0]"
 
 
-def _parse_config_mapping[ParsedValues: tuple[object, ...]](
-    parser: cabc.Callable[[cabc.Mapping[str, typ.Any], str], ParsedValues],
-    mapping: cabc.Mapping[str, typ.Any],
-    field_name: str,
-) -> ParsedValues:
-    """Run a schema parser while preserving its configuration error boundary."""
-    try:
-        return parser(mapping, field_name)
-    except ConfigurationError as exc:
-        raise ConfigurationError(str(exc)) from exc
-
-
 def _construct_from_mapping[Record, ParsedValues: tuple[object, ...]](
     config_type: type[Record],
     parser: cabc.Callable[[cabc.Mapping[str, typ.Any], str], ParsedValues],
@@ -169,7 +157,7 @@ def _construct_from_mapping[Record, ParsedValues: tuple[object, ...]](
     field_name: str,
 ) -> Record:
     """Construct one config record from its validated ordered values."""
-    values = _parse_config_mapping(parser, mapping, field_name)
+    values = parser(mapping, field_name)
     constructor = typ.cast("cabc.Callable[..., Record]", config_type)
     return constructor(*values)
 

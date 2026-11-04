@@ -26,7 +26,7 @@ from tomlkit.container import OutOfOrderTableProxy
 from tomlkit.exceptions import ParseError
 from tomlkit.items import InlineTable, Table
 
-from lading.commands import bump_lockfile_paths, bump_toml
+from lading.commands import bump_toml, manifest_paths
 from lading.commands.bump_manifest_rewrite_dependencies import (
     rewrite_dependency_requirements,
 )
@@ -236,7 +236,7 @@ def _merge_rewrite_candidate(
     candidate: Path,
 ) -> None:
     """Validate one candidate and merge its dependency and string rules."""
-    manifest_path = bump_lockfile_paths.resolve_manifest_candidate(
+    manifest_path = manifest_paths.resolve_manifest_candidate(
         context.workspace_root,
         candidate,
         error_type=ManifestRewriteError,
