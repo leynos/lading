@@ -4,6 +4,7 @@ Covers ``cli.main`` selecting a command, rejecting a missing or invalid
 subcommand, and translating a rejected ``--log-level`` into an exit code.
 """
 
+import collections.abc as cabc
 import dataclasses as dc
 import logging
 import typing as typ
@@ -15,6 +16,7 @@ from lading import cli
 from lading import config as config_module
 from lading.commands import bump as bump_command
 from lading.commands import publish as publish_command
+from tests.helpers.cli_diagnostics import normalize_diagnostic
 from tests.helpers.cli_workspace import make_workspace, preserve_root_logger
 from tests.helpers.cwd import chdir_for_test
 from tests.unit.test_cli_facade import CommandDispatchCase
@@ -118,8 +120,14 @@ def test_main_handles_invalid_subcommand(
     exit_code = cli.main(["invalid"])
     assert exit_code != 0, "an unknown subcommand must fail"
     captured = capsys.readouterr()
-    assert "Unknown command" in captured.out, (
-        "the unknown-command error must be printed"
+    # Cyclopts writes parse diagnostics to its error console, which is stderr.
+    # Asserting on the normalized stderr keeps the message contract without
+    # depending on Rich's panel width or colour.
+    assert "Unknown command" in normalize_diagnostic(captured.err), (
+        "the unknown-command error must be printed to stderr"
+    )
+    assert "Unknown command" not in captured.out, (
+        "a diagnostic must not be written to stdout"
     )
 
 
@@ -242,3 +250,88 @@ def test_main_rejects_invalid_log_level(
     assert cli.LOG_LEVEL_ENV_VAR in str(excinfo.value), (
         "the error must name the log-level environment variable"
     )
+
+
+@dc.dataclass(frozen=True, slots=True)
+class _DispatchOutcomeCase:
+    """One ``cli.app`` outcome and the exit status and streams it must produce."""
+
+    app_outcome: object
+    expected_status: int
+    expected_stdout: str
+    expected_stderr: str
+
+
+_DISPATCH_OUTCOME_CASES = (
+    pytest.param(
+        _DispatchOutcomeCase(None, 0, "", ""),
+        id="none-return",
+    ),
+    pytest.param(
+        _DispatchOutcomeCase(0, 0, "", ""),
+        id="zero-return",
+    ),
+    pytest.param(
+        _DispatchOutcomeCase(7, 7, "", ""),
+        id="nonzero-return",
+    ),
+    pytest.param(
+        _DispatchOutcomeCase("summary", 0, "summary\n", ""),
+        id="string-return",
+    ),
+    pytest.param(
+        _DispatchOutcomeCase(SystemExit(None), 0, "", ""),
+        id="exit-none",
+    ),
+    pytest.param(
+        _DispatchOutcomeCase(SystemExit(0), 0, "", ""),
+        id="exit-zero",
+    ),
+    pytest.param(
+        _DispatchOutcomeCase(SystemExit(7), 7, "", ""),
+        id="exit-nonzero",
+    ),
+    pytest.param(
+        _DispatchOutcomeCase(SystemExit("failure"), 1, "", "failure\n"),
+        id="exit-message",
+    ),
+)
+
+
+@pytest.mark.parametrize("case", _DISPATCH_OUTCOME_CASES)
+def test_dispatch_and_print_owns_results_and_exit_codes(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    case: _DispatchOutcomeCase,
+) -> None:
+    """``_dispatch_and_print`` is the only owner of printing and exit codes.
+
+    Cyclopts is configured with ``result_action="return_value"``, so the app
+    hands back the raw command result and never prints it. This matrix pins
+    the translation the dispatcher performs: a string is printed once to
+    stdout, an integer becomes the exit status, and a ``SystemExit`` carrying
+    a message is reported on stderr with status 1.
+    """
+    calls: list[tuple[str, ...]] = []
+
+    def fake_app(tokens: cabc.Sequence[str]) -> object:
+        calls.append(tuple(tokens))
+        outcome = case.app_outcome
+        if isinstance(outcome, SystemExit):
+            raise outcome
+        return outcome
+
+    monkeypatch.setattr(cli, "app", fake_app)
+    tokens = ("bump", "1.2.3")
+
+    status = cli._dispatch_and_print(tokens)
+
+    assert status == case.expected_status, "the dispatcher must map the outcome"
+    captured = capsys.readouterr()
+    assert captured.out == case.expected_stdout, (
+        "the dispatcher must print a string result exactly once, unwrapped"
+    )
+    assert captured.err == case.expected_stderr, (
+        "the dispatcher must report a message-carrying exit on stderr"
+    )
+    assert calls == [tokens], "the app must be called once with the supplied tokens"

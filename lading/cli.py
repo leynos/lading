@@ -103,7 +103,15 @@ _LOG_LEVEL_ALIASES: dict[str, int] = {
     "DEBUG": logging.DEBUG,
 }
 
-app = App(help="Manage Rust workspaces with the lading toolkit.")
+# Cyclopts 4 defaults to ``print_non_int_sys_exit``: it renders the command's
+# return value through Rich and calls :func:`sys.exit`, so an embedded caller
+# can neither read the result nor control the stream. lading owns that boundary:
+# :func:`_dispatch_and_print` prints the raw result once and maps it to an exit
+# code, which keeps summaries unwrapped and lets tests call ``app`` directly.
+app = App(
+    help="Manage Rust workspaces with the lading toolkit.",
+    result_action="return_value",
+)
 LOGGER = logging.getLogger(__name__)
 
 

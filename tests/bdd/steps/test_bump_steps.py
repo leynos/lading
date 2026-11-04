@@ -8,6 +8,7 @@ from cmd_mox import CmdMox
 from pytest_bdd import given, parsers, then, when
 
 from lading.commands import bump_readme
+from tests.helpers.cli_diagnostics import normalize_diagnostic
 
 # Keep direct fixture imports for BDD collection even though conftest.py
 # registers the modules as pytest plugins.
@@ -21,7 +22,6 @@ from . import (
 from .cli_run_types import CliRunResult
 
 if typ.TYPE_CHECKING:
-
     from .test_common_steps import (
         _run_cli,  # ruff: ignore[unused-import] - imported only for type checking
     )
@@ -148,8 +148,7 @@ def then_command_reports_no_changes(
 ) -> None:
     """Assert that the bump command reports that no updates were required."""
     assert cli_run["returncode"] == 0, (
-        f"a no-op bump to {version!r} must still succeed; "
-        f"stderr:\n{cli_run['stderr']}"
+        f"a no-op bump to {version!r} must still succeed; stderr:\n{cli_run['stderr']}"
     )
     stdout = cli_run["stdout"]
     assert "No manifest changes required" in stdout, (
@@ -189,11 +188,14 @@ def then_bump_reports_invalid_version(
         f"an invalid version {version!r} must fail the command with exit code 1, "
         f"but exited with {cli_run['returncode']}"
     )
-    # Cyclopts renders argument-validation errors through its own console
-    # (stdout), consistent with other cyclopts errors such as "Unknown command".
-    stdout = cli_run["stdout"]
-    assert f"Invalid version argument '{version}'" in stdout, (
+    # Cyclopts writes argument-validation errors to its error console, which is
+    # stderr, consistent with other parse errors such as "Unknown command".
+    stderr = normalize_diagnostic(cli_run["stderr"])
+    assert f"Invalid version argument '{version}'" in stderr, (
         f"the failure must name {version!r} as an invalid version argument"
+    )
+    assert "Invalid version argument" not in cli_run["stdout"], (
+        "a diagnostic must not be written to stdout"
     )
 
 
@@ -229,7 +231,7 @@ _LISTED_PATH_LABELS = {
 
 @then(
     parsers.re(
-        r'the CLI output lists (?P<kind>documentation|README|lockfile) path'
+        r"the CLI output lists (?P<kind>documentation|README|lockfile) path"
         r' "(?P<expected>[^"]+)"'
     )
 )
@@ -340,8 +342,7 @@ def then_crate_readme_contains(
     normalized_expected = expected.replace(r"\"", '"')
     contents = readme_path.read_text(encoding="utf-8")
     assert normalized_expected in contents, (
-        f"the {crate_name!r} crate README must contain {expected!r} "
-        "after the bump"
+        f"the {crate_name!r} crate README must contain {expected!r} after the bump"
     )
 
 

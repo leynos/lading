@@ -78,8 +78,11 @@ def test_a_report_leaves_the_staging_directory_in_place(tmp_path: Path) -> None:
         f"the report did not count the tree: {result.stdout!r}"
     )
     assert tree.name in result.stdout, "the report did not name the tree"
-    assert "Pass --remove to delete them." in result.stdout, (
-        "the report did not say how to remove what it found"
+    assert result.stdout.count("Pass --remove to delete them.") == 1, (
+        "the report must say how to remove what it found, exactly once"
+    )
+    assert "╭" not in result.stderr, (
+        "a successful run must not render a Cyclopts error panel"
     )
 
 
