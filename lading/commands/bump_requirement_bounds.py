@@ -55,27 +55,42 @@ def _parse_version(value: str, *, require_full: bool) -> _Version | None:
     core_parts = tuple(int(part) for part in match.group("core").split("."))
     precision = len(core_parts)
     prerelease_text = match.group("prerelease")
+    if _has_invalid_precision(precision, prerelease_text, require_full=require_full):
+        return None
+    prerelease = _parse_prerelease(prerelease_text)
+    if prerelease is None:
+        return None
+    return _Version(_pad_core(core_parts), precision, prerelease)
+
+
+def _has_invalid_precision(
+    precision: int, prerelease_text: str | None, *, require_full: bool
+) -> bool:
+    """Check core precision constraints for target and comparator versions."""
     if require_full and precision != _VERSION_COMPONENT_COUNT:
+        return True
+    return bool(prerelease_text) and precision != _VERSION_COMPONENT_COUNT
+
+
+def _parse_prerelease(value: str | None) -> tuple[int | str, ...] | None:
+    """Parse prerelease identifiers, rejecting numeric leading zeroes."""
+    if not value:
+        return ()
+    identifiers = value.split(".")
+    if any(_has_numeric_leading_zero(identifier) for identifier in identifiers):
         return None
-    if prerelease_text and precision != _VERSION_COMPONENT_COUNT:
-        return None
-    prerelease_parts = (prerelease_text or "").split(".")
-    if any(
-        part.isdigit() and len(part) > 1 and part.startswith("0")
-        for part in prerelease_parts
-    ):
-        return None
-    padded_core = (
-        *core_parts,
-        *(0 for _ in range(_VERSION_COMPONENT_COUNT - precision)),
-    )
-    core = (padded_core[0], padded_core[1], padded_core[2])
-    prerelease = (
-        tuple(int(part) if part.isdigit() else part for part in prerelease_parts)
-        if prerelease_text
-        else ()
-    )
-    return _Version(core, precision, prerelease)
+    return tuple(int(part) if part.isdigit() else part for part in identifiers)
+
+
+def _has_numeric_leading_zero(identifier: str) -> bool:
+    """Return whether a numeric prerelease identifier has a leading zero."""
+    return identifier.isdigit() and len(identifier) > 1 and identifier.startswith("0")
+
+
+def _pad_core(parts: tuple[int, ...]) -> tuple[int, int, int]:
+    """Pad a partial comparator core to three components."""
+    padded = (*parts, *(0 for _ in range(_VERSION_COMPONENT_COUNT - len(parts))))
+    return (padded[0], padded[1], padded[2])
 
 
 def _satisfies(target: _Version, operator: str, bound: _Version) -> bool:
