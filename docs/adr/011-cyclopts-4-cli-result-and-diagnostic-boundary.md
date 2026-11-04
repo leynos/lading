@@ -20,8 +20,8 @@ Two upstream defaults changed in Cyclopts 4 and both are observable at
 
 - **Result handling.** `App.__call__` defaults to
   `result_action="print_non_int_sys_exit"`. It renders a command's return value
-  through Rich and calls :func:`sys.exit`. In Cyclopts 3 the app returned the
-  value to its caller. Direct in-process calls such as `cli.app(["bump", ...])`
+  through Rich and calls `sys.exit`. In Cyclopts 3 the app returned the value
+  to its caller. Direct in-process calls such as `cli.app(["bump", ...])`
   therefore began raising `SystemExit(0)` on success, and every reader of the
   returned summary string broke.
 - **Diagnostic streams.** Parse and validation errors are written to the
@@ -29,9 +29,9 @@ Two upstream defaults changed in Cyclopts 4 and both are observable at
   stdout. Help remains on the normal console, which defaults to stdout.
 
 `lading` already had an owner for both concerns: `_dispatch_and_print` in
-`lading/cli.py` caught `SystemExit`, printed a string result once with
-:func:`print`, and mapped it to an exit code. That function and `main()` were
-correct; the app was no longer cooperating with them.
+`lading/cli.py` caught `SystemExit`, printed a string result once with `print`,
+and mapped it to an exit code. That function and `main()` were correct; the app
+was no longer cooperating with them.
 
 The pathological failure was not only the exit status. Rich re-rendered the
 returned summary, wrapping long lines and adding ANSI colour, so

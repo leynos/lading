@@ -110,9 +110,6 @@ lading [--workspace-root <path>] <subcommand> [options]
   `pathlib.Path` alone), and stores the resolved path in the
   `LADING_WORKSPACE_ROOT` environment variable so that Cyclopts can hydrate
   per-command options without bespoke parsing hooks.
-- Subcommands currently dispatch to placeholder implementations that return a
-  human-readable acknowledgement. The CLI prints these messages to aid smoke
-  testing while we build out real behaviours in later roadmap steps.
 - Behavioural coverage uses `pytest-bdd` with `cmd-mox` spies to exercise the
   CLI through an actual `python -m lading.cli` invocation. This ensures the
   scaffolding works end-to-end, not just through direct function calls.

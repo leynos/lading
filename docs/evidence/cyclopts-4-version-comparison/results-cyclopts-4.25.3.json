@@ -1,0 +1,412 @@
+{
+  "cases": {
+    "bool-false": {
+      "argv": [
+        "no"
+      ],
+      "in_process_default": {
+        "outcome": {
+          "system_exit": {
+            "repr": "1",
+            "type": "int"
+          }
+        },
+        "stderr": "",
+        "stdout": ""
+      },
+      "in_process_return_value": {
+        "outcome": {
+          "returned": {
+            "repr": "False",
+            "type": "bool"
+          }
+        },
+        "stderr": "",
+        "stdout": ""
+      },
+      "process_default": {
+        "status": 1,
+        "stderr": "",
+        "stdout": ""
+      },
+      "process_dispatcher": {
+        "status": 1,
+        "stderr": "",
+        "stdout": ""
+      },
+      "process_return_value_dispatcher": {
+        "status": 1,
+        "stderr": "",
+        "stdout": ""
+      }
+    },
+    "bool-true": {
+      "argv": [
+        "yes"
+      ],
+      "in_process_default": {
+        "outcome": {
+          "system_exit": {
+            "repr": "0",
+            "type": "int"
+          }
+        },
+        "stderr": "",
+        "stdout": ""
+      },
+      "in_process_return_value": {
+        "outcome": {
+          "returned": {
+            "repr": "True",
+            "type": "bool"
+          }
+        },
+        "stderr": "",
+        "stdout": ""
+      },
+      "process_default": {
+        "status": 0,
+        "stderr": "",
+        "stdout": ""
+      },
+      "process_dispatcher": {
+        "status": 0,
+        "stderr": "",
+        "stdout": ""
+      },
+      "process_return_value_dispatcher": {
+        "status": 0,
+        "stderr": "",
+        "stdout": ""
+      }
+    },
+    "help": {
+      "argv": [
+        "--help"
+      ],
+      "in_process_default": {
+        "outcome": {
+          "system_exit": {
+            "repr": "0",
+            "type": "int"
+          }
+        },
+        "stderr": "",
+        "stdout": "Usage: probe.py COMMAND\n\n\u256d\u2500 Commands \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 abort        Raise SystemExit        \u2502\n\u2502              carrying a message, as  \u2502\n\u2502              lading bootstrap does.  \u2502\n\u2502 no           Return False.           \u2502\n\u2502 nothing      Return None, the        \u2502\n\u2502              success outcome that    \u2502\n\u2502              prints nothing.         \u2502\n\u2502 status       Return a non-zero       \u2502\n\u2502              integer status.         \u2502\n\u2502 summary      Return the long summary \u2502\n\u2502              lading prints verbatim. \u2502\n\u2502 typed        Require an integer so a \u2502\n\u2502              parse failure is        \u2502\n\u2502              observable.             \u2502\n\u2502 yes          Return True.            \u2502\n\u2502 --help (-h)  Display this message    \u2502\n\u2502              and exit.               \u2502\n\u2502 --version    Display application     \u2502\n\u2502              version.                \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n"
+      },
+      "in_process_return_value": {
+        "outcome": {
+          "returned": {
+            "repr": "None",
+            "type": "NoneType"
+          }
+        },
+        "stderr": "",
+        "stdout": "Usage: probe.py COMMAND\n\n\u256d\u2500 Commands \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 abort        Raise SystemExit        \u2502\n\u2502              carrying a message, as  \u2502\n\u2502              lading bootstrap does.  \u2502\n\u2502 no           Return False.           \u2502\n\u2502 nothing      Return None, the        \u2502\n\u2502              success outcome that    \u2502\n\u2502              prints nothing.         \u2502\n\u2502 status       Return a non-zero       \u2502\n\u2502              integer status.         \u2502\n\u2502 summary      Return the long summary \u2502\n\u2502              lading prints verbatim. \u2502\n\u2502 typed        Require an integer so a \u2502\n\u2502              parse failure is        \u2502\n\u2502              observable.             \u2502\n\u2502 yes          Return True.            \u2502\n\u2502 --help (-h)  Display this message    \u2502\n\u2502              and exit.               \u2502\n\u2502 --version    Display application     \u2502\n\u2502              version.                \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n"
+      },
+      "process_default": {
+        "status": 0,
+        "stderr": "",
+        "stdout": "Usage: cli_fixture.py COMMAND\n\n\u256d\u2500 Commands \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 abort        Raise SystemExit        \u2502\n\u2502              carrying a message, as  \u2502\n\u2502              lading bootstrap does.  \u2502\n\u2502 no           Return False.           \u2502\n\u2502 nothing      Return None, the        \u2502\n\u2502              success outcome that    \u2502\n\u2502              prints nothing.         \u2502\n\u2502 status       Return a non-zero       \u2502\n\u2502              integer status.         \u2502\n\u2502 summary      Return the long summary \u2502\n\u2502              lading prints verbatim. \u2502\n\u2502 typed        Require an integer so a \u2502\n\u2502              parse failure is        \u2502\n\u2502              observable.             \u2502\n\u2502 yes          Return True.            \u2502\n\u2502 --help (-h)  Display this message    \u2502\n\u2502              and exit.               \u2502\n\u2502 --version    Display application     \u2502\n\u2502              version.                \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n"
+      },
+      "process_dispatcher": {
+        "status": 0,
+        "stderr": "",
+        "stdout": "Usage: cli_fixture.py COMMAND\n\n\u256d\u2500 Commands \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 abort        Raise SystemExit        \u2502\n\u2502              carrying a message, as  \u2502\n\u2502              lading bootstrap does.  \u2502\n\u2502 no           Return False.           \u2502\n\u2502 nothing      Return None, the        \u2502\n\u2502              success outcome that    \u2502\n\u2502              prints nothing.         \u2502\n\u2502 status       Return a non-zero       \u2502\n\u2502              integer status.         \u2502\n\u2502 summary      Return the long summary \u2502\n\u2502              lading prints verbatim. \u2502\n\u2502 typed        Require an integer so a \u2502\n\u2502              parse failure is        \u2502\n\u2502              observable.             \u2502\n\u2502 yes          Return True.            \u2502\n\u2502 --help (-h)  Display this message    \u2502\n\u2502              and exit.               \u2502\n\u2502 --version    Display application     \u2502\n\u2502              version.                \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n"
+      },
+      "process_return_value_dispatcher": {
+        "status": 0,
+        "stderr": "",
+        "stdout": "Usage: cli_fixture.py COMMAND\n\n\u256d\u2500 Commands \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 abort        Raise SystemExit        \u2502\n\u2502              carrying a message, as  \u2502\n\u2502              lading bootstrap does.  \u2502\n\u2502 no           Return False.           \u2502\n\u2502 nothing      Return None, the        \u2502\n\u2502              success outcome that    \u2502\n\u2502              prints nothing.         \u2502\n\u2502 status       Return a non-zero       \u2502\n\u2502              integer status.         \u2502\n\u2502 summary      Return the long summary \u2502\n\u2502              lading prints verbatim. \u2502\n\u2502 typed        Require an integer so a \u2502\n\u2502              parse failure is        \u2502\n\u2502              observable.             \u2502\n\u2502 yes          Return True.            \u2502\n\u2502 --help (-h)  Display this message    \u2502\n\u2502              and exit.               \u2502\n\u2502 --version    Display application     \u2502\n\u2502              version.                \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n"
+      }
+    },
+    "int-nonzero": {
+      "argv": [
+        "status"
+      ],
+      "in_process_default": {
+        "outcome": {
+          "system_exit": {
+            "repr": "3",
+            "type": "int"
+          }
+        },
+        "stderr": "",
+        "stdout": ""
+      },
+      "in_process_return_value": {
+        "outcome": {
+          "returned": {
+            "repr": "3",
+            "type": "int"
+          }
+        },
+        "stderr": "",
+        "stdout": ""
+      },
+      "process_default": {
+        "status": 3,
+        "stderr": "",
+        "stdout": ""
+      },
+      "process_dispatcher": {
+        "status": 3,
+        "stderr": "",
+        "stdout": ""
+      },
+      "process_return_value_dispatcher": {
+        "status": 3,
+        "stderr": "",
+        "stdout": ""
+      }
+    },
+    "invalid-value": {
+      "argv": [
+        "typed",
+        "not-an-int"
+      ],
+      "in_process_default": {
+        "outcome": {
+          "system_exit": {
+            "repr": "1",
+            "type": "int"
+          }
+        },
+        "stderr": "\u256d\u2500 Error \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 Invalid value for COUNT: unable to   \u2502\n\u2502 convert \"not-an-int\" into int.       \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n",
+        "stdout": ""
+      },
+      "in_process_return_value": {
+        "outcome": {
+          "system_exit": {
+            "repr": "1",
+            "type": "int"
+          }
+        },
+        "stderr": "\u256d\u2500 Error \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 Invalid value for COUNT: unable to   \u2502\n\u2502 convert \"not-an-int\" into int.       \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n",
+        "stdout": ""
+      },
+      "process_default": {
+        "status": 1,
+        "stderr": "\u256d\u2500 Error \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 Invalid value for COUNT: unable to   \u2502\n\u2502 convert \"not-an-int\" into int.       \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n",
+        "stdout": ""
+      },
+      "process_dispatcher": {
+        "status": 1,
+        "stderr": "\u256d\u2500 Error \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 Invalid value for COUNT: unable to   \u2502\n\u2502 convert \"not-an-int\" into int.       \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n",
+        "stdout": ""
+      },
+      "process_return_value_dispatcher": {
+        "status": 1,
+        "stderr": "\u256d\u2500 Error \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 Invalid value for COUNT: unable to   \u2502\n\u2502 convert \"not-an-int\" into int.       \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n",
+        "stdout": ""
+      }
+    },
+    "missing-subcommand": {
+      "argv": [],
+      "in_process_default": {
+        "outcome": {
+          "system_exit": {
+            "repr": "0",
+            "type": "int"
+          }
+        },
+        "stderr": "",
+        "stdout": "Usage: probe.py COMMAND\n\n\u256d\u2500 Commands \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 abort        Raise SystemExit        \u2502\n\u2502              carrying a message, as  \u2502\n\u2502              lading bootstrap does.  \u2502\n\u2502 no           Return False.           \u2502\n\u2502 nothing      Return None, the        \u2502\n\u2502              success outcome that    \u2502\n\u2502              prints nothing.         \u2502\n\u2502 status       Return a non-zero       \u2502\n\u2502              integer status.         \u2502\n\u2502 summary      Return the long summary \u2502\n\u2502              lading prints verbatim. \u2502\n\u2502 typed        Require an integer so a \u2502\n\u2502              parse failure is        \u2502\n\u2502              observable.             \u2502\n\u2502 yes          Return True.            \u2502\n\u2502 --help (-h)  Display this message    \u2502\n\u2502              and exit.               \u2502\n\u2502 --version    Display application     \u2502\n\u2502              version.                \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n"
+      },
+      "in_process_return_value": {
+        "outcome": {
+          "returned": {
+            "repr": "None",
+            "type": "NoneType"
+          }
+        },
+        "stderr": "",
+        "stdout": "Usage: probe.py COMMAND\n\n\u256d\u2500 Commands \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 abort        Raise SystemExit        \u2502\n\u2502              carrying a message, as  \u2502\n\u2502              lading bootstrap does.  \u2502\n\u2502 no           Return False.           \u2502\n\u2502 nothing      Return None, the        \u2502\n\u2502              success outcome that    \u2502\n\u2502              prints nothing.         \u2502\n\u2502 status       Return a non-zero       \u2502\n\u2502              integer status.         \u2502\n\u2502 summary      Return the long summary \u2502\n\u2502              lading prints verbatim. \u2502\n\u2502 typed        Require an integer so a \u2502\n\u2502              parse failure is        \u2502\n\u2502              observable.             \u2502\n\u2502 yes          Return True.            \u2502\n\u2502 --help (-h)  Display this message    \u2502\n\u2502              and exit.               \u2502\n\u2502 --version    Display application     \u2502\n\u2502              version.                \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n"
+      },
+      "process_default": {
+        "status": 0,
+        "stderr": "",
+        "stdout": "Usage: cli_fixture.py COMMAND\n\n\u256d\u2500 Commands \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 abort        Raise SystemExit        \u2502\n\u2502              carrying a message, as  \u2502\n\u2502              lading bootstrap does.  \u2502\n\u2502 no           Return False.           \u2502\n\u2502 nothing      Return None, the        \u2502\n\u2502              success outcome that    \u2502\n\u2502              prints nothing.         \u2502\n\u2502 status       Return a non-zero       \u2502\n\u2502              integer status.         \u2502\n\u2502 summary      Return the long summary \u2502\n\u2502              lading prints verbatim. \u2502\n\u2502 typed        Require an integer so a \u2502\n\u2502              parse failure is        \u2502\n\u2502              observable.             \u2502\n\u2502 yes          Return True.            \u2502\n\u2502 --help (-h)  Display this message    \u2502\n\u2502              and exit.               \u2502\n\u2502 --version    Display application     \u2502\n\u2502              version.                \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n"
+      },
+      "process_dispatcher": {
+        "status": 0,
+        "stderr": "",
+        "stdout": "Usage: cli_fixture.py COMMAND\n\n\u256d\u2500 Commands \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 abort        Raise SystemExit        \u2502\n\u2502              carrying a message, as  \u2502\n\u2502              lading bootstrap does.  \u2502\n\u2502 no           Return False.           \u2502\n\u2502 nothing      Return None, the        \u2502\n\u2502              success outcome that    \u2502\n\u2502              prints nothing.         \u2502\n\u2502 status       Return a non-zero       \u2502\n\u2502              integer status.         \u2502\n\u2502 summary      Return the long summary \u2502\n\u2502              lading prints verbatim. \u2502\n\u2502 typed        Require an integer so a \u2502\n\u2502              parse failure is        \u2502\n\u2502              observable.             \u2502\n\u2502 yes          Return True.            \u2502\n\u2502 --help (-h)  Display this message    \u2502\n\u2502              and exit.               \u2502\n\u2502 --version    Display application     \u2502\n\u2502              version.                \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n"
+      },
+      "process_return_value_dispatcher": {
+        "status": 0,
+        "stderr": "",
+        "stdout": "Usage: cli_fixture.py COMMAND\n\n\u256d\u2500 Commands \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 abort        Raise SystemExit        \u2502\n\u2502              carrying a message, as  \u2502\n\u2502              lading bootstrap does.  \u2502\n\u2502 no           Return False.           \u2502\n\u2502 nothing      Return None, the        \u2502\n\u2502              success outcome that    \u2502\n\u2502              prints nothing.         \u2502\n\u2502 status       Return a non-zero       \u2502\n\u2502              integer status.         \u2502\n\u2502 summary      Return the long summary \u2502\n\u2502              lading prints verbatim. \u2502\n\u2502 typed        Require an integer so a \u2502\n\u2502              parse failure is        \u2502\n\u2502              observable.             \u2502\n\u2502 yes          Return True.            \u2502\n\u2502 --help (-h)  Display this message    \u2502\n\u2502              and exit.               \u2502\n\u2502 --version    Display application     \u2502\n\u2502              version.                \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n"
+      }
+    },
+    "none": {
+      "argv": [
+        "nothing"
+      ],
+      "in_process_default": {
+        "outcome": {
+          "system_exit": {
+            "repr": "0",
+            "type": "int"
+          }
+        },
+        "stderr": "",
+        "stdout": ""
+      },
+      "in_process_return_value": {
+        "outcome": {
+          "returned": {
+            "repr": "None",
+            "type": "NoneType"
+          }
+        },
+        "stderr": "",
+        "stdout": ""
+      },
+      "process_default": {
+        "status": 0,
+        "stderr": "",
+        "stdout": ""
+      },
+      "process_dispatcher": {
+        "status": 0,
+        "stderr": "",
+        "stdout": ""
+      },
+      "process_return_value_dispatcher": {
+        "status": 0,
+        "stderr": "",
+        "stdout": ""
+      }
+    },
+    "summary": {
+      "argv": [
+        "summary"
+      ],
+      "in_process_default": {
+        "outcome": {
+          "system_exit": {
+            "repr": "0",
+            "type": "int"
+          }
+        },
+        "stderr": "",
+        "stdout": "Found 1 staging directory under \nparser-summary-parser-summary-parser-sum\nmary-parser-summary-parser-summary-parse\nr-summary-, 64 B\n"
+      },
+      "in_process_return_value": {
+        "outcome": {
+          "returned": {
+            "repr": "'Found 1 staging directory under parser-summary-parser-summary-parser-summary-parser-summary-parser-summary-parser-summary-, 64 B'",
+            "type": "str"
+          }
+        },
+        "stderr": "",
+        "stdout": ""
+      },
+      "process_default": {
+        "status": 0,
+        "stderr": "",
+        "stdout": "Found 1 staging directory under \nparser-summary-parser-summary-parser-sum\nmary-parser-summary-parser-summary-parse\nr-summary-, 64 B\n"
+      },
+      "process_dispatcher": {
+        "status": 0,
+        "stderr": "",
+        "stdout": "Found 1 staging directory under \nparser-summary-parser-summary-parser-sum\nmary-parser-summary-parser-summary-parse\nr-summary-, 64 B\n"
+      },
+      "process_return_value_dispatcher": {
+        "status": 0,
+        "stderr": "",
+        "stdout": "Found 1 staging directory under parser-summary-parser-summary-parser-summary-parser-summary-parser-summary-parser-summary-, 64 B\n"
+      }
+    },
+    "systemexit-str": {
+      "argv": [
+        "abort"
+      ],
+      "in_process_default": {
+        "outcome": {
+          "system_exit": {
+            "repr": "'fatal: workspace missing'",
+            "type": "str"
+          }
+        },
+        "stderr": "",
+        "stdout": ""
+      },
+      "in_process_return_value": {
+        "outcome": {
+          "system_exit": {
+            "repr": "'fatal: workspace missing'",
+            "type": "str"
+          }
+        },
+        "stderr": "",
+        "stdout": ""
+      },
+      "process_default": {
+        "status": 1,
+        "stderr": "fatal: workspace missing\n",
+        "stdout": ""
+      },
+      "process_dispatcher": {
+        "status": 1,
+        "stderr": "fatal: workspace missing\n",
+        "stdout": ""
+      },
+      "process_return_value_dispatcher": {
+        "status": 1,
+        "stderr": "fatal: workspace missing\n",
+        "stdout": ""
+      }
+    },
+    "unknown-command": {
+      "argv": [
+        "unknown"
+      ],
+      "in_process_default": {
+        "outcome": {
+          "system_exit": {
+            "repr": "1",
+            "type": "int"
+          }
+        },
+        "stderr": "\u256d\u2500 Error \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 Unknown command \"unknown\". Available \u2502\n\u2502 commands: summary, nothing, status,  \u2502\n\u2502 yes, no, abort, typed.               \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n",
+        "stdout": ""
+      },
+      "in_process_return_value": {
+        "outcome": {
+          "system_exit": {
+            "repr": "1",
+            "type": "int"
+          }
+        },
+        "stderr": "\u256d\u2500 Error \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 Unknown command \"unknown\". Available \u2502\n\u2502 commands: summary, nothing, status,  \u2502\n\u2502 yes, no, abort, typed.               \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n",
+        "stdout": ""
+      },
+      "process_default": {
+        "status": 1,
+        "stderr": "\u256d\u2500 Error \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 Unknown command \"unknown\". Available \u2502\n\u2502 commands: summary, nothing, status,  \u2502\n\u2502 yes, no, abort, typed.               \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n",
+        "stdout": ""
+      },
+      "process_dispatcher": {
+        "status": 1,
+        "stderr": "\u256d\u2500 Error \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 Unknown command \"unknown\". Available \u2502\n\u2502 commands: summary, nothing, status,  \u2502\n\u2502 yes, no, abort, typed.               \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n",
+        "stdout": ""
+      },
+      "process_return_value_dispatcher": {
+        "status": 1,
+        "stderr": "\u256d\u2500 Error \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 Unknown command \"unknown\". Available \u2502\n\u2502 commands: summary, nothing, status,  \u2502\n\u2502 yes, no, abort, typed.               \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n",
+        "stdout": ""
+      }
+    }
+  },
+  "controls": {
+    "COLUMNS": "40",
+    "LINES": "24",
+    "NO_COLOR": "1",
+    "TERM": "dumb"
+  },
+  "cyclopts": "4.25.3",
+  "interpreter": "/tmp/venv-cp425/bin/python",
+  "python": "3.14.7"
+}

@@ -22,41 +22,69 @@ project's CLI, tests, or interpreter baseline.
 - Test runner: pytest 9.1.1 with `--doctest-modules`
 - Python 3.13 was not used: the project supports 3.14, and forcing an older
   interpreter would compare Python's behaviour as well as Cyclopts's
+- Fixture and probe:
+  [evidence/cyclopts-4-version-comparison/](evidence/cyclopts-4-version-comparison/README.md)
 
 ## Arms
 
 Table 1 lists the two environments. Both were created with
-`uv sync --locked --python 3.14` against the base commit, so they share the
+`uv sync --locked --python 3.14.7` against the base commit, so they share the
 same dependency tree. The treatment arm differs only in the Cyclopts
 distribution.
 
 Table 1: comparison arms.
 
-| Arm       | Environment       | Cyclopts                                                 |
-| --------- | ----------------- | -------------------------------------------------------- |
-| control   | `/tmp/venv-cp324` | 3.24.0, resolved from the committed `uv.lock`            |
-| treatment | `/tmp/venv-cp425` | 4.25.3, installed with `uv pip install cyclopts==4.25.3` |
+| Arm       | Environment       | Cyclopts                                                                                     |
+| --------- | ----------------- | -------------------------------------------------------------------------------------------- |
+| control   | `/tmp/venv-cp324` | 3.24.0, resolved from the committed `uv.lock`                                                |
+| treatment | `/tmp/venv-cp425` | 4.25.3, installed with `uv pip install --python /tmp/venv-cp425/bin/python cyclopts==4.25.3` |
 
 `pyproject.toml` and `uv.lock` were not edited in either arm. The treatment
 environment was verified immediately before and after its suite run with the
 same interpreter that ran the tests.
+
+Installing one distribution can also move its dependencies, so the treatment
+was checked against the control by package set rather than by Cyclopts version
+alone. Both environments hold the same 60 distributions and the only line that
+differs is the Cyclopts pin:
+
+```shell
+NO_COLOR=1 uv pip list --python /tmp/venv-cp324/bin/python --format freeze \
+  | sort > /tmp/cp324-freeze.txt
+NO_COLOR=1 uv pip list --python /tmp/venv-cp425/bin/python --format freeze \
+  | sort > /tmp/cp425-freeze.txt
+diff /tmp/cp324-freeze.txt /tmp/cp425-freeze.txt
+```
+
+```text
+11c11
+< cyclopts==3.24.0
+---
+> cyclopts==4.25.3
+```
+
+No other package was added, removed, or changed in version, so a failure that
+appears only in the treatment arm is attributable to Cyclopts and not to a
+transitive dependency.
 
 ## Environment controls
 
 Both arms ran with identical controls:
 
 ```shell
-env -u PYTHONPATH -u VIRTUAL_ENV -u UV_PROJECT_ENVIRONMENT \
+env -u PYTHONPATH -u VIRTUAL_ENV -u UV_PROJECT_ENVIRONMENT -u FORCE_COLOR \
   PYTHONHASHSEED=0 COLUMNS=80 LINES=24 TERM=dumb \
-  NO_COLOR=1 FORCE_COLOR=0 PYTHONDONTWRITEBYTECODE=1 \
+  NO_COLOR=1 PYTHONDONTWRITEBYTECODE=1 \
   /tmp/venv-cpNNN/bin/python -m pytest -q -p no:randomly \
   -p no:cacheprovider --tb=no -rf --doctest-modules
 ```
 
 - `PYTHONHASHSEED=0` and `-p no:randomly` remove hash and collection-order
   variation.
-- `COLUMNS`, `LINES`, `TERM`, `NO_COLOR`, and `FORCE_COLOR` pin the inputs Rich
-  reads when it renders a value or a diagnostic.
+- `COLUMNS`, `LINES`, `TERM`, and `NO_COLOR` pin the inputs Rich reads when it
+  renders a value or a diagnostic. `FORCE_COLOR` is explicitly unset rather
+  than set to `0`: Rich treats the variable's presence as a request for colour,
+  so `FORCE_COLOR=0` would override `NO_COLOR` and colour the output.
 - `UV_PROJECT_ENVIRONMENT` is unset because a child `uv` process that adopted
   the environment under test could resynchronize it to `uv.lock` mid-run.
   Invoking the virtual environment's interpreter directly removes that exposure
@@ -75,6 +103,11 @@ Each case is probed four ways: an in-process call with the app's default result
 action; an in-process call with `result_action="return_value"`; a subprocess
 whose wrapper discards the app's return value, as a naive process caller did
 before the fix; and a subprocess whose wrapper applies the dispatcher's mapping.
+
+The fixture, the probe, and both raw records live in
+[evidence/cyclopts-4-version-comparison/](evidence/cyclopts-4-version-comparison/README.md);
+`results-cyclopts-3.24.0.json` and `results-cyclopts-4.25.3.json` are the data
+Table 2 summarizes, and diffing them shows every row behind it.
 
 Table 2: fixture behaviour by outcome shape at `COLUMNS=40`.
 
@@ -108,8 +141,11 @@ Table 3: complete suite result per arm.
 
 | Arm       | Result                                         | Cyclopts resolved after the run |
 | --------- | ---------------------------------------------- | ------------------------------- |
-| control   | 1 failed, 1533 passed, 37 skipped in 168.02 s  | 3.24.0                          |
-| treatment | 20 failed, 1514 passed, 37 skipped in 147.62 s | 4.25.3                          |
+| control   | 1 failed, 1533 passed, 37 skipped in 353.31 s  | 3.24.0                          |
+| treatment | 20 failed, 1514 passed, 37 skipped in 155.66 s | 4.25.3                          |
+
+Wall-clock durations vary with host load and are recorded only for provenance;
+the pass and fail counts are the comparison.
 
 The treatment arm's 20 failures contain exactly one that also fails on the
 control:
@@ -200,28 +236,46 @@ by returning the raw value and printing it once.
    environments:
 
    ```shell
-   UV_PROJECT_ENVIRONMENT=/tmp/venv-cp324 uv sync --locked --python 3.14
-   UV_PROJECT_ENVIRONMENT=/tmp/venv-cp425 uv sync --locked --python 3.14
+   UV_PROJECT_ENVIRONMENT=/tmp/venv-cp324 uv sync --locked --python 3.14.7
+   UV_PROJECT_ENVIRONMENT=/tmp/venv-cp425 uv sync --locked --python 3.14.7
    uv pip install --python /tmp/venv-cp425/bin/python 'cyclopts==4.25.3'
    ```
 
-2. Confirm each environment resolves the version its arm names:
+2. Confirm each environment resolves the interpreter and the version its arm
+   names, and that the treatment moved no other distribution:
 
    ```shell
-   /tmp/venv-cp324/bin/python -c 'import cyclopts; print(cyclopts.__version__)'
-   /tmp/venv-cp425/bin/python -c 'import cyclopts; print(cyclopts.__version__)'
+   /tmp/venv-cpNNN/bin/python -c \
+     'import sys, cyclopts; print(sys.version.split()[0], cyclopts.__version__)'
    ```
 
-3. Run the fixture probes and the suite, one arm at a time, with the controls
-   in the section above. Print the resolved version again afterwards; a changed
-   value means some process resynchronized the environment and the run is void
-   rather than a result.
+   ```shell
+   NO_COLOR=1 uv pip list --python /tmp/venv-cp324/bin/python --format freeze \
+     | sort > /tmp/cp324-freeze.txt
+   NO_COLOR=1 uv pip list --python /tmp/venv-cp425/bin/python --format freeze \
+     | sort > /tmp/cp425-freeze.txt
+   diff /tmp/cp324-freeze.txt /tmp/cp425-freeze.txt
+   ```
 
-The fixture sources used for this comparison are a small `cyclopts.App` with
-`summary`, `nothing`, `status`, `yes`, `no`, `abort`, and `typed` commands,
-plus a probe that records the outcome, stdout, stderr, and exit status of each
-case. They are deliberately kept outside the repository: they instrument the
-dependency, not `lading`.
+   The first command must print `3.14.7 3.24.0` and `3.14.7 4.25.3`
+   respectively. The diff must contain only the `cyclopts` line; any other
+   difference means the arms no longer isolate the dependency.
+
+3. Run the published probe and the suite, one arm at a time. The probe sets its
+   own rendering controls (`COLUMNS=40`, `LINES=24`, `TERM=dumb`, `NO_COLOR=1`)
+   and removes `FORCE_COLOR` before it constructs an app, so it records the
+   same conditions from any shell. From
+   `docs/evidence/cyclopts-4-version-comparison/`:
+
+   ```shell
+   /tmp/venv-cp324/bin/python probe.py > /tmp/results-3.24.0.json
+   /tmp/venv-cp425/bin/python probe.py > /tmp/results-4.25.3.json
+   ```
+
+   Compare those records with the committed ones, then run the suite with the
+   controls above. Print the resolved version again afterwards; a changed value
+   means some process resynchronized the environment and the run is void rather
+   than a result.
 
 ## References
 
