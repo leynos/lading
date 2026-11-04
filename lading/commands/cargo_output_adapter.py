@@ -205,7 +205,24 @@ def parse_index_lookup_failure(
     'inner_crate'
 
     A dependency that has never been published at all produces the same
-    failure type from Cargo's ``no matching package named`` diagnostic.
+    failure type from Cargo's ``no matching package named`` diagnostic:
+
+    >>> absent_stderr = (
+    ...     "error: no matching package named `inner_crate` found\n"
+    ...     "location searched: crates.io index"
+    ... )
+    >>> absent_result = CargoSubprocessResult(
+    ...     exit_code=101,
+    ...     stdout="",
+    ...     stderr=absent_stderr,
+    ... )
+    >>> absent_failure = parse_index_lookup_failure(
+    ...     crate_name="beta",
+    ...     subcommand="package",
+    ...     result=absent_result,
+    ... )
+    >>> absent_failure.missing_dependency_name
+    'inner_crate'
     """
     if result.exit_code == 0:
         return None

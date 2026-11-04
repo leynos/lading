@@ -34,9 +34,8 @@ from .conftest import (
     prepare_staging_root,
 )
 from .index_missing_outputs import (
-    INDEX_MISSING_PACKAGE_STDERR_BETA,
+    BETA_SHAPES_AND_STDERR,
     INDEX_MISSING_PACKAGE_STDERR_EXTERNAL,
-    INDEX_MISSING_STDERR_BETA,
     INDEX_MISSING_STDERR_EXTERNAL,
 )
 
@@ -46,16 +45,12 @@ _PHASE_IDS = [
     pytest.param("package", publish.PublishPreflightError, id="packaging"),
     pytest.param("publish", publish_pipeline.PublishError, id="publish-dry-run"),
 ]
-_BETA_SHAPES_AND_STDERR = (
-    ("version-selection", INDEX_MISSING_STDERR_BETA),
-    ("absent-package", INDEX_MISSING_PACKAGE_STDERR_BETA),
-)
 _EXTERNAL_SHAPES_AND_STDERR = (
     ("version-selection", INDEX_MISSING_STDERR_EXTERNAL),
     ("absent-package", INDEX_MISSING_PACKAGE_STDERR_EXTERNAL),
 )
 _BETA_DIAGNOSTICS = [
-    pytest.param((shape, stderr), id=shape) for shape, stderr in _BETA_SHAPES_AND_STDERR
+    pytest.param((shape, stderr), id=shape) for shape, stderr in BETA_SHAPES_AND_STDERR
 ]
 _EXTERNAL_DIAGNOSTICS = [
     pytest.param((shape, stderr), id=shape)
@@ -172,7 +167,7 @@ _FLAGLESS_CASES = [
         id=f"{phase_id}-{shape}",
     )
     for phase_id, phase_name, exc_type, expected_fragment in _FLAGLESS_PHASES
-    for shape, stderr in _BETA_SHAPES_AND_STDERR
+    for shape, stderr in BETA_SHAPES_AND_STDERR
 ]
 
 

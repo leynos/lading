@@ -51,7 +51,16 @@ INDEX_MISSING_PACKAGE_STDERR_EXTERNAL = (
     "  location searched: crates.io index\n"
 )
 
+# The beta transcripts paired with the shape name that produces them. Tests
+# parameterize over this tuple so both diagnostic shapes stay covered wherever
+# one of them is exercised.
+BETA_SHAPES_AND_STDERR = (
+    ("version-selection", INDEX_MISSING_STDERR_BETA),
+    ("absent-package", INDEX_MISSING_PACKAGE_STDERR_BETA),
+)
+
 __all__ = [
+    "BETA_SHAPES_AND_STDERR",
     "INDEX_MISSING_PACKAGE_STDERR_BETA",
     "INDEX_MISSING_PACKAGE_STDERR_EXTERNAL",
     "INDEX_MISSING_STDERR_BETA",

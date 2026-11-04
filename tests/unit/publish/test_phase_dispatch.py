@@ -24,22 +24,15 @@ from .conftest import (
     _warning_records,
     invoke_phase,
 )
-from .index_missing_outputs import (
-    INDEX_MISSING_PACKAGE_STDERR_BETA,
-    INDEX_MISSING_STDERR_BETA,
-)
+from .index_missing_outputs import BETA_SHAPES_AND_STDERR
 
-_SHAPES_AND_STDERR = (
-    ("version-selection", INDEX_MISSING_STDERR_BETA),
-    ("absent-package", INDEX_MISSING_PACKAGE_STDERR_BETA),
-)
 # One case per (phase, diagnostic shape) pair keeps the test signature small
 # enough to satisfy the advisory argument-count rule while preserving a
 # readable id for each combination.
 _PHASE_DIAGNOSTIC_CASES = [
     pytest.param((phase_name, shape, stderr), id=f"{phase_name}-{shape}")
     for phase_name in ("package", "publish")
-    for shape, stderr in _SHAPES_AND_STDERR
+    for shape, stderr in BETA_SHAPES_AND_STDERR
 ]
 
 
