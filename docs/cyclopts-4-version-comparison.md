@@ -58,7 +58,7 @@ env -u PYTHONPATH -u VIRTUAL_ENV -u UV_PROJECT_ENVIRONMENT \
 - `COLUMNS`, `LINES`, `TERM`, `NO_COLOR`, and `FORCE_COLOR` pin the inputs Rich
   reads when it renders a value or a diagnostic.
 - `UV_PROJECT_ENVIRONMENT` is unset because a child `uv` process that adopted
-  the environment under test could resynchronise it to `uv.lock` mid-run.
+  the environment under test could resynchronize it to `uv.lock` mid-run.
   Invoking the virtual environment's interpreter directly removes that exposure
   and keeps the interpreter that ran the tests unambiguous.
 - `-p no:cacheprovider` stops either arm writing shared pytest state.
@@ -214,7 +214,7 @@ by returning the raw value and printing it once.
 
 3. Run the fixture probes and the suite, one arm at a time, with the controls
    in the section above. Print the resolved version again afterwards; a changed
-   value means some process resynchronised the environment and the run is void
+   value means some process resynchronized the environment and the run is void
    rather than a result.
 
 The fixture sources used for this comparison are a small `cyclopts.App` with
