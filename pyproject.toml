@@ -679,13 +679,6 @@ reason = "_MappingConfigRecord.from_mapping calls this helper after selecting th
 [[tool.skylos.dead_code.entrypoints]]
 type = "function"
 full_name = [
-    "lading.config_manifest_rewrites._parse_config_mapping",
-]
-reason = "_construct_from_mapping calls this helper to apply the selected rewrite schema parser and preserve the configuration error boundary."
-
-[[tool.skylos.dead_code.entrypoints]]
-type = "function"
-full_name = [
     "lading.commands.publish_staging.prepare_workspace",
 ]
 reason = "Retained public staging entry point for callers that cannot express block-scoped cleanup; it is documented in the users guide."

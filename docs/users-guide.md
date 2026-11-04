@@ -718,10 +718,12 @@ Each group accepts these fields:
   match must resolve inside the workspace, name a `Cargo.toml` file, and refer
   to a regular file.
 - `dependencies`: boolean, default `true`. Matching Cargo dependency
-  requirements are updated by package name, including renamed dependency keys
-  whose `package` value names an updated workspace crate. The rewrite visits
-  top-level, target-specific, and workspace dependency sections. Path-only
-  entries and entries with `workspace = true` are left alone.
+  requirements are updated by package name. When a dependency table sets
+  `package`, that value is authoritative; otherwise the dependency key supplies
+  the package name. This supports renamed dependency keys whose `package` value
+  names an updated workspace crate. The rewrite visits top-level,
+  target-specific, and workspace dependency sections. Path-only entries and
+  entries with `workspace = true` are left alone.
 - `string_values`: array of selector tables, default `[]`. Each selector has a
   non-empty literal `table` path, an optional `field`, and an optional
   `template`. Table segments and fields cannot have leading or trailing

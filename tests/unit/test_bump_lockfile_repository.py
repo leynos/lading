@@ -1,51 +1,16 @@
 """Integration tests for the injected LockfileRepository port in :mod:`lading.commands.bump`."""  # ruff: ignore[line-too-long] fixed one-line module docstring; wrapping it trips pydocstyle D205/D209
 
-import collections.abc as cabc
 import pathlib
 
 from lading.commands import bump
+from tests.helpers.recording_lockfile_repository import RecordingLockfileRepository
 from tests.helpers.workspace_builders import _make_config, _make_workspace
-
-
-class _RecordingLockfileRepository:
-    """LockfileRepository double recording calls without touching Cargo."""
-
-    def __init__(
-        self,
-        before_regenerate: cabc.Callable[[pathlib.Path, tuple[str, ...]], None]
-        | None = None,
-    ) -> None:
-        """Start with empty call records for both port operations."""
-        self.resolved: list[tuple[pathlib.Path, tuple[str, ...]]] = []
-        self.regenerated: list[tuple[pathlib.Path, tuple[str, ...]]] = []
-        self.before_regenerate = before_regenerate
-
-    def resolve_lockfile_paths(
-        self,
-        workspace_root: pathlib.Path,
-        lockfile_manifests: cabc.Sequence[str],
-    ) -> tuple[pathlib.Path, ...]:
-        """Record the resolution request and return a single lockfile path."""
-        self.resolved.append((workspace_root, tuple(lockfile_manifests)))
-        return (workspace_root / "Cargo.lock",)
-
-    def regenerate_lockfiles(
-        self,
-        workspace_root: pathlib.Path,
-        lockfile_manifests: cabc.Sequence[str],
-    ) -> tuple[pathlib.Path, ...]:
-        """Record the regeneration request and return a single lockfile path."""
-        manifests = tuple(lockfile_manifests)
-        if self.before_regenerate is not None:
-            self.before_regenerate(workspace_root, manifests)
-        self.regenerated.append((workspace_root, manifests))
-        return (workspace_root / "Cargo.lock",)
 
 
 def test_run_uses_injected_lockfile_repository(tmp_path: pathlib.Path) -> None:
     """Bump reaches lockfile operations only through the repository port."""
     workspace = _make_workspace(tmp_path)
-    repository = _RecordingLockfileRepository()
+    repository = RecordingLockfileRepository()
 
     message = bump.run(
         tmp_path,
@@ -73,7 +38,7 @@ def test_dry_run_projects_through_lockfile_repository(
 ) -> None:
     """Dry runs project lockfile paths without regenerating."""
     workspace = _make_workspace(tmp_path)
-    repository = _RecordingLockfileRepository()
+    repository = RecordingLockfileRepository()
 
     bump.run(
         tmp_path,

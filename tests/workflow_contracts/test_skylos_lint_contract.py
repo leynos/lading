@@ -97,7 +97,6 @@ _ENTRYPOINT_NAMES: typ.Final = frozenset({
     "lading.commands.publish_staging._handle_termination.frame",
     "lading.config_manifest_rewrites._MappingConfigRecord.from_mapping",
     "lading.config_manifest_rewrites._construct_from_mapping",
-    "lading.config_manifest_rewrites._parse_config_mapping",
 })
 
 

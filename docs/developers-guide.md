@@ -1083,6 +1083,31 @@ resolve from the crate directory, and leaves absolute URI targets unchanged.
 Markdown links in fenced code blocks, indented code blocks, and inline code
 spans are preserved verbatim.
 
+### Configured non-member manifest rewrites
+
+`lading.config_manifest_rewrites` owns the immutable records and strict schema
+for `bump.manifest_rewrites`. It uses `lading.config_validation` for shared
+mapping-key and selector-segment validation.
+
+`lading.commands.manifest_paths.resolve_manifest_candidate` owns the shared
+workspace-containment and `Cargo.toml` filename check. The lockfile path module
+supplies its lockfile error type and label; the rewrite planner supplies its
+manifest-rewrite error type and label. File existence and regular-file checks
+remain with each caller.
+
+`lading.commands.bump_manifest_rewrites` resolves the allowlist, skips the
+workspace and member manifests, parses selected TOML, and plans dependency and
+string-value edits before any pipeline write. It applies those plans after the
+workspace and member manifest stages, then documentation, README, and lockfile
+stages run. `bump.lockfile_manifests` remains a separate setting that adds
+lockfile-regeneration targets.
+
+`lading.commands.bump_manifest_rewrite_dependencies` owns traversal of direct,
+target-specific, and workspace dependency sections. When a dependency entry sets
+`package`, that package name determines the crate; otherwise its table key
+does. The rewrite module leaves `[patch]` and `[replace]` tables to explicit
+string-value selectors.
+
 ### Lockfile regeneration modules
 
 `lading.commands.bump_lockfiles` is the public compatibility façade. It owns

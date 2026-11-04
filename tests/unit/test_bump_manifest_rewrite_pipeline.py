@@ -8,8 +8,8 @@ from lading import config as config_module
 from lading.commands import bump
 from lading.commands.bump_manifest_rewrites import ManifestRewriteError
 from lading.config import ManifestRewriteConfig, StringValueRewriteConfig
+from tests.helpers.recording_lockfile_repository import RecordingLockfileRepository
 from tests.helpers.workspace_builders import _make_workspace
-from tests.unit.test_bump_lockfile_repository import _RecordingLockfileRepository
 
 
 def test_rewrites_fixture_before_lockfile_regeneration(
@@ -25,7 +25,7 @@ def test_rewrites_fixture_before_lockfile_regeneration(
         encoding="utf-8",
     )
     observed_fixture_text: list[str] = []
-    repository = _RecordingLockfileRepository(
+    repository = RecordingLockfileRepository(
         before_regenerate=lambda _root, _manifests: observed_fixture_text.append(
             fixture.read_text(encoding="utf-8")
         )
@@ -82,7 +82,7 @@ def test_dry_run_reports_fixture_and_projects_lockfiles_without_writes(
     fixture.parent.mkdir(parents=True)
     fixture.write_text('[dependencies]\nalpha = "0.1.0"\n', encoding="utf-8")
     original_bytes = fixture.read_bytes()
-    repository = _RecordingLockfileRepository()
+    repository = RecordingLockfileRepository()
     configuration = config_module.LadingConfig(
         bump=config_module.BumpConfig(
             lockfile_manifests=("nested/Cargo.toml",),
