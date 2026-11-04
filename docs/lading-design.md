@@ -110,9 +110,6 @@ lading [--workspace-root <path>] <subcommand> [options]
   `pathlib.Path` alone), and stores the resolved path in the
   `LADING_WORKSPACE_ROOT` environment variable so that Cyclopts can hydrate
   per-command options without bespoke parsing hooks.
-- Subcommands currently dispatch to placeholder implementations that return a
-  human-readable acknowledgement. The CLI prints these messages to aid smoke
-  testing while we build out real behaviours in later roadmap steps.
 - Behavioural coverage uses `pytest-bdd` with `cmd-mox` spies to exercise the
   CLI through an actual `python -m lading.cli` invocation. This ensures the
   scaffolding works end-to-end, not just through direct function calls.
@@ -123,6 +120,14 @@ lading [--workspace-root <path>] <subcommand> [options]
   through every call. The CLI sets up this context before dispatching a
   subcommand and falls back to on-demand loading when commands are invoked
   programmatically.
+- The `cyclopts.App` is constructed with `result_action="return_value"`, so a
+  command's return value reaches `_dispatch_and_print` unchanged. That
+  function, and `main()` around it, own printing and exit codes: a string
+  result is printed once to stdout, an integer becomes the exit status, and a
+  `SystemExit` carrying a message is reported on stderr with status 1.
+  Cyclopts's own diagnostics go to stderr and help goes to stdout. The
+  contract, its exceptions, and the dependency floor are recorded in
+  [ADR-011](adr/011-cyclopts-4-cli-result-and-diagnostic-boundary.md).
 
 ### 2.2. Configuration: `lading.toml`
 

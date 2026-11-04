@@ -103,7 +103,15 @@ _LOG_LEVEL_ALIASES: dict[str, int] = {
     "DEBUG": logging.DEBUG,
 }
 
-app = App(help="Manage Rust workspaces with the lading toolkit.")
+# Cyclopts 4 defaults to ``print_non_int_sys_exit``: it renders the command's
+# return value through Rich and calls :func:`sys.exit`, so an embedded caller
+# can neither read the result nor control the stream. lading owns that boundary:
+# :func:`_dispatch_and_print` prints the raw result once and maps it to an exit
+# code, which keeps summaries unwrapped and lets tests call ``app`` directly.
+app = App(
+    help="Manage Rust workspaces with the lading toolkit.",
+    result_action="return_value",
+)
 LOGGER = logging.getLogger(__name__)
 
 
@@ -382,11 +390,19 @@ def _dispatch_and_print(tokens: cabc.Sequence[str]) -> int:
             return code
         print(code, file=sys.stderr)
         return 1
-    if isinstance(result, int):
-        return result
-    if result is not None:
-        print(result)
-    return 0
+    match result:
+        case None:
+            status = 0
+        case bool():
+            # bool subclasses int, so it must be matched first. Cyclopts maps
+            # a bool result to success when true and failure when false.
+            status = 0 if result else 1
+        case int():
+            status = result
+        case _:
+            print(result)
+            status = 0
+    return status
 
 
 def main(argv: cabc.Sequence[str] | None = None) -> int:

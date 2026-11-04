@@ -446,7 +446,9 @@ test: build $(UV) pytest makeutil test-workflow-contracts ## Run tests
 	# --doctest-modules collects the examples in module and function
 	# docstrings. Without it they are documentation nobody checks: 342 example
 	# lines across 45 files were never run before this was added.
-	$(UV) run pytest -v --doctest-modules
+	# docs/evidence holds comparison fixtures, not project code, and is
+	# excluded so doctest collection never imports it.
+	$(UV) run pytest -v --doctest-modules --ignore=docs/evidence
 
 # Model-check the bump_output pure-helper contracts (issue #95). Only the
 # string/count helpers are enumerated: CrossHair 0.0.107 cannot build a symbolic

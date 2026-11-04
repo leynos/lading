@@ -18,6 +18,7 @@ from lading import cli
 from lading import config as config_module
 from lading.commands import bump as bump_command
 from lading.commands import publish as publish_command
+from tests.helpers.cli_diagnostics import normalize_diagnostic
 from tests.helpers.cli_workspace import make_workspace
 
 if typ.TYPE_CHECKING:
@@ -86,10 +87,13 @@ def test_bump_command_validates_version(
     exit_code = cli.main(["bump", "1.2", "--workspace-root", str(tmp_path)])
     assert exit_code == 1, f"an invalid version must exit 1, got {exit_code}"
     captured = capsys.readouterr()
-    # Cyclopts renders argument-validation errors through its own console
-    # (stdout), consistent with other cyclopts errors such as "Unknown command".
-    assert "Invalid version argument '1.2'" in captured.out, (
-        "cyclopts should report the invalid version on stdout"
+    # Cyclopts writes argument-validation errors to its error console, which is
+    # stderr, consistent with other parse errors such as "Unknown command".
+    assert "Invalid version argument '1.2'" in normalize_diagnostic(captured.err), (
+        "cyclopts should report the invalid version on stderr"
+    )
+    assert "Invalid version argument" not in captured.out, (
+        "a diagnostic must not be written to stdout"
     )
 
 

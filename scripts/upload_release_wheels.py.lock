@@ -1,11 +1,11 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.14"
 
 [manifest]
 requirements = [
     { name = "cuprum", specifier = "==0.2.0b2" },
-    { name = "cyclopts", specifier = ">=3" },
+    { name = "cyclopts", specifier = ">=4.25.3" },
 ]
 
 [[package]]

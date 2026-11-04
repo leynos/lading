@@ -60,11 +60,17 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
 - [ADR-010: Adopt the nose duplication gate][adr-010] - accepted design for the
   blocking code-duplication gate, its scan scope, and the adjudication of
   intentional parallels.
+- [ADR-011: Preserve the CLI result and diagnostic-stream boundary under
+  Cyclopts 4][adr-011] - accepted policy for raw command results, stdout
+  summaries, stderr diagnostics, exit-code mapping, and the dependency floor.
 
 ## Reference documents
 
 - [Documentation style guide](documentation-style-guide.md) - writing,
   formatting, and naming conventions for project documentation.
+- [Cyclopts 3.24.0 and 4.25.3 comparison](cyclopts-4-version-comparison.md) -
+  fixed-base evidence and the reproduction recipe for the dependency boundary
+  recorded in ADR-011.
 - [Scripting standards](scripting-standards.md) - conventions for robust helper
   scripts, secure command execution, and command mocking.
 - [cmd-mox usage guide](cmd-mox-usage-guide.md) - testing guidance for command
@@ -76,7 +82,8 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
   reference copy of the `cuprum` 0.2.0-beta2 guide to the API changes from
   0.1.x, including `ScopeConfig` and `RunOutputOptions`.
 - [Lading 0.4.0 migration guide](v0-4-0-migration-guide.md) - the interpreter
-  floor moving to CPython 3.14, PyPI publication, and how to upgrade or defer.
+  floor moving to CPython 3.14, PyPI publication, the command-line stream
+  boundary, and how to upgrade or defer.
 - [Complexity antipatterns and refactoring
   strategies](complexity-antipatterns-and-refactoring-strategies.md) -
   reference on cyclomatic and cognitive complexity metrics, the bumpy road
@@ -90,4 +97,5 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
 [adr-008]: adr/008-adopt-the-shared-cv005-contract-library.md
 [adr-009]: adr/009-pypi-first-distribution-publication.md
 [adr-010]: adr/010-adopt-nose-duplication-gate.md
+[adr-011]: adr/011-cyclopts-4-cli-result-and-diagnostic-boundary.md
 [execplan-regenerate-lockfiles]: execplans/regenerate-lockfiles.md

@@ -184,6 +184,72 @@ Guidance:
   ] = None
   ```
 
+### Result values, streams, and exit codes
+
+Cyclopts 4 changed what `app()` does with a command's return value. Its default
+`result_action` is `print_non_int_sys_exit`: a non-`int` result is rendered
+through Rich and printed, and the app then calls `sys.exit`. A returned `int`
+becomes the exit status. That default suits a script whose only caller is the
+shell, but it takes the process boundary away from the script.
+
+Choose one of two patterns deliberately.
+
+**Shell-only script.** Return `None` and print what you need yourself. The
+default action leaves `None` alone, so the script keeps control of its own
+formatting and the exit status stays `0` unless an exception escapes.
+
+**Script with an outer boundary.** When the script is imported by tests, called
+in-process, or must emit machine-readable output, set
+`result_action="return_value"` and own printing and exit codes in an outer
+`main()`:
+
+```python
+app = App(
+    config=cyclopts.config.Env("INPUT_", command=False),
+    result_action="return_value",
+)
+
+
+def main() -> int:
+    result = app()
+    if result is None:
+        return 0
+    if isinstance(result, bool):
+        # bool subclasses int, so test it first. Cyclopts maps a bool result
+        # to success when true and failure when false; match that.
+        return 0 if result else 1
+    if isinstance(result, int):
+        return result
+    print(result)  # once, unwrapped, on stdout
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+```
+
+Check `bool` before `int`: Python makes `bool` a subclass of `int`, so a `True`
+result would otherwise exit with status `1` and a `False` result with status
+`0`, reversing the meaning. Cyclopts's own `print_non_int_sys_exit` performs
+the same check first, exiting `0` for `True` and `1` for `False`.
+
+The second pattern is what `lading` itself uses; see
+[ADR-011](adr/011-cyclopts-4-cli-result-and-diagnostic-boundary.md) for the
+full contract and its exit-code table.
+
+Whichever pattern applies, the stream split is the same:
+
+- **stdout** carries help, usage, and command output.
+- **stderr** carries diagnostics: unknown commands, invalid values, and missing
+  required options. Cyclopts writes these to its `error_console`, which
+  defaults to stderr.
+
+Do not merge the streams in tests. Assert a diagnostic on stderr and assert
+that it is absent from stdout, so a regression that duplicated it fails. Rich
+adds ANSI colour and a box-drawn panel whose width follows the terminal, so
+normalize captured diagnostics before matching text rather than asserting on
+the raw bytes.
+
 ## cuprum: typed command execution
 
 Cuprum provides allowlist-based command execution with built-in observability.
@@ -460,7 +526,7 @@ except FileNotFoundError:
 #!/usr/bin/env -S uv run python
 # /// script
 # requires-python = ">=3.14"
-# dependencies = ["cyclopts>=2.9", "cuprum", "cmd-mox"]
+# dependencies = ["cyclopts>=4.25.3", "cuprum", "cmd-mox"]
 # ///
 
 from __future__ import annotations
@@ -648,6 +714,11 @@ def test_spy_and_record(cmd_mox, monkeypatch, tmp_path):
 6. Bash glue: delete argument arrays and conditional appends in GitHub
    Actions. Export `INPUT_*` environment variables and call `uv run` on the
    script.
+7. Result handling: decide whether the script is shell-only or owns an outer
+   boundary, as described in
+   [Result values, streams, and exit codes](#result-values-streams-and-exit-codes).
+   Typer's `typer.Exit` becomes a returned `int` or a raised `SystemExit`; do
+   not rely on Cyclopts's default Rich rendering for output a caller parses.
 
 ## Migration guidance (plumbum → cuprum)
 

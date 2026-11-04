@@ -872,3 +872,28 @@ run); `--sccache-stats-json PATH` also writes a JSON report and implies
 
 Set `LADING_LOG_LEVEL` to control verbosity (`DEBUG`, `INFO`, `WARNING`,
 `ERROR`, `CRITICAL`). The default is `INFO`.
+
+### Output streams and exit codes
+
+`lading` writes command output and diagnostics to different streams, so a
+pipeline can read stdout without filtering error text.
+
+- **stdout** carries help, usage, and command summaries. A summary is printed
+  once, as plain text: it is not wrapped to the terminal width and carries no
+  colour codes, so a caller may parse it.
+- **stderr** carries diagnostics, including unknown subcommands, invalid
+  argument values, missing required options, configuration errors, and
+  workspace errors.
+
+The exit status is:
+
+| Status | Meaning                                                         |
+| ------ | --------------------------------------------------------------- |
+| 0      | The command succeeded.                                          |
+| 1      | A command failed, or an argument or configuration was rejected. |
+| 2      | No subcommand was given; usage was printed to stdout.           |
+| 130    | The run was cancelled with an interrupt.                        |
+
+A command that fails always exits non-zero, whether it is run through the
+installed `lading` script or through `python -m lading.cli`. The policy is
+recorded in [ADR-011](adr/011-cyclopts-4-cli-result-and-diagnostic-boundary.md).

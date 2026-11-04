@@ -13,6 +13,7 @@ same helper, so neither can reach a real ``gh`` or inherit a credential.
 """
 
 import json
+import typing as typ
 from pathlib import Path
 
 import pytest
@@ -22,7 +23,15 @@ from tests.e2e.helpers.wheel_upload import (
     make_wheel,
     run_repository_upload,
 )
-from tests.helpers.gh_stub import STUB_TAG, GhStub, GhStubConfig, install_gh_stub
+from tests.helpers.cli_diagnostics import normalize_diagnostic
+from tests.helpers.gh_stub import (
+    STUB_TAG,
+    GhStub,
+    GhStubConfig,
+    install_gh_stub,
+    isolated_environment,
+    run_uploader,
+)
 
 pytestmark = pytest.mark.timeout(60)
 
@@ -195,27 +204,40 @@ def test_a_missing_directory_is_reported_as_such(tmp_path: Path, stub: GhStub) -
     assert "does not exist" in result.stderr, result.stderr
 
 
+@pytest.mark.parametrize("mode", ["repository", "standalone"])
 @pytest.mark.parametrize("arguments", [(), ("--directory", "dist")])
 def test_the_tag_is_required(
-    tmp_path: Path, stub: GhStub, arguments: tuple[str, ...]
+    tmp_path: Path,
+    stub: GhStub,
+    mode: typ.Literal["repository", "standalone"],
+    arguments: tuple[str, ...],
 ) -> None:
     """Without a tag the script refuses rather than guessing one.
 
     The asserted text is Cyclopts's own missing-argument diagnostic, so the
     test cannot pass on an unrelated failure -- a missing ``dist`` directory,
-    for instance. Cyclopts writes that diagnostic to stdout while still
-    exiting non-zero, which is why the assertion is not made on stderr. The
-    environment builder also strips ``GITHUB_REF_NAME``, so the check means
-    the same thing under CI as it does locally; before that, a CI run
-    inherited the branch name as its tag and only failed for some other
-    reason.
+    for instance. Cyclopts writes that diagnostic to its error console, which
+    is stderr, while still exiting non-zero. Both dependency paths are
+    exercised because the standalone path resolves its own Cyclopts from the
+    script's lockfile. The environment builder also strips
+    ``GITHUB_REF_NAME``, so the check means the same thing under CI as it does
+    locally; before that, a CI run inherited the branch name as its tag and
+    only failed for some other reason.
     """
-    result = run_repository_upload(stub, *arguments)
+    environment = isolated_environment(stub)
+    result = run_uploader(mode, environment, *arguments)
 
     assert result.returncode != 0, "a missing tag must not upload anything"
-    assert "requires an argument" in result.stdout, result.stdout
-    assert "--tag" in result.stdout, result.stdout
+    diagnostic = normalize_diagnostic(result.stderr)
+    assert "requires an argument" in diagnostic, result.stderr
+    assert "--tag" in diagnostic, result.stderr
+    assert "requires an argument" not in result.stdout, (
+        "a diagnostic must not be written to stdout"
+    )
     assert stub.calls() == (), "gh must not be invoked without a tag"
+    assert "release_wheel_upload " not in result.stderr, (
+        "a rejected invocation must not report an upload outcome"
+    )
 
 
 def _outcome_line(stderr: str) -> dict[str, object]:
