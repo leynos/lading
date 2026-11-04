@@ -74,6 +74,14 @@ Feature: Lading CLI scaffolding
     When I invoke lading bump 1.2 with that workspace
     Then the bump command reports an invalid version error for "1.2"
 
+  Scenario: Bumping labels errors from configured manifest rewrites
+    Given a workspace directory with configuration
+    And cargo metadata describes a sample workspace
+    And bump.manifest_rewrites selects an unmatched fixture glob
+    When I invoke lading bump 1.2.3 with that workspace
+    Then the CLI exits with code 1
+    And the stderr contains "Manifest rewrite error: Manifest rewrite glob matched no files"
+
   Scenario: Bumping workspace versions skips excluded crates
     Given a workspace directory with configuration
     And cargo metadata describes a workspace with crates alpha and beta
