@@ -114,10 +114,16 @@ def _process_non_member_rewrites(
     changed_manifests: set[Path],
 ) -> None:
     """Apply planned fixture rewrites and include their resolved paths."""
+    dry_run = context.base_options.dry_run
+    _log.debug(
+        "Non-member manifest rewrites: %d planned manifest(s), dry_run=%s",
+        len(plans),
+        dry_run,
+    )
     if not plans:
         return
     rewritten_paths = bump_manifest_rewrites.apply_manifest_rewrites(
-        plans, dry_run=context.base_options.dry_run
+        plans, dry_run=dry_run
     )
     changed_manifests.update(path.resolve() for path in rewritten_paths)
 
