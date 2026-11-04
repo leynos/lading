@@ -2,6 +2,7 @@
 
 import collections.abc as cabc
 import pathlib
+from types import SimpleNamespace
 
 import pytest
 
@@ -10,6 +11,7 @@ from lading.commands import (
     bump,
     bump_manifest_rewrite_application,
     bump_manifest_rewrite_metrics,
+    bump_pipeline,
 )
 from lading.commands.bump_manifest_rewrites import ManifestRewriteError
 from lading.config import ManifestRewriteConfig, StringValueRewriteConfig
@@ -127,6 +129,52 @@ def test_rewrites_fixture_before_lockfile_regeneration(
     )
     _assert_single_rewrite_duration(
         outcome="applied", dry_run="false", error_category="none"
+    )
+
+
+def test_rewrite_duration_excludes_intervening_manifest_stages(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Rewrite timing excludes workspace and member manifest processing."""
+    workspace = _make_workspace(tmp_path)
+    fixture = tmp_path / "tests/fixtures/standalone/Cargo.toml"
+    fixture.parent.mkdir(parents=True)
+    fixture.write_text('[dependencies]\nalpha = "0.1.0"\n', encoding="utf-8")
+    configuration = config_module.LadingConfig(
+        bump=config_module.BumpConfig(
+            manifest_rewrites=(
+                ManifestRewriteConfig(paths=("tests/fixtures/standalone/Cargo.toml",)),
+            )
+        )
+    )
+    clock_readings = iter((10.0, 12.0, 100.0, 103.0))
+    monkeypatch.setattr(
+        bump_pipeline,
+        "time",
+        SimpleNamespace(perf_counter=lambda: next(clock_readings)),
+    )
+
+    bump.run(
+        tmp_path,
+        "1.2.3",
+        options=bump.BumpOptions(
+            rebuild_lockfiles=False,
+            configuration=configuration,
+            workspace=workspace,
+        ),
+    )
+
+    sample = metrics.duration_stats(
+        bump_manifest_rewrite_metrics.MANIFEST_REWRITE_DURATION_METRIC,
+        outcome="applied",
+        dry_run="false",
+        error_category="none",
+    )
+    assert sample.count == 1, "the configured rewrite should record one duration"
+    assert sample.total_seconds == pytest.approx(5.0), (
+        "duration should sum two seconds of planning and three seconds of "
+        "application, excluding the intervening member stages"
     )
 
 

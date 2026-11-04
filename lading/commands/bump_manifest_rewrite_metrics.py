@@ -1,7 +1,6 @@
 """Record bounded metrics for configured manifest rewrite stages."""
 
 import dataclasses as dc
-import time
 
 from lading.utils import metrics
 
@@ -36,38 +35,44 @@ class ManifestRewriteMetricLabels:
 
 
 def record_manifest_rewrite_metrics(
-    started_at: float,
+    duration_seconds: float | None,
     labels: ManifestRewriteMetricLabels,
 ) -> None:
-    """Record one rewrite outcome and its plan-to-application duration.
+    """Record one rewrite outcome and its rewrite-only duration.
 
-    The counter and duration use the bounded values documented by
-    :class:`ManifestRewriteMetricLabels`. The duration includes planning and
-    application, measured from the supplied monotonic start time.
+    The duration is the sum of configured-manifest planning and application
+    intervals, excluding workspace and member manifest updates between them.
+    A ``None`` duration records no metric, as used when rewriting is disabled.
+    Counter and duration labels use the bounded values documented by
+    :class:`ManifestRewriteMetricLabels`.
 
     Parameters
     ----------
-    started_at : float
-        Start time returned by :func:`time.perf_counter` before planning
-        begins.
+    duration_seconds : float or None
+        Sum of the time spent planning and applying configured rewrites, or
+        ``None`` when no rewrite timing is enabled.
     labels : ManifestRewriteMetricLabels
         Phase, outcome, dry-run state, and error category for this run.
     """
-    dry_run_label = str(labels.dry_run).lower()
-    metrics.increment_counter(
-        MANIFEST_REWRITE_RUN_METRIC,
-        phase=labels.phase,
-        outcome=labels.outcome,
-        dry_run=dry_run_label,
-        error_category=labels.error_category,
-    )
-    metrics.observe_duration(
-        MANIFEST_REWRITE_DURATION_METRIC,
-        time.perf_counter() - started_at,
-        outcome=labels.outcome,
-        dry_run=dry_run_label,
-        error_category=labels.error_category,
-    )
+    match duration_seconds:
+        case None:
+            return
+        case elapsed_seconds:
+            dry_run_label = str(labels.dry_run).lower()
+            metrics.increment_counter(
+                MANIFEST_REWRITE_RUN_METRIC,
+                phase=labels.phase,
+                outcome=labels.outcome,
+                dry_run=dry_run_label,
+                error_category=labels.error_category,
+            )
+            metrics.observe_duration(
+                MANIFEST_REWRITE_DURATION_METRIC,
+                elapsed_seconds,
+                outcome=labels.outcome,
+                dry_run=dry_run_label,
+                error_category=labels.error_category,
+            )
 
 
 def record_manifest_rewrite_planned(*, dry_run: bool) -> None:
