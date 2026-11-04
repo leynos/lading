@@ -708,10 +708,13 @@ stderr_tail_lines = 40
   use `lockfile_manifests` for an untracked fixture lockfile.
 
 When a bump updates a dependency requirement, it replaces the version in the
-first comparator and keeps later comma-separated comparators verbatim. Check
-that the target version still satisfies those retained bounds. For example,
-`>=0.6.0-beta4, <0.7` becomes `>=0.6.0, <0.7`; targeting `0.7.0` instead would
-leave an unsatisfiable requirement.
+first comparator and keeps later comma-separated comparators verbatim. For
+recognized comparison bounds (`<`, `<=`, `=`, `>=` and `>`), `lading bump`
+warns when the target does not satisfy a retained comparator. The warning does
+not change the requirement or stop the bump. For example, `>=0.6.0-beta4, <0.7`
+becomes `>=0.6.0, <0.7`; targeting `0.7.0` instead warns because the retained
+upper bound excludes the target. Cargo lockfile regeneration remains the final
+check when enabled; otherwise, resolve the warning before committing.
 
 Lockfile regeneration runs
 `cargo update --workspace --manifest-path <manifest>` for the workspace root,
@@ -792,6 +795,13 @@ written; configured rewrites are applied after member manifests and before
 lockfile regeneration. During a dry run, the result lists each changed fixture
 manifest while its contents remain unchanged; configured lockfile projection
 still runs without invoking Cargo.
+
+Each configured manifest write is atomic, but the batch is not. If a later
+write fails, earlier fixture rewrites remain and lockfile regeneration is
+skipped. Member manifests already contain the target version, so rerunning the
+bump may no longer have the old version needed to plan remaining string
+rewrites. Restore the pre-bump working tree before retrying, or manually finish
+the remaining fixture edits.
 
 For example, the `rstest-bdd` published GPUI fixture can opt into rewriting its
 dependency requirements and staged package patch paths:

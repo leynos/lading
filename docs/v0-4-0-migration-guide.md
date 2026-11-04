@@ -7,17 +7,27 @@ non-member manifests during `lading bump`. It defaults to `[]`, so existing
 configurations are unchanged; enable it only when standalone manifests need
 rewriting. See the [bump configuration reference](users-guide.md#bump) for its
 fields and behaviour. The command-line interface is unchanged from 0.3.x. The
-Python surface changes additively: `BumpConfig.manifest_rewrites` is new, and
+Python API changes additively. `BumpConfig.manifest_rewrites` is new, and
 `lading.config_manifest_rewrites` and `lading.config_validation` support its
-configuration. `ConfigurationError` and `ConfigurationNotLoadedError` now live
-in `lading.exceptions` and remain importable from `lading.config`. An
-environment already running 3.14 needs no action beyond the version bump itself.
+configuration. `BumpOptions.clock` adds an injectable rewrite timer, and
+`lading.commands.manifest_paths.resolve_manifest_candidate` is available to
+manifest-path consumers. `lading.commands.bump_manifest_rewrites` exports
+`ManifestRewriteError`, `ManifestRewritePlan` and `ManifestRewriteVersions`.
+`ConfigurationError` and `ConfigurationNotLoadedError` now live in
+`lading.exceptions` and remain importable from `lading.config`. An environment
+already running 3.14 needs no action beyond the version bump itself.
 
 When 0.4.0 is released, its tagged build will also be published to PyPI as a
 source distribution and pure-Python wheel. GitHub Releases will retain both
 files for direct download. Use PyPI for a normal package installation; choose
 the matching GitHub release to download an artefact directly. No project
 configuration changes are needed to move an existing install to PyPI.
+
+The release also changes how `lading bump` rewrites compound dependency
+requirements in every manifest: the first comparator takes the target version,
+later comparators remain verbatim, and a warning appears if a retained bound
+excludes the target. See the
+[bump configuration reference](users-guide.md#bump).
 
 Subprocess output relays also emit additive, privacy-safe `INFO` decision
 events with the prefix `relay observability event:`. They describe relay

@@ -4,9 +4,7 @@
   [patch.crates-io]
   rstest-bdd = { path = '$STAGING_rstest-bdd-0.6.0' } # keep comment
   rstest-bdd-harness = { path = '$STAGING_rstest-bdd-harness-0.6.0' }
-  rstest-bdd-harness-gpui = {
-      path = '$STAGING_rstest-bdd-harness-gpui-0.6.0'
-  }
+  rstest-bdd-harness-gpui = { path = '$STAGING_rstest-bdd-harness-gpui-0.6.0' }
   longer-version = { path = '$STAGING_rstest-bdd-0.6.0-beta40' }
   x-prefixed = { path = '$STAGING_xrstest-bdd-0.6.0-beta4' }
   literal = { path = '$STAGING_rstest-bdd-0.6.0' }
