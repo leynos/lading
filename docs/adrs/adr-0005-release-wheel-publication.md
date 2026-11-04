@@ -111,20 +111,20 @@ extraction into `path`; an unnamed all-artefacts download extracts each result
 under `path/<artefact-name>`, even when one artefact matches. The pinned v8
 implementation also extracts one result from an unnamed all-artefacts download
 directly into `path`; it creates per-artefact directories only when several
-artefacts match and `merge-multiple` is false. See the pinned
-[v4 source](https://github.com/actions/download-artifact/blob/fa0a91b85d4f404e444e00e005971372dc801d16/src/download-artifact.ts)
-and
-[v8 source](https://github.com/actions/download-artifact/blob/9000827ccba6bdab643e8b6fd33ac0654aef8333/src/download-artifact.ts).
-With one `wheels-pure` artefact, the former `find dist/wheels-*` pipeline
-found no path under v8. The failed `find` was masked because `xargs -r` ran no
-upload and returned zero; without `pipefail`, the pipeline therefore exited
-zero.
+artefacts match and `merge-multiple` is false. See the pinned v4 and v8
+implementations.[^1][^2] With one `wheels-pure` artefact, the former
+`find dist/wheels-*` pipeline found no path under v8. The failed `find` was
+masked because `xargs -r` ran no upload and returned zero; without `pipefail`,
+the pipeline therefore exited zero.
 
 The current workflow names `wheels-pure` and downloads it to `dist`. It uses
 `scripts/upload_release_wheels.py`, which fails when no distribution is found,
 and passes the release tag through `"$TAG"`. The Phase 1 contract tests in
 `tests/workflow_contracts/test_release_workflow.py` tie the producer artefact,
 job dependency, download name and path, and uploader directory together. They
-also enforce draft creation before download and upload, and publication only
-after upload succeeds. The named download and Python uploader remove the path
-ambiguity and silent empty-upload failure modes.
+also assert the current order: collect and download the artefacts, create or
+reuse the draft, upload distributions, then publish. The named download and
+Python uploader remove the path ambiguity and silent empty-upload failure modes.
+
+[^1]: [Pinned `actions/download-artifact` v4 source](https://github.com/actions/download-artifact/blob/fa0a91b85d4f404e444e00e005971372dc801d16/src/download-artifact.ts).
+[^2]: [Pinned `actions/download-artifact` v8 source](https://github.com/actions/download-artifact/blob/9000827ccba6bdab643e8b6fd33ac0654aef8333/src/download-artifact.ts).
