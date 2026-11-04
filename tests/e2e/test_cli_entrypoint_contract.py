@@ -21,6 +21,7 @@ from pathlib import Path
 
 import pytest
 
+from lading.commands.publish_staging import STAGING_PREFIX
 from tests.helpers.cli_diagnostics import normalize_diagnostic
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -93,3 +94,52 @@ def test_an_invalid_bump_version_fails_on_stderr(
         f"the diagnostic must be written to stderr: {result.stderr!r}"
     )
     assert not result.stdout, f"stdout must stay empty: {result.stdout!r}"
+
+
+def _staging_tree(location: Path) -> Path:
+    """Create one leftover staging tree for ``lading clean`` to report."""
+    tree = location / f"{STAGING_PREFIX}summary"
+    tree.mkdir(parents=True)
+    (tree / "Cargo.toml").write_bytes(b"x" * 64)
+    return tree
+
+
+def test_a_successful_summary_is_printed_once_and_unwrapped(
+    entry_point: list[str], tmp_path: Path
+) -> None:
+    """Both entry points print the whole summary once, byte for byte.
+
+    The staging location is deliberately wider than a narrow terminal. If the
+    summary were rendered through Rich, it would be wrapped at the terminal
+    width and carry ANSI escapes; comparing the exact bytes proves it is
+    printed once, unwrapped, and free of escape sequences.
+    """
+    location = tmp_path / ("long-location-segment-" * 8)
+    tree = _staging_tree(location)
+
+    result = _run(
+        entry_point,
+        tmp_path / "workspace",
+        "clean",
+        "--location",
+        str(location),
+    )
+
+    assert result.returncode == 0, f"the report failed: {result.stderr}"
+    # ``python -m lading.cli`` emits Python's runpy re-import warning because
+    # ``lading`` re-exports ``cli``; it is not a lading diagnostic, so only a
+    # rendered error panel or ANSI escapes would violate the stream contract.
+    assert "╭" not in result.stderr, (
+        f"a successful run must not render a Cyclopts error panel: {result.stderr!r}"
+    )
+    assert "\x1b" not in result.stderr, (
+        f"a successful run must not colour its diagnostics: {result.stderr!r}"
+    )
+    expected = (
+        f"Found 1 staging directory under {location}, 64 B\n"
+        f"  {tree.name}  64 B\n"
+        "Pass --remove to delete them.\n"
+    )
+    assert result.stdout == expected, (
+        f"stdout must be the summary exactly once: {result.stdout!r}"
+    )

@@ -68,6 +68,9 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
 
 - [Documentation style guide](documentation-style-guide.md) - writing,
   formatting, and naming conventions for project documentation.
+- [Cyclopts 3.24.0 and 4.25.3 comparison](cyclopts-4-version-comparison.md) -
+  fixed-base evidence and the reproduction recipe for the dependency boundary
+  recorded in ADR-011.
 - [Scripting standards](scripting-standards.md) - conventions for robust helper
   scripts, secure command execution, and command mocking.
 - [cmd-mox usage guide](cmd-mox-usage-guide.md) - testing guidance for command

@@ -168,9 +168,10 @@ Three exits bypass the table above and are part of the contract as stated.
 - `tests/unit/test_cyclopts_contract.py` describes the upstream behaviour
   with a throwaway app, so a future Cyclopts upgrade fails one small,
   self-describing test instead of 36 diffuse ones.
-  `tests/unit/test_cli_dispatch.py` pins the dispatcher's eight outcome cases,
-  and `tests/e2e/test_cli_entrypoint_contract.py` pins the same streams through
-  `python -m lading.cli` and the installed `lading` script.
+  `tests/unit/test_cli_dispatch.py` pins the dispatcher's ten outcome cases, and
+  `tests/e2e/test_cli_entrypoint_contract.py` pins the same streams through
+  `python -m lading.cli` and the installed `lading` script, including a
+  successful summary that must reach stdout unwrapped and once.
 - A future `cyclopts` 5.x adoption in the repository is a deliberate decision
   that must move the upper bound and reconcile the contract test, not a
   resolution the solver performs.
@@ -183,12 +184,14 @@ Three exits bypass the table above and are part of the contract as stated.
 
 ## References
 
+- [Cyclopts 3.24.0 and 4.25.3: controlled comparison][comparison]
 - [Cyclopts 4.25.3 calling documentation][cyclopts-calling]
 - [Cyclopts 4.25.3 packaging guidance][cyclopts-packaging]
 - [ADR-005: Draft-then-publish releases with a standalone wheel
   uploader](005-release-wheel-publication.md)
 - [ADR-006: Align cuprum selection across dependency paths](006-align-cuprum-selection-across-dependency-paths.md)
 
+[comparison]: ../cyclopts-4-version-comparison.md
 [cyclopts-calling]: https://github.com/BrianPugh/cyclopts/blob/v4.25.3/docs/source/app_calling.rst
 [cyclopts-packaging]: https://github.com/BrianPugh/cyclopts/blob/v4.25.3/docs/source/packaging.rst
 [dependabot-316]: https://github.com/leynos/lading/pull/316
