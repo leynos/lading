@@ -26,84 +26,8 @@ _EMPTY_FORMAT_SPEC: typ.Final[re.Pattern[str]] = re.compile(
 )
 
 
-def _parse_string_value_rewrite(
-    mapping: cabc.Mapping[str, typ.Any], field_name: str
-) -> tuple[tuple[str, ...], str | None, str]:
-    """Parse fields owned by one configured string-value selector."""
-    validate_mapping_keys(mapping, set(BUMP_STRING_VALUE_REWRITE_TOML_KEYS), field_name)
-    table = _required_rewrite_segments(
-        mapping.get("table"), f"{field_name}.table", "segment"
-    )
-    selected_field = _optional_rewrite_field(mapping, field_name)
-    template = _rewrite_template_value(mapping, field_name)
-    return table, selected_field, template
-
-
-def _parse_manifest_rewrite(
-    mapping: cabc.Mapping[str, typ.Any], field_name: str
-) -> tuple[tuple[str, ...], bool, tuple[StringValueRewriteConfig, ...]]:
-    """Parse fields owned by one configured manifest rewrite group."""
-    validate_mapping_keys(mapping, set(BUMP_MANIFEST_REWRITE_TOML_KEYS), field_name)
-    paths = _manifest_rewrite_paths(mapping, field_name)
-    dependencies = toml_coerce.boolean(
-        mapping.get("dependencies"),
-        f"{field_name}.dependencies",
-        error=ConfigurationError,
-        default=True,
-    )
-    string_values = _manifest_rewrite_string_values(mapping, field_name)
-    if not dependencies and not string_values:
-        message = f"{field_name} must enable dependencies or define string_values."
-        raise ConfigurationError(message)
-    return paths, dependencies, string_values
-
-
-class _MappingConfigRecord:
-    """Provide one mapping constructor for immutable rewrite config records."""
-
-    __slots__ = ()
-
-    _mapping_parser: typ.ClassVar[
-        cabc.Callable[[cabc.Mapping[str, typ.Any], str], tuple[object, ...]]
-    ]
-    _default_field_name: typ.ClassVar[str]
-
-    @classmethod
-    def from_mapping(
-        cls,
-        mapping: cabc.Mapping[str, typ.Any],
-        field_name: str | None = None,
-    ) -> typ.Self:
-        """Create a validated config record from a TOML table mapping.
-
-        Parameters
-        ----------
-        mapping : cabc.Mapping[str, typ.Any]
-            Parsed settings for this record.
-        field_name : str | None, default None
-            Configuration path used in validation errors. The record supplies
-            its standard path when this value is omitted.
-
-        Returns
-        -------
-        Self
-            Validated immutable configuration settings.
-
-        Raises
-        ------
-        ConfigurationError
-            If a key or field value is invalid.
-        """  # ruff: ignore[docstring-extraneous-exception]  # delegated schema errors
-        selected_field_name = (
-            cls._default_field_name if field_name is None else field_name
-        )
-        return _construct_from_mapping(
-            cls, cls._mapping_parser, mapping, selected_field_name
-        )
-
-
 @dc.dataclass(frozen=True, slots=True)
-class StringValueRewriteConfig(_MappingConfigRecord):
+class StringValueRewriteConfig:
     """Describe string values to rewrite in a selected TOML table.
 
     Attributes
@@ -119,16 +43,51 @@ class StringValueRewriteConfig(_MappingConfigRecord):
     table: tuple[str, ...]
     field: str | None = None
     template: str = "{crate}-{version}"
-    _mapping_parser: typ.ClassVar[
-        cabc.Callable[[cabc.Mapping[str, typ.Any], str], tuple[object, ...]]
-    ] = staticmethod(_parse_string_value_rewrite)
-    _default_field_name: typ.ClassVar[str] = (
-        "bump.manifest_rewrites[0].string_values[0]"
-    )
+
+    @classmethod
+    def from_mapping(
+        cls,
+        mapping: cabc.Mapping[str, typ.Any],
+        field_name: str = "bump.manifest_rewrites[0].string_values[0]",
+    ) -> typ.Self:
+        """Create a validated TOML string selector.
+
+        Parameters
+        ----------
+        mapping : cabc.Mapping[str, typ.Any]
+            Parsed settings for this selector.
+        field_name : str, default "bump.manifest_rewrites[0].string_values[0]"
+            Configuration path used to identify validation errors.
+
+        Returns
+        -------
+        StringValueRewriteConfig
+            Validated table path, optional field, and replacement template.
+
+        Raises
+        ------
+        ConfigurationError
+            If a key, table segment, field, or template is invalid.
+
+        Examples
+        --------
+        >>> StringValueRewriteConfig.from_mapping({"table": ["metadata"]}).table
+        ('metadata',)
+        """  # ruff: ignore[docstring-extraneous-exception]  # schema validators raise
+        validate_mapping_keys(
+            mapping, set(BUMP_STRING_VALUE_REWRITE_TOML_KEYS), field_name
+        )
+        return cls(
+            table=_required_rewrite_segments(
+                mapping.get("table"), f"{field_name}.table", "segment"
+            ),
+            field=_optional_rewrite_field(mapping, field_name),
+            template=_rewrite_template_value(mapping, field_name),
+        )
 
 
 @dc.dataclass(frozen=True, slots=True)
-class ManifestRewriteConfig(_MappingConfigRecord):
+class ManifestRewriteConfig:
     """Allow version rewrites in selected non-member Cargo manifests.
 
     Attributes
@@ -144,22 +103,55 @@ class ManifestRewriteConfig(_MappingConfigRecord):
     paths: tuple[str, ...]
     dependencies: bool = True
     string_values: tuple[StringValueRewriteConfig, ...] = ()
-    _mapping_parser: typ.ClassVar[
-        cabc.Callable[[cabc.Mapping[str, typ.Any], str], tuple[object, ...]]
-    ] = staticmethod(_parse_manifest_rewrite)
-    _default_field_name: typ.ClassVar[str] = "bump.manifest_rewrites[0]"
 
+    @classmethod
+    def from_mapping(
+        cls,
+        mapping: cabc.Mapping[str, typ.Any],
+        field_name: str = "bump.manifest_rewrites[0]",
+    ) -> typ.Self:
+        """Create an allowlisted manifest rewrite group.
 
-def _construct_from_mapping[Record, ParsedValues: tuple[object, ...]](
-    config_type: type[Record],
-    parser: cabc.Callable[[cabc.Mapping[str, typ.Any], str], ParsedValues],
-    mapping: cabc.Mapping[str, typ.Any],
-    field_name: str,
-) -> Record:
-    """Construct one config record from its validated ordered values."""
-    values = parser(mapping, field_name)
-    constructor = typ.cast("cabc.Callable[..., Record]", config_type)
-    return constructor(*values)
+        Parameters
+        ----------
+        mapping : cabc.Mapping[str, typ.Any]
+            Parsed settings for this group.
+        field_name : str, default "bump.manifest_rewrites[0]"
+            Configuration path used to identify validation errors.
+
+        Returns
+        -------
+        ManifestRewriteConfig
+            Validated manifest paths, dependency setting, and string selectors.
+
+        Raises
+        ------
+        ConfigurationError
+            If a key or field value is invalid, or if both rewrite kinds are
+            disabled.
+
+        Examples
+        --------
+        >>> ManifestRewriteConfig.from_mapping({"paths": ["fixture"]}).dependencies
+        True
+        """
+        validate_mapping_keys(mapping, set(BUMP_MANIFEST_REWRITE_TOML_KEYS), field_name)
+        paths = _manifest_rewrite_paths(mapping, field_name)
+        dependencies = toml_coerce.boolean(
+            mapping.get("dependencies"),
+            f"{field_name}.dependencies",
+            error=ConfigurationError,
+            default=True,
+        )
+        string_values = _manifest_rewrite_string_values(mapping, field_name)
+        if not dependencies and not string_values:
+            message = f"{field_name} must enable dependencies or define string_values."
+            raise ConfigurationError(message)
+        return cls(
+            paths=paths,
+            dependencies=dependencies,
+            string_values=string_values,
+        )
 
 
 def _manifest_rewrite_paths(

@@ -95,8 +95,6 @@ _ENTRYPOINT_NAMES: typ.Final = frozenset({
     "lading.commands.lockfile_repository.CargoLockfileInspectionRepository._bound_runner.runner_with_env",
     "lading.commands.publish_staging.prepare_workspace",
     "lading.commands.publish_staging._handle_termination.frame",
-    "lading.config_manifest_rewrites._MappingConfigRecord.from_mapping",
-    "lading.config_manifest_rewrites._construct_from_mapping",
 })
 
 
