@@ -394,24 +394,22 @@ def _print_expected_command_error(
     error: ManifestRewriteError | WorkspaceModelError,
 ) -> None:
     """Report one expected domain failure with its event or error label."""
-    if isinstance(error, ManifestRewriteError) and error.failed_path is not None:
-        LOGGER.error(
-            "manifest_rewrite failed: path=%s completed=%d planned=%d "
-            "error_category=write: %s",
-            error.failed_path,
-            error.completed_writes,
-            error.planned_writes,
-            error,
-        )
-        if not LOGGER.isEnabledFor(logging.ERROR):
-            print(f"Manifest rewrite error: {error}", file=sys.stderr)
-        return
     match error:
+        case ManifestRewriteError(failed_path=Path() as failed_path):
+            LOGGER.error(
+                "manifest_rewrite failed: path=%s completed=%d planned=%d "
+                "error_category=write: %s",
+                failed_path,
+                error.completed_writes,
+                error.planned_writes,
+                error,
+            )
+            if not LOGGER.isEnabledFor(logging.ERROR):
+                print(f"Manifest rewrite error: {error}", file=sys.stderr)
         case ManifestRewriteError():
-            label = "Manifest rewrite error"
+            print(f"Manifest rewrite error: {error}", file=sys.stderr)
         case WorkspaceModelError():
-            label = "Workspace error"
-    print(f"{label}: {error}", file=sys.stderr)
+            print(f"Workspace error: {error}", file=sys.stderr)
 
 
 def main(argv: cabc.Sequence[str] | None = None) -> int:
