@@ -863,12 +863,13 @@ rewrites. Labels are bounded to these values:
 
 #### `bump.manifest_rewrite.duration`
 
-One duration observation covers manifest resolution, planning, and application
-for each configured rewrite run, including failures. Its labels are `outcome`,
-`dry_run`, and `error_category`, with the values documented above. Runs with no
-`bump.manifest_rewrites` configuration emit no rewrite metrics. A failed write
-emits one `manifest_rewrite failed:` error event naming the path and reporting
-completed and planned writes.
+One duration observation covers manifest resolution and planning plus rewrite
+application for each configured rewrite run, including failures. It excludes
+workspace and member manifest updates between those intervals. Its labels are
+`outcome`, `dry_run`, and `error_category`, with the values documented above.
+Runs with no `bump.manifest_rewrites` configuration emit no rewrite metrics. A
+failed write emits one `manifest_rewrite failed:` error event naming the path
+and reporting completed and planned writes.
 
 #### `publish.cargo.duration`
 
