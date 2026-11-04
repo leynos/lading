@@ -707,6 +707,35 @@ stderr_tail_lines = 40
   `string_values` selectors. The rewrite stage does not add lockfile targets;
   use `lockfile_manifests` for an untracked fixture lockfile.
 
+Lockfile regeneration runs
+`cargo update --workspace --manifest-path <manifest>` for the workspace root,
+each configured nested manifest, and each manifest adjacent to a discovered
+git-tracked lockfile. This updates workspace package entries while avoiding a
+full transitive dependency refresh.
+
+Regeneration is not atomic, and `lading bump` attempts every manifest rather
+than stopping at the first Cargo failure. Manifest versions are written before
+any lockfile is refreshed, so a failure leaves the workspace inconsistent: the
+manifests carry the new version but the affected lockfiles do not. When several
+lockfiles are regenerated, `lading` raises one aggregated error that lists
+every failed manifest with the exact repair command to run:
+
+```plaintext
+Cargo lockfile regeneration failed for 2 manifest(s). Manifests already carry
+the new version, so the workspace is inconsistent until each lockfile below is
+repaired:
+- Cargo lockfile regeneration failed for crates/a/Cargo.toml with exit code 101: <cargo error>
+  cargo update --workspace --manifest-path crates/a/Cargo.toml
+- Cargo lockfile regeneration failed for crates/b/Cargo.toml with exit code 101: <cargo error>
+  cargo update --workspace --manifest-path crates/b/Cargo.toml
+```
+
+When one manifest was attempted, its lone failure surfaces the plain Cargo
+error instead. To recover, fix the underlying Cargo error and rerun
+`lading bump`, run the printed repair command for each listed manifest, or use
+`--no-rebuild-lockfiles` and regenerate the lockfiles manually before
+committing the bump.
+
 #### Rewriting configured non-member manifests
 
 `manifest_rewrites` is an explicit allowlist for standalone fixture manifests.
@@ -768,35 +797,6 @@ paths. The bump changes those configured references to `0.6.0` and reports the
 fixture manifest. Lockfiles beside tracked manifests are discovered as usual;
 for a fixture `Cargo.lock` that Git does not track, also list its manifest in
 `bump.lockfile_manifests`.
-
-Lockfile regeneration runs
-`cargo update --workspace --manifest-path <manifest>` for the workspace root,
-each configured nested manifest, and each manifest adjacent to a discovered
-git-tracked lockfile. This updates workspace package entries while avoiding a
-full transitive dependency refresh.
-
-Regeneration is not atomic, and `lading bump` attempts every manifest rather
-than stopping at the first Cargo failure. Manifest versions are written before
-any lockfile is refreshed, so a failure leaves the workspace inconsistent: the
-manifests carry the new version but the affected lockfiles do not. When several
-lockfiles are regenerated, `lading` raises one aggregated error that lists
-every failed manifest with the exact repair command to run:
-
-```plaintext
-Cargo lockfile regeneration failed for 2 manifest(s). Manifests already carry
-the new version, so the workspace is inconsistent until each lockfile below is
-repaired:
-- Cargo lockfile regeneration failed for crates/a/Cargo.toml with exit code 101: <cargo error>
-  cargo update --workspace --manifest-path crates/a/Cargo.toml
-- Cargo lockfile regeneration failed for crates/b/Cargo.toml with exit code 101: <cargo error>
-  cargo update --workspace --manifest-path crates/b/Cargo.toml
-```
-
-When one manifest was attempted, its lone failure surfaces the plain Cargo
-error instead. To recover, fix the underlying Cargo error and rerun
-`lading bump`, run the printed repair command for each listed manifest, or use
-`--no-rebuild-lockfiles` and regenerate the lockfiles manually before
-committing the bump.
 
 ### `[bump.documentation]`
 

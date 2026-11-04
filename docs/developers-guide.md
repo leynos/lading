@@ -1454,8 +1454,8 @@ _run_with_context(
 data. It resolves configuration once: it first tries
 `config.current_configuration()`, the already-installed context-var
 configuration that `main()` sets up. If that raises
-`config.ConfigurationNotLoadedError` — for example, when a command is invoked
-programmatically via `cli.app` without a preloaded scope — it loads
+`lading.exceptions.ConfigurationNotLoadedError` — for example, when a command
+is invoked programmatically via `cli.app` without a preloaded scope — it loads
 configuration from disk with `config.load_configuration(workspace_root)` and
 installs it under a fresh `config.use_configuration(...)` scope. When
 configuration is already active, a `nullcontext()` stands in for that scope, so
@@ -1482,7 +1482,7 @@ area so existing handling remains precise:
 
 | Root exception              | Module                             | Notes                                                                                           |
 | --------------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `ConfigurationError`        | `lading.config`                    | Base for configuration loading and validation failures.                                         |
+| `ConfigurationError`        | `lading.exceptions`                | Base for configuration loading and validation failures.                                         |
 | `WorkspaceModelError`       | `lading.workspace.models`          | Base for workspace graph/model validation failures.                                             |
 | `CargoMetadataError`        | `lading.workspace.metadata`        | Base for cargo metadata execution and parsing failures.                                         |
 | `CommandSpawnError`         | `lading.runtime.subprocess_runner` | Raised when the subprocess runner cannot spawn an external command.                             |
@@ -1919,7 +1919,7 @@ publish phases and makes snapshot testing straightforward.
 mapping coercion helpers shared by `lading.config` and
 `lading.workspace.models`. Each helper takes an `error` keyword naming the
 `LadingError` subclass to raise, and both consumers bind their domain error
-type once with `functools.partial` (`ConfigurationError` in `config`,
+type once with `functools.partial` (`ConfigurationError` in `lading.exceptions`,
 `WorkspaceModelError` in `models`); neither module re-declares a coercer. The
 canonical error-message shape is
 `{field} must be {expected}; received {type(value).__name__}.` and is pinned by
