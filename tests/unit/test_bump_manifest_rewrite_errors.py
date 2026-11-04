@@ -1,6 +1,7 @@
 """Tests for manifest rewrite input errors."""
 
 import pathlib
+import re
 
 import pytest
 
@@ -30,7 +31,7 @@ def test_wraps_toml_errors_with_manifest_path(
 
     with pytest.raises(
         bump_manifest_rewrites.ManifestRewriteError,
-        match=str(manifest.resolve()),
+        match=re.escape(str(manifest.resolve())),
     ):
         bump_manifest_rewrites.plan_manifest_rewrites(
             tmp_path,
