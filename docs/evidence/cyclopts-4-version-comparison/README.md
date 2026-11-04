@@ -3,9 +3,10 @@
 This directory holds the executable evidence for
 [the Cyclopts 3.24.0 and 4.25.3 comparison](../../cyclopts-4-version-comparison.md).
 It instruments the dependency, not `lading`, and is not part of the package,
-the test suite, or any lint target: it sits under `docs/`, which the Python
-source discovery and Ruff configuration exclude, and its files are not named
-`test_*.py`, so pytest does not collect them.
+the test suite, or any lint target. It sits under `docs/`, which the Python
+source discovery and Ruff configuration exclude, and `make test` passes
+`--ignore=docs/evidence`, so pytest never imports these modules even with
+`--doctest-modules` enabled.
 
 ## Contents
 
