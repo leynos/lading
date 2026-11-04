@@ -11,6 +11,7 @@ from cyclopts.config import Toml
 
 from lading import toml_coerce
 from lading.exceptions import LadingError
+from lading.stage_exclude_policy import StageExcludeError, normalize_stage_exclude
 from lading.utils import normalize_workspace_root
 
 if typ.TYPE_CHECKING:  # pragma: no cover - type checking only
@@ -19,6 +20,14 @@ if typ.TYPE_CHECKING:  # pragma: no cover - type checking only
 CONFIG_FILENAME = "lading.toml"
 
 StripPatchesSetting = typ.Literal["all", "per-crate"] | bool
+
+#: Paths staging omits when ``publish.stage_exclude`` is not configured.
+#: ``.git`` is large, and no lading step reads the copy. Cargo does read a
+#: checkout, so omitting it changes file selection: without one, ``cargo
+#: package`` skips dot-named entries, ignores ``.gitignore``, and records no
+#: ``.cargo_vcs_info.json`` provenance (issue #262). ``target`` is deliberately
+#: not excluded: some workspaces package artefacts from it.
+DEFAULT_STAGE_EXCLUDE: typ.Final[tuple[str, ...]] = (".git",)
 
 CONFIG_ROOT_TOML_KEYS: typ.Final[frozenset[str]] = frozenset({
     "bump",
@@ -35,6 +44,7 @@ BUMP_DOCUMENTATION_TOML_KEYS: typ.Final[frozenset[str]] = frozenset({"globs"})
 PUBLISH_TOML_KEYS: typ.Final[frozenset[str]] = frozenset({
     "exclude",
     "order",
+    "stage_exclude",
     "strip_patches",
 })
 PREFLIGHT_TOML_KEYS: typ.Final[frozenset[str]] = frozenset({
@@ -164,6 +174,7 @@ class PublishConfig:
 
     exclude: tuple[str, ...] = ()
     order: tuple[str, ...] = ()
+    stage_exclude: tuple[str, ...] = DEFAULT_STAGE_EXCLUDE
     strip_patches: StripPatchesSetting = "per-crate"
 
     @classmethod
@@ -193,13 +204,25 @@ class PublishConfig:
         ('a', 'b')
         >>> PublishConfig.from_mapping(None).strip_patches
         'per-crate'
+        >>> PublishConfig.from_mapping(None).stage_exclude
+        ('.git',)
+        >>> PublishConfig.from_mapping({"stage_exclude": []}).stage_exclude
+        ()
         """  # ruff: ignore[docstring-extraneous-exception]  # propagated from the shared mapping validators
         if mapping is None:
             return cls()
         _validate_mapping_keys(mapping, set(PUBLISH_TOML_KEYS), "publish")
+        # A present key replaces the default rather than adding to it, so an
+        # explicit ``[]`` can restore the old copy-everything behaviour.
+        stage_exclude = (
+            DEFAULT_STAGE_EXCLUDE
+            if "stage_exclude" not in mapping
+            else _stage_exclude(mapping.get("stage_exclude"))
+        )
         return cls(
             exclude=_string_tuple(mapping.get("exclude"), "publish.exclude"),
             order=_string_tuple(mapping.get("order"), "publish.order"),
+            stage_exclude=stage_exclude,
             strip_patches=_strip_patches(mapping.get("strip_patches")),
         )
 
@@ -550,3 +573,23 @@ _non_negative_int = functools.partial(
 _optional_mapping = functools.partial(
     toml_coerce.optional_mapping, error=ConfigurationError
 )
+
+
+def _stage_exclude(value: object) -> tuple[str, ...]:
+    """Normalize the ``publish.stage_exclude`` patterns.
+
+    Returns
+    -------
+    tuple[str, ...]
+        The configured patterns, each with one trailing slash removed.
+
+    Raises
+    ------
+    ConfigurationError
+        If a pattern is not a string or cannot describe a workspace path.
+    """
+    patterns = _string_tuple(value, "publish.stage_exclude")
+    try:
+        return normalize_stage_exclude(patterns)
+    except StageExcludeError as exc:
+        raise ConfigurationError(str(exc)) from exc

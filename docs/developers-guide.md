@@ -1294,6 +1294,88 @@ Examples:
 - `PublishOptions(allow_dirty=False)` — require a clean git working tree before
   proceeding with publish preparation.
 
+### Staging exclusions (`stage_exclude`)
+
+`staged_workspace`, `prepare_workspace` and the internal `_copy_workspace_tree`
+each take a keyword-only `stage_exclude` sequence of workspace-relative path
+patterns. The parameter is separate from `PublishOptions` because it comes from
+configuration (`PublishConfig.stage_exclude`) rather than from the command
+line, and `publish.run` forwards `active_configuration.publish.stage_exclude`
+on every call. Both public entry points default to
+`lading.config.DEFAULT_STAGE_EXCLUDE`, currently `(".git",)`, so a programmatic
+caller gets the same behaviour as the CLI without repeating the default.
+
+The policy lives in `lading.commands.publish_stage_exclude` rather than in
+`publish_staging`, which keeps the copy/cleanup lifecycle free of pattern
+matching. That module owns three things:
+
+- `_match_stage_exclude`, the single predicate every call site uses. A pattern
+  without `/` matches a basename at any depth; a leading `**/` is stripped
+  first, so `**/venv` also matches a top-level `venv`. A pattern containing `/`
+  is matched against the whole `PurePosixPath`, and `fnmatch.fnmatchcase` lets
+  its `*` span separators. A leading `**/` lifts that anchoring: the stripped
+  remainder also matches below any ancestor, so `**/crates/app/venv` matches
+  `tools/crates/app/venv`.
+- `_stage_exclude_ignore`, which adapts the predicate to
+  `shutil.copytree(ignore=...)`. Returning a directory name prunes it before
+  `copytree` descends, so excluding `target/` costs nothing rather than copying
+  and discarding it. The callback matches lexically against the root passed to
+  `copytree`, because its recursive `src` arguments are that root joined with
+  each entry name.
+- `_validate_stage_exclude`, called by `_stage` before the temporary directory
+  is created or anything is copied. It checks the workspace manifest and every
+  planned crate manifest, including crates skipped by `publish = false` or
+  `publish.exclude`, against the pattern and each of its ancestor directories,
+  and raises `PublishPreparationError` naming both the pattern and the manifest
+  it would remove. A member whose manifest resolves outside the workspace root
+  is skipped, since staging never copies it. When
+  `PublishOptions.preserve_symlinks` is set, a manifest is checked a second
+  time through each symbolic link in its path, including a link in a parent
+  directory, and through each in-workspace target those links name: every link
+  is copied as written, so pruning any of them would leave a dangling staged
+  manifest. A target outside the workspace is not checked, because
+  dereferencing it still finds the original file. A link's target is resolved
+  the way the kernel resolves it: the parent directory is resolved first, then
+  the link text is joined, so a `..` inside the text applies to the physical
+  parent rather than the lexical one. Each link in the parent chain is still
+  walked separately, so that resolution loses no dependency. If the workspace
+  cannot be read to answer the question at all, `_validate_stage_exclude` raises
+  `StageExcludeInspectionError`, a `PublishPreparationError` subclass that
+  `_stage` counts apart from a refused pattern.
+
+Spelling rules are shared by both entry routes. `publish.stage_exclude` can
+come from `lading.toml` or from a direct call to the public staging functions,
+and neither route may silently accept a pattern that can never match.
+`lading.stage_exclude_policy` owns those rules so it depends on neither the
+configuration nor the command layer: `normalize_stage_exclude` strips one
+trailing slash from each pattern and rejects a bare string, blank,
+`!`-prefixed, absolute, backslash-separated, and `.`, `..` or empty-segment
+spellings. `lading.config._stage_exclude` translates its `StageExcludeError`
+into `ConfigurationError` for a bad file, and `_stage` applies it before the
+temporary directory exists, translating it into `PublishPreparationError` and
+logging the normalized tuple. The predicate here therefore only ever sees
+relative, normalized paths.
+
+`_stage` takes a keyword-only `clock` defaulting to `time.perf_counter`, the
+same seam the other publish timings use, so a test can supply a deterministic
+duration for `publish.staging.duration` instead of measuring wall time.
+
+`_stage` also calls `_warn_if_live_publish_loses_git_selection` before copying.
+It logs a `WARNING` when `PublishOptions.live` is set and the effective
+patterns match `.git`, because Cargo then selects package files without a
+checkout: `.gitignore` no longer applies, and a live upload cannot be undone.
+The warning exists for the default `(".git",)` case, so removing the default
+from `DEFAULT_STAGE_EXCLUDE` must revisit it rather than leave a message that
+never fires.
+
+When adding a pattern spelling, change `lading.stage_exclude_policy` if the
+spelling must be accepted or rejected, and change `_match_stage_exclude` if it
+must match differently. Cover the copy filter and the staging boundary in
+`tests/unit/test_publish_staging_exclusions.py`, and manifest protection in
+`tests/unit/test_publish_stage_exclude_validation.py`. `_match_stage_exclude`
+is the only predicate that decides matching, so the validator and the copy
+cannot diverge.
+
 ## Publish command internals
 
 `PublishOptions.allow_unpublished_workspace_deps` is a dry-run-only override
@@ -1500,12 +1582,17 @@ then joins the resulting lines. All three helpers are public exports of
 `publish_plan`.
 
 `publish_staging.py` owns workspace preparation types and helpers that copy the
-workspace tree. `publish_manifest.py` owns the `publish.strip_patches`
-staging-time manifest mutation. These operations run before any `cargo package`
-or `cargo publish` command, so the command runner works against a prepared
-snapshot rather than the source workspace. Workspace README adoption is not
-performed here; the `lading bump` command transposes the workspace README into
-each opted-in crate before publication.
+workspace tree. Its exclusion policy — pattern matching, the `copytree` ignore
+callback, and the pre-copy manifest check — lives in `publish_stage_exclude.py`
+(issue #262) so the copy and cleanup lifecycle does not also own pattern
+semantics. The spelling rules those patterns must satisfy live one layer lower,
+in `lading.stage_exclude_policy`, because configuration loading enforces them
+too and must not depend on the command layer. `publish_manifest.py` owns the
+`publish.strip_patches` staging-time manifest mutation. These operations run
+before any `cargo package` or `cargo publish` command, so the command runner
+works against a prepared snapshot rather than the source workspace. Workspace
+README adoption is not performed here; the `lading bump` command transposes the
+workspace README into each opted-in crate before publication.
 
 `publish_diagnostics.py` owns compiletest failure enrichment. When a cargo
 pre-flight test failure mentions compiletest-style `*.stderr` artefacts, the
@@ -1848,6 +1935,8 @@ Defined metrics:
 | `lockfile.validate.duration`     | (none)                        | Duration observation around each `cargo metadata --locked` probe.                                                                                                                                                                                |
 | `publish.cargo.duration`         | `subcommand`, `crate`         | One duration observation per `cargo package` or `cargo publish` invocation in the publish pipeline, successful or not (issue #251).                                                                                                              |
 | `publish.sccache.query`          | `outcome`                     | One increment per sccache statistics query while instrumentation is on (`--sccache-stats`, or a `--sccache-stats-json` path, which implies it); `outcome` is `success` or `failure` (issue [#252](https://github.com/leynos/lading/issues/252)). |
+| `publish.staging`                | `outcome`                     | One increment per `_stage` attempt; `outcome` is `success`, `rejected` when the exclusions cannot be used, `inspection_failed` when the workspace cannot be read to check them, or `failed` for any other error.                                 |
+| `publish.staging.duration`       | (none)                        | Duration observation around each `_stage` attempt, from exclusion validation to a finished copy, successful or not.                                                                                                                              |
 
 Duration metrics aggregate a count and total seconds per label set via
 `observe_duration` / `duration_stats` and appear in the exit summary with

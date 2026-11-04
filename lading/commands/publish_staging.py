@@ -37,11 +37,21 @@ import logging
 import shutil
 import signal
 import tempfile
+import time
 import typing as typ
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from lading.commands import staging_lock
 from lading.commands.publish_manifest import PublishPreparationError
+from lading.commands.publish_stage_exclude import (
+    StageExcludeInspectionError,
+    _match_stage_exclude,
+    _stage_exclude_ignore,
+    _validate_stage_exclude,
+)
+from lading.config import DEFAULT_STAGE_EXCLUDE
+from lading.stage_exclude_policy import StageExcludeError, normalize_stage_exclude
+from lading.utils import metrics
 
 if typ.TYPE_CHECKING:
     from lading.commands.publish import PublishOptions
@@ -56,6 +66,13 @@ LOGGER = logging.getLogger(__name__)
 #: clean that stopped using it would either miss them or reach for something
 #: else.
 STAGING_PREFIX = "lading-publish-"
+
+#: Counts each staging attempt by ``outcome``: ``success``, ``rejected`` when
+#: the exclusions cannot be used, or ``failed`` for any other error.
+STAGING_METRIC = "publish.staging"
+
+#: Observes staging duration, from exclusion validation to a finished copy.
+STAGING_DURATION_METRIC = "publish.staging.duration"
 
 #: Staged trees the process is responsible for removing. A signal handler
 #: installed by the command-line entry point reads this, because a terminated
@@ -116,7 +133,11 @@ def _normalize_build_directory(
 
 
 def _copy_workspace_tree(
-    workspace_root: Path, build_directory: Path, *, preserve_symlinks: bool
+    workspace_root: Path,
+    build_directory: Path,
+    *,
+    preserve_symlinks: bool,
+    stage_exclude: cabc.Sequence[str] = (),
 ) -> Path:
     """Copy ``workspace_root`` into ``build_directory`` and return the clone.
 
@@ -124,6 +145,10 @@ def _copy_workspace_tree(
     links instead of dereferencing them. This avoids unexpectedly copying large
     directories outside the workspace while still allowing callers to opt into
     dereferencing if required.
+
+    ``stage_exclude`` names entries, relative to the workspace root, that the
+    copy leaves out. Directories are pruned rather than walked and discarded,
+    which is what makes excluding a large build tree cheap.
 
     Returns
     -------
@@ -143,31 +168,121 @@ def _copy_workspace_tree(
     try:
         if staging_root.exists():
             shutil.rmtree(staging_root)
-        shutil.copytree(workspace_root, staging_root, symlinks=preserve_symlinks)
+        ignore = (
+            _stage_exclude_ignore(workspace_root, stage_exclude)
+            if stage_exclude
+            else None
+        )
+        shutil.copytree(
+            workspace_root,
+            staging_root,
+            symlinks=preserve_symlinks,
+            ignore=ignore,
+        )
     except OSError as exc:
         message = f"Cannot copy workspace into staging directory: {staging_root}"
         raise PublishPreparationError(message) from exc
     return staging_root
 
 
-def _stage(
-    plan: PublishPlan, options: PublishOptions | None
-) -> tuple[PublishPreparation, Path, bool]:
-    """Copy the workspace and report what, if anything, must be removed later.
+def _normalize_stage_exclude(
+    stage_exclude: cabc.Sequence[str],
+) -> tuple[str, ...]:
+    """Apply the spelling rules, reporting failures as staging errors.
+
+    Callers of :func:`staged_workspace` and :func:`prepare_workspace` never
+    pass through ``lading.toml``, so the rules are applied here too. Otherwise
+    a spelling such as ``target/`` would match nothing and the copy would
+    silently keep the tree the caller asked to omit.
 
     Returns
     -------
-    tuple[PublishPreparation, Path, bool]
-        The staged workspace, the path whose removal cleans it up, and whether
-        cleanup was requested.
+    tuple[str, ...]
+        The patterns, each with one trailing slash removed.
+
+    Raises
+    ------
+    PublishPreparationError
+        If a pattern cannot describe a workspace path.
     """
+    try:
+        return normalize_stage_exclude(stage_exclude)
+    except StageExcludeError as exc:
+        raise PublishPreparationError(str(exc)) from exc
+
+
+def _warn_if_live_publish_loses_git_selection(
+    active_options: PublishOptions, stage_exclude: cabc.Sequence[str]
+) -> None:
+    """Warn when a live publish stages without the repository's ``.git``.
+
+    A live upload cannot be undone: a yanked version still holds its files.
+    Without a checkout, Cargo stops consulting ``.gitignore``, so a file Git
+    ignores whose name does not start with a dot can enter the package. The
+    warning is the last chance to see that before the copy is made.
+    """
+    if not active_options.live:
+        return
+    if _match_stage_exclude(PurePosixPath(".git"), stage_exclude) is None:
+        return
+    LOGGER.warning(
+        "Live publish staging excludes .git, so cargo will not apply "
+        ".gitignore when selecting package files; a file Git ignores whose "
+        "name does not start with a dot can be uploaded. A live upload cannot "
+        "be undone. Set publish.stage_exclude = [] to keep Git-aware selection."
+    )
+
+
+class _StagingDestination(typ.NamedTuple):
+    """Where the staged copy is written and what removal must delete."""
+
+    build_directory: Path
+    cleanup_target: Path
+
+
+def _active_stage_options(options: PublishOptions | None) -> PublishOptions:
+    """Return ``options``, or a fresh default when the caller passed none."""
     if options is None:
         from lading.commands.publish import PublishOptions
 
-        active_options = PublishOptions()
-    else:
-        active_options = options
-    auto_created_build_directory = active_options.build_directory is None
+        return PublishOptions()
+    return options
+
+
+def _validated_stage_exclude(
+    plan: PublishPlan,
+    active_options: PublishOptions,
+    stage_exclude: cabc.Sequence[str],
+) -> tuple[str, ...]:
+    """Normalize and check exclusions before any staging directory exists."""
+    # A caller's unusable spelling should fail as cheaply as a
+    # manifest-removing one, and neither should wait for tens of gigabytes to
+    # be copied before it is reported.
+    normalized = _normalize_stage_exclude(stage_exclude)
+    _validate_stage_exclude(
+        plan, normalized, preserve_symlinks=active_options.preserve_symlinks
+    )
+    return normalized
+
+
+def _begin_staging(
+    plan: PublishPlan,
+    active_options: PublishOptions,
+    stage_exclude: cabc.Sequence[str],
+) -> _StagingDestination:
+    """Log the effective exclusions and register the clean-up target.
+
+    Returns
+    -------
+    _StagingDestination
+        The directory the copy goes under and the path whose removal cleans
+        it up.
+    """
+    _warn_if_live_publish_loses_git_selection(active_options, stage_exclude)
+    # Recorded because the effective list decides what the staged tree holds,
+    # and it may come from the default, `lading.toml`, or a programmatic
+    # caller. Without this, a file missing from staging has no visible cause.
+    LOGGER.info("Staging workspace with stage_exclude=%s", tuple(stage_exclude))
     build_directory = _normalize_build_directory(
         plan.workspace_root, active_options.build_directory
     )
@@ -179,7 +294,7 @@ def _stage(
     # A caller-supplied one may hold their files, so only the copy goes.
     cleanup_target = (
         build_directory
-        if auto_created_build_directory
+        if active_options.build_directory is None
         else _staging_root_for(plan.workspace_root, build_directory)
     )
     # Tracked before the copy starts, not after it finishes. Copying a
@@ -188,30 +303,105 @@ def _stage(
     # leave the partial tree behind.
     if active_options.cleanup:
         _ACTIVE_STAGING_ROOTS.add(cleanup_target)
+    return _StagingDestination(build_directory, cleanup_target)
+
+
+def _copy_staged_workspace(
+    plan: PublishPlan,
+    active_options: PublishOptions,
+    destination: _StagingDestination,
+    stage_exclude: cabc.Sequence[str],
+) -> Path:
+    """Copy the workspace, removing a partial tree when the copy fails."""
     try:
-        staging_root = _copy_workspace_tree(
+        return _copy_workspace_tree(
             plan.workspace_root,
-            build_directory,
+            destination.build_directory,
             preserve_symlinks=active_options.preserve_symlinks,
+            stage_exclude=stage_exclude,
         )
     except BaseException:
         # Staging failed part way through, so no caller will ever be handed a
         # block to leave. Whatever was written goes now.
         if active_options.cleanup:
-            _remove_staged_tree_or_report(cleanup_target)
+            _remove_staged_tree_or_report(destination.cleanup_target)
         raise
-    LOGGER.info("Staged workspace created at %s", staging_root)
-    LOGGER.info("Workspace README staging skipped; handled by lading bump")
-    if not active_options.cleanup:
-        LOGGER.info(
-            "Retaining staged workspace at %s; remove it when you are done",
-            cleanup_target,
+
+
+def _stage(
+    plan: PublishPlan,
+    options: PublishOptions | None,
+    *,
+    stage_exclude: cabc.Sequence[str] = DEFAULT_STAGE_EXCLUDE,
+    clock: cabc.Callable[[], float] = time.perf_counter,
+) -> tuple[PublishPreparation, Path, bool]:
+    """Copy the workspace and record the staging time and outcome.
+
+    Parameters
+    ----------
+    plan : PublishPlan
+        The publication to stage.
+    options : PublishOptions | None
+        Staging options, or :data:`None` for the defaults.
+    stage_exclude : cabc.Sequence[str]
+        Workspace-relative entries the copy leaves out.
+    clock : cabc.Callable[[], float]
+        Monotonic time source for the duration metric. Tests inject a
+        deterministic clock; production uses :func:`time.perf_counter`.
+
+    Returns
+    -------
+    tuple[PublishPreparation, Path, bool]
+        The staged workspace, the path whose removal cleans it up, and whether
+        cleanup was requested.
+
+    Raises
+    ------
+    PublishPreparationError
+        If an exclusion cannot be used or the workspace cannot be copied.
+    StageExcludeInspectionError
+        If the workspace cannot be read while checking an exclusion. It is a
+        :class:`PublishPreparationError` subclass, counted separately from a
+        refused pattern.
+    """
+    started_at = clock()
+    outcome = "failed"
+    try:
+        active_options = _active_stage_options(options)
+        try:
+            stage_exclude = _validated_stage_exclude(
+                plan, active_options, stage_exclude
+            )
+        except StageExcludeInspectionError:
+            # The pattern may be sound and the workspace unreadable, so this
+            # is counted apart from a refused pattern and from a failed copy.
+            outcome = "inspection_failed"
+            raise
+        except PublishPreparationError:
+            # A refused exclusion is a configuration problem with its own
+            # remedy, so it is counted apart from a copy that failed.
+            outcome = "rejected"
+            raise
+        destination = _begin_staging(plan, active_options, stage_exclude)
+        staging_root = _copy_staged_workspace(
+            plan, active_options, destination, stage_exclude
         )
-    return (
-        PublishPreparation(staging_root=staging_root),
-        cleanup_target,
-        active_options.cleanup,
-    )
+        LOGGER.info("Staged workspace created at %s", staging_root)
+        LOGGER.info("Workspace README staging skipped; handled by lading bump")
+        if not active_options.cleanup:
+            LOGGER.info(
+                "Retaining staged workspace at %s; remove it when you are done",
+                destination.cleanup_target,
+            )
+        outcome = "success"
+        return (
+            PublishPreparation(staging_root=staging_root),
+            destination.cleanup_target,
+            active_options.cleanup,
+        )
+    finally:
+        metrics.observe_duration(STAGING_DURATION_METRIC, clock() - started_at)
+        metrics.increment_counter(STAGING_METRIC, outcome=outcome)
 
 
 def _staging_root_for(workspace_root: Path, build_directory: Path) -> Path:
@@ -323,6 +513,7 @@ def staged_workspace(
     plan: PublishPlan,
     *,
     options: PublishOptions | None = None,
+    stage_exclude: cabc.Sequence[str] = DEFAULT_STAGE_EXCLUDE,
 ) -> cabc.Generator[StagedWorkspace]:
     """Stage a workspace copy and remove it when the block ends.
 
@@ -336,6 +527,9 @@ def staged_workspace(
         Publication plan containing the workspace root.
     options:
         Staging options. Defaults to :class:`PublishOptions` values.
+    stage_exclude:
+        Workspace-relative entries the copy leaves out. Defaults to
+        :data:`~lading.config.DEFAULT_STAGE_EXCLUDE`.
 
     Yields
     ------
@@ -345,7 +539,9 @@ def staged_workspace(
     """
     # `_stage` has already registered the target, from before it began
     # copying, so there is nothing to add here.
-    preparation, cleanup_target, cleanup = _stage(plan, options)
+    preparation, cleanup_target, cleanup = _stage(
+        plan, options, stage_exclude=stage_exclude
+    )
     staged = StagedWorkspace(preparation=preparation)
     try:
         yield staged
@@ -368,6 +564,7 @@ def prepare_workspace(
     plan: PublishPlan,
     *,
     options: PublishOptions | None = None,
+    stage_exclude: cabc.Sequence[str] = DEFAULT_STAGE_EXCLUDE,
 ) -> PublishPreparation:
     """Stage a workspace copy for publishing, removing it at process exit.
 
@@ -382,6 +579,9 @@ def prepare_workspace(
         Publication plan containing the workspace root.
     options:
         Staging options. Defaults to :class:`PublishOptions` values.
+    stage_exclude:
+        Workspace-relative entries the copy leaves out. Defaults to
+        :data:`~lading.config.DEFAULT_STAGE_EXCLUDE`.
 
     Returns
     -------
@@ -389,7 +589,9 @@ def prepare_workspace(
         The staged workspace location.
     """
     # Registered by `_stage`; this form adds only the exit hook.
-    preparation, cleanup_target, cleanup = _stage(plan, options)
+    preparation, cleanup_target, cleanup = _stage(
+        plan, options, stage_exclude=stage_exclude
+    )
     if cleanup:
         atexit.register(_remove_staged_tree_or_report, cleanup_target)
     return preparation

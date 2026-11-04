@@ -187,7 +187,11 @@ def run(
     )
     # The staged tree lives no longer than this block: a publish that raises
     # or is interrupted must not leave its copy of the workspace behind.
-    with publish_staging.staged_workspace(plan, options=effective_options) as staged:
+    with publish_staging.staged_workspace(
+        plan,
+        options=effective_options,
+        stage_exclude=active_configuration.publish.stage_exclude,
+    ) as staged:
         _apply_strip_patch_strategy(
             staged.staging_root, plan, active_configuration.publish.strip_patches
         )
