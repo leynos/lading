@@ -4,7 +4,7 @@ import pathlib
 
 from tomlkit import parse as parse_toml
 
-from lading.commands import bump_manifest_rewrites
+from lading.commands import bump_manifest_rewrite_dependencies, bump_manifest_rewrites
 from lading.config import ManifestRewriteConfig
 
 
@@ -73,4 +73,18 @@ def test_rewrites_inline_dependency_sections_and_aliases(
     )
     assert document["workspace"]["dependencies"]["alpha"] == "2.0.0", (
         "inline workspace dependency tables must be traversed"
+    )
+
+
+def test_rewrite_preserves_upper_bound_of_compound_requirement() -> None:
+    """Rewriting a prerelease requirement retains its upper comparator."""
+    document = parse_toml('[dependencies]\nrstest-bdd = ">=0.6.0-beta4, <0.7"\n')
+
+    changed = bump_manifest_rewrite_dependencies.rewrite_dependency_requirements(
+        document, {"rstest-bdd"}, "0.6.0"
+    )
+
+    assert changed, "the matching workspace crate requirement should change"
+    assert document["dependencies"]["rstest-bdd"] == ">=0.6.0, <0.7", (
+        "rewriting the lower comparator must retain the excluded upper range"
     )
