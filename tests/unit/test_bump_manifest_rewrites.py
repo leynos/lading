@@ -1,5 +1,6 @@
 """Tests for configured non-member manifest rewrites."""
 
+import logging
 import pathlib
 import typing as typ
 
@@ -126,7 +127,10 @@ def test_rejects_glob_matches_that_are_not_regular_files(
         _plan(tmp_path, (group,))
 
 
-def test_skips_workspace_and_member_manifests(tmp_path: pathlib.Path) -> None:
+def test_skips_workspace_and_member_manifests(
+    tmp_path: pathlib.Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     """Configured root and member paths remain owned by the regular stages."""
     root_manifest = _write_manifest(
         tmp_path, "Cargo.toml", '[dependencies]\nalpha = "1.0.0"\n'
@@ -136,9 +140,20 @@ def test_skips_workspace_and_member_manifests(tmp_path: pathlib.Path) -> None:
     )
     group = ManifestRewriteConfig(paths=("Cargo.toml", "crates/alpha/Cargo.toml"))
 
-    plans = _plan(tmp_path, (group,), members=(member_manifest,))
+    with caplog.at_level(logging.DEBUG, logger=bump_manifest_rewrites.__name__):
+        plans = _plan(tmp_path, (group,), members=(member_manifest,))
 
     assert not plans, "workspace and member manifests must be skipped"
+    assert [record.getMessage() for record in caplog.records] == [
+        (
+            "Skipping configured manifest rewrite Cargo.toml because it resolves to "
+            f"a workspace-owned manifest at {root_manifest.resolve()}"
+        ),
+        (
+            "Skipping configured manifest rewrite crates/alpha/Cargo.toml because it "
+            f"resolves to a workspace-owned manifest at {member_manifest.resolve()}"
+        ),
+    ], "skip logs must identify both the configured and resolved path"
     assert root_manifest.read_text(encoding="utf-8").endswith('alpha = "1.0.0"\n'), (
         "the rewrite planner must leave the root manifest to its owner stage"
     )
