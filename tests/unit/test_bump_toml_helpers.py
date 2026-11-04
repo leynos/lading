@@ -1,5 +1,7 @@
 """Unit tests for low-level bump TOML table and version helpers."""
 
+import logging
+
 import pytest
 from tomlkit import parse as parse_toml
 
@@ -140,3 +142,33 @@ def test_assign_version_works_with_out_of_order_table() -> None:
     assert table.get("version") == "2.0.0", (
         "out-of-order table version should be rewritten"
     )
+
+
+def test_prepare_version_replacement_warns_when_target_breaks_retained_bound(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A retained comparator that excludes the target is reported."""
+    with caplog.at_level(logging.WARNING, logger=bump_toml.__name__):
+        replacement = bump_toml.prepare_version_replacement(">=1.0.0, <2", "2.0.0")
+
+    assert bump_toml.value_as_string(replacement) == ">=2.0.0, <2", (
+        "rewriting should preserve the retained comparator"
+    )
+    assert "Target version 2.0.0 does not satisfy retained Cargo bound <2" in (
+        caplog.text
+    ), "the impossible retained bound should produce an operator warning"
+
+
+def test_prepare_version_replacement_does_not_warn_for_satisfied_bound(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A target inside the preserved comparator range needs no warning."""
+    with caplog.at_level(logging.WARNING, logger=bump_toml.__name__):
+        replacement = bump_toml.prepare_version_replacement(
+            ">=0.6.0-beta4, <0.7", "0.6.0"
+        )
+
+    assert bump_toml.value_as_string(replacement) == ">=0.6.0, <0.7", (
+        "the first comparator should update while retaining the upper bound"
+    )
+    assert not caplog.records, "a satisfied retained bound should stay quiet"

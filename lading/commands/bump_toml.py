@@ -1,6 +1,7 @@
 """TOML manipulation utilities for version bumping."""
 
 import collections.abc as cabc
+import logging
 import os
 import re
 import tempfile
@@ -12,6 +13,8 @@ from tomlkit import parse as parse_toml
 from tomlkit import string
 from tomlkit.container import OutOfOrderTableProxy
 from tomlkit.items import InlineTable, Item, String, StringType, Table
+
+from lading.commands.bump_requirement_bounds import excluding_retained_bounds
 
 if typ.TYPE_CHECKING:
     from tomlkit.toml_document import TOMLDocument
@@ -26,6 +29,7 @@ _TABLE_LIKE_TYPES: typ.Final[
 )
 
 NON_DIGIT_PREFIX: typ.Final[re.Pattern[str]] = re.compile(r"^([^\d]*)")
+_log = logging.getLogger(__name__)
 
 # Canonical Cargo dependency-section vocabulary (issue #103). Every module
 # that iterates or maps dependency sections must reference this constant
@@ -142,6 +146,15 @@ def prepare_version_replacement(
     current = value_as_string(value)
     if current is None:
         return None
+    excluded_bounds = excluding_retained_bounds(current, target_version)
+    if excluded_bounds:
+        _log.warning(
+            "Target version %s does not satisfy retained Cargo bound %s in "
+            "requirement %r; the rewritten requirement may not resolve",
+            target_version,
+            ", ".join(excluded_bounds),
+            current,
+        )
     replacement_text = compose_requirement(current, target_version)
     if replacement_text == current:
         return None

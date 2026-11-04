@@ -28,6 +28,12 @@ files for direct download. Use PyPI for a normal package installation; choose
 the matching GitHub release to download an artefact directly. No project
 configuration changes are needed to move an existing install to PyPI.
 
+The release also changes how `lading bump` rewrites compound dependency
+requirements in every manifest: the first comparator takes the target version,
+later comparators remain verbatim, and a warning appears if a retained bound
+excludes the target. See the
+[bump configuration reference](users-guide.md#bump).
+
 Subprocess output relays also emit additive, privacy-safe `INFO` decision
 events with the prefix `relay observability event:`. They describe relay
 fallback and disablement decisions without including child-process output. This

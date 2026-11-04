@@ -144,9 +144,7 @@ def test_rewrites_selected_strings_once_and_preserves_literal_style(
         """[patch.crates-io]
 rstest-bdd = { path = '../../../target/rstest-bdd-0.6.0-beta4' } # keep comment
 rstest-bdd-harness = { path = '../../../target/rstest-bdd-harness-0.6.0-beta4' }
-rstest-bdd-harness-gpui = {
-    path = '../../../target/rstest-bdd-harness-gpui-0.6.0-beta4'
-}
+rstest-bdd-harness-gpui = { path = 'target/rstest-bdd-harness-gpui-0.6.0-beta4' }
 longer-version = { path = '../../../target/rstest-bdd-0.6.0-beta40' }
 x-prefixed = { path = '../../../target/xrstest-bdd-0.6.0-beta4' }
 literal = { path = '../../../target/rstest-bdd-0.6.0-beta4' }
@@ -174,6 +172,7 @@ literal = { path = '../../../target/rstest-bdd-0.6.0-beta4' }
         "the rewrite plan must identify its manifest"
     )
     snapshot_text = plan.new_text.replace("../../../target/", "$STAGING_")
+    snapshot_text = snapshot_text.replace("'target/", "'$STAGING_")
     assert snapshot_text == snapshot(name="selected_string_rewrites"), (
         "the rendered manifest must preserve its selected string contract"
     )
@@ -188,7 +187,7 @@ literal = { path = '../../../target/rstest-bdd-0.6.0-beta4' }
         "../../../target/rstest-bdd-harness-0.6.0"
     ), "the harness path must receive the new version"
     assert patch_paths["rstest-bdd-harness-gpui"] == (
-        "../../../target/rstest-bdd-harness-gpui-0.6.0"
+        "target/rstest-bdd-harness-gpui-0.6.0"
     ), "the longer crate prefix must receive the new version"
     assert patch_paths["longer-version"] == (
         "../../../target/rstest-bdd-0.6.0-beta40"
