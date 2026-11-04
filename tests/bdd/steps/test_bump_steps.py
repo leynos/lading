@@ -218,21 +218,6 @@ def then_cli_output_lists_manifest_paths(
     )
 
 
-@then(parsers.parse('the CLI output lists manifest path "{expected}"'))
-def then_cli_output_lists_one_manifest_path(
-    cli_run: dict[str, typ.Any], expected: str
-) -> None:
-    """Assert one configured manifest appears in the bump report."""
-    assert cli_run["returncode"] == 0, (
-        "listing a manifest requires a successful bump run; "
-        f"stderr:\n{cli_run['stderr']}"
-    )
-    stdout_lines = [line.strip() for line in cli_run["stdout"].splitlines()]
-    assert expected in stdout_lines, (
-        f"the output must list configured manifest {expected!r}"
-    )
-
-
 @given(
     "cargo metadata describes the rstest-bdd workspace and published fixture",
     target_fixture="published_fixture_original",
@@ -280,6 +265,7 @@ def then_no_cargo_lockfile_updates(cmd_mox: CmdMox) -> None:
 
 
 _LISTED_PATH_LABELS = {
+    "manifest": "updated manifest",
     "documentation": "changed documentation file",
     "README": "transposed README",
     "lockfile": "refreshed lockfile",
@@ -288,7 +274,7 @@ _LISTED_PATH_LABELS = {
 
 @then(
     parsers.re(
-        r'the CLI output lists (?P<kind>documentation|README|lockfile) path'
+        r'the CLI output lists (?P<kind>manifest|documentation|README|lockfile) path'
         r' "(?P<expected>[^"]+)"'
     )
 )

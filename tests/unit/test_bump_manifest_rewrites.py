@@ -156,12 +156,12 @@ def test_skips_missing_member_manifest_before_file_validation(
     assert not plans, "missing member manifests must be skipped before validation"
 
 
-def test_updates_dependency_sections_and_package_aliases(
-    tmp_path: pathlib.Path, snapshot: SnapshotAssertion
-) -> None:
-    """Dependency keys, package aliases, target, and workspace tables update."""
+def _rstest_bdd_dependency_plan(
+    root: pathlib.Path,
+) -> bump_manifest_rewrites.ManifestRewritePlan:
+    """Build a rewrite plan for a multi-section prerelease manifest."""
     _write_manifest(
-        tmp_path,
+        root,
         "fixtures/standalone/Cargo.toml",
         """[dependencies]
 rstest-bdd = "^0.6.0-beta4"
@@ -192,11 +192,9 @@ rstest-bdd = { version = "0.6.0-beta4", path = "../patched" }
 "rstest-bdd:0.1.0" = { path = "../replaced" }
 """,
     )
-    group = ManifestRewriteConfig(paths=("fixtures/standalone/Cargo.toml",))
-
-    (plan,) = _plan(
-        tmp_path,
-        (group,),
+    return _plan(
+        root,
+        (ManifestRewriteConfig(paths=("fixtures/standalone/Cargo.toml",)),),
         versions=_versions(
             names=frozenset({"rstest-bdd", "rstest-bdd-harness"}),
             pre_bump_versions={
@@ -205,8 +203,14 @@ rstest-bdd = { version = "0.6.0-beta4", path = "../patched" }
             },
             target_version="0.6.0",
         ),
-    )
+    )[0]
 
+
+def test_updates_dependency_sections_and_package_aliases(
+    tmp_path: pathlib.Path, snapshot: SnapshotAssertion
+) -> None:
+    """Dependency keys, package aliases, target, and workspace tables update."""
+    plan = _rstest_bdd_dependency_plan(tmp_path)
     assert plan.new_text == snapshot(name="dependency_rewrites"), (
         "the rendered dependency manifest must match its focused snapshot"
     )
@@ -216,6 +220,9 @@ rstest-bdd = { version = "0.6.0-beta4", path = "../patched" }
     )
     assert document["dependencies"]["renamed"]["version"] == "~0.6.0", (
         "an aliased dependency must retain its compatible operator"
+    )
+    assert document["dev-dependencies"]["rstest-bdd"] == "0.6.0", (
+        "the development dependency section must be rewritten"
     )
     assert document["target"]["cfg(unix)"]["dependencies"]["rstest-bdd"] == "0.6.0", (
         "the target dependency section must be rewritten"
@@ -232,6 +239,13 @@ rstest-bdd = { version = "0.6.0-beta4", path = "../patched" }
     assert document["workspace"]["dependencies"]["rstest-bdd"] == "0.6.0", (
         "the workspace dependency section must be rewritten"
     )
+
+
+def test_leaves_unsupported_dependency_entries_unchanged(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Path-only, inherited, unrelated, and patch entries remain untouched."""
+    document = parse_toml(_rstest_bdd_dependency_plan(tmp_path).new_text)
     assert document["dependencies"]["path-only"]["path"] == "../rstest-bdd", (
         "path-only dependencies must remain unchanged"
     )
@@ -243,6 +257,9 @@ rstest-bdd = { version = "0.6.0-beta4", path = "../patched" }
     )
     assert document["patch"]["crates-io"]["rstest-bdd"]["version"] == "0.6.0-beta4", (
         "path dependencies must remain unchanged"
+    )
+    assert document["replace"]["rstest-bdd:0.1.0"]["path"] == "../replaced", (
+        "replace entries must remain untouched"
     )
 
 
