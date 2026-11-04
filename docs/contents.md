@@ -60,6 +60,9 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
 - [ADR-010: Adopt the nose duplication gate][adr-010] - accepted design for the
   blocking code-duplication gate, its scan scope, and the adjudication of
   intentional parallels.
+- [ADR-011: Preserve the CLI result and diagnostic-stream boundary under
+  Cyclopts 4][adr-011] - accepted policy for raw command results, stdout
+  summaries, stderr diagnostics, exit-code mapping, and the dependency floor.
 
 ## Reference documents
 
@@ -90,4 +93,5 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
 [adr-008]: adr/008-adopt-the-shared-cv005-contract-library.md
 [adr-009]: adr/009-pypi-first-distribution-publication.md
 [adr-010]: adr/010-adopt-nose-duplication-gate.md
+[adr-011]: adr/011-cyclopts-4-cli-result-and-diagnostic-boundary.md
 [execplan-regenerate-lockfiles]: execplans/regenerate-lockfiles.md

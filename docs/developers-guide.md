@@ -149,6 +149,36 @@ implementation module may be invoked directly:
 uv run python -m lading.cli --help
 ```
 
+## CLI result and diagnostic boundary
+
+`lading.cli.app` is constructed with `result_action="return_value"`. Cyclopts 4
+otherwise defaults to `print_non_int_sys_exit`, which renders a command's
+return value through Rich and calls `sys.exit`; that would both break in-process
+`app(...)` calls and re-wrap summaries that callers parse.
+
+The rule for new code is:
+
+- **A command returns its result; it does not print it.** `_dispatch_and_print`
+  prints a non-`None` result once, with `print`, and maps an `int` to the exit
+  status. `main()` owns bootstrap, configuration, and workspace errors.
+- **Diagnostics go to stderr; help and summaries go to stdout.** Cyclopts's
+  error console is stderr, so parse and validation errors are asserted there.
+  Never merge the two streams in a test: assert the diagnostic on stderr and
+  assert it is absent from stdout.
+- **Normalize Rich output before asserting on it.** Use
+  `tests/helpers/cli_diagnostics.normalize_diagnostic`, which strips ANSI
+  escapes and box drawing and collapses whitespace. Assert exact text only for
+  messages `lading` owns; match Cyclopts's own diagnostics on a distinctive
+  fragment.
+- **Pin the contract, not the library default.**
+  `tests/unit/test_cyclopts_contract.py` describes the upstream behaviour with
+  a throwaway app, and `tests/unit/test_cli_dispatch.py` pins the dispatcher's
+  outcome matrix. A Cyclopts upgrade that changes either fails a small,
+  self-describing test.
+
+The full policy, the exit-code table, and the dependency floor are in
+[ADR-011](adr/011-cyclopts-4-cli-result-and-diagnostic-boundary.md).
+
 ## Build environment
 
 The Makefile resolves the `uv` executable through the `UV` variable:
@@ -616,7 +646,7 @@ solver performs. Three sites declare it:
 "cuprum==0.2.0b2",
 
 # scripts/upload_release_wheels.py, PEP 723 block
-# dependencies = ["cuprum==0.2.0b2", "cyclopts>=3"]
+# dependencies = ["cuprum==0.2.0b2", "cyclopts>=4.25.3"]
 
 # scripts/format_markdown.py, PEP 723 block
 # dependencies = ["cuprum==0.2.0b2", "cyclopts>=3"]

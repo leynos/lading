@@ -123,6 +123,14 @@ lading [--workspace-root <path>] <subcommand> [options]
   through every call. The CLI sets up this context before dispatching a
   subcommand and falls back to on-demand loading when commands are invoked
   programmatically.
+- The `cyclopts.App` is constructed with `result_action="return_value"`, so a
+  command's return value reaches `_dispatch_and_print` unchanged. That
+  function, and `main()` around it, own printing and exit codes: a string
+  result is printed once to stdout, an integer becomes the exit status, and a
+  `SystemExit` carrying a message is reported on stderr with status 1.
+  Cyclopts's own diagnostics go to stderr and help goes to stdout. The
+  contract, its exceptions, and the dependency floor are recorded in
+  [ADR-011](adr/011-cyclopts-4-cli-result-and-diagnostic-boundary.md).
 
 ### 2.2. Configuration: `lading.toml`
 
