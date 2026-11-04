@@ -2,13 +2,10 @@
 
 import collections.abc as cabc
 import dataclasses as dc
-import logging
 from pathlib import Path
 
 from lading.commands import bump_toml
 from lading.exceptions import LadingError
-
-_log = logging.getLogger(__name__)
 
 
 class ManifestRewriteError(LadingError):
@@ -20,6 +17,8 @@ class ManifestRewriteError(LadingError):
         The operator-facing explanation of the rewrite failure.
     completed_writes : int, optional
         Number of manifests written before a write failure. Defaults to zero.
+    planned_writes : int, optional
+        Number of manifests in the write plan. Defaults to zero.
     failed_path : Path or None, optional
         Manifest whose write failed, or ``None`` for planning errors.
     """
@@ -29,6 +28,7 @@ class ManifestRewriteError(LadingError):
         message: str,
         *,
         completed_writes: int = 0,
+        planned_writes: int = 0,
         failed_path: Path | None = None,
     ) -> None:
         """Initialise an operator-facing failure and write-progress details.
@@ -39,11 +39,14 @@ class ManifestRewriteError(LadingError):
             Explanation of the rewrite failure.
         completed_writes : int, optional
             Number of manifests written before a write failure.
+        planned_writes : int, optional
+            Number of manifests in the write plan. Defaults to zero.
         failed_path : Path or None, optional
             Manifest whose write failed, or ``None`` for planning errors.
         """
         super().__init__(message)
         self.completed_writes = completed_writes
+        self.planned_writes = planned_writes
         self.failed_path = failed_path
 
 
@@ -105,16 +108,10 @@ def apply_manifest_rewrites(
                     f"Could not write manifest rewrite target {plan.path} after "
                     f"{completed_writes} of {len(plans)} write(s): {exc}"
                 )
-                _log.error(
-                    "manifest_rewrite failed: path=%s completed=%d planned=%d "
-                    "error_category=write",
-                    plan.path,
-                    completed_writes,
-                    len(plans),
-                )
                 raise ManifestRewriteError(
                     message,
                     completed_writes=completed_writes,
+                    planned_writes=len(plans),
                     failed_path=plan.path,
                 ) from exc
     return tuple(plan.path for plan in plans)

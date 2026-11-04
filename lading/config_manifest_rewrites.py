@@ -21,6 +21,7 @@ BUMP_STRING_VALUE_REWRITE_TOML_KEYS: typ.Final[frozenset[str]] = frozenset({
     "field",
     "template",
 })
+DEFAULT_REWRITE_TEMPLATE: typ.Final[str] = "{crate}-{version}"
 _EMPTY_FORMAT_SPEC: typ.Final[re.Pattern[str]] = re.compile(
     r"(?<!\{)(?:\{\{)*\{(?:crate|version):\}"
 )
@@ -42,7 +43,7 @@ class StringValueRewriteConfig:
 
     table: tuple[str, ...]
     field: str | None = None
-    template: str = "{crate}-{version}"
+    template: str = DEFAULT_REWRITE_TEMPLATE
 
     @classmethod
     def from_mapping(
@@ -203,7 +204,7 @@ def _rewrite_template_value(
 ) -> str:
     """Parse and validate one configured version-rewrite template."""
     template = toml_coerce.expect_string(
-        mapping.get("template", "{crate}-{version}"),
+        mapping.get("template", DEFAULT_REWRITE_TEMPLATE),
         f"{field_name}.template",
         error=ConfigurationError,
     )

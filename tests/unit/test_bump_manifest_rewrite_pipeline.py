@@ -1,7 +1,6 @@
 """Pipeline integration for configured non-member manifest rewrites."""
 
 import collections.abc as cabc
-import logging
 import pathlib
 
 import pytest
@@ -48,23 +47,16 @@ def _assert_single_rewrite_duration(**labels: str) -> None:
 def _assert_partial_write_failure(
     error: ManifestRewriteError,
     failed_path: pathlib.Path,
-    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Assert the failing path, completed count, and stable log details."""
+    """Assert the failing path and write progress from the exception."""
     assert error.failed_path == failed_path, (
         "the exception should identify the manifest whose write failed"
     )
     assert error.completed_writes == 1, (
         "the exception should expose the number of completed fixture writes"
     )
-    assert "manifest_rewrite failed:" in caplog.text, (
-        "the failure should emit a stable operator-facing event"
-    )
-    assert str(failed_path) in caplog.text, (
-        "the failure event should name the manifest that could not be written"
-    )
-    assert "completed=1 planned=2" in caplog.text, (
-        "the failure event should name the completed-write count"
+    assert error.planned_writes == 2, (
+        "the exception should expose the number of planned fixture writes"
     )
 
 
@@ -265,7 +257,6 @@ def test_missing_rewrite_manifest_fails_before_any_workspace_write(
 def test_partial_write_failure_names_path_and_completed_count(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """A write failure reports its path and counts completed fixture writes."""
     workspace = _make_workspace(tmp_path)
@@ -300,8 +291,6 @@ def test_partial_write_failure_names_path_and_completed_count(
         "write_atomic_text",
         fail_second_write,
     )
-    caplog.set_level(logging.ERROR)
-
     with pytest.raises(ManifestRewriteError, match="1 of 2") as failure:
         bump.run(
             tmp_path,
@@ -319,7 +308,7 @@ def test_partial_write_failure_names_path_and_completed_count(
     assert fixtures[1].read_bytes() == second_original, (
         "the failed manifest should retain its original bytes"
     )
-    _assert_partial_write_failure(failure.value, fixtures[1].resolve(), caplog)
+    _assert_partial_write_failure(failure.value, fixtures[1].resolve())
     _assert_single_rewrite_counter(
         phase="application", outcome="failed", dry_run="false", error_category="write"
     )
