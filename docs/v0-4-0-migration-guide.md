@@ -1,7 +1,7 @@
 # Lading 0.4.0 migration guide
 
-Lading 0.4.0 raises the interpreter floor from CPython 3.13 to CPython 3.14.
-It also makes the command-line boundary explicit: diagnostics that an earlier
+Lading 0.4.0 raises the interpreter floor from CPython 3.13 to CPython 3.14. It
+also makes the command-line boundary explicit: diagnostics that an earlier
 dependency rendered on stdout are now written to stderr, and command summaries
 are printed once, unwrapped and without colour. The flags, `lading.toml` keys,
 and published Python surface are unchanged from 0.3.x. An environment already
