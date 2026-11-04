@@ -68,17 +68,32 @@ def _run(
     )
 
 
+def _assert_rejected(
+    result: subprocess.CompletedProcess[str],
+    message: str,
+    *,
+    expected_status: int | None = None,
+) -> None:
+    """Assert a rejected invocation wrote one diagnostic and no output."""
+    if expected_status is None:
+        assert result.returncode != 0, "a rejected invocation must exit non-zero"
+    else:
+        assert result.returncode == expected_status, (
+            f"the invocation must exit {expected_status}, got {result.returncode}"
+        )
+    assert message in normalize_diagnostic(result.stderr), (
+        f"the diagnostic must be written to stderr: {result.stderr!r}"
+    )
+    assert not result.stdout, f"stdout must stay empty: {result.stdout!r}"
+
+
 def test_an_unknown_subcommand_fails_on_stderr(
     entry_point: list[str], tmp_path: Path
 ) -> None:
     """Both entry points reject an unknown command without writing stdout."""
     result = _run(entry_point, tmp_path / "workspace", "invalid")
 
-    assert result.returncode != 0, "an unknown command must exit non-zero"
-    assert "Unknown command" in normalize_diagnostic(result.stderr), (
-        f"the diagnostic must be written to stderr: {result.stderr!r}"
-    )
-    assert not result.stdout, f"stdout must stay empty: {result.stdout!r}"
+    _assert_rejected(result, "Unknown command")
 
 
 def test_an_invalid_bump_version_fails_on_stderr(
@@ -87,13 +102,7 @@ def test_an_invalid_bump_version_fails_on_stderr(
     """Both entry points reject an invalid version without writing stdout."""
     result = _run(entry_point, tmp_path / "workspace", "bump", "1.2")
 
-    assert result.returncode == 1, (
-        f"an invalid version must exit 1, got {result.returncode}"
-    )
-    assert "Invalid version argument '1.2'" in normalize_diagnostic(result.stderr), (
-        f"the diagnostic must be written to stderr: {result.stderr!r}"
-    )
-    assert not result.stdout, f"stdout must stay empty: {result.stdout!r}"
+    _assert_rejected(result, "Invalid version argument '1.2'", expected_status=1)
 
 
 def _staging_tree(location: Path) -> Path:
