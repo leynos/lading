@@ -40,6 +40,14 @@ if typ.TYPE_CHECKING:
 _CRATE_NAME_CHARACTER: typ.Final[str] = r"A-Za-z0-9_-"
 _VERSION_PREFIX_CHARACTER: typ.Final[str] = r"A-Za-z0-9."
 _VERSION_SUFFIX_CHARACTER: typ.Final[str] = r"A-Za-z0-9.+-"
+_LEADING_BOUNDARIES: typ.Final[tuple[tuple[str, str], ...]] = (
+    ("{crate}", rf"(?<![{_CRATE_NAME_CHARACTER}])"),
+    ("{version}", rf"(?<![{_VERSION_PREFIX_CHARACTER}])"),
+)
+_TRAILING_BOUNDARIES: typ.Final[tuple[tuple[str, str], ...]] = (
+    ("{version}", rf"(?![{_VERSION_SUFFIX_CHARACTER}])"),
+    ("{crate}", rf"(?![{_CRATE_NAME_CHARACTER}])"),
+)
 
 
 class ManifestRewriteError(LadingError):
@@ -343,19 +351,21 @@ def _string_replacement_pattern(
         re.escape(old_text)
         for old_text in sorted(replacements, key=lambda item: (-len(item), item))
     )
-    if rule.template.startswith("{crate}"):
-        prefix = rf"(?<![{_CRATE_NAME_CHARACTER}])"
-    elif rule.template.startswith("{version}"):
-        prefix = rf"(?<![{_VERSION_PREFIX_CHARACTER}])"
-    else:
-        prefix = ""
-    if rule.template.endswith("{version}"):
-        suffix = rf"(?![{_VERSION_SUFFIX_CHARACTER}])"
-    elif rule.template.endswith("{crate}"):
-        suffix = rf"(?![{_CRATE_NAME_CHARACTER}])"
-    else:
-        suffix = ""
+    prefix = _template_boundary(rule.template, str.startswith, _LEADING_BOUNDARIES)
+    suffix = _template_boundary(rule.template, str.endswith, _TRAILING_BOUNDARIES)
     return re.compile(f"{prefix}(?:{alternatives}){suffix}")
+
+
+def _template_boundary(
+    template: str,
+    matches_edge: cabc.Callable[[str, str], bool],
+    boundaries: cabc.Sequence[tuple[str, str]],
+) -> str:
+    """Return the boundary expression for the matching template edge."""
+    for placeholder, boundary_expression in boundaries:
+        if matches_edge(template, placeholder):
+            return boundary_expression
+    return ""
 
 
 def _replace_string_item(
