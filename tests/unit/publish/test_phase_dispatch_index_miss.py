@@ -152,7 +152,7 @@ def test_missing_dep_in_plan_allows_cargo_name_normalization(
         "could not resolve sibling dependency alpha_crate" in message
         and "unpublished workspace dependency override is enabled" in message
         for message in caplog.messages
-    ), "expected canonicalised in-plan dependency to be downgraded to a warning"
+    ), "expected canonicalized in-plan dependency to be downgraded to a warning"
 
 
 _FLAGLESS_PHASES = (

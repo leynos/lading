@@ -1672,8 +1672,8 @@ The index-lookup handling is split across the adapter and decision helper:
   `failed to select a version for the requirement` with
   `location searched: crates.io index`; the absent-package shape pairs
   `no matching package named` with the same index marker. The second shape is
-  the first-publication case for a newly extracted crate (issue #367). It
-  accepts a `CargoSubprocessResult` value object (carrying `exit_code`,
+  the first-publication case for a newly extracted crate (issue #367). The
+  function accepts a `CargoSubprocessResult` value object (carrying `exit_code`,
   `stdout`, and `stderr`) and returns a `CargoIndexLookupFailure` or `None`.
   Requiring both markers of a shape minimizes false positives from unrelated
   resolver, registry, or command failures.

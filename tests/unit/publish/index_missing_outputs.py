@@ -3,7 +3,7 @@
 Cargo reports a dependency that exists at a non-matching version differently
 from one that is absent from the index entirely. Both diagnostics carry a
 non-zero exit code and the ``location searched: crates.io index`` marker, so
-tests parameterise over both shapes to keep their coverage aligned
+tests parameterize over both shapes to keep their coverage aligned
 (issue #367).
 """
 
