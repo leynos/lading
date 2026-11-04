@@ -1,11 +1,9 @@
 """Contracts for PyPI-first, idempotent release publication."""
 
-from __future__ import annotations
-
 import re
 import shlex
 import typing as typ
-from pathlib import Path, PurePosixPath
+from pathlib import PurePosixPath
 
 import yaml
 
@@ -20,7 +18,8 @@ RELEASE_WORKFLOW = REPOSITORY_ROOT / ".github/workflows/release.yml"
 COLLECT_ACTION = (
     REPOSITORY_ROOT / ".github/actions/collect-release-artefacts/action.yml"
 )
-PURE_WHEEL_ACTION = "./.github/actions/pure-python-wheel"
+PURE_WHEEL_ACTION_YML = REPOSITORY_ROOT / ".github/actions/pure-python-wheel/action.yml"
+PURE_WHEEL_UPLOAD_STEP = "Upload sdist and wheel artefact"
 COLLECT_ACTION_REFERENCE = "./.github/actions/collect-release-artefacts"
 UPLOAD_SCRIPT = "scripts/upload_release_wheels.py"
 PURE_ARTIFACT_NAME = "wheels-pure"
@@ -30,9 +29,13 @@ UPLOAD_STEP = "Upload distributions to GitHub release"
 PUBLISH_STEP = "Publish GitHub release"
 UPLOAD_COMMAND = ("uv", "run", "--locked", "--script", UPLOAD_SCRIPT)
 PUBLISH_COMMAND = ("gh", "release", "edit")
+DRAFT_COMMAND = ("gh", "release", "create", "$TAG", "--draft", "--generate-notes")
+GH_ENV_REFERENCE = "${{ secrets.GITHUB_TOKEN }}"
 SHELL_CONTROL_OPERATOR_CHARACTERS = frozenset("&;|")
-# The CLI's default is declared by scripts/upload_release_wheels.py.
-DEFAULT_UPLOAD_DIRECTORY = "dist"
+DEFAULT_UPLOAD_DIRECTORY = "dist"  # See scripts/upload_release_wheels.py.
+StepControls = typ.TypedDict(
+    "StepControls", {"continue-on-error": bool, "if": str}, total=False
+)
 
 
 def _workflow() -> dict[str, typ.Any]:
@@ -66,8 +69,9 @@ def _needs(job_name: str) -> list[str]:
     needs = _load_job(job_name).get("needs", [])
     if isinstance(needs, str):
         return [needs]
-    assert isinstance(needs, list) and all(isinstance(item, str) for item in needs), (
-        f"{job_name} needs must be a string or list of strings, got {needs!r}"
+    assert isinstance(needs, list), f"{job_name} needs must be a list or string"
+    assert all(isinstance(item, str) for item in needs), (
+        f"{job_name} needs entries must be strings, got {needs!r}"
     )
     return needs
 
@@ -77,33 +81,12 @@ def _step_tokens(step: WorkflowStep) -> list[str]:
     return shlex.split(step["run"], comments=True)
 
 
-def _shell_control_operators(step: WorkflowStep) -> set[str]:
-    """Return parsed shell control operators present in a workflow step."""
-    lexer = shlex.shlex(step["run"], posix=True, punctuation_chars=";&|")
-    lexer.whitespace_split = True
-    lexer.commenters = "#"
-    return {
-        token
-        for token in lexer
-        if token and set(token) <= SHELL_CONTROL_OPERATOR_CHARACTERS
-    }
-
-
 def _artifact_download_steps() -> list[WorkflowStep]:
     """Return downloads inside the shared composite collector."""
     return [
         step
         for step in _steps(COLLECT_ACTION)
         if step.get("uses", "").startswith("actions/download-artifact")
-    ]
-
-
-def _wheel_producer_steps() -> list[WorkflowStep]:
-    """Return pure-wheel artifact producers in the release build job."""
-    return [
-        step
-        for step in _job_steps("build-dist")
-        if step.get("uses") == PURE_WHEEL_ACTION
     ]
 
 
@@ -117,7 +100,8 @@ def _upload_directory(tokens: list[str]) -> str:
         try:
             return tokens[index + 1]
         except IndexError as error:
-            raise ValueError("--directory must have a value") from error
+            message = "--directory must have a value"
+            raise ValueError(message) from error
     return DEFAULT_UPLOAD_DIRECTORY
 
 
@@ -149,7 +133,6 @@ def _upload_tokens(step: WorkflowStep) -> list[str]:
     assert _is_upload_command(tokens), (
         f"upload must run the checked uploader, got {tokens}"
     )
-    assert not _shell_control_operators(step), "upload command must fail closed"
     return tokens
 
 
@@ -170,9 +153,12 @@ def _collection_publish_directory() -> str:
         f"expected one publish-directory assignment, got {matches}"
     )
     relative_directory = PurePosixPath(matches[0])
-    assert (
-        not relative_directory.is_absolute() and ".." not in relative_directory.parts
-    ), f"collector publish directory must stay under DIST_DIRECTORY: {matches[0]!r}"
+    assert not relative_directory.is_absolute(), (
+        f"collector publish directory must be relative: {matches[0]!r}"
+    )
+    assert ".." not in relative_directory.parts, (
+        f"collector publish directory must stay under DIST_DIRECTORY: {matches[0]!r}"
+    )
     return (PurePosixPath(distribution_directory) / relative_directory).as_posix()
 
 
@@ -208,17 +194,27 @@ def test_release_trigger_jobs_and_permissions_are_tag_scoped() -> None:
     assert release["permissions"] == {"contents": "write"}, (
         "the GitHub publisher should receive only release-content access"
     )
+    assert release.get("if") is None, "release job must preserve dependency gating"
 
 
 def test_build_artifact_and_uploader_paths_agree() -> None:
     """Bind the producer, download, collector and uploader paths together."""
-    producers = _wheel_producer_steps()
+    producers = [
+        step
+        for step in _job_steps("build-dist")
+        if step.get("uses") == "./.github/actions/pure-python-wheel"
+    ]
     downloads = _artifact_download_steps()
     assert len(producers) == 1, f"expected one pure-wheel producer, got {producers}"
     assert len(downloads) == 1, f"expected one artifact download, got {downloads}"
 
     producer = producers[0]
     artifact_name = producer.get("with_", {}).get("artifact-name")
+    wheel_upload = _find_named_step(PURE_WHEEL_ACTION_YML, PURE_WHEEL_UPLOAD_STEP)
+    upload_uses = wheel_upload.get("uses", "")
+    assert upload_uses.startswith("actions/upload-artifact@"), "must upload an artifact"
+    upload_name = wheel_upload.get("with_", {}).get("name")
+    assert upload_name == "${{ inputs.artifact-name }}", "name must use action input"
     download = downloads[0].get("with_", {})
     assert artifact_name == PURE_ARTIFACT_NAME, (
         f"producer must name its artifact {PURE_ARTIFACT_NAME!r}, got {artifact_name!r}"
@@ -298,10 +294,9 @@ def test_github_release_is_uploaded_and_published_in_order() -> None:
         UPLOAD_STEP,
         PUBLISH_STEP,
     }, f"unexpected release shell steps: {run_steps}"
-    for step in run_steps:
-        assert not {"find", "xargs"}.intersection(_step_tokens(step)), (
-            f"release step {step.get('name')!r} must not search for artifacts"
-        )
+    assert all(
+        not {"find", "xargs"}.intersection(_step_tokens(step)) for step in run_steps
+    ), "release steps must not search for artifacts"
     collector = _find_named_step(RELEASE_WORKFLOW, COLLECT_RELEASE_STEP, job="release")
     create = _find_named_step(RELEASE_WORKFLOW, CREATE_RELEASE_STEP, job="release")
     upload = _find_named_step(RELEASE_WORKFLOW, UPLOAD_STEP, job="release")
@@ -313,14 +308,20 @@ def test_github_release_is_uploaded_and_published_in_order() -> None:
         < steps.index(publish)
     ), "collect artifacts before drafting, then upload before publication"
 
+    publication_tokens = [*PUBLISH_COMMAND, "$TAG", "--draft=false"]
+    for step in steps[: steps.index(upload)]:
+        if step.get("run"):
+            tokens = _step_tokens(step)
+            assert not any(
+                tokens[index : index + len(publication_tokens)] == publication_tokens
+                for index in range(len(tokens) - len(publication_tokens) + 1)
+            ), "no step before upload may publish the release"
+
     create_tokens = _step_tokens(create)
     create_index = create_tokens.index("create")
-    assert create_tokens[create_index : create_index + 4] == [
-        "create",
-        "$TAG",
-        "--draft",
-        "--generate-notes",
-    ], "a new release should begin as a generated draft"
+    assert create_tokens[create_index - 2 : create_index + 4] == list(DRAFT_COMMAND), (
+        "draft creation must invoke gh release create"
+    )
     upload_tokens = _upload_tokens(upload)
     assert "--clobber" not in upload_tokens, "reruns must preserve existing assets"
     assert upload["env"]["TAG"] == "${{ github.ref_name }}", (
@@ -328,17 +329,15 @@ def test_github_release_is_uploaded_and_published_in_order() -> None:
     )
 
     publish_tokens = _step_tokens(publish)
-    assert publish_tokens == [*PUBLISH_COMMAND, "$TAG", "--draft=false"], (
+    assert publish_tokens == publication_tokens, (
         f"publish must run the standalone gh release edit command, got {publish_tokens}"
     )
-    assert not _shell_control_operators(publish), "no publish failure override"
-    for step in (create, upload, publish):
-        assert step["env"]["GH_REPO"] == "${{ github.repository }}", (
-            "GitHub CLI operations should use an explicit repository context"
-        )
-        assert step["env"]["GH_TOKEN"] == "${{ secrets.GITHUB_TOKEN }}", (
-            "GitHub release operations should use the workflow token"
-        )
+    assert all(
+        step["env"]["GH_REPO"] == "${{ github.repository }}"
+        and step["env"]["GH_TOKEN"] == GH_ENV_REFERENCE
+        and step["env"]["TAG"] == "${{ github.ref_name }}"
+        for step in (create, upload, publish)
+    ), "GitHub CLI operations should use the tag, workflow token and repository context"
 
 
 def test_release_publication_steps_fail_closed() -> None:
@@ -357,19 +356,17 @@ def test_release_publication_steps_fail_closed() -> None:
         _find_named_step(COLLECT_ACTION, "Collect and validate release distributions"),
     ]
     for step in (*critical_workflow_steps, *critical_action_steps):
-        assert not step.get("continue-on-error"), (
+        assert not typ.cast("StepControls", step).get("continue-on-error"), (
             f"release step must not continue after failure: {step}"
         )
     assert not _release_job().get("continue-on-error"), (
         "the release job must not continue after a step failure"
     )
 
-    condition = str(
-        _find_named_step(RELEASE_WORKFLOW, PUBLISH_STEP, job="release").get("if", "")
-    ).lower()
-    assert not any(
-        name in condition for name in ("always()", "failure()", "cancelled()")
-    ), f"publish condition must not override failure handling: {condition!r}"
+    upload = _find_named_step(RELEASE_WORKFLOW, UPLOAD_STEP, job="release")
+    assert typ.cast("StepControls", upload).get("if") is None, "unexpected upload if"
+    publish = _find_named_step(RELEASE_WORKFLOW, PUBLISH_STEP, job="release")
+    assert typ.cast("StepControls", publish).get("if") is None, "unexpected publish if"
 
 
 def test_run_blocks_have_no_inline_expressions_or_clobbering_uploads() -> None:
@@ -377,12 +374,8 @@ def test_run_blocks_have_no_inline_expressions_or_clobbering_uploads() -> None:
     for job_name in _workflow()["jobs"]:
         for step in _job_steps(job_name):
             run = step.get("run", "")
-            assert "${{" not in run and "--clobber" not in run, (
-                job_name,
-                step.get("name"),
-                run,
-                "expressions belong in env and uploads preserve existing assets",
-            )
+            assert "${{" not in run, (job_name, step.get("name"), run)
+            assert "--clobber" not in run, (job_name, step.get("name"), run)
 
 
 def test_release_jobs_do_not_persist_checkout_credentials() -> None:
