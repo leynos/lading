@@ -6,9 +6,12 @@ also adds the opt-in `bump.manifest_rewrites` setting for updating configured
 non-member manifests during `lading bump`. It defaults to `[]`, so existing
 configurations are unchanged; enable it only when standalone manifests need
 rewriting. See the [bump configuration reference](users-guide.md#bump) for its
-fields and behaviour. The command-line interface and published Python surface
-remain unchanged from 0.3.x. An environment already running 3.14 needs no
-action beyond the version bump itself.
+fields and behaviour. The command-line interface is unchanged from 0.3.x. The
+Python surface changes additively: `BumpConfig.manifest_rewrites` is new, and
+`lading.config_manifest_rewrites` and `lading.config_validation` support its
+configuration. `ConfigurationError` and `ConfigurationNotLoadedError` now live
+in `lading.exceptions` and remain importable from `lading.config`. An
+environment already running 3.14 needs no action beyond the version bump itself.
 
 When 0.4.0 is released, its tagged build will also be published to PyPI as a
 source distribution and pure-Python wheel. GitHub Releases will retain both

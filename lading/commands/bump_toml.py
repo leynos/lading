@@ -16,9 +16,12 @@ from tomlkit.items import InlineTable, Item, String, StringType, Table
 if typ.TYPE_CHECKING:
     from tomlkit.toml_document import TOMLDocument
 
-type _TableLike = Table | OutOfOrderTableProxy
-_TABLE_LIKE_TYPES: typ.Final[tuple[type[Table], type[OutOfOrderTableProxy]]] = (
+type _TableLike = Table | InlineTable | OutOfOrderTableProxy
+_TABLE_LIKE_TYPES: typ.Final[
+    tuple[type[Table] | type[InlineTable] | type[OutOfOrderTableProxy], ...]
+] = (
     Table,
+    InlineTable,
     OutOfOrderTableProxy,
 )
 
@@ -424,7 +427,7 @@ def select_table(
     Parameters
     ----------
     document : TOMLDocument | _TableLike
-        The document or table to descend from.
+        The document or table to descend from, including inline tables.
     keys : tuple[str, ...]
         Ordered keys identifying the nested table path. An empty tuple returns
         ``document`` itself when it is table-like.
@@ -432,7 +435,8 @@ def select_table(
     Returns
     -------
     _TableLike | None
-        The nested table, or ``None`` when the path does not resolve to one.
+        The nested table or inline table, or ``None`` when the path does not
+        resolve to one.
 
     Examples
     --------

@@ -1097,9 +1097,14 @@ remain with each caller.
 
 `lading.commands.bump_manifest_rewrites` resolves the allowlist, skips the
 workspace and member manifests, parses selected TOML, and plans dependency and
-string-value edits before any pipeline write. It applies those plans after the
-workspace and member manifest stages, then documentation, README, and lockfile
-stages run. `bump.lockfile_manifests` remains a separate setting that adds
+string-value edits before any pipeline write.
+`lading.commands.bump_manifest_rewrite_application` owns `ManifestRewritePlan`,
+`ManifestRewriteError`, and the atomic per-manifest write stage. It applies
+plans after the workspace and member manifest stages, then documentation,
+README, and lockfile stages run. A write failure reports its path and the count
+of writes that completed first. `lading.commands.bump_manifest_rewrite_metrics`
+records bounded outcome counters and the plan-to-application duration.
+`bump.lockfile_manifests` remains a separate setting that adds
 lockfile-regeneration targets.
 
 `lading.commands.bump_manifest_rewrite_dependencies` owns traversal of direct,
@@ -1480,19 +1485,19 @@ Every root domain exception should inherit from `LadingError`. More specific
 exceptions should continue to inherit from the local root for their feature
 area so existing handling remains precise:
 
-| Root exception              | Module                                   | Notes                                                                                           |
-| --------------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `ConfigurationError`        | `lading.exceptions`                      | Base for configuration loading and validation failures.                                         |
-| `WorkspaceModelError`       | `lading.workspace.models`                | Base for workspace graph/model validation failures.                                             |
-| `CargoMetadataError`        | `lading.workspace.metadata`              | Base for cargo metadata execution and parsing failures.                                         |
-| `CommandSpawnError`         | `lading.runtime.subprocess_runner`       | Raised when the subprocess runner cannot spawn an external command.                             |
-| `LockfileDiscoveryError`    | `lading.commands.lockfile`               | Raised when git cannot list tracked lockfiles.                                                  |
-| `LockfileRegenerationError` | `lading.commands.bump_lockfiles`         | Raised when configured bump lockfile manifests are invalid or `cargo update --workspace` fails. |
-| `ManifestRewriteError`      | `lading.commands.bump_manifest_rewrites` | Raised when a configured non-member manifest cannot be selected, read, or parsed.               |
-| `PublishPlanError`          | `lading.commands.publish_plan`           | Raised when a publish plan cannot be constructed.                                               |
-| `ReadmeTranspositionError`  | `lading.commands.bump_readme`            | Raised when the workspace README cannot be transposed into a crate during `lading bump`.        |
-| `PublishPreparationError`   | `lading.commands.publish_manifest`       | Raised when staged publish manifests or workspace assets cannot be prepared.                    |
-| `PublishPreflightError`     | `lading.commands.publish_errors`         | Raised for local publish validation and pre-flight failures.                                    |
+| Root exception              | Module                                              | Notes                                                                                           |
+| --------------------------- | --------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `ConfigurationError`        | `lading.exceptions`                                 | Base for configuration loading and validation failures.                                         |
+| `WorkspaceModelError`       | `lading.workspace.models`                           | Base for workspace graph/model validation failures.                                             |
+| `CargoMetadataError`        | `lading.workspace.metadata`                         | Base for cargo metadata execution and parsing failures.                                         |
+| `CommandSpawnError`         | `lading.runtime.subprocess_runner`                  | Raised when the subprocess runner cannot spawn an external command.                             |
+| `LockfileDiscoveryError`    | `lading.commands.lockfile`                          | Raised when git cannot list tracked lockfiles.                                                  |
+| `LockfileRegenerationError` | `lading.commands.bump_lockfiles`                    | Raised when configured bump lockfile manifests are invalid or `cargo update --workspace` fails. |
+| `ManifestRewriteError`      | `lading.commands.bump_manifest_rewrite_application` | Raised when a configured non-member manifest cannot be selected, read, parsed, or written.      |
+| `PublishPlanError`          | `lading.commands.publish_plan`                      | Raised when a publish plan cannot be constructed.                                               |
+| `ReadmeTranspositionError`  | `lading.commands.bump_readme`                       | Raised when the workspace README cannot be transposed into a crate during `lading bump`.        |
+| `PublishPreparationError`   | `lading.commands.publish_manifest`                  | Raised when staged publish manifests or workspace assets cannot be prepared.                    |
+| `PublishPreflightError`     | `lading.commands.publish_errors`                    | Raised for local publish validation and pre-flight failures.                                    |
 
 Domain ownership: README transposition failures during `lading bump` are owned
 by the bump domain (`ReadmeTranspositionError`); publish staging failures are
@@ -1964,17 +1969,19 @@ than bucketed.
 
 Defined metrics:
 
-| Metric                           | Labels                        | Incremented when                                                                                                                                                                                                                                 |
-| -------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `publish.index_lookup_downgrade` | `subcommand`, `missing_crate` | `_handle_index_missing_version` downgrades a crates.io index-lookup failure to a warning (in-plan, override enabled).                                                                                                                            |
-| `lockfile.discovered`            | (none)                        | Incremented by tracked-lockfile count when discovery observability is enabled; dry-run bump projection suppresses it.                                                                                                                            |
-| `lockfile.discovery.failed`      | `reason`                      | Incremented once per failed tracked-lockfile discovery; `reason` is `not_git` or `git_error`. Failure counting ignores the discovery observability switch, which suppresses success telemetry only.                                              |
-| `lockfile.regenerate`            | `outcome`, `cause`            | Incremented per successful or failed lockfile regeneration; `cause` is `none`, `validation`, `command_spawn`, `runner_value`, or `cargo_exit`.                                                                                                   |
-| `lockfile.regenerate.duration`   | (none)                        | Total duration observation around each lockfile-regeneration run.                                                                                                                                                                                |
-| `lockfile.validate`              | `outcome`                     | One increment per `validate_lockfile_freshness` call; `outcome` is `fresh`, `stale`, or `failed`.                                                                                                                                                |
-| `lockfile.validate.duration`     | (none)                        | Duration observation around each `cargo metadata --locked` probe.                                                                                                                                                                                |
-| `publish.cargo.duration`         | `subcommand`, `crate`         | One duration observation per `cargo package` or `cargo publish` invocation in the publish pipeline, successful or not (issue #251).                                                                                                              |
-| `publish.sccache.query`          | `outcome`                     | One increment per sccache statistics query while instrumentation is on (`--sccache-stats`, or a `--sccache-stats-json` path, which implies it); `outcome` is `success` or `failure` (issue [#252](https://github.com/leynos/lading/issues/252)). |
+| Metric                           | Labels                                          | Incremented when                                                                                                                                                                                                                                 |
+| -------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `publish.index_lookup_downgrade` | `subcommand`, `missing_crate`                   | `_handle_index_missing_version` downgrades a crates.io index-lookup failure to a warning (in-plan, override enabled).                                                                                                                            |
+| `lockfile.discovered`            | (none)                                          | Incremented by tracked-lockfile count when discovery observability is enabled; dry-run bump projection suppresses it.                                                                                                                            |
+| `lockfile.discovery.failed`      | `reason`                                        | Incremented once per failed tracked-lockfile discovery; `reason` is `not_git` or `git_error`. Failure counting ignores the discovery observability switch, which suppresses success telemetry only.                                              |
+| `lockfile.regenerate`            | `outcome`, `cause`                              | Incremented per successful or failed lockfile regeneration; `cause` is `none`, `validation`, `command_spawn`, `runner_value`, or `cargo_exit`.                                                                                                   |
+| `lockfile.regenerate.duration`   | (none)                                          | Total duration observation around each lockfile-regeneration run.                                                                                                                                                                                |
+| `lockfile.validate`              | `outcome`                                       | One increment per `validate_lockfile_freshness` call; `outcome` is `fresh`, `stale`, or `failed`.                                                                                                                                                |
+| `lockfile.validate.duration`     | (none)                                          | Duration observation around each `cargo metadata --locked` probe.                                                                                                                                                                                |
+| `bump.manifest_rewrite.run`      | `phase`, `outcome`, `dry_run`, `error_category` | One increment for each planning or application outcome; labels use finite values documented in the users' guide.                                                                                                                                 |
+| `bump.manifest_rewrite.duration` | `outcome`, `dry_run`, `error_category`          | One plan-to-application duration per configured rewrite run, including failures.                                                                                                                                                                 |
+| `publish.cargo.duration`         | `subcommand`, `crate`                           | One duration observation per `cargo package` or `cargo publish` invocation in the publish pipeline, successful or not (issue #251).                                                                                                              |
+| `publish.sccache.query`          | `outcome`                                       | One increment per sccache statistics query while instrumentation is on (`--sccache-stats`, or a `--sccache-stats-json` path, which implies it); `outcome` is `success` or `failure` (issue [#252](https://github.com/leynos/lading/issues/252)). |
 
 Duration metrics aggregate a count and total seconds per label set via
 `observe_duration` / `duration_stats` and appear in the exit summary with

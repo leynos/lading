@@ -22,6 +22,17 @@ def test_select_table_returns_none_for_missing() -> None:
     assert table is None, "a selector with no matching table should return None"
 
 
+def test_select_table_accepts_inline_tables() -> None:
+    """Inline tables are valid targets for explicit TOML selectors."""
+    document = parse_toml('dependencies = { alpha = "1.0.0" }')
+
+    table = bump_toml.select_table(document, ("dependencies",))
+
+    assert table is document["dependencies"], (
+        "an inline table should resolve through the same selector path"
+    )
+
+
 def test_assign_version_handles_absent_table() -> None:
     """``assign_version`` tolerates missing tables."""
     assert bump_toml.assign_version(None, "1.0.0") is False, (

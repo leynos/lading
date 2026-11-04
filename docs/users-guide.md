@@ -851,6 +851,25 @@ Each entry records a counter name, the label values that identify it, and the
 accumulated count for the current invocation. The summary line is omitted
 entirely when no metrics were recorded (quiet runs stay quiet).
 
+#### `bump.manifest_rewrite.run`
+
+Counts planning and application outcomes for configured non-member manifest
+rewrites. Labels are bounded to these values:
+
+- `phase` — `planning` or `application`.
+- `outcome` — `planned`, `applied`, `skipped`, or `failed`.
+- `dry_run` — `true` or `false`.
+- `error_category` — `none`, `planning`, or `write`.
+
+#### `bump.manifest_rewrite.duration`
+
+One duration observation covers manifest resolution, planning, and application
+for each configured rewrite run, including failures. Its labels are `outcome`,
+`dry_run`, and `error_category`, with the values documented above. Runs with no
+`bump.manifest_rewrites` configuration emit no rewrite metrics. A failed write
+also emits a `manifest_rewrite failed:` log event naming the path and the
+number of completed writes, and the command error repeats that count.
+
 #### `publish.cargo.duration`
 
 One duration observation per `cargo package` or `cargo publish` invocation in
