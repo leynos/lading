@@ -1480,18 +1480,19 @@ Every root domain exception should inherit from `LadingError`. More specific
 exceptions should continue to inherit from the local root for their feature
 area so existing handling remains precise:
 
-| Root exception              | Module                             | Notes                                                                                           |
-| --------------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `ConfigurationError`        | `lading.exceptions`                | Base for configuration loading and validation failures.                                         |
-| `WorkspaceModelError`       | `lading.workspace.models`          | Base for workspace graph/model validation failures.                                             |
-| `CargoMetadataError`        | `lading.workspace.metadata`        | Base for cargo metadata execution and parsing failures.                                         |
-| `CommandSpawnError`         | `lading.runtime.subprocess_runner` | Raised when the subprocess runner cannot spawn an external command.                             |
-| `LockfileDiscoveryError`    | `lading.commands.lockfile`         | Raised when git cannot list tracked lockfiles.                                                  |
-| `LockfileRegenerationError` | `lading.commands.bump_lockfiles`   | Raised when configured bump lockfile manifests are invalid or `cargo update --workspace` fails. |
-| `PublishPlanError`          | `lading.commands.publish_plan`     | Raised when a publish plan cannot be constructed.                                               |
-| `ReadmeTranspositionError`  | `lading.commands.bump_readme`      | Raised when the workspace README cannot be transposed into a crate during `lading bump`.        |
-| `PublishPreparationError`   | `lading.commands.publish_manifest` | Raised when staged publish manifests or workspace assets cannot be prepared.                    |
-| `PublishPreflightError`     | `lading.commands.publish_errors`   | Raised for local publish validation and pre-flight failures.                                    |
+| Root exception              | Module                                   | Notes                                                                                           |
+| --------------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `ConfigurationError`        | `lading.exceptions`                      | Base for configuration loading and validation failures.                                         |
+| `WorkspaceModelError`       | `lading.workspace.models`                | Base for workspace graph/model validation failures.                                             |
+| `CargoMetadataError`        | `lading.workspace.metadata`              | Base for cargo metadata execution and parsing failures.                                         |
+| `CommandSpawnError`         | `lading.runtime.subprocess_runner`       | Raised when the subprocess runner cannot spawn an external command.                             |
+| `LockfileDiscoveryError`    | `lading.commands.lockfile`               | Raised when git cannot list tracked lockfiles.                                                  |
+| `LockfileRegenerationError` | `lading.commands.bump_lockfiles`         | Raised when configured bump lockfile manifests are invalid or `cargo update --workspace` fails. |
+| `ManifestRewriteError`      | `lading.commands.bump_manifest_rewrites` | Raised when a configured non-member manifest cannot be selected, read, or parsed.               |
+| `PublishPlanError`          | `lading.commands.publish_plan`           | Raised when a publish plan cannot be constructed.                                               |
+| `ReadmeTranspositionError`  | `lading.commands.bump_readme`            | Raised when the workspace README cannot be transposed into a crate during `lading bump`.        |
+| `PublishPreparationError`   | `lading.commands.publish_manifest`       | Raised when staged publish manifests or workspace assets cannot be prepared.                    |
+| `PublishPreflightError`     | `lading.commands.publish_errors`         | Raised for local publish validation and pre-flight failures.                                    |
 
 Domain ownership: README transposition failures during `lading bump` are owned
 by the bump domain (`ReadmeTranspositionError`); publish staging failures are

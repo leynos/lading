@@ -1,10 +1,14 @@
 # Lading 0.4.0 migration guide
 
 Lading 0.4.0 raises the interpreter floor from CPython 3.13 to CPython 3.14.
-Nothing else in this release changes how Lading is invoked, configured, or
-extended: the command-line interface, `lading.toml` keys, and the published
-Python surface are unchanged from 0.3.x. An environment already running 3.14
-needs no action beyond the version bump itself.
+This is the only change that requires an environment migration. The release
+also adds the opt-in `bump.manifest_rewrites` setting for updating configured
+non-member manifests during `lading bump`. It defaults to `[]`, so existing
+configurations are unchanged; enable it only when standalone manifests need
+rewriting. See the [bump configuration reference](users-guide.md#bump) for its
+fields and behaviour. The command-line interface and published Python surface
+remain unchanged from 0.3.x. An environment already running 3.14 needs no
+action beyond the version bump itself.
 
 When 0.4.0 is released, its tagged build will also be published to PyPI as a
 source distribution and pure-Python wheel. GitHub Releases will retain both

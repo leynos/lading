@@ -37,13 +37,6 @@ if typ.TYPE_CHECKING:
 
     from lading.config import ManifestRewriteConfig, StringValueRewriteConfig
 
-_TABLE_TYPES: typ.Final[
-    tuple[type[InlineTable], type[Table], type[OutOfOrderTableProxy]]
-] = (
-    InlineTable,
-    Table,
-    OutOfOrderTableProxy,
-)
 _CRATE_NAME_CHARACTER: typ.Final[str] = r"A-Za-z0-9_-"
 _VERSION_SUFFIX_CHARACTER: typ.Final[str] = r"A-Za-z0-9.+-"
 
@@ -311,10 +304,10 @@ def _rewrite_selected_fields(
     """Rewrite one field in each inline or standard sub-table."""
     changed = False
     for _, entry in tuple(table.items()):
-        if not isinstance(entry, _TABLE_TYPES):
-            continue
-        value = entry.get(field)
-        changed |= _replace_string_item(entry, field, value, replacement)
+        match entry:
+            case (InlineTable() | Table() | OutOfOrderTableProxy()) as sub_table:
+                value = sub_table.get(field)
+                changed |= _replace_string_item(sub_table, field, value, replacement)
     return changed
 
 
