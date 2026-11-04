@@ -693,7 +693,9 @@ remained in the original feature scope.
 at the user's request. The Makefile defines `TY_VERSION ?= 0.0.56` and invokes
 the checker through `uv tool run --from ty==$(TY_VERSION) ty`; CI runs
 `make typecheck` and no longer installs ty separately. Ty 0.0.56 passes with no
-new diagnostics. The non-member manifest rewriting follow-up remains open.
+new diagnostics. The non-member manifest rewriting follow-up remained open at
+the time of this note. Issue #260 later delivered it through
+`bump.manifest_rewrites`.
 
 2026-07-14: rebasing onto `origin/main` incorporated issue #82's
 `LockfileRepository` port. Discovery now occurs inside the
