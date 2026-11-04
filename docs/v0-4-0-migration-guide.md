@@ -1,12 +1,26 @@
 # Lading 0.4.0 migration guide
 
-Lading 0.4.0 raises the interpreter floor from CPython 3.13 to CPython 3.14. It
-also makes the command-line boundary explicit: diagnostics that an earlier
+Lading 0.4.0 raises the interpreter floor from CPython 3.13 to CPython 3.14.
+It also makes the command-line boundary explicit: diagnostics that an earlier
 dependency rendered on stdout are now written to stderr, and command summaries
-are printed once, unwrapped and without colour. The flags, `lading.toml` keys,
-and published Python surface are unchanged from 0.3.x. An environment already
-running 3.14 that only reads successful output needs no action beyond the
-version bump itself.
+are printed once, unwrapped and without colour. The release adds the opt-in
+`bump.manifest_rewrites` setting for updating configured non-member manifests
+during `lading bump`. It defaults to `[]`, so existing configurations are
+unchanged; enable it only when standalone manifests need rewriting. See the
+[bump configuration reference](users-guide.md#bump) for its fields and
+behaviour.
+
+The command-line flags and `lading.toml` keys are unchanged from 0.3.x. The
+Python API changes additively. `BumpConfig.manifest_rewrites` is new, and
+`lading.config_manifest_rewrites` and `lading.config_validation` support its
+configuration. `BumpOptions.clock` adds an injectable rewrite timer, and
+`lading.commands.manifest_paths.resolve_manifest_candidate` is available to
+manifest-path consumers. `lading.commands.bump_manifest_rewrites` exports
+`ManifestRewriteError`, `ManifestRewritePlan` and `ManifestRewriteVersions`.
+`ConfigurationError` and `ConfigurationNotLoadedError` now live in
+`lading.exceptions` and remain importable from `lading.config`. An environment
+already running 3.14 that only reads successful output needs no action beyond
+the version bump itself.
 
 When 0.4.0 is released, its tagged build will also be published to PyPI as a
 source distribution and pure-Python wheel. GitHub Releases will retain both

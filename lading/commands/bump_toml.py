@@ -170,15 +170,22 @@ def prepare_string_value_replacement(
     current = value_as_string(value)
     if current is None or current == replacement_text:
         return None
-    string_type = value.type if isinstance(value, String) else None
+    match value:
+        case String() as styled_string:
+            string_type = styled_string.type
+        case _:
+            string_type = None
     replacement = string(
         replacement_text,
         literal=string_type in {StringType.SLL, StringType.MLL},
         multiline=string_type in {StringType.MLB, StringType.MLL},
     )
-    if isinstance(value, Item):
-        with suppress(AttributeError):  # Preserve inline comments and whitespace trivia
-            replacement._trivia = value._trivia
+    match value:
+        case Item() as original_item:
+            with suppress(
+                AttributeError
+            ):  # Preserve inline comments and whitespace trivia
+                replacement._trivia = original_item._trivia
     return replacement
 
 
