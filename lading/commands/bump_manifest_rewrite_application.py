@@ -31,7 +31,7 @@ class ManifestRewriteError(LadingError):
         planned_writes: int = 0,
         failed_path: Path | None = None,
     ) -> None:
-        """Initialise an operator-facing failure and write-progress details.
+        """Initialize an operator-facing failure and write-progress details.
 
         Parameters
         ----------
