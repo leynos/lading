@@ -9,6 +9,7 @@ module owns the ordered update sequence.
 import collections.abc as cabc
 import dataclasses as dc
 import logging
+import time
 import types
 import typing as typ
 from pathlib import Path
@@ -52,6 +53,9 @@ class BumpOptions:
         Explicit dependency sections to rewrite by crate name.
     include_workspace_sections : bool, default False
         Whether workspace dependency tables should be rewritten as well.
+    clock : Callable[[], float], default time.perf_counter
+        Monotonic clock used to measure configured manifest rewrite phases.
+        Inject a deterministic clock when testing timing behaviour.
 
     Notes
     -----
@@ -68,6 +72,7 @@ class BumpOptions:
         default_factory=lambda: types.MappingProxyType({})
     )
     include_workspace_sections: bool = False
+    clock: cabc.Callable[[], float] = time.perf_counter
 
 
 def run(
@@ -154,6 +159,7 @@ def _initialize_bump_context(
     )
     base_options = BumpOptions(
         dry_run=resolved_options.dry_run,
+        clock=resolved_options.clock,
         rebuild_lockfiles=rebuild_lockfiles,
         configuration=configuration,
         workspace=workspace,

@@ -10,7 +10,6 @@ import collections.abc as cabc
 import dataclasses as dc
 import enum
 import logging
-import time
 import typing as typ
 
 from lading.commands import (
@@ -116,13 +115,14 @@ def _record_rewrite_failure(
 
 def _rewrite_duration_seconds(
     application_timing: tuple[float, float] | None,
+    clock: cabc.Callable[[], float],
 ) -> float | None:
     """Sum planning and application time, excluding intervening stages."""
     match application_timing:
         case None:
             return None
         case (planning_duration, application_started_at):
-            return planning_duration + time.perf_counter() - application_started_at
+            return planning_duration + clock() - application_started_at
 
 
 def _plan_non_member_rewrites(
@@ -133,7 +133,8 @@ def _plan_non_member_rewrites(
     rewrite_groups = context.configuration.bump.manifest_rewrites
     if not rewrite_groups:
         return (), None
-    planning_started_at = time.perf_counter()
+    clock = context.base_options.clock
+    planning_started_at = clock()
     pre_bump_versions = {
         crate.name: crate.version for crate in context.workspace.crates
     }
@@ -153,13 +154,13 @@ def _plan_non_member_rewrites(
         )
     except bump_manifest_rewrites.ManifestRewriteError:
         _record_rewrite_failure(
-            time.perf_counter() - planning_started_at,
+            clock() - planning_started_at,
             phase="planning",
             error_category="planning",
             dry_run=context.base_options.dry_run,
         )
         raise
-    planning_duration = time.perf_counter() - planning_started_at
+    planning_duration = clock() - planning_started_at
     record_manifest_rewrite_planned(dry_run=context.base_options.dry_run)
     return plans, planning_duration
 
@@ -173,15 +174,14 @@ def _process_non_member_rewrites(
 ) -> None:
     """Apply planned fixture rewrites and include their resolved paths."""
     dry_run = context.base_options.dry_run
+    clock = context.base_options.clock
     _log.debug(
         "Non-member manifest rewrites: %d planned manifest(s), dry_run=%s",
         len(plans),
         dry_run,
     )
     application_timing = (
-        (planning_duration, time.perf_counter())
-        if planning_duration is not None
-        else None
+        (planning_duration, clock()) if planning_duration is not None else None
     )
     try:
         rewritten_paths = bump_manifest_rewrites.apply_manifest_rewrites(
@@ -189,13 +189,13 @@ def _process_non_member_rewrites(
         )
     except bump_manifest_rewrites.ManifestRewriteError:
         _record_rewrite_failure(
-            _rewrite_duration_seconds(application_timing),
+            _rewrite_duration_seconds(application_timing, clock),
             phase="application",
             error_category="write",
             dry_run=dry_run,
         )
         raise
-    duration_seconds = _rewrite_duration_seconds(application_timing)
+    duration_seconds = _rewrite_duration_seconds(application_timing, clock)
     changed_manifests.update(path.resolve() for path in rewritten_paths)
     outcome = "skipped" if dry_run or not plans else "applied"
     record_manifest_rewrite_metrics(

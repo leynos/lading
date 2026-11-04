@@ -2,7 +2,6 @@
 
 import collections.abc as cabc
 import pathlib
-from types import SimpleNamespace
 
 import pytest
 
@@ -11,7 +10,6 @@ from lading.commands import (
     bump,
     bump_manifest_rewrite_application,
     bump_manifest_rewrite_metrics,
-    bump_pipeline,
 )
 from lading.commands.bump_manifest_rewrites import ManifestRewriteError
 from lading.config import ManifestRewriteConfig, StringValueRewriteConfig
@@ -134,7 +132,6 @@ def test_rewrites_fixture_before_lockfile_regeneration(
 
 def test_rewrite_duration_excludes_intervening_manifest_stages(
     tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Rewrite timing excludes workspace and member manifest processing."""
     workspace = _make_workspace(tmp_path)
@@ -149,16 +146,12 @@ def test_rewrite_duration_excludes_intervening_manifest_stages(
         )
     )
     clock_readings = iter((10.0, 12.0, 100.0, 103.0))
-    monkeypatch.setattr(
-        bump_pipeline,
-        "time",
-        SimpleNamespace(perf_counter=lambda: next(clock_readings)),
-    )
 
     bump.run(
         tmp_path,
         "1.2.3",
         options=bump.BumpOptions(
+            clock=lambda: next(clock_readings),
             rebuild_lockfiles=False,
             configuration=configuration,
             workspace=workspace,
