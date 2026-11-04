@@ -43,10 +43,12 @@ def resolve_manifest_candidate(
     >>> from lading.exceptions import LadingError
     >>> from pathlib import Path
     >>> options = {"error_type": LadingError, "label": "Manifest"}
-    >>> resolve_manifest_candidate(
-    ...     Path("/workspace"), "fixtures/demo/Cargo.toml", **options
+    >>> root = Path("/workspace")
+    >>> candidate = resolve_manifest_candidate(
+    ...     root, "fixtures/demo/Cargo.toml", **options
     ... )
-    PosixPath('/workspace/fixtures/demo/Cargo.toml')
+    >>> candidate.relative_to(root.resolve()).as_posix()
+    'fixtures/demo/Cargo.toml'
     """  # ruff: ignore[docstring-extraneous-exception]  # error_type selects the raised subclass
     candidate = (workspace_root / manifest).resolve()
     try:
