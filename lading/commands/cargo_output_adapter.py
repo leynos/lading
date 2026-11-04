@@ -184,44 +184,31 @@ def parse_index_lookup_failure(
 
     Examples
     --------
-    A dependency that exists on the index at a non-matching version:
+    A dependency present at a non-matching version:
 
-    >>> cargo_stderr = (
-    ...     "error: failed to select a version for the requirement "
+    >>> stderr = (
+    ...     "failed to select a version for the requirement "
     ...     '`inner_crate = "^0.8.0"`\n'
     ...     "location searched: crates.io index"
     ... )
-    >>> result = CargoSubprocessResult(
-    ...     exit_code=101,
-    ...     stdout="",
-    ...     stderr=cargo_stderr,
-    ... )
-    >>> failure = parse_index_lookup_failure(
+    >>> parse_index_lookup_failure(
     ...     crate_name="beta",
     ...     subcommand="package",
-    ...     result=result,
-    ... )
-    >>> failure.missing_dependency_name
+    ...     result=CargoSubprocessResult(101, "", stderr),
+    ... ).missing_dependency_name
     'inner_crate'
 
-    A dependency that has never been published at all produces the same
-    failure type from Cargo's ``no matching package named`` diagnostic:
+    A dependency absent from the index entirely:
 
-    >>> absent_stderr = (
-    ...     "error: no matching package named `inner_crate` found\n"
+    >>> stderr = (
+    ...     "no matching package named `inner_crate` found\n"
     ...     "location searched: crates.io index"
     ... )
-    >>> absent_result = CargoSubprocessResult(
-    ...     exit_code=101,
-    ...     stdout="",
-    ...     stderr=absent_stderr,
-    ... )
-    >>> absent_failure = parse_index_lookup_failure(
+    >>> parse_index_lookup_failure(
     ...     crate_name="beta",
     ...     subcommand="package",
-    ...     result=absent_result,
-    ... )
-    >>> absent_failure.missing_dependency_name
+    ...     result=CargoSubprocessResult(101, "", stderr),
+    ... ).missing_dependency_name
     'inner_crate'
     """
     if result.exit_code == 0:
