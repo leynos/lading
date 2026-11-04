@@ -73,6 +73,7 @@ from .cli_options import (
     WorkspaceRootOption as WorkspaceRootOption,
 )
 from .commands import publish_staging
+from .commands.bump_manifest_rewrites import ManifestRewriteError
 from .commands.publish_skip import SkipPreflightDecision, SkipPreflightSource
 from .runtime import CommandRunner, subprocess_runner
 from .utils import metrics, normalize_workspace_root
@@ -389,6 +390,17 @@ def _dispatch_and_print(tokens: cabc.Sequence[str]) -> int:
     return 0
 
 
+def _print_expected_command_error(
+    error: ManifestRewriteError | WorkspaceModelError,
+) -> None:
+    """Print the established label for an expected domain failure."""
+    if isinstance(error, ManifestRewriteError):
+        label = "Manifest rewrite error"
+    else:
+        label = "Workspace error"
+    print(f"{label}: {error}", file=sys.stderr)
+
+
 def main(argv: cabc.Sequence[str] | None = None) -> int:
     """Entry point for ``python -m lading.cli``.
 
@@ -442,8 +454,8 @@ def main(argv: cabc.Sequence[str] | None = None) -> int:
             ):
                 try:
                     return _dispatch_and_print(remaining)
-                except WorkspaceModelError as exc:
-                    print(f"Workspace error: {exc}", file=sys.stderr)
+                except (ManifestRewriteError, WorkspaceModelError) as exc:
+                    _print_expected_command_error(exc)
                     return 1
         finally:
             app.config = previous_config
