@@ -1,5 +1,6 @@
 """Unit tests for low-level bump TOML table and version helpers."""
 
+import pytest
 from tomlkit import parse as parse_toml
 
 from lading.commands import bump_toml
@@ -64,6 +65,32 @@ def test_value_matches_handles_toml_items() -> None:
     )
     assert bump_toml.value_matches(item, "4.0.0") is False, (
         "a TOML item should not match a different value"
+    )
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ('"old"', 'path = "new" # keep\n'),
+        ("'old'", "path = 'new' # keep\n"),
+        ('"""old"""', 'path = """new""" # keep\n'),
+        ("'''old'''", "path = '''new''' # keep\n"),
+    ],
+    ids=["basic", "literal", "multiline-basic", "multiline-literal"],
+)
+def test_prepare_string_value_replacement_preserves_style_and_comment(
+    source: str,
+    expected: str,
+) -> None:
+    """Replacement retains the original TOML string delimiters and trivia."""
+    document = parse_toml(f"path = {source} # keep\n")
+
+    replacement = bump_toml.prepare_string_value_replacement(document["path"], "new")
+
+    assert replacement is not None, "a differing string value should be replaced"
+    document["path"] = replacement
+    assert document.as_string() == expected, (
+        "replacement should preserve string style and the trailing comment"
     )
 
 
