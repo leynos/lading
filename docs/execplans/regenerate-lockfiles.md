@@ -163,11 +163,6 @@ fixture lockfile and seeing that lockfile listed in the bump output with a
   dry-run projection free of successful discovery telemetry while retaining
   discovery warnings and failures. The final modules measure 217, 88, 140, and
   284 lines respectively, all below the 400-line limit.
-- [x] (2026-10-10) Delivered the non-member manifest follow-up in issue #260:
-  `bump.manifest_rewrites` allowlists standalone manifests, plans dependency
-  and selected string rewrites before writes, and applies them before lockfile
-  regeneration. Focused unit and CLI BDD acceptance tests cover the published
-  GPUI fixture, dry-run byte preservation, and lockfile-stage ordering.
 
 ## Surprises & discoveries
 

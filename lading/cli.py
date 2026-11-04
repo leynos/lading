@@ -394,10 +394,11 @@ def _print_expected_command_error(
     error: ManifestRewriteError | WorkspaceModelError,
 ) -> None:
     """Print the established label for an expected domain failure."""
-    if isinstance(error, ManifestRewriteError):
-        label = "Manifest rewrite error"
-    else:
-        label = "Workspace error"
+    match error:
+        case ManifestRewriteError():
+            label = "Manifest rewrite error"
+        case WorkspaceModelError():
+            label = "Workspace error"
     print(f"{label}: {error}", file=sys.stderr)
 
 
