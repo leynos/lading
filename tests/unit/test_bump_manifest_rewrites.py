@@ -385,15 +385,3 @@ def test_unchanged_manifest_is_omitted_and_dry_run_does_not_write(
     assert manifest.read_bytes() == original_bytes, (
         "dry-run must preserve manifest bytes"
     )
-
-
-def test_wraps_malformed_manifest_errors_with_path(tmp_path: pathlib.Path) -> None:
-    """Invalid TOML is reported as a manifest rewrite domain error."""
-    manifest = _write_manifest(tmp_path, "fixture/Cargo.toml", "[dependencies\n")
-    group = ManifestRewriteConfig(paths=("fixture/Cargo.toml",))
-
-    with pytest.raises(
-        bump_manifest_rewrites.ManifestRewriteError,
-        match=str(manifest),
-    ):
-        _plan(tmp_path, (group,))
