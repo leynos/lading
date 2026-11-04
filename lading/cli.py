@@ -390,11 +390,19 @@ def _dispatch_and_print(tokens: cabc.Sequence[str]) -> int:
             return code
         print(code, file=sys.stderr)
         return 1
-    if isinstance(result, int):
-        return result
-    if result is not None:
-        print(result)
-    return 0
+    match result:
+        case None:
+            status = 0
+        case bool():
+            # bool subclasses int, so it must be matched first. Cyclopts maps
+            # a bool result to success when true and failure when false.
+            status = 0 if result else 1
+        case int():
+            status = result
+        case _:
+            print(result)
+            status = 0
+    return status
 
 
 def main(argv: cabc.Sequence[str] | None = None) -> int:

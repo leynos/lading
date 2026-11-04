@@ -276,6 +276,24 @@ _DISPATCH_OUTCOME_CASES = (
         id="nonzero-return",
     ),
     pytest.param(
+        _DispatchOutcomeCase(
+            app_outcome=True,
+            expected_status=0,
+            expected_stdout="",
+            expected_stderr="",
+        ),
+        id="true-return",
+    ),
+    pytest.param(
+        _DispatchOutcomeCase(
+            app_outcome=False,
+            expected_status=1,
+            expected_stdout="",
+            expected_stderr="",
+        ),
+        id="false-return",
+    ),
+    pytest.param(
         _DispatchOutcomeCase("summary", 0, "summary\n", ""),
         id="string-return",
     ),
@@ -309,8 +327,9 @@ def test_dispatch_and_print_owns_results_and_exit_codes(
     Cyclopts is configured with ``result_action="return_value"``, so the app
     hands back the raw command result and never prints it. This matrix pins
     the translation the dispatcher performs: a string is printed once to
-    stdout, an integer becomes the exit status, and a ``SystemExit`` carrying
-    a message is reported on stderr with status 1.
+    stdout, an integer becomes the exit status, a boolean maps to success when
+    true and failure when false, and a ``SystemExit`` carrying a message is
+    reported on stderr with status 1.
     """
     calls: list[tuple[str, ...]] = []
 

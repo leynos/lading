@@ -212,16 +212,26 @@ app = App(
 
 def main() -> int:
     result = app()
+    if result is None:
+        return 0
+    if isinstance(result, bool):
+        # bool subclasses int, so test it first. Cyclopts maps a bool result
+        # to success when true and failure when false; match that.
+        return 0 if result else 1
     if isinstance(result, int):
         return result
-    if result is not None:
-        print(result)  # once, unwrapped, on stdout
+    print(result)  # once, unwrapped, on stdout
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
 ```
+
+Check `bool` before `int`: Python makes `bool` a subclass of `int`, so a `True`
+result would otherwise exit with status `1` and a `False` result with status
+`0`, reversing the meaning. Cyclopts's own `print_non_int_sys_exit` performs
+the same check first, exiting `0` for `True` and `1` for `False`.
 
 The second pattern is what `lading` itself uses; see
 [ADR-011](adr/011-cyclopts-4-cli-result-and-diagnostic-boundary.md) for the

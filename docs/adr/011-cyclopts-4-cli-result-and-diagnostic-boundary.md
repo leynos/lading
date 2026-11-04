@@ -75,14 +75,18 @@ The division of responsibility is:
 | `_dispatch_and_print` | Printing a non-`None` result once, and mapping to a status   |
 | `main()`              | Bootstrap, configuration, workspace errors, and `SystemExit` |
 
-`_dispatch_and_print` and `main()` are unchanged by this decision. The mapping
-it applies is part of the contract:
+`_dispatch_and_print` and `main()` keep their responsibility under this
+decision. The mapping they apply is part of the contract. A `bool` result is
+checked before `int` because Python makes `bool` a subclass of `int`; the
+mapping matches Cyclopts's own, so `True` succeeds and `False` fails:
 
 | App outcome               | Exit status | Streams                              |
 | ------------------------- | ----------- | ------------------------------------ |
 | Returns `None`            | 0           | none                                 |
 | Returns a non-zero `int`  | that `int`  | none                                 |
 | Returns `0`               | 0           | none                                 |
+| Returns `True`            | 0           | none                                 |
+| Returns `False`           | 1           | none                                 |
 | Returns a `str`           | 0           | the string once on stdout, unwrapped |
 | Raises `SystemExit(None)` | 0           | none                                 |
 | Raises `SystemExit(int)`  | that `int`  | whatever Cyclopts already wrote      |
