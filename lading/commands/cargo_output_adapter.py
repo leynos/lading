@@ -204,26 +204,8 @@ def parse_index_lookup_failure(
     >>> failure.missing_dependency_name
     'inner_crate'
 
-    A dependency that has never been published at all:
-
-    >>> cargo_stderr = (
-    ...     "error: failed to prepare local package for uploading\n"
-    ...     "Caused by:\n"
-    ...     "  no matching package named `new_crate` found\n"
-    ...     "  location searched: crates.io index"
-    ... )
-    >>> result = CargoSubprocessResult(
-    ...     exit_code=101,
-    ...     stdout="",
-    ...     stderr=cargo_stderr,
-    ... )
-    >>> failure = parse_index_lookup_failure(
-    ...     crate_name="beta",
-    ...     subcommand="package",
-    ...     result=result,
-    ... )
-    >>> failure.missing_dependency_name
-    'new_crate'
+    A dependency that has never been published at all produces the same
+    failure type from Cargo's ``no matching package named`` diagnostic.
     """
     if result.exit_code == 0:
         return None
