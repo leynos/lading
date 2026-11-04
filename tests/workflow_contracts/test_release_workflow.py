@@ -1,5 +1,6 @@
 """Contracts for PyPI-first, idempotent release publication."""
 
+import ast
 import re
 import shlex
 import typing as typ
@@ -70,9 +71,7 @@ def _needs(job_name: str) -> list[str]:
     if isinstance(needs, str):
         return [needs]
     assert isinstance(needs, list), f"{job_name} needs must be a list or string"
-    assert all(isinstance(item, str) for item in needs), (
-        f"{job_name} needs entries must be strings, got {needs!r}"
-    )
+    assert all(isinstance(item, str) for item in needs), "needs entries must be strings"
     return needs
 
 
@@ -199,6 +198,15 @@ def test_release_trigger_jobs_and_permissions_are_tag_scoped() -> None:
 
 def test_build_artifact_and_uploader_paths_agree() -> None:
     """Bind the producer, download, collector and uploader paths together."""
+    script = ast.parse((REPOSITORY_ROOT / UPLOAD_SCRIPT).read_text(encoding="utf-8"))
+    main = next(node for node in script.body if getattr(node, "name", "") == "main")
+    assert isinstance(main, ast.FunctionDef), "main must remain a function"
+    assert main.args.kwonlyargs[-1].arg == "directory", "directory must stay last"
+    default = main.args.kw_defaults[-1]
+    assert isinstance(default, ast.Call), "directory default must stay a Path call"
+    uploader_default = ast.literal_eval(default.args[0])
+    assert uploader_default == DEFAULT_UPLOAD_DIRECTORY, "CLI default mismatch"
+
     producers = [
         step
         for step in _job_steps("build-dist")
@@ -254,7 +262,7 @@ def test_pypi_order_uses_oidc_and_uv_simple_index_check() -> None:
     steps = _job_steps("publish-pypi")
     names = [step.get("name") for step in steps]
     assert names.index("Collect release artefacts") < names.index("Set up Python"), (
-        "artifacts must be collected before Python setup"
+        "artefacts must be collected before Python setup"
     )
     assert names.index("Set up Python") < names.index("Install uv"), (
         "uv setup requires the selected Python interpreter"
@@ -286,7 +294,7 @@ def test_pypi_order_uses_oidc_and_uv_simple_index_check() -> None:
 
 
 def test_github_release_is_uploaded_and_published_in_order() -> None:
-    """Validate artifacts before draft creation, upload before publication."""
+    """Validate artefacts before draft creation, upload before publication."""
     steps = _job_steps("release")
     run_steps = [step for step in steps if step.get("run")]
     assert {step.get("name") for step in run_steps} == {
@@ -296,7 +304,7 @@ def test_github_release_is_uploaded_and_published_in_order() -> None:
     }, f"unexpected release shell steps: {run_steps}"
     assert all(
         not {"find", "xargs"}.intersection(_step_tokens(step)) for step in run_steps
-    ), "release steps must not search for artifacts"
+    ), "release steps must not search for artefacts"
     collector = _find_named_step(RELEASE_WORKFLOW, COLLECT_RELEASE_STEP, job="release")
     create = _find_named_step(RELEASE_WORKFLOW, CREATE_RELEASE_STEP, job="release")
     upload = _find_named_step(RELEASE_WORKFLOW, UPLOAD_STEP, job="release")
@@ -306,19 +314,18 @@ def test_github_release_is_uploaded_and_published_in_order() -> None:
         < steps.index(create)
         < steps.index(upload)
         < steps.index(publish)
-    ), "collect artifacts before drafting, then upload before publication"
-
+    ), "collect artefacts before drafting, then upload before publication"
     publication_tokens = [*PUBLISH_COMMAND, "$TAG", "--draft=false"]
     for step in steps[: steps.index(upload)]:
         if step.get("run"):
-            tokens = _step_tokens(step)
-            assert not any(
-                tokens[index : index + len(publication_tokens)] == publication_tokens
-                for index in range(len(tokens) - len(publication_tokens) + 1)
-            ), "no step before upload may publish the release"
+            assert "--draft=false" not in _step_tokens(step), (
+                f"step {step.get('name')!r} must not publish before upload"
+            )
 
     create_tokens = _step_tokens(create)
     create_index = create_tokens.index("create")
+    view_index = create_tokens.index("view") if "view" in create_tokens else -1
+    assert 0 <= view_index < create_index, "probe existing release before create"
     assert create_tokens[create_index - 2 : create_index + 4] == list(DRAFT_COMMAND), (
         "draft creation must invoke gh release create"
     )
@@ -374,8 +381,9 @@ def test_run_blocks_have_no_inline_expressions_or_clobbering_uploads() -> None:
     for job_name in _workflow()["jobs"]:
         for step in _job_steps(job_name):
             run = step.get("run", "")
-            assert "${{" not in run, (job_name, step.get("name"), run)
-            assert "--clobber" not in run, (job_name, step.get("name"), run)
+            context = f"{job_name}/{step.get('name')}"
+            assert "${{" not in run, f"{context}: expressions belong in env, not run"
+            assert "--clobber" not in run, f"{context}: uploads must not clobber assets"
 
 
 def test_release_jobs_do_not_persist_checkout_credentials() -> None:
