@@ -1,5 +1,5 @@
 # serializer version: 1
-# name: test_missing_dep_in_plan_and_flag_continues[package][package]
+# name: test_missing_dep_in_plan_and_flag_continues[package-absent-package]
   tuple(
     tuple(
       'cargo %s for crate %s could not resolve sibling dependency %s from crates.io; continuing because the unpublished workspace dependency override is enabled',
@@ -11,7 +11,31 @@
     ),
   )
 # ---
-# name: test_missing_dep_in_plan_and_flag_continues[publish][publish]
+# name: test_missing_dep_in_plan_and_flag_continues[package-version-selection]
+  tuple(
+    tuple(
+      'cargo %s for crate %s could not resolve sibling dependency %s from crates.io; continuing because the unpublished workspace dependency override is enabled',
+      tuple(
+        'package',
+        'beta',
+        'alpha',
+      ),
+    ),
+  )
+# ---
+# name: test_missing_dep_in_plan_and_flag_continues[publish-absent-package]
+  tuple(
+    tuple(
+      'cargo %s for crate %s could not resolve sibling dependency %s from crates.io; continuing because the unpublished workspace dependency override is enabled',
+      tuple(
+        'publish',
+        'beta',
+        'alpha',
+      ),
+    ),
+  )
+# ---
+# name: test_missing_dep_in_plan_and_flag_continues[publish-version-selection]
   tuple(
     tuple(
       'cargo %s for crate %s could not resolve sibling dependency %s from crates.io; continuing because the unpublished workspace dependency override is enabled',

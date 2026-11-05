@@ -6,10 +6,12 @@ identify one diagnostic shape, so this module owns that parsing boundary and
 returns typed value objects instead.
 
 Callers pass the crate name, cargo subcommand, and raw subprocess result to
-``parse_index_lookup_failure``. When the output matches Cargo's crates.io
-index-lookup diagnostic, the function returns
+``parse_index_lookup_failure``. When the output matches either of Cargo's
+crates.io index-lookup diagnostics, the function returns
 ``CargoIndexLookupFailure`` with the original process streams and the extracted
-missing dependency name. The adapter likewise recognises Cargo's
+missing dependency name. Cargo reports a dependency that exists at a
+non-matching version differently from one that is absent from the index
+entirely; both shapes are recognized. The adapter likewise recognizes Cargo's
 already-published registry diagnostic as ``CargoAlreadyPublishedFailure``.
 Non-matching or successful invocations return ``None``.
 
@@ -44,6 +46,20 @@ _INDEX_MISSING_VERSION_MARKERS: tuple[str, ...] = (
     "location searched: crates.io index",
 )
 
+# Cargo uses a different diagnostic when the dependency is absent from the
+# index entirely rather than present at a non-matching version. This is the
+# first-publication case for a newly extracted crate, so the dry-run override
+# must recognize it too.
+_INDEX_MISSING_PACKAGE_MARKERS: tuple[str, ...] = (
+    "no matching package named",
+    "location searched: crates.io index",
+)
+
+_INDEX_MISS_MARKER_SETS: tuple[tuple[str, ...], ...] = (
+    _INDEX_MISSING_VERSION_MARKERS,
+    _INDEX_MISSING_PACKAGE_MARKERS,
+)
+
 _ALREADY_PUBLISHED_MARKERS: tuple[str, ...] = (
     "already uploaded",
     "already published",
@@ -58,6 +74,19 @@ _INDEX_MISSING_VERSION_NAME_PATTERN = re.compile(
     "failed to select a version for the requirement [`'\"]"  # ruff: ignore[unraw-re-pattern] - keeps escaped quote pattern for cargo diagnostics
     r"(?P<name>[A-Za-z_][A-Za-z0-9_-]*)\s*=",
     re.IGNORECASE,
+)
+
+# Capture the dependency crate name from cargo's absent-package error, e.g.
+#   no matching package named `inner_crate` found
+_INDEX_MISSING_PACKAGE_NAME_PATTERN = re.compile(
+    r"no matching package named [`'\"]"
+    r"(?P<name>[A-Za-z_][A-Za-z0-9_-]*)[`'\"]?\s+found",
+    re.IGNORECASE,
+)
+
+_INDEX_MISS_NAME_PATTERNS: tuple[re.Pattern[str], ...] = (
+    _INDEX_MISSING_VERSION_NAME_PATTERN,
+    _INDEX_MISSING_PACKAGE_NAME_PATTERN,
 )
 
 
@@ -155,22 +184,31 @@ def parse_index_lookup_failure(
 
     Examples
     --------
-    >>> cargo_stderr = (
-    ...     "error: failed to select a version for the requirement "
+    A dependency present at a non-matching version:
+
+    >>> stderr = (
+    ...     "failed to select a version for the requirement "
     ...     '`inner_crate = "^0.8.0"`\n'
     ...     "location searched: crates.io index"
     ... )
-    >>> result = CargoSubprocessResult(
-    ...     exit_code=101,
-    ...     stdout="",
-    ...     stderr=cargo_stderr,
-    ... )
-    >>> failure = parse_index_lookup_failure(
+    >>> parse_index_lookup_failure(
     ...     crate_name="beta",
     ...     subcommand="package",
-    ...     result=result,
+    ...     result=CargoSubprocessResult(101, "", stderr),
+    ... ).missing_dependency_name
+    'inner_crate'
+
+    A dependency absent from the index entirely:
+
+    >>> stderr = (
+    ...     "no matching package named `inner_crate` found\n"
+    ...     "location searched: crates.io index"
     ... )
-    >>> failure.missing_dependency_name
+    >>> parse_index_lookup_failure(
+    ...     crate_name="beta",
+    ...     subcommand="package",
+    ...     result=CargoSubprocessResult(101, "", stderr),
+    ... ).missing_dependency_name
     'inner_crate'
     """
     if result.exit_code == 0:
@@ -237,10 +275,13 @@ def parse_already_published_failure(
 
 
 def _output_matches_index_markers(haystack: str) -> bool:
-    """Return whether both crates.io index-miss markers appear in cargo output."""
-    return all(
-        re.search(re.escape(marker), haystack, re.IGNORECASE)
-        for marker in _INDEX_MISSING_VERSION_MARKERS
+    """Return whether any crates.io index-miss diagnostic shape appears."""
+    return any(
+        all(
+            re.search(re.escape(marker), haystack, re.IGNORECASE)
+            for marker in marker_set
+        )
+        for marker_set in _INDEX_MISS_MARKER_SETS
     )
 
 
@@ -276,10 +317,11 @@ def _build_index_lookup_failure(
 def _extract_missing_dependency_name(stdout: str, stderr: str) -> str | None:
     """Return the missing dependency crate name parsed from cargo output."""
     # Cargo writes primary diagnostics to stderr. If both streams happen to
-    # match _INDEX_MISSING_VERSION_NAME_PATTERN, prefer the stderr name as the
-    # most relevant failure detail and leave conflicting stdout as secondary.
+    # match a name pattern, prefer the stderr name as the most relevant failure
+    # detail and leave conflicting stdout as secondary.
     for stream in (stderr, stdout):
-        match = _INDEX_MISSING_VERSION_NAME_PATTERN.search(stream)
-        if match is not None:
-            return match.group("name")
+        for pattern in _INDEX_MISS_NAME_PATTERNS:
+            match = pattern.search(stream)
+            if match is not None:
+                return match.group("name")
     return None

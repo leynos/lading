@@ -34,6 +34,17 @@ _INDEX_MISSING_STDERR_ALPHA = (
     "  required by package `beta v0.1.0`\n"
 )
 
+# Cargo's diagnostic when the dependency has never been published at all,
+# which is the first-publication case for a newly extracted crate (issue #367).
+_ABSENT_PACKAGE_STDERR_ALPHA = (
+    "error: failed to prepare local package for uploading\n"
+    "\n"
+    "Caused by:\n"
+    "  no matching package named `alpha` found\n"
+    "  location searched: crates.io index\n"
+    "  required by package `beta v0.1.0`\n"
+)
+
 
 @given("cargo check fails during publish pre-flight")
 def given_cargo_check_fails(
@@ -169,6 +180,7 @@ def given_cargo_publish_already_uploaded(
     """Simulate cargo publish returning an already-uploaded error for ``crate_name``."""
 
     def _handler(invocation: Invocation) -> _CommandResponse:
+        """Fail the publish invocation for ``crate_name`` only."""
         env_mapping = dict(invocation.env)
         if "PWD" not in env_mapping:
             message = (
@@ -190,20 +202,38 @@ def given_cargo_publish_already_uploaded(
     preflight_overrides["cargo", "publish", "--dry-run"] = _handler
 
 
+def _fail_beta_package_with(stderr: str) -> ResponseProvider:
+    """Return a cargo package handler that fails for the beta crate."""
+
+    def _handler(invocation: Invocation) -> _CommandResponse:
+        """Fail cargo package for the beta crate and succeed otherwise."""
+        env_mapping = dict(invocation.env)
+        cwd = Path(env_mapping.get("PWD", ""))
+        if cwd.name == "beta":
+            return _CommandResponse(exit_code=1, stderr=stderr)
+        return _CommandResponse(exit_code=0)
+
+    return _handler
+
+
 @given("a workspace where a sibling crate dependency is not yet indexed")
 def given_sibling_dependency_is_not_indexed(
     preflight_overrides: dict[tuple[str, ...], ResponseProvider],
 ) -> None:
     """Make cargo package fail for beta because alpha is not indexed yet."""
+    preflight_overrides["cargo", "package"] = _fail_beta_package_with(
+        _INDEX_MISSING_STDERR_ALPHA
+    )
 
-    def _handler(invocation: Invocation) -> _CommandResponse:
-        env_mapping = dict(invocation.env)
-        cwd = Path(env_mapping.get("PWD", ""))
-        if cwd.name == "beta":
-            return _CommandResponse(exit_code=1, stderr=_INDEX_MISSING_STDERR_ALPHA)
-        return _CommandResponse(exit_code=0)
 
-    preflight_overrides["cargo", "package"] = _handler
+@given("a workspace where a sibling crate dependency has never been published")
+def given_sibling_dependency_has_never_been_published(
+    preflight_overrides: dict[tuple[str, ...], ResponseProvider],
+) -> None:
+    """Make cargo package fail for beta with the absent-package diagnostic."""
+    preflight_overrides["cargo", "package"] = _fail_beta_package_with(
+        _ABSENT_PACKAGE_STDERR_ALPHA
+    )
 
 
 @given("the missing dependency is part of the planned publish set")
@@ -290,6 +320,7 @@ def given_rustc_wrapper_names_stub_sccache(
     queries = 0
 
     def _json_stats(_invocation: Invocation) -> _CommandResponse:
+        """Report increasing sccache counters on each successive query."""
         nonlocal queries
         queries += 1
         payload = json.dumps({

@@ -19,6 +19,14 @@ Feature: lading publish --allow-unpublished-workspace-deps flag
     Then a WARNING log should be emitted containing "unpublished workspace dependency override"
     And no PublishPreflightError should be raised
 
+  Scenario: Absent-package diagnostic is downgraded for an earlier in-plan dependency
+    Given a valid lading workspace
+    And a workspace where a sibling crate dependency has never been published
+    And the missing dependency is part of the planned publish set
+    When I run "lading publish --allow-unpublished-workspace-deps"
+    Then a WARNING log should be emitted containing "unpublished workspace dependency override"
+    And no PublishPreflightError should be raised
+
   Scenario: Dry-run defaults to allowing in-plan unpublished dependencies
     Given a valid lading workspace
     And a workspace where a sibling crate dependency is not yet indexed
