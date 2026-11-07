@@ -250,7 +250,7 @@ def test_interrogate_config_does_not_weaken_the_gate() -> None:
     pyproject = tomllib.loads(PYPROJECT_PATH.read_text(encoding="utf-8"))
     table = pyproject["tool"]["interrogate"]
     enabled = {
-        key.removeprefix("--").replace("_", "-")
+        key.replace("--", "").replace("-", "_").replace("_", "-")
         for key, value in table.items()
         if value is True
     }

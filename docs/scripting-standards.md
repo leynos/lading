@@ -60,8 +60,7 @@ before it is committed:
   `PYTHON_SOURCE_ROOTS` rather than leaving it ungated.
 - Interrogate runs over `DOCSTRING_TARGETS` in the Makefile (`lading`, `tests`,
   `scripts` and `docs`), not over `PYTHON_SOURCE_ROOTS`, so add a new tree to
-  both lists. Its command line carries no nested-definition exemption, so test
-  closures and test-local stub classes need docstrings too.
+  both lists. Its command line carries no nested-definition exemption.
 - The df12 `C9102` rule requires an `assert` to carry a failure message that
   names the violated expectation. Write the message for a tired teammate
   reading the failure at 3am:

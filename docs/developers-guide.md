@@ -209,10 +209,9 @@ policy used by `leynos/episodic`. If Ruff passes, the target runs the
 `lint-docstrings` target to enforce **100% docstring coverage**: one
 `interrogate` run with `--fail-under 100` across `DOCSTRING_TARGETS` (`lading`,
 `tests`, `scripts` and `docs`). The command line carries no nested-definition
-exemption, so test closures and test-local stub classes need docstrings too.
-The target prints every scanned definition (`-vv`) and also fails on any
-`MISSED` row, because Interrogate rounds its percentage to one decimal and the
-threshold alone can pass a lone gap. If it passes, the third stage runs the
+exemption. The target prints every scanned definition (`-vv`) and also fails on
+any `MISSED` row, because Interrogate rounds its percentage to one decimal and
+the threshold alone can pass a lone gap. If it passes, the third stage runs the
 pinned Pylint release under managed CPython at the project baseline through
 `uv tool run`. That stage is focused on rule families that complement Ruff,
 especially logging format safety, pattern matching checks, selected
