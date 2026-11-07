@@ -73,6 +73,48 @@ class _MockCommandRunner:
         return Path(sys.executable)
 
 
+class _Env:
+    """Environment constant holder mimicking the cmd-mox env module."""
+
+    CMOX_IPC_SOCKET_ENV = "CMOX_IPC_SOCKET"
+    CMOX_REAL_COMMAND_ENV_PREFIX = "CMOX_REAL_"
+
+
+class _IPC:
+    """IPC module double exposing the cmd-mox Response and PassthroughResult."""
+
+    class Response:
+        """Response double holding captured stdout, stderr, and exit code."""
+
+        def __init__(
+            self, stdout: str = "", stderr: str = "", exit_code: int = 0
+        ) -> None:
+            """Store the canned stdout, stderr, and exit code."""
+            self.stdout = stdout
+            self.stderr = stderr
+            self.exit_code = exit_code
+
+    class PassthroughResult:
+        """Minimal passthrough-result stand-in for the IPC double."""
+
+        def __init__(
+            self, invocation_id: str, stdout: str, stderr: str, exit_code: int
+        ) -> None:
+            """Store the invocation ID, output streams, and exit code."""
+            self.invocation_id = invocation_id
+            self.stdout = stdout
+            self.stderr = stderr
+            self.exit_code = exit_code
+
+    def report_passthrough_result(self, result: object, timeout: float) -> Response:
+        """Wrap the passthrough result's output and exit code in a Response."""
+        return self.Response(
+            stdout=getattr(result, "stdout", ""),
+            stderr=getattr(result, "stderr", ""),
+            exit_code=getattr(result, "exit_code", 0),
+        )
+
+
 @pytest.fixture
 def mock_cmd_mox_modules(tmp_path: Path) -> SimpleNamespace:
     """Provide complete cmd-mox module stubs for passthrough handling.
@@ -95,46 +137,6 @@ def mock_cmd_mox_modules(tmp_path: Path) -> SimpleNamespace:
     ...     mock_cmd_mox_modules.ipc_module.Response
     ...     mock_cmd_mox_modules.command_runner
     """
-
-    class _Env:
-        """Environment constant holder mimicking the cmd-mox env module."""
-
-        CMOX_IPC_SOCKET_ENV = "CMOX_IPC_SOCKET"
-        CMOX_REAL_COMMAND_ENV_PREFIX = "CMOX_REAL_"
-
-    class _IPC:
-        """IPC module double exposing the cmd-mox Response and PassthroughResult."""
-
-        class Response:
-            """Response double holding captured stdout, stderr, and exit code."""
-
-            def __init__(
-                self, stdout: str = "", stderr: str = "", exit_code: int = 0
-            ) -> None:
-                """Store the canned stdout, stderr, and exit code."""
-                self.stdout = stdout
-                self.stderr = stderr
-                self.exit_code = exit_code
-
-        class PassthroughResult:
-            """Minimal passthrough-result stand-in for the IPC double."""
-
-            def __init__(
-                self, invocation_id: str, stdout: str, stderr: str, exit_code: int
-            ) -> None:
-                """Store the invocation ID, output streams, and exit code."""
-                self.invocation_id = invocation_id
-                self.stdout = stdout
-                self.stderr = stderr
-                self.exit_code = exit_code
-
-        def report_passthrough_result(self, result: object, timeout: float) -> Response:
-            """Wrap the passthrough result's output and exit code in a Response."""
-            return self.Response(
-                stdout=getattr(result, "stdout", ""),
-                stderr=getattr(result, "stderr", ""),
-                exit_code=getattr(result, "exit_code", 0),
-            )
 
     class _CommandRunner:
         """Command runner double that adds a shim directory and canned output."""
