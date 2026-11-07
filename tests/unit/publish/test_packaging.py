@@ -287,6 +287,7 @@ def test_package_publishable_crates_stops_on_failure(
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Record each command as text, then delegate to the failing runner."""
         calls.append(" ".join(command))
         return failing_runner(command, cwd=cwd, env=env)
 
@@ -425,6 +426,7 @@ def test_publish_crate_continues_when_version_already_uploaded(
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Fail every publish command as an already-uploaded crate version."""
         del command, cwd, env, echo_stdout
         return 101, "", "error: crate version `alpha v0.1.0` is already uploaded"
 
@@ -473,6 +475,7 @@ def test_publish_crates_continue_when_version_already_uploaded(
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Record each crate directory name and fail alpha as already uploaded."""
         del env, echo_stdout
         crate_name = "" if cwd is None else cwd.name
         calls.append(crate_name)
@@ -552,6 +555,7 @@ def test_execute_live_publication_pipeline_stops_after_partial_publish(
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Fail the beta cargo package step and succeed for every other command."""
         del env, echo_stdout
         normalized = tuple(command)
         calls.append((normalized, cwd))

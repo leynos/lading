@@ -33,6 +33,7 @@ def test_preflight_checks_remove_all_targets_for_unit_only(
         runner: CommandRunner,
         options: publish_preflight._CargoPreflightOptions,
     ) -> None:
+        """Record the cargo pre-flight options for each subcommand."""
         recorded[subcommand] = options
 
     monkeypatch.setattr(publish_preflight, "_run_cargo_preflight", recording_preflight)
@@ -88,6 +89,7 @@ def test_preflight_checks_support_special_target_dir(
         runner: CommandRunner,
         options: publish_preflight._CargoPreflightOptions,
     ) -> None:
+        """Record each subcommand's extra cargo arguments as a tuple."""
         recorded[subcommand] = tuple(options.extra_args)
 
     monkeypatch.setattr(publish_preflight, "_run_cargo_preflight", recording_preflight)
@@ -95,11 +97,15 @@ def test_preflight_checks_support_special_target_dir(
     special_dir = tmp_path / "target dir with spaces & symbols!@#"
 
     class DummyTempDir:
+        """Context manager yielding a fixed directory with awkward characters."""
+
         def __enter__(self) -> str:
+            """Create the special target directory and return its path."""
             special_dir.mkdir(parents=True, exist_ok=True)
             return str(special_dir)
 
         def __exit__(self, *_args: object) -> bool:
+            """Return False so exceptions raised inside the block propagate."""
             return False
 
     monkeypatch.setattr(
@@ -145,6 +151,7 @@ def test_preflight_runs_aux_build_commands(
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Record each command and its cwd, then report success."""
         commands.append((tuple(command), cwd))
         return 0, "", ""
 
@@ -189,6 +196,7 @@ def test_aux_build_failure_surfaces_error(
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Fail the aux build command under test and succeed otherwise."""
         if tuple(command) == failing_command:
             return 1, "", "aux failure"
         return 0, "", ""
@@ -233,6 +241,7 @@ def test_preflight_env_overrides_forwarded(
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Capture the environment passed to each cargo test invocation."""
         if command[:2] == ("cargo", "test"):
             captured_env.update(env or {})
         return 0, "", ""
@@ -277,6 +286,7 @@ def test_preflight_append_compiletest_externs(
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Collect the RUSTFLAGS passed to each cargo test invocation."""
         # Decompose complex conditional into readable business rules
         is_cargo_test = command[:2] == ("cargo", "test")
         has_rustflags = env is not None and "RUSTFLAGS" in env
@@ -329,6 +339,7 @@ def test_verify_clean_working_tree_detects_dirty_state(
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Report a dirty git status for the workspace root probe."""
         assert cwd == root, "the dirty-tree probe must inspect the workspace root"
         return 0, " M file\n", ""
 
@@ -365,6 +376,7 @@ def test_verify_clean_working_tree_reports_missing_repo(
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Simulate git status failing with a not-a-repository error."""
         assert command == ("git", "status", "--porcelain"), (
             "the repository probe must run git status --porcelain"
         )

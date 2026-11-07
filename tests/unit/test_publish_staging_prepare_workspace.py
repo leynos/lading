@@ -43,6 +43,7 @@ def test_prepare_workspace_registers_cleanup(
     registered: list[cabc.Callable[[], None]] = []
 
     def capture(callback: cabc.Callable[..., None], *arguments: object) -> None:
+        """Stash the atexit callback so the test can run it on demand."""
         registered.append(lambda: callback(*arguments))
 
     monkeypatch.setattr(publish_staging.atexit, "register", capture)
@@ -91,6 +92,7 @@ def test_prepare_workspace_cleanup_removes_auto_created_build_directory(
     registered: list[cabc.Callable[[], None]] = []
 
     def capture(callback: cabc.Callable[..., None], *arguments: object) -> None:
+        """Stash the atexit callback so the test can run it on demand."""
         registered.append(lambda: callback(*arguments))
 
     monkeypatch.setattr(publish_staging.atexit, "register", capture)
@@ -177,6 +179,7 @@ def test_prepare_workspace_does_not_register_cleanup_when_disabled(
     registered: list[cabc.Callable[[], None]] = []
 
     def capture(callback: cabc.Callable[..., None], *arguments: object) -> None:
+        """Stash the atexit callback so the test can run it on demand."""
         registered.append(lambda: callback(*arguments))
 
     monkeypatch.setattr(publish_staging.atexit, "register", capture)

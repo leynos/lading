@@ -96,6 +96,7 @@ def test_discover_tracked_lockfiles_filters_missing_manifests(tmp_path: Path) ->
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Answer the ls-files glob query with root, nested and orphan lockfiles."""
         assert command == ("git", "ls-files", "**/Cargo.lock", "Cargo.lock"), (
             "discovery must query git for both root and glob lockfile paths"
         )
@@ -180,9 +181,11 @@ def test_discover_tracked_lockfiles_accepts_manifest_probe(
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Report one root and one nested tracked lockfile."""
         return 0, "Cargo.lock\nnested/Cargo.lock\n", ""
 
     def manifest_exists(manifest_path: Path) -> bool:
+        """Record the probed manifest and accept only the root Cargo.toml."""
         probed.append(manifest_path)
         return (
             manifest_path.name == "Cargo.toml" and manifest_path.parent.name != "nested"
@@ -224,6 +227,7 @@ def test_discover_tracked_lockfiles_raises_for_non_git_directory(
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Fail every git call as if the workspace were not a repository."""
         return 128, "", "fatal: not a git repository"
 
     with pytest.raises(
@@ -249,6 +253,7 @@ def test_discover_tracked_lockfiles_raises_on_git_failure(tmp_path: Path) -> Non
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Fail every git call with a generic bad-revision error."""
         return 128, "", "fatal: bad revision"
 
     with pytest.raises(lockfile.LockfileDiscoveryError, match="bad revision"):
@@ -268,6 +273,7 @@ def _validate_lockfile_freshness_for_result(
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Check the cargo metadata invocation and return the fake exit result."""
         assert command == (
             "cargo",
             "metadata",
@@ -405,6 +411,7 @@ def _stub_git_runner(stdout: str) -> cabc.Callable[..., tuple[int, str, str]]:
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Return the stubbed stdout for the git ls-files query."""
         del cwd, env
         assert command[:2] == ("git", "ls-files"), (
             "discovery must drive the git ls-files command"
@@ -527,6 +534,7 @@ def _static_runner(
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Ignore the call arguments and return the fixed exit code and output."""
         del command, cwd, env, echo_stdout
         return exit_code, stdout, stderr
 
@@ -622,6 +630,7 @@ def test_discovery_failures_record_bounded_outcome(
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Fail every git call with the parametrised stderr message."""
         return 128, "", stderr
 
     with pytest.raises(lockfile.LockfileDiscoveryError):

@@ -45,12 +45,15 @@ def test_run_never_stages_or_dispatches_after_preflight_failure(
     reached_phases: list[str] = []
 
     def fail_preflight(*_args: object, **_kwargs: object) -> None:
+        """Raise the injected PublishPreflightError to simulate a failed check."""
         raise PublishPreflightError(detail)
 
     def record_staging(*_args: object, **_kwargs: object) -> None:
+        """Record that the staging phase was reached."""
         reached_phases.append("staging")
 
     def record_dispatch(*_args: object, **_kwargs: object) -> None:
+        """Record that the dispatch phase was reached."""
         reached_phases.append("dispatch")
 
     monkeypatch.setattr(publish_preflight, "_run_preflight_checks", fail_preflight)

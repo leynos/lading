@@ -188,24 +188,33 @@ def test_cmd_mox_runner_executes_via_ipc(
     monkeypatch.setenv("CMOX_IPC_TIMEOUT", "1.5")
 
     class _StubEnv:
+        """Environment constant holder for the stubbed cmd-mox env module."""
+
         CMOX_IPC_SOCKET_ENV = "CMOX_IPC_SOCKET"
         CMOX_IPC_TIMEOUT_ENV = "CMOX_IPC_TIMEOUT"
 
     class _StubIPC:
+        """IPC double that records the last invocation and its timeout."""
+
         class Invocation:
+            """Invocation record holding the command, args, stdin, and env."""
+
             def __init__(
                 self, command: str, args: list[str], stdin: str, env: dict[str, str]
             ) -> None:
+                """Store the command, args, stdin, and env of one invocation."""
                 self.command = command
                 self.args = args
                 self.stdin = stdin
                 self.env = env
 
         def __init__(self) -> None:
+            """Start with no recorded invocation and no timeout."""
             self.last_invocation: _StubIPC.Invocation | None = None
             self.timeout: float | None = None
 
         def invoke_server(self, invocation: object, timeout: float) -> object:
+            """Record the invocation and timeout, then return a successful reply."""
             self.last_invocation = typ.cast("_StubIPC.Invocation", invocation)
             self.timeout = timeout
             return SimpleNamespace(exit_code=0, stdout="{}", stderr="")

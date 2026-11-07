@@ -150,6 +150,7 @@ def test_an_exception_still_closes_the_span_and_propagates(
     sink = io.StringIO()
 
     def explode() -> None:
+        """Raise RuntimeError to simulate a crash at the process edge."""
         message = "the process edge raised"
         raise RuntimeError(message)
 

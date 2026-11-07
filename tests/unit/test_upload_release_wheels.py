@@ -75,6 +75,7 @@ def _recorder(
     def record(
         tag: str, distributions: cabc.Sequence[Path], _log: object
     ) -> cabc.Sequence[Path]:
+        """Append the upload call to uploaded and return the distributions."""
         uploaded.append((tag, tuple(distributions)))
         return distributions
 

@@ -95,6 +95,7 @@ def test_release_asset_adapter_reads_names_from_json(
     calls: list[tuple[str, ...]] = []
 
     def run(arguments: cabc.Sequence[str]) -> types.SimpleNamespace:
+        """Record the gh arguments and return a JSON asset listing."""
         calls.append(tuple(arguments))
         return types.SimpleNamespace(
             exit_code=0,
@@ -121,6 +122,7 @@ def test_release_asset_adapter_uploads_only_the_given_paths(
     calls: list[tuple[str, ...]] = []
 
     def run(arguments: cabc.Sequence[str]) -> types.SimpleNamespace:
+        """Record the gh arguments and report a successful upload."""
         calls.append(tuple(arguments))
         return types.SimpleNamespace(exit_code=0, stdout="", stderr="")
 

@@ -43,6 +43,7 @@ def _failing_runner(
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Ignore the call arguments and return the stubbed failure output."""
         del command, cwd, env, echo_stdout
         return exit_code, stdout, stderr
 

@@ -178,6 +178,7 @@ def test_raising_runner_still_records_duration(
     state, alpha = _alpha_state(publish_plan_and_prep, live=False)
 
     def _raising_runner(*_args: object, **_kwargs: object) -> tuple[int, str, str]:
+        """Raise a PublishPreflightError as if cargo could not be spawned."""
         message = "cargo could not be spawned"
         raise PublishPreflightError(message)
 

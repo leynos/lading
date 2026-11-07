@@ -87,6 +87,7 @@ def test_normalize_build_directory_wraps_creation_failure(
     workspace_root.mkdir()
 
     def fail_mkdir(*_args: object, **_kwargs: object) -> None:
+        """Raise OSError in place of Path.mkdir to simulate a permission failure."""
         message = "permission denied"
         raise OSError(message)
 

@@ -53,6 +53,7 @@ def test_main_dispatches_command(
     workspace_graph = make_workspace(tmp_path.resolve())
 
     def fake_run(*args: object, **kwargs: object) -> str:
+        """Record the call arguments and return the case's canned value."""
         called["args"] = args
         called["kwargs"] = kwargs
         return case.return_value
@@ -215,6 +216,7 @@ def test_main_uses_defaults_when_configuration_missing(
         *,
         options: bump_command.BumpOptions,
     ) -> str:
+        """Record the bump's root, version, and options, then return ok."""
         captured["workspace_root"] = workspace_root
         captured["version"] = version
         captured["options"] = options
@@ -334,6 +336,7 @@ def test_dispatch_and_print_owns_results_and_exit_codes(
     calls: list[tuple[str, ...]] = []
 
     def fake_app(tokens: cabc.Sequence[str]) -> object:
+        """Record the tokens and return or raise the case's app outcome."""
         calls.append(tuple(tokens))
         outcome = case.app_outcome
         if isinstance(outcome, SystemExit):

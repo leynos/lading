@@ -55,18 +55,21 @@ def _make_app() -> App:
 
     @app.command
     def echo(value: str) -> str:
+        """Echo the given value back as a prefixed string."""
         return f"echo {value}"
 
     @app.command
     def nothing() -> None:
-        return None
+        """Return no value, exercising the None result path."""
 
     @app.command
     def count() -> int:
+        """Return the non-zero integer 3 as the command result."""
         return 3
 
     @app.command
     def fail() -> int:
+        """Return 7 as the exit value of a failing command."""
         return 7
 
     return app

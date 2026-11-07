@@ -112,6 +112,7 @@ def test_copy_workspace_tree_wraps_filesystem_failures(
     failure = OSError(case.message)
 
     def fail_operation(*_args: object, **_kwargs: object) -> None:
+        """Raise the prepared OSError in place of the patched shutil call."""
         raise failure
 
     monkeypatch.setattr(publish_staging.shutil, case.operation, fail_operation)

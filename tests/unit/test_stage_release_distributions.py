@@ -60,6 +60,7 @@ def test_stage_removes_exact_index_filenames_and_reports_each_skip(
     messages: list[str] = []
 
     def remove_file(path: Path) -> None:
+        """Record the removed path and delete the file from disk."""
         removed.append(path)
         path.unlink()
 
@@ -126,6 +127,7 @@ def test_project_index_status_distinguishes_missing_from_other_errors(
     """A 404 is an empty index, while another 4xx status fails publication."""
 
     def open_index(*_args: object, **_kwargs: object) -> _JsonResponse:
+        """Raise the parametrised HTTP error for every index request."""
         raise _http_error(status)
 
     if expected == "error":
@@ -171,6 +173,7 @@ def test_malformed_index_responses_fail_without_retry(
     """Malformed PEP 691 data fails as a bounded, classified index error."""
 
     def open_index(*_args: object, **_kwargs: object) -> _JsonResponse:
+        """Return the malformed payload as the index response body."""
         return _JsonResponse(payload)
 
     with pytest.raises(stage_module.ProjectIndexError) as raised:
@@ -200,6 +203,7 @@ def test_transient_status_retries_then_logs_bounded_success_telemetry(
     messages: list[str] = []
 
     def open_index(*_args: object, **_kwargs: object) -> _JsonResponse:
+        """Replay scripted responses, raising any queued exception."""
         response = responses.pop(0)
         if isinstance(response, BaseException):
             raise response
@@ -250,6 +254,7 @@ def test_retry_sequence_property(
     attempts = 0
 
     def open_index(*_args: object, **_kwargs: object) -> _JsonResponse:
+        """Count each attempt and replay the next scripted response."""
         nonlocal attempts
         attempts += 1
         response = responses.pop(0)
@@ -295,6 +300,7 @@ def test_retryable_failure_exhaustion_is_reported(
     messages: list[str] = []
 
     def open_index(*_args: object, **_kwargs: object) -> _JsonResponse:
+        """Count each attempt and fail with a retryable status or timeout."""
         nonlocal attempts
         attempts += 1
         if failure == "status":
