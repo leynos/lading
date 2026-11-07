@@ -94,10 +94,8 @@ Every nested test closure and test-local stub class now carries a docstring, so
 target: one run with `-vv --fail-under 100` over `DOCSTRING_TARGETS` (`lading`,
 `tests`, `scripts` and `docs`). It also fails on any `MISSED` row, because
 Interrogate rounds its percentage to one decimal and the threshold alone can
-pass a lone gap. The docstring gate now reads `DOCSTRING_TARGETS` rather than
-`PYTHON_SOURCE_ROOTS`, so a new Python tree is added to both lists; this
-supersedes the "counted for docstrings" clause of the consequences section
-below.
+pass a lone gap. The gate reads `DOCSTRING_TARGETS`, independently of
+`PYTHON_SOURCE_ROOTS`.
 
 `tests/workflow_contracts/test_lint_target.py` now runs the target against a
 stub tool and the real tool, pins the flags, checks that every tracked `.py`
