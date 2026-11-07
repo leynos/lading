@@ -61,7 +61,8 @@ before it is committed:
 - Interrogate runs over `DOCSTRING_TARGETS` in the Makefile (`lading`, `tests`,
   `scripts` and `docs`), not over `PYTHON_SOURCE_ROOTS`, so add a new tree to
   both lists. Its command line carries no nested-definition exemption, so test
-  closures and test-local stub classes need docstrings too.
+  closures and test-local stub classes need docstrings too; only the
+  `[tool.interrogate]` configuration can exempt anything further.
 - The df12 `C9102` rule requires an `assert` to carry a failure message that
   names the violated expectation. Write the message for a tired teammate
   reading the failure at 3am:
