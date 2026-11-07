@@ -317,10 +317,9 @@ ability to see the file.
 
 ### Consequences of the widened gateway
 
-Adding a Python tree to the repository is no longer enough to lint or typecheck
-it, but adding it to `PYTHON_SOURCE_ROOTS` is. A module under any listed root
-is a candidate for the lint and typecheck stages. The docstring gate reads
-`DOCSTRING_TARGETS` instead (see the 2026-11-07 addendum).
+The lint and typecheck stages consider only trees under `PYTHON_SOURCE_ROOTS`,
+and a module under a listed root is a candidate for them. The docstring gate
+reads `DOCSTRING_TARGETS` instead (see the 2026-11-07 addendum).
 
 `tests/test_pylint_tier_contract.py` pins the interpreter and the release;
 `tests/workflow_contracts/test_lint_environment.py` pins the df12 enable-list
