@@ -236,7 +236,7 @@ NOSE_BINARY_SHA256_X86_64_UNKNOWN_LINUX_GNU ?= 05d2a2df2a9f0a1ab92ed91c0032e5cbd
 # lading or touches the project virtualenv.
 DUPLICATION_GATE = $(UV_ENV) NOSE_BIN=$(NOSE_BIN) $(UV) run scripts/duplication_gate.py
 
-.PHONY: help all clean build build-release lint fmt check-fmt test-workflow-contracts \
+.PHONY: help all clean build build-release lint lint-docstrings fmt check-fmt test-workflow-contracts \
 	markdownlint nixie spelling test typecheck crosshair \
 	makeutil skylos-allow install-nose duplication duplication-test \
 	duplication-allow $(TOOLS) $(VENV_TOOLS)
@@ -296,11 +296,29 @@ check-fmt: $(UV) ## Verify formatting
 	$(RUFF) format --check $(RUFF_FORCE_EXCLUDE) $(RUFF_TARGETS)
 	$(MARKDOWN_FORMATTER) --mode check -- $(MDTABLEFIX_RULES)
 
+# Interrogate scans these targets recursively, subject to its default exclusions.
+DOCSTRING_TARGETS ?= lading tests scripts docs
+# Level 2 prints a MISSED row per undocumented definition, which the
+# `lint-docstrings` target fails on: the rounded percentage alone can pass a
+# lone gap. The flags carry no nested-definition exemption.
+DOCSTRING_FLAGS ?= -vv --fail-under 100
+DOCSTRING_TOOL ?= $(UV) run interrogate
+
+# Interrogate rounds its percentage to one decimal, so `--fail-under 100` alone
+# can pass a lone gap in a large repository; fail on any MISSED row as well.
+lint-docstrings: ## Enforce complete Python docstring coverage
+	@report="$$($(DOCSTRING_TOOL) $(DOCSTRING_FLAGS) $(DOCSTRING_TARGETS))"; \
+	  status=$$?; \
+	  printf '%s\n' "$$report"; \
+	  test "$$status" -eq 0 || exit "$$status"; \
+	  if printf '%s\n' "$$report" | grep -q '| *MISSED *|'; then \
+	    printf '%s\n' 'interrogate: undocumented definitions remain; see the MISSED rows above' >&2; \
+	    exit 1; \
+	  fi
+
 lint: build $(UV) interrogate install-nose ## Run linters
 	$(RUFF) check $(RUFF_FORCE_EXCLUDE) $(RUFF_TARGETS)
-	$(UV) run interrogate --fail-under 100 lading
-	$(UV) run interrogate --fail-under 100 \
-		--ignore-nested-functions --ignore-nested-classes tests scripts
+	$(MAKE) --no-print-directory lint-docstrings
 	$(PYLINT) $(PYLINT_TARGETS)
 	$(DF12_PYLINT) $(PYLINT_TARGETS)
 	$(AMBRLEAKS) tests

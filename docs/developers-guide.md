@@ -205,28 +205,30 @@ make lint
 
 The target is deliberately seven-stage. Ruff runs first because it is fast,
 handles broad style and correctness checks, and imports the stricter lint
-policy used by `leynos/episodic`. If Ruff passes, the target runs `interrogate`
-with `--fail-under 100` twice to enforce **100% docstring coverage**: once
-across `lading`, and once across `tests` and `scripts`, where the shape-based
-`--ignore-nested-functions` and `--ignore-nested-classes` options are passed to
-that invocation on the command line in the Makefile. They exempt nested test
-closures and test-local stub classes. The `lading` pass carries no exemptions,
-and every module-level definition in `tests` and `scripts` still requires a
-docstring. If `interrogate` passes, the third stage runs the pinned Pylint
-release under managed CPython at the project baseline through `uv tool run`.
-That stage is focused on rule families that complement Ruff, especially logging
-format safety, pattern matching checks, selected simplification checks,
-deprecated standard-library usage, file hygiene, and design-size limits. The
-fourth stage runs a selected allow-list of `df12-python-lints` checks under
-CPython at the baseline, evaluating version-gated diagnostics against that same
-baseline. The fifth stage runs `ambrleaks`, which scans Syrupy snapshots under
-`tests` for values that should have been redacted. The sixth stage is Skylos, a
-blocking, strict, production-only dead-code scan across `lading`. The seventh
-and final stage is the code-duplication gate, after which the lint gate is
-complete. [ADR-003](adr/003-three-tier-python-linting.md) records the policy
-decision, including the
+policy used by `leynos/episodic`. If Ruff passes, the target runs the
+`lint-docstrings` target to enforce **100% docstring coverage**: one
+`interrogate` run with `--fail-under 100` across `DOCSTRING_TARGETS` (`lading`,
+`tests`, `scripts` and `docs`). The command line carries no nested-definition
+exemption. The target prints every scanned definition (`-vv`) and also fails on
+any `MISSED` row, because Interrogate rounds its percentage to one decimal and
+the threshold alone can pass a lone gap. If it passes, the third stage runs the
+pinned Pylint release under managed CPython at the project baseline through
+`uv tool run`. That stage is focused on rule families that complement Ruff,
+especially logging format safety, pattern matching checks, selected
+simplification checks, deprecated standard-library usage, file hygiene, and
+design-size limits. The fourth stage runs a selected allow-list of
+`df12-python-lints` checks under CPython at the baseline, evaluating
+version-gated diagnostics against that same baseline. The fifth stage runs
+`ambrleaks`, which scans Syrupy snapshots under `tests` for values that should
+have been redacted. The sixth stage is Skylos, a blocking, strict,
+production-only dead-code scan across `lading`. The seventh and final stage is
+the code-duplication gate, after which the lint gate is complete.
+[ADR-003](adr/003-three-tier-python-linting.md) records the policy decision,
+including the
 [2026-09-07 addendum](adr/003-three-tier-python-linting.md#addendum-docstring-coverage-for-tests-and-scripts-2026-09-07)
-extending Interrogate coverage to `tests` and `scripts`.
+extending Interrogate coverage to `tests` and `scripts`, and the
+[2026-11-07 addendum](adr/003-three-tier-python-linting.md#addendum-no-nested-definition-exemptions-2026-11-07)
+that removed the nested-definition exemptions.
 
 ## Code-duplication gate
 

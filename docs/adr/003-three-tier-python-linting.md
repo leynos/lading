@@ -83,6 +83,25 @@ on every definition it measures, including nested ones.
 Makefile boundary, pinning both absolute 100% passes and confining the
 nested-definition exemptions to the `tests` and `scripts` invocation.
 
+## Addendum: no nested-definition exemptions (2026-11-07)
+
+Adopted 2026-11-07. This addendum supersedes the nested-definition exemptions
+of the 2026-09-07 addendum above, which is kept as the historical record.
+
+Every nested test closure and test-local stub class now carries a docstring, so
+`make lint` no longer passes `--ignore-nested-functions` or
+`--ignore-nested-classes`. The Interrogate stage is the `lint-docstrings`
+target: one run with `-vv --fail-under 100` over `DOCSTRING_TARGETS` (`lading`,
+`tests`, `scripts` and `docs`). It also fails on any `MISSED` row, because
+Interrogate rounds its percentage to one decimal and the threshold alone can
+pass a lone gap. The gate reads `DOCSTRING_TARGETS`, independently of
+`PYTHON_SOURCE_ROOTS`.
+
+`tests/workflow_contracts/test_lint_target.py` now runs the target against a
+stub tool and the real tool, pins the flags, checks that every tracked `.py`
+file lies under a target, and checks that neither the Makefile nor the parsed
+`[tool.interrogate]` table enables a nested-definition exemption.
+
 ## Addendum: Skylos dead-code detection (2026-08-27)
 
 Adopted 2026-08-27. This addendum extends the decision above with a sixth
