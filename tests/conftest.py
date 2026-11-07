@@ -120,6 +120,7 @@ def write_config(tmp_path: Path) -> cabc.Callable[[str], Path]:
     from lading import config as config_module
 
     def _write(body: str) -> Path:
+        """Write the dedented config body to lading.toml and return its path."""
         config_path = tmp_path / config_module.CONFIG_FILENAME
         config_path.write_text(textwrap.dedent(body).lstrip())
         return config_path

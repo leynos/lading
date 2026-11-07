@@ -164,6 +164,7 @@ def stub_runner(
     payload = STUB_REPORT if report is None else report
 
     def run(command: cabc.Sequence[str]) -> str:
+        """Answer a --version probe or return the stub report as JSON."""
         if "--version" in command:
             return f"{version}\n"
         return json.dumps(payload)

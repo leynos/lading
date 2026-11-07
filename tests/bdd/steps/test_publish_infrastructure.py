@@ -148,6 +148,7 @@ def _make_preflight_handler(
     """Build a cmd-mox handler that validates argument prefixes."""
 
     def _handler(invocation: Invocation) -> tuple[str, str, int]:
+        """Validate arguments, record if tracked, and return the stubbed reply."""
         _validate_stub_arguments(expected_arguments, tuple(invocation.args))
         if isinstance(response, _CommandResponse):
             active_response = response
@@ -185,6 +186,7 @@ def _make_preflight_dispatch_handler(
     """Build a handler that dispatches several prefixes for one command."""
 
     def _handler(invocation: Invocation) -> tuple[str, str, int]:
+        """Dispatch to the first matching prefix, or fail on unknown arguments."""
         received = tuple(invocation.args)
         for expected_arguments, response in entries:
             if _matches_expected_prefix(expected_arguments, received):
@@ -380,6 +382,7 @@ def _make_git_handler(
     """Build a git handler that can serve multiple git subcommands."""
 
     def _handler(invocation: Invocation) -> tuple[str, str, int]:
+        """Return the git response for exact arguments, failing on unknown ones."""
         args = tuple(invocation.args)
         try:
             response = responses[args]

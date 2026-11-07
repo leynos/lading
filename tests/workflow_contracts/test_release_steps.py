@@ -33,7 +33,10 @@ class _IndexServer:
         owner = self
 
         class Handler(http.server.BaseHTTPRequestHandler):
+            """Request handler that serves queued PEP 691 index responses."""
+
             def do_GET(self) -> None:
+                """Record the request, then serve the next queued response."""
                 owner.requests.append((self.path, self.headers.get("Accept")))
                 status, body = owner.responses[
                     min(len(owner.requests) - 1, len(owner.responses) - 1)

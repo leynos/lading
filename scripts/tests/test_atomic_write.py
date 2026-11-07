@@ -141,6 +141,7 @@ def test_failed_temporary_file_stages_preserve_destination_and_clean_sibling(
     def temporary_file(
         *, delete: bool = True, prefix: str | None = None, **options: object
     ) -> cabc.Generator[_FailingTemporaryStream]:
+        """Yield a temporary stream that fails at the configured failure stage."""
         directory = typ.cast("Path", options["dir"])
         with original_temporary_file(
             delete=delete, dir=directory, prefix=prefix
@@ -151,6 +152,7 @@ def test_failed_temporary_file_stages_preserve_destination_and_clean_sibling(
     if failure_stage == "fsync":
 
         def fail_fsync(_descriptor: int) -> typ.NoReturn:
+            """Fail every fsync call with the injected temporary-file error."""
             raise _InjectedTemporaryError
 
         monkeypatch.setattr(atomic_write.os, "fsync", fail_fsync)

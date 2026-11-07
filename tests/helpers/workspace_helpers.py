@@ -22,6 +22,7 @@ def install_cargo_stub(cmd_mox: CmdMox, monkeypatch: pytest.MonkeyPatch) -> None
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Send a metadata command to cmd-mox and return (exit, stdout, stderr)."""
         del cwd, echo_stdout
         invocation = Invocation(
             command=command[0],
@@ -37,6 +38,7 @@ def install_cargo_stub(cmd_mox: CmdMox, monkeypatch: pytest.MonkeyPatch) -> None
     undo = monkeypatch.undo
 
     def undo_with_runner_context() -> None:
+        """Exit the runner context, then run the original monkeypatch undo."""
         runner_context.__exit__(None, None, None)
         undo()
 
