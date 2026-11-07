@@ -94,3 +94,37 @@ process. Tagged releases now publish an sdist and every wheel to PyPI through
 Trusted Publishing before attaching any missing filenames to the GitHub
 Release. The GitHub-only wheel process above remains the historical decision;
 ADR-009 records the current order, retry rules, and trade-offs.
+
+## Addendum, 2026-11-04: Incident account and workflow contracts
+
+Adopted 2026-11-04. This addendum corrects the incident account without
+rewriting the accepted ADR. The claim above that both `v0.3.0` and `v0.3.1` had
+no wheel, green jobs, and manual repairs is not independently verified by run
+logs here. Issue #256 reports that `v0.3.0` lacked a wheel and that it was
+attached by hand; it also reports that `v0.2.0` retained its wheel. The
+workflow comments report that `v0.3.0` and `v0.3.1` were live without wheels.
+These are attributed reports, not verified run-log details.
+
+The original download omitted `name` and left `merge-multiple` false. In the
+pinned v4 implementation, an explicit `name` selects one artefact for direct
+extraction into `path`; an unnamed all-artefacts download extracts each result
+under `path/<artefact-name>`, even when one artefact matches. The pinned v8
+implementation also extracts one result from an unnamed all-artefacts download
+directly into `path`; it creates per-artefact directories only when several
+artefacts match and `merge-multiple` is false. See the pinned v4 and v8
+implementations.[^1][^2] With one `wheels-pure` artefact, the former
+`find dist/wheels-*` pipeline found no path under v8. The failed `find` was
+masked because `xargs -r` ran no upload and returned zero; without `pipefail`,
+the pipeline therefore exited zero.
+
+The current workflow names `wheels-pure` and downloads it to `dist`. It uses
+`scripts/upload_release_wheels.py`, which fails when no distribution is found,
+and passes the release tag through `"$TAG"`. The Phase 1 contract tests in
+`tests/workflow_contracts/test_release_workflow.py` tie the producer artefact,
+job dependency, download name and path, and uploader directory together. They
+also assert the current order: collect and download the artefacts, create or
+reuse the draft, upload distributions, then publish. The named download and
+Python uploader remove the path ambiguity and silent empty-upload failure modes.
+
+[^1]: [Pinned `actions/download-artifact` v4 source](https://github.com/actions/download-artifact/blob/fa0a91b85d4f404e444e00e005971372dc801d16/src/download-artifact.ts).
+[^2]: [Pinned `actions/download-artifact` v8 source](https://github.com/actions/download-artifact/blob/9000827ccba6bdab643e8b6fd33ac0654aef8333/src/download-artifact.ts).
