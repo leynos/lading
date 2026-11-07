@@ -44,6 +44,7 @@ def test_run_rebuilds_lockfiles_when_enabled(
         *,
         runner: object | None = None,
     ) -> tuple[str, ...]:
+        """Record the merge inputs and return the merged manifest tuple."""
         captured["merge_workspace_root"] = workspace_root
         captured["merge_lockfile_manifests"] = lockfile_manifests
         captured["merge_runner"] = runner
@@ -55,6 +56,7 @@ def test_run_rebuilds_lockfiles_when_enabled(
         *,
         runner: object | None = None,
     ) -> tuple[pathlib.Path, ...]:
+        """Record each regeneration call and return the root and nested lockfiles."""
         # ``captured`` is shared with the other doubles, so the counter is
         # read back through a narrow that states the value it must hold.
         previous_calls = captured.get("calls", 0)
@@ -137,6 +139,7 @@ def test_run_inherits_lockfile_rebuild_configuration(
     )
 
     def fail_regeneration(*args: object, **kwargs: object) -> typ.NoReturn:
+        """Fail the test if regeneration runs despite inherited configuration."""
         pytest.fail("lockfile regeneration should inherit configuration")
 
     monkeypatch.setattr(
@@ -177,6 +180,7 @@ def test_run_reports_lockfiles_in_dry_run(
         runner: object | None = None,
         emit_discovery_observability: bool = True,
     ) -> tuple[str, ...]:
+        """Record the manifests and observability flag; return the merged manifests."""
         captured["merge_lockfile_manifests"] = lockfile_manifests
         captured["emit_discovery_observability"] = emit_discovery_observability
         return merged_manifests
@@ -185,11 +189,13 @@ def test_run_reports_lockfiles_in_dry_run(
         workspace_root: pathlib.Path,
         lockfile_manifests: tuple[str, ...],
     ) -> tuple[pathlib.Path, ...]:
+        """Record the workspace and manifests and return the lockfile paths."""
         captured["workspace_root"] = workspace_root
         captured["lockfile_manifests"] = lockfile_manifests
         return (tmp_path / "Cargo.lock", nested_lockfile)
 
     def fail_regeneration(*args: object, **kwargs: object) -> typ.NoReturn:
+        """Fail the test if a dry run tries to invoke Cargo for regeneration."""
         pytest.fail("dry-run lockfile reporting should not invoke Cargo")
 
     monkeypatch.setattr(
@@ -258,6 +264,7 @@ def test_run_skips_lockfile_rebuild(
     configuration = _make_config()
 
     def fail_regeneration(*args: object, **kwargs: object) -> typ.NoReturn:
+        """Fail the test with the scenario's message if regeneration runs."""
         pytest.fail(scenario.fail_message)
 
     monkeypatch.setattr(

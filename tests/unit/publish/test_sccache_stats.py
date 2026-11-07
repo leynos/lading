@@ -227,6 +227,7 @@ def test_query_snapshot_wraps_spawn_failures(tmp_path: Path) -> None:
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Fail every command with CommandSpawnError as if sccache were missing."""
         del command, cwd, env, echo_stdout
         program = "sccache"
         raise CommandSpawnError(program, FileNotFoundError(program))

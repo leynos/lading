@@ -131,6 +131,7 @@ def test_publish_cli_labels_the_skip_preflight_decision(
         *,
         options: publish_command.PublishOptions | None = None,
     ) -> str:
+        """Capture the publish options the CLI passes and return a canned result."""
         del workspace_root, configuration, workspace_model
         assert options is not None, (
             "publish must receive a PublishOptions instance from the CLI"
@@ -214,6 +215,7 @@ def test_publish_rejects_an_unparseable_environment_value(
     monkeypatch.setenv("LADING_SKIP_PREFLIGHT", raw)
 
     def fail_if_called(*_args: object, **_kwargs: object) -> str:  # pragma: no cover
+        """Fail the test if publish runs despite an unparseable skip value."""
         message = "publish should not run with an unparseable skip value"
         raise AssertionError(message)
 

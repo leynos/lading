@@ -151,6 +151,7 @@ def test_report_replacement_failure_keeps_the_existing_file(
     report.write_text('{"previous": true}', encoding="utf-8")
 
     def _refuse_replace(self: Path, target: Path) -> Path:
+        """Raise PermissionError in place of Path.replace for the target."""
         message = f"refusing to replace {target}"
         raise PermissionError(message)
 
@@ -184,13 +185,15 @@ def test_atomic_write_removes_temporary_file_after_write_failure(
         name = str(temporary)
 
         def __enter__(self) -> _FailingStream:
+            """Touch the temporary file and enter the context."""
             temporary.touch()
             return self
 
         def __exit__(self, *_args: object) -> None:
-            return None
+            """Exit without suppressing exceptions raised inside the block."""
 
         def write(self, _content: str) -> None:
+            """Raise OSError to simulate a failed write to the temporary file."""
             raise OSError(_WRITE_FAILURE_MESSAGE)
 
     monkeypatch.setattr(

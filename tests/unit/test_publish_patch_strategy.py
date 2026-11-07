@@ -39,6 +39,7 @@ def make_plan_factory(
     def _builder(
         workspace_root: Path, publishable_names: tuple[str, ...]
     ) -> publish_plan.PublishPlan:
+        """Build a publish plan with one crate per requested publishable name."""
         crates: list[WorkspaceCrate] = []
         for name in publishable_names:
             crate = make_crate(workspace_root / "crates", name)

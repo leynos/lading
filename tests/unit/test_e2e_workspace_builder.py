@@ -83,6 +83,7 @@ def test_create_nontrivial_workspace_metadata_payload_is_json_serialisable(
     def _dependency_signature(
         entry: dict[str, object],
     ) -> tuple[object | None, object | None, object | None]:
+        """Project a dependency entry onto its name, package, and kind fields."""
         return entry.get("name"), entry.get("package"), entry.get("kind")
 
     dependency_signatures = {

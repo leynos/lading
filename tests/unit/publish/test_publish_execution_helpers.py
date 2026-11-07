@@ -41,6 +41,7 @@ class _MockCmdMoxIPC:
             stderr: str,
             exit_code: int,
         ) -> None:
+            """Store the invocation ID, output streams, and exit code for cmd-mox."""
             self.invocation_id = invocation_id
             self.stdout = stdout
             self.stderr = stderr
@@ -72,6 +73,48 @@ class _MockCommandRunner:
         return Path(sys.executable)
 
 
+class _Env:
+    """Environment constant holder mimicking the cmd-mox env module."""
+
+    CMOX_IPC_SOCKET_ENV = "CMOX_IPC_SOCKET"
+    CMOX_REAL_COMMAND_ENV_PREFIX = "CMOX_REAL_"
+
+
+class _IPC:
+    """IPC module double exposing the cmd-mox Response and PassthroughResult."""
+
+    class Response:
+        """Response double holding captured stdout, stderr, and exit code."""
+
+        def __init__(
+            self, stdout: str = "", stderr: str = "", exit_code: int = 0
+        ) -> None:
+            """Store the canned stdout, stderr, and exit code."""
+            self.stdout = stdout
+            self.stderr = stderr
+            self.exit_code = exit_code
+
+    class PassthroughResult:
+        """Minimal passthrough-result stand-in for the IPC double."""
+
+        def __init__(
+            self, invocation_id: str, stdout: str, stderr: str, exit_code: int
+        ) -> None:
+            """Store the invocation ID, output streams, and exit code."""
+            self.invocation_id = invocation_id
+            self.stdout = stdout
+            self.stderr = stderr
+            self.exit_code = exit_code
+
+    def report_passthrough_result(self, result: object, timeout: float) -> Response:
+        """Wrap the passthrough result's output and exit code in a Response."""
+        return self.Response(
+            stdout=getattr(result, "stdout", ""),
+            stderr=getattr(result, "stderr", ""),
+            exit_code=getattr(result, "exit_code", 0),
+        )
+
+
 @pytest.fixture
 def mock_cmd_mox_modules(tmp_path: Path) -> SimpleNamespace:
     """Provide complete cmd-mox module stubs for passthrough handling.
@@ -95,44 +138,16 @@ def mock_cmd_mox_modules(tmp_path: Path) -> SimpleNamespace:
     ...     mock_cmd_mox_modules.command_runner
     """
 
-    class _Env:
-        CMOX_IPC_SOCKET_ENV = "CMOX_IPC_SOCKET"
-        CMOX_REAL_COMMAND_ENV_PREFIX = "CMOX_REAL_"
-
-    class _IPC:
-        class Response:
-            def __init__(
-                self, stdout: str = "", stderr: str = "", exit_code: int = 0
-            ) -> None:
-                self.stdout = stdout
-                self.stderr = stderr
-                self.exit_code = exit_code
-
-        class PassthroughResult:
-            """Minimal passthrough-result stand-in for the IPC double."""
-
-            def __init__(
-                self, invocation_id: str, stdout: str, stderr: str, exit_code: int
-            ) -> None:
-                self.invocation_id = invocation_id
-                self.stdout = stdout
-                self.stderr = stderr
-                self.exit_code = exit_code
-
-        def report_passthrough_result(self, result: object, timeout: float) -> Response:
-            return self.Response(
-                stdout=getattr(result, "stdout", ""),
-                stderr=getattr(result, "stderr", ""),
-                exit_code=getattr(result, "exit_code", 0),
-            )
-
     class _CommandRunner:
+        """Command runner double that adds a shim directory and canned output."""
+
         def prepare_environment(
             self,
             lookup_path: str,
             extra_env: dict[str, str],
             invocation_env: dict[str, str],
         ) -> dict[str, str]:
+            """Build a PATH with the shim and /usr/bin; extra env may override it."""
             shim_dir = tmp_path / "cmox" / "shim"
             return (
                 {"PATH": f"{lookup_path}{os.pathsep}{shim_dir}{os.pathsep}/usr/bin"}
@@ -143,6 +158,7 @@ def mock_cmd_mox_modules(tmp_path: Path) -> SimpleNamespace:
         def resolve_command_with_override(
             self, command: str, path: str, override: str | None
         ) -> _IPC.Response:
+            """Return a canned passthrough Response, skipping real resolution."""
             return _IPC.Response(stdout="pass", stderr="through", exit_code=0)
 
     return SimpleNamespace(
@@ -201,7 +217,10 @@ def test_process_cmd_mox_response_updates_environment(
     monkeypatch.delenv("ADDED_VAR", raising=False)
 
     class _Response:
+        """Buffered response double with env, output streams, and exit status."""
+
         def __init__(self) -> None:
+            """Set a canned env update, output streams, and exit code 3."""
             self.env = {"ADDED_VAR": "yes"}
             self.stdout = "out\n"
             self.stderr = "err\n"
@@ -324,6 +343,7 @@ def test_handle_cmd_mox_passthrough_uses_pwd_for_cwd(
         args: tuple[str, ...],
         context: subprocess_runner.SubprocessContext,
     ) -> tuple[int, str, str]:
+        """Record the requested cwd and report success without spawning."""
         del program, args
         captured["cwd"] = context.cwd
         return 0, "", ""
@@ -426,10 +446,14 @@ def test_write_to_sink_handles_broken_pipe() -> None:
     """Broken pipes should be swallowed and return None."""
 
     class _Broken:
+        """Sink double whose writes and flushes always raise BrokenPipeError."""
+
         def write(self, _: str, /) -> int:
+            """Raise BrokenPipeError to simulate a closed pipe on write."""
             raise BrokenPipeError
 
         def flush(self, /) -> None:
+            """Raise BrokenPipeError to simulate a closed pipe on flush."""
             raise BrokenPipeError
 
     assert subprocess_runner.write_to_sink(None, "payload", "stdout") is None, (

@@ -216,6 +216,7 @@ def make_config() -> cabc.Callable[..., config_module.LadingConfig]:
         exclude: tuple[str, ...] = (),
         order: tuple[str, ...] = (),
     ) -> config_module.LadingConfig:
+        """Build a LadingConfig from publish and preflight test settings."""
         publish_table = config_module.PublishConfig(
             strip_patches="all", exclude=exclude, order=order
         )
@@ -252,6 +253,7 @@ def make_crate() -> _CrateFactory:
     def _make_crate(
         root: Path, name: str, spec: _CrateSpec | None = None
     ) -> WorkspaceCrate:
+        """Write a crate manifest under root and return its WorkspaceCrate record."""
         active_spec = _CrateSpec() if spec is None else spec
 
         root.mkdir(parents=True, exist_ok=True)
@@ -308,6 +310,7 @@ def make_workspace(
     """
 
     def _make_workspace(root: Path, *crates: WorkspaceCrate) -> WorkspaceGraph:
+        """Return a WorkspaceGraph of the crates, defaulting to one alpha crate."""
         if not crates:
             crates = (make_crate(root, "alpha"),)
         return WorkspaceGraph(workspace_root=root, crates=tuple(crates))
@@ -383,6 +386,7 @@ def make_dependency() -> cabc.Callable[[str], WorkspaceDependency]:
     """
 
     def _make_dependency(name: str) -> WorkspaceDependency:
+        """Return a WorkspaceDependency named name with a derived package ID."""
         return WorkspaceDependency(
             package_id=f"{name}-id",
             name=name,

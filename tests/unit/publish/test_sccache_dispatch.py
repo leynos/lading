@@ -237,6 +237,7 @@ def test_dispatch_reports_what_it_measured_when_a_crate_fails(
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Run the script; fail a package command that is the second cargo call."""
         exit_code, stdout, stderr = original_call(
             command, cwd=cwd, env=env, echo_stdout=echo_stdout
         )

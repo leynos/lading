@@ -59,6 +59,7 @@ def test_main_handles_exceptions(
     """Handle exceptions during command execution."""
 
     def boom(_: cabc.Sequence[str]) -> int:
+        """Raise the parametrised exception in place of dispatching the command."""
         raise case.exception
 
     monkeypatch.setattr(cli, "_dispatch_and_print", boom)
@@ -81,6 +82,7 @@ def test_bump_command_validates_version(
     """Reject bump invocations that provide an invalid version string."""
 
     def fail(*_: object, **__: object) -> typ.NoReturn:
+        """Fail the test immediately if bump.run is ever invoked."""
         pytest.fail("bump.run should not be invoked for invalid versions")
 
     monkeypatch.setattr(bump_command, "run", fail)
@@ -114,6 +116,7 @@ def test_bump_command_accepts_extended_semver(
         *,
         options: bump_command.BumpOptions,
     ) -> str:
+        """Record the bump arguments and return a canned summary."""
         captured["workspace_root"] = workspace_root
         captured["version"] = version
         captured["options"] = options
@@ -153,6 +156,7 @@ def test_cyclopts_invoke_uses_workspace_env(
         *,
         options: bump_command.BumpOptions,
     ) -> str:
+        """Assert the parsed bump arguments and return a canned summary."""
         assert workspace_root == tmp_path.resolve(), (
             "the workspace override should reach bump.run"
         )
@@ -207,6 +211,7 @@ def test_run_with_context_branches_behave_identically(
         workspace: WorkspaceGraph,
         command_runner: object,
     ) -> str:
+        """Record the runner arguments and return a canned result."""
         calls.append((root, configuration, workspace, command_runner))
         return "ran"
 
@@ -266,6 +271,7 @@ def test_publish_via_app_matches_across_config_branches(
         *,
         options: publish_command.PublishOptions,
     ) -> str:
+        """Record the publish call and return a canned result."""
         assert isinstance(options, publish_command.PublishOptions), (
             "publish.run must receive a PublishOptions instance"
         )

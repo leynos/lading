@@ -18,7 +18,10 @@ def test_render_section_renders_formatted_items() -> None:
     """Generic section helper applies the provided formatter."""
 
     class Dummy:
+        """Minimal item carrying a value for the section formatter."""
+
         def __init__(self, value: str) -> None:
+            """Store the value that the formatter will read."""
             self.value = value
 
     items = (Dummy("alpha"), Dummy("beta"))

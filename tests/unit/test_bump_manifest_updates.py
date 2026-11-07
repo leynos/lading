@@ -280,6 +280,7 @@ def test_run_reports_when_versions_already_match(
     configuration = _make_config()
 
     def fail_regeneration(*args: object, **kwargs: object) -> typ.NoReturn:
+        """Fail the test if a no-op bump attempts lockfile regeneration."""
         pytest.fail("no-op bumps must not regenerate lockfiles")
 
     monkeypatch.setattr(

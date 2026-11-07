@@ -27,6 +27,7 @@ def test_run_cargo_preflight_raises_on_failure(
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Assert cargo runs in the workspace root and return a failing result."""
         assert cwd == tmp_path, "cargo pre-flight must run in the workspace root"
         assert command[0] == "cargo", "pre-flight commands must be cargo invocations"
         return 1, "", "boom"
@@ -88,6 +89,7 @@ def test_run_cargo_preflight_failure_message_snapshot(
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Return the case's exit code and stderr as a failing cargo result."""
         del command, cwd, env, echo_stdout
         return case.exit_code, "", case.stderr
 
@@ -129,6 +131,7 @@ def _run_and_record_cargo_preflight(
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Record the command tuple and return success for every invocation."""
         del cwd, env, echo_stdout
         recorded.append(tuple(command))
         return 0, "", ""
@@ -233,6 +236,7 @@ def test_compiletest_diagnostic_details(
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Return a failing result whose stdout names the artefact path."""
         return 1, f"diff at {artefact}", ""
 
     options = publish_preflight._CargoPreflightOptions(

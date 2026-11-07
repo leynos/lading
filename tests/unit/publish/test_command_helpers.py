@@ -63,11 +63,14 @@ def test_write_to_sink_handles_broken_pipe() -> None:
     """Broken pipe errors should be swallowed and return ``None`` sink."""
 
     class _BrokenSink:
+        """Sink whose writes always fail with a broken pipe."""
+
         def write(self, payload: str, /) -> int:  # pragma: no cover - invoked
+            """Raise BrokenPipeError to simulate a closed consumer."""
             raise BrokenPipeError
 
         def flush(self, /) -> None:  # pragma: no cover - compatibility hook
-            return None
+            """Do nothing so flush calls succeed without side effects."""
 
     result = execution.write_to_sink(_BrokenSink(), "data", "stdout")
 

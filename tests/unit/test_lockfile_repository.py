@@ -43,6 +43,7 @@ def _recording_runner(
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Record the call and return the canned exit code and output streams."""
         calls.append((tuple(command), cwd, env, echo_stdout))
         return exit_code, stdout, stderr
 
@@ -128,6 +129,7 @@ class TestCargoLockfileInspectionRepositoryAdapter:
         probed: list[Path] = []
 
         def manifest_exists(manifest_path: Path) -> bool:
+            """Record the probed path and report that the manifest is absent."""
             probed.append(manifest_path)
             return False
 

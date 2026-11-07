@@ -31,6 +31,7 @@ def _result_runner(exit_code: int, stderr: str = "") -> RunnerDouble:
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Report the fixed exit code and stderr for every command."""
         del command, cwd, env, echo_stdout
         return exit_code, "", stderr
 
@@ -47,6 +48,7 @@ def _raising_runner(failure: cabc.Callable[[], BaseException]) -> RunnerDouble:
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Raise a freshly built failure on every command."""
         del command, cwd, env, echo_stdout
         raise failure()
 
@@ -181,6 +183,7 @@ def test_regenerate_lockfiles_records_partial_success_and_failure(
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Fail the nested lockfile command with a conflict and succeed otherwise."""
         del cwd, env, echo_stdout
         return (
             (101, "", "dependency conflict") if "nested" in command[-1] else (0, "", "")

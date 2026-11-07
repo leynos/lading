@@ -33,6 +33,7 @@ def test_bump_cli_accepts_dry_run_flag(
     captured_kwargs: dict[str, typ.Any] = {}
 
     def fake_run(*args: object, **kwargs: object) -> str:
+        """Record the keyword arguments of a dry-run bump and return a preview."""
         captured_kwargs.update(kwargs)
         return "preview"
 
@@ -184,6 +185,7 @@ def test_publish_cli_passes_unpublished_workspace_deps_flag(
         *,
         options: publish_command.PublishOptions | None = None,
     ) -> str:
+        """Record the publish options, asserting they were supplied."""
         del workspace_root, configuration, workspace_model
         assert options is not None, "publish.run must receive options"
         captured_options["options"] = options
@@ -291,6 +293,7 @@ def test_publish_cli_passes_sccache_flags(
         *,
         options: publish_command.PublishOptions | None = None,
     ) -> str:
+        """Record the publish options the CLI forwards, asserting presence."""
         del workspace_root, configuration, workspace_model
         assert options is not None, "publish.run must receive options"
         captured_options["options"] = options
@@ -384,6 +387,7 @@ def test_bump_cli_forwards_raw_rebuild_lockfiles(
     captured_kwargs: dict[str, typ.Any] = {}
 
     def fake_run(*args: object, **kwargs: object) -> str:
+        """Record the keyword arguments of a bump and return a bumped marker."""
         captured_kwargs.update(kwargs)
         return "bumped"
 

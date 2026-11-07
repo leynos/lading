@@ -84,6 +84,7 @@ def test_read_tail_lines_handles_zero_and_errors(
     )
 
     def _raise(*args: object, **kwargs: object) -> str:
+        """Raise OSError to simulate an unreadable artefact on read_text."""
         message = "boom"
         raise OSError(message)
 

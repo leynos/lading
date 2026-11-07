@@ -267,6 +267,7 @@ def test_an_unreadable_location_is_a_domain_error(
     real_iterdir = Path.iterdir
 
     def refuse_location(path: Path) -> cabc.Iterator[Path]:
+        """Raise PermissionError for the location and delegate every other path."""
         if path == resolved:
             message = "directory is unreadable"
             raise PermissionError(message)

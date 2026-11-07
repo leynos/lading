@@ -39,6 +39,7 @@ def _recording_runner(
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Append each command to calls and report success."""
         del cwd, env, echo_stdout
         calls.append(tuple(command))
         return 0, "", ""
@@ -76,6 +77,7 @@ def _failing_runner(
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Record each command and fail every one that starts with the prefix."""
         del cwd, env, echo_stdout
         recorded = tuple(command)
         calls.append(recorded)
@@ -91,6 +93,7 @@ def _stepped_clock(values: cabc.Sequence[float]) -> cabc.Callable[[], float]:
     remaining = list(values)
 
     def clock() -> float:
+        """Return the next scripted timestamp, then keep returning the last."""
         return remaining.pop(0) if len(remaining) > 1 else remaining[0]
 
     return clock
@@ -423,6 +426,7 @@ def test_skipped_preflight_still_fails_on_a_dirty_tree(
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Report a modified file for git status and succeed otherwise."""
         del cwd, env, echo_stdout
         recorded = tuple(command)
         calls.append(recorded)

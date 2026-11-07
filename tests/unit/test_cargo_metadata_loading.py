@@ -81,6 +81,7 @@ def test_load_cargo_metadata_suppresses_stdout_echo(tmp_path: Path) -> None:
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Record the echo flag and return the metadata payload as JSON."""
         del command, cwd, env
         echo_flags.append(echo_stdout)
         return 0, json.dumps(_METADATA_PAYLOAD), ""
@@ -107,6 +108,7 @@ def test_load_cargo_metadata_missing_executable(
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Simulate spawning cargo failing because the binary is absent."""
         del command, cwd, env, echo_stdout
         program = "cargo"
         raise CommandSpawnError(program, FileNotFoundError(program))
@@ -252,6 +254,7 @@ def test_load_workspace_invokes_metadata(
     def _fake_load_cargo_metadata(
         workspace_root: Path | str | None = None,
     ) -> dict[str, typ.Any]:
+        """Return the canned metadata payload, ignoring the workspace root."""
         return metadata
 
     monkeypatch.setattr(
@@ -284,6 +287,7 @@ def test_load_cargo_metadata_passes_resolved_cwd(tmp_path: Path) -> None:
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Record the runner cwd and return the metadata payload as JSON."""
         del command, env, echo_stdout
         recorded_cwd.append(cwd)
         return 0, json.dumps(payload), ""

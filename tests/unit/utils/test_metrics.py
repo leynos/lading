@@ -218,6 +218,7 @@ def test_register_summary_atexit_leaves_flag_unset_on_failure(
     monkeypatch.setattr(metrics, "_summary_hook_registered", threading.Event())
 
     def boom(_func: cabc.Callable[[], None]) -> None:
+        """Raise RuntimeError in place of atexit.register to simulate failure."""
         message = "registration failed"
         raise RuntimeError(message)
 
@@ -258,6 +259,7 @@ def test_register_summary_atexit_registers_once_under_concurrency(
     barrier = threading.Barrier(worker_count)
 
     def worker() -> None:
+        """Wait on the barrier, then call register_summary_atexit once."""
         # Release all threads together to maximise contention on the guard.
         barrier.wait()
         metrics.register_summary_atexit()

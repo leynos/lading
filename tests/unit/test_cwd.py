@@ -17,6 +17,7 @@ def test_chdir_for_test_creates_mutmut_source_path_before_chdir(
     original_chdir = monkeypatch.chdir
 
     def assert_source_path_exists(path: Path) -> None:
+        """Assert the mutmut source directory exists, then change into path."""
         assert (path / "lading").is_dir(), (
             "mutmut source directory should be created before changing directory"
         )

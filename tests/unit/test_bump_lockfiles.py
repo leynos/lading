@@ -192,6 +192,7 @@ def test_regenerate_lockfiles_partial_failure_updates_earlier_lockfiles(
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Fail only the nested manifest and record every manifest invoked."""
         del cwd, env, echo_stdout
         manifest = next((a for a in command if a.endswith("Cargo.toml")), None)
         invocations.append(str(manifest))
@@ -231,6 +232,7 @@ def test_regenerate_lockfiles_wraps_command_spawn_errors(tmp_path: Path) -> None
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Raise the injected spawn error for every command."""
         del command, cwd, env, echo_stdout
         raise spawn_error
 
@@ -266,6 +268,7 @@ def test_regenerate_lockfiles_propagates_unexpected_runner_defects(
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Raise the injected defect to check that it escapes unchanged."""
         del command, cwd, env, echo_stdout
         raise defect
 
@@ -294,6 +297,7 @@ def _selective_failure_runner(
         cwd: Path | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Return failure for manifests in the failing set and log every attempt."""
         del cwd, echo_stdout
         manifest = Path(command[-1])
         attempted.append(manifest)
@@ -447,6 +451,7 @@ def test_regenerate_lockfiles_aggregate_chains_first_underlying_cause(
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
+        """Raise the boom spawn error so the aggregate records its cause."""
         del command, cwd, env, echo_stdout
         raise boom
 
