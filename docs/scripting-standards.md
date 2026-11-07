@@ -55,13 +55,13 @@ The same gate covers scripts as it covers the package, so a new helper script
 is expected to satisfy `make check-fmt`, `make lint`, and `make typecheck`
 before it is committed:
 
-- Ruff, Interrogate, Pylint (built-in checks) and a df12 Pylint pass run over
-  every listed source. A script outside those roots is not linted, so add the
-  tree to `PYTHON_SOURCE_ROOTS` rather than leaving it ungated.
-- Interrogate requires a docstring on every definition in the `.py` files under
-  `tests`, `scripts` and `docs`, nested test closures and test-local stub
-  classes included. It reads `DOCSTRING_TARGETS` in the Makefile, not
-  `PYTHON_SOURCE_ROOTS`, so add a new `.py` tree to both lists.
+- Ruff, Pylint (built-in checks) and a df12 Pylint pass run over every listed
+  source. A script outside those roots is not linted, so add the tree to
+  `PYTHON_SOURCE_ROOTS` rather than leaving it ungated.
+- Interrogate runs over `DOCSTRING_TARGETS` in the Makefile (`lading`, `tests`,
+  `scripts` and `docs`), not over `PYTHON_SOURCE_ROOTS`, so add a new tree to
+  both lists. Its command line carries no nested-definition exemption, so test
+  closures and test-local stub classes need docstrings too.
 - The df12 `C9102` rule requires an `assert` to carry a failure message that
   names the violated expectation. Write the message for a tired teammate
   reading the failure at 3am:

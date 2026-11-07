@@ -1,9 +1,8 @@
 """Contract tests for the docstring-coverage stage of the ``make lint`` target.
 
-``make lint`` must reach one ``lint-docstrings`` run over the trees that hold the
-repository's ``.py`` files, at a threshold of 100 with no nested-definition
-exemption on the command line, and with a guard that fails on any ``MISSED``
-row (``[tool.interrogate]`` still skips overload stubs): interrogate rounds
+``make lint`` must reach one ``lint-docstrings`` run over ``DOCSTRING_TARGETS``,
+at a threshold of 100 with no nested-definition exemption on its command line,
+and with a guard that fails on any ``MISSED`` row: interrogate rounds
 its percentage to one decimal, so the threshold alone can pass a lone gap in a
 large repository. These tests read the recipe's variables and run the target, so
 a dropped call, a relaxed flag or a guard that stops failing breaks a test
@@ -17,6 +16,7 @@ import shutil
 import subprocess
 import sys
 import textwrap
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -246,13 +246,13 @@ def test_no_nested_exemption_survives_in_the_makefile() -> None:
 
 
 def test_interrogate_config_does_not_weaken_the_gate() -> None:
-    """Nested-definition exemptions must stay out of the shared Interrogate config."""
-    pyproject = PYPROJECT_PATH.read_text(encoding="utf-8")
-    assert "[tool.interrogate]" in pyproject, "Interrogate config section missing"
+    """The parsed ``[tool.interrogate]`` table must not enable a nested exemption."""
+    pyproject = tomllib.loads(PYPROJECT_PATH.read_text(encoding="utf-8"))
+    table = pyproject["tool"]["interrogate"]
     for flag in NESTED_EXEMPTION_FLAGS:
         option = flag.removeprefix("--")
         for config_key in (option, option.replace("-", "_")):
-            assert f"{config_key} = true" not in pyproject, config_key
+            assert table.get(config_key) is not True, config_key
 
 
 def test_a_documented_package_passes_the_real_gate(tmp_path: Path) -> None:

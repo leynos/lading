@@ -208,10 +208,9 @@ handles broad style and correctness checks, and imports the stricter lint
 policy used by `leynos/episodic`. If Ruff passes, the target runs the
 `lint-docstrings` target to enforce **100% docstring coverage**: one
 `interrogate` run with `--fail-under 100` across `DOCSTRING_TARGETS` (`lading`,
-`tests`, `scripts` and `docs`, subject to Interrogate's default exclusions and
-to its `.py` file discovery). No nested definition is exempt, test closures and
-test-local stub classes included; `[tool.interrogate]` still skips overload
-stubs. The target prints every scanned definition (`-vv`) and also fails on any
+`tests`, `scripts` and `docs`). The command line carries no nested-definition
+exemption, so test closures and test-local stub classes need docstrings too.
+The target prints every scanned definition (`-vv`) and also fails on any
 `MISSED` row, because Interrogate rounds its percentage to one decimal and the
 threshold alone can pass a lone gap. If it passes, the third stage runs the
 pinned Pylint release under managed CPython at the project baseline through

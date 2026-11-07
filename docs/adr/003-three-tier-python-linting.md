@@ -94,14 +94,12 @@ Every nested test closure and test-local stub class now carries a docstring, so
 target: one run with `-vv --fail-under 100` over `DOCSTRING_TARGETS` (`lading`,
 `tests`, `scripts` and `docs`). It also fails on any `MISSED` row, because
 Interrogate rounds its percentage to one decimal and the threshold alone can
-pass a lone gap. The shared `[tool.interrogate]` table still skips overload
-stubs, and Interrogate discovers `.py` files only, so an extensionless script
-is outside the gate.
+pass a lone gap.
 
 `tests/workflow_contracts/test_lint_target.py` now runs the target against a
 stub tool and the real tool, pins the flags, checks that every tracked `.py`
-file lies under a target, and keeps the nested-definition exemptions out of the
-Makefile and the shared Interrogate config.
+file lies under a target, and checks that neither the Makefile nor the parsed
+`[tool.interrogate]` table enables a nested-definition exemption.
 
 ## Addendum: Skylos dead-code detection (2026-08-27)
 
@@ -320,8 +318,9 @@ ability to see the file.
 ### Consequences of the widened gateway
 
 Adding a Python tree to the repository is no longer enough to gate it, but
-adding it to `PYTHON_SOURCE_ROOTS` is. A module under any listed root is
-linted, typechecked, and counted for docstrings the moment it lands.
+adding it to `PYTHON_SOURCE_ROOTS` is. A module under any listed root is linted
+and typechecked the moment it lands; the docstring gate reads
+`DOCSTRING_TARGETS` instead (see the 2026-11-07 addendum).
 
 `tests/test_pylint_tier_contract.py` pins the interpreter and the release;
 `tests/workflow_contracts/test_lint_environment.py` pins the df12 enable-list

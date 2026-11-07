@@ -300,8 +300,7 @@ check-fmt: $(UV) ## Verify formatting
 DOCSTRING_TARGETS ?= lading tests scripts docs
 # Level 2 prints a MISSED row per undocumented definition, which the
 # `lint-docstrings` target fails on: the rounded percentage alone can pass a
-# lone gap. No nested definition is exempt; `[tool.interrogate]` still skips
-# overload stubs.
+# lone gap. The flags carry no nested-definition exemption.
 DOCSTRING_FLAGS ?= -vv --fail-under 100
 DOCSTRING_TOOL ?= $(UV) run interrogate
 
