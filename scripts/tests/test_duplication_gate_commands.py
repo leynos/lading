@@ -120,6 +120,7 @@ class TestGateCommands:
         entry = allowlist.AllowEntry(keys=("lading/a.py",), reason="reviewed")
 
         def reader(_path: object) -> tuple[allowlist.AllowEntry, ...]:
+            """Return the single allow entry, ignoring the supplied path."""
             return (entry,)
 
         assert gate._read_allowlist(reader) == (entry,), (
@@ -138,6 +139,7 @@ class TestGateCommands:
         )
 
         def detect() -> list[detector.Finding]:
+            """Return one canned finding as the detector result."""
             return [finding]
 
         assert gate._detect_findings(detect) == [finding], (
@@ -207,6 +209,7 @@ class TestGateCommands:
         error = RuntimeError("detector runtime failed")
 
         def detect() -> list[detector.Finding]:
+            """Raise the injected runtime error from the detector call."""
             raise error
 
         with pytest.raises(RuntimeError) as raised:
@@ -219,6 +222,7 @@ class TestGateCommands:
         error = gate.GateConfigError("duplication_gate.allow[0] requires a reason")
 
         def reader(_path: object) -> tuple[allowlist.AllowEntry, ...]:
+            """Raise the injected configuration error from the allowlist reader."""
             raise error
 
         with pytest.raises(gate.GateConfigError) as raised:
@@ -231,6 +235,7 @@ class TestGateCommands:
         error = gate.GateConfigError("nose 0.19.0 is installed but 0.20.0 is pinned")
 
         def detect() -> list[detector.Finding]:
+            """Raise the injected configuration error from the detector call."""
             raise error
 
         with pytest.raises(gate.GateConfigError) as raised:
@@ -249,6 +254,7 @@ class TestGateCommands:
         monkeypatch.setattr(gate, "load_allowlist", lambda _path: ())
 
         def raise_schema_error() -> list[detector.Finding]:
+            """Raise a TypeError describing a malformed nose report schema."""
             msg = "nose report families must be an array"
             raise TypeError(msg)
 
@@ -315,6 +321,7 @@ class TestGateCommands:
         write_error = OSError("read-only filesystem")
 
         def fail_write(*_args: object, **_kwargs: object) -> None:
+            """Raise the injected write error for any append_allow_entry call."""
             raise write_error
 
         monkeypatch.setattr(gate, "append_allow_entry", fail_write)

@@ -167,6 +167,7 @@ def staging_cleanup() -> cabc.Callable[[Path], None]:
     """
 
     def _cleanup(staging_root: Path) -> None:
+        """Remove the staging root's parent build directory when it exists."""
         build_root = staging_root.parent
         if build_root.exists():
             git_helpers.rmtree(build_root)

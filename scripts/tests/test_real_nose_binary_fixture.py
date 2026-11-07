@@ -55,6 +55,7 @@ def test_real_nose_binary_fails_when_binary_version_is_invalid(
     )
 
     def report_wrong_version(_command: cabc.Sequence[str]) -> str:
+        """Return a version line that differs from the pinned nose release."""
         return "nose 0.19.0\n"
 
     monkeypatch.setattr(

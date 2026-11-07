@@ -29,6 +29,7 @@ class TestRunDetector:
         def run(
             command: list[str], **kwargs: object
         ) -> detector.subprocess.CompletedProcess[str]:
+            """Record the cwd kwarg and return a successful nose 0.20.0 result."""
             observed["working_directory"] = kwargs["cwd"]
             return detector.subprocess.CompletedProcess(
                 args=command, returncode=0, stdout="nose 0.20.0\n", stderr=""
@@ -284,6 +285,7 @@ class TestRunDetector:
         """Non-JSON detector output fails with an execution error."""
 
         def runner(command: cabc.Sequence[str]) -> str:
+            """Answer the version probe, else return non-JSON output."""
             return "nose 0.20.0\n" if "--version" in command else "not json"
 
         with pytest.raises(detector.GateExecutionError, match="not valid JSON"):
@@ -307,6 +309,7 @@ class TestRunDetector:
         """A slow detector becomes an actionable execution error."""
 
         def timeout(*_args: object, **_kwargs: object) -> typ.NoReturn:
+            """Raise a TimeoutExpired carrying a 120-second timeout, without waiting."""
             raise detector.subprocess.TimeoutExpired(["nose", "query"], 120)
 
         monkeypatch.setattr(detector.subprocess, "run", timeout)
@@ -326,6 +329,7 @@ class TestRunDetector:
         def failing(
             *_args: object, **_kwargs: object
         ) -> detector.subprocess.CompletedProcess[str]:
+            """Return a CompletedProcess with status 2 and a stderr diagnostic."""
             return detector.subprocess.CompletedProcess(
                 args=["nose", "query"], returncode=2, stdout="", stderr="bad query\n"
             )
@@ -364,6 +368,7 @@ class TestRunDetector:
         """An unrunnable detector points at the install remediation."""
 
         def unrunnable(*_args: object, **_kwargs: object) -> typ.NoReturn:
+            """Raise the injected OS error as if the detector cannot start."""
             raise error
 
         monkeypatch.setattr(detector.subprocess, "run", unrunnable)

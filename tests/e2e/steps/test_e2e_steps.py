@@ -49,6 +49,7 @@ def _create_recording_handler(
     """Create an invocation handler that validates and records cmd-mox calls."""
 
     def _handler(invocation: Invocation) -> tuple[str, str, int]:
+        """Record a validated invocation and return a silent success."""
         args = tuple(invocation.args)
         _validate_args_prefix(label, args, expected_prefixes)
         if require_target_dir:
