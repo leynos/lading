@@ -36,7 +36,7 @@ class _IndexServer:
             """Request handler that serves queued PEP 691 index responses."""
 
             def do_GET(self) -> None:
-                """Record the request; serve responses in order, repeating the last."""
+                """Record path and Accept header; serve responses, repeating the last."""
                 owner.requests.append((self.path, self.headers.get("Accept")))
                 status, body = owner.responses[
                     min(len(owner.requests) - 1, len(owner.responses) - 1)
