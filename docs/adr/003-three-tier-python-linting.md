@@ -319,7 +319,7 @@ ability to see the file.
 
 Adding a Python tree to the repository is no longer enough to lint or typecheck
 it, but adding it to `PYTHON_SOURCE_ROOTS` is. A module under any listed root
-is discovered by the lint and typecheck stages. The docstring gate reads
+is a candidate for the lint and typecheck stages. The docstring gate reads
 `DOCSTRING_TARGETS` instead (see the 2026-11-07 addendum).
 
 `tests/test_pylint_tier_contract.py` pins the interpreter and the release;
