@@ -208,11 +208,12 @@ handles broad style and correctness checks, and imports the stricter lint
 policy used by `leynos/episodic`. If Ruff passes, the target runs the
 `lint-docstrings` target to enforce **100% docstring coverage**: one
 `interrogate` run with `--fail-under 100` across `DOCSTRING_TARGETS` (`lading`,
-`tests`, `scripts` and `docs`, subject to Interrogate's default exclusions). No
-definition is exempt, nested test closures and test-local stub classes
-included. The target prints every scanned definition (`-vv`) and also fails on
-any `MISSED` row, because Interrogate rounds its percentage to one decimal and
-the threshold alone can pass a lone gap. If it passes, the third stage runs the
+`tests`, `scripts` and `docs`, subject to Interrogate's default exclusions and
+to its `.py` file discovery). No nested definition is exempt, test closures and
+test-local stub classes included; `[tool.interrogate]` still skips overload
+stubs. The target prints every scanned definition (`-vv`) and also fails on any
+`MISSED` row, because Interrogate rounds its percentage to one decimal and the
+threshold alone can pass a lone gap. If it passes, the third stage runs the
 pinned Pylint release under managed CPython at the project baseline through
 `uv tool run`. That stage is focused on rule families that complement Ruff,
 especially logging format safety, pattern matching checks, selected
@@ -228,7 +229,7 @@ the code-duplication gate, after which the lint gate is complete.
 including the
 [2026-09-07 addendum](adr/003-three-tier-python-linting.md#addendum-docstring-coverage-for-tests-and-scripts-2026-09-07)
 extending Interrogate coverage to `tests` and `scripts`, and the
-[2026-11-07 addendum](adr/003-three-tier-python-linting.md#addendum-no-exempt-definitions-2026-11-07)
+[2026-11-07 addendum](adr/003-three-tier-python-linting.md#addendum-no-nested-definition-exemptions-2026-11-07)
 that removed the nested-definition exemptions.
 
 ## Code-duplication gate
