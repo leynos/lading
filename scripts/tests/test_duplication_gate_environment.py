@@ -36,7 +36,7 @@ class TestGateEnvironmentAdapter:
             binary_finder: detector.BinaryFinder,
             runner: detector.CommandRunner,
         ) -> list[detector.Finding]:
-            """Record the detector arguments and return no findings."""
+            """Record the environment, binary finder and runner; return no findings."""
             observed["environment"] = environment
             observed["binary_finder"] = binary_finder
             observed["runner"] = runner

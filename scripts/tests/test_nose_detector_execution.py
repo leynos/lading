@@ -309,7 +309,7 @@ class TestRunDetector:
         """A slow detector becomes an actionable execution error."""
 
         def timeout(*_args: object, **_kwargs: object) -> typ.NoReturn:
-            """Raise a TimeoutExpired for the query after 120 seconds."""
+            """Raise a TimeoutExpired carrying a 120-second timeout, without waiting."""
             raise detector.subprocess.TimeoutExpired(["nose", "query"], 120)
 
         monkeypatch.setattr(detector.subprocess, "run", timeout)
