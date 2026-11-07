@@ -147,7 +147,7 @@ def mock_cmd_mox_modules(tmp_path: Path) -> SimpleNamespace:
             extra_env: dict[str, str],
             invocation_env: dict[str, str],
         ) -> dict[str, str]:
-            """Build a PATH that appends the shim directory and /usr/bin."""
+            """Build a PATH with the shim and /usr/bin; extra env may override it."""
             shim_dir = tmp_path / "cmox" / "shim"
             return (
                 {"PATH": f"{lookup_path}{os.pathsep}{shim_dir}{os.pathsep}/usr/bin"}

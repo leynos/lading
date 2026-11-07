@@ -180,7 +180,7 @@ def test_run_reports_lockfiles_in_dry_run(
         runner: object | None = None,
         emit_discovery_observability: bool = True,
     ) -> tuple[str, ...]:
-        """Record merge inputs and the observability flag; return merged manifests."""
+        """Record the manifests and observability flag; return the merged manifests."""
         captured["merge_lockfile_manifests"] = lockfile_manifests
         captured["emit_discovery_observability"] = emit_discovery_observability
         return merged_manifests

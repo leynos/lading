@@ -61,7 +61,7 @@ class TestBumpLockfileMessages:
             *,
             runner: object | None = None,
         ) -> tuple[Path, ...]:
-            """Return the root-relative lockfile paths without invoking Cargo."""
+            """Join the lockfile paths to workspace_root; do not invoke Cargo."""
             del lockfile_manifests, runner
             return tuple(workspace_root / path for path in lockfile_paths)
 

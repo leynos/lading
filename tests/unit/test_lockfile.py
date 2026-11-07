@@ -185,7 +185,7 @@ def test_discover_tracked_lockfiles_accepts_manifest_probe(
         return 0, "Cargo.lock\nnested/Cargo.lock\n", ""
 
     def manifest_exists(manifest_path: Path) -> bool:
-        """Record the probed manifest and accept only the root Cargo.toml."""
+        """Record the probe; accept Cargo.toml whose parent is not named nested."""
         probed.append(manifest_path)
         return (
             manifest_path.name == "Cargo.toml" and manifest_path.parent.name != "nested"

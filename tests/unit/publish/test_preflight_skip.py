@@ -77,7 +77,7 @@ def _failing_runner(
         env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
-        """Record each command and fail the first matching prefix."""
+        """Record each command and fail every one that starts with the prefix."""
         del cwd, env, echo_stdout
         recorded = tuple(command)
         calls.append(recorded)
