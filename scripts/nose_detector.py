@@ -332,6 +332,7 @@ def repository_runner(repository_root: Path) -> CommandRunner:
     """
 
     def run(command: cabc.Sequence[str]) -> str:
+        """Run the detector command from the repository root and return its output."""
         return _run_command(command, working_directory=repository_root)
 
     return run

@@ -58,9 +58,9 @@ before it is committed:
 - Ruff, Interrogate, Pylint (built-in checks) and a df12 Pylint pass run over
   every listed source. A script outside those roots is not linted, so add the
   tree to `PYTHON_SOURCE_ROOTS` rather than leaving it ungated.
-- Interrogate requires a docstring on every public definition under `tests`
-  and `scripts`; only nested test closures and test-local stub classes are
-  exempt, and only by structure.
+- Interrogate requires a docstring on every definition under `tests`,
+  `scripts` and `docs`, nested test closures and test-local stub classes
+  included.
 - The df12 `C9102` rule requires an `assert` to carry a failure message that
   names the violated expectation. Write the message for a tired teammate
   reading the failure at 3am:
