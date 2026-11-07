@@ -249,7 +249,11 @@ def test_interrogate_config_does_not_weaken_the_gate() -> None:
     """The parsed ``[tool.interrogate]`` table must not enable a nested exemption."""
     pyproject = tomllib.loads(PYPROJECT_PATH.read_text(encoding="utf-8"))
     table = pyproject["tool"]["interrogate"]
-    enabled = {key.replace("_", "-") for key, value in table.items() if value is True}
+    enabled = {
+        key.removeprefix("--").replace("_", "-")
+        for key, value in table.items()
+        if value is True
+    }
     for flag in NESTED_EXEMPTION_FLAGS:
         assert flag.removeprefix("--") not in enabled, flag
 
