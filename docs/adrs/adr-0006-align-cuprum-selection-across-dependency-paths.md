@@ -96,7 +96,7 @@ enforced by a contract test.
 - The standalone path's `cyclopts` stays at its own resolution (5.0.0) while
   the repository holds 3.24.0. Only cuprum is required to agree, because only
   cuprum's behaviour is what the release job and the suite both depend on.
-- This ADR amends [ADR-005](005-release-wheel-publication.md)'s standalone
+- This ADR amends [ADR-005](adr-0005-release-wheel-publication.md)'s standalone
   script contract. ADR-005 made the uploader a PEP 723 script that does not
   import the package; this ADR adds that the resulting second dependency path
   must be pinned and locked like the first. Nothing in ADR-005 is reversed.

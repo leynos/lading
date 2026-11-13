@@ -234,8 +234,8 @@ result would otherwise exit with status `1` and a `False` result with status
 the same check first, exiting `0` for `True` and `1` for `False`.
 
 The second pattern is what `lading` itself uses; see
-[ADR-011](adr/011-cyclopts-4-cli-result-and-diagnostic-boundary.md) for the
-full contract and its exit-code table.
+[ADR-011](adrs/adr-0011-cyclopts-4-cli-result-and-diagnostic-boundary.md) for
+the full contract and its exit-code table.
 
 Whichever pattern applies, the stream split is the same:
 

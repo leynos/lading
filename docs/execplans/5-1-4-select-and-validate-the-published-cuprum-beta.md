@@ -353,13 +353,13 @@ in `Decision log`, and escalate.
     `.so` at all, so the differing first field is a property of which wheel was
     installed rather than of the machine.
   - [x] (2026-09-25) Stage D step 2:
-        `docs/adr/006-align-cuprum-selection-across-dependency-paths.md`
+        `docs/adrs/adr-0006-align-cuprum-selection-across-dependency-paths.md`
     written, recording D1, D2, D4, D8, and D9, and linked from `docs/contents.md`
     (both the Decision records entry and its link definition). Every factual
     claim in it was verified by inspection -- the pins, the two lockfiles, the
     cyclopts divergence (3.24.0 repository vs 5.0.0 standalone), and the
     contract test's path. The style guide's ADR naming rule is corrected to
-    `NNN-short-description.md` under `docs/adr/`.
+    `NNN-short-description.md` under `docs/adrs/`.
   - [x] (2026-09-25) EP-M2 closed and committed as `1a5de20`, after re-running
     all seven gates against the staged index: `check-fmt`, `typecheck`, `lint`
     (7/7 stages, 10.00/10 twice), `test` (1200 passed, 30 skipped, no xfail,
@@ -1149,7 +1149,7 @@ in `Decision log`, and escalate.
     `PATH`.
   - Date/Author: 2026-09-25; hardened after review.
 - **D6: record the policy in design §7 and a new ADR,
-  `docs/adr/006-align-cuprum-selection-across-dependency-paths.md`.** The
+  `docs/adrs/adr-0006-align-cuprum-selection-across-dependency-paths.md`.** The
   policy covers:
   - exact pins while on a pre-release;
   - a lock on each path;
@@ -2606,7 +2606,8 @@ Documentation and skills to consult:
 - **Testing and scripts.** `docs/cmd-mox-usage-guide.md` for the cmd-mox
   fixture. `docs/scripting-standards.md` for the PEP 723, cyclopts, and cuprum
   conventions.
-- **The uploader's records.** `docs/adr/005-release-wheel-publication.md`. In
+- **The uploader's records.**
+  `docs/adrs/adr-0005-release-wheel-publication.md`. In
   `docs/developers-guide.md`: "Release workflow" and the `LADING_CATALOGUE`
   note near line 1606.
 - **Style.** `docs/documentation-style-guide.md` for the ADR and prose rules.
@@ -3093,7 +3094,7 @@ These steps form one commit.
 
 1. Run the distribution smoke checks in `Concrete steps` for the native wheel
    and the pure-Python wheel. Paste the transcripts into `Artefacts and notes`.
-2. Write `docs/adr/006-align-cuprum-selection-across-dependency-paths.md`,
+2. Write `docs/adrs/adr-0006-align-cuprum-selection-across-dependency-paths.md`,
    recording D1, D2, D4, D8, and D9, and link it from `docs/contents.md` and
    design §7. In `docs/documentation-style-guide.md`, correct the ADR path rule
    to `docs/adr/NNN-short-description.md`.

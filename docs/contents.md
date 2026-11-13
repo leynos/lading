@@ -89,13 +89,13 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
   reference on cyclomatic and cognitive complexity metrics, the bumpy road
   antipattern, and refactoring techniques that reduce cognitive load.
 
-[adr-003]: adr/003-three-tier-python-linting.md
-[adr-004]: adr/004-in-process-metrics-backend.md
-[adr-005]: adr/005-release-wheel-publication.md
-[adr-006]: adr/006-align-cuprum-selection-across-dependency-paths.md
-[adr-007]: adr/007-relay-observability-events.md
-[adr-008]: adr/008-adopt-the-shared-cv005-contract-library.md
-[adr-009]: adr/009-pypi-first-distribution-publication.md
-[adr-010]: adr/010-adopt-nose-duplication-gate.md
-[adr-011]: adr/011-cyclopts-4-cli-result-and-diagnostic-boundary.md
+[adr-003]: adrs/adr-0003-three-tier-python-linting.md
+[adr-004]: adrs/adr-0004-in-process-metrics-backend.md
+[adr-005]: adrs/adr-0005-release-wheel-publication.md
+[adr-006]: adrs/adr-0006-align-cuprum-selection-across-dependency-paths.md
+[adr-007]: adrs/adr-0007-relay-observability-events.md
+[adr-008]: adrs/adr-0008-adopt-the-shared-cv005-contract-library.md
+[adr-009]: adrs/adr-0009-pypi-first-distribution-publication.md
+[adr-010]: adrs/adr-0010-adopt-nose-duplication-gate.md
+[adr-011]: adrs/adr-0011-cyclopts-4-cli-result-and-diagnostic-boundary.md
 [execplan-regenerate-lockfiles]: execplans/regenerate-lockfiles.md

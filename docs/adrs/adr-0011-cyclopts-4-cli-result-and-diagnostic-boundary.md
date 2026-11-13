@@ -133,10 +133,10 @@ Both dependency paths state the floor this decision was verified against.
 - `scripts/upload_release_wheels.py` declares `cyclopts>=4.25.3` in its PEP
   723 block. Its committed lock, `uv lock --script`, continues to resolve
   independently and currently selects **5.0.0**. That is the same independence
-  [ADR-006](006-align-cuprum-selection-across-dependency-paths.md) records for
-  the standalone path: only cuprum is required to agree across paths, and both
-  paths are exercised by the tag-required test, so the repository covers 4.25.3
-  and 5.0.0 rather than assuming one implies the other.
+  [ADR-006](adr-0006-align-cuprum-selection-across-dependency-paths.md) records
+  for the standalone path: only cuprum is required to agree across paths, and
+  both paths are exercised by the tag-required test, so the repository covers
+  4.25.3 and 5.0.0 rather than assuming one implies the other.
 
 Dependabot pull request #316 is superseded by this change and should be closed
 once this lands.
@@ -188,8 +188,8 @@ Three exits bypass the table above and are part of the contract as stated.
 - [Cyclopts 4.25.3 calling documentation][cyclopts-calling]
 - [Cyclopts 4.25.3 packaging guidance][cyclopts-packaging]
 - [ADR-005: Draft-then-publish releases with a standalone wheel
-  uploader](005-release-wheel-publication.md)
-- [ADR-006: Align cuprum selection across dependency paths](006-align-cuprum-selection-across-dependency-paths.md)
+  uploader](adr-0005-release-wheel-publication.md)
+- [ADR-006: Align cuprum selection across dependency paths](adr-0006-align-cuprum-selection-across-dependency-paths.md)
 
 [comparison]: ../cyclopts-4-version-comparison.md
 [cyclopts-calling]: https://github.com/BrianPugh/cyclopts/blob/v4.25.3/docs/source/app_calling.rst

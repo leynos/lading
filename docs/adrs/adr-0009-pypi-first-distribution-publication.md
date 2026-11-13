@@ -75,6 +75,6 @@ standard-library staging script.
 
 ## References
 
-- [ADR-005: Draft-then-publish releases with a standalone wheel uploader](005-release-wheel-publication.md)
+- [ADR-005: Draft-then-publish releases with a standalone wheel uploader](adr-0005-release-wheel-publication.md)
 - [cuprum#488: Publish the sdist and tolerate re-run releases](https://github.com/leynos/cuprum/pull/488)
 - [lading#286: Adopt the cuprum release process](https://github.com/leynos/lading/issues/286)
