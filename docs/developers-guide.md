@@ -290,9 +290,12 @@ make duplication-allow \
 nobody asked for. They are passed through the environment, so a reason
 containing spaces, quotes, dollar signs, or command-substitution-looking text
 is stored exactly as written rather than being re-expanded as Make or shell
-program text. Recursive globs must start at a named repository directory;
-unanchored patterns such as `**/*.py` are rejected because they could silence
-every reported source file.
+program text. Recursive globs must start at a named repository directory: never
+record an unanchored pattern such as `**/*.py`, because it could silence every
+reported source file. The installed `df12-duplication` command does not yet
+refuse such keys (the vendored gate did); that gap is tracked in
+[df12-python-lints#80](https://github.com/leynos/df12-python-lints/issues/80),
+so review a new entry's keys by hand until it is closed.
 
 An entry silences a family only when **every** location it reports is covered
 by one of the entry's keys, so adding a copy in an unlisted file blocks the
