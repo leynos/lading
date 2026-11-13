@@ -127,7 +127,7 @@ lading [--workspace-root <path>] <subcommand> [options]
   `SystemExit` carrying a message is reported on stderr with status 1.
   Cyclopts's own diagnostics go to stderr and help goes to stdout. The
   contract, its exceptions, and the dependency floor are recorded in
-  [ADR-011](adr/011-cyclopts-4-cli-result-and-diagnostic-boundary.md).
+  [ADR-011](adrs/adr-0011-cyclopts-4-cli-result-and-diagnostic-boundary.md).
 
 ### 2.2. Configuration: `lading.toml`
 
@@ -989,7 +989,7 @@ migrates the call sites that the beta broke. The pin has since moved to
 relies on, without further call-site changes. The selection policy -- an exact
 pin on each path, a lock per path, cross-path alignment enforced by a contract
 test, and manual bumps -- is
-[ADR-006](adr/006-align-cuprum-selection-across-dependency-paths.md).
+[ADR-006](adrs/adr-0006-align-cuprum-selection-across-dependency-paths.md).
 
 - The repository path is `pyproject.toml` plus `uv.lock`. The standalone paths
   are the PEP 723 metadata blocks in `scripts/upload_release_wheels.py` and
@@ -1156,7 +1156,7 @@ rebuilt distribution may have different bytes under an existing filename, and
 this workflow does not reconcile those bytes across targets. The process
 uploads no PEP 740 attestations.
 
-[ADR-009](adr/009-pypi-first-distribution-publication.md) records the decision
-and trade-offs; [ADR-005](adr/005-release-wheel-publication.md) records the
-original GitHub-only flow it amends. Operational detail is in the
+[ADR-009](adrs/adr-0009-pypi-first-distribution-publication.md) records the
+decision and trade-offs; [ADR-005](adrs/adr-0005-release-wheel-publication.md)
+records the original GitHub-only flow it amends. Operational detail is in the
 [developers' guide](developers-guide.md#publishing-a-release).

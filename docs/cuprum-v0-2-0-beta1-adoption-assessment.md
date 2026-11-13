@@ -487,10 +487,10 @@ changes about them. It does not rewrite them.
 `pyproject.toml` dependency and the PEP 723 block in
 `scripts/upload_release_wheels.py`, with both lockfiles regenerated. The pin is
 exact rather than the brief's `>=0.2.0b2`, because the repository's pin helper
-and [ADR-006](adr/006-align-cuprum-selection-across-dependency-paths.md) both
-require an exact pre-release pin, and an exact pin selects the tested release
-without admitting a later beta. No call site needed a change: the beta1 forms
-remain correct in beta2.
+and [ADR-006](adrs/adr-0006-align-cuprum-selection-across-dependency-paths.md)
+both require an exact pre-release pin, and an exact pin selects the tested
+release without admitting a later beta. No call site needed a change: the beta1
+forms remain correct in beta2.
 
 **Blockers resolved natively.** beta2 supplies the two capabilities §6.1 and
 §6.2 asked for, so each blocker becomes an opt-in rather than a shim.

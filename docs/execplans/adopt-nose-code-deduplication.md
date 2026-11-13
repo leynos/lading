@@ -283,8 +283,8 @@ Main has since advanced again, to `2b6b8de`. The second rebase — onto that hea
 recorded here because the first account above stops short of it. Main landed
 `efbafb1` ("Add relay observability events",
 [#264](https://github.com/leynos/lading/pull/264)) on 2026-10-10, taking
-ADR-007 for `007-relay-observability-events.md`. This branch's record had held
-ADR-007 since the first renumber, so it moved to ADR-008 and every local
+ADR-007 for `adr-0007-relay-observability-events.md`. This branch's record had
+held ADR-007 since the first renumber, so it moved to ADR-008 and every local
 reference followed. The two-number history is the reason the pointers at that
 rebase were 008 while the first collision is described as 006→007: both
 statements are true of their own rebase.
@@ -294,7 +294,7 @@ for PyPI-first publication. The rebase onto `origin/main` at
 `ec5597e78097126dcea5784f97acde7872a180f6` therefore moved this decision from
 ADR-008 to ADR-010. The ADR index kept main's ADR-008 and ADR-009 entries, and
 the nose decision's local links now resolve to
-`docs/adr/010-adopt-nose-duplication-gate.md`.
+`docs/adrs/adr-0010-adopt-nose-duplication-gate.md`.
 
 Main also raised `requires-python` from `>=3.13` to `>=3.14` in the same period
 ([#322](https://github.com/leynos/lading/pull/322)), which obviates two of the

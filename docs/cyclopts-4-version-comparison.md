@@ -205,8 +205,8 @@ E     + Publish plan for
 
 The workspace path moved to a later line because Rich wrapped the value. This
 is the machine-consumed output contract that
-[ADR-011](adr/011-cyclopts-4-cli-result-and-diagnostic-boundary.md) preserves
-by returning the raw value and printing it once.
+[ADR-011](adrs/adr-0011-cyclopts-4-cli-result-and-diagnostic-boundary.md)
+preserves by returning the raw value and printing it once.
 
 ## Limitations
 
@@ -283,7 +283,7 @@ by returning the raw value and printing it once.
 - Superseded Dependabot pull request:
   <https://github.com/leynos/lading/pull/316>
 - [ADR-011: Preserve the CLI result and diagnostic-stream boundary under
-  Cyclopts 4](adr/011-cyclopts-4-cli-result-and-diagnostic-boundary.md)
+  Cyclopts 4](adrs/adr-0011-cyclopts-4-cli-result-and-diagnostic-boundary.md)
 
 [issue-340]: https://github.com/leynos/lading/issues/340
 [dependabot-316]: https://github.com/leynos/lading/pull/316

@@ -236,5 +236,5 @@ couple the coercers to it.
   `v0.20.0`
 - `[tool.nose]` and `[tool.duplication_gate]` in `pyproject.toml`
 - `tests/workflow_contracts/test_duplication_toolchain_contract.py`
-- [ADR-003](003-three-tier-python-linting.md) for the existing `make lint`
+- [ADR-003](adr-0003-three-tier-python-linting.md) for the existing `make lint`
   stages

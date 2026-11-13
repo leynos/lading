@@ -177,7 +177,7 @@ The rule for new code is:
   self-describing test.
 
 The full policy, the exit-code table, and the dependency floor are in
-[ADR-011](adr/011-cyclopts-4-cli-result-and-diagnostic-boundary.md).
+[ADR-011](adrs/adr-0011-cyclopts-4-cli-result-and-diagnostic-boundary.md).
 
 ## Build environment
 
@@ -223,11 +223,11 @@ version-gated diagnostics against that same baseline. The fifth stage runs
 have been redacted. The sixth stage is Skylos, a blocking, strict,
 production-only dead-code scan across `lading`. The seventh and final stage is
 the code-duplication gate, after which the lint gate is complete.
-[ADR-003](adr/003-three-tier-python-linting.md) records the policy decision,
-including the
-[2026-09-07 addendum](adr/003-three-tier-python-linting.md#addendum-docstring-coverage-for-tests-and-scripts-2026-09-07)
+[ADR-003](adrs/adr-0003-three-tier-python-linting.md) records the policy
+decision, including the
+[2026-09-07 addendum](adrs/adr-0003-three-tier-python-linting.md#addendum-docstring-coverage-for-tests-and-scripts-2026-09-07)
 extending Interrogate coverage to `tests` and `scripts`, and the
-[2026-11-07 addendum](adr/003-three-tier-python-linting.md#addendum-no-nested-definition-exemptions-2026-11-07)
+[2026-11-07 addendum](adrs/adr-0003-three-tier-python-linting.md#addendum-no-nested-definition-exemptions-2026-11-07)
 that removed the nested-definition exemptions.
 
 ## Code-duplication gate
@@ -245,9 +245,9 @@ families ranked by refactoring value. Every family must then be either
 extracted or recorded as a reasoned exception. The objective is to remove
 unjustified repeated logic and to keep intentional parallels explicitly
 reviewable, **not** to drive the duplication count down through indiscriminate
-abstraction or suppression. [ADR-010](adr/010-adopt-nose-duplication-gate.md)
-records the decision, the scan scope, and the adjudication of this repository's
-initial findings.
+abstraction or suppression.
+[ADR-010](adrs/adr-0010-adopt-nose-duplication-gate.md) records the decision,
+the scan scope, and the adjudication of this repository's initial findings.
 
 Install the detector before the first run, and after a version bump:
 
@@ -568,7 +568,7 @@ bump. The target needs `uv`, which fetches the Python the library runs under,
 and `.github/cv005.toml` holds `repository` and `interpreter = "3.14"`, which
 makes every `generate-coverage` call pin `UV_PYTHON` to the repository's
 baseline. `tests/workflow_contracts/test_cv005_wiring.py` holds the local
-wiring, and [ADR-008](adr/008-adopt-the-shared-cv005-contract-library.md)
+wiring, and [ADR-008](adrs/adr-0008-adopt-the-shared-cv005-contract-library.md)
 records the decision.
 
 The old invocation also ran pytest under `pytest-forked`. Nothing in the suite
@@ -685,8 +685,8 @@ request that edits `pyproject.toml` and `uv.lock` alone leaves the standalone
 path behind, so the selection contract fails it. The red pull request is the
 notice that a new release exists, not a merge candidate.
 
-[ADR-006](adr/006-align-cuprum-selection-across-dependency-paths.md) records
-the policy and the reasoning behind it.
+[ADR-006](adrs/adr-0006-align-cuprum-selection-across-dependency-paths.md)
+records the policy and the reasoning behind it.
 
 ## Publishing a release
 
@@ -737,12 +737,13 @@ validation and distribution attestations remain possible follow-ups. The
 workflow does not block tags based on the cuprum version, so retain the release
 procedure: no final lading 0.x release until cuprum 0.2.0 final is available.
 
-[ADR-009](adr/009-pypi-first-distribution-publication.md) records the decision
-and trade-offs. It amends [ADR-005](adr/005-release-wheel-publication.md),
-which documents the original GitHub-only wheel uploader. The workflow contracts
-are in `tests/workflow_contracts/test_release_workflow.py`; checked-in
-collection, staging, and publication steps run against scratch directories and
-stand-in tools from `tests/workflow_contracts/test_release_steps.py`, and the
+[ADR-009](adrs/adr-0009-pypi-first-distribution-publication.md) records the
+decision and trade-offs. It amends
+[ADR-005](adrs/adr-0005-release-wheel-publication.md), which documents the
+original GitHub-only wheel uploader. The workflow contracts are in
+`tests/workflow_contracts/test_release_workflow.py`; checked-in collection,
+staging, and publication steps run against scratch directories and stand-in
+tools from `tests/workflow_contracts/test_release_steps.py`, and the
 draft-creation step from `tests/workflow_contracts/test_release_gh_steps.py`.
 `make test` runs all three sets.
 
@@ -814,9 +815,9 @@ because the termination matters more than the tree.
 and then re-raises the signal under its default disposition, so cleaning up
 does not swallow the termination. It is installed from `lading.cli.main` rather
 than on import, for the same reason the metrics summary's `atexit` hook is
-registered there ([ADR-004](adr/004-in-process-metrics-backend.md)): exit-time
-behaviour should be a visible lifecycle decision rather than an import side
-effect.
+registered there ([ADR-004](adrs/adr-0004-in-process-metrics-backend.md)):
+exit-time behaviour should be a visible lifecycle decision rather than an
+import side effect.
 
 Two safeguards keep this honest.
 `tests/e2e/test_staging_cleanup_on_termination.py` signals a real process
@@ -1969,9 +1970,9 @@ avoids exporter dependencies such as `prometheus_client` or `statsd`: a lading
 invocation is a short-lived CLI process whose logs are already aggregated, so
 the summary line is the operational boundary. Tests use `counter_value`,
 `duration_stats`, `snapshot`, and `reset` as deterministic seams.
-[ADR-004](adr/004-in-process-metrics-backend.md) records this backend decision,
-including why label values such as `missing_crate` are kept verbatim rather
-than bucketed.
+[ADR-004](adrs/adr-0004-in-process-metrics-backend.md) records this backend
+decision, including why label values such as `missing_crate` are kept verbatim
+rather than bucketed.
 
 Defined metrics:
 
@@ -2076,7 +2077,7 @@ fields:
 Events never contain subprocess payloads, decoded output, command arguments, or
 other unbounded subprocess data. This per-decision contract is separate from
 the aggregate exit-time metrics in `lading.utils.metrics`; see
-[ADR-007](adr/007-relay-observability-events.md).
+[ADR-007](adrs/adr-0007-relay-observability-events.md).
 
 The cmd-mox runner validates `CMOX_IPC_TIMEOUT` in `_resolve_cmd_mox_timeout`.
 The two operator-facing messages it raises live as a single source of truth in

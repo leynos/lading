@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. Amended by [ADR-009](009-pypi-first-distribution-publication.md).
+Accepted. Amended by [ADR-009](adr-0009-pypi-first-distribution-publication.md).
 
 ## Date
 
@@ -68,7 +68,7 @@ exit status but not the publication order, and would leave multi-command gate
 logic in a `run:` block, which the repository's scripting standard rules out.
 
 Importing `lading.utils.metrics` (see
-[ADR-004](004-in-process-metrics-backend.md)) for the outcome signal was
+[ADR-004](adr-0004-in-process-metrics-backend.md)) for the outcome signal was
 rejected. The uploader is a standalone PEP 723 script that does not import the
 package, and the workflow step is shorter lived than even a `lading` run, so
 the job log and `GITHUB_OUTPUT` are the signals a consumer can actually read.
@@ -89,7 +89,7 @@ the job log and `GITHUB_OUTPUT` are the signals a consumer can actually read.
 
 ## Addendum, 2026-10-13: PyPI-first publication
 
-[ADR-009](009-pypi-first-distribution-publication.md) amends this release
+[ADR-009](adr-0009-pypi-first-distribution-publication.md) amends this release
 process. Tagged releases now publish an sdist and every wheel to PyPI through
 Trusted Publishing before attaching any missing filenames to the GitHub
 Release. The GitHub-only wheel process above remains the historical decision;

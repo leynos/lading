@@ -88,7 +88,7 @@ script that read error text from stdout must read stderr instead. The complete
 contract, including the exit-status table, is in
 [Output streams and exit codes](users-guide.md#output-streams-and-exit-codes);
 the decision is recorded in
-[ADR-011](adr/011-cyclopts-4-cli-result-and-diagnostic-boundary.md).
+[ADR-011](adrs/adr-0011-cyclopts-4-cli-result-and-diagnostic-boundary.md).
 
 ## Why the floor moved
 

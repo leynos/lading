@@ -344,7 +344,7 @@ production execution. See the assessment §§1-3 and §7.
     script execution with a stub `gh`, and no GitHub release was published by
     validation. Evidence: the distribution smoke in the plan's `Artefacts and
     notes` ran both the native and pure-Python wheels; the selection policy is
-    [ADR-006](adr/006-align-cuprum-selection-across-dependency-paths.md).
+    [ADR-006](adrs/adr-0006-align-cuprum-selection-across-dependency-paths.md).
   - Consequence: no final lading 0.x release until the pin moves to cuprum
     0.2.0 final (D8, and #286 for the release process).
 - [ ] 5.1.5. Record the adapter compatibility policy in the design document.

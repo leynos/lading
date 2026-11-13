@@ -280,7 +280,7 @@ Wheels from releases tagged before this change declare the older
 release is tagged while the pin names a pre-release, so no newly tagged wheel
 carries the beta. That release gate is a procedure rather than an automated
 check, as recorded in
-[ADR-006](adr/006-align-cuprum-selection-across-dependency-paths.md). See
+[ADR-006](adrs/adr-0006-align-cuprum-selection-across-dependency-paths.md). See
 [Changing the cuprum version](developers-guide.md#changing-the-cuprum-version)
 for the maintainer procedure.
 
@@ -913,4 +913,5 @@ The exit status is:
 
 A command that fails always exits non-zero, whether it is run through the
 installed `lading` script or through `python -m lading.cli`. The policy is
-recorded in [ADR-011](adr/011-cyclopts-4-cli-result-and-diagnostic-boundary.md).
+recorded in
+[ADR-011](adrs/adr-0011-cyclopts-4-cli-result-and-diagnostic-boundary.md).

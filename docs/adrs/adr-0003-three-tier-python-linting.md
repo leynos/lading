@@ -159,7 +159,7 @@ Adopted 2026-09-27. This amendment supersedes the six-stage ordering in the
 decision above by adding a seventh stage; the other six stages are unchanged.
 
 The accepted decision above states that Skylos is the final, blocking check.
-[ADR-010](010-adopt-nose-duplication-gate.md) adopts a blocking
+[ADR-010](adr-0010-adopt-nose-duplication-gate.md) adopts a blocking
 code-duplication gate, and `make lint` runs it after Skylos as its seventh and
 last stage. The gate is the only stage that inspects the repository as a whole
 for repetition rather than checking each module on its own, so it has to
