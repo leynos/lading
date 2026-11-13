@@ -205,40 +205,22 @@ DF12_PYLINT_BASE = $(UV_ENV) $(UV) run --isolated --python $(DF12_PYTHON) \
 DF12_PYLINT = $(DF12_PYLINT_BASE) --enable=$(DF12_PYLINT_MESSAGES)
 AMBRLEAKS = $(UV_ENV) $(UV) tool run --python $(DF12_PYTHON) \
 	--from '$(DF12_PYTHON_LINTS)' ambrleaks
-SKYLOS_VERSION ?= 4.33.2
-# Skylos parses source using its own Python AST, so an interpreter at the
-# project baseline prevents phantom dead-code findings from syntax older tool
-# runtimes cannot parse.
-SKYLOS_CLI ?= $(UV_ENV) $(UV) tool run --python $(PYTHON_BASELINE) --from 'skylos==$(SKYLOS_VERSION)' skylos
-SKYLOS ?= $(SKYLOS_CLI) --config-file pyproject.toml
-SKYLOS_PRODUCTION_TARGETS ?= lading
-SKYLOS_EXCLUDE_FOLDERS ?= tests
-SKYLOS_WHITELIST_LOCK ?= .skylos-whitelist.lock
-# Pin the nose duplication detector so `make` and CI install the same release.
-# Bump the three sites together: this variable, the NOSE_VERSION environment in
-# .github/workflows/ci.yml, and [tool.nose].version in pyproject.toml.
-# tests/workflow_contracts/test_duplication_toolchain_contract.py fails on drift.
-NOSE_VERSION ?= 0.20.0
-NOSE_TOOLS_DIR ?= .tools/nose
-NOSE_BIN ?= $(NOSE_TOOLS_DIR)/nose
-# Pin both the published archive and its executable. The release checksum
-# files are informative; these committed values are the trust boundary.
-NOSE_ARCHIVE_SHA256_AARCH64_APPLE_DARWIN ?= c737cb0e571f1a9b91020d7610443b8d3c885a552f690375315d1ce29330e6a5
-NOSE_BINARY_SHA256_AARCH64_APPLE_DARWIN ?= 8ee79b8be2ba84893daad563776165d192ab2717ac3fa24e24d6cc03e6df77da
-NOSE_ARCHIVE_SHA256_X86_64_APPLE_DARWIN ?= a2fd52a09dcfdb1ae84cada859d4b5a824af8e8dd93a37809ff1c61336134505
-NOSE_BINARY_SHA256_X86_64_APPLE_DARWIN ?= 445e75bb5a84eb1a3efbb6fbe299570b985e567e4613e6bb65ce9d336e534e42
-NOSE_ARCHIVE_SHA256_AARCH64_UNKNOWN_LINUX_GNU ?= d98f95398655bdcadfd849c71088361358058b660d7f702b5ac8bd12db205454
-NOSE_BINARY_SHA256_AARCH64_UNKNOWN_LINUX_GNU ?= d6e4b57dce8f9bb698de23165b63a418bf844ee5b53047f7bcebe25aca00f27e
-NOSE_ARCHIVE_SHA256_X86_64_UNKNOWN_LINUX_GNU ?= ae28f5fdd845570c1e9d4d2b2149d25c80952bea0a5ddbe9396b28880c1f4717
-NOSE_BINARY_SHA256_X86_64_UNKNOWN_LINUX_GNU ?= 05d2a2df2a9f0a1ab92ed91c0032e5cbd1e2098ab5b25f85dfefaa5329956a69
-# The gate wrapper is PEP 723 tooling: `uv run` reads its inline metadata and
-# resolves cyclopts/tomlkit on its own interpreter, so the gate never imports
-# lading or touches the project virtualenv.
-DUPLICATION_GATE = $(UV_ENV) NOSE_BIN=$(NOSE_BIN) $(UV) run scripts/duplication_gate.py
+# The dead-code gate is the installed df12-skylos command; its `skylos` extra
+# carries the one Skylos pin. Skylos parses source with its own runtime AST, so
+# the tool environment runs the project baseline interpreter or newer.
+DF12_GATES_SHA = 56ad71721c3f1f2164ec84b69150582488f1a927
+DF12_GATES = git+https://github.com/leynos/df12-python-lints.git@$(DF12_GATES_SHA)
+SKYLOS = $(UV_ENV) $(UV) tool run --python $(PYTHON_BASELINE) --from \
+	'df12-python-lints[skylos] @ $(DF12_GATES)' df12-skylos
+# The duplication gate is the installed df12-duplication command. It downloads
+# the nose release named by [tool.nose] version and verifies it against the
+# digest table shipped in the package, so no nose pin lives here.
+DUPLICATION = $(UV_ENV) $(UV) tool run --from \
+	'df12-python-lints[duplication] @ $(DF12_GATES)' df12-duplication
 
 .PHONY: help all clean build build-release lint lint-docstrings fmt check-fmt test-workflow-contracts \
 	markdownlint nixie spelling test typecheck crosshair \
-	makeutil skylos-allow install-nose duplication duplication-test \
+	makeutil skylos skylos-allow duplication \
 	duplication-allow $(TOOLS) $(VENV_TOOLS)
 
 .DEFAULT_GOAL := all
@@ -316,129 +298,45 @@ lint-docstrings: ## Enforce complete Python docstring coverage
 	    exit 1; \
 	  fi
 
-lint: build $(UV) interrogate install-nose ## Run linters
+lint: build $(UV) interrogate skylos duplication ## Run linters
 	$(RUFF) check $(RUFF_FORCE_EXCLUDE) $(RUFF_TARGETS)
 	$(MAKE) --no-print-directory lint-docstrings
 	$(PYLINT) $(PYLINT_TARGETS)
 	$(DF12_PYLINT) $(PYLINT_TARGETS)
 	$(AMBRLEAKS) tests
-	$(SKYLOS) $(SKYLOS_PRODUCTION_TARGETS) --exclude $(SKYLOS_EXCLUDE_FOLDERS) --category dead_code --gate \
-		--format concise --no-upload --no-provenance --no-grep-verify
-	$(DUPLICATION_GATE) check
 
-# Accept FIRST/SECOND/SECOND_KEYS_JSON/REASON only from the make command line.
-# Ambient values must not satisfy the duplication targets: `FIRST` and
-# `REASON` are common enough names that an exported environment could
-# otherwise record an exception nobody asked for. `cli_value` therefore reads
-# a variable only when the command line set it. Values travel to the recipes
-# through `export`, so quoted JSON and reasons containing `$` or `$(...)` are
-# passed through literally rather than re-expanded as Make or shell text.
+skylos: ## Detect dead production code
+	$(SKYLOS) check --repository .
+
+# Accept FIRST/SECOND/REASON only from the make command line. Ambient values
+# must not satisfy the duplication targets: `FIRST` and `REASON` are common
+# enough names that an exported environment could otherwise record an exception
+# nobody asked for. `cli_value` therefore reads a variable only when the
+# command line set it. Values travel to the recipes through `export`, so
+# reasons containing `$` or `$(...)` are passed through literally rather than
+# re-expanded as Make or shell text.
 cli_value = $(if $(filter command line,$(origin $(1))),$(value $(1)))
 
 skylos-allow: export SKYLOS_SYMBOL = $(value SYMBOL)
 skylos-allow: export SKYLOS_REASON = $(value REASON)
-skylos-allow: ## Document one named Skylos exception, not an entry point
-	@case "$${SKYLOS_SYMBOL}" in *[![:space:]]*) ;; *) printf "Error: SYMBOL is required for a named whitelist exception\\n" >&2; exit 2;; esac
-	@case "$${SKYLOS_REASON}" in *[![:space:]]*) ;; *) printf "Error: REASON is required for a named whitelist exception\\n" >&2; exit 2;; esac
-	flock "$(SKYLOS_WHITELIST_LOCK)" env $(SKYLOS_CLI) whitelist "$${SKYLOS_SYMBOL}" --reason "$${SKYLOS_REASON}"
+skylos-allow: ## Document one named Skylos exception (SYMBOL=name REASON=text)
+	$(SKYLOS) allow --repository . --symbol="$${SKYLOS_SYMBOL}" --reason="$${SKYLOS_REASON}"
 
-install-nose: ## Install the pinned nose duplication detector
-	@set -eu; \
-	os="$$(uname -s)"; \
-	arch="$$(uname -m)"; \
-	case "$$os:$$arch" in \
-	  Linux:x86_64) \
-	    target=x86_64-unknown-linux-gnu; \
-	    archive_checksum=$(NOSE_ARCHIVE_SHA256_X86_64_UNKNOWN_LINUX_GNU); \
-	    binary_checksum=$(NOSE_BINARY_SHA256_X86_64_UNKNOWN_LINUX_GNU) ;; \
-	  Linux:aarch64|Linux:arm64) \
-	    target=aarch64-unknown-linux-gnu; \
-	    archive_checksum=$(NOSE_ARCHIVE_SHA256_AARCH64_UNKNOWN_LINUX_GNU); \
-	    binary_checksum=$(NOSE_BINARY_SHA256_AARCH64_UNKNOWN_LINUX_GNU) ;; \
-	  Darwin:x86_64) \
-	    target=x86_64-apple-darwin; \
-	    archive_checksum=$(NOSE_ARCHIVE_SHA256_X86_64_APPLE_DARWIN); \
-	    binary_checksum=$(NOSE_BINARY_SHA256_X86_64_APPLE_DARWIN) ;; \
-	  Darwin:arm64|Darwin:aarch64) \
-	    target=aarch64-apple-darwin; \
-	    archive_checksum=$(NOSE_ARCHIVE_SHA256_AARCH64_APPLE_DARWIN); \
-	    binary_checksum=$(NOSE_BINARY_SHA256_AARCH64_APPLE_DARWIN) ;; \
-	  *) printf 'Unsupported nose release platform: %s:%s\n' "$$os" "$$arch" >&2; exit 2 ;; \
-	esac; \
-	sha256_stdin() { \
-	  if [ "$$os" = Darwin ]; then shasum -a 256 | cut -d ' ' -f 1; \
-	  else sha256sum | cut -d ' ' -f 1; fi; \
-	}; \
-	sha256_file() { sha256_stdin < "$$1"; }; \
-	nose_bin="$(NOSE_BIN)"; \
-	if [ -x "$$nose_bin" ]; then \
-	  installed_checksum="$$(sha256_file "$$nose_bin" || true)"; \
-	  if [ "$$installed_checksum" = "$$binary_checksum" ]; then \
-	    installed_version="$$( "$$nose_bin" --version 2>/dev/null || true )"; \
-	    if [ "$$installed_version" = "nose $(NOSE_VERSION)" ]; then \
-	      printf 'Verified nose %s at %s\n' "$(NOSE_VERSION)" "$$nose_bin"; \
-	      exit 0; \
-	    fi; \
-	  fi; \
-	fi; \
-	archive="$$(mktemp)"; \
-	nose_tmp=; \
-	trap 'unlink "$$archive" 2>/dev/null || true; if [ -n "$$nose_tmp" ]; then unlink "$$nose_tmp" 2>/dev/null || true; fi' EXIT; \
-	curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 -o "$$archive" \
-	  "https://github.com/corca-ai/nose/releases/download/v$(NOSE_VERSION)/nose-cli-$$target.tar.xz"; \
-	actual_archive_checksum="$$(sha256_file "$$archive")"; \
-	if [ "$$actual_archive_checksum" != "$$archive_checksum" ]; then \
-	  printf 'nose %s archive digest mismatch for %s\n' "$(NOSE_VERSION)" "$$target" >&2; exit 1; \
-	fi; \
-	archive_binary="nose-cli-$$target/nose"; \
-	actual_binary_checksum="$$(tar -xJOf "$$archive" "$$archive_binary" | sha256_stdin)"; \
-	if [ "$$actual_binary_checksum" != "$$binary_checksum" ]; then \
-	  printf 'nose %s executable digest mismatch for %s\n' "$(NOSE_VERSION)" "$$target" >&2; exit 1; \
-	fi; \
-	mkdir -p "$(dir $(NOSE_BIN))"; \
-	nose_tmp="$$(mktemp "$(NOSE_BIN).tmp.XXXXXX")"; \
-	tar -xJOf "$$archive" "$$archive_binary" > "$$nose_tmp"; \
-	chmod 755 "$$nose_tmp"; \
-	mv -f "$$nose_tmp" "$$nose_bin"; \
-	actual_installed_checksum="$$(sha256_file "$$nose_bin")"; \
-	if [ "$$actual_installed_checksum" != "$$binary_checksum" ]; then \
-	  printf 'Installed nose %s executable digest mismatch\n' "$(NOSE_VERSION)" >&2; exit 1; \
-	fi; \
-	installed_version="$$( "$$nose_bin" --version 2>/dev/null )"; \
-	if [ "$$installed_version" != "nose $(NOSE_VERSION)" ]; then \
-	  printf 'Installed nose reports %s, expected nose %s\n' "$$installed_version" "$(NOSE_VERSION)" >&2; exit 1; \
-	fi; \
-	printf 'Installed verified nose %s at %s\n' "$(NOSE_VERSION)" "$$nose_bin"
-
-duplication: install-nose ## Run the blocking code-duplication gate
-	$(DUPLICATION_GATE) check
-
-# The gate wrapper and its helper tests run on their own tooling environment,
-# not the project virtualenv: `uv run --no-project` ignores pyproject.toml and
-# resolves the pinned dependencies from the inline script metadata. The
-# application suite may collect them when those dependencies are available;
-# the helper conftest skips them when any are missing. This target always runs
-# them in the pinned, isolated environment.
-duplication-test: ## Run the duplication-gate helper tests
-	@$(UV_ENV) NOSE_BIN=$(NOSE_BIN) $(UV) run --no-project \
-		--python $(PYTHON_BASELINE) \
-		--with pytest==9.1.1 --with cyclopts==4.25.2 \
-		--with tomlkit==0.15.1 --with syrupy==5.5.3 \
-		--with 'hypothesis[asyncio]==6.163.0' \
-		python -m pytest -c /dev/null --rootdir=. -p no:cacheprovider scripts/tests/
+duplication: ## Run the blocking code-duplication gate
+	$(DUPLICATION) install
+	$(DUPLICATION) check
 
 duplication-allow: export DUPLICATION_FIRST = $(call cli_value,FIRST)
 duplication-allow: export DUPLICATION_SECOND = $(call cli_value,SECOND)
-duplication-allow: export DUPLICATION_SECOND_KEYS_JSON = $(call cli_value,SECOND_KEYS_JSON)
 duplication-allow: export DUPLICATION_REASON = $(call cli_value,REASON)
 duplication-allow: ## Record one reasoned duplication exception
-	@test -n "$${DUPLICATION_FIRST}" || { printf "Error: FIRST is required (path[::name])\\n" >&2; exit 2; }
-	@test -n "$${DUPLICATION_REASON}" || { printf "Error: REASON is required for a duplication exception\\n" >&2; exit 2; }
-	@test -z "$${DUPLICATION_SECOND}" || test -z "$${DUPLICATION_SECOND_KEYS_JSON}" || { printf "Error: use SECOND or SECOND_KEYS_JSON, not both\\n" >&2; exit 2; }
-	$(DUPLICATION_GATE) allow --first "$${DUPLICATION_FIRST}" \
-		$(if $(call cli_value,SECOND),--second "$${DUPLICATION_SECOND}",) \
-		$(if $(call cli_value,SECOND_KEYS_JSON),--second-keys-json "$${DUPLICATION_SECOND_KEYS_JSON}",) \
-		--reason "$${DUPLICATION_REASON}"
+	@case "$${DUPLICATION_FIRST}" in *[![:space:]]*) ;; *) printf "Error: FIRST is required (path[::name])\\n" >&2; exit 2;; esac
+	@case "$${DUPLICATION_REASON}" in *[![:space:]]*) ;; *) printf "Error: REASON is required for a duplication exception\\n" >&2; exit 2;; esac
+	@case "$${DUPLICATION_SECOND}" in *[![:print:][:space:]]*) printf "Error: SECOND members must be printable text\\n" >&2; exit 2;; esac
+	@$(DUPLICATION) install
+	@set -f; set --; for key in $${DUPLICATION_SECOND}; do set -- "$$@" --second "$$key"; done; \
+		$(DUPLICATION) allow --first "$${DUPLICATION_FIRST}" "$$@" \
+			--reason "$${DUPLICATION_REASON}"
 
 typecheck: build $(UV) ## Run typechecking
 	$(UV_ENV) $(TY) check --python-version $(PYTHON_BASELINE) \

@@ -249,34 +249,20 @@ abstraction or suppression.
 [ADR-010](adrs/adr-0010-adopt-nose-duplication-gate.md) records the decision,
 the scan scope, and the adjudication of this repository's initial findings.
 
-Install the detector before the first run, and after a version bump:
+The gate is the installed `df12-duplication` command from
+[df12-python-lints](https://github.com/leynos/df12-python-lints), pinned by
+commit in the Makefile (`DF12_GATES_SHA`). `make duplication` runs
+`df12-duplication install` first, which downloads the `nose` release named by
+`[tool.nose] version` into `.tools/nose` and verifies it against the digest
+table shipped in the package; it is a no-op when the binary is already present
+and correct. Source compilation never happens, so a missing release artefact
+fails provisioning. `NOSE_BIN` overrides the binary location; a relative value
+resolves against the repository root. The command's behaviour, tests and
+benchmarks live in df12-python-lints, and CI runs it through the shared-actions
+`df12-duplication` action. Bumping the package means editing `DF12_GATES_SHA`
+here and the action SHAs in `.github/workflows/ci.yml`.
 
-```bash
-make install-nose
-```
-
-The target is idempotent: it reuses a binary only when both its reported
-version and SHA-256 match the committed pins. Otherwise it downloads the
-official prebuilt release for Linux x86-64 or ARM64, or macOS Intel or Apple
-Silicon, and checks the archive and executable digests before installing it into
-`.tools/nose`. The hashes in the Makefile are the trust boundary; a published
-checksum sidecar does not authenticate itself. Missing or mismatched bytes and
-unsupported platforms fail provisioning. CI uses the same installer, and its
-cache key includes the Makefile so binaries from the earlier version-only
-installer cannot be reused. `NOSE_BIN` overrides the binary location; a
-relative value resolves against the repository root, so the override works from
-any working directory. The CLI adapter reads `NOSE_BIN` and `PATH` and passes
-them with the repository root in a `NoseEnvironment` value. The detector
-wrapper receives a binary finder callable, while unit tests supply environment
-values and finders directly instead of patching process globals. The default
-process runner uses that supplied root as its working directory, and an absent
-or empty `PATH` does not fall back to a host search path.
-
-The detector version is pinned in three places -- `NOSE_VERSION` in the
-Makefile, the `NOSE_VERSION` environment in `.github/workflows/ci.yml`, and
-`[tool.nose].version` in `pyproject.toml` -- and
-`tests/workflow_contracts/test_duplication_toolchain_contract.py` fails when
-they disagree. Bump all three together.
+The detector version lives only in `[tool.nose].version` in `pyproject.toml`.
 
 ### Recording an exception
 
@@ -289,27 +275,24 @@ make duplication-allow \
   REASON='Why these two must remain separate.'
 ```
 
-For a family with several additional members, pass one JSON array through
-`SECOND_KEYS_JSON`:
+For a family with several additional members, pass them as one
+whitespace-separated `SECOND` value (each member becomes its own `--second`):
 
 ```bash
 make duplication-allow \
   FIRST='lading/commands/example.py' \
-  SECOND_KEYS_JSON='["lading/commands/other.py", "lading/commands/third.py"]' \
+  SECOND='lading/commands/other.py lading/commands/third.py' \
   REASON='Why these contracts must remain separate.'
 ```
 
-`FIRST` and `REASON` are required. Use either one `SECOND` value or a
-`SECOND_KEYS_JSON` array, not both. Values are accepted only when supplied on
-the `make` command line, so exported environment values cannot record an
-exception nobody asked for. They are passed through literally, so a reason
+`FIRST` and `REASON` are required. Values are accepted only when supplied on the
+`make` command line, so exported environment values cannot record an exception
+nobody asked for. They are passed through the environment, so a reason
 containing spaces, quotes, dollar signs, or command-substitution-looking text
 is stored exactly as written rather than being re-expanded as Make or shell
-program text. Direct calls to `scripts/duplication_gate.py allow` can still
-repeat `--second` and also accept the same JSON array through
-`--second-keys-json`. Recursive globs must start at a named repository
-directory; unanchored patterns such as `**/*.py` are rejected because they
-could silence every reported source file.
+program text. Recursive globs must start at a named repository directory;
+unanchored patterns such as `**/*.py` are rejected because they could silence
+every reported source file.
 
 An entry silences a family only when **every** location it reports is covered
 by one of the entry's keys, so adding a copy in an unlisted file blocks the
@@ -331,8 +314,7 @@ concluding that a clean run means the codebase is duplication-free:
 
 - `exclude` globs are anchored to each scan **root**, not to the repository
   root, so a repository-relative glob such as `scripts/tests/**` matches
-  nothing and excludes no files. Write them `**/`-prefixed; a contract test
-  rejects the silently-inert form.
+  nothing and excludes no files. Write them `**/`-prefixed.
 - `top = 30` bounds the adjudicated surface rather than describing the scan.
   Allowed families still occupy places in it, and lower-ranked families are
   measured but not enforced.
@@ -345,21 +327,6 @@ The gate fails **closed**. A missing or wrong-version binary, a timeout, a
 failed command, malformed JSON, or an invalid report shape raises with a
 diagnostic rather than being treated as an empty findings list, so a gate that
 could not run never reports success.
-
-### Running the helper tests
-
-```bash
-make duplication-test
-```
-
-The gate modules and their tests are pinned PEP 723 tooling: `uv` reads the
-inline script metadata and resolves `cyclopts` and `tomlkit` on its own
-interpreter, so the gate never imports `lading` and never touches the project
-virtualenv. The helper tests run on their own interpreter for the same reason.
-When any required tooling dependency is unavailable,
-`scripts/tests/conftest.py` excludes the helper tests from application-suite
-collection. When all required tooling dependencies are available, the
-application suite can collect them.
 
 The relevant Makefile variables are:
 
@@ -437,21 +404,16 @@ The relevant Makefile variables are:
   that same baseline without replacing the project's `.venv` interpreter.
 - `AMBRLEAKS` — isolated `df12-python-lints` tool invocation used to scan
   Syrupy snapshots under `tests`.
-- `SKYLOS_VERSION` — the pinned Skylos release used by the command-only CLI
-  macro; defaults to `4.33.2`.
-- `SKYLOS_CLI` — the Skylos CLI invocation, pinned to `$(PYTHON_BASELINE)`.
-  Skylos parses source using its own runtime AST; pinning the interpreter to
-  the project baseline prevents phantom findings when newer Python syntax is
-  present.
-- `SKYLOS` — the configured Skylos scan command used by `make lint`; global
-  scan options such as `--config-file` are kept separate from the CLI macro.
-- `SKYLOS_EXCLUDE_FOLDERS` — folders excluded from the production Skylos scan;
-  this keeps test modules out of the blocking dead-code gate.
-- `SKYLOS_WHITELIST_LOCK` — lock file used to serialize concurrent
-  `make skylos-allow` updates.
-- `SKYLOS_PRODUCTION_TARGETS` — source directories checked for dead code;
-  defaults to `lading` so test-only references do not keep application symbols
-  live.
+- `DF12_GATES_SHA` — the df12-python-lints commit that provides the Skylos and
+  duplication gates, separate from the v0.3.0 tag that provisions Pylint and
+  `ambrleaks`.
+- `SKYLOS` — the installed `df12-skylos` command, run under
+  `$(PYTHON_BASELINE)`. The package's `skylos` extra carries the one Skylos
+  pin. Skylos parses source using its own runtime AST, so the interpreter
+  prevents phantom findings when newer Python syntax is present. The production
+  roots live in `[tool.df12_skylos]` and the exclusions in `[tool.skylos]`,
+  which keeps test modules out of the blocking dead-code gate.
+- `DUPLICATION` — the installed `df12-duplication` command.
 
 The `lint` target depends on `build`, `uv`, and `interrogate`, so it creates
 and syncs the virtual environment before checking virtual-environment tools.
@@ -494,11 +456,11 @@ allow-list; do not add unexplained broad exceptions.
 
 Use `make skylos-allow SYMBOL=... REASON=...` only when no typed entry-point
 rule can model the boundary. Both values must contain non-whitespace content;
-the target rejects missing or whitespace-only values. `NAME` must not be used:
-WSL injects it with the hostname. The target invokes Skylos as
-`skylos whitelist <symbol> --reason <reason>` and serializes documented
-whitelist writes. Never use a broad or unreasoned exception, and remove
-allow-list entries when the runtime boundary disappears.
+`df12-skylos allow` rejects missing or whitespace-only values. `NAME` must not
+be used: WSL injects it with the hostname. The command serializes documented
+whitelist writes under the ignored `.pyproject.toml.df12.lock`. Never use a
+broad or unreasoned exception, and remove allow-list entries when the runtime
+boundary disappears.
 
 ## Testing hooks
 

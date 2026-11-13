@@ -113,16 +113,20 @@ analysis only: no uploads, no provenance collection, and no repository-wide
 grep verification, so the gate stays deterministic and test-only references
 cannot be mistaken for application liveness. Skylos never modifies source files.
 
-Skylos is invoked through a command-only macro, `$(SKYLOS_CLI)`, that pins both
-the interpreter and the release:
-`uv tool run --python 3.14 --from 'skylos==$(SKYLOS_VERSION)' skylos`. Skylos
-parses source through its own runtime AST, so fixing the interpreter version
-prevents phantom findings for syntax added by newer Python releases, and the
-release pin keeps local and Continuous Integration (CI) runs on the same rule
-set. Scan options are held separately in `$(SKYLOS)`, so the command macro
-stays reusable by the whitelist target. That tool environment is deliberately
-independent of the project lock file, so the interpreter and the release are
-both pinned on the command line rather than resolved from `uv.lock`.
+Skylos is invoked through the `$(SKYLOS)` macro, which runs the installed
+`df12-skylos` command from df12-python-lints under a fixed interpreter (see the
+2026-11-13 update below). Skylos parses source through its own runtime AST, so
+fixing the interpreter version prevents phantom findings for syntax added by
+newer Python releases, and the package's `skylos` extra carries the one release
+pin that keeps local and Continuous Integration (CI) runs on the same rule set.
+That tool environment is deliberately independent of the project lock file, so
+the interpreter and the package are both pinned on the command line rather than
+resolved from `uv.lock`.
+
+Update, 2026-11-13: the Skylos production roots now live in
+`[tool.df12_skylos]` and its exclusions in `[tool.skylos]`; the earlier
+`SKYLOS_*` Makefile variables, whitelist lock recipe and Makefile contract
+tests were removed, and the behaviour is tested once in df12-python-lints.
 
 Every finding remains subject to caller verification. Genuine dead code is
 removed. For a verified false positive, contributors must first use a typed
