@@ -83,7 +83,7 @@
   the PR or execution record.
 - **Decision history:** Preserve accepted ADR decisions; record subsequent
   changes through the
-  [ADR amendment and supersession process](docs/documentation-style-guide.md#architectural-decision-records-adrs).
+  [ADR amendment process](docs/documentation-style-guide.md#architectural-decision-records-adrs).
 - **Completed execplans:** Completed execplans are historical documents and
   should reflect the state of the repository at time of implementation. Do not
   retroactively update completed execplan documents to reflect subsequent
@@ -138,7 +138,7 @@
     must not be used for Skylos symbols. Skylos records the symbol only, so
     retain the caller-specific rationale with the reviewing change.
   - **Code duplication:** Passes the blocking nose duplication gate
-    (`make duplication`, run as the final stage of `make lint`). The objective
+    (`make duplication`, a prerequisite of `make lint`). The objective
     is to remove unjustified repeated logic and keep intentional parallels
     explicitly reviewable, **not** to reach a low duplication count through
     indiscriminate abstraction or suppression. Investigate every reported
@@ -264,8 +264,8 @@ guidance does not apply here, so it is not imported.
     examples in module and function docstrings are executed.
 - `make typecheck` runs `ty check` on the Python sources at the 3.14 baseline.
 - `make fmt` applies the fixes: `ruff format`, `ruff check --select I --fix`,
-  the Markdown formatter in place, and `markdownlint-cli2 --fix` over all
-  Markdown files.
+  the Markdown formatter in place (excluding the vendored cuprum guides), and
+  `markdownlint-cli2 --fix` over the Markdown files it selects.
 - `make markdownlint` runs the en-GB-oxendict spelling gate before
   `markdownlint-cli2` over the tracked Markdown files.
 - `make nixie` validates Mermaid diagrams.
@@ -296,15 +296,17 @@ guidance does not apply here, so it is not imported.
 ## Markdown guidance
 
 - Validate Markdown files using `make markdownlint`.
-- Run `make fmt` after documentation changes to format all Markdown files and
-  fix table markup.
+- Run `make fmt` after documentation changes to format Markdown files, except
+  the vendored cuprum guides, and fix table markup.
 - Validate Mermaid diagrams in Markdown by running `make nixie`.
 - Markdown paragraphs and bullet points must be wrapped at 80 columns.
 - Code blocks must be wrapped at 120 columns.
 - Tables and headings must not be wrapped.
 - Use dashes (`-`) for list bullets.
 - Use GitHub-flavoured Markdown footnotes (`[^1]`) for references and
-  footnotes.
+  footnotes. Exception: roadmap-shaped Markdown processed by the `mapsplice`
+  tool must cite references with inline links instead, because the `mapsplice`
+  roadmap grammar rejects footnote references.
 - Avoid first-person prose outside README and BDD feature files; allow
   second-person prose in README, AGENTS, BDD feature files, and agent skill
   directories. These exceptions qualify the documentation style guide.
