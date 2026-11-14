@@ -497,11 +497,10 @@ do_not_mutate = ["lading/testing/*"]
 [tool.uv]
 package = true
 
-# Settings for the pinned `nose` duplication detector, read by
-# scripts/nose_detector.py. `version` is enforced against the Makefile's
-# NOSE_VERSION and the CI workflow by
-# tests/workflow_contracts/test_duplication_toolchain_contract.py; bump all
-# three together.
+# Settings for the pinned `nose` duplication detector, read by the installed
+# `df12-duplication` command from df12-python-lints. `version` is the only
+# detector pin; the command verifies the downloaded release against the digest
+# table shipped in the package.
 #
 # `roots` are the maintained first-party Python roots a duplicated region may
 # be reported in. `tests/` is deliberately absent: nose reports 190 families
@@ -620,6 +619,16 @@ members = [
     "scripts/release_gh.py",
 ]
 reason = "Fragment-level overlap in the Cuprum import blocks for two independent command adapters. The formatter and release adapter need the same narrow execution primitives, while their program catalogues, documentation boundaries and command contracts remain distinct. A shared import or catalogue module would add a cross-command dependency without sharing behaviour. nose reports this as unnamed fragments, so the file keys are broader than the import blocks; re-adjudicate if either script is reorganised."
+
+# The dead-code gate is the installed `df12-skylos` command from
+# df12-python-lints. `roots` limits liveness analysis to production sources and
+# the exclusion keeps the test tree out of the liveness graph.
+[tool.df12_skylos]
+roots = ["lading"]
+python = "3.14"
+
+[tool.skylos]
+exclude = ["tests"]
 
 [tool.skylos.gate]
 strict = true

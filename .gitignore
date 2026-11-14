@@ -52,8 +52,8 @@ coverage.xml
 .uv-cache/
 .uv-tools/
 # Provisioned binaries, installed by target rather than committed: the
-# duplication gate's `make install-nose` fetches a pinned nose release into
-# .tools/nose. The directory is per-checkout, so a clean tree here says
+# duplication gate's `df12-duplication install` fetches a pinned nose release
+# into .tools/nose. The directory is per-checkout, so a clean tree here says
 # nothing about whether it exists elsewhere; keeping it ignored stops a
 # local tool download from showing up as an uncommitted change.
 .tools/
@@ -195,12 +195,11 @@ cython_debug/
 .skylos/cache/
 .skylos/runs/
 .skylos/contribution/
-.skylos-whitelist.lock
 
-# Pinned tool binaries installed by `make install-nose`, and the sidecar lock
-# held while `make duplication-allow` rewrites pyproject.toml:
+# Pinned tool binaries installed by `df12-duplication install`, and the sidecar
+# lock the df12 gates hold while they rewrite pyproject.toml:
 .tools/
-.pyproject.toml.duplication-gate.lock
+.pyproject.toml.df12.lock
 
 # PyPI configuration file
 .pypirc

@@ -114,8 +114,8 @@
     couple. Never reduce the ranking
     budget, raise the size floor, or widen an exception merely to obtain a
     green run. Never use a repository-wide wildcard, a mass-generated reason,
-    or automatic allowlisting. Run `make install-nose` first if the pinned
-    detector is absent. [ADR-010](docs/adrs/adr-0010-adopt-nose-duplication-gate.md)
+    or automatic allowlisting. `make duplication` provisions the pinned
+    detector itself. [ADR-010](docs/adrs/adr-0010-adopt-nose-duplication-gate.md)
     records the policy.
   - **Formatting:** Adheres to formatting standards (`make check-fmt`; use
     `make fmt` to apply fixes).
