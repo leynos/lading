@@ -318,13 +318,11 @@ concluding that a clean run means the codebase is duplication-free:
 - `exclude` globs are anchored to each scan **root**, not to the repository
   root, so a repository-relative glob such as `scripts/tests/**` matches
   nothing and excludes no files. Write them `**/`-prefixed.
-- `top = 30` bounds the adjudicated surface rather than describing the scan.
-  Allowed families still occupy places in it, and lower-ranked families are
-  measured but not enforced.
-- Stale-entry reporting means "unmatched in this scan", not "proven gone". A
-  family can fall below the ranking bound and be reported as unmatched while
-  its duplication is intact. Confirm a removal by inspecting the source or by
-  running a deliberately widened `top=0` scan before deleting an entry.
+- `top = 0` asks for every family, so the adjudicated surface is the whole
+  scan and nothing is measured but not enforced. concordat's
+  `python-duplication-gate` rule (NS-001) requires it.
+- Stale-entry reporting means "unmatched in this scan", not "proven gone".
+  Confirm a removal by inspecting the source before deleting an entry.
 
 The gate fails **closed**. A missing or wrong-version binary, a timeout, a
 failed command, malformed JSON, or an invalid report shape raises with a
