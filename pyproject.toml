@@ -521,16 +521,16 @@ package = true
 # Every channel is pinned explicitly so a change to nose's own defaults cannot
 # silently widen or narrow the gate. `min-size` counts nose intermediate
 # language tokens, not Python lines or AST nodes. `surface = "all"` includes
-# families nose keeps off its dashboard, but it does not make `top = 30`
-# exhaustive: only the thirty highest-value families are adjudicated, and
-# allowed families still occupy places in that surface.
+# families nose keeps off its dashboard, and `top = 0` asks for every family,
+# so none is truncated; concordat's python-duplication-gate rule (NS-001)
+# requires `top = 0`.
 [tool.nose]
 version = "0.20.0"
 roots = ["lading", "scripts"]
 mode = "syntax,semantic,near"
 min-size = 24
 surface = "all"
-top = 30
+top = 0
 exclude = ["**/tests/**"]
 
 # Reasoned exceptions to the duplication gate. Each entry silences one family
@@ -545,8 +545,8 @@ exclude = ["**/tests/**"]
 # the tightest key available. The consequence is recorded where it matters: an
 # entry covers its whole file, so a *new* family arising inside one of these
 # files would be silenced too. Removing an entry is manual and deliberate --
-# absence from the ranked surface means "unmatched in this scan", not proven
-# gone, and a lower-ranked family may simply have fallen below `top`.
+# absence from the report means "unmatched in this scan"; the scan reports
+# every family (`top = 0`), so confirm with source inspection before deleting.
 [tool.duplication_gate]
 
 [[tool.duplication_gate.allow]]
@@ -612,13 +612,6 @@ reason = "A deliberate cross-platform pair: the Windows (msvcrt) and POSIX (fcnt
 [[tool.duplication_gate.allow]]
 unit = "lading/toml_coerce/_scalars.py"
 reason = "Two single-statement rejection calls differing only in the expected-type noun ('a string' versus 'a boolean'). The shared helper, _reject, already exists; a further extraction would only rename the noun argument. NOTE: this key covers the whole file."
-
-[[tool.duplication_gate.allow]]
-members = [
-    "scripts/format_markdown.py",
-    "scripts/release_gh.py",
-]
-reason = "Fragment-level overlap in the Cuprum import blocks for two independent command adapters. The formatter and release adapter need the same narrow execution primitives, while their program catalogues, documentation boundaries and command contracts remain distinct. A shared import or catalogue module would add a cross-command dependency without sharing behaviour. nose reports this as unnamed fragments, so the file keys are broader than the import blocks; re-adjudicate if either script is reorganised."
 
 # The dead-code gate is the installed `df12-skylos` command from
 # df12-python-lints. `roots` limits liveness analysis to production sources and
