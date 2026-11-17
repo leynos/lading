@@ -21,6 +21,8 @@ from lading.commands import publish, publish_plan, publish_staging
 from tests.unit.publish_staging_plan_fixtures import _plan_with_roles
 
 if typ.TYPE_CHECKING:
+    from syrupy.assertion import SnapshotAssertion
+
     from tests.unit.conftest import PreparationFixtures
 
 _POPULATED_PATHS = (
@@ -330,6 +332,31 @@ def test_live_publish_warns_only_when_git_is_excluded(
 
     assert (".gitignore" in caplog.text) is should_warn, (
         "the warning must appear exactly when the upload loses gitignore selection"
+    )
+
+
+def test_live_publish_warning_message_is_pinned(
+    preparation_fixtures: PreparationFixtures,
+    caplog: pytest.LogCaptureFixture,
+    snapshot: SnapshotAssertion,
+) -> None:
+    """The warning an operator acts on keeps its exact wording."""
+    plan = _plan_with_roles(preparation_fixtures)
+    options = publish.PublishOptions(
+        build_directory=preparation_fixtures.tmp_path / "staging", live=True
+    )
+    with _stage_capturing_logs(plan, options, caplog, stage_exclude=(".git",)):
+        pass
+
+    warnings = [
+        record.getMessage()
+        for record in caplog.records
+        if record.levelno == logging.WARNING
+        and record.name == "lading.commands.publish_staging"
+    ]
+    assert len(warnings) == 1, "exactly one live-publish warning must be logged"
+    assert warnings[0] == snapshot, (
+        "the live-publish warning must match the locked snapshot"
     )
 
 

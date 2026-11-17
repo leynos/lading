@@ -1,0 +1,4 @@
+# serializer version: 1
+# name: test_staging_summary_payload_is_pinned
+  'lading metrics summary: [{"metric": "publish.staging", "labels": {"outcome": "success"}, "value": 1}, {"metric": "publish.staging.duration", "labels": {}, "count": 1, "total_seconds": 2.5}]'
+# ---

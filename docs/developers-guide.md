@@ -1659,8 +1659,11 @@ matching. That module owns three things:
   the way the kernel resolves it: the parent directory is resolved first, then
   the link text is joined, so a `..` inside the text applies to the physical
   parent rather than the lexical one. Each link in the parent chain is still
-  walked separately, so that resolution loses no dependency. If the workspace
-  cannot be read to answer the question at all, `_validate_stage_exclude` raises
+  walked separately, so that resolution loses no dependency. A manifest link
+  that names nothing, because its target is missing or the chain loops, is
+  treated as absent: there is no target staging could have copied. Any other
+  failure to inspect it, such as a permission denial, is not turned into
+  absence, so a genuinely unreadable workspace raises
   `StageExcludeInspectionError`, a `PublishPreparationError` subclass that
   `_stage` counts apart from a refused pattern.
 
