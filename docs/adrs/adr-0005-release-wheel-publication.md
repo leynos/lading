@@ -25,20 +25,22 @@ when `dist/wheels-*` did not exist, and `xargs -r` then ran nothing and exited
 zero. Separately, `softprops/action-gh-release` publishes immediately by
 default, so the release was already visible before the upload ran at all.
 
-Both `v0.3.0` and `v0.3.1` published with no wheel attached and a green job.
-Each was completed by hand afterwards (issue #266). A release that ships
-nothing has to be indistinguishable from no release at all, and the job that
-produced it has to fail.
+The issue #256 ticket reports that `v0.3.0` had no wheel attached and that the
+wheel was added by hand. Workflow comments report that `v0.3.0` and `v0.3.1`
+were live without wheels. This ADR does not independently verify those outcomes
+from run logs. A release that ships nothing has to be indistinguishable from no
+release at all, and the job that produced it has to fail.
 
 ## Decision
 
 Publication is the last thing the release job does, and the work that could
 fail runs in Python rather than in a shell.
 
-- The release is created with `draft: true`. The download and upload steps run
-  next. A final step clears the flag with
-  `gh release edit "$GITHUB_REF_NAME" --draft=false`. A failure anywhere in
-  between leaves a draft, which is not a release anyone can install from.
+- The collector downloads and validates distributions before a draft exists.
+  The release job then creates or reuses a draft, uploads distributions, and
+  clears the flag with `gh release edit "$GITHUB_REF_NAME" --draft=false`.
+  Collection failures happen before draft creation; upload failures leave the
+  release as a draft that is not available for installation.
 - The download names the artefact (`name: wheels-pure`), so the wheel's
   location does not depend on the action's default layout.
 - Wheel discovery, the empty case, and the upload move into
@@ -77,8 +79,9 @@ the job log and `GITHUB_OUTPUT` are the signals a consumer can actually read.
 
 - A visible release always has its wheel. This is now a user-facing guarantee,
   stated in the [users' guide](../users-guide.md#install-from-a-tagged-release).
-- A failed release leaves a draft that a maintainer must delete or rerun the
-  tag against. That is deliberate: the draft is the evidence of what failed.
+- A collection failure leaves no draft because collection runs first. A later
+  upload failure leaves a draft that a maintainer must delete or rerun the tag
+  against. That draft records a release that was not ready to publish.
 - The uploader is the first script in this repository to run `gh`. Its cuprum
   catalogue allowlists `gh` alone, and that boundary covers the script, not the
   job, which also runs `uv` and its pinned actions.
@@ -105,17 +108,16 @@ attached by hand; it also reports that `v0.2.0` retained its wheel. The
 workflow comments report that `v0.3.0` and `v0.3.1` were live without wheels.
 These are attributed reports, not verified run-log details.
 
-The original download omitted `name` and left `merge-multiple` false. In the
-pinned v4 implementation, an explicit `name` selects one artefact for direct
-extraction into `path`; an unnamed all-artefacts download extracts each result
-under `path/<artefact-name>`, even when one artefact matches. The pinned v8
-implementation also extracts one result from an unnamed all-artefacts download
-directly into `path`; it creates per-artefact directories only when several
-artefacts match and `merge-multiple` is false. See the pinned v4 and v8
-implementations.[^1][^2] With one `wheels-pure` artefact, the former
-`find dist/wheels-*` pipeline found no path under v8. The failed `find` was
-masked because `xargs -r` ran no upload and returned zero; without `pipefail`,
-the pipeline therefore exited zero.
+The original download omitted `name` and left `merge-multiple` false. A named
+single-artefact download extracts directly into `path` in both pinned versions.
+Without `name`, v4 puts every matching artefact under `path/<artefact-name>`,
+even when one matches. In v8, an unnamed single match goes directly into
+`path`; per-artefact directories are created only when several artefacts match
+and `merge-multiple` is false. See the pinned v4 and v8
+implementations.[^1][^2] With one `wheels-pure` artefact and no `name`, the
+former `find dist/wheels-*` pipeline matched the v4 layout but found no path
+under v8. The failed `find` was masked because `xargs -r` ran no upload and
+returned zero; without `pipefail`, the pipeline therefore exited zero.
 
 The current workflow names `wheels-pure` and downloads it to `dist`. It uses
 `scripts/upload_release_wheels.py`, which fails when no distribution is found,

@@ -323,14 +323,16 @@ def test_github_release_is_uploaded_and_published_in_order() -> None:
     ), "GitHub CLI operations should use the tag, workflow token and repository context"
 
 
-@pytest.mark.parametrize("state", ["absent", "existing"])
+@pytest.mark.parametrize("state", ["absent", "existing", "unexpected"])
 def test_draft_release_creation_is_idempotent(tmp_path: Path, state: str) -> None:
-    """Exercise draft creation for absent and existing releases."""
+    """Create absent drafts, reuse existing ones, and reject inspection errors."""
     create = _find_named_step(RELEASE_WORKFLOW, CREATE_RELEASE_STEP, job="release")
     gh_stub = (
         'gh() { printf "%s\\n" "$*" >> "$GH_STUB_LOG"; '
         'if [[ "$GH_STUB_STATE" == absent && "$2" == view ]]; then '
-        'echo "release not found" >&2; return 1; fi; return 0; }\n'
+        'echo "release not found" >&2; return 1; '
+        'elif [[ "$GH_STUB_STATE" == unexpected && "$2" == view ]]; then '
+        'echo "permission denied" >&2; return 2; fi; return 0; }\n'
     )
     call_log = tmp_path / state
     env = dict(
@@ -350,10 +352,27 @@ def test_draft_release_creation_is_idempotent(tmp_path: Path, state: str) -> Non
         check=False,
         shell=False,
     )
-    assert result.returncode == 0, f"{state} release probe failed: {result.stderr}"
     expected_calls = ["release view v-test"]
-    if state == "absent":
-        expected_calls.append("release create v-test --draft --generate-notes")
+    match state:
+        case "absent":
+            assert result.returncode == 0, (
+                f"{state} release probe failed: {result.stderr}"
+            )
+            expected_calls.append("release create v-test --draft --generate-notes")
+        case "existing":
+            assert result.returncode == 0, (
+                f"{state} release probe failed: {result.stderr}"
+            )
+        case "unexpected":
+            assert result.returncode == 2, (
+                "unexpected gh view failure must fail the step"
+            )
+            assert "permission denied" in result.stderr, (
+                "unexpected inspection error must reach stderr"
+            )
+            assert "Could not inspect release" in result.stderr, (
+                "the workflow must report release inspection failures"
+            )
     calls = call_log.read_text(encoding="utf-8").splitlines()
     assert calls == expected_calls, f"{state} release invoked gh unexpectedly"
 
