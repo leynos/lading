@@ -9,6 +9,8 @@ check agrees with what the copy actually leaves behind.
 """
 
 import dataclasses as dc
+import errno
+import os
 import tempfile
 from pathlib import Path
 
@@ -264,6 +266,32 @@ def test_stage_exclude_ignores_a_self_referencing_manifest_link(
     # follows it and no inspection failure is raised.
     publish_stage_exclude._validate_stage_exclude(
         plan, ("shared",), preserve_symlinks=True
+    )
+
+
+def test_stage_exclude_reports_an_unreadable_manifest(
+    preparation_fixtures: PreparationFixtures,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A permission failure is an inspection failure, not a silent absence."""
+    plan = _plan_with_roles(preparation_fixtures)
+    manifest = plan.workspace_root / "Cargo.toml"
+    real_stat = Path.stat
+
+    def deny_unreadable(self: Path, *, follow_symlinks: bool = True) -> os.stat_result:
+        if self == manifest:
+            raise PermissionError(errno.EACCES, "permission denied", str(self))
+        return real_stat(self, follow_symlinks=follow_symlinks)
+
+    monkeypatch.setattr(Path, "stat", deny_unreadable)
+
+    with pytest.raises(publish_stage_exclude.StageExcludeInspectionError) as excinfo:
+        publish_stage_exclude._validate_stage_exclude(
+            plan, ("shared",), preserve_symlinks=True
+        )
+
+    assert "could not inspect the workspace" in str(excinfo.value), (
+        "an unreadable manifest must surface as an inspection failure"
     )
 
 

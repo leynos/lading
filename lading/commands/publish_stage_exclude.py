@@ -21,6 +21,7 @@ is how a reader asks for any depth.
 """
 
 import collections.abc as cabc
+import errno
 import fnmatch
 import os
 import typing as typ
@@ -250,11 +251,42 @@ def _preserved_dependencies(path: Path, workspace_root: Path) -> cabc.Iterator[P
         pending.extend(_unseen_link_targets(current, workspace_root, seen))
 
 
+def _is_absent(path: Path) -> bool:
+    """Return whether ``path`` names nothing staging could copy.
+
+    :meth:`Path.exists` reports every :class:`OSError` as absence, so an
+    unreadable directory would hide behind a silently accepted exclusion and
+    the run would fail later, during the copy, instead of being reported as an
+    inspection failure. Only a missing entry, a non-directory component, or a
+    looping link counts as absent; any other failure is left to the caller.
+
+    Returns
+    -------
+    bool
+        Whether ``path`` names nothing staging could copy.
+
+    Raises
+    ------
+    OSError
+        If ``path`` exists but cannot be inspected for a reason other than a
+        loop, such as a permission denial.
+    """
+    try:
+        path.stat()
+    except FileNotFoundError, NotADirectoryError:
+        return True
+    except OSError as error:
+        if error.errno == errno.ELOOP:
+            return True
+        raise
+    return False
+
+
 def _preserved_link_exclusion(
     manifest: Path, workspace_root: Path, patterns: cabc.Sequence[str]
 ) -> tuple[PurePosixPath, str] | None:
     """Return the excluded dependency of a preserved manifest, if any."""
-    if not manifest.exists():
+    if _is_absent(manifest):
         # A broken chain has no target staging could have copied, and a pattern
         # is not what broke it.
         return None

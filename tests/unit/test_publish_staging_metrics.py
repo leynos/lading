@@ -6,6 +6,7 @@ make a slow or refused staging attributable in the run's metric summary.
 """
 
 import collections.abc as cabc
+import logging
 import shutil
 import typing as typ
 
@@ -20,6 +21,8 @@ from lading.commands import (
 from lading.utils import metrics
 
 if typ.TYPE_CHECKING:
+    from syrupy.assertion import SnapshotAssertion
+
     from tests.unit.conftest import PreparationFixtures
 
 
@@ -165,4 +168,39 @@ def test_staging_records_a_failed_copy(
     ), "a copy error must be counted as a failure"
     assert metrics.duration_stats(publish_staging.STAGING_DURATION_METRIC).count == 1, (
         "a failed copy must still record its duration"
+    )
+
+
+def test_staging_summary_payload_is_pinned(
+    preparation_fixtures: PreparationFixtures,
+    caplog: pytest.LogCaptureFixture,
+    snapshot: SnapshotAssertion,
+) -> None:
+    """The exit summary keeps the exact staging records operators read.
+
+    The duration comes from the injected clock, so the snapshot pins the
+    payload shape rather than wall time.
+    """
+    plan = _plan(preparation_fixtures)
+    build_directory = preparation_fixtures.tmp_path / "build"
+    options = publish.PublishOptions(build_directory=build_directory, cleanup=False)
+    ticks = iter([100.0, 102.5])
+
+    preparation, _, _ = publish_staging._stage(
+        plan, options, stage_exclude=("venv",), clock=lambda: next(ticks)
+    )
+    try:
+        caplog.set_level(logging.INFO, logger="lading.utils.metrics")
+        metrics.emit_summary()
+    finally:
+        shutil.rmtree(preparation.staging_root)
+
+    summaries = [
+        record.getMessage()
+        for record in caplog.records
+        if "metrics summary" in record.getMessage()
+    ]
+    assert len(summaries) == 1, "exactly one metrics summary line must be emitted"
+    assert summaries[0] == snapshot, (
+        "the staging summary payload must match the locked snapshot"
     )
