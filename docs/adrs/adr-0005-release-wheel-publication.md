@@ -2,11 +2,12 @@
 
 ## Status
 
-Accepted. Amended by [ADR-009](adr-0009-pypi-first-distribution-publication.md).
+Accepted. Amended by [ADR-009](adr-0009-pypi-first-distribution-publication.md)
+and issue `#256` (2026-11-21).
 
 ## Date
 
-2026-09-15
+2026-11-21
 
 ## Context and problem statement
 
@@ -25,11 +26,13 @@ when `dist/wheels-*` did not exist, and `xargs -r` then ran nothing and exited
 zero. Separately, `softprops/action-gh-release` publishes immediately by
 default, so the release was already visible before the upload ran at all.
 
-The issue #256 ticket reports that `v0.3.0` had no wheel attached and that the
-wheel was added by hand. Workflow comments report that `v0.3.0` and `v0.3.1`
-were live without wheels. This ADR does not independently verify those outcomes
-from run logs. A release that ships nothing has to be indistinguishable from no
-release at all, and the job that produced it has to fail.
+The last accepted Context recorded that both `v0.3.0` and `v0.3.1` had no wheel
+attached and a green job, and that each was completed by hand afterwards for
+issue `#266`. That account is preserved as history, not as a verified run-log
+fact. The issue `#256` ticket reports that `v0.3.0` lacked a wheel and that it
+was attached by hand; workflow comments report that `v0.3.0` and `v0.3.1` were
+live without wheels. A release that ships nothing has to be indistinguishable
+from no release at all, and the job that produced it has to fail.
 
 ## Decision
 
@@ -96,15 +99,21 @@ Trusted Publishing before attaching any missing filenames to the GitHub
 Release. The GitHub-only wheel process above remains the historical decision;
 ADR-009 records the current order, retry rules, and trade-offs.
 
-## Addendum, 2026-11-04: Incident account and workflow contracts
+## Amendments
 
-Adopted 2026-11-04. This addendum corrects the incident account without
-rewriting the accepted ADR. The claim above that both `v0.3.0` and `v0.3.1` had
-no wheel, green jobs, and manual repairs is not independently verified by run
-logs here. Issue #256 reports that `v0.3.0` lacked a wheel and that it was
-attached by hand; it also reports that `v0.2.0` retained its wheel. The
-workflow comments report that `v0.3.0` and `v0.3.1` were live without wheels.
-These are attributed reports, not verified run-log details.
+### 2026-11-04: Incident account and workflow contracts
+
+Clarified on 2026-11-21 to preserve the accepted account as history while
+stating its evidentiary status.
+
+The accepted Context previously stated that both `v0.3.0` and `v0.3.1`
+published with no wheel attached and a green job, and that each was completed
+by hand afterwards for issue `#266`. This wording is retained here as
+historical text, not as a verified run-log account. The issue `#256` ticket
+reports that `v0.3.0` lacked a wheel and that it was attached by hand; workflow
+comments report that `v0.3.0` and `v0.3.1` were live without wheels. The ticket
+also reports that `v0.2.0` retained its wheel. This ADR does not independently
+verify those outcomes from run logs.
 
 The original download omitted `name` and left `merge-multiple` false. A named
 single-artefact download extracts directly into `path` in both pinned versions.
@@ -124,10 +133,11 @@ and passes the release tag through `"$TAG"`. The Phase 1 contract tests in
 `tests/workflow_contracts/test_release_workflow.py` tie the producer artefact,
 job dependency, download name and path, and uploader directory together. They
 also assert the current order: collect and validate the artefacts, create or
-reuse the draft, upload distributions, then publish. Collection failures occur
-before draft creation; upload failures leave the release unpublished as a
-draft. The named download and Python uploader remove the path ambiguity and
-silent empty-upload failure modes.
+reuse the release, upload distributions, then publish. Collection failures
+occur before draft creation. An upload failure leaves a newly created draft
+unpublished. A rerun for an already published tag reuses that published
+release, so an upload failure leaves it published. The named download and
+Python uploader remove the path ambiguity and silent empty-upload failure modes.
 
 [^1]: [Pinned `actions/download-artifact` v4 source](https://github.com/actions/download-artifact/blob/fa0a91b85d4f404e444e00e005971372dc801d16/src/download-artifact.ts).
 [^2]: [Pinned `actions/download-artifact` v8 source](https://github.com/actions/download-artifact/blob/9000827ccba6bdab643e8b6fd33ac0654aef8333/src/download-artifact.ts).

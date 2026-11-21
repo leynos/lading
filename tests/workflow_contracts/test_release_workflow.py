@@ -159,8 +159,14 @@ def _upload_tokens(step: WorkflowStep) -> list[str]:
 def _single_command_source(command: str) -> str:
     """Join shell line continuations and reject additional command lines."""
     source = SHELL_LINE_CONTINUATION.sub(r"\1", command).strip()
-    assert len(source.splitlines()) == 1, "uploader step must contain one shell command"
+    assert len(source.splitlines()) == 1, "step must contain one shell command"
     return source
+
+
+def _publish_tokens(step: WorkflowStep) -> list[str]:
+    """Tokenize a standalone release publication command."""
+    command = _single_command_source(step["run"])
+    return shlex.split(command, comments=True, posix=False)
 
 
 def _collection_publish_directory() -> str:
@@ -277,6 +283,23 @@ def test_upload_tokens_accept_escaped_line_continuations() -> None:
     ], "escaped line continuation must remain one uploader invocation"
 
 
+def test_publish_tokens_reject_unescaped_command_newlines() -> None:
+    """A newline cannot turn publication arguments into a second command."""
+    command = 'gh release edit "$TAG"\n--draft=false'
+    with pytest.raises(AssertionError, match="one shell command"):
+        _publish_tokens({"run": command})
+
+
+def test_publish_tokens_accept_escaped_line_continuations() -> None:
+    """A shell continuation keeps publication arguments in one command."""
+    command = 'gh release edit "$TAG" \\\n--draft=false'
+    assert _publish_tokens({"run": command}) == [
+        *PUBLISH_COMMAND,
+        '"$TAG"',
+        "--draft=false",
+    ], "escaped line continuation must remain one publication command"
+
+
 def test_pypi_order_uses_oidc_and_uv_simple_index_check() -> None:
     """Collection, interpreter setup, staging and publication run in order."""
     steps = _job_steps("publish-pypi")
@@ -344,7 +367,7 @@ def test_github_release_is_uploaded_and_published_in_order() -> None:
     assert upload["env"]["TAG"] == "${{ github.ref_name }}", (
         "the uploader must receive the tag from the workflow ref"
     )
-    publish_tokens = _step_tokens(publish, posix=False)
+    publish_tokens = _publish_tokens(publish)
     assert publish_tokens == publication_tokens, (
         f"publish must run the standalone gh release edit command, got {publish_tokens}"
     )
@@ -384,6 +407,7 @@ def test_draft_release_creation_is_idempotent(tmp_path: Path, state: str) -> Non
         text=True,
         check=False,
         shell=False,
+        timeout=10,
     )
     expected_calls = ["release view v-test"]
     match state:
