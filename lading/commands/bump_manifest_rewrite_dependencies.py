@@ -11,7 +11,7 @@ import typing as typ
 from tomlkit.container import OutOfOrderTableProxy
 from tomlkit.items import InlineTable, Item, Table
 
-from lading.commands import bump_toml
+from lading.commands import bump_toml, bump_toml_dependencies
 
 if typ.TYPE_CHECKING:
     from tomlkit.toml_document import TOMLDocument
@@ -48,7 +48,7 @@ def rewrite_dependency_requirements(
     '[dependencies]\nalpha = "^2.0.0"'
     """
     changed = False
-    for section in bump_toml.DEPENDENCY_SECTIONS:
+    for section in bump_toml_dependencies.DEPENDENCY_SECTIONS:
         changed |= _rewrite_dependency_section(
             document, (section,), updated_crate_names, target_version
         )
@@ -89,7 +89,7 @@ def _rewrite_target_selector(
 ) -> bool:
     """Rewrite each supported dependency section under one target selector."""
     changed = False
-    for section in bump_toml.DEPENDENCY_SECTIONS:
+    for section in bump_toml_dependencies.DEPENDENCY_SECTIONS:
         changed |= _rewrite_dependency_section(
             document,
             ("target", selector, section),
@@ -116,7 +116,9 @@ def _rewrite_dependency_section(
     }
     if not matching_names:
         return False
-    return bump_toml.update_section(document, path, matching_names, target_version)
+    return bump_toml_dependencies.update_section(
+        document, path, matching_names, target_version
+    )
 
 
 def _is_matching_dependency(

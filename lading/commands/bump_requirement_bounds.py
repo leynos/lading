@@ -4,6 +4,11 @@
 its version is replaced with the target. :func:`excluding_retained_bounds`
 checks later comparators that remain verbatim. :mod:`lading.commands.bump_toml`
 uses both results to warn without changing the user's comparator operators.
+
+Examples
+--------
+>>> excluding_retained_bounds(">=0.6.0, <0.6", "0.6.0")
+('<0.6',)
 """
 
 import re

@@ -37,7 +37,7 @@ from markdown_it import MarkdownIt
 from tomlkit import parse as parse_toml
 from tomlkit.exceptions import TOMLKitError
 
-from lading.commands import bump_toml
+from lading.commands import bump_toml, bump_toml_dependencies
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -317,7 +317,9 @@ def _update_single_dependency_section(
     table = bump_toml.select_table(document, (section,))
     if table is None:
         return False
-    return bump_toml.update_dependency_table(table, dependency_targets, target_version)
+    return bump_toml_dependencies.update_dependency_table(
+        table, dependency_targets, target_version
+    )
 
 
 def update_toml_snippet_dependencies(
@@ -346,7 +348,7 @@ def update_toml_snippet_dependencies(
         return False
 
     changed = False
-    for section in bump_toml.DEPENDENCY_SECTIONS:
+    for section in bump_toml_dependencies.DEPENDENCY_SECTIONS:
         if _update_single_dependency_section(
             document, section, dependency_targets, target_version
         ):

@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from tomlkit import parse as parse_toml
 
-from lading.commands import bump, bump_manifests, bump_toml
+from lading.commands import bump, bump_manifests, bump_toml_dependencies
 from tests.helpers.workspace_builders import _load_version
 
 
@@ -69,7 +69,7 @@ def test_update_dependency_sections_workspace_flag(
         '[dependencies]\nalpha = "0.1.0"\n\n'
         '[workspace.dependencies]\nalpha = "^0.1.0"\n'
     )
-    changed = bump_toml.update_dependency_sections(
+    changed = bump_toml_dependencies.update_dependency_sections(
         document,
         {"dependencies": ("alpha",)},
         "1.0.0",
@@ -87,7 +87,7 @@ def test_update_dependency_sections_workspace_flag(
 def test_update_dependency_sections_workspace_only() -> None:
     """When only workspace sections exist, they are updated with the flag."""
     document = parse_toml('[workspace.dependencies]\nalpha = "0.1.0"\n')
-    changed = bump_toml.update_dependency_sections(
+    changed = bump_toml_dependencies.update_dependency_sections(
         document,
         {"dependencies": ("alpha",)},
         "2.0.0",
@@ -105,7 +105,7 @@ def test_update_dependency_sections_workspace_dev_and_build() -> None:
         '[workspace.dev-dependencies]\nalpha = "~0.1.0"\n\n'
         '[workspace.build-dependencies]\nbeta = { version = "0.1.0" }\n'
     )
-    changed = bump_toml.update_dependency_sections(
+    changed = bump_toml_dependencies.update_dependency_sections(
         document,
         {"dev-dependencies": ("alpha",), "build-dependencies": ("beta",)},
         "3.0.0",

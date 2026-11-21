@@ -1,9 +1,8 @@
 """Tests for the canonical Cargo dependency-section vocabulary.
 
-Issue #103: the section names live once in
-:data:`lading.commands.bump_toml.DEPENDENCY_SECTIONS`; the kind mapping in
-``bump`` and the snippet rewriting in ``bump_docs`` must stay in agreement
-with it.
+Issue #103: the canonical names live in
+``bump_toml_dependencies.DEPENDENCY_SECTIONS``; the kind mapping in ``bump``
+and the snippet rewriting in ``bump_docs`` must stay in agreement with it.
 """
 
 import typing as typ
@@ -12,7 +11,7 @@ import hypothesis.strategies as st
 from hypothesis import given, settings
 from tomlkit import parse as parse_toml
 
-from lading.commands import bump_docs, bump_manifests, bump_toml
+from lading.commands import bump_docs, bump_manifests, bump_toml_dependencies
 
 if typ.TYPE_CHECKING:
     from syrupy.assertion import SnapshotAssertion
@@ -24,7 +23,7 @@ def test_kind_mapping_agrees_with_canonical_sections() -> None:
     """Every mapped section is canonical and every canonical section is mapped."""
     mapped = set(bump_manifests._DEPENDENCY_SECTION_BY_KIND.values())
 
-    assert mapped == set(bump_toml.DEPENDENCY_SECTIONS), (
+    assert mapped == set(bump_toml_dependencies.DEPENDENCY_SECTIONS), (
         "the kind mapping and the canonical section list must agree exactly"
     )
 
@@ -33,7 +32,7 @@ def test_workspace_dependency_sections_use_canonical_vocabulary() -> None:
     """The workspace manifest update targets exactly the canonical sections."""
     sections = bump_manifests._workspace_dependency_sections(["alpha", "beta"])
 
-    assert tuple(sections) == bump_toml.DEPENDENCY_SECTIONS, (
+    assert tuple(sections) == bump_toml_dependencies.DEPENDENCY_SECTIONS, (
         "workspace updates must target the canonical sections in order"
     )
     assert all(names == {"alpha", "beta"} for names in sections.values()), (
@@ -51,7 +50,7 @@ def _render_manifest(sections: tuple[str, ...]) -> str:
 
 @settings(max_examples=40)
 @given(
-    present=st.sets(st.sampled_from(bump_toml.DEPENDENCY_SECTIONS)),
+    present=st.sets(st.sampled_from(bump_toml_dependencies.DEPENDENCY_SECTIONS)),
     decoys=st.sets(st.sampled_from(_DECOY_SECTIONS)),
 )
 def test_snippet_rewrite_visits_exactly_canonical_sections(
@@ -60,7 +59,7 @@ def test_snippet_rewrite_visits_exactly_canonical_sections(
     """Rewriting updates targets in canonical sections and nothing else."""
     ordered = tuple(
         section
-        for section in (*bump_toml.DEPENDENCY_SECTIONS, *_DECOY_SECTIONS)
+        for section in (*bump_toml_dependencies.DEPENDENCY_SECTIONS, *_DECOY_SECTIONS)
         if section in present | decoys
     )
     document = parse_toml(_render_manifest(ordered))
@@ -83,7 +82,9 @@ def test_multi_section_manifest_rewrite_snapshot(
     snapshot: SnapshotAssertion,
 ) -> None:
     """The rewritten multi-section manifest output is locked by snapshot."""
-    manifest = _render_manifest(bump_toml.DEPENDENCY_SECTIONS + _DECOY_SECTIONS)
+    manifest = _render_manifest(
+        bump_toml_dependencies.DEPENDENCY_SECTIONS + _DECOY_SECTIONS
+    )
     document = parse_toml(manifest)
 
     assert bump_docs.update_toml_snippet_dependencies(document, ("alpha",), "2.0.0"), (
