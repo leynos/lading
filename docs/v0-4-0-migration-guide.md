@@ -294,13 +294,19 @@ default is `[".git"]`, so the staged tree is no longer a Git checkout.
 
 Leaving `.git` behind removes most of the cost of staging a large repository,
 but it also changes how Cargo selects files for a package. With no Git metadata,
-`cargo package` skips every dot-named entry, does not consult the repository's
-`.gitignore`, and writes no `.cargo_vcs_info.json`. A file that Git ignores
-without a leading dot — a local database, or a settings module — is therefore
-packaged unless the crate names it in `include` or the configuration excludes
-it. Audit any such file that sits inside a publishable crate before relying on
-the default. A live publish that stages without `.git` logs a warning before
-copying, because an upload cannot be undone.
+`cargo package` does not consult the repository's `.gitignore` and writes no
+`.cargo_vcs_info.json`. When the manifest does not set `include`, Cargo skips
+dot-named entries. When the manifest sets `include`, Cargo packages each
+dot-named entry that the list names. A file that Git ignores without a leading
+dot — a local database, or a settings module — is therefore packaged unless the
+configuration excludes it. A Git-ignored settings file named in `include` is
+packaged even when it is dot-named: keep such a file out of the `include` list,
+or remove it with `stage_exclude`, before a live publish. Audit any such file
+that sits inside a publishable crate before relying on the default. The default
+rules for `include` and `exclude` are described in the
+[Cargo manifest documentation](https://doc.rust-lang.org/cargo/reference/manifest.html#the-exclude-and-include-fields).
+A live publish that stages without `.git` logs a warning before copying,
+because an upload cannot be undone.
 
 Projects that do not publish are unaffected. To keep the 0.3.x behaviour for a
 workspace that depends on Git-aware selection, set:

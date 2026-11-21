@@ -430,12 +430,15 @@ lading bump <new_version> [--dry-run]
   written: pruning any of them would leave the staged manifest dangling. A
   directory link carries the remaining manifest path to its target, so
   `alias -> manifests` makes `alias/alpha/Cargo.toml` depend on
-  `manifests/alpha/Cargo.toml`, not on `manifests` alone. Each link's target is
-  joined the way the kernel resolves it: the link's parent directory is
-  resolved first, so a `..` in the link text applies to the physical parent,
-  not the lexical one. An unreadable workspace is reported as its own staging
-  outcome rather than as an invalid pattern. The default is `(".git",)`: it is
-  the largest entry no packaging step needs, and omitting it changes how Cargo
+  `manifests/alpha/Cargo.toml`, not on `manifests` alone. A component the link
+  text enters before a later `..` counts too, because the kernel must traverse
+  it: `../bridge/../manifests/Cargo.toml` needs `bridge` copied even though a
+  lexical join names only `manifests/Cargo.toml`. Each link's target is joined
+  the way the kernel resolves it: the link's parent directory is resolved
+  first, so a `..` in the link text applies to the physical parent, not the
+  lexical one. An unreadable workspace is reported as its own staging outcome
+  rather than as an invalid pattern. The default is `(".git",)`: it is the
+  largest entry no packaging step needs, and omitting it changes how Cargo
   selects package files, as the user's guide describes. `target/` is
   deliberately retained by default, because some workspaces package artefacts
   from it — rstest-bdd stages packaged crates under

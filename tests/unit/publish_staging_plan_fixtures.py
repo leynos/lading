@@ -6,7 +6,12 @@ skipped by configuration. Building it in one place keeps each test module
 focused on the behaviour it checks rather than on fixture assembly.
 """
 
-from lading.commands import publish, publish_plan
+from lading.commands import (
+    publish,
+    publish_plan,
+    publish_stage_exclude,
+    publish_staging,
+)
 from tests.unit.conftest import PreparationFixtures, _CrateSpec
 
 
@@ -22,3 +27,19 @@ def _plan_with_roles(fixtures: PreparationFixtures) -> publish_plan.PublishPlan:
         root, publishable, manifest_skipped, configuration_skipped
     )
     return publish.plan_publication(workspace, fixtures.make_config(exclude=("gamma",)))
+
+
+def validation_rejects(
+    plan: publish_plan.PublishPlan,
+    patterns: tuple[str, ...],
+    *,
+    preserve_symlinks: bool = False,
+) -> bool:
+    """Return whether the pre-copy check refuses ``patterns``."""
+    try:
+        publish_stage_exclude._validate_stage_exclude(
+            plan, patterns, preserve_symlinks=preserve_symlinks
+        )
+    except publish_staging.PublishPreparationError:
+        return True
+    return False

@@ -102,19 +102,22 @@ would leave the staged manifest dangling. Patterns are filesystem paths, not
 crate names; use `publish.exclude` to skip a crate from publication.
 
 Because staging omits `.git` by default, the staged tree is not a Git checkout,
-and `cargo package` selects files accordingly. It skips every hidden file and
-directory whose name starts with a dot, does not consult the repository's
-`.gitignore` rules, and writes no `.cargo_vcs_info.json` into the package, so
-the published crate carries no source-commit provenance. A dot-named file the
-package needs must be named in its `include` list. Conversely, a file that Git
-ignores whose name does not start with a dot is included unless the crate's
-`include` list or `stage_exclude` keeps it out, so audit for such files in a
-publishable crate before relying on the default. To keep the old Git-aware
-selection, including gitignore handling and VCS provenance, set
-`stage_exclude = []`. A live publish whose effective exclusions remove `.git`
-logs a warning before it copies, because an upload cannot be undone: a yanked
-version still holds the files it published. `--forbid-dirty` is unaffected
-either way: it inspects the source workspace's Git status before staging begins.
+and `cargo package` selects files accordingly. It does not consult the
+repository's `.gitignore` rules and writes no `.cargo_vcs_info.json` into the
+package, so the published crate carries no source-commit provenance. When the
+manifest does not set `include`, Cargo skips every dot-named entry; when it sets
+`include`, Cargo packages each dot-named entry that the list names, so a
+dot-named file the package needs must be listed there. A file that Git ignores
+whose name does not start with a dot is packaged unless the manifest's
+`include` list or `stage_exclude` keeps it out. A Git-ignored settings file
+must therefore stay out of `include`, or be removed with `stage_exclude`, so
+audit for such files in a publishable crate before relying on the default. To
+keep the old Git-aware selection, including gitignore handling and VCS
+provenance, set `stage_exclude = []`. A live publish whose effective exclusions
+remove `.git` logs a warning before it copies, because an upload cannot be
+undone: a yanked version still holds the files it published. `--forbid-dirty`
+is unaffected either way: it inspects the source workspace's Git status before
+staging begins.
 
 ## Reclaiming space from earlier versions
 

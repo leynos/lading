@@ -15,7 +15,6 @@ module is the only place that resolves, stats or reads a path.
 
 import collections.abc as cabc
 import errno
-import os
 import stat
 import typing as typ
 from pathlib import Path, PurePosixPath
@@ -117,20 +116,41 @@ def _manifest_relative_path(
     return None
 
 
-def _link_target(path: Path) -> Path:
-    """Return the path ``path`` names, resolving only its parent directory.
+def _link_path(path: Path) -> tuple[Path, tuple[Path, ...]]:
+    """Return the link's target and the directories its text must traverse.
 
     The kernel applies a ``..`` in the link text to the physical parent, so the
-    parent is resolved before the text is joined. Resolving the whole path
-    would collapse the link chain that :func:`_link_targets_in_path` walks.
+    parent is resolved before the text is joined. It also visits each component
+    in turn: ``../bridge/../manifests`` fails when ``bridge`` is absent even
+    though a lexical join names only ``manifests``. Components the resolution
+    ends beneath are already covered by matching the target's ancestors, so
+    only the components it leaves again are returned as extra dependencies.
 
     Returns
     -------
-    Path
-        The path the link text names, with its parent already resolved.
+    tuple[Path, tuple[Path, ...]]
+        The path the link text names, with its parent already resolved, and
+        each component the resolution enters but does not end beneath.
     """
-    parent = path.parent.resolve(strict=False)
-    return Path(os.path.normpath(parent / path.readlink()))
+    link_text = path.readlink()
+    current = (
+        Path(link_text.anchor)
+        if link_text.is_absolute()
+        else path.parent.resolve(strict=False)
+    )
+    traversed: list[Path] = []
+    for part in link_text.parts:
+        if part == "..":
+            current = current.parent
+        elif part in {".", link_text.anchor}:
+            continue
+        else:
+            current /= part
+            traversed.append(current)
+    diverged = tuple(
+        candidate for candidate in traversed if not current.is_relative_to(candidate)
+    )
+    return current, diverged
 
 
 def _is_symlink(path: Path) -> bool:
@@ -160,15 +180,17 @@ def _link_targets_in_path(path: Path, workspace_root: Path) -> cabc.Iterator[Pat
     A link to a directory is followed by the rest of the path, because that is
     what the kernel does with ``alias/Cargo.toml`` when ``alias`` names
     ``real``: the manifest staging must preserve is ``real/Cargo.toml``, and a
-    pattern removing it would leave the staged link dangling.
+    pattern removing it would leave the staged link dangling. A directory the
+    link text traverses before a later ``..`` counts too, because the kernel
+    must enter it even though the final target does not sit beneath it.
 
     Yields
     ------
     Path
         The target of a link in ``path`` or one of its parent directories,
-        joined with the remaining components of ``path``, in path order. A
-        path outside the workspace names nothing staging copies, so it yields
-        no targets.
+        joined with the remaining components of ``path``, plus each directory
+        the link text leaves again, in path order. A path outside the workspace
+        names nothing staging copies, so it yields no targets.
     """
     relative = _manifest_relative_path(path, workspace_root)
     if relative is None:
@@ -176,8 +198,10 @@ def _link_targets_in_path(path: Path, workspace_root: Path) -> cabc.Iterator[Pat
     for prefix in workspace_relative_prefixes(relative):
         component = workspace_root / prefix
         if _is_symlink(component):
+            target, traversed = _link_path(component)
             remainder = relative.parts[len(prefix.parts) :]
-            yield _link_target(component).joinpath(*remainder)
+            yield from traversed
+            yield target.joinpath(*remainder)
 
 
 def _unseen_link_targets(

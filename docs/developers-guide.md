@@ -1670,18 +1670,21 @@ The adapter owns:
   manifest. A directory link carries the rest of the path to its target, so
   `alias -> manifests` makes `alias/alpha/Cargo.toml` depend on
   `manifests/alpha/Cargo.toml`; checking only `manifests` would accept a
-  pattern that removes the manifest. A target outside the workspace is not
-  checked, because dereferencing it still finds the original file. A link's
-  target is resolved the way the kernel resolves it: the parent directory is
-  resolved first, then the link text is joined, so a `..` inside the text
-  applies to the physical parent rather than the lexical one. Each link in the
-  parent chain is still walked separately, so that resolution loses no
-  dependency. A manifest link that names nothing, because its target is missing
-  or the chain loops, is treated as absent: there is no target staging could
-  have copied. Any other failure to inspect it, such as a permission denial, is
-  not turned into absence: the adapter probes links with a no-follow `lstat` and
-  `stat.S_ISLNK` instead of `Path.is_symlink`, which reports every `OSError` as
-  `False`. A genuinely unreadable workspace therefore raises
+  pattern that removes the manifest. A component the link text enters before a
+  later `..` counts too, because the kernel must traverse it:
+  `../bridge/../manifests/Cargo.toml` needs `bridge` copied even though a
+  lexical join names only `manifests/Cargo.toml`. A target outside the
+  workspace is not checked, because dereferencing it still finds the original
+  file. A link's target is resolved the way the kernel resolves it: the parent
+  directory is resolved first, then the link text is joined, so a `..` inside
+  the text applies to the physical parent rather than the lexical one. Each
+  link in the parent chain is still walked separately, so that resolution loses
+  no dependency. A manifest link that names nothing, because its target is
+  missing or the chain loops, is treated as absent: there is no target staging
+  could have copied. Any other failure to inspect it, such as a permission
+  denial, is not turned into absence: the adapter probes links with a no-follow
+  `lstat` and `stat.S_ISLNK` instead of `Path.is_symlink`, which reports every
+  `OSError` as `False`. A genuinely unreadable workspace therefore raises
   `StageExcludeInspectionError`, a `PublishPreparationError` subclass that
   `_stage` counts apart from a refused pattern.
 
@@ -1713,8 +1716,11 @@ never fires.
 When adding a pattern spelling, change `lading.stage_exclude_policy` if the
 spelling must be accepted or rejected, and change `match_stage_exclude` if it
 must match differently. Cover the copy filter and the staging boundary in
-`tests/unit/test_publish_staging_exclusions.py`, and manifest protection in
-`tests/unit/test_publish_stage_exclude_validation.py`. `match_stage_exclude` is
+`tests/unit/test_publish_staging_exclusions.py`, the pure policy and the
+staging boundary in `tests/unit/test_publish_stage_exclude_validation.py`,
+symbolic-link traversal in `tests/unit/test_publish_stage_exclude_links.py`,
+and inspection failures in
+`tests/unit/test_publish_stage_exclude_inspection.py`. `match_stage_exclude` is
 the only predicate that decides matching, so the validator and the copy cannot
 diverge.
 
