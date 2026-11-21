@@ -1,4 +1,10 @@
-"""Shared configuration schema validators."""
+"""Share strict key and selector-segment checks across configuration records.
+
+:func:`validate_mapping_keys` is used by :mod:`lading.config` and
+:mod:`lading.config_manifest_rewrites`; :func:`validate_segments` validates
+the literal TOML selectors in the rewrite schema. Both helpers raise
+:class:`lading.exceptions.ConfigurationError` with the relevant field path.
+"""
 
 import collections.abc as cabc
 

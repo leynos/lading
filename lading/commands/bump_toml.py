@@ -220,14 +220,14 @@ def prepare_string_value_replacement(
 
 
 def assign_dependency_version_field(
-    container: InlineTable | Table,
+    container: _TableLike,
     target_version: str,
 ) -> bool:
     """Update the ``version`` key of ``container`` if present.
 
     Parameters
     ----------
-    container : InlineTable | Table
+    container : _TableLike
         The dependency table whose ``version`` key is updated in place.
     target_version : str
         The target version to apply.
@@ -288,7 +288,7 @@ def update_dependency_entry(
     >>> table["alpha"]
     '2.0.0'
     """
-    if isinstance(entry, InlineTable | Table):
+    if isinstance(entry, _TABLE_LIKE_TYPES):
         return assign_dependency_version_field(entry, target_version)
     replacement = prepare_version_replacement(entry, target_version)
     if replacement is None:

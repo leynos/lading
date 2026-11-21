@@ -1180,7 +1180,17 @@ plans after the workspace and member manifest stages, then documentation,
 README, and lockfile stages run. A write failure carries its path and completed
 and planned counts; the CLI reports it in one structured error event.
 `lading.commands.bump_manifest_rewrite_metrics` records bounded outcome
-counters and the plan-to-application duration. `bump.lockfile_manifests`
+counters and rewrite-only duration observations.
+`lading.commands.bump_pipeline_manifest_rewrites` owns pipeline coordination:
+it plans before the first write and applies plans after member manifests. Its
+duration sums the planning and application intervals, excluding intervening
+stages. `BumpOptions.clock` supplies the monotonic clock; tests inject
+deterministic values.
+
+`lading.commands.bump_requirement_bounds.excluding_retained_bounds` reports
+understood retained Cargo comparators that exclude the target version.
+`lading.commands.bump_toml.prepare_version_replacement` logs a warning for each
+such comparator and still rewrites the requirement. `bump.lockfile_manifests`
 remains a separate setting that adds lockfile-regeneration targets.
 
 `lading.commands.bump_manifest_rewrite_dependencies` owns traversal of direct,
@@ -2060,7 +2070,7 @@ Defined metrics:
 | `lockfile.validate`              | `outcome`                                       | One increment per `validate_lockfile_freshness` call; `outcome` is `fresh`, `stale`, or `failed`.                                                                                                                                                |
 | `lockfile.validate.duration`     | (none)                                          | Duration observation around each `cargo metadata --locked` probe.                                                                                                                                                                                |
 | `bump.manifest_rewrite.run`      | `phase`, `outcome`, `dry_run`, `error_category` | One increment for each planning or application outcome; labels use finite values documented in the users' guide.                                                                                                                                 |
-| `bump.manifest_rewrite.duration` | `outcome`, `dry_run`, `error_category`          | One plan-to-application duration per configured rewrite run, including failures.                                                                                                                                                                 |
+| `bump.manifest_rewrite.duration` | `outcome`, `dry_run`, `error_category`          | Planning and application intervals per configured rewrite run, excluding intervening stages; planning only on planning failures.                                                                                                                 |
 | `publish.cargo.duration`         | `subcommand`, `crate`                           | One duration observation per `cargo package` or `cargo publish` invocation in the publish pipeline, successful or not (issue #251).                                                                                                              |
 | `publish.sccache.query`          | `outcome`                                       | One increment per sccache statistics query while instrumentation is on (`--sccache-stats`, or a `--sccache-stats-json` path, which implies it); `outcome` is `success` or `failure` (issue [#252](https://github.com/leynos/lading/issues/252)). |
 

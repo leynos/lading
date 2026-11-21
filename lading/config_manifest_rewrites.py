@@ -1,4 +1,12 @@
-"""Schema records and validation for configured manifest version rewrites."""
+"""Define the strict configuration records for manifest version rewrites.
+
+:class:`lading.config.BumpConfig` parses rewrite groups through
+:class:`ManifestRewriteConfig`; each group parses its
+:class:`StringValueRewriteConfig` selectors. The planner in
+:mod:`lading.commands.bump_manifest_rewrites` consumes these immutable records.
+Invalid values raise :class:`lading.exceptions.ConfigurationError` while the
+configuration is loaded.
+"""
 
 import collections.abc as cabc
 import dataclasses as dc

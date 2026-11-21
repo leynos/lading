@@ -323,6 +323,7 @@ def test_partial_write_failure_names_path_and_completed_count(
     message = "simulated write failure"
 
     def fail_second_write(path: pathlib.Path, text: str) -> None:
+        """Fail the second fixture write and forward the first atomic write."""
         if path == fixtures[1].resolve():
             raise OSError(message)
         write_atomic_text(path, text)

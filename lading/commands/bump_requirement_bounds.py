@@ -1,4 +1,9 @@
-"""Check whether retained Cargo comparators exclude a target version."""
+"""Compare retained Cargo requirement bounds with a bump target.
+
+:func:`excluding_retained_bounds` recognizes supported retained comparators.
+:mod:`lading.commands.bump_toml` uses the result to warn when preserving a
+bound would exclude the target version.
+"""
 
 import re
 import typing as typ
@@ -26,7 +31,32 @@ def excluding_retained_bounds(
     requirement: str,
     target_version: str,
 ) -> tuple[str, ...]:
-    """Return understood retained comparators that reject ``target_version``."""
+    """Return understood retained Cargo comparators that reject the target.
+
+    Only comparator clauses after the first requirement clause are considered.
+    Unsupported clauses and an unparseable target version are ignored.
+
+    Parameters
+    ----------
+    requirement : str
+        Cargo version requirement whose later comparator clauses are retained.
+    target_version : str
+        Full three-component semantic version being applied by the bump.
+
+    Returns
+    -------
+    tuple[str, ...]
+        Retained comparator clauses understood to reject ``target_version``,
+        in their original order. Returns an empty tuple when no understood
+        retained comparator rejects the target.
+
+    Examples
+    --------
+    >>> excluding_retained_bounds(">=0.6.0, <0.6", "0.6.0")
+    ('<0.6',)
+    >>> excluding_retained_bounds(">=0.6.0, <1.0", "0.6.0")
+    ()
+    """
     _, separator, remaining = requirement.partition(",")
     if not separator:
         return ()

@@ -186,6 +186,7 @@ def write_fixture_manifest() -> cabc.Callable[[Path, str, str], Path]:
     """
 
     def write(root: Path, relative_path: str, content: str) -> Path:
+        """Write a fixture manifest beneath the supplied workspace root."""
         path = root / relative_path
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")

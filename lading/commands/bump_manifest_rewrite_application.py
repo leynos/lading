@@ -1,4 +1,11 @@
-"""Apply planned rewrites to configured non-member Cargo manifests."""
+"""Apply already-planned edits to configured non-member Cargo manifests.
+
+:class:`ManifestRewritePlan` carries the TOML text prepared by
+:mod:`lading.commands.bump_manifest_rewrites`. The pipeline orchestration in
+:mod:`lading.commands.bump_pipeline_manifest_rewrites` calls
+:func:`apply_manifest_rewrites` after member-manifest updates; writes use the
+atomic text helper in :mod:`lading.commands.bump_toml`.
+"""
 
 import collections.abc as cabc
 import dataclasses as dc

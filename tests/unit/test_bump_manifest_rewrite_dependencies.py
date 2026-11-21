@@ -3,6 +3,7 @@
 import pathlib
 
 from tomlkit import parse as parse_toml
+from tomlkit.container import OutOfOrderTableProxy
 
 from lading.commands import bump_manifest_rewrite_dependencies, bump_manifest_rewrites
 from lading.config import ManifestRewriteConfig
@@ -73,6 +74,50 @@ def test_rewrites_inline_dependency_sections_and_aliases(
     )
     assert document["workspace"]["dependencies"]["alpha"] == "2.0.0", (
         "inline workspace dependency tables must be traversed"
+    )
+
+
+def test_rewrites_interleaved_dotted_dependency_table_proxy() -> None:
+    """Interleaved dotted keys keep matching package versions up to date."""
+    document = parse_toml(
+        "[dependencies]\n"
+        'alpha.version = "1.0.0"\n'
+        'beta.version = "1.0.0"\n'
+        'alpha.package = "alpha"\n'
+    )
+    alpha = document["dependencies"]["alpha"]
+    assert isinstance(alpha, OutOfOrderTableProxy), (
+        "interleaved dotted keys should exercise tomlkit's proxy representation"
+    )
+
+    changed = bump_manifest_rewrite_dependencies.rewrite_dependency_requirements(
+        document, {"alpha"}, "2.0.0"
+    )
+    rewritten_alpha = document["dependencies"]["alpha"]
+
+    assert changed, "a matching proxy-backed dependency should be rewritten"
+    assert rewritten_alpha["version"] == "2.0.0", (
+        "the workspace crate version should update through the table proxy"
+    )
+    assert document["dependencies"]["beta"]["version"] == "1.0.0", (
+        "the unrelated proxy-backed dependency should remain unchanged"
+    )
+    assert rewritten_alpha["package"] == "alpha", (
+        "the package alias metadata should remain unchanged"
+    )
+
+
+def test_rewrites_dependency_version_in_standard_table() -> None:
+    """Regular dependency tables continue to update their version field."""
+    document = parse_toml('[dependencies.alpha]\nversion = "1.0.0"\n')
+
+    changed = bump_manifest_rewrite_dependencies.rewrite_dependency_requirements(
+        document, {"alpha"}, "2.0.0"
+    )
+
+    assert changed, "the standard dependency table should report a rewrite"
+    assert document["dependencies"]["alpha"]["version"] == "2.0.0", (
+        "the standard dependency table version should be updated"
     )
 
 

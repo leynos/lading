@@ -409,6 +409,10 @@ lading bump <new_version> [--dry-run]
 - `bump_manifest_rewrite_dependencies` owns dependency-section traversal for
   direct, target, and workspace requirements; `bump_toml` handles requirement
   composition and TOML value replacement.
+- `bump_pipeline_manifest_rewrites` owns the rewrite-only planning,
+  application, and timing orchestration used by `bump_pipeline`. This keeps
+  fail-fast planning before writes and application after member manifests
+  without growing the ordered stage coordinator beyond its module boundary.
 - Every selected manifest is resolved, validated, read, and planned before the
   workspace manifest stage writes. The plans are applied after member manifests
   and before documentation, README transposition, and lockfile work.

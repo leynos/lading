@@ -1,4 +1,11 @@
-"""Validate resolved Cargo manifest candidates for workspace commands."""
+"""Share containment and filename validation for Cargo manifest candidates.
+
+:func:`resolve_manifest_candidate` checks that a resolved candidate remains
+inside its workspace and is named ``Cargo.toml``. The lockfile path resolver
+in :mod:`lading.commands.bump_lockfile_paths` and the rewrite planner in
+:mod:`lading.commands.bump_manifest_rewrites` supply their own error types;
+each caller retains responsibility for existence and regular-file checks.
+"""
 
 import typing as typ
 from pathlib import Path

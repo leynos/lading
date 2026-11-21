@@ -823,6 +823,8 @@ the remaining fixture edits.
 For example, the `rstest-bdd` published GPUI fixture can opt into rewriting its
 dependency requirements and staged package patch paths:
 
+<!-- tested-example: bump-manifest-rewrites-rstest-bdd -->
+
 ```toml
 [[bump.manifest_rewrites]]
 paths = ["tests/fixtures/published-gpui-e2e/Cargo.toml"]
