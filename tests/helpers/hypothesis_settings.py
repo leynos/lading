@@ -9,8 +9,10 @@ the time then measures disk latency and cold import cost, not the invariant.
 
 :func:`filesystem_property_settings` is the one place that decision is made.
 Opting in is explicit and per property; there is no profile or global
-override, so an in-memory property keeps the default deadline and still
-detects a real regression.
+override. It changes no global state, so whether an in-memory property is
+still timed depends on the active profile: locally the ``default`` profile
+enforces the 200 ms deadline, while Hypothesis's built-in ``ci`` profile
+disables deadlines.
 
 The measurement that motivated the seam: the first example of the
 manifest-selection property took 281 ms against the 200 ms default on a cold
@@ -46,7 +48,8 @@ def filesystem_property_settings(
     Use this only when each example creates, rewrites, scans, resolves or
     removes real filesystem state. Building ``Path`` objects under
     ``tmp_path`` without touching the disk does not qualify; those properties
-    keep the default deadline so a genuine slowdown is still reported.
+    stay under whatever deadline the active profile enforces, so a genuine
+    slowdown is still reported locally.
 
     Parameters
     ----------
@@ -64,6 +67,12 @@ def filesystem_property_settings(
     hypothesis.settings
         Settings with the supplied example budget, the given suppressions and
         ``deadline=None``. Every other setting keeps its Hypothesis default.
+
+    Notes
+    -----
+    Hypothesis selects its built-in ``ci`` profile in CI environments, and
+    that profile disables deadlines. The factory changes no global state, so
+    in-memory properties remain governed by whatever profile is active.
 
     Examples
     --------

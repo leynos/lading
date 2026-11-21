@@ -949,9 +949,15 @@ def test_manifest_selection_matches_naive_reference(tmp_path, data):
 
 The factory sets `max_examples`, `deadline=None`, and the suppressions the
 caller passes. It does not change `settings.default`, register or load a
-profile, or alter any other setting. Do not raise the deadline for a single
-test, and do not set it globally: a blanket bump would hide a real regression
-in the in-memory properties that the default deadline is meant to catch.
+profile, or alter any other property's settings. It therefore makes no promise
+about whether an in-memory property is timed: Hypothesis selects its built-in
+`ci` profile in CI environments, and that profile disables deadlines, while
+some in-memory properties opt out explicitly with `deadline=None`. Those
+choices stand outside this policy.
+
+Do not raise the deadline for a single test, and do not set it globally: a
+blanket bump would hide a real regression in the in-memory properties that the
+active profile is meant to catch.
 
 Building `Path` objects under `tmp_path` without touching the disk does not
 qualify. `tmp_path` alone does not establish filesystem work; the property must

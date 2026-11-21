@@ -45,13 +45,23 @@ def test_filesystem_property_settings_passes_suppression_through() -> None:
     )
 
 
-def test_filesystem_property_settings_leaves_the_default_deadline_alone() -> None:
-    """Opting in is per property; the global default still enforces timing."""
+def test_filesystem_property_settings_leaves_the_active_defaults_alone() -> None:
+    """Creating filesystem settings must not replace the active defaults.
+
+    Hypothesis selects its built-in ``ci`` profile in CI environments, and that
+    profile disables deadlines. The active default is therefore whatever
+    profile the run selected, not necessarily the library's ``default``
+    profile, so this test compares the active settings with themselves rather
+    than requiring a particular deadline.
+    """
+    before = settings.default
+    assert before is not None, "Hypothesis should have active default settings"
+    deadline_before = before.deadline
+
     filesystem_property_settings(max_examples=20)
 
-    default_settings = settings.default
-    assert default_settings is not None, "Hypothesis should register a default profile"
-    assert default_settings.deadline is not None, (
-        "the shared default must keep its deadline so in-memory properties "
-        "still detect regressions"
+    after = settings.default
+    assert after is before, "the factory must not replace the active defaults"
+    assert after.deadline == deadline_before, (
+        "the factory must not change the active default deadline"
     )
