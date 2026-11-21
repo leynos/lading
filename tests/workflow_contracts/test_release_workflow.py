@@ -4,12 +4,15 @@ import ast
 import os
 import re
 import shlex
+import string
 import subprocess
 import typing as typ
 from pathlib import Path, PurePosixPath
 
 import pytest
 import yaml
+from hypothesis import given
+from hypothesis import strategies as st
 
 from tests.workflow_contracts.step_harness import (
     REPOSITORY_ROOT,
@@ -36,8 +39,11 @@ UPLOAD_COMMAND = ("uv", "run", "--locked", "--script", UPLOAD_SCRIPT)
 PUBLISH_COMMAND = ("gh", "release", "edit")
 GH_ENV_REFERENCE = "${{ secrets.GITHUB_TOKEN }}"
 SHELL_CONTROL_OPERATOR_CHARACTERS = frozenset("&;|")
+SHELL_COMMAND_SUBSTITUTION_START = "$("
 DEFAULT_UPLOAD_DIRECTORY = "dist"  # See scripts/upload_release_wheels.py.
 SHELL_LINE_CONTINUATION = re.compile(r"(?<!\\)((?:\\\\)*)\\\r?\n")
+SHELL_TEXT_ALPHABET = string.ascii_letters + string.digits + "_-"
+DIRECTORY_TEXT_ALPHABET = SHELL_TEXT_ALPHABET + "/."
 StepControls = typ.TypedDict(
     "StepControls", {"continue-on-error": bool, "if": str}, total=False
 )
@@ -144,7 +150,11 @@ def _is_upload_command(tokens: list[str]) -> bool:
         tokens[: len(UPLOAD_COMMAND)] == list(UPLOAD_COMMAND)
         and arguments[:2] == ["--tag", '"$TAG"']
         and _has_supported_directory_arguments(arguments[2:])
-        and not any(set(token) & SHELL_CONTROL_OPERATOR_CHARACTERS for token in tokens)
+        and not any(
+            set(token) & SHELL_CONTROL_OPERATOR_CHARACTERS
+            or SHELL_COMMAND_SUBSTITUTION_START in token
+            for token in tokens
+        )
     )
 
 
@@ -298,6 +308,85 @@ def test_publish_tokens_accept_escaped_line_continuations() -> None:
         '"$TAG"',
         "--draft=false",
     ], "escaped line continuation must remain one publication command"
+
+
+@given(
+    prefix=st.text(alphabet=SHELL_TEXT_ALPHABET, min_size=1, max_size=12),
+    suffix=st.text(alphabet=SHELL_TEXT_ALPHABET, min_size=1, max_size=12),
+)
+def test_shell_tokenizers_reject_generated_unescaped_newlines(
+    prefix: str,
+    suffix: str,
+) -> None:
+    """Generated second command lines must fail both release parsers."""
+    commands = (
+        (
+            _upload_tokens,
+            f'{" ".join(UPLOAD_COMMAND)} --tag "$TAG" {prefix}\n{suffix}',
+        ),
+        (_publish_tokens, f'gh release edit "$TAG" {prefix}\n{suffix}'),
+    )
+    for tokenize, command in commands:
+        with pytest.raises(AssertionError, match="one shell command"):
+            tokenize({"run": command})
+
+
+@given(
+    prefix=st.text(alphabet=SHELL_TEXT_ALPHABET, min_size=1, max_size=12),
+    suffix=st.text(alphabet=SHELL_TEXT_ALPHABET, min_size=1, max_size=12),
+    escaped_backslash_pairs=st.integers(min_value=0, max_value=4),
+    line_ending=st.sampled_from(["\n", "\r\n"]),
+)
+def test_command_source_normalizes_generated_line_continuations(
+    prefix: str,
+    suffix: str,
+    escaped_backslash_pairs: int,
+    line_ending: str,
+) -> None:
+    """Odd trailing backslash runs join lines and preserve escaped pairs."""
+    slash = "\\"
+    source = f"{prefix}{slash * (2 * escaped_backslash_pairs + 1)}{line_ending}{suffix}"
+    expected = f"{prefix}{slash * (2 * escaped_backslash_pairs)}{suffix}"
+
+    assert _single_command_source(source) == expected, (
+        "line continuation changed command tokens"
+    )
+
+
+@given(
+    directory=st.text(alphabet=DIRECTORY_TEXT_ALPHABET, min_size=1, max_size=16),
+    use_equals=st.booleans(),
+)
+def test_upload_tokens_preserve_generated_directory_arguments(
+    directory: str,
+    *,
+    use_equals: bool,
+) -> None:
+    """Valid generated directory forms retain their parsed argv sequence."""
+    if use_equals:
+        directory_arguments = [f"--directory={directory}"]
+    else:
+        directory_arguments = ["--directory", directory]
+    command = (
+        f'{" ".join(UPLOAD_COMMAND)} --tag "$TAG" \\\n{" ".join(directory_arguments)}'
+    )
+
+    tokens = _upload_tokens({"run": command})
+
+    assert tokens == [*UPLOAD_COMMAND, "--tag", '"$TAG"', *directory_arguments], (
+        "uploader arguments changed during tokenization"
+    )
+    assert _upload_directory(tokens) == directory, "parsed upload directory changed"
+
+
+@pytest.mark.parametrize("shell_syntax", [";", "&", "|", "$(touch)"])
+def test_upload_tokens_reject_shell_operators_and_substitution(
+    shell_syntax: str,
+) -> None:
+    """The standalone uploader command cannot add shell control syntax."""
+    command = f'{" ".join(UPLOAD_COMMAND)} --tag "$TAG" --directory=dist{shell_syntax}'
+    with pytest.raises(AssertionError, match="unsupported upload command"):
+        _upload_tokens({"run": command})
 
 
 def test_pypi_order_uses_oidc_and_uv_simple_index_check() -> None:
