@@ -12,12 +12,13 @@ import dataclasses as dc
 import errno
 import os
 import tempfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
+from lading import stage_exclude_policy
 from lading.commands import (
     publish,
     publish_plan,
@@ -370,6 +371,38 @@ def test_stage_exclude_reports_an_unreadable_manifest(
     assert "could not inspect the workspace" in str(excinfo.value), (
         "an unreadable manifest must surface as an inspection failure"
     )
+
+
+def test_policy_reports_the_first_excluded_ancestor() -> None:
+    """The pure policy names the excluded ancestor and its pattern."""
+    relative = PurePosixPath("alias/alpha/Cargo.toml")
+
+    assert stage_exclude_policy.excluded_manifest_message(
+        "crate 'alpha'", relative, ("src", "alias")
+    ) == (
+        "publish.stage_exclude pattern 'alias' would exclude crate 'alpha' "
+        "manifest 'alias/alpha/Cargo.toml'"
+    ), "the message must name the first matching ancestor"
+    assert (
+        stage_exclude_policy.excluded_manifest_message(
+            "crate 'alpha'", relative, ("src",)
+        )
+        is None
+    ), "a manifest the patterns leave alone must not be reported"
+
+
+def test_policy_reports_the_first_excluded_dependency() -> None:
+    """The pure policy names the dangling dependency and its pattern."""
+    assert stage_exclude_policy.dangling_dependency_message(
+        "crate 'alpha'",
+        PurePosixPath("alias/alpha/Cargo.toml"),
+        (PurePosixPath("manifests/alpha/Cargo.toml"),),
+        ("manifests/alpha",),
+    ) == (
+        "publish.stage_exclude pattern 'manifests/alpha' would exclude "
+        "crate 'alpha' manifest 'alias/alpha/Cargo.toml', which depends on "
+        "symlink target 'manifests/alpha/Cargo.toml' that staging would not copy"
+    ), "the message must name the dependency staging would not copy"
 
 
 _CANDIDATE_PATTERNS = (
