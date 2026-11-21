@@ -107,6 +107,33 @@ def test_prepare_string_value_replacement_preserves_style_and_comment(
     )
 
 
+@pytest.mark.parametrize(
+    ("delimiter", "expected"),
+    [
+        ('"""', 'path = """\n\nnew""" # keep\n'),
+        ("'''", "path = '''\n\nnew''' # keep\n"),
+    ],
+    ids=["multiline-basic", "multiline-literal"],
+)
+def test_prepare_multiline_replacement_preserves_leading_newline(
+    delimiter: str,
+    expected: str,
+) -> None:
+    """Multiline replacements round-trip a leading content newline."""
+    document = parse_toml(f"path = {delimiter}\n\nold{delimiter} # keep\n")
+
+    replacement = bump_toml.prepare_string_value_replacement(document["path"], "\nnew")
+
+    assert replacement is not None, "a changed multiline string should be replaced"
+    document["path"] = replacement
+    rendered = document.as_string()
+    reparsed = parse_toml(rendered)
+    assert rendered == expected, "the replacement should retain its original style"
+    assert reparsed["path"] == "\nnew", (
+        "serializing and reparsing must retain the leading content newline"
+    )
+
+
 def test_select_table_handles_out_of_order_package() -> None:
     """Out-of-order tables (OutOfOrderTableProxy) are accepted."""
     # When [package.metadata.docs.rs] appears after other tables,

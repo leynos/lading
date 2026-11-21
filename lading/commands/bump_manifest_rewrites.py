@@ -233,7 +233,12 @@ def _expand_path(workspace_root: Path, configured_path: str) -> tuple[Path, ...]
     if not glob.has_magic(configured_path):
         return (workspace_root / configured_path,)
     try:
-        matches = tuple(sorted(workspace_root.glob(configured_path)))
+        matches = manifest_paths.expand_manifest_glob_candidates(
+            workspace_root,
+            configured_path,
+            error_type=ManifestRewriteError,
+            label="Manifest rewrite",
+        )
     except (OSError, ValueError) as exc:
         message = f"Could not expand manifest rewrite glob {configured_path!r}: {exc}"
         raise ManifestRewriteError(message) from exc

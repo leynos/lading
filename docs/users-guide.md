@@ -837,9 +837,10 @@ string_values = [
 Before `lading bump 0.6.0`, that fixture may refer to `0.6.0-beta4` in
 dependency requirements and to `rstest-bdd-0.6.0-beta4` in staged package
 paths. The bump changes those configured references to `0.6.0` and reports the
-fixture manifest. Lockfiles beside tracked manifests are discovered as usual;
-for a fixture `Cargo.lock` that Git does not track, also list its manifest in
-`bump.lockfile_manifests`.
+fixture manifest. Manifests beside Git-tracked `Cargo.lock` files are
+discovered automatically. For a fixture whose lockfile is untracked or ignored,
+also list its manifest in `bump.lockfile_manifests`, even when Git tracks that
+manifest.
 
 ### `[bump.documentation]`
 

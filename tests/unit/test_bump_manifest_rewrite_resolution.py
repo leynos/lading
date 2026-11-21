@@ -89,6 +89,37 @@ def test_rejects_glob_matches_that_are_not_regular_files(
         plan_fixture_rewrites(tmp_path, (group,))
 
 
+def test_propagates_directory_scan_failures_during_glob_expansion(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    write_fixture_manifest: _ManifestWriter,
+) -> None:
+    """A partial glob result must not hide an unreadable selected subtree."""
+    write_fixture_manifest(
+        tmp_path, "fixtures/a/deep/Cargo.toml", '[dependencies]\nalpha = "1.0.0"\n'
+    )
+    denied_directory = tmp_path / "fixtures/z"
+    denied_directory.mkdir(parents=True)
+    original_iterdir = pathlib.Path.iterdir
+
+    def iterdir_with_denied_directory(
+        path: pathlib.Path,
+    ) -> cabc.Iterator[pathlib.Path]:
+        """Raise a permission error when traversal reaches the denied directory."""
+        if path == denied_directory:
+            raise PermissionError
+        return original_iterdir(path)
+
+    monkeypatch.setattr(pathlib.Path, "iterdir", iterdir_with_denied_directory)
+    group = ManifestRewriteConfig(paths=("fixtures/*/*/Cargo.toml",))
+
+    with pytest.raises(bump_manifest_rewrites.ManifestRewriteError) as error:
+        plan_fixture_rewrites(tmp_path, (group,))
+    assert isinstance(error.value.__cause__, PermissionError), (
+        "scan failures must remain attached to the planning error"
+    )
+
+
 def test_skips_workspace_and_member_manifests(
     tmp_path: pathlib.Path,
     caplog: pytest.LogCaptureFixture,

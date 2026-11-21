@@ -12,7 +12,7 @@ from pathlib import Path
 from tomlkit import parse as parse_toml
 from tomlkit import string
 from tomlkit.container import OutOfOrderTableProxy
-from tomlkit.items import InlineTable, Item, String, StringType, Table
+from tomlkit.items import InlineTable, Item, String, Table
 
 from lading.commands.bump_requirement_bounds import excluding_retained_bounds
 
@@ -202,14 +202,22 @@ def prepare_string_value_replacement(
         return None
     match value:
         case String() as styled_string:
-            string_type = styled_string.type
+            original_text = styled_string.as_string()
+            literal = original_text.startswith("'")
+            multiline = original_text.startswith(("'''", '"""'))
         case _:
-            string_type = None
+            literal = multiline = False
     replacement = string(
         replacement_text,
-        literal=string_type in {StringType.SLL, StringType.MLL},
-        multiline=string_type in {StringType.MLB, StringType.MLL},
+        literal=literal,
+        multiline=multiline,
     )
+    if multiline and replacement_text.startswith("\n"):
+        rendered = replacement.as_string()
+        reparsed = parse_toml(f"value = {rendered}")["value"]
+        if str(reparsed) != replacement_text:
+            repaired = f"{rendered[:3]}\n{rendered[3:]}"
+            replacement = parse_toml(f"value = {repaired}")["value"]
     match value:
         case Item() as original_item:
             with suppress(
