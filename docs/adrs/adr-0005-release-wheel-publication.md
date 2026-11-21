@@ -36,11 +36,10 @@ release at all, and the job that produced it has to fail.
 Publication is the last thing the release job does, and the work that could
 fail runs in Python rather than in a shell.
 
-- The collector downloads and validates distributions before a draft exists.
-  The release job then creates or reuses a draft, uploads distributions, and
-  clears the flag with `gh release edit "$GITHUB_REF_NAME" --draft=false`.
-  Collection failures happen before draft creation; upload failures leave the
-  release as a draft that is not available for installation.
+- The release is created with `draft: true`. The download and upload steps run
+  next. A final step clears the flag with
+  `gh release edit "$GITHUB_REF_NAME" --draft=false`. A failure anywhere in
+  between leaves a draft, which is not a release anyone can install from.
 - The download names the artefact (`name: wheels-pure`), so the wheel's
   location does not depend on the action's default layout.
 - Wheel discovery, the empty case, and the upload move into
@@ -79,9 +78,8 @@ the job log and `GITHUB_OUTPUT` are the signals a consumer can actually read.
 
 - A visible release always has its wheel. This is now a user-facing guarantee,
   stated in the [users' guide](../users-guide.md#install-from-a-tagged-release).
-- A collection failure leaves no draft because collection runs first. A later
-  upload failure leaves a draft that a maintainer must delete or rerun the tag
-  against. That draft records a release that was not ready to publish.
+- A failed release leaves a draft that a maintainer must delete or rerun the
+  tag against. That is deliberate: the draft is the evidence of what failed.
 - The uploader is the first script in this repository to run `gh`. Its cuprum
   catalogue allowlists `gh` alone, and that boundary covers the script, not the
   job, which also runs `uv` and its pinned actions.
@@ -119,14 +117,17 @@ former `find dist/wheels-*` pipeline matched the v4 layout but found no path
 under v8. The failed `find` was masked because `xargs -r` ran no upload and
 returned zero; without `pipefail`, the pipeline therefore exited zero.
 
-The current workflow names `wheels-pure` and downloads it to `dist`. It uses
+The current workflow differs from the historical Decision above. It names
+`wheels-pure` and downloads it to `dist`. It uses
 `scripts/upload_release_wheels.py`, which fails when no distribution is found,
 and passes the release tag through `"$TAG"`. The Phase 1 contract tests in
 `tests/workflow_contracts/test_release_workflow.py` tie the producer artefact,
 job dependency, download name and path, and uploader directory together. They
-also assert the current order: collect and download the artefacts, create or
-reuse the draft, upload distributions, then publish. The named download and
-Python uploader remove the path ambiguity and silent empty-upload failure modes.
+also assert the current order: collect and validate the artefacts, create or
+reuse the draft, upload distributions, then publish. Collection failures occur
+before draft creation; upload failures leave the release unpublished as a
+draft. The named download and Python uploader remove the path ambiguity and
+silent empty-upload failure modes.
 
 [^1]: [Pinned `actions/download-artifact` v4 source](https://github.com/actions/download-artifact/blob/fa0a91b85d4f404e444e00e005971372dc801d16/src/download-artifact.ts).
 [^2]: [Pinned `actions/download-artifact` v8 source](https://github.com/actions/download-artifact/blob/9000827ccba6bdab643e8b6fd33ac0654aef8333/src/download-artifact.ts).

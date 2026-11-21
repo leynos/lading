@@ -37,6 +37,7 @@ PUBLISH_COMMAND = ("gh", "release", "edit")
 GH_ENV_REFERENCE = "${{ secrets.GITHUB_TOKEN }}"
 SHELL_CONTROL_OPERATOR_CHARACTERS = frozenset("&;|")
 DEFAULT_UPLOAD_DIRECTORY = "dist"  # See scripts/upload_release_wheels.py.
+SHELL_LINE_CONTINUATION = re.compile(r"(?<!\\)((?:\\\\)*)\\\r?\n")
 StepControls = typ.TypedDict(
     "StepControls", {"continue-on-error": bool, "if": str}, total=False
 )
@@ -149,9 +150,17 @@ def _is_upload_command(tokens: list[str]) -> bool:
 
 def _upload_tokens(step: WorkflowStep) -> list[str]:
     """Return a standalone invocation of the release wheel uploader."""
-    tokens = _step_tokens(step, posix=False)
+    command = _single_command_source(step["run"])
+    tokens = shlex.split(command, comments=True, posix=False)
     assert _is_upload_command(tokens), f"unsupported upload command: {tokens}"
     return tokens
+
+
+def _single_command_source(command: str) -> str:
+    """Join shell line continuations and reject additional command lines."""
+    source = SHELL_LINE_CONTINUATION.sub(r"\1", command).strip()
+    assert len(source.splitlines()) == 1, "uploader step must contain one shell command"
+    return source
 
 
 def _collection_publish_directory() -> str:
@@ -242,6 +251,30 @@ def test_build_artifact_and_uploader_paths_agree() -> None:
     upload = _find_named_step(RELEASE_WORKFLOW, UPLOAD_STEP, job="release")
     upload_directory = _upload_directory(_upload_tokens(upload))
     assert upload_directory == _collection_publish_directory(), "uploader path mismatch"
+
+
+def test_upload_tokens_reject_unescaped_command_newlines() -> None:
+    """A second shell command cannot masquerade as uploader arguments."""
+    command = (
+        "uv run --locked --script scripts/upload_release_wheels.py "
+        '--tag "$TAG"\n--directory=dist/publish'
+    )
+    with pytest.raises(AssertionError, match="one shell command"):
+        _upload_tokens({"run": command})
+
+
+def test_upload_tokens_accept_escaped_line_continuations() -> None:
+    """A shell line continuation remains one uploader invocation."""
+    command = (
+        "uv run --locked --script scripts/upload_release_wheels.py "
+        '--tag "$TAG" \\\n--directory=dist/publish'
+    )
+    assert _upload_tokens({"run": command}) == [
+        *UPLOAD_COMMAND,
+        "--tag",
+        '"$TAG"',
+        "--directory=dist/publish",
+    ], "escaped line continuation must remain one uploader invocation"
 
 
 def test_pypi_order_uses_oidc_and_uv_simple_index_check() -> None:
