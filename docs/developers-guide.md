@@ -1626,18 +1626,32 @@ on every call. Both public entry points default to
 `lading.config.DEFAULT_STAGE_EXCLUDE`, currently `(".git",)`, so a programmatic
 caller gets the same behaviour as the CLI without repeating the default.
 
-The policy lives in `lading.commands.publish_stage_exclude` rather than in
-`publish_staging`, which keeps the copy/cleanup lifecycle free of pattern
-matching. That module owns three things:
+The policy is split by what it touches. `lading.stage_exclude_policy` holds the
+pure predicates: they accept workspace-relative `PurePosixPath` values and
+never read the filesystem or the command layer.
+`lading.commands.publish_stage_exclude` is the staging adapter: it inspects the
+workspace, walks symbolic links, and keeps the copy/cleanup lifecycle free of
+pattern matching.
 
-- `_match_stage_exclude`, the single predicate every call site uses. A pattern
+The pure module owns:
+
+- `match_stage_exclude`, the single predicate every call site uses. A pattern
   without `/` matches a basename at any depth; a leading `**/` is stripped
   first, so `**/venv` also matches a top-level `venv`. A pattern containing `/`
   is matched against the whole `PurePosixPath`, and `fnmatch.fnmatchcase` lets
   its `*` span separators. A leading `**/` lifts that anchoring: the stripped
   remainder also matches below any ancestor, so `**/crates/app/venv` matches
   `tools/crates/app/venv`.
-- `_stage_exclude_ignore`, which adapts the predicate to
+- `exclusion_of`, which applies `match_stage_exclude` to a path and each of its
+  ancestors, because excluding a directory removes everything below it.
+- `excluded_manifest_message` and `dangling_dependency_message`, which turn an
+  exclusion into the operator-facing refusal or `None`. They take the
+  manifest's workspace-relative path and, for a link chain, the dependency
+  paths the adapter collected.
+
+The adapter owns:
+
+- `_stage_exclude_ignore`, which adapts `match_stage_exclude` to
   `shutil.copytree(ignore=...)`. Returning a directory name prunes it before
   `copytree` descends, so excluding `target/` costs nothing rather than copying
   and discarding it. The callback matches lexically against the root passed to
@@ -1646,24 +1660,28 @@ matching. That module owns three things:
 - `_validate_stage_exclude`, called by `_stage` before the temporary directory
   is created or anything is copied. It checks the workspace manifest and every
   planned crate manifest, including crates skipped by `publish = false` or
-  `publish.exclude`, against the pattern and each of its ancestor directories,
-  and raises `PublishPreparationError` naming both the pattern and the manifest
-  it would remove. A member whose manifest resolves outside the workspace root
-  is skipped, since staging never copies it. When
+  `publish.exclude`, and raises `PublishPreparationError` naming both the
+  pattern and the manifest it would remove. A member whose manifest resolves
+  outside the workspace root is skipped, since staging never copies it. When
   `PublishOptions.preserve_symlinks` is set, a manifest is checked a second
   time through each symbolic link in its path, including a link in a parent
   directory, and through each in-workspace target those links name: every link
   is copied as written, so pruning any of them would leave a dangling staged
-  manifest. A target outside the workspace is not checked, because
-  dereferencing it still finds the original file. A link's target is resolved
-  the way the kernel resolves it: the parent directory is resolved first, then
-  the link text is joined, so a `..` inside the text applies to the physical
-  parent rather than the lexical one. Each link in the parent chain is still
-  walked separately, so that resolution loses no dependency. A manifest link
-  that names nothing, because its target is missing or the chain loops, is
-  treated as absent: there is no target staging could have copied. Any other
-  failure to inspect it, such as a permission denial, is not turned into
-  absence, so a genuinely unreadable workspace raises
+  manifest. A directory link carries the rest of the path to its target, so
+  `alias -> manifests` makes `alias/alpha/Cargo.toml` depend on
+  `manifests/alpha/Cargo.toml`; checking only `manifests` would accept a
+  pattern that removes the manifest. A target outside the workspace is not
+  checked, because dereferencing it still finds the original file. A link's
+  target is resolved the way the kernel resolves it: the parent directory is
+  resolved first, then the link text is joined, so a `..` inside the text
+  applies to the physical parent rather than the lexical one. Each link in the
+  parent chain is still walked separately, so that resolution loses no
+  dependency. A manifest link that names nothing, because its target is missing
+  or the chain loops, is treated as absent: there is no target staging could
+  have copied. Any other failure to inspect it, such as a permission denial, is
+  not turned into absence: the adapter probes links with a no-follow `lstat` and
+  `stat.S_ISLNK` instead of `Path.is_symlink`, which reports every `OSError` as
+  `False`. A genuinely unreadable workspace therefore raises
   `StageExcludeInspectionError`, a `PublishPreparationError` subclass that
   `_stage` counts apart from a refused pattern.
 
@@ -1677,7 +1695,7 @@ trailing slash from each pattern and rejects a bare string, blank,
 spellings. `lading.config._stage_exclude` translates its `StageExcludeError`
 into `ConfigurationError` for a bad file, and `_stage` applies it before the
 temporary directory exists, translating it into `PublishPreparationError` and
-logging the normalized tuple. The predicate here therefore only ever sees
+logging the normalized tuple. `match_stage_exclude` therefore only ever sees
 relative, normalized paths.
 
 `_stage` takes a keyword-only `clock` defaulting to `time.perf_counter`, the
@@ -1693,12 +1711,12 @@ from `DEFAULT_STAGE_EXCLUDE` must revisit it rather than leave a message that
 never fires.
 
 When adding a pattern spelling, change `lading.stage_exclude_policy` if the
-spelling must be accepted or rejected, and change `_match_stage_exclude` if it
+spelling must be accepted or rejected, and change `match_stage_exclude` if it
 must match differently. Cover the copy filter and the staging boundary in
 `tests/unit/test_publish_staging_exclusions.py`, and manifest protection in
-`tests/unit/test_publish_stage_exclude_validation.py`. `_match_stage_exclude`
-is the only predicate that decides matching, so the validator and the copy
-cannot diverge.
+`tests/unit/test_publish_stage_exclude_validation.py`. `match_stage_exclude` is
+the only predicate that decides matching, so the validator and the copy cannot
+diverge.
 
 ## Publish command internals
 
@@ -1906,17 +1924,19 @@ then joins the resulting lines. All three helpers are public exports of
 `publish_plan`.
 
 `publish_staging.py` owns workspace preparation types and helpers that copy the
-workspace tree. Its exclusion policy — pattern matching, the `copytree` ignore
-callback, and the pre-copy manifest check — lives in `publish_stage_exclude.py`
-(issue #262) so the copy and cleanup lifecycle does not also own pattern
-semantics. The spelling rules those patterns must satisfy live one layer lower,
-in `lading.stage_exclude_policy`, because configuration loading enforces them
-too and must not depend on the command layer. `publish_manifest.py` owns the
-`publish.strip_patches` staging-time manifest mutation. These operations run
-before any `cargo package` or `cargo publish` command, so the command runner
-works against a prepared snapshot rather than the source workspace. Workspace
-README adoption is not performed here; the `lading bump` command transposes the
-workspace README into each opted-in crate before publication.
+workspace tree. Its exclusion adapter — the `copytree` ignore callback, the
+symbolic-link walk, and the pre-copy manifest check — lives in
+`publish_stage_exclude.py` (issue #262) so the copy and cleanup lifecycle does
+not also own exclusion semantics. The pure decisions those checks rest on,
+including pattern matching and the spelling rules, live one layer lower in
+`lading.stage_exclude_policy`, which accepts workspace-relative values and
+depends on neither the filesystem nor the command layer. `publish_manifest.py`
+owns the `publish.strip_patches` staging-time manifest mutation. These
+operations run before any `cargo package` or `cargo publish` command, so the
+command runner works against a prepared snapshot rather than the source
+workspace. Workspace README adoption is not performed here; the `lading bump`
+command transposes the workspace README into each opted-in crate before
+publication.
 
 `publish_diagnostics.py` owns compiletest failure enrichment. When a cargo
 pre-flight test failure mentions compiletest-style `*.stderr` artefacts, the

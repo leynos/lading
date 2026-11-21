@@ -45,12 +45,15 @@ from lading.commands import staging_lock
 from lading.commands.publish_manifest import PublishPreparationError
 from lading.commands.publish_stage_exclude import (
     StageExcludeInspectionError,
-    _match_stage_exclude,
     _stage_exclude_ignore,
     _validate_stage_exclude,
 )
 from lading.config import DEFAULT_STAGE_EXCLUDE
-from lading.stage_exclude_policy import StageExcludeError, normalize_stage_exclude
+from lading.stage_exclude_policy import (
+    StageExcludeError,
+    match_stage_exclude,
+    normalize_stage_exclude,
+)
 from lading.utils import metrics
 
 if typ.TYPE_CHECKING:
@@ -223,7 +226,7 @@ def _warn_if_live_publish_loses_git_selection(
     """
     if not active_options.live:
         return
-    if _match_stage_exclude(PurePosixPath(".git"), stage_exclude) is None:
+    if match_stage_exclude(PurePosixPath(".git"), stage_exclude) is None:
         return
     LOGGER.warning(
         "Live publish staging excludes .git, so cargo will not apply "

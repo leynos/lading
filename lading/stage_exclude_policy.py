@@ -18,12 +18,18 @@ This module depends on neither the configuration nor the command layer, so
 both can use it without an import cycle. The configuration loader translates
 :class:`StageExcludeError` into :class:`~lading.config.ConfigurationError` for
 a bad file; the staging boundary translates it into
-:class:`~lading.commands.publish_manifest.PublishPreparationError`. Pattern
-matching and the protection of required manifests live in
-:mod:`lading.commands.publish_stage_exclude`.
+:class:`~lading.commands.publish_manifest.PublishPreparationError`.
+
+Pattern matching and the protection of required manifests also belong here.
+Both answer questions about workspace-relative paths, so they accept
+:class:`pathlib.PurePosixPath` values and either return a value or raise
+:class:`StageExcludeError`; neither reads the filesystem. The staging adapter
+in :mod:`lading.commands.publish_stage_exclude` gathers those paths, walks
+symbolic links, and translates filesystem errors.
 """
 
 import collections.abc as cabc
+import fnmatch
 from pathlib import PurePosixPath, PureWindowsPath
 
 #: Prefix used in error messages when a caller names no field.
@@ -155,3 +161,167 @@ def normalize_stage_exclude(
         _reject_non_workspace_segments(candidate, entry_name, pattern)
         normalized.append(candidate)
     return tuple(normalized)
+
+
+def workspace_relative_prefixes(
+    relative_path: PurePosixPath,
+) -> tuple[PurePosixPath, ...]:
+    """Return ``relative_path`` and every ancestor below the workspace root.
+
+    Returns
+    -------
+    tuple[PurePosixPath, ...]
+        The ancestors from the shallowest to the deepest, ending with
+        ``relative_path`` itself.
+
+    Examples
+    --------
+    >>> workspace_relative_prefixes(PurePosixPath("a/b/c"))
+    (PurePosixPath('a'), PurePosixPath('a/b'), PurePosixPath('a/b/c'))
+    """
+    ancestors = tuple(
+        parent for parent in reversed(relative_path.parents) if parent.parts
+    )
+    return (*ancestors, relative_path)
+
+
+def match_stage_exclude(
+    relative_path: PurePosixPath, patterns: cabc.Sequence[str]
+) -> str | None:
+    """Return the first exclusion pattern matching ``relative_path``, if any.
+
+    A pattern without a slash names a basename at any depth, the way a
+    gitignore entry without a slash does, and a leading ``**/`` is accepted as
+    the same intent rather than as a pattern that requires a leading directory.
+    A pattern with a slash is matched against the whole workspace-relative
+    path, and its ``*`` may span separators. A leading ``**/`` lifts that
+    anchoring: the remainder matches at any depth, including the workspace
+    root. An interior ``**`` is not special, so it still needs a separator on
+    each side and does not make the segment it names optional.
+
+    Parameters
+    ----------
+    relative_path : PurePosixPath
+        The copied path, relative to the workspace root.
+    patterns : cabc.Sequence[str]
+        Normalized exclusion patterns.
+
+    Returns
+    -------
+    str | None
+        The matching pattern as configured, or :data:`None` when no pattern
+        matches.
+
+    Examples
+    --------
+    >>> match_stage_exclude(PurePosixPath("tools/venv"), ("venv",))
+    'venv'
+    >>> match_stage_exclude(PurePosixPath("crates/app/src"), ("crates/*",))
+    'crates/*'
+    >>> match_stage_exclude(PurePosixPath("src/lib.rs"), ("venv",)) is None
+    True
+    """
+    rendered = relative_path.as_posix()
+    for pattern in patterns:
+        effective = pattern.removeprefix("**/")
+        if "/" not in effective:
+            matched = fnmatch.fnmatchcase(relative_path.name, effective)
+        else:
+            # ``*`` spans separators, so this covers every ancestor depth the
+            # remainder may sit below; the anchored spelling covers the root.
+            matched = fnmatch.fnmatchcase(rendered, effective) or (
+                effective != pattern and fnmatch.fnmatchcase(rendered, f"*/{effective}")
+            )
+        if matched:
+            return pattern
+    return None
+
+
+def exclusion_of(
+    relative_path: PurePosixPath, patterns: cabc.Sequence[str]
+) -> tuple[PurePosixPath, str] | None:
+    """Return the path and pattern excluding ``relative_path`` or an ancestor.
+
+    Excluding a directory removes everything below it, so a pattern matching
+    an ancestor removes ``relative_path`` as surely as one matching the path
+    itself.
+
+    Returns
+    -------
+    tuple[PurePosixPath, str] | None
+        ``relative_path`` and the first matching pattern, or :data:`None` when
+        the path survives ``patterns``.
+
+    Examples
+    --------
+    >>> exclusion_of(PurePosixPath("crates/app/src"), ("crates/app",))
+    (PurePosixPath('crates/app/src'), 'crates/app')
+    """
+    for candidate in workspace_relative_prefixes(relative_path):
+        pattern = match_stage_exclude(candidate, patterns)
+        if pattern is not None:
+            return relative_path, pattern
+    return None
+
+
+def excluded_manifest_message(
+    label: str, manifest_relative: PurePosixPath, patterns: cabc.Sequence[str]
+) -> str | None:
+    """Return why ``patterns`` would remove a required manifest, if they would.
+
+    Returns
+    -------
+    str | None
+        A message naming the pattern and the manifest, or :data:`None` when
+        the manifest survives ``patterns``.
+    """
+    exclusion = exclusion_of(manifest_relative, patterns)
+    if exclusion is None:
+        return None
+    pattern = exclusion[1]
+    return (
+        f"publish.stage_exclude pattern {pattern!r} would exclude "
+        f"{label} manifest {manifest_relative.as_posix()!r}"
+    )
+
+
+def dangling_dependency_message(
+    label: str,
+    manifest_relative: PurePosixPath,
+    dependencies: cabc.Sequence[PurePosixPath],
+    patterns: cabc.Sequence[str],
+) -> str | None:
+    """Return why an excluded link dependency breaks ``manifest_relative``.
+
+    A manifest reached through a symbolic link needs both the link and its
+    target copied. Excluding the target leaves the staged link dangling, even
+    though no pattern matches the manifest's own path.
+
+    Parameters
+    ----------
+    label : str
+        How the manifest is named in an error message.
+    manifest_relative : PurePosixPath
+        The manifest's workspace-relative path.
+    dependencies : cabc.Sequence[PurePosixPath]
+        The link targets the manifest depends on, workspace-relative.
+    patterns : cabc.Sequence[str]
+        Normalized exclusion patterns.
+
+    Returns
+    -------
+    str | None
+        A message naming the excluded dependency, or :data:`None` when every
+        dependency survives ``patterns``.
+    """
+    for dependency in dependencies:
+        exclusion = exclusion_of(dependency, patterns)
+        if exclusion is not None:
+            pattern = exclusion[1]
+            return (
+                f"publish.stage_exclude pattern {pattern!r} would exclude "
+                f"{label} manifest {manifest_relative.as_posix()!r}, which "
+                f"depends on symlink target {dependency.as_posix()!r} that "
+                f"staging would not copy"
+            )
+    return None

@@ -200,12 +200,88 @@ def test_stage_exclude_rejects_a_link_through_an_excluded_directory(
             plan, ("manifests",), preserve_symlinks=True
         )
 
-    assert "symlink target 'manifests'" in str(excinfo.value), (
-        "the rejection must name the directory the link in the path names"
+    assert "symlink target 'manifests/workspace.toml'" in str(excinfo.value), (
+        "the rejection must name the file the directory link resolves to"
     )
     # An unrelated pattern still passes.
     publish_stage_exclude._validate_stage_exclude(
         plan, ("src",), preserve_symlinks=True
+    )
+
+
+def test_stage_exclude_rejects_a_directory_link_target_below_the_link(
+    preparation_fixtures: PreparationFixtures,
+) -> None:
+    """A directory link carries the rest of the path into its target."""
+    root = preparation_fixtures.tmp_path / "workspace"
+    root.mkdir()
+    (root / "Cargo.toml").write_text("[workspace]\n", encoding="utf-8")
+    (root / "manifests").mkdir()
+    (root / "alias").symlink_to("manifests")
+    # Writing through the link leaves the manifest at ``manifests/alpha`` while
+    # the plan records the path staging copies, ``alias/alpha/Cargo.toml``.
+    crate = preparation_fixtures.make_crate(root / "alias", "alpha")
+    plan = publish.plan_publication(
+        preparation_fixtures.make_workspace(root, crate),
+        preparation_fixtures.make_config(),
+    )
+
+    # The manifest is reached as ``alias/alpha/Cargo.toml``, so the dependency
+    # staging must copy is ``manifests/alpha/Cargo.toml``: a pattern naming the
+    # target directory removes it while matching none of the link's own path.
+    with pytest.raises(publish_staging.PublishPreparationError) as excinfo:
+        publish_stage_exclude._validate_stage_exclude(
+            plan, ("manifests/alpha",), preserve_symlinks=True
+        )
+
+    assert "symlink target 'manifests/alpha/Cargo.toml'" in str(excinfo.value), (
+        "the rejection must name the manifest the directory link resolves to"
+    )
+    # An unrelated pattern still passes.
+    publish_stage_exclude._validate_stage_exclude(
+        plan, ("src",), preserve_symlinks=True
+    )
+    # The refused pattern would really have dangled the staged manifest: the
+    # link survives the copy, but its target directory does not.
+    staging_parent = preparation_fixtures.tmp_path / "staging"
+    staging_parent.mkdir()
+    staging_root = publish_staging._copy_workspace_tree(
+        root,
+        staging_parent,
+        preserve_symlinks=True,
+        stage_exclude=("manifests/alpha",),
+    )
+    staged_link = staging_root / "alias"
+    assert staged_link.is_symlink(), "the directory link must be copied as a link"
+    assert not (staged_link / "alpha" / "Cargo.toml").exists(), (
+        "the refused pattern would leave the staged manifest dangling"
+    )
+
+
+def test_stage_exclude_reports_a_link_that_cannot_be_inspected(
+    preparation_fixtures: PreparationFixtures,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A link that cannot be stat-ed is an inspection failure, not a skip."""
+    plan = _plan_with_roles(preparation_fixtures)
+    manifest = plan.workspace_root / "alpha" / "Cargo.toml"
+    real_lstat = Path.lstat
+
+    def deny_link(self: Path) -> os.stat_result:
+        """Fail the no-follow inspection of the crate manifest."""
+        if self == manifest:
+            raise OSError(errno.EIO, "I/O error", str(self))
+        return real_lstat(self)
+
+    monkeypatch.setattr(Path, "lstat", deny_link)
+
+    with pytest.raises(publish_stage_exclude.StageExcludeInspectionError) as excinfo:
+        publish_stage_exclude._validate_stage_exclude(
+            plan, ("shared",), preserve_symlinks=True
+        )
+
+    assert "could not inspect the workspace" in str(excinfo.value), (
+        "a failed link inspection must not be read as 'not a link'"
     )
 
 
@@ -311,12 +387,15 @@ _REQUIRED_MANIFESTS = ("Cargo.toml", "crates/alpha/Cargo.toml")
 
 
 def _validation_rejects(
-    plan: publish_plan.PublishPlan, patterns: tuple[str, ...]
+    plan: publish_plan.PublishPlan,
+    patterns: tuple[str, ...],
+    *,
+    preserve_symlinks: bool = False,
 ) -> bool:
     """Return whether the pre-copy check refuses ``patterns``."""
     try:
         publish_stage_exclude._validate_stage_exclude(
-            plan, patterns, preserve_symlinks=False
+            plan, patterns, preserve_symlinks=preserve_symlinks
         )
     except publish_staging.PublishPreparationError:
         return True
@@ -365,6 +444,56 @@ def test_validation_rejects_exactly_the_patterns_that_remove_a_manifest(
     assert rejected is removed, (
         f"patterns {stage_exclude!r} must be refused exactly when the copy "
         f"would remove a required manifest (refused: {rejected}, removed: {removed})"
+    )
+
+
+_DIRECTORY_LINK_PATTERNS = (
+    "Cargo.toml",
+    "alias",
+    "alias/alpha",
+    "manifests",
+    "manifests/alpha",
+    "manifests/alpha/Cargo.toml",
+    "src",
+)
+
+
+@settings(
+    max_examples=20,
+    deadline=None,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
+@given(patterns=st.lists(st.sampled_from(_DIRECTORY_LINK_PATTERNS), max_size=3))
+def test_validation_rejects_every_pattern_that_dangles_a_directory_link(
+    preparation_fixtures: PreparationFixtures,
+    tmp_path: Path,
+    patterns: list[str],
+) -> None:
+    """A pruned directory link never leaves a required manifest dangling."""
+    workspace_root = Path(tempfile.mkdtemp(dir=tmp_path, prefix="workspace-"))
+    staging_parent = Path(tempfile.mkdtemp(dir=tmp_path, prefix="staging-"))
+    (workspace_root / "Cargo.toml").write_text("[workspace]\n", encoding="utf-8")
+    (workspace_root / "manifests").mkdir()
+    (workspace_root / "alias").symlink_to("manifests")
+    crate = preparation_fixtures.make_crate(workspace_root / "alias", "alpha")
+    plan = publish.plan_publication(
+        preparation_fixtures.make_workspace(workspace_root, crate),
+        preparation_fixtures.make_config(),
+    )
+    stage_exclude = tuple(patterns)
+
+    rejected = _validation_rejects(plan, stage_exclude, preserve_symlinks=True)
+    staging_root = publish_staging._copy_workspace_tree(
+        workspace_root,
+        staging_parent,
+        preserve_symlinks=True,
+        stage_exclude=stage_exclude,
+    )
+    manifest = staging_root / "alias" / "alpha" / "Cargo.toml"
+
+    assert manifest.is_file() or rejected, (
+        f"patterns {stage_exclude!r} removed the manifest staging must keep "
+        f"without being refused (rejected: {rejected})"
     )
 
 

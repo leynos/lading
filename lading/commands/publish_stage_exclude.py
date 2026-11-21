@@ -1,33 +1,32 @@
-"""Exclusion policy for the staged publish workspace copy.
+"""Staging adapter for workspace-relative publish exclusions.
 
 Staging copies the workspace before packaging, so entries that packaging never
 reads only cost time: build output, Git metadata, virtual environments and tool
-caches. This module owns the pattern semantics, the :func:`shutil.copytree`
-callback that prunes an excluded directory instead of walking it, and the check
-that an exclusion cannot remove a manifest the publication needs.
+caches. This module gathers the facts the exclusion policy needs: it builds the
+:func:`shutil.copytree` callback that prunes an excluded directory instead of
+walking it, walks the symbolic links a required manifest depends on, and
+translates filesystem failures into :class:`StageExcludeInspectionError`.
 
-Patterns are filesystem paths relative to the workspace root, not crate names;
-``publish.exclude`` is the way to skip a crate from publication. A pattern
-without ``/`` matches a basename at any depth, and a leading ``**/`` is accepted
-as a spelling of that same intent. A pattern with ``/`` matches the whole
-workspace-relative path, where ``*`` may span separators; a leading ``**/``
-lifts that anchoring so the remainder matches at any depth, including the
-workspace root.
-
-Only a *leading* ``**/`` is special. An interior ``**`` is a ``*`` like any
-other, so it still needs a separator on each side: ``crates/**/venv`` matches
-``crates/app/venv`` but not ``crates/venv``. Writing ``**/venv``, or ``venv``,
-is how a reader asks for any depth.
+The spelling rules and the decision about which paths a pattern removes live in
+:mod:`lading.stage_exclude_policy`. Those functions take workspace-relative
+:class:`~pathlib.PurePosixPath` values and never read the filesystem, so this
+module is the only place that resolves, stats or reads a path.
 """
 
 import collections.abc as cabc
 import errno
-import fnmatch
 import os
+import stat
 import typing as typ
 from pathlib import Path, PurePosixPath
 
 from lading.commands.publish_manifest import PublishPreparationError
+from lading.stage_exclude_policy import (
+    dangling_dependency_message,
+    excluded_manifest_message,
+    match_stage_exclude,
+    workspace_relative_prefixes,
+)
 
 if typ.TYPE_CHECKING:
     from lading.commands.publish_plan import PublishPlan
@@ -42,42 +41,6 @@ class StageExcludeInspectionError(PublishPreparationError):
     callers handle it as a staging failure, but it is counted apart from a
     refused pattern: the configuration may be sound and the filesystem not.
     """
-
-
-def _match_stage_exclude(
-    relative_path: PurePosixPath, patterns: cabc.Sequence[str]
-) -> str | None:
-    """Return the first exclusion pattern matching ``relative_path``, if any.
-
-    A pattern without a slash names a basename at any depth, the way a
-    gitignore entry without a slash does, and a leading ``**/`` is accepted as
-    the same intent rather than as a pattern that requires a leading directory.
-    A pattern with a slash is matched against the whole workspace-relative
-    path, and its ``*`` may span separators. A leading ``**/`` lifts that
-    anchoring: the remainder matches at any depth, including the workspace
-    root. An interior ``**`` is not special, so it still needs a separator on
-    each side and does not make the segment it names optional.
-
-    Returns
-    -------
-    str | None
-        The matching pattern as configured, or :data:`None` when no pattern
-        matches.
-    """
-    rendered = relative_path.as_posix()
-    for pattern in patterns:
-        effective = pattern.removeprefix("**/")
-        if "/" not in effective:
-            matched = fnmatch.fnmatchcase(relative_path.name, effective)
-        else:
-            # ``*`` spans separators, so this covers every ancestor depth the
-            # remainder may sit below; the anchored spelling covers the root.
-            matched = fnmatch.fnmatchcase(rendered, effective) or (
-                effective != pattern and fnmatch.fnmatchcase(rendered, f"*/{effective}")
-            )
-        if matched:
-            return pattern
-    return None
 
 
 def _stage_exclude_ignore(
@@ -105,7 +68,7 @@ def _stage_exclude_ignore(
         return {
             name
             for name in names
-            if _match_stage_exclude(PurePosixPath(relative_directory, name), patterns)
+            if match_stage_exclude(PurePosixPath(relative_directory, name), patterns)
             is not None
         }
 
@@ -154,32 +117,6 @@ def _manifest_relative_path(
     return None
 
 
-def _workspace_relative_prefixes(
-    relative_path: PurePosixPath,
-) -> tuple[PurePosixPath, ...]:
-    """Return ``relative_path`` and every ancestor below the workspace root."""
-    ancestors = tuple(
-        parent for parent in reversed(relative_path.parents) if parent.parts
-    )
-    return (*ancestors, relative_path)
-
-
-def _manifest_exclusion(
-    manifest: Path,
-    workspace_root: Path,
-    patterns: cabc.Sequence[str],
-) -> tuple[PurePosixPath, str] | None:
-    """Return the excluded manifest path and the pattern that excludes it."""
-    relative = _manifest_relative_path(manifest, workspace_root)
-    if relative is None:
-        return None
-    for candidate in _workspace_relative_prefixes(relative):
-        pattern = _match_stage_exclude(candidate, patterns)
-        if pattern is not None:
-            return relative, pattern
-    return None
-
-
 def _link_target(path: Path) -> Path:
     """Return the path ``path`` names, resolving only its parent directory.
 
@@ -196,23 +133,51 @@ def _link_target(path: Path) -> Path:
     return Path(os.path.normpath(parent / path.readlink()))
 
 
+def _is_symlink(path: Path) -> bool:
+    """Return whether ``path`` is a symbolic link, preserving inspection errors.
+
+    :meth:`Path.is_symlink` reports every :class:`OSError` as ``False``, so a
+    link that could not be inspected would be skipped and an exclusion could
+    remove its target unnoticed. Only a missing entry or a non-directory
+    component counts as "not a link"; any other failure is left to the caller.
+
+    Returns
+    -------
+    bool
+        Whether ``path`` is a symbolic link. An inspection failure the caller
+        did not exclude propagates, rather than being reported as ``False``.
+    """
+    try:
+        mode = path.lstat().st_mode
+    except FileNotFoundError, NotADirectoryError:
+        return False
+    return stat.S_ISLNK(mode)
+
+
 def _link_targets_in_path(path: Path, workspace_root: Path) -> cabc.Iterator[Path]:
     """Yield what each symbolic link in ``path`` or an ancestor names.
+
+    A link to a directory is followed by the rest of the path, because that is
+    what the kernel does with ``alias/Cargo.toml`` when ``alias`` names
+    ``real``: the manifest staging must preserve is ``real/Cargo.toml``, and a
+    pattern removing it would leave the staged link dangling.
 
     Yields
     ------
     Path
-        The target of a link in ``path`` or one of its parent directories, in
-        path order. A path outside the workspace names nothing staging copies,
-        so it yields no targets.
+        The target of a link in ``path`` or one of its parent directories,
+        joined with the remaining components of ``path``, in path order. A
+        path outside the workspace names nothing staging copies, so it yields
+        no targets.
     """
     relative = _manifest_relative_path(path, workspace_root)
     if relative is None:
         return
-    for prefix in _workspace_relative_prefixes(relative):
+    for prefix in workspace_relative_prefixes(relative):
         component = workspace_root / prefix
-        if component.is_symlink():
-            yield _link_target(component)
+        if _is_symlink(component):
+            remainder = relative.parts[len(prefix.parts) :]
+            yield _link_target(component).joinpath(*remainder)
 
 
 def _unseen_link_targets(
@@ -282,61 +247,30 @@ def _is_absent(path: Path) -> bool:
     return False
 
 
-def _preserved_link_exclusion(
-    manifest: Path, workspace_root: Path, patterns: cabc.Sequence[str]
-) -> tuple[PurePosixPath, str] | None:
-    """Return the excluded dependency of a preserved manifest, if any."""
+def _dependency_relatives(
+    manifest: Path, workspace_root: Path
+) -> tuple[PurePosixPath, ...]:
+    """Return each link dependency of ``manifest`` inside the workspace.
+
+    A dependency outside the workspace names nothing staging copies, so it is
+    omitted: no pattern can remove it from the staged tree.
+
+    Returns
+    -------
+    tuple[PurePosixPath, ...]
+        Each dependency the workspace contains, relative to the workspace
+        root.
+    """
     if _is_absent(manifest):
         # A broken chain has no target staging could have copied, and a pattern
         # is not what broke it.
-        return None
+        return ()
+    relatives: list[PurePosixPath] = []
     for dependency in _preserved_dependencies(manifest, workspace_root):
-        exclusion = _manifest_exclusion(dependency, workspace_root, patterns)
-        if exclusion is not None:
-            return exclusion
-    return None
-
-
-def _excluded_manifest_message(
-    label: str,
-    manifest: Path,
-    patterns: cabc.Sequence[str],
-    workspace_root: Path,
-) -> str | None:
-    """Return why ``patterns`` would remove ``manifest``, if they would."""
-    relative = _manifest_relative_path(manifest, workspace_root)
-    if relative is None:
-        # No spelling of the workspace root contains the manifest, so staging
-        # never copies it and no pattern can remove it.
-        return None
-    exclusion = _manifest_exclusion(manifest, workspace_root, patterns)
-    if exclusion is None:
-        return None
-    pattern = exclusion[1]
-    return (
-        f"publish.stage_exclude pattern {pattern!r} would exclude "
-        f"{label} manifest {relative.as_posix()!r}"
-    )
-
-
-def _dangling_link_message(
-    label: str,
-    manifest: Path,
-    patterns: cabc.Sequence[str],
-    workspace_root: Path,
-) -> str | None:
-    """Return why an excluded link dependency breaks ``manifest``."""
-    relative = _manifest_relative_path(manifest, workspace_root)
-    target = _preserved_link_exclusion(manifest, workspace_root, patterns)
-    if relative is None or target is None:
-        return None
-    target_relative, pattern = target
-    return (
-        f"publish.stage_exclude pattern {pattern!r} would exclude "
-        f"{label} manifest {relative.as_posix()!r}, which depends on "
-        f"symlink target {target_relative.as_posix()!r} that staging would "
-        f"not copy"
-    )
+        relative = _manifest_relative_path(dependency, workspace_root)
+        if relative is not None:
+            relatives.append(relative)
+    return tuple(relatives)
 
 
 def _reject_excluded_manifests(
@@ -347,12 +281,18 @@ def _reject_excluded_manifests(
 ) -> None:
     """Raise for the first required manifest ``stage_exclude`` would remove."""
     for label, manifest in _required_manifests(plan):
-        message = _excluded_manifest_message(
-            label, manifest, stage_exclude, plan.workspace_root
-        )
+        relative = _manifest_relative_path(manifest, plan.workspace_root)
+        if relative is None:
+            # No spelling of the workspace root contains the manifest, so
+            # staging never copies it and no pattern can remove it.
+            continue
+        message = excluded_manifest_message(label, relative, stage_exclude)
         if message is None and preserve_symlinks:
-            message = _dangling_link_message(
-                label, manifest, stage_exclude, plan.workspace_root
+            message = dangling_dependency_message(
+                label,
+                relative,
+                _dependency_relatives(manifest, plan.workspace_root),
+                stage_exclude,
             )
         if message is not None:
             raise PublishPreparationError(message)
