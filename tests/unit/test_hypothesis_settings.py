@@ -24,12 +24,39 @@ def test_filesystem_property_settings_preserves_max_examples() -> None:
     )
 
 
-def test_filesystem_property_settings_defaults_to_no_suppression() -> None:
-    """Suppression is opted into by the caller, not by the factory."""
+def test_filesystem_property_settings_inherits_the_active_example_budget() -> None:
+    """Omitting the budget keeps the active profile's example count."""
+    active = settings.default
+    assert active is not None, "Hypothesis should have active default settings"
+
+    configured = filesystem_property_settings()
+
+    assert configured.max_examples == active.max_examples, (
+        "an unspecified example budget must be inherited, not replaced"
+    )
+
+
+def test_filesystem_property_settings_inherits_the_active_suppressions() -> None:
+    """Omitting suppressions keeps the active profile's health checks."""
+    active = settings.default
+    assert active is not None, "Hypothesis should have active default settings"
+
     configured = filesystem_property_settings(max_examples=20)
 
+    assert configured.suppress_health_check == active.suppress_health_check, (
+        "an unspecified suppression list must be inherited, not replaced"
+    )
+
+
+def test_filesystem_property_settings_accepts_an_explicit_empty_suppression() -> None:
+    """An explicit empty sequence suppresses nothing, whatever the profile says."""
+    configured = filesystem_property_settings(
+        max_examples=20,
+        suppress_health_check=[],
+    )
+
     assert configured.suppress_health_check == (), (
-        "filesystem access alone should not suppress health checks"
+        "an explicit empty suppression must override the active profile"
     )
 
 
@@ -57,6 +84,8 @@ def test_filesystem_property_settings_leaves_the_active_defaults_alone() -> None
     before = settings.default
     assert before is not None, "Hypothesis should have active default settings"
     deadline_before = before.deadline
+    budget_before = before.max_examples
+    suppression_before = before.suppress_health_check
 
     filesystem_property_settings(max_examples=20)
 
@@ -64,4 +93,10 @@ def test_filesystem_property_settings_leaves_the_active_defaults_alone() -> None
     assert after is before, "the factory must not replace the active defaults"
     assert after.deadline == deadline_before, (
         "the factory must not change the active default deadline"
+    )
+    assert after.max_examples == budget_before, (
+        "the factory must not change the active default example budget"
+    )
+    assert after.suppress_health_check == suppression_before, (
+        "the factory must not change the active default suppressions"
     )

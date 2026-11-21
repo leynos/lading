@@ -22,11 +22,14 @@ would only move the flake; the deadline itself is the wrong instrument here.
 Health-check suppression is a separate decision. Filesystem access alone does
 not require ``HealthCheck.function_scoped_fixture``; a property that uses no
 pytest fixture needs no suppression, while one that reuses a function-scoped
-``tmp_path`` across examples does. Callers pass exactly the list they need.
+``tmp_path`` across examples does. Omitting the argument inherits the active
+profile's suppressions, which matters because the ``ci`` profile suppresses
+``HealthCheck.too_slow``. Pass an explicit sequence, including an empty one,
+to choose suppressions yourself.
 
 Example isolation also remains the property's responsibility: this helper
-changes only timing. It does not create, reset or clean up any state, so a
-shared ``tmp_path`` still needs an explicit reset between examples.
+does not create, reset or clean up any state, so a shared ``tmp_path`` still
+needs an explicit reset between examples.
 """
 
 import collections.abc as cabc
@@ -40,8 +43,8 @@ if typ.TYPE_CHECKING:
 
 def filesystem_property_settings(
     *,
-    max_examples: int,
-    suppress_health_check: cabc.Sequence[HealthCheck] = (),
+    max_examples: int | None = None,
+    suppress_health_check: cabc.Sequence[HealthCheck] | None = None,
 ) -> settings:
     """Return settings for a property that performs real filesystem I/O.
 
@@ -53,26 +56,29 @@ def filesystem_property_settings(
 
     Parameters
     ----------
-    max_examples : int
-        Number of examples to generate, preserving the property's existing
-        budget.
+    max_examples : int, optional
+        Number of examples to generate, pinning the property's existing
+        budget. Omit it to inherit the active profile's budget.
     suppress_health_check : collections.abc.Sequence[HealthCheck], optional
-        Health checks to suppress, by default no suppression. Pass
-        ``[HealthCheck.function_scoped_fixture]`` only when the property
-        reuses a function-scoped fixture such as ``tmp_path`` across
-        examples.
+        Health checks to suppress. Omit it to inherit the active profile's
+        suppressions. Pass an explicit sequence, including an empty one, to
+        choose exactly; use ``[HealthCheck.function_scoped_fixture]`` only
+        when the property reuses a function-scoped fixture such as
+        ``tmp_path`` across examples.
 
     Returns
     -------
     hypothesis.settings
-        Settings with the supplied example budget, the given suppressions and
-        ``deadline=None``. Every other setting keeps its Hypothesis default.
+        Settings with ``deadline=None`` and whichever of the other two
+        arguments the caller supplied. Unsupplied settings are inherited from
+        the active profile.
 
     Notes
     -----
     Hypothesis selects its built-in ``ci`` profile in CI environments, and
-    that profile disables deadlines. The factory changes no global state, so
-    in-memory properties remain governed by whatever profile is active.
+    that profile disables deadlines and suppresses ``HealthCheck.too_slow``.
+    The factory changes no global state, so in-memory properties remain
+    governed by whatever profile is active.
 
     Examples
     --------
@@ -93,8 +99,9 @@ def filesystem_property_settings(
     runs ``--doctest-modules``, and an executable example here would need a
     real property to decorate.
     """
-    return settings(
-        max_examples=max_examples,
-        deadline=None,
-        suppress_health_check=suppress_health_check,
-    )
+    options: dict[str, typ.Any] = {"deadline": None}
+    if max_examples is not None:
+        options["max_examples"] = max_examples
+    if suppress_health_check is not None:
+        options["suppress_health_check"] = suppress_health_check
+    return settings(**options)

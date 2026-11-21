@@ -947,13 +947,20 @@ def test_manifest_selection_matches_naive_reference(tmp_path, data):
     ...
 ```
 
-The factory sets `max_examples`, `deadline=None`, and the suppressions the
-caller passes. It does not change `settings.default`, register or load a
-profile, or alter any other property's settings. It therefore makes no promise
-about whether an in-memory property is timed: Hypothesis selects its built-in
-`ci` profile in CI environments, and that profile disables deadlines, while
-some in-memory properties opt out explicitly with `deadline=None`. Those
-choices stand outside this policy.
+The factory always sets `deadline=None`. It passes `max_examples` and
+`suppress_health_check` through only when the caller supplies them; anything
+omitted is inherited from the active profile. Inheritance matters beyond
+budgets: the `ci` profile suppresses `HealthCheck.too_slow`, so forcing an
+empty suppression list would re-enable a health check the profile had turned
+off. Pass an explicit sequence, including an empty one, to choose suppressions
+yourself.
+
+The factory does not change `settings.default`, register or load a profile, or
+alter any other property's settings. It therefore makes no promise about
+whether an in-memory property is timed: Hypothesis selects its built-in `ci`
+profile in CI environments, and that profile disables deadlines, while some
+in-memory properties opt out explicitly with `deadline=None`. Those choices
+stand outside this policy.
 
 Do not raise the deadline for a single test, and do not set it globally: a
 blanket bump would hide a real regression in the in-memory properties that the
@@ -967,7 +974,8 @@ Opting out of the deadline does not opt out of health checks. Filesystem access
 alone does not need `HealthCheck.function_scoped_fixture`. Pass that
 suppression only when the property reuses a function-scoped fixture such as
 `tmp_path` across examples, because suppression silences the warning without
-resetting any state.
+resetting any state. Omit the argument to inherit the profile's suppressions;
+pass an explicit sequence to replace them.
 
 Example isolation remains the property's responsibility. Use one of these
 patterns, and keep the chosen pattern visible in the test:
