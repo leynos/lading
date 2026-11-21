@@ -17,7 +17,7 @@ keywords = ["rust", "cargo", "workspace", "release", "lading"]
 authors = [{ name = "Payton McIntosh", email = "pmcintosh@df12.net" }]
 dependencies = [
     "cuprum==0.2.0b2",
-    "cyclopts>=4.25.3,<5",
+    "cyclopts>=4.25.3,<6",
     "markdown-it-py>=3,<5",
     "msgspec>=0.18,<1.0",
     "tomlkit>=0.13,<0.16",
