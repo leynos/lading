@@ -15,8 +15,14 @@ import typing as typ
 from lading.commands import (
     bump_docs,
     bump_lockfiles,
-    bump_pipeline_manifest_rewrites,
+    bump_manifest_rewrite_application,
+    bump_manifest_rewrite_filesystem,
+    bump_manifest_rewrite_metrics,
+    bump_manifest_rewrites,
     bump_readme,
+)
+from lading.commands.bump_manifest_rewrite_metrics import (
+    ManifestRewriteMetricLabels,
 )
 from lading.commands.bump_manifests import (
     _WORKSPACE_SELECTORS,
@@ -59,22 +65,22 @@ class _BumpAuxiliaryChanges:
     lockfiles: cabc.Sequence[Path]
 
 
+@dc.dataclass(frozen=True, slots=True)
+class _ManifestRewriteStage:
+    """Configured rewrite plans and their measured planning interval."""
+
+    is_configured: bool = False
+    plans: tuple[bump_manifest_rewrites.ManifestRewritePlan, ...] = ()
+    planning_duration_seconds: float = 0.0
+
+
 def _run_pipeline(context: _BumpContext, target_version: str) -> BumpChanges:
     """Run update stages and return their ordered changes."""
     changed_manifests: set[Path] = set()
-    rewrite_plans, planning_duration = (
-        bump_pipeline_manifest_rewrites._plan_non_member_manifest_rewrites(
-            context, target_version
-        )
-    )
+    rewrite_stage = _plan_non_member_manifest_rewrites(context, target_version)
     _process_workspace_manifest(context, target_version, changed_manifests)
     _process_crate_manifests(context, target_version, changed_manifests)
-    bump_pipeline_manifest_rewrites._apply_non_member_manifest_rewrites(
-        context,
-        rewrite_plans,
-        changed_manifests,
-        planning_duration=planning_duration,
-    )
+    _apply_non_member_manifest_rewrites(context, rewrite_stage, changed_manifests)
     changed_documents = _process_documentation_files(context, target_version)
     changed_readmes = _process_readme_transposition(
         context, dry_run=context.base_options.dry_run
@@ -87,6 +93,100 @@ def _run_pipeline(context: _BumpContext, target_version: str) -> BumpChanges:
             documents=tuple(changed_documents),
             readmes=tuple(changed_readmes),
             lockfiles=changed_lockfiles,
+        ),
+    )
+
+
+def _plan_non_member_manifest_rewrites(
+    context: _BumpContext,
+    target_version: str,
+) -> _ManifestRewriteStage:
+    """Plan configured fixture changes before any pipeline write."""
+    rewrite_groups = context.configuration.bump.manifest_rewrites
+    if not rewrite_groups:
+        return _ManifestRewriteStage()
+    clock = context.base_options.clock
+    planning_started_at = clock()
+    pre_bump_versions = {
+        crate.name: crate.version for crate in context.workspace.crates
+    }
+    member_manifest_paths = tuple(
+        crate.manifest_path for crate in context.workspace.crates
+    )
+    try:
+        sources = bump_manifest_rewrite_filesystem.read_manifest_rewrite_sources(
+            context.root_path, rewrite_groups, member_manifest_paths
+        )
+        plans = bump_manifest_rewrites.plan_manifest_rewrites(
+            sources,
+            bump_manifest_rewrites.ManifestRewriteVersions(
+                updated_crate_names=context.updated_crate_names,
+                pre_bump_versions=pre_bump_versions,
+                target_version=target_version,
+            ),
+        )
+    except bump_manifest_rewrites.ManifestRewriteError:
+        bump_manifest_rewrite_metrics.record_manifest_rewrite_metrics(
+            clock() - planning_started_at,
+            ManifestRewriteMetricLabels(
+                phase="planning",
+                outcome="failed",
+                dry_run=context.base_options.dry_run,
+                error_category="planning",
+            ),
+        )
+        raise
+    planning_duration = clock() - planning_started_at
+    bump_manifest_rewrite_metrics.record_manifest_rewrite_planned(
+        dry_run=context.base_options.dry_run
+    )
+    return _ManifestRewriteStage(
+        is_configured=True,
+        plans=plans,
+        planning_duration_seconds=planning_duration,
+    )
+
+
+def _apply_non_member_manifest_rewrites(
+    context: _BumpContext,
+    stage: _ManifestRewriteStage,
+    changed_manifests: set[Path],
+) -> None:
+    """Apply planned fixture rewrites and include their resolved paths."""
+    if not stage.is_configured:
+        return
+    dry_run = context.base_options.dry_run
+    clock = context.base_options.clock
+    _log.debug(
+        "Non-member manifest rewrites: %d planned manifest(s), dry_run=%s",
+        len(stage.plans),
+        dry_run,
+    )
+    application_started_at = clock()
+    try:
+        rewritten_paths = bump_manifest_rewrite_application.apply_manifest_rewrites(
+            stage.plans, dry_run=dry_run
+        )
+    except bump_manifest_rewrites.ManifestRewriteError:
+        bump_manifest_rewrite_metrics.record_manifest_rewrite_metrics(
+            stage.planning_duration_seconds + clock() - application_started_at,
+            ManifestRewriteMetricLabels(
+                phase="application",
+                outcome="failed",
+                dry_run=dry_run,
+                error_category="write",
+            ),
+        )
+        raise
+    changed_manifests.update(path.resolve() for path in rewritten_paths)
+    outcome = "skipped" if dry_run or not stage.plans else "applied"
+    bump_manifest_rewrite_metrics.record_manifest_rewrite_metrics(
+        stage.planning_duration_seconds + clock() - application_started_at,
+        ManifestRewriteMetricLabels(
+            phase="application",
+            outcome=outcome,
+            dry_run=dry_run,
+            error_category="none",
         ),
     )
 

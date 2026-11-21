@@ -4,6 +4,7 @@ import collections.abc as cabc
 import pathlib
 import typing as typ
 
+import pytest
 from tomlkit import parse as parse_toml
 
 from lading.commands import bump_manifest_rewrites
@@ -295,3 +296,51 @@ def test_unchanged_manifest_is_omitted_and_dry_run_does_not_write(
     assert manifest.read_bytes() == original_bytes, (
         "dry-run must preserve manifest bytes"
     )
+
+
+def test_planner_rewrites_supplied_text_without_filesystem_access() -> None:
+    """The rewrite policy consumes source text without opening its path."""
+    source = bump_manifest_rewrites.ManifestRewriteSource(
+        path=pathlib.Path("unopened/Cargo.toml"),
+        content='[dependencies]\nalpha = "1.0.0"\n',
+        dependencies=True,
+        string_values=(),
+    )
+
+    (plan,) = bump_manifest_rewrites.plan_manifest_rewrites(
+        (source,), manifest_rewrite_versions()
+    )
+
+    assert plan.path == pathlib.Path("unopened/Cargo.toml"), (
+        "the planner should preserve the supplied source identity"
+    )
+    assert plan.new_text == '[dependencies]\nalpha = "2.0.0"\n', (
+        "the planner should use only supplied text and version metadata"
+    )
+
+
+def test_application_rejects_manifest_changed_after_planning(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Applying a stale plan must preserve the newer manifest content."""
+    manifest = tmp_path / "Cargo.toml"
+    manifest.write_text('[dependencies]\nalpha = "1.0.0"\n', encoding="utf-8")
+    plan = bump_manifest_rewrites.ManifestRewritePlan(
+        manifest,
+        '[dependencies]\nalpha = "1.0.0"\n',
+        '[dependencies]\nalpha = "2.0.0"\n',
+    )
+    manifest.write_text('[dependencies]\nalpha = "local-edit"\n', encoding="utf-8")
+
+    with pytest.raises(
+        bump_manifest_rewrites.ManifestRewriteError,
+        match="changed after planning",
+    ) as failure:
+        bump_manifest_rewrites.apply_manifest_rewrites((plan,), dry_run=False)
+
+    assert failure.value.failed_path == manifest, (
+        "the error should identify the stale plan's target"
+    )
+    assert manifest.read_text(encoding="utf-8") == (
+        '[dependencies]\nalpha = "local-edit"\n'
+    ), "application must not overwrite changes made after planning"

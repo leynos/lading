@@ -7,6 +7,7 @@ import pytest
 
 from lading.commands import bump_manifest_rewrites
 from lading.config import ManifestRewriteConfig
+from tests.helpers.manifest_rewrites import plan_fixture_rewrites
 
 
 @pytest.mark.parametrize(
@@ -33,9 +34,4 @@ def test_wraps_toml_errors_with_manifest_path(
         bump_manifest_rewrites.ManifestRewriteError,
         match=re.escape(str(manifest.resolve())),
     ):
-        bump_manifest_rewrites.plan_manifest_rewrites(
-            tmp_path,
-            (group,),
-            (),
-            versions,
-        )
+        plan_fixture_rewrites(tmp_path, (group,), versions)

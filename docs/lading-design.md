@@ -406,16 +406,20 @@ lading bump <new_version> [--dry-run]
   Cargo manifests. It updates matching dependency requirements and explicit
   TOML string selectors while leaving root and member manifest ownership with
   the normal bump stages.
+- `bump_manifest_rewrite_filesystem` resolves and reads allowlisted sources;
+  `bump_manifest_rewrites` plans edits from supplied TOML text and version
+  metadata without filesystem access. `bump_manifest_rewrite_model` owns the
+  shared plans and rewrite error.
 - `bump_manifest_rewrite_dependencies` owns dependency-section traversal for
-  direct, target, and workspace requirements; `bump_toml` handles requirement
-  composition and TOML value replacement.
-- `bump_pipeline_manifest_rewrites` owns the rewrite-only planning,
-  application, and timing orchestration used by `bump_pipeline`. This keeps
-  fail-fast planning before writes and application after member manifests
-  without growing the ordered stage coordinator beyond its module boundary.
-- Every selected manifest is resolved, validated, read, and planned before the
-  workspace manifest stage writes. The plans are applied after member manifests
-  and before documentation, README transposition, and lockfile work.
+  direct, target, and workspace requirements. `bump_toml` and
+  `bump_toml_dependencies` encapsulate TOML node details, requirement
+  composition, and formatting preservation. The planner parses supplied TOML
+  text directly; `bump_toml_files` owns manifest file I/O. Comparator warnings
+  are returned as data and logged at the command boundary.
+- `bump_pipeline` owns timing, metrics, and stage ordering. It plans every
+  selected manifest before the workspace manifest stage writes, then applies
+  the plans after member manifests and before documentation, README
+  transposition, and lockfile work.
 - Changed non-member manifests appear in the existing manifest report
   category. Rewriting does not add lockfile targets; `bump.lockfile_manifests`
   continues to control additional lockfile regeneration.

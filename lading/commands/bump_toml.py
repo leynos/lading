@@ -1,8 +1,9 @@
-r"""Manipulate TOML values and files used by version bumping.
+r"""Manipulate TOML values used by version bumping.
 
 The module selects tables, preserves TOML formatting while replacing scalar
-values, and writes changed files atomically. Dependency-table traversal lives
-in :mod:`lading.commands.bump_toml_dependencies`.
+values, and prepares changed string items. Dependency-table traversal lives in
+:mod:`lading.commands.bump_toml_dependencies`; manifest file I/O lives in
+:mod:`lading.commands.bump_toml_files`.
 
 Examples
 --------
@@ -15,23 +16,15 @@ True
 '2.0.0'
 """
 
-import logging
-import os
+import collections.abc as cabc
 import re
-import tempfile
 import typing as typ
 from contextlib import suppress
-from pathlib import Path
 
 from tomlkit import parse as parse_toml
 from tomlkit import string
 from tomlkit.container import OutOfOrderTableProxy
 from tomlkit.items import InlineTable, Item, String, Table
-
-from lading.commands.bump_requirement_bounds import (
-    excluding_retained_bounds,
-    excluding_rewritten_first_bound,
-)
 
 if typ.TYPE_CHECKING:
     from tomlkit.toml_document import TOMLDocument
@@ -46,7 +39,6 @@ _TABLE_LIKE_TYPES: typ.Final[
 )
 
 NON_DIGIT_PREFIX: typ.Final[re.Pattern[str]] = re.compile(r"^([^\d]*)")
-_log = logging.getLogger(__name__)
 
 
 def value_as_string(value: object) -> str | None:
@@ -152,18 +144,6 @@ def prepare_version_replacement(
     current = value_as_string(value)
     if current is None:
         return None
-    excluded_bounds = (
-        *excluding_rewritten_first_bound(current, target_version),
-        *excluding_retained_bounds(current, target_version),
-    )
-    if excluded_bounds:
-        _log.warning(
-            "Target version %s does not satisfy preserved Cargo comparator(s) %s "
-            "in requirement %r; the rewritten requirement may not resolve",
-            target_version,
-            ", ".join(excluded_bounds),
-            current,
-        )
     replacement_text = compose_requirement(current, target_version)
     if replacement_text == current:
         return None
@@ -236,30 +216,59 @@ def prepare_string_value_replacement(
     return replacement
 
 
-def parse_manifest(manifest_path: Path) -> TOMLDocument:
-    """Load ``manifest_path`` into a :class:`tomlkit` document.
+def update_string_values(
+    table: _TableLike,
+    replacement: cabc.Callable[[str], str],
+    *,
+    field: str | None = None,
+) -> bool:
+    r"""Update matching strings in a table or in its sub-table fields.
 
     Parameters
     ----------
-    manifest_path : Path
-        Filesystem path to the TOML manifest to read.
+    table : _TableLike
+        TOML table whose values are inspected.
+    replacement : Callable[[str], str]
+        Pure transformation applied to each selected string value.
+    field : str or None, optional
+        When set, inspect this field in each inline or standard sub-table.
+        When omitted, inspect direct string values in ``table``.
 
     Returns
     -------
-    TOMLDocument
-        The parsed manifest document.
+    bool
+        Whether any string value changed.
 
     Examples
     --------
-    >>> import tempfile
-    >>> from pathlib import Path
-    >>> path = Path(tempfile.mkdtemp()) / "Cargo.toml"
-    >>> _ = path.write_text('version = "0.1.0"', encoding="utf-8")
-    >>> parse_manifest(path)["version"]
-    '0.1.0'
+    >>> document = parse_toml('[metadata]\npath = "alpha-1.0.0"')
+    >>> update_string_values(
+    ...     document["metadata"], lambda value: value.replace("1.0.0", "2.0.0")
+    ... )
+    True
+    >>> document["metadata"]["path"]
+    'alpha-2.0.0'
     """
-    content = manifest_path.read_text(encoding="utf-8")
-    return parse_toml(content)
+    changed = False
+    for key, entry in tuple(table.items()):
+        container = table
+        value = entry
+        selected_key = key
+        if field is not None:
+            if not isinstance(entry, _TABLE_LIKE_TYPES):
+                continue
+            container = entry
+            selected_key = field
+            value = entry.get(field)
+        current = value_as_string(value)
+        if current is None:
+            continue
+        replacement_item = prepare_string_value_replacement(value, replacement(current))
+        if replacement_item is None:
+            continue
+        container[selected_key] = replacement_item
+        changed = True
+    return changed
 
 
 def select_table(
@@ -372,26 +381,3 @@ def value_matches(value: object, expected: str) -> bool:
     if isinstance(value, Item):
         return value.value == expected
     return value == expected
-
-
-def write_atomic_text(file_path: Path, content: str) -> None:
-    """Persist ``content`` to ``file_path`` atomically using UTF-8 encoding."""
-    dirpath = file_path.parent
-    existing_mode: int | None = None
-    with suppress(FileNotFoundError):
-        existing_mode = file_path.stat().st_mode
-    fd, tmp_path = tempfile.mkstemp(
-        dir=dirpath,
-        prefix=f"{file_path.name}.",
-        text=True,
-    )
-    try:
-        if existing_mode is not None:
-            with suppress(AttributeError):
-                os.fchmod(fd, existing_mode)  # not available on Windows
-        with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
-            handle.write(content)
-        Path(tmp_path).replace(file_path)
-    finally:
-        with suppress(FileNotFoundError):
-            Path(tmp_path).unlink()

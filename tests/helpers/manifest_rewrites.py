@@ -4,7 +4,10 @@ import collections.abc as cabc
 import typing as typ
 from pathlib import Path
 
-from lading.commands import bump_manifest_rewrites
+from lading.commands import (
+    bump_manifest_rewrite_filesystem,
+    bump_manifest_rewrites,
+)
 
 if typ.TYPE_CHECKING:
     from lading.config import ManifestRewriteConfig
@@ -35,9 +38,7 @@ def plan_fixture_rewrites(
 ) -> tuple[bump_manifest_rewrites.ManifestRewritePlan, ...]:
     """Plan fixture changes using the compact default rewrite context."""
     version_context = versions if versions is not None else manifest_rewrite_versions()
-    return bump_manifest_rewrites.plan_manifest_rewrites(
-        root,
-        groups,
-        members,
-        version_context,
+    sources = bump_manifest_rewrite_filesystem.read_manifest_rewrite_sources(
+        root, groups, members
     )
+    return bump_manifest_rewrites.plan_manifest_rewrites(sources, version_context)

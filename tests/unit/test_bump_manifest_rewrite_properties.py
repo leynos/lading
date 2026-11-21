@@ -10,6 +10,7 @@ from tomlkit import parse as parse_toml
 
 from lading.commands import bump_manifest_rewrites
 from lading.config import ManifestRewriteConfig, StringValueRewriteConfig
+from tests.helpers.manifest_rewrites import plan_fixture_rewrites
 
 _CRATE_NAME_CHARACTERS = string.ascii_letters + string.digits + "_-"
 _VERSION_PREFIX_CHARACTERS = string.ascii_letters + string.digits + "."
@@ -61,9 +62,7 @@ def test_string_rewrites_respect_token_boundaries_and_are_idempotent(
             target_version="0.6.0",
         )
 
-        (plan,) = bump_manifest_rewrites.plan_manifest_rewrites(
-            workspace_root, groups, (), versions
-        )
+        (plan,) = plan_fixture_rewrites(workspace_root, groups, versions)
 
         rewritten = parse_toml(plan.new_text)["metadata"]
         assert rewritten["longer-crate"] == f"{crate_prefix}{old_reference}/", (
@@ -77,9 +76,9 @@ def test_string_rewrites_respect_token_boundaries_and_are_idempotent(
         )
 
         manifest.write_text(plan.new_text, encoding="utf-8")
-        assert not bump_manifest_rewrites.plan_manifest_rewrites(
-            workspace_root, groups, (), versions
-        ), "planning the rewritten manifest again must produce no further changes"
+        assert not plan_fixture_rewrites(workspace_root, groups, versions), (
+            "planning the rewritten manifest again must produce no further changes"
+        )
 
 
 @given(
@@ -132,9 +131,7 @@ def test_string_rewrites_boundaries_for_version_and_crate_templates(
             target_version="1.0.0",
         )
 
-        (plan,) = bump_manifest_rewrites.plan_manifest_rewrites(
-            workspace_root, groups, (), versions
-        )
+        (plan,) = plan_fixture_rewrites(workspace_root, groups, versions)
 
         rewritten = parse_toml(plan.new_text)["metadata"]
         assert rewritten["version-prefix"] == f"{version_prefix}{old_version}", (

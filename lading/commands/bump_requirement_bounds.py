@@ -2,8 +2,9 @@
 
 :func:`excluding_rewritten_first_bound` checks a strict first comparator after
 its version is replaced with the target. :func:`excluding_retained_bounds`
-checks later comparators that remain verbatim. :mod:`lading.commands.bump_toml`
-uses both results to warn without changing the user's comparator operators.
+checks later comparators that remain verbatim. :func:`requirement_bound_warning`
+combines those pure checks into warning data for command layers to log without
+changing the user's comparator operators.
 
 Examples
 --------
@@ -11,6 +12,7 @@ Examples
 ('<0.6',)
 """
 
+import dataclasses as dc
 import re
 import typing as typ
 
@@ -23,6 +25,85 @@ _COMPARATOR_PATTERN: typ.Final[re.Pattern[str]] = re.compile(
     r"\s*(?P<operator><=|>=|<|>|=)\s*(?P<version>\S+)\s*"
 )
 _VERSION_COMPONENT_COUNT: typ.Final[int] = 3
+
+
+@dc.dataclass(frozen=True, slots=True)
+class RequirementBoundWarning:
+    """Data describing preserved Cargo comparators that reject a bump target.
+
+    Attributes
+    ----------
+    requirement : str
+        Original Cargo requirement being rewritten.
+    target_version : str
+        Requested version that one or more comparators reject.
+    excluded_bounds : tuple[str, ...]
+        Comparator text retained or rewritten by the bump that excludes target.
+    """
+
+    requirement: str
+    target_version: str
+    excluded_bounds: tuple[str, ...]
+
+
+def requirement_bound_warning(
+    requirement: str,
+    target_version: str,
+) -> RequirementBoundWarning | None:
+    """Return warning data when a rewritten or retained bound rejects target.
+
+    Parameters
+    ----------
+    requirement : str
+        Cargo requirement whose first version is replaced and later clauses
+        are preserved.
+    target_version : str
+        Full three-component semantic version being applied by the bump.
+
+    Returns
+    -------
+    RequirementBoundWarning or None
+        Requirement and comparator details for an excluding bound, or ``None``
+        when all understood bounds include the target.
+
+    Examples
+    --------
+    >>> warning = requirement_bound_warning(
+    ...     ">=1.0.0, <2", "2.0.0"
+    ... )
+    >>> warning.excluded_bounds
+    ('<2',)
+    >>> requirement_bound_warning(">=0.6.0-beta4, <0.7", "0.6.0") is None
+    True
+    """
+    excluded_bounds = (
+        *excluding_rewritten_first_bound(requirement, target_version),
+        *excluding_retained_bounds(requirement, target_version),
+    )
+    if not excluded_bounds:
+        return None
+    return RequirementBoundWarning(requirement, target_version, excluded_bounds)
+
+
+def format_requirement_bound_warning(warning: RequirementBoundWarning) -> str:
+    """Format returned comparator data for a command-layer warning log.
+
+    Parameters
+    ----------
+    warning : RequirementBoundWarning
+        Structured comparator warning produced by
+        :func:`requirement_bound_warning`.
+
+    Returns
+    -------
+    str
+        Operator-facing warning text.
+    """
+    return (
+        f"Target version {warning.target_version} does not satisfy preserved "
+        f"Cargo comparator(s) {', '.join(warning.excluded_bounds)} in requirement "
+        f"{warning.requirement!r}; the rewritten requirement may not resolve"
+    )
 
 
 class _Version(typ.NamedTuple):

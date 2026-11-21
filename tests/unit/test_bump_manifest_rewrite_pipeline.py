@@ -312,7 +312,7 @@ def test_partial_write_failure_names_path_and_completed_count(
             )
         )
     )
-    write_atomic_text = bump_manifest_rewrite_application.bump_toml.write_atomic_text
+    write_atomic_text = bump_manifest_rewrite_application.write_atomic_text
     message = "simulated write failure"
 
     def fail_second_write(path: pathlib.Path, text: str) -> None:
@@ -322,7 +322,7 @@ def test_partial_write_failure_names_path_and_completed_count(
         write_atomic_text(path, text)
 
     monkeypatch.setattr(
-        bump_manifest_rewrite_application.bump_toml,
+        bump_manifest_rewrite_application,
         "write_atomic_text",
         fail_second_write,
     )

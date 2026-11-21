@@ -1,7 +1,5 @@
 """Unit tests for low-level bump TOML table and version helpers."""
 
-import logging
-
 import pytest
 from tomlkit import parse as parse_toml
 
@@ -171,56 +169,25 @@ def test_assign_version_works_with_out_of_order_table() -> None:
     )
 
 
-def test_prepare_version_replacement_warns_when_target_breaks_retained_bound(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """A retained comparator that excludes the target is reported."""
-    with caplog.at_level(logging.WARNING, logger=bump_toml.__name__):
-        replacement = bump_toml.prepare_version_replacement(">=1.0.0, <2", "2.0.0")
-
-    assert bump_toml.value_as_string(replacement) == ">=2.0.0, <2", (
-        "rewriting should preserve the retained comparator"
-    )
-    assert (
-        "Target version 2.0.0 does not satisfy preserved Cargo comparator(s) <2"
-        in caplog.text
-    ), "the impossible retained comparator should produce an operator warning"
-
-
 @pytest.mark.parametrize(
-    ("requirement", "expected"),
+    ("requirement", "target", "expected"),
     [
-        ("<0.7", "<0.6.0"),
-        (">0.6.0-beta4", ">0.6.0"),
+        (">=1.0.0, <2", "2.0.0", ">=2.0.0, <2"),
+        ("<0.7", "0.6.0", "<0.6.0"),
+        (">0.6.0-beta4", "0.6.0", ">0.6.0"),
+        (">=0.6.0-beta4, <0.7", "0.6.0", ">=0.6.0, <0.7"),
     ],
 )
-def test_prepare_version_replacement_warns_for_strict_first_comparator(
+def test_prepare_version_replacement_is_pure(
     caplog: pytest.LogCaptureFixture,
     requirement: str,
+    target: str,
     expected: str,
 ) -> None:
-    """Rewritten strict first comparators preserve intent and warn clearly."""
-    with caplog.at_level(logging.WARNING, logger=bump_toml.__name__):
-        replacement = bump_toml.prepare_version_replacement(requirement, "0.6.0")
+    """Requirement construction leaves warnings to the mutation boundary."""
+    replacement = bump_toml.prepare_version_replacement(requirement, target)
 
     assert bump_toml.value_as_string(replacement) == expected, (
-        "the bump should preserve the existing comparator operator"
+        "requirement construction should preserve the comparator and bounds"
     )
-    assert f"preserved Cargo comparator(s) {expected}" in caplog.text, (
-        "the warning should identify the rewritten strict comparator"
-    )
-
-
-def test_prepare_version_replacement_does_not_warn_for_satisfied_bound(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """A target inside the preserved comparator range needs no warning."""
-    with caplog.at_level(logging.WARNING, logger=bump_toml.__name__):
-        replacement = bump_toml.prepare_version_replacement(
-            ">=0.6.0-beta4, <0.7", "0.6.0"
-        )
-
-    assert bump_toml.value_as_string(replacement) == ">=0.6.0, <0.7", (
-        "the first comparator should update while retaining the upper bound"
-    )
-    assert not caplog.records, "a satisfied retained bound should stay quiet"
+    assert not caplog.records, "a pure replacement helper must not log warnings"

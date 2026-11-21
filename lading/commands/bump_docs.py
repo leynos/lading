@@ -37,7 +37,8 @@ from markdown_it import MarkdownIt
 from tomlkit import parse as parse_toml
 from tomlkit.exceptions import TOMLKitError
 
-from lading.commands import bump_toml, bump_toml_dependencies
+from lading.commands import bump_toml, bump_toml_dependencies, bump_toml_files
+from lading.commands.bump_requirement_bounds import format_requirement_bound_warning
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -124,7 +125,7 @@ def update_documentation_files(
             continue
         changed.add(doc_path)
         if not dry_run:
-            bump_toml.write_atomic_text(doc_path, updated_text)
+            bump_toml_files.write_atomic_text(doc_path, updated_text)
     return changed
 
 
@@ -317,6 +318,11 @@ def _update_single_dependency_section(
     table = bump_toml.select_table(document, (section,))
     if table is None:
         return False
+    warnings = bump_toml_dependencies.collect_dependency_bound_warnings(
+        table, dependency_targets, target_version
+    )
+    for warning in warnings:
+        _LOGGER.warning(format_requirement_bound_warning(warning))
     return bump_toml_dependencies.update_dependency_table(
         table, dependency_targets, target_version
     )

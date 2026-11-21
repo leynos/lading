@@ -6,15 +6,16 @@ an allowlisted non-member manifest.
 """
 
 import collections.abc as cabc
+import logging
 import typing as typ
 
-from tomlkit.container import OutOfOrderTableProxy
-from tomlkit.items import InlineTable, Item, Table
-
 from lading.commands import bump_toml, bump_toml_dependencies
+from lading.commands.bump_requirement_bounds import format_requirement_bound_warning
 
 if typ.TYPE_CHECKING:
     from tomlkit.toml_document import TOMLDocument
+
+_log = logging.getLogger(__name__)
 
 
 def rewrite_dependency_requirements(
@@ -112,43 +113,15 @@ def _rewrite_dependency_section(
     matching_names = {
         name
         for name, entry in tuple(table.items())
-        if _is_matching_dependency(name, entry, updated_crate_names)
+        if bump_toml_dependencies.dependency_target_name(name, entry)
+        in updated_crate_names
     }
     if not matching_names:
         return False
+    for warning in bump_toml_dependencies.collect_dependency_bound_warnings(
+        table, matching_names, target_version
+    ):
+        _log.warning(format_requirement_bound_warning(warning))
     return bump_toml_dependencies.update_section(
         document, path, matching_names, target_version
     )
-
-
-def _is_matching_dependency(
-    name: str,
-    entry: object,
-    updated_crate_names: cabc.Collection[str],
-) -> bool:
-    """Return whether a dependency key or package alias is safe to update."""
-    match entry:
-        case (InlineTable() | Table() | OutOfOrderTableProxy()) as table:
-            if _inherits_workspace_version(table):
-                return False
-            package_item = table.get("package")
-            if package_item is None:
-                return name in updated_crate_names
-            package_name = bump_toml.value_as_string(package_item)
-            return package_name is not None and package_name in updated_crate_names
-        case _:
-            return (
-                name in updated_crate_names
-                and bump_toml.value_as_string(entry) is not None
-            )
-
-
-def _inherits_workspace_version(
-    entry: InlineTable | Table | OutOfOrderTableProxy,
-) -> bool:
-    """Return whether a dependency table sets ``workspace = true``."""
-    match entry.get("workspace"):
-        case Item() as item:
-            return item.value is True
-        case flag:
-            return flag is True

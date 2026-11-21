@@ -8,10 +8,12 @@ sequence is orchestrated by :mod:`lading.commands.bump_pipeline`, while
 
 import collections.abc as cabc
 import dataclasses as dc
+import logging
 import types
 import typing as typ
 
-from lading.commands import bump_toml, bump_toml_dependencies
+from lading.commands import bump_toml, bump_toml_dependencies, bump_toml_files
+from lading.commands.bump_requirement_bounds import format_requirement_bound_warning
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
@@ -19,6 +21,8 @@ if typ.TYPE_CHECKING:
     from lading.commands.bump import BumpOptions
     from lading.config import LadingConfig
     from lading.workspace import WorkspaceCrate, WorkspaceGraph
+
+_log = logging.getLogger(__name__)
 
 _WORKSPACE_SELECTORS: typ.Final[tuple[tuple[str, ...], ...]] = (
     ("package",),
@@ -91,12 +95,20 @@ def _update_manifest(
     options: BumpOptions,
 ) -> bool:
     """Apply ``target_version`` to each selected table and dependency section."""
-    document = bump_toml.parse_manifest(manifest_path)
+    document = bump_toml_files.parse_manifest(manifest_path)
     changed = False
     for selector in selectors:
         table = bump_toml.select_table(document, selector)
         changed |= bump_toml.assign_version(table, target_version)
     if options.dependency_sections:
+        warnings = bump_toml_dependencies.collect_dependency_section_warnings(
+            document,
+            options.dependency_sections,
+            target_version,
+            include_workspace_sections=options.include_workspace_sections,
+        )
+        for warning in warnings:
+            _log.warning(format_requirement_bound_warning(warning))
         changed |= bump_toml_dependencies.update_dependency_sections(
             document,
             options.dependency_sections,
@@ -104,7 +116,7 @@ def _update_manifest(
             include_workspace_sections=options.include_workspace_sections,
         )
     if changed and not options.dry_run:
-        bump_toml.write_atomic_text(manifest_path, document.as_string())
+        bump_toml_files.write_atomic_text(manifest_path, document.as_string())
     return changed
 
 

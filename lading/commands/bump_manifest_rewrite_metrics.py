@@ -1,8 +1,8 @@
 """Record bounded metrics for configured manifest rewrite stages.
 
-:mod:`lading.commands.bump_pipeline_manifest_rewrites` records planning and
-application outcomes here. :mod:`lading.utils.metrics` aggregates the bounded
-labels and rewrite-only durations for the CLI's structured exit summary.
+:mod:`lading.commands.bump_pipeline` records planning and application outcomes
+here. :mod:`lading.utils.metrics` aggregates the bounded labels and rewrite-only
+durations for the CLI's structured exit summary.
 """
 
 import dataclasses as dc

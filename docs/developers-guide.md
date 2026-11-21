@@ -1171,29 +1171,40 @@ supplies its lockfile error type and label; the rewrite planner supplies its
 manifest-rewrite error type and label. File existence and regular-file checks
 remain with each caller.
 
-`lading.commands.bump_manifest_rewrites` resolves the allowlist, skips the
-workspace and member manifests, parses selected TOML, and plans dependency and
-string-value edits before any pipeline write.
-`lading.commands.bump_manifest_rewrite_application` owns `ManifestRewritePlan`,
-`ManifestRewriteError`, and the atomic per-manifest write stage. It applies
-plans after the workspace and member manifest stages, then documentation,
-README, and lockfile stages run. A write failure carries its path and completed
-and planned counts; the CLI reports it in one structured error event.
+`lading.commands.bump_manifest_rewrite_filesystem` resolves the allowlist,
+skips the workspace and member manifests, validates each candidate, and reads
+its UTF-8 text. It returns `ManifestRewriteSource` records and performs no TOML
+rewrite policy. `lading.commands.bump_manifest_rewrites` plans dependency and
+string-value edits from those records. It parses supplied TOML text but does
+not access the filesystem. `bump_toml` and `bump_toml_dependencies` contain the
+tomlkit node handling for selected strings, dependency aliases, and requirement
+replacement. The rewrite planner parses supplied text with tomlkit directly;
+`bump_toml_files` owns manifest reads and atomic writes.
+`lading.commands.bump_manifest_rewrite_model` owns `ManifestRewritePlan`,
+`ManifestRewriteSource`, `ManifestRewriteVersions`, and `ManifestRewriteError`;
+the records keep filesystem, planning, and application boundaries independent.
+`lading.commands.bump_manifest_rewrite_application` re-reads each manifest
+before writing and rejects a stale plan if its content changed. It then writes
+atomically. A write failure carries its path and completed and planned counts;
+the CLI reports it in one structured error event.
 `lading.commands.bump_manifest_rewrite_metrics` records bounded outcome
 counters and rewrite-only duration observations.
-`lading.commands.bump_pipeline_manifest_rewrites` owns pipeline coordination:
-it plans before the first write and applies plans after member manifests. Its
-duration sums the planning and application intervals, excluding intervening
-stages. `BumpOptions.clock` supplies the monotonic clock; tests inject
-deterministic values.
+`lading.commands.bump_pipeline` owns pipeline coordination, timing, and
+metrics. It plans before the first write and applies plans after member
+manifests. Rewrite duration sums the planning and application intervals,
+excluding intervening stages. `BumpOptions.clock` supplies the monotonic clock;
+tests inject deterministic values.
 
 `lading.commands.bump_requirement_bounds.excluding_rewritten_first_bound`
 reports a strict first comparator after the bump substitutes the target version.
 `excluding_retained_bounds` reports understood later comparators that remain
-verbatim. `lading.commands.bump_toml.prepare_version_replacement` logs a
-warning for each comparator that excludes the target and still preserves the
-requirement's operators and later bounds. `bump.lockfile_manifests` remains a
-separate setting that adds lockfile-regeneration targets.
+verbatim. `requirement_bound_warning` returns structured comparator details;
+`bump_toml_dependencies.collect_dependency_section_warnings` gathers that data
+for TOML sections without mutation or logging. The manifest, documentation, and
+non-member rewrite command layers log those warnings while the TOML helpers
+preserve the requirement's operators and later bounds.
+`bump.lockfile_manifests` remains a separate setting that adds
+lockfile-regeneration targets.
 
 `lading.commands.bump_manifest_rewrite_dependencies` owns traversal of direct,
 target-specific, and workspace dependency sections. When a dependency entry sets
@@ -1573,19 +1584,19 @@ Every root domain exception should inherit from `LadingError`. More specific
 exceptions should continue to inherit from the local root for their feature
 area so existing handling remains precise:
 
-| Root exception              | Module                                              | Notes                                                                                           |
-| --------------------------- | --------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `ConfigurationError`        | `lading.exceptions`                                 | Base for configuration loading and validation failures.                                         |
-| `WorkspaceModelError`       | `lading.workspace.models`                           | Base for workspace graph/model validation failures.                                             |
-| `CargoMetadataError`        | `lading.workspace.metadata`                         | Base for cargo metadata execution and parsing failures.                                         |
-| `CommandSpawnError`         | `lading.runtime.subprocess_runner`                  | Raised when the subprocess runner cannot spawn an external command.                             |
-| `LockfileDiscoveryError`    | `lading.commands.lockfile`                          | Raised when git cannot list tracked lockfiles.                                                  |
-| `LockfileRegenerationError` | `lading.commands.bump_lockfiles`                    | Raised when configured bump lockfile manifests are invalid or `cargo update --workspace` fails. |
-| `ManifestRewriteError`      | `lading.commands.bump_manifest_rewrite_application` | Raised when a configured non-member manifest cannot be selected, read, parsed, or written.      |
-| `PublishPlanError`          | `lading.commands.publish_plan`                      | Raised when a publish plan cannot be constructed.                                               |
-| `ReadmeTranspositionError`  | `lading.commands.bump_readme`                       | Raised when the workspace README cannot be transposed into a crate during `lading bump`.        |
-| `PublishPreparationError`   | `lading.commands.publish_manifest`                  | Raised when staged publish manifests or workspace assets cannot be prepared.                    |
-| `PublishPreflightError`     | `lading.commands.publish_errors`                    | Raised for local publish validation and pre-flight failures.                                    |
+| Root exception              | Module                                        | Notes                                                                                           |
+| --------------------------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `ConfigurationError`        | `lading.exceptions`                           | Base for configuration loading and validation failures.                                         |
+| `WorkspaceModelError`       | `lading.workspace.models`                     | Base for workspace graph/model validation failures.                                             |
+| `CargoMetadataError`        | `lading.workspace.metadata`                   | Base for cargo metadata execution and parsing failures.                                         |
+| `CommandSpawnError`         | `lading.runtime.subprocess_runner`            | Raised when the subprocess runner cannot spawn an external command.                             |
+| `LockfileDiscoveryError`    | `lading.commands.lockfile`                    | Raised when git cannot list tracked lockfiles.                                                  |
+| `LockfileRegenerationError` | `lading.commands.bump_lockfiles`              | Raised when configured bump lockfile manifests are invalid or `cargo update --workspace` fails. |
+| `ManifestRewriteError`      | `lading.commands.bump_manifest_rewrite_model` | Raised when a configured non-member manifest cannot be selected, read, parsed, or written.      |
+| `PublishPlanError`          | `lading.commands.publish_plan`                | Raised when a publish plan cannot be constructed.                                               |
+| `ReadmeTranspositionError`  | `lading.commands.bump_readme`                 | Raised when the workspace README cannot be transposed into a crate during `lading bump`.        |
+| `PublishPreparationError`   | `lading.commands.publish_manifest`            | Raised when staged publish manifests or workspace assets cannot be prepared.                    |
+| `PublishPreflightError`     | `lading.commands.publish_errors`              | Raised for local publish validation and pre-flight failures.                                    |
 
 Domain ownership: README transposition failures during `lading bump` are owned
 by the bump domain (`ReadmeTranspositionError`); publish staging failures are

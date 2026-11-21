@@ -6,7 +6,10 @@ import pathlib
 
 import pytest
 
-from lading.commands import bump_manifest_rewrites
+from lading.commands import (
+    bump_manifest_rewrite_filesystem,
+    bump_manifest_rewrites,
+)
 from lading.config import ManifestRewriteConfig, StringValueRewriteConfig
 from tests.helpers.manifest_rewrites import (
     plan_fixture_rewrites,
@@ -134,7 +137,9 @@ def test_skips_workspace_and_member_manifests(
     )
     group = ManifestRewriteConfig(paths=("Cargo.toml", "crates/alpha/Cargo.toml"))
 
-    with caplog.at_level(logging.DEBUG, logger=bump_manifest_rewrites.__name__):
+    with caplog.at_level(
+        logging.DEBUG, logger=bump_manifest_rewrite_filesystem.__name__
+    ):
         plans = plan_fixture_rewrites(tmp_path, (group,), members=(member_manifest,))
 
     assert not plans, "workspace and member manifests must be skipped"

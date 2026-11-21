@@ -816,11 +816,11 @@ manifest while its contents remain unchanged; configured lockfile projection
 still runs without invoking Cargo.
 
 Each configured manifest write is atomic, but the batch is not. If a later
-write fails, earlier fixture rewrites remain and lockfile regeneration is
-skipped. Member manifests already contain the target version, so rerunning the
-bump may no longer have the old version needed to plan remaining string
-rewrites. Restore the pre-bump working tree before retrying, or manually finish
-the remaining fixture edits.
+write fails, or a manifest changes after planning, earlier fixture rewrites
+remain and lockfile regeneration is skipped. Member manifests already contain
+the target version, so rerunning the bump may no longer have the old version
+needed to plan remaining string rewrites. Restore the pre-bump working tree
+before retrying, or manually finish the remaining fixture edits.
 
 For example, the `rstest-bdd` published GPUI fixture can opt into rewriting its
 dependency requirements and staged package patch paths:

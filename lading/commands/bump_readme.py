@@ -21,7 +21,7 @@ import typing as typ
 from pathlib import Path
 from urllib.parse import urlparse
 
-from lading.commands import bump_toml
+from lading.commands import bump_toml_files
 from lading.exceptions import LadingError
 
 _log = logging.getLogger(__name__)
@@ -185,7 +185,7 @@ def _write_or_skip_readme(
         _log.debug("README already up to date for crate %r; skipping", crate_name)
         return None
     if not dry_run:
-        bump_toml.write_atomic_text(target_readme, rewritten_text)
+        bump_toml_files.write_atomic_text(target_readme, rewritten_text)
         _log.info("Transposed workspace README to %s", target_readme)
     else:
         _log.info("Dry run: would transpose workspace README to %s", target_readme)

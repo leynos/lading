@@ -1,12 +1,18 @@
 """Tests for Cargo dependency matching in manifest rewrites."""
 
+import logging
 import pathlib
+import typing as typ
 
 from tomlkit import parse as parse_toml
 from tomlkit.container import OutOfOrderTableProxy
 
 from lading.commands import bump_manifest_rewrite_dependencies, bump_manifest_rewrites
 from lading.config import ManifestRewriteConfig
+from tests.helpers.manifest_rewrites import plan_fixture_rewrites
+
+if typ.TYPE_CHECKING:
+    import pytest
 
 
 def test_explicit_package_name_overrides_a_matching_dependency_alias(
@@ -19,10 +25,9 @@ def test_explicit_package_name_overrides_a_matching_dependency_alias(
         '[dependencies]\nrstest-bdd = { package = "serde", version = "0.6.0-beta4" }\n',
         encoding="utf-8",
     )
-    plans = bump_manifest_rewrites.plan_manifest_rewrites(
+    plans = plan_fixture_rewrites(
         tmp_path,
         (ManifestRewriteConfig(paths=("fixtures/standalone/Cargo.toml",)),),
-        (),
         bump_manifest_rewrites.ManifestRewriteVersions(
             updated_crate_names=frozenset({"rstest-bdd"}),
             pre_bump_versions={"rstest-bdd": "0.6.0-beta4"},
@@ -50,10 +55,9 @@ def test_rewrites_inline_dependency_sections_and_aliases(
         'workspace = { dependencies = { alpha = "1.0.0" } }\n',
         encoding="utf-8",
     )
-    plans = bump_manifest_rewrites.plan_manifest_rewrites(
+    plans = plan_fixture_rewrites(
         tmp_path,
         (ManifestRewriteConfig(paths=("fixtures/standalone/Cargo.toml",)),),
-        (),
         bump_manifest_rewrites.ManifestRewriteVersions(
             updated_crate_names=frozenset({"alpha"}),
             pre_bump_versions={"alpha": "1.0.0"},
@@ -132,4 +136,23 @@ def test_rewrite_preserves_upper_bound_of_compound_requirement() -> None:
     assert changed, "the matching workspace crate requirement should change"
     assert document["dependencies"]["rstest-bdd"] == ">=0.6.0, <0.7", (
         "rewriting the lower comparator must retain the excluded upper range"
+    )
+
+
+def test_rewrite_planning_logs_collected_comparator_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The manifest rewrite policy logs warning data returned by TOML helpers."""
+    document = parse_toml('[dependencies]\nalpha = "<0.7"\n')
+    caplog.set_level(
+        logging.WARNING, logger=bump_manifest_rewrite_dependencies.__name__
+    )
+
+    changed = bump_manifest_rewrite_dependencies.rewrite_dependency_requirements(
+        document, {"alpha"}, "0.6.0"
+    )
+
+    assert changed, "the dependency requirement should still be rewritten"
+    assert "preserved Cargo comparator(s) <0.6.0" in caplog.text, (
+        "the planning boundary should log the returned comparator warning"
     )
