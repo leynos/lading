@@ -3,6 +3,7 @@
 import json
 import shutil
 import subprocess
+import typing as typ
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,9 @@ from tests.helpers.workspace_builders import (
     _build_workspace_with_internal_deps,
     _CrateSpec,
 )
+
+if typ.TYPE_CHECKING:
+    from lading.workspace import WorkspaceGraph
 
 _CARGO_EXECUTABLE = shutil.which("cargo")
 
@@ -127,20 +131,38 @@ def _package_versions(lockfile: Path) -> dict[str, tuple[str, ...]]:
     }
 
 
-def test_bump_rewrites_and_regenerates_tracked_published_fixture_lockfile(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Cargo accepts the full rewritten fixture and its regenerated lockfile."""
-    monkeypatch.setenv("CARGO_NET_OFFLINE", "true")
+def _write_initial_lockfiles(workspace_root: Path, fixture: Path) -> None:
+    """Generate and track the root and standalone fixture lockfiles."""
+    _run_cargo(
+        "generate-lockfile",
+        "--offline",
+        "--manifest-path",
+        "Cargo.toml",
+        cwd=workspace_root,
+    )
+    _run_cargo(
+        "generate-lockfile",
+        "--offline",
+        "--manifest-path",
+        str(fixture),
+        cwd=workspace_root,
+    )
+    git_init(workspace_root)
+    git_add_all(workspace_root)
+
+
+def _prepare_tracked_fixture_workspace(
+    workspace_root: Path,
+) -> tuple[WorkspaceGraph, Path]:
+    """Build a prerelease workspace and track its standalone fixture lockfile."""
     workspace, member_manifests = _build_workspace_with_internal_deps(
-        tmp_path,
+        workspace_root,
         specs=tuple(
             _CrateSpec(name=crate_name, version=_PRERELEASE)
             for crate_name in _CRATE_NAMES
         ),
     )
-    root_manifest = tmp_path / "Cargo.toml"
+    root_manifest = workspace_root / "Cargo.toml"
     root_document = parse_toml(root_manifest.read_text(encoding="utf-8"))
     root_document["workspace"]["package"]["version"] = _PRERELEASE
     root_manifest.write_text(dumps(root_document), encoding="utf-8")
@@ -150,42 +172,30 @@ def test_bump_rewrites_and_regenerates_tracked_published_fixture_lockfile(
         (source_directory / "lib.rs").write_text(
             "// lockfile-only workspace package\n", encoding="utf-8"
         )
-
     for version in (_PRERELEASE, _TARGET):
         for crate_name in _CRATE_NAMES:
-            _write_staged_package(tmp_path, crate_name, version)
-    fixture = _write_fixture(tmp_path)
-    (tmp_path / ".gitignore").write_text("target/\n", encoding="utf-8")
+            _write_staged_package(workspace_root, crate_name, version)
+    fixture = _write_fixture(workspace_root)
+    (workspace_root / ".gitignore").write_text("target/\n", encoding="utf-8")
+    _write_initial_lockfiles(workspace_root, fixture)
+    return workspace, fixture
 
-    _run_cargo(
-        "generate-lockfile", "--offline", "--manifest-path", "Cargo.toml", cwd=tmp_path
-    )
-    _run_cargo(
-        "generate-lockfile",
-        "--offline",
-        "--manifest-path",
-        str(fixture),
-        cwd=tmp_path,
-    )
-    git_init(tmp_path)
-    git_add_all(tmp_path)
 
+def _fixture_rewrite_configuration() -> config_module.LadingConfig:
+    """Configure the published GPUI fixture's dependency and patch rewrites."""
     rewrite = ManifestRewriteConfig(
         paths=("tests/fixtures/published-gpui-e2e/Cargo.toml",),
         string_values=(
             StringValueRewriteConfig(table=("patch", "crates-io"), field="path"),
         ),
     )
-    configuration = config_module.LadingConfig(
+    return config_module.LadingConfig(
         bump=config_module.BumpConfig(manifest_rewrites=(rewrite,))
     )
 
-    result = bump.run(
-        tmp_path,
-        _TARGET,
-        options=bump.BumpOptions(configuration=configuration, workspace=workspace),
-    )
 
+def _assert_rewritten_fixture(fixture: Path, result: str) -> None:
+    """Check rewritten requirements, six paths, and bump output."""
     document = parse_toml(fixture.read_text(encoding="utf-8"))
     assert {
         crate_name: str(document["dependencies"][crate_name])
@@ -204,6 +214,12 @@ def test_bump_rewrites_and_regenerates_tracked_published_fixture_lockfile(
         "the rewritten fixture must appear in the bump result"
     )
 
+
+def _assert_fixture_lockfile_resolves_target(
+    workspace_root: Path,
+    fixture: Path,
+) -> None:
+    """Check that Cargo's tracked fixture lockfile resolves all release packages."""
     lockfile_versions = _package_versions(fixture.with_name("Cargo.lock"))
     assert lockfile_versions == dict.fromkeys(_CRATE_NAMES, (_TARGET,)), (
         "tracked fixture lockfile regeneration must select all six release packages"
@@ -216,7 +232,7 @@ def test_bump_rewrites_and_regenerates_tracked_published_fixture_lockfile(
             "1",
             "--manifest-path",
             str(fixture),
-            cwd=tmp_path,
+            cwd=workspace_root,
         ).stdout
     )
     resolved_versions = {
@@ -232,3 +248,24 @@ def test_bump_rewrites_and_regenerates_tracked_published_fixture_lockfile(
     assert resolved_versions == dict.fromkeys(_CRATE_NAMES, (_TARGET,)), (
         "Cargo metadata --locked must resolve every staged package at the target"
     )
+
+
+def test_bump_rewrites_and_regenerates_tracked_published_fixture_lockfile(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Cargo accepts the full rewritten fixture and its regenerated lockfile."""
+    monkeypatch.setenv("CARGO_NET_OFFLINE", "true")
+    workspace, fixture = _prepare_tracked_fixture_workspace(tmp_path)
+
+    result = bump.run(
+        tmp_path,
+        _TARGET,
+        options=bump.BumpOptions(
+            configuration=_fixture_rewrite_configuration(),
+            workspace=workspace,
+        ),
+    )
+
+    _assert_rewritten_fixture(fixture, result)
+    _assert_fixture_lockfile_resolves_target(tmp_path, fixture)
