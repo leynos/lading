@@ -252,14 +252,23 @@ def then_published_fixture_versions_updated(cli_run: CliRunResult) -> None:
         crate_names, "0.6.0"
     ), "all four dependency requirements must use the exact target version"
     patch_paths = document["patch"]["crates-io"]
+    patch_crate_names = (
+        *crate_names,
+        "rstest-bdd-patterns",
+        "rstest-bdd-policy",
+    )
+    assert set(patch_paths) == set(patch_crate_names), (
+        "the fixture should retain exactly the six staged package patches"
+    )
+    expected_paths = {
+        name: f"../../../target/published-gpui-e2e/{name}-0.6.0"
+        for name in patch_crate_names
+    }
     assert {
-        name: str(patch_paths[name]["path"]) for name in crate_names[:2]
-    } == {
-        "rstest-bdd": "../../../target/published-gpui-e2e/rstest-bdd-0.6.0",
-        "rstest-bdd-harness": (
-            "../../../target/published-gpui-e2e/rstest-bdd-harness-0.6.0"
-        ),
-    }, "both staged package paths must use the exact target version"
+        name: str(patch_paths[name]["path"]) for name in patch_crate_names
+    } == expected_paths, (
+        "all six staged package paths must use the exact target version"
+    )
 
 
 @then("the published fixture manifest remains unchanged")

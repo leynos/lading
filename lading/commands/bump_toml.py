@@ -14,7 +14,10 @@ from tomlkit import string
 from tomlkit.container import OutOfOrderTableProxy
 from tomlkit.items import InlineTable, Item, String, Table
 
-from lading.commands.bump_requirement_bounds import excluding_retained_bounds
+from lading.commands.bump_requirement_bounds import (
+    excluding_retained_bounds,
+    excluding_rewritten_first_bound,
+)
 
 if typ.TYPE_CHECKING:
     from tomlkit.toml_document import TOMLDocument
@@ -146,11 +149,14 @@ def prepare_version_replacement(
     current = value_as_string(value)
     if current is None:
         return None
-    excluded_bounds = excluding_retained_bounds(current, target_version)
+    excluded_bounds = (
+        *excluding_rewritten_first_bound(current, target_version),
+        *excluding_retained_bounds(current, target_version),
+    )
     if excluded_bounds:
         _log.warning(
-            "Target version %s does not satisfy retained Cargo bound %s in "
-            "requirement %r; the rewritten requirement may not resolve",
+            "Target version %s does not satisfy preserved Cargo comparator(s) %s "
+            "in requirement %r; the rewritten requirement may not resolve",
             target_version,
             ", ".join(excluded_bounds),
             current,

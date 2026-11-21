@@ -46,6 +46,8 @@ def inherited_hypothesis_profile_name() -> str:
     return inherited
 
 
+from lading.utils import metrics
+
 pytest_plugins = (
     "cmd_mox.pytest_plugin",
     "tests.bdd.steps.config_fixtures",
@@ -82,6 +84,14 @@ def repo_root() -> Path:
     ...     assert (repo_root / "pyproject.toml").exists()
     """
     return Path(__file__).resolve().parent.parent
+
+
+@pytest.fixture
+def reset_process_metrics() -> cabc.Iterator[None]:
+    """Reset process-local metrics around a test that inspects them."""
+    metrics.reset()
+    yield
+    metrics.reset()
 
 
 @pytest.fixture(autouse=True)

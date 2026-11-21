@@ -1187,11 +1187,13 @@ duration sums the planning and application intervals, excluding intervening
 stages. `BumpOptions.clock` supplies the monotonic clock; tests inject
 deterministic values.
 
-`lading.commands.bump_requirement_bounds.excluding_retained_bounds` reports
-understood retained Cargo comparators that exclude the target version.
-`lading.commands.bump_toml.prepare_version_replacement` logs a warning for each
-such comparator and still rewrites the requirement. `bump.lockfile_manifests`
-remains a separate setting that adds lockfile-regeneration targets.
+`lading.commands.bump_requirement_bounds.excluding_rewritten_first_bound`
+reports a strict first comparator after the bump substitutes the target version.
+`excluding_retained_bounds` reports understood later comparators that remain
+verbatim. `lading.commands.bump_toml.prepare_version_replacement` logs a
+warning for each comparator that excludes the target and still preserves the
+requirement's operators and later bounds. `bump.lockfile_manifests` remains a
+separate setting that adds lockfile-regeneration targets.
 
 `lading.commands.bump_manifest_rewrite_dependencies` owns traversal of direct,
 target-specific, and workspace dependency sections. When a dependency entry sets

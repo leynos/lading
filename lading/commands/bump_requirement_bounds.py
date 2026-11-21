@@ -1,8 +1,9 @@
-"""Compare retained Cargo requirement bounds with a bump target.
+"""Find Cargo comparators that exclude a bump target.
 
-:func:`excluding_retained_bounds` recognizes supported retained comparators.
-:mod:`lading.commands.bump_toml` uses the result to warn when preserving a
-bound would exclude the target version.
+:func:`excluding_rewritten_first_bound` checks a strict first comparator after
+its version is replaced with the target. :func:`excluding_retained_bounds`
+checks later comparators that remain verbatim. :mod:`lading.commands.bump_toml`
+uses both results to warn without changing the user's comparator operators.
 """
 
 import re
@@ -75,6 +76,50 @@ def excluding_retained_bounds(
         if not _satisfies(target, match.group("operator"), bound):
             excluded.append(constraint.strip())
     return tuple(excluded)
+
+
+def excluding_rewritten_first_bound(
+    requirement: str,
+    target_version: str,
+) -> tuple[str, ...]:
+    """Return a rewritten strict first comparator that rejects the target.
+
+    The bump operation replaces the first comparator's version but retains its
+    operator. A strict ``<`` or ``>`` comparator therefore excludes the target
+    after rewriting. Inclusive, equality, caret, and tilde comparators do not.
+
+    Parameters
+    ----------
+    requirement : str
+        Cargo requirement whose first comparator will be rewritten.
+    target_version : str
+        Full three-component semantic version being applied by the bump.
+
+    Returns
+    -------
+    tuple[str, ...]
+        The rewritten strict comparator when it excludes ``target_version``;
+        otherwise an empty tuple.
+
+    Examples
+    --------
+    >>> excluding_rewritten_first_bound("<0.7", "0.6.0")
+    ('<0.6.0',)
+    >>> excluding_rewritten_first_bound(">=0.6.0-beta4", "0.6.0")
+    ()
+    """
+    target = _parse_version(target_version, require_full=True)
+    if target is None:
+        return ()
+
+    first_constraint = requirement.partition(",")[0]
+    match = _COMPARATOR_PATTERN.fullmatch(first_constraint)
+    if match is None:
+        return ()
+    operator = match.group("operator")
+    if operator not in {"<", ">"}:
+        return ()
+    return (f"{operator}{target_version}",)
 
 
 def _parse_version(value: str, *, require_full: bool) -> _Version | None:

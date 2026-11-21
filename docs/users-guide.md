@@ -727,11 +727,13 @@ stderr_tail_lines = 40
 When a bump updates a dependency requirement, it replaces the version in the
 first comparator and keeps later comma-separated comparators verbatim. For
 recognized comparison bounds (`<`, `<=`, `=`, `>=` and `>`), `lading bump`
-warns when the target does not satisfy a retained comparator. The warning does
-not change the requirement or stop the bump. For example, `>=0.6.0-beta4, <0.7`
-becomes `>=0.6.0, <0.7`; targeting `0.7.0` instead warns because the retained
-upper bound excludes the target. Cargo lockfile regeneration remains the final
-check when enabled; otherwise, resolve the warning before committing.
+warns when the rewritten first comparator or a later comparator excludes the
+target. A strict first operator (`<` or `>`) remains unchanged, so its
+rewritten version necessarily excludes the target; the warning does not change
+the requirement or stop the bump. For example, `>=0.6.0-beta4, <0.7` becomes
+`>=0.6.0, <0.7`; targeting `0.7.0` instead warns because the retained upper
+bound excludes the target. Cargo lockfile regeneration remains the final check
+when enabled; otherwise, resolve the warning before committing.
 
 Lockfile regeneration runs
 `cargo update --workspace --manifest-path <manifest>` for the workspace root,

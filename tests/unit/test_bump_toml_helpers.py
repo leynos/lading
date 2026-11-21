@@ -181,9 +181,34 @@ def test_prepare_version_replacement_warns_when_target_breaks_retained_bound(
     assert bump_toml.value_as_string(replacement) == ">=2.0.0, <2", (
         "rewriting should preserve the retained comparator"
     )
-    assert "Target version 2.0.0 does not satisfy retained Cargo bound <2" in (
-        caplog.text
-    ), "the impossible retained bound should produce an operator warning"
+    assert (
+        "Target version 2.0.0 does not satisfy preserved Cargo comparator(s) <2"
+        in caplog.text
+    ), "the impossible retained comparator should produce an operator warning"
+
+
+@pytest.mark.parametrize(
+    ("requirement", "expected"),
+    [
+        ("<0.7", "<0.6.0"),
+        (">0.6.0-beta4", ">0.6.0"),
+    ],
+)
+def test_prepare_version_replacement_warns_for_strict_first_comparator(
+    caplog: pytest.LogCaptureFixture,
+    requirement: str,
+    expected: str,
+) -> None:
+    """Rewritten strict first comparators preserve intent and warn clearly."""
+    with caplog.at_level(logging.WARNING, logger=bump_toml.__name__):
+        replacement = bump_toml.prepare_version_replacement(requirement, "0.6.0")
+
+    assert bump_toml.value_as_string(replacement) == expected, (
+        "the bump should preserve the existing comparator operator"
+    )
+    assert f"preserved Cargo comparator(s) {expected}" in caplog.text, (
+        "the warning should identify the rewritten strict comparator"
+    )
 
 
 def test_prepare_version_replacement_does_not_warn_for_satisfied_bound(

@@ -2,7 +2,10 @@
 
 import pytest
 
-from lading.commands.bump_requirement_bounds import excluding_retained_bounds
+from lading.commands.bump_requirement_bounds import (
+    excluding_retained_bounds,
+    excluding_rewritten_first_bound,
+)
 
 
 @pytest.mark.parametrize(
@@ -31,4 +34,27 @@ def test_excluding_retained_bounds_matches_cargo_comparators(
 
     assert bool(result) is (outcome == "excluded"), (
         f"Cargo bound {bound!r} should {outcome} target version {target!r}"
+    )
+
+
+@pytest.mark.parametrize(
+    ("requirement", "target", "excluded"),
+    [
+        ("<0.7", "0.6.0", ("<0.6.0",)),
+        (">0.6.0-beta4", "0.6.0", (">0.6.0",)),
+        (">=0.6.0-beta4", "0.6.0", ()),
+        ("<=0.7", "0.6.0", ()),
+    ],
+)
+def test_excluding_rewritten_first_bound_detects_strict_operators(
+    requirement: str,
+    target: str,
+    excluded: tuple[str, ...],
+) -> None:
+    """A preserved strict first operator rejects its rewritten target."""
+    result = excluding_rewritten_first_bound(requirement, target)
+
+    assert result == excluded, (
+        f"rewritten first comparator for {requirement!r} should report "
+        f"{excluded!r}, got {result!r}"
     )

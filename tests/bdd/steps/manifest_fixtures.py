@@ -66,13 +66,15 @@ def _prepare_published_gpui_e2e_fixture(
         "rstest-bdd-harness-gpui",
         "rstest-bdd-macros",
     )
+    patch_crate_names = (*crate_names, "rstest-bdd-patterns", "rstest-bdd-policy")
     install_cargo_stub(cmd_mox, monkeypatch)
     manifests = [
-        _create_test_crate(workspace_directory, name, version) for name in crate_names
+        _create_test_crate(workspace_directory, name, version)
+        for name in patch_crate_names
     ]
     _write_workspace_manifest(
         workspace_directory,
-        [f"crates/{name}" for name in crate_names],
+        [f"crates/{name}" for name in patch_crate_names],
         version=version,
     )
     _mock_cargo_metadata(
@@ -80,9 +82,9 @@ def _prepare_published_gpui_e2e_fixture(
         workspace_directory,
         packages=[
             _build_package_metadata(name, manifest, version=version)
-            for name, manifest in zip(crate_names, manifests, strict=True)
+            for name, manifest in zip(patch_crate_names, manifests, strict=True)
         ],
-        member_ids=[f"{name}-id" for name in crate_names],
+        member_ids=[f"{name}-id" for name in patch_crate_names],
     )
     fixture = workspace_directory / "tests/fixtures/published-gpui-e2e/Cargo.toml"
     fixture.parent.mkdir(parents=True, exist_ok=True)
@@ -92,7 +94,7 @@ def _prepare_published_gpui_e2e_fixture(
         "",
         "[patch.crates-io]",
     ]
-    for name in crate_names[:2]:
+    for name in patch_crate_names:
         patch_path = f"../../../target/published-gpui-e2e/{name}-{version}"
         fixture_lines.append(f'{name} = {{ path = "{patch_path}" }}')
     fixture_lines.append("")

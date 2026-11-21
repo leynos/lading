@@ -1,6 +1,5 @@
 """Pipeline integration for configured non-member manifest rewrites."""
 
-import collections.abc as cabc
 import pathlib
 
 import pytest
@@ -17,13 +16,7 @@ from lading.utils import metrics
 from tests.helpers.recording_lockfile_repository import RecordingLockfileRepository
 from tests.helpers.workspace_builders import _make_workspace
 
-
-@pytest.fixture(autouse=True)
-def _metrics_registry() -> cabc.Iterator[None]:
-    """Reset process-local metrics around each test."""
-    metrics.reset()
-    yield
-    metrics.reset()
+pytestmark = pytest.mark.usefixtures("reset_process_metrics")
 
 
 def _assert_single_rewrite_counter(**labels: str) -> None:
