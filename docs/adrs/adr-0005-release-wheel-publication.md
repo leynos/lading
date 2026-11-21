@@ -36,6 +36,11 @@ from no release at all, and the job that produced it has to fail.
 
 ## Decision
 
+The decision below records the original release order and is superseded by the
+amendments below. The current workflow collects and validates artefacts before
+creating or reusing a draft, then uploads and publishes only after the upload
+succeeds.
+
 Publication is the last thing the release job does, and the work that could
 fail runs in Python rather than in a shell.
 
@@ -81,8 +86,9 @@ the job log and `GITHUB_OUTPUT` are the signals a consumer can actually read.
 
 - A visible release always has its wheel. This is now a user-facing guarantee,
   stated in the [users' guide](../users-guide.md#install-from-a-tagged-release).
-- A failed release leaves a draft that a maintainer must delete or rerun the
-  tag against. That is deliberate: the draft is the evidence of what failed.
+- In the original order, a failure after draft creation left a draft that a
+  maintainer had to delete or rerun. Current failure outcomes are recorded in
+  the issue `#256` amendment below.
 - The uploader is the first script in this repository to run `gh`. Its cuprum
   catalogue allowlists `gh` alone, and that boundary covers the script, not the
   job, which also runs `uv` and its pinned actions.
