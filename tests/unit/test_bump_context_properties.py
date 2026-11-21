@@ -88,6 +88,8 @@ def _synthetic_workspace(
     extra_excludes=st.sets(_crate_name, max_size=4),
     data=st.data(),
 )
+# Context initialisation resolves the workspace root through the filesystem.
+@filesystem_property_settings()
 def test_bump_context_crate_sets_match_naive_derivation(
     names: set[str],
     extra_excludes: set[str],

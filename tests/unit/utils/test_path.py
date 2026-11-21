@@ -8,6 +8,7 @@ import hypothesis.strategies as st
 from hypothesis import given
 
 from lading.utils import normalize_workspace_root
+from tests.helpers.hypothesis_settings import filesystem_property_settings
 
 _path_segment: st.SearchStrategy[str] = st.text(
     alphabet=string.ascii_lowercase + string.digits + "_-",
@@ -52,6 +53,8 @@ def test_accepts_path_instances() -> None:
 
 
 @given(segments=_relative_segments)
+# Resolution reads real path components, so the deadline measures the host.
+@filesystem_property_settings()
 def test_relative_inputs_resolve_to_absolute_paths(segments: list[str]) -> None:
     """Relative inputs resolve to a fully normalized, cwd-anchored path."""
     value = str(Path(*segments))
@@ -79,6 +82,7 @@ def test_relative_inputs_resolve_to_absolute_paths(segments: list[str]) -> None:
 
 
 @given(segments=_relative_segments)
+@filesystem_property_settings()
 def test_redundant_separators_are_normalized(segments: list[str]) -> None:
     """Doubling separators does not change the resolved path."""
     value = str(Path(*segments))
@@ -90,6 +94,7 @@ def test_redundant_separators_are_normalized(segments: list[str]) -> None:
 
 
 @given(segments=_relative_segments)
+@filesystem_property_settings()
 def test_tilde_prefix_expands_for_arbitrary_suffixes(segments: list[str]) -> None:
     """Expanding ``~`` is equivalent to substituting the literal home path."""
     tilde_value = str(Path("~", *segments))

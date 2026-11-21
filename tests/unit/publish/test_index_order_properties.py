@@ -10,11 +10,12 @@ import tempfile
 from pathlib import Path
 
 import pytest
-from hypothesis import given, settings
+from hypothesis import given
 from hypothesis import strategies as st
 
 from lading.commands import publish, publish_pipeline, publish_plan
 from lading.commands.cargo_output_adapter import CargoIndexLookupFailure
+from tests.helpers.hypothesis_settings import filesystem_property_settings
 
 from .conftest import make_crate
 
@@ -31,7 +32,8 @@ def _publish_order_cases(
 
 
 @given(case=_publish_order_cases())
-@settings(max_examples=80, deadline=None)
+# Each example writes real crate manifests into a temporary workspace.
+@filesystem_property_settings(max_examples=80)
 def test_index_missing_dependency_requires_prior_publish_order(
     case: tuple[int, int, int],
 ) -> None:
