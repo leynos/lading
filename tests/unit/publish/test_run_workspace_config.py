@@ -156,6 +156,7 @@ def _capture_stage_exclude(
         options: object | None = None,
         stage_exclude: cabc.Sequence[str] = (),
     ) -> cabc.Generator[publish_staging.StagedWorkspace]:
+        """Record the exclusion and yield a fake staged workspace."""
         del options
         captured["stage_exclude"] = tuple(stage_exclude)
         yield publish_staging.StagedWorkspace(

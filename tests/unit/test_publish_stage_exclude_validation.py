@@ -279,6 +279,7 @@ def test_stage_exclude_reports_an_unreadable_manifest(
     real_stat = Path.stat
 
     def deny_unreadable(self: Path, *, follow_symlinks: bool = True) -> os.stat_result:
+        """Deny ``stat`` on the workspace manifest and delegate every other path."""
         if self == manifest:
             raise PermissionError(errno.EACCES, "permission denied", str(self))
         return real_stat(self, follow_symlinks=follow_symlinks)

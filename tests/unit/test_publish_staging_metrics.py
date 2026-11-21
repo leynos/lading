@@ -93,6 +93,7 @@ def test_staging_records_an_inspection_failure(
     build_directory = preparation_fixtures.tmp_path / "build"
 
     def unreadable(*_args: object, **_kwargs: object) -> None:
+        """Fail as an unreadable workspace does during link inspection."""
         message = "cannot read link"
         raise PermissionError(message)
 
@@ -151,6 +152,7 @@ def test_staging_records_a_failed_copy(
     build_directory = preparation_fixtures.tmp_path / "build"
 
     def fail_copy(*_args: object, **_kwargs: object) -> None:
+        """Fail as the workspace copy does on an I/O error."""
         message = "copy failed"
         raise OSError(message)
 
