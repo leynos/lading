@@ -113,7 +113,7 @@ jobs:
         # 4580e161 is the annotated tag's own SHA: immutable, but not a
         # commit, so a checkout resolving it is resolving a different kind of
         # object than the pin is meant to name.
-        uses: DavidAnson/markdownlint-cli2-action@21c1be1b93ad9ed58fa840aacc3f279cde2a72ff  # v24.2.0
+        uses: DavidAnson/markdownlint-cli2-action@696eb3f2509270d7b882d2aa68347bc676e7af34  # v25.0.0
         with:
           globs: '**/*.md'
 
