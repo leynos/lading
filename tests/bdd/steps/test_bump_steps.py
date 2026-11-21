@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from cmd_mox import CmdMox
 from pytest_bdd import given, parsers, then, when
+from tomlkit import parse as parse_toml
 
 from lading.commands import bump_readme
 from tests.helpers.cli_diagnostics import normalize_diagnostic
@@ -239,9 +240,26 @@ def given_published_fixture_workspace(
 def then_published_fixture_versions_updated(cli_run: CliRunResult) -> None:
     """Assert dependency and staged-path prerelease values were rewritten."""
     fixture = cli_run["workspace"] / "tests/fixtures/published-gpui-e2e/Cargo.toml"
-    contents = fixture.read_text(encoding="utf-8")
-    assert "0.6.0-beta4" not in contents, f"prerelease remains:\n{contents}"
-    assert contents.count("0.6.0") == 6, f"unexpected rewrite count:\n{contents}"
+    document = parse_toml(fixture.read_text(encoding="utf-8"))
+    crate_names = (
+        "rstest-bdd",
+        "rstest-bdd-harness",
+        "rstest-bdd-harness-gpui",
+        "rstest-bdd-macros",
+    )
+    dependencies = document["dependencies"]
+    assert {name: str(dependencies[name]) for name in crate_names} == dict.fromkeys(
+        crate_names, "0.6.0"
+    ), "all four dependency requirements must use the exact target version"
+    patch_paths = document["patch"]["crates-io"]
+    assert {
+        name: str(patch_paths[name]["path"]) for name in crate_names[:2]
+    } == {
+        "rstest-bdd": "../../../target/published-gpui-e2e/rstest-bdd-0.6.0",
+        "rstest-bdd-harness": (
+            "../../../target/published-gpui-e2e/rstest-bdd-harness-0.6.0"
+        ),
+    }, "both staged package paths must use the exact target version"
 
 
 @then("the published fixture manifest remains unchanged")
