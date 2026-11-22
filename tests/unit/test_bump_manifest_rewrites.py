@@ -235,6 +235,37 @@ def test_direct_string_values_and_missing_selectors_are_noops(
     )
 
 
+def test_retry_rejects_stale_string_when_member_is_already_at_target(
+    tmp_path: pathlib.Path,
+    write_fixture_manifest: _ManifestWriter,
+) -> None:
+    """A retry must not silently leave fixture text at an unknown old version."""
+    write_fixture_manifest(
+        tmp_path,
+        "fixtures/standalone/Cargo.toml",
+        '[metadata]\npath = "target/alpha-1.0.0"\n',
+    )
+    group = ManifestRewriteConfig(
+        paths=("fixtures/standalone/Cargo.toml",),
+        dependencies=False,
+        string_values=(StringValueRewriteConfig(table=("metadata",)),),
+    )
+
+    with pytest.raises(
+        bump_manifest_rewrites.ManifestRewriteError,
+        match=r"crate 'alpha'.*'1\.0\.0'.*previous version cannot be recovered",
+    ):
+        plan_fixture_rewrites(
+            tmp_path,
+            (group,),
+            versions=manifest_rewrite_versions(
+                names=frozenset({"alpha"}),
+                pre_bump_versions={"alpha": "2.0.0"},
+                target_version="2.0.0",
+            ),
+        )
+
+
 def test_rewrites_direct_and_nested_inline_string_tables(
     tmp_path: pathlib.Path,
     write_fixture_manifest: _ManifestWriter,

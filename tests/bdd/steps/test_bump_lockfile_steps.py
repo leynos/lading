@@ -97,7 +97,10 @@ def then_bump_refreshed_workspace_and_nested_lockfiles(
 
 
 @then("the bump command did not refresh tracked lockfiles")
-def then_bump_did_not_refresh_lockfiles(cli_run: dict[str, typ.Any]) -> None:
+def then_bump_did_not_refresh_lockfiles(
+    cli_run: dict[str, typ.Any],
+    cmd_mox: CmdMox,
+) -> None:
     """Assert the dry-run lockfile scenario completed without refresh."""
     assert cli_run["returncode"] == 0, (
         f"the dry-run lockfile bump must succeed; stderr:\n{cli_run['stderr']}"
@@ -109,3 +112,9 @@ def then_bump_did_not_refresh_lockfiles(cli_run: dict[str, typ.Any]) -> None:
     assert "cargo update --workspace" not in output, (
         "a dry run must not refresh lockfiles"
     )
+    updates = [
+        invocation
+        for invocation in cmd_mox.journal
+        if invocation.command == "cargo::update"
+    ]
+    assert not updates, f"dry run must not invoke Cargo update; got {updates!r}"

@@ -33,6 +33,15 @@ class _RewriteSelection:
     string_values: list[StringValueRewriteConfig] = dc.field(default_factory=list)
 
 
+@dc.dataclass(slots=True)
+class _RewriteSelectionContext:
+    """Track workspace boundaries and merged rules during path resolution."""
+
+    workspace_root: Path
+    skipped_manifests: set[Path]
+    selections: dict[Path, _RewriteSelection] = dc.field(default_factory=dict)
+
+
 def read_manifest_rewrite_sources(
     workspace_root: Path,
     rewrite_groups: cabc.Sequence[ManifestRewriteConfig],
@@ -56,48 +65,71 @@ def read_manifest_rewrite_sources(
         Read manifests in configuration and path order, with duplicate paths
         merged and workspace-owned manifests omitted.
 
-    Raises
-    ------
-    ManifestRewriteError
-        If a selected path is unsafe, missing, not a regular Cargo manifest,
-        or cannot be read as UTF-8 text.
     """
     if not rewrite_groups:
         return ()
     root = workspace_root.resolve()
-    skipped = {
-        (root / "Cargo.toml").resolve(),
-        *((root / path).resolve() for path in member_manifest_paths),
-    }
-    selections: dict[Path, _RewriteSelection] = {}
+    context = _RewriteSelectionContext(
+        root,
+        {
+            (root / "Cargo.toml").resolve(),
+            *((root / path).resolve() for path in member_manifest_paths),
+        },
+    )
     for group in rewrite_groups:
-        for configured_path in group.paths:
-            for candidate in _expand_path(root, configured_path):
-                manifest_path = manifest_paths.resolve_manifest_candidate(
-                    root,
-                    candidate,
-                    error_type=ManifestRewriteError,
-                    label="Manifest rewrite",
-                )
-                if manifest_path in skipped:
-                    _log.debug(
-                        "Skipping configured manifest rewrite %s because it "
-                        "resolves to a workspace-owned manifest at %s",
-                        configured_path,
-                        manifest_path,
-                    )
-                    continue
-                if not manifest_path.is_file():
-                    message = (
-                        "Manifest rewrite path must point to a regular file: "
-                        f"{configured_path}"
-                    )
-                    raise ManifestRewriteError(message)
-                selection = selections.setdefault(manifest_path, _RewriteSelection())
-                selection.dependencies |= group.dependencies
-                selection.string_values.extend(group.string_values)
+        _select_rewrite_group(context, group)
+    return tuple(starmap(_read_source, context.selections.items()))
 
-    return tuple(starmap(_read_source, selections.items()))
+
+def _select_rewrite_group(
+    context: _RewriteSelectionContext,
+    group: ManifestRewriteConfig,
+) -> None:
+    """Expand every path in a group and merge its rules by resolved path."""
+    for configured_path in group.paths:
+        _select_configured_path(context, group, configured_path)
+
+
+def _select_configured_path(
+    context: _RewriteSelectionContext,
+    group: ManifestRewriteConfig,
+    configured_path: str,
+) -> None:
+    """Validate every file selected by one literal path or glob."""
+    candidates = _expand_path(context.workspace_root, configured_path)
+    for candidate in candidates:
+        _merge_rewrite_candidate(context, group, configured_path, candidate)
+
+
+def _merge_rewrite_candidate(
+    context: _RewriteSelectionContext,
+    group: ManifestRewriteConfig,
+    configured_path: str,
+    candidate: Path,
+) -> None:
+    """Validate one candidate and merge its dependency and string rules."""
+    manifest_path = manifest_paths.resolve_manifest_candidate(
+        context.workspace_root,
+        candidate,
+        error_type=ManifestRewriteError,
+        label="Manifest rewrite",
+    )
+    if manifest_path in context.skipped_manifests:
+        _log.debug(
+            "Skipping configured manifest rewrite %s because it resolves to a "
+            "workspace-owned manifest at %s",
+            configured_path,
+            manifest_path,
+        )
+        return
+    if not manifest_path.is_file():
+        message = (
+            f"Manifest rewrite path must point to a regular file: {configured_path}"
+        )
+        raise ManifestRewriteError(message)
+    selection = context.selections.setdefault(manifest_path, _RewriteSelection())
+    selection.dependencies |= group.dependencies
+    selection.string_values.extend(group.string_values)
 
 
 def _expand_path(workspace_root: Path, configured_path: str) -> tuple[Path, ...]:

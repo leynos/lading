@@ -34,51 +34,72 @@ def apply_manifest_rewrites(
     tuple[Path, ...]
         Paths represented by the plans, including during dry runs.
 
-    Raises
-    ------
-    ManifestRewriteError
-        If a manifest changed after planning or a write fails. The message
-        identifies the failed manifest and how many planned writes completed.
-
     Notes
     -----
     Each atomic write protects one manifest. If a later write fails, earlier
     completed writes remain in place, so the sequence is not atomic as a whole.
     """
-    if plans and not dry_run:
-        for completed_writes, plan in enumerate(plans):
-            try:
-                current_text = plan.path.read_text(encoding="utf-8")
-            except (OSError, UnicodeError) as exc:
-                message = (
-                    f"Could not read manifest rewrite target {plan.path} before "
-                    f"writing: {exc}"
-                )
-                raise ManifestRewriteError(
-                    message,
-                    completed_writes=completed_writes,
-                    planned_writes=len(plans),
-                    failed_path=plan.path,
-                ) from exc
-            if current_text != plan.original_text:
-                message = f"Manifest rewrite target changed after planning: {plan.path}"
-                raise ManifestRewriteError(
-                    message,
-                    completed_writes=completed_writes,
-                    planned_writes=len(plans),
-                    failed_path=plan.path,
-                )
-            try:
-                write_atomic_text(plan.path, plan.new_text)
-            except (OSError, UnicodeError) as exc:
-                message = (
-                    f"Could not write manifest rewrite target {plan.path} after "
-                    f"{completed_writes} of {len(plans)} write(s): {exc}"
-                )
-                raise ManifestRewriteError(
-                    message,
-                    completed_writes=completed_writes,
-                    planned_writes=len(plans),
-                    failed_path=plan.path,
-                ) from exc
+    if dry_run:
+        return tuple(plan.path for plan in plans)
+    for completed_writes, plan in enumerate(plans):
+        _apply_manifest_rewrite(plan, completed_writes, len(plans))
     return tuple(plan.path for plan in plans)
+
+
+def _apply_manifest_rewrite(
+    plan: ManifestRewritePlan,
+    completed_writes: int,
+    planned_writes: int,
+) -> None:
+    """Check one plan's source and atomically persist its replacement."""
+    current_text = _read_current_text(plan, completed_writes, planned_writes)
+    if current_text != plan.original_text:
+        message = f"Manifest rewrite target changed after planning: {plan.path}"
+        raise ManifestRewriteError(
+            message,
+            completed_writes=completed_writes,
+            planned_writes=planned_writes,
+            failed_path=plan.path,
+        )
+    _write_manifest_plan(plan, completed_writes, planned_writes)
+
+
+def _read_current_text(
+    plan: ManifestRewritePlan,
+    completed_writes: int,
+    planned_writes: int,
+) -> str:
+    """Read a plan source or raise a progress-aware rewrite error."""
+    try:
+        return plan.path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        message = (
+            f"Could not read manifest rewrite target {plan.path} before writing: {exc}"
+        )
+        raise ManifestRewriteError(
+            message,
+            completed_writes=completed_writes,
+            planned_writes=planned_writes,
+            failed_path=plan.path,
+        ) from exc
+
+
+def _write_manifest_plan(
+    plan: ManifestRewritePlan,
+    completed_writes: int,
+    planned_writes: int,
+) -> None:
+    """Atomically write a plan or raise a progress-aware rewrite error."""
+    try:
+        write_atomic_text(plan.path, plan.new_text)
+    except (OSError, UnicodeError) as exc:
+        message = (
+            f"Could not write manifest rewrite target {plan.path} after "
+            f"{completed_writes} of {planned_writes} write(s): {exc}"
+        )
+        raise ManifestRewriteError(
+            message,
+            completed_writes=completed_writes,
+            planned_writes=planned_writes,
+            failed_path=plan.path,
+        ) from exc

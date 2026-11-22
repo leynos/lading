@@ -1,9 +1,9 @@
 r"""Manipulate TOML values used by version bumping.
 
 The module selects tables, preserves TOML formatting while replacing scalar
-values, and prepares changed string items. Dependency-table traversal lives in
-:mod:`lading.commands.bump_toml_dependencies`; manifest file I/O lives in
-:mod:`lading.commands.bump_toml_files`.
+values. String-value traversal lives in :mod:`lading.commands.bump_toml_strings`,
+dependency-table traversal lives in :mod:`lading.commands.bump_toml_dependencies`,
+and manifest file I/O lives in :mod:`lading.commands.bump_toml_files`.
 
 Examples
 --------
@@ -16,7 +16,6 @@ True
 '2.0.0'
 """
 
-import collections.abc as cabc
 import re
 import typing as typ
 from contextlib import suppress
@@ -189,24 +188,14 @@ def prepare_string_value_replacement(
     current = value_as_string(value)
     if current is None or current == replacement_text:
         return None
-    match value:
-        case String() as styled_string:
-            original_text = styled_string.as_string()
-            literal = original_text.startswith("'")
-            multiline = original_text.startswith(("'''", '"""'))
-        case _:
-            literal = multiline = False
+    literal, multiline = _string_format_flags(value)
     replacement = string(
         replacement_text,
         literal=literal,
         multiline=multiline,
     )
-    if multiline and replacement_text.startswith("\n"):
-        rendered = replacement.as_string()
-        reparsed = parse_toml(f"value = {rendered}")["value"]
-        if str(reparsed) != replacement_text:
-            repaired = f"{rendered[:3]}\n{rendered[3:]}"
-            replacement = parse_toml(f"value = {repaired}")["value"]
+    if multiline:
+        replacement = _preserve_multiline_leading_newline(replacement, replacement_text)
     match value:
         case Item() as original_item:
             with suppress(
@@ -216,59 +205,32 @@ def prepare_string_value_replacement(
     return replacement
 
 
-def update_string_values(
-    table: _TableLike,
-    replacement: cabc.Callable[[str], str],
-    *,
-    field: str | None = None,
-) -> bool:
-    r"""Update matching strings in a table or in its sub-table fields.
+def _string_format_flags(value: object) -> tuple[bool, bool]:
+    """Return whether a TOML string uses literal and multiline delimiters."""
+    match value:
+        case String() as styled_string:
+            original_text = styled_string.as_string()
+            return original_text.startswith("'"), original_text.startswith((
+                "'''",
+                '"""',
+            ))
+        case _:
+            return False, False
 
-    Parameters
-    ----------
-    table : _TableLike
-        TOML table whose values are inspected.
-    replacement : Callable[[str], str]
-        Pure transformation applied to each selected string value.
-    field : str or None, optional
-        When set, inspect this field in each inline or standard sub-table.
-        When omitted, inspect direct string values in ``table``.
 
-    Returns
-    -------
-    bool
-        Whether any string value changed.
-
-    Examples
-    --------
-    >>> document = parse_toml('[metadata]\npath = "alpha-1.0.0"')
-    >>> update_string_values(
-    ...     document["metadata"], lambda value: value.replace("1.0.0", "2.0.0")
-    ... )
-    True
-    >>> document["metadata"]["path"]
-    'alpha-2.0.0'
-    """
-    changed = False
-    for key, entry in tuple(table.items()):
-        container = table
-        value = entry
-        selected_key = key
-        if field is not None:
-            if not isinstance(entry, _TABLE_LIKE_TYPES):
-                continue
-            container = entry
-            selected_key = field
-            value = entry.get(field)
-        current = value_as_string(value)
-        if current is None:
-            continue
-        replacement_item = prepare_string_value_replacement(value, replacement(current))
-        if replacement_item is None:
-            continue
-        container[selected_key] = replacement_item
-        changed = True
-    return changed
+def _preserve_multiline_leading_newline(
+    replacement: Item,
+    replacement_text: str,
+) -> Item:
+    """Work around tomlkit normalizing a leading multiline string newline."""
+    if not replacement_text.startswith("\n"):
+        return replacement
+    rendered = replacement.as_string()
+    reparsed = parse_toml(f"value = {rendered}")["value"]
+    if str(reparsed) == replacement_text:
+        return replacement
+    repaired = f"{rendered[:3]}\n{rendered[3:]}"
+    return parse_toml(f"value = {repaired}")["value"]
 
 
 def select_table(

@@ -12,13 +12,16 @@ behaviour.
 
 The command-line flags and existing `lading.toml` keys retain their behaviour
 from 0.3.x; this release adds the opt-in `bump.manifest_rewrites` key described
-above. The Python API changes additively. `BumpConfig.manifest_rewrites` is
-new, and `lading.config_manifest_rewrites` and `lading.config_validation`
-support its configuration. `BumpOptions.clock` adds an injectable rewrite
-timer, and `lading.commands.manifest_paths.resolve_manifest_candidate` is
-available to manifest-path consumers. `lading.commands.bump_manifest_rewrites`
-exports `ManifestRewriteError`, `ManifestRewritePlan` and
-`ManifestRewriteVersions`. `ConfigurationError` and
+above. The documented Python API additions are additive.
+`BumpConfig.manifest_rewrites` is new, and `lading.config_manifest_rewrites` and
+`lading.config_validation` support its configuration. `BumpOptions.clock` adds
+an injectable rewrite timer, and
+`lading.commands.manifest_paths.resolve_manifest_candidate` is available to
+manifest-path consumers. `lading.commands.bump_manifest_rewrites` exports
+`ManifestRewriteError`, `ManifestRewritePlan` and `ManifestRewriteVersions`.
+The internal `parse_manifest` and `write_atomic_text` helpers moved from
+`lading.commands.bump_toml` to `lading.commands.bump_toml_files`; update
+imports if your tooling uses them. `ConfigurationError` and
 `ConfigurationNotLoadedError` now live in `lading.exceptions` and remain
 importable from `lading.config`. An environment already running 3.14 that only
 reads successful output needs no action beyond the version bump itself.

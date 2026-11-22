@@ -23,7 +23,8 @@ class ManifestRewriteError(LadingError):
     planned_writes : int, optional
         Number of manifests in the write plan. Defaults to zero.
     failed_path : Path or None, optional
-        Manifest whose write failed, or ``None`` for planning errors.
+        Manifest associated with the error, or ``None`` when no single path is
+        known.
     """
 
     def __init__(
@@ -39,6 +40,67 @@ class ManifestRewriteError(LadingError):
         self.completed_writes = completed_writes
         self.planned_writes = planned_writes
         self.failed_path = failed_path
+
+    @classmethod
+    def pre_bump_versions_unavailable(
+        cls,
+        crate_names: cabc.Sequence[str],
+        manifest_path: Path,
+    ) -> ManifestRewriteError:
+        """Create an error for selected rewrites missing source versions.
+
+        Parameters
+        ----------
+        crate_names : Sequence[str]
+            Workspace packages whose pre-bump versions were not available.
+        manifest_path : Path
+            Configured manifest whose rewrite could not be planned.
+
+        Returns
+        -------
+        ManifestRewriteError
+            Failure identifying the missing package versions and manifest.
+        """
+        names = ", ".join(repr(name) for name in crate_names)
+        message = (
+            f"Pre-bump versions for workspace crate(s) {names} are unavailable "
+            f"while rewriting {manifest_path}"
+        )
+        return cls(message, failed_path=manifest_path)
+
+    @classmethod
+    def stale_template_reference(
+        cls,
+        crate_name: str,
+        stale_version: str,
+        target_version: str,
+        manifest_path: Path,
+    ) -> ManifestRewriteError:
+        """Create an error for a stale string value after a partial bump.
+
+        Parameters
+        ----------
+        crate_name : str
+            Workspace package named by the configured template.
+        stale_version : str
+            Version text still present in the configured manifest value.
+        target_version : str
+            Version already assigned to the workspace package.
+        manifest_path : Path
+            Configured manifest that still contains the stale reference.
+
+        Returns
+        -------
+        ManifestRewriteError
+            Failure explaining that a retry cannot recover the old version.
+        """
+        message = (
+            f"Configured string rewrite for workspace crate {crate_name!r} "
+            f"in {manifest_path} contains non-target version {stale_version!r}; "
+            f"the workspace crate is already at {target_version!r}, so the "
+            "previous version cannot be recovered for this retry"
+        )
+        return cls(message, failed_path=manifest_path)
 
 
 @dc.dataclass(frozen=True, slots=True)

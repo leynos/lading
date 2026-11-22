@@ -1,6 +1,7 @@
 """Exercise non-member fixture rewrites with real Cargo lockfile updates."""
 
 import json
+import os
 import shutil
 import subprocess
 import typing as typ
@@ -256,6 +257,14 @@ def test_bump_rewrites_and_regenerates_tracked_published_fixture_lockfile(
 ) -> None:
     """Cargo accepts the full rewritten fixture and its regenerated lockfile."""
     monkeypatch.setenv("CARGO_NET_OFFLINE", "true")
+    cargo_home = tmp_path / "cargo-home"
+    cargo_home.mkdir()
+    # Isolate user Cargo configuration while sharing the host's registry cache.
+    shared_cargo_home = Path(os.environ.get("CARGO_HOME", Path.home() / ".cargo"))
+    shared_registry = shared_cargo_home / "registry"
+    if shared_registry.exists():
+        (cargo_home / "registry").symlink_to(shared_registry, target_is_directory=True)
+    monkeypatch.setenv("CARGO_HOME", str(cargo_home))
     workspace, fixture = _prepare_tracked_fixture_workspace(tmp_path)
 
     result = bump.run(
