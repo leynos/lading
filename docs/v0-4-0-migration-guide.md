@@ -297,8 +297,11 @@ but it also changes how Cargo selects files for a package. With no Git metadata,
 `cargo package` does not consult the repository's `.gitignore` and writes no
 `.cargo_vcs_info.json`. When the manifest does not set `include`, Cargo skips
 dot-named entries. When the manifest sets `include`, Cargo packages each
-dot-named entry that the list names. A file that Git ignores without a leading
-dot — a local database, or a settings module — is therefore packaged unless the
+dot-named entry that the list names. Cargo also always packages the file named
+by `license-file`, and the `readme` file, even when they are dot-named and
+`include` does not name them; run `cargo package --list` to check the exact
+list before a live publish. A file that Git ignores without a leading dot — a
+local database, or a settings module — is therefore packaged unless the
 configuration excludes it. A Git-ignored settings file named in `include` is
 packaged even when it is dot-named: keep such a file out of the `include` list,
 or remove it with `stage_exclude`, before a live publish. Audit any such file
