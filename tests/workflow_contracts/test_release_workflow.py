@@ -168,6 +168,7 @@ def _upload_tokens(step: WorkflowStep) -> list[str]:
 
 def _single_command_source(command: str) -> str:
     """Join shell line continuations and reject additional command lines."""
+    assert "#" not in command, "comments are unsupported in restricted shell commands"
     source = SHELL_LINE_CONTINUATION.sub(r"\1", command).strip()
     assert len(source.splitlines()) == 1, "step must contain one shell command"
     return source
@@ -308,6 +309,20 @@ def test_publish_tokens_accept_escaped_line_continuations() -> None:
         '"$TAG"',
         "--draft=false",
     ], "escaped line continuation must remain one publication command"
+
+
+def test_shell_tokenizers_reject_comments_before_line_continuations() -> None:
+    """A comment's trailing backslash cannot hide the following shell line."""
+    commands = (
+        (
+            _upload_tokens,
+            f'{" ".join(UPLOAD_COMMAND)} --tag "$TAG" # comment \\\n--directory=dist',
+        ),
+        (_publish_tokens, 'gh release edit "$TAG" # comment \\\n--draft=false'),
+    )
+    for tokenize, command in commands:
+        with pytest.raises(AssertionError, match="comments are unsupported"):
+            tokenize({"run": command})
 
 
 @given(
