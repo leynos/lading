@@ -302,13 +302,15 @@ by `license-file`, and the `readme` file, even when they are dot-named and
 `include` does not name them. A file that Git ignores without a leading dot — a
 local database, or a settings module — is therefore packaged unless the
 configuration excludes it, and a Git-ignored settings file is packaged when the
-manifest sets no `include` list. To exclude one, either add an `include` list
-that omits it, or remove it with `stage_exclude`, before a live publish. Audit
-any such file that sits inside a publishable crate before relying on the
-default. The source checkout still applies Git-aware selection, so check the
-file list on the staged tree: run `lading publish --keep-staging` in dry-run
-mode, which logs the retained path, and run `cargo package --list` in that
-staged crate. The default rules for `include` and `exclude` are described in the
+manifest sets no `include` list. To exclude one, either narrow `include` so it
+omits the file, or remove it with `stage_exclude`, before a live publish.
+Setting `include` makes Cargo ignore `exclude` entirely, so carry any existing
+`exclude` entries over into the new list. Audit any such file that sits inside
+a publishable crate before relying on the default. The source checkout still
+applies Git-aware selection, so check the file list on the staged tree: run
+`lading publish --keep-staging` in dry-run mode, which logs the retained path,
+and run `cargo package --list` in that staged crate. The default rules for
+`include` and `exclude` are described in the
 [Cargo manifest documentation](https://doc.rust-lang.org/cargo/reference/manifest.html#the-exclude-and-include-fields).
 A live publish that stages without `.git` logs a warning before copying,
 because an upload cannot be undone.

@@ -111,14 +111,16 @@ dot-named file the package needs must be listed there. Cargo also always
 packages the file named by `license-file`, and the `readme` file, even when
 they are dot-named and `include` does not name them. A file that Git ignores
 whose name does not start with a dot is packaged unless the manifest's
-`include` list or `stage_exclude` keeps it out. Without an `include` list, a
-Git-ignored settings file is therefore packaged. To exclude one, either add an
-`include` list that omits it, or remove it with `stage_exclude`; audit such
-files in a publishable crate before relying on the default. Because the source
-checkout still applies Git-aware selection, check the file list on the staged
-tree: run `lading publish --keep-staging` in dry-run mode, which logs the
-retained path, and run `cargo package --list` in that staged crate. To keep the
-old Git-aware selection, including gitignore handling and VCS provenance, set
+`include` list or `stage_exclude` keeps it out. Without `include`, a
+Git-ignored settings file is therefore packaged. To exclude one, either narrow
+`include` so it omits the file, or remove it with `stage_exclude`; audit such
+files in a publishable crate before relying on the default. Setting `include`
+makes Cargo ignore `exclude` entirely, so carry any existing `exclude` entries
+over into the new list. Because the source checkout still applies Git-aware
+selection, check the file list on the staged tree: run
+`lading publish --keep-staging` in dry-run mode, which logs the retained path,
+and run `cargo package --list` in that staged crate. To keep the old Git-aware
+selection, including gitignore handling and VCS provenance, set
 `stage_exclude = []`. A live publish whose effective exclusions remove `.git`
 logs a warning before it copies, because an upload cannot be undone: a yanked
 version still holds the files it published. `--forbid-dirty` is unaffected
