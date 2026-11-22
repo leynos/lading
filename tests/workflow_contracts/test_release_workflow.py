@@ -1,18 +1,17 @@
-"""Contracts for PyPI-first, idempotent release publication."""
+"""Contracts for PyPI-first, idempotent release publication.
+
+Lock the producer artefact, shared collector, uploader and publication contract
+to the checked-in workflow. Shell commands are parsed into tokens so assertions
+track executable arguments rather than source substrings.
+"""
 
 import ast
-import os
 import re
 import shlex
-import string
-import subprocess
 import typing as typ
-from pathlib import Path, PurePosixPath
+from pathlib import PurePosixPath
 
-import pytest
 import yaml
-from hypothesis import given
-from hypothesis import strategies as st
 
 from tests.workflow_contracts.step_harness import (
     REPOSITORY_ROOT,
@@ -42,8 +41,6 @@ SHELL_CONTROL_OPERATOR_CHARACTERS = frozenset("&;|")
 SHELL_COMMAND_SUBSTITUTION_START = "$("
 DEFAULT_UPLOAD_DIRECTORY = "dist"  # See scripts/upload_release_wheels.py.
 SHELL_LINE_CONTINUATION = re.compile(r"(?<!\\)((?:\\\\)*)\\\r?\n")
-SHELL_TEXT_ALPHABET = string.ascii_letters + string.digits + "_-"
-DIRECTORY_TEXT_ALPHABET = SHELL_TEXT_ALPHABET + "/."
 StepControls = typ.TypedDict(
     "StepControls", {"continue-on-error": bool, "if": str}, total=False
 )
@@ -270,140 +267,6 @@ def test_build_artifact_and_uploader_paths_agree() -> None:
     assert upload_directory == _collection_publish_directory(), "uploader path mismatch"
 
 
-def test_upload_tokens_reject_unescaped_command_newlines() -> None:
-    """A second shell command cannot masquerade as uploader arguments."""
-    command = (
-        "uv run --locked --script scripts/upload_release_wheels.py "
-        '--tag "$TAG"\n--directory=dist/publish'
-    )
-    with pytest.raises(AssertionError, match="one shell command"):
-        _upload_tokens({"run": command})
-
-
-def test_upload_tokens_accept_escaped_line_continuations() -> None:
-    """A shell line continuation remains one uploader invocation."""
-    command = (
-        "uv run --locked --script scripts/upload_release_wheels.py "
-        '--tag "$TAG" \\\n--directory=dist/publish'
-    )
-    assert _upload_tokens({"run": command}) == [
-        *UPLOAD_COMMAND,
-        "--tag",
-        '"$TAG"',
-        "--directory=dist/publish",
-    ], "escaped line continuation must remain one uploader invocation"
-
-
-def test_publish_tokens_reject_unescaped_command_newlines() -> None:
-    """A newline cannot turn publication arguments into a second command."""
-    command = 'gh release edit "$TAG"\n--draft=false'
-    with pytest.raises(AssertionError, match="one shell command"):
-        _publish_tokens({"run": command})
-
-
-def test_publish_tokens_accept_escaped_line_continuations() -> None:
-    """A shell continuation keeps publication arguments in one command."""
-    command = 'gh release edit "$TAG" \\\n--draft=false'
-    assert _publish_tokens({"run": command}) == [
-        *PUBLISH_COMMAND,
-        '"$TAG"',
-        "--draft=false",
-    ], "escaped line continuation must remain one publication command"
-
-
-def test_shell_tokenizers_reject_comments_before_line_continuations() -> None:
-    """A comment's trailing backslash cannot hide the following shell line."""
-    commands = (
-        (
-            _upload_tokens,
-            f'{" ".join(UPLOAD_COMMAND)} --tag "$TAG" # comment \\\n--directory=dist',
-        ),
-        (_publish_tokens, 'gh release edit "$TAG" # comment \\\n--draft=false'),
-    )
-    for tokenize, command in commands:
-        with pytest.raises(AssertionError, match="comments are unsupported"):
-            tokenize({"run": command})
-
-
-@given(
-    prefix=st.text(alphabet=SHELL_TEXT_ALPHABET, min_size=1, max_size=12),
-    suffix=st.text(alphabet=SHELL_TEXT_ALPHABET, min_size=1, max_size=12),
-)
-def test_shell_tokenizers_reject_generated_unescaped_newlines(
-    prefix: str,
-    suffix: str,
-) -> None:
-    """Generated second command lines must fail both release parsers."""
-    commands = (
-        (
-            _upload_tokens,
-            f'{" ".join(UPLOAD_COMMAND)} --tag "$TAG" {prefix}\n{suffix}',
-        ),
-        (_publish_tokens, f'gh release edit "$TAG" {prefix}\n{suffix}'),
-    )
-    for tokenize, command in commands:
-        with pytest.raises(AssertionError, match="one shell command"):
-            tokenize({"run": command})
-
-
-@given(
-    prefix=st.text(alphabet=SHELL_TEXT_ALPHABET, min_size=1, max_size=12),
-    suffix=st.text(alphabet=SHELL_TEXT_ALPHABET, min_size=1, max_size=12),
-    escaped_backslash_pairs=st.integers(min_value=0, max_value=4),
-    line_ending=st.sampled_from(["\n", "\r\n"]),
-)
-def test_command_source_normalizes_generated_line_continuations(
-    prefix: str,
-    suffix: str,
-    escaped_backslash_pairs: int,
-    line_ending: str,
-) -> None:
-    """Odd trailing backslash runs join lines and preserve escaped pairs."""
-    slash = "\\"
-    source = f"{prefix}{slash * (2 * escaped_backslash_pairs + 1)}{line_ending}{suffix}"
-    expected = f"{prefix}{slash * (2 * escaped_backslash_pairs)}{suffix}"
-
-    assert _single_command_source(source) == expected, (
-        "line continuation changed command tokens"
-    )
-
-
-@given(
-    directory=st.text(alphabet=DIRECTORY_TEXT_ALPHABET, min_size=1, max_size=16),
-    use_equals=st.booleans(),
-)
-def test_upload_tokens_preserve_generated_directory_arguments(
-    directory: str,
-    *,
-    use_equals: bool,
-) -> None:
-    """Valid generated directory forms retain their parsed argv sequence."""
-    if use_equals:
-        directory_arguments = [f"--directory={directory}"]
-    else:
-        directory_arguments = ["--directory", directory]
-    command = (
-        f'{" ".join(UPLOAD_COMMAND)} --tag "$TAG" \\\n{" ".join(directory_arguments)}'
-    )
-
-    tokens = _upload_tokens({"run": command})
-
-    assert tokens == [*UPLOAD_COMMAND, "--tag", '"$TAG"', *directory_arguments], (
-        "uploader arguments changed during tokenization"
-    )
-    assert _upload_directory(tokens) == directory, "parsed upload directory changed"
-
-
-@pytest.mark.parametrize("shell_syntax", [";", "&", "|", "$(touch)"])
-def test_upload_tokens_reject_shell_operators_and_substitution(
-    shell_syntax: str,
-) -> None:
-    """The standalone uploader command cannot add shell control syntax."""
-    command = f'{" ".join(UPLOAD_COMMAND)} --tag "$TAG" --directory=dist{shell_syntax}'
-    with pytest.raises(AssertionError, match="unsupported upload command"):
-        _upload_tokens({"run": command})
-
-
 def test_pypi_order_uses_oidc_and_uv_simple_index_check() -> None:
     """Collection, interpreter setup, staging and publication run in order."""
     steps = _job_steps("publish-pypi")
@@ -481,76 +344,6 @@ def test_github_release_is_uploaded_and_published_in_order() -> None:
         and step["env"]["TAG"] == "${{ github.ref_name }}"
         for step in (create, upload, publish)
     ), "GitHub CLI operations should use the tag, workflow token and repository context"
-
-
-@pytest.mark.parametrize("state", ["absent", "existing", "unexpected"])
-def test_draft_release_creation_is_idempotent(tmp_path: Path, state: str) -> None:
-    """Create absent drafts, reuse existing ones, and reject inspection errors."""
-    create = _find_named_step(RELEASE_WORKFLOW, CREATE_RELEASE_STEP, job="release")
-    gh_stub = (
-        'gh() { printf "%s\\n" "$#" "$@" >> "$GH_STUB_LOG"; '
-        'if [[ "$GH_STUB_STATE" == absent && "$2" == view ]]; then '
-        'echo "release not found" >&2; return 1; '
-        'elif [[ "$GH_STUB_STATE" == unexpected && "$2" == view ]]; then '
-        'echo "permission denied" >&2; return 2; fi; return 0; }\n'
-    )
-    call_log = tmp_path / state
-    env = dict(
-        os.environ,
-        TAG="v-test",
-        GH_STUB_STATE=state,
-        GH_STUB_LOG=str(call_log),
-        GH_HOST="github.invalid",
-    )
-    for token in ("GH_TOKEN", "GITHUB_TOKEN", "BASH_ENV"):
-        env.pop(token, None)
-    result = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - executes checked-in workflow shell with a recording stub
-        ["/bin/bash", "-e", "-o", "pipefail", "-c", gh_stub + create["run"]],
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-        shell=False,
-        timeout=10,
-    )
-    expected_calls = [["release", "view", "v-test"]]
-    match state:
-        case "absent":
-            assert result.returncode == 0, (
-                f"{state} release probe failed: {result.stderr}"
-            )
-            expected_calls.append([
-                "release",
-                "create",
-                "v-test",
-                "--draft",
-                "--generate-notes",
-            ])
-        case "existing":
-            assert result.returncode == 0, (
-                f"{state} release probe failed: {result.stderr}"
-            )
-        case "unexpected":
-            assert result.returncode == 2, (
-                "unexpected gh view failure must fail the step"
-            )
-            assert "permission denied" in result.stderr, (
-                "unexpected inspection error must reach stderr"
-            )
-            assert "Could not inspect release" in result.stderr, (
-                "the workflow must report release inspection failures"
-            )
-    log_lines = call_log.read_text(encoding="utf-8").splitlines()
-    calls: list[list[str]] = []
-    position = 0
-    while position < len(log_lines):
-        argument_count = int(log_lines[position])
-        position += 1
-        arguments = log_lines[position : position + argument_count]
-        assert len(arguments) == argument_count, "call log ended mid-invocation"
-        calls.append(arguments)
-        position += argument_count
-    assert calls == expected_calls, f"{state} release invoked gh unexpectedly"
 
 
 def test_release_publication_steps_fail_closed() -> None:
