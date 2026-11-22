@@ -106,12 +106,15 @@ that it was attached by hand; workflow comments report that `v0.3.0` and
 `v0.3.1` releases were live without wheels. The ticket also reports that the
 `v0.2.0` release retained its wheel.
 
-`actions/download-artifact` extracts a single matching artefact directly into
-`path` in both v4 and v8. It creates per-artefact subdirectories only when
-several artefacts match and `merge-multiple` is false. See the pinned v4 and v8
-implementations.[^1][^2] The former `find dist/wheels-*` pipeline therefore
-matched no directory whenever only one artefact was downloaded. `xargs -r` ran
-no upload, and the missing `pipefail` let the pipeline exit zero.
+With `name` omitted and `merge-multiple` false, v4 extracts each matching
+artefact beneath `path/<artifact-name>`, including when only one artefact
+matches. In v8, a single matching artefact is extracted directly into `path`;
+per-artefact subdirectories are created only when several artefacts match and
+`merge-multiple` is false. A named download extracts directly into `path` in
+both versions. See the pinned v4 and v8 implementations.[^1][^2] The former
+`find dist/wheels-*` pipeline therefore matched nothing when the unnamed v8
+download found only one artefact. `xargs -r` ran no upload, and the missing
+`pipefail` let the pipeline exit zero.
 
 The current workflow names `wheels-pure` and downloads it to `dist`. The Python
 uploader fails when no distribution is found. The Phase 1 contract tests in
