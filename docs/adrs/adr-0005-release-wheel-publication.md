@@ -2,12 +2,11 @@
 
 ## Status
 
-Accepted. Amended by [ADR-009](adr-0009-pypi-first-distribution-publication.md)
-and issue `#256` (2026-11-21).
+Accepted. Amended by [ADR-009](adr-0009-pypi-first-distribution-publication.md).
 
 ## Date
 
-2026-11-21
+2026-09-15
 
 ## Context and problem statement
 
@@ -26,20 +25,12 @@ when `dist/wheels-*` did not exist, and `xargs -r` then ran nothing and exited
 zero. Separately, `softprops/action-gh-release` publishes immediately by
 default, so the release was already visible before the upload ran at all.
 
-The last accepted Context recorded that both `v0.3.0` and `v0.3.1` had no wheel
-attached and a green job, and that each was completed by hand afterwards for
-issue `#266`. That account is preserved as history, not as a verified run-log
-fact. The issue `#256` ticket reports that `v0.3.0` lacked a wheel and that it
-was attached by hand; workflow comments report that `v0.3.0` and `v0.3.1` were
-live without wheels. A release that ships nothing has to be indistinguishable
-from no release at all, and the job that produced it has to fail.
+Both `v0.3.0` and `v0.3.1` published with no wheel attached and a green job.
+Each was completed by hand afterwards (issue #266). A release that ships
+nothing has to be indistinguishable from no release at all, and the job that
+produced it has to fail.
 
 ## Decision
-
-The decision below records the original release order and is superseded by the
-amendments below. The current workflow collects and validates artefacts before
-creating or reusing a draft, then uploads and publishes only after the upload
-succeeds.
 
 Publication is the last thing the release job does, and the work that could
 fail runs in Python rather than in a shell.
@@ -86,9 +77,8 @@ the job log and `GITHUB_OUTPUT` are the signals a consumer can actually read.
 
 - A visible release always has its wheel. This is now a user-facing guarantee,
   stated in the [users' guide](../users-guide.md#install-from-a-tagged-release).
-- In the original order, a failure after draft creation left a draft that a
-  maintainer had to delete or rerun. Current failure outcomes are recorded in
-  the issue `#256` amendment below.
+- A failed release leaves a draft that a maintainer must delete or rerun the
+  tag against. That is deliberate: the draft is the evidence of what failed.
 - The uploader is the first script in this repository to run `gh`. Its cuprum
   catalogue allowlists `gh` alone, and that boundary covers the script, not the
   job, which also runs `uv` and its pinned actions.
@@ -107,43 +97,32 @@ ADR-009 records the current order, retry rules, and trade-offs.
 
 ## Amendments
 
-### 2026-11-04: Incident account and workflow contracts
+### 2026-11-22: Issue #256 artefact layout and workflow contracts
 
-Clarified on 2026-11-21 to preserve the accepted account as history while
-stating its evidentiary status.
+The accepted Context above preserves the account recorded when this decision
+was made. This amendment does not independently verify its release outcomes
+from run logs. The issue `#256` ticket reports that `v0.3.0` lacked a wheel and
+that it was attached by hand; workflow comments report that `v0.3.0` and
+`v0.3.1` releases were live without wheels. The ticket also reports that the
+`v0.2.0` release retained its wheel.
 
-The accepted Context previously stated that both `v0.3.0` and `v0.3.1`
-published with no wheel attached and a green job, and that each was completed
-by hand afterwards for issue `#266`. This wording is retained here as
-historical text, not as a verified run-log account. The issue `#256` ticket
-reports that `v0.3.0` lacked a wheel and that it was attached by hand; workflow
-comments report that `v0.3.0` and `v0.3.1` were live without wheels. The ticket
-also reports that `v0.2.0` retained its wheel. This ADR does not independently
-verify those outcomes from run logs.
+`actions/download-artifact` extracts a single matching artefact directly into
+`path` in both v4 and v8. It creates per-artefact subdirectories only when
+several artefacts match and `merge-multiple` is false. See the pinned v4 and v8
+implementations.[^1][^2] The former `find dist/wheels-*` pipeline therefore
+matched no directory whenever only one artefact was downloaded. `xargs -r` ran
+no upload, and the missing `pipefail` let the pipeline exit zero.
 
-The original download omitted `name` and left `merge-multiple` false. A named
-single-artefact download extracts directly into `path` in both pinned versions.
-Without `name`, v4 puts every matching artefact under `path/<artefact-name>`,
-even when one matches. In v8, an unnamed single match goes directly into
-`path`; per-artefact directories are created only when several artefacts match
-and `merge-multiple` is false. See the pinned v4 and v8
-implementations.[^1][^2] With one `wheels-pure` artefact and no `name`, the
-former `find dist/wheels-*` pipeline matched the v4 layout but found no path
-under v8. The failed `find` was masked because `xargs -r` ran no upload and
-returned zero; without `pipefail`, the pipeline therefore exited zero.
-
-The current workflow differs from the historical Decision above. It names
-`wheels-pure` and downloads it to `dist`. It uses
-`scripts/upload_release_wheels.py`, which fails when no distribution is found,
-and passes the release tag through `"$TAG"`. The Phase 1 contract tests in
+The current workflow names `wheels-pure` and downloads it to `dist`. The Python
+uploader fails when no distribution is found. The Phase 1 contract tests in
 `tests/workflow_contracts/test_release_workflow.py` tie the producer artefact,
 job dependency, download name and path, and uploader directory together. They
-also assert the current order: collect and validate the artefacts, create or
-reuse the release, upload distributions, then publish. Collection failures
-occur before draft creation. An upload failure leaves a newly created draft
-unpublished. A rerun for an already published tag reuses that published
-release, so an upload failure leaves it published. The named download and
-Python uploader remove the path ambiguity and silent empty-upload failure modes.
+also assert the current order: collect and validate artefacts, create or reuse
+the release, upload distributions, then publish. Collection failures occur
+before draft creation. An upload failure leaves a newly created draft
+unpublished. A rerun for an already published tag reuses that release, so an
+upload failure leaves it published. The named download and Python uploader
+remove the path ambiguity and silent empty-upload failure modes.
 
 [^1]: [Pinned `actions/download-artifact` v4 source](https://github.com/actions/download-artifact/blob/fa0a91b85d4f404e444e00e005971372dc801d16/src/download-artifact.ts).
 [^2]: [Pinned `actions/download-artifact` v8 source](https://github.com/actions/download-artifact/blob/9000827ccba6bdab643e8b6fd33ac0654aef8333/src/download-artifact.ts).
