@@ -106,6 +106,34 @@ def test_prepare_string_value_replacement_preserves_style_and_comment(
 
 
 @pytest.mark.parametrize(
+    ("replacement_text", "expected"),
+    [
+        ("it's new", 'path = "it\'s new" # keep\n'),
+        ("first\nsecond", 'path = "first\\nsecond" # keep\n'),
+    ],
+    ids=["apostrophe", "newline"],
+)
+def test_prepare_literal_replacement_falls_back_to_basic_string(
+    replacement_text: str,
+    expected: str,
+) -> None:
+    """Unrepresentable literal values fall back without losing trivia."""
+    document = parse_toml("path = 'old' # keep\n")
+
+    replacement = bump_toml.prepare_string_value_replacement(
+        document["path"], replacement_text
+    )
+
+    assert replacement is not None, "a differing string value should be replaced"
+    document["path"] = replacement
+    rendered = document.as_string()
+    assert rendered == expected, "fallback should use an escaped basic string"
+    assert parse_toml(rendered)["path"] == replacement_text, (
+        "the serialized replacement should retain its exact string value"
+    )
+
+
+@pytest.mark.parametrize(
     ("delimiter", "expected"),
     [
         ('"""', 'path = """\n\nnew""" # keep\n'),

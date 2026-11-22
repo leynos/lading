@@ -23,6 +23,7 @@ from contextlib import suppress
 from tomlkit import parse as parse_toml
 from tomlkit import string
 from tomlkit.container import OutOfOrderTableProxy
+from tomlkit.exceptions import InvalidStringError
 from tomlkit.items import InlineTable, Item, String, Table
 
 if typ.TYPE_CHECKING:
@@ -173,6 +174,11 @@ def prepare_string_value_replacement(
         The replacement item, or ``None`` when ``value`` is not a string or
         already contains ``replacement_text``.
 
+    Raises
+    ------
+    InvalidStringError
+        If the replacement cannot be represented as a TOML basic string.
+
     Examples
     --------
     >>> from tomlkit import parse
@@ -189,11 +195,17 @@ def prepare_string_value_replacement(
     if current is None or current == replacement_text:
         return None
     literal, multiline = _string_format_flags(value)
-    replacement = string(
-        replacement_text,
-        literal=literal,
-        multiline=multiline,
-    )
+    try:
+        replacement = string(
+            replacement_text,
+            literal=literal,
+            multiline=multiline,
+        )
+    except InvalidStringError:
+        if not literal:
+            raise
+        multiline = False
+        replacement = string(replacement_text)
     if multiline:
         replacement = _preserve_multiline_leading_newline(replacement, replacement_text)
     match value:
