@@ -323,6 +323,9 @@ def test_github_release_is_uploaded_and_published_in_order() -> None:
         < steps.index(upload)
         < steps.index(publish)
     ), "collect artefacts before drafting, then upload before publication"
+    assert "--draft" in _step_tokens(create), (
+        "new GitHub releases must be created as drafts"
+    )
     publication_tokens = [*PUBLISH_COMMAND, '"$TAG"', "--draft=false"]
     assert all(
         "--draft=false" not in _step_tokens(step)
