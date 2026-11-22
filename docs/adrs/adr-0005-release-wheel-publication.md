@@ -94,3 +94,38 @@ process. Tagged releases now publish an sdist and every wheel to PyPI through
 Trusted Publishing before attaching any missing filenames to the GitHub
 Release. The GitHub-only wheel process above remains the historical decision;
 ADR-009 records the current order, retry rules, and trade-offs.
+
+## Amendments
+
+### 2026-11-22: Issue #256 artefact layout and workflow contracts
+
+The accepted Context above preserves the account recorded when this decision
+was made. This amendment does not independently verify its release outcomes
+from run logs. The issue `#256` ticket reports that `v0.3.0` lacked a wheel and
+that it was attached by hand; workflow comments report that `v0.3.0` and
+`v0.3.1` releases were live without wheels. The ticket also reports that the
+`v0.2.0` release retained its wheel.
+
+With `name` omitted and `merge-multiple` false, v4 extracts each matching
+artefact beneath `path/<artifact-name>`, including when only one artefact
+matches. In v8, a single matching artefact is extracted directly into `path`;
+per-artefact subdirectories are created only when several artefacts match and
+`merge-multiple` is false. A named download extracts directly into `path` in
+both versions. See the pinned v4 and v8 implementations.[^1][^2] The former
+`find dist/wheels-*` pipeline therefore matched nothing when the unnamed v8
+download found only one artefact. `xargs -r` ran no upload, and the missing
+`pipefail` let the pipeline exit zero.
+
+The current workflow names `wheels-pure` and downloads it to `dist`. The Python
+uploader fails when no distribution is found. The Phase 1 contract tests in
+`tests/workflow_contracts/test_release_workflow.py` tie the producer artefact,
+job dependency, download name and path, and uploader directory together. They
+also assert the current order: collect and validate artefacts, create or reuse
+the release, upload distributions, then publish. Collection failures occur
+before draft creation. An upload failure leaves a newly created draft
+unpublished. A rerun for an already published tag reuses that release, so an
+upload failure leaves it published. The named download and Python uploader
+remove the path ambiguity and silent empty-upload failure modes.
+
+[^1]: [Pinned `actions/download-artifact` v4 source](https://github.com/actions/download-artifact/blob/fa0a91b85d4f404e444e00e005971372dc801d16/src/download-artifact.ts).
+[^2]: [Pinned `actions/download-artifact` v8 source](https://github.com/actions/download-artifact/blob/9000827ccba6bdab643e8b6fd33ac0654aef8333/src/download-artifact.ts).
