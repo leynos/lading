@@ -2,17 +2,20 @@
 
 Hypothesis enforces a per-example deadline (200 ms by default) so that a
 property which suddenly becomes slow is reported as a failure rather than
-merely running slowly. That default is the right check for a property whose
-work is pure computation. It is the wrong check for a property that creates,
-rewrites, scans, resolves or removes real filesystem state in every example:
-the time then measures disk latency and cold import cost, not the invariant.
+merely running slowly. That default suits a property whose elapsed time is
+itself part of the contract; no property in this suite asserts duration, so
+the suite profile disables the deadline for the run (issue #270). It is the
+wrong check for a property that creates, rewrites, scans, resolves or removes
+real filesystem state in every example: the time then measures disk latency
+and cold import cost, not the invariant.
 
-:func:`filesystem_property_settings` is the one place that decision is made.
-Opting in is explicit and per property; there is no profile or global
-override. It changes no global state, so whether an in-memory property is
-still timed depends on the active profile: locally the ``default`` profile
-enforces the 200 ms deadline, while Hypothesis's built-in ``ci`` profile
-disables deadlines.
+:func:`filesystem_property_settings` remains the explicit per-property opt-out
+for that boundary. The suite's own ``lading`` profile, registered in
+``tests/conftest.py``, disables the deadline for every property because no
+property here asserts duration (issue #270); the factory therefore keeps the
+filesystem exemption working when an explicit ``--hypothesis-profile``
+replaces that profile. It changes no global state, so whether an in-memory
+property is timed remains the active profile's decision.
 
 The measurement that motivated the seam: the first example of the
 manifest-selection property took 281 ms against the 200 ms default on a cold
@@ -50,9 +53,8 @@ def filesystem_property_settings(
 
     Use this only when each example creates, rewrites, scans, resolves or
     removes real filesystem state. Building ``Path`` objects under
-    ``tmp_path`` without touching the disk does not qualify; those properties
-    stay under whatever deadline the active profile enforces, so a genuine
-    slowdown is still reported locally.
+    ``tmp_path`` without touching the disk does not qualify; whether those
+    properties are timed remains the active profile's decision.
 
     Parameters
     ----------
@@ -75,10 +77,11 @@ def filesystem_property_settings(
 
     Notes
     -----
-    Hypothesis selects its built-in ``ci`` profile in CI environments, and
-    that profile disables deadlines and suppresses ``HealthCheck.too_slow``.
-    The factory changes no global state, so in-memory properties remain
-    governed by whatever profile is active.
+    The suite profile disables the deadline for every property, so this
+    factory mainly keeps the filesystem exemption in place when an explicit
+    ``--hypothesis-profile`` replaces that profile. Hypothesis also selects its
+    built-in ``ci`` profile in CI environments, which disables deadlines and
+    suppresses ``HealthCheck.too_slow``. The factory changes no global state.
 
     Examples
     --------
@@ -94,8 +97,9 @@ def filesystem_property_settings(
         def test_manifests_round_trip(tmp_path, names):
             ...
 
-    Leave the decorator off for a property that only computes in memory. The
-    illustration is a code block rather than a doctest because ``make test``
+    Leave the decorator off for a property that only computes in memory; the
+    active profile decides its deadline. The illustration is a code block
+    rather than a doctest because ``make test``
     runs ``--doctest-modules``, and an executable example here would need a
     real property to decorate.
     """
