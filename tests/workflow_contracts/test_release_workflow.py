@@ -488,7 +488,7 @@ def test_draft_release_creation_is_idempotent(tmp_path: Path, state: str) -> Non
     """Create absent drafts, reuse existing ones, and reject inspection errors."""
     create = _find_named_step(RELEASE_WORKFLOW, CREATE_RELEASE_STEP, job="release")
     gh_stub = (
-        'gh() { printf "%s\\n" "$*" >> "$GH_STUB_LOG"; '
+        'gh() { printf "%s\\n" "$#" "$@" >> "$GH_STUB_LOG"; '
         'if [[ "$GH_STUB_STATE" == absent && "$2" == view ]]; then '
         'echo "release not found" >&2; return 1; '
         'elif [[ "$GH_STUB_STATE" == unexpected && "$2" == view ]]; then '
@@ -513,13 +513,19 @@ def test_draft_release_creation_is_idempotent(tmp_path: Path, state: str) -> Non
         shell=False,
         timeout=10,
     )
-    expected_calls = ["release view v-test"]
+    expected_calls = [["release", "view", "v-test"]]
     match state:
         case "absent":
             assert result.returncode == 0, (
                 f"{state} release probe failed: {result.stderr}"
             )
-            expected_calls.append("release create v-test --draft --generate-notes")
+            expected_calls.append([
+                "release",
+                "create",
+                "v-test",
+                "--draft",
+                "--generate-notes",
+            ])
         case "existing":
             assert result.returncode == 0, (
                 f"{state} release probe failed: {result.stderr}"
@@ -534,7 +540,16 @@ def test_draft_release_creation_is_idempotent(tmp_path: Path, state: str) -> Non
             assert "Could not inspect release" in result.stderr, (
                 "the workflow must report release inspection failures"
             )
-    calls = call_log.read_text(encoding="utf-8").splitlines()
+    log_lines = call_log.read_text(encoding="utf-8").splitlines()
+    calls: list[list[str]] = []
+    position = 0
+    while position < len(log_lines):
+        argument_count = int(log_lines[position])
+        position += 1
+        arguments = log_lines[position : position + argument_count]
+        assert len(arguments) == argument_count, "call log ended mid-invocation"
+        calls.append(arguments)
+        position += argument_count
     assert calls == expected_calls, f"{state} release invoked gh unexpectedly"
 
 
