@@ -43,7 +43,9 @@ dev = [
     "cmd-mox@git+https://github.com/leynos/cmd-mox@f583c279a15760aba5cfd9bddf1fbbe9b1f8c429",
     "interrogate>=1.7.0",
     "syrupy>=5.1.0",
-    "hypothesis>=6,<7",
+    # The suite-wide profile in tests/conftest.py reads
+    # settings.get_current_profile_name(), which Hypothesis 6.139.0 introduced.
+    "hypothesis>=6.139.0,<7",
     # Test-only: the end-to-end helpers shell out via plumbum; production
     # code is pathlib + cuprum only (docs/roadmap.md Phase 5).
     "plumbum>=1.8",

@@ -927,7 +927,10 @@ deliberate local deadline needs a comment stating why that test's duration is
 the property under test, and a genuine performance bound should be asserted
 explicitly rather than through Hypothesis's deadline. An explicit
 `--hypothesis-profile` replaces the suite profile, and the separate 30-second
-`pytest-timeout` limit in `pyproject.toml` still applies.
+`pytest-timeout` limit in `pyproject.toml` still applies. The suite requires
+`hypothesis>=6.139.0,<7`, because the suite profile reads
+`settings.get_current_profile_name()`, which earlier 6.x releases do not
+provide.
 
 ### Filesystem-backed properties
 
