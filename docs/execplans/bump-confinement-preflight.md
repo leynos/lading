@@ -410,7 +410,11 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
   `make check-fmt`, `make lint`, `make typecheck`, and `make test` (1455
   passed, 30 skipped) all green.
 - [ ] EP-M1 follow-up: none outstanding.
-- [ ] EP-M2: confined, read-only bump discovery.
+- [x] 2026-11-23: EP-M2 landed. `lading.workspace.confined_discovery` loads
+  the bump workspace through `cargo metadata --no-deps`, validates declared
+  patterns before Cargo and every reported manifest after it, and rejects
+  mismatched roots. The CLI selects it only for bump. `make lint`,
+  `make typecheck`, and `make test` (1469 passed, 31 skipped) green.
 - [ ] EP-M3: one immutable plan, prepared then committed.
 - [ ] EP-M4: command-level and real-Cargo evidence.
 - [ ] EP-M5: documentation, migration, and release hand-off.
@@ -427,6 +431,13 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
   seam rather than only inside `bump.run()`.
 - A 400-line limit applies to every new module, so the confinement policy is a
   package (`errors`, `patterns`, `walk`, `glob`) rather than one module.
+- `cmd-mox` keeps one double per program, so a fixture cannot register both
+  `cargo metadata` spellings. The shared stub helper serves both from one
+  handler, and the publish pre-flight dispatcher falls back to a pre-existing
+  handler stub for invocations its prefix table does not cover.
+- Public confinement helpers take an options dataclass (`ConfineOptions`,
+  `GlobOptions`) because the project's four-argument lint ceiling makes long
+  keyword-only signatures impractical.
 - Cargo expands `[workspace].members` globs to directories and ignores
   non-directory matches. Rejecting a stray file under `crates/` would refuse a
   workspace Cargo already accepts, so member expansion selects directories and

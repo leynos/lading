@@ -107,7 +107,7 @@ def test_bump_command_accepts_extended_semver(
 ) -> None:
     """Accept semantic versions with pre-release and build metadata."""
     graph = make_workspace(tmp_path.resolve())
-    monkeypatch.setattr(cli, "load_workspace", lambda _: graph)
+    monkeypatch.setattr(cli, "load_bump_workspace", lambda _: graph)
     captured: dict[str, object] = {}
 
     def fake_run(
@@ -148,7 +148,7 @@ def test_cyclopts_invoke_uses_workspace_env(
 ) -> None:
     """Invoke the Cyclopts app directly with workspace override propagation."""
     graph = make_workspace(tmp_path.resolve())
-    monkeypatch.setattr(cli, "load_workspace", lambda _: graph)
+    monkeypatch.setattr(cli, "load_bump_workspace", lambda _: graph)
 
     def fake_run(
         workspace_root: Path,

@@ -77,7 +77,12 @@ from .commands.publish_skip import SkipPreflightDecision, SkipPreflightSource
 from .runtime import CommandRunner, subprocess_runner
 from .utils import metrics, normalize_workspace_root
 from .utils.confinement import BumpPreflightError
-from .workspace import WorkspaceGraph, WorkspaceModelError, load_workspace
+from .workspace import (
+    WorkspaceGraph,
+    WorkspaceModelError,
+    load_bump_workspace,
+    load_workspace,
+)
 from .workspace import metadata as metadata_module
 
 LOG_LEVEL_ENV_VAR = "LADING_LOG_LEVEL"
@@ -495,6 +500,9 @@ def _dispatch_with_diagnostics(remaining: cabc.Sequence[str]) -> int:
         return 1
 
 
+type WorkspaceLoader = cabc.Callable[[Path], WorkspaceGraph]
+
+
 def _run_with_context(
     workspace_root: Path,
     runner: cabc.Callable[
@@ -503,8 +511,27 @@ def _run_with_context(
     ],
     *,
     command_runner: CommandRunner | None = None,
+    workspace_loader: WorkspaceLoader | None = None,
 ) -> str:
-    """Execute ``runner`` with configuration and workspace data."""
+    """Execute ``runner`` with configuration and workspace data.
+
+    Parameters
+    ----------
+    workspace_root : Path
+        Canonical workspace root.
+    runner : cabc.Callable[[Path, LadingConfig, WorkspaceGraph, CommandRunner], str]
+        Command body invoked with the loaded configuration and workspace.
+    command_runner : CommandRunner | None
+        Explicit runner; ``None`` selects the CLI runner.
+    workspace_loader : WorkspaceLoader | None
+        Workspace discovery function. ``None`` uses :func:`load_workspace`;
+        bump passes the confined, read-only loader.
+
+    Returns
+    -------
+    str
+        The command's rendered summary.
+    """
     active_runner = command_runner or _select_runner()
     configuration_scope: AbstractContextManager[object] = nullcontext()
     try:
@@ -514,8 +541,9 @@ def _run_with_context(
         # the command; an already-active configuration needs no new scope.
         configuration = config.load_configuration(workspace_root)
         configuration_scope = config.use_configuration(configuration)
+    loader = load_workspace if workspace_loader is None else workspace_loader
     with configuration_scope, metadata_module.use_command_runner(active_runner):
-        workspace_model = load_workspace(workspace_root)
+        workspace_model = loader(workspace_root)
         return runner(workspace_root, configuration, workspace_model, active_runner)
 
 
@@ -573,6 +601,7 @@ def bump(
                 ),
             ),
         ),
+        workspace_loader=load_bump_workspace,
     )
 
 

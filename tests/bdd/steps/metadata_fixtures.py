@@ -14,7 +14,7 @@ from tests.bdd.steps.test_data_helpers import (
     _build_package_metadata,
     _create_test_crate,
 )
-from tests.helpers.workspace_helpers import install_cargo_stub
+from tests.helpers.workspace_helpers import install_cargo_stub, stub_cargo_metadata
 
 
 def _write_workspace_manifest(
@@ -86,11 +86,7 @@ def _mock_cargo_metadata(
         "packages": list(packages),
         "workspace_members": list(member_ids),
     }
-    cmd_mox.stub("cargo").with_args("metadata", "--format-version", "1").returns(
-        exit_code=0,
-        stdout=json.dumps(payload),
-        stderr="",
-    ).any_order()
+    stub_cargo_metadata(cmd_mox, json.dumps(payload))
     cmd_mox.stub("git").with_args("ls-files", "**/Cargo.lock", "Cargo.lock").returns(
         exit_code=0, stdout="", stderr=""
     ).any_order()

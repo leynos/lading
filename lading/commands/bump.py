@@ -16,7 +16,13 @@ from pathlib import Path
 from lading import config as config_module
 from lading.commands import bump_lockfiles, bump_manifests, bump_pipeline
 from lading.commands.bump_output import _format_result_message
-from lading.utils import normalize_workspace_root
+from lading.utils.confinement import (
+    BumpPreflightError,
+    UnsafeBumpTargetError,
+    confine_relative_path,
+    establish_workspace_root,
+    relative_to_root,
+)
 
 if typ.TYPE_CHECKING:
     from lading.commands.bump_manifests import _BumpContext
@@ -132,15 +138,17 @@ def _initialize_bump_context(
 ) -> _BumpContext:
     """Return initialised bump context for ``workspace_root``."""
     resolved_options = BumpOptions() if options is None else options
-    root_path = normalize_workspace_root(workspace_root)
+    root_path = establish_workspace_root(workspace_root)
     configuration = resolved_options.configuration
     if configuration is None:
         configuration = config_module.current_configuration()
     workspace = resolved_options.workspace
     if workspace is None:
-        from lading.workspace import load_workspace
+        from lading.workspace import load_bump_workspace
 
-        workspace = load_workspace(root_path)
+        workspace = load_bump_workspace(root_path)
+    else:
+        _validate_injected_workspace(root_path, workspace)
     rebuild_lockfiles = (
         configuration.bump.rebuild_lockfiles
         if resolved_options.rebuild_lockfiles is None
@@ -174,3 +182,44 @@ def _initialize_bump_context(
         excluded=excluded,
         updated_crate_names=updated_crate_names,
     )
+
+
+def _validate_injected_workspace(root_path: Path, workspace: WorkspaceGraph) -> None:
+    """Validate an injected graph's root and every crate manifest path.
+
+    A programmatic caller may construct the graph itself. Its manifest paths
+    become write targets, so they must satisfy the same confinement contract as
+    a graph loaded from Cargo before any manifest is read or written.
+
+    Parameters
+    ----------
+    root_path : Path
+        Canonical workspace root established from the requested path.
+    workspace : WorkspaceGraph
+        Graph supplied through :class:`BumpOptions`.
+
+    Raises
+    ------
+    BumpPreflightError
+        If the graph root differs from ``root_path`` or a crate manifest escapes
+        the workspace, is not named ``Cargo.toml``, or is not a confined regular
+        file.
+    UnsafeBumpTargetError
+        If a crate manifest path is not confined beneath the workspace root.
+    """
+    graph_root = establish_workspace_root(workspace.workspace_root)
+    if graph_root != root_path:
+        message = (
+            f"Injected workspace graph root {graph_root} does not match the "
+            f"requested workspace root {root_path}"
+        )
+        raise BumpPreflightError(message)
+    for crate in workspace.crates:
+        key = f"workspace member {crate.name!r} manifest"
+        relative = relative_to_root(
+            root_path, crate.manifest_path, key=key, label="manifest"
+        )
+        if relative.name != "Cargo.toml":
+            message = f"{key} must be named Cargo.toml: {crate.manifest_path}"
+            raise UnsafeBumpTargetError(message)
+        confine_relative_path(root_path, relative.as_posix(), key=key)

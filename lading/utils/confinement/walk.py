@@ -31,6 +31,7 @@ __all__ = [
     "establish_workspace_root",
     "is_link_like",
     "prove_containment",
+    "relative_to_root",
 ]
 
 # Windows exposes reparse-point attributes on ``os.stat_result``; CPython on
@@ -343,6 +344,41 @@ class _ConfinementWalk:
             f"{display_relative(self.root, candidate)}"
         )
         raise UnsafeBumpTargetError(message)
+
+
+def relative_to_root(root: Path, candidate: Path, *, key: str, label: str) -> Path:
+    """Return ``candidate`` relative to ``root``, rejecting anything outside it.
+
+    Parameters
+    ----------
+    root : Path
+        Canonical workspace root.
+    candidate : Path
+        Absolute candidate path, which need not exist.
+    key : str
+        Configuration key or role naming the subject in diagnostics.
+    label : str
+        Human-readable description such as ``"manifest"``.
+
+    Returns
+    -------
+    Path
+        The root-relative path.
+
+    Raises
+    ------
+    UnsafeBumpTargetError
+        If ``candidate`` is on another drive or outside ``root``.
+    """
+    try:
+        relative = Path(os.path.relpath(candidate, root))
+    except ValueError as exc:
+        message = f"{key}: {label} is on a different drive: {candidate}"
+        raise UnsafeBumpTargetError(message) from exc
+    if relative.parts[:1] == ("..",):
+        message = f"{key}: {label} is outside the workspace root: {candidate}"
+        raise UnsafeBumpTargetError(message)
+    return relative
 
 
 def prove_containment(root: Path, candidate: Path, *, key: str, display: str) -> None:

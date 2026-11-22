@@ -178,15 +178,43 @@ def _matches_expected_prefix(
     )
 
 
+def _existing_stub_fallback(
+    cmd_mox: CmdMox,
+    program: str,
+) -> cabc.Callable[[Invocation], tuple[str, str, int]] | None:
+    """Return a pre-existing handler stub's responder for ``program``.
+
+    Workspace discovery happens before publish pre-flight, and the fixtures for
+    the bump and publish commands share one ``cargo metadata`` stub. A
+    handler-based stub cannot be lifted into the prefix table, so it is called
+    as a fallback for invocations the pre-flight table does not cover. The
+    handler is read before the dispatch double is installed, because cmd-mox
+    reuses the same double object for a program.
+
+    Returns
+    -------
+    cabc.Callable[[Invocation], tuple[str, str, int]] | None
+        The pre-existing handler, or ``None`` when there is no handler stub.
+    """
+    double = getattr(cmd_mox, "_doubles", {}).get(program)
+    if double is None or getattr(double, "kind", None) != "stub":
+        return None
+    handler = getattr(double, "handler", None)
+    if handler is None:
+        return None
+    return typ.cast("cabc.Callable[[Invocation], tuple[str, str, int]]", handler)
+
+
 def _make_preflight_dispatch_handler(
     entries: cabc.Sequence[tuple[tuple[str, ...], ResponseProvider]],
     recorder: _PreflightInvocationRecorder | None,
     label: str,
+    fallback: cabc.Callable[[Invocation], tuple[str, str, int]] | None = None,
 ) -> cabc.Callable[[Invocation], tuple[str, str, int]]:
     """Build a handler that dispatches several prefixes for one command."""
 
     def _handler(invocation: Invocation) -> tuple[str, str, int]:
-        """Dispatch to the first matching prefix, or fail on unknown arguments."""
+        """Dispatch to the first matching prefix, else the fallback responder."""
         received = tuple(invocation.args)
         for expected_arguments, response in entries:
             if _matches_expected_prefix(expected_arguments, received):
@@ -202,6 +230,8 @@ def _make_preflight_dispatch_handler(
                     active_response.stderr,
                     active_response.exit_code,
                 )
+        if fallback is not None:
+            return fallback(invocation)
         expected = ", ".join(str(arguments) for arguments, _response in entries)
         message = (
             f"Unexpected {label} invocation arguments: {received!r}; "
@@ -352,11 +382,13 @@ def _register_preflight_commands(
         existing = _existing_static_stub_response(config.cmd_mox, expectation_program)
         if existing is not None:
             entries.insert(0, existing)
+        fallback = _existing_stub_fallback(config.cmd_mox, expectation_program)
         config.cmd_mox.stub(expectation_program).runs(
             _make_preflight_dispatch_handler(
                 entries,
                 config.recorder,
                 expectation_program,
+                fallback,
             )
         )
 

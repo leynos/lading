@@ -88,12 +88,18 @@ def _synthetic_workspace(
     extra_excludes=st.sets(_crate_name, max_size=4),
     data=st.data(),
 )
-# Context initialisation resolves the workspace root through the filesystem.
-@filesystem_property_settings()
+# Context initialisation resolves the workspace root and confines every member
+# manifest, so it needs a real directory. The fixture is function-scoped and
+# Hypothesis does not reset it between examples, so the health check is
+# suppressed in the same way as the manifest test below.
+@filesystem_property_settings(
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
 def test_bump_context_crate_sets_match_naive_derivation(
     names: set[str],
     extra_excludes: set[str],
     data: st.DataObject,
+    tmp_path: Path,
 ) -> None:
     """Context crate sets equal a reference computation for any workspace.
 
@@ -107,10 +113,13 @@ def test_bump_context_crate_sets_match_naive_derivation(
         else st.just(set())
     )
     exclude = tuple(sorted(excluded_members | extra_excludes))
-    workspace = _synthetic_workspace(sorted(names))
+    # The context now validates every injected member manifest as a confined
+    # regular file, so the synthetic graph must live in a real directory.
+    workspace = _synthetic_workspace(sorted(names), root=tmp_path)
+    _write_synthetic_manifests(tmp_path, names, {})
 
     context = bump._initialize_bump_context(
-        Path("/ws"),
+        tmp_path,
         bump.BumpOptions(
             configuration=_make_config(exclude=exclude),
             workspace=workspace,

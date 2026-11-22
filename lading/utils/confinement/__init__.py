@@ -60,6 +60,7 @@ from lading.utils.confinement.walk import (
     establish_workspace_root,
     is_link_like,
     prove_containment,
+    relative_to_root,
 )
 
 __all__ = [
@@ -79,5 +80,6 @@ __all__ = [
     "expand_confined_glob",
     "is_link_like",
     "prove_containment",
+    "relative_to_root",
     "validate_relative_pattern",
 ]
