@@ -1201,10 +1201,11 @@ reports a strict first comparator after the bump substitutes the target version.
 verbatim. `requirement_bound_warning` returns structured comparator details;
 each warning record groups all understood comparators that exclude the target
 for one requirement, and command layers log it once per affected dependency
-entry. `bump_toml_dependencies.collect_dependency_section_warnings` gathers
-that data for TOML sections without mutation or logging. The manifest,
-documentation, and non-member rewrite command layers log those warnings while
-the TOML helpers preserve the requirement's operators and later bounds.
+entry. `bump_toml_dependency_warnings.collect_dependency_section_warnings`
+gathers that data for TOML sections without mutation or logging. The manifest,
+documentation, and non-member rewrite command layers use
+`bump_toml_dependency_updates` to log those warnings before applying updates.
+The TOML helpers preserve the requirement's operators and later bounds.
 `bump.lockfile_manifests` remains a separate setting that adds
 lockfile-regeneration targets.
 
@@ -2043,8 +2044,15 @@ To keep source files within the 400-line guideline, the following
 responsibilities live in dedicated modules, imported by their original homes:
 
 - `lading.commands.bump_toml_dependencies` — dependency-entry traversal and
-  updates for manifests and documentation snippets; it uses TOML value and
-  table helpers from `bump_toml`.
+  updates for manifests; it uses TOML value and table helpers from `bump_toml`.
+- `lading.commands.bump_toml_dependency_warnings` — read-only collection of
+  comparator warnings for selected dependency entries and sections.
+- `lading.commands.bump_toml_dependency_updates` — shared command-layer
+  orchestration that logs collected warnings before applying updates for
+  workspace manifests, documentation snippets, and configured fixtures.
+- `lading.commands.bump_docs_toml` — package and dependency version rewrites in
+  parsed TOML snippets; `bump_docs` owns Markdown fence processing and
+  re-exports these transformation functions.
 - `lading.commands.bump_manifests` — per-manifest version and
   dependency-section rewriting plus the `_BumpContext` construction contract
   (imported by `bump`).

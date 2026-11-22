@@ -1,11 +1,10 @@
 """Documentation processing utilities for version bumping.
 
-This module provides utilities for updating version references within Markdown
-documentation files. It scans fenced TOML code blocks (e.g., Cargo.toml
-snippets in README files) and rewrites version entries to match the target
-workspace version. The public surface is ``resolve_documentation_targets``,
-``update_documentation_files``, ``rewrite_markdown_toml_fences``, and
-``update_toml_snippet_versions``.
+This module resolves and updates Markdown documentation files. It scans fenced
+TOML code blocks (e.g., Cargo.toml snippets in README files) and delegates TOML
+changes to :mod:`lading.commands.bump_docs_toml`. Its public surface includes
+``resolve_documentation_targets``, ``update_documentation_files``,
+``rewrite_markdown_toml_fences``, and ``update_toml_snippet_versions``.
 
 Examples
 --------
@@ -34,11 +33,14 @@ import re
 import typing as typ
 
 from markdown_it import MarkdownIt
-from tomlkit import parse as parse_toml
-from tomlkit.exceptions import TOMLKitError
 
-from lading.commands import bump_toml, bump_toml_dependencies, bump_toml_files
-from lading.commands.bump_requirement_bounds import format_requirement_bound_warning
+from lading.commands import bump_toml_files
+from lading.commands.bump_docs_toml import (
+    update_toml_snippet_dependencies as update_toml_snippet_dependencies,
+)
+from lading.commands.bump_docs_toml import (
+    update_toml_snippet_versions as update_toml_snippet_versions,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -46,12 +48,8 @@ if typ.TYPE_CHECKING:
     from pathlib import Path
 
     from markdown_it.token import Token
-    from tomlkit.toml_document import TOMLDocument
 
     from lading import config as config_module
-
-else:  # pragma: no cover - provide runtime placeholders for type checking imports
-    Token = TOMLDocument = typ.Any
 
 
 def resolve_documentation_targets(
@@ -295,113 +293,3 @@ def extract_fence_indent(line: str, fence_marker: str) -> str:
     """
     position = line.find(fence_marker)
     return "" if position < 0 else line[:position]
-
-
-def _try_assign_version_at_path(
-    document: TOMLDocument,
-    path: tuple[str, ...],
-    target_version: str,
-) -> bool:
-    """Attempt to assign version at the specified table path."""
-    return bump_toml.assign_version(
-        bump_toml.select_table(document, path), target_version
-    )
-
-
-def _update_single_dependency_section(
-    document: TOMLDocument,
-    section: str,
-    dependency_targets: cabc.Collection[str],
-    target_version: str,
-) -> bool:
-    """Update a single dependency section if it exists."""
-    table = bump_toml.select_table(document, (section,))
-    if table is None:
-        return False
-    warnings = bump_toml_dependencies.collect_dependency_bound_warnings(
-        table, dependency_targets, target_version
-    )
-    for warning in warnings:
-        _LOGGER.warning(format_requirement_bound_warning(warning))
-    return bump_toml_dependencies.update_dependency_table(
-        table, dependency_targets, target_version
-    )
-
-
-def update_toml_snippet_dependencies(
-    document: TOMLDocument,
-    dependency_targets: cabc.Collection[str],
-    target_version: str,
-) -> bool:
-    """Update dependency sections in a TOML snippet document.
-
-    Parameters
-    ----------
-    document
-        A parsed TOML document to modify in place.
-    dependency_targets
-        Names of crates whose dependency entries should be updated.
-    target_version
-        The version string to apply to matching entries.
-
-    Returns
-    -------
-    bool
-        True if any dependency entries were updated.
-
-    """
-    if not dependency_targets:
-        return False
-
-    changed = False
-    for section in bump_toml_dependencies.DEPENDENCY_SECTIONS:
-        if _update_single_dependency_section(
-            document, section, dependency_targets, target_version
-        ):
-            changed = True
-    return changed
-
-
-def update_toml_snippet_versions(
-    snippet: str,
-    dependency_targets: cabc.Collection[str],
-    target_version: str,
-) -> tuple[str, bool]:
-    """Return a TOML snippet with dependency versions rewritten.
-
-    Parameters
-    ----------
-    snippet
-        A TOML snippet string to process.
-    dependency_targets
-        Names of crates whose dependency entries should be updated.
-    target_version
-        The version string to apply to matching entries.
-
-    Returns
-    -------
-    tuple[str, bool]
-        A tuple of (updated_snippet, changed) where changed indicates whether
-        any modifications were made.
-
-    """
-    try:
-        document = parse_toml(snippet)
-    except TOMLKitError:
-        return snippet, False
-
-    changed = False
-    if _try_assign_version_at_path(document, ("package",), target_version):
-        changed = True
-    if _try_assign_version_at_path(document, ("workspace", "package"), target_version):
-        changed = True
-    if update_toml_snippet_dependencies(document, dependency_targets, target_version):
-        changed = True
-
-    if not changed:
-        return snippet, False
-
-    suffix_match = re.search(r"((?:\r?\n)*)$", snippet)
-    newline_suffix = suffix_match.group(1) if suffix_match else ""
-    rendered = document.as_string().rstrip("\r\n")
-    return f"{rendered}{newline_suffix}", True

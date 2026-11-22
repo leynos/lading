@@ -12,8 +12,14 @@ import logging
 import types
 import typing as typ
 
-from lading.commands import bump_toml, bump_toml_dependencies, bump_toml_files
-from lading.commands.bump_requirement_bounds import format_requirement_bound_warning
+from lading.commands import (
+    bump_toml,
+    bump_toml_dependencies,
+    bump_toml_files,
+)
+from lading.commands.bump_toml_dependency_updates import (
+    update_dependency_sections_with_warnings,
+)
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
@@ -101,15 +107,7 @@ def _update_manifest(
         table = bump_toml.select_table(document, selector)
         changed |= bump_toml.assign_version(table, target_version)
     if options.dependency_sections:
-        warnings = bump_toml_dependencies.collect_dependency_section_warnings(
-            document,
-            options.dependency_sections,
-            target_version,
-            include_workspace_sections=options.include_workspace_sections,
-        )
-        for warning in warnings:
-            _log.warning(format_requirement_bound_warning(warning))
-        changed |= bump_toml_dependencies.update_dependency_sections(
+        changed |= update_dependency_sections_with_warnings(
             document,
             options.dependency_sections,
             target_version,

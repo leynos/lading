@@ -6,16 +6,15 @@ an allowlisted non-member manifest.
 """
 
 import collections.abc as cabc
-import logging
 import typing as typ
 
 from lading.commands import bump_toml, bump_toml_dependencies
-from lading.commands.bump_requirement_bounds import format_requirement_bound_warning
+from lading.commands.bump_toml_dependency_updates import (
+    update_matching_dependency_section,
+)
 
 if typ.TYPE_CHECKING:
     from tomlkit.toml_document import TOMLDocument
-
-_log = logging.getLogger(__name__)
 
 
 def rewrite_dependency_requirements(
@@ -50,10 +49,10 @@ def rewrite_dependency_requirements(
     """
     changed = False
     for section in bump_toml_dependencies.DEPENDENCY_SECTIONS:
-        changed |= _rewrite_dependency_section(
+        changed |= update_matching_dependency_section(
             document, (section,), updated_crate_names, target_version
         )
-        changed |= _rewrite_dependency_section(
+        changed |= update_matching_dependency_section(
             document,
             ("workspace", section),
             updated_crate_names,
@@ -91,37 +90,10 @@ def _rewrite_target_selector(
     """Rewrite each supported dependency section under one target selector."""
     changed = False
     for section in bump_toml_dependencies.DEPENDENCY_SECTIONS:
-        changed |= _rewrite_dependency_section(
+        changed |= update_matching_dependency_section(
             document,
             ("target", selector, section),
             updated_crate_names,
             target_version,
         )
     return changed
-
-
-def _rewrite_dependency_section(
-    document: TOMLDocument,
-    path: tuple[str, ...],
-    updated_crate_names: cabc.Collection[str],
-    target_version: str,
-) -> bool:
-    """Match dependency keys and package aliases, then reuse section updates."""
-    table = bump_toml.select_table(document, path)
-    if table is None:
-        return False
-    matching_names = {
-        name
-        for name, entry in tuple(table.items())
-        if bump_toml_dependencies.dependency_target_name(name, entry)
-        in updated_crate_names
-    }
-    if not matching_names:
-        return False
-    for warning in bump_toml_dependencies.collect_dependency_bound_warnings(
-        table, matching_names, target_version
-    ):
-        _log.warning(format_requirement_bound_warning(warning))
-    return bump_toml_dependencies.update_section(
-        document, path, matching_names, target_version
-    )

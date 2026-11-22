@@ -1,9 +1,9 @@
-"""Tests for dependency entry mutation and package-name selection."""
+"""Test TOML dependency mutation, target selection, and warning collection."""
 
 import pytest
 from tomlkit import parse as parse_toml
 
-from lading.commands import bump_toml_dependencies
+from lading.commands import bump_toml_dependencies, bump_toml_dependency_warnings
 
 
 @pytest.mark.parametrize(
@@ -22,7 +22,7 @@ def test_dependency_update_warns_when_preserved_bound_excludes_target(
 ) -> None:
     """The helper returns warning data without logging as a side effect."""
     document = parse_toml(f'[dependencies]\nalpha = "{requirement}"\n')
-    warnings = bump_toml_dependencies.collect_dependency_section_warnings(
+    warnings = bump_toml_dependency_warnings.collect_dependency_section_warnings(
         document, {"dependencies": {"alpha"}}, target
     )
 
@@ -43,7 +43,7 @@ def test_dependency_update_does_not_warn_when_target_satisfies_bounds(
 ) -> None:
     """A valid target retains additional Cargo bounds without a warning."""
     document = parse_toml('[dependencies]\nalpha = ">=0.6.0-beta4, <0.7"\n')
-    warnings = bump_toml_dependencies.collect_dependency_section_warnings(
+    warnings = bump_toml_dependency_warnings.collect_dependency_section_warnings(
         document, {"dependencies": {"alpha"}}, "0.6.0"
     )
 
