@@ -155,7 +155,7 @@ def _expand_path(workspace_root: Path, configured_path: str) -> tuple[Path, ...]
 def _read_source(path: Path, selection: _RewriteSelection) -> ManifestRewriteSource:
     """Read one selected manifest and attach its merged rewrite rules."""
     try:
-        content = path.read_text(encoding="utf-8")
+        content = path.read_text(encoding="utf-8", newline="")
     except (OSError, UnicodeError) as exc:
         message = f"Could not read manifest rewrite target {path}: {exc}"
         raise ManifestRewriteError(message) from exc

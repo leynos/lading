@@ -11,6 +11,7 @@ from pathlib import Path
 from lading.commands.bump_manifest_rewrite_model import (
     ManifestRewriteError,
     ManifestRewritePlan,
+    ManifestRewriteWriteError,
 )
 from lading.commands.bump_toml_files import write_atomic_text
 
@@ -71,7 +72,7 @@ def _read_current_text(
 ) -> str:
     """Read a plan source or raise a progress-aware rewrite error."""
     try:
-        return plan.path.read_text(encoding="utf-8")
+        return plan.path.read_text(encoding="utf-8", newline="")
     except (OSError, UnicodeError) as exc:
         message = (
             f"Could not read manifest rewrite target {plan.path} before writing: {exc}"
@@ -97,7 +98,7 @@ def _write_manifest_plan(
             f"Could not write manifest rewrite target {plan.path} after "
             f"{completed_writes} of {planned_writes} write(s): {exc}"
         )
-        raise ManifestRewriteError(
+        raise ManifestRewriteWriteError(
             message,
             completed_writes=completed_writes,
             planned_writes=planned_writes,

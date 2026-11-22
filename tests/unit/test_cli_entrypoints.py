@@ -19,7 +19,7 @@ from lading import cli
 from lading import config as config_module
 from lading.commands import bump as bump_command
 from lading.commands import publish as publish_command
-from lading.commands.bump_manifest_rewrites import ManifestRewriteError
+from lading.commands.bump_manifest_rewrites import ManifestRewriteWriteError
 from tests.helpers.cli_diagnostics import normalize_diagnostic
 from tests.helpers.cli_workspace import make_workspace
 
@@ -79,7 +79,7 @@ def test_manifest_rewrite_write_failure_is_reported_once(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Write failures use one structured CLI event with progress details."""
-    error = ManifestRewriteError(
+    error = ManifestRewriteWriteError(
         "Could not write selected fixture manifest",
         completed_writes=1,
         planned_writes=2,
@@ -106,7 +106,7 @@ def test_manifest_rewrite_write_failure_is_visible_when_errors_are_disabled(
 ) -> None:
     """CRITICAL-only logging still prints write failures to standard error."""
     failed_path = Path("tests/fixtures/standalone/Cargo.toml")
-    error = ManifestRewriteError(
+    error = ManifestRewriteWriteError(
         f"Could not write manifest rewrite target {failed_path} after 1 of 2 "
         "write(s): permission denied",
         completed_writes=1,
@@ -118,7 +118,11 @@ def test_manifest_rewrite_write_failure_is_visible_when_errors_are_disabled(
         cli._print_expected_command_error(error)
 
     assert not caplog.records, "ERROR events must remain suppressed at CRITICAL"
-    message = capsys.readouterr().err
+    captured = capsys.readouterr()
+    message = captured.err
+    assert not captured.out, (
+        "write-failure fallback must not duplicate stderr on stdout"
+    )
     assert "Manifest rewrite error:" in message, (
         "the CLI should print a fallback error message"
     )

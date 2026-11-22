@@ -103,6 +103,23 @@ class ManifestRewriteError(LadingError):
         return cls(message, failed_path=manifest_path)
 
 
+class ManifestRewriteWriteError(ManifestRewriteError):
+    """Report an atomic write failure with its partial progress.
+
+    This subtype lets the CLI reserve structured progress events for failures
+    raised by an attempted atomic write.
+
+    Attributes
+    ----------
+    completed_writes : int
+        Number of manifests persisted before this failure.
+    planned_writes : int
+        Number of manifests in the write plan.
+    failed_path : Path or None
+        Manifest whose atomic write failed.
+    """
+
+
 @dc.dataclass(frozen=True, slots=True)
 class ManifestRewriteVersions:
     """Version context shared by dependency and string rewrite passes.

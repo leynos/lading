@@ -1181,8 +1181,10 @@ tomlkit node handling for selected strings, dependency aliases, and requirement
 replacement. The rewrite planner parses supplied text with tomlkit directly;
 `bump_toml_files` owns manifest reads and atomic writes.
 `lading.commands.bump_manifest_rewrite_model` owns `ManifestRewritePlan`,
-`ManifestRewriteSource`, `ManifestRewriteVersions`, and `ManifestRewriteError`;
-the records keep filesystem, planning, and application boundaries independent.
+`ManifestRewriteSource`, `ManifestRewriteVersions`, `ManifestRewriteError`, and
+`ManifestRewriteWriteError`; the records keep filesystem, planning, and
+application boundaries independent. The CLI logs structured completed/planned
+progress only for `ManifestRewriteWriteError` failures.
 `lading.commands.bump_manifest_rewrite_application` re-reads each manifest
 before writing and rejects a stale plan if its content changed. It then writes
 atomically. A write failure carries its path and completed and planned counts;
@@ -1595,7 +1597,8 @@ area so existing handling remains precise:
 | `CommandSpawnError`         | `lading.runtime.subprocess_runner`            | Raised when the subprocess runner cannot spawn an external command.                             |
 | `LockfileDiscoveryError`    | `lading.commands.lockfile`                    | Raised when git cannot list tracked lockfiles.                                                  |
 | `LockfileRegenerationError` | `lading.commands.bump_lockfiles`              | Raised when configured bump lockfile manifests are invalid or `cargo update --workspace` fails. |
-| `ManifestRewriteError`      | `lading.commands.bump_manifest_rewrite_model` | Raised when a configured non-member manifest cannot be selected, read, parsed, or written.      |
+| `ManifestRewriteError`      | `lading.commands.bump_manifest_rewrite_model` | Raised when a configured non-member manifest cannot be selected, read, parsed, or applied.      |
+| `ManifestRewriteWriteError` | `lading.commands.bump_manifest_rewrite_model` | Raised when an atomic manifest write fails; it carries the failed path and write progress.      |
 | `PublishPlanError`          | `lading.commands.publish_plan`                | Raised when a publish plan cannot be constructed.                                               |
 | `ReadmeTranspositionError`  | `lading.commands.bump_readme`                 | Raised when the workspace README cannot be transposed into a crate during `lading bump`.        |
 | `PublishPreparationError`   | `lading.commands.publish_manifest`            | Raised when staged publish manifests or workspace assets cannot be prepared.                    |

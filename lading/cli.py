@@ -73,7 +73,10 @@ from .cli_options import (
     WorkspaceRootOption as WorkspaceRootOption,
 )
 from .commands import publish_staging
-from .commands.bump_manifest_rewrites import ManifestRewriteError
+from .commands.bump_manifest_rewrites import (
+    ManifestRewriteError,
+    ManifestRewriteWriteError,
+)
 from .commands.publish_skip import SkipPreflightDecision, SkipPreflightSource
 from .runtime import CommandRunner, subprocess_runner
 from .utils import metrics, normalize_workspace_root
@@ -411,7 +414,7 @@ def _print_expected_command_error(
 ) -> None:
     """Report one expected domain failure with its event or error label."""
     match error:
-        case ManifestRewriteError(failed_path=Path() as failed_path):
+        case ManifestRewriteWriteError(failed_path=Path() as failed_path):
             LOGGER.error(
                 "manifest_rewrite failed: path=%s completed=%d planned=%d "
                 "error_category=write: %s",

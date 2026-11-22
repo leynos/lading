@@ -50,10 +50,10 @@ def write_atomic_text(file_path: Path, content: str) -> None:
         text=True,
     )
     try:
-        if existing_mode is not None:
-            with suppress(AttributeError):
-                os.fchmod(fd, existing_mode)  # not available on Windows
         with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
+            if existing_mode is not None:
+                with suppress(AttributeError):
+                    os.fchmod(handle.fileno(), existing_mode)  # not on Windows
             handle.write(content)
         Path(tmp_path).replace(file_path)
     finally:

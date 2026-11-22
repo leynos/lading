@@ -1,11 +1,18 @@
 """Unit tests for bump manifest writing and dependency-section rewrites."""
 
+import errno
+import os
 from pathlib import Path
 
 import pytest
 from tomlkit import parse as parse_toml
 
-from lading.commands import bump, bump_manifests, bump_toml_dependencies
+from lading.commands import (
+    bump,
+    bump_manifests,
+    bump_toml_dependencies,
+    bump_toml_files,
+)
 from tests.helpers.workspace_builders import _load_version
 
 
@@ -51,6 +58,40 @@ def test_update_manifest_skips_when_unchanged(tmp_path: Path) -> None:
     assert changed is False, "an already-current version should report no change"
     assert manifest_path.read_text() == original, (
         "the manifest file should be left byte-for-byte unchanged"
+    )
+
+
+def test_write_atomic_text_closes_descriptor_when_fchmod_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed mode copy closes the temporary fd and removes its file."""
+    manifest_path = tmp_path / "Cargo.toml"
+    manifest_path.write_text("original", encoding="utf-8")
+    descriptor_numbers: list[int] = []
+    failure_message = "mode change denied"
+
+    def fail_fchmod(descriptor: int, _mode: int) -> None:
+        """Capture the owned descriptor, then simulate a permission failure."""
+        descriptor_numbers.append(descriptor)
+        raise PermissionError(errno.EACCES, failure_message)
+
+    monkeypatch.setattr(bump_toml_files.os, "fchmod", fail_fchmod)
+
+    with pytest.raises(PermissionError, match=failure_message):
+        bump_toml_files.write_atomic_text(manifest_path, "replacement")
+
+    assert len(descriptor_numbers) == 1, "fchmod should receive the temporary fd once"
+    with pytest.raises(OSError, match=r".+") as closed_descriptor:
+        os.fstat(descriptor_numbers[0])
+    assert closed_descriptor.value.errno == errno.EBADF, (
+        "the descriptor must be closed after the permission failure"
+    )
+    assert manifest_path.read_text(encoding="utf-8") == "original", (
+        "a failed replacement must leave the target content unchanged"
+    )
+    assert not list(tmp_path.glob("Cargo.toml.*")), (
+        "a failed replacement must remove its temporary file"
     )
 
 

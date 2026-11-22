@@ -43,6 +43,7 @@ from lading.commands.bump_manifest_rewrite_model import (
     ManifestRewritePlan,
     ManifestRewriteSource,
     ManifestRewriteVersions,
+    ManifestRewriteWriteError,
 )
 
 if typ.TYPE_CHECKING:
@@ -55,6 +56,7 @@ __all__ = [
     "ManifestRewritePlan",
     "ManifestRewriteSource",
     "ManifestRewriteVersions",
+    "ManifestRewriteWriteError",
     "apply_manifest_rewrites",
     "plan_manifest_rewrites",
 ]

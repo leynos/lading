@@ -58,6 +58,47 @@ def test_resolves_globs_deduplicates_and_merges_groups(
     )
 
 
+def test_manifest_rewrite_preserves_crlf_line_endings(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Planning and applying a rewrite retain a fixture's CRLF convention."""
+    manifest = tmp_path / "fixtures" / "Cargo.toml"
+    manifest.parent.mkdir(parents=True)
+    original = b'[dependencies]\r\nalpha = "1.0.0"\r\n'
+    manifest.write_bytes(original)
+    groups = (ManifestRewriteConfig(paths=("fixtures/Cargo.toml",)),)
+
+    (plan,) = plan_fixture_rewrites(tmp_path, groups)
+    bump_manifest_rewrites.apply_manifest_rewrites((plan,), dry_run=False)
+
+    assert manifest.read_bytes() == b'[dependencies]\r\nalpha = "2.0.0"\r\n', (
+        "the rewritten manifest should retain CRLF line endings"
+    )
+
+
+def test_application_detects_line_ending_only_source_change(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A newline-only edit after planning invalidates the source snapshot."""
+    manifest = tmp_path / "fixtures" / "Cargo.toml"
+    manifest.parent.mkdir(parents=True)
+    original = b'[dependencies]\r\nalpha = "1.0.0"\r\n'
+    manifest.write_bytes(original)
+    groups = (ManifestRewriteConfig(paths=("fixtures/Cargo.toml",)),)
+    plans = plan_fixture_rewrites(tmp_path, groups)
+    manifest.write_bytes(original.replace(b"\r\n", b"\n"))
+
+    with pytest.raises(
+        bump_manifest_rewrites.ManifestRewriteError,
+        match="changed after planning",
+    ):
+        bump_manifest_rewrites.apply_manifest_rewrites(plans, dry_run=False)
+
+    assert manifest.read_bytes() == original.replace(b"\r\n", b"\n"), (
+        "application should preserve the external line-ending edit"
+    )
+
+
 @pytest.mark.parametrize(
     ("configured_path", "message"),
     [

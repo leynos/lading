@@ -42,14 +42,27 @@ def given_nested_lockfile_manifest(
 
 
 @then("the bump command refreshed tracked lockfiles")
-def then_bump_refreshed_lockfiles(cli_run: dict[str, typ.Any]) -> None:
-    """Assert the live bump lockfile scenario completed successfully."""
+def then_bump_refreshed_lockfiles(
+    cli_run: CliRunResult,
+    cmd_mox: CmdMox,
+    workspace_directory: Path,
+) -> None:
+    """Assert the live lockfile scenario invoked Cargo for the root manifest."""
     assert cli_run["returncode"] == 0, (
         f"the live lockfile bump must succeed; stderr:\n{cli_run['stderr']}"
     )
-    output = f"{cli_run['stdout']}\n{cli_run['stderr']}"
-    assert "cargo update --workspace" in output, (
-        "the bump must refresh the tracked lockfiles via cargo update --workspace"
+    update_args = [
+        tuple(invocation.args)
+        for invocation in cmd_mox.journal
+        if invocation.command == "cargo::update"
+    ]
+    expected_root_update = (
+        "--workspace",
+        "--manifest-path",
+        str((workspace_directory / "Cargo.toml").resolve()),
+    )
+    assert expected_root_update in update_args, (
+        f"the bump must invoke Cargo update for the root lockfile; got {update_args!r}"
     )
 
 
@@ -104,13 +117,6 @@ def then_bump_did_not_refresh_lockfiles(
     """Assert the dry-run lockfile scenario completed without refresh."""
     assert cli_run["returncode"] == 0, (
         f"the dry-run lockfile bump must succeed; stderr:\n{cli_run['stderr']}"
-    )
-    output = f"{cli_run['stdout']}\n{cli_run['stderr']}"
-    assert "cargo::update" not in output, (
-        "a dry run must not invoke the cargo update shim"
-    )
-    assert "cargo update --workspace" not in output, (
-        "a dry run must not refresh lockfiles"
     )
     updates = [
         invocation
