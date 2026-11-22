@@ -236,7 +236,7 @@ def _preserve_multiline_leading_newline(
     replacement_text: str,
 ) -> Item:
     """Work around tomlkit normalizing a leading multiline string newline."""
-    if not replacement_text.startswith("\n"):
+    if not replacement_text.startswith(("\n", "\r\n")):
         return replacement
     rendered = replacement.as_string()
     reparsed = parse_toml(f"value = {rendered}")["value"]

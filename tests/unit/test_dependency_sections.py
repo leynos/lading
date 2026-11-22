@@ -78,6 +78,20 @@ def test_snippet_rewrite_visits_exactly_canonical_sections(
         assert table["other"] == "0.9.0", rendered
 
 
+def test_snippet_rewrite_updates_renamed_dependency_by_package_name() -> None:
+    """A renamed dependency is selected by its Cargo package name."""
+    document = parse_toml(
+        '[dependencies]\nrenamed = { package = "alpha", version = "1.0.0" }\n'
+    )
+
+    changed = bump_docs.update_toml_snippet_dependencies(document, ("alpha",), "2.0.0")
+
+    assert changed, "the matching aliased dependency should be rewritten"
+    assert document["dependencies"]["renamed"]["version"] == "2.0.0", (
+        "the version should follow the package selected for the bump"
+    )
+
+
 def test_multi_section_manifest_rewrite_snapshot(
     snapshot: SnapshotAssertion,
 ) -> None:

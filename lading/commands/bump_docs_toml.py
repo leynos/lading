@@ -18,7 +18,7 @@ from lading.commands import (
     bump_toml_dependencies,
 )
 from lading.commands.bump_toml_dependency_updates import (
-    update_dependency_section_with_warnings,
+    update_matching_dependency_section,
 )
 
 if typ.TYPE_CHECKING:
@@ -70,7 +70,7 @@ def update_toml_snippet_dependencies(
 
     changed = False
     for section in bump_toml_dependencies.DEPENDENCY_SECTIONS:
-        if update_dependency_section_with_warnings(
+        if update_matching_dependency_section(
             document,
             (section,),
             dependency_targets,

@@ -68,39 +68,6 @@ def update_dependency_table_with_warnings(
     )
 
 
-def update_dependency_section_with_warnings(
-    document: TOMLDocument,
-    path: tuple[str, ...],
-    dependency_names: cabc.Collection[str],
-    target_version: str,
-) -> bool:
-    """Update one selected dependency table, if it exists.
-
-    Parameters
-    ----------
-    document : TOMLDocument
-        Parsed manifest or documentation snippet to update.
-    path : tuple[str, ...]
-        Literal table path to inspect.
-    dependency_names : Collection[str]
-        Dependency keys whose requirements should be updated.
-    target_version : str
-        Version to assign while preserving each requirement's operator.
-
-    Returns
-    -------
-    bool
-        ``True`` when at least one requirement changed; a missing table is a
-        no-op and returns ``False``.
-    """
-    table = bump_toml.select_table(document, path)
-    if table is None:
-        return False
-    return update_dependency_table_with_warnings(
-        table, dependency_names, target_version
-    )
-
-
 def update_matching_dependency_section(
     document: TOMLDocument,
     path: tuple[str, ...],

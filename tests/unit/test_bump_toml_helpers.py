@@ -147,28 +147,38 @@ def test_prepare_literal_replacement_falls_back_to_basic_string(
 
 
 @pytest.mark.parametrize(
-    ("delimiter", "expected"),
+    ("delimiter", "content_newline", "expected"),
     [
-        ('"""', 'path = """\n\nnew""" # keep\n'),
-        ("'''", "path = '''\n\nnew''' # keep\n"),
+        ('"""', "\n", 'path = """\n\nnew""" # keep\n'),
+        ("'''", "\n", "path = '''\n\nnew''' # keep\n"),
+        ('"""', "\r\n", 'path = """\n\r\nnew""" # keep\n'),
+        ("'''", "\r\n", "path = '''\n\r\nnew''' # keep\n"),
     ],
-    ids=["multiline-basic", "multiline-literal"],
+    ids=[
+        "multiline-basic-lf",
+        "multiline-literal-lf",
+        "multiline-basic-crlf",
+        "multiline-literal-crlf",
+    ],
 )
 def test_prepare_multiline_replacement_preserves_leading_newline(
     delimiter: str,
+    content_newline: str,
     expected: str,
 ) -> None:
-    """Multiline replacements round-trip a leading content newline."""
+    """Multiline replacements round-trip LF and CRLF content newlines."""
     document = parse_toml(f"path = {delimiter}\n\nold{delimiter} # keep\n")
 
-    replacement = bump_toml.prepare_string_value_replacement(document["path"], "\nnew")
+    replacement = bump_toml.prepare_string_value_replacement(
+        document["path"], f"{content_newline}new"
+    )
 
     assert replacement is not None, "a changed multiline string should be replaced"
     document["path"] = replacement
     rendered = document.as_string()
     reparsed = parse_toml(rendered)
     assert rendered == expected, "the replacement should retain its original style"
-    assert reparsed["path"] == "\nnew", (
+    assert reparsed["path"] == f"{content_newline}new", (
         "serializing and reparsing must retain the leading content newline"
     )
 
