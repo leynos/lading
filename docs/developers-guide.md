@@ -1199,10 +1199,12 @@ tests inject deterministic values.
 reports a strict first comparator after the bump substitutes the target version.
 `excluding_retained_bounds` reports understood later comparators that remain
 verbatim. `requirement_bound_warning` returns structured comparator details;
-`bump_toml_dependencies.collect_dependency_section_warnings` gathers that data
-for TOML sections without mutation or logging. The manifest, documentation, and
-non-member rewrite command layers log those warnings while the TOML helpers
-preserve the requirement's operators and later bounds.
+each warning record groups all understood comparators that exclude the target
+for one requirement, and command layers log it once per affected dependency
+entry. `bump_toml_dependencies.collect_dependency_section_warnings` gathers
+that data for TOML sections without mutation or logging. The manifest,
+documentation, and non-member rewrite command layers log those warnings while
+the TOML helpers preserve the requirement's operators and later bounds.
 `bump.lockfile_manifests` remains a separate setting that adds
 lockfile-regeneration targets.
 
