@@ -6,6 +6,45 @@ import textwrap
 from pathlib import Path
 
 import pytest
+from hypothesis import settings
+
+#: No property in this suite asserts how long its work takes, so Hypothesis's
+#: 200 ms per-example deadline only turns host load into false failures. Register
+#: and load the profile here, at import time, because ``@settings`` decorators
+#: and module-level ``settings(...)`` objects capture the active defaults when
+#: their module is imported. An explicit ``--hypothesis-profile`` still replaces
+#: this profile.
+#:
+#: The profile inherits whichever built-in profile Hypothesis activated first:
+#: ``ci`` when it detects a CI environment, otherwise ``default``. That keeps CI
+#: behaviour (derandomization, no example database, ``too_slow`` suppression)
+#: unchanged; only the deadline is overridden.
+_INHERITED_HYPOTHESIS_PROFILE = settings.get_current_profile_name()
+settings.register_profile("lading", deadline=None)
+settings.load_profile("lading")
+
+
+@pytest.fixture(scope="session")
+def inherited_hypothesis_profile_name() -> str:
+    """Return the name of the Hypothesis profile the suite profile extends.
+
+    Returns
+    -------
+    str
+        ``"ci"`` or ``"default"``, whichever profile was active when
+        ``tests/conftest.py`` registered ``lading``.
+
+    Raises
+    ------
+    RuntimeError
+        If Hypothesis reported no active profile before this module ran.
+    """
+    inherited = _INHERITED_HYPOTHESIS_PROFILE
+    if inherited is None:  # pragma: no cover - Hypothesis always installs one
+        message = "Hypothesis must load a default profile before conftest runs"
+        raise RuntimeError(message)
+    return inherited
+
 
 pytest_plugins = (
     "cmd_mox.pytest_plugin",

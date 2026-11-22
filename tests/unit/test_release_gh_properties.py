@@ -28,7 +28,6 @@ from tests.helpers.script_imports import import_script_module
 #: ``sys.path`` across the session.
 _SETTINGS = settings(
     max_examples=25,
-    deadline=None,
     suppress_health_check=[HealthCheck.function_scoped_fixture],
 )
 

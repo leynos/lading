@@ -918,22 +918,34 @@ Property-based tests in the publish suite use
 to keep continuous integration (CI) fast while still exercising a range of
 inputs.
 
-### Deadlines for filesystem-backed properties
+`tests/conftest.py` registers and loads a `lading` Hypothesis profile with
+`deadline=None` for every local and CI run. No property in this suite asserts
+how long its work takes, so Hypothesis's 200 ms per-example deadline would only
+turn host load into false `DeadlineExceeded` failures (issue #270). Do not
+repeat `deadline=None` in a test; the suite profile already supplies it. A
+deliberate local deadline needs a comment stating why that test's duration is
+the property under test, and a genuine performance bound should be asserted
+explicitly rather than through Hypothesis's deadline. An explicit
+`--hypothesis-profile` replaces the suite profile, and the separate 30-second
+`pytest-timeout` limit in `pyproject.toml` still applies. The suite requires
+`hypothesis>=6.139.0,<7`, because the suite profile reads
+`settings.get_current_profile_name()`, which earlier 6.x releases do not
+provide.
 
-Hypothesis measures each example against a 200 ms deadline by default. Keep
-that deadline for properties whose work is computation: it is the check that
-turns a newly slow implementation into a failure.
+### Filesystem-backed properties
 
-A property may opt out only when every example performs real filesystem I/O:
-creating, rewriting, scanning, resolving, or removing files or directories. For
-those properties the elapsed time measures disk latency and cold import cost
-rather than the invariant. On a loaded machine a single example can take
-several times the deadline, so the failure says nothing about the code under
-test. The manifest-selection property took 281 ms on a cold first example and
-51 ms on a warm rerun.
+The suite profile disables the deadline for the whole run. When an explicit
+`--hypothesis-profile` replaces it, properties whose examples perform real
+filesystem I/O still opt out explicitly through
+`tests.helpers.hypothesis_settings.filesystem_property_settings`, because for
+them the elapsed time measures disk latency and cold import cost rather than
+the invariant. On a loaded machine a single example can take several times the
+deadline, so the failure says nothing about the code under test. The
+manifest-selection property took 281 ms on a cold first example and 51 ms on a
+warm rerun.
 
-Express that decision per property through
-`tests.helpers.hypothesis_settings.filesystem_property_settings`:
+Use the factory only when every example creates, rewrites, scans, resolves, or
+removes real files or directories:
 
 ```python
 from tests.helpers.hypothesis_settings import filesystem_property_settings
@@ -956,15 +968,9 @@ off. Pass an explicit sequence, including an empty one, to choose suppressions
 yourself.
 
 The factory does not change `settings.default`, register or load a profile, or
-alter any other property's settings. It therefore makes no promise about
-whether an in-memory property is timed: Hypothesis selects its built-in `ci`
-profile in CI environments, and that profile disables deadlines, while some
-in-memory properties opt out explicitly with `deadline=None`. Those choices
-stand outside this policy.
-
-Do not raise the deadline for a single test, and do not set it globally: a
-blanket bump would hide a real regression in the in-memory properties that the
-active profile is meant to catch.
+alter any other property's settings. Whether an in-memory property is timed
+remains the active profile's decision, and the suite profile is the one this
+repository loads by default.
 
 Building `Path` objects under `tmp_path` without touching the disk does not
 qualify. `tmp_path` alone does not establish filesystem work; the property must
@@ -985,8 +991,8 @@ patterns, and keep the chosen pattern visible in the test:
 - Write idempotently, so a repeated example overwrites the same paths rather
   than accumulating stale state.
 
-Subprocess-bound properties are exempted outside this policy; their cost is
-process startup rather than ordinary filesystem latency.
+Subprocess-bound properties do not use this factory; their cost is process
+startup rather than ordinary filesystem latency.
 
 ## Working-directory test helper (`tests/helpers/cwd.py`)
 

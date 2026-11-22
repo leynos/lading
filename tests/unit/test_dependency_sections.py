@@ -49,7 +49,7 @@ def _render_manifest(sections: tuple[str, ...]) -> str:
     return "\n".join(blocks)
 
 
-@settings(max_examples=40, deadline=None)
+@settings(max_examples=40)
 @given(
     present=st.sets(st.sampled_from(bump_toml.DEPENDENCY_SECTIONS)),
     decoys=st.sets(st.sampled_from(_DECOY_SECTIONS)),

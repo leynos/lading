@@ -68,7 +68,7 @@ def _randomly_cased(text: str) -> st.SearchStrategy[str]:
 
 
 @given(stdout=st.text(), stderr=st.text())
-@settings(max_examples=100, deadline=None)
+@settings(max_examples=100)
 def test_parse_index_lookup_failure_success_always_returns_none(
     stdout: str, stderr: str
 ) -> None:
@@ -79,7 +79,7 @@ def test_parse_index_lookup_failure_success_always_returns_none(
 
 
 @given(case=_both_markers_stderr(), exit_code=st.integers(min_value=1, max_value=255))
-@settings(max_examples=80, deadline=None)
+@settings(max_examples=80)
 def test_parse_index_lookup_failure_both_markers_nonzero_returns_failure(
     case: tuple[str, str], exit_code: int
 ) -> None:
@@ -95,7 +95,7 @@ def test_parse_index_lookup_failure_both_markers_nonzero_returns_failure(
     case=_absent_package_stderr(),
     exit_code=st.integers(min_value=1, max_value=255),
 )
-@settings(max_examples=80, deadline=None)
+@settings(max_examples=80)
 def test_parse_index_lookup_failure_absent_package_markers_return_failure(
     case: tuple[str, str], exit_code: int
 ) -> None:
@@ -115,7 +115,7 @@ def test_parse_index_lookup_failure_absent_package_markers_return_failure(
     stderr=st.text().filter(lambda s: _MARKER_INDEX.lower() not in s.lower()),
     exit_code=st.integers(min_value=1, max_value=255),
 )
-@settings(max_examples=80, deadline=None)
+@settings(max_examples=80)
 def test_parse_index_lookup_failure_missing_index_marker_returns_none(
     stdout: str, stderr: str, exit_code: int
 ) -> None:
@@ -126,7 +126,7 @@ def test_parse_index_lookup_failure_missing_index_marker_returns_none(
 
 
 @given(case=_both_markers_stderr(), exit_code=st.integers(min_value=1, max_value=255))
-@settings(max_examples=80, deadline=None)
+@settings(max_examples=80)
 def test_parse_index_lookup_failure_extracted_name_matches_crate_name_pattern(
     case: tuple[str, str], exit_code: int
 ) -> None:
@@ -145,7 +145,7 @@ def test_parse_index_lookup_failure_extracted_name_matches_crate_name_pattern(
     name=_crate_names,
     exit_code=st.integers(min_value=1, max_value=255),
 )
-@settings(max_examples=80, deadline=None)
+@settings(max_examples=80)
 def test_parse_index_lookup_failure_matches_markers_case_insensitively(
     version_marker: str, index_marker: str, name: str, exit_code: int
 ) -> None:
@@ -171,7 +171,7 @@ def test_parse_index_lookup_failure_matches_markers_case_insensitively(
     name=_crate_names,
     exit_code=st.integers(min_value=1, max_value=255),
 )
-@settings(max_examples=80, deadline=None)
+@settings(max_examples=80)
 def test_parse_index_lookup_failure_absent_package_matches_case_insensitively(
     package_marker: str, index_marker: str, name: str, exit_code: int
 ) -> None:
