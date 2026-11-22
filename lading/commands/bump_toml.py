@@ -148,9 +148,7 @@ def prepare_version_replacement(
     if replacement_text == current:
         return None
     replacement = string(replacement_text)
-    if isinstance(value, Item):
-        with suppress(AttributeError):  # Preserve inline comments and whitespace trivia
-            replacement._trivia = value._trivia
+    _copy_string_trivia(replacement, value)
     return replacement
 
 
@@ -208,13 +206,16 @@ def prepare_string_value_replacement(
         replacement = string(replacement_text)
     if multiline:
         replacement = _preserve_multiline_leading_newline(replacement, replacement_text)
-    match value:
-        case Item() as original_item:
-            with suppress(
-                AttributeError
-            ):  # Preserve inline comments and whitespace trivia
-                replacement._trivia = original_item._trivia
+    _copy_string_trivia(replacement, value)
     return replacement
+
+
+def _copy_string_trivia(replacement: Item, original: object) -> None:
+    """Preserve comments and whitespace from an original TOML item."""
+    match original:
+        case Item() as original_item:
+            with suppress(AttributeError):
+                replacement._trivia = original_item._trivia
 
 
 def _string_format_flags(value: object) -> tuple[bool, bool]:

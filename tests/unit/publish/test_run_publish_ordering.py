@@ -255,6 +255,9 @@ def test_dry_run_batching_invariant_property(tmp_path: Path, crate_count: int) -
 
 
 @given(st.integers(min_value=1, max_value=10))
+# Filesystem-backed: each example creates up to ten real crate directories and
+# copies them into staging. Runtime measures filesystem and interpreter cost;
+# the assertions cover call ordering, not duration.
 @filesystem_property_settings(
     max_examples=20,
     suppress_health_check=[HealthCheck.function_scoped_fixture],

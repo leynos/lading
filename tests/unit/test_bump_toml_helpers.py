@@ -105,6 +105,19 @@ def test_prepare_string_value_replacement_preserves_style_and_comment(
     )
 
 
+def test_prepare_version_replacement_preserves_comment() -> None:
+    """Version replacement retains the original item's trailing comment."""
+    document = parse_toml('version = "^1.0.0" # keep\n')
+
+    replacement = bump_toml.prepare_version_replacement(document["version"], "2.0.0")
+
+    assert replacement is not None, "a differing requirement should be replaced"
+    document["version"] = replacement
+    assert document.as_string() == 'version = "^2.0.0" # keep\n', (
+        "version replacement should preserve trailing trivia"
+    )
+
+
 @pytest.mark.parametrize(
     ("replacement_text", "expected"),
     [
