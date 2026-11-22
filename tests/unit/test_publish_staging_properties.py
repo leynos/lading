@@ -6,10 +6,11 @@ import typing as typ
 from pathlib import Path
 
 import pytest
-from hypothesis import HealthCheck, given, settings
+from hypothesis import HealthCheck, given
 from hypothesis import strategies as st
 
 from lading.commands import publish, publish_staging
+from tests.helpers.hypothesis_settings import filesystem_property_settings
 from tests.unit.conftest import PreparationFixtures, PrepareWorkspaceFixtures
 
 _SAFE_PATH_COMPONENT = st.text(
@@ -36,7 +37,10 @@ _CLEANUP_CASE = st.builds(
 
 
 @given(parts=st.lists(_SAFE_PATH_COMPONENT, min_size=1, max_size=3))
-@settings(max_examples=20, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@filesystem_property_settings(
+    max_examples=20,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
 def test_normalize_build_directory_rejects_workspace_descendants(
     tmp_path: Path, parts: list[str]
 ) -> None:
@@ -53,7 +57,10 @@ def test_normalize_build_directory_rejects_workspace_descendants(
 
 
 @given(name=_SAFE_PATH_COMPONENT)
-@settings(max_examples=20, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@filesystem_property_settings(
+    max_examples=20,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
 def test_normalize_build_directory_accepts_workspace_siblings(
     tmp_path: Path, name: str
 ) -> None:
@@ -76,7 +83,10 @@ def test_normalize_build_directory_accepts_workspace_siblings(
 
 
 @given(case=_CLEANUP_CASE)
-@settings(max_examples=20, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@filesystem_property_settings(
+    max_examples=20,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
 def test_prepare_workspace_cleanup_scopes_generated_caller_content(
     monkeypatch: pytest.MonkeyPatch,
     prepare_workspace_fixtures: PrepareWorkspaceFixtures,

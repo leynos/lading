@@ -13,6 +13,7 @@ import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
+from tests.helpers.hypothesis_settings import filesystem_property_settings
 from tests.helpers.script_imports import import_script_module
 
 _FILENAME_CHARACTERS = string.ascii_lowercase + string.digits + "-_."
@@ -88,7 +89,10 @@ def test_stage_removes_exact_index_filenames_and_reports_each_skip(
     indexed_names=st.sets(_filename_strategy(), max_size=8),
 )
 # The module is stateless and each generated case gets an isolated directory.
-@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
+@filesystem_property_settings(
+    max_examples=100,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
 def test_stage_filename_membership_property(
     stage_module: types.ModuleType,
     tmp_path: Path,

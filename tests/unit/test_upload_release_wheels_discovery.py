@@ -13,9 +13,10 @@ import types
 from pathlib import Path
 
 import pytest
-from hypothesis import HealthCheck, given, settings
+from hypothesis import HealthCheck, given
 from hypothesis import strategies as st
 
+from tests.helpers.hypothesis_settings import filesystem_property_settings
 from tests.helpers.script_imports import import_script_module
 
 
@@ -159,9 +160,8 @@ def test_an_unreadable_artefact_path_is_not_reported_as_absent(
     ),
     suffixes=st.lists(st.sampled_from([".whl", ".txt", ".tar.gz"]), max_size=6),
 )
-@settings(
+@filesystem_property_settings(
     max_examples=40,
-    deadline=None,
     # The module is stateless, so re-importing it per example changes nothing.
     # The fixture is suppressed rather than hoisted to module scope, because a
     # module-scoped import would leak the scripts directory onto ``sys.path``

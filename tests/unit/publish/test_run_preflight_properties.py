@@ -3,7 +3,7 @@
 from pathlib import Path
 
 import pytest
-from hypothesis import HealthCheck, given, settings
+from hypothesis import HealthCheck, given
 from hypothesis import strategies as st
 
 from lading.commands import (
@@ -13,6 +13,7 @@ from lading.commands import (
     publish_staging,
 )
 from lading.commands.publish_errors import PublishPreflightError
+from tests.helpers.hypothesis_settings import filesystem_property_settings
 
 from .conftest import make_config, make_crate, make_workspace
 
@@ -24,15 +25,14 @@ _FAILURE_DETAIL = st.text(
 
 
 @given(detail=_FAILURE_DETAIL)
-# No deadline: each example builds a real crate manifest under ``tmp_path`` and
-# drives ``publish.run`` to an aborted preflight, so its cost is the host's
-# filesystem and interpreter time rather than the property. The invariant is
-# that a failure transition reaches neither staging nor dispatch; it is not a
-# cost budget. A larger deadline would only move the point at which a busy
-# host reddens the suite.
-@settings(
+# Filesystem-backed: each example builds a real crate manifest under
+# ``tmp_path`` and drives ``publish.run`` to an aborted preflight, so its cost
+# is the host's filesystem and interpreter time rather than the property. The
+# invariant is that a failure transition reaches neither staging nor dispatch;
+# it is not a cost budget. See tests/helpers/hypothesis_settings.py for the
+# deadline policy.
+@filesystem_property_settings(
     max_examples=20,
-    deadline=None,
     suppress_health_check=[HealthCheck.function_scoped_fixture],
 )
 def test_run_never_stages_or_dispatches_after_preflight_failure(
