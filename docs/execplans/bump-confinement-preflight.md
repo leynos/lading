@@ -4,8 +4,7 @@ Status: IN PROGRESS
 
 Issue: <https://github.com/leynos/lading/issues/409>
 
-Downstream consumer:
-<https://github.com/leynos/ortho-config/issues/438>
+Downstream consumer: <https://github.com/leynos/ortho-config/issues/438>
 
 ## Purpose
 
@@ -23,9 +22,9 @@ before it mutates anything. The write plan covers the root manifest, every
 member manifest, configured documentation, README-adoption destinations, and
 lockfile-related manifests and destinations. Validation proves two things for
 every target: the target is lexically inside the canonical workspace root, and
-every filesystem component between the root and the target is a real
-directory or a regular file rather than a symlink or special file. The write
-phase consumes only the validated plan.
+every filesystem component between the root and the target is a real directory
+or a regular file rather than a symlink or special file. The write phase
+consumes only the validated plan.
 
 After this change an operator can run `lading bump` on a workspace containing a
 hostile or accidental symlink and receive a nonzero exit status with a
@@ -62,10 +61,10 @@ ISSUE-409-REQ-migration   -> EP-M5 -> docs/users-guide.md
 
 The repository is a Python project. The bump command lives in
 `lading/commands/`. `bump.run()` normalises the workspace root, loads the
-workspace graph, and hands a `_BumpContext` to
-`bump_pipeline._run_pipeline()`. That pipeline currently processes the
-workspace manifest, then member manifests, then documentation, then README
-adoption, then lockfiles; each stage both computes and writes its own changes.
+workspace graph, and hands a `_BumpContext` to `bump_pipeline._run_pipeline()`.
+That pipeline currently processes the workspace manifest, then member
+manifests, then documentation, then README adoption, then lockfiles; each stage
+both computes and writes its own changes.
 
 Relevant modules:
 
@@ -88,8 +87,8 @@ snapshots, `pytest-bdd`, `cmd-mox` for command stubs, and real temporary
 directories. `make test` runs pytest with `--doctest-modules`.
 
 The repository enforces a 400-line ceiling for new and edited code modules, a
-maximum of four positional arguments (Ruff) or five (Pylint), Ruff complexity 8,
-and en-GB-oxendict spelling in comments and documentation.
+maximum of four positional arguments (Ruff) or five (Pylint), Ruff complexity
+8, and en-GB-oxendict spelling in comments and documentation.
 
 ## Required outcome
 
@@ -101,8 +100,8 @@ and en-GB-oxendict spelling in comments and documentation.
 2. Inspect lexical components below the canonical root with `lstat` before any
    resolution. Reject symlinked ancestors, final symlinks, dangling links,
    in-workspace symlink aliases, and non-regular existing targets. Prove
-   canonical containment as a second, independent check. A root reached
-   through a symlink in its own ancestry remains valid.
+   canonical containment as a second, independent check. A root reached through
+   a symlink in its own ancestry remains valid.
 3. Build and validate the complete write plan before the first mutation:
    root and member manifests, configured documentation, README destinations,
    and lockfile manifests and destinations.
@@ -121,9 +120,9 @@ and en-GB-oxendict spelling in comments and documentation.
    and their migration implications.
 
 Explicit non-goals: full rollback after a write or subprocess failure, and
-protection against a concurrent adversary that changes paths between
-validation and writing. Per-file atomic replacement remains the only
-write-atomicity guarantee.
+protection against a concurrent adversary that changes paths between validation
+and writing. Per-file atomic replacement remains the only write-atomicity
+guarantee.
 
 ## Constraints
 
@@ -175,9 +174,9 @@ Create `lading/utils/confinement.py` with:
   when `may_create` is set, and proves canonical containment.
 - `expand_confined_glob()`, which expands patterns component by component with
   `os.scandir`, `fnmatch.fnmatchcase`, and a non-following recursive `**`
-  descent; rejects symlink matches and special files; ignores directory
-  matches for file patterns; surfaces scan errors; and returns sorted
-  root-relative paths.
+  descent; rejects symlink matches and special files; ignores directory matches
+  for file patterns; surfaces scan errors; and returns sorted root-relative
+  paths.
 
 Map `BumpPreflightError` in `lading/cli.py` to a dedicated `Preflight error:`
 stderr prefix and exit status 1.
@@ -223,11 +222,11 @@ Publish tests remain green and publish discovery is unchanged.
 
 ### EP-M3: one immutable plan, prepared then committed
 
-Create `lading/commands/bump_plan.py` with frozen `PlannedWrite` and
-`BumpPlan` models, and a category enum covering manifests, documentation,
-README destinations, and lockfiles. Proposals are keyed by confined absolute
-path, and later stages compose from earlier proposed content. A path present in
-both documentation and README categories keeps both categories.
+Create `lading/commands/bump_plan.py` with frozen `PlannedWrite` and `BumpPlan`
+models, and a category enum covering manifests, documentation, README
+destinations, and lockfiles. Proposals are keyed by confined absolute path, and
+later stages compose from earlier proposed content. A path present in both
+documentation and README categories keeps both categories.
 
 Rewrite `bump_pipeline` into `_prepare_plan(context)`, `_commit_plan(plan)`,
 and gated regeneration. Preparation covers:
@@ -244,8 +243,7 @@ and gated regeneration. Preparation covers:
   exports. Discover Git manifests once, merge and validate all manifests
   including the root, query Cargo with `--no-deps --manifest-path` for each
   effective workspace root, and validate and deduplicate the resulting
-  `Cargo.lock` destinations. Reject an inherited
-  `CARGO_RESOLVER_LOCKFILE_PATH`.
+  `Cargo.lock` destinations. Reject an inherited `CARGO_RESOLVER_LOCKFILE_PATH`.
 
 Commit writes in deterministic root-manifest, member-manifest, documentation,
 README order, then regenerates lockfiles when the rebuild-and-changed-manifest
@@ -260,13 +258,12 @@ the last preflight check.
 
 Add `tests/helpers/fs_snapshot.py` (non-following tree snapshots with
 `os.scandir`, `lstat`, regular-file bytes, and `readlink` targets) and a
-recording `CommandRunner` helper. Add
-`tests/unit/test_bump_preflight_cli.py` with a valid member ordered before each
-invalid input. Cover unsafe member patterns, documentation, README and
-lockfile targets, special files, and examination failures. Assert named
-diagnostics, exit status 1, unchanged workspace and sentinel snapshots, no
-temporary files or created lockfiles, no Cargo updates, and no metadata call
-for pre-Cargo rejections.
+recording `CommandRunner` helper. Add `tests/unit/test_bump_preflight_cli.py`
+with a valid member ordered before each invalid input. Cover unsafe member
+patterns, documentation, README and lockfile targets, special files, and
+examination failures. Assert named diagnostics, exit status 1, unchanged
+workspace and sentinel snapshots, no temporary files or created lockfiles, no
+Cargo updates, and no metadata call for pre-Cargo rejections.
 
 Add live and dry-run success tests, a root-member single-write test,
 overlapping documentation and README targets, equal summaries, and exact
@@ -274,8 +271,8 @@ overlapping documentation and README targets, equal summaries, and exact
 update repository doubles.
 
 Add a real-Cargo integration lane with availability skip, a 60-second timeout,
-an isolated `CARGO_HOME`, offline mode, and path dependencies. Cover missing and
-stale lockfiles, unchanged dry-run snapshots, metadata field parity,
+an isolated `CARGO_HOME`, offline mode, and path dependencies. Cover missing
+and stale lockfiles, unchanged dry-run snapshots, metadata field parity,
 member-pattern outcomes, and root, member, and nested-workspace lockfile
 destinations.
 
@@ -284,8 +281,8 @@ Acceptance: the new tests fail before the implementation and pass after it;
 
 ### EP-M5: documentation, migration, and release hand-off
 
-Create this ExecPlan (done), add an ADR for confinement, `--no-deps`
-discovery, lockfile destinations, and prepare-then-commit, and index both in
+Create this ExecPlan (done), add an ADR for confinement, `--no-deps` discovery,
+lockfile destinations, and prepare-then-commit, and index both in
 `docs/contents.md`. Update `docs/users-guide.md` with the member-pattern and
 exclusion policy, symlink and non-regular rejection, documentation-read
 failures, effective workspace lockfile destinations, environment rejection, the
@@ -297,8 +294,8 @@ the non-member manifest extension hook.
 
 Run `make check-fmt`, `make lint`, `make typecheck`, `make test`,
 `make markdownlint`, and `make nixie` before review. Bump `pyproject.toml`,
-follow the documented release flow, push, and open a draft pull request.
-Record the first fixed version and immutable commit on the issue.
+follow the documented release flow, push, and open a draft pull request. Record
+the first fixed version and immutable commit on the issue.
 
 Acceptance: every gate passes; the PR links #409, this plan, and the downstream
 issue; the release version and commit are recorded.
@@ -330,8 +327,8 @@ issue; the release version and commit are recorded.
   Cargo reports, so a nested manifest that belongs to the outer workspace
   reports the outer `Cargo.lock` instead of an adjacent lockfile.
 - A same-version rerun still skips manifest writes and therefore skips lockfile
-  regeneration; repair a stale lockfile with the printed `cargo update`
-  command rather than assuming a rerun will fix it.
+  regeneration; repair a stale lockfile with the printed `cargo update` command
+  rather than assuming a rerun will fix it.
 - `CARGO_RESOLVER_LOCKFILE_PATH` must be unset for bump runs.
 
 ## Verification plan
@@ -408,7 +405,11 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
 - [x] 2026-11-22: Oriented in the repository; baseline `make build` and
   `pytest` (1412 passed, 30 skipped) recorded.
 - [x] 2026-11-22: ExecPlan drafted.
-- [ ] EP-M1: confinement policy and preflight diagnostics.
+- [x] 2026-11-22: EP-M1 landed. `lading/utils/confinement/` package (errors,
+  patterns, walk, glob), `Preflight error:` CLI mapping, and 43 unit tests.
+  `make check-fmt`, `make lint`, `make typecheck`, and `make test` (1455
+  passed, 30 skipped) all green.
+- [ ] EP-M1 follow-up: none outstanding.
 - [ ] EP-M2: confined, read-only bump discovery.
 - [ ] EP-M3: one immutable plan, prepared then committed.
 - [ ] EP-M4: command-level and real-Cargo evidence.
@@ -424,6 +425,12 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
 - `lading/cli.py` currently loads the workspace graph for every command before
   dispatch, including bump, so the new confined loader must be selected at that
   seam rather than only inside `bump.run()`.
+- A 400-line limit applies to every new module, so the confinement policy is a
+  package (`errors`, `patterns`, `walk`, `glob`) rather than one module.
+- Cargo expands `[workspace].members` globs to directories and ignores
+  non-directory matches. Rejecting a stray file under `crates/` would refuse a
+  workspace Cargo already accepts, so member expansion selects directories and
+  ignores regular-file matches while still rejecting special files.
 
 ## Decision log
 

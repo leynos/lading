@@ -76,6 +76,7 @@ from .commands import publish_staging
 from .commands.publish_skip import SkipPreflightDecision, SkipPreflightSource
 from .runtime import CommandRunner, subprocess_runner
 from .utils import metrics, normalize_workspace_root
+from .utils.confinement import BumpPreflightError
 from .workspace import WorkspaceGraph, WorkspaceModelError, load_workspace
 from .workspace import metadata as metadata_module
 
@@ -456,11 +457,7 @@ def main(argv: cabc.Sequence[str] | None = None) -> int:
                 config.use_configuration(configuration),
                 _recorded_command_tokens(remaining),
             ):
-                try:
-                    return _dispatch_and_print(remaining)
-                except WorkspaceModelError as exc:
-                    print(f"Workspace error: {exc}", file=sys.stderr)
-                    return 1
+                return _dispatch_with_diagnostics(remaining)
         finally:
             app.config = previous_config
     except KeyboardInterrupt:
@@ -468,6 +465,33 @@ def main(argv: cabc.Sequence[str] | None = None) -> int:
         return 130
     except Exception as exc:  # ruff: ignore[blind-except] - fallback guard for CLI entry point
         print(f"Unexpected error: {exc}", file=sys.stderr)
+        return 1
+
+
+def _dispatch_with_diagnostics(remaining: cabc.Sequence[str]) -> int:
+    """Dispatch ``remaining`` and translate expected domain failures.
+
+    Parameters
+    ----------
+    remaining : cabc.Sequence[str]
+        Command-line tokens after the workspace override has been removed.
+
+    Returns
+    -------
+    int
+        The process exit code. A rejected bump write plan exits 1 with a
+        ``Preflight error:`` diagnostic naming the offending input; a workspace
+        model failure keeps its established ``Workspace error:`` diagnostic.
+    """
+    try:
+        return _dispatch_and_print(remaining)
+    except BumpPreflightError as exc:
+        # A rejected write plan is a validation failure, not an unexpected
+        # error: it exits before any workspace file was touched (issue #409).
+        print(f"Preflight error: {exc}", file=sys.stderr)
+        return 1
+    except WorkspaceModelError as exc:
+        print(f"Workspace error: {exc}", file=sys.stderr)
         return 1
 
 
