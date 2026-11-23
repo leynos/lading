@@ -29,7 +29,7 @@ _VERSION_COMPONENT_COUNT: typ.Final[int] = 3
 
 @dc.dataclass(frozen=True, slots=True)
 class RequirementBoundWarning:
-    """Data describing preserved Cargo comparators that reject a bump target.
+    """Data describing Cargo comparators that reject a bump target.
 
     Attributes
     ----------
@@ -100,8 +100,8 @@ def format_requirement_bound_warning(warning: RequirementBoundWarning) -> str:
         Operator-facing warning text.
     """
     return (
-        f"Target version {warning.target_version} does not satisfy preserved "
-        f"Cargo comparator(s) {', '.join(warning.excluded_bounds)} in requirement "
+        f"Target version {warning.target_version} does not satisfy Cargo "
+        f"comparator(s) {', '.join(warning.excluded_bounds)} in requirement "
         f"{warning.requirement!r}; the rewritten requirement may not resolve"
     )
 

@@ -169,13 +169,21 @@ def _stale_string_references(
 ) -> tuple[tuple[str | None, str], ...]:
     """Find stale values that a retry cannot attribute to a selected crate."""
     if _template_identifies_crate(template):
+        pre_bump_renderings = {
+            template.format(
+                crate=crate_name,
+                version=versions.pre_bump_versions[crate_name],
+            )
+            for crate_name in versions.updated_crate_names
+        }
         return tuple(
             (crate_name, stale_version)
             for crate_name in sorted(versions.updated_crate_names)
             if versions.pre_bump_versions[crate_name] == versions.target_version
-            for stale_version in _versions_for_crate_not_at_target(
+            for matched_text, stale_version in _versions_for_crate_not_at_target(
                 values, template, crate_name, versions.target_version
             )
+            if matched_text not in pre_bump_renderings
         )
     pre_bump_versions = {
         versions.pre_bump_versions[crate_name]
@@ -186,7 +194,7 @@ def _stale_string_references(
     recoverable_versions = pre_bump_versions - {versions.target_version}
     return tuple(
         (None, stale_version)
-        for stale_version in _versions_for_crate_not_at_target(
+        for _, stale_version in _versions_for_crate_not_at_target(
             values, template, "", versions.target_version
         )
         if stale_version not in recoverable_versions
@@ -206,12 +214,12 @@ def _versions_for_crate_not_at_target(
     template: str,
     crate_name: str,
     target_version: str,
-) -> tuple[str, ...]:
-    """Find stale versions matching one crate's configured template."""
+) -> tuple[tuple[str, str], ...]:
+    """Find full stale matches and their versions for one crate template."""
     pattern, version_groups = _stale_template_pattern(template, crate_name)
     target_rendering = template.format(crate=crate_name, version=target_version)
     return tuple(
-        version
+        (match.group(), version)
         for value in values
         for match in pattern.finditer(value)
         if match.group() != target_rendering

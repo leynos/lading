@@ -51,7 +51,7 @@ def test_excluding_rewritten_first_bound_detects_strict_operators(
     target: str,
     excluded: tuple[str, ...],
 ) -> None:
-    """A preserved strict first operator rejects its rewritten target."""
+    """A rewritten strict first operator rejects its target."""
     result = excluding_rewritten_first_bound(requirement, target)
 
     assert result == excluded, (

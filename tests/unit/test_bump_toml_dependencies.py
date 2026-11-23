@@ -14,7 +14,7 @@ from lading.commands import bump_toml_dependencies, bump_toml_dependency_warning
         (">0.6.0-beta4", "0.6.0", (">0.6.0",)),
     ],
 )
-def test_dependency_update_warns_when_preserved_bound_excludes_target(
+def test_dependency_update_warns_when_bound_excludes_target(
     caplog: pytest.LogCaptureFixture,
     requirement: str,
     target: str,

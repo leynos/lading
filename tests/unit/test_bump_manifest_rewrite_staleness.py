@@ -88,6 +88,35 @@ class _RewriteRetryScenario:
         pytest.param(
             _RewriteRetryScenario(
                 value_key="path",
+                current_value="1.0.0-foo-alpha",
+                template="{version}-{crate}",
+                names=frozenset({"alpha", "foo-alpha"}),
+                pre_bump_versions={"alpha": "2.0.0", "foo-alpha": "1.0.0"},
+                target_version="2.0.0",
+                expected_error=None,
+                expected_new_text='[metadata]\npath = "2.0.0-foo-alpha"\n',
+            ),
+            id="other-crate-pre-bump-rendering-is-recoverable",
+        ),
+        pytest.param(
+            _RewriteRetryScenario(
+                value_key="path",
+                current_value="0.9.0-alpha",
+                template="{version}-{crate}",
+                names=frozenset({"alpha", "foo-alpha"}),
+                pre_bump_versions={"alpha": "2.0.0", "foo-alpha": "1.0.0"},
+                target_version="2.0.0",
+                expected_error=(
+                    r"crate 'alpha'.*non-target version '0\.9\.0'.*"
+                    r"already at '2\.0\.0'"
+                ),
+                expected_new_text=None,
+            ),
+            id="unrecoverable-crate-version-still-fails",
+        ),
+        pytest.param(
+            _RewriteRetryScenario(
+                value_key="path",
                 current_value="target/alpha-1.0.0",
                 template="{crate}-{version}",
                 names=frozenset({"alpha"}),

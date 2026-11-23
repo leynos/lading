@@ -28,11 +28,15 @@ imports if your tooling uses them.
 
 ### Before
 
+<!-- tested-example: v0-4-0-helper-import-before -->
+
 ```python
 from lading.commands.bump_toml import parse_manifest, write_atomic_text
 ```
 
 ### After
+
+<!-- tested-example: v0-4-0-helper-import-after -->
 
 ```python
 from lading.commands.bump_toml_files import parse_manifest, write_atomic_text
