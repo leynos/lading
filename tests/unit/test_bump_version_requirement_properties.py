@@ -102,42 +102,39 @@ def _compare_prereleases(
     return (len(left) > len(right)) - (len(left) < len(right))
 
 
+def _compare_target_to_bound(target: _Version, bound: _Version) -> tuple[int, bool]:
+    """Return comparison order and equality under a Cargo comparator."""
+    target_prefix = target.core[: bound.precision]
+    bound_prefix = bound.core[: bound.precision]
+    if bound.precision < 3:
+        core_comparison = (target_prefix > bound_prefix) - (
+            target_prefix < bound_prefix
+        )
+        return (
+            core_comparison,
+            core_comparison == 0 and target.prerelease == bound.prerelease,
+        )
+
+    core_comparison = (target.core > bound.core) - (target.core < bound.core)
+    if core_comparison == 0:
+        core_comparison = _compare_prereleases(target.prerelease, bound.prerelease)
+    return core_comparison, core_comparison == 0
+
+
 def _accepts_target(
     target: _Version,
     operator: _ComparatorOperator,
     bound: _Version,
 ) -> bool:
     """Apply Cargo's generated comparator contract independently."""
-    target_prefix = target.core[: bound.precision]
-    bound_prefix = bound.core[: bound.precision]
-    same_prefix = target_prefix == bound_prefix
-    same_prerelease = target.prerelease == bound.prerelease
-
-    if operator == "=":
-        return same_prefix and same_prerelease
-
-    if bound.precision < 3:
-        core_comparison = (target_prefix > bound_prefix) - (
-            target_prefix < bound_prefix
-        )
-        exact = same_prefix and same_prerelease
-    else:
-        core_comparison = (target.core > bound.core) - (target.core < bound.core)
-        if core_comparison == 0:
-            core_comparison = _compare_prereleases(target.prerelease, bound.prerelease)
-        exact = core_comparison == 0
-
-    match operator:
-        case "<":
-            return core_comparison < 0
-        case "<=":
-            return core_comparison < 0 or exact
-        case ">":
-            return core_comparison > 0
-        case ">=":
-            return core_comparison > 0 or exact
-        case _:
-            typ.assert_never(operator)
+    comparison, exact = _compare_target_to_bound(target, bound)
+    return {
+        "=": exact,
+        "<": comparison < 0,
+        "<=": comparison < 0 or exact,
+        ">": comparison > 0,
+        ">=": comparison > 0 or exact,
+    }[operator]
 
 
 @given(
