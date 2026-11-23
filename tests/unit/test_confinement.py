@@ -44,6 +44,7 @@ _ESCAPING_PATTERNS = [
     pytest.param("//server/share/file", id="unc"),
     pytest.param("\\\\server\\share\\file", id="unc-backslash"),
     pytest.param("", id="empty"),
+    pytest.param(".", id="current-directory"),
     pytest.param("   ", id="whitespace"),
     pytest.param("docs/\x00/evil.md", id="nul-byte"),
 ]

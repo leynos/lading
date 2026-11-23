@@ -51,7 +51,7 @@ from lading.utils.confinement import (
     expand_confined_glob,
 )
 
-if typ.TYPE_CHECKING:
+if typ.TYPE_CHECKING:  # pragma: no cover - import-time typing aids only
     from pathlib import Path
 
     from markdown_it.token import Token

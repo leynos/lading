@@ -72,12 +72,17 @@ def test_loader_matches_a_longer_closing_fence(tmp_path: Path) -> None:
     """A four-backtick fence closes only on four or more backticks."""
     path = _write(
         tmp_path,
-        "<!-- tested-example: long -->\n````bash\necho ``` inside\n````\n",
+        "<!-- tested-example: long -->\n"
+        "````bash\n"
+        "echo ``` inside\n"
+        "```\n"
+        "still inside\n"
+        "````\n",
     )
 
     example = load_tested_examples(path)["long"]
 
     assert example.language == "bash", "the info string follows the delimiter run"
-    assert "echo ``` inside" in example.body, (
-        "a shorter backtick run inside the fence must not close it"
+    assert example.body == "echo ``` inside\n```\nstill inside", (
+        "a standalone shorter backtick line must neither close the fence nor be lost"
     )

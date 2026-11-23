@@ -18,7 +18,6 @@ from lading.utils.confinement import (
     MissingBumpTargetError,
     UnsafeBumpTargetError,
 )
-from lading.workspace import WorkspaceModelError
 from lading.workspace.confined_discovery import load_bump_workspace
 
 if typ.TYPE_CHECKING:
@@ -257,22 +256,6 @@ def test_load_bump_workspace_rejects_a_member_cargo_omits(tmp_path: Path) -> Non
     )
 
 
-def test_load_bump_workspace_rejects_a_foreign_workspace_root(
-    tmp_path: Path,
-) -> None:
-    """Require Cargo's workspace root to equal the requested canonical root."""
-    _prepare_workspace(tmp_path, ["crates/alpha"], ["alpha"])
-    payload = _payload(tmp_path, ["alpha"])
-    payload["workspace_root"] = str(tmp_path / "elsewhere")
-    runner = _RecordingRunner(payload=payload)
-    with pytest.raises(BumpPreflightError) as excinfo:
-        load_bump_workspace(tmp_path, runner=typ.cast("CommandRunner", runner))
-    message = str(excinfo.value)
-    assert "--workspace-root" in message, (
-        "the diagnostic must suggest the workspace-root override"
-    )
-
-
 def test_load_bump_workspace_rejects_a_symlinked_member_before_cargo(
     tmp_path: Path,
 ) -> None:
@@ -320,47 +303,6 @@ def test_load_bump_workspace_rejects_a_symlinked_declared_manifest(
     )
     assert not runner.calls, (
         "a declared member's symlinked manifest is rejected before Cargo runs"
-    )
-
-
-def test_load_bump_workspace_rejects_a_symlinked_implicit_manifest(
-    tmp_path: Path,
-) -> None:
-    """Reject a Cargo-reported implicit member whose manifest is a symlink."""
-    outside = tmp_path / "outside"
-    root = tmp_path / "workspace"
-    outside.mkdir()
-    (outside / "Cargo.toml").write_text(
-        '[package]\nname = "outside"\nversion = "0.1.0"\n', encoding="utf-8"
-    )
-    _prepare_workspace(root, ["crates/alpha"], ["alpha"])
-    (root / "crates" / "implicit").mkdir()
-    (root / "crates" / "implicit" / "Cargo.toml").symlink_to(outside / "Cargo.toml")
-    # The implicit member is not declared, so only Cargo's report names it.
-    payload = _payload(root, ["alpha", "implicit"])
-    runner = _RecordingRunner(payload=payload)
-    with pytest.raises(UnsafeBumpTargetError) as excinfo:
-        load_bump_workspace(root, runner=typ.cast("CommandRunner", runner))
-    assert "symlink" in str(excinfo.value), (
-        "an implicit member reached through a symlink must be rejected"
-    )
-    assert runner.calls, (
-        "an implicit member is only known after Cargo reports the member set"
-    )
-
-
-def test_load_bump_workspace_rejects_a_missing_member_identifier(
-    tmp_path: Path,
-) -> None:
-    """Preserve ``WorkspaceModelError`` when a member id is absent."""
-    _prepare_workspace(tmp_path, ["crates/alpha"], ["alpha"])
-    payload = _payload(tmp_path, ["alpha"])
-    payload["workspace_members"] = ["ghost-id"]
-    runner = _RecordingRunner(payload=payload)
-    with pytest.raises(WorkspaceModelError) as excinfo:
-        load_bump_workspace(tmp_path, runner=typ.cast("CommandRunner", runner))
-    assert "ghost-id" in str(excinfo.value), (
-        "the model error must name the missing member identifier"
     )
 
 

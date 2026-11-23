@@ -30,7 +30,7 @@ from lading.utils.confinement import (
 )
 from lading.workspace.metadata import CargoMetadataError, load_cargo_metadata
 
-if typ.TYPE_CHECKING:
+if typ.TYPE_CHECKING:  # pragma: no cover - import-time typing aids only
     from lading.runtime import CommandRunner
 
 __all__ = ["LockfilePlan", "plan_lockfiles", "reject_lockfile_override"]
@@ -122,12 +122,23 @@ def _cargo_config_paths(
 
 
 def _config_files(directory: Path) -> list[Path]:
-    """Return the Cargo configuration files that exist in ``directory``."""
-    return [
-        candidate
-        for name in ("config.toml", "config")
-        if (candidate := directory / name).is_file()
-    ]
+    """Return the Cargo configuration file Cargo would read from ``directory``.
+
+    When both spellings exist, Cargo prefers the extensionless ``config`` and
+    ignores ``config.toml``. Returning both would let this preflight reject a
+    setting, or a malformed file, that Cargo never reads.
+
+    Returns
+    -------
+    list[Path]
+        The configuration file Cargo would read, or an empty list when the
+        directory has neither spelling.
+    """
+    for name in ("config", "config.toml"):
+        candidate = directory / name
+        if candidate.is_file():
+            return [candidate]
+    return []
 
 
 def _configured_lockfile_path(config_path: Path) -> str | None:
@@ -265,8 +276,11 @@ def _effective_workspace_root(
         workspace.
     """
     try:
+        # Run from the workspace root, matching regeneration, so Cargo layers
+        # the same configuration in both phases. ``--manifest-path`` selects
+        # the manifest's workspace regardless of the working directory.
         metadata = load_cargo_metadata(
-            manifest.path.parent,
+            root,
             runner=runner,
             no_deps=True,
             manifest_path=manifest.path,

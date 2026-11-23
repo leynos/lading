@@ -181,11 +181,12 @@ class _Expansion:
     found: set[tuple[str, ...]] = dc.field(default_factory=set)
 
     def expand(self, remaining: tuple[str, ...], prefix: tuple[str, ...]) -> None:
-        """Expand ``remaining`` starting from the directory ``prefix``."""
-        if not remaining:
-            if prefix:
-                self.found.add(prefix)
-            return
+        """Expand ``remaining`` starting from the directory ``prefix``.
+
+        Every caller passes at least one component: a final component selects
+        through :meth:`_consider_final`, and the directory itself is handled by
+        :meth:`_consider_current_directory`.
+        """
         component, rest = remaining[0], remaining[1:]
         if component == "**":
             self._expand_recursive(remaining, prefix)

@@ -34,7 +34,7 @@ from lading.utils.confinement import (
     relative_to_root,
 )
 
-if typ.TYPE_CHECKING:
+if typ.TYPE_CHECKING:  # pragma: no cover - import-time typing aids only
     from lading.commands.bump_manifests import _BumpContext
     from lading.workspace import WorkspaceCrate
 

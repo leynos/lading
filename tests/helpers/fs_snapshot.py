@@ -94,7 +94,7 @@ def _snapshot_entry(
                 relative=relative,
                 kind="symlink",
                 mode=result.st_mode,
-                link_target=Path(entry.path).readlink().as_posix(),
+                link_target=os.readlink(entry.path),  # ruff: ignore[os-readlink] raw text
             )
         )
         return
@@ -106,7 +106,7 @@ def _snapshot_entry(
                 relative=relative,
                 kind="junction",
                 mode=result.st_mode,
-                link_target=Path(entry.path).readlink().as_posix(),
+                link_target=os.readlink(entry.path),  # ruff: ignore[os-readlink] raw text
             )
         )
         return

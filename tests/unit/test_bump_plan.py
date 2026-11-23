@@ -7,11 +7,12 @@ no-mutation-on-rejection promise.
 """
 
 import dataclasses as dc
+import os
 from pathlib import Path
 
 import pytest
 
-from lading.commands import bump, bump_plan, bump_toml
+from lading.commands import bump, bump_toml
 from lading.commands.bump_plan import (
     PlanBuilder,
     WriteCategory,
@@ -264,19 +265,22 @@ def test_rejected_plan_leaves_every_target_unchanged(tmp_path: Path) -> None:
     )
 
 
-def test_plan_builder_keys_by_native_path_identity(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Case-equivalent paths compose as one proposal on a case-insensitive host."""
-    (tmp_path / "README.md").write_text("disk\n", encoding="utf-8")
+def test_plan_builder_keys_by_filesystem_identity(tmp_path: Path) -> None:
+    """Two names for one file compose as one proposal on any filesystem."""
     root = tmp_path.resolve()
-    monkeypatch.setattr(bump_plan.os.path, "normcase", str.lower)
+    (root / "README.md").write_text("disk\n", encoding="utf-8")
+    path = _confined(root, "README.md")
+    try:
+        os.link(root / "README.md", root / "readme.md")
+    except OSError as exc:  # pragma: no cover - capability
+        pytest.skip(f"hard links are unavailable here: {exc}")
     builder = PlanBuilder(root=root)
 
-    builder.propose(_confined(root, "README.md"), "proposed\n", WriteCategory.README)
+    builder.propose(path, "proposed\n", WriteCategory.README)
 
-    assert builder.read(_confined(root, "readme.md")) == "proposed\n", (
-        "a case-equivalent path must read the earlier proposal"
+    alias = ConfinedPath(root=root, parts=("readme.md",))
+    assert builder.read(alias) == "proposed\n", (
+        "an alias of the same file must read the earlier proposal"
     )
 
 

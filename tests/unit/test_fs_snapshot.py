@@ -65,3 +65,26 @@ def test_snapshot_propagates_an_unrelated_examination_error(
     assert excinfo.value.errno == errno.EIO, (
         "the original examination error must propagate unchanged"
     )
+
+
+def test_snapshot_preserves_the_raw_symlink_target(tmp_path: Path) -> None:
+    """A target spelling change is visible even when the resolved path is equal."""
+    target = tmp_path / "target"
+    target.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to("target/./file")
+    before = snapshot_tree(tmp_path)
+
+    link.unlink()
+    link.symlink_to("target/file")
+    after = snapshot_tree(tmp_path)
+
+    before_target = next(
+        entry.link_target for entry in before if entry.relative == "link"
+    )
+    after_target = next(
+        entry.link_target for entry in after if entry.relative == "link"
+    )
+    assert (before_target, after_target) == ("target/./file", "target/file"), (
+        "the snapshot must record the raw link text rather than a normalized path"
+    )

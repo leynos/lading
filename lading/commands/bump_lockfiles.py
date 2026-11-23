@@ -25,7 +25,7 @@ from lading.commands.bump_lockfile_regeneration import (
     regenerate_planned,
 )
 
-if typ.TYPE_CHECKING:
+if typ.TYPE_CHECKING:  # pragma: no cover - import-time typing aids only
     from lading.runtime import CommandRunner
 
 

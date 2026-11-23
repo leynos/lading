@@ -12,7 +12,7 @@ import typing as typ
 
 from lading.commands import bump_toml
 
-if typ.TYPE_CHECKING:
+if typ.TYPE_CHECKING:  # pragma: no cover - import-time typing aids only
     from pathlib import Path
 
     from lading.commands.bump import BumpOptions

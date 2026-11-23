@@ -30,7 +30,7 @@ from lading.utils.confinement import (
 
 _log = logging.getLogger(__name__)
 
-if typ.TYPE_CHECKING:
+if typ.TYPE_CHECKING:  # pragma: no cover - import-time typing aids only
     from lading.utils.confinement import ConfinedPath
     from lading.workspace import WorkspaceCrate
 

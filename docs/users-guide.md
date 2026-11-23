@@ -380,8 +380,11 @@ README for crates that adopt it is a rejected plan too, so it produces the same
 completes before the first write. Per-file replacement is atomic, but the
 command does not roll back writes after an actual execution failure, and it
 does not defend against a concurrent process changing paths between validation
-and writing. `CARGO_RESOLVER_LOCKFILE_PATH` must be unset; a non-empty value is
-rejected because Cargo would write a lockfile the plan did not validate.
+and writing. `CARGO_RESOLVER_LOCKFILE_PATH` must be unset, and no Cargo
+configuration file Cargo would read may set `resolver.lockfile-path`; either
+route is rejected because Cargo would write a lockfile the plan did not
+validate. Unset the variable, or remove the setting from the reported
+configuration file, before bumping.
 
 Configured lockfile manifests are resolved to the effective workspace root that
 Cargo reports. A member manifest therefore contributes the outer workspace

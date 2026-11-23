@@ -24,7 +24,7 @@ from lading.commands.bump_prepare import (
     prepare_readmes,
 )
 
-if typ.TYPE_CHECKING:
+if typ.TYPE_CHECKING:  # pragma: no cover - import-time typing aids only
     from pathlib import Path
 
     from lading.commands.bump_lockfile_planning import LockfilePlan

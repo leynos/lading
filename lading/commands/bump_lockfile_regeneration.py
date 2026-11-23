@@ -34,7 +34,7 @@ from lading.runtime import CommandRunner, CommandSpawnError, subprocess_runner
 from lading.utils import metrics
 from lading.utils.process import with_detail
 
-if typ.TYPE_CHECKING:
+if typ.TYPE_CHECKING:  # pragma: no cover - import-time typing aids only
     from lading.commands.bump_lockfile_planning import LockfilePlan
 
 _LOGGER = logging.getLogger(__name__)

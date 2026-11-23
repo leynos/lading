@@ -154,6 +154,19 @@ stated in the user guide rather than implied away.
 - The confinement package is available to future commands, but nothing else
   consumes it yet.
 
+## Amendments
+
+### 2026-11-23: Cargo configuration lockfile overrides
+
+The Decision above rejects `CARGO_RESOLVER_LOCKFILE_PATH` when non-empty. Cargo
+accepts the same setting as `resolver.lockfile-path` in a configuration file it
+layers, so planning also rejects a non-empty setting found in the configuration
+file Cargo would read for the workspace root, each ancestor, and `$CARGO_HOME`.
+When a directory contains both `.cargo/config` and `.cargo/config.toml`, only
+the extensionless `config` is inspected, because Cargo ignores the other file.
+Planning runs its metadata query from the workspace root so it layers the same
+configuration as regeneration.
+
 ## Alternatives considered
 
 - **Resolve once and check containment.** `Path.resolve()` follows the links it

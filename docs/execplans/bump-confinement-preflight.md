@@ -331,8 +331,11 @@ issue; the release version and commit are recorded.
   Cargo reports, so a nested manifest that belongs to the outer workspace
   reports the outer `Cargo.lock` instead of an adjacent lockfile.
 - A same-version rerun still skips manifest writes and therefore skips lockfile
-  regeneration; repair a stale lockfile with the printed `cargo update` command
-  rather than assuming a rerun will fix it.
+  regeneration; repair a stale lockfile explicitly with
+  `cargo update --workspace --manifest-path <manifest>` rather than assuming a
+  rerun will fix it. A single regeneration failure re-raises the original Cargo
+  error; only an aggregated multi-manifest failure prints one repair command
+  per failed manifest.
 - `CARGO_RESOLVER_LOCKFILE_PATH` must be unset for bump runs.
 
 ## Verification plan
@@ -479,6 +482,17 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
   loader to tilde and length-matched fences. The migration guide is retitled
   with both endpoints and no longer ties its historical pins to the current
   project version.
+- [x] 2026-11-23: Fifth CodeRabbit review cleared and coverage remediated. The
+  effective Cargo configuration file is now the extensionless `config` when
+  both spellings exist; planning queries Cargo from the workspace root so both
+  phases layer the same configuration; proposal identity uses the file's device
+  and inode for existing targets; snapshots record the raw link text; the
+  migration-guide release check matches complete version components; the fence
+  fixture contains a standalone shorter fence; the users guide documents
+  configuration-file rejection; and this plan states the explicit
+  single-manifest repair command. Targeted tests cover the remaining rejection
+  branches, and typing-only import blocks are excluded from coverage the same
+  way as existing modules.
 - [ ] EP-M5 release: tag and release `v0.4.0b1` after review convergence, then
   record the tag commit on issue #409.
 
@@ -536,6 +550,17 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
   procedure forbids a final 0.x release until cuprum 0.2.0 final exists and
   PyPI still lists only cuprum `0.1.0`, `0.2.0b1`, and `0.2.0b2`. A pre-release
   tag is permitted and gives ortho-config an immutable commit to pin.
+- The Cargo configuration preflight inspects only the file Cargo would read in
+  each directory: the extensionless `config` when present, otherwise
+  `config.toml`. Rejecting a setting from a file Cargo ignores would refuse a
+  valid workspace.
+- Lockfile planning runs `cargo metadata` from the workspace root, matching
+  regeneration, so both phases layer the same Cargo configuration. Cargo still
+  selects the manifest's workspace through `--manifest-path`.
+- Proposal identity is the target's device and inode when it exists, falling
+  back to the normalized native path for an absent may-create target. This
+  composes aliases on case-insensitive filesystems while keeping distinct files
+  distinct on case-sensitive volumes.
 
 ## Outcomes & retrospective
 
@@ -550,3 +575,5 @@ here and on issue #409 once the release tag is pushed.
 - 2026-11-22: Initial draft, created before implementation.
 - 2026-11-23: Recorded the delivered milestones, the ADR, the migration
   guidance, and the `0.4.0b1` release decision.
+- 2026-11-23: Recorded the fifth-review decisions on configuration precedence,
+  planning working directory, and filesystem-aware proposal identity.

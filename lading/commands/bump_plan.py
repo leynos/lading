@@ -1,7 +1,7 @@
 """Immutable bump write plan and the proposal builder that produces it.
 
 A bump run computes every intended write before it changes anything. Each
-proposal is keyed by its confined absolute path, so two stages that target the
+proposal is keyed by its filesystem identity, so two stages that target the
 same file compose into one write while retaining both change categories.
 Later stages read earlier proposed content through :meth:`PlanBuilder.read`,
 which keeps, for example, an adopted README consistent with a documentation
@@ -26,7 +26,7 @@ from lading.utils.confinement import (
     ConfinedPath,
 )
 
-if typ.TYPE_CHECKING:
+if typ.TYPE_CHECKING:  # pragma: no cover - import-time typing aids only
     from lading.commands.bump_lockfile_planning import LockfilePlan
 
 __all__ = [
@@ -39,6 +39,8 @@ __all__ = [
 ]
 
 _ROOT_MANIFEST_PARTS: typ.Final[tuple[str, ...]] = ("Cargo.toml",)
+
+type _ProposalKey = tuple[str, int, int] | tuple[str, str]
 
 
 class WriteCategory(enum.Enum):
@@ -114,25 +116,32 @@ class PlanBuilder:
     """
 
     root: Path
-    _contents: dict[str, str] = dc.field(default_factory=dict)
-    _categories: dict[str, set[WriteCategory]] = dc.field(default_factory=dict)
-    _paths: dict[str, ConfinedPath] = dc.field(default_factory=dict)
-    _original: dict[str, str | None] = dc.field(default_factory=dict)
-    _order: list[str] = dc.field(default_factory=list)
+    _contents: dict[_ProposalKey, str] = dc.field(default_factory=dict)
+    _categories: dict[_ProposalKey, set[WriteCategory]] = dc.field(default_factory=dict)
+    _paths: dict[_ProposalKey, ConfinedPath] = dc.field(default_factory=dict)
+    _original: dict[_ProposalKey, str | None] = dc.field(default_factory=dict)
+    _order: list[_ProposalKey] = dc.field(default_factory=list)
 
-    def _key(self, path: ConfinedPath) -> str:
-        """Return the native filesystem identity for ``path``.
+    def _key(self, path: ConfinedPath) -> _ProposalKey:
+        """Return a filesystem-aware identity for ``path``.
 
-        Windows compares paths case-insensitively. Keying proposals by the
-        normalized native path means ``readme.md`` and ``README.md`` compose as
-        one target there, while POSIX keeps its case-sensitive identity.
+        An existing target is identified by its device and inode, so two
+        spellings that name the same file compose even on a case-insensitive
+        filesystem whose path comparison is case-preserving, such as macOS
+        APFS. An absent target has no inode yet, so it falls back to the
+        normalized native path: Windows still merges case-only spellings,
+        while a case-sensitive volume keeps distinct files distinct.
 
         Returns
         -------
-        str
-            The normalized absolute spelling used as the proposal key.
+        _ProposalKey
+            The identity used as the proposal key.
         """
-        return os.path.normcase(str(path.path))
+        try:
+            status = path.path.stat()
+        except OSError:
+            return ("path", os.path.normcase(str(path.path)))
+        return ("file", status.st_dev, status.st_ino)
 
     def read(self, path: ConfinedPath) -> str | None:
         """Return the current content of ``path`` honouring earlier proposals.
@@ -256,7 +265,7 @@ class PlanBuilder:
             lockfiles=lockfiles,
         )
 
-    def _rank(self, key: str) -> tuple[int, str]:
+    def _rank(self, key: _ProposalKey) -> tuple[int, str]:
         """Return the commit rank for one proposed path."""
         categories = self._categories[key]
         path = self._paths[key]

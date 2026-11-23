@@ -103,11 +103,11 @@ def test_prerelease_examples_pin_the_guide_release() -> None:
         match = re.search(r"lading==(\d+\.\d+\.\d+(?:[a-zA-Z]+\d+)?)", example.body)
         assert match is not None, f"{identifier!r} must pin an exact lading version"
         pinned = match.group(1)
-        assert pinned.startswith(release), (
-            f"{identifier!r} must pin a version of {release}, not {pinned}"
-        )
-        assert pinned != release, (
-            f"{identifier!r} is the pre-release example and must name a pre-release"
+        # Match the complete release components, not a character prefix:
+        # 0.4.01rc1 starts with "0.4.0" but its patch component is not 0.
+        prerelease = rf"{re.escape(release)}[a-zA-Z]+\d+"
+        assert re.fullmatch(prerelease, pinned), (
+            f"{identifier!r} must pin a pre-release of {release}, not {pinned}"
         )
 
 

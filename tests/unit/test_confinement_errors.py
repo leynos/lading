@@ -1,0 +1,133 @@
+"""Unit tests for confinement error branches outside the happy paths."""
+
+import errno
+import os
+from pathlib import Path
+
+import pytest
+
+from lading.utils.confinement import (
+    BumpTargetExaminationError,
+    ProofContext,
+    UnsafeBumpTargetError,
+    establish_workspace_root,
+    prove_containment,
+    relative_to_root,
+)
+from lading.utils.confinement import patterns as patterns_module
+from lading.utils.confinement.walk import display_relative
+
+
+def test_display_relative_falls_back_for_an_outside_path(tmp_path: Path) -> None:
+    """A path outside the root is rendered absolutely."""
+    root = tmp_path / "workspace"
+    root.mkdir()
+    outside = tmp_path / "outside"
+
+    assert display_relative(root, outside) == str(outside), (
+        "an outside path cannot be made relative to the root"
+    )
+
+
+def test_establish_workspace_root_reports_resolution_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A permission failure while resolving the root is an examination error."""
+    real_resolve = Path.resolve
+
+    def failing_resolve(self: Path, *, strict: bool = False) -> Path:
+        """Fail only for the candidate root."""
+        if self == tmp_path:
+            raise PermissionError(errno.EACCES, "denied", str(self))
+        return real_resolve(self, strict=strict)
+
+    monkeypatch.setattr(Path, "resolve", failing_resolve)
+
+    with pytest.raises(BumpTargetExaminationError) as excinfo:
+        establish_workspace_root(tmp_path)
+
+    assert "Cannot examine workspace root" in str(excinfo.value), (
+        "the diagnostic must name the root examination failure"
+    )
+
+
+def test_relative_to_root_rejects_an_outside_path(tmp_path: Path) -> None:
+    """A candidate outside the root is rejected."""
+    root = tmp_path / "workspace"
+    root.mkdir()
+    outside = tmp_path / "outside"
+
+    with pytest.raises(UnsafeBumpTargetError) as excinfo:
+        relative_to_root(root, outside, key="members", label="member")
+
+    assert "outside the workspace root" in str(excinfo.value), (
+        "the diagnostic must say the path escapes the root"
+    )
+
+
+def test_relative_to_root_reports_a_different_drive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A relpath failure is reported as an unsafe target."""
+    root = tmp_path / "workspace"
+    root.mkdir()
+
+    def failing_relpath(*_args: object, **_kwargs: object) -> str:
+        """Simulate a Windows drive mismatch."""
+        message = "different drives"
+        raise ValueError(message)
+
+    monkeypatch.setattr(os.path, "relpath", failing_relpath)
+
+    with pytest.raises(UnsafeBumpTargetError) as excinfo:
+        relative_to_root(root, root / "Cargo.toml", key="m", label="manifest")
+
+    assert "different drive" in str(excinfo.value), (
+        "the diagnostic must name the drive mismatch"
+    )
+
+
+def test_prove_containment_rejects_an_outside_candidate(tmp_path: Path) -> None:
+    """The canonical proof rejects a candidate outside the root."""
+    root = tmp_path / "workspace"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.write_text("external", encoding="utf-8")
+
+    with pytest.raises(UnsafeBumpTargetError) as excinfo:
+        prove_containment(
+            root,
+            outside,
+            ProofContext(key="target", display="outside"),
+        )
+
+    assert "outside the workspace root" in str(excinfo.value), (
+        "the canonical proof must reject the outside candidate"
+    )
+
+
+def test_prove_containment_resolves_an_existing_creatable_target(
+    tmp_path: Path,
+) -> None:
+    """A creatable proof resolves an existing final component."""
+    root = tmp_path / "workspace"
+    root.mkdir()
+    existing = root / "README.md"
+    existing.write_text("content", encoding="utf-8")
+
+    prove_containment(
+        root,
+        existing,
+        ProofContext(key="readme", display="README.md", may_create=True),
+    )
+
+
+def test_native_parts_uses_windows_components_on_windows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The Windows host flavour splits a backslash-separated pattern."""
+    monkeypatch.setattr(patterns_module.os, "sep", "\\")
+
+    assert patterns_module._native_parts("docs\\guide.md") == ("docs", "guide.md"), (
+        "a Windows host must split the pattern into its own components"
+    )

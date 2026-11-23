@@ -41,7 +41,7 @@ from lading.workspace.graph_build import build_workspace_graph
 from lading.workspace.metadata import load_cargo_metadata
 from lading.workspace.models import WorkspaceGraph, WorkspaceModelError
 
-if typ.TYPE_CHECKING:
+if typ.TYPE_CHECKING:  # pragma: no cover - import-time typing aids only
     from lading.runtime import CommandRunner
 
 __all__ = ["load_bump_workspace"]
