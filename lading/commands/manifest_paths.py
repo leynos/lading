@@ -164,7 +164,13 @@ class _ManifestGlobTraversal:
         """Match one wildcard path segment against each directory entry."""
         for child in _manifest_directory_entries(candidate):
             if fnmatch.fnmatch(child.name, segment):
-                self.visit(child, index + 1)
+                self.visit_candidate(child, index + 1)
+
+    def visit_candidate(self, candidate: Path, index: int) -> None:
+        """Skip non-directories when another pattern segment needs traversal."""
+        if index < len(self.segments) and not _is_manifest_directory(candidate):
+            return
+        self.visit(candidate, index)
 
     def visit(self, candidate: Path, index: int) -> None:
         """Walk one pattern segment while enforcing the workspace boundary."""
@@ -189,7 +195,7 @@ class _ManifestGlobTraversal:
             self.visit_wildcard(candidate, segment, index)
             return
 
-        self.visit(candidate / segment, index + 1)
+        self.visit_candidate(candidate / segment, index + 1)
 
     def record_if_present(self, candidate: Path) -> None:
         """Record a candidate that still exists after traversal."""

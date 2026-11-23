@@ -59,6 +59,33 @@ def test_resolves_globs_deduplicates_and_merges_groups(
     )
 
 
+def test_glob_skips_symlinked_files_before_traversing_remaining_segments(
+    tmp_path: pathlib.Path,
+    write_fixture_manifest: _ManifestWriter,
+) -> None:
+    """A non-directory wildcard match cannot abort later valid manifest matches."""
+    manifest = write_fixture_manifest(
+        tmp_path,
+        "fixtures/a/Cargo.toml",
+        '[dependencies]\nalpha = "1.0.0"\n',
+    )
+    outside_file = tmp_path.parent / "notice"
+    outside_file.write_text("not a directory", encoding="utf-8")
+    symlinked_file = tmp_path / "fixtures" / "notice"
+    symlinked_file.symlink_to(outside_file)
+
+    matches = manifest_paths.expand_manifest_glob_candidates(
+        tmp_path,
+        "fixtures/*/Cargo.toml",
+        error_type=bump_manifest_rewrites.ManifestRewriteError,
+        label="Manifest rewrite",
+    )
+
+    assert matches == (manifest,), (
+        "a symlinked file must be skipped when more path segments remain"
+    )
+
+
 def test_terminal_recursive_glob_includes_manifest_files(
     tmp_path: pathlib.Path,
     write_fixture_manifest: _ManifestWriter,
