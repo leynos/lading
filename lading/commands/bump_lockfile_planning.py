@@ -187,7 +187,7 @@ def _resolve_destinations(
         lockfile = _confine_lockfile(root, effective_root)
         destinations.setdefault(
             lockfile.parts,
-            (effective_root / _ROOT_MANIFEST, lockfile.path),
+            (_confine_root_manifest(root, effective_root), lockfile.path),
         )
     workspace_manifests = tuple(entry[0] for entry in destinations.values())
     lockfiles = tuple(entry[1] for entry in destinations.values())
@@ -219,6 +219,33 @@ def _effective_workspace_root(
         If Cargo cannot report a root, or reports a root outside the requested
         workspace.
     """
+    reported_path = _reported_workspace_root(root, manifest, runner=runner)
+    if reported_path == root:
+        return root
+    if manifest.parts == (_ROOT_MANIFEST,):
+        message = (
+            f"Cargo reports workspace root {reported_path} for {root}, which is "
+            f"not a Cargo workspace root; pass --workspace-root {reported_path}"
+        )
+        raise BumpPreflightError(message)
+    key = f"lockfile manifest {manifest.display} workspace root"
+    relative = relative_to_root(root, reported_path, key=key, label="workspace root")
+    confined = confine_relative_path(
+        root,
+        relative.as_posix(),
+        key=key,
+        options=ConfineOptions(expect=TargetKind.DIRECTORY),
+    )
+    return confined.path
+
+
+def _reported_workspace_root(
+    root: Path,
+    manifest: ConfinedPath,
+    *,
+    runner: CommandRunner | None,
+) -> Path:
+    """Return the absolute workspace root Cargo reports for ``manifest``."""
     try:
         # Run from the workspace root, matching regeneration, so Cargo layers
         # the same configuration in both phases. ``--manifest-path`` selects
@@ -248,38 +275,39 @@ def _effective_workspace_root(
             f"manifest {manifest.display}: {reported!r}"
         )
         raise BumpPreflightError(message)
-    if reported_path == root:
-        return root
-    if manifest.parts == (_ROOT_MANIFEST,):
-        message = (
-            f"Cargo reports workspace root {reported_path} for {root}, which is "
-            f"not a Cargo workspace root; pass --workspace-root {reported_path}"
-        )
-        raise BumpPreflightError(message)
-    key = f"lockfile manifest {manifest.display} workspace root"
-    relative = relative_to_root(root, reported_path, key=key, label="workspace root")
-    confined = confine_relative_path(
-        root,
-        relative.as_posix(),
-        key=key,
-        options=ConfineOptions(expect=TargetKind.DIRECTORY),
+    return reported_path
+
+
+def _confine_root_manifest(root: Path, workspace_root: Path) -> Path:
+    """Return the confined ``Cargo.toml`` of an effective workspace root."""
+    key = "lockfile root manifest"
+    pattern = _root_relative_pattern(root, workspace_root, key=key, name=_ROOT_MANIFEST)
+    return confine_relative_path(root, pattern, key=key).path
+
+
+def _root_relative_pattern(
+    root: Path,
+    workspace_root: Path,
+    *,
+    key: str,
+    name: str,
+) -> str:
+    """Return ``name`` relative to ``root`` inside ``workspace_root``."""
+    relative_root = relative_to_root(
+        root, workspace_root, key=key, label="workspace root"
     )
-    return confined.path
+    if not relative_root.parts:
+        return name
+    return PurePosixPath(relative_root.as_posix(), name).as_posix()
 
 
 def _confine_lockfile(root: Path, workspace_root: Path) -> ConfinedPath:
     """Return the confined ``Cargo.lock`` destination for ``workspace_root``."""
-    relative_root = relative_to_root(
-        root, workspace_root, key="lockfile destination", label="workspace root"
-    )
-    pattern = (
-        _ROOT_LOCKFILE
-        if not relative_root.parts
-        else PurePosixPath(relative_root.as_posix(), _ROOT_LOCKFILE).as_posix()
-    )
+    key = "lockfile destination"
+    pattern = _root_relative_pattern(root, workspace_root, key=key, name=_ROOT_LOCKFILE)
     return confine_relative_path(
         root,
         pattern,
-        key="lockfile destination",
+        key=key,
         options=ConfineOptions(may_create=True),
     )

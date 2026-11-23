@@ -93,19 +93,36 @@ def test_expand_confined_glob_ignores_links_on_the_way_to_a_match(
     )
 
 
-def test_expand_confined_glob_reports_special_files(tmp_path: Path) -> None:
-    """Report a matched special file distinctly from a symlink."""
+def _make_fifo(path: Path) -> None:
+    """Create a FIFO at ``path``, or skip when the host cannot."""
     if not hasattr(os, "mkfifo"):
         pytest.skip("os.mkfifo is unavailable on this platform")
-    root = tmp_path / "workspace"
-    (root / "docs").mkdir(parents=True)
-    fifo = root / "docs" / "pipe.md"
     try:
-        os.mkfifo(fifo)
+        os.mkfifo(path)
     except OSError as exc:  # pragma: no cover - capability
         pytest.skip(f"cannot create a FIFO here: {exc}")
+
+
+@pytest.mark.parametrize(
+    ("relative", "pattern"),
+    [
+        pytest.param("docs/pipe.md", "docs/*.md", id="final-match"),
+        pytest.param("pipe", "pipe/*.md", id="intermediate-component"),
+    ],
+)
+def test_expand_confined_glob_reports_special_files(
+    tmp_path: Path,
+    relative: str,
+    pattern: str,
+) -> None:
+    """Report a matched special file, whether final or intermediate."""
+    root = tmp_path / "workspace"
+    (root / "docs").mkdir(parents=True)
+    _make_fifo(root / relative)
+
     with pytest.raises(UnsafeBumpTargetError) as excinfo:
-        expand_confined_glob(root, "docs/*.md", key="globs")
+        expand_confined_glob(root, pattern, key="globs")
+
     assert "special file" in str(excinfo.value), (
         "a FIFO match must be reported as a special file"
     )
@@ -211,28 +228,6 @@ def test_expand_confined_glob_treats_a_trailing_separator_as_directories(
 
     assert not matches, (
         "a directory selector must not fall back to selecting regular files"
-    )
-
-
-def test_expand_confined_glob_rejects_a_special_intermediate_component(
-    tmp_path: Path,
-) -> None:
-    """A special file on an intermediate component is rejected, not ignored."""
-    if not hasattr(os, "mkfifo"):
-        pytest.skip("os.mkfifo is unavailable on this platform")
-    root = tmp_path / "workspace"
-    root.mkdir()
-    pipe = root / "pipe"
-    try:
-        os.mkfifo(pipe)
-    except OSError as exc:  # pragma: no cover - capability
-        pytest.skip(f"cannot create a FIFO here: {exc}")
-
-    with pytest.raises(UnsafeBumpTargetError) as excinfo:
-        expand_confined_glob(root, "pipe/*.md", key="globs")
-
-    assert "special file" in str(excinfo.value), (
-        "an intermediate special file must be reported as a special file"
     )
 
 

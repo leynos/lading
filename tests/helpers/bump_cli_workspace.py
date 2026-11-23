@@ -12,6 +12,9 @@ from pathlib import Path
 
 from tomlkit import array, document, dumps, table
 
+if typ.TYPE_CHECKING:
+    from tomlkit.items import Table
+
 
 @dc.dataclass(frozen=True, slots=True)
 class CliWorkspace:
@@ -173,20 +176,38 @@ def _write_config(
         return
     config = document()
     bump = table()
-    if lockfile_manifests:
-        lockfiles = array()
-        for manifest in lockfile_manifests:
-            lockfiles.append(manifest)
-        bump.add("lockfile_manifests", lockfiles)
-    if documentation_globs:
-        documentation = table()
-        globs = array()
-        for pattern in documentation_globs:
-            globs.append(pattern)
-        documentation.add("globs", globs)
-        bump.add("documentation", documentation)
+    _add_lockfile_manifests(bump, lockfile_manifests)
+    _add_documentation_globs(bump, documentation_globs)
     config.add("bump", bump)
     (root / "lading.toml").write_text(dumps(config), encoding="utf-8")
+
+
+def _add_lockfile_manifests(
+    bump: Table,
+    lockfile_manifests: cabc.Sequence[str],
+) -> None:
+    """Add the configured lockfile manifests to the bump table."""
+    if not lockfile_manifests:
+        return
+    lockfiles = array()
+    for manifest in lockfile_manifests:
+        lockfiles.append(manifest)
+    bump.add("lockfile_manifests", lockfiles)
+
+
+def _add_documentation_globs(
+    bump: Table,
+    documentation_globs: cabc.Sequence[str],
+) -> None:
+    """Add the configured documentation globs to the bump table."""
+    if not documentation_globs:
+        return
+    documentation = table()
+    globs = array()
+    for pattern in documentation_globs:
+        globs.append(pattern)
+    documentation.add("globs", globs)
+    bump.add("documentation", documentation)
 
 
 __all__ = ["CliWorkspace", "WorkspaceOptions", "create_cli_workspace"]

@@ -195,6 +195,15 @@ Path dependencies outside the workspace are not members and remain Cargo's
 responsibility. A missing dependency manifest fails the preflight, which Cargo
 would also reject.
 
+### 2026-11-23: Effective workspace-root manifests and dangling links
+
+Lockfile planning now confines the `Cargo.toml` of each effective workspace
+root before it enters the plan, not only the lockfile destination. A reported
+root whose manifest is a symlink is therefore rejected rather than passed to
+`cargo update`. `prove_containment` tests presence with `os.path.lexists`, so a
+dangling final symlink reaches the strict resolution and is reported as an
+examination failure instead of looking absent.
+
 ### 2026-11-23: Parent components reach the lexical validator
 
 `relative_to_root` uses `Path.relative_to` rather than `os.path.relpath`.

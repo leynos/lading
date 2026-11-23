@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from tests.helpers.bump_cli_workspace import (
+    CliWorkspace,
     WorkspaceOptions,
     create_cli_workspace,
 )
@@ -49,13 +50,13 @@ _ESCAPING_LOCKFILES = [
 ]
 
 
-def _outside_sentinel(tmp_path: Path) -> Path:
-    """Create and return an external sentinel file outside the workspace."""
-    outside = tmp_path / "outside"
-    outside.mkdir(exist_ok=True)
-    sentinel = outside / "README.md"
-    sentinel.write_text("external\n", encoding="utf-8")
-    return sentinel
+@pytest.fixture
+def seams(
+    monkeypatch: MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> CliSeams:
+    """Bundle the CLI seams for one test."""
+    return CliSeams(monkeypatch, capsys)
 
 
 @pytest.mark.parametrize("member_pattern", _ESCAPING_MEMBERS)
@@ -88,40 +89,21 @@ def test_bump_rejects_an_unsafe_member_pattern_before_cargo(
     )
 
 
-def test_bump_rejects_a_missing_literal_member(
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-    monkeypatch: MonkeyPatch,
-) -> None:
-    """A literal member pattern naming no directory is rejected."""
-    outside_sentinel(tmp_path)
-    workspace = create_cli_workspace(tmp_path / "workspace")
+def _missing_literal_member(workspace: CliWorkspace, tmp_path: Path) -> str:
+    """Declare a literal member that names no directory."""
     (workspace.root / "Cargo.toml").write_text(
         '[workspace]\nmembers = ["crates/alpha", "crates/missing"]\n\n'
         '[workspace.package]\nversion = "0.1.0"\n',
         encoding="utf-8",
     )
-    runner = RecordingCommandRunner(metadata=workspace.metadata)
-
-    assert_rejected(
-        workspace=workspace,
-        runner=runner,
-        run=lambda: run_bump(workspace, runner, CliSeams(monkeypatch, capsys)),
-        expected="crates/missing",
-    )
-    assert runner.metadata_calls() == [], (
-        "a missing literal member must be rejected before Cargo runs"
-    )
+    return "crates/missing"
 
 
-def test_bump_rejects_a_symlinked_member_directory(
+def _symlinked_member(
+    workspace: CliWorkspace,
     tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-    monkeypatch: MonkeyPatch,
-) -> None:
-    """A member directory that is a symlink is rejected before Cargo."""
-    outside_sentinel(tmp_path)
-    workspace = create_cli_workspace(tmp_path / "workspace")
+) -> str:
+    """Declare a member directory that is a symlink."""
     (workspace.root / "crates" / "linked").symlink_to(
         tmp_path / "outside", target_is_directory=True
     )
@@ -130,39 +112,78 @@ def test_bump_rejects_a_symlinked_member_directory(
         '[workspace.package]\nversion = "0.1.0"\n',
         encoding="utf-8",
     )
+    return "crates/linked"
+
+
+@pytest.mark.parametrize(
+    ("prepare", "expected"),
+    [
+        pytest.param(_missing_literal_member, "crates/missing", id="missing-literal"),
+        pytest.param(_symlinked_member, "crates/linked", id="symlinked-member"),
+    ],
+)
+def test_bump_rejects_an_invalid_member_before_cargo(
+    tmp_path: Path,
+    seams: CliSeams,
+    prepare: cabc.Callable[[CliWorkspace, Path], str],
+    expected: str,
+) -> None:
+    """An invalid member pattern is rejected before Cargo runs."""
+    outside_sentinel(tmp_path)
+    workspace = create_cli_workspace(tmp_path / "workspace")
+    assert prepare(workspace, tmp_path) == expected, (
+        "the fixture must name the rejected member"
+    )
     runner = RecordingCommandRunner(metadata=workspace.metadata)
 
     assert_rejected(
         workspace=workspace,
         runner=runner,
-        run=lambda: run_bump(workspace, runner, CliSeams(monkeypatch, capsys)),
-        expected="crates/linked",
+        run=lambda: run_bump(workspace, runner, seams),
+        expected=expected,
     )
     assert runner.metadata_calls() == [], (
-        "a symlinked member directory must be rejected before Cargo runs"
+        "an invalid member must be rejected before Cargo runs"
     )
 
 
-@pytest.mark.parametrize("glob_pattern", _ESCAPING_GLOBS)
-def test_bump_rejects_an_escaping_documentation_glob(
+_DOCUMENTATION_REJECTIONS = [
+    *(
+        pytest.param(
+            WorkspaceOptions(documentation_globs=(glob_pattern,)),
+            glob_pattern,
+            id=f"glob-{index}",
+        )
+        for index, glob_pattern in enumerate([
+            "../outside/README.md",
+            "docs/../../outside/README.md",
+        ])
+    ),
+    pytest.param(
+        WorkspaceOptions(readme_workspace=True, workspace_readme=None),
+        "Workspace README.md is required",
+        id="missing-workspace-readme",
+    ),
+]
+
+
+@pytest.mark.parametrize(("options", "expected"), _DOCUMENTATION_REJECTIONS)
+def test_bump_rejects_a_documentation_or_readme_plan(
     tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-    monkeypatch: MonkeyPatch,
-    glob_pattern: str,
+    seams: CliSeams,
+    options: WorkspaceOptions,
+    expected: str,
 ) -> None:
-    """An escaping documentation glob is rejected after manifests are planned."""
+    """An escaping glob or a missing adopted README is a rejected plan."""
     outside_sentinel(tmp_path)
-    workspace = create_cli_workspace(
-        tmp_path / "workspace",
-        options=WorkspaceOptions(documentation_globs=(glob_pattern,)),
-    )
+    workspace = create_cli_workspace(tmp_path / "workspace", options=options)
     runner = RecordingCommandRunner(metadata=workspace.metadata)
 
     assert_rejected(
         workspace=workspace,
         runner=runner,
-        run=lambda: run_bump(workspace, runner, CliSeams(monkeypatch, capsys)),
-        expected=glob_pattern,
+        run=lambda: run_bump(workspace, runner, seams),
+        expected=expected,
     )
 
 
@@ -330,27 +351,6 @@ def test_bump_rejects_a_special_documentation_target(
         runner=runner,
         run=lambda: run_bump(workspace, runner, CliSeams(monkeypatch, capsys)),
         expected="special file",
-    )
-
-
-def test_bump_reports_a_missing_workspace_readme_as_a_preflight_error(
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-    monkeypatch: MonkeyPatch,
-) -> None:
-    """A missing adopted README source is reported as a rejected plan."""
-    outside_sentinel(tmp_path)
-    workspace = create_cli_workspace(
-        tmp_path / "workspace",
-        options=WorkspaceOptions(readme_workspace=True, workspace_readme=None),
-    )
-    runner = RecordingCommandRunner(metadata=workspace.metadata)
-
-    assert_rejected(
-        workspace=workspace,
-        runner=runner,
-        run=lambda: run_bump(workspace, runner, CliSeams(monkeypatch, capsys)),
-        expected="Workspace README.md is required",
     )
 
 

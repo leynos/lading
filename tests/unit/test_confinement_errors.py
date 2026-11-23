@@ -145,3 +145,24 @@ def test_native_parts_uses_windows_components_on_windows(
     assert patterns_module._native_parts("docs\\guide.md") == ("docs", "guide.md"), (
         "a Windows host must split the pattern into its own components"
     )
+
+
+def test_prove_containment_rejects_a_dangling_final_symlink(
+    tmp_path: Path,
+) -> None:
+    """A dangling final link is resolved strictly instead of looking absent."""
+    root = tmp_path / "workspace"
+    root.mkdir()
+    dangling = root / "README.md"
+    dangling.symlink_to(root / "missing")
+
+    with pytest.raises(BumpTargetExaminationError) as excinfo:
+        prove_containment(
+            root,
+            dangling,
+            ProofContext(key="readme", display="README.md", may_create=True),
+        )
+
+    assert "cannot resolve target" in str(excinfo.value), (
+        "the diagnostic must name the unresolvable link"
+    )

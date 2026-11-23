@@ -216,20 +216,13 @@ def _make_preflight_dispatch_handler(
     def _handler(invocation: Invocation) -> tuple[str, str, int]:
         """Dispatch to the first matching prefix, else the fallback responder."""
         received = tuple(invocation.args)
-        for expected_arguments, response in entries:
-            if _matches_expected_prefix(expected_arguments, received):
-                if isinstance(response, _CommandResponse):
-                    active_response = response
-                else:
-                    active_response = response(invocation)
-                if recorder is not None:
-                    env_mapping = dict(invocation.env)
-                    recorder.record(label, received, env_mapping)
-                return (
-                    active_response.stdout,
-                    active_response.stderr,
-                    active_response.exit_code,
-                )
+        response = _matching_response(entries, received)
+        if response is not None:
+            return _respond(
+                response,
+                invocation,
+                _DispatchContext(recorder=recorder, label=label),
+            )
         if fallback is not None:
             return fallback(invocation)
         expected = ", ".join(str(arguments) for arguments, _response in entries)
@@ -240,6 +233,45 @@ def _make_preflight_dispatch_handler(
         raise AssertionError(message)
 
     return _handler
+
+
+def _matching_response(
+    entries: cabc.Sequence[tuple[tuple[str, ...], ResponseProvider]],
+    received: tuple[str, ...],
+) -> ResponseProvider | None:
+    """Return the response for the first matching prefix."""
+    for expected_arguments, response in entries:
+        if _matches_expected_prefix(expected_arguments, received):
+            return response
+    return None
+
+
+@dc.dataclass(frozen=True, slots=True)
+class _DispatchContext:
+    """Reporting context for one dispatch handler."""
+
+    recorder: _PreflightInvocationRecorder | None
+    label: str
+
+
+def _respond(
+    response: ResponseProvider,
+    invocation: Invocation,
+    context: _DispatchContext,
+) -> tuple[str, str, int]:
+    """Resolve one response, record the invocation, and return its tuple."""
+    active_response = (
+        response if isinstance(response, _CommandResponse) else response(invocation)
+    )
+    if context.recorder is not None:
+        context.recorder.record(
+            context.label, tuple(invocation.args), dict(invocation.env)
+        )
+    return (
+        active_response.stdout,
+        active_response.stderr,
+        active_response.exit_code,
+    )
 
 
 def _existing_static_stub_response(

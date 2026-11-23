@@ -75,15 +75,33 @@ def _payload(root: Path, names: cabc.Sequence[str]) -> dict[str, typ.Any]:
     }
 
 
+@dc.dataclass(frozen=True, slots=True)
+class WorkspaceShape:
+    """Optional overrides for the written workspace manifest.
+
+    Attributes
+    ----------
+    excludes : cabc.Sequence[str]
+        Exclusion patterns added to ``[workspace].exclude``.
+    workspace_table : str | None
+        A complete replacement for the generated workspace table.
+    """
+
+    excludes: cabc.Sequence[str] = ()
+    workspace_table: str | None = None
+
+
 def _prepare_workspace(
     root: Path,
     members: cabc.Sequence[str],
     names: cabc.Sequence[str],
     *,
-    excludes: cabc.Sequence[str] = (),
-    workspace_table: str | None = None,
+    options: WorkspaceShape | None = None,
 ) -> None:
     """Write a workspace manifest and one manifest per named relative path."""
+    shape = options or WorkspaceShape()
+    excludes = shape.excludes
+    workspace_table = shape.workspace_table
     members_literal = ", ".join(f'"{member}"' for member in members)
     excludes_literal = ", ".join(f'"{entry}"' for entry in excludes)
     workspace = workspace_table or (
@@ -173,7 +191,7 @@ def test_load_bump_workspace_applies_exclusions(tmp_path: Path) -> None:
         tmp_path,
         ["crates/*"],
         ["alpha", "beta"],
-        excludes=["crates/beta"],
+        options=WorkspaceShape(excludes=("crates/beta",)),
     )
     graph, runner = _load(tmp_path, _payload(tmp_path, ["alpha"]))
     assert runner.calls, "the metadata call must still run"
@@ -188,7 +206,7 @@ def test_load_bump_workspace_excludes_descendants_of_a_glob(tmp_path: Path) -> N
         tmp_path,
         ["crates/*/app"],
         ["retired/app", "live/app"],
-        excludes=["crates/retired"],
+        options=WorkspaceShape(excludes=("crates/retired",)),
     )
     graph, _runner = _load(tmp_path, _payload(tmp_path, ["live/app"]))
     assert len(graph.crates) == 1, (
@@ -238,7 +256,12 @@ def test_load_bump_workspace_allows_implicit_members(tmp_path: Path) -> None:
     """Allow a Cargo-reported member that no declared pattern names."""
     _prepare_workspace(tmp_path, ["crates/alpha"], ["alpha", "implicit"])
     # The implicit member is reached as a path dependency of alpha, so Cargo
-    # reports it without the manifest declaring it.
+    # reports it without the workspace manifest declaring it.
+    (tmp_path / "crates" / "alpha" / "Cargo.toml").write_text(
+        '[package]\nname = "alpha"\nversion = "0.1.0"\n\n'
+        '[dependencies]\nimplicit = { path = "../implicit" }\n',
+        encoding="utf-8",
+    )
     graph, _runner = _load(tmp_path, _payload(tmp_path, ["alpha", "implicit"]))
     assert {crate.name for crate in graph.crates} == {"alpha", "implicit"}, (
         "a validated implicit member must not be rejected as an extra"

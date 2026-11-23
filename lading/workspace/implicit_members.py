@@ -96,21 +96,38 @@ def validate_implicit_member_manifests(
         If a manifest is not a regular file or a dependency path traverses a
         symlinked component.
     """  # ruff: ignore[docstring-extraneous-exception]  # raised by helpers
-    seen: set[tuple[str, ...]] = {()}
-    frontier: list[tuple[str, ...]] = [()]
-    for parts in member_parts:
-        if parts not in seen:
-            seen.add(parts)
-            frontier.append(parts)
+    frontier = _initial_frontier(member_parts)
+    seen = set(frontier)
     while frontier:
         parts = frontier.pop()
-        document = _parse_manifest(root, parts)
-        for raw in _path_dependencies(document):
-            resolved = _resolve_dependency(root, parts, raw)
-            if resolved is None or resolved in seen:
-                continue
-            seen.add(resolved)
-            frontier.append(resolved)
+        frontier.extend(_dependency_parts(root, parts, seen))
+
+
+def _initial_frontier(
+    member_parts: cabc.Iterable[tuple[str, ...]],
+) -> list[tuple[str, ...]]:
+    """Return the root manifest and each distinct declared member."""
+    frontier: list[tuple[str, ...]] = [()]
+    for parts in member_parts:
+        if parts not in frontier:
+            frontier.append(parts)
+    return frontier
+
+
+def _dependency_parts(
+    root: Path,
+    parts: tuple[str, ...],
+    seen: set[tuple[str, ...]],
+) -> list[tuple[str, ...]]:
+    """Return newly discovered in-workspace dependency directories."""
+    discovered: list[tuple[str, ...]] = []
+    for raw in _path_dependencies(_parse_manifest(root, parts)):
+        resolved = _resolve_dependency(root, parts, raw)
+        if resolved is None or resolved in seen:
+            continue
+        seen.add(resolved)
+        discovered.append(resolved)
+    return discovered
 
 
 def _parse_manifest(
@@ -151,14 +168,25 @@ def _table_paths(
     """Yield ``path`` values from the named dependency tables."""
     for name in names:
         table = mapping.get(name)
-        if not isinstance(table, cabc.Mapping):
-            continue
-        for specification in table.values():
-            if not isinstance(specification, cabc.Mapping):
-                continue
-            path = specification.get("path")
-            if isinstance(path, str):
-                yield path
+        if isinstance(table, cabc.Mapping):
+            yield from _specification_paths(table)
+
+
+def _specification_paths(
+    table: cabc.Mapping[str, typ.Any],
+) -> cabc.Iterator[str]:
+    """Yield the path of every table-valued dependency specification."""
+    return (
+        path for path in map(_specification_path, table.values()) if path is not None
+    )
+
+
+def _specification_path(specification: object) -> str | None:
+    """Return a dependency specification's path, if it declares one."""
+    if not isinstance(specification, cabc.Mapping):
+        return None
+    path = specification.get("path")
+    return path if isinstance(path, str) else None
 
 
 def _resolve_dependency(

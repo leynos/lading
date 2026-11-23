@@ -11,7 +11,10 @@ import pytest
 
 from lading.commands.bump_lockfile_planning import LockfilePlan, plan_lockfiles
 from lading.commands.bump_lockfile_regeneration import regenerate_planned
-from lading.utils.confinement import BumpPreflightError
+from lading.utils.confinement import (
+    BumpPreflightError,
+    UnsafeBumpTargetError,
+)
 from tests.helpers.cwd import chdir_for_test
 from tests.unit.lockfile_planning_helpers import (
     RecordingRunner,
@@ -46,11 +49,20 @@ def test_regenerate_planned_runs_each_effective_root(tmp_path: Path) -> None:
     )
 
 
-def test_plan_rejects_a_cargo_config_lockfile_override(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "name",
+    [
+        pytest.param("config.toml", id="toml"),
+        pytest.param("config", id="extensionless"),
+    ],
+)
+def test_plan_rejects_a_cargo_config_lockfile_override(
+    tmp_path: Path, name: str
+) -> None:
     """A resolver.lockfile-path in Cargo configuration is rejected before Git."""
     root = tmp_path.resolve()
     write_workspace(root)
-    config = root / ".cargo" / "config.toml"
+    config = root / ".cargo" / name
     config.parent.mkdir()
     config.write_text(
         '[resolver]\nlockfile-path = "/tmp/outside-409/Cargo.lock"\n',
@@ -232,26 +244,6 @@ def test_plan_prefers_the_extensionless_cargo_config(tmp_path: Path) -> None:
     )
 
 
-def test_plan_reads_the_extensionless_cargo_config_when_alone(tmp_path: Path) -> None:
-    """A lone extensionless configuration file is inspected."""
-    root = tmp_path.resolve()
-    write_workspace(root)
-    config = root / ".cargo" / "config"
-    config.parent.mkdir()
-    config.write_text(
-        '[resolver]\nlockfile-path = "/tmp/outside-409/Cargo.lock"\n',
-        encoding="utf-8",
-    )
-    runner = RecordingRunner(metadata_root=root)
-
-    with pytest.raises(BumpPreflightError) as excinfo:
-        plan_lockfiles(root, (), runner=runner, environ={})
-
-    assert str(config) in str(excinfo.value), (
-        "the diagnostic must name the extensionless configuration file"
-    )
-
-
 def test_planning_runs_cargo_from_the_workspace_root(tmp_path: Path) -> None:
     """Planning queries Cargo from the root regeneration also uses."""
     root = tmp_path.resolve()
@@ -272,4 +264,24 @@ def test_planning_runs_cargo_from_the_workspace_root(tmp_path: Path) -> None:
     }
     assert metadata_cwds == {root}, (
         "every planning query must run from the workspace root"
+    )
+
+
+def test_plan_rejects_a_symlinked_effective_root_manifest(tmp_path: Path) -> None:
+    """A reported workspace root must contain a confined ``Cargo.toml``."""
+    root = tmp_path.resolve()
+    write_workspace(root, members=("crates/app",))
+    member = write_package(root, "crates/app/Cargo.toml", standalone=False)
+    nested = root / "nested"
+    nested.mkdir()
+    outside = tmp_path.resolve() / "outside.toml"
+    outside.write_text("[workspace]\nmembers = []\n", encoding="utf-8")
+    (nested / "Cargo.toml").symlink_to(outside)
+    runner = RecordingRunner(metadata_root=root, roots_by_manifest={member: nested})
+
+    with pytest.raises(UnsafeBumpTargetError) as excinfo:
+        plan_lockfiles(root, ("crates/app/Cargo.toml",), runner=runner, environ={})
+
+    assert "symlink" in str(excinfo.value), (
+        "the diagnostic must identify the symlinked root manifest"
     )

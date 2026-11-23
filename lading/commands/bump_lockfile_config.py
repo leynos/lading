@@ -122,6 +122,20 @@ def _effective_setting(
         message = f"Cargo configuration include cycle at {config_path}"
         raise BumpPreflightError(message)
     document = _load(config_path)
+    setting = _included_setting(document, config_path, ancestors | {canonical})
+    own = _declared_path(document)
+    if own is not None:
+        # The file's own values are merged on top of everything it includes.
+        setting = _PathSetting(value=own, source=config_path)
+    return setting
+
+
+def _included_setting(
+    document: cabc.Mapping[str, typ.Any],
+    config_path: Path,
+    ancestors: frozenset[Path],
+) -> _PathSetting | None:
+    """Return the last setting declared by the file's includes."""
     setting: _PathSetting | None = None
     for include_path, optional in _include_entries(document, config_path):
         if not include_path.is_file():
@@ -129,14 +143,10 @@ def _effective_setting(
                 continue
             # Reading a missing file raises the standard diagnostic.
             _load(include_path)
-        nested = _effective_setting(include_path, ancestors | {canonical})
+        nested = _effective_setting(include_path, ancestors)
         if nested is not None:
             # Included files load left to right, so later values win.
             setting = nested
-    own = _declared_path(document)
-    if own is not None:
-        # The file's own values are merged on top of everything it includes.
-        setting = _PathSetting(value=own, source=config_path)
     return setting
 
 
@@ -159,39 +169,56 @@ def _include_entry(entry: object, config_path: Path) -> tuple[Path, bool]:
     """Return one include entry's path and optional flag."""
     match entry:
         case str():
-            path_text, optional = entry, False
+            return _include_path(entry, config_path), False
         case cabc.Mapping():
-            path_value = entry.get("path")
-            if not isinstance(path_value, str):
-                message = f"{config_path}: include table must name a string path"
-                raise BumpPreflightError(message)
-            optional_value = entry.get("optional", False)
-            if not isinstance(optional_value, bool):
-                message = f"{config_path}: include optional must be a boolean"
-                raise BumpPreflightError(message)
-            path_text, optional = path_value, optional_value
+            return _include_table(
+                typ.cast("cabc.Mapping[str, typ.Any]", entry), config_path
+            )
         case _:
             message = f"{config_path}: include entries must be paths or tables"
             raise BumpPreflightError(message)
+
+
+def _include_table(
+    entry: cabc.Mapping[str, typ.Any],
+    config_path: Path,
+) -> tuple[Path, bool]:
+    """Return a table-form include entry's path and optional flag."""
+    path_value = entry.get("path")
+    if not isinstance(path_value, str):
+        message = f"{config_path}: include table must name a string path"
+        raise BumpPreflightError(message)
+    optional_value = entry.get("optional", False)
+    if not isinstance(optional_value, bool):
+        message = f"{config_path}: include optional must be a boolean"
+        raise BumpPreflightError(message)
+    return _include_path(path_value, config_path), optional_value
+
+
+def _include_path(path_text: str, config_path: Path) -> Path:
+    """Return the resolved path for one include target."""
     if not path_text.endswith(_TOML_SUFFIX):
         message = (
             f"{config_path}: included path must end with {_TOML_SUFFIX}: {path_text}"
         )
         raise BumpPreflightError(message)
     candidate = Path(path_text)
-    if not candidate.is_absolute():
-        # Cargo resolves an include path against the file that includes it.
-        candidate = config_path.parent / candidate
-    return candidate, optional
+    if candidate.is_absolute():
+        return candidate
+    # Cargo resolves an include path against the file that includes it.
+    return config_path.parent / candidate
 
 
 def _declared_path(document: cabc.Mapping[str, typ.Any]) -> str | None:
     """Return this file's top-level ``resolver.lockfile-path``, if declared."""
-    resolver = document.get(_RESOLVER_TABLE)
-    if not isinstance(resolver, cabc.Mapping):
-        return None
-    configured = resolver.get(_LOCKFILE_PATH_KEY)
-    return configured if isinstance(configured, str) else None
+    match document.get(_RESOLVER_TABLE):
+        case cabc.Mapping() as resolver:
+            match resolver.get(_LOCKFILE_PATH_KEY):
+                case str() as configured:
+                    return configured
+        case _:
+            pass
+    return None
 
 
 def _load(config_path: Path) -> cabc.Mapping[str, typ.Any]:

@@ -7,6 +7,7 @@ out-of-workspace path dependencies still load.
 """
 
 import collections.abc as cabc
+import json
 import os
 import typing as typ
 from pathlib import Path
@@ -32,10 +33,10 @@ def _write_workspace(root: Path, *, dependency: str = "../dep") -> None:
     (root / "Cargo.toml").write_text(
         '[workspace]\nmembers = ["app"]\n', encoding="utf-8"
     )
-    (root / "app").mkdir()
+    (root / "app").mkdir(exist_ok=True)
     (root / "app" / "Cargo.toml").write_text(
         '[package]\nname = "app"\nversion = "0.1.0"\n\n'
-        f'[dependencies]\ndep = {{ path = "{dependency}" }}\n',
+        f"[dependencies]\ndep = {{ path = {json.dumps(dependency)} }}\n",
         encoding="utf-8",
     )
 
@@ -86,18 +87,94 @@ def _make_fifo(path: Path) -> None:
         pytest.skip(f"cannot create a FIFO here: {exc}")
 
 
-def test_a_special_implicit_manifest_is_rejected_before_cargo(tmp_path: Path) -> None:
-    """A FIFO at an implicit member's manifest is rejected before Cargo."""
-    root = tmp_path.resolve()
+def _symlinked_member(tmp_path: Path) -> None:
+    """Replace ``dep`` with a symlink to an external package."""
+    root = tmp_path.resolve() / "workspace"
+    outside = tmp_path.resolve() / "outside"
+    _write_package(outside, "dep")
+    (root / "dep").symlink_to(outside, target_is_directory=True)
+
+
+def _absolute_dependency(root: Path) -> None:
+    """Point the dependency at an absolute in-workspace path."""
+    _write_workspace(root, dependency=str(root / "dep"))
+
+
+def _target_table_dependency(root: Path) -> None:
+    """Declare the dependency under a target table."""
+    (root / "Cargo.toml").write_text(
+        '[workspace]\nmembers = ["app"]\n', encoding="utf-8"
+    )
+    (root / "app").mkdir(exist_ok=True)
+    (root / "app" / "Cargo.toml").write_text(
+        '[package]\nname = "app"\nversion = "0.1.0"\n\n'
+        "[target.'cfg(unix)'.dependencies]\n"
+        'dep = { path = "../dep" }\n',
+        encoding="utf-8",
+    )
+
+
+def _workspace_dependency(root: Path) -> None:
+    """Declare the dependency in ``[workspace.dependencies]``."""
+    (root / "Cargo.toml").write_text(
+        '[workspace]\nmembers = ["app"]\n\n'
+        "[workspace.dependencies]\n"
+        'dep = { path = "dep" }\n',
+        encoding="utf-8",
+    )
+    (root / "app").mkdir(exist_ok=True)
+    _write_package(root / "app", "app")
+
+
+@pytest.mark.parametrize(
+    ("prepare", "detail"),
+    [
+        pytest.param(
+            lambda _root, _tmp: None,
+            "regular file",
+            id="declared-dependency-fifo",
+        ),
+        pytest.param(
+            lambda _root, tmp: _symlinked_member(tmp),
+            "symlink",
+            id="symlinked-dependency",
+        ),
+        pytest.param(
+            lambda root, _tmp: _absolute_dependency(root),
+            "regular file",
+            id="absolute-in-workspace",
+        ),
+        pytest.param(
+            lambda root, _tmp: _target_table_dependency(root),
+            "regular file",
+            id="target-table",
+        ),
+        pytest.param(
+            lambda root, _tmp: _workspace_dependency(root),
+            "regular file",
+            id="workspace-dependencies",
+        ),
+    ],
+)
+def test_an_unsafe_implicit_manifest_is_rejected_before_cargo(
+    tmp_path: Path,
+    prepare: cabc.Callable[[Path, Path], None],
+    detail: str,
+) -> None:
+    """An unsafe implicit member is rejected before Cargo reads it."""
+    root = tmp_path.resolve() / "workspace"
+    root.mkdir(parents=True, exist_ok=True)
     _write_workspace(root)
-    _make_fifo(root / "dep" / "Cargo.toml")
+    prepare(root, tmp_path)
+    if detail == "regular file":
+        _make_fifo(root / "dep" / "Cargo.toml")
     runner = _runner(_payload(root, ("app", "dep")), root)
 
     with pytest.raises(UnsafeBumpTargetError) as excinfo:
         load_bump_workspace(root, runner=typ.cast("CommandRunner", runner))
 
-    assert "regular file" in str(excinfo.value), (
-        "the diagnostic must identify the special implicit manifest"
+    assert detail in str(excinfo.value), (
+        "the diagnostic must identify the unsafe implicit manifest"
     )
     assert not runner.metadata_calls(), (
         "the implicit manifest must be rejected before Cargo runs"
@@ -119,26 +196,6 @@ def test_a_regular_implicit_member_is_accepted(tmp_path: Path) -> None:
     assert runner.metadata_calls(), "a valid implicit member must reach Cargo"
 
 
-def test_a_symlinked_implicit_member_is_rejected(tmp_path: Path) -> None:
-    """A path dependency reached through a symlink is rejected."""
-    root = tmp_path.resolve() / "workspace"
-    outside = tmp_path.resolve() / "outside"
-    _write_workspace(root)
-    _write_package(outside, "dep")
-    (root / "dep").symlink_to(outside, target_is_directory=True)
-    runner = _runner(_payload(root, ("app", "dep")), root)
-
-    with pytest.raises(UnsafeBumpTargetError) as excinfo:
-        load_bump_workspace(root, runner=typ.cast("CommandRunner", runner))
-
-    assert "symlink" in str(excinfo.value), (
-        "the diagnostic must identify the symlinked dependency"
-    )
-    assert not runner.metadata_calls(), (
-        "a symlinked dependency must be rejected before Cargo runs"
-    )
-
-
 def test_a_path_dependency_outside_the_workspace_is_left_to_cargo(
     tmp_path: Path,
 ) -> None:
@@ -154,52 +211,6 @@ def test_a_path_dependency_outside_the_workspace_is_left_to_cargo(
         "an out-of-workspace dependency must not appear as a member"
     )
     assert runner.metadata_calls(), "discovery must still reach Cargo"
-
-
-def test_a_target_table_dependency_is_validated(tmp_path: Path) -> None:
-    """A path dependency under a target table is inspected."""
-    root = tmp_path.resolve()
-    (root / "Cargo.toml").write_text(
-        '[workspace]\nmembers = ["app"]\n', encoding="utf-8"
-    )
-    (root / "app").mkdir()
-    (root / "app" / "Cargo.toml").write_text(
-        '[package]\nname = "app"\nversion = "0.1.0"\n\n'
-        "[target.'cfg(unix)'.dependencies]\n"
-        'dep = { path = "../dep" }\n',
-        encoding="utf-8",
-    )
-    _make_fifo(root / "dep" / "Cargo.toml")
-    runner = _runner(_payload(root, ("app", "dep")), root)
-
-    with pytest.raises(UnsafeBumpTargetError) as excinfo:
-        load_bump_workspace(root, runner=typ.cast("CommandRunner", runner))
-
-    assert "regular file" in str(excinfo.value), (
-        "a target-table dependency must be inspected"
-    )
-
-
-def test_a_workspace_dependency_path_is_validated(tmp_path: Path) -> None:
-    """A ``[workspace.dependencies]`` path is inspected from the root."""
-    root = tmp_path.resolve()
-    (root / "Cargo.toml").write_text(
-        '[workspace]\nmembers = ["app"]\n\n'
-        "[workspace.dependencies]\n"
-        'dep = { path = "dep" }\n',
-        encoding="utf-8",
-    )
-    (root / "app").mkdir()
-    _write_package(root / "app", "app")
-    _make_fifo(root / "dep" / "Cargo.toml")
-    runner = _runner(_payload(root, ("app", "dep")), root)
-
-    with pytest.raises(UnsafeBumpTargetError) as excinfo:
-        load_bump_workspace(root, runner=typ.cast("CommandRunner", runner))
-
-    assert "regular file" in str(excinfo.value), (
-        "a workspace dependency path must be inspected"
-    )
 
 
 def test_a_nested_implicit_member_is_validated(tmp_path: Path) -> None:
@@ -220,23 +231,6 @@ def test_a_nested_implicit_member_is_validated(tmp_path: Path) -> None:
 
     assert "regular file" in str(excinfo.value), (
         "a nested implicit member must be inspected"
-    )
-
-
-def test_an_absolute_dependency_inside_the_workspace_is_validated(
-    tmp_path: Path,
-) -> None:
-    """An absolute path dependency inside the workspace is inspected."""
-    root = tmp_path.resolve()
-    _write_workspace(root, dependency=str(root / "dep"))
-    _make_fifo(root / "dep" / "Cargo.toml")
-    runner = _runner(_payload(root, ("app", "dep")), root)
-
-    with pytest.raises(UnsafeBumpTargetError) as excinfo:
-        load_bump_workspace(root, runner=typ.cast("CommandRunner", runner))
-
-    assert "regular file" in str(excinfo.value), (
-        "an absolute in-workspace dependency must be inspected"
     )
 
 
@@ -284,34 +278,61 @@ def test_a_missing_dependency_directory_is_skipped(tmp_path: Path) -> None:
     )
 
 
-def test_a_missing_dependency_manifest_is_rejected(tmp_path: Path) -> None:
-    """A dependency directory without a manifest fails the preflight."""
-    root = tmp_path.resolve()
-    _write_workspace(root)
-    (root / "dep").mkdir()
-    runner = _runner(_payload(root, ("app",)), root)
-
-    with pytest.raises(MissingBumpTargetError) as excinfo:
-        load_bump_workspace(root, runner=typ.cast("CommandRunner", runner))
-
-    assert "dep/Cargo.toml" in str(excinfo.value), (
-        "the diagnostic must name the missing dependency manifest"
-    )
+def _missing_manifest(root: Path) -> None:
+    """Leave the dependency directory without a manifest."""
 
 
-def test_an_invalid_dependency_manifest_is_rejected(tmp_path: Path) -> None:
-    """A dependency manifest that is not valid TOML fails before Cargo."""
-    root = tmp_path.resolve()
-    _write_workspace(root)
-    (root / "dep").mkdir()
+def _invalid_manifest(root: Path) -> None:
+    """Write a dependency manifest that is not valid TOML."""
     (root / "dep" / "Cargo.toml").write_text("not toml [\n", encoding="utf-8")
+
+
+def _undecodable_manifest(root: Path) -> None:
+    """Write a dependency manifest that is not valid UTF-8."""
+    (root / "dep" / "Cargo.toml").write_bytes(b"\xff\xfe")
+
+
+@pytest.mark.parametrize(
+    ("prepare", "error", "expected"),
+    [
+        pytest.param(
+            _missing_manifest,
+            MissingBumpTargetError,
+            "dep/Cargo.toml",
+            id="missing",
+        ),
+        pytest.param(
+            _invalid_manifest,
+            BumpPreflightError,
+            "not valid TOML",
+            id="invalid-toml",
+        ),
+        pytest.param(
+            _undecodable_manifest,
+            BumpTargetExaminationError,
+            "cannot read",
+            id="undecodable",
+        ),
+    ],
+)
+def test_a_broken_dependency_manifest_is_rejected(
+    tmp_path: Path,
+    prepare: cabc.Callable[[Path], None],
+    error: type[Exception],
+    expected: str,
+) -> None:
+    """A dependency manifest that cannot be used fails before Cargo."""
+    root = tmp_path.resolve()
+    _write_workspace(root)
+    (root / "dep").mkdir()
+    prepare(root)
     runner = _runner(_payload(root, ("app",)), root)
 
-    with pytest.raises(BumpPreflightError) as excinfo:
+    with pytest.raises(error) as excinfo:
         load_bump_workspace(root, runner=typ.cast("CommandRunner", runner))
 
-    assert "not valid TOML" in str(excinfo.value), (
-        "the diagnostic must name the malformed dependency manifest"
+    assert expected in str(excinfo.value), (
+        "the diagnostic must explain the broken dependency manifest"
     )
 
 
@@ -349,7 +370,7 @@ def test_non_table_dependency_shapes_are_ignored(tmp_path: Path) -> None:
     (root / "Cargo.toml").write_text(
         '[workspace]\nmembers = ["app"]\n', encoding="utf-8"
     )
-    (root / "app").mkdir()
+    (root / "app").mkdir(exist_ok=True)
     (root / "app" / "Cargo.toml").write_text(
         '[package]\nname = "app"\nversion = "0.1.0"\n\n'
         "dependencies = 1\ntarget = 1\nworkspace = 1\n\n"

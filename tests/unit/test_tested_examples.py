@@ -139,3 +139,34 @@ def test_loader_rejects_a_four_space_indented_closing_fence(
 
     with pytest.raises(ValueError, match="unterminated"):
         load_tested_examples(path)
+
+
+def test_loader_reads_a_marked_example_in_a_block_quote(tmp_path: Path) -> None:
+    """A marker and its fence may both sit inside a block quote."""
+    path = _write(
+        tmp_path,
+        "> <!-- tested-example: quoted -->\n> ```python\n> print(1)\n> ```\n",
+    )
+
+    example = load_tested_examples(path)["quoted"]
+
+    assert example.language == "python", "the fence info string must be captured"
+    assert example.body == "print(1)", (
+        "the block-quote markers must be removed from the body"
+    )
+
+
+def test_loader_accepts_a_closing_fence_at_the_list_indentation(
+    tmp_path: Path,
+) -> None:
+    """A fence opened inside a list item closes at the same indentation."""
+    path = _write(
+        tmp_path,
+        "<!-- tested-example: list -->\n    ```python\n    print(1)\n    ```\n",
+    )
+
+    example = load_tested_examples(path)["list"]
+
+    assert example.body == "print(1)", (
+        "the list container indentation must not become body text"
+    )

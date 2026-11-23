@@ -114,35 +114,6 @@ def test_run_rebuilds_lockfiles_when_enabled(
     assert message == snapshot, "the bump summary must list the regenerated lockfiles"
 
 
-def test_run_skips_lockfiles_when_disabled(
-    tmp_path: pathlib.Path,
-    snapshot: SnapshotAssertion,
-) -> None:
-    """Lockfile work is suppressed when explicitly disabled."""
-    workspace = _make_workspace(tmp_path)
-    repository = _RecordingRepository(
-        lockfiles=(), manifest_path=tmp_path / "Cargo.toml"
-    )
-
-    message = bump.run(
-        tmp_path,
-        "1.2.3",
-        options=bump.BumpOptions(
-            rebuild_lockfiles=False,
-            configuration=_make_config(),
-            workspace=workspace,
-            lockfile_repository=repository,
-        ),
-    )
-
-    assert not repository.calls, (
-        "a disabled rebuild must not plan or regenerate lockfiles"
-    )
-    assert message == snapshot, (
-        "a disabled rebuild must report the bump summary without lockfile entries"
-    )
-
-
 def test_run_inherits_lockfile_rebuild_configuration(
     tmp_path: pathlib.Path,
     snapshot: SnapshotAssertion,

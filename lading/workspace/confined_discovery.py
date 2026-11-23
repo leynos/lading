@@ -295,11 +295,21 @@ def _validate_reported_member_manifests(
         If the metadata payload is malformed.
     WorkspaceModelError
         If a member identifier is missing from the package list.
-    """
-    packages = _metadata_sequence(metadata.get("packages"), "packages")
+    """  # ruff: ignore[docstring-extraneous-exception]  # raised by helpers
+    packages_by_id = _packages_by_id(metadata)
     member_ids = _metadata_sequence(
         metadata.get("workspace_members"), "workspace_members"
     )
+    return {
+        _reported_member(root, packages_by_id, member_id) for member_id in member_ids
+    }
+
+
+def _packages_by_id(
+    metadata: cabc.Mapping[str, typ.Any],
+) -> dict[str, cabc.Mapping[str, typ.Any]]:
+    """Return the metadata package entries keyed by identifier."""
+    packages = _metadata_sequence(metadata.get("packages"), "packages")
     packages_by_id: dict[str, cabc.Mapping[str, typ.Any]] = {}
     for package in packages:
         package_mapping = _metadata_mapping(package, "packages[]")
@@ -308,17 +318,23 @@ def _validate_reported_member_manifests(
             message = "cargo metadata package id must be a string"
             raise BumpPreflightError(message)
         packages_by_id[package_id] = package_mapping
-    reported: set[tuple[str, ...]] = set()
-    for member_id in member_ids:
-        if not isinstance(member_id, str):
-            message = "cargo metadata workspace_members entries must be strings"
-            raise BumpPreflightError(message)
-        package = packages_by_id.get(member_id)
-        if package is None:
-            message = f"workspace member {member_id!r} missing from package list"
-            raise WorkspaceModelError(message)
-        reported.add(_validate_member_manifest(root, package, member_id))
-    return reported
+    return packages_by_id
+
+
+def _reported_member(
+    root: Path,
+    packages_by_id: cabc.Mapping[str, cabc.Mapping[str, typ.Any]],
+    member_id: object,
+) -> tuple[str, ...]:
+    """Return one reported member's validated manifest directory."""
+    if not isinstance(member_id, str):
+        message = "cargo metadata workspace_members entries must be strings"
+        raise BumpPreflightError(message)
+    package = packages_by_id.get(member_id)
+    if package is None:
+        message = f"workspace member {member_id!r} missing from package list"
+        raise WorkspaceModelError(message)
+    return _validate_member_manifest(root, package, member_id)
 
 
 def _metadata_sequence(value: object, field: str) -> cabc.Sequence[object]:

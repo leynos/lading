@@ -516,6 +516,15 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
   most three spaces; the expansion-failure test no longer depends on the host
   account; and the user and migration guides qualify lockfile validation and
   classify the implicit-member rejection.
+- [x] 2026-11-23: Ninth CodeRabbit review cleared and the CodeScene delta
+  reduced. The effective root manifest is confined before planning; a dangling
+  final symlink reaches the strict containment proof; example fences are read
+  with their container depth so block quotes and list items work; the
+  dependency path is serialized as a TOML string; the implicit-member fixture
+  declares a real path dependency. The glob policy was split into `glob_types`,
+  `glob_expansion` and `glob`, complexity was extracted from the config,
+  planning, discovery, root and example helpers, duplicated test families were
+  parametrized, and one import-preamble duplication exception was recorded.
 - [ ] EP-M5 release: tag and release `v0.4.0b1` after review convergence, then
   record the tag commit on issue #409.
 
@@ -608,6 +617,13 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
 - A configured lockfile repository is selected by an `is not None` check, not
   by truthiness, so an injected false-valued adapter is never replaced by the
   Cargo adapter.
+- The glob policy is three modules: `glob_types` for the options, `glob` for
+  validation, unmatched policy and containment, and `glob_expansion` for the
+  scan engine. Splitting keeps each module under the CodeScene complexity
+  threshold without widening any public import.
+- `relative_to_root` keeps `..` components, so `prove_containment` also tests
+  presence with `lexists`: a dangling final link must reach strict resolution
+  rather than look absent.
 
 ## Outcomes & retrospective
 

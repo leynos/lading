@@ -46,24 +46,34 @@ def establish_workspace_root(value: Path | str | None) -> Path:
         If the candidate cannot be resolved.
     UnsafeBumpTargetError
         If the candidate is not a directory.
-    """
+    """  # ruff: ignore[docstring-extraneous-exception]  # raised by helpers
+    candidate = _candidate_root(value)
+    resolved = _resolve_root(candidate)
+    if not resolved.is_dir():
+        message = f"Workspace root is not a directory: {candidate}"
+        raise UnsafeBumpTargetError(message)
+    return resolved
+
+
+def _candidate_root(value: Path | str | None) -> Path:
+    """Return the unexpanded candidate root, reporting expansion failures."""
     try:
-        candidate = Path.cwd() if value is None else Path(value).expanduser()
+        return Path.cwd() if value is None else Path(value).expanduser()
     except RuntimeError as exc:
         message = f"Cannot expand workspace root {value!r}: {exc}"
         raise BumpTargetExaminationError(message) from exc
+
+
+def _resolve_root(candidate: Path) -> Path:
+    """Return the strictly resolved root, reporting resolution failures."""
     try:
-        resolved = candidate.resolve(strict=True)
+        return candidate.resolve(strict=True)
     except FileNotFoundError as exc:
         message = f"Workspace root does not exist: {candidate}"
         raise MissingBumpTargetError(message) from exc
     except OSError as exc:
         message = f"Cannot examine workspace root {candidate}: {exc}"
         raise BumpTargetExaminationError(message) from exc
-    if not resolved.is_dir():
-        message = f"Workspace root is not a directory: {candidate}"
-        raise UnsafeBumpTargetError(message)
-    return resolved
 
 
 def relative_to_root(root: Path, candidate: Path, *, key: str, label: str) -> Path:
@@ -166,7 +176,9 @@ def prove_containment(
             # real, resolvable directory.
             canonical_parent = Path(os.path.realpath(candidate.parent, strict=True))
             canonical_candidate = canonical_parent / candidate.name
-            if candidate.exists():
+            # ``exists`` follows links, so a dangling final symlink would look
+            # absent here. ``lexists`` sends it to the strict resolution below.
+            if os.path.lexists(candidate):
                 canonical_candidate = Path(os.path.realpath(candidate, strict=True))
         else:
             canonical_candidate = Path(os.path.realpath(candidate, strict=True))

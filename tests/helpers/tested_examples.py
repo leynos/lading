@@ -22,6 +22,7 @@ _MAX_FENCE_INDENT: typ.Final[int] = 3
 _CONTAINER_MARKERS: typ.Final[re.Pattern[str]] = re.compile(
     r"^(?:(?:>\s?)|(?:[-+*]|\d{1,9}[.)])\s+)+"
 )
+_QUOTE_TOKEN: typ.Final[re.Pattern[str]] = re.compile(r"^ {0,3}> ?")
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -69,50 +70,102 @@ def load_tested_examples(path: Path) -> dict[str, MarkedExample]:
     examples: dict[str, MarkedExample] = {}
     index = 0
     while index < len(lines):
-        stripped = lines[index].strip()
-        if _fence_delimiter(_without_container(stripped)) is not None:
-            message = f"{path}:{index + 1}: unmarked fenced example"
-            raise ValueError(message)
-        if stripped.startswith("<!-- tested-example:"):
-            match = _MARKER.match(stripped)
-            if match is None:
-                message = f"{path}:{index + 1}: malformed tested-example marker"
-                raise ValueError(message)
-        else:
+        raw = lines[index]
+        _reject_unmarked_fence(raw, path, index)
+        marker = _marker_at(raw, path, index)
+        if marker is None:
             index += 1
             continue
-        identifier = match.group(1)
-        if identifier in examples:
-            message = f"{path}:{index + 1}: duplicate tested-example {identifier!r}"
+        if marker.identifier in examples:
+            message = (
+                f"{path}:{index + 1}: duplicate tested-example {marker.identifier!r}"
+            )
             raise ValueError(message)
-        fence_start = _next_fence_line(lines, index + 1, path, identifier)
-        fence = lines[fence_start].strip()
-        delimiter = _fence_delimiter(fence)
-        if delimiter is None:  # pragma: no cover - _next_fence_line found it
-            message = f"{path}:{fence_start + 1}: malformed fenced example"
-            raise ValueError(message)
-        character, length = delimiter
-        marked_fence = _MarkedFence(
-            path=path,
-            identifier=identifier,
-            character=character,
-            length=length,
-            indent=_indentation(lines[fence_start]),
-        )
-        body, fence_end = _read_fence_body(lines, fence_start + 1, marked_fence)
-        examples[identifier] = MarkedExample(
-            identifier=identifier,
-            language=fence[length:].strip(),
-            body="\n".join(body),
-            line=index + 1,
-        )
-        index = fence_end + 1
+        example, next_index = _read_marked_example(lines, index, marker)
+        examples[marker.identifier] = example
+        index = next_index
     return examples
+
+
+def _reject_unmarked_fence(raw: str, path: Path, index: int) -> None:
+    """Raise when ``raw`` opens a fence that no marker introduces."""
+    if _fence_delimiter(_without_container(raw.strip())) is not None:
+        message = f"{path}:{index + 1}: unmarked fenced example"
+        raise ValueError(message)
+
+
+def _marker_at(raw: str, path: Path, index: int) -> _MarkerContext | None:
+    """Return the marker on ``raw``, or ``None`` when it carries none."""
+    depth = _quote_depth(raw)
+    marker_text = (_strip_quotes(raw, depth) or "").strip()
+    if not marker_text.startswith("<!-- tested-example:"):
+        return None
+    match = _MARKER.match(marker_text)
+    if match is None:
+        message = f"{path}:{index + 1}: malformed tested-example marker"
+        raise ValueError(message)
+    return _MarkerContext(path=path, identifier=match.group(1), depth=depth)
+
+
+def _read_marked_example(
+    lines: cabc.Sequence[str],
+    index: int,
+    marker: _MarkerContext,
+) -> tuple[MarkedExample, int]:
+    """Read the fence that follows a marker and return it with the next index."""
+    fence_start = _next_fence_line(lines, index + 1, marker)
+    opener = _strip_quotes(lines[fence_start], marker.depth)
+    if opener is None:  # pragma: no cover - _next_fence_line found it
+        message = f"{marker.path}:{fence_start + 1}: malformed fenced example"
+        raise ValueError(message)
+    fence = opener.strip()
+    delimiter = _fence_delimiter(fence)
+    if delimiter is None:  # pragma: no cover - _next_fence_line found it
+        message = f"{marker.path}:{fence_start + 1}: malformed fenced example"
+        raise ValueError(message)
+    character, length = delimiter
+    marked_fence = _MarkedFence(
+        path=marker.path,
+        identifier=marker.identifier,
+        character=character,
+        length=length,
+        indent=_indentation(opener),
+        depth=marker.depth,
+    )
+    body, fence_end = _read_fence_body(lines, fence_start + 1, marked_fence)
+    example = MarkedExample(
+        identifier=marker.identifier,
+        language=fence[length:].strip(),
+        body="\n".join(body),
+        line=index + 1,
+    )
+    return example, fence_end + 1
 
 
 def _without_container(line: str) -> str:
     """Return ``line`` without leading block-quote or list-item markers."""
     return _CONTAINER_MARKERS.sub("", line).strip()
+
+
+def _quote_depth(line: str) -> int:
+    """Return the number of block-quote markers that prefix ``line``."""
+    depth = 0
+    remainder = line
+    while (match := _QUOTE_TOKEN.match(remainder)) is not None:
+        remainder = remainder[match.end() :]
+        depth += 1
+    return depth
+
+
+def _strip_quotes(line: str, depth: int) -> str | None:
+    """Remove ``depth`` block-quote markers, or ``None`` when the quote ends."""
+    remainder = line
+    for _ in range(depth):
+        match = _QUOTE_TOKEN.match(remainder)
+        if match is None:
+            return None
+        remainder = remainder[match.end() :]
+    return remainder
 
 
 def _fence_delimiter(line: str) -> tuple[str, int] | None:
@@ -124,21 +177,34 @@ def _fence_delimiter(line: str) -> tuple[str, int] | None:
     return None
 
 
+@dc.dataclass(frozen=True, slots=True)
+class _MarkerContext:
+    """The marker that opened an example and its container depth."""
+
+    path: Path
+    identifier: str
+    depth: int
+
+
 def _next_fence_line(
     lines: cabc.Sequence[str],
     start: int,
-    path: Path,
-    identifier: str,
+    marker: _MarkerContext,
 ) -> int:
     """Return the line index of the fence following a marker."""
     for index in range(start, len(lines)):
-        stripped = lines[index].strip()
+        content = _strip_quotes(lines[index], marker.depth)
+        if content is None:
+            break
+        stripped = content.strip()
         if not stripped:
             continue
         if _fence_delimiter(stripped) is not None:
             return index
         break
-    message = f"{path}:{start}: tested-example {identifier!r} has no fence"
+    message = (
+        f"{marker.path}:{start}: tested-example {marker.identifier!r} has no fence"
+    )
     raise ValueError(message)
 
 
@@ -151,6 +217,7 @@ class _MarkedFence:
     character: str
     length: int
     indent: int
+    depth: int
 
 
 def _read_fence_body(
@@ -161,21 +228,41 @@ def _read_fence_body(
     """Return the fence body and the index of its matching closing fence."""
     body: list[str] = []
     for index in range(start, len(lines)):
-        if _closes_fence(lines[index], fence.character, fence.length):
+        content = _strip_quotes(lines[index], fence.depth)
+        if content is None:
+            break
+        if _closes_fence(content, fence.character, fence.length, fence.indent):
             return body, index
-        body.append(_dedent(lines[index], fence.indent))
+        body.append(_dedent(content, fence.indent))
     message = (
         f"{fence.path}:{start}: tested-example {fence.identifier!r} is unterminated"
     )
     raise ValueError(message)
 
 
-def _closes_fence(line: str, character: str, length: int) -> bool:
-    """Return whether ``line`` closes a fence of ``character`` and ``length``."""
-    indent = _indentation(line)
-    if indent > _MAX_FENCE_INDENT:
-        # GitHub-flavoured Markdown permits at most three leading spaces on a
-        # closing fence; more indentation makes the line body text.
+def _closes_fence(
+    line: str,
+    character: str,
+    length: int,
+    opener_indent: int,
+) -> bool:
+    """Return whether ``line`` closes a fence of ``character`` and ``length``.
+
+    GitHub-flavoured Markdown permits at most three leading spaces relative to
+    the container. A fence opened inside a list item already carries the list
+    item's indentation, so that indentation is the base for the limit.
+
+    Returns
+    -------
+    bool
+        Whether ``line`` closes the fence.
+    """
+    allowed = (
+        opener_indent + _MAX_FENCE_INDENT
+        if opener_indent > _MAX_FENCE_INDENT
+        else _MAX_FENCE_INDENT
+    )
+    if _indentation(line) > allowed:
         return False
     stripped = line.strip()
     run = len(stripped) - len(stripped.lstrip(character))
