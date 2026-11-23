@@ -29,8 +29,14 @@ imports if your tooling uses them.
 
 ### Before
 
-Before 0.4.0, import `parse_manifest` and `write_atomic_text` from
-`lading.commands.bump_toml`.
+Before 0.4.0, import these helpers from `lading.commands.bump_toml`. This
+historical import is expected to raise `ImportError` on 0.4.0.
+
+<!-- tested-example: v0-4-0-helper-import-before -->
+
+```python
+from lading.commands.bump_toml import parse_manifest, write_atomic_text
+```
 
 ### After
 
