@@ -233,6 +233,29 @@ def test_loader_accepts_commonmark_fence_indentation(
 
 
 @pytest.mark.parametrize(
+    "fence_like_line",
+    ["``", "~~~", "``` trailing text"],
+    ids=["shorter-fence", "different-fence-character", "trailing-text"],
+)
+def test_loader_preserves_fence_like_content_inside_example(
+    tmp_path: Path,
+    fence_like_line: str,
+) -> None:
+    """Only a matching fence of sufficient length closes an example."""
+    document = _write_document(
+        tmp_path,
+        "<!-- tested-example: fence-like-content -->\n\n"
+        f"```python\nbefore\n{fence_like_line}\nafter\n```   \n",
+    )
+
+    (example,) = load_markdown_examples(document)
+
+    assert example.source == f"before\n{fence_like_line}\nafter", (
+        "shorter, different, and non-whitespace-suffixed fences stay in content"
+    )
+
+
+@pytest.mark.parametrize(
     ("content", "message"),
     [
         ("```python\nprint('unmarked')\n```\n", "unmarked"),
