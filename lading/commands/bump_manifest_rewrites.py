@@ -258,11 +258,11 @@ def _rewrite_string_values(
     manifest_path: Path,
 ) -> bool:
     """Apply one bounded replacement rule to its selected TOML table."""
-    replacement = _compile_string_rewrite(rule, versions, manifest_path)
-    if replacement is None:
-        return False
     table = bump_toml.select_table(document, rule.table)
     if table is None:
+        return False
+    replacement = _compile_string_rewrite(rule, versions, manifest_path)
+    if replacement is None:
         return False
     return bump_toml_strings.update_string_values(table, replacement, field=rule.field)
 

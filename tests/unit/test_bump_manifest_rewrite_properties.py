@@ -5,11 +5,12 @@ import string
 import tempfile
 
 import hypothesis.strategies as st
-from hypothesis import given, settings
+from hypothesis import given
 from tomlkit import parse as parse_toml
 
 from lading.commands import bump_manifest_rewrites
 from lading.config import ManifestRewriteConfig, StringValueRewriteConfig
+from tests.helpers.hypothesis_settings import filesystem_property_settings
 from tests.helpers.manifest_rewrites import plan_fixture_rewrites
 
 _CRATE_NAME_CHARACTERS = string.ascii_letters + string.digits + "_-"
@@ -29,7 +30,7 @@ _VERSION_SUFFIX_CHARACTERS = string.ascii_letters + string.digits + ".+-"
         max_size=8,
     ),
 )
-@settings(max_examples=100)
+@filesystem_property_settings(max_examples=100)
 def test_string_rewrites_respect_token_boundaries_and_are_idempotent(
     crate_prefix: str,
     version_suffix: str,
@@ -93,7 +94,7 @@ def test_string_rewrites_respect_token_boundaries_and_are_idempotent(
         max_size=8,
     ),
 )
-@settings(max_examples=100)
+@filesystem_property_settings(max_examples=100)
 def test_string_rewrites_boundaries_for_version_and_crate_templates(
     version_prefix: str,
     crate_suffix: str,

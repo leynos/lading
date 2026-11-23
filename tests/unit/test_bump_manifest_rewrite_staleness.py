@@ -270,3 +270,31 @@ def test_string_rewrite_retry_staleness_contract(
         assert plans[0].new_text == scenario.expected_new_text, (
             "a stale value should be replaced with the target rendering"
         )
+
+
+def test_missing_string_table_skips_conflicting_template(
+    tmp_path: pathlib.Path,
+    write_fixture_manifest: _ManifestWriter,
+) -> None:
+    """An absent selector is a no-op before template conflict checks."""
+    write_fixture_manifest(
+        tmp_path,
+        "fixtures/standalone/Cargo.toml",
+        '[package]\nname = "fixture"\nversion = "0.1.0"\n',
+    )
+    group = ManifestRewriteConfig(
+        paths=("fixtures/standalone/Cargo.toml",),
+        dependencies=False,
+        string_values=(
+            StringValueRewriteConfig(table=("metadata",), template="{crate}{version}"),
+        ),
+    )
+    versions = manifest_rewrite_versions(
+        names=frozenset({"a", "a1"}),
+        pre_bump_versions={"a": "11.0.0", "a1": "1.0.0"},
+        target_version="12.0.0",
+    )
+
+    assert not plan_fixture_rewrites(tmp_path, (group,), versions=versions), (
+        "a missing TOML table must skip otherwise-conflicting renderings"
+    )

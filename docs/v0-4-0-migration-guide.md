@@ -29,11 +29,8 @@ imports if your tooling uses them.
 
 ### Before
 
-<!-- tested-example: v0-4-0-helper-import-before -->
-
-```python
-from lading.commands.bump_toml import parse_manifest, write_atomic_text
-```
+Before 0.4.0, import `parse_manifest` and `write_atomic_text` from
+`lading.commands.bump_toml`.
 
 ### After
 
