@@ -283,6 +283,36 @@ def test_rejects_ambiguous_string_template_replacements(
     ), "a rejected replacement plan must not write the manifest"
 
 
+def test_rejects_old_rendering_that_collides_with_a_target_rendering(
+    tmp_path: pathlib.Path,
+    write_fixture_manifest: _ManifestWriter,
+) -> None:
+    """Reject old text that the protection matcher must treat as a target."""
+    original_text = '[metadata]\nartifact = "lib12.0.0"\n'
+    manifest = write_fixture_manifest(tmp_path, "fixture/Cargo.toml", original_text)
+    group = ManifestRewriteConfig(
+        paths=("fixture/Cargo.toml",),
+        dependencies=False,
+        string_values=(
+            StringValueRewriteConfig(table=("metadata",), template="{crate}{version}"),
+        ),
+    )
+    versions = manifest_rewrite_versions(
+        names=frozenset({"lib", "lib1"}),
+        pre_bump_versions={"lib": "12.0.0", "lib1": "1.0.0"},
+        target_version="2.0.0",
+    )
+    with pytest.raises(
+        bump_manifest_rewrites.ManifestRewriteError,
+        match=r"maps workspace crates 'lib' and 'lib1'.*'lib12\.0\.0'",
+    ):
+        plan_fixture_rewrites(tmp_path, (group,), versions=versions)
+
+    assert manifest.read_text(encoding="utf-8") == original_text, (
+        "planning must not write"
+    )
+
+
 def test_direct_string_values_and_missing_selectors_are_noops(
     tmp_path: pathlib.Path,
     write_fixture_manifest: _ManifestWriter,

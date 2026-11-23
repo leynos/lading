@@ -285,30 +285,55 @@ def _compile_string_rewrite(
         )
         previous_pair = replacement_pairs.get(old_text)
         if previous_pair is not None and previous_pair[0] != new_text:
-            previous_crate = previous_pair[1]
-            message = (
-                "Configured string rewrite template maps workspace crates "
-                f"{previous_crate!r} and {crate_name!r} from {old_text!r} "
-                f"to different replacements in {manifest_path}"
+            _raise_string_rewrite_conflict(
+                manifest_path,
+                previous_pair[1],
+                crate_name,
+                f"from {old_text!r} to different replacements",
             )
-            raise ManifestRewriteError(message, failed_path=manifest_path)
         replacement_pairs.setdefault(old_text, (new_text, crate_name))
         if old_text != new_text:
             replacements[old_text] = new_text
     if not replacements:
         return None
-    protected_targets = {
-        rule.template.format(crate=crate_name, version=versions.target_version)
+    target_rendering_crates = {
+        rule.template.format(
+            crate=crate_name, version=versions.target_version
+        ): crate_name
         for crate_name in versions.updated_crate_names
     }
+    for target_rendering, target_crate in target_rendering_crates.items():
+        previous_pair = replacement_pairs.get(target_rendering)
+        if previous_pair is not None and previous_pair[0] != target_rendering:
+            _raise_string_rewrite_conflict(
+                manifest_path,
+                previous_pair[1],
+                target_crate,
+                f"through conflicting rendering {target_rendering!r}",
+            )
     matching_replacements = dict(replacements)
     matching_replacements.update(
-        (target_rendering, target_rendering) for target_rendering in protected_targets
+        (target_rendering, target_rendering)
+        for target_rendering in target_rendering_crates
     )
     pattern = _string_replacement_pattern(rule.template, matching_replacements)
     return lambda value: pattern.sub(
         lambda match: matching_replacements[match.group()], value
     )
+
+
+def _raise_string_rewrite_conflict(
+    manifest_path: Path,
+    first_crate: str,
+    second_crate: str,
+    conflict: str,
+) -> typ.NoReturn:
+    """Raise a path-specific error for ambiguous template renderings."""
+    message = (
+        "Configured string rewrite template maps workspace crates "
+        f"{first_crate!r} and {second_crate!r} {conflict} in {manifest_path}"
+    )
+    raise ManifestRewriteError(message, failed_path=manifest_path)
 
 
 def _string_replacement_pattern(
