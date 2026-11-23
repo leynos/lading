@@ -25,18 +25,10 @@ from tomlkit.container import OutOfOrderTableProxy
 from tomlkit.items import InlineTable, Item, Table
 
 from lading.commands import bump_toml
+from lading.commands.bump_toml_types import _TABLE_LIKE_TYPES, _TableLike
 
 if typ.TYPE_CHECKING:
     from tomlkit.toml_document import TOMLDocument
-
-_TableLike = Table | InlineTable | OutOfOrderTableProxy
-_TABLE_LIKE_TYPES: typ.Final[
-    tuple[type[Table] | type[InlineTable] | type[OutOfOrderTableProxy], ...]
-] = (
-    Table,
-    InlineTable,
-    OutOfOrderTableProxy,
-)
 
 # Canonical Cargo dependency-section vocabulary (issue #103). The order is
 # normal, dev, then build dependencies.

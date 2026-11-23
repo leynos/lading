@@ -410,12 +410,13 @@ lading bump <new_version> [--dry-run]
   metadata without filesystem access. `bump_manifest_rewrite_model` owns the
   shared plans and rewrite error.
 - `bump_manifest_rewrite_dependencies` owns dependency-section traversal for
-  direct, target, and workspace requirements. `bump_toml` and
-  `bump_toml_dependencies` encapsulate TOML node details, requirement
-  composition, and formatting preservation. `bump_docs_toml` reuses this
-  traversal for dependency tables in documentation fences. The planner parses
-  supplied TOML text directly; `bump_toml_files` owns manifest file I/O.
-  Comparator warnings are returned as data and logged at the command boundary.
+  direct, target, and workspace requirements. `bump_toml_types` owns the shared
+  TOML table-node type and runtime checks; `bump_toml` and
+  `bump_toml_dependencies` encapsulate requirement composition and formatting
+  preservation. `bump_docs_toml` reuses this traversal for dependency tables in
+  documentation fences. The planner parses supplied TOML text directly;
+  `bump_toml_files` owns manifest file I/O. Comparator warnings are returned as
+  data and logged at the command boundary.
 - `bump_pipeline` owns timing, metrics, and stage ordering. It plans every
   selected manifest before the workspace manifest stage writes, then applies
   the plans after member manifests and before documentation, README

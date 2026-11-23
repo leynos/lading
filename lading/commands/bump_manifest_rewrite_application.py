@@ -1,8 +1,8 @@
 """Apply already-planned edits to configured non-member Cargo manifests.
 
-This adapter checks that each source still matches its plan, then writes the
-replacement atomically. The check protects a plan from overwriting edits made
-between planning and application.
+This adapter checks that each source still matches its plan immediately before
+writing the replacement atomically. It does not coordinate with external
+writers during the interval between that check and replacement.
 """
 
 import collections.abc as cabc
@@ -37,6 +37,11 @@ def apply_manifest_rewrites(
 
     Notes
     -----
+    Before each write, the source is compared with the text used to create its
+    plan. This detects edits already present at that check, but does not provide
+    compare-and-swap protection against external writers changing the file
+    before the atomic replacement.
+
     Each atomic write protects one manifest. If a later write fails, earlier
     completed writes remain in place, so the sequence is not atomic as a whole.
     """
@@ -52,7 +57,7 @@ def _apply_manifest_rewrite(
     completed_writes: int,
     planned_writes: int,
 ) -> None:
-    """Check one plan's source and atomically persist its replacement."""
+    """Check one plan's source before atomically persisting its replacement."""
     current_text = _read_current_text(plan, completed_writes, planned_writes)
     if current_text != plan.original_text:
         message = f"Manifest rewrite target changed after planning: {plan.path}"

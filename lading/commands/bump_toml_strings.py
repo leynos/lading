@@ -18,20 +18,11 @@ True
 """
 
 import collections.abc as cabc
-import typing as typ
-
-from tomlkit.container import OutOfOrderTableProxy
-from tomlkit.items import InlineTable, Table
 
 from lading.commands import bump_toml
-
-type _TableLike = Table | InlineTable | OutOfOrderTableProxy
-_TABLE_LIKE_TYPES: typ.Final[
-    tuple[type[Table] | type[InlineTable] | type[OutOfOrderTableProxy], ...]
-] = (
-    Table,
-    InlineTable,
-    OutOfOrderTableProxy,
+from lading.commands.bump_toml_types import (
+    _TABLE_LIKE_TYPES,
+    _TableLike,
 )
 
 

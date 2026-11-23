@@ -22,21 +22,13 @@ from contextlib import suppress
 
 from tomlkit import parse as parse_toml
 from tomlkit import string
-from tomlkit.container import OutOfOrderTableProxy
 from tomlkit.exceptions import InvalidStringError
-from tomlkit.items import InlineTable, Item, String, Table
+from tomlkit.items import Item, String
+
+from lading.commands.bump_toml_types import _TABLE_LIKE_TYPES, _TableLike
 
 if typ.TYPE_CHECKING:
     from tomlkit.toml_document import TOMLDocument
-
-type _TableLike = Table | InlineTable | OutOfOrderTableProxy
-_TABLE_LIKE_TYPES: typ.Final[
-    tuple[type[Table] | type[InlineTable] | type[OutOfOrderTableProxy], ...]
-] = (
-    Table,
-    InlineTable,
-    OutOfOrderTableProxy,
-)
 
 NON_DIGIT_PREFIX: typ.Final[re.Pattern[str]] = re.compile(r"^([^\d]*)")
 

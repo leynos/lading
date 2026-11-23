@@ -24,7 +24,7 @@ from lading.commands.bump_requirement_bounds import (
 if typ.TYPE_CHECKING:
     from tomlkit.toml_document import TOMLDocument
 
-    from lading.commands.bump_toml_dependencies import _TableLike
+    from lading.commands.bump_toml_types import _TableLike
 
 _LOGGER = logging.getLogger(__name__)
 

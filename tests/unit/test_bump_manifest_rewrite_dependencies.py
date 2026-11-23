@@ -153,6 +153,9 @@ def test_rewrite_planning_logs_collected_comparator_warning(
     )
 
     assert changed, "the dependency requirement should still be rewritten"
+    assert document["dependencies"]["alpha"] == "<0.6.0", (
+        "the unsupported upper comparator should remain attached to the target version"
+    )
     assert "preserved Cargo comparator(s) <0.6.0" in caplog.text, (
         "the planning boundary should log the returned comparator warning"
     )

@@ -27,11 +27,8 @@ from lading.commands.bump_requirement_bounds import (
     RequirementBoundWarning,
     requirement_bound_warning,
 )
-from lading.commands.bump_toml_dependencies import (
-    _TABLE_LIKE_TYPES,
-    _inherits_workspace_version,
-    _TableLike,
-)
+from lading.commands.bump_toml_dependencies import _inherits_workspace_version
+from lading.commands.bump_toml_types import _TABLE_LIKE_TYPES, _TableLike
 
 if typ.TYPE_CHECKING:
     from tomlkit.toml_document import TOMLDocument
