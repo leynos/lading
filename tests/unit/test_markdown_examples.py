@@ -64,6 +64,26 @@ def test_loader_counts_physical_fence_lines_with_unicode_separator(
     )
 
 
+@pytest.mark.parametrize("indent", [0, 1, 3], ids=["none", "one-space", "three-spaces"])
+def test_loader_accepts_permitted_indentation_before_example_marker(
+    tmp_path: Path,
+    indent: int,
+) -> None:
+    """A marker accepts zero to three leading spaces before its comment."""
+    document = _write_document(
+        tmp_path,
+        f"{' ' * indent}<!-- tested-example: indented-marker -->\n\n"
+        "```python\nprint('indented marker')\n```\n",
+    )
+
+    (example,) = load_markdown_examples(document)
+
+    assert (example.identifier, example.source) == (
+        "indented-marker",
+        "print('indented marker')",
+    ), "permitted leading indentation must not hide a tested-example marker"
+
+
 def test_loader_accepts_closed_fence_with_empty_body(tmp_path: Path) -> None:
     """A closed fence with no body lines remains a valid empty example."""
     document = _write_document(

@@ -1,14 +1,20 @@
 """Pipeline coverage for fixture-only non-member manifest changes."""
 
+import collections.abc as cabc
 import pathlib
+import typing as typ
+from unittest import mock
 
 import pytest
 
 from lading import config as config_module
-from lading.commands import bump
+from lading.commands import bump, bump_manifest_rewrite_application
 from lading.config import ManifestRewriteConfig
 from tests.helpers.recording_lockfile_repository import RecordingLockfileRepository
 from tests.helpers.workspace_builders import _make_workspace
+
+if typ.TYPE_CHECKING:
+    from lading.commands.bump_manifest_rewrite_model import ManifestRewritePlan
 
 pytestmark = pytest.mark.usefixtures("reset_process_metrics")
 
@@ -76,3 +82,57 @@ def test_fixture_only_change_triggers_lockfile_regeneration(
         assert member_manifest.relative_to(tmp_path).as_posix() not in message, (
             f"unchanged member manifest should not be reported: {member_manifest}"
         )
+
+
+def test_report_keeps_planned_path_if_parent_becomes_symlink(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Reporting does not re-resolve a manifest after its write completes."""
+    workspace = _make_workspace(tmp_path)
+    configured_directory = tmp_path / "tests/fixtures/configured"
+    configured_directory.mkdir(parents=True)
+    manifest = configured_directory / "Cargo.toml"
+    manifest.write_text('[dependencies]\nalpha = "0.1.0"\n', encoding="utf-8")
+    redirected_directory = tmp_path / "tests/fixtures/redirected"
+    redirected_directory.mkdir()
+    archived_directory = tmp_path / "tests/fixtures/configured-archived"
+    configured_path = manifest.relative_to(tmp_path).as_posix()
+    configuration = config_module.LadingConfig(
+        bump=config_module.BumpConfig(
+            manifest_rewrites=(ManifestRewriteConfig(paths=(configured_path,)),)
+        )
+    )
+    apply_manifest_rewrites = bump_manifest_rewrite_application.apply_manifest_rewrites
+
+    def rewrite_then_redirect(
+        plans: cabc.Sequence[ManifestRewritePlan],
+        *,
+        dry_run: bool,
+    ) -> tuple[pathlib.Path, ...]:
+        """Write the plan, then redirect its parent before reporting."""
+        rewritten_paths = apply_manifest_rewrites(plans, dry_run=dry_run)
+        configured_directory.rename(archived_directory)
+        configured_directory.symlink_to(redirected_directory, target_is_directory=True)
+        return rewritten_paths
+
+    with mock.patch.object(
+        bump_manifest_rewrite_application,
+        "apply_manifest_rewrites",
+        side_effect=rewrite_then_redirect,
+    ):
+        message = bump.run(
+            tmp_path,
+            "1.2.3",
+            options=bump.BumpOptions(
+                rebuild_lockfiles=False,
+                configuration=configuration,
+                workspace=workspace,
+            ),
+        )
+
+    assert f"- {configured_path}" in message, (
+        "the report must identify the path selected and rewritten during planning"
+    )
+    assert "- tests/fixtures/redirected/Cargo.toml" not in message, (
+        "a later symlink target must not change the reported manifest path"
+    )

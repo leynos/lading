@@ -82,7 +82,10 @@ def plan_manifest_rewrites(
     Raises
     ------
     ManifestRewriteError
-        If any source is malformed TOML. No source is written by this function.
+        If any source is malformed TOML, a selected string rule lacks
+        pre-bump version metadata, a partial bump left a stale string reference,
+        or configured string templates have ambiguous renderings. No source is
+        written by this function.
     """
     plans: list[ManifestRewritePlan] = []
     for source in sources:

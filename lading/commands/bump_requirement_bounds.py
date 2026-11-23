@@ -17,14 +17,16 @@ import re
 import typing as typ
 
 _VERSION_PATTERN: typ.Final[re.Pattern[str]] = re.compile(
-    r"(?P<core>(?:0|[1-9]\d*)(?:\.(?:0|[1-9]\d*)){0,2})"
+    r"(?P<core>(?:0|[1-9][0-9]*)(?:\.(?:0|[1-9][0-9]*)){0,2})"
+    r"(?P<wildcard>\.(?:\*|x|X))?"
     r"(?:-(?P<prerelease>[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?"
-    r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
+    r"(?:\+(?P<build>[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?"
 )
 _COMPARATOR_PATTERN: typ.Final[re.Pattern[str]] = re.compile(
     r"\s*(?P<operator><=|>=|<|>|=)\s*(?P<version>\S+)\s*"
 )
 _VERSION_COMPONENT_COUNT: typ.Final[int] = 3
+_MAX_U64_TEXT: typ.Final[str] = "18446744073709551615"
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -213,7 +215,19 @@ def _parse_version(value: str, *, require_full: bool) -> _Version | None:
     match = _VERSION_PATTERN.fullmatch(value)
     if match is None:
         return None
-    core_parts = tuple(int(part) for part in match.group("core").split("."))
+    core_text = match.group("core")
+    core_components = core_text.split(".")
+    if any(not _is_u64_component(part) for part in core_components):
+        return None
+    has_wildcard = match.group("wildcard") is not None
+    if has_wildcard and _has_invalid_wildcard_precision(
+        require_full=require_full,
+        core_component_count=len(core_components),
+        prerelease_text=match.group("prerelease"),
+        build_text=match.group("build"),
+    ):
+        return None
+    core_parts = tuple(int(part) for part in core_components)
     precision = len(core_parts)
     prerelease_text = match.group("prerelease")
     if _has_invalid_precision(precision, prerelease_text, require_full=require_full):
@@ -222,6 +236,30 @@ def _parse_version(value: str, *, require_full: bool) -> _Version | None:
     if prerelease is None:
         return None
     return _Version(_pad_core(core_parts), precision, prerelease)
+
+
+def _is_u64_component(value: str) -> bool:
+    """Check a decimal version component against Cargo's u64 range."""
+    return len(value) < len(_MAX_U64_TEXT) or (
+        len(value) == len(_MAX_U64_TEXT) and value <= _MAX_U64_TEXT
+    )
+
+
+def _has_invalid_wildcard_precision(
+    *,
+    require_full: bool,
+    core_component_count: int,
+    prerelease_text: str | None,
+    build_text: str | None,
+) -> bool:
+    """Reject wildcard comparators outside Cargo's supported form."""
+    if require_full:
+        return True
+    if core_component_count == _VERSION_COMPONENT_COUNT:
+        return True
+    if prerelease_text is not None:
+        return True
+    return build_text is not None
 
 
 def _has_invalid_precision(

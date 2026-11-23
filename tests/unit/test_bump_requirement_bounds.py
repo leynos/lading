@@ -52,6 +52,54 @@ def test_numeric_prerelease_comparison_avoids_integer_conversion() -> None:
 
 
 @pytest.mark.parametrize(
+    ("bound", "target", "expected"),
+    [
+        ("<2.*", "2.0.0", ("<2.*",)),
+        ("<2.*", "1.9.0", ()),
+        ("<2.3.*", "2.3.0", ("<2.3.*",)),
+        ("<2.x", "2.0.0", ("<2.x",)),
+    ],
+)
+def test_retained_wildcard_precision_uses_the_numeric_prefix(
+    bound: str,
+    target: str,
+    expected: tuple[str, ...],
+) -> None:
+    """Wildcard components have the same comparison precision as omission."""
+    result = excluding_retained_bounds(f">=0.1.0, {bound}", target)
+
+    assert result == expected, (
+        f"Cargo wildcard bound {bound!r} should report {expected!r}"
+    )
+
+
+@pytest.mark.parametrize(
+    ("bound", "target", "expected"),
+    [
+        (
+            "<18446744073709551615.0.0",
+            "18446744073709551615.0.0",
+            ("<18446744073709551615.0.0",),
+        ),
+        ("<18446744073709551616.0.0", "1.0.0", ()),
+        (f"<{'9' * 5000}.0.0", "1.0.0", ()),
+    ],
+    ids=["u64-maximum", "u64-overflow", "oversized-decimal"],
+)
+def test_retained_bounds_reject_core_components_above_u64(
+    bound: str,
+    target: str,
+    expected: tuple[str, ...],
+) -> None:
+    """Core components follow Cargo's u64 range without huge int conversions."""
+    result = excluding_retained_bounds(f">=0.1.0, {bound}", target)
+
+    assert result == expected, (
+        f"Cargo bound {bound!r} should report {expected!r} for target {target!r}"
+    )
+
+
+@pytest.mark.parametrize(
     ("requirement", "target", "excluded"),
     [
         ("<0.7", "0.6.0", ("<0.6.0",)),

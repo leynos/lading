@@ -15,6 +15,7 @@ _MARKER_PREFIX = "<!-- tested-example:"
 _MARKER_PATTERN = re.compile(r"<!-- tested-example: ([a-z0-9][a-z0-9_-]*) -->")
 _DIRECT_MARKER_GAP = 1
 _BLANK_LINE_MARKER_GAP = 2
+_MAX_MARKER_INDENT = 3
 
 
 class MarkdownExampleError(ValueError):
@@ -114,11 +115,16 @@ def _index_markers(
         if token.type != "html_block" or token.map is None:
             continue
         start_line = token.map[0]
-        for offset, line in enumerate(token.content.splitlines()):
-            if not line.startswith(_MARKER_PREFIX):
+        for offset, line in enumerate(token.content.split("\n")):
+            line = line.removesuffix("\r")
+            indent = len(line) - len(line.lstrip(" "))
+            marker_text = line[indent:]
+            if indent > _MAX_MARKER_INDENT or not marker_text.startswith(
+                _MARKER_PREFIX
+            ):
                 continue
             line_number = start_line + offset
-            match = _MARKER_PATTERN.fullmatch(line)
+            match = _MARKER_PATTERN.fullmatch(marker_text)
             if match is None:
                 raise MarkdownExampleError(
                     document_name,

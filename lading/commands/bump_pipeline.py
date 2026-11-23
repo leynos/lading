@@ -178,7 +178,9 @@ def _apply_non_member_manifest_rewrites(
             ),
         )
         raise
-    changed_manifests.update(path.resolve() for path in rewritten_paths)
+    # The resolver already canonicalized these paths; resolving after a write
+    # could follow a replaced symlink and report a different manifest.
+    changed_manifests.update(rewritten_paths)
     outcome = "skipped" if dry_run or not stage.plans else "applied"
     bump_manifest_rewrite_metrics.record_manifest_rewrite_metrics(
         stage.planning_duration_seconds + clock() - application_started_at,
