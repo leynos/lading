@@ -151,7 +151,7 @@ class _ManifestGlobTraversal:
         return tuple(sorted(self.matches))
 
     def visit_recursive(self, candidate: Path, index: int) -> None:
-        """Match zero or more directory segments for ``**``."""
+        """Match ``**`` without following directory symlinks, avoiding cycles."""
         self.visit(candidate, index + 1)
         is_terminal_recursive = index == len(self.segments) - 1
         for child in _manifest_directory_entries(candidate):
@@ -168,7 +168,9 @@ class _ManifestGlobTraversal:
 
     def visit_candidate(self, candidate: Path, index: int) -> None:
         """Skip non-directories when another pattern segment needs traversal."""
-        if index < len(self.segments) and not _is_manifest_directory(candidate):
+        if index < len(self.segments) and not _is_manifest_directory(
+            candidate, follow_symlinks=True
+        ):
             return
         self.visit(candidate, index)
 
@@ -216,9 +218,10 @@ def _manifest_directory_entries(directory: Path) -> tuple[Path, ...]:
         return ()
 
 
-def _is_manifest_directory(path: Path) -> bool:
-    """Check whether a path is a directory without following symlinks."""
+def _is_manifest_directory(path: Path, *, follow_symlinks: bool = False) -> bool:
+    """Check directory status with optional final-component symlink following."""
     try:
-        return stat.S_ISDIR(path.lstat().st_mode)
+        metadata = path.stat() if follow_symlinks else path.lstat()
+        return stat.S_ISDIR(metadata.st_mode)
     except FileNotFoundError, NotADirectoryError:
         return False

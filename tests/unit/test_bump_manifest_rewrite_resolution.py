@@ -69,7 +69,7 @@ def test_glob_skips_symlinked_files_before_traversing_remaining_segments(
         "fixtures/a/Cargo.toml",
         '[dependencies]\nalpha = "1.0.0"\n',
     )
-    outside_file = tmp_path.parent / "notice"
+    outside_file = tmp_path.parent / f"{tmp_path.name}-notice"
     outside_file.write_text("not a directory", encoding="utf-8")
     symlinked_file = tmp_path / "fixtures" / "notice"
     symlinked_file.symlink_to(outside_file)
@@ -83,6 +83,81 @@ def test_glob_skips_symlinked_files_before_traversing_remaining_segments(
 
     assert matches == (manifest,), (
         "a symlinked file must be skipped when more path segments remain"
+    )
+
+
+def test_glob_follows_internal_directory_symlinks_for_remaining_segments(
+    tmp_path: pathlib.Path,
+    write_fixture_manifest: _ManifestWriter,
+) -> None:
+    """Non-recursive glob segments can traverse contained directory symlinks."""
+    manifest = write_fixture_manifest(
+        tmp_path,
+        "fixtures/real/Cargo.toml",
+        '[dependencies]\nalpha = "1.0.0"\n',
+    )
+    alias = tmp_path / "fixtures" / "alias"
+    alias.symlink_to(manifest.parent, target_is_directory=True)
+
+    matches = manifest_paths.expand_manifest_glob_candidates(
+        tmp_path,
+        "fixtures/*/Cargo.toml",
+        error_type=bump_manifest_rewrites.ManifestRewriteError,
+        label="Manifest rewrite",
+    )
+
+    assert tmp_path / "fixtures/alias/Cargo.toml" in matches, (
+        "a contained directory symlink must remain eligible for non-recursive globs"
+    )
+
+
+def test_glob_rejects_escaping_directory_symlinks(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Following a glob directory symlink must still enforce containment."""
+    outside_directory = tmp_path.parent / f"{tmp_path.name}-outside"
+    outside_directory.mkdir()
+    (outside_directory / "Cargo.toml").write_text(
+        '[package]\nname = "outside"\nversion = "0.1.0"\n', encoding="utf-8"
+    )
+    alias = tmp_path / "fixtures" / "escape"
+    alias.parent.mkdir()
+    alias.symlink_to(outside_directory, target_is_directory=True)
+
+    with pytest.raises(
+        bump_manifest_rewrites.ManifestRewriteError,
+        match="stay within the workspace",
+    ):
+        manifest_paths.expand_manifest_glob_candidates(
+            tmp_path,
+            "fixtures/*/Cargo.toml",
+            error_type=bump_manifest_rewrites.ManifestRewriteError,
+            label="Manifest rewrite",
+        )
+
+
+def test_recursive_globs_do_not_follow_directory_symlink_cycles(
+    tmp_path: pathlib.Path,
+    write_fixture_manifest: _ManifestWriter,
+) -> None:
+    """Recursive ``**`` ignores a directory symlink back to an ancestor."""
+    manifest = write_fixture_manifest(
+        tmp_path,
+        "fixtures/a/Cargo.toml",
+        '[dependencies]\nalpha = "1.0.0"\n',
+    )
+    cycle = manifest.parent / "loop"
+    cycle.symlink_to(tmp_path / "fixtures", target_is_directory=True)
+
+    matches = manifest_paths.expand_manifest_glob_candidates(
+        tmp_path,
+        "fixtures/**/Cargo.toml",
+        error_type=bump_manifest_rewrites.ManifestRewriteError,
+        label="Manifest rewrite",
+    )
+
+    assert matches == (manifest,), (
+        "recursive glob traversal must not revisit symlink cycles"
     )
 
 

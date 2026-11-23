@@ -20,6 +20,7 @@ def test_unchanged_manifest_is_omitted_and_dry_run_does_not_write(
     manifest = tmp_path / "fixture/Cargo.toml"
     manifest.parent.mkdir()
     manifest.write_text(content, encoding="utf-8")
+    original_bytes = manifest.read_bytes()
     group = ManifestRewriteConfig(paths=("fixture/Cargo.toml",))
 
     assert not plan_fixture_rewrites(
@@ -38,7 +39,7 @@ def test_unchanged_manifest_is_omitted_and_dry_run_does_not_write(
     assert changed_paths == (manifest.resolve(),), (
         "dry-run must return the planned manifest path"
     )
-    assert manifest.read_bytes() == content.encode(), (
+    assert manifest.read_bytes() == original_bytes, (
         "dry-run must preserve manifest bytes"
     )
 

@@ -101,6 +101,19 @@ class _RewriteRetryScenario:
         pytest.param(
             _RewriteRetryScenario(
                 value_key="path",
+                current_value="alpha12.0.0",
+                template="{crate}{version}",
+                names=frozenset({"alpha", "alpha1"}),
+                pre_bump_versions={"alpha": "2.0.0", "alpha1": "1.0.0"},
+                target_version="2.0.0",
+                expected_error=None,
+                expected_new_text=None,
+            ),
+            id="other-crate-target-rendering-is-not-stale",
+        ),
+        pytest.param(
+            _RewriteRetryScenario(
+                value_key="path",
                 current_value="0.9.0-alpha",
                 template="{version}-{crate}",
                 names=frozenset({"alpha", "foo-alpha"}),

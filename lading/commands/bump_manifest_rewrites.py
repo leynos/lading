@@ -169,12 +169,16 @@ def _stale_string_references(
 ) -> tuple[tuple[str | None, str], ...]:
     """Find stale values that a retry cannot attribute to a selected crate."""
     if _template_identifies_crate(template):
-        pre_bump_renderings = {
+        known_renderings = {
             template.format(
                 crate=crate_name,
-                version=versions.pre_bump_versions[crate_name],
+                version=version,
             )
             for crate_name in versions.updated_crate_names
+            for version in (
+                versions.pre_bump_versions[crate_name],
+                versions.target_version,
+            )
         }
         return tuple(
             (crate_name, stale_version)
@@ -183,7 +187,7 @@ def _stale_string_references(
             for matched_text, stale_version in _versions_for_crate_not_at_target(
                 values, template, crate_name, versions.target_version
             )
-            if matched_text not in pre_bump_renderings
+            if matched_text not in known_renderings
         )
     pre_bump_versions = {
         versions.pre_bump_versions[crate_name]
