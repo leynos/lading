@@ -90,7 +90,7 @@ def plan_manifest_rewrites(
             document = parse_toml(source.content)
         except TOMLKitError as exc:
             message = f"Could not parse manifest rewrite target {source.path}: {exc}"
-            raise ManifestRewriteError(message) from exc
+            raise ManifestRewriteError(message, failed_path=source.path) from exc
         _rewrite_manifest_document(source, document, versions)
         new_text = document.as_string()
         if new_text != source.content:

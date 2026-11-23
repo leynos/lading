@@ -71,7 +71,7 @@ def test_glob_skips_symlinked_files_before_traversing_remaining_segments(
     )
     outside_file = tmp_path.parent / f"{tmp_path.name}-notice"
     outside_file.write_text("not a directory", encoding="utf-8")
-    symlinked_file = tmp_path / "fixtures" / "notice"
+    symlinked_file = tmp_path / "fixtures" / "000-notice"
     symlinked_file.symlink_to(outside_file)
 
     matches = manifest_paths.expand_manifest_glob_candidates(
@@ -268,6 +268,26 @@ def test_rejects_invalid_configured_paths(
         plan_fixture_rewrites(tmp_path, (group,))
 
 
+def test_malformed_manifest_rewrite_error_identifies_its_path(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Malformed selected TOML reports the file that failed parsing."""
+    manifest = tmp_path / "fixtures/standalone/Cargo.toml"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text("[dependencies\n", encoding="utf-8")
+    group = ManifestRewriteConfig(paths=("fixtures/standalone/Cargo.toml",))
+
+    with pytest.raises(
+        bump_manifest_rewrites.ManifestRewriteError,
+        match="Could not parse manifest rewrite target",
+    ) as failure:
+        plan_fixture_rewrites(tmp_path, (group,))
+
+    assert failure.value.failed_path == manifest.resolve(), (
+        "parse errors must retain the resolved manifest path"
+    )
+
+
 @pytest.mark.parametrize(
     "pattern",
     ["fixtures/**/Cargo.toml", "fixtures/**/Cargo.toml/"],
@@ -305,7 +325,6 @@ def test_trailing_slash_glob_does_not_select_regular_manifest_files(
 
 def test_propagates_directory_scan_failures_during_glob_expansion(
     tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
     write_fixture_manifest: _ManifestWriter,
 ) -> None:
     """A partial glob result must not hide an unreadable selected subtree."""
@@ -314,24 +333,23 @@ def test_propagates_directory_scan_failures_during_glob_expansion(
     )
     denied_directory = tmp_path / "fixtures/z"
     denied_directory.mkdir(parents=True)
-    original_iterdir = pathlib.Path.iterdir
 
-    def iterdir_with_denied_directory(
-        path: pathlib.Path,
-    ) -> cabc.Iterator[pathlib.Path]:
+    def read_directory(path: pathlib.Path) -> tuple[pathlib.Path, ...]:
         """Raise a permission error when traversal reaches the denied directory."""
         if path == denied_directory:
             raise PermissionError
-        return original_iterdir(path)
+        return tuple(sorted(path.iterdir()))
 
-    monkeypatch.setattr(pathlib.Path, "iterdir", iterdir_with_denied_directory)
-    group = ManifestRewriteConfig(paths=("fixtures/*/*/Cargo.toml",))
-
-    with pytest.raises(bump_manifest_rewrites.ManifestRewriteError) as error:
-        plan_fixture_rewrites(tmp_path, (group,))
-    assert isinstance(error.value.__cause__, PermissionError), (
-        "scan failures must remain attached to the planning error"
+    traversal = manifest_paths._ManifestGlobTraversal(
+        workspace_root=tmp_path,
+        pattern="fixtures/*/*/Cargo.toml",
+        error_type=bump_manifest_rewrites.ManifestRewriteError,
+        label="Manifest rewrite",
+        directory_reader=read_directory,
     )
+
+    with pytest.raises(PermissionError):
+        traversal.collect()
 
 
 def test_skips_workspace_and_member_manifests(

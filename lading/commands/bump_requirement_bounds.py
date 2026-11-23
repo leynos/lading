@@ -111,7 +111,7 @@ class _Version(typ.NamedTuple):
 
     core: tuple[int, int, int]
     precision: int
-    prerelease: tuple[int | str, ...]
+    prerelease: tuple[tuple[bool, str], ...]
 
 
 def excluding_retained_bounds(
@@ -233,14 +233,16 @@ def _has_invalid_precision(
     return bool(prerelease_text) and precision != _VERSION_COMPONENT_COUNT
 
 
-def _parse_prerelease(value: str | None) -> tuple[int | str, ...] | None:
+def _parse_prerelease(
+    value: str | None,
+) -> tuple[tuple[bool, str], ...] | None:
     """Parse prerelease identifiers, rejecting numeric leading zeroes."""
     if not value:
         return ()
     identifiers = value.split(".")
     if any(_has_numeric_leading_zero(identifier) for identifier in identifiers):
         return None
-    return tuple(int(part) if part.isdigit() else part for part in identifiers)
+    return tuple((part.isdigit(), part) for part in identifiers)
 
 
 def _has_numeric_leading_zero(identifier: str) -> bool:
@@ -300,24 +302,25 @@ def _matches_strict(bound: _Version, target: _Version, *, operator: str) -> bool
 
 
 def _compare_prerelease(
-    left: tuple[int | str, ...], right: tuple[int | str, ...]
+    left: tuple[tuple[bool, str], ...], right: tuple[tuple[bool, str], ...]
 ) -> int:
     """Compare SemVer prereleases; an empty prerelease sorts after all others."""
     if not left or not right:
         return (not left) - (not right)
-    for left_part, right_part in zip(left, right, strict=False):
-        if left_part == right_part:
+    for (left_is_numeric, left_part), (right_is_numeric, right_part) in zip(
+        left, right, strict=False
+    ):
+        if left_is_numeric == right_is_numeric and left_part == right_part:
             continue
-        match left_part, right_part:
-            case int(), int():
+        if left_is_numeric != right_is_numeric:
+            return -1 if left_is_numeric else 1
+        if left_is_numeric:
+            comparison = (len(left_part) > len(right_part)) - (
+                len(left_part) < len(right_part)
+            )
+            if comparison == 0:
                 comparison = (left_part > right_part) - (left_part < right_part)
-            case str(), str():
-                comparison = (left_part > right_part) - (left_part < right_part)
-            case int(), str():
-                comparison = -1
-            case str(), int():
-                comparison = 1
-            case _:
-                typ.assert_never((left_part, right_part))
+        else:
+            comparison = (left_part > right_part) - (left_part < right_part)
         return comparison
     return (len(left) > len(right)) - (len(left) < len(right))

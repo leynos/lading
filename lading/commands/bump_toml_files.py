@@ -86,9 +86,14 @@ def write_atomic_text(file_path: Path, content: str) -> None:
         with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
             if existing_mode is not None:
                 with suppress(AttributeError):
-                    os.fchmod(handle.fileno(), existing_mode)  # not on Windows
+                    _set_file_mode(handle.fileno(), existing_mode)
             handle.write(content)
         Path(tmp_path).replace(file_path)
     finally:
         with suppress(FileNotFoundError):
             Path(tmp_path).unlink()
+
+
+def _set_file_mode(descriptor: int, mode: int) -> None:
+    """Apply existing mode bits to the temporary file descriptor."""
+    os.fchmod(descriptor, mode)  # not on Windows

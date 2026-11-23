@@ -13,6 +13,116 @@ from tests.helpers.manifest_rewrites import plan_fixture_rewrites
 
 if typ.TYPE_CHECKING:
     import pytest
+    from syrupy.assertion import SnapshotAssertion
+
+
+def _rstest_bdd_dependency_plan(
+    root: pathlib.Path,
+) -> bump_manifest_rewrites.ManifestRewritePlan:
+    """Build a rewrite plan for a multi-section prerelease manifest."""
+    manifest = root / "fixtures/standalone/Cargo.toml"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(
+        """[dependencies]
+rstest-bdd = "^0.6.0-beta4"
+renamed = { package = "rstest-bdd-harness", version = "~0.6.0-beta4" }
+path-only = { package = "rstest-bdd", path = "../rstest-bdd" }
+workspace-ref = { package = "rstest-bdd", version = "0.6.0-beta4", workspace = true }
+unrelated = "0.6.0-beta4"
+
+[dev-dependencies]
+rstest-bdd = "0.6.0-beta4"
+
+[build-dependencies]
+rstest-bdd-harness = "0.6.0-beta4"
+
+[target.'cfg(unix)'.dependencies]
+rstest-bdd = "0.6.0-beta4"
+
+[target.x86_64_unknown_linux_gnu.dev-dependencies]
+rstest-bdd-harness = "0.6.0-beta4"
+
+[workspace.dependencies]
+rstest-bdd = "0.6.0-beta4"
+
+[patch.crates-io]
+rstest-bdd = { version = "0.6.0-beta4", path = "../patched" }
+
+[replace]
+"rstest-bdd:0.1.0" = { path = "../replaced" }
+""",
+        encoding="utf-8",
+    )
+    return plan_fixture_rewrites(
+        root,
+        (ManifestRewriteConfig(paths=("fixtures/standalone/Cargo.toml",)),),
+        versions=bump_manifest_rewrites.ManifestRewriteVersions(
+            updated_crate_names=frozenset({"rstest-bdd", "rstest-bdd-harness"}),
+            pre_bump_versions={
+                "rstest-bdd": "0.6.0-beta4",
+                "rstest-bdd-harness": "0.6.0-beta4",
+            },
+            target_version="0.6.0",
+        ),
+    )[0]
+
+
+def test_updates_dependency_sections_and_package_aliases(
+    tmp_path: pathlib.Path,
+    snapshot: SnapshotAssertion,
+) -> None:
+    """Dependency keys, package aliases, target, and workspace tables update."""
+    plan = _rstest_bdd_dependency_plan(tmp_path)
+    assert plan.new_text == snapshot(name="dependency_rewrites"), (
+        "the rendered dependency manifest must match its focused snapshot"
+    )
+    document = parse_toml(plan.new_text)
+    assert document["dependencies"]["rstest-bdd"] == "^0.6.0", (
+        "the main dependency requirement must retain its compatible operator"
+    )
+    assert document["dependencies"]["renamed"]["version"] == "~0.6.0", (
+        "an aliased dependency must retain its compatible operator"
+    )
+    assert document["dev-dependencies"]["rstest-bdd"] == "0.6.0", (
+        "the development dependency section must be rewritten"
+    )
+    assert document["target"]["cfg(unix)"]["dependencies"]["rstest-bdd"] == "0.6.0", (
+        "the target dependency section must be rewritten"
+    )
+    assert document["build-dependencies"]["rstest-bdd-harness"] == "0.6.0", (
+        "the harness build dependency must be rewritten"
+    )
+    assert (
+        document["target"]["x86_64_unknown_linux_gnu"]["dev-dependencies"][
+            "rstest-bdd-harness"
+        ]
+        == "0.6.0"
+    ), "the harness target dependency must be rewritten"
+    assert document["workspace"]["dependencies"]["rstest-bdd"] == "0.6.0", (
+        "the workspace dependency should be rewritten"
+    )
+
+
+def test_leaves_unsupported_dependency_entries_unchanged(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Path-only, inherited, unrelated, and patch entries remain untouched."""
+    document = parse_toml(_rstest_bdd_dependency_plan(tmp_path).new_text)
+    assert document["dependencies"]["path-only"]["path"] == "../rstest-bdd", (
+        "path-only dependencies must remain unchanged"
+    )
+    assert document["dependencies"]["workspace-ref"]["version"] == "0.6.0-beta4", (
+        "workspace-inherited dependency versions must remain unchanged"
+    )
+    assert document["dependencies"]["unrelated"] == "0.6.0-beta4", (
+        "dependencies for crates outside the updated workspace must remain unchanged"
+    )
+    assert document["patch"]["crates-io"]["rstest-bdd"]["version"] == "0.6.0-beta4", (
+        "path dependencies must remain unchanged"
+    )
+    assert document["replace"]["rstest-bdd:0.1.0"]["path"] == "../replaced", (
+        "replace entries must remain untouched"
+    )
 
 
 def test_explicit_package_name_overrides_a_matching_dependency_alias(

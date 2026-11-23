@@ -1,6 +1,7 @@
 """Pipeline integration for configured non-member manifest rewrites."""
 
 import pathlib
+from unittest import mock
 
 import pytest
 
@@ -290,7 +291,6 @@ def test_missing_rewrite_manifest_fails_before_any_workspace_write(
 
 def test_partial_write_failure_names_path_and_completed_count(
     tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A write failure reports its path and counts completed fixture writes."""
     workspace = _make_workspace(tmp_path)
@@ -321,12 +321,14 @@ def test_partial_write_failure_names_path_and_completed_count(
             raise OSError(message)
         write_atomic_text(path, text)
 
-    monkeypatch.setattr(
-        bump_manifest_rewrite_application,
-        "write_atomic_text",
-        fail_second_write,
-    )
-    with pytest.raises(ManifestRewriteError, match="1 of 2") as failure:
+    with (
+        mock.patch.object(
+            bump_manifest_rewrite_application,
+            "write_atomic_text",
+            side_effect=fail_second_write,
+        ),
+        pytest.raises(ManifestRewriteError, match="1 of 2") as failure,
+    ):
         bump.run(
             tmp_path,
             "1.2.3",

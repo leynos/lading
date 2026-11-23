@@ -7,11 +7,11 @@ from lading.commands import bump_toml_dependencies, bump_toml_dependency_warning
 
 
 @pytest.mark.parametrize(
-    ("requirement", "target", "expected_bounds"),
+    ("requirement", "target", "expected_bounds", "expected_requirement"),
     [
-        (">=1.0.0, <2", "2.0.0", ("<2",)),
-        ("<0.7", "0.6.0", ("<0.6.0",)),
-        (">0.6.0-beta4", "0.6.0", (">0.6.0",)),
+        (">=1.0.0, <2", "2.0.0", ("<2",), ">=2.0.0, <2"),
+        ("<0.7", "0.6.0", ("<0.6.0",), "<0.6.0"),
+        (">0.6.0-beta4", "0.6.0", (">0.6.0",), ">0.6.0"),
     ],
 )
 def test_dependency_update_warns_when_bound_excludes_target(
@@ -19,6 +19,7 @@ def test_dependency_update_warns_when_bound_excludes_target(
     requirement: str,
     target: str,
     expected_bounds: tuple[str, ...],
+    expected_requirement: str,
 ) -> None:
     """The helper returns warning data without logging as a side effect."""
     document = parse_toml(f'[dependencies]\nalpha = "{requirement}"\n')
@@ -31,6 +32,9 @@ def test_dependency_update_warns_when_bound_excludes_target(
     )
 
     assert changed, "the selected dependency should be rewritten"
+    assert document["dependencies"]["alpha"] == expected_requirement, (
+        "dependency mutation should retain the first comparator and later bounds"
+    )
     assert len(warnings) == 1, "the collector should return one warning record"
     assert warnings[0].excluded_bounds == expected_bounds, (
         "returned warning data should identify the comparator that excludes target"
@@ -52,6 +56,9 @@ def test_dependency_update_does_not_warn_when_target_satisfies_bounds(
     )
 
     assert changed, "the selected dependency should be rewritten"
+    assert document["dependencies"]["alpha"] == ">=0.6.0, <0.7", (
+        "the rewritten lower comparator should retain its satisfied upper bound"
+    )
     assert not warnings, "a satisfied upper bound should produce no warning data"
     assert not caplog.records, "TOML mutation helpers must not log warnings"
 

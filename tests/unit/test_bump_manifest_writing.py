@@ -3,6 +3,7 @@
 import errno
 import os
 from pathlib import Path
+from unittest import mock
 
 import pytest
 from tomlkit import parse as parse_toml
@@ -63,7 +64,6 @@ def test_update_manifest_skips_when_unchanged(tmp_path: Path) -> None:
 
 def test_write_atomic_text_closes_descriptor_when_fchmod_fails(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A failed mode copy closes the temporary fd and removes its file."""
     manifest_path = tmp_path / "Cargo.toml"
@@ -76,9 +76,10 @@ def test_write_atomic_text_closes_descriptor_when_fchmod_fails(
         descriptor_numbers.append(descriptor)
         raise PermissionError(errno.EACCES, failure_message)
 
-    monkeypatch.setattr(bump_toml_files.os, "fchmod", fail_fchmod)
-
-    with pytest.raises(PermissionError, match=failure_message):
+    with (
+        mock.patch.object(bump_toml_files, "_set_file_mode", side_effect=fail_fchmod),
+        pytest.raises(PermissionError, match=failure_message),
+    ):
         bump_toml_files.write_atomic_text(manifest_path, "replacement")
 
     assert len(descriptor_numbers) == 1, "fchmod should receive the temporary fd once"
@@ -105,7 +106,10 @@ def test_write_atomic_text_preserves_symbolic_link(tmp_path: Path) -> None:
     bump_toml_files.write_atomic_text(symbolic_link, "replacement")
 
     assert symbolic_link.is_symlink(), "the configured symlink must remain intact"
-    assert symbolic_link.read_text(encoding="utf-8") == "replacement", (
+    assert symbolic_link.readlink() == Path(target.name), (
+        "the symbolic link must continue pointing at its original relative target"
+    )
+    assert target.read_text(encoding="utf-8") == "replacement", (
         "the target content must be updated through the symlink"
     )
 

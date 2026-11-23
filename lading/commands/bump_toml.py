@@ -181,7 +181,7 @@ def prepare_string_value_replacement(
     if current is None or current == replacement_text:
         return None
     literal, multiline = _string_format_flags(value)
-    if "\r" in replacement_text.replace("\r\n", ""):
+    if "\r" in replacement_text:
         # Multiline strings accept bare carriage returns in some supported
         # tomlkit versions, but TOML treats CR as a line ending only in CRLF.
         # A basic string escapes it consistently across the supported range.

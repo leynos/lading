@@ -149,7 +149,9 @@ def _require_explicit_fence_close(
     MarkdownExampleError
         If the fence ends at a CommonMark container boundary or document end.
     """
-    body_line_count = len(token.content.splitlines())
+    body_line_count = token.content.count("\n")
+    if token.content and not token.content.endswith("\n"):
+        body_line_count += 1
     if end_line - start_line != body_line_count + 2:
         raise MarkdownExampleError(
             document_name,

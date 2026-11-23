@@ -20,119 +20,6 @@ if typ.TYPE_CHECKING:
     from syrupy.assertion import SnapshotAssertion
 
 
-def _rstest_bdd_dependency_plan(
-    root: pathlib.Path,
-    write_fixture_manifest: _ManifestWriter,
-) -> bump_manifest_rewrites.ManifestRewritePlan:
-    """Build a rewrite plan for a multi-section prerelease manifest."""
-    write_fixture_manifest(
-        root,
-        "fixtures/standalone/Cargo.toml",
-        """[dependencies]
-rstest-bdd = "^0.6.0-beta4"
-renamed = { package = "rstest-bdd-harness", version = "~0.6.0-beta4" }
-path-only = { package = "rstest-bdd", path = "../rstest-bdd" }
-workspace-ref = { package = "rstest-bdd", version = "0.6.0-beta4", workspace = true }
-unrelated = "0.6.0-beta4"
-
-[dev-dependencies]
-rstest-bdd = "0.6.0-beta4"
-
-[build-dependencies]
-rstest-bdd-harness = "0.6.0-beta4"
-
-[target.'cfg(unix)'.dependencies]
-rstest-bdd = "0.6.0-beta4"
-
-[target.x86_64_unknown_linux_gnu.dev-dependencies]
-rstest-bdd-harness = "0.6.0-beta4"
-
-[workspace.dependencies]
-rstest-bdd = "0.6.0-beta4"
-
-[patch.crates-io]
-rstest-bdd = { version = "0.6.0-beta4", path = "../patched" }
-
-[replace]
-"rstest-bdd:0.1.0" = { path = "../replaced" }
-""",
-    )
-    return plan_fixture_rewrites(
-        root,
-        (ManifestRewriteConfig(paths=("fixtures/standalone/Cargo.toml",)),),
-        versions=manifest_rewrite_versions(
-            names=frozenset({"rstest-bdd", "rstest-bdd-harness"}),
-            pre_bump_versions={
-                "rstest-bdd": "0.6.0-beta4",
-                "rstest-bdd-harness": "0.6.0-beta4",
-            },
-            target_version="0.6.0",
-        ),
-    )[0]
-
-
-def test_updates_dependency_sections_and_package_aliases(
-    tmp_path: pathlib.Path,
-    snapshot: SnapshotAssertion,
-    write_fixture_manifest: _ManifestWriter,
-) -> None:
-    """Dependency keys, package aliases, target, and workspace tables update."""
-    plan = _rstest_bdd_dependency_plan(tmp_path, write_fixture_manifest)
-    assert plan.new_text == snapshot(name="dependency_rewrites"), (
-        "the rendered dependency manifest must match its focused snapshot"
-    )
-    document = parse_toml(plan.new_text)
-    assert document["dependencies"]["rstest-bdd"] == "^0.6.0", (
-        "the main dependency requirement must retain its compatible operator"
-    )
-    assert document["dependencies"]["renamed"]["version"] == "~0.6.0", (
-        "an aliased dependency must retain its compatible operator"
-    )
-    assert document["dev-dependencies"]["rstest-bdd"] == "0.6.0", (
-        "the development dependency section must be rewritten"
-    )
-    assert document["target"]["cfg(unix)"]["dependencies"]["rstest-bdd"] == "0.6.0", (
-        "the target dependency section must be rewritten"
-    )
-    assert document["build-dependencies"]["rstest-bdd-harness"] == "0.6.0", (
-        "the harness build dependency must be rewritten"
-    )
-    assert (
-        document["target"]["x86_64_unknown_linux_gnu"]["dev-dependencies"][
-            "rstest-bdd-harness"
-        ]
-        == "0.6.0"
-    ), "the harness target dependency must be rewritten"
-    assert document["workspace"]["dependencies"]["rstest-bdd"] == "0.6.0", (
-        "the workspace dependency section must be rewritten"
-    )
-
-
-def test_leaves_unsupported_dependency_entries_unchanged(
-    tmp_path: pathlib.Path,
-    write_fixture_manifest: _ManifestWriter,
-) -> None:
-    """Path-only, inherited, unrelated, and patch entries remain untouched."""
-    document = parse_toml(
-        _rstest_bdd_dependency_plan(tmp_path, write_fixture_manifest).new_text
-    )
-    assert document["dependencies"]["path-only"]["path"] == "../rstest-bdd", (
-        "path-only dependencies must remain unchanged"
-    )
-    assert document["dependencies"]["workspace-ref"]["version"] == "0.6.0-beta4", (
-        "workspace-inherited dependency versions must remain unchanged"
-    )
-    assert document["dependencies"]["unrelated"] == "0.6.0-beta4", (
-        "dependencies for crates outside the updated workspace must remain unchanged"
-    )
-    assert document["patch"]["crates-io"]["rstest-bdd"]["version"] == "0.6.0-beta4", (
-        "path dependencies must remain unchanged"
-    )
-    assert document["replace"]["rstest-bdd:0.1.0"]["path"] == "../replaced", (
-        "replace entries must remain untouched"
-    )
-
-
 def test_rewrites_selected_strings_once_and_preserves_literal_style(
     tmp_path: pathlib.Path,
     snapshot: SnapshotAssertion,
@@ -415,8 +302,9 @@ def test_rewrites_direct_and_nested_inline_string_tables(
 
 def test_planner_rewrites_supplied_text_without_filesystem_access() -> None:
     """The rewrite policy consumes source text without opening its path."""
+    unopened_path = pathlib.PurePath("unopened/Cargo.toml")
     source = bump_manifest_rewrites.ManifestRewriteSource(
-        path=pathlib.Path("unopened/Cargo.toml"),
+        path=typ.cast("pathlib.Path", unopened_path),
         content='[dependencies]\nalpha = "1.0.0"\n',
         dependencies=True,
         string_values=(),
@@ -426,8 +314,11 @@ def test_planner_rewrites_supplied_text_without_filesystem_access() -> None:
         (source,), manifest_rewrite_versions()
     )
 
-    assert plan.path == pathlib.Path("unopened/Cargo.toml"), (
+    assert plan.path is unopened_path, (
         "the planner should preserve the supplied source identity"
+    )
+    assert not hasattr(unopened_path, "read_text"), (
+        "the supplied path must be incapable of filesystem reads"
     )
     assert plan.new_text == '[dependencies]\nalpha = "2.0.0"\n', (
         "the planner should use only supplied text and version metadata"

@@ -47,6 +47,35 @@ echo second
     ], "the loader must preserve every example's fenced source"
 
 
+def test_loader_counts_physical_fence_lines_with_unicode_separator(
+    tmp_path: Path,
+) -> None:
+    """A Unicode line separator inside JSON does not add a source line."""
+    source = '{"value": "left\u2028right"}'
+    document = _write_document(
+        tmp_path,
+        f"<!-- tested-example: unicode-separator -->\n\n```json\n{source}\n```\n",
+    )
+
+    (example,) = load_markdown_examples(document)
+
+    assert example.source == source, (
+        "the fenced source must preserve U+2028 as content on one physical line"
+    )
+
+
+def test_loader_accepts_closed_fence_with_empty_body(tmp_path: Path) -> None:
+    """A closed fence with no body lines remains a valid empty example."""
+    document = _write_document(
+        tmp_path,
+        "<!-- tested-example: empty -->\n\n```json\n```\n",
+    )
+
+    (example,) = load_markdown_examples(document)
+
+    assert not example.source, "an empty fenced body should remain empty"
+
+
 def test_loader_keeps_marker_text_inside_marked_markdown_source(
     tmp_path: Path,
 ) -> None:
@@ -198,6 +227,13 @@ def test_loader_accepts_commonmark_fence_indentation(
         ),
         (
             "<!-- tested-example: open -->\n\n```python\nprint('open')\n",
+            "unterminated",
+        ),
+        (
+            (
+                "<!-- tested-example: open-no-final-newline -->\n\n"
+                "```python\nprint('open')"
+            ),
             "unterminated",
         ),
         (

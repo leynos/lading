@@ -151,8 +151,8 @@ def test_prepare_literal_replacement_falls_back_to_basic_string(
     [
         ('"""', "\n", 'path = """\n\nnew""" # keep\n'),
         ("'''", "\n", "path = '''\n\nnew''' # keep\n"),
-        ('"""', "\r\n", 'path = """\n\r\nnew""" # keep\n'),
-        ("'''", "\r\n", "path = '''\n\r\nnew''' # keep\n"),
+        ('"""', "\r\n", 'path = "\\r\\nnew" # keep\n'),
+        ("'''", "\r\n", 'path = "\\r\\nnew" # keep\n'),
     ],
     ids=[
         "multiline-basic-lf",
@@ -203,6 +203,26 @@ def test_prepare_multiline_replacement_escapes_bare_carriage_return(
     )
     assert parse_toml(rendered)["path"] == replacement_text, (
         "the escaped replacement must preserve the exact string value"
+    )
+
+
+def test_prepare_replacement_escapes_carriage_return_and_lf_together() -> None:
+    """Escaped CRLF stays a value pair instead of becoming a physical line end."""
+    document = parse_toml('path = """v1.0.0\\r\\nkeep""" # keep\n')
+    replacement_text = document["path"].replace("v1.0.0", "v2.0.0")
+
+    replacement = bump_toml.prepare_string_value_replacement(
+        document["path"], replacement_text
+    )
+
+    assert replacement is not None, "a differing CRLF string should be replaced"
+    document["path"] = replacement
+    rendered = document.as_string()
+    assert rendered == 'path = "v2.0.0\\r\\nkeep" # keep\n', (
+        "CRLF content must be escaped in a basic string"
+    )
+    assert parse_toml(rendered)["path"] == replacement_text, (
+        "the emitted TOML must preserve the exact CRLF value"
     )
 
 

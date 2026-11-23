@@ -9,6 +9,7 @@ their own error types; each caller retains responsibility for existence and
 regular-file checks.
 """
 
+import collections.abc as cabc
 import dataclasses as dc
 import fnmatch
 import glob
@@ -115,6 +116,7 @@ def expand_manifest_glob_candidates(
         pattern=pattern,
         error_type=error_type,
         label=label,
+        directory_reader=_manifest_directory_entries,
     )
     return traversal.collect()
 
@@ -127,6 +129,7 @@ class _ManifestGlobTraversal:
     pattern: str
     error_type: type[LadingError]
     label: str
+    directory_reader: cabc.Callable[[Path], tuple[Path, ...]]
     root: Path = dc.field(init=False)
     segments: tuple[str, ...] = dc.field(init=False)
     directory_only: bool = dc.field(init=False)
@@ -154,7 +157,7 @@ class _ManifestGlobTraversal:
         """Match ``**`` without following directory symlinks, avoiding cycles."""
         self.visit(candidate, index + 1)
         is_terminal_recursive = index == len(self.segments) - 1
-        for child in _manifest_directory_entries(candidate):
+        for child in self.directory_reader(candidate):
             if _is_manifest_directory(child):
                 self.visit(child, index)
             elif is_terminal_recursive and not self.directory_only:
@@ -162,7 +165,7 @@ class _ManifestGlobTraversal:
 
     def visit_wildcard(self, candidate: Path, segment: str, index: int) -> None:
         """Match one wildcard path segment against each directory entry."""
-        for child in _manifest_directory_entries(candidate):
+        for child in self.directory_reader(candidate):
             if fnmatch.fnmatch(child.name, segment):
                 self.visit_candidate(child, index + 1)
 
