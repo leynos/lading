@@ -92,6 +92,30 @@ def test_snippet_rewrite_updates_renamed_dependency_by_package_name() -> None:
     )
 
 
+def test_snippet_rewrite_updates_workspace_dependencies() -> None:
+    """Workspace dependency tables in TOML snippets are rewritten."""
+    document = parse_toml('[workspace.dependencies]\nalpha = "1.0.0"\n')
+
+    changed = bump_docs.update_toml_snippet_dependencies(document, ("alpha",), "2.0.0")
+
+    assert changed, "the workspace dependency should be rewritten"
+    assert document["workspace"]["dependencies"]["alpha"] == "2.0.0", (
+        "the workspace requirement should follow the target version"
+    )
+
+
+def test_snippet_rewrite_updates_target_dependencies() -> None:
+    """Target-specific dependency tables in TOML snippets are rewritten."""
+    document = parse_toml('[target."cfg(unix)".dependencies]\nalpha = "1.0.0"\n')
+
+    changed = bump_docs.update_toml_snippet_dependencies(document, ("alpha",), "2.0.0")
+
+    assert changed, "the target-specific dependency should be rewritten"
+    assert document["target"]["cfg(unix)"]["dependencies"]["alpha"] == "2.0.0", (
+        "the target-specific requirement should follow the target version"
+    )
+
+
 def test_multi_section_manifest_rewrite_snapshot(
     snapshot: SnapshotAssertion,
 ) -> None:

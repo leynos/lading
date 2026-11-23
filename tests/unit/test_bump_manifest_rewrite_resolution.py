@@ -9,6 +9,7 @@ import pytest
 from lading.commands import (
     bump_manifest_rewrite_filesystem,
     bump_manifest_rewrites,
+    manifest_paths,
 )
 from lading.config import ManifestRewriteConfig, StringValueRewriteConfig
 from tests.helpers.manifest_rewrites import (
@@ -56,6 +57,25 @@ def test_resolves_globs_deduplicates_and_merges_groups(
     assert 'alpha = "2.0.0"' in plans[1].new_text, (
         "the second glob match must receive dependency rewrites"
     )
+
+
+def test_terminal_recursive_glob_includes_manifest_files(
+    tmp_path: pathlib.Path,
+    write_fixture_manifest: _ManifestWriter,
+) -> None:
+    """A terminal ``**`` records matching files as well as directories."""
+    manifest = write_fixture_manifest(
+        tmp_path, "fixtures/demo/Cargo.toml", '[dependencies]\nalpha = "1.0.0"\n'
+    )
+
+    matches = manifest_paths.expand_manifest_glob_candidates(
+        tmp_path,
+        "fixtures/**",
+        error_type=bump_manifest_rewrites.ManifestRewriteError,
+        label="Manifest rewrite",
+    )
+
+    assert manifest in matches, "terminal recursive globs must retain file matches"
 
 
 def test_manifest_rewrite_preserves_crlf_line_endings(
@@ -120,15 +140,37 @@ def test_rejects_invalid_configured_paths(
         plan_fixture_rewrites(tmp_path, (group,))
 
 
+@pytest.mark.parametrize(
+    "pattern",
+    ["fixtures/**/Cargo.toml", "fixtures/**/Cargo.toml/"],
+    ids=["file-pattern", "directory-pattern"],
+)
 def test_rejects_glob_matches_that_are_not_regular_files(
     tmp_path: pathlib.Path,
+    pattern: str,
 ) -> None:
     """A directory named Cargo.toml cannot pass candidate validation."""
     (tmp_path / "fixtures" / "Cargo.toml").mkdir(parents=True)
-    group = ManifestRewriteConfig(paths=("fixtures/**/Cargo.toml",))
+    group = ManifestRewriteConfig(paths=(pattern,))
 
     with pytest.raises(
         bump_manifest_rewrites.ManifestRewriteError, match="regular file"
+    ):
+        plan_fixture_rewrites(tmp_path, (group,))
+
+
+def test_trailing_slash_glob_does_not_select_regular_manifest_files(
+    tmp_path: pathlib.Path,
+    write_fixture_manifest: _ManifestWriter,
+) -> None:
+    """A trailing separator keeps a manifest glob directory-only."""
+    write_fixture_manifest(
+        tmp_path, "fixtures/demo/Cargo.toml", '[dependencies]\nalpha = "1.0.0"\n'
+    )
+    group = ManifestRewriteConfig(paths=("fixtures/*/Cargo.toml/",))
+
+    with pytest.raises(
+        bump_manifest_rewrites.ManifestRewriteError, match="matched no files"
     ):
         plan_fixture_rewrites(tmp_path, (group,))
 

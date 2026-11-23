@@ -5,17 +5,18 @@ also makes the command-line boundary explicit: diagnostics that an earlier
 dependency rendered on stdout are now written to stderr, and command summaries
 are printed once, unwrapped and without colour. The release adds the opt-in
 `bump.manifest_rewrites` setting for updating configured non-member manifests
-during `lading bump`. It defaults to `[]`, so existing configurations are
-unchanged; enable it only when standalone manifests need rewriting. See the
+during `lading bump`. It defaults to `[]`; configured non-member manifests are
+rewritten only when this setting is enabled. See the
 [bump configuration reference](users-guide.md#bump) for its fields and
 behaviour.
 
-The command-line flags and existing `lading.toml` keys retain their behaviour
-from 0.3.x; this release adds the opt-in `bump.manifest_rewrites` key described
-above. The documented Python API additions are additive.
-`BumpConfig.manifest_rewrites` is new, and `lading.config_manifest_rewrites` and
-`lading.config_validation` support its configuration. `BumpOptions.clock` adds
-an injectable rewrite timer, and
+The command-line flags and existing `lading.toml` key syntax remain compatible
+with 0.3.x; this release adds the opt-in `bump.manifest_rewrites` key described
+above. Compound dependency requirement rewriting changes for every manifest,
+whether or not `bump.manifest_rewrites` is configured. The documented Python
+API additions are additive. `BumpConfig.manifest_rewrites` is new, and
+`lading.config_manifest_rewrites` and `lading.config_validation` support its
+configuration. `BumpOptions.clock` adds an injectable rewrite timer, and
 `lading.commands.manifest_paths.resolve_manifest_candidate` is available to
 manifest-path consumers. `lading.commands.bump_manifest_rewrites` exports
 `ManifestRewriteError`, `ManifestRewritePlan` and `ManifestRewriteVersions`.

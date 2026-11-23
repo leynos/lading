@@ -13,12 +13,9 @@ import typing as typ
 from tomlkit import parse as parse_toml
 from tomlkit.exceptions import TOMLKitError
 
-from lading.commands import (
-    bump_toml,
-    bump_toml_dependencies,
-)
-from lading.commands.bump_toml_dependency_updates import (
-    update_matching_dependency_section,
+from lading.commands import bump_toml
+from lading.commands.bump_manifest_rewrite_dependencies import (
+    rewrite_dependency_requirements,
 )
 
 if typ.TYPE_CHECKING:
@@ -67,17 +64,7 @@ def update_toml_snippet_dependencies(
     """
     if not dependency_targets:
         return False
-
-    changed = False
-    for section in bump_toml_dependencies.DEPENDENCY_SECTIONS:
-        if update_matching_dependency_section(
-            document,
-            (section,),
-            dependency_targets,
-            target_version,
-        ):
-            changed = True
-    return changed
+    return rewrite_dependency_requirements(document, dependency_targets, target_version)
 
 
 def update_toml_snippet_versions(

@@ -111,7 +111,7 @@ def plan_manifest_rewrites(
             )
         for rule in source.string_values:
             _raise_if_string_rewrite_is_stale(source.path, document, rule, versions)
-            _rewrite_string_values(document, rule, versions)
+            _rewrite_string_values(document, rule, versions, source.path)
         new_text = document.as_string()
         if new_text != source.content:
             plans.append(ManifestRewritePlan(source.path, source.content, new_text))
@@ -177,8 +177,14 @@ def _versions_for_crate_not_at_target(
 ) -> tuple[str, ...]:
     """Find stale versions matching one crate's configured template."""
     pattern, version_groups = _stale_template_pattern(template, crate_name)
+    target_rendering = template.format(crate=crate_name, version=target_version)
+    target_pattern = _string_replacement_pattern(template, {target_rendering: "\x00"})
+    # TOML strings cannot contain NUL, so this marker safely separates exact
+    # current renderings from stale matches without joining surrounding text.
+    # The shared boundaries keep a target prefix inside a stale suffix visible.
+    values_to_check = tuple(target_pattern.sub("\x00", value) for value in values)
     return _template_versions_not_target(
-        values, pattern, version_groups, target_version
+        values_to_check, pattern, version_groups, target_version
     )
 
 
@@ -225,9 +231,10 @@ def _rewrite_string_values(
     document: TOMLDocument,
     rule: StringValueRewriteConfig,
     versions: ManifestRewriteVersions,
+    manifest_path: Path,
 ) -> bool:
     """Apply one bounded replacement rule to its selected TOML table."""
-    replacement = _compile_string_rewrite(rule, versions)
+    replacement = _compile_string_rewrite(rule, versions, manifest_path)
     if replacement is None:
         return False
     table = bump_toml.select_table(document, rule.table)
@@ -239,10 +246,12 @@ def _rewrite_string_values(
 def _compile_string_rewrite(
     rule: StringValueRewriteConfig,
     versions: ManifestRewriteVersions,
+    manifest_path: Path,
 ) -> cabc.Callable[[str], str] | None:
     """Build a one-pass replacement callable for the configured template."""
     replacements: dict[str, str] = {}
-    for crate_name in versions.updated_crate_names:
+    replacement_pairs: dict[str, tuple[str, str]] = {}
+    for crate_name in sorted(versions.updated_crate_names):
         old_version = versions.pre_bump_versions.get(crate_name)
         if old_version is None:
             continue
@@ -250,6 +259,16 @@ def _compile_string_rewrite(
         new_text = rule.template.format(
             crate=crate_name, version=versions.target_version
         )
+        previous_pair = replacement_pairs.get(old_text)
+        if previous_pair is not None and previous_pair[0] != new_text:
+            previous_crate = previous_pair[1]
+            message = (
+                "Configured string rewrite template maps workspace crates "
+                f"{previous_crate!r} and {crate_name!r} from {old_text!r} "
+                f"to different replacements in {manifest_path}"
+            )
+            raise ManifestRewriteError(message, failed_path=manifest_path)
+        replacement_pairs.setdefault(old_text, (new_text, crate_name))
         if old_text != new_text:
             replacements[old_text] = new_text
     if not replacements:

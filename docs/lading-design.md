@@ -302,9 +302,14 @@ lading bump <new_version> [--dry-run]
 **Execution Flow:**
 
 1. **Discover Workspace:** Build the internal workspace model.
-2. **Update Workspace **`Cargo.toml`**:** Set `workspace.package.version` to
+2. **Plan Configured Non-member Rewrites:** Resolve opted-in standalone
+   manifests and plan dependency requirement and selected TOML string rewrites
+   from their original files. The root manifest and every workspace-member
+   manifest are skipped because the workspace and member stages own them.
+   Planning errors stop the bump before any manifest write.
+3. **Update Workspace **`Cargo.toml`**:** Set `workspace.package.version` to
    `<new_version>`.
-3. **Update Member Crates:** For each crate in the workspace (not just
+4. **Update Member Crates:** For each crate in the workspace (not just
    publishable ones):
 
     - Update `package.version` in its `Cargo.toml`.
@@ -314,17 +319,11 @@ lading bump <new_version> [--dry-run]
       operators (e.g., `^`, `~`). This prevents version drift between internal
       crates.
 
-4. **Rewrite Configured Non-member Manifests:** For each opted-in standalone
-   manifest in `bump.manifest_rewrites`:
+5. **Apply Configured Non-member Rewrites:** Apply the completed plans after
+   workspace and member manifest updates, before documentation, README
+   transposition, and lockfile regeneration.
 
-    - Plan dependency requirement and selected TOML string rewrites from the
-      original files. The root manifest and every workspace-member manifest
-      remain owned by the workspace and member stages and are skipped here.
-    - Apply the completed plans after workspace and member manifest updates,
-      before documentation, README transposition, and lockfile regeneration.
-      Planning errors stop the bump before any manifest write.
-
-5. **Update Documentation Files:**
+6. **Update Documentation Files:**
 
     - Introduce configuration-driven glob patterns for documentation files.
     - For each matching file, scan for TOML fenced code blocks (three backticks
@@ -333,15 +332,15 @@ lading bump <new_version> [--dry-run]
       dependency that is also a workspace member to `<new_version>`. This
       replaces the previous hardcoded logic.
 
-6. **Handle Workspace READMEs:** For each crate where `readme_is_workspace` is
+7. **Handle Workspace READMEs:** For each crate where `readme_is_workspace` is
    `true`, copy the workspace README into the crate directory, rewrite relative
    Markdown links, and overwrite only when the content changes.
 
-7. **Regenerate Lockfiles:** When enabled and any manifest changed, regenerate
+8. **Regenerate Lockfiles:** When enabled and any manifest changed, regenerate
    the root, discovered, and configured lockfiles. Non-member manifest
    rewriting does not add lockfile targets.
 
-8. **Report Changes:** Output a summary of all files that were (or would be)
+9. **Report Changes:** Output a summary of all files that were (or would be)
    modified. Rewritten non-member manifests use the existing manifest category.
 
 ### Implementation notes (Step 2.1)
@@ -413,9 +412,10 @@ lading bump <new_version> [--dry-run]
 - `bump_manifest_rewrite_dependencies` owns dependency-section traversal for
   direct, target, and workspace requirements. `bump_toml` and
   `bump_toml_dependencies` encapsulate TOML node details, requirement
-  composition, and formatting preservation. The planner parses supplied TOML
-  text directly; `bump_toml_files` owns manifest file I/O. Comparator warnings
-  are returned as data and logged at the command boundary.
+  composition, and formatting preservation. `bump_docs_toml` reuses this
+  traversal for dependency tables in documentation fences. The planner parses
+  supplied TOML text directly; `bump_toml_files` owns manifest file I/O.
+  Comparator warnings are returned as data and logged at the command boundary.
 - `bump_pipeline` owns timing, metrics, and stage ordering. It plans every
   selected manifest before the workspace manifest stage writes, then applies
   the plans after member manifests and before documentation, README

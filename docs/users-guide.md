@@ -339,7 +339,8 @@ READMEs appear in the output with the `(readme)` suffix described above.
 
 If `bump.documentation.globs` is configured, `lading` also searches those
 Markdown files for TOML code fences and updates version values that refer to
-workspace crates.
+workspace crates. Dependency requirements are updated in top-level,
+`[workspace.<section>]`, and `[target.<selector>.<section>]` tables.
 
 ### 3. Publish in dry-run mode
 
@@ -732,7 +733,8 @@ target. A strict first operator (`<` or `>`) remains unchanged, so its
 rewritten version necessarily excludes the target; the warning does not change
 the requirement or stop the bump. For example, `>=0.6.0-beta4, <0.7` becomes
 `>=0.6.0, <0.7`; targeting `0.7.0` instead warns because the retained upper
-bound excludes the target. Cargo lockfile regeneration remains the final check
+bound excludes the target. Retained caret (`^`) and tilde (`~`) clauses are not
+evaluated by this warning. Cargo lockfile regeneration remains the final check
 when enabled; otherwise, resolve the warning before committing.
 
 Lockfile regeneration runs
@@ -802,7 +804,9 @@ the match; one ending with `{version}` requires a boundary after the match that
 rejects letters, digits, periods, plus signs, and hyphens. An adjacent `.crate`
 extension or `-extra` suffix therefore blocks the match. These rules keep
 `rstest-bdd` from matching inside `rstest-bdd-harness` and prevent
-`0.6.0-beta4` matching the prefix of `0.6.0-beta40`.
+`0.6.0-beta4` matching the prefix of `0.6.0-beta40`. If distinct crates render
+the same old text but different target text, planning fails with the affected
+manifest path instead of choosing one replacement.
 
 The root manifest and all workspace-member manifests are skipped even when a
 configured glob selects them. Repeated groups selecting the same non-member
@@ -901,13 +905,15 @@ rewrites. Labels are bounded to these values:
 
 #### `bump.manifest_rewrite.duration`
 
-One duration observation covers manifest resolution and planning plus rewrite
-application for each configured rewrite run, including failures. It excludes
-workspace and member manifest updates between those intervals. Its labels are
+Planning failures record the planning duration. When the rewrite application
+stage runs, one duration observation covers manifest resolution and planning
+plus application, including application failures. It excludes workspace and
+member manifest updates between those intervals. A workspace or member manifest
+write failure between planning and application emits no duration. Labels are
 `outcome`, `dry_run`, and `error_category`, with the values documented above.
 Runs with no `bump.manifest_rewrites` configuration emit no rewrite metrics. A
-failed write emits one `manifest_rewrite failed:` error event naming the path
-and reporting completed and planned writes.
+failed rewrite write emits one `manifest_rewrite failed:` error event naming
+the path and reporting completed and planned writes.
 
 #### `publish.cargo.duration`
 

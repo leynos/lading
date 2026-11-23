@@ -183,6 +183,29 @@ def test_prepare_multiline_replacement_preserves_leading_newline(
     )
 
 
+@pytest.mark.parametrize("delimiter", ['"""', "'''"])
+def test_prepare_multiline_replacement_escapes_bare_carriage_return(
+    delimiter: str,
+) -> None:
+    """Bare carriage returns use a basic string to stay valid TOML."""
+    document = parse_toml(f"path = {delimiter}old{delimiter} # keep\n")
+    replacement_text = "before\rafter"
+
+    replacement = bump_toml.prepare_string_value_replacement(
+        document["path"], replacement_text
+    )
+
+    assert replacement is not None, "a changed multiline string should be replaced"
+    document["path"] = replacement
+    rendered = document.as_string()
+    assert rendered == 'path = "before\\rafter" # keep\n', (
+        "bare carriage returns must be escaped in a single-line basic string"
+    )
+    assert parse_toml(rendered)["path"] == replacement_text, (
+        "the escaped replacement must preserve the exact string value"
+    )
+
+
 def test_select_table_handles_out_of_order_package() -> None:
     """Out-of-order tables (OutOfOrderTableProxy) are accepted."""
     # When [package.metadata.docs.rs] appears after other tables,

@@ -1,8 +1,8 @@
-"""Match workspace crates in dependency sections of Cargo manifests.
+"""Match workspace crates in dependency sections of Cargo TOML.
 
 This module owns traversal of direct, workspace, and target dependency tables.
-The bump planner uses :func:`rewrite_dependency_requirements` after selecting
-an allowlisted non-member manifest.
+Both the configured manifest planner and documentation snippet updater use
+:func:`rewrite_dependency_requirements` to keep supported sections aligned.
 """
 
 import collections.abc as cabc
@@ -22,12 +22,12 @@ def rewrite_dependency_requirements(
     updated_crate_names: cabc.Collection[str],
     target_version: str,
 ) -> bool:
-    r"""Update matching dependency requirements in a Cargo manifest.
+    r"""Update matching dependency requirements in a Cargo TOML document.
 
     Parameters
     ----------
     document : TOMLDocument
-        Parsed Cargo manifest whose dependency tables may be updated.
+        Parsed Cargo TOML document whose dependency tables may be updated.
     updated_crate_names : Collection[str]
         Workspace package names selected for the current bump.
     target_version : str

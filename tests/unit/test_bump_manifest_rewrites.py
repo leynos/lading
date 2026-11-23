@@ -201,6 +201,41 @@ literal = { path = '../../../target/rstest-bdd-0.6.0-beta4' }
     )
 
 
+def test_rejects_ambiguous_string_template_replacements(
+    tmp_path: pathlib.Path,
+    write_fixture_manifest: _ManifestWriter,
+) -> None:
+    """Colliding old values cannot select one crate's new value arbitrarily."""
+    manifest = write_fixture_manifest(
+        tmp_path, "fixture/Cargo.toml", '[metadata]\nartifact = "a12.0.0"\n'
+    )
+    group = ManifestRewriteConfig(
+        paths=("fixture/Cargo.toml",),
+        dependencies=False,
+        string_values=(
+            StringValueRewriteConfig(table=("metadata",), template="{crate}{version}"),
+        ),
+    )
+    versions = manifest_rewrite_versions(
+        names=frozenset({"a", "a1"}),
+        pre_bump_versions={"a": "12.0.0", "a1": "2.0.0"},
+        target_version="3.0.0",
+    )
+
+    with pytest.raises(
+        bump_manifest_rewrites.ManifestRewriteError,
+        match="different replacements",
+    ) as failure:
+        plan_fixture_rewrites(tmp_path, (group,), versions=versions)
+
+    assert failure.value.failed_path == manifest.resolve(), (
+        "the planning error should identify the affected manifest"
+    )
+    assert (
+        manifest.read_text(encoding="utf-8") == '[metadata]\nartifact = "a12.0.0"\n'
+    ), "a rejected replacement plan must not write the manifest"
+
+
 def test_direct_string_values_and_missing_selectors_are_noops(
     tmp_path: pathlib.Path,
     write_fixture_manifest: _ManifestWriter,
@@ -235,37 +270,6 @@ def test_direct_string_values_and_missing_selectors_are_noops(
     )
 
 
-def test_retry_rejects_stale_string_when_member_is_already_at_target(
-    tmp_path: pathlib.Path,
-    write_fixture_manifest: _ManifestWriter,
-) -> None:
-    """A retry must not silently leave fixture text at an unknown old version."""
-    write_fixture_manifest(
-        tmp_path,
-        "fixtures/standalone/Cargo.toml",
-        '[metadata]\npath = "target/alpha-1.0.0"\n',
-    )
-    group = ManifestRewriteConfig(
-        paths=("fixtures/standalone/Cargo.toml",),
-        dependencies=False,
-        string_values=(StringValueRewriteConfig(table=("metadata",)),),
-    )
-
-    with pytest.raises(
-        bump_manifest_rewrites.ManifestRewriteError,
-        match=r"crate 'alpha'.*'1\.0\.0'.*previous version cannot be recovered",
-    ):
-        plan_fixture_rewrites(
-            tmp_path,
-            (group,),
-            versions=manifest_rewrite_versions(
-                names=frozenset({"alpha"}),
-                pre_bump_versions={"alpha": "2.0.0"},
-                target_version="2.0.0",
-            ),
-        )
-
-
 def test_rewrites_direct_and_nested_inline_string_tables(
     tmp_path: pathlib.Path,
     write_fixture_manifest: _ManifestWriter,
@@ -298,37 +302,6 @@ def test_rewrites_direct_and_nested_inline_string_tables(
     )
 
 
-def test_unchanged_manifest_is_omitted_and_dry_run_does_not_write(
-    tmp_path: pathlib.Path,
-    write_fixture_manifest: _ManifestWriter,
-) -> None:
-    """No-op plans are empty and applying a plan in dry-run preserves bytes."""
-    content = '[dependencies]\nalpha = "2.0.0"\n'
-    manifest = write_fixture_manifest(tmp_path, "fixture/Cargo.toml", content)
-    group = ManifestRewriteConfig(paths=("fixture/Cargo.toml",))
-
-    assert not plan_fixture_rewrites(
-        tmp_path,
-        (group,),
-        manifest_rewrite_versions(target_version="2.0.0"),
-    ), "an unchanged target version must produce no rewrite plan"
-    plans = plan_fixture_rewrites(
-        tmp_path,
-        (group,),
-        manifest_rewrite_versions(target_version="3.0.0"),
-    )
-    original_bytes = manifest.read_bytes()
-
-    changed_paths = bump_manifest_rewrites.apply_manifest_rewrites(plans, dry_run=True)
-
-    assert changed_paths == (manifest.resolve(),), (
-        "dry-run must return the planned manifest path"
-    )
-    assert manifest.read_bytes() == original_bytes, (
-        "dry-run must preserve manifest bytes"
-    )
-
-
 def test_planner_rewrites_supplied_text_without_filesystem_access() -> None:
     """The rewrite policy consumes source text without opening its path."""
     source = bump_manifest_rewrites.ManifestRewriteSource(
@@ -348,30 +321,3 @@ def test_planner_rewrites_supplied_text_without_filesystem_access() -> None:
     assert plan.new_text == '[dependencies]\nalpha = "2.0.0"\n', (
         "the planner should use only supplied text and version metadata"
     )
-
-
-def test_application_rejects_manifest_changed_after_planning(
-    tmp_path: pathlib.Path,
-) -> None:
-    """Applying a stale plan must preserve the newer manifest content."""
-    manifest = tmp_path / "Cargo.toml"
-    manifest.write_text('[dependencies]\nalpha = "1.0.0"\n', encoding="utf-8")
-    plan = bump_manifest_rewrites.ManifestRewritePlan(
-        manifest,
-        '[dependencies]\nalpha = "1.0.0"\n',
-        '[dependencies]\nalpha = "2.0.0"\n',
-    )
-    manifest.write_text('[dependencies]\nalpha = "local-edit"\n', encoding="utf-8")
-
-    with pytest.raises(
-        bump_manifest_rewrites.ManifestRewriteError,
-        match="changed after planning",
-    ) as failure:
-        bump_manifest_rewrites.apply_manifest_rewrites((plan,), dry_run=False)
-
-    assert failure.value.failed_path == manifest, (
-        "the error should identify the stale plan's target"
-    )
-    assert manifest.read_text(encoding="utf-8") == (
-        '[dependencies]\nalpha = "local-edit"\n'
-    ), "application must not overwrite changes made after planning"

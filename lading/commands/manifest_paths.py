@@ -12,6 +12,7 @@ regular-file checks.
 import dataclasses as dc
 import fnmatch
 import glob
+import os
 import stat
 import typing as typ
 from pathlib import Path
@@ -128,12 +129,16 @@ class _ManifestGlobTraversal:
     label: str
     root: Path = dc.field(init=False)
     segments: tuple[str, ...] = dc.field(init=False)
+    directory_only: bool = dc.field(init=False)
     matches: list[Path] = dc.field(default_factory=list)
 
     def __post_init__(self) -> None:
         """Initialize the resolved root and path segments before traversal."""
         self.root = self.workspace_root.resolve()
         self.segments = Path(self.pattern).parts
+        self.directory_only = self.pattern.endswith(os.sep) or (
+            os.altsep is not None and self.pattern.endswith(os.altsep)
+        )
 
     def collect(self) -> tuple[Path, ...]:
         """Return all matching candidates in stable path order."""
@@ -143,9 +148,12 @@ class _ManifestGlobTraversal:
     def visit_recursive(self, candidate: Path, index: int) -> None:
         """Match zero or more directory segments for ``**``."""
         self.visit(candidate, index + 1)
+        is_terminal_recursive = index == len(self.segments) - 1
         for child in _manifest_directory_entries(candidate):
             if _is_manifest_directory(child):
                 self.visit(child, index)
+            elif is_terminal_recursive and not self.directory_only:
+                self.record_if_present(child)
 
     def visit_wildcard(self, candidate: Path, segment: str, index: int) -> None:
         """Match one wildcard path segment against each directory entry."""
@@ -181,8 +189,10 @@ class _ManifestGlobTraversal:
     def record_if_present(self, candidate: Path) -> None:
         """Record a candidate that still exists after traversal."""
         try:
-            candidate.lstat()
+            candidate_stat = candidate.lstat()
         except FileNotFoundError, NotADirectoryError:
+            return
+        if self.directory_only and not stat.S_ISDIR(candidate_stat.st_mode):
             return
         self.matches.append(candidate)
 

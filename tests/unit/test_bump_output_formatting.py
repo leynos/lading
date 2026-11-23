@@ -312,9 +312,8 @@ def test_format_result_message_lists_non_member_manifest_in_existing_category(
 ) -> None:
     """Live and dry-run reports use workspace-relative manifest entries."""
     root = tmp_path
-    changes = bump_output.BumpChanges(
-        manifests=(root / "Cargo.toml", root / "tests/fixtures/standalone/Cargo.toml")
-    )
+    fixture_manifest = root / "tests/fixtures/standalone/Cargo.toml"
+    changes = bump_output.BumpChanges(manifests=(root / "Cargo.toml", fixture_manifest))
 
     live = bump_output._format_result_message(
         changes, "1.2.3", dry_run=False, workspace_root=root
@@ -326,10 +325,10 @@ def test_format_result_message_lists_non_member_manifest_in_existing_category(
     assert live.splitlines() == [
         "Updated version to 1.2.3 in 2 manifest(s):",
         "- Cargo.toml",
-        "- tests/fixtures/standalone/Cargo.toml",
+        f"- {fixture_manifest.relative_to(root)}",
     ], "live output must list root and fixture manifests in the manifest category"
     assert dry_run.splitlines() == [
         "Dry run; would update version to 1.2.3 in 2 manifest(s):",
         "- Cargo.toml",
-        "- tests/fixtures/standalone/Cargo.toml",
+        f"- {fixture_manifest.relative_to(root)}",
     ], "dry-run output must list the same manifest paths with its dry-run header"
