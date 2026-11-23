@@ -364,10 +364,13 @@ that matches nothing is not an error; exclusions are filters.
 Within the workspace, every path component below the canonical root is
 inspected with `lstat` before anything is resolved. Symlinked ancestors, final
 symlinks, dangling links, in-workspace symlink aliases, junctions, and
-non-regular targets are rejected. An intended new file, such as an adopted
-crate README, is accepted only when every parent directory is a real directory.
-Canonical containment is proved as an independent second check. A workspace
-reached through a symlink in the root's own ancestry remains valid.
+non-regular targets are rejected. Existing regular-file targets with more than
+one hard link are rejected even when every link is inside the workspace,
+because a write through one name would leave the other names stale. An intended
+new file, such as an adopted crate README, is accepted only when every parent
+directory is a real directory. Canonical containment is proved as an
+independent second check. A workspace reached through a symlink in the root's
+own ancestry remains valid.
 
 A selected documentation file that cannot be read or decoded is a preflight
 error rather than a warning-skip.
@@ -381,10 +384,11 @@ completes before the first write. Per-file replacement is atomic, but the
 command does not roll back writes after an actual execution failure, and it
 does not defend against a concurrent process changing paths between validation
 and writing. `CARGO_RESOLVER_LOCKFILE_PATH` must be unset, and no Cargo
-configuration file Cargo would read may set `resolver.lockfile-path`; either
-route is rejected because Cargo would write a lockfile the plan did not
-validate. Unset the variable, or remove the setting from the reported
-configuration file, before bumping.
+configuration file Cargo would read may set `resolver.lockfile-path`, including
+through that configuration's `include` entries; either route is rejected
+because Cargo would write a lockfile the plan did not validate. Unset the
+variable, or remove the setting from the reported configuration file, before
+bumping.
 
 Configured lockfile manifests are resolved to the effective workspace root that
 Cargo reports. A member manifest therefore contributes the outer workspace

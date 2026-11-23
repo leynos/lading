@@ -86,3 +86,14 @@ def test_loader_matches_a_longer_closing_fence(tmp_path: Path) -> None:
     assert example.body == "echo ``` inside\n```\nstill inside", (
         "a standalone shorter backtick line must neither close the fence nor be lost"
     )
+
+
+def test_loader_rejects_an_unmarked_block_quote_fence(tmp_path: Path) -> None:
+    """A fenced example nested in a block quote is still a fence."""
+    path = _write(
+        tmp_path,
+        "> ~~~python\n> print(1)\n> ~~~\n",
+    )
+
+    with pytest.raises(ValueError, match="unmarked fenced example"):
+        load_tested_examples(path)

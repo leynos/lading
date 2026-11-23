@@ -170,3 +170,21 @@ def test_recursive_glob_reports_an_unreadable_current_directory(
     assert "cannot examine target" in str(excinfo.value), (
         "the diagnostic must name the unreadable starting directory"
     )
+
+
+def test_a_hard_linked_documentation_match_is_rejected(tmp_path: Path) -> None:
+    """Two names for one inode cannot both receive a write."""
+    root = tmp_path / "workspace"
+    (root / "docs").mkdir(parents=True)
+    (root / "docs" / "a.md").write_text("", encoding="utf-8")
+    try:
+        os.link(root / "docs" / "a.md", root / "docs" / "b.md")
+    except OSError as exc:  # pragma: no cover - capability
+        pytest.skip(f"hard links are unavailable here: {exc}")
+
+    with pytest.raises(UnsafeBumpTargetError) as excinfo:
+        expand_confined_glob(root, "docs/*.md", key="globs")
+
+    assert "hard-linked target is not permitted" in str(excinfo.value), (
+        "a hard-linked regular-file match must be rejected"
+    )

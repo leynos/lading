@@ -47,13 +47,18 @@ workspace that relied on any of the following now fails with exit status 1 and a
   was skipped with a warning.
 - A workspace README or adopted crate README that is a symlink or a
   non-regular file.
+- A manifest, documentation file, README, or lockfile target that is a hard
+  link (a file with more than one directory entry), even when every link stays
+  inside the workspace. A write through one name would leave the others stale,
+  so replace the target with an independent copy of the file.
 - A configured `bump.lockfile_manifests` entry that is absolute, traverses
   upwards, is missing, is a symlink, or is not named `Cargo.toml`. This
   validation applies when lockfile regeneration is enabled; a run with
   `--no-rebuild-lockfiles` ignores configured entries.
 - A non-empty `CARGO_RESOLVER_LOCKFILE_PATH` in the environment, or a
-  `resolver.lockfile-path` in a Cargo configuration file. Unset the variable or
-  remove the setting.
+  `resolver.lockfile-path` in a Cargo configuration file, including a file
+  pulled in through that configuration's `include` entries. Unset the variable
+  or remove the setting.
 
 Configured lockfile manifests are resolved to the effective workspace root
 Cargo reports. A manifest that belongs to the outer workspace now reports the
@@ -76,6 +81,7 @@ path after validation is not defended against.
 | Your environment                                                       | Action required                                             |
 | ---------------------------------------------------------------------- | ----------------------------------------------------------- |
 | CPython 3.14 or later, confined workspace                              | None; upgrade as usual.                                     |
+| CPython 3.14 or later, script reads diagnostics from stdout            | Required: read diagnostics from stderr instead.             |
 | CPython 3.14 or later, symlinked member or escaping documentation glob | Required: make the member or glob real, or remain on 0.3.1. |
 | CPython 3.13                                                           | Required: upgrade the interpreter, or remain on 0.3.1.      |
 | CPython 3.12 or earlier                                                | Required: upgrade the interpreter; 0.3.1 required 3.13.     |
@@ -180,8 +186,15 @@ python3.14 -m venv .venv
 .venv/bin/python -m pip install lading==0.4.0b1
 ```
 
-On Windows, the virtual environment's interpreter is `.venv\Scripts\python`; run
-`.venv\Scripts\python -m pip install lading==0.4.0b1` instead.
+On Windows, create the environment with the launcher:
+
+<!-- tested-example: migration-create-venv-windows -->
+```text
+py -3.14 -m venv .venv
+```
+
+Then run the environment's interpreter, which is `.venv\Scripts\python`:
+`.venv\Scripts\python -m pip install lading==0.4.0b1`.
 
 Once the final `0.4.0` release is available, the same commands with
 `lading==0.4.0` move an installation to it; the final release carries the same

@@ -351,6 +351,14 @@ class _Expansion:
         wants_regular = self.expect is MatchExpectation.REGULAR_FILE
         selected = is_regular if wants_regular else is_directory
         if selected:
+            if wants_regular and result.st_nlink > 1:
+                # A write through one name would leave the other names stale,
+                # so hard-linked files follow the single-target walk's policy.
+                self._reject_match(
+                    matched_parts[:-1],
+                    matched_parts[-1],
+                    "hard-linked target is not permitted",
+                )
             self.found.add(matched_parts)
             return
         ignored = is_directory if wants_regular else is_regular

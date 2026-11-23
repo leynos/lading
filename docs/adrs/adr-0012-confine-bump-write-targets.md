@@ -164,8 +164,19 @@ layers, so planning also rejects a non-empty setting found in the configuration
 file Cargo would read for the workspace root, each ancestor, and `$CARGO_HOME`.
 When a directory contains both `.cargo/config` and `.cargo/config.toml`, only
 the extensionless `config` is inspected, because Cargo ignores the other file.
+The check follows each file's `include` entries recursively, resolving relative
+paths against the including file and applying Cargo's left-to-right, own-value
+wins merge order, so a value supplied by an included file is rejected too.
 Planning runs its metadata query from the workspace root so it layers the same
 configuration as regeneration.
+
+### 2026-11-23: Hard-linked glob matches
+
+The component walk rejects an existing regular-file target with more than one
+hard link. Glob expansion now applies the same policy to every selected
+regular-file match. Without it, two names for one inode reached the plan under
+one identity, so only the first was written and the others silently kept their
+old content.
 
 ## Alternatives considered
 

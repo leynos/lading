@@ -493,6 +493,14 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
   single-manifest repair command. Targeted tests cover the remaining rejection
   branches, and typing-only import blocks are excluded from coverage the same
   way as existing modules.
+- [x] 2026-11-23: Sixth CodeRabbit review cleared. Glob expansion now rejects
+  hard-linked regular-file matches with the walk's policy, so two names for one
+  inode cannot be planned as one write. The lockfile-path preflight follows
+  Cargo configuration `include` entries recursively with Cargo's merge order.
+  The migration guide documents the diagnostic-stream row, the Windows virtual
+  environment command, and hard-linked targets; the user guide and ADR record
+  the same changes. The example loader rejects fenced blocks nested in block
+  quotes, and a working-directory test uses `chdir_for_test`.
 - [ ] EP-M5 release: tag and release `v0.4.0b1` after review convergence, then
   record the tag commit on issue #409.
 
@@ -560,7 +568,13 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
 - Proposal identity is the target's device and inode when it exists, falling
   back to the normalized native path for an absent may-create target. This
   composes aliases on case-insensitive filesystems while keeping distinct files
-  distinct on case-sensitive volumes.
+  distinct on case-sensitive volumes. Because glob matches can therefore share
+  an identity, glob expansion rejects any regular-file match with more than one
+  hard link.
+- The lockfile-path preflight follows Cargo configuration `include` entries
+  recursively, resolving paths against the including file and applying Cargo's
+  left-to-right, own-value-wins merge order. Reading only top-level values
+  would let a committed include redirect the lockfile after validation.
 
 ## Outcomes & retrospective
 
@@ -577,3 +591,5 @@ here and on issue #409 once the release tag is pushed.
   guidance, and the `0.4.0b1` release decision.
 - 2026-11-23: Recorded the fifth-review decisions on configuration precedence,
   planning working directory, and filesystem-aware proposal identity.
+- 2026-11-23: Recorded the sixth-review decisions on hard-linked glob matches
+  and Cargo configuration includes.

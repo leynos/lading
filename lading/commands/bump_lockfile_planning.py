@@ -14,10 +14,10 @@ validated by the preflight.
 import collections.abc as cabc
 import dataclasses as dc
 import os
-import tomllib
 import typing as typ
 from pathlib import Path, PurePosixPath
 
+from lading.commands.bump_lockfile_config import configured_lockfile_override
 from lading.commands.bump_lockfile_manifests import merge_discovered_manifests
 from lading.commands.bump_lockfile_paths import LockfileRegenerationError
 from lading.utils.confinement import (
@@ -90,70 +90,14 @@ def reject_lockfile_override(
             "Cargo writes the lockfiles the bump plan validated"
         )
         raise BumpPreflightError(message)
-    for config_path in _cargo_config_paths(workspace_root, environ):
-        configured = _configured_lockfile_path(config_path)
-        if configured:
-            message = (
-                f"{config_path} sets resolver.lockfile-path to {configured!r}; "
-                "remove it so Cargo writes the lockfiles the bump plan validated"
-            )
-            raise BumpPreflightError(message)
-
-
-def _cargo_config_paths(
-    workspace_root: Path,
-    environ: cabc.Mapping[str, str],
-) -> tuple[Path, ...]:
-    """Return the Cargo configuration files that could layer over the root."""
-    paths: list[Path] = []
-    for directory in (workspace_root, *workspace_root.parents):
-        paths.extend(_config_files(directory / ".cargo"))
-    cargo_home = environ.get("CARGO_HOME")
-    if cargo_home:
-        home = Path(cargo_home).expanduser()
-        if not home.is_absolute():
-            # Cargo runs with cwd=workspace_root, so a relative CARGO_HOME is
-            # relative to the workspace, not to this process's directory.
-            home = workspace_root / home
-    else:
-        home = Path.home() / ".cargo"
-    paths.extend(_config_files(home))
-    return tuple(dict.fromkeys(paths))
-
-
-def _config_files(directory: Path) -> list[Path]:
-    """Return the Cargo configuration file Cargo would read from ``directory``.
-
-    When both spellings exist, Cargo prefers the extensionless ``config`` and
-    ignores ``config.toml``. Returning both would let this preflight reject a
-    setting, or a malformed file, that Cargo never reads.
-
-    Returns
-    -------
-    list[Path]
-        The configuration file Cargo would read, or an empty list when the
-        directory has neither spelling.
-    """
-    for name in ("config", "config.toml"):
-        candidate = directory / name
-        if candidate.is_file():
-            return [candidate]
-    return []
-
-
-def _configured_lockfile_path(config_path: Path) -> str | None:
-    """Return ``resolver.lockfile-path`` from ``config_path`` when set."""
-    try:
-        with config_path.open("rb") as handle:
-            document = tomllib.load(handle)
-    except (OSError, tomllib.TOMLDecodeError) as exc:
-        message = f"cannot read Cargo configuration {config_path}: {exc}"
-        raise BumpPreflightError(message) from exc
-    resolver = document.get("resolver")
-    if not isinstance(resolver, cabc.Mapping):
-        return None
-    configured = resolver.get("lockfile-path")
-    return configured if isinstance(configured, str) and configured else None
+    found = configured_lockfile_override(workspace_root, environ)
+    if found is not None:
+        config_path, configured = found
+        message = (
+            f"{config_path} sets resolver.lockfile-path to {configured!r}; "
+            "remove it so Cargo writes the lockfiles the bump plan validated"
+        )
+        raise BumpPreflightError(message)
 
 
 def plan_lockfiles(

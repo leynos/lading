@@ -352,3 +352,31 @@ def test_bump_reports_a_missing_workspace_readme_as_a_preflight_error(
         run=lambda: run_bump(workspace, runner, CliSeams(monkeypatch, capsys)),
         expected="Workspace README.md is required",
     )
+
+
+def test_bump_rejects_hard_linked_documentation_targets(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """Two documentation names for one inode are rejected before planning."""
+    outside_sentinel(tmp_path)
+    workspace = create_cli_workspace(
+        tmp_path / "workspace",
+        options=WorkspaceOptions(documentation_globs=("docs/*.md",)),
+    )
+    docs = workspace.root / "docs"
+    docs.mkdir()
+    (docs / "a.md").write_text("", encoding="utf-8")
+    try:
+        os.link(docs / "a.md", docs / "b.md")
+    except OSError as exc:  # pragma: no cover - capability
+        pytest.skip(f"hard links are unavailable here: {exc}")
+    runner = RecordingCommandRunner(metadata=workspace.metadata)
+
+    assert_rejected(
+        workspace=workspace,
+        runner=runner,
+        run=lambda: run_bump(workspace, runner, CliSeams(monkeypatch, capsys)),
+        expected="hard-linked target",
+    )

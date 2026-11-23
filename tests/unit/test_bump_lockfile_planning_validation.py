@@ -12,6 +12,7 @@ import pytest
 from lading.commands.bump_lockfile_planning import LockfilePlan, plan_lockfiles
 from lading.commands.bump_lockfile_regeneration import regenerate_planned
 from lading.utils.confinement import BumpPreflightError
+from tests.helpers.cwd import chdir_for_test
 from tests.unit.lockfile_planning_helpers import (
     RecordingRunner,
     write_package,
@@ -116,7 +117,7 @@ def test_relative_cargo_home_is_resolved_against_the_workspace(
     )
     elsewhere = tmp_path.resolve() / "elsewhere"
     elsewhere.mkdir()
-    monkeypatch.chdir(elsewhere)
+    chdir_for_test(monkeypatch, elsewhere)
     runner = RecordingRunner(metadata_root=root)
 
     with pytest.raises(BumpPreflightError) as excinfo:
