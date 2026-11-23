@@ -114,3 +114,34 @@ def test_retry_accepts_exact_target_with_repeated_version_placeholder(
     assert not plan_fixture_rewrites(tmp_path, (group,), versions=versions), (
         "an exact target template rendering must produce an unchanged plan"
     )
+
+
+def test_version_only_template_does_not_blame_another_crates_old_version(
+    tmp_path: pathlib.Path,
+    write_fixture_manifest: _ManifestWriter,
+) -> None:
+    """A version-only template cannot identify which crate owns stale text."""
+    write_fixture_manifest(
+        tmp_path,
+        "fixtures/standalone/Cargo.toml",
+        '[metadata]\nversion = "1.0.0"\n',
+    )
+    group = ManifestRewriteConfig(
+        paths=("fixtures/standalone/Cargo.toml",),
+        dependencies=False,
+        string_values=(
+            StringValueRewriteConfig(table=("metadata",), template="{version}"),
+        ),
+    )
+    versions = manifest_rewrite_versions(
+        names=frozenset({"alpha", "beta"}),
+        pre_bump_versions={"alpha": "1.0.0", "beta": "2.0.0"},
+        target_version="2.0.0",
+    )
+
+    plans = plan_fixture_rewrites(tmp_path, (group,), versions=versions)
+
+    assert len(plans) == 1, "the old alpha version should produce one rewrite plan"
+    assert plans[0].new_text == '[metadata]\nversion = "2.0.0"\n', (
+        "a version-only template should rewrite old values without stale ownership"
+    )

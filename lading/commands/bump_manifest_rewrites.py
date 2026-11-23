@@ -168,6 +168,8 @@ def _stale_string_references(
     versions: ManifestRewriteVersions,
 ) -> tuple[tuple[str, str], ...]:
     """Find old template versions for crates already at the target version."""
+    if not _template_identifies_crate(template):
+        return ()
     return tuple(
         (crate_name, stale_version)
         for crate_name in sorted(versions.updated_crate_names)
@@ -175,6 +177,14 @@ def _stale_string_references(
         for stale_version in _versions_for_crate_not_at_target(
             values, template, crate_name, versions.target_version
         )
+    )
+
+
+def _template_identifies_crate(template: str) -> bool:
+    """Return whether a rewrite template identifies the crate it names."""
+    return any(
+        field_name == "crate"
+        for _, field_name, _, _ in string_module.Formatter().parse(template)
     )
 
 
