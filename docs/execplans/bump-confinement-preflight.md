@@ -60,7 +60,7 @@ ISSUE-409-REQ-migration   -> EP-M5 -> docs/users-guide.md
 ## Context and orientation
 
 The repository is a Python project. The bump command lives in
-`lading/commands/`. `bump.run()` normalises the workspace root, loads the
+`lading/commands/`. `bump.run()` normalizes the workspace root, loads the
 workspace graph, and hands a `_BumpContext` to `bump_pipeline._run_pipeline()`.
 That pipeline currently processes the workspace manifest, then member
 manifests, then documentation, then README adoption, then lockfiles; each stage
@@ -79,9 +79,9 @@ Relevant modules:
 - `lading/workspace/metadata.py` — the `cargo metadata` invocation.
 - `lading/cli.py` — the composition root that selects the command runner and
   loads the workspace graph before dispatch.
-- `lading/utils/path.py` — the existing root normaliser.
+- `lading/utils/path.py` — the existing root normalizer.
 
-Tests are organised under `tests/unit`, `tests/integration`, `tests/bdd`, and
+Tests are organized under `tests/unit`, `tests/integration`, `tests/bdd`, and
 `tests/e2e`. Shared helpers live in `tests/helpers`. The suite uses `syrupy`
 snapshots, `pytest-bdd`, `cmd-mox` for command stubs, and real temporary
 directories. `make test` runs pytest with `--doctest-modules`.
@@ -372,7 +372,7 @@ Axioms (external interfaces treated as documented contracts):
 
 Verification methods:
 
-- Parameterised pytest tables for lexical partitions and pattern shapes.
+- Parameterized pytest tables for lexical partitions and pattern shapes.
 - Exact-call monkeypatched `lstat`/`scandir` failures for examination errors.
 - `os.mkfifo` with a capability skip for special-file rejection, plus an
   `open()` sentinel.
@@ -430,7 +430,12 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
   Cargo confirmed that `cargo metadata --no-deps` leaves missing and stale
   lockfiles untouched. `make check-fmt`, `make lint`, `make typecheck`, and
   `make test` (1518 passed, 31 skipped) green.
-- [ ] EP-M5: documentation, migration, and release hand-off.
+- [x] 2026-11-23: EP-M5 documentation landed: ADR-012, the ExecPlan and ADR
+  are indexed, and the users, design, developer, roadmap, and 0.4.0 migration
+  guides describe the contract, migration, limits, and non-member manifest hook.
+  `pyproject.toml` is bumped to `0.4.0b1`.
+- [ ] EP-M5 release: tag and release `v0.4.0b1` after review convergence, then
+  record the tag commit on issue #409.
 
 ## Surprises & discoveries
 
@@ -482,12 +487,21 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
   behaviour of its own.
 - The write phase keeps atomic per-file replacement and adds no rollback. The
   guarantee is validation before mutation.
+- The release is `0.4.0b1`, not final `0.4.0`, because the documented release
+  procedure forbids a final 0.x release until cuprum 0.2.0 final exists and
+  PyPI still lists only cuprum `0.1.0`, `0.2.0b1`, and `0.2.0b2`. A pre-release
+  tag is permitted and gives ortho-config an immutable commit to pin.
 
 ## Outcomes & retrospective
 
-Not yet complete. This section will record what landed, the first fixed
-version, and the immutable commit after EP-M5.
+Implementation and documentation are complete. The first fixed version is
+`0.4.0b1`: a final 0.4.0 release is deferred by the repository's documented
+release procedure until cuprum 0.2.0 final is available, and PyPI still lists
+only `0.1.0`, `0.2.0b1`, and `0.2.0b2`. The immutable commit will be recorded
+here and on issue #409 once the release tag is pushed.
 
 ## Revision note
 
 - 2026-11-22: Initial draft, created before implementation.
+- 2026-11-23: Recorded the delivered milestones, the ADR, the migration
+  guidance, and the `0.4.0b1` release decision.

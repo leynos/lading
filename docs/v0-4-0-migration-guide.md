@@ -22,13 +22,49 @@ adds no configuration or invocation change; see
 
 The number is derived rather than announced: 0.3.1 is the most recent release,
 and a breaking change under pre-1.0 semantic versioning advances the minor
-component, so the next tag from this tree is 0.4.0. If the floor change is
-scheduled into a later release, the content below applies to that release
+component, so the next final tag from this tree is 0.4.0. The documented
+release procedure defers a final 0.x release until cuprum 0.2.0 final is
+available, so the bump confinement change ships first in the `0.4.0b1`
+pre-release; the migration content below applies to both. If the floor change
+is scheduled into a later release, the content below applies to that release
 unchanged.
 
 The release is the first whose wheel is built under 3.14, and the first whose
 package metadata refuses an older interpreter. Both follow from the same
 decision, recorded below.
+
+## Bump confinement preflight
+
+`lading bump` now validates the complete write plan before changing anything. A
+workspace that relied on any of the following now fails with exit status 1 and a
+`Preflight error:` diagnostic:
+
+- A member reachable only through a symlinked directory below the workspace
+  root. Make the member path real, or move the member into the workspace.
+- A documentation glob that escapes the workspace, such as
+  `../outside/README.md`. Narrow the glob to the workspace.
+- A selected documentation file that cannot be read or decoded. Previously it
+  was skipped with a warning.
+- A workspace README or adopted crate README that is a symlink or a
+  non-regular file.
+- A configured `bump.lockfile_manifests` entry that is absolute, traverses
+  upwards, is missing, is a symlink, or is not named `Cargo.toml`.
+- A non-empty `CARGO_RESOLVER_LOCKFILE_PATH` in the environment. Unset it.
+
+Configured lockfile manifests are resolved to the effective workspace root
+Cargo reports. A manifest that belongs to the outer workspace now reports the
+outer `Cargo.lock` instead of an adjacent file; only a standalone nested
+workspace keeps its own adjacent lockfile. A dry run still writes nothing, and
+discovery now runs `cargo metadata --no-deps`, which leaves a missing or stale
+lockfile untouched.
+
+A same-version rerun makes no manifest changes and therefore skips lockfile
+regeneration. Repair a stale lockfile with the printed `cargo update` command
+rather than assuming a rerun will fix it.
+
+The guarantee is validation before mutation. A failure during an actual write
+or Cargo invocation is not rolled back, and a concurrent process that changes a
+path after validation is not defended against.
 
 ## Who is affected
 

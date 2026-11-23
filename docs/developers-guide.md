@@ -1112,6 +1112,31 @@ tests skip there; `make test` and CI still provision and verify it, and
 provisioning it in the mutation environment is part of
 [shared-actions#591](https://github.com/leynos/shared-actions/issues/591).
 
+## Bump preflight test infrastructure
+
+Command-level preflight tests drive `lading.cli` in process and assert that a
+rejected plan changes nothing.
+
+- `tests/helpers/fs_snapshot.py` records a non-following tree snapshot with
+  `scandir` and `lstat`. Symlinks record their target text rather than being
+  followed, and only regular files are opened, so a special file cannot block a
+  snapshot. `changed_paths` compares two snapshots.
+- `tests/helpers/recording_runner.py` journals every command, serves
+  `cargo metadata` and `cargo update` from a fixture, and reports Git discovery
+  as an empty tracked-lockfile set. Install it with
+  `runner.install(monkeypatch)`, which replaces `lading.cli._select_runner` for
+  the test.
+- `tests/helpers/bump_cli_workspace.py` materializes a real workspace and the
+  matching Cargo metadata payload, so the stub and the filesystem cannot drift
+  apart. Use `WorkspaceOptions` for members, a root package, README adoption,
+  documentation globs, and lockfile manifests.
+
+Place a valid member before each invalid input, snapshot the workspace and an
+external sentinel, and assert both are unchanged after the rejection. The
+real-Cargo lane in `tests/integration/test_bump_confinement_cargo.py` uses an
+isolated `CARGO_HOME` and `CARGO_NET_OFFLINE=true`; it is the evidence for the
+read-only `cargo metadata --no-deps` contract.
+
 ## Publish test infrastructure (`tests/unit/publish/conftest.py`)
 
 The publish unit-test conftest exports the following shared helpers:
@@ -1140,10 +1165,36 @@ parametrized and property-based tests that must exercise arbitrary chain sizes.
 
 ## Bump command internals
 
-`lading.commands.bump` coordinates manifest updates, documentation updates,
-README adoption, and lockfile reporting. Keep user-facing summary construction
-in `lading.commands.bump_output` rather than formatting messages inline in the
-workflow.
+`lading.commands.bump` coordinates a prepare-then-commit workflow. Keep
+user-facing summary construction in `lading.commands.bump_output` rather than
+formatting messages inline in the workflow.
+
+### Confinement preflight modules
+
+`lading/utils/confinement/` owns the shared filesystem policy. `errors` defines
+`BumpPreflightError` and its unsafe, examination, and missing-target subclasses;
+`patterns` validates workspace-relative patterns under POSIX and Windows
+spellings; `walk` performs the `lstat` component walk and canonical containment
+proof; `glob` expands patterns with `scandir` without following links. The
+package is bump-scoped by its error vocabulary, but the checking helpers hold
+no bump state and may be reused by another command that supplies its own error
+base. Callers import from the package root (`lading.utils.confinement`), not
+from the private modules.
+
+`lading/workspace/confined_discovery.py` owns bump discovery.
+`load_bump_workspace` validates the declared member and exclusion patterns
+before any Cargo invocation, calls `load_cargo_metadata` with `no_deps=True`,
+and validates every reported member manifest before `build_workspace_graph`
+reads it. Publish discovery is unchanged and continues to use
+`lading.workspace.load_workspace`.
+
+`lading/commands/bump_plan.py` owns the frozen `BumpPlan`/`PlannedWrite`
+models, the `PlanBuilder` proposal sink, the deterministic commit order, and the
+`BumpChanges` projection. `lading/commands/bump_prepare.py` owns preparation
+of manifests, documentation, and adopted READMEs. `bump_pipeline` only
+orchestrates: prepare, then commit, then regenerate. A new bump target kind
+must be added to preparation and to `commit_plan`, never written directly from
+a pipeline stage.
 
 `lading.commands.bump_output` is the sole owner of `BumpChanges` and all bump
 result-message formatting; `bump.py` imports these helpers and must not
@@ -1177,10 +1228,19 @@ and re-exports the public lockfile helpers from three cohesive modules:
   and de-duplicates resolved paths. `resolve_lockfile_paths` projects that
   execution-ordered manifest tuple to the corresponding `Cargo.lock` paths
   without invoking Cargo.
-- `lading.commands.bump_lockfile_regeneration` owns `regenerate_lockfiles` and
-  its Cargo-execution helpers. `regenerate_lockfiles` uses the same validated,
-  root-first manifest order, attempts every Cargo update, returns successful
-  lockfile paths in execution order, and aggregates multi-manifest failures.
+- `lading.commands.bump_lockfile_planning` owns `LockfilePlan` and
+  `plan_lockfiles`. It validates configured and discovered manifests as
+  confined existing targets, asks Cargo with `--no-deps --manifest-path` for
+  each manifest's effective workspace root, and deduplicates the resulting
+  `Cargo.lock` destinations. It also rejects a non-empty
+  `CARGO_RESOLVER_LOCKFILE_PATH`.
+- `lading.commands.bump_lockfile_regeneration` owns `regenerate_lockfiles`,
+  `regenerate_planned`, and their Cargo-execution helpers.
+  `regenerate_lockfiles` uses the same validated, root-first manifest order,
+  attempts every Cargo update, returns successful lockfile paths in execution
+  order, and aggregates multi-manifest failures. `regenerate_planned` performs
+  the same attempt-all behaviour over a validated `LockfilePlan` without
+  rediscovery.
 
 For screen readers: the following flowchart traces `regenerate_lockfiles`. It
 resolves the manifest list, then initializes empty `lockfiles` and `failures`
@@ -1233,14 +1293,12 @@ introduced by issue #82: the bump domain never holds a raw command runner. When
 the field is `None`, bump uses `bump_lockfiles.CargoLockfileRepository`, the
 cargo- and git-backed adapter bound to the default subprocess runner; the CLI
 binds the adapter to its selected runner. The adapter merges configured
-manifests with manifests discovered from tracked lockfiles before either
-projecting dry-run paths or regenerating live lockfiles. In a non-Git
-workspace, discovery emits a warning and the adapter falls back to the
-configured manifests. Dry-run projection suppresses successful-discovery
-metrics and informational logging while retaining that warning and all
-discovery errors. Tests inject a repository (or bind the adapter to a recording
-runner) so lockfile commands can be observed without invoking real processes.
-The port's scope is bump-side lockfile projection and regeneration;
+manifests with manifests discovered from tracked lockfiles, then resolves each
+manifest's effective workspace root through Cargo before planning destinations.
+In a non-Git workspace, discovery emits a warning and the adapter falls back to
+the configured manifests. Tests inject a repository (or bind the adapter to a
+recording runner) so lockfile commands can be observed without invoking real
+processes. The port's scope is bump-side lockfile planning and regeneration;
 publish-side discovery and validation go through the sibling
 `lockfile_repository.LockfileInspectionRepository` port (see the Lockfile
 helpers section below), so neither the bump nor the publish lockfile domain
@@ -1248,8 +1306,8 @@ holds a raw `CommandRunner` (issue #82).
 
 Bump-time crate-set derivation is centralized in the bump context: the
 `excluded` and `updated_crate_names` sets are computed exactly once in
-`bump._initialize_bump_context` and threaded to downstream helpers such as
-`_update_crate_manifest`. Helpers must consume the context sets rather than
+`bump._initialize_bump_context` and threaded to preparation through
+`bump_prepare`. Preparation must consume the context sets rather than
 re-deriving them per crate, which would make manifest processing quadratic in
 workspace size.
 
@@ -1262,8 +1320,8 @@ coalescing.)
 
 Bump-time crate-set derivation is centralized in the bump context: the
 `excluded` and `updated_crate_names` sets are computed exactly once in
-`bump._initialize_bump_context` and threaded to downstream helpers such as
-`_update_crate_manifest`. Helpers must consume the context sets rather than
+`bump._initialize_bump_context` and threaded to preparation through
+`bump_prepare`. Preparation must consume the context sets rather than
 re-deriving them per crate, which would make manifest processing quadratic in
 workspace size.
 
