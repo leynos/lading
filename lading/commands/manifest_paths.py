@@ -135,7 +135,12 @@ class _ManifestGlobTraversal:
     def __post_init__(self) -> None:
         """Initialize the resolved root and path segments before traversal."""
         self.root = self.workspace_root.resolve()
-        self.segments = Path(self.pattern).parts
+        segments = Path(self.pattern).parts
+        self.segments = tuple(
+            segment
+            for index, segment in enumerate(segments)
+            if segment != "**" or index == 0 or segments[index - 1] != "**"
+        )
         self.directory_only = self.pattern.endswith(os.sep) or (
             os.altsep is not None and self.pattern.endswith(os.altsep)
         )

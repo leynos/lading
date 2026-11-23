@@ -78,6 +78,32 @@ def test_terminal_recursive_glob_includes_manifest_files(
     assert manifest in matches, "terminal recursive globs must retain file matches"
 
 
+def test_adjacent_recursive_glob_segments_do_not_duplicate_manifests(
+    tmp_path: pathlib.Path,
+    write_fixture_manifest: _ManifestWriter,
+) -> None:
+    """Adjacent ``**`` segments traverse each matching manifest once."""
+    shallow = write_fixture_manifest(
+        tmp_path, "fixtures/a/Cargo.toml", '[dependencies]\nalpha = "1.0.0"\n'
+    )
+    nested = write_fixture_manifest(
+        tmp_path,
+        "fixtures/a/deep/Cargo.toml",
+        '[dependencies]\nalpha = "1.0.0"\n',
+    )
+
+    matches = manifest_paths.expand_manifest_glob_candidates(
+        tmp_path,
+        "fixtures/**/**/Cargo.toml",
+        error_type=bump_manifest_rewrites.ManifestRewriteError,
+        label="Manifest rewrite",
+    )
+
+    assert matches == (shallow, nested), (
+        "adjacent recursive segments must not duplicate matching paths"
+    )
+
+
 def test_manifest_rewrite_preserves_crlf_line_endings(
     tmp_path: pathlib.Path,
 ) -> None:

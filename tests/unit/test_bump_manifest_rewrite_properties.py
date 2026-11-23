@@ -29,7 +29,7 @@ _VERSION_SUFFIX_CHARACTERS = string.ascii_letters + string.digits + ".+-"
         max_size=8,
     ),
 )
-@settings(max_examples=100, deadline=None)
+@settings(max_examples=100)
 def test_string_rewrites_respect_token_boundaries_and_are_idempotent(
     crate_prefix: str,
     version_suffix: str,
@@ -93,7 +93,7 @@ def test_string_rewrites_respect_token_boundaries_and_are_idempotent(
         max_size=8,
     ),
 )
-@settings(max_examples=100, deadline=None)
+@settings(max_examples=100)
 def test_string_rewrites_boundaries_for_version_and_crate_templates(
     version_prefix: str,
     crate_suffix: str,

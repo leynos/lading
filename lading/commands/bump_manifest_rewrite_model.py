@@ -71,7 +71,7 @@ class ManifestRewriteError(LadingError):
     @classmethod
     def stale_template_reference(
         cls,
-        crate_name: str,
+        crate_name: str | None,
         stale_version: str,
         target_version: str,
         manifest_path: Path,
@@ -80,8 +80,9 @@ class ManifestRewriteError(LadingError):
 
         Parameters
         ----------
-        crate_name : str
-            Workspace package named by the configured template.
+        crate_name : str or None
+            Workspace package named by the template, or ``None`` when the
+            template does not identify a crate.
         stale_version : str
             Version text still present in the configured manifest value.
         target_version : str
@@ -94,12 +95,20 @@ class ManifestRewriteError(LadingError):
         ManifestRewriteError
             Failure explaining that a retry cannot recover the old version.
         """
-        message = (
-            f"Configured string rewrite for workspace crate {crate_name!r} "
-            f"in {manifest_path} contains non-target version {stale_version!r}; "
-            f"the workspace crate is already at {target_version!r}, so the "
-            "previous version cannot be recovered for this retry"
-        )
+        if crate_name is None:
+            message = (
+                f"Configured string rewrite in {manifest_path} contains "
+                f"non-target version {stale_version!r}; all updated workspace "
+                f"crates are already at {target_version!r}, so the previous "
+                "version cannot be recovered for this retry"
+            )
+        else:
+            message = (
+                f"Configured string rewrite for workspace crate {crate_name!r} "
+                f"in {manifest_path} contains non-target version {stale_version!r}; "
+                f"the workspace crate is already at {target_version!r}, so the "
+                "previous version cannot be recovered for this retry"
+            )
         return cls(message, failed_path=manifest_path)
 
 

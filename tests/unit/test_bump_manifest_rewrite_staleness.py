@@ -145,3 +145,61 @@ def test_version_only_template_does_not_blame_another_crates_old_version(
     assert plans[0].new_text == '[metadata]\nversion = "2.0.0"\n', (
         "a version-only template should rewrite old values without stale ownership"
     )
+
+
+def test_version_only_template_rejects_stale_value_after_all_crates_reach_target(
+    tmp_path: pathlib.Path,
+    write_fixture_manifest: _ManifestWriter,
+) -> None:
+    """A retry rejects stale text when a version-only template cannot attribute it."""
+    write_fixture_manifest(
+        tmp_path,
+        "fixtures/standalone/Cargo.toml",
+        '[metadata]\nversion = "1.0.0"\n',
+    )
+    group = ManifestRewriteConfig(
+        paths=("fixtures/standalone/Cargo.toml",),
+        dependencies=False,
+        string_values=(
+            StringValueRewriteConfig(table=("metadata",), template="{version}"),
+        ),
+    )
+    versions = manifest_rewrite_versions(
+        names=frozenset({"alpha", "beta"}),
+        pre_bump_versions={"alpha": "2.0.0", "beta": "2.0.0"},
+        target_version="2.0.0",
+    )
+
+    with pytest.raises(
+        bump_manifest_rewrites.ManifestRewriteError,
+        match=re.escape("all updated workspace crates are already at '2.0.0'"),
+    ):
+        plan_fixture_rewrites(tmp_path, (group,), versions=versions)
+
+
+def test_version_only_template_accepts_target_value_after_all_crates_reach_target(
+    tmp_path: pathlib.Path,
+    write_fixture_manifest: _ManifestWriter,
+) -> None:
+    """A version-only target rendering remains an unchanged no-op on retry."""
+    write_fixture_manifest(
+        tmp_path,
+        "fixtures/standalone/Cargo.toml",
+        '[metadata]\nversion = "2.0.0"\n',
+    )
+    group = ManifestRewriteConfig(
+        paths=("fixtures/standalone/Cargo.toml",),
+        dependencies=False,
+        string_values=(
+            StringValueRewriteConfig(table=("metadata",), template="{version}"),
+        ),
+    )
+    versions = manifest_rewrite_versions(
+        names=frozenset({"alpha", "beta"}),
+        pre_bump_versions={"alpha": "2.0.0", "beta": "2.0.0"},
+        target_version="2.0.0",
+    )
+
+    assert not plan_fixture_rewrites(tmp_path, (group,), versions=versions), (
+        "a version-only target rendering must not be treated as stale"
+    )

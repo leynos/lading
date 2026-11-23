@@ -166,17 +166,32 @@ def _stale_string_references(
     values: cabc.Sequence[str],
     template: str,
     versions: ManifestRewriteVersions,
-) -> tuple[tuple[str, str], ...]:
+) -> tuple[tuple[str | None, str], ...]:
     """Find old template versions for crates already at the target version."""
-    if not _template_identifies_crate(template):
+    if _template_identifies_crate(template):
+        return tuple(
+            (crate_name, stale_version)
+            for crate_name in sorted(versions.updated_crate_names)
+            if versions.pre_bump_versions[crate_name] == versions.target_version
+            for stale_version in _versions_for_crate_not_at_target(
+                values, template, crate_name, versions.target_version
+            )
+        )
+    if not _all_updated_crates_are_at_target(versions):
         return ()
     return tuple(
-        (crate_name, stale_version)
-        for crate_name in sorted(versions.updated_crate_names)
-        if versions.pre_bump_versions[crate_name] == versions.target_version
+        (None, stale_version)
         for stale_version in _versions_for_crate_not_at_target(
-            values, template, crate_name, versions.target_version
+            values, template, "", versions.target_version
         )
+    )
+
+
+def _all_updated_crates_are_at_target(versions: ManifestRewriteVersions) -> bool:
+    """Return whether every selected crate has already reached the target."""
+    return bool(versions.updated_crate_names) and all(
+        versions.pre_bump_versions[crate_name] == versions.target_version
+        for crate_name in versions.updated_crate_names
     )
 
 
