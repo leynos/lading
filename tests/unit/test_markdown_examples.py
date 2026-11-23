@@ -231,6 +231,14 @@ def test_loader_accepts_commonmark_fence_indentation(
         ),
         (
             (
+                "<!-- tested-example: separated -->\n"
+                "A paragraph separates the marker from its fence.\n"
+                "```python\npass\n```\n"
+            ),
+            "unmarked",
+        ),
+        (
+            (
                 "<!-- tested-example: open-no-final-newline -->\n\n"
                 "```python\nprint('open')"
             ),

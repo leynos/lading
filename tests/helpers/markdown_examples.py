@@ -13,6 +13,8 @@ if typ.TYPE_CHECKING:
 
 _MARKER_PREFIX = "<!-- tested-example:"
 _MARKER_PATTERN = re.compile(r"<!-- tested-example: ([a-z0-9][a-z0-9_-]*) -->")
+_DIRECT_MARKER_GAP = 1
+_BLANK_LINE_MARKER_GAP = 2
 
 
 class MarkdownExampleError(ValueError):
@@ -42,6 +44,15 @@ class MarkdownExample:
     source: str
 
 
+@dc.dataclass(frozen=True, slots=True)
+class _MarkerContext:
+    """Carry marker locations with the physical source needed to validate them."""
+
+    markers: dict[int, tuple[str, int]]
+    source_lines: tuple[str, ...]
+    document_name: str
+
+
 def load_markdown_examples(path: Path) -> tuple[MarkdownExample, ...]:
     """Load every marked fenced example from a Markdown document.
 
@@ -67,7 +78,7 @@ def _parse_markdown_examples(
 ) -> tuple[MarkdownExample, ...]:
     """Parse CommonMark containers and enforce unique markers for every fence."""
     tokens = MarkdownIt("commonmark").parse(document)
-    markers = _index_markers(tokens, document_name)
+    marker_context = _index_markers(tokens, tuple(document.split("\n")), document_name)
     examples: list[MarkdownExample] = []
     consumed_markers: set[int] = set()
     for token in tokens:
@@ -76,7 +87,7 @@ def _parse_markdown_examples(
         start_line, end_line = _source_lines(token, document_name)
         _require_explicit_fence_close(token, start_line, end_line, document_name)
         marker_line, identifier = _require_example_marker(
-            markers, start_line, token.level, document_name
+            marker_context, start_line, token.level
         )
         language = _require_language(token.info, start_line, document_name)
         examples.append(
@@ -87,13 +98,15 @@ def _parse_markdown_examples(
             )
         )
         consumed_markers.add(marker_line)
-    _check_markers_have_fences(markers, document_name, consumed_markers)
+    _check_markers_have_fences(marker_context.markers, document_name, consumed_markers)
     return tuple(examples)
 
 
 def _index_markers(
-    tokens: cabc.Sequence[Token], document_name: str
-) -> dict[int, tuple[str, int]]:
+    tokens: cabc.Sequence[Token],
+    source_lines: tuple[str, ...],
+    document_name: str,
+) -> _MarkerContext:
     """Index valid marker comments and reject missing or duplicate identifiers."""
     markers: dict[int, tuple[str, int]] = {}
     seen_identifiers: set[str] = set()
@@ -121,7 +134,7 @@ def _index_markers(
                 )
             seen_identifiers.add(identifier)
             markers[line_number] = (identifier, token.level)
-    return markers
+    return _MarkerContext(markers, source_lines, document_name)
 
 
 def _source_lines(token: Token, document_name: str) -> tuple[int, int]:
@@ -161,19 +174,31 @@ def _require_explicit_fence_close(
 
 
 def _require_example_marker(
-    markers: dict[int, tuple[str, int]],
+    context: _MarkerContext,
     fence_start: int,
     fence_level: int,
-    document_name: str,
 ) -> tuple[int, str]:
-    """Return the marker immediately before a fence at the same container level."""
-    for marker_line in (fence_start - 1, fence_start - 2):
-        marker = markers.get(marker_line)
-        if marker is not None and marker[1] == fence_level:
-            return marker_line, marker[0]
+    """Return the nearest marker without intervening block content."""
+    for line_gap in (_DIRECT_MARKER_GAP, _BLANK_LINE_MARKER_GAP):
+        marker_line = fence_start - line_gap
+        marker = context.markers.get(marker_line)
+        if marker is None or marker[1] != fence_level:
+            continue
+        if line_gap == _BLANK_LINE_MARKER_GAP and not _is_blank_container_line(
+            context.source_lines[fence_start - 1]
+        ):
+            continue
+        return marker_line, marker[0]
     raise MarkdownExampleError(
-        document_name, fence_start + 1, "fenced example is unmarked"
+        context.document_name, fence_start + 1, "fenced example is unmarked"
     )
+
+
+def _is_blank_container_line(line: str) -> bool:
+    """Return whether a physical line is blank after Markdown container marks."""
+    if not line.strip(" \t\r"):
+        return True
+    return re.fullmatch(r"(?: {0,3}>[ \t]?)+[ \t\r]*", line) is not None
 
 
 def _require_language(info: str, fence_start: int, document_name: str) -> str:
