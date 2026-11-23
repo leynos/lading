@@ -62,6 +62,45 @@ class _RewriteRetryScenario:
         pytest.param(
             _RewriteRetryScenario(
                 value_key="path",
+                current_value="alpha-1.0.0-rc.1",
+                template="{crate}-{version}",
+                names=frozenset({"alpha"}),
+                pre_bump_versions={"alpha": "2.0.0-rc.1"},
+                target_version="2.0.0-rc.1",
+                expected_error=r"contains non-target version '1\.0\.0-rc\.1'",
+                expected_new_text=None,
+            ),
+            id="valid-prerelease-staleness-is-detected",
+        ),
+        pytest.param(
+            _RewriteRetryScenario(
+                value_key="path",
+                current_value="alpha-2.0.0-rc.1.",
+                template="{crate}-{version}",
+                names=frozenset({"alpha"}),
+                pre_bump_versions={"alpha": "2.0.0-rc.1"},
+                target_version="2.0.0-rc.1",
+                expected_error=None,
+                expected_new_text=None,
+            ),
+            id="trailing-period-is-not-a-version-identifier",
+        ),
+        pytest.param(
+            _RewriteRetryScenario(
+                value_key="path",
+                current_value="alpha-2.0.0+build.1.",
+                template="{crate}-{version}",
+                names=frozenset({"alpha"}),
+                pre_bump_versions={"alpha": "2.0.0+build.1"},
+                target_version="2.0.0+build.1",
+                expected_error=None,
+                expected_new_text=None,
+            ),
+            id="trailing-period-is-not-a-build-identifier",
+        ),
+        pytest.param(
+            _RewriteRetryScenario(
+                value_key="path",
                 current_value="alpha-2.0.0-src-src",
                 template="{crate}-{version}-src",
                 names=frozenset({"alpha"}),

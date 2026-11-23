@@ -9,6 +9,15 @@ from pytest_bdd import given, parsers, then
 from .cli_run_types import CliRunResult
 
 
+def _cargo_update_args(cmd_mox: CmdMox) -> list[tuple[str, ...]]:
+    """Collect Cargo update arguments from the command journal."""
+    return [
+        tuple(invocation.args)
+        for invocation in cmd_mox.journal
+        if invocation.command == "cargo::update"
+    ]
+
+
 @given(parsers.parse('a nested lockfile manifest is configured at "{manifest}"'))
 def given_nested_lockfile_manifest(
     cmd_mox: CmdMox,
@@ -51,11 +60,7 @@ def then_bump_refreshed_lockfiles(
     assert cli_run["returncode"] == 0, (
         f"the live lockfile bump must succeed; stderr:\n{cli_run['stderr']}"
     )
-    update_args = [
-        tuple(invocation.args)
-        for invocation in cmd_mox.journal
-        if invocation.command == "cargo::update"
-    ]
+    update_args = _cargo_update_args(cmd_mox)
     expected_root_update = (
         "--workspace",
         "--manifest-path",
@@ -87,11 +92,7 @@ def then_bump_refreshed_workspace_and_nested_lockfiles(
     assert cli_run["returncode"] == 0, (
         f"stdout:\n{cli_run['stdout']}\nstderr:\n{cli_run['stderr']}"
     )
-    update_args = [
-        tuple(invocation.args)
-        for invocation in cmd_mox.journal
-        if invocation.command == "cargo::update"
-    ]
+    update_args = _cargo_update_args(cmd_mox)
     expected_args = [
         (
             "--workspace",
@@ -106,6 +107,34 @@ def then_bump_refreshed_workspace_and_nested_lockfiles(
     ]
     assert update_args == expected_args, (
         f"expected distinct root and nested Cargo updates; got {update_args!r}"
+    )
+
+
+@then("the bump command refreshed root and configured nested tracked lockfiles")
+def then_bump_refreshed_root_and_configured_nested_lockfiles(
+    cli_run: CliRunResult,
+    cmd_mox: CmdMox,
+    workspace_directory: Path,
+) -> None:
+    """Assert Cargo refreshed both the root and configured nested manifests."""
+    assert cli_run["returncode"] == 0, (
+        f"stdout:\n{cli_run['stdout']}\nstderr:\n{cli_run['stderr']}"
+    )
+    expected_args = [
+        (
+            "--workspace",
+            "--manifest-path",
+            str((workspace_directory / "Cargo.toml").resolve()),
+        ),
+        (
+            "--workspace",
+            "--manifest-path",
+            str((workspace_directory / "nested/Cargo.toml").resolve()),
+        ),
+    ]
+    update_args = _cargo_update_args(cmd_mox)
+    assert update_args == expected_args, (
+        f"expected root and configured nested Cargo updates; got {update_args!r}"
     )
 
 

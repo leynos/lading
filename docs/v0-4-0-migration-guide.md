@@ -31,12 +31,13 @@ them.
 
 ## Impact at a glance
 
-| Change                   | Action required                                          |
-| ------------------------ | -------------------------------------------------------- |
-| Python interpreter floor | Use Python 3.14 or later to install 0.4.0.               |
-| Moved helper imports     | Update imports if your code uses the moved helpers.      |
-| Diagnostic output stream | Read stderr if scripts consume diagnostics from stdout.  |
-| `bump.manifest_rewrites` | Optional; enable it for configured non-member manifests. |
+| Change                   | Obligation  | Action                                                      |
+| ------------------------ | ----------- | ----------------------------------------------------------- |
+| Python interpreter floor | Required    | Use Python 3.14 or later to install 0.4.0.                  |
+| Moved helper imports     | Conditional | Update imports if your code uses the moved helpers.         |
+| Diagnostic output stream | Conditional | Read stderr if scripts expect diagnostics on stdout.        |
+| Compound requirements    | Conditional | Review and resolve warnings when bounds exclude the target. |
+| `bump.manifest_rewrites` | Optional    | Enable it for configured non-member manifests.              |
 
 _Table 1: Migration actions by change._
 

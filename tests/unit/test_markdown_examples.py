@@ -94,6 +94,63 @@ def test_loader_extracts_marked_fences_inside_blockquotes(tmp_path: Path) -> Non
     ], "a blockquote fence must retain its marker and source"
 
 
+def test_loader_extracts_marked_fences_inside_list_items(tmp_path: Path) -> None:
+    """List indentation is removed as a CommonMark container prefix."""
+    document = _write_document(
+        tmp_path,
+        """- Example:
+
+  <!-- tested-example: list-item -->
+
+    ~~~toml
+    value = 1
+    ~~~
+""",
+    )
+
+    examples = load_markdown_examples(document)
+
+    assert [
+        (example.identifier, example.language, example.source) for example in examples
+    ] == [("list-item", "toml", "value = 1")], (
+        "the loader must return the marked code without list indentation"
+    )
+
+
+def test_loader_stops_a_quoted_fence_at_its_container_boundary(
+    tmp_path: Path,
+) -> None:
+    """A later blockquote delimiter cannot close an earlier quote's fence."""
+    document = _write_document(
+        tmp_path,
+        """> <!-- tested-example: quoted -->
+>
+> ```python
+> print('quoted')
+outside paragraph
+> ```
+""",
+    )
+
+    with pytest.raises(MarkdownExampleError, match="unterminated"):
+        load_markdown_examples(document)
+
+
+def test_loader_ignores_ordinary_indented_code_blocks(tmp_path: Path) -> None:
+    """Indented code is not a fenced example container."""
+    document = _write_document(
+        tmp_path,
+        """    ```python
+    print('indented code')
+    ```
+""",
+    )
+
+    assert not load_markdown_examples(document), (
+        "ordinary indented code blocks must not be treated as fences"
+    )
+
+
 @pytest.mark.parametrize(
     ("content", "expected_source"),
     [
@@ -133,6 +190,10 @@ def test_loader_accepts_commonmark_fence_indentation(
         ("  ```python\npass\n  ```\n", "unmarked"),
         (
             "> ```python\n> assert False\n> ```\n",
+            "unmarked",
+        ),
+        (
+            "- Example:\n\n    ~~~toml\n    value = 1\n    ~~~\n",
             "unmarked",
         ),
         (
