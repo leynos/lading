@@ -34,6 +34,9 @@ from lading.runtime import CommandRunner, CommandSpawnError, subprocess_runner
 from lading.utils import metrics
 from lading.utils.process import with_detail
 
+if typ.TYPE_CHECKING:
+    from lading.commands.bump_lockfile_planning import LockfilePlan
+
 _LOGGER = logging.getLogger(__name__)
 
 # Metric names (issue #91); documented in docs/developers-guide.md.
@@ -139,6 +142,60 @@ def regenerate_lockfiles(
         elapsed,
     )
     return tuple(lockfiles)
+
+
+def regenerate_planned(
+    plan: LockfilePlan,
+    *,
+    runner: CommandRunner | None = None,
+    clock: cabc.Callable[[], float] = time.perf_counter,
+) -> tuple[Path, ...]:
+    """Regenerate the lockfiles named by a validated plan.
+
+    Parameters
+    ----------
+    plan : LockfilePlan
+        Destination plan built during bump preparation. Its manifests are the
+        effective workspace roots; no rediscovery happens here.
+    runner : CommandRunner | None
+        Callable used to invoke ``cargo``. Defaults to
+        :func:`lading.runtime.subprocess_runner`.
+    clock : cabc.Callable[[], float], optional
+        Monotonic clock for logging and duration metrics.
+
+    Returns
+    -------
+    tuple[Path, ...]
+        The validated lockfile destinations, in plan order.
+
+    Raises
+    ------
+    LockfileRegenerationError
+        After every manifest has been attempted, if any ``cargo update``
+        failed. A lone failure re-raises the original cargo error unchanged;
+        multiple failures raise one aggregated error listing each manifest and
+        its repair command.
+
+    Notes
+    -----
+    Regeneration is not a transaction. Manifest versions are already written
+    when this runs, and successful updates are not rolled back when a later
+    manifest fails. Validation happened before the first write; an error here
+    is an execution failure, not a rejected plan.
+    """  # ruff: ignore[docstring-extraneous-exception]  # raised after attempt-all aggregation
+    command_runner = subprocess_runner if runner is None else runner
+    started_at = clock()
+    try:
+        _LOGGER.info("Regenerating %d Cargo lockfile(s)", len(plan.manifests))
+        lockfiles, failures = _collect_lockfile_results(
+            plan.manifests, plan.root, command_runner, clock
+        )
+        _record_regeneration_results(lockfiles, failures)
+        if failures:
+            _raise_aggregated_failure(plan.manifests, failures)
+    finally:
+        metrics.observe_duration(REGENERATE_DURATION_METRIC, clock() - started_at)
+    return plan.lockfiles
 
 
 def _collect_lockfile_results(

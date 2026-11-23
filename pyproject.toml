@@ -615,6 +615,13 @@ reason = "A deliberate cross-platform pair: the Windows (msvcrt) and POSIX (fcnt
 unit = "lading/toml_coerce/_scalars.py"
 reason = "Two single-statement rejection calls differing only in the expected-type noun ('a string' versus 'a boolean'). The shared helper, _reject, already exists; a further extraction would only rename the noun argument. NOTE: this key covers the whole file."
 
+[[tool.duplication_gate.allow]]
+members = [
+    "lading/commands/bump_docs.py",
+    "lading/commands/bump_pipeline.py",
+    "lading/commands/publish.py",
+]
+reason = "Independent command modules importing the same shared confinement and TOML helpers; the overlap is an import header, not shared logic, and a common import module would add an artificial layer with no behaviour of its own."
 # The dead-code gate is the installed `df12-skylos` command from
 # df12-python-lints. `roots` limits liveness analysis to production sources and
 # the exclusion keeps the test tree out of the liveness graph.

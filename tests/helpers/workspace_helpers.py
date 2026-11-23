@@ -81,10 +81,50 @@ def stub_cargo_metadata(
     from cmd_mox import UnexpectedCommandError
 
     def handler(invocation: Invocation) -> tuple[str, str, int]:
-        """Return ``payload`` for a recognised metadata spelling, else raise."""
-        if tuple(invocation.args) in METADATA_SPELLINGS:
+        """Return ``payload`` for a metadata discovery query, else raise."""
+        args = tuple(invocation.args)
+        if args in METADATA_SPELLINGS:
             return payload, "", 0
-        message = f"unexpected cargo invocation: {invocation.args!r}"
+        if _is_manifest_query(args):
+            return _payload_for_manifest(payload, args), "", 0
+        message = f"unexpected cargo invocation: {args!r}"
         raise UnexpectedCommandError(message)
 
     cmd_mox.stub("cargo").runs(handler)
+
+
+def _is_manifest_query(args: tuple[str, ...]) -> bool:
+    """Return whether ``args`` is a ``cargo metadata --manifest-path`` query."""
+    return (
+        args[:3] == ("metadata", "--format-version", "1") and "--manifest-path" in args
+    )
+
+
+def _payload_for_manifest(payload: str, args: tuple[str, ...]) -> str:
+    """Return ``payload`` with the effective root of a queried manifest.
+
+    A manifest already listed as a package belongs to the outer workspace, so
+    the payload is returned unchanged. Any other manifest is modelled as a
+    standalone nested workspace rooted at its own directory, which is how the
+    nested-lockfile fixtures are shaped.
+
+    Returns
+    -------
+    str
+        JSON text whose ``workspace_root`` reflects the queried manifest.
+    """
+    import json
+    from pathlib import Path
+
+    manifest = Path(args[args.index("--manifest-path") + 1])
+    data = json.loads(payload)
+    packages = data.get("packages", [])
+    known = {
+        Path(package["manifest_path"])
+        for package in packages
+        if isinstance(package, dict) and "manifest_path" in package
+    }
+    if manifest in known or "workspace_root" not in data:
+        return payload
+    data["workspace_root"] = str(manifest.parent)
+    return json.dumps(data)

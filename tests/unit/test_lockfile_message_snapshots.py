@@ -55,20 +55,29 @@ class TestBumpLockfileMessages:
         )
         workspace = WorkspaceGraph(workspace_root=tmp_path, crates=())
 
-        def fake_regenerate_lockfiles(
+        def fake_plan(
+            _repository: object,
             workspace_root: Path,
-            lockfile_manifests: tuple[str, ...],
-            *,
-            runner: object | None = None,
-        ) -> tuple[Path, ...]:
-            """Join the lockfile paths to workspace_root; do not invoke Cargo."""
-            del lockfile_manifests, runner
-            return tuple(workspace_root / path for path in lockfile_paths)
+            _lockfile_manifests: tuple[str, ...],
+        ) -> object:
+            """Return a plan naming the parametrised lockfiles."""
+            from lading.commands.bump_lockfile_planning import LockfilePlan
+
+            return LockfilePlan(
+                root=workspace_root,
+                manifests=(workspace_root / "Cargo.toml",),
+                lockfiles=tuple(workspace_root / path for path in lockfile_paths),
+            )
 
         monkeypatch.setattr(
-            bump.bump_lockfiles,
-            "regenerate_lockfiles",
-            fake_regenerate_lockfiles,
+            bump.bump_lockfiles.CargoLockfileRepository,
+            "plan_lockfiles",
+            fake_plan,
+        )
+        monkeypatch.setattr(
+            bump.bump_lockfiles.CargoLockfileRepository,
+            "regenerate_planned",
+            lambda _repository, plan: plan.lockfiles,
         )
 
         message = bump.run(

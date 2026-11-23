@@ -99,10 +99,10 @@ def _run_bump_capturing_regeneration(
         bump=config_module.BumpConfig(rebuild_lockfiles=configured)
     )
     with mock.patch.object(
-        bump.bump_lockfiles,
-        "regenerate_lockfiles",
-        return_value=(),
-    ) as regenerate:
+        bump.bump_lockfiles.CargoLockfileRepository,
+        "plan_lockfiles",
+        return_value=None,
+    ) as plan:
         bump.run(
             workspace_root,
             "1.2.3",
@@ -112,7 +112,7 @@ def _run_bump_capturing_regeneration(
                 workspace=workspace,
             ),
         )
-    return regenerate.called
+    return plan.called
 
 
 @pytest.mark.parametrize("configured", [True, False])

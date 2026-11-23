@@ -415,7 +415,14 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
   patterns before Cargo and every reported manifest after it, and rejects
   mismatched roots. The CLI selects it only for bump. `make lint`,
   `make typecheck`, and `make test` (1469 passed, 31 skipped) green.
-- [ ] EP-M3: one immutable plan, prepared then committed.
+- [x] 2026-11-23: EP-M3 landed. `bump_plan` owns the frozen plan and commit
+  order, `bump_prepare` prepares manifests, documentation, and READMEs, and
+  `bump_lockfile_planning` resolves every lockfile destination through Cargo
+  once. The pipeline now prepares, commits, then regenerates; the legacy
+  `_update_manifest`, `resolve_documentation_targets`, and
+  `update_documentation_files` helpers were removed. `make check-fmt`,
+  `make lint`, `make typecheck`, and `make test` (1487 passed, 31 skipped)
+  green.
 - [ ] EP-M4: command-level and real-Cargo evidence.
 - [ ] EP-M5: documentation, migration, and release hand-off.
 
@@ -438,6 +445,11 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
 - Public confinement helpers take an options dataclass (`ConfineOptions`,
   `GlobOptions`) because the project's four-argument lint ceiling makes long
   keyword-only signatures impractical.
+- A fixture whose `cargo metadata` claims the outer workspace root for a
+  nested manifest now plans the *outer* lockfile, because that is the file
+  Cargo would actually rewrite. The BDD and E2E nested-lockfile fixtures were
+  reshaped into genuinely standalone nested workspaces so they keep testing a
+  distinct destination.
 - Cargo expands `[workspace].members` globs to directories and ignores
   non-directory matches. Rejecting a stray file under `crates/` would refuse a
   workspace Cargo already accepts, so member expansion selects directories and
@@ -458,6 +470,10 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
 - Lockfile destinations are resolved through Cargo's reported workspace root
   rather than assumed adjacent to each manifest, because a nested manifest can
   belong to the outer workspace.
+- One reasoned duplication exception was recorded for the import headers shared
+  by `bump_docs`, `bump_pipeline`, and `publish`. The overlap is an import
+  block, not shared logic; extracting it would add an artificial module with no
+  behaviour of its own.
 - The write phase keeps atomic per-file replacement and adds no rollback. The
   guarantee is validation before mutation.
 

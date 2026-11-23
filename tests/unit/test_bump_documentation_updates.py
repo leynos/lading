@@ -50,7 +50,7 @@ def test_readme_transposition_failure_is_logged_at_pipeline_boundary(
         caplog.at_level(logging.ERROR, logger=bump_pipeline._log.name),
         pytest.raises(ReadmeTranspositionError),
     ):
-        bump_pipeline._process_readme_transposition(context, dry_run=False)
+        bump_pipeline._prepare_plan(context, "1.2.3")
 
     assert caplog.messages == ["README transposition failed for crate 'alpha'"], (
         "the pipeline boundary must log the README failure once with the "

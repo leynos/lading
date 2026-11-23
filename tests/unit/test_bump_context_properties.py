@@ -2,7 +2,7 @@
 
 These tests guard that the ``excluded`` and ``updated_crate_names`` sets are
 derived once in :func:`lading.commands.bump._initialize_bump_context` and that
-:func:`~lading.commands.bump_pipeline._apply_crate_manifest_update` consumes them,
+:func:`~lading.commands.bump_pipeline._prepare_plan` consumes them,
 rather than recomputing selection per crate.
 """
 
@@ -17,12 +17,10 @@ from hypothesis import HealthCheck, given
 from tomlkit import parse as parse_toml
 
 from lading.commands import bump, bump_pipeline
+from lading.commands.bump_plan import commit_plan
 from lading.workspace import WorkspaceCrate, WorkspaceDependency, WorkspaceGraph
 from tests.helpers.hypothesis_settings import filesystem_property_settings
 from tests.helpers.workspace_builders import _make_config
-
-if typ.TYPE_CHECKING:
-    from lading.commands.bump_manifests import _BumpContext
 
 _crate_name = st.text(
     alphabet=string.ascii_lowercase + string.digits + "-_",
@@ -188,7 +186,7 @@ def _write_synthetic_manifests(
     names: cabc.Iterable[str],
     dependencies: _DependencyEdges,
 ) -> None:
-    """Write one ``Cargo.toml`` per crate under ``root`` matching the graph.
+    """Write the workspace manifest and one ``Cargo.toml`` per crate.
 
     Each manifest is seeded at ``_INITIAL_VERSION``; every dependency edge is
     written as a plain-string version requirement under the section its ``kind``
@@ -196,6 +194,10 @@ def _write_synthetic_manifests(
     ``[build-dependencies]``), mirroring the :class:`WorkspaceDependency`
     entries built by ``_synthetic_workspace``.
     """
+    members = ", ".join(f'"{name}"' for name in sorted(names))
+    root.joinpath("Cargo.toml").write_text(
+        f"[workspace]\nmembers = [{members}]\n", encoding="utf-8"
+    )
     for name in names:
         crate_dir = root / name
         crate_dir.mkdir(parents=True, exist_ok=True)
@@ -255,26 +257,9 @@ def _draw_dependency_edges(
 def _assert_crate_manifest_update(
     crate: WorkspaceCrate,
     crate_edges: cabc.Mapping[str, _DependencyKind],
-    context: _BumpContext,
     expected: _ExpectedManifestOutcome,
 ) -> None:
-    """Apply the manifest update for ``crate`` and check it against reference."""
-    depends_on_updated = any(target in expected.updated_names for target in crate_edges)
-    expect_skipped = expected.excluded and not depends_on_updated
-
-    outcome = bump_pipeline._apply_crate_manifest_update(
-        crate, _TARGET_VERSION, context
-    )
-
-    expected_outcome = (
-        bump_pipeline._CrateManifestOutcome.SKIPPED
-        if expect_skipped
-        else bump_pipeline._CrateManifestOutcome.UPDATED
-    )
-    assert outcome is expected_outcome, (
-        f"crate {crate.name!r}: expected outcome {expected_outcome}, got {outcome}"
-    )
-
+    """Check ``crate``'s committed manifest against the reference semantics."""
     package_version, section_versions = _read_manifest_versions(crate.manifest_path)
     expected_package = _INITIAL_VERSION if expected.excluded else _TARGET_VERSION
     assert package_version == expected_package, (
@@ -354,12 +339,13 @@ def test_manifest_selection_matches_naive_reference(
         ),
     )
 
+    commit_plan(bump_pipeline._prepare_plan(context, _TARGET_VERSION))
+
     crates_by_name = {crate.name: crate for crate in workspace.crates}
     for name in names:
         _assert_crate_manifest_update(
             crates_by_name[name],
             edges[name],
-            context,
             _ExpectedManifestOutcome(
                 updated_names=updated_names,
                 excluded=name in exclude_set,

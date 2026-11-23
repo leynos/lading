@@ -401,7 +401,8 @@ def given_nested_lockfile_manifest(
     nested_manifest = workspace_directory / _Path(manifest)
     nested_manifest.parent.mkdir(parents=True, exist_ok=True)
     nested_manifest.write_text(
-        '[package]\nname = "nested"\nversion = "0.1.0"\n', encoding="utf-8"
+        '[package]\nname = "nested"\nversion = "0.1.0"\n\n[workspace]\n',
+        encoding="utf-8",
     )
     (nested_manifest.parent / "Cargo.lock").write_text(
         "# nested lock\n", encoding="utf-8"

@@ -1,5 +1,12 @@
-"""Integration tests for lockfile rebuild behaviour in :mod:`lading.commands.bump`."""
+"""Integration tests for lockfile rebuild behaviour in :mod:`lading.commands.bump`.
 
+The bump pipeline consumes the lockfile repository port's plan and regenerate
+methods, so these tests inject a recording repository rather than patching the
+lower-level façade helpers. That keeps the assertions on the contract the
+pipeline actually uses.
+"""
+
+import collections.abc as cabc
 import dataclasses as dc
 import pathlib
 import typing as typ
@@ -8,75 +15,62 @@ import pytest
 
 from lading import config as config_module
 from lading.commands import bump
-from tests.helpers.path_normalization import normalized_captured
+from lading.commands.bump_lockfile_planning import LockfilePlan
 from tests.helpers.workspace_builders import _make_config, _make_workspace
 
 if typ.TYPE_CHECKING:
-    from _pytest.monkeypatch import MonkeyPatch
     from syrupy.assertion import SnapshotAssertion
 
 
-@dc.dataclass(frozen=True, slots=True)
-class _LockfileSkipScenario:
-    """Parameters describing lockfile rebuild skip scenarios."""
+@dc.dataclass(slots=True)
+class _RecordingRepository:
+    """Record lockfile plan and regeneration calls for assertions."""
 
-    test_id: str
-    version: str
-    rebuild_lockfiles: bool
-    fail_message: str
+    lockfiles: tuple[pathlib.Path, ...]
+    calls: list[tuple[str, object]] = dc.field(default_factory=list)
+
+    def plan_lockfiles(
+        self,
+        workspace_root: pathlib.Path,
+        lockfile_manifests: cabc.Sequence[str],
+    ) -> LockfilePlan:
+        """Record the planning inputs and return a plan with the lockfiles."""
+        self.calls.append(("plan", (workspace_root, tuple(lockfile_manifests))))
+        return LockfilePlan(
+            root=workspace_root,
+            manifests=(workspace_root / "Cargo.toml",),
+            lockfiles=self.lockfiles,
+        )
+
+    def regenerate_planned(self, plan: LockfilePlan) -> tuple[pathlib.Path, ...]:
+        """Record the regenerated plan and return its lockfiles."""
+        self.calls.append(("regenerate", plan))
+        return plan.lockfiles
+
+    def resolve_lockfile_paths(
+        self, *_args: object, **_kwargs: object
+    ) -> tuple[pathlib.Path, ...]:
+        """Fail: the pipeline must not use the legacy projection method."""
+        pytest.fail("the pipeline must use plan_lockfiles, not resolve_lockfile_paths")
+
+    def regenerate_lockfiles(
+        self, *_args: object, **_kwargs: object
+    ) -> tuple[pathlib.Path, ...]:
+        """Fail: the pipeline must not use the legacy regeneration method."""
+        pytest.fail("the pipeline must use regenerate_planned")
 
 
 def test_run_rebuilds_lockfiles_when_enabled(
     tmp_path: pathlib.Path,
-    monkeypatch: MonkeyPatch,
     snapshot: SnapshotAssertion,
 ) -> None:
-    """Lockfile regeneration runs and is reported when explicitly enabled."""
+    """Lockfile planning and regeneration run when explicitly enabled."""
     workspace = _make_workspace(tmp_path)
-    configuration = _make_config()
-    nested_lockfile = tmp_path / "crates/ui/Cargo.lock"
-    captured: dict[str, object] = {}
-    merged_manifests = ("crates/ui/Cargo.toml",)
-
-    def fake_merge_discovered_manifests(
-        workspace_root: pathlib.Path,
-        lockfile_manifests: tuple[str, ...],
-        *,
-        runner: object | None = None,
-    ) -> tuple[str, ...]:
-        """Record the merge inputs and return the merged manifest tuple."""
-        captured["merge_workspace_root"] = workspace_root
-        captured["merge_lockfile_manifests"] = lockfile_manifests
-        captured["merge_runner"] = runner
-        return merged_manifests
-
-    def fake_regenerate_lockfiles(
-        workspace_root: pathlib.Path,
-        lockfile_manifests: tuple[str, ...],
-        *,
-        runner: object | None = None,
-    ) -> tuple[pathlib.Path, ...]:
-        """Record each regeneration call and return the root and nested lockfiles."""
-        # ``captured`` is shared with the other doubles, so the counter is
-        # read back through a narrow that states the value it must hold.
-        previous_calls = captured.get("calls", 0)
-        assert isinstance(previous_calls, int), "the call counter must stay an int"
-        captured["calls"] = previous_calls + 1
-        captured["workspace_root"] = workspace_root
-        captured["lockfile_manifests"] = lockfile_manifests
-        captured["runner"] = runner
-        return (tmp_path / "Cargo.lock", nested_lockfile)
-
-    monkeypatch.setattr(
-        bump.bump_lockfiles,
-        "merge_discovered_manifests",
-        fake_merge_discovered_manifests,
+    configuration = config_module.LadingConfig(
+        bump=config_module.BumpConfig(lockfile_manifests=("crates/ui/Cargo.toml",))
     )
-    monkeypatch.setattr(
-        bump.bump_lockfiles,
-        "regenerate_lockfiles",
-        fake_regenerate_lockfiles,
-    )
+    lockfiles = (tmp_path / "Cargo.lock", tmp_path / "crates/ui/Cargo.lock")
+    repository = _RecordingRepository(lockfiles=lockfiles)
 
     message = bump.run(
         tmp_path,
@@ -85,134 +79,87 @@ def test_run_rebuilds_lockfiles_when_enabled(
             rebuild_lockfiles=True,
             configuration=configuration,
             workspace=workspace,
+            lockfile_repository=repository,
         ),
     )
 
-    assert normalized_captured(captured.items(), tmp_path) == snapshot(
-        name="captured"
-    ), "expected regenerate_lockfiles to receive the merged manifest tuple"
-    assert message == snapshot(name="message"), (
-        "the bump summary should match the snapshot"
+    assert [call[0] for call in repository.calls] == ["plan", "regenerate"], (
+        "a live bump must plan before writing and regenerate after"
     )
+    plan_call = repository.calls[0][1]
+    assert plan_call == (tmp_path, ("crates/ui/Cargo.toml",)), (
+        "the plan must receive the canonical root and configured manifests"
+    )
+    assert message == snapshot, "the bump summary must list the regenerated lockfiles"
 
 
 def test_run_skips_lockfiles_when_disabled(
     tmp_path: pathlib.Path,
-    monkeypatch: MonkeyPatch,
     snapshot: SnapshotAssertion,
 ) -> None:
-    """Lockfile regeneration is suppressed when explicitly disabled."""
+    """Lockfile work is suppressed when explicitly disabled."""
     workspace = _make_workspace(tmp_path)
-    configuration = _make_config()
-    monkeypatch.setattr(
-        bump.bump_lockfiles,
-        "regenerate_lockfiles",
-        lambda *args, **kwargs: pytest.fail(
-            "regenerate_lockfiles must not be called when rebuild_lockfiles=False"
-        ),
-    )
+    repository = _RecordingRepository(lockfiles=())
 
     message = bump.run(
         tmp_path,
         "1.2.3",
         options=bump.BumpOptions(
             rebuild_lockfiles=False,
-            configuration=configuration,
+            configuration=_make_config(),
             workspace=workspace,
+            lockfile_repository=repository,
         ),
     )
 
+    assert not repository.calls, (
+        "a disabled rebuild must not plan or regenerate lockfiles"
+    )
     assert message == snapshot, (
-        "a disabled rebuild must report the bump summary without any lockfile entries"
+        "a disabled rebuild must report the bump summary without lockfile entries"
     )
 
 
 def test_run_inherits_lockfile_rebuild_configuration(
     tmp_path: pathlib.Path,
-    monkeypatch: MonkeyPatch,
     snapshot: SnapshotAssertion,
 ) -> None:
-    """Programmatic bump calls inherit lockfile rebuild configuration by default."""
+    """A programmatic bump inherits ``rebuild_lockfiles`` from configuration."""
     workspace = _make_workspace(tmp_path)
     configuration = config_module.LadingConfig(
         bump=config_module.BumpConfig(rebuild_lockfiles=False)
     )
-
-    def fail_regeneration(*args: object, **kwargs: object) -> typ.NoReturn:
-        """Fail the test if regeneration runs despite inherited configuration."""
-        pytest.fail("lockfile regeneration should inherit configuration")
-
-    monkeypatch.setattr(
-        bump.bump_lockfiles,
-        "regenerate_lockfiles",
-        fail_regeneration,
-    )
+    repository = _RecordingRepository(lockfiles=())
 
     message = bump.run(
         tmp_path,
         "1.2.3",
-        options=bump.BumpOptions(configuration=configuration, workspace=workspace),
+        options=bump.BumpOptions(
+            configuration=configuration,
+            workspace=workspace,
+            lockfile_repository=repository,
+        ),
     )
 
+    assert not repository.calls, (
+        "the inherited disabled configuration must suppress all lockfile work"
+    )
     assert message == snapshot, (
-        "a programmatic bump must inherit rebuild_lockfiles from the configuration"
+        "the summary must not name lockfiles when regeneration is disabled"
     )
 
 
 def test_run_reports_lockfiles_in_dry_run(
     tmp_path: pathlib.Path,
-    monkeypatch: MonkeyPatch,
     snapshot: SnapshotAssertion,
 ) -> None:
-    """Dry-run bump output reports lockfiles without regenerating them."""
+    """A dry run reports planned lockfiles without regenerating them."""
     workspace = _make_workspace(tmp_path)
     configuration = config_module.LadingConfig(
         bump=config_module.BumpConfig(lockfile_manifests=("crates/ui/Cargo.toml",))
     )
-    nested_lockfile = tmp_path / "crates/ui/Cargo.lock"
-    captured: dict[str, object] = {}
-    merged_manifests = ("crates/ui/Cargo.toml", "fixtures/minimal/Cargo.toml")
-
-    def fake_merge_discovered_manifests(
-        workspace_root: pathlib.Path,
-        lockfile_manifests: tuple[str, ...],
-        *,
-        runner: object | None = None,
-        emit_discovery_observability: bool = True,
-    ) -> tuple[str, ...]:
-        """Record the manifests and observability flag; return the merged manifests."""
-        captured["merge_lockfile_manifests"] = lockfile_manifests
-        captured["emit_discovery_observability"] = emit_discovery_observability
-        return merged_manifests
-
-    def fake_resolve_lockfile_paths(
-        workspace_root: pathlib.Path,
-        lockfile_manifests: tuple[str, ...],
-    ) -> tuple[pathlib.Path, ...]:
-        """Record the workspace and manifests and return the lockfile paths."""
-        captured["workspace_root"] = workspace_root
-        captured["lockfile_manifests"] = lockfile_manifests
-        return (tmp_path / "Cargo.lock", nested_lockfile)
-
-    def fail_regeneration(*args: object, **kwargs: object) -> typ.NoReturn:
-        """Fail the test if a dry run tries to invoke Cargo for regeneration."""
-        pytest.fail("dry-run lockfile reporting should not invoke Cargo")
-
-    monkeypatch.setattr(
-        bump.bump_lockfiles,
-        "merge_discovered_manifests",
-        fake_merge_discovered_manifests,
-    )
-    monkeypatch.setattr(
-        bump.bump_lockfiles,
-        "resolve_lockfile_paths",
-        fake_resolve_lockfile_paths,
-    )
-    monkeypatch.setattr(
-        bump.bump_lockfiles,
-        "regenerate_lockfiles",
-        fail_regeneration,
-    )
+    lockfiles = (tmp_path / "Cargo.lock", tmp_path / "crates/ui/Cargo.lock")
+    repository = _RecordingRepository(lockfiles=lockfiles)
 
     message = bump.run(
         tmp_path,
@@ -222,67 +169,53 @@ def test_run_reports_lockfiles_in_dry_run(
             rebuild_lockfiles=True,
             configuration=configuration,
             workspace=workspace,
+            lockfile_repository=repository,
         ),
     )
 
-    assert normalized_captured(captured.items(), tmp_path) == snapshot(
-        name="dry_run_captured"
-    ), "expected dry-run lockfile resolution for the merged manifest tuple"
-    assert message == snapshot(name="message"), (
-        "the dry-run summary should match the snapshot"
+    assert [call[0] for call in repository.calls] == ["plan"], (
+        "a dry run must plan lockfiles but never regenerate them"
+    )
+    assert (tmp_path / "Cargo.lock").exists() is False, (
+        "a dry run must not create a lockfile"
+    )
+    assert message == snapshot, (
+        "the dry-run summary must list the planned lockfile destinations"
     )
 
 
 @pytest.mark.parametrize(
-    "scenario",
+    ("rebuild_lockfiles", "version"),
     [
-        _LockfileSkipScenario(
-            test_id="disabled",
-            version="1.2.3",
-            rebuild_lockfiles=False,
-            fail_message="lockfile regeneration should be skipped",
-        ),
-        _LockfileSkipScenario(
-            test_id="versions_already_match",
-            version="0.1.0",
-            rebuild_lockfiles=True,
-            fail_message=(
-                "lockfiles should not be regenerated without manifest changes"
-            ),
-        ),
+        pytest.param(False, "1.2.3", id="disabled"),
+        pytest.param(True, "0.1.0", id="versions_already_match"),
     ],
-    ids=lambda scenario: scenario.test_id,
 )
 def test_run_skips_lockfile_rebuild(
     tmp_path: pathlib.Path,
-    monkeypatch: MonkeyPatch,
-    scenario: _LockfileSkipScenario,
+    version: str,
     snapshot: SnapshotAssertion,
+    *,
+    rebuild_lockfiles: bool,
 ) -> None:
-    """Lockfile regeneration is skipped when disabled or no manifests changed."""
+    """No lockfile work happens when disabled or when no manifest changes."""
     workspace = _make_workspace(tmp_path)
-    configuration = _make_config()
-
-    def fail_regeneration(*args: object, **kwargs: object) -> typ.NoReturn:
-        """Fail the test with the scenario's message if regeneration runs."""
-        pytest.fail(scenario.fail_message)
-
-    monkeypatch.setattr(
-        bump.bump_lockfiles,
-        "regenerate_lockfiles",
-        fail_regeneration,
-    )
+    repository = _RecordingRepository(lockfiles=())
 
     message = bump.run(
         tmp_path,
-        scenario.version,
+        version,
         options=bump.BumpOptions(
-            rebuild_lockfiles=scenario.rebuild_lockfiles,
-            configuration=configuration,
+            rebuild_lockfiles=rebuild_lockfiles,
+            configuration=_make_config(),
             workspace=workspace,
+            lockfile_repository=repository,
         ),
     )
 
+    assert not repository.calls, (
+        "a skipped lockfile rebuild must not reach the repository"
+    )
     assert message == snapshot, (
         "a skipped lockfile rebuild must leave the bump summary unchanged"
     )

@@ -16,7 +16,14 @@ from lading.commands.bump_lockfile_paths import (
 from lading.commands.bump_lockfile_paths import (
     resolve_lockfile_paths,
 )
-from lading.commands.bump_lockfile_regeneration import regenerate_lockfiles
+from lading.commands.bump_lockfile_planning import (
+    LockfilePlan,
+    plan_lockfiles,
+)
+from lading.commands.bump_lockfile_regeneration import (
+    regenerate_lockfiles,
+    regenerate_planned,
+)
 
 if typ.TYPE_CHECKING:
     from lading.runtime import CommandRunner
@@ -24,9 +31,75 @@ if typ.TYPE_CHECKING:
 
 @dc.dataclass(frozen=True, slots=True)
 class CargoLockfileRepository:
-    """Cargo-backed :class:`LockfileRepository` bound to a command runner."""
+    """Cargo-backed :class:`LockfileRepository` bound to a command runner.
+
+    Attributes
+    ----------
+    runner : CommandRunner | None
+        Runner used for Git discovery and Cargo invocations; ``None`` selects
+        the default subprocess runner.
+    environ : cabc.Mapping[str, str] | None
+        Environment checked for ``CARGO_RESOLVER_LOCKFILE_PATH`` before a plan
+        is built. ``None`` reads :data:`os.environ`; the CLI supplies the
+        process environment explicitly.
+    """
 
     runner: CommandRunner | None = None
+    environ: cabc.Mapping[str, str] | None = None
+
+    def plan_lockfiles(
+        self,
+        workspace_root: Path,
+        lockfile_manifests: cabc.Sequence[str],
+    ) -> LockfilePlan:
+        """Plan lockfile destinations before any manifest is rewritten.
+
+        Parameters
+        ----------
+        workspace_root :
+            Canonical workspace root.
+        lockfile_manifests :
+            Configured manifests relative to *workspace_root*. Git-tracked
+            lockfile manifests are merged before validation.
+
+        Returns
+        -------
+        LockfilePlan
+            Effective workspace-root manifests and their lockfile
+            destinations.
+
+        Raises
+        ------
+        BumpPreflightError
+            If a target is unsafe, missing, or Cargo reports an unexpected
+            workspace root, or ``CARGO_RESOLVER_LOCKFILE_PATH`` is set.
+        """
+        return plan_lockfiles(
+            workspace_root,
+            lockfile_manifests,
+            runner=self.runner,
+            environ=self.environ,
+        )
+
+    def regenerate_planned(self, plan: LockfilePlan) -> tuple[Path, ...]:
+        """Regenerate the lockfiles named by a validated plan.
+
+        Parameters
+        ----------
+        plan :
+            Destination plan produced by :meth:`plan_lockfiles`.
+
+        Returns
+        -------
+        tuple[Path, ...]
+            The validated lockfile destinations.
+
+        Raises
+        ------
+        LockfileRegenerationError
+            After every manifest is attempted, if any ``cargo update`` failed.
+        """
+        return regenerate_planned(plan, runner=self.runner)
 
     def resolve_lockfile_paths(
         self,
@@ -179,6 +252,52 @@ class LockfileRepository(typ.Protocol):
         LockfileRegenerationError
             If a configured manifest is outside the workspace or is not named
             ``Cargo.toml``.
+        """
+
+    def plan_lockfiles(
+        self,
+        workspace_root: Path,
+        lockfile_manifests: cabc.Sequence[str],
+    ) -> LockfilePlan:
+        """Plan lockfile destinations before any manifest is rewritten.
+
+        Parameters
+        ----------
+        workspace_root :
+            Canonical workspace root.
+        lockfile_manifests :
+            Configured manifests relative to *workspace_root*.
+
+        Returns
+        -------
+        LockfilePlan
+            Effective workspace-root manifests and their lockfile
+            destinations.
+
+        Raises
+        ------
+        BumpPreflightError
+            If a target is unsafe, missing, or Cargo reports an unexpected
+            workspace root.
+        """
+
+    def regenerate_planned(self, plan: LockfilePlan) -> tuple[Path, ...]:
+        """Regenerate the lockfiles named by a validated plan.
+
+        Parameters
+        ----------
+        plan :
+            Destination plan produced by :meth:`plan_lockfiles`.
+
+        Returns
+        -------
+        tuple[Path, ...]
+            The validated lockfile destinations.
+
+        Raises
+        ------
+        LockfileRegenerationError
+            After every manifest is attempted, if any ``cargo update`` failed.
         """
 
     def regenerate_lockfiles(

@@ -1,38 +1,44 @@
-"""Unit tests for bump manifest writing and dependency-section rewrites."""
+"""Unit tests for bump manifest rendering and dependency-section rewrites."""
 
 from pathlib import Path
 
 import pytest
 from tomlkit import parse as parse_toml
 
-from lading.commands import bump, bump_manifests, bump_toml
+from lading.commands import bump_manifests, bump_toml
 from tests.helpers.workspace_builders import _load_version
 
 
-def test_update_manifest_writes_when_changed(tmp_path: Path) -> None:
-    """Applying a new version persists changes to disk."""
+def test_render_manifest_returns_updated_text(tmp_path: Path) -> None:
+    """Rendering applies the new version to the selected table."""
     manifest_path = tmp_path / "Cargo.toml"
     manifest_path.write_text('[package]\nname = "demo"\nversion = "0.1.0"\n')
-    changed = bump_manifests._update_manifest(
-        manifest_path, (("package",),), "1.0.0", bump.BumpOptions()
+    content = bump_manifests.render_manifest(
+        manifest_path,
+        (("package",),),
+        "1.0.0",
+        bump_manifests.ManifestRenderOptions(),
     )
-    assert changed is True, "changing the version should report a change"
+    assert content is not None, "changing the version should produce new text"
+    manifest_path.write_text(content, encoding="utf-8")
     assert _load_version(manifest_path, ("package",)) == "1.0.0", (
-        "package version should be persisted to disk"
+        "the rendered manifest should carry the new package version"
     )
 
 
-def test_update_manifest_preserves_inline_comment(tmp_path: Path) -> None:
-    """Inline comments survive manifest rewrites."""
+def test_render_manifest_preserves_inline_comment(tmp_path: Path) -> None:
+    """Inline comments survive manifest rendering."""
     manifest_path = tmp_path / "Cargo.toml"
     manifest_path.write_text(
         '[package]\nversion = "0.1.0"  # keep me\n', encoding="utf-8"
     )
-    changed = bump_manifests._update_manifest(
-        manifest_path, (("package",),), "1.2.3", bump.BumpOptions()
+    text = bump_manifests.render_manifest(
+        manifest_path,
+        (("package",),),
+        "1.2.3",
+        bump_manifests.ManifestRenderOptions(),
     )
-    assert changed is True, "rewriting the version should report a change"
-    text = manifest_path.read_text(encoding="utf-8")
+    assert text is not None, "rewriting the version should produce new text"
     assert "# keep me" in text, "the inline comment should survive the rewrite"
     document = parse_toml(text)
     assert document["package"]["version"] == "1.2.3", (
@@ -40,15 +46,18 @@ def test_update_manifest_preserves_inline_comment(tmp_path: Path) -> None:
     )
 
 
-def test_update_manifest_skips_when_unchanged(tmp_path: Path) -> None:
-    """No write occurs when the manifest already records the target version."""
+def test_render_manifest_returns_none_when_unchanged(tmp_path: Path) -> None:
+    """No text is produced when the manifest already records the target version."""
     manifest_path = tmp_path / "Cargo.toml"
     original = '[package]\nname = "demo"\nversion = "0.1.0"\n'
     manifest_path.write_text(original)
-    changed = bump_manifests._update_manifest(
-        manifest_path, (("package",),), "0.1.0", bump.BumpOptions()
+    content = bump_manifests.render_manifest(
+        manifest_path,
+        (("package",),),
+        "0.1.0",
+        bump_manifests.ManifestRenderOptions(),
     )
-    assert changed is False, "an already-current version should report no change"
+    assert content is None, "an already-current version should produce no text"
     assert manifest_path.read_text() == original, (
         "the manifest file should be left byte-for-byte unchanged"
     )
