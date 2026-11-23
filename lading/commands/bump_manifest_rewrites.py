@@ -297,8 +297,18 @@ def _compile_string_rewrite(
             replacements[old_text] = new_text
     if not replacements:
         return None
-    pattern = _string_replacement_pattern(rule.template, replacements)
-    return lambda value: pattern.sub(lambda match: replacements[match.group()], value)
+    protected_targets = {
+        rule.template.format(crate=crate_name, version=versions.target_version)
+        for crate_name in versions.updated_crate_names
+    }
+    matching_replacements = dict(replacements)
+    matching_replacements.update(
+        (target_rendering, target_rendering) for target_rendering in protected_targets
+    )
+    pattern = _string_replacement_pattern(rule.template, matching_replacements)
+    return lambda value: pattern.sub(
+        lambda match: matching_replacements[match.group()], value
+    )
 
 
 def _string_replacement_pattern(

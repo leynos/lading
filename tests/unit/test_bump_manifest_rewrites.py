@@ -201,6 +201,53 @@ literal = { path = '../../../target/rstest-bdd-0.6.0-beta4' }
     )
 
 
+@pytest.mark.parametrize(
+    ("current_value", "selector_count", "expected_value"),
+    [
+        pytest.param("2.0.0+1.0.0", 1, None, id="already-target"),
+        pytest.param("1.0.0", 2, "2.0.0+1.0.0", id="duplicate-selectors"),
+    ],
+)
+def test_string_rewrites_protect_complete_target_renderings(
+    tmp_path: pathlib.Path,
+    write_fixture_manifest: _ManifestWriter,
+    current_value: str,
+    selector_count: int,
+    expected_value: str | None,
+) -> None:
+    """Do not rewrite old-version text inside an already-target rendering."""
+    write_fixture_manifest(
+        tmp_path,
+        "fixture/Cargo.toml",
+        f'[metadata]\nartifact = "{current_value}"\n',
+    )
+    selector = StringValueRewriteConfig(
+        table=("metadata",),
+        template="{version}",
+    )
+    group = ManifestRewriteConfig(
+        paths=("fixture/Cargo.toml",),
+        dependencies=False,
+        string_values=(selector,) * selector_count,
+    )
+    versions = manifest_rewrite_versions(
+        names=frozenset({"alpha"}),
+        pre_bump_versions={"alpha": "1.0.0"},
+        target_version="2.0.0+1.0.0",
+    )
+
+    plans = plan_fixture_rewrites(tmp_path, (group,), versions=versions)
+
+    if expected_value is None:
+        assert not plans, "an already-target string must remain an unchanged no-op"
+    else:
+        assert len(plans) == 1, "the repeated selector should produce one plan"
+        document = parse_toml(plans[0].new_text)
+        assert document["metadata"]["artifact"] == expected_value, (
+            "a repeated selector must not rewrite text inside the target version"
+        )
+
+
 def test_rejects_ambiguous_string_template_replacements(
     tmp_path: pathlib.Path,
     write_fixture_manifest: _ManifestWriter,
