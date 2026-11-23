@@ -86,12 +86,8 @@ def compose_requirement(existing: str, target_version: str) -> str:
     '>=0.6.0, <0.7'
     """
     first_constraint, separator, remaining_constraints = existing.partition(",")
-    trailing_whitespace = ""
-    if separator:
-        trimmed_constraint = first_constraint.rstrip()
-        trailing_whitespace = first_constraint[len(trimmed_constraint) :]
-    else:
-        trimmed_constraint = first_constraint
+    trimmed_constraint = first_constraint.rstrip()
+    trailing_whitespace = first_constraint[len(trimmed_constraint) :]
 
     match = NON_DIGIT_PREFIX.match(trimmed_constraint)
     if not match:
