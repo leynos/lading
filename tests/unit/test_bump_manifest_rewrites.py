@@ -202,20 +202,19 @@ literal = { path = '../../../target/rstest-bdd-0.6.0-beta4' }
 
 
 @pytest.mark.parametrize(
-    ("current_value", "selector_count", "expected_value"),
+    "case",
     [
-        pytest.param("2.0.0+1.0.0", 1, None, id="already-target"),
-        pytest.param("1.0.0", 2, "2.0.0+1.0.0", id="duplicate-selectors"),
+        pytest.param(("2.0.0+1.0.0", 1, None), id="already-target"),
+        pytest.param(("1.0.0", 2, "2.0.0+1.0.0"), id="duplicate-selectors"),
     ],
 )
 def test_string_rewrites_protect_complete_target_renderings(
     tmp_path: pathlib.Path,
     write_fixture_manifest: _ManifestWriter,
-    current_value: str,
-    selector_count: int,
-    expected_value: str | None,
+    case: tuple[str, int, str | None],
 ) -> None:
     """Do not rewrite old-version text inside an already-target rendering."""
+    current_value, selector_count, expected_value = case
     write_fixture_manifest(
         tmp_path,
         "fixture/Cargo.toml",

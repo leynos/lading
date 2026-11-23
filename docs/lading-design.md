@@ -417,6 +417,10 @@ lading bump <new_version> [--dry-run]
   documentation fences. The planner parses supplied TOML text directly;
   `bump_toml_files` owns manifest file I/O. Comparator warnings are returned as
   data and logged at the command boundary.
+- `bump_manifest_rewrite_strings` owns string-template matching, stale
+  reference detection, and replacement conflict checks. Its private operations
+  are called by the rewrite planner; they receive parsed TOML and version
+  metadata, perform no file access, and do not update dependencies.
 - `bump_pipeline` owns timing, metrics, and stage ordering. It plans every
   selected manifest before the workspace manifest stage writes, then applies
   the plans after member manifests and before documentation, README

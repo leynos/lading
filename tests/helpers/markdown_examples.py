@@ -144,15 +144,45 @@ def _parse_example_at(
     lines: list[str], fence_index: int, document_name: str
 ) -> tuple[MarkdownExample, int, int]:
     """Parse one opening fence, its marker and matching closing fence."""
+    opening = _require_opening_fence(lines, fence_index, document_name)
+    marker_index, identifier = _require_example_marker(
+        lines, fence_index, document_name
+    )
+    closing_index = _require_closing_fence(
+        lines, fence_index, opening.group("fence"), document_name
+    )
+    example = MarkdownExample(
+        identifier=identifier,
+        language=opening.group("info").strip().split(maxsplit=1)[0],
+        source="\n".join(
+            _remove_fence_indentation(
+                lines[fence_index + 1 : closing_index],
+                len(opening.group("indent")),
+            )
+        ),
+    )
+    return example, marker_index, closing_index
+
+
+def _require_opening_fence(
+    lines: list[str], fence_index: int, document_name: str
+) -> re.Match[str]:
+    """Return a valid opening fence with a language identifier."""
     opening = _OPENING_FENCE_PATTERN.fullmatch(lines[fence_index])
     if opening is None:  # Called only after _extract_examples identified a fence.
         raise MarkdownExampleError(document_name, fence_index + 1, "expected a fence")
-    opening_fence = opening.group("fence")
     info = opening.group("info").strip()
     if not info:
         raise MarkdownExampleError(
             document_name, fence_index + 1, "fence needs a language"
         )
+    return opening
+
+
+def _require_example_marker(
+    lines: list[str], fence_index: int, document_name: str
+) -> tuple[int, str]:
+    """Return the stable identifier attached to a fenced example."""
     marker_index = _preceding_marker_index(lines, fence_index)
     if marker_index is None:
         raise MarkdownExampleError(
@@ -163,27 +193,24 @@ def _parse_example_at(
         raise MarkdownExampleError(
             document_name, marker_index + 1, "tested-example marker needs an identifier"
         )
+    return marker_index, match.group(1)
+
+
+def _require_closing_fence(
+    lines: list[str],
+    fence_index: int,
+    opening_fence: str,
+    document_name: str,
+) -> int:
+    """Return the matching close or report the unterminated example."""
     closing_index = _find_closing_fence(lines, fence_index + 1, opening_fence)
     if closing_index is None:
         raise MarkdownExampleError(
             document_name,
             fence_index + 1,
-            f"fenced example {match.group(1)!r} is unterminated",
+            "fenced example is unterminated",
         )
-    return (
-        MarkdownExample(
-            identifier=match.group(1),
-            language=info.split(maxsplit=1)[0],
-            source="\n".join(
-                _remove_fence_indentation(
-                    lines[fence_index + 1 : closing_index],
-                    len(opening.group("indent")),
-                )
-            ),
-        ),
-        marker_index,
-        closing_index,
-    )
+    return closing_index
 
 
 def _check_markers_have_fences(
