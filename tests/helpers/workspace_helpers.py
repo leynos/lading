@@ -124,7 +124,10 @@ def _payload_for_manifest(payload: str, args: tuple[str, ...]) -> str:
         for package in packages
         if isinstance(package, dict) and "manifest_path" in package
     }
-    if manifest in known or "workspace_root" not in data:
+    if "workspace_root" not in data:
+        return payload
+    root_manifest = Path(data["workspace_root"]) / "Cargo.toml"
+    if manifest in known or manifest == root_manifest:
         return payload
     data["workspace_root"] = str(manifest.parent)
     return json.dumps(data)

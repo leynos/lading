@@ -434,6 +434,15 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
   are indexed, and the users, design, developer, roadmap, and 0.4.0 migration
   guides describe the contract, migration, limits, and non-member manifest hook.
   `pyproject.toml` is bumped to `0.4.0b1`.
+- [x] 2026-11-23: CodeRabbit review cleared. All 15 findings were verified
+  against the code and fixed: the migration impact table and prerelease
+  install commands, the preflight diagnostic scope (`ReadmeTranspositionError`
+  is now a preflight error), native-identity proposal keys, native path
+  components on Windows, the Cargo-root suggestion, snapshot permission and
+  junction handling, native open sentinels, the plan-before-write ordering
+  assertion, TOML-safe member serialization, scoped scan failures, the
+  400-line split of the confinement tests, the `MatchExpectation` docstring,
+  and the root-manifest Cargo query in lockfile planning.
 - [ ] EP-M5 release: tag and release `v0.4.0b1` after review convergence, then
   record the tag commit on issue #409.
 

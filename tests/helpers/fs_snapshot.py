@@ -22,7 +22,8 @@ class SnapshotEntry:
     relative : str
         POSIX path relative to the snapshotted root; ``"."`` is the root itself.
     kind : str
-        ``"file"``, ``"directory"``, ``"symlink"``, or ``"special"``.
+        ``"file"``, ``"directory"``, ``"symlink"``, ``"junction"``, or
+        ``"special"``.
     mode : int
         The ``lstat`` mode bits.
     content : bytes | None
@@ -68,13 +69,14 @@ def _snapshot_directory(
 ) -> None:
     """Append every entry below ``root/prefix`` to ``entries``.
 
-    A directory that cannot be listed keeps only its own entry. Snapshotting is
-    an observation of the operation under test, so it must not raise for a
-    permission failure the test itself injected.
+    A directory that cannot be listed because the test injected a permission
+    failure keeps only its own entry. Any other examination error propagates:
+    treating an I/O failure as an empty listing would let a changed subtree
+    look unchanged.
     """
     try:
         scanned = list(os.scandir(root.joinpath(*prefix)))
-    except OSError:
+    except PermissionError:
         return
     for entry in scanned:
         parts = (*prefix, entry.name)
@@ -95,6 +97,18 @@ def _snapshot_entry(
             SnapshotEntry(
                 relative=relative,
                 kind="symlink",
+                mode=result.st_mode,
+                link_target=Path(entry.path).readlink().as_posix(),
+            )
+        )
+        return
+    if entry.is_junction():
+        # A Windows junction is not reported as a symlink by lstat, and
+        # recursing through it would read a tree outside the snapshot root.
+        entries.append(
+            SnapshotEntry(
+                relative=relative,
+                kind="junction",
                 mode=result.st_mode,
                 link_target=Path(entry.path).readlink().as_posix(),
             )

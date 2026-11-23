@@ -15,6 +15,7 @@ performs the only workspace mutations in the bump workflow.
 import collections.abc as cabc
 import dataclasses as dc
 import enum
+import os
 import typing as typ
 from pathlib import Path, PurePosixPath
 
@@ -113,11 +114,24 @@ class PlanBuilder:
     """
 
     root: Path
-    _contents: dict[tuple[str, ...], str] = dc.field(default_factory=dict)
-    _categories: dict[tuple[str, ...], set[WriteCategory]] = dc.field(
-        default_factory=dict
-    )
-    _order: list[tuple[str, ...]] = dc.field(default_factory=list)
+    _contents: dict[str, str] = dc.field(default_factory=dict)
+    _categories: dict[str, set[WriteCategory]] = dc.field(default_factory=dict)
+    _paths: dict[str, ConfinedPath] = dc.field(default_factory=dict)
+    _order: list[str] = dc.field(default_factory=list)
+
+    def _key(self, path: ConfinedPath) -> str:
+        """Return the native filesystem identity for ``path``.
+
+        Windows compares paths case-insensitively. Keying proposals by the
+        normalized native path means ``readme.md`` and ``README.md`` compose as
+        one target there, while POSIX keeps its case-sensitive identity.
+
+        Returns
+        -------
+        str
+            The normalized absolute spelling used as the proposal key.
+        """
+        return os.path.normcase(str(path.path))
 
     def read(self, path: ConfinedPath) -> str | None:
         """Return the current content of ``path`` honouring earlier proposals.
@@ -138,7 +152,7 @@ class PlanBuilder:
         BumpTargetExaminationError
             If the file exists but cannot be read or decoded.
         """
-        key = path.parts
+        key = self._key(path)
         proposed = self._contents.get(key)
         if proposed is not None:
             return proposed
@@ -167,7 +181,7 @@ class PlanBuilder:
         category : WriteCategory
             The stage's role for reporting purposes.
         """
-        key = path.parts
+        key = self._key(path)
         if key in self._contents:
             self._contents[key] = content
             self._categories[key].add(category)
@@ -176,6 +190,7 @@ class PlanBuilder:
             return
         self._contents[key] = content
         self._categories[key] = {category}
+        self._paths[key] = path
         self._order.append(key)
 
     def has_changes(self, category: WriteCategory) -> bool:
@@ -216,7 +231,7 @@ class PlanBuilder:
         ordered = sorted(self._order, key=self._rank)
         proposals = tuple(
             PlannedWrite(
-                path=ConfinedPath(root=self.root, parts=key),
+                path=self._paths[key],
                 content=self._contents[key],
                 categories=frozenset(self._categories[key]),
             )
@@ -228,13 +243,14 @@ class PlanBuilder:
             lockfiles=lockfiles,
         )
 
-    def _rank(self, key: tuple[str, ...]) -> tuple[int, str]:
+    def _rank(self, key: str) -> tuple[int, str]:
         """Return the commit rank for one proposed path."""
         categories = self._categories[key]
-        display = PurePosixPath(*key).as_posix()
+        path = self._paths[key]
+        display = PurePosixPath(*path.parts).as_posix()
         if WriteCategory.MANIFEST in categories:
             # The workspace manifest is written before member manifests.
-            return (0 if key == _ROOT_MANIFEST_PARTS else 1, display)
+            return (0 if path.parts == _ROOT_MANIFEST_PARTS else 1, display)
         if WriteCategory.DOCUMENTATION in categories:
             return (2, display)
         return (3, display)

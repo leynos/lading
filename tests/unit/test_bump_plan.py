@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from lading.commands import bump, bump_toml
+from lading.commands import bump, bump_plan, bump_toml
 from lading.commands.bump_plan import (
     PlanBuilder,
     WriteCategory,
@@ -261,4 +261,20 @@ def test_rejected_plan_leaves_every_target_unchanged(tmp_path: Path) -> None:
         )
     assert sentinel.read_text(encoding="utf-8") == "external\n", (
         "the external sentinel must be untouched"
+    )
+
+
+def test_plan_builder_keys_by_native_path_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Case-equivalent paths compose as one proposal on a case-insensitive host."""
+    (tmp_path / "README.md").write_text("disk\n", encoding="utf-8")
+    root = tmp_path.resolve()
+    monkeypatch.setattr(bump_plan.os.path, "normcase", str.lower)
+    builder = PlanBuilder(root=root)
+
+    builder.propose(_confined(root, "README.md"), "proposed\n", WriteCategory.README)
+
+    assert builder.read(_confined(root, "readme.md")) == "proposed\n", (
+        "a case-equivalent path must read the earlier proposal"
     )

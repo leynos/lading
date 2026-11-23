@@ -27,7 +27,17 @@ class _RecordingRepository:
     """Record lockfile plan and regeneration calls for assertions."""
 
     lockfiles: tuple[pathlib.Path, ...]
+    manifest_path: pathlib.Path
     calls: list[tuple[str, object]] = dc.field(default_factory=list)
+    planned_version: str | None = None
+    regenerated_version: str | None = None
+
+    def _root_version(self) -> str:
+        """Return the root manifest's ``version`` value at this moment."""
+        for line in self.manifest_path.read_text(encoding="utf-8").splitlines():
+            if line.startswith("version = "):
+                return line.split('"')[1]
+        return ""
 
     def plan_lockfiles(
         self,
@@ -35,6 +45,7 @@ class _RecordingRepository:
         lockfile_manifests: cabc.Sequence[str],
     ) -> LockfilePlan:
         """Record the planning inputs and return a plan with the lockfiles."""
+        self.planned_version = self._root_version()
         self.calls.append(("plan", (workspace_root, tuple(lockfile_manifests))))
         return LockfilePlan(
             root=workspace_root,
@@ -44,6 +55,7 @@ class _RecordingRepository:
 
     def regenerate_planned(self, plan: LockfilePlan) -> tuple[pathlib.Path, ...]:
         """Record the regenerated plan and return its lockfiles."""
+        self.regenerated_version = self._root_version()
         self.calls.append(("regenerate", plan))
         return plan.lockfiles
 
@@ -70,7 +82,10 @@ def test_run_rebuilds_lockfiles_when_enabled(
         bump=config_module.BumpConfig(lockfile_manifests=("crates/ui/Cargo.toml",))
     )
     lockfiles = (tmp_path / "Cargo.lock", tmp_path / "crates/ui/Cargo.lock")
-    repository = _RecordingRepository(lockfiles=lockfiles)
+    repository = _RecordingRepository(
+        lockfiles=lockfiles,
+        manifest_path=tmp_path / "Cargo.toml",
+    )
 
     message = bump.run(
         tmp_path,
@@ -83,6 +98,12 @@ def test_run_rebuilds_lockfiles_when_enabled(
         ),
     )
 
+    assert repository.planned_version == "0.1.0", (
+        "lockfile planning must run before the first manifest write"
+    )
+    assert repository.regenerated_version == "1.2.3", (
+        "lockfile regeneration must run after the manifests carry the new version"
+    )
     assert [call[0] for call in repository.calls] == ["plan", "regenerate"], (
         "a live bump must plan before writing and regenerate after"
     )
@@ -99,7 +120,9 @@ def test_run_skips_lockfiles_when_disabled(
 ) -> None:
     """Lockfile work is suppressed when explicitly disabled."""
     workspace = _make_workspace(tmp_path)
-    repository = _RecordingRepository(lockfiles=())
+    repository = _RecordingRepository(
+        lockfiles=(), manifest_path=tmp_path / "Cargo.toml"
+    )
 
     message = bump.run(
         tmp_path,
@@ -129,7 +152,9 @@ def test_run_inherits_lockfile_rebuild_configuration(
     configuration = config_module.LadingConfig(
         bump=config_module.BumpConfig(rebuild_lockfiles=False)
     )
-    repository = _RecordingRepository(lockfiles=())
+    repository = _RecordingRepository(
+        lockfiles=(), manifest_path=tmp_path / "Cargo.toml"
+    )
 
     message = bump.run(
         tmp_path,
@@ -159,7 +184,10 @@ def test_run_reports_lockfiles_in_dry_run(
         bump=config_module.BumpConfig(lockfile_manifests=("crates/ui/Cargo.toml",))
     )
     lockfiles = (tmp_path / "Cargo.lock", tmp_path / "crates/ui/Cargo.lock")
-    repository = _RecordingRepository(lockfiles=lockfiles)
+    repository = _RecordingRepository(
+        lockfiles=lockfiles,
+        manifest_path=tmp_path / "Cargo.toml",
+    )
 
     message = bump.run(
         tmp_path,
@@ -200,7 +228,9 @@ def test_run_skips_lockfile_rebuild(
 ) -> None:
     """No lockfile work happens when disabled or when no manifest changes."""
     workspace = _make_workspace(tmp_path)
-    repository = _RecordingRepository(lockfiles=())
+    repository = _RecordingRepository(
+        lockfiles=(), manifest_path=tmp_path / "Cargo.toml"
+    )
 
     message = bump.run(
         tmp_path,

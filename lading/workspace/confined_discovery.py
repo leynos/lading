@@ -232,8 +232,8 @@ def _require_cargo_workspace_root(
     if reported_root != root:
         message = (
             f"Cargo reported workspace root {reported_root} but lading was asked "
-            f"to bump {root}; pass --workspace-root {root} (or run from that "
-            "directory) so both agree"
+            f"to bump {root}; pass --workspace-root {reported_root} (or run from "
+            "that directory) so both agree"
         )
         raise BumpPreflightError(message)
 

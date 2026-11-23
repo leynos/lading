@@ -68,17 +68,21 @@ path after validation is not defended against.
 
 ## Who is affected
 
-| Your environment        | Action required                                    |
-| ----------------------- | -------------------------------------------------- |
-| CPython 3.14 or later   | None; upgrade as usual.                            |
-| CPython 3.13            | Upgrade the interpreter, or remain on 0.3.1.       |
-| CPython 3.12 or earlier | Upgrade the interpreter; 0.3.1 also required 3.13. |
+| Your environment                                                       | Action required                                             |
+| ---------------------------------------------------------------------- | ----------------------------------------------------------- |
+| CPython 3.14 or later, confined workspace                              | None; upgrade as usual.                                     |
+| CPython 3.14 or later, symlinked member or escaping documentation glob | Required: make the member or glob real, or remain on 0.3.1. |
+| CPython 3.13                                                           | Required: upgrade the interpreter, or remain on 0.3.1.      |
+| CPython 3.12 or earlier                                                | Required: upgrade the interpreter; 0.3.1 required 3.13.     |
 
-_Table 1: Required action by interpreter version._
+_Table 1: Required action by interpreter version and workspace shape._
 
-Only the interpreter-floor change requires an environment migration. The
-command-line stream change described below needs no environment work, though a
-script that reads diagnostics from stdout must read stderr instead. A project
+Three changes require action. The interpreter floor requires an environment
+migration. A workspace that relies on a symlinked member or an escaping
+documentation glob must be corrected, as described under
+[Bump confinement preflight](#bump-confinement-preflight); such a workspace
+fails the same way on any interpreter. A script that reads diagnostics from
+stdout should read stderr instead, because diagnostics moved there. A project
 pinned to a Lading version through a lockfile keeps that version until the
 lockfile is regenerated, so the floor bites when the pin is moved rather than
 when this release is published.
@@ -147,21 +151,29 @@ the floor for users.
 Upgrade the interpreter first, then the package, so that the installer's
 constraint is satisfied at the moment it is checked.
 
+The first release carrying the bump confinement change is the `0.4.0b1`
+pre-release. Install it explicitly, because a plain version specifier does not
+select a pre-release:
+
 ```bash
 # Substitute the tool that manages your interpreter.
 uv python install 3.14
 uv python pin 3.14
 
-# Then move the package itself.
-uv add lading==0.4.0
+# Then move the package itself, selecting the pre-release.
+uv add lading==0.4.0b1
 ```
 
 A project using `pip` and a virtual environment follows the same order:
 
 ```bash
 python3.14 -m venv .venv
-.venv/bin/python -m pip install lading==0.4.0
+.venv/bin/python -m pip install lading==0.4.0b1
 ```
+
+Once the final `0.4.0` release is available, the same commands with
+`lading==0.4.0` move an installation to it; the final release carries the same
+bump confinement behaviour.
 
 If the interpreter cannot be moved yet, pin Lading below the floor and defer
 the upgrade. Nothing in 0.4.0 fixes a defect present in 0.3.1, so there is no

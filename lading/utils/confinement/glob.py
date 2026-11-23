@@ -60,9 +60,11 @@ _GLOB_METACHARACTERS: typ.Final[frozenset[str]] = frozenset("*?[")
 class MatchExpectation(enum.Enum):
     """How a glob should treat final matches of each kind.
 
-    ``REGULAR_FILE`` selects documentation files: regular files are returned and
-    directory matches are ignored. ``DIRECTORY`` selects workspace-member
-    directories: directories are returned and other matches are rejected.
+    ``REGULAR_FILE`` selects documentation files: regular files are returned
+    and directory matches are ignored. ``DIRECTORY`` selects workspace-member
+    directories: directories are returned and regular-file matches are ignored,
+    matching Cargo's own member glob expansion. In both modes a matched special
+    file is an error.
     """
 
     REGULAR_FILE = enum.auto()

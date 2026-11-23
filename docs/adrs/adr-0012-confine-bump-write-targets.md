@@ -93,7 +93,7 @@ Every reported member manifest is required to be lexically contained, named
 reads it. Cargo's reported workspace root must equal the canonical root; a
 mismatch suggests `--workspace-root`.
 
-`--no-deps` is the discovery contract, not an optimisation. Bump needs the
+`--no-deps` is the discovery contract, not an optimization. Bump needs the
 member set, and dependency resolution is what makes Cargo want to write
 `Cargo.lock`. The real-Cargo integration lane proves that a missing lockfile
 stays absent and a stale lockfile stays byte-for-byte unchanged. Publish keeps

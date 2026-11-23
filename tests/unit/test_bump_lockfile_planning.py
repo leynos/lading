@@ -24,9 +24,10 @@ from lading.utils.confinement import (
 
 @dc.dataclass(slots=True)
 class _RecordingRunner:
-    """Record Git and Cargo invocations and answer from a fixed payload."""
+    """Record Git and Cargo invocations and answer from fixed payloads."""
 
     metadata_root: Path
+    roots_by_manifest: dict[Path, Path] = dc.field(default_factory=dict)
     calls: list[tuple[tuple[str, ...], Path | None]] = dc.field(default_factory=list)
 
     def __call__(
@@ -43,11 +44,19 @@ class _RecordingRunner:
         if command[0] == "git":
             return 0, "", ""
         if command[0] == "cargo" and command[1] == "metadata":
-            payload = {"workspace_root": str(self.metadata_root)}
+            root = self._metadata_root_for(command)
+            payload = {"workspace_root": str(root)}
             return 0, json.dumps(payload), ""
         if command[0] == "cargo" and command[1] == "update":
             return 0, "", ""
         return 1, "", f"unexpected command: {command}"
+
+    def _metadata_root_for(self, command: cabc.Sequence[str]) -> Path:
+        """Return the workspace root this invocation should report."""
+        if "--manifest-path" in command:
+            manifest = Path(command[list(command).index("--manifest-path") + 1])
+            return self.roots_by_manifest.get(manifest, manifest.parent)
+        return self.metadata_root
 
     def cargo_metadata_calls(self) -> list[tuple[str, ...]]:
         """Return the recorded ``cargo metadata`` argument tuples."""
@@ -90,7 +99,7 @@ def _write_package(root: Path, relative: str, *, standalone: bool) -> Path:
     return manifest
 
 
-def test_root_only_plan_makes_no_metadata_query(tmp_path: Path) -> None:
+def test_root_only_plan_confirms_cargo_workspace_root(tmp_path: Path) -> None:
     """A workspace with no configured manifests plans only the root lockfile."""
     root = tmp_path.resolve()
     _write_workspace(root)
@@ -101,8 +110,38 @@ def test_root_only_plan_makes_no_metadata_query(tmp_path: Path) -> None:
     assert plan.lockfiles == (root / "Cargo.lock",), (
         "the workspace root lockfile must be the only destination"
     )
-    assert runner.cargo_metadata_calls() == [], (
-        "the root manifest needs no Cargo query to learn its workspace root"
+    expected_query = [
+        (
+            "cargo",
+            "metadata",
+            "--format-version",
+            "1",
+            "--no-deps",
+            "--manifest-path",
+            str(root / "Cargo.toml"),
+        )
+    ]
+    assert runner.cargo_metadata_calls() == expected_query, (
+        "the root manifest must be confirmed as Cargo's workspace root"
+    )
+
+
+def test_plan_rejects_a_root_inside_an_outer_workspace(tmp_path: Path) -> None:
+    """A requested root that is only an outer member is rejected."""
+    root = tmp_path.resolve() / "crates" / "app"
+    root.mkdir(parents=True)
+    _write_workspace(root)
+    outer = tmp_path.resolve()
+    runner = _RecordingRunner(
+        metadata_root=outer,
+        roots_by_manifest={root / "Cargo.toml": outer},
+    )
+
+    with pytest.raises(BumpPreflightError) as excinfo:
+        plan_lockfiles(root, (), runner=runner, environ={})
+
+    assert str(outer) in str(excinfo.value), (
+        "the diagnostic must suggest Cargo's reported workspace root"
     )
 
 
@@ -131,8 +170,17 @@ def test_nested_standalone_manifest_keeps_its_own_lockfile(tmp_path: Path) -> No
             "1",
             "--no-deps",
             "--manifest-path",
+            str(root / "Cargo.toml"),
+        ),
+        (
+            "cargo",
+            "metadata",
+            "--format-version",
+            "1",
+            "--no-deps",
+            "--manifest-path",
             str(nested),
-        )
+        ),
     ]
     assert runner.cargo_metadata_calls() == expected_metadata_call, (
         "the plan must ask Cargo for the nested manifest's workspace root"
@@ -144,7 +192,10 @@ def test_member_manifest_deduplicates_to_the_outer_lockfile(tmp_path: Path) -> N
     root = tmp_path.resolve()
     _write_workspace(root, members=("crates/app",))
     member = _write_package(root, "crates/app/Cargo.toml", standalone=False)
-    runner = _RecordingRunner(metadata_root=root)
+    runner = _RecordingRunner(
+        metadata_root=root,
+        roots_by_manifest={root / "Cargo.toml": root, member: root},
+    )
 
     plan = plan_lockfiles(root, ("crates/app/Cargo.toml",), runner=runner, environ={})
 
@@ -154,7 +205,11 @@ def test_member_manifest_deduplicates_to_the_outer_lockfile(tmp_path: Path) -> N
     assert plan.manifests == (root / "Cargo.toml",), (
         "the effective workspace root must be updated once"
     )
-    assert str(member) in runner.cargo_metadata_calls()[0], (
+    queried_manifests = [
+        command[command.index("--manifest-path") + 1]
+        for command in runner.cargo_metadata_calls()
+    ]
+    assert str(member) in queried_manifests, (
         "the query must name the configured member manifest"
     )
 

@@ -372,14 +372,16 @@ reached through a symlink in the root's own ancestry remains valid.
 A selected documentation file that cannot be read or decoded is a preflight
 error rather than a warning-skip.
 
-On any validation failure the command exits with status 1, writes
+When a rejected write plan is detected, the command exits with status 1, writes
 `Preflight error: <detail>` to stderr naming the rejected input, and leaves
-every intended target and any external file unchanged. Validation completes
-before the first write. Per-file replacement is atomic, but the command does
-not roll back writes after an actual execution failure, and it does not defend
-against a concurrent process changing paths between validation and writing.
-`CARGO_RESOLVER_LOCKFILE_PATH` must be unset; a non-empty value is rejected
-because Cargo would write a lockfile the plan did not validate.
+every intended target and any external file unchanged. A missing workspace
+README for crates that adopt it is a rejected plan too, so it produces the same
+`Preflight error:` diagnostic rather than a separate message. Validation
+completes before the first write. Per-file replacement is atomic, but the
+command does not roll back writes after an actual execution failure, and it
+does not defend against a concurrent process changing paths between validation
+and writing. `CARGO_RESOLVER_LOCKFILE_PATH` must be unset; a non-empty value is
+rejected because Cargo would write a lockfile the plan did not validate.
 
 Configured lockfile manifests are resolved to the effective workspace root that
 Cargo reports. A member manifest therefore contributes the outer workspace

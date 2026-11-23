@@ -7,6 +7,7 @@ a copied snippet can name a path outside the workspace, so they are validated
 lexically before the filesystem is consulted.
 """
 
+import os
 import re
 import typing as typ
 from pathlib import PurePosixPath, PureWindowsPath
@@ -50,13 +51,31 @@ def validate_relative_pattern(pattern: str, *, key: str) -> tuple[str, ...]:
     _reject_missing_value(pattern, key)
     _reject_rooted_pattern(pattern, key)
     _reject_parent_traversal(pattern, key)
-    parts = PurePosixPath(pattern).parts
+    parts = _native_parts(pattern)
     if not parts:
         message = (
             f"{key}: pattern must name a path below the workspace root: {pattern!r}"
         )
         raise UnsafeBumpTargetError(message)
     return parts
+
+
+def _native_parts(pattern: str) -> tuple[str, ...]:
+    r"""Return pattern components using the host path flavour.
+
+    A backslash is a separator on Windows but a literal filename character on
+    POSIX. Using the native flavour after lexical validation means a Windows
+    walk inspects every component of ``docs\guide.md`` while a POSIX walk
+    keeps the backslash as part of one filename.
+
+    Returns
+    -------
+    tuple[str, ...]
+        Native path components below the workspace root.
+    """
+    if os.sep == "\\":
+        return PureWindowsPath(pattern).parts
+    return PurePosixPath(pattern).parts
 
 
 def _reject_missing_value(pattern: str, key: str) -> None:

@@ -9,6 +9,7 @@ lockfile can appear unnoticed.
 
 import collections.abc as cabc
 import errno
+import json
 import os
 import typing as typ
 from pathlib import Path
@@ -124,7 +125,8 @@ def test_bump_rejects_an_unsafe_member_pattern_before_cargo(
     workspace = create_cli_workspace(tmp_path / "workspace")
     root_manifest = workspace.root / "Cargo.toml"
     root_manifest.write_text(
-        f'[workspace]\nmembers = ["crates/alpha", "{member_pattern}"]\n\n'
+        "[workspace]\n"
+        f'members = ["crates/alpha", {json.dumps(member_pattern)}]\n\n'
         '[workspace.package]\nversion = "0.1.0"\n',
         encoding="utf-8",
     )
@@ -295,12 +297,16 @@ def test_bump_reports_an_unreadable_documentation_target(
             raise PermissionError(errno.EACCES, "denied", str(target))
         return real_scandir(path)
 
-    monkeypatch.setattr(os, "scandir", failing_scandir)
+    def run_with_failing_scandir() -> tuple[int, str, str]:
+        """Run the CLI with the injected listing failure active only there."""
+        with monkeypatch.context() as scoped:
+            scoped.setattr(os, "scandir", failing_scandir)
+            return _run_bump(workspace, runner, monkeypatch, capsys)
 
     _assert_rejected(
         workspace=workspace,
         runner=runner,
-        run=lambda: _run_bump(workspace, runner, monkeypatch, capsys),
+        run=run_with_failing_scandir,
         expected="cannot list directory",
     )
 
@@ -368,9 +374,21 @@ def test_live_bump_writes_and_regenerates_as_planned(
     assert "Updated version to 1.2.3" in stdout, (
         "the live run must report the applied version"
     )
-    assert runner.metadata_calls() == [
-        ("cargo", "metadata", "--format-version", "1", "--no-deps")
-    ], "bump discovery must pass --no-deps and nothing else"
+    expected_metadata_calls = [
+        ("cargo", "metadata", "--format-version", "1", "--no-deps"),
+        (
+            "cargo",
+            "metadata",
+            "--format-version",
+            "1",
+            "--no-deps",
+            "--manifest-path",
+            str(workspace.root / "Cargo.toml"),
+        ),
+    ]
+    assert runner.metadata_calls() == expected_metadata_calls, (
+        "discovery must pass --no-deps, then confirm the root for lockfile planning"
+    )
     assert [command[:4] for command in runner.update_calls()] == [
         ("cargo", "update", "--workspace", "--manifest-path")
     ], "the live run must regenerate the planned root lockfile"
@@ -503,4 +521,25 @@ def test_overlapping_documentation_and_readme_target_is_reported_twice(
     )
     assert 'alpha = "1.2.3"' in crate_readme.read_text(encoding="utf-8"), (
         "the adopted README must compose from the documentation rewrite"
+    )
+
+
+def test_bump_reports_a_missing_workspace_readme_as_a_preflight_error(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """A missing adopted README source is reported as a rejected plan."""
+    _outside_sentinel(tmp_path)
+    workspace = create_cli_workspace(
+        tmp_path / "workspace",
+        options=WorkspaceOptions(readme_workspace=True, workspace_readme=None),
+    )
+    runner = RecordingCommandRunner(metadata=workspace.metadata)
+
+    _assert_rejected(
+        workspace=workspace,
+        runner=runner,
+        run=lambda: _run_bump(workspace, runner, monkeypatch, capsys),
+        expected="Workspace README.md is required",
     )

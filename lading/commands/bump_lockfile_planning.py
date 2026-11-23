@@ -178,9 +178,25 @@ def _effective_workspace_root(
     *,
     runner: CommandRunner | None,
 ) -> Path:
-    """Return the workspace root Cargo reports for ``manifest``."""
-    if manifest.parts == (_ROOT_MANIFEST,):
-        return root
+    """Return the workspace root Cargo reports for ``manifest``.
+
+    Even the workspace manifest is queried. A caller can pass a root that is
+    itself a member of an outer workspace; Cargo would then write the outer
+    lockfile, which is outside the plan. Requiring Cargo to confirm that the
+    requested root is its own workspace root rejects that case before any
+    write.
+
+    Returns
+    -------
+    Path
+        The confined effective workspace root for ``manifest``.
+
+    Raises
+    ------
+    BumpPreflightError
+        If Cargo cannot report a root, or reports a root outside the requested
+        workspace.
+    """
     try:
         metadata = load_cargo_metadata(
             manifest.path.parent,
@@ -209,6 +225,12 @@ def _effective_workspace_root(
         raise BumpPreflightError(message)
     if reported_path == root:
         return root
+    if manifest.parts == (_ROOT_MANIFEST,):
+        message = (
+            f"Cargo reports workspace root {reported_path} for {root}, which is "
+            f"not a Cargo workspace root; pass --workspace-root {reported_path}"
+        )
+        raise BumpPreflightError(message)
     key = f"lockfile manifest {manifest.display} workspace root"
     relative = relative_to_root(root, reported_path, key=key, label="workspace root")
     confined = confine_relative_path(

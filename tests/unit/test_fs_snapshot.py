@@ -1,0 +1,72 @@
+"""Unit tests for the non-following snapshot helper.
+
+The helper must observe without following links and must not turn an unrelated
+I/O failure into an empty subtree, which would make a no-write assertion pass
+vacuously.
+"""
+
+import collections.abc as cabc
+import errno
+import os
+import typing as typ
+
+import pytest
+
+from tests.helpers.fs_snapshot import snapshot_tree
+
+if typ.TYPE_CHECKING:
+    from pathlib import Path
+
+
+def test_snapshot_records_a_permission_failure_as_an_unlisted_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A permission failure the test injected leaves only the directory entry."""
+    (tmp_path / "dir").mkdir()
+    (tmp_path / "dir" / "file").write_text("content", encoding="utf-8")
+    target = tmp_path.resolve() / "dir"
+    real_scandir = os.scandir
+
+    def denying_scandir(
+        path: str | os.PathLike[str],
+    ) -> cabc.Iterator[os.DirEntry[str]]:
+        """Deny only the directory whose listing the test withholds."""
+        if os.fspath(path) == str(target):
+            raise PermissionError(errno.EACCES, "denied", str(target))
+        return real_scandir(path)
+
+    monkeypatch.setattr(os, "scandir", denying_scandir)
+
+    entries = snapshot_tree(tmp_path)
+
+    relative_paths = {entry.relative for entry in entries}
+    assert "dir" in relative_paths, "the unreadable directory must be recorded"
+    assert "dir/file" not in relative_paths, (
+        "the children of an unreadable directory cannot be observed"
+    )
+
+
+def test_snapshot_propagates_an_unrelated_examination_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An EIO-style failure is not converted into an empty listing."""
+    (tmp_path / "dir").mkdir()
+    target = tmp_path.resolve() / "dir"
+    real_scandir = os.scandir
+
+    def failing_scandir(
+        path: str | os.PathLike[str],
+    ) -> cabc.Iterator[os.DirEntry[str]]:
+        """Fail with a non-permission error for the target directory."""
+        if os.fspath(path) == str(target):
+            raise OSError(errno.EIO, "I/O error", str(target))
+        return real_scandir(path)
+
+    monkeypatch.setattr(os, "scandir", failing_scandir)
+
+    with pytest.raises(OSError, match="I/O error") as excinfo:
+        snapshot_tree(tmp_path)
+
+    assert excinfo.value.errno == errno.EIO, (
+        "the original examination error must propagate unchanged"
+    )

@@ -22,8 +22,8 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from lading.commands import bump_toml
-from lading.exceptions import LadingError
 from lading.utils.confinement import (
+    BumpPreflightError,
     MissingBumpTargetError,
     confine_relative_path,
 )
@@ -34,11 +34,14 @@ if typ.TYPE_CHECKING:
     from lading.workspace import WorkspaceCrate
 
 
-class ReadmeTranspositionError(LadingError):
+class ReadmeTranspositionError(BumpPreflightError):
     """Raised when the workspace README cannot be transposed into a crate.
 
     This is the bump-domain error for README adoption failures (issue #100);
-    publish staging failures use ``PublishPreparationError`` instead.
+    publish staging failures use ``PublishPreparationError`` instead. It is a
+    preflight error because preparation raises it before any write, so the CLI
+    reports it with the same ``Preflight error:`` diagnostic as every other
+    rejected plan.
     """
 
 
