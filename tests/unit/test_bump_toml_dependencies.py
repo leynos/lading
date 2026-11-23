@@ -7,7 +7,7 @@ from lading.commands import bump_toml_dependencies, bump_toml_dependency_warning
 
 
 @pytest.mark.parametrize(
-    ("requirement", "target", "expected_bounds", "expected_requirement"),
+    "case",
     [
         (">=1.0.0, <2", "2.0.0", ("<2",), ">=2.0.0, <2"),
         ("<0.7", "0.6.0", ("<0.6.0",), "<0.6.0"),
@@ -16,12 +16,10 @@ from lading.commands import bump_toml_dependencies, bump_toml_dependency_warning
 )
 def test_dependency_update_warns_when_bound_excludes_target(
     caplog: pytest.LogCaptureFixture,
-    requirement: str,
-    target: str,
-    expected_bounds: tuple[str, ...],
-    expected_requirement: str,
+    case: tuple[str, str, tuple[str, ...], str],
 ) -> None:
     """The helper returns warning data without logging as a side effect."""
+    requirement, target, expected_bounds, expected_requirement = case
     document = parse_toml(f'[dependencies]\nalpha = "{requirement}"\n')
     warnings = bump_toml_dependency_warnings.collect_dependency_section_warnings(
         document, {"dependencies": {"alpha"}}, target

@@ -345,20 +345,21 @@ def _compare_prerelease(
     """Compare SemVer prereleases; an empty prerelease sorts after all others."""
     if not left or not right:
         return (not left) - (not right)
-    for (left_is_numeric, left_part), (right_is_numeric, right_part) in zip(
-        left, right, strict=False
-    ):
-        if left_is_numeric == right_is_numeric and left_part == right_part:
-            continue
-        if left_is_numeric != right_is_numeric:
-            return -1 if left_is_numeric else 1
-        if left_is_numeric:
-            comparison = (len(left_part) > len(right_part)) - (
-                len(left_part) < len(right_part)
-            )
-            if comparison == 0:
-                comparison = (left_part > right_part) - (left_part < right_part)
-        else:
-            comparison = (left_part > right_part) - (left_part < right_part)
-        return comparison
+    for left_identifier, right_identifier in zip(left, right, strict=False):
+        comparison = _compare_prerelease_identifier(left_identifier, right_identifier)
+        if comparison:
+            return comparison
     return (len(left) > len(right)) - (len(left) < len(right))
+
+
+def _compare_prerelease_identifier(
+    left: tuple[bool, str], right: tuple[bool, str]
+) -> int:
+    """Compare one pair of SemVer prerelease identifiers."""
+    left_is_numeric, left_part = left
+    right_is_numeric, right_part = right
+    if left_is_numeric != right_is_numeric:
+        return -1 if left_is_numeric else 1
+    if left_is_numeric and len(left_part) != len(right_part):
+        return -1 if len(left_part) < len(right_part) else 1
+    return (left_part > right_part) - (left_part < right_part)

@@ -112,35 +112,67 @@ def _index_markers(
     markers: dict[int, tuple[str, int]] = {}
     seen_identifiers: set[str] = set()
     for token in tokens:
-        if token.type != "html_block" or token.map is None:
-            continue
-        start_line = token.map[0]
-        for offset, line in enumerate(token.content.split("\n")):
-            line = line.removesuffix("\r")
-            indent = len(line) - len(line.lstrip(" "))
-            marker_text = line[indent:]
-            if indent > _MAX_MARKER_INDENT or not marker_text.startswith(
-                _MARKER_PREFIX
-            ):
-                continue
-            line_number = start_line + offset
-            match = _MARKER_PATTERN.fullmatch(marker_text)
-            if match is None:
-                raise MarkdownExampleError(
-                    document_name,
-                    line_number + 1,
-                    "tested-example marker needs an identifier",
-                )
-            identifier = match.group(1)
-            if identifier in seen_identifiers:
-                raise MarkdownExampleError(
-                    document_name,
-                    line_number + 1,
-                    f"duplicate tested-example identifier {identifier!r}",
-                )
-            seen_identifiers.add(identifier)
-            markers[line_number] = (identifier, token.level)
+        _index_token_markers(token, markers, seen_identifiers, document_name)
     return _MarkerContext(markers, source_lines, document_name)
+
+
+def _index_token_markers(
+    token: Token,
+    markers: dict[int, tuple[str, int]],
+    seen_identifiers: set[str],
+    document_name: str,
+) -> None:
+    """Index valid marker comments from one HTML block token."""
+    if token.type != "html_block" or token.map is None:
+        return
+    start_line = token.map[0]
+    for offset, line in enumerate(token.content.split("\n")):
+        marker = _parse_marker_line(
+            line, start_line + offset, token.level, document_name
+        )
+        if marker is None:
+            continue
+        _record_marker(markers, seen_identifiers, marker, document_name)
+
+
+def _record_marker(
+    markers: dict[int, tuple[str, int]],
+    seen_identifiers: set[str],
+    marker: tuple[int, str, int],
+    document_name: str,
+) -> None:
+    """Reject duplicate identifiers and add one marker to the index."""
+    line_number, identifier, level = marker
+    if identifier in seen_identifiers:
+        raise MarkdownExampleError(
+            document_name,
+            line_number + 1,
+            f"duplicate tested-example identifier {identifier!r}",
+        )
+    seen_identifiers.add(identifier)
+    markers[line_number] = (identifier, level)
+
+
+def _parse_marker_line(
+    line: str,
+    line_number: int,
+    token_level: int,
+    document_name: str,
+) -> tuple[int, str, int] | None:
+    """Return a parsed marker line, or ``None`` when the line is unrelated."""
+    normalized_line = line.removesuffix("\r")
+    indent = len(normalized_line) - len(normalized_line.lstrip(" "))
+    marker_text = normalized_line[indent:]
+    if indent > _MAX_MARKER_INDENT or not marker_text.startswith(_MARKER_PREFIX):
+        return None
+    match = _MARKER_PATTERN.fullmatch(marker_text)
+    if match is None:
+        raise MarkdownExampleError(
+            document_name,
+            line_number + 1,
+            "tested-example marker needs an identifier",
+        )
+    return line_number, match.group(1), token_level
 
 
 def _source_lines(token: Token, document_name: str) -> tuple[int, int]:
