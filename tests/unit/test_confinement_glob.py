@@ -254,3 +254,20 @@ def test_expand_confined_glob_applies_the_policy_to_a_directory_selector(
     assert "docs/" in str(excinfo.value), (
         "the diagnostic must name the directory-only pattern"
     )
+
+
+def test_a_trailing_backslash_is_a_filename_character_on_posix(
+    tmp_path: Path,
+) -> None:
+    """On POSIX a trailing backslash names a file, not a directory selector."""
+    if os.sep != "/":
+        pytest.skip("the POSIX filename rule does not apply here")
+    root = tmp_path / "workspace"
+    (root / "docs").mkdir(parents=True)
+    (root / "docs" / "guide.md\\").write_text("", encoding="utf-8")
+
+    matches = expand_confined_glob(root, "docs/guide.md\\", key="globs")
+
+    assert [match.display for match in matches] == ["docs/guide.md\\"], (
+        "a documentation pattern ending in a backslash must select the file"
+    )

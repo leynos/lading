@@ -182,6 +182,19 @@ regular-file match. Without it, two names for one inode reached the plan under
 one identity, so only the first was written and the others silently kept their
 old content.
 
+### 2026-11-23: Implicit member manifests
+
+Cargo treats a path dependency inside the workspace directory as an implicit
+workspace member and reads its manifest while discovering the member set, so
+the declared-member walk alone cannot keep a special file away from Cargo.
+Discovery parses each declared member's dependency tables, including target
+tables and `[workspace.dependencies]`, resolves path entries component by
+component with `lstat`, rejects symlinked components, and confines every
+in-workspace dependency's `Cargo.toml` as a regular file before invoking Cargo.
+Path dependencies outside the workspace are not members and remain Cargo's
+responsibility. A missing dependency manifest fails the preflight, which Cargo
+would also reject.
+
 ### 2026-11-23: Parent components reach the lexical validator
 
 `relative_to_root` uses `Path.relative_to` rather than `os.path.relpath`.

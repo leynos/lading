@@ -10,6 +10,7 @@ import builtins
 import errno
 import io
 import os
+import pathlib
 import typing as typ
 
 import pytest
@@ -351,10 +352,20 @@ def test_confine_relative_path_rejects_a_hard_link(tmp_path: Path) -> None:
     )
 
 
-def test_establish_workspace_root_reports_an_unexpandable_user() -> None:
-    """A ``~user`` that cannot be resolved is a preflight examination error."""
+def test_establish_workspace_root_reports_an_unexpandable_user(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An expansion failure is a preflight examination error on every host."""
+
+    def failing_expanduser(self: pathlib.Path) -> pathlib.Path:
+        """Raise the failure every platform can reproduce."""
+        message = "no such user"
+        raise RuntimeError(message)
+
+    monkeypatch.setattr(pathlib.Path, "expanduser", failing_expanduser)
+
     with pytest.raises(BumpTargetExaminationError) as excinfo:
-        establish_workspace_root("~this-user-does-not-exist-409/workspace")
+        establish_workspace_root("~/workspace")
 
     assert "Cannot expand workspace root" in str(excinfo.value), (
         "the diagnostic must name the unexpandable root"

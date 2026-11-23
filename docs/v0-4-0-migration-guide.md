@@ -51,6 +51,9 @@ workspace that relied on any of the following now fails with exit status 1 and a
   link (a file with more than one directory entry), even when every link stays
   inside the workspace. A write through one name would leave the others stale,
   so replace the target with an independent copy of the file.
+- A path dependency inside the workspace whose `Cargo.toml` is a symlink,
+  missing, or not a regular file. Cargo treats such a dependency as an implicit
+  workspace member; make the path real and give it a regular `Cargo.toml`.
 - A configured `bump.lockfile_manifests` entry that is absolute, traverses
   upwards, is missing, is a symlink, or is not named `Cargo.toml`. This
   validation applies when lockfile regeneration is enabled; a run with
@@ -87,6 +90,7 @@ path after validation is not defended against.
 | CPython 3.14 or later, symlinked or non-regular README target          | Required: replace it with a regular file.                   |
 | CPython 3.14 or later, hard-linked write target                        | Required: replace it with an independent copy of the file.  |
 | CPython 3.14 or later, invalid configured lockfile manifest            | Required: make it an existing, confined `Cargo.toml`.       |
+| CPython 3.14 or later, invalid implicit member manifest                | Required: make the path dependency real and regular.        |
 | CPython 3.14 or later, Cargo lockfile-path override                    | Required: unset the variable or remove the setting.         |
 | CPython 3.13                                                           | Required: upgrade the interpreter, or remain on 0.3.1.      |
 | CPython 3.12 or earlier                                                | Required: upgrade the interpreter; 0.3.1 required 3.13.     |

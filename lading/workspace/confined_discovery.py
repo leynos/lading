@@ -26,7 +26,6 @@ from tomlkit.exceptions import TOMLKitError
 from lading import toml_coerce
 from lading.utils.confinement import (
     BumpPreflightError,
-    BumpTargetExaminationError,
     ConfinedPath,
     GlobOptions,
     MatchExpectation,
@@ -38,6 +37,10 @@ from lading.utils.confinement import (
     relative_to_root,
 )
 from lading.workspace.graph_build import build_workspace_graph
+from lading.workspace.implicit_members import (
+    read_manifest_text,
+    validate_implicit_member_manifests,
+)
 from lading.workspace.metadata import load_cargo_metadata
 from lading.workspace.models import WorkspaceGraph, WorkspaceModelError
 
@@ -95,6 +98,7 @@ def load_bump_workspace(
     root = establish_workspace_root(workspace_root)
     members, excludes = _read_workspace_tables(root)
     declared = _expand_member_patterns(root, members, excludes)
+    validate_implicit_member_manifests(root, declared)
     metadata = load_cargo_metadata(root, runner=runner, no_deps=True)
     _require_cargo_workspace_root(root, metadata)
     reported = _validate_reported_member_manifests(root, metadata)
@@ -105,7 +109,7 @@ def load_bump_workspace(
 def _read_workspace_tables(root: Path) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """Return the declared member and exclusion patterns from the root manifest."""
     manifest = confine_relative_path(root, _ROOT_MANIFEST, key="workspace manifest")
-    text = _read_manifest_text(manifest.path, key="workspace manifest")
+    text = read_manifest_text(manifest.path, key="workspace manifest")
     try:
         document = parse(text)
     except TOMLKitError as exc:
@@ -121,15 +125,6 @@ def _read_workspace_tables(root: Path) -> tuple[tuple[str, ...], tuple[str, ...]
         _string_sequence(workspace_mapping.get("members"), _MEMBERS_KEY),
         _string_sequence(workspace_mapping.get("exclude"), _EXCLUDES_KEY),
     )
-
-
-def _read_manifest_text(path: Path, *, key: str) -> str:
-    """Read ``path`` as UTF-8 text, reporting read and decode failures."""
-    try:
-        return path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError) as exc:
-        message = f"{key}: cannot read {path}: {exc}"
-        raise BumpTargetExaminationError(message) from exc
 
 
 def _string_sequence(value: object, key: str) -> tuple[str, ...]:

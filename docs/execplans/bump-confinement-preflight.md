@@ -508,6 +508,14 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
   root itself; fence detection recognizes list items; the metadata rejection
   cases are parametrized; the migration guide's example test validates recorded
   argv; and the impact table classifies every rejected preflight input.
+- [x] 2026-11-23: Eighth CodeRabbit review cleared. Discovery validates
+  implicit member manifests, reached through path dependencies, before Cargo
+  can read them; the configured lockfile repository is selected only when it is
+  `None`; a trailing backslash is a directory selector only on Windows; fence
+  bodies lose the opening indentation and a closing fence may be indented at
+  most three spaces; the expansion-failure test no longer depends on the host
+  account; and the user and migration guides qualify lockfile validation and
+  classify the implicit-member rejection.
 - [ ] EP-M5 release: tag and release `v0.4.0b1` after review convergence, then
   record the tag commit on issue #409.
 
@@ -592,6 +600,14 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
 - Automatic detection of a lockfile left stale by a failed regeneration stays
   out of scope. The failure already reports a per-manifest repair command, and
   a same-version rerun is documented as no repair; issue #84 owns recovery.
+- Declared members alone cannot bound what Cargo reads: an in-workspace path
+  dependency is an implicit member. Discovery therefore parses member
+  dependency tables, resolves path entries with `lstat`, rejects symlinked
+  components, and confines each implicit manifest before Cargo runs. Dependency
+  paths outside the workspace are not write targets and are left to Cargo.
+- A configured lockfile repository is selected by an `is not None` check, not
+  by truthiness, so an injected false-valued adapter is never replaced by the
+  Cargo adapter.
 
 ## Outcomes & retrospective
 

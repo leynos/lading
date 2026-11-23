@@ -47,14 +47,13 @@ from lading.utils.confinement.walk import (
     is_link_like,
 )
 
-__all__ = [
-    "GlobOptions",
-    "MatchExpectation",
-    "UnmatchedPolicy",
-    "expand_confined_glob",
-]
+__all__ = ["GlobOptions", "MatchExpectation", "UnmatchedPolicy", "expand_confined_glob"]
 
 _GLOB_METACHARACTERS: typ.Final[frozenset[str]] = frozenset("*?[")
+# Windows treats a backslash as a separator; POSIX allows it in a filename.
+_TRAILING_SEPARATORS: typ.Final[tuple[str, ...]] = (
+    ("/", "\\") if os.sep == "\\" else ("/",)
+)
 
 
 class MatchExpectation(enum.Enum):
@@ -138,7 +137,10 @@ def expand_confined_glob(
     """  # ruff: ignore[docstring-extraneous-exception]  # delegated to _Expansion
     parts = validate_relative_pattern(pattern, key=key)
     policy = options or GlobOptions()
-    if pattern.endswith(("/", "\\")) and policy.expect is MatchExpectation.REGULAR_FILE:
+    if (
+        pattern.endswith(_TRAILING_SEPARATORS)
+        and policy.expect is MatchExpectation.REGULAR_FILE
+    ):
         # A trailing separator selects directories. Documentation patterns
         # select regular files, so a directory selector matches nothing; it
         # must not fall back to selecting files directly under the directory.

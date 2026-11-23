@@ -86,7 +86,7 @@ def _regenerate_plan(
 
 def _lockfile_repository(context: _BumpContext) -> bump_lockfiles.LockfileRepository:
     """Return the configured lockfile repository or the cargo adapter."""
-    return (
-        context.base_options.lockfile_repository
-        or bump_lockfiles.CargoLockfileRepository()
-    )
+    configured = context.base_options.lockfile_repository
+    if configured is not None:
+        return configured
+    return bump_lockfiles.CargoLockfileRepository()

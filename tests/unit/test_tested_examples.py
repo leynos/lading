@@ -108,3 +108,34 @@ def test_loader_rejects_an_unmarked_list_item_fence(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="unmarked fenced example"):
         load_tested_examples(path)
+
+
+def test_loader_dedents_the_opening_fence_indentation(tmp_path: Path) -> None:
+    """The opening fence's indentation is removed from body lines."""
+    path = _write(
+        tmp_path,
+        "<!-- tested-example: indented -->\n"
+        "  ```python\n"
+        "  print(1)\n"
+        "    print(2)\n"
+        "  ```\n",
+    )
+
+    example = load_tested_examples(path)["indented"]
+
+    assert example.body == "print(1)\n  print(2)", (
+        "each body line must lose the opening fence's indentation only"
+    )
+
+
+def test_loader_rejects_a_four_space_indented_closing_fence(
+    tmp_path: Path,
+) -> None:
+    """A closing fence indented four spaces does not close the block."""
+    path = _write(
+        tmp_path,
+        "<!-- tested-example: long -->\n````bash\necho one\n    ````\n",
+    )
+
+    with pytest.raises(ValueError, match="unterminated"):
+        load_tested_examples(path)

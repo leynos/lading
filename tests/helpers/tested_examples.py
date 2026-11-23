@@ -18,6 +18,7 @@ _MARKER: typ.Final[re.Pattern[str]] = re.compile(
     r"^<!--\s*tested-example:\s*([a-z0-9-]+)\s*-->$"
 )
 _MIN_FENCE_LENGTH: typ.Final[int] = 3
+_MAX_FENCE_INDENT: typ.Final[int] = 3
 _CONTAINER_MARKERS: typ.Final[re.Pattern[str]] = re.compile(
     r"^(?:(?:>\s?)|(?:[-+*]|\d{1,9}[.)])\s+)+"
 )
@@ -96,6 +97,7 @@ def load_tested_examples(path: Path) -> dict[str, MarkedExample]:
             identifier=identifier,
             character=character,
             length=length,
+            indent=_indentation(lines[fence_start]),
         )
         body, fence_end = _read_fence_body(lines, fence_start + 1, marked_fence)
         examples[identifier] = MarkedExample(
@@ -148,6 +150,7 @@ class _MarkedFence:
     identifier: str
     character: str
     length: int
+    indent: int
 
 
 def _read_fence_body(
@@ -158,9 +161,9 @@ def _read_fence_body(
     """Return the fence body and the index of its matching closing fence."""
     body: list[str] = []
     for index in range(start, len(lines)):
-        if _closes_fence(lines[index].strip(), fence.character, fence.length):
+        if _closes_fence(lines[index], fence.character, fence.length):
             return body, index
-        body.append(lines[index])
+        body.append(_dedent(lines[index], fence.indent))
     message = (
         f"{fence.path}:{start}: tested-example {fence.identifier!r} is unterminated"
     )
@@ -169,5 +172,25 @@ def _read_fence_body(
 
 def _closes_fence(line: str, character: str, length: int) -> bool:
     """Return whether ``line`` closes a fence of ``character`` and ``length``."""
-    run = len(line) - len(line.lstrip(character))
-    return run >= length and line == character * run
+    indent = _indentation(line)
+    if indent > _MAX_FENCE_INDENT:
+        # GitHub-flavoured Markdown permits at most three leading spaces on a
+        # closing fence; more indentation makes the line body text.
+        return False
+    stripped = line.strip()
+    run = len(stripped) - len(stripped.lstrip(character))
+    return run >= length and stripped == character * run
+
+
+def _indentation(line: str) -> int:
+    """Return the number of leading spaces before any other character."""
+    return len(line) - len(line.lstrip(" "))
+
+
+def _dedent(line: str, indent: int) -> str:
+    """Remove up to ``indent`` leading spaces from ``line``."""
+    removed = 0
+    while removed < indent and line.startswith(" "):
+        line = line[1:]
+        removed += 1
+    return line
