@@ -501,6 +501,13 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
   environment command, and hard-linked targets; the user guide and ADR record
   the same changes. The example loader rejects fenced blocks nested in block
   quotes, and a working-directory test uses `chdir_for_test`.
+- [x] 2026-11-23: Seventh CodeRabbit review cleared. `CARGO_HOME` is no longer
+  tilde-expanded, matching Cargo; the lockfile repository validates the
+  inherited process environment its runner also receives; `relative_to_root`
+  preserves parent components for the lexical validator; snapshots classify the
+  root itself; fence detection recognizes list items; the metadata rejection
+  cases are parametrized; the migration guide's example test validates recorded
+  argv; and the impact table classifies every rejected preflight input.
 - [ ] EP-M5 release: tag and release `v0.4.0b1` after review convergence, then
   record the tag commit on issue #409.
 
@@ -575,6 +582,16 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
   recursively, resolving paths against the including file and applying Cargo's
   left-to-right, own-value-wins merge order. Reading only top-level values
   would let a committed include redirect the lockfile after validation.
+- A relative `CARGO_HOME` is joined literally, without tilde expansion, and the
+  lockfile repository checks the inherited process environment rather than a
+  validation-only mapping. Both choices keep the preflight looking at the same
+  configuration and environment Cargo uses.
+- `relative_to_root` preserves `..` components instead of collapsing them
+  through `os.path.relpath`. The lexical validator then rejects the path rather
+  than permitting a validation/read disagreement across a symlinked component.
+- Automatic detection of a lockfile left stale by a failed regeneration stays
+  out of scope. The failure already reports a per-manifest repair command, and
+  a same-version rerun is documented as no repair; issue #84 owns recovery.
 
 ## Outcomes & retrospective
 
@@ -593,3 +610,6 @@ here and on issue #409 once the release tag is pushed.
   planning working directory, and filesystem-aware proposal identity.
 - 2026-11-23: Recorded the sixth-review decisions on hard-linked glob matches
   and Cargo configuration includes.
+- 2026-11-23: Recorded the seventh-review decisions on literal `CARGO_HOME`,
+  environment binding, parent-component preservation, and deferred
+  stale-lockfile detection.

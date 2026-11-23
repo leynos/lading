@@ -12,7 +12,7 @@ import typing as typ
 
 import pytest
 
-from tests.helpers.fs_snapshot import snapshot_tree
+from tests.helpers.fs_snapshot import changed_paths, snapshot_tree
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
@@ -87,4 +87,23 @@ def test_snapshot_preserves_the_raw_symlink_target(tmp_path: Path) -> None:
     )
     assert (before_target, after_target) == ("target/./file", "target/file"), (
         "the snapshot must record the raw link text rather than a normalized path"
+    )
+
+
+def test_snapshot_classifies_the_root_symlink_target(tmp_path: Path) -> None:
+    """Relinking the snapshotted root changes the snapshot."""
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(first, target_is_directory=True)
+    before = snapshot_tree(link)
+
+    link.unlink()
+    link.symlink_to(second, target_is_directory=True)
+    after = snapshot_tree(link)
+
+    assert changed_paths(before, after) == (".",), (
+        "a different root link target must be observed rather than compared equal"
     )

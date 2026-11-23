@@ -56,8 +56,8 @@ def snapshot_tree(root: Path) -> tuple[SnapshotEntry, ...]:
         root_stat = os.lstat(root)
     except FileNotFoundError:
         return ()
-    entries = [SnapshotEntry(relative=".", kind="directory", mode=root_stat.st_mode)]
-    if stat.S_ISDIR(root_stat.st_mode):
+    entries = [_record(root, (), root_stat, is_junction=root.is_junction())]
+    if entries[0].kind == "directory":
         _snapshot_directory(root, (), entries)
     return tuple(sorted(entries, key=lambda entry: entry.relative))
 
@@ -87,48 +87,48 @@ def _snapshot_entry(
 ) -> None:
     """Append one directory entry, recursing into real directories."""
     result = entry.stat(follow_symlinks=False)
-    relative = "/".join(parts)
-    if stat.S_ISLNK(result.st_mode):
-        entries.append(
-            SnapshotEntry(
-                relative=relative,
-                kind="symlink",
-                mode=result.st_mode,
-                link_target=os.readlink(entry.path),  # ruff: ignore[os-readlink] raw text
-            )
-        )
-        return
-    if entry.is_junction():
+    recorded = _record(root, parts, result, is_junction=entry.is_junction())
+    entries.append(recorded)
+    if recorded.kind == "directory":
+        _snapshot_directory(root, parts, entries)
+
+
+def _record(
+    root: Path,
+    parts: tuple[str, ...],
+    result: os.stat_result,
+    *,
+    is_junction: bool,
+) -> SnapshotEntry:
+    """Return the snapshot entry for one path inspected without following it."""
+    relative = "/".join(parts) if parts else "."
+    absolute = root.joinpath(*parts)
+    if is_junction:
         # A Windows junction is not reported as a symlink by lstat, and
         # recursing through it would read a tree outside the snapshot root.
-        entries.append(
-            SnapshotEntry(
-                relative=relative,
-                kind="junction",
-                mode=result.st_mode,
-                link_target=os.readlink(entry.path),  # ruff: ignore[os-readlink] raw text
-            )
+        return SnapshotEntry(
+            relative=relative,
+            kind="junction",
+            mode=result.st_mode,
+            link_target=os.readlink(absolute),  # ruff: ignore[os-readlink] raw text
         )
-        return
+    if stat.S_ISLNK(result.st_mode):
+        return SnapshotEntry(
+            relative=relative,
+            kind="symlink",
+            mode=result.st_mode,
+            link_target=os.readlink(absolute),  # ruff: ignore[os-readlink] raw text
+        )
     if stat.S_ISDIR(result.st_mode):
-        entries.append(
-            SnapshotEntry(relative=relative, kind="directory", mode=result.st_mode)
-        )
-        _snapshot_directory(root, parts, entries)
-        return
+        return SnapshotEntry(relative=relative, kind="directory", mode=result.st_mode)
     if stat.S_ISREG(result.st_mode):
-        entries.append(
-            SnapshotEntry(
-                relative=relative,
-                kind="file",
-                mode=result.st_mode,
-                content=Path(entry.path).read_bytes(),
-            )
+        return SnapshotEntry(
+            relative=relative,
+            kind="file",
+            mode=result.st_mode,
+            content=absolute.read_bytes(),
         )
-        return
-    entries.append(
-        SnapshotEntry(relative=relative, kind="special", mode=result.st_mode)
-    )
+    return SnapshotEntry(relative=relative, kind="special", mode=result.st_mode)
 
 
 def changed_paths(

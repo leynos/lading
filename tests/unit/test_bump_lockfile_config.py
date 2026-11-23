@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from lading.commands.bump_lockfile_planning import plan_lockfiles
+from lading.commands.bump_lockfiles import CargoLockfileRepository
 from lading.utils.confinement import BumpPreflightError
 from tests.unit.lockfile_planning_helpers import RecordingRunner, write_workspace
 
@@ -179,4 +180,41 @@ def test_malformed_include_directives_are_rejected(
 
     assert expected in str(excinfo.value), (
         "the diagnostic must explain the malformed include directive"
+    )
+
+
+def test_a_literal_tilde_in_cargo_home_is_not_expanded(tmp_path: Path) -> None:
+    """CARGO_HOME is joined literally, matching Cargo's interpretation."""
+    root = tmp_path.resolve()
+    write_workspace(root)
+    home = root / "~" / "cargo-home"
+    home.mkdir(parents=True)
+    config = home / "config.toml"
+    config.write_text(
+        f"[resolver]\nlockfile-path = {_LOCKFILE_PATH}\n", encoding="utf-8"
+    )
+    runner = RecordingRunner(metadata_root=root)
+
+    with pytest.raises(BumpPreflightError) as excinfo:
+        plan_lockfiles(root, (), runner=runner, environ={"CARGO_HOME": "~/cargo-home"})
+
+    assert str(config) in str(excinfo.value), (
+        "the literal tilde path beneath the workspace must be inspected"
+    )
+
+
+def test_the_repository_checks_the_inherited_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The adapter validates the environment its runner also inherits."""
+    root = tmp_path.resolve()
+    write_workspace(root)
+    monkeypatch.setenv("CARGO_RESOLVER_LOCKFILE_PATH", "/elsewhere/Cargo.lock")
+    repository = CargoLockfileRepository(runner=RecordingRunner(metadata_root=root))
+
+    with pytest.raises(BumpPreflightError) as excinfo:
+        repository.plan_lockfiles(root, ())
+
+    assert "CARGO_RESOLVER_LOCKFILE_PATH" in str(excinfo.value), (
+        "the inherited environment override must be rejected"
     )

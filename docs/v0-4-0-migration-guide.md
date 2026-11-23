@@ -83,6 +83,11 @@ path after validation is not defended against.
 | CPython 3.14 or later, confined workspace                              | None; upgrade as usual.                                     |
 | CPython 3.14 or later, script reads diagnostics from stdout            | Required: read diagnostics from stderr instead.             |
 | CPython 3.14 or later, symlinked member or escaping documentation glob | Required: make the member or glob real, or remain on 0.3.1. |
+| CPython 3.14 or later, unreadable documentation file                   | Required: make the file readable and decodable.             |
+| CPython 3.14 or later, symlinked or non-regular README target          | Required: replace it with a regular file.                   |
+| CPython 3.14 or later, hard-linked write target                        | Required: replace it with an independent copy of the file.  |
+| CPython 3.14 or later, invalid configured lockfile manifest            | Required: make it an existing, confined `Cargo.toml`.       |
+| CPython 3.14 or later, Cargo lockfile-path override                    | Required: unset the variable or remove the setting.         |
 | CPython 3.13                                                           | Required: upgrade the interpreter, or remain on 0.3.1.      |
 | CPython 3.12 or earlier                                                | Required: upgrade the interpreter; 0.3.1 required 3.13.     |
 

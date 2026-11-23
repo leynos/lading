@@ -80,10 +80,11 @@ def _cargo_config_paths(
         paths.extend(_config_files(directory / ".cargo"))
     cargo_home = environ.get("CARGO_HOME")
     if cargo_home:
-        home = Path(cargo_home).expanduser()
+        home = Path(cargo_home)
         if not home.is_absolute():
-            # Cargo runs with cwd=workspace_root, so a relative CARGO_HOME is
-            # relative to the workspace, not to this process's directory.
+            # Cargo joins a relative CARGO_HOME to its working directory and
+            # does not expand ``~``, so neither does this check. The bump run
+            # gives Cargo the workspace root as its working directory.
             home = workspace_root / home
     else:
         home = Path.home() / ".cargo"

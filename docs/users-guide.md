@@ -396,6 +396,8 @@ Cargo reports. A member manifest therefore contributes the outer workspace
 lockfile. Duplicate destinations are reported once. A same-version rerun makes
 no manifest changes and therefore does not regenerate lockfiles; repair a stale
 lockfile with `cargo update --workspace --manifest-path <manifest>` instead.
+Run that command from the workspace root, or pass an absolute manifest path,
+because a relative path resolves against the shell's current directory.
 
 ### 3. Publish in dry-run mode
 
@@ -800,7 +802,10 @@ recover, fix the underlying Cargo error and run
 `cargo update --workspace --manifest-path <manifest>` for that manifest, or use
 `--no-rebuild-lockfiles` and regenerate the lockfiles manually before
 committing the bump. A same-version rerun is not a repair: it finds no manifest
-changes and therefore skips lockfile regeneration.
+changes and therefore skips lockfile regeneration, even when an earlier
+regeneration failed after the manifests were already written. Run the repair
+command from the workspace root, or pass an absolute manifest path, because a
+relative path resolves against the shell's current directory.
 
 ### `[bump.documentation]`
 

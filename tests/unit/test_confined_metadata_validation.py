@@ -209,122 +209,104 @@ def test_load_bump_workspace_rejects_a_non_array_members_table(
     assert "members" in str(excinfo.value), "the diagnostic must name the members table"
 
 
-def test_load_bump_workspace_rejects_metadata_without_a_root(
-    tmp_path: Path,
-) -> None:
-    """Metadata that omits ``workspace_root`` cannot anchor confinement."""
-    _prepare_workspace(tmp_path, ["crates/alpha"], ["alpha"])
-    payload = _payload(tmp_path, ["alpha"])
+def _drop_workspace_root(payload: dict[str, typ.Any]) -> None:
+    """Remove the reported workspace root."""
     del payload["workspace_root"]
-    runner = _RecordingRunner(payload=payload)
-
-    with pytest.raises(BumpPreflightError) as excinfo:
-        load_bump_workspace(tmp_path, runner=typ.cast("CommandRunner", runner))
-
-    assert "did not report a workspace_root path" in str(excinfo.value), (
-        "the diagnostic must say the root is missing"
-    )
 
 
-def test_load_bump_workspace_rejects_a_non_string_package_id(
-    tmp_path: Path,
-) -> None:
-    """A package identifier that is not a string is rejected."""
-    _prepare_workspace(tmp_path, ["crates/alpha"], ["alpha"])
-    payload = _payload(tmp_path, ["alpha"])
+def _non_string_package_id(payload: dict[str, typ.Any]) -> None:
+    """Replace the package identifier with an integer."""
     payload["packages"][0]["id"] = 42
-    runner = _RecordingRunner(payload=payload)
-
-    with pytest.raises(BumpPreflightError) as excinfo:
-        load_bump_workspace(tmp_path, runner=typ.cast("CommandRunner", runner))
-
-    assert "package id must be a string" in str(excinfo.value), (
-        "the diagnostic must name the malformed package identifier"
-    )
 
 
-def test_load_bump_workspace_rejects_a_non_string_member_id(
-    tmp_path: Path,
-) -> None:
-    """A workspace member identifier that is not a string is rejected."""
-    _prepare_workspace(tmp_path, ["crates/alpha"], ["alpha"])
-    payload = _payload(tmp_path, ["alpha"])
+def _non_string_member_id(payload: dict[str, typ.Any]) -> None:
+    """Replace the member identifiers with an integer."""
     payload["workspace_members"] = [42]
-    runner = _RecordingRunner(payload=payload)
-
-    with pytest.raises(BumpPreflightError) as excinfo:
-        load_bump_workspace(tmp_path, runner=typ.cast("CommandRunner", runner))
-
-    assert "workspace_members entries must be strings" in str(excinfo.value), (
-        "the diagnostic must name the malformed member identifier"
-    )
 
 
-def test_load_bump_workspace_rejects_a_non_sequence_package_list(
-    tmp_path: Path,
-) -> None:
-    """A ``packages`` value that is not a sequence is rejected."""
-    _prepare_workspace(tmp_path, ["crates/alpha"], ["alpha"])
-    payload = _payload(tmp_path, ["alpha"])
+def _non_sequence_packages(payload: dict[str, typ.Any]) -> None:
+    """Replace the package list with a string."""
     payload["packages"] = "nope"
-    runner = _RecordingRunner(payload=payload)
-
-    with pytest.raises(BumpPreflightError) as excinfo:
-        load_bump_workspace(tmp_path, runner=typ.cast("CommandRunner", runner))
-
-    assert "packages must be a sequence" in str(excinfo.value), (
-        "the diagnostic must name the malformed package list"
-    )
 
 
-def test_load_bump_workspace_rejects_a_non_mapping_package(
-    tmp_path: Path,
-) -> None:
-    """A package entry that is not a mapping is rejected."""
-    _prepare_workspace(tmp_path, ["crates/alpha"], ["alpha"])
-    payload = _payload(tmp_path, ["alpha"])
+def _non_mapping_package(payload: dict[str, typ.Any]) -> None:
+    """Replace the package list with a non-mapping entry."""
     payload["packages"] = [42]
-    runner = _RecordingRunner(payload=payload)
-
-    with pytest.raises(BumpPreflightError) as excinfo:
-        load_bump_workspace(tmp_path, runner=typ.cast("CommandRunner", runner))
-
-    assert "packages[] entries must be mappings" in str(excinfo.value), (
-        "the diagnostic must name the malformed package entry"
-    )
 
 
-def test_load_bump_workspace_rejects_a_non_path_manifest(
-    tmp_path: Path,
-) -> None:
-    """A member ``manifest_path`` that is not a path is a model error."""
-    _prepare_workspace(tmp_path, ["crates/alpha"], ["alpha"])
-    payload = _payload(tmp_path, ["alpha"])
+def _non_path_manifest(payload: dict[str, typ.Any]) -> None:
+    """Replace the manifest path with an integer."""
     payload["packages"][0]["manifest_path"] = 42
-    runner = _RecordingRunner(payload=payload)
-
-    with pytest.raises(WorkspaceModelError) as excinfo:
-        load_bump_workspace(tmp_path, runner=typ.cast("CommandRunner", runner))
-
-    assert "manifest_path must be a path" in str(excinfo.value), (
-        "the diagnostic must name the malformed manifest path"
-    )
 
 
-def test_load_bump_workspace_rejects_a_misnamed_member_manifest(
+def _misnamed_manifest(payload: dict[str, typ.Any]) -> None:
+    """Rename the member manifest away from ``Cargo.toml``."""
+    manifest = Path(payload["packages"][0]["manifest_path"])
+    payload["packages"][0]["manifest_path"] = str(manifest.with_name("Other.toml"))
+
+
+@pytest.mark.parametrize(
+    ("mutate", "error", "expected"),
+    [
+        pytest.param(
+            _drop_workspace_root,
+            BumpPreflightError,
+            "did not report a workspace_root path",
+            id="missing-root",
+        ),
+        pytest.param(
+            _non_string_package_id,
+            BumpPreflightError,
+            "package id must be a string",
+            id="non-string-package-id",
+        ),
+        pytest.param(
+            _non_string_member_id,
+            BumpPreflightError,
+            "workspace_members entries must be strings",
+            id="non-string-member-id",
+        ),
+        pytest.param(
+            _non_sequence_packages,
+            BumpPreflightError,
+            "packages must be a sequence",
+            id="non-sequence-packages",
+        ),
+        pytest.param(
+            _non_mapping_package,
+            BumpPreflightError,
+            "packages[] entries must be mappings",
+            id="non-mapping-package",
+        ),
+        pytest.param(
+            _non_path_manifest,
+            WorkspaceModelError,
+            "manifest_path must be a path",
+            id="non-path-manifest",
+        ),
+        pytest.param(
+            _misnamed_manifest,
+            BumpPreflightError,
+            "must be named Cargo.toml",
+            id="misnamed-manifest",
+        ),
+    ],
+)
+def test_load_bump_workspace_rejects_malformed_metadata(
     tmp_path: Path,
+    mutate: cabc.Callable[[dict[str, typ.Any]], None],
+    error: type[Exception],
+    expected: str,
 ) -> None:
-    """A reported member manifest not named ``Cargo.toml`` is rejected."""
+    """A malformed metadata payload is rejected with a precise diagnostic."""
     _prepare_workspace(tmp_path, ["crates/alpha"], ["alpha"])
     payload = _payload(tmp_path, ["alpha"])
-    payload["packages"][0]["manifest_path"] = str(
-        tmp_path / "crates" / "alpha" / "Other.toml"
-    )
+    mutate(payload)
     runner = _RecordingRunner(payload=payload)
 
-    with pytest.raises(BumpPreflightError) as excinfo:
+    with pytest.raises(error) as excinfo:
         load_bump_workspace(tmp_path, runner=typ.cast("CommandRunner", runner))
 
-    assert "must be named Cargo.toml" in str(excinfo.value), (
-        "the diagnostic must name the expected manifest filename"
+    assert expected in str(excinfo.value), (
+        "the diagnostic must explain the malformed metadata payload"
     )

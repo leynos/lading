@@ -97,3 +97,14 @@ def test_loader_rejects_an_unmarked_block_quote_fence(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="unmarked fenced example"):
         load_tested_examples(path)
+
+
+def test_loader_rejects_an_unmarked_list_item_fence(tmp_path: Path) -> None:
+    """A fenced example opened inside a list item is still a fence."""
+    path = _write(
+        tmp_path,
+        "- ~~~bash\n  echo unchecked\n",
+    )
+
+    with pytest.raises(ValueError, match="unmarked fenced example"):
+        load_tested_examples(path)

@@ -6,6 +6,7 @@ published commands honest without making the test depend on the current
 project version, which advances with later releases.
 """
 
+import dataclasses as dc
 import re
 import shutil
 import subprocess
@@ -28,6 +29,44 @@ _PRERELEASE_EXAMPLES = (
 _INSTALL_EXAMPLES = (*_PRERELEASE_EXAMPLES, "migration-defer-upgrade")
 
 
+@dc.dataclass(frozen=True, slots=True)
+class _Invocation:
+    """One recorded process invocation with its argument boundaries."""
+
+    program: str
+    arguments: tuple[str, ...]
+
+
+_UV_INTERPRETER_STEPS = (
+    _Invocation(program="uv", arguments=("python", "install", "3.14")),
+    _Invocation(program="uv", arguments=("python", "pin", "3.14")),
+)
+
+
+def _expected_uv_prerelease(pinned: str) -> tuple[_Invocation, ...]:
+    """Return the uv steps that install the pinned pre-release."""
+    return (
+        *_UV_INTERPRETER_STEPS,
+        _Invocation(program="uv", arguments=("add", pinned)),
+    )
+
+
+def _expected_pip_prerelease(pinned: str) -> tuple[_Invocation, ...]:
+    """Return the pip steps that create the environment and install the pin."""
+    return (
+        _Invocation(program="python3.14", arguments=("-m", "venv", ".venv")),
+        _Invocation(
+            program=".venv/bin/python",
+            arguments=("-m", "pip", "install", pinned),
+        ),
+    )
+
+
+def _expected_defer(release: str) -> tuple[_Invocation, ...]:
+    """Return the single uv step that bounds the deferred release."""
+    return (_Invocation(program="uv", arguments=("add", f"lading<{release}")),)
+
+
 def _guide_release() -> str:
     """Return the release version named by the guide's title."""
     match = _TITLE.search(_GUIDE.read_text(encoding="utf-8"))
@@ -35,18 +74,64 @@ def _guide_release() -> str:
     return match.group("version")
 
 
+def _pinned_version(example: MarkedExample, release: str) -> str:
+    """Return the pre-release version ``example`` pins."""
+    match = re.search(r"lading==(\d+\.\d+\.\d+(?:[a-zA-Z]+\d+)?)", example.body)
+    assert match is not None, f"{example.identifier!r} must pin an exact lading version"
+    pinned = match.group(1)
+    prerelease = rf"{re.escape(release)}[a-zA-Z]+\d+"
+    assert re.fullmatch(prerelease, pinned), (
+        f"{example.identifier!r} must pin a pre-release of {release}, not {pinned}"
+    )
+    return pinned
+
+
 def _write_stub(path: Path, log: Path) -> None:
-    """Write an executable stub that records its argv and exits zero."""
+    """Write an executable stub that records its argv boundaries."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        f'#!/bin/sh\nprintf "%s\\n" "$0 $*" >> "{log}"\nexit 0\n',
+        "#!/bin/sh\n"
+        'printf \'CMD %s\\n\' "$0" >> "$CALL_LOG"\n'
+        'for arg in "$@"; do\n'
+        '  printf \'ARG %s\\n\' "$arg" >> "$CALL_LOG"\n'
+        "done\n"
+        "printf 'END\\n' >> \"$CALL_LOG\"\n"
+        "exit 0\n",
         encoding="utf-8",
     )
     path.chmod(0o755)
 
 
-def _run_example(example: MarkedExample, tmp_path: Path) -> str:
-    """Run one shell example in an isolated PATH and return its call log."""
+def _read_invocations(log: Path) -> tuple[_Invocation, ...]:
+    """Return the invocations recorded in ``log``."""
+    invocations: list[_Invocation] = []
+    program: str | None = None
+    arguments: list[str] = []
+    for line in log.read_text(encoding="utf-8").splitlines():
+        if line.startswith("CMD "):
+            program = line.removeprefix("CMD ")
+            arguments = []
+        elif line.startswith("ARG "):
+            arguments.append(line.removeprefix("ARG "))
+        elif line == "END" and program is not None:
+            invocations.append(
+                _Invocation(
+                    program=_stable_program(program),
+                    arguments=tuple(arguments),
+                )
+            )
+            program = None
+    return tuple(invocations)
+
+
+def _stable_program(program: str) -> str:
+    """Return a stable label, dropping an absolute PATH-resolved directory."""
+    path = Path(program)
+    return path.name if path.is_absolute() else program
+
+
+def _run_example(example: MarkedExample, tmp_path: Path) -> tuple[_Invocation, ...]:
+    """Run one shell example in an isolated PATH and return its invocations."""
     bash = shutil.which("bash")
     assert bash is not None, "the example runner requires bash"
     bin_dir = tmp_path / "bin"
@@ -68,7 +153,7 @@ def _run_example(example: MarkedExample, tmp_path: Path) -> str:
         text=True,
         timeout=30,
     )
-    return log.read_text(encoding="utf-8")
+    return _read_invocations(log)
 
 
 def test_every_marked_example_has_content() -> None:
@@ -100,26 +185,32 @@ def test_prerelease_examples_pin_the_guide_release() -> None:
             )
             continue
 
-        match = re.search(r"lading==(\d+\.\d+\.\d+(?:[a-zA-Z]+\d+)?)", example.body)
-        assert match is not None, f"{identifier!r} must pin an exact lading version"
-        pinned = match.group(1)
-        # Match the complete release components, not a character prefix:
-        # 0.4.01rc1 starts with "0.4.0" but its patch component is not 0.
-        prerelease = rf"{re.escape(release)}[a-zA-Z]+\d+"
-        assert re.fullmatch(prerelease, pinned), (
-            f"{identifier!r} must pin a pre-release of {release}, not {pinned}"
-        )
+        _pinned_version(example, release)
 
 
 @pytest.mark.parametrize("identifier", _INSTALL_EXAMPLES)
 def test_marked_examples_execute_in_an_isolated_boundary(
     identifier: str, tmp_path: Path
 ) -> None:
-    """Each marked shell example runs and reaches its package manager."""
-    example = load_tested_examples(_GUIDE)[identifier]
+    """Each marked shell example runs its documented commands unchanged."""
+    examples = load_tested_examples(_GUIDE)
+    example = examples[identifier]
+    release = _guide_release()
+    invocations = _run_example(example, tmp_path)
 
-    log = _run_example(example, tmp_path)
+    if identifier == "migration-defer-upgrade":
+        assert invocations == _expected_defer(release), (
+            "the defer example must only add the bounded requirement"
+        )
+        return
 
-    assert "lading" in log, (
-        f"{identifier!r} must invoke a package manager with a lading requirement"
+    pinned = f"lading=={_pinned_version(example, release)}"
+    if identifier == "migration-upgrade-uv-prerelease":
+        assert invocations == _expected_uv_prerelease(pinned), (
+            "each uv command must match the documented interpreter and package steps"
+        )
+        return
+
+    assert invocations == _expected_pip_prerelease(pinned), (
+        "the pip example must create the environment then install the pre-release"
     )

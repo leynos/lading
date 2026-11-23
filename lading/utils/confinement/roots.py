@@ -88,15 +88,25 @@ def relative_to_root(root: Path, candidate: Path, *, key: str, label: str) -> Pa
     Raises
     ------
     UnsafeBumpTargetError
-        If ``candidate`` is on another drive or outside ``root``.
+        If ``candidate`` is on another drive, outside ``root``, or contains a
+        parent-traversing ``..`` component.
     """
-    try:
-        relative = Path(os.path.relpath(candidate, root))
-    except ValueError as exc:
+    if os.path.normcase(os.path.splitdrive(candidate)[0]) != os.path.normcase(
+        os.path.splitdrive(root)[0]
+    ):
         message = f"{key}: {label} is on a different drive: {candidate}"
-        raise UnsafeBumpTargetError(message) from exc
-    if relative.parts[:1] == ("..",):
+        raise UnsafeBumpTargetError(message)
+    try:
+        # ``relpath`` would collapse ``link/..`` lexically, while the operating
+        # system resolves it through ``link``. Preserving the component lets
+        # the lexical validator reject the path instead of checking a
+        # different file.
+        relative = candidate.relative_to(root)
+    except ValueError as exc:
         message = f"{key}: {label} is outside the workspace root: {candidate}"
+        raise UnsafeBumpTargetError(message) from exc
+    if ".." in relative.parts:
+        message = f"{key}: {label} contains a parent traversal: {candidate}"
         raise UnsafeBumpTargetError(message)
     return relative
 

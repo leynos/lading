@@ -38,14 +38,16 @@ class CargoLockfileRepository:
     runner : CommandRunner | None
         Runner used for Git discovery and Cargo invocations; ``None`` selects
         the default subprocess runner.
-    environ : cabc.Mapping[str, str] | None
-        Environment checked for ``CARGO_RESOLVER_LOCKFILE_PATH`` before a plan
-        is built. ``None`` reads :data:`os.environ`; the CLI supplies the
-        process environment explicitly.
+
+    Notes
+    -----
+    The preflight checks the process environment, which is also the
+    environment a runner inherits when no explicit mapping is passed.
+    Validation and the Cargo invocations it guards therefore observe the same
+    environment.
     """
 
     runner: CommandRunner | None = None
-    environ: cabc.Mapping[str, str] | None = None
 
     def plan_lockfiles(
         self,
@@ -78,7 +80,6 @@ class CargoLockfileRepository:
             workspace_root,
             lockfile_manifests,
             runner=self.runner,
-            environ=self.environ,
         )
 
     def regenerate_planned(self, plan: LockfilePlan) -> tuple[Path, ...]:

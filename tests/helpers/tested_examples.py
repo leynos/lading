@@ -18,7 +18,9 @@ _MARKER: typ.Final[re.Pattern[str]] = re.compile(
     r"^<!--\s*tested-example:\s*([a-z0-9-]+)\s*-->$"
 )
 _MIN_FENCE_LENGTH: typ.Final[int] = 3
-_BLOCK_QUOTE: typ.Final[re.Pattern[str]] = re.compile(r"^(?:>\s?)+")
+_CONTAINER_MARKERS: typ.Final[re.Pattern[str]] = re.compile(
+    r"^(?:(?:>\s?)|(?:[-+*]|\d{1,9}[.)])\s+)+"
+)
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -67,7 +69,7 @@ def load_tested_examples(path: Path) -> dict[str, MarkedExample]:
     index = 0
     while index < len(lines):
         stripped = lines[index].strip()
-        if _fence_delimiter(_without_block_quote(stripped)) is not None:
+        if _fence_delimiter(_without_container(stripped)) is not None:
             message = f"{path}:{index + 1}: unmarked fenced example"
             raise ValueError(message)
         if stripped.startswith("<!-- tested-example:"):
@@ -106,9 +108,9 @@ def load_tested_examples(path: Path) -> dict[str, MarkedExample]:
     return examples
 
 
-def _without_block_quote(line: str) -> str:
-    """Return ``line`` without any leading block-quote markers."""
-    return _BLOCK_QUOTE.sub("", line).strip()
+def _without_container(line: str) -> str:
+    """Return ``line`` without leading block-quote or list-item markers."""
+    return _CONTAINER_MARKERS.sub("", line).strip()
 
 
 def _fence_delimiter(line: str) -> tuple[str, int] | None:

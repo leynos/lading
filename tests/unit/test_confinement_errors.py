@@ -68,22 +68,36 @@ def test_relative_to_root_rejects_an_outside_path(tmp_path: Path) -> None:
 def test_relative_to_root_reports_a_different_drive(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A relpath failure is reported as an unsafe target."""
+    """A Windows drive mismatch is reported as an unsafe target."""
     root = tmp_path / "workspace"
     root.mkdir()
 
-    def failing_relpath(*_args: object, **_kwargs: object) -> str:
-        """Simulate a Windows drive mismatch."""
-        message = "different drives"
-        raise ValueError(message)
+    def fake_splitdrive(path: str | os.PathLike[str]) -> tuple[str, str]:
+        """Give the candidate a different drive from the root."""
+        drive = "D:" if Path(path).name == "Cargo.toml" else "C:"
+        return drive, os.fspath(path)
 
-    monkeypatch.setattr(os.path, "relpath", failing_relpath)
+    monkeypatch.setattr(os.path, "splitdrive", fake_splitdrive)
 
     with pytest.raises(UnsafeBumpTargetError) as excinfo:
         relative_to_root(root, root / "Cargo.toml", key="m", label="manifest")
 
     assert "different drive" in str(excinfo.value), (
         "the diagnostic must name the drive mismatch"
+    )
+
+
+def test_relative_to_root_preserves_a_parent_traversal(tmp_path: Path) -> None:
+    """A parent component is rejected rather than lexically collapsed."""
+    root = tmp_path.resolve() / "workspace"
+    root.mkdir()
+    candidate = root / "link" / ".." / "outside" / "Cargo.toml"
+
+    with pytest.raises(UnsafeBumpTargetError) as excinfo:
+        relative_to_root(root, candidate, key="m", label="manifest")
+
+    assert "parent traversal" in str(excinfo.value), (
+        "the diagnostic must name the parent-traversing component"
     )
 
 
