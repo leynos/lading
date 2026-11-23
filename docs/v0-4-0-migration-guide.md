@@ -29,6 +29,17 @@ The internal `parse_manifest` and `write_atomic_text` helpers moved from
 `lading.commands.bump_toml_dependencies`. Update imports if your tooling uses
 them.
 
+## Impact at a glance
+
+| Change                   | Action required                                          |
+| ------------------------ | -------------------------------------------------------- |
+| Python interpreter floor | Use Python 3.14 or later to install 0.4.0.               |
+| Moved helper imports     | Update imports if your code uses the moved helpers.      |
+| Diagnostic output stream | Read stderr if scripts consume diagnostics from stdout.  |
+| `bump.manifest_rewrites` | Optional; enable it for configured non-member manifests. |
+
+_Table 1: Migration actions by change._
+
 ## Import migration
 
 ### File helpers
@@ -131,7 +142,7 @@ decision, recorded below.
 | CPython 3.13            | Upgrade the interpreter, or remain on 0.3.1.       |
 | CPython 3.12 or earlier | Upgrade the interpreter; 0.3.1 also required 3.13. |
 
-_Table 1: Required action by interpreter version._
+_Table 2: Required action by interpreter version._
 
 Only the interpreter-floor change requires an environment migration. The
 command-line stream change described below needs no environment work, though a
@@ -214,6 +225,9 @@ constraint is satisfied at the moment it is checked.
 # Substitute the tool that manages your interpreter.
 uv python install 3.14
 uv python pin 3.14
+
+# In the existing [project] table in pyproject.toml, set:
+# requires-python = ">=3.14"
 
 # Then move the package itself.
 uv add lading==0.4.0

@@ -56,6 +56,7 @@ def test_loader_keeps_marker_text_inside_marked_markdown_source(
         """<!-- tested-example: markdown-source -->
 
 ```markdown
+> this is literal source, not a container prefix
 <!-- tested-example: inner -->
 ```
 """,
@@ -64,8 +65,33 @@ def test_loader_keeps_marker_text_inside_marked_markdown_source(
     examples = load_markdown_examples(document)
 
     assert [(example.identifier, example.source) for example in examples] == [
-        ("markdown-source", "<!-- tested-example: inner -->")
+        (
+            "markdown-source",
+            "\n".join((
+                "> this is literal source, not a container prefix",
+                "<!-- tested-example: inner -->",
+            )),
+        )
     ], "fenced marker text must be returned as source"
+
+
+def test_loader_extracts_marked_fences_inside_blockquotes(tmp_path: Path) -> None:
+    """Quote prefixes are containers and do not become example source."""
+    document = _write_document(
+        tmp_path,
+        """> <!-- tested-example: quoted -->
+>
+> ```python
+> print('quoted')
+> ```
+""",
+    )
+
+    examples = load_markdown_examples(document)
+
+    assert [(example.identifier, example.source) for example in examples] == [
+        ("quoted", "print('quoted')")
+    ], "a blockquote fence must retain its marker and source"
 
 
 @pytest.mark.parametrize(
@@ -105,6 +131,10 @@ def test_loader_accepts_commonmark_fence_indentation(
     [
         ("```python\nprint('unmarked')\n```\n", "unmarked"),
         ("  ```python\npass\n  ```\n", "unmarked"),
+        (
+            "> ```python\n> assert False\n> ```\n",
+            "unmarked",
+        ),
         (
             "<!-- tested-example: open -->\n\n```python\nprint('open')\n",
             "unterminated",

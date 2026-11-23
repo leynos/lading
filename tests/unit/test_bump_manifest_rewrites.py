@@ -247,6 +247,41 @@ def test_string_rewrites_protect_complete_target_renderings(
         )
 
 
+def test_version_rewrite_does_not_match_inside_build_metadata(
+    tmp_path: pathlib.Path,
+    write_fixture_manifest: _ManifestWriter,
+) -> None:
+    """A version embedded in build metadata is not a standalone version."""
+    write_fixture_manifest(
+        tmp_path,
+        "fixture/Cargo.toml",
+        '[metadata]\nartifact = "9.0.0+1.2.3"\nfixture = "published-1.2.3"\n',
+    )
+    group = ManifestRewriteConfig(
+        paths=("fixture/Cargo.toml",),
+        dependencies=False,
+        string_values=(
+            StringValueRewriteConfig(table=("metadata",), template="{version}"),
+        ),
+    )
+    versions = manifest_rewrite_versions(
+        names=frozenset({"alpha"}),
+        pre_bump_versions={"alpha": "1.2.3"},
+        target_version="2.0.0",
+    )
+
+    plans = plan_fixture_rewrites(tmp_path, (group,), versions=versions)
+
+    assert len(plans) == 1, "the standalone version should still produce a plan"
+    document = parse_toml(plans[0].new_text)
+    assert document["metadata"]["artifact"] == "9.0.0+1.2.3", (
+        "build metadata must not be mistaken for a standalone version"
+    )
+    assert document["metadata"]["fixture"] == "published-2.0.0", (
+        "a hyphen before a standalone version remains a valid boundary"
+    )
+
+
 def test_rejects_ambiguous_string_template_replacements(
     tmp_path: pathlib.Path,
     write_fixture_manifest: _ManifestWriter,

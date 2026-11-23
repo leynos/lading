@@ -11,6 +11,7 @@ _OPENING_FENCE_PATTERN = re.compile(
     r"^(?P<indent> {0,3})(?P<fence>`{3,}|~{3,})(?P<info>.*)$"
 )
 _CLOSING_FENCE_PATTERN = re.compile(r"^(?P<indent> {0,3})(?P<fence>`{3,}|~{3,})[ \t]*$")
+_BLOCKQUOTE_PREFIX_PATTERN = re.compile(r"^ {0,3}> ?")
 
 
 class MarkdownExampleError(ValueError):
@@ -96,28 +97,56 @@ def _index_markers(lines: list[str], document_name: str) -> dict[str, int]:
 
 
 def _lines_outside_fences(lines: list[str]) -> cabc.Iterator[tuple[int, str]]:
-    """Yield document lines outside all fenced code bodies."""
-    open_fence: tuple[str, int] | None = None
+    """Yield normalized document lines outside all fenced code bodies."""
+    open_fence: tuple[str, int, int] | None = None
     for line_index, line in enumerate(lines):
         if open_fence is not None:
             if _is_closing_fence(line, open_fence):
                 open_fence = None
             continue
-        opening = _OPENING_FENCE_PATTERN.fullmatch(line)
+        normalized_line, quote_depth = _strip_blockquote_prefixes(line)
+        opening = _OPENING_FENCE_PATTERN.fullmatch(normalized_line)
         if opening is None:
-            yield line_index, line
+            yield line_index, normalized_line
             continue
         marker = opening.group("fence")
-        open_fence = (marker[0], len(marker))
+        open_fence = (marker[0], len(marker), quote_depth)
 
 
-def _is_closing_fence(line: str, open_fence: tuple[str, int]) -> bool:
+def _is_closing_fence(line: str, open_fence: tuple[str, int, int]) -> bool:
     """Return whether ``line`` closes the active fence family and length."""
-    closing = _CLOSING_FENCE_PATTERN.fullmatch(line)
+    content = _line_in_quote_container(line, open_fence[2])
+    if content is None:
+        return False
+    closing = _CLOSING_FENCE_PATTERN.fullmatch(content)
     if closing is None:
         return False
     marker = closing.group("fence")
     return marker[0] == open_fence[0] and len(marker) >= open_fence[1]
+
+
+def _strip_blockquote_prefixes(
+    line: str, *, limit: int | None = None
+) -> tuple[str, int]:
+    """Remove blockquote container markers while preserving their nesting depth."""
+    depth = 0
+    while limit is None or depth < limit:
+        prefix = _BLOCKQUOTE_PREFIX_PATTERN.match(line)
+        if prefix is None:
+            break
+        line = line[prefix.end() :]
+        depth += 1
+    return line, depth
+
+
+def _line_in_quote_container(line: str, quote_depth: int) -> str | None:
+    """Return line content inside the active quote, or ``None`` outside it."""
+    if quote_depth == 0:
+        return line
+    content, depth = _strip_blockquote_prefixes(line, limit=quote_depth)
+    if depth == quote_depth:
+        return content
+    return "" if not line.strip() else None
 
 
 def _extract_examples(
@@ -128,11 +157,12 @@ def _extract_examples(
     consumed_markers: set[int] = set()
     line_index = 0
     while line_index < len(lines):
-        if _OPENING_FENCE_PATTERN.fullmatch(lines[line_index]) is None:
+        normalized_line, quote_depth = _strip_blockquote_prefixes(lines[line_index])
+        if _OPENING_FENCE_PATTERN.fullmatch(normalized_line) is None:
             line_index += 1
             continue
         example, marker_index, closing_index = _parse_example_at(
-            lines, line_index, document_name
+            lines, line_index, quote_depth, document_name
         )
         examples.append(example)
         consumed_markers.add(marker_index)
@@ -141,22 +171,30 @@ def _extract_examples(
 
 
 def _parse_example_at(
-    lines: list[str], fence_index: int, document_name: str
+    lines: list[str],
+    fence_index: int,
+    quote_depth: int,
+    document_name: str,
 ) -> tuple[MarkdownExample, int, int]:
     """Parse one opening fence, its marker and matching closing fence."""
     opening = _require_opening_fence(lines, fence_index, document_name)
     marker_index, identifier = _require_example_marker(
         lines, fence_index, document_name
     )
+    marker = opening.group("fence")
     closing_index = _require_closing_fence(
-        lines, fence_index, opening.group("fence"), document_name
+        lines, fence_index, (marker[0], len(marker), quote_depth), document_name
     )
+    source_lines = [
+        _source_line_in_container(line, quote_depth)
+        for line in lines[fence_index + 1 : closing_index]
+    ]
     example = MarkdownExample(
         identifier=identifier,
         language=opening.group("info").strip().split(maxsplit=1)[0],
         source="\n".join(
             _remove_fence_indentation(
-                lines[fence_index + 1 : closing_index],
+                source_lines,
                 len(opening.group("indent")),
             )
         ),
@@ -164,11 +202,18 @@ def _parse_example_at(
     return example, marker_index, closing_index
 
 
+def _source_line_in_container(line: str, quote_depth: int) -> str:
+    """Strip the fence's quote containers from a source line when present."""
+    content = _line_in_quote_container(line, quote_depth)
+    return line if content is None else content
+
+
 def _require_opening_fence(
     lines: list[str], fence_index: int, document_name: str
 ) -> re.Match[str]:
     """Return a valid opening fence with a language identifier."""
-    opening = _OPENING_FENCE_PATTERN.fullmatch(lines[fence_index])
+    content, _ = _strip_blockquote_prefixes(lines[fence_index])
+    opening = _OPENING_FENCE_PATTERN.fullmatch(content)
     if opening is None:  # Called only after _extract_examples identified a fence.
         raise MarkdownExampleError(document_name, fence_index + 1, "expected a fence")
     info = opening.group("info").strip()
@@ -188,7 +233,8 @@ def _require_example_marker(
         raise MarkdownExampleError(
             document_name, fence_index + 1, "fenced example is unmarked"
         )
-    match = _MARKER_PATTERN.fullmatch(lines[marker_index])
+    marker_line, _ = _strip_blockquote_prefixes(lines[marker_index])
+    match = _MARKER_PATTERN.fullmatch(marker_line)
     if match is None:
         raise MarkdownExampleError(
             document_name, marker_index + 1, "tested-example marker needs an identifier"
@@ -199,7 +245,7 @@ def _require_example_marker(
 def _require_closing_fence(
     lines: list[str],
     fence_index: int,
-    opening_fence: str,
+    opening_fence: tuple[str, int, int],
     document_name: str,
 ) -> int:
     """Return the matching close or report the unterminated example."""
@@ -223,7 +269,8 @@ def _check_markers_have_fences(
     dangling_markers = sorted(set(markers.values()) - consumed_markers)
     if dangling_markers:
         line_index = dangling_markers[0]
-        match = _MARKER_PATTERN.fullmatch(lines[line_index])
+        marker_line, _ = _strip_blockquote_prefixes(lines[line_index])
+        match = _MARKER_PATTERN.fullmatch(marker_line)
         identifier = match.group(1) if match is not None else "<invalid>"
         raise MarkdownExampleError(
             document_name,
@@ -235,25 +282,38 @@ def _check_markers_have_fences(
 def _preceding_marker_index(lines: list[str], fence_index: int) -> int | None:
     """Return an adjacent marker index, allowing its usual separating blank."""
     preceding_index = fence_index - 1
-    if preceding_index >= 0 and _MARKER_PATTERN.fullmatch(lines[preceding_index]):
-        return preceding_index
-    if preceding_index > 0 and not lines[preceding_index]:
-        marker_index = preceding_index - 1
-        if _MARKER_PATTERN.fullmatch(lines[marker_index]):
-            return marker_index
+    if preceding_index >= 0:
+        if _is_tested_marker(lines[preceding_index]):
+            return preceding_index
+        preceding_line, _ = _strip_blockquote_prefixes(lines[preceding_index])
+        if preceding_index > 0 and not preceding_line:
+            marker_index = preceding_index - 1
+            if _is_tested_marker(lines[marker_index]):
+                return marker_index
     return None
 
 
-def _find_closing_fence(lines: list[str], start: int, opening_fence: str) -> int | None:
+def _is_tested_marker(line: str) -> bool:
+    """Return whether a structural line contains a valid tested marker."""
+    content, _ = _strip_blockquote_prefixes(line)
+    return _MARKER_PATTERN.fullmatch(content) is not None
+
+
+def _find_closing_fence(
+    lines: list[str], start: int, opening_fence: tuple[str, int, int]
+) -> int | None:
     """Find a closing fence with the same marker and at least its length."""
     for index in range(start, len(lines)):
-        closing = _CLOSING_FENCE_PATTERN.fullmatch(lines[index])
+        content = _line_in_quote_container(lines[index], opening_fence[2])
+        if content is None:
+            continue
+        closing = _CLOSING_FENCE_PATTERN.fullmatch(content)
         if closing is None:
             continue
         closing_fence = closing.group("fence")
         if closing_fence[0] != opening_fence[0]:
             continue
-        if len(closing_fence) >= len(opening_fence):
+        if len(closing_fence) >= opening_fence[1]:
             return index
     return None
 

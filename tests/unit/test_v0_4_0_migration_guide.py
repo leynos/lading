@@ -216,6 +216,18 @@ def test_python313_rejection_example_states_the_package_constraint() -> None:
     )
 
 
+def test_uv_upgrade_updates_project_floor_before_adding_package() -> None:
+    """The project metadata floor must be raised before resolving 0.4.0."""
+    example = _examples_by_id()["v0-4-0-upgrade-uv"]
+
+    floor_update = example.source.index('# requires-python = ">=3.14"')
+    package_add = example.source.index("uv add lading==0.4.0")
+
+    assert floor_update < package_add, (
+        "the Python metadata floor must be updated before the package is added"
+    )
+
+
 @pytest.mark.parametrize(
     ("example_id", "expected_calls"),
     [
