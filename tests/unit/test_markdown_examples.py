@@ -47,10 +47,64 @@ echo second
     ], "the loader must preserve every example's fenced source"
 
 
+def test_loader_keeps_marker_text_inside_marked_markdown_source(
+    tmp_path: Path,
+) -> None:
+    """Marker-looking source inside a fence is not document metadata."""
+    document = _write_document(
+        tmp_path,
+        """<!-- tested-example: markdown-source -->
+
+```markdown
+<!-- tested-example: inner -->
+```
+""",
+    )
+
+    examples = load_markdown_examples(document)
+
+    assert [(example.identifier, example.source) for example in examples] == [
+        ("markdown-source", "<!-- tested-example: inner -->")
+    ], "fenced marker text must be returned as source"
+
+
+@pytest.mark.parametrize(
+    ("content", "expected_source"),
+    [
+        (
+            (
+                "<!-- tested-example: indented-open -->\n\n"
+                "  ```python\n    print('indented')\n  ```\n"
+            ),
+            "  print('indented')",
+        ),
+        (
+            (
+                "<!-- tested-example: indented-close -->\n\n"
+                "```python\nprint('indented close')\n  ```\n"
+            ),
+            "print('indented close')",
+        ),
+    ],
+)
+def test_loader_accepts_commonmark_fence_indentation(
+    tmp_path: Path, content: str, expected_source: str
+) -> None:
+    """Up to three spaces may indent either fence and opening content."""
+    document = _write_document(tmp_path, content)
+
+    (example,) = load_markdown_examples(document)
+
+    assert example.source == expected_source, (
+        "opening indentation must be removed from the extracted source"
+    )
+
+
 @pytest.mark.parametrize(
     ("content", "message"),
     [
         ("```python\nprint('unmarked')\n```\n", "unmarked"),
+        ("  ```python\npass\n  ```\n", "unmarked"),
         (
             "<!-- tested-example: open -->\n\n```python\nprint('open')\n",
             "unterminated",

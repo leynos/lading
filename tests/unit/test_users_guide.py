@@ -1,9 +1,11 @@
 """Documentation coverage tests for the end-user guide."""
 
+import tomllib
 import typing as typ
 from pathlib import Path
 
 from lading import config as config_module
+from tests.helpers.markdown_examples import load_markdown_examples
 
 if typ.TYPE_CHECKING:
     from syrupy.assertion import SnapshotAssertion
@@ -38,6 +40,23 @@ def test_users_guide_documents_all_supported_config_keys() -> None:
 
     missing = [term for term in required_terms if term not in content]
     assert not missing, f"users guide missing terms: {missing}"
+
+
+def test_users_guide_complete_configuration_example_is_valid() -> None:
+    """The complete published configuration example remains loadable."""
+    examples = load_markdown_examples(Path("docs/users-guide.md"))
+    example = next(
+        item for item in examples if item.identifier == "users-guide-complete-config"
+    )
+
+    configuration = config_module.LadingConfig.from_mapping(
+        tomllib.loads(example.source)
+    )
+
+    (rewrite,) = configuration.bump.manifest_rewrites
+    assert rewrite.paths == ("tests/fixtures/published-gpui-e2e/Cargo.toml",), (
+        "the complete example must register the documented fixture path"
+    )
 
 
 def test_users_guide_documents_key_cli_flags_and_env_vars() -> None:

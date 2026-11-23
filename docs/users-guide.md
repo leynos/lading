@@ -49,6 +49,8 @@ one case still leaves the copy behind. Nothing else accumulates between runs.
 Pass `--keep-staging` to retain it while debugging a staging problem. The
 retained path is logged, and removing it is then a manual step:
 
+<!-- tested-example: users-guide-example-01 -->
+
 ```bash
 lading publish --keep-staging
 ```
@@ -61,11 +63,15 @@ Releases before this one never removed the staged copy, so a host that has been
 publishing for a while holds one directory per run. `lading clean` finds them
 and reports what removing them would reclaim:
 
+<!-- tested-example: users-guide-example-02 -->
+
 ```bash
 lading clean
 ```
 
 It deletes nothing unless asked:
+
+<!-- tested-example: users-guide-example-03 -->
 
 ```bash
 lading clean --remove
@@ -110,6 +116,8 @@ directory as clear when nothing in it had been looked at.
 Programmatic callers should use the staging context manager from
 `lading.commands.publish_staging` and pass a publication plan with options as a
 keyword argument:
+
+<!-- tested-example: users-guide-example-04 -->
 
 ```python
 from lading.commands.publish_staging import staged_workspace
@@ -160,6 +168,8 @@ re-exports `WorkspaceCrate`, `WorkspaceDependency`, and `WorkspaceGraph`.
 > `WorkspaceDependency.package_id` carries the `packages[].id` value that
 > `cargo metadata` reports for the dependency target.
 
+<!-- tested-example: users-guide-example-05 -->
+
 ```python
 from pathlib import Path
 
@@ -189,6 +199,8 @@ Lading requires CPython 3.14 or later. The requirement is declared in the
 package metadata as `requires-python = ">=3.14"`, so `pip` refuses to install a
 wheel into an older interpreter rather than installing one that cannot run:
 
+<!-- tested-example: users-guide-example-06 -->
+
 ```console
 $ python3.13 -m pip install lading-0.3.1-py3-none-any.whl
 ERROR: Package 'lading' requires a different Python: 3.13.x not in '>=3.14'
@@ -211,11 +223,15 @@ version nothing in the project is checked against.
 
 Install the latest published release from PyPI:
 
+<!-- tested-example: users-guide-example-07 -->
+
 ```bash
 python -m pip install lading
 ```
 
 To select a particular release, pin its version:
+
+<!-- tested-example: users-guide-example-08 -->
 
 ```bash
 python -m pip install lading==0.2.0
@@ -236,6 +252,8 @@ sdist from the matching
 [GitHub release](https://github.com/leynos/lading/releases), then install the
 wheel:
 
+<!-- tested-example: users-guide-example-09 -->
+
 ```bash
 gh release download v0.3.1 --pattern '*.whl' --pattern '*.tar.gz'
 python -m pip install lading-*.whl
@@ -250,6 +268,8 @@ files already attached and retries the remaining ones.
 
 Build a wheel from the repository, then install it:
 
+<!-- tested-example: users-guide-example-10 -->
+
 ```bash
 make build-release
 python -m pip install dist/*.whl
@@ -258,6 +278,8 @@ python -m pip install dist/*.whl
 ### Install for development (using uv)
 
 Create a development environment and run `lading` via `uv`:
+
+<!-- tested-example: users-guide-example-11 -->
 
 ```bash
 make build
@@ -293,6 +315,8 @@ member crates.
 
 Create a minimal configuration file at the workspace root:
 
+<!-- tested-example: users-guide-example-12 -->
+
 ```toml
 [bump.documentation]
 globs = ["README.md", "docs/**/*.md"]
@@ -308,11 +332,15 @@ documented in the configuration reference below.
 
 To update the workspace and member crate manifests to `1.2.3`:
 
+<!-- tested-example: users-guide-example-13 -->
+
 ```bash
 lading bump 1.2.3
 ```
 
 To preview changes without writing any files:
+
+<!-- tested-example: users-guide-example-14 -->
 
 ```bash
 lading bump 1.2.3 --dry-run
@@ -347,6 +375,8 @@ workspace crates. Dependency requirements are updated in top-level,
 By default, `publish` runs `cargo publish --dry-run` so the full pipeline can
 be validated without uploading crates.
 
+<!-- tested-example: users-guide-example-15 -->
+
 ```bash
 lading publish
 ```
@@ -358,6 +388,8 @@ run reports the whole workspace. If any lockfile is stale — for example after
 manifest edits made without `lading bump`, or after a bump run with
 `--no-rebuild-lockfiles` — the command exits with code 1 and lists each stale
 lockfile alongside its own repair command:
+
+<!-- tested-example: users-guide-example-16 -->
 
 ```plaintext
 Tracked Cargo.lock files are stale after manifest version changes.
@@ -396,10 +428,14 @@ In `lading.toml`, set `skip = true` in the `[preflight]` table. Alternatively
 pass `--skip-preflight`, or set `LADING_SKIP_PREFLIGHT=1`. Any of the three
 suppresses the auxiliary builds, `cargo check`, and `cargo test`:
 
+<!-- tested-example: users-guide-example-17 -->
+
 ```toml
 [preflight]
 skip = true
 ```
+
+<!-- tested-example: users-guide-example-18 -->
 
 ```bash
 lading publish --skip-preflight
@@ -417,6 +453,8 @@ caller's build, which is why a skip never removes them. Every skipped run logs
 one line naming whichever input asked for it: the setting, the flag, the
 environment variable, or an in-process caller.
 
+<!-- tested-example: users-guide-example-19 -->
+
 ```plaintext
 INFO: Skipping the publish pre-flight auxiliary builds, cargo check and cargo
 test at the request of the --skip-preflight command-line flag. The Cargo.lock
@@ -432,11 +470,15 @@ workspace as a whole and no test runs at all.
 To require a clean working tree before running the pre-flight checks, pass
 `--forbid-dirty`:
 
+<!-- tested-example: users-guide-example-20 -->
+
 ```bash
 lading publish --forbid-dirty
 ```
 
 To perform a real publish (no `--dry-run`), pass `--live`:
+
+<!-- tested-example: users-guide-example-21 -->
 
 ```bash
 lading publish --live
@@ -457,6 +499,8 @@ its position in the publish order and its elapsed time when it succeeds, so an
 operator can tell which crate a run is on and a slow verify build can be
 attributed to a crate:
 
+<!-- tested-example: users-guide-example-22 -->
+
 ```plaintext
 INFO: Running cargo package for crate alpha (1/3)
 INFO: Successfully packaged crate alpha (1/3) in 84.2s
@@ -471,6 +515,8 @@ At the end of the run, `lading publish` prints a summary of the publish plan it
 computed, listing the crates to publish and any crates skipped because they are
 marked `publish = false`, excluded via `publish.exclude`, or named in
 `publish.exclude` but absent from the workspace:
+
+<!-- tested-example: users-guide-example-23 -->
 
 ```plaintext
 Publish plan for <workspace>
@@ -488,6 +534,8 @@ Configured exclusions not found in workspace:
 
 When no crates are publishable, the summary reports `Crates to publish: none`
 instead of a list:
+
+<!-- tested-example: users-guide-example-24 -->
 
 ```plaintext
 Publish plan for <workspace>
@@ -519,9 +567,13 @@ baseline before the first cargo build and again after every `cargo package` and
 `cargo publish` invocation, and log one line per invocation with the counters
 attributable to it:
 
+<!-- tested-example: users-guide-example-25 -->
+
 ```bash
 RUSTC_WRAPPER=/path/to/sccache lading publish --sccache-stats
 ```
+
+<!-- tested-example: users-guide-example-26 -->
 
 ```plaintext
 INFO: Compiler cache statistics enabled via /path/to/sccache
@@ -545,6 +597,8 @@ Add `--sccache-stats-json PATH` (which implies `--sccache-stats`) to write a
 JSON report alongside, for an artefact upload or a later comparison. A relative
 `PATH` is resolved against the workspace root, like every other path `lading`
 accepts:
+
+<!-- tested-example: users-guide-example-27 -->
 
 ```bash
 lading publish --sccache-stats-json target/sccache-publish.json
@@ -574,6 +628,8 @@ crates.io, `cargo package` will fail. Cargo reports two variants of this
 failure. When the dependency exists on the index but not at the required
 version, the diagnostic names the requirement:
 
+<!-- tested-example: users-guide-example-28 -->
+
 ```plaintext
 error: failed to prepare local package for uploading
 
@@ -586,6 +642,8 @@ Caused by:
 
 When the dependency has never been published at all — the first-publication
 case for a newly extracted crate — Cargo instead reports:
+
+<!-- tested-example: users-guide-example-29 -->
 
 ```plaintext
 error: failed to prepare local package for uploading
@@ -614,6 +672,8 @@ foundational crate first, then run `lading publish` (dry-run) or
 `lading publish --live` for the remaining workspace once the new version is
 indexed:
 
+<!-- tested-example: users-guide-example-30 -->
+
 ```bash
 
 # 1. Publish the foundational crate live so crates.io has the new version.
@@ -633,6 +693,8 @@ the same behaviour as passing `--allow-unpublished-workspace-deps`: it
 downgrades the index-lookup failure to a warning when the missing dependency is
 itself part of the planned publish set and appears earlier in publish order:
 
+<!-- tested-example: users-guide-example-31 -->
+
 ```bash
 lading publish --allow-unpublished-workspace-deps
 ```
@@ -643,6 +705,8 @@ crates.io index lookup), so the dry run completes end-to-end.
 
 Use `--no-allow-unpublished-workspace-deps` to opt out during dry-runs and keep
 Cargo's index lookup strict:
+
+<!-- tested-example: users-guide-example-32 -->
 
 ```bash
 lading publish --no-allow-unpublished-workspace-deps
@@ -667,6 +731,8 @@ table at the top level. Unknown keys are rejected with a configuration error.
 All paths and globs are interpreted relative to the workspace root.
 
 ### Complete example
+
+<!-- tested-example: users-guide-complete-config -->
 
 ```toml
 [bump]
@@ -749,6 +815,8 @@ any lockfile is refreshed, so a failure leaves the workspace inconsistent: the
 manifests carry the new version but the affected lockfiles do not. When several
 lockfiles are regenerated, `lading` raises one aggregated error that lists
 every failed manifest with the exact repair command to run:
+
+<!-- tested-example: users-guide-example-33 -->
 
 ```plaintext
 Cargo lockfile regeneration failed for 2 manifest(s). Manifests already carry
@@ -884,6 +952,8 @@ When `lading` runs, a structured JSON summary may appear in the log output at
 command can emit it — and reports whichever metrics that run recorded. For
 example, a `publish` run that downgraded an index-lookup failure emits:
 
+<!-- tested-example: users-guide-example-34 -->
+
 ```plaintext
 lading metrics summary: [{"metric": "publish.index_lookup_downgrade",
   "labels": {"missing_crate": "...", "subcommand": "..."}, "value": 1}]
@@ -986,6 +1056,8 @@ sibling workspace dependency is downgraded to a warning because
 
 `--workspace-root` specifies the workspace root explicitly. The flag can appear
 before or after the subcommand:
+
+<!-- tested-example: users-guide-example-35 -->
 
 ```bash
 lading --workspace-root /path/to/workspace bump 1.2.3

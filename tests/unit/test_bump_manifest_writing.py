@@ -95,6 +95,21 @@ def test_write_atomic_text_closes_descriptor_when_fchmod_fails(
     )
 
 
+def test_write_atomic_text_preserves_symbolic_link(tmp_path: Path) -> None:
+    """Atomic replacement writes through a symlink without replacing it."""
+    target = tmp_path / "target.toml"
+    target.write_text("original", encoding="utf-8")
+    symbolic_link = tmp_path / "Cargo.toml"
+    symbolic_link.symlink_to(target.name)
+
+    bump_toml_files.write_atomic_text(symbolic_link, "replacement")
+
+    assert symbolic_link.is_symlink(), "the configured symlink must remain intact"
+    assert symbolic_link.read_text(encoding="utf-8") == "replacement", (
+        "the target content must be updated through the symlink"
+    )
+
+
 @pytest.mark.parametrize(
     ("include_workspace_sections", "expected_workspace_alpha"),
     [(True, "^1.0.0"), (False, "^0.1.0")],

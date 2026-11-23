@@ -1,13 +1,16 @@
 """Load marked fenced examples from published Markdown documents."""
 
+import collections.abc as cabc
 import dataclasses as dc
 import re
 from pathlib import Path
 
 _MARKER_PREFIX = "<!-- tested-example:"
 _MARKER_PATTERN = re.compile(r"<!-- tested-example: ([a-z0-9][a-z0-9_-]*) -->")
-_OPENING_FENCE_PATTERN = re.compile(r"^(?P<fence>`{3,}|~{3,})(?P<info>.*)$")
-_CLOSING_FENCE_PATTERN = re.compile(r"^(`{3,}|~{3,})\s*$")
+_OPENING_FENCE_PATTERN = re.compile(
+    r"^(?P<indent> {0,3})(?P<fence>`{3,}|~{3,})(?P<info>.*)$"
+)
+_CLOSING_FENCE_PATTERN = re.compile(r"^(?P<indent> {0,3})(?P<fence>`{3,}|~{3,})[ \t]*$")
 
 
 class MarkdownExampleError(ValueError):
@@ -71,7 +74,7 @@ def _parse_markdown_examples(
 def _index_markers(lines: list[str], document_name: str) -> dict[str, int]:
     """Index valid markers and reject missing or duplicate identifiers."""
     markers: dict[str, int] = {}
-    for line_index, line in enumerate(lines):
+    for line_index, line in _lines_outside_fences(lines):
         if not line.startswith(_MARKER_PREFIX):
             continue
         match = _MARKER_PATTERN.fullmatch(line)
@@ -90,6 +93,31 @@ def _index_markers(lines: list[str], document_name: str) -> dict[str, int]:
             )
         markers[identifier] = line_index
     return markers
+
+
+def _lines_outside_fences(lines: list[str]) -> cabc.Iterator[tuple[int, str]]:
+    """Yield document lines outside all fenced code bodies."""
+    open_fence: tuple[str, int] | None = None
+    for line_index, line in enumerate(lines):
+        if open_fence is not None:
+            if _is_closing_fence(line, open_fence):
+                open_fence = None
+            continue
+        opening = _OPENING_FENCE_PATTERN.fullmatch(line)
+        if opening is None:
+            yield line_index, line
+            continue
+        marker = opening.group("fence")
+        open_fence = (marker[0], len(marker))
+
+
+def _is_closing_fence(line: str, open_fence: tuple[str, int]) -> bool:
+    """Return whether ``line`` closes the active fence family and length."""
+    closing = _CLOSING_FENCE_PATTERN.fullmatch(line)
+    if closing is None:
+        return False
+    marker = closing.group("fence")
+    return marker[0] == open_fence[0] and len(marker) >= open_fence[1]
 
 
 def _extract_examples(
@@ -146,7 +174,12 @@ def _parse_example_at(
         MarkdownExample(
             identifier=match.group(1),
             language=info.split(maxsplit=1)[0],
-            source="\n".join(lines[fence_index + 1 : closing_index]),
+            source="\n".join(
+                _remove_fence_indentation(
+                    lines[fence_index + 1 : closing_index],
+                    len(opening.group("indent")),
+                )
+            ),
         ),
         marker_index,
         closing_index,
@@ -190,9 +223,18 @@ def _find_closing_fence(lines: list[str], start: int, opening_fence: str) -> int
         closing = _CLOSING_FENCE_PATTERN.fullmatch(lines[index])
         if closing is None:
             continue
-        closing_fence = closing.group(1)
+        closing_fence = closing.group("fence")
         if closing_fence[0] != opening_fence[0]:
             continue
         if len(closing_fence) >= len(opening_fence):
             return index
     return None
+
+
+def _remove_fence_indentation(lines: list[str], indentation: int) -> list[str]:
+    """Remove up to the opening fence's indentation from each source line."""
+    if indentation == 0:
+        return lines
+    return [
+        line[min(indentation, len(line) - len(line.lstrip(" "))) :] for line in lines
+    ]

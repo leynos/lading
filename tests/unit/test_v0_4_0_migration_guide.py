@@ -28,6 +28,17 @@ _EXPECTED_EXAMPLE_IDS = (
 )
 
 
+def _load_project_metadata() -> tuple[str, str]:
+    """Load the package version and interpreter requirement once for the suite."""
+    project = tomllib.loads(
+        (_REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    )["project"]
+    return str(project["version"]), str(project["requires-python"])
+
+
+_PROJECT_VERSION, _PROJECT_REQUIRES_PYTHON = _load_project_metadata()
+
+
 def _examples_by_id() -> dict[str, MarkdownExample]:
     """Load the published migration guide examples by stable identifier."""
     return {
@@ -52,14 +63,14 @@ def _imports_for_example(
             statement.module,
             tuple(alias.name for alias in statement.names),
         ))
+    assert imports, f"{example.identifier} must contain at least one import"
     return tuple(imports)
 
 
-def _stub_program(directory: Path, name: str) -> Program:
+def _stub_program(directory: Path, name: str) -> Path:
     """Create an allowlisted command that records its arguments."""
     command = directory / name
     command.write_text(
-        f"#!{sys.executable}\n"
         "import json\n"
         "import os\n"
         "import sys\n"
@@ -70,8 +81,7 @@ def _stub_program(directory: Path, name: str) -> Program:
         "    )\n",
         encoding="utf-8",
     )
-    command.chmod(0o755)
-    return Program(str(command))
+    return command
 
 
 def _parse_shell_commands(example: MarkdownExample) -> list[list[str]]:
@@ -105,8 +115,9 @@ def _exercise_shell_example(
         name: _stub_program(path.parent, path.name)
         for name, path in executable_paths.items()
     }
+    interpreter = Program(sys.executable)
     catalogue = ProgramCatalogue.from_programs(
-        *programs.values(), name="migration-guide-examples"
+        interpreter, name="migration-guide-examples"
     )
     log_path = tmp_path / "commands.jsonl"
     context = ExecutionContext(cwd=tmp_path, env={"DOC_EXAMPLE_LOG": str(log_path)})
@@ -115,13 +126,13 @@ def _exercise_shell_example(
             program_name = command[0]
             if program_name == ".venv/bin/python":
                 program_name = "python"
-            program = programs.get(program_name)
-            assert program is not None, (
+            stub = programs.get(program_name)
+            assert stub is not None, (
                 f"{example.identifier} uses an unapproved executable {command[0]!r}"
             )
-            result = sh.make(program, catalogue=catalogue)(*command[1:]).run_sync(
-                context=context
-            )
+            result = sh.make(interpreter, catalogue=catalogue)(
+                str(stub), *command[1:]
+            ).run_sync(context=context)
             assert result.exit_code == 0, (
                 f"{example.identifier} command failed: {command!r}: {result.stderr}"
             )
@@ -150,15 +161,17 @@ def test_before_import_examples_fail_on_0_4_0(
     example_id: str, missing_name: str
 ) -> None:
     """The historical helper imports must no longer resolve on 0.4.0."""
+    missing_names: set[str] = set()
     for module_name, names in _imports_for_example(_examples_by_id()[example_id]):
         module = importlib.import_module(module_name)
-        missing_names = tuple(name for name in names if not hasattr(module, name))
-        assert missing_names == names, (
+        absent_names = tuple(name for name in names if not hasattr(module, name))
+        assert absent_names == names, (
             f"the historical import must fail for {module_name}"
         )
-        assert missing_name in missing_names, (
-            f"the example must include moved helper {missing_name}"
-        )
+        missing_names.update(absent_names)
+    assert missing_name in missing_names, (
+        f"the example must include moved helper {missing_name}"
+    )
 
 
 @pytest.mark.parametrize(
@@ -178,37 +191,28 @@ def test_after_import_examples_resolve_on_0_4_0(example_id: str) -> None:
 def test_requires_python_example_matches_project_metadata() -> None:
     """The documented new interpreter floor must match package metadata."""
     example = _examples_by_id()["v0-4-0-requires-python"]
-    project_metadata = tomllib.loads(
-        (_REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    )["project"]
-    requirements = project_metadata["requires-python"]
 
     assert "# 0.3.1\nRequires-Python: >=3.13" in example.source, (
         "the historical metadata example must retain its Python 3.13 floor"
     )
-    assert f"# 0.4.0\nRequires-Python: {requirements}" in example.source, (
-        "the release metadata example must match the current requirement"
+    assert "# 0.4.0\nRequires-Python: >=3.14" in example.source, (
+        "the frozen 0.4.0 release example must keep its Python 3.14 floor"
     )
-    assert requirements == ">=3.14", (
-        "the project must declare the documented Python 3.14 floor"
-    )
+    if str(_PROJECT_VERSION).startswith("0.4."):
+        assert _PROJECT_REQUIRES_PYTHON == ">=3.14", (
+            "the live 0.4.x project metadata must match its migration guide"
+        )
 
 
 def test_python313_rejection_example_states_the_package_constraint() -> None:
     """The installer transcript must agree with the current Python floor."""
     example = _examples_by_id()["v0-4-0-python313-wheel-rejection"]
-    requirements = tomllib.loads(
-        (_REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    )["project"]["requires-python"]
 
     assert "$ python3.13 -m pip install lading-0.4.0-py3-none-any.whl" in (
         example.source
     ), "the installation example must use Python 3.13 and the 0.4.0 wheel"
     assert "3.13.x not in '>=3.14'" in example.source, (
         "the pip example must explain rejection against the >=3.14 requirement"
-    )
-    assert requirements == ">=3.14", (
-        "the example's rejection constraint must match project metadata"
     )
 
 

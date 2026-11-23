@@ -77,6 +77,7 @@ def test_main_handles_exceptions(
 
 def test_manifest_rewrite_write_failure_is_reported_once(
     caplog: pytest.LogCaptureFixture,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Write failures use one structured CLI event with progress details."""
     error = ManifestRewriteWriteError(
@@ -98,6 +99,9 @@ def test_manifest_rewrite_write_failure_is_reported_once(
     assert str(error.failed_path) in message, (
         "the event should identify the failed path"
     )
+    captured = capsys.readouterr()
+    assert not captured.out, "the structured log must not be duplicated on stdout"
+    assert not captured.err, "the structured log must not be duplicated on stderr"
 
 
 def test_manifest_rewrite_write_failure_is_visible_when_errors_are_disabled(
