@@ -105,17 +105,26 @@ def plan_manifest_rewrites(
         except TOMLKitError as exc:
             message = f"Could not parse manifest rewrite target {source.path}: {exc}"
             raise ManifestRewriteError(message) from exc
-        if source.dependencies:
-            rewrite_dependency_requirements(
-                document, versions.updated_crate_names, versions.target_version
-            )
-        for rule in source.string_values:
-            _raise_if_string_rewrite_is_stale(source.path, document, rule, versions)
-            _rewrite_string_values(document, rule, versions, source.path)
+        _rewrite_manifest_document(source, document, versions)
         new_text = document.as_string()
         if new_text != source.content:
             plans.append(ManifestRewritePlan(source.path, source.content, new_text))
     return tuple(plans)
+
+
+def _rewrite_manifest_document(
+    source: ManifestRewriteSource,
+    document: TOMLDocument,
+    versions: ManifestRewriteVersions,
+) -> None:
+    """Apply configured dependency and string rules to one parsed manifest."""
+    if source.dependencies:
+        rewrite_dependency_requirements(
+            document, versions.updated_crate_names, versions.target_version
+        )
+    for rule in source.string_values:
+        _raise_if_string_rewrite_is_stale(source.path, document, rule, versions)
+        _rewrite_string_values(document, rule, versions, source.path)
 
 
 def _raise_if_string_rewrite_is_stale(

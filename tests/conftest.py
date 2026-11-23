@@ -8,6 +8,8 @@ from pathlib import Path
 import pytest
 from hypothesis import settings
 
+from lading.utils import metrics
+
 #: No property in this suite asserts how long its work takes, so Hypothesis's
 #: 200 ms per-example deadline only turns host load into false failures. Register
 #: and load the profile here, at import time, because ``@settings`` decorators
@@ -45,8 +47,6 @@ def inherited_hypothesis_profile_name() -> str:
         raise RuntimeError(message)
     return inherited
 
-
-from lading.utils import metrics
 
 pytest_plugins = (
     "cmd_mox.pytest_plugin",
