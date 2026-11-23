@@ -117,6 +117,7 @@ class PlanBuilder:
     _contents: dict[str, str] = dc.field(default_factory=dict)
     _categories: dict[str, set[WriteCategory]] = dc.field(default_factory=dict)
     _paths: dict[str, ConfinedPath] = dc.field(default_factory=dict)
+    _original: dict[str, str | None] = dc.field(default_factory=dict)
     _order: list[str] = dc.field(default_factory=list)
 
     def _key(self, path: ConfinedPath) -> str:
@@ -183,10 +184,22 @@ class PlanBuilder:
         """
         key = self._key(path)
         if key in self._contents:
+            original = self._original.get(key)
+            if content == original:
+                # A later stage restored the file's pre-bump content, so the
+                # plan must not replace it or report a change.
+                del self._contents[key]
+                del self._categories[key]
+                del self._paths[key]
+                self._original.pop(key, None)
+                self._order.remove(key)
+                return
             self._contents[key] = content
             self._categories[key].add(category)
             return
-        if self.read(path) == content:
+        current = self.read(path)
+        self._original[key] = current
+        if current == content:
             return
         self._contents[key] = content
         self._categories[key] = {category}

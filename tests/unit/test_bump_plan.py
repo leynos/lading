@@ -278,3 +278,25 @@ def test_plan_builder_keys_by_native_path_identity(
     assert builder.read(_confined(root, "readme.md")) == "proposed\n", (
         "a case-equivalent path must read the earlier proposal"
     )
+
+
+def test_plan_builder_drops_a_proposal_that_restores_the_original(
+    tmp_path: Path,
+) -> None:
+    """A later stage that restores the disk content removes the proposal."""
+    document = tmp_path / "README.md"
+    document.write_text("original\n", encoding="utf-8")
+    root = tmp_path.resolve()
+    path = _confined(root, "README.md")
+    builder = PlanBuilder(root=root)
+
+    builder.propose(path, "rewritten\n", WriteCategory.DOCUMENTATION)
+    builder.propose(path, "original\n", WriteCategory.README)
+    plan = builder.build(target_version="1.2.3", lockfiles=None)
+
+    assert not plan.proposals, (
+        "a proposal that restores the original file must not be written"
+    )
+    assert not builder.has_changes(WriteCategory.DOCUMENTATION), (
+        "the restored path must not retain a change category"
+    )

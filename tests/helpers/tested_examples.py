@@ -12,7 +12,7 @@ import re
 import typing as typ
 from pathlib import Path
 
-__all__ = ["TestedExample", "load_tested_examples"]
+__all__ = ["MarkedExample", "load_tested_examples"]
 
 _MARKER: typ.Final[re.Pattern[str]] = re.compile(
     r"^<!--\s*tested-example:\s*([a-z0-9-]+)\s*-->$"
@@ -20,7 +20,7 @@ _MARKER: typ.Final[re.Pattern[str]] = re.compile(
 
 
 @dc.dataclass(frozen=True, slots=True)
-class TestedExample:
+class MarkedExample:
     """One marked fenced example.
 
     Attributes
@@ -41,7 +41,7 @@ class TestedExample:
     line: int
 
 
-def load_tested_examples(path: Path) -> dict[str, TestedExample]:
+def load_tested_examples(path: Path) -> dict[str, MarkedExample]:
     """Return every marked example in ``path`` keyed by identifier.
 
     Parameters
@@ -51,21 +51,29 @@ def load_tested_examples(path: Path) -> dict[str, TestedExample]:
 
     Returns
     -------
-    dict[str, TestedExample]
+    dict[str, MarkedExample]
         Marked examples keyed by their identifier.
 
     Raises
     ------
     ValueError
-        If a marker is not followed by a fence, a fence is unterminated, or an
-        identifier is duplicated.
+        If a fence has no marker, a marker is malformed or not followed by a
+        fence, a fence is unterminated, or an identifier is duplicated.
     """
     lines = path.read_text(encoding="utf-8").splitlines()
-    examples: dict[str, TestedExample] = {}
+    examples: dict[str, MarkedExample] = {}
     index = 0
     while index < len(lines):
-        match = _MARKER.match(lines[index].strip())
-        if match is None:
+        stripped = lines[index].strip()
+        if stripped.startswith("```"):
+            message = f"{path}:{index + 1}: unmarked fenced example"
+            raise ValueError(message)
+        if stripped.startswith("<!-- tested-example:"):
+            match = _MARKER.match(stripped)
+            if match is None:
+                message = f"{path}:{index + 1}: malformed tested-example marker"
+                raise ValueError(message)
+        else:
             index += 1
             continue
         identifier = match.group(1)
@@ -75,7 +83,7 @@ def load_tested_examples(path: Path) -> dict[str, TestedExample]:
         fence_start = _next_fence_line(lines, index + 1, path, identifier)
         fence = lines[fence_start].strip()
         body, fence_end = _read_fence_body(lines, fence_start + 1, path, identifier)
-        examples[identifier] = TestedExample(
+        examples[identifier] = MarkedExample(
             identifier=identifier,
             language=fence[3:].strip(),
             body="\n".join(body),

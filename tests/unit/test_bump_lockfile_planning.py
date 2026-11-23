@@ -355,3 +355,35 @@ def test_plan_rejects_a_cargo_config_lockfile_override(tmp_path: Path) -> None:
     assert not runner.calls, (
         "a Cargo configuration override must be rejected before Git or Cargo"
     )
+
+
+def test_plan_rejects_a_cargo_home_config_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A CARGO_HOME configuration override is found at the home root."""
+    root = tmp_path.resolve() / "workspace"
+    root.mkdir()
+    _write_workspace(root)
+    cargo_home = tmp_path.resolve() / "cargo-home"
+    cargo_home.mkdir()
+    config = cargo_home / "config.toml"
+    config.write_text(
+        'resolver = { lockfile-path = "/tmp/outside-409/Cargo.lock" }\n',
+        encoding="utf-8",
+    )
+    runner = _RecordingRunner(metadata_root=root)
+
+    with pytest.raises(BumpPreflightError) as excinfo:
+        plan_lockfiles(
+            root,
+            (),
+            runner=runner,
+            environ={"CARGO_HOME": str(cargo_home)},
+        )
+
+    assert str(config) in str(excinfo.value), (
+        "the diagnostic must name the Cargo-home configuration file"
+    )
+    assert not runner.calls, (
+        "a Cargo-home override must be rejected before Git or Cargo"
+    )

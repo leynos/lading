@@ -51,16 +51,19 @@ from lading.utils.confinement.glob import (
     expand_confined_glob,
 )
 from lading.utils.confinement.patterns import validate_relative_pattern
+from lading.utils.confinement.roots import (
+    ProofContext,
+    establish_workspace_root,
+    prove_containment,
+    relative_to_root,
+)
 from lading.utils.confinement.walk import (
     ConfinedPath,
     ConfineOptions,
     LinkPredicate,
     TargetKind,
     confine_relative_path,
-    establish_workspace_root,
     is_link_like,
-    prove_containment,
-    relative_to_root,
 )
 
 __all__ = [
@@ -72,6 +75,7 @@ __all__ = [
     "LinkPredicate",
     "MatchExpectation",
     "MissingBumpTargetError",
+    "ProofContext",
     "TargetKind",
     "UnmatchedPolicy",
     "UnsafeBumpTargetError",

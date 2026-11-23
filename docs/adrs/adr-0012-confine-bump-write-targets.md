@@ -65,10 +65,14 @@ POSIX host where a backslash is otherwise a literal filename character.
 
 Each component below the canonical root is inspected with `os.lstat` before
 anything is resolved. The walk rejects symlinks, Windows junctions and reparse
-points, non-directory ancestors, and non-regular final components. An absent
-final component is accepted only for an intended new file, and only when every
-parent is a real directory. The final component is classified from its `lstat`
-result and never opened, so a FIFO or device cannot block the command.
+points, non-directory ancestors, non-regular final components, and existing
+regular file targets with a link count above one. The hard-link check matters
+because Cargo opens an existing `Cargo.lock` and writes through its inode: a
+lockfile that is a hard link to an external file would otherwise be rewritten
+outside the workspace even though its path is confined. An absent final
+component is accepted only for an intended new file, and only when every parent
+is a real directory. The final component is classified from its `lstat` result
+and never opened, so a FIFO or device cannot block the command.
 
 Canonical containment is then proved with `os.path.realpath` as an independent
 second check. A symlinked component would already have been rejected; the

@@ -387,8 +387,8 @@ Configured lockfile manifests are resolved to the effective workspace root that
 Cargo reports. A member manifest therefore contributes the outer workspace
 `Cargo.lock`, while a nested standalone workspace contributes its own adjacent
 lockfile. Duplicate destinations are reported once. A same-version rerun makes
-no manifest changes and therefore does not regenerate lockfiles; use the
-printed repair command for a stale lockfile instead.
+no manifest changes and therefore does not regenerate lockfiles; repair a stale
+lockfile with `cargo update --workspace --manifest-path <manifest>` instead.
 
 ### 3. Publish in dry-run mode
 

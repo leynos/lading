@@ -31,6 +31,7 @@ from lading.utils.confinement import (
 _log = logging.getLogger(__name__)
 
 if typ.TYPE_CHECKING:
+    from lading.utils.confinement import ConfinedPath
     from lading.workspace import WorkspaceCrate
 
 
@@ -165,7 +166,7 @@ def _load_source_text(source_readme: Path, _source_text: str | None) -> str:
 def read_workspace_readme(
     workspace_root: Path,
     *,
-    read_source: cabc.Callable[[typ.Any], str | None],
+    read_source: cabc.Callable[[ConfinedPath], str | None],
 ) -> str:
     """Return the confined workspace README text for README adoption.
 

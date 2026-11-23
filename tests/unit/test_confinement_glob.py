@@ -191,3 +191,45 @@ def test_expand_confined_glob_reports_scandir_failures(
     assert "cannot list directory" in str(excinfo.value), (
         "a scan failure must surface instead of looking like an empty match"
     )
+
+
+def test_expand_confined_glob_treats_a_trailing_separator_as_directories(
+    tmp_path: Path,
+) -> None:
+    """A trailing separator never selects regular files for a file pattern."""
+    root = tmp_path / "workspace"
+    (root / "docs").mkdir(parents=True)
+    (root / "docs" / "guide.md").write_text("", encoding="utf-8")
+
+    matches = expand_confined_glob(
+        root,
+        "docs/*/",
+        key="bump.documentation.globs",
+        options=GlobOptions(unmatched=UnmatchedPolicy.IGNORE),
+    )
+
+    assert not matches, (
+        "a directory selector must not fall back to selecting regular files"
+    )
+
+
+def test_expand_confined_glob_rejects_a_special_intermediate_component(
+    tmp_path: Path,
+) -> None:
+    """A special file on an intermediate component is rejected, not ignored."""
+    if not hasattr(os, "mkfifo"):
+        pytest.skip("os.mkfifo is unavailable on this platform")
+    root = tmp_path / "workspace"
+    root.mkdir()
+    pipe = root / "pipe"
+    try:
+        os.mkfifo(pipe)
+    except OSError as exc:  # pragma: no cover - capability
+        pytest.skip(f"cannot create a FIFO here: {exc}")
+
+    with pytest.raises(UnsafeBumpTargetError) as excinfo:
+        expand_confined_glob(root, "pipe/*.md", key="globs")
+
+    assert "special file" in str(excinfo.value), (
+        "an intermediate special file must be reported as a special file"
+    )

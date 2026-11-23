@@ -21,7 +21,18 @@ if typ.TYPE_CHECKING:
 
 
 def outside_sentinel(tmp_path: Path) -> Path:
-    """Create and return an external sentinel file outside the workspace."""
+    r"""Create or overwrite the external sentinel beside the workspace.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        Per-test directory; the sentinel is written to ``tmp_path/outside``.
+
+    Returns
+    -------
+    Path
+        The sentinel file, containing ``"external\n"``.
+    """
     outside = tmp_path / "outside"
     outside.mkdir(exist_ok=True)
     sentinel = outside / "README.md"
@@ -52,7 +63,27 @@ def run_bump(
     *,
     extra_args: cabc.Sequence[str] = (),
 ) -> tuple[int, str, str]:
-    """Run ``lading bump`` in process and return status, stdout, and stderr."""
+    """Run ``lading bump`` in process and return status, stdout, and stderr.
+
+    The runner is installed through ``lading.cli._select_runner`` and any
+    pending capture is cleared before the invocation.
+
+    Parameters
+    ----------
+    workspace : CliWorkspace
+        Materialised workspace and metadata payload.
+    runner : RecordingCommandRunner
+        Runner to install for this invocation.
+    seams : CliSeams
+        Monkeypatch and capture fixtures, bundled to keep the call site small.
+    extra_args : cabc.Sequence[str], optional
+        Additional bump arguments, such as ``--dry-run``.
+
+    Returns
+    -------
+    tuple[int, str, str]
+        Exit status, stdout, and stderr.
+    """
     runner.install(seams.monkeypatch)
     seams.capsys.readouterr()
     exit_code = cli.main([
@@ -73,7 +104,19 @@ def assert_rejected(
     run: cabc.Callable[[], tuple[int, str, str]],
     expected: str,
 ) -> None:
-    """Run ``run`` and assert a clean preflight rejection."""
+    r"""Run ``run`` and assert a clean preflight rejection.
+
+    Parameters
+    ----------
+    workspace : CliWorkspace
+        Materialised workspace; its parent must hold the sentinel.
+    runner : RecordingCommandRunner
+        Runner the invocation uses, checked for absent update calls.
+    run : cabc.Callable[[], tuple[int, str, str]]
+        Invocation to execute.
+    expected : str
+        Text the diagnostic must name.
+    """
     outside = workspace.root.parent / "outside"
     sentinel = outside / "README.md"
     before_workspace = snapshot_tree(workspace.root)

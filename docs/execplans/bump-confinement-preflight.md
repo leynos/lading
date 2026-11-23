@@ -449,13 +449,28 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
   root-manifest Cargo query in lockfile planning.
 - [x] 2026-11-23: Second CodeRabbit review cleared. Added Cargo
   configuration-file rejection for `resolver.lockfile-path` (with a real-Cargo
-  test), deferred the unmatched-glob decision until expansion finishes,
-  applied Cargo's descendant exclusion semantics, removed the duplicate README
-  log-and-re-raise, propagated snapshot examination errors, added tested-example
-  markers and a loader contract for the migration guide, corrected the
-  member-glob policy and single-manifest repair guidance, split the preflight
-  test module, and strengthened the exclusion, ordering, and recursive-glob
-  tests.
+  test), deferred the unmatched-glob decision until expansion finishes, applied
+  Cargo's descendant exclusion semantics, removed the duplicate README
+  log-and-re-raise, propagated snapshot examination errors, added
+  tested-example markers and a loader contract for the migration guide,
+  corrected the member-glob policy and single-manifest repair guidance, split
+  the preflight test module, and strengthened the exclusion, ordering, and
+  recursive-glob tests.
+- [x] 2026-11-23: Third CodeRabbit review cleared. Rejected hard-linked write
+  targets, made canonical containment strict, split the root helpers out of the
+  walk module, fixed the Cargo-home configuration lookup, deferred the
+  unmatched-glob decision to the whole expansion, rejected special intermediate
+  glob components, treated trailing separators as directory-only, dropped
+  proposals that restore the original file, typed the README reader with
+  `ConfinedPath`, and marked and executed every migration example in an
+  isolated command boundary.
+- [x] 2026-11-23: Third-review remediation committed. Added hard-link
+  rejection, strict canonical resolution, a split root/support module,
+  CARGO_HOME-root configuration probing, whole-glob unmatched semantics,
+  special intermediate-component rejection, directory-only trailing
+  separators, restore-original proposal removal, typed README callbacks,
+  strict tested-example loading, executed migration examples in an isolated
+  boundary, and stronger regeneration observation in the resolution tests.
 - [ ] EP-M5 release: tag and release `v0.4.0b1` after review convergence, then
   record the tag commit on issue #409.
 

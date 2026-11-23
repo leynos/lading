@@ -11,6 +11,7 @@ from hypothesis import strategies as st
 
 from lading import config as config_module
 from lading.commands import bump
+from lading.commands.bump_lockfile_planning import LockfilePlan
 from tests.helpers.hypothesis_settings import filesystem_property_settings
 from tests.helpers.workspace_builders import _make_workspace
 
@@ -98,11 +99,23 @@ def _run_bump_capturing_regeneration(
     configuration = config_module.LadingConfig(
         bump=config_module.BumpConfig(rebuild_lockfiles=configured)
     )
-    with mock.patch.object(
-        bump.bump_lockfiles.CargoLockfileRepository,
-        "plan_lockfiles",
-        return_value=None,
-    ) as plan:
+    plan = LockfilePlan(
+        root=workspace_root.resolve(),
+        manifests=(workspace_root.resolve() / "Cargo.toml",),
+        lockfiles=(workspace_root.resolve() / "Cargo.lock",),
+    )
+    with (
+        mock.patch.object(
+            bump.bump_lockfiles.CargoLockfileRepository,
+            "plan_lockfiles",
+            return_value=plan,
+        ) as planned,
+        mock.patch.object(
+            bump.bump_lockfiles.CargoLockfileRepository,
+            "regenerate_planned",
+            return_value=plan.lockfiles,
+        ) as regenerated,
+    ):
         bump.run(
             workspace_root,
             "1.2.3",
@@ -112,7 +125,11 @@ def _run_bump_capturing_regeneration(
                 workspace=workspace,
             ),
         )
-    return plan.called
+    if planned.called:
+        assert regenerated.call_args.args[0] == plan, (
+            "regeneration must receive the plan that planning returned"
+        )
+    return regenerated.called
 
 
 @pytest.mark.parametrize("configured", [True, False])

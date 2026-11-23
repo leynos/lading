@@ -8,6 +8,7 @@ workspace-root lockfile destinations that a stub cannot prove.
 """
 
 import collections.abc as cabc
+import json
 import shutil
 import typing as typ
 from pathlib import Path
@@ -346,7 +347,10 @@ def test_cargo_config_lockfile_override_is_rejected_before_writing(
     outside = tmp_path.resolve() / "outside" / "Cargo.lock"
     config = root / ".cargo" / "config.toml"
     config.parent.mkdir()
-    config.write_text(f'[resolver]\nlockfile-path = "{outside}"\n', encoding="utf-8")
+    config.write_text(
+        f"[resolver]\nlockfile-path = {json.dumps(str(outside))}\n",
+        encoding="utf-8",
+    )
     workspace = load_bump_workspace(root)
     before = snapshot_tree(root)
 

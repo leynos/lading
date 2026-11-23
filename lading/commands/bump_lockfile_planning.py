@@ -105,18 +105,22 @@ def _cargo_config_paths(
     environ: cabc.Mapping[str, str],
 ) -> tuple[Path, ...]:
     """Return the Cargo configuration files that could layer over the root."""
-    directories = [workspace_root]
-    directories.extend(workspace_root.parents)
-    cargo_home = environ.get("CARGO_HOME")
-    if cargo_home:
-        directories.append(Path(cargo_home).expanduser())
     paths: list[Path] = []
-    for directory in directories:
-        for name in ("config.toml", "config"):
-            candidate = directory / ".cargo" / name
-            if candidate.is_file():
-                paths.append(candidate)
-    return tuple(paths)
+    for directory in (workspace_root, *workspace_root.parents):
+        paths.extend(_config_files(directory / ".cargo"))
+    cargo_home = environ.get("CARGO_HOME")
+    home = Path(cargo_home).expanduser() if cargo_home else Path.home() / ".cargo"
+    paths.extend(_config_files(home))
+    return tuple(dict.fromkeys(paths))
+
+
+def _config_files(directory: Path) -> list[Path]:
+    """Return the Cargo configuration files that exist in ``directory``."""
+    return [
+        candidate
+        for name in ("config.toml", "config")
+        if (candidate := directory / name).is_file()
+    ]
 
 
 def _configured_lockfile_path(config_path: Path) -> str | None:

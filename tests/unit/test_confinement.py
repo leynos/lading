@@ -319,3 +319,40 @@ def test_confine_relative_path_rejects_a_fifo_without_opening_it(
         "a FIFO must be rejected as a non-regular target"
     )
     assert not opened, f"no target may be opened to classify it; opened {opened!r}"
+
+
+def test_confine_relative_path_rejects_a_hard_link(tmp_path: Path) -> None:
+    """A hard-linked write target could rewrite an external inode."""
+    root = tmp_path / "workspace"
+    outside = tmp_path / "outside"
+    (root / "docs").mkdir(parents=True)
+    outside.mkdir()
+    external = outside / "guide.md"
+    external.write_text("external", encoding="utf-8")
+    linked = root / "docs" / "guide.md"
+    try:
+        os.link(external, linked)
+    except OSError as exc:  # pragma: no cover - filesystem capability
+        pytest.skip(f"hard links are unavailable here: {exc}")
+    if os.lstat(linked).st_nlink <= 1:  # pragma: no cover - capability
+        pytest.skip("the filesystem does not report a shared link count")
+
+    with pytest.raises(UnsafeBumpTargetError) as excinfo:
+        confine_relative_path(root, "docs/guide.md", key="bump.documentation")
+
+    assert "hard-linked" in str(excinfo.value), (
+        "the diagnostic must say the target is hard-linked"
+    )
+    assert external.read_text(encoding="utf-8") == "external", (
+        "rejecting the target must not modify the external inode"
+    )
+
+
+def test_establish_workspace_root_reports_an_unexpandable_user() -> None:
+    """A ``~user`` that cannot be resolved is a preflight examination error."""
+    with pytest.raises(BumpTargetExaminationError) as excinfo:
+        establish_workspace_root("~this-user-does-not-exist-409/workspace")
+
+    assert "Cannot expand workspace root" in str(excinfo.value), (
+        "the diagnostic must name the unexpandable root"
+    )

@@ -36,6 +36,7 @@ import typing as typ
 from pathlib import Path, PurePosixPath
 
 from lading.utils.confinement.patterns import validate_relative_pattern
+from lading.utils.confinement.roots import ProofContext, prove_containment
 from lading.utils.confinement.walk import (
     BumpTargetExaminationError,
     ConfinedPath,
@@ -44,7 +45,6 @@ from lading.utils.confinement.walk import (
     UnsafeBumpTargetError,
     display_relative,
     is_link_like,
-    prove_containment,
 )
 
 __all__ = [
@@ -138,6 +138,11 @@ def expand_confined_glob(
     """  # ruff: ignore[docstring-extraneous-exception]  # delegated to _Expansion
     parts = validate_relative_pattern(pattern, key=key)
     policy = options or GlobOptions()
+    if pattern.endswith(("/", "\\")) and policy.expect is MatchExpectation.REGULAR_FILE:
+        # A trailing separator selects directories. Documentation patterns
+        # select regular files, so a directory selector matches nothing; it
+        # must not fall back to selecting files directly under the directory.
+        return ()
     expansion = _Expansion(
         root=root,
         key=key,
@@ -152,7 +157,11 @@ def expand_confined_glob(
     matches: list[ConfinedPath] = []
     for matched_parts in sorted(expansion.found):
         display = PurePosixPath(*matched_parts).as_posix()
-        prove_containment(root, root.joinpath(*matched_parts), key=key, display=display)
+        prove_containment(
+            root,
+            root.joinpath(*matched_parts),
+            ProofContext(key=key, display=display),
+        )
         matches.append(ConfinedPath(root=root, parts=matched_parts))
     return tuple(matches)
 
@@ -236,7 +245,9 @@ class _Expansion:
         for name, result in self._iter_entries(prefix, "*"):
             if self.link_predicate(result):
                 if is_final:
-                    self._raise_symlink_match(prefix, name)
+                    self._reject_match(
+                        prefix, name, "symlinked pattern match is not permitted"
+                    )
                 # An intermediate symlink cannot be traversed, so it contributes
                 # no match. Raising here would reject unrelated links, such as
                 # an image symlink under a documentation tree.
@@ -282,12 +293,9 @@ class _Expansion:
         try:
             result = os.lstat(candidate)
         except FileNotFoundError:
-            if not rest and self.unmatched is UnmatchedPolicy.ERROR:
-                message = (
-                    f"{self.key}: target does not exist: "
-                    f"{display_relative(self.root, candidate)}"
-                )
-                raise MissingBumpTargetError(message) from None
+            # One branch produced no match. The caller raises only when the
+            # whole expansion is empty, so a wildcard branch that matched
+            # elsewhere is not rejected here.
             return
         except OSError as exc:
             message = (
@@ -306,11 +314,13 @@ class _Expansion:
         """Reject a linked match, then select it or descend into it."""
         name, result = matched
         if self.link_predicate(result):
-            self._raise_symlink_match(prefix, name)
+            self._reject_match(prefix, name, "symlinked pattern match is not permitted")
         if not rest:
             self._consider_final(result, (*prefix, name))
         elif stat.S_ISDIR(result.st_mode):
             self.expand(rest, (*prefix, name))
+        elif not stat.S_ISREG(result.st_mode):
+            self._reject_match(prefix, name, "matched a special file")
 
     def _consider_final(
         self,
@@ -331,8 +341,7 @@ class _Expansion:
         UnsafeBumpTargetError
             If a matched special file is neither a selected file nor an ignored
             directory.
-        """
-        display = PurePosixPath(*matched_parts).as_posix()
+        """  # ruff: ignore[docstring-extraneous-exception]  # raised by _raise_special_file
         is_regular = stat.S_ISREG(result.st_mode)
         is_directory = stat.S_ISDIR(result.st_mode)
         wants_regular = self.expect is MatchExpectation.REGULAR_FILE
@@ -343,15 +352,32 @@ class _Expansion:
         ignored = is_directory if wants_regular else is_regular
         if ignored:
             return
-        message = f"{self.key}: matched a special file: {display}"
-        raise UnsafeBumpTargetError(message)
+        self._reject_match(
+            matched_parts[:-1], matched_parts[-1], "matched a special file"
+        )
 
-    def _raise_symlink_match(
+    def _reject_match(
         self,
         prefix: tuple[str, ...],
         name: str,
+        detail: str,
     ) -> typ.NoReturn:
-        """Reject a pattern match that is a symlink or junction."""
+        """Raise the unsafe-target error for one rejected match.
+
+        Parameters
+        ----------
+        prefix : tuple[str, ...]
+            Components of the directory holding the match.
+        name : str
+            Matched entry name.
+        detail : str
+            Reason included in the diagnostic.
+
+        Raises
+        ------
+        UnsafeBumpTargetError
+            Always, naming the rejected match and the reason.
+        """
         display = PurePosixPath(*prefix, name).as_posix()
-        message = f"{self.key}: symlinked pattern match is not permitted: {display}"
+        message = f"{self.key}: {detail}: {display}"
         raise UnsafeBumpTargetError(message)

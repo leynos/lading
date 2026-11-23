@@ -91,6 +91,7 @@ when this release is published.
 
 The requirement in the package metadata moved:
 
+<!-- tested-example: migration-requires-python-floor -->
 ```text
 # 0.3.1
 Requires-Python: >=3.13
@@ -102,6 +103,7 @@ Requires-Python: >=3.14
 Because `Requires-Python` is enforced by the installer, an attempt to install
 the 0.4.0 wheel under 3.13 fails before any file is written:
 
+<!-- tested-example: migration-old-interpreter-error -->
 ```console
 $ python3.13 -m pip install lading-0.4.0-py3-none-any.whl
 ERROR: Package 'lading' requires a different Python: 3.13.x not in '>=3.14'
@@ -156,7 +158,6 @@ pre-release. Install it explicitly, because a plain version specifier does not
 select a pre-release:
 
 <!-- tested-example: migration-upgrade-uv-prerelease -->
-
 ```bash
 # Substitute the tool that manages your interpreter.
 uv python install 3.14
@@ -169,7 +170,6 @@ uv add lading==0.4.0b1
 A project using `pip` and a virtual environment follows the same order:
 
 <!-- tested-example: migration-upgrade-pip-prerelease -->
-
 ```bash
 python3.14 -m venv .venv
 .venv/bin/python -m pip install lading==0.4.0b1
@@ -187,6 +187,7 @@ still fail after manifests were rewritten. There is no scheduled defect fix
 waiting in 0.4.0 beyond that safety boundary, but a workspace in one of those
 shapes should be corrected, or migrated, before the interpreter moves:
 
+<!-- tested-example: migration-defer-upgrade -->
 ```bash
 uv add 'lading<0.4.0'
 ```
