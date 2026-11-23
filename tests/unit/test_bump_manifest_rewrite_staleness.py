@@ -103,13 +103,55 @@ class _RewriteRetryScenario:
         pytest.param(
             _RewriteRetryScenario(
                 value_key="version",
+                current_value="0.8.0",
+                template="{version}",
+                names=frozenset({"alpha", "beta"}),
+                pre_bump_versions={"alpha": "2.0.0", "beta": "1.0.0"},
+                target_version="2.0.0",
+                expected_error=(
+                    r"non-target version '0\.8\.0'.*one or more updated "
+                    r"workspace crates are already at '2\.0\.0'"
+                ),
+                expected_new_text=None,
+            ),
+            id="version-only-mixed-retry-unrecoverable-version",
+        ),
+        pytest.param(
+            _RewriteRetryScenario(
+                value_key="version",
+                current_value="1.0.0",
+                template="{version}",
+                names=frozenset({"alpha", "beta"}),
+                pre_bump_versions={"alpha": "2.0.0", "beta": "1.0.0"},
+                target_version="2.0.0",
+                expected_error=None,
+                expected_new_text='[metadata]\nversion = "2.0.0"\n',
+            ),
+            id="version-only-mixed-retry-known-old-version-rewrite",
+        ),
+        pytest.param(
+            _RewriteRetryScenario(
+                value_key="version",
+                current_value="0.8.0",
+                template="{version}",
+                names=frozenset({"alpha", "beta"}),
+                pre_bump_versions={"alpha": "1.0.0", "beta": "1.5.0"},
+                target_version="2.0.0",
+                expected_error=None,
+                expected_new_text=None,
+            ),
+            id="version-only-initial-bump-unrelated-version-no-op",
+        ),
+        pytest.param(
+            _RewriteRetryScenario(
+                value_key="version",
                 current_value="1.0.0",
                 template="{version}",
                 names=frozenset({"alpha", "beta"}),
                 pre_bump_versions={"alpha": "2.0.0", "beta": "2.0.0"},
                 target_version="2.0.0",
                 expected_error=(
-                    r"all updated workspace crates are already at '2\.0\.0'"
+                    r"one or more updated workspace crates are already at '2\.0\.0'"
                 ),
                 expected_new_text=None,
             ),

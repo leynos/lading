@@ -98,9 +98,9 @@ class ManifestRewriteError(LadingError):
         if crate_name is None:
             message = (
                 f"Configured string rewrite in {manifest_path} contains "
-                f"non-target version {stale_version!r}; all updated workspace "
-                f"crates are already at {target_version!r}, so the previous "
-                "version cannot be recovered for this retry"
+                f"non-target version {stale_version!r}; one or more updated "
+                f"workspace crates are already at {target_version!r}, so a "
+                "previous version cannot be recovered for this retry"
             )
         else:
             message = (

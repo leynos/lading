@@ -167,7 +167,7 @@ def _stale_string_references(
     template: str,
     versions: ManifestRewriteVersions,
 ) -> tuple[tuple[str | None, str], ...]:
-    """Find old template versions for crates already at the target version."""
+    """Find stale values that a retry cannot attribute to a selected crate."""
     if _template_identifies_crate(template):
         return tuple(
             (crate_name, stale_version)
@@ -177,21 +177,19 @@ def _stale_string_references(
                 values, template, crate_name, versions.target_version
             )
         )
-    if not _all_updated_crates_are_at_target(versions):
+    pre_bump_versions = {
+        versions.pre_bump_versions[crate_name]
+        for crate_name in versions.updated_crate_names
+    }
+    if versions.target_version not in pre_bump_versions:
         return ()
+    recoverable_versions = pre_bump_versions - {versions.target_version}
     return tuple(
         (None, stale_version)
         for stale_version in _versions_for_crate_not_at_target(
             values, template, "", versions.target_version
         )
-    )
-
-
-def _all_updated_crates_are_at_target(versions: ManifestRewriteVersions) -> bool:
-    """Return whether every selected crate has already reached the target."""
-    return bool(versions.updated_crate_names) and all(
-        versions.pre_bump_versions[crate_name] == versions.target_version
-        for crate_name in versions.updated_crate_names
+        if stale_version not in recoverable_versions
     )
 
 
