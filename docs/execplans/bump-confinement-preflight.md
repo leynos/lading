@@ -423,7 +423,13 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
   `update_documentation_files` helpers were removed. `make check-fmt`,
   `make lint`, `make typecheck`, and `make test` (1487 passed, 31 skipped)
   green.
-- [ ] EP-M4: command-level and real-Cargo evidence.
+- [x] 2026-11-23: EP-M4 landed. Added the non-following `fs_snapshot` helper,
+  a recording command runner, a workspace/metadata fixture builder, 18
+  command-level preflight tests, the BDD lockfile-rejection scenario, and a
+  12-test real-Cargo lane with an isolated `CARGO_HOME` and offline mode. Real
+  Cargo confirmed that `cargo metadata --no-deps` leaves missing and stale
+  lockfiles untouched. `make check-fmt`, `make lint`, `make typecheck`, and
+  `make test` (1518 passed, 31 skipped) green.
 - [ ] EP-M5: documentation, migration, and release hand-off.
 
 ## Surprises & discoveries

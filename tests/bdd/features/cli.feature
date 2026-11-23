@@ -415,3 +415,13 @@ Feature: Lading CLI scaffolding
     Then the bump command reports manifest updates for "1.2.3"
     And the workspace manifest version is "1.2.3"
     And the crate "alpha" manifest version is "1.2.3"
+
+  Scenario: Bumping rejects an escaping configured lockfile manifest
+    Given a workspace directory with configuration
+    And cargo metadata describes a sample workspace
+    And a nested lockfile manifest is configured at "../outside/Cargo.toml"
+    When I invoke lading bump 1.2.3 with that workspace
+    Then the CLI exits with code 1
+    And the stderr contains "Preflight error"
+    And the stderr contains "../outside/Cargo.toml"
+    And the workspace manifest version is "0.1.0"
