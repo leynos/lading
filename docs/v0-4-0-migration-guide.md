@@ -22,12 +22,18 @@ an injectable rewrite timer, and
 manifest-path consumers. `lading.commands.bump_manifest_rewrites` exports
 `ManifestRewriteError`, `ManifestRewritePlan` and `ManifestRewriteVersions`.
 The internal `parse_manifest` and `write_atomic_text` helpers moved from
-`lading.commands.bump_toml` to `lading.commands.bump_toml_files`; update
-imports if your tooling uses them.
+`lading.commands.bump_toml` to `lading.commands.bump_toml_files`. The
+`DEPENDENCY_SECTIONS`, `assign_dependency_version_field`,
+`update_dependency_entry`, `update_dependency_sections`,
+`update_dependency_table` and `update_section` helpers moved to
+`lading.commands.bump_toml_dependencies`. Update imports if your tooling uses
+them.
 
 ## Import migration
 
-### Before
+### File helpers
+
+#### Before: file helpers
 
 Before 0.4.0, import these helpers from `lading.commands.bump_toml`. This
 historical import is expected to raise `ImportError` on 0.4.0.
@@ -38,12 +44,47 @@ historical import is expected to raise `ImportError` on 0.4.0.
 from lading.commands.bump_toml import parse_manifest, write_atomic_text
 ```
 
-### After
+#### After: file helpers
 
 <!-- tested-example: v0-4-0-helper-import-after -->
 
 ```python
 from lading.commands.bump_toml_files import parse_manifest, write_atomic_text
+```
+
+### Dependency helpers
+
+#### Before: dependency helpers
+
+Before 0.4.0, import these dependency helpers from `lading.commands.bump_toml`.
+This historical import is expected to raise `ImportError` on 0.4.0.
+
+<!-- tested-example: v0-4-0-dependency-import-before -->
+
+```python
+from lading.commands.bump_toml import (
+    DEPENDENCY_SECTIONS,
+    assign_dependency_version_field,
+    update_dependency_entry,
+    update_dependency_sections,
+    update_dependency_table,
+    update_section,
+)
+```
+
+#### After: dependency helpers
+
+<!-- tested-example: v0-4-0-dependency-import-after -->
+
+```python
+from lading.commands.bump_toml_dependencies import (
+    DEPENDENCY_SECTIONS,
+    assign_dependency_version_field,
+    update_dependency_entry,
+    update_dependency_sections,
+    update_dependency_table,
+    update_section,
+)
 ```
 
 `ConfigurationError` and `ConfigurationNotLoadedError` now live in
@@ -103,6 +144,8 @@ when this release is published.
 
 The requirement in the package metadata moved:
 
+<!-- tested-example: v0-4-0-requires-python -->
+
 ```text
 # 0.3.1
 Requires-Python: >=3.13
@@ -113,6 +156,8 @@ Requires-Python: >=3.14
 
 Because `Requires-Python` is enforced by the installer, an attempt to install
 the 0.4.0 wheel under 3.13 fails before any file is written:
+
+<!-- tested-example: v0-4-0-python313-wheel-rejection -->
 
 ```console
 $ python3.13 -m pip install lading-0.4.0-py3-none-any.whl
@@ -163,6 +208,8 @@ the floor for users.
 Upgrade the interpreter first, then the package, so that the installer's
 constraint is satisfied at the moment it is checked.
 
+<!-- tested-example: v0-4-0-upgrade-uv -->
+
 ```bash
 # Substitute the tool that manages your interpreter.
 uv python install 3.14
@@ -174,6 +221,8 @@ uv add lading==0.4.0
 
 A project using `pip` and a virtual environment follows the same order:
 
+<!-- tested-example: v0-4-0-upgrade-venv -->
+
 ```bash
 python3.14 -m venv .venv
 .venv/bin/python -m pip install lading==0.4.0
@@ -182,6 +231,8 @@ python3.14 -m venv .venv
 If the interpreter cannot be moved yet, pin Lading below the floor and defer
 the upgrade. Nothing in 0.4.0 fixes a defect present in 0.3.1, so there is no
 correctness pressure to migrate before the interpreter is ready:
+
+<!-- tested-example: v0-4-0-pin-before-floor -->
 
 ```bash
 uv add 'lading<0.4.0'
