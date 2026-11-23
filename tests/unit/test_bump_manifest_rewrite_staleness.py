@@ -62,6 +62,32 @@ class _RewriteRetryScenario:
         pytest.param(
             _RewriteRetryScenario(
                 value_key="path",
+                current_value="alpha-2.0.0-src-src",
+                template="{crate}-{version}-src",
+                names=frozenset({"alpha"}),
+                pre_bump_versions={"alpha": "2.0.0"},
+                target_version="2.0.0",
+                expected_error=r"contains non-target version '2\.0\.0-src'",
+                expected_new_text=None,
+            ),
+            id="target-prefix-does-not-mask-longer-version",
+        ),
+        pytest.param(
+            _RewriteRetryScenario(
+                value_key="path",
+                current_value="alpha-2.0.0-src",
+                template="{crate}-{version}-src",
+                names=frozenset({"alpha"}),
+                pre_bump_versions={"alpha": "2.0.0"},
+                target_version="2.0.0",
+                expected_error=None,
+                expected_new_text=None,
+            ),
+            id="exact-target-suffix-rendering-no-op",
+        ),
+        pytest.param(
+            _RewriteRetryScenario(
+                value_key="path",
                 current_value="target/alpha-1.0.0",
                 template="{crate}-{version}",
                 names=frozenset({"alpha"}),

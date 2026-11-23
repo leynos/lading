@@ -22,10 +22,26 @@ manifest-path consumers. `lading.commands.bump_manifest_rewrites` exports
 `ManifestRewriteError`, `ManifestRewritePlan` and `ManifestRewriteVersions`.
 The internal `parse_manifest` and `write_atomic_text` helpers moved from
 `lading.commands.bump_toml` to `lading.commands.bump_toml_files`; update
-imports if your tooling uses them. `ConfigurationError` and
-`ConfigurationNotLoadedError` now live in `lading.exceptions` and remain
-importable from `lading.config`. An environment already running 3.14 that only
-reads successful output needs no action beyond the version bump itself.
+imports if your tooling uses them.
+
+## Import migration
+
+### Before
+
+```python
+from lading.commands.bump_toml import parse_manifest, write_atomic_text
+```
+
+### After
+
+```python
+from lading.commands.bump_toml_files import parse_manifest, write_atomic_text
+```
+
+`ConfigurationError` and `ConfigurationNotLoadedError` now live in
+`lading.exceptions` and remain importable from `lading.config`. An environment
+already running 3.14 that only reads successful output needs no action beyond
+the version bump itself.
 
 When 0.4.0 is released, its tagged build will also be published to PyPI as a
 source distribution and pure-Python wheel. GitHub Releases will retain both

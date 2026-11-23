@@ -210,13 +210,14 @@ def _versions_for_crate_not_at_target(
     """Find stale versions matching one crate's configured template."""
     pattern, version_groups = _stale_template_pattern(template, crate_name)
     target_rendering = template.format(crate=crate_name, version=target_version)
-    target_pattern = _string_replacement_pattern(template, {target_rendering: "\x00"})
-    # TOML strings cannot contain NUL, so this marker safely separates exact
-    # current renderings from stale matches without joining surrounding text.
-    # The shared boundaries keep a target prefix inside a stale suffix visible.
-    values_to_check = tuple(target_pattern.sub("\x00", value) for value in values)
-    return _template_versions_not_target(
-        values_to_check, pattern, version_groups, target_version
+    return tuple(
+        version
+        for value in values
+        for match in pattern.finditer(value)
+        if match.group() != target_rendering
+        for group_name in version_groups
+        if (version := match.group(group_name)) is not None
+        if version != target_version
     )
 
 
@@ -240,23 +241,6 @@ def _stale_template_pattern(
     suffix = _template_boundary(template, str.endswith, _TRAILING_BOUNDARIES)
     pattern = re.compile(f"{prefix}(?:{''.join(pieces)}){suffix}")
     return pattern, tuple(version_groups)
-
-
-def _template_versions_not_target(
-    values: cabc.Sequence[str],
-    pattern: re.Pattern[str],
-    version_groups: cabc.Sequence[str],
-    target_version: str,
-) -> tuple[str, ...]:
-    """Find matched template versions that differ from the requested target."""
-    return tuple(
-        version
-        for value in values
-        for match in pattern.finditer(value)
-        for group_name in version_groups
-        if (version := match.group(group_name)) is not None
-        if version != target_version
-    )
 
 
 def _rewrite_string_values(
