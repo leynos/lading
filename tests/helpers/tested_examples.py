@@ -17,6 +17,7 @@ __all__ = ["MarkedExample", "load_tested_examples"]
 _MARKER: typ.Final[re.Pattern[str]] = re.compile(
     r"^<!--\s*tested-example:\s*([a-z0-9-]+)\s*-->$"
 )
+_MIN_FENCE_LENGTH: typ.Final[int] = 3
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -65,7 +66,7 @@ def load_tested_examples(path: Path) -> dict[str, MarkedExample]:
     index = 0
     while index < len(lines):
         stripped = lines[index].strip()
-        if stripped.startswith("```"):
+        if _fence_delimiter(stripped) is not None:
             message = f"{path}:{index + 1}: unmarked fenced example"
             raise ValueError(message)
         if stripped.startswith("<!-- tested-example:"):
@@ -82,15 +83,35 @@ def load_tested_examples(path: Path) -> dict[str, MarkedExample]:
             raise ValueError(message)
         fence_start = _next_fence_line(lines, index + 1, path, identifier)
         fence = lines[fence_start].strip()
-        body, fence_end = _read_fence_body(lines, fence_start + 1, path, identifier)
+        delimiter = _fence_delimiter(fence)
+        if delimiter is None:  # pragma: no cover - _next_fence_line found it
+            message = f"{path}:{fence_start + 1}: malformed fenced example"
+            raise ValueError(message)
+        character, length = delimiter
+        marked_fence = _MarkedFence(
+            path=path,
+            identifier=identifier,
+            character=character,
+            length=length,
+        )
+        body, fence_end = _read_fence_body(lines, fence_start + 1, marked_fence)
         examples[identifier] = MarkedExample(
             identifier=identifier,
-            language=fence[3:].strip(),
+            language=fence[length:].strip(),
             body="\n".join(body),
             line=index + 1,
         )
         index = fence_end + 1
     return examples
+
+
+def _fence_delimiter(line: str) -> tuple[str, int] | None:
+    """Return the fence character and run length for an opening fence."""
+    for character in ("`", "~"):
+        length = len(line) - len(line.lstrip(character))
+        if length >= _MIN_FENCE_LENGTH and line.startswith(character * length):
+            return character, length
+    return None
 
 
 def _next_fence_line(
@@ -104,24 +125,41 @@ def _next_fence_line(
         stripped = lines[index].strip()
         if not stripped:
             continue
-        if stripped.startswith("```"):
+        if _fence_delimiter(stripped) is not None:
             return index
         break
     message = f"{path}:{start}: tested-example {identifier!r} has no fence"
     raise ValueError(message)
 
 
+@dc.dataclass(frozen=True, slots=True)
+class _MarkedFence:
+    """One opened fence and the diagnostic context that named it."""
+
+    path: Path
+    identifier: str
+    character: str
+    length: int
+
+
 def _read_fence_body(
     lines: cabc.Sequence[str],
     start: int,
-    path: Path,
-    identifier: str,
+    fence: _MarkedFence,
 ) -> tuple[list[str], int]:
-    """Return the fence body and the index of its closing fence."""
+    """Return the fence body and the index of its matching closing fence."""
     body: list[str] = []
     for index in range(start, len(lines)):
-        if lines[index].strip() == "```":
+        if _closes_fence(lines[index].strip(), fence.character, fence.length):
             return body, index
         body.append(lines[index])
-    message = f"{path}:{start}: tested-example {identifier!r} is unterminated"
+    message = (
+        f"{fence.path}:{start}: tested-example {fence.identifier!r} is unterminated"
+    )
     raise ValueError(message)
+
+
+def _closes_fence(line: str, character: str, length: int) -> bool:
+    """Return whether ``line`` closes a fence of ``character`` and ``length``."""
+    run = len(line) - len(line.lstrip(character))
+    return run >= length and line == character * run

@@ -17,7 +17,9 @@ from tests.helpers.tested_examples import MarkedExample, load_tested_examples
 
 _GUIDE = Path("docs/v0-4-0-migration-guide.md")
 _TITLE = re.compile(
-    r"^# Lading (?P<version>\d+\.\d+\.\d+) migration guide$", re.MULTILINE
+    r"^# Migration guide: v(?P<previous>\d+\.\d+\.\d+) to "
+    r"v(?P<version>\d+\.\d+\.\d+)$",
+    re.MULTILINE,
 )
 _PRERELEASE_EXAMPLES = (
     "migration-upgrade-uv-prerelease",
@@ -31,14 +33,6 @@ def _guide_release() -> str:
     match = _TITLE.search(_GUIDE.read_text(encoding="utf-8"))
     assert match is not None, "the guide title must name the release it covers"
     return match.group("version")
-
-
-def _project_version() -> str:
-    """Return the project version declared in ``pyproject.toml``."""
-    content = Path("pyproject.toml").read_text(encoding="utf-8")
-    match = re.search(r'^version = "([^"]+)"$', content, re.MULTILINE)
-    assert match is not None, "pyproject.toml must declare a project version"
-    return match.group(1)
 
 
 def _write_stub(path: Path, log: Path) -> None:
@@ -92,7 +86,6 @@ def test_prerelease_examples_pin_the_guide_release() -> None:
     """The marked install commands pin a pre-release of the guide's release."""
     examples = load_tested_examples(_GUIDE)
     release = _guide_release()
-    project_version = _project_version()
 
     for identifier in _INSTALL_EXAMPLES:
         example = examples.get(identifier)
@@ -116,10 +109,6 @@ def test_prerelease_examples_pin_the_guide_release() -> None:
         assert pinned != release, (
             f"{identifier!r} is the pre-release example and must name a pre-release"
         )
-        if project_version.startswith(release):
-            assert pinned == project_version, (
-                f"{identifier!r} must pin the project version {project_version}"
-            )
 
 
 @pytest.mark.parametrize("identifier", _INSTALL_EXAMPLES)

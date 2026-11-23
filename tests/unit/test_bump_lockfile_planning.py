@@ -387,3 +387,30 @@ def test_plan_rejects_a_cargo_home_config_override(
     assert not runner.calls, (
         "a Cargo-home override must be rejected before Git or Cargo"
     )
+
+
+def test_relative_cargo_home_is_resolved_against_the_workspace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A relative CARGO_HOME follows Cargo's workspace-root resolution."""
+    root = tmp_path.resolve() / "workspace"
+    root.mkdir()
+    _write_workspace(root)
+    cargo_home = root / "cargo-home"
+    cargo_home.mkdir()
+    config = cargo_home / "config.toml"
+    config.write_text(
+        'resolver = { lockfile-path = "/tmp/outside-409/Cargo.lock" }\n',
+        encoding="utf-8",
+    )
+    elsewhere = tmp_path.resolve() / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    runner = _RecordingRunner(metadata_root=root)
+
+    with pytest.raises(BumpPreflightError) as excinfo:
+        plan_lockfiles(root, (), runner=runner, environ={"CARGO_HOME": "cargo-home"})
+
+    assert str(config) in str(excinfo.value), (
+        "the relative Cargo home must resolve against the workspace root"
+    )

@@ -1,7 +1,7 @@
 """Non-following glob expansion beneath a confined workspace root.
 
 This module expands documentation and workspace-member patterns one component
-at a time with :func:`os.scandir` and :func:`fnmatch.fnmatchcase`. The recursive
+at a time with :func:`os.scandir` and :func:`fnmatch.fnmatch`. The recursive
 ``**`` component matches the current directory and zero or more descendant
 directories, and it never follows a symlink. Literal and wildcard components
 reject symlink matches, special files, and (for file patterns) directory
@@ -142,6 +142,9 @@ def expand_confined_glob(
         # A trailing separator selects directories. Documentation patterns
         # select regular files, so a directory selector matches nothing; it
         # must not fall back to selecting files directly under the directory.
+        if policy.unmatched is UnmatchedPolicy.ERROR:
+            message = f"{key}: pattern matched nothing: {pattern!r}"
+            raise MissingBumpTargetError(message)
         return ()
     expansion = _Expansion(
         root=root,
@@ -226,7 +229,7 @@ class _Expansion:
         if entries is None:
             return
         for entry in entries:
-            if not fnmatch.fnmatchcase(entry.name, component):
+            if not fnmatch.fnmatch(entry.name, component):
                 continue
             yield entry.name, self._entry_stat(entry)
 

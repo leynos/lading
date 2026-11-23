@@ -362,3 +362,47 @@ def test_load_bump_workspace_rejects_a_missing_member_identifier(
     assert "ghost-id" in str(excinfo.value), (
         "the model error must name the missing member identifier"
     )
+
+
+def test_load_bump_workspace_accepts_an_explicit_root_member(tmp_path: Path) -> None:
+    """A workspace that lists "." selects the root manifest and continues."""
+    root = tmp_path / "workspace"
+    (root / "crates" / "alpha").mkdir(parents=True)
+    root_manifest = root / "Cargo.toml"
+    root_manifest.write_text(
+        '[package]\nname = "root"\nversion = "0.1.0"\n\n'
+        '[workspace]\nmembers = [".", "crates/alpha"]\n',
+        encoding="utf-8",
+    )
+    alpha_manifest = root / "crates" / "alpha" / "Cargo.toml"
+    alpha_manifest.write_text(
+        '[package]\nname = "alpha"\nversion = "0.1.0"\n', encoding="utf-8"
+    )
+    payload = {
+        "workspace_root": str(root),
+        "packages": [
+            {
+                "id": "root-id",
+                "name": "root",
+                "version": "0.1.0",
+                "manifest_path": str(root_manifest),
+                "dependencies": [],
+                "publish": None,
+            },
+            {
+                "id": "alpha-id",
+                "name": "alpha",
+                "version": "0.1.0",
+                "manifest_path": str(alpha_manifest),
+                "dependencies": [],
+                "publish": None,
+            },
+        ],
+        "workspace_members": ["root-id", "alpha-id"],
+    }
+
+    graph, _runner = _load(root, payload)
+
+    assert {crate.name for crate in graph.crates} == {"root", "alpha"}, (
+        "an explicit root member must not prevent discovery of the other members"
+    )

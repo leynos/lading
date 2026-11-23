@@ -149,10 +149,17 @@ def prove_containment(
     BumpTargetExaminationError
         If a component cannot be resolved.
     """
-    strict_mode = os.path.ALLOW_MISSING if context.may_create else True
     try:
-        canonical_root = Path(os.path.realpath(root, strict=strict_mode))
-        canonical_candidate = Path(os.path.realpath(candidate, strict=strict_mode))
+        canonical_root = Path(os.path.realpath(root, strict=True))
+        if context.may_create:
+            # Only the final component may be absent; every parent must be a
+            # real, resolvable directory.
+            canonical_parent = Path(os.path.realpath(candidate.parent, strict=True))
+            canonical_candidate = canonical_parent / candidate.name
+            if candidate.exists():
+                canonical_candidate = Path(os.path.realpath(candidate, strict=True))
+        else:
+            canonical_candidate = Path(os.path.realpath(candidate, strict=True))
     except OSError as exc:
         message = f"{context.key}: cannot resolve target {context.display}: {exc}"
         raise BumpTargetExaminationError(message) from exc

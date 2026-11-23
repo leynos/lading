@@ -1,4 +1,4 @@
-# Lading 0.4.0 migration guide
+# Migration guide: v0.3.1 to v0.4.0
 
 Lading 0.4.0 raises the interpreter floor from CPython 3.13 to CPython 3.14. It
 also makes the command-line boundary explicit: diagnostics that an earlier
@@ -48,8 +48,12 @@ workspace that relied on any of the following now fails with exit status 1 and a
 - A workspace README or adopted crate README that is a symlink or a
   non-regular file.
 - A configured `bump.lockfile_manifests` entry that is absolute, traverses
-  upwards, is missing, is a symlink, or is not named `Cargo.toml`.
-- A non-empty `CARGO_RESOLVER_LOCKFILE_PATH` in the environment. Unset it.
+  upwards, is missing, is a symlink, or is not named `Cargo.toml`. This
+  validation applies when lockfile regeneration is enabled; a run with
+  `--no-rebuild-lockfiles` ignores configured entries.
+- A non-empty `CARGO_RESOLVER_LOCKFILE_PATH` in the environment, or a
+  `resolver.lockfile-path` in a Cargo configuration file. Unset the variable or
+  remove the setting.
 
 Configured lockfile manifests are resolved to the effective workspace root
 Cargo reports. A manifest that belongs to the outer workspace now reports the
@@ -59,8 +63,9 @@ discovery now runs `cargo metadata --no-deps`, which leaves a missing or stale
 lockfile untouched.
 
 A same-version rerun makes no manifest changes and therefore skips lockfile
-regeneration. Repair a stale lockfile with the printed `cargo update` command
-rather than assuming a rerun will fix it.
+regeneration. Repair a single failed manifest with
+`cargo update --workspace --manifest-path <manifest>`; a multi-manifest failure
+also prints that repair command for each listed manifest.
 
 The guarantee is validation before mutation. A failure during an actual write
 or Cargo invocation is not rolled back, and a concurrent process that changes a
@@ -174,6 +179,9 @@ A project using `pip` and a virtual environment follows the same order:
 python3.14 -m venv .venv
 .venv/bin/python -m pip install lading==0.4.0b1
 ```
+
+On Windows, the virtual environment's interpreter is `.venv\Scripts\python`; run
+`.venv\Scripts\python -m pip install lading==0.4.0b1` instead.
 
 Once the final `0.4.0` release is available, the same commands with
 `lading==0.4.0` move an installation to it; the final release carries the same

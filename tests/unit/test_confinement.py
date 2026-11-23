@@ -18,10 +18,12 @@ from lading.utils.confinement import (
     BumpTargetExaminationError,
     ConfineOptions,
     MissingBumpTargetError,
+    ProofContext,
     TargetKind,
     UnsafeBumpTargetError,
     confine_relative_path,
     establish_workspace_root,
+    prove_containment,
     validate_relative_pattern,
 )
 
@@ -356,3 +358,18 @@ def test_establish_workspace_root_reports_an_unexpandable_user() -> None:
     assert "Cannot expand workspace root" in str(excinfo.value), (
         "the diagnostic must name the unexpandable root"
     )
+
+
+def test_creatable_containment_requires_existing_parents(tmp_path: Path) -> None:
+    """A creatable target may omit only its final component."""
+    root = establish_workspace_root(tmp_path)
+    context = ProofContext(
+        key="lockfile destination",
+        display="missing/Cargo.lock",
+        may_create=True,
+    )
+
+    with pytest.raises(BumpTargetExaminationError):
+        prove_containment(root, root / "missing" / "Cargo.lock", context)
+
+    prove_containment(root, root / "Cargo.lock", context)

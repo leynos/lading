@@ -164,15 +164,7 @@ def _expand_member_patterns(
     for index, pattern in enumerate(members):
         key = f"{_MEMBERS_KEY}[{index}]"
         is_glob = bool(_GLOB_METACHARACTERS.intersection(pattern))
-        matches = expand_confined_glob(
-            root,
-            pattern,
-            key=key,
-            options=GlobOptions(
-                expect=MatchExpectation.DIRECTORY,
-                unmatched=UnmatchedPolicy.ERROR,
-            ),
-        )
+        matches = _member_matches(root, pattern, key=key)
         for match in matches:
             if is_glob and _is_excluded(match.parts, excluded):
                 continue
@@ -182,6 +174,32 @@ def _expand_member_patterns(
 
 
 _GLOB_METACHARACTERS: typ.Final[frozenset[str]] = frozenset("*?[")
+
+
+def _member_matches(
+    root: Path,
+    pattern: str,
+    *,
+    key: str,
+) -> tuple[ConfinedPath, ...]:
+    """Expand one member pattern, accepting an explicit ``"."`` for the root."""
+    if _is_root_member(pattern):
+        return (ConfinedPath(root=root, parts=()),)
+    return expand_confined_glob(
+        root,
+        pattern,
+        key=key,
+        options=GlobOptions(
+            expect=MatchExpectation.DIRECTORY,
+            unmatched=UnmatchedPolicy.ERROR,
+        ),
+    )
+
+
+def _is_root_member(pattern: str) -> bool:
+    """Return whether ``pattern`` explicitly names the workspace root."""
+    stripped = pattern.strip()
+    return stripped in {".", "./", ".\\"}
 
 
 def _is_excluded(

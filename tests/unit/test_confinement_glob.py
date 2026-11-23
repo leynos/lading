@@ -117,6 +117,7 @@ def test_expand_confined_glob_does_not_fail_when_one_branch_matches(
     """A strict policy errors only when the whole expansion is empty."""
     root = tmp_path / "workspace"
     (root / "a").mkdir(parents=True)
+    (root / "b").mkdir()
     (root / "a" / "README.md").write_text("", encoding="utf-8")
     matches = expand_confined_glob(
         root,
@@ -232,4 +233,24 @@ def test_expand_confined_glob_rejects_a_special_intermediate_component(
 
     assert "special file" in str(excinfo.value), (
         "an intermediate special file must be reported as a special file"
+    )
+
+
+def test_expand_confined_glob_applies_the_policy_to_a_directory_selector(
+    tmp_path: Path,
+) -> None:
+    """A directory-only selector still reports an unmatched pattern."""
+    root = tmp_path / "workspace"
+    (root / "docs").mkdir(parents=True)
+
+    with pytest.raises(MissingBumpTargetError) as excinfo:
+        expand_confined_glob(
+            root,
+            "docs/",
+            key="globs",
+            options=GlobOptions(unmatched=UnmatchedPolicy.ERROR),
+        )
+
+    assert "docs/" in str(excinfo.value), (
+        "the diagnostic must name the directory-only pattern"
     )

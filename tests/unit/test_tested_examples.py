@@ -58,3 +58,26 @@ def test_loader_rejects_a_duplicate_identifier(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="duplicate tested-example"):
         load_tested_examples(path)
+
+
+def test_loader_rejects_an_unmarked_tilde_fence(tmp_path: Path) -> None:
+    """A tilde fence without a marker fails the load."""
+    path = _write(tmp_path, "~~~bash\necho one\n~~~\n")
+
+    with pytest.raises(ValueError, match="unmarked fenced example"):
+        load_tested_examples(path)
+
+
+def test_loader_matches_a_longer_closing_fence(tmp_path: Path) -> None:
+    """A four-backtick fence closes only on four or more backticks."""
+    path = _write(
+        tmp_path,
+        "<!-- tested-example: long -->\n````bash\necho ``` inside\n````\n",
+    )
+
+    example = load_tested_examples(path)["long"]
+
+    assert example.language == "bash", "the info string follows the delimiter run"
+    assert "echo ``` inside" in example.body, (
+        "a shorter backtick run inside the fence must not close it"
+    )

@@ -467,10 +467,18 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
 - [x] 2026-11-23: Third-review remediation committed. Added hard-link
   rejection, strict canonical resolution, a split root/support module,
   CARGO_HOME-root configuration probing, whole-glob unmatched semantics,
-  special intermediate-component rejection, directory-only trailing
-  separators, restore-original proposal removal, typed README callbacks,
-  strict tested-example loading, executed migration examples in an isolated
-  boundary, and stronger regeneration observation in the resolution tests.
+  special intermediate-component rejection, directory-only trailing separators,
+  restore-original proposal removal, typed README callbacks, strict
+  tested-example loading, executed migration examples in an isolated boundary,
+  and stronger regeneration observation in the resolution tests.
+- [x] 2026-11-23: Fourth-review remediation committed. Accepted an explicit
+  `"."` root member, matched documentation names with `fnmatch.fnmatch`,
+  applied the unmatched policy to directory-only selectors, resolved a relative
+  `CARGO_HOME` against the workspace root, required existing parents in
+  creatable containment, copied recorded environments, and extended the example
+  loader to tilde and length-matched fences. The migration guide is retitled
+  with both endpoints and no longer ties its historical pins to the current
+  project version.
 - [ ] EP-M5 release: tag and release `v0.4.0b1` after review convergence, then
   record the tag commit on issue #409.
 

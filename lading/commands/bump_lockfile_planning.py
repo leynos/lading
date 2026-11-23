@@ -109,7 +109,14 @@ def _cargo_config_paths(
     for directory in (workspace_root, *workspace_root.parents):
         paths.extend(_config_files(directory / ".cargo"))
     cargo_home = environ.get("CARGO_HOME")
-    home = Path(cargo_home).expanduser() if cargo_home else Path.home() / ".cargo"
+    if cargo_home:
+        home = Path(cargo_home).expanduser()
+        if not home.is_absolute():
+            # Cargo runs with cwd=workspace_root, so a relative CARGO_HOME is
+            # relative to the workspace, not to this process's directory.
+            home = workspace_root / home
+    else:
+        home = Path.home() / ".cargo"
     paths.extend(_config_files(home))
     return tuple(dict.fromkeys(paths))
 

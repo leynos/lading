@@ -77,7 +77,7 @@ class RecordingCommandRunner:
             RecordedInvocation(
                 command=argv,
                 cwd=cwd,
-                env=env,
+                env=dict(env) if env is not None else None,
                 echo_stdout=echo_stdout,
             )
         )
