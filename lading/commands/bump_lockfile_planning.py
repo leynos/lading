@@ -14,6 +14,7 @@ validated by the preflight.
 import collections.abc as cabc
 import dataclasses as dc
 import os
+import tomllib
 import typing as typ
 from pathlib import Path, PurePosixPath
 
@@ -58,19 +59,29 @@ class LockfilePlan:
     lockfiles: tuple[Path, ...]
 
 
-def reject_lockfile_override(environ: cabc.Mapping[str, str]) -> None:
+def reject_lockfile_override(
+    environ: cabc.Mapping[str, str],
+    workspace_root: Path,
+) -> None:
     """Reject a Cargo lockfile-path override before planning.
+
+    Cargo accepts the override from ``CARGO_RESOLVER_LOCKFILE_PATH`` or from
+    ``resolver.lockfile-path`` in any configuration file it layers. Either
+    route would make Cargo write a lockfile the validated plan does not name,
+    so both are rejected.
 
     Parameters
     ----------
     environ : cabc.Mapping[str, str]
         Environment to inspect.
+    workspace_root : Path
+        Canonical workspace root, used to locate layered configuration files.
 
     Raises
     ------
     BumpPreflightError
-        If ``CARGO_RESOLVER_LOCKFILE_PATH`` is set to a non-empty value, because
-        Cargo would then write a lockfile the validated plan does not name.
+        If the environment variable or a configuration file sets a non-empty
+        lockfile path.
     """
     override = environ.get(_LOCKFILE_OVERRIDE_ENV_VAR)
     if override:
@@ -79,6 +90,48 @@ def reject_lockfile_override(environ: cabc.Mapping[str, str]) -> None:
             "Cargo writes the lockfiles the bump plan validated"
         )
         raise BumpPreflightError(message)
+    for config_path in _cargo_config_paths(workspace_root, environ):
+        configured = _configured_lockfile_path(config_path)
+        if configured:
+            message = (
+                f"{config_path} sets resolver.lockfile-path to {configured!r}; "
+                "remove it so Cargo writes the lockfiles the bump plan validated"
+            )
+            raise BumpPreflightError(message)
+
+
+def _cargo_config_paths(
+    workspace_root: Path,
+    environ: cabc.Mapping[str, str],
+) -> tuple[Path, ...]:
+    """Return the Cargo configuration files that could layer over the root."""
+    directories = [workspace_root]
+    directories.extend(workspace_root.parents)
+    cargo_home = environ.get("CARGO_HOME")
+    if cargo_home:
+        directories.append(Path(cargo_home).expanduser())
+    paths: list[Path] = []
+    for directory in directories:
+        for name in ("config.toml", "config"):
+            candidate = directory / ".cargo" / name
+            if candidate.is_file():
+                paths.append(candidate)
+    return tuple(paths)
+
+
+def _configured_lockfile_path(config_path: Path) -> str | None:
+    """Return ``resolver.lockfile-path`` from ``config_path`` when set."""
+    try:
+        with config_path.open("rb") as handle:
+            document = tomllib.load(handle)
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        message = f"cannot read Cargo configuration {config_path}: {exc}"
+        raise BumpPreflightError(message) from exc
+    resolver = document.get("resolver")
+    if not isinstance(resolver, cabc.Mapping):
+        return None
+    configured = resolver.get("lockfile-path")
+    return configured if isinstance(configured, str) and configured else None
 
 
 def plan_lockfiles(
@@ -118,7 +171,10 @@ def plan_lockfiles(
     LockfileRegenerationError
         If a merged manifest is not named ``Cargo.toml``.
     """  # ruff: ignore[docstring-extraneous-exception]  # delegated to the helpers
-    reject_lockfile_override(os.environ if environ is None else environ)
+    reject_lockfile_override(
+        os.environ if environ is None else environ,
+        workspace_root,
+    )
     merged = merge_discovered_manifests(
         workspace_root, lockfile_manifests, runner=runner
     )

@@ -18,10 +18,10 @@ if typ.TYPE_CHECKING:
     from pathlib import Path
 
 
-def test_snapshot_records_a_permission_failure_as_an_unlisted_directory(
+def test_snapshot_propagates_a_permission_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A permission failure the test injected leaves only the directory entry."""
+    """A permission failure is preserved rather than reported as an empty list."""
     (tmp_path / "dir").mkdir()
     (tmp_path / "dir" / "file").write_text("content", encoding="utf-8")
     target = tmp_path.resolve() / "dir"
@@ -37,13 +37,8 @@ def test_snapshot_records_a_permission_failure_as_an_unlisted_directory(
 
     monkeypatch.setattr(os, "scandir", denying_scandir)
 
-    entries = snapshot_tree(tmp_path)
-
-    relative_paths = {entry.relative for entry in entries}
-    assert "dir" in relative_paths, "the unreadable directory must be recorded"
-    assert "dir/file" not in relative_paths, (
-        "the children of an unreadable directory cannot be observed"
-    )
+    with pytest.raises(PermissionError):
+        snapshot_tree(tmp_path)
 
 
 def test_snapshot_propagates_an_unrelated_examination_error(

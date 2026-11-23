@@ -1,7 +1,6 @@
 """Integration tests for documentation updates in :mod:`lading.commands.bump`."""
 
 import dataclasses as dc
-import logging
 import pathlib
 import typing as typ
 
@@ -31,11 +30,10 @@ class _ReadmeTransposeScenario:
     check_version_unchanged: bool = False
 
 
-def test_readme_transposition_failure_is_logged_at_pipeline_boundary(
+def test_readme_transposition_failure_propagates_from_preparation(
     tmp_path: pathlib.Path,
-    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """README failures are logged once with the affected crate name."""
+    """A README failure propagates unchanged for the CLI to diagnose."""
     workspace, _manifests = _build_workspace_with_internal_deps(
         tmp_path,
         specs=(_CrateSpec(name="alpha", readme_workspace=True),),
@@ -46,15 +44,11 @@ def test_readme_transposition_failure_is_logged_at_pipeline_boundary(
         bump.BumpOptions(configuration=configuration, workspace=workspace),
     )
 
-    with (
-        caplog.at_level(logging.ERROR, logger=bump_pipeline._log.name),
-        pytest.raises(ReadmeTranspositionError),
-    ):
+    with pytest.raises(ReadmeTranspositionError) as excinfo:
         bump_pipeline._prepare_plan(context, "1.2.3")
 
-    assert caplog.messages == ["README transposition failed for crate 'alpha'"], (
-        "the pipeline boundary must log the README failure once with the "
-        "affected crate name"
+    assert "Workspace README.md is required" in str(excinfo.value), (
+        "preparation must propagate the actionable README diagnostic"
     )
 
 

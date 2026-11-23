@@ -9,6 +9,7 @@ import collections.abc as cabc
 import dataclasses as dc
 import json
 import typing as typ
+from pathlib import Path
 
 import pytest
 
@@ -21,8 +22,6 @@ from lading.workspace import WorkspaceModelError
 from lading.workspace.confined_discovery import load_bump_workspace
 
 if typ.TYPE_CHECKING:
-    from pathlib import Path
-
     from lading.runtime import CommandRunner
 
 
@@ -55,11 +54,12 @@ def _write_manifest(path: Path, text: str) -> Path:
 
 
 def _member_package(root: Path, name: str) -> dict[str, typ.Any]:
-    """Return a Cargo metadata package entry for ``name`` under ``root``."""
+    """Return a Cargo metadata package entry for the crate at ``name``."""
+    crate_name = Path(name).name
     manifest = root / "crates" / name / "Cargo.toml"
     return {
-        "id": f"{name}-id",
-        "name": name,
+        "id": f"{crate_name}-id",
+        "name": crate_name,
         "version": "0.1.0",
         "manifest_path": str(manifest),
         "dependencies": [],
@@ -72,7 +72,7 @@ def _payload(root: Path, names: cabc.Sequence[str]) -> dict[str, typ.Any]:
     return {
         "workspace_root": str(root),
         "packages": [_member_package(root, name) for name in names],
-        "workspace_members": [f"{name}-id" for name in names],
+        "workspace_members": [f"{Path(name).name}-id" for name in names],
     }
 
 
@@ -84,7 +84,7 @@ def _prepare_workspace(
     excludes: cabc.Sequence[str] = (),
     workspace_table: str | None = None,
 ) -> None:
-    """Write a workspace manifest and one manifest per named crate."""
+    """Write a workspace manifest and one manifest per named relative path."""
     members_literal = ", ".join(f'"{member}"' for member in members)
     excludes_literal = ", ".join(f'"{entry}"' for entry in excludes)
     workspace = workspace_table or (
@@ -92,10 +92,11 @@ def _prepare_workspace(
         + (f"exclude = [{excludes_literal}]\n" if excludes else "")
     )
     _write_manifest(root / "Cargo.toml", workspace)
-    for name in names:
+    for relative in names:
+        crate_name = Path(relative).name
         _write_manifest(
-            root / "crates" / name / "Cargo.toml",
-            f'[package]\nname = "{name}"\nversion = "0.1.0"\n',
+            root / "crates" / relative / "Cargo.toml",
+            f'[package]\nname = "{crate_name}"\nversion = "0.1.0"\n',
         )
 
 
@@ -168,18 +169,35 @@ def test_load_bump_workspace_rejects_a_member_without_a_manifest(
 
 
 def test_load_bump_workspace_applies_exclusions(tmp_path: Path) -> None:
-    """Exclude a member from the declared set even when a glob matches it."""
+    """An excluded glob match is removed before Cargo's report is cross-checked."""
     _prepare_workspace(
         tmp_path,
         ["crates/*"],
         ["alpha", "beta"],
         excludes=["crates/beta"],
     )
-    graph, runner = _load(tmp_path, _payload(tmp_path, ["alpha", "beta"]))
+    graph, runner = _load(tmp_path, _payload(tmp_path, ["alpha"]))
     assert runner.calls, "the metadata call must still run"
-    assert {crate.name for crate in graph.crates} == {"alpha", "beta"}, (
-        "Cargo's reported member set is authoritative for the graph"
+    assert {crate.name for crate in graph.crates} == {"alpha"}, (
+        "the excluded glob match must not be required from Cargo's report"
     )
+
+
+def test_load_bump_workspace_excludes_descendants_of_a_glob(tmp_path: Path) -> None:
+    """An excluded directory removes glob matches beneath it, as Cargo does."""
+    _prepare_workspace(
+        tmp_path,
+        ["crates/*/app"],
+        ["retired/app", "live/app"],
+        excludes=["crates/retired"],
+    )
+    graph, _runner = _load(tmp_path, _payload(tmp_path, ["live/app"]))
+    assert len(graph.crates) == 1, (
+        "only the live crate's glob match may remain a member"
+    )
+    assert (
+        graph.crates[0].root_path == tmp_path.resolve() / "crates" / "live" / "app"
+    ), "the remaining member must be the live crate, not the retired one"
 
 
 def test_load_bump_workspace_accepts_a_virtual_workspace(tmp_path: Path) -> None:

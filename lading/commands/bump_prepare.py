@@ -220,19 +220,15 @@ def prepare_readmes(context: _BumpContext, builder: PlanBuilder) -> None:
     ReadmeTranspositionError
         If the workspace README is missing or a crate lies outside the
         workspace root.
-    """
+    """  # ruff: ignore[docstring-extraneous-exception]  # propagated from bump_readme
     opted_in = [
         crate for crate in context.workspace.crates if crate.readme_is_workspace
     ]
     if not opted_in:
         return
-    try:
-        source_text = bump_readme.read_workspace_readme(
-            context.root_path, read_source=builder.read
-        )
-    except bump_readme.ReadmeTranspositionError:
-        _log.exception("README transposition failed for crate %r", opted_in[0].name)
-        raise
+    source_text = bump_readme.read_workspace_readme(
+        context.root_path, read_source=builder.read
+    )
     for crate in opted_in:
         _prepare_readme(context.root_path, crate, source_text, builder)
     _log.debug("Prepared %d README write(s)", len(opted_in))
@@ -245,11 +241,7 @@ def _prepare_readme(
     builder: PlanBuilder,
 ) -> None:
     """Prepare one crate's adopted README."""
-    try:
-        content = bump_readme.prepare_readme_content(root_path, crate, source_text)
-    except bump_readme.ReadmeTranspositionError:
-        _log.exception("README transposition failed for crate %r", crate.name)
-        raise
+    content = bump_readme.prepare_readme_content(root_path, crate, source_text)
     key = f"workspace member {crate.name!r} README"
     relative_crate = bump_readme.resolve_crate_relative_path(root_path, crate)
     pattern = PurePosixPath(relative_crate.as_posix(), "README.md").as_posix()

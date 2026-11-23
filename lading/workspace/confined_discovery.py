@@ -163,6 +163,7 @@ def _expand_member_patterns(
     declared: dict[tuple[str, ...], str] = {}
     for index, pattern in enumerate(members):
         key = f"{_MEMBERS_KEY}[{index}]"
+        is_glob = bool(_GLOB_METACHARACTERS.intersection(pattern))
         matches = expand_confined_glob(
             root,
             pattern,
@@ -173,11 +174,36 @@ def _expand_member_patterns(
             ),
         )
         for match in matches:
-            if match.parts in excluded:
+            if is_glob and _is_excluded(match.parts, excluded):
                 continue
             _require_member_manifest(root, match, key=key, pattern=pattern)
             declared[match.parts] = pattern
     return declared
+
+
+_GLOB_METACHARACTERS: typ.Final[frozenset[str]] = frozenset("*?[")
+
+
+def _is_excluded(
+    member_parts: tuple[str, ...],
+    excluded: cabc.Set[tuple[str, ...]],
+) -> bool:
+    """Return whether ``member_parts`` is ``excluded`` or lies beneath it.
+
+    Cargo applies an exclusion to a matching directory and its descendants;
+    an exact comparison would leave ``crates/retired/app`` a member when
+    ``crates/retired`` is excluded. Explicitly listed members keep Cargo's
+    precedence, so only glob-derived matches are filtered.
+
+    Returns
+    -------
+    bool
+        ``True`` when the member is excluded or lies beneath an exclusion.
+    """
+    return any(
+        member_parts[: len(excluded_parts)] == excluded_parts
+        for excluded_parts in excluded
+    )
 
 
 def _expand_exclusions(

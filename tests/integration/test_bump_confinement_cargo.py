@@ -20,7 +20,11 @@ from lading.commands.bump_lockfile_planning import (
     plan_lockfiles,
 )
 from lading.commands.bump_lockfile_regeneration import regenerate_planned
-from lading.utils.confinement import MissingBumpTargetError, UnsafeBumpTargetError
+from lading.utils.confinement import (
+    BumpPreflightError,
+    MissingBumpTargetError,
+    UnsafeBumpTargetError,
+)
 from lading.workspace import load_cargo_metadata
 from lading.workspace.confined_discovery import load_bump_workspace
 from tests.helpers.fs_snapshot import changed_paths, snapshot_tree
@@ -330,4 +334,42 @@ def test_workspace_reached_through_a_symlinked_ancestor_is_valid(
     )
     assert {crate.name for crate in graph.crates} == {"core", "app"}, (
         "the symlinked ancestor must not hide any member"
+    )
+
+
+def test_cargo_config_lockfile_override_is_rejected_before_writing(
+    tmp_path: Path,
+) -> None:
+    """A resolver.lockfile-path in Cargo configuration cannot redirect a bump."""
+    root = tmp_path.resolve() / "workspace"
+    _write_workspace(root)
+    outside = tmp_path.resolve() / "outside" / "Cargo.lock"
+    config = root / ".cargo" / "config.toml"
+    config.parent.mkdir()
+    config.write_text(f'[resolver]\nlockfile-path = "{outside}"\n', encoding="utf-8")
+    workspace = load_bump_workspace(root)
+    before = snapshot_tree(root)
+
+    with pytest.raises(BumpPreflightError) as excinfo:
+        bump.run(
+            root,
+            "1.2.3",
+            options=bump.BumpOptions(
+                rebuild_lockfiles=True,
+                configuration=_make_config(),
+                workspace=workspace,
+            ),
+        )
+
+    assert str(config) in str(excinfo.value), (
+        "the diagnostic must name the configuration file carrying the override"
+    )
+    assert not changed_paths(before, snapshot_tree(root)), (
+        "a rejected lockfile plan must leave every manifest unchanged"
+    )
+    assert not outside.exists(), (
+        "the external lockfile named by the override must not be written"
+    )
+    assert not (root / "Cargo.lock").exists(), (
+        "no lockfile may be created before the override is rejected"
     )

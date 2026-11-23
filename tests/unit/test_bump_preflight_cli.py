@@ -16,17 +16,21 @@ from pathlib import Path
 
 import pytest
 
-from lading import cli
 from tests.helpers.bump_cli_workspace import (
-    CliWorkspace,
     WorkspaceOptions,
     create_cli_workspace,
 )
-from tests.helpers.fs_snapshot import changed_paths, snapshot_tree
 from tests.helpers.recording_runner import RecordingCommandRunner
+from tests.unit.bump_cli_harness import (
+    CliSeams,
+    assert_rejected,
+    outside_sentinel,
+    run_bump,
+)
 
 if typ.TYPE_CHECKING:
     from _pytest.monkeypatch import MonkeyPatch
+
 
 _ESCAPING_MEMBERS = [
     pytest.param("../outside", id="parent-traversal"),
@@ -45,28 +49,6 @@ _ESCAPING_LOCKFILES = [
 ]
 
 
-def _run_bump(
-    workspace: CliWorkspace,
-    runner: RecordingCommandRunner,
-    monkeypatch: MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-    *,
-    extra_args: cabc.Sequence[str] = (),
-) -> tuple[int, str, str]:
-    """Run ``lading bump`` in process and return status, stdout, and stderr."""
-    runner.install(monkeypatch)
-    capsys.readouterr()
-    exit_code = cli.main([
-        "--workspace-root",
-        str(workspace.root),
-        "bump",
-        "1.2.3",
-        *extra_args,
-    ])
-    captured = capsys.readouterr()
-    return exit_code, captured.out, captured.err
-
-
 def _outside_sentinel(tmp_path: Path) -> Path:
     """Create and return an external sentinel file outside the workspace."""
     outside = tmp_path / "outside"
@@ -74,43 +56,6 @@ def _outside_sentinel(tmp_path: Path) -> Path:
     sentinel = outside / "README.md"
     sentinel.write_text("external\n", encoding="utf-8")
     return sentinel
-
-
-def _assert_rejected(
-    *,
-    workspace: CliWorkspace,
-    runner: RecordingCommandRunner,
-    run: cabc.Callable[[], tuple[int, str, str]],
-    expected: str,
-) -> None:
-    """Run ``run`` and assert a clean preflight rejection."""
-    outside = workspace.root.parent / "outside"
-    sentinel = outside / "README.md"
-    before_workspace = snapshot_tree(workspace.root)
-    before_sentinel = snapshot_tree(outside)
-    exit_code, stdout, stderr = run()
-
-    assert exit_code == 1, f"a rejected plan must exit 1; stderr:\n{stderr}"
-    assert "Preflight error:" in stderr, (
-        f"the diagnostic must use the preflight prefix; stderr:\n{stderr}"
-    )
-    assert expected in stderr, (
-        f"the diagnostic must name {expected!r}; stderr:\n{stderr}"
-    )
-    assert not stdout, "a rejected plan must not write a summary"
-    assert not changed_paths(before_workspace, snapshot_tree(workspace.root)), (
-        "a rejected plan must leave the workspace byte-for-byte unchanged"
-    )
-    assert not changed_paths(before_sentinel, snapshot_tree(outside)), (
-        "a rejected plan must leave the external sentinel unchanged"
-    )
-    assert sentinel.read_text(encoding="utf-8") == "external\n", (
-        "the sentinel text must be untouched"
-    )
-    assert not (workspace.root / "Cargo.lock").exists(), (
-        "a rejected plan must not create a lockfile"
-    )
-    assert runner.update_calls() == [], "a rejected plan must not run cargo update"
 
 
 @pytest.mark.parametrize("member_pattern", _ESCAPING_MEMBERS)
@@ -121,7 +66,7 @@ def test_bump_rejects_an_unsafe_member_pattern_before_cargo(
     member_pattern: str,
 ) -> None:
     """An unsafe member pattern is rejected with no metadata call."""
-    _outside_sentinel(tmp_path)
+    outside_sentinel(tmp_path)
     workspace = create_cli_workspace(tmp_path / "workspace")
     root_manifest = workspace.root / "Cargo.toml"
     root_manifest.write_text(
@@ -132,10 +77,10 @@ def test_bump_rejects_an_unsafe_member_pattern_before_cargo(
     )
     runner = RecordingCommandRunner(metadata=workspace.metadata)
 
-    _assert_rejected(
+    assert_rejected(
         workspace=workspace,
         runner=runner,
-        run=lambda: _run_bump(workspace, runner, monkeypatch, capsys),
+        run=lambda: run_bump(workspace, runner, CliSeams(monkeypatch, capsys)),
         expected=member_pattern,
     )
     assert runner.metadata_calls() == [], (
@@ -149,7 +94,7 @@ def test_bump_rejects_a_missing_literal_member(
     monkeypatch: MonkeyPatch,
 ) -> None:
     """A literal member pattern naming no directory is rejected."""
-    _outside_sentinel(tmp_path)
+    outside_sentinel(tmp_path)
     workspace = create_cli_workspace(tmp_path / "workspace")
     (workspace.root / "Cargo.toml").write_text(
         '[workspace]\nmembers = ["crates/alpha", "crates/missing"]\n\n'
@@ -158,10 +103,10 @@ def test_bump_rejects_a_missing_literal_member(
     )
     runner = RecordingCommandRunner(metadata=workspace.metadata)
 
-    _assert_rejected(
+    assert_rejected(
         workspace=workspace,
         runner=runner,
-        run=lambda: _run_bump(workspace, runner, monkeypatch, capsys),
+        run=lambda: run_bump(workspace, runner, CliSeams(monkeypatch, capsys)),
         expected="crates/missing",
     )
     assert runner.metadata_calls() == [], (
@@ -175,7 +120,7 @@ def test_bump_rejects_a_symlinked_member_directory(
     monkeypatch: MonkeyPatch,
 ) -> None:
     """A member directory that is a symlink is rejected before Cargo."""
-    _outside_sentinel(tmp_path)
+    outside_sentinel(tmp_path)
     workspace = create_cli_workspace(tmp_path / "workspace")
     (workspace.root / "crates" / "linked").symlink_to(
         tmp_path / "outside", target_is_directory=True
@@ -187,10 +132,10 @@ def test_bump_rejects_a_symlinked_member_directory(
     )
     runner = RecordingCommandRunner(metadata=workspace.metadata)
 
-    _assert_rejected(
+    assert_rejected(
         workspace=workspace,
         runner=runner,
-        run=lambda: _run_bump(workspace, runner, monkeypatch, capsys),
+        run=lambda: run_bump(workspace, runner, CliSeams(monkeypatch, capsys)),
         expected="crates/linked",
     )
     assert runner.metadata_calls() == [], (
@@ -206,17 +151,17 @@ def test_bump_rejects_an_escaping_documentation_glob(
     glob_pattern: str,
 ) -> None:
     """An escaping documentation glob is rejected after manifests are planned."""
-    _outside_sentinel(tmp_path)
+    outside_sentinel(tmp_path)
     workspace = create_cli_workspace(
         tmp_path / "workspace",
         options=WorkspaceOptions(documentation_globs=(glob_pattern,)),
     )
     runner = RecordingCommandRunner(metadata=workspace.metadata)
 
-    _assert_rejected(
+    assert_rejected(
         workspace=workspace,
         runner=runner,
-        run=lambda: _run_bump(workspace, runner, monkeypatch, capsys),
+        run=lambda: run_bump(workspace, runner, CliSeams(monkeypatch, capsys)),
         expected=glob_pattern,
     )
 
@@ -227,7 +172,7 @@ def test_bump_rejects_a_symlinked_documentation_target(
     monkeypatch: MonkeyPatch,
 ) -> None:
     """A documentation glob matching a symlink is rejected."""
-    sentinel = _outside_sentinel(tmp_path)
+    sentinel = outside_sentinel(tmp_path)
     workspace = create_cli_workspace(
         tmp_path / "workspace",
         options=WorkspaceOptions(documentation_globs=("docs/*.md",)),
@@ -237,10 +182,10 @@ def test_bump_rejects_a_symlinked_documentation_target(
     (workspace.root / "docs" / "real.md").write_text("", encoding="utf-8")
     runner = RecordingCommandRunner(metadata=workspace.metadata)
 
-    _assert_rejected(
+    assert_rejected(
         workspace=workspace,
         runner=runner,
-        run=lambda: _run_bump(workspace, runner, monkeypatch, capsys),
+        run=lambda: run_bump(workspace, runner, CliSeams(monkeypatch, capsys)),
         expected="docs/linked.md",
     )
 
@@ -251,7 +196,7 @@ def test_bump_rejects_a_symlinked_readme_destination(
     monkeypatch: MonkeyPatch,
 ) -> None:
     """An adopted README whose destination is a symlink is rejected."""
-    sentinel = _outside_sentinel(tmp_path)
+    sentinel = outside_sentinel(tmp_path)
     workspace = create_cli_workspace(
         tmp_path / "workspace",
         options=WorkspaceOptions(
@@ -263,10 +208,10 @@ def test_bump_rejects_a_symlinked_readme_destination(
     crate_readme.symlink_to(sentinel)
     runner = RecordingCommandRunner(metadata=workspace.metadata)
 
-    _assert_rejected(
+    assert_rejected(
         workspace=workspace,
         runner=runner,
-        run=lambda: _run_bump(workspace, runner, monkeypatch, capsys),
+        run=lambda: run_bump(workspace, runner, CliSeams(monkeypatch, capsys)),
         expected="crates/alpha/README.md",
     )
 
@@ -277,7 +222,7 @@ def test_bump_reports_an_unreadable_documentation_target(
     monkeypatch: MonkeyPatch,
 ) -> None:
     """A selected documentation file that cannot be read is a preflight error."""
-    _outside_sentinel(tmp_path)
+    outside_sentinel(tmp_path)
     workspace = create_cli_workspace(
         tmp_path / "workspace",
         options=WorkspaceOptions(documentation_globs=("docs/*.md",)),
@@ -301,9 +246,9 @@ def test_bump_reports_an_unreadable_documentation_target(
         """Run the CLI with the injected listing failure active only there."""
         with monkeypatch.context() as scoped:
             scoped.setattr(os, "scandir", failing_scandir)
-            return _run_bump(workspace, runner, monkeypatch, capsys)
+            return run_bump(workspace, runner, CliSeams(monkeypatch, capsys))
 
-    _assert_rejected(
+    assert_rejected(
         workspace=workspace,
         runner=runner,
         run=run_with_failing_scandir,
@@ -319,7 +264,7 @@ def test_bump_rejects_an_invalid_lockfile_manifest_before_any_write(
     lockfile_manifest: str,
 ) -> None:
     """An invalid configured lockfile manifest fails before every write."""
-    _outside_sentinel(tmp_path)
+    outside_sentinel(tmp_path)
     workspace = create_cli_workspace(
         tmp_path / "workspace",
         options=WorkspaceOptions(lockfile_manifests=(lockfile_manifest,)),
@@ -329,10 +274,10 @@ def test_bump_rejects_an_invalid_lockfile_manifest_before_any_write(
         metadata_by_manifest=lambda manifest: {"workspace_root": str(tmp_path)},
     )
 
-    _assert_rejected(
+    assert_rejected(
         workspace=workspace,
         runner=runner,
-        run=lambda: _run_bump(workspace, runner, monkeypatch, capsys),
+        run=lambda: run_bump(workspace, runner, CliSeams(monkeypatch, capsys)),
         expected=lockfile_manifest,
     )
     assert runner.update_calls() == [], (
@@ -346,118 +291,16 @@ def test_bump_rejects_the_lockfile_path_override(
     monkeypatch: MonkeyPatch,
 ) -> None:
     """An inherited Cargo lockfile-path override is rejected."""
-    _outside_sentinel(tmp_path)
+    outside_sentinel(tmp_path)
     workspace = create_cli_workspace(tmp_path / "workspace")
     runner = RecordingCommandRunner(metadata=workspace.metadata)
     monkeypatch.setenv("CARGO_RESOLVER_LOCKFILE_PATH", str(tmp_path / "elsewhere"))
 
-    _assert_rejected(
+    assert_rejected(
         workspace=workspace,
         runner=runner,
-        run=lambda: _run_bump(workspace, runner, monkeypatch, capsys),
+        run=lambda: run_bump(workspace, runner, CliSeams(monkeypatch, capsys)),
         expected="CARGO_RESOLVER_LOCKFILE_PATH",
-    )
-
-
-def test_live_bump_writes_and_regenerates_as_planned(
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-    monkeypatch: MonkeyPatch,
-) -> None:
-    """A confined workspace bumps, and discovery used the exact Cargo flags."""
-    workspace = create_cli_workspace(tmp_path / "workspace")
-    runner = RecordingCommandRunner(metadata=workspace.metadata)
-
-    exit_code, stdout, stderr = _run_bump(workspace, runner, monkeypatch, capsys)
-
-    assert exit_code == 0, f"a confined bump must succeed; stderr:\n{stderr}"
-    assert "Updated version to 1.2.3" in stdout, (
-        "the live run must report the applied version"
-    )
-    expected_metadata_calls = [
-        ("cargo", "metadata", "--format-version", "1", "--no-deps"),
-        (
-            "cargo",
-            "metadata",
-            "--format-version",
-            "1",
-            "--no-deps",
-            "--manifest-path",
-            str(workspace.root / "Cargo.toml"),
-        ),
-    ]
-    assert runner.metadata_calls() == expected_metadata_calls, (
-        "discovery must pass --no-deps, then confirm the root for lockfile planning"
-    )
-    assert [command[:4] for command in runner.update_calls()] == [
-        ("cargo", "update", "--workspace", "--manifest-path")
-    ], "the live run must regenerate the planned root lockfile"
-    for manifest in (
-        workspace.root / "Cargo.toml",
-        *workspace.crate_manifests.values(),
-    ):
-        assert 'version = "1.2.3"' in manifest.read_text(encoding="utf-8"), (
-            f"{manifest} must carry the bumped version"
-        )
-
-
-def test_dry_run_reports_the_plan_without_writing(
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-    monkeypatch: MonkeyPatch,
-) -> None:
-    """A dry run reports the same targets and leaves the workspace unchanged."""
-    workspace = create_cli_workspace(
-        tmp_path / "workspace",
-        options=WorkspaceOptions(documentation_globs=("README.md",)),
-    )
-    (workspace.root / "README.md").write_text(
-        '```toml\n[dependencies]\nalpha = "0.1.0"\n```\n', encoding="utf-8"
-    )
-    before = snapshot_tree(workspace.root)
-    runner = RecordingCommandRunner(metadata=workspace.metadata)
-
-    exit_code, stdout, stderr = _run_bump(
-        workspace, runner, monkeypatch, capsys, extra_args=("--dry-run",)
-    )
-
-    assert exit_code == 0, f"a dry run must succeed; stderr:\n{stderr}"
-    assert "Dry run;" in stdout, "the dry run must label its summary"
-    assert "- README.md (documentation)" in stdout, (
-        "the dry run must name the documentation target it would rewrite"
-    )
-    assert not changed_paths(before, snapshot_tree(workspace.root)), (
-        "a dry run must not modify any file"
-    )
-    assert runner.update_calls() == [], "a dry run must not regenerate lockfiles"
-
-
-def test_root_member_manifest_is_written_once(
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-    monkeypatch: MonkeyPatch,
-) -> None:
-    """A root package that is also the sole member is reported once."""
-    workspace = create_cli_workspace(
-        tmp_path / "workspace",
-        options=WorkspaceOptions(members=(), root_package=True),
-    )
-    runner = RecordingCommandRunner(metadata=workspace.metadata)
-
-    exit_code, stdout, stderr = _run_bump(workspace, runner, monkeypatch, capsys)
-
-    assert exit_code == 0, f"a root-member bump must succeed; stderr:\n{stderr}"
-    root_text = (workspace.root / "Cargo.toml").read_text(encoding="utf-8")
-    assert root_text.count('version = "1.2.3"') == 2, (
-        "both the package and workspace.package versions must be updated"
-    )
-    manifest_lines = [
-        line.strip()
-        for line in stdout.splitlines()
-        if line.strip().startswith("- ") and line.strip().endswith("Cargo.toml")
-    ]
-    assert manifest_lines == ["- Cargo.toml"], (
-        "the root member must be reported as a single manifest change"
     )
 
 
@@ -469,7 +312,7 @@ def test_bump_rejects_a_special_documentation_target(
     """A FIFO matched by a documentation glob is rejected without opening it."""
     if not hasattr(os, "mkfifo"):
         pytest.skip("os.mkfifo is unavailable on this platform")
-    _outside_sentinel(tmp_path)
+    outside_sentinel(tmp_path)
     workspace = create_cli_workspace(
         tmp_path / "workspace",
         options=WorkspaceOptions(documentation_globs=("docs/*.md",)),
@@ -482,45 +325,11 @@ def test_bump_rejects_a_special_documentation_target(
         pytest.skip(f"cannot create a FIFO here: {exc}")
     runner = RecordingCommandRunner(metadata=workspace.metadata)
 
-    _assert_rejected(
+    assert_rejected(
         workspace=workspace,
         runner=runner,
-        run=lambda: _run_bump(workspace, runner, monkeypatch, capsys),
+        run=lambda: run_bump(workspace, runner, CliSeams(monkeypatch, capsys)),
         expected="special file",
-    )
-
-
-def test_overlapping_documentation_and_readme_target_is_reported_twice(
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-    monkeypatch: MonkeyPatch,
-) -> None:
-    """One path targeted by both stages yields one write and two report lines."""
-    workspace = create_cli_workspace(
-        tmp_path / "workspace",
-        options=WorkspaceOptions(
-            readme_workspace=True,
-            documentation_globs=("README.md", "crates/*/README.md"),
-            workspace_readme='```toml\n[dependencies]\nalpha = "0.1.0"\n```\n',
-        ),
-    )
-    crate_readme = workspace.root / "crates" / "alpha" / "README.md"
-    crate_readme.write_text(
-        '```toml\n[dependencies]\nalpha = "0.1.0"\n```\n', encoding="utf-8"
-    )
-    runner = RecordingCommandRunner(metadata=workspace.metadata)
-
-    exit_code, stdout, stderr = _run_bump(workspace, runner, monkeypatch, capsys)
-
-    assert exit_code == 0, f"the overlapping targets must succeed; stderr:\n{stderr}"
-    assert "- crates/alpha/README.md (documentation)" in stdout, (
-        "the documentation category must be reported"
-    )
-    assert "- crates/alpha/README.md (readme)" in stdout, (
-        "the README category must be reported for the same path"
-    )
-    assert 'alpha = "1.2.3"' in crate_readme.read_text(encoding="utf-8"), (
-        "the adopted README must compose from the documentation rewrite"
     )
 
 
@@ -530,16 +339,16 @@ def test_bump_reports_a_missing_workspace_readme_as_a_preflight_error(
     monkeypatch: MonkeyPatch,
 ) -> None:
     """A missing adopted README source is reported as a rejected plan."""
-    _outside_sentinel(tmp_path)
+    outside_sentinel(tmp_path)
     workspace = create_cli_workspace(
         tmp_path / "workspace",
         options=WorkspaceOptions(readme_workspace=True, workspace_readme=None),
     )
     runner = RecordingCommandRunner(metadata=workspace.metadata)
 
-    _assert_rejected(
+    assert_rejected(
         workspace=workspace,
         runner=runner,
-        run=lambda: _run_bump(workspace, runner, monkeypatch, capsys),
+        run=lambda: run_bump(workspace, runner, CliSeams(monkeypatch, capsys)),
         expected="Workspace README.md is required",
     )

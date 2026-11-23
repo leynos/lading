@@ -69,16 +69,12 @@ def _snapshot_directory(
 ) -> None:
     """Append every entry below ``root/prefix`` to ``entries``.
 
-    A directory that cannot be listed because the test injected a permission
-    failure keeps only its own entry. Any other examination error propagates:
-    treating an I/O failure as an empty listing would let a changed subtree
-    look unchanged.
+    Every examination error propagates. Converting a failure into an empty
+    listing would let a changed subtree look unchanged, and the preflight tests
+    scope their injected failure to the CLI call so both snapshots are taken
+    against the real scanner.
     """
-    try:
-        scanned = list(os.scandir(root.joinpath(*prefix)))
-    except PermissionError:
-        return
-    for entry in scanned:
+    for entry in list(os.scandir(root.joinpath(*prefix))):
         parts = (*prefix, entry.name)
         _snapshot_entry(root, parts, entry, entries)
 

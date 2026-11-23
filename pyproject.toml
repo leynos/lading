@@ -143,6 +143,10 @@ extend-ignore = [
 ]
 [tool.ruff.lint.per-file-ignores]
 "**/test_*.py" = ["assert", "too-many-arguments", "too-many-positional-arguments", "magic-value-comparison", "no-self-use"]
+# The bump CLI harness holds the shared rejection assertions used by the
+# command-level preflight suites. It is test support, so the same assertion
+# policy applies even though its filename does not start with ``test_``.
+"tests/unit/bump_cli_harness.py" = ["assert", "too-many-arguments", "too-many-positional-arguments", "magic-value-comparison"]
 "tests/bdd/steps/*.py" = ["assert", "too-many-arguments", "too-many-positional-arguments", "magic-value-comparison", "no-self-use"]
 # The TOML-coercion helpers raise through the ``_reject`` factory, which
 # returns the caller-injected ``error`` (a ``LadingError`` subclass) for the

@@ -155,6 +155,8 @@ The first release carrying the bump confinement change is the `0.4.0b1`
 pre-release. Install it explicitly, because a plain version specifier does not
 select a pre-release:
 
+<!-- tested-example: migration-upgrade-uv-prerelease -->
+
 ```bash
 # Substitute the tool that manages your interpreter.
 uv python install 3.14
@@ -166,6 +168,8 @@ uv add lading==0.4.0b1
 
 A project using `pip` and a virtual environment follows the same order:
 
+<!-- tested-example: migration-upgrade-pip-prerelease -->
+
 ```bash
 python3.14 -m venv .venv
 .venv/bin/python -m pip install lading==0.4.0b1
@@ -176,8 +180,12 @@ Once the final `0.4.0` release is available, the same commands with
 bump confinement behaviour.
 
 If the interpreter cannot be moved yet, pin Lading below the floor and defer
-the upgrade. Nothing in 0.4.0 fixes a defect present in 0.3.1, so there is no
-correctness pressure to migrate before the interpreter is ready:
+the upgrade. That defers the confinement fix too: on 0.3.1 a symlinked member,
+a symlinked manifest, or an escaping documentation glob can still make a bump
+write outside the workspace, and an invalid configured lockfile manifest can
+still fail after manifests were rewritten. There is no scheduled defect fix
+waiting in 0.4.0 beyond that safety boundary, but a workspace in one of those
+shapes should be corrected, or migrated, before the interpreter moves:
 
 ```bash
 uv add 'lading<0.4.0'

@@ -332,3 +332,26 @@ def test_regenerate_planned_runs_each_effective_root(tmp_path: Path) -> None:
     assert runner.cargo_update_calls() == expected_updates, (
         "one update must run per effective workspace root"
     )
+
+
+def test_plan_rejects_a_cargo_config_lockfile_override(tmp_path: Path) -> None:
+    """A resolver.lockfile-path in Cargo configuration is rejected before Git."""
+    root = tmp_path.resolve()
+    _write_workspace(root)
+    config = root / ".cargo" / "config.toml"
+    config.parent.mkdir()
+    config.write_text(
+        '[resolver]\nlockfile-path = "/tmp/outside-409/Cargo.lock"\n',
+        encoding="utf-8",
+    )
+    runner = _RecordingRunner(metadata_root=root)
+
+    with pytest.raises(BumpPreflightError) as excinfo:
+        plan_lockfiles(root, (), runner=runner, environ={})
+
+    assert str(config) in str(excinfo.value), (
+        "the diagnostic must name the configuration file carrying the override"
+    )
+    assert not runner.calls, (
+        "a Cargo configuration override must be rejected before Git or Cargo"
+    )

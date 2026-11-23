@@ -304,7 +304,11 @@ issue; the release version and commit are recorded.
 
 - A literal member pattern that does not exist is an error naming the pattern.
 - A glob member pattern that matches nothing is an error naming the pattern.
-- A member pattern match that is not a directory is an error.
+- A member pattern match that is a regular file is ignored, as Cargo does; a
+  matched special file is an error.
+- A glob member match beneath an excluded directory is excluded, matching
+  Cargo's descendant semantics; an explicitly listed member keeps Cargo's
+  precedence.
 - A member directory without a regular `Cargo.toml` is an error naming the
   directory.
 - A documentation glob that matches nothing is a no-op.
@@ -435,14 +439,23 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
   guides describe the contract, migration, limits, and non-member manifest hook.
   `pyproject.toml` is bumped to `0.4.0b1`.
 - [x] 2026-11-23: CodeRabbit review cleared. All 15 findings were verified
-  against the code and fixed: the migration impact table and prerelease
-  install commands, the preflight diagnostic scope (`ReadmeTranspositionError`
-  is now a preflight error), native-identity proposal keys, native path
-  components on Windows, the Cargo-root suggestion, snapshot permission and
-  junction handling, native open sentinels, the plan-before-write ordering
-  assertion, TOML-safe member serialization, scoped scan failures, the
-  400-line split of the confinement tests, the `MatchExpectation` docstring,
-  and the root-manifest Cargo query in lockfile planning.
+  against the code and fixed: the migration impact table and prerelease install
+  commands, the preflight diagnostic scope (`ReadmeTranspositionError` is now a
+  preflight error), native-identity proposal keys, native path components on
+  Windows, the Cargo-root suggestion, snapshot permission and junction
+  handling, native open sentinels, the plan-before-write ordering assertion,
+  TOML-safe member serialization, scoped scan failures, the 400-line split of
+  the confinement tests, the `MatchExpectation` docstring, and the
+  root-manifest Cargo query in lockfile planning.
+- [x] 2026-11-23: Second CodeRabbit review cleared. Added Cargo
+  configuration-file rejection for `resolver.lockfile-path` (with a real-Cargo
+  test), deferred the unmatched-glob decision until expansion finishes,
+  applied Cargo's descendant exclusion semantics, removed the duplicate README
+  log-and-re-raise, propagated snapshot examination errors, added tested-example
+  markers and a loader contract for the migration guide, corrected the
+  member-glob policy and single-manifest repair guidance, split the preflight
+  test module, and strengthened the exclusion, ordering, and recursive-glob
+  tests.
 - [ ] EP-M5 release: tag and release `v0.4.0b1` after review convergence, then
   record the tag commit on issue #409.
 

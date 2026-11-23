@@ -16,6 +16,7 @@ class _RecordingLockfileRepository:
     def __init__(self) -> None:
         """Start with empty call records for both port operations."""
         self.planned: list[tuple[pathlib.Path, tuple[str, ...]]] = []
+        self.planned_plans: list[LockfilePlan] = []
         self.regenerated: list[LockfilePlan] = []
 
     def plan_lockfiles(
@@ -25,11 +26,13 @@ class _RecordingLockfileRepository:
     ) -> LockfilePlan:
         """Record the plan request and return a single-lockfile plan."""
         self.planned.append((workspace_root, tuple(lockfile_manifests)))
-        return LockfilePlan(
+        plan = LockfilePlan(
             root=workspace_root,
             manifests=(workspace_root / "Cargo.toml",),
             lockfiles=(workspace_root / "Cargo.lock",),
         )
+        self.planned_plans.append(plan)
+        return plan
 
     def regenerate_planned(self, plan: LockfilePlan) -> tuple[pathlib.Path, ...]:
         """Record the regeneration request and return the planned lockfiles."""
@@ -67,8 +70,8 @@ def test_run_uses_injected_lockfile_repository(tmp_path: pathlib.Path) -> None:
     assert repository.planned == [(tmp_path.resolve(), ())], (
         "a real bump must plan lockfiles through the repository port"
     )
-    assert [plan.root for plan in repository.regenerated] == [tmp_path.resolve()], (
-        "a real bump must regenerate the plan it validated"
+    assert repository.regenerated == repository.planned_plans, (
+        "regeneration must receive the exact plan that planning returned"
     )
     assert "Cargo.lock (lockfile)" in message, (
         "the bump summary must report the regenerated lockfile"

@@ -788,11 +788,12 @@ repaired:
 ```
 
 When one manifest was attempted, its lone failure surfaces the plain Cargo
-error instead. To recover, fix the underlying Cargo error and run the printed
-repair command for each listed manifest, or use `--no-rebuild-lockfiles` and
-regenerate the lockfiles manually before committing the bump. A same-version
-rerun is not a repair: it finds no manifest changes and therefore skips
-lockfile regeneration.
+error instead, naming the manifest and exit code without a repair command. To
+recover, fix the underlying Cargo error and run
+`cargo update --workspace --manifest-path <manifest>` for that manifest, or use
+`--no-rebuild-lockfiles` and regenerate the lockfiles manually before
+committing the bump. A same-version rerun is not a repair: it finds no manifest
+changes and therefore skips lockfile regeneration.
 
 ### `[bump.documentation]`
 

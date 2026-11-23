@@ -78,7 +78,7 @@ def test_expand_confined_glob_rejects_symlinked_matches(tmp_path: Path) -> None:
 def test_expand_confined_glob_ignores_links_on_the_way_to_a_match(
     tmp_path: Path,
 ) -> None:
-    """Do not descend a symlinked directory, and do not fail on unrelated links."""
+    """Do not follow file or directory links, and do not fail on either."""
     root = tmp_path / "workspace"
     outside = tmp_path / "outside"
     (root / "docs").mkdir(parents=True)
@@ -86,9 +86,10 @@ def test_expand_confined_glob_ignores_links_on_the_way_to_a_match(
     (outside / "evil.md").write_text("external", encoding="utf-8")
     (root / "docs" / "guide.md").write_text("", encoding="utf-8")
     (root / "docs" / "image.png").symlink_to(outside / "evil.md")
+    (root / "docs" / "linked").symlink_to(outside, target_is_directory=True)
     matches = expand_confined_glob(root, "docs/**/*.md", key="globs")
     assert [match.display for match in matches] == ["docs/guide.md"], (
-        "a non-final symlink must contribute no match rather than failing the run"
+        "neither a file link nor a directory link may contribute a match"
     )
 
 
@@ -107,6 +108,24 @@ def test_expand_confined_glob_reports_special_files(tmp_path: Path) -> None:
         expand_confined_glob(root, "docs/*.md", key="globs")
     assert "special file" in str(excinfo.value), (
         "a FIFO match must be reported as a special file"
+    )
+
+
+def test_expand_confined_glob_does_not_fail_when_one_branch_matches(
+    tmp_path: Path,
+) -> None:
+    """A strict policy errors only when the whole expansion is empty."""
+    root = tmp_path / "workspace"
+    (root / "a").mkdir(parents=True)
+    (root / "a" / "README.md").write_text("", encoding="utf-8")
+    matches = expand_confined_glob(
+        root,
+        "*/README.md",
+        key="globs",
+        options=GlobOptions(unmatched=UnmatchedPolicy.ERROR),
+    )
+    assert [match.display for match in matches] == ["a/README.md"], (
+        "a missing branch must not fail an expansion that matched elsewhere"
     )
 
 
