@@ -12,11 +12,12 @@ behaviour.
 
 The command-line flags and existing `lading.toml` key syntax remain compatible
 with 0.3.x; this release adds the opt-in `bump.manifest_rewrites` key described
-above. Compound dependency requirement rewriting changes for every manifest,
-whether or not `bump.manifest_rewrites` is configured. The documented Python
-API additions are additive. `BumpConfig.manifest_rewrites` is new, and
-`lading.config_manifest_rewrites` and `lading.config_validation` support its
-configuration. `BumpOptions.clock` adds an injectable rewrite timer, and
+above. Compound dependency requirement rewriting changes for workspace-member
+manifests and for non-member manifests selected by `bump.manifest_rewrites`.
+The documented Python API additions are additive.
+`BumpConfig.manifest_rewrites` is new, and `lading.config_manifest_rewrites` and
+`lading.config_validation` support its configuration. `BumpOptions.clock` adds
+an injectable rewrite timer, and
 `lading.commands.manifest_paths.resolve_manifest_candidate` is available to
 manifest-path consumers. `lading.commands.bump_manifest_rewrites` exports
 `ManifestRewriteError`, `ManifestRewritePlan` and `ManifestRewriteVersions`.
@@ -54,11 +55,12 @@ the matching GitHub release to download an artefact directly. No project
 configuration changes are needed to move an existing install to PyPI.
 
 The release also changes how `lading bump` rewrites compound dependency
-requirements in every manifest: the first comparator takes the target version,
-and later comparators remain verbatim. It warns when the rewritten first
-comparator is strict (`<` or `>`) or a later recognized comparison bound (`<`,
-`<=`, `=`, `>=` or `>`) excludes the target. Retained caret and tilde clauses,
-and unsupported forms, are not evaluated by this warning. See the
+requirements in workspace-member manifests and explicitly configured non-member
+manifests: the first comparator takes the target version, and later comparators
+remain verbatim. It warns when the rewritten first comparator is strict (`<` or
+`>`) or a later recognized comparison bound (`<`, `<=`, `=`, `>=` or `>`)
+excludes the target. Retained caret and tilde clauses, and unsupported forms,
+are not evaluated by this warning. See the
 [bump configuration reference](users-guide.md#bump).
 
 Subprocess output relays also emit additive, privacy-safe `INFO` decision
