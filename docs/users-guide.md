@@ -760,9 +760,7 @@ skip = false
 test_exclude = ["slow-integration-suite"]
 unit_tests_only = false
 aux_build = [["cargo", "+nightly", "test", "-p", "lint", "--no-run"]]
-compiletest_extern = {
-  ui_test_helpers = "target/debug/deps/libui_test_helpers.so"
-}
+compiletest_extern = { ui_test_helpers = "target/debug/deps/libui_test_helpers.so" }
 env = { DYLINT_LOCALE = "en_GB" }
 stderr_tail_lines = 40
 ```
