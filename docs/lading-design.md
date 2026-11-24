@@ -1291,14 +1291,19 @@ local catalogue is not merged into `LADING_CATALOGUE`, and the adapter never
 permits all programs.
 
 Cuprum's `bind_executable()` is the alternative and is not selected for 5.2. It
-separates the logical program from the file executed, reports the file as
-`CommandResult.resolved_path`, and does not widen authorization -- binding a
+separates the logical program from the file executed and reports the file as
+`CommandResult.resolved_path`. It does not widen authorization: binding a
 program the scope does not allow still raises `ForbiddenProgramError` before
-the resolver runs. That is the right tool when the logical name must stay
-stable, and it retains the same trust rule: the file bound is the file
-authorized. Exact-path registration is preferred here only because these
-callers have no stable logical name to preserve. A future binding must keep the
-same rule: authorization names the file, and telemetry names the program.
+the resolver runs. It does not narrow it to the bound file either, and that
+asymmetry is the part a future binding must not inherit. Measured: a scope
+permitting only the logical `Program`, bound to an unrelated executable, ran
+that executable with no check on it at all. Authorization named the program;
+resolution named the file. Exact-path registration is preferred here precisely
+because it ties the two together -- the path registered is the path authorized
+-- and these callers have no stable logical name to preserve anyway. A future
+binding must keep that tie by authorizing the bound path separately, exactly as
+exact-path registration does, rather than assuming the binding vouches for the
+file it names.
 
 Resolution of a bare name against the effective child environment is cuprum's,
 and its measured behaviour is part of this policy:

@@ -184,9 +184,10 @@ separate checks, and a per-call scope narrows rather than widens. A configured
 sccache path and a cmd-mox-resolved path are registered as exact-path `Program`
 entries in a local catalogue for that invocation; a matching basename does not
 authorize. `bind_executable()` is the documented alternative and does not widen
-authorization; it is not selected because these callers have no stable logical
-name to preserve. Validation is not a sandbox, and the check-and-use race is
-documented rather than denied.
+authorization; it does not authorize the bound file either, so authorization
+and resolution are not interchangeable. It is not selected because these
+callers have no stable logical name to preserve. Validation is not a sandbox,
+and the check-and-use race is documented rather than denied.
 
 ### Relay
 

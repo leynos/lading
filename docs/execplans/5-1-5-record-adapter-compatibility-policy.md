@@ -123,10 +123,11 @@ given and to the parent's working directory otherwise, and a relative target
 follows the same rule and needs a `cwd` to resolve. `bind_executable()`
 preserves logical identity, reports `resolved_path`, and refuses to widen the
 allowlist, so the assessment's executable-identity gap is narrower than §6.4
-implied. Finally, a text facade that absorbs `BrokenPipeError` prevents cuprum's
-`BEST_EFFORT` policy from firing at all, so the ADR-007 event and a
-`relay_fallbacks` entry can be kept disjoint. All of it is recorded in
-assessment §9.
+implied -- but it does not authorize the bound file either, which is why
+exact-path registration is what the adapter uses. Finally, a text facade that
+absorbs `BrokenPipeError` prevents cuprum's `BEST_EFFORT` policy from firing at
+all, so the ADR-007 event and a `relay_fallbacks` entry can be kept disjoint.
+All of it is recorded in assessment §9.
 
 ## Decision log
 
@@ -151,6 +152,13 @@ assessment §9.
   than the assessment implied; and a text facade that absorbs `BrokenPipeError`
   produces no `relay_fallbacks` entry, which fixes the division between the
   ADR-007 event and the cuprum record.
+- (2026-11-24) Correct an inverted trust rule that the first review pass did not
+  catch and the second did. `bind_executable()` authorizes the logical
+  `Program` only; a permitted program bound to an unrelated executable runs
+  that executable with no check on it. The earlier draft claimed the opposite
+  -- that the file bound is the file authorized -- which would have licensed a
+  future binding to skip path authorization. Design §7.6.3, ADR-012, the
+  developer guide and assessment §9 all state the measured asymmetry now.
 - (2026-11-24) Record `CommandPreparationError` as the one type this policy
   requires without introducing it. Naming it in §7.6.1 and deferring the
   definition to 5.2.1 keeps the plan documentation-only while making the
@@ -567,7 +575,10 @@ and the assessment addendum.
   the child's `cwd` when supplied and to the parent's directory otherwise;
   absent and empty `PATH` behaved differently; `./tool` resolved under `cwd`
   and failed without one; a symlinked binding reported the configured path.
-  `bind_executable()` preserved identity without widening authorization. The
+  `bind_executable()` preserved identity, did not widen authorization, and did
+  not narrow it to the bound file either: a permitted logical `Program` bound
+  to an unrelated executable ran it unchecked. The design states that asymmetry
+  and why exact-path registration ties authorization to the file. The
   check-and-use race is stated as a limitation, not a guarantee.
 - **A4 (R4: relay and capture).** Design §7.6.4. Measured: a text sink that
   raised `UnicodeEncodeError` produced one fallback record with full capture;

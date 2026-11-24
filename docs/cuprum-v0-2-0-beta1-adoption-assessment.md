@@ -590,16 +590,21 @@ resolved against `cwd` and failed without one. A symlinked binding reported the
 configured path, not its target. These distinctions are absent from section 4's
 table and are what design §7.6.3 records.
 
-**`bind_executable()` separates identity from authorization, and does not widen
-it.** Binding a program the active scope did not allow still raised
-`ForbiddenProgramError` before the resolver ran. A relative binding was
+**`bind_executable()` separates identity from authorization, and widens it in
+neither direction.** Binding a program the active scope did not allow still
+raised `ForbiddenProgramError` before the resolver ran. It did **not** narrow
+authorization to the bound file either: a scope permitting only the logical
+`Program`, bound to an unrelated executable, ran that executable with no check
+on it, and reported it as `resolved_path`. Authorization named the program and
+resolution named the file, so the binding vouches for neither the path it
+supplies nor any claim that the path was approved. A relative binding was
 rejected without `allow_relative=True`, and with it was anchored to the supplied
-`cwd`. `CommandResult.resolved_path` reported the bound file. Exact path
-identity held in the other direction too: a catalogue holding a different path
-with the same basename raised `UnknownProgramError`. Section 6.4's
-executable-identity gap is therefore narrower than the beta1 snapshot implied
-for the adapter's purposes: identity can be preserved, and only *authorization*
-of a resolved path needs the local-catalogue rule.
+`cwd`. Exact path identity held in the other direction too: a catalogue
+holding a different path with the same basename raised `UnknownProgramError`.
+Section 6.4's executable-identity gap is therefore narrower than the beta1
+snapshot implied for the adapter's purposes: identity can be preserved, and
+*authorization* of a resolved path still needs the local-catalogue rule, which
+is why the adapter registers exact paths rather than binding logical names.
 
 **Echo is byte-first whenever a sink exposes `.buffer`.** A sink with a
 `buffer` attribute received raw bytes on that buffer and no text writes at all,

@@ -2083,7 +2083,8 @@ short form a maintainer needs before touching the runner.
   register a resolved absolute path as an exact-path `Program` in a local
   catalogue. A basename match does not authorize. `bind_executable()` is the
   alternative when a logical name must survive, and it does not widen the
-  allowlist.
+  allowlist -- but it does not authorize the bound file either, so a binding
+  must authorize that path separately. See design §7.6.3.
 - **Relay.** Select `capture=True`, the caller's `echo_stdout`,
   `echo_stderr=True`, `max_echo_line_bytes=None`, and
   `BrokenPipePolicy.BEST_EFFORT`, and echo through a text-only facade over
