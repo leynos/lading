@@ -874,16 +874,18 @@ adjacent `.crate` extension or `-extra` suffix therefore blocks the match.
 Versions nested in another SemVer prerelease, such as `9.0.0-1.0.0` or
 `9.0.0-rc.alpha-1.0.0`, also remain unchanged. These rules keep `rstest-bdd`
 from matching inside `rstest-bdd-harness` and prevent `0.6.0-beta4` matching
-the prefix of `0.6.0-beta40`. If distinct crates render the same old text but
-different target text, planning fails with the affected manifest path instead
-of choosing one replacement. Version-only selectors leave selected versions
-that do not match a workspace crate's pre-bump version unchanged, since the
-selector cannot attribute those values to a crate. A version-only selector also
-cannot identify which unmatched version belongs to an updated crate. The same
-limit applies to crate-qualified templates. A value with that crate name but an
-unmatched version may be an intentional historical reference. Rewrites replace
-exact renderings made from the pre-bump workspace versions; unmatched selected
-text remains unchanged.
+the prefix of `0.6.0-beta40`. SemVer protection applies only when the complete
+configured rendering consists of SemVer identifier characters; a slash in a
+staged path keeps that rendering eligible for rewriting. If distinct crates
+render the same old text but different target text, planning fails with the
+affected manifest path instead of choosing one replacement. Version-only
+selectors leave selected versions that do not match a workspace crate's
+pre-bump version unchanged, since the selector cannot attribute those values to
+a crate. A version-only selector also cannot identify which unmatched version
+belongs to an updated crate. The same limit applies to crate-qualified
+templates. A value with that crate name but an unmatched version may be an
+intentional historical reference. Rewrites replace exact renderings made from
+the pre-bump workspace versions; unmatched selected text remains unchanged.
 
 The root manifest and all workspace-member manifests are skipped even when a
 configured glob selects them. Repeated groups selecting the same non-member

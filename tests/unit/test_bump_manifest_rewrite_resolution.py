@@ -86,6 +86,49 @@ def test_glob_skips_symlinked_files_before_traversing_remaining_segments(
     )
 
 
+def test_relative_root_glob_candidates_are_resolved_once(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    write_fixture_manifest: _ManifestWriter,
+) -> None:
+    """Glob results remain absolute when the workspace root is relative."""
+    manifest = write_fixture_manifest(
+        tmp_path,
+        "fixtures/demo/Cargo.toml",
+        '[dependencies]\nalpha = "1.0.0"\n',
+    )
+    monkeypatch.chdir(tmp_path.parent)
+    relative_root = pathlib.Path(tmp_path.name)
+
+    matches = manifest_paths.expand_manifest_glob_candidates(
+        relative_root,
+        "fixtures/*/Cargo.toml",
+        error_type=bump_manifest_rewrites.ManifestRewriteError,
+        label="Manifest rewrite",
+    )
+    resolved = manifest_paths.resolve_manifest_candidate(
+        relative_root,
+        matches[0],
+        error_type=bump_manifest_rewrites.ManifestRewriteError,
+        label="Manifest rewrite",
+    )
+    (literal_source,) = bump_manifest_rewrite_filesystem.read_manifest_rewrite_sources(
+        relative_root,
+        (ManifestRewriteConfig(paths=("fixtures/demo/Cargo.toml",)),),
+        (),
+    )
+
+    assert matches == (manifest.resolve(),), (
+        "glob expansion should return absolute candidates from a relative root"
+    )
+    assert resolved == manifest.resolve(), (
+        "resolving a glob candidate must not prefix the root a second time"
+    )
+    assert literal_source.path == manifest.resolve(), (
+        "literal candidates should be root-relative until the shared resolver"
+    )
+
+
 def test_glob_follows_internal_directory_symlinks_for_remaining_segments(
     tmp_path: pathlib.Path,
     write_fixture_manifest: _ManifestWriter,

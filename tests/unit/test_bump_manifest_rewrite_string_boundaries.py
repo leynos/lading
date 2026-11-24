@@ -143,6 +143,37 @@ def test_plus_prefixed_version_template_preserves_build_metadata(
     )
 
 
+def test_crate_path_rewrite_can_cross_semver_metadata_boundary(
+    tmp_path: pathlib.Path,
+    write_fixture_manifest: _ManifestWriter,
+) -> None:
+    """A path template crossing metadata is not itself a SemVer component."""
+    write_fixture_manifest(
+        tmp_path,
+        "fixture/Cargo.toml",
+        '[metadata]\npath = "3.0.0+alpha/1.0.0"\n',
+    )
+    group = ManifestRewriteConfig(
+        paths=("fixture/Cargo.toml",),
+        dependencies=False,
+        string_values=(
+            StringValueRewriteConfig(table=("metadata",), template="{crate}/{version}"),
+        ),
+    )
+    versions = manifest_rewrite_versions(
+        names=frozenset({"alpha"}),
+        pre_bump_versions={"alpha": "1.0.0"},
+        target_version="2.0.0",
+    )
+
+    (plan,) = plan_fixture_rewrites(tmp_path, (group,), versions=versions)
+
+    document = parse_toml(plan.new_text)
+    assert document["metadata"]["path"] == "3.0.0+alpha/2.0.0", (
+        "a configured path rendering spanning slash must still be rewritten"
+    )
+
+
 def test_crate_version_rewrite_does_not_match_inside_dotted_prerelease(
     tmp_path: pathlib.Path,
     write_fixture_manifest: _ManifestWriter,

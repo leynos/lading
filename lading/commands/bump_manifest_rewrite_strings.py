@@ -30,7 +30,11 @@ _SEMVER_PRERELEASE_PREFIX: typ.Final[re.Pattern[str]] = re.compile(
     r"\d+\.\d+\.\d+-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*\."
     r")$"
 )
-_BUILD_METADATA_CHARACTERS: typ.Final[re.Pattern[str]] = re.compile(r"[0-9A-Za-z.-]*")
+_SEMVER_IDENTIFIER_CHARACTERS: typ.Final[re.Pattern[str]] = re.compile(
+    r"[0-9A-Za-z.-]*"
+)
+# A configured match may include the build-metadata separator itself.
+_SEMVER_MATCH_TEXT: typ.Final[re.Pattern[str]] = re.compile(r"\+?[0-9A-Za-z.-]+")
 _LEADING_BOUNDARIES: typ.Final[tuple[tuple[str, str], ...]] = (
     ("{crate}", rf"(?<![{_CRATE_NAME_CHARACTER}])"),
     ("{version}", rf"(?<![{_VERSION_PREFIX_CHARACTER}])"),
@@ -104,7 +108,9 @@ def _replacement_for_match(
 ) -> str:
     """Replace a match unless it is nested in a SemVer prerelease or build."""
     matched_text = match.group()
-    if _is_semver_component_match(value, match.start()):
+    if _SEMVER_MATCH_TEXT.fullmatch(matched_text) is not None and (
+        _is_semver_component_match(value, match.start())
+    ):
         return matched_text
     return replacements[matched_text]
 
@@ -128,7 +134,7 @@ def _is_semver_build_metadata_match(
     metadata_prefix = value[separator + 1 : match_start]
     return (
         _SEMVER_BUILD_METADATA_PREFIX.search(semver_prefix) is not None
-        and _BUILD_METADATA_CHARACTERS.fullmatch(metadata_prefix) is not None
+        and _SEMVER_IDENTIFIER_CHARACTERS.fullmatch(metadata_prefix) is not None
     )
 
 

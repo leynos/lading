@@ -135,7 +135,7 @@ def _merge_rewrite_candidate(
 def _expand_path(workspace_root: Path, configured_path: str) -> tuple[Path, ...]:
     """Expand a glob or return its single literal candidate."""
     if not glob.has_magic(configured_path):
-        return (workspace_root / configured_path,)
+        return (Path(configured_path),)
     try:
         matches = manifest_paths.expand_manifest_glob_candidates(
             workspace_root,
