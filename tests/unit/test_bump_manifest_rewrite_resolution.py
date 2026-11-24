@@ -222,30 +222,42 @@ def test_terminal_recursive_glob_includes_manifest_files(
     assert manifest in matches, "terminal recursive globs must retain file matches"
 
 
-def test_adjacent_recursive_glob_segments_do_not_duplicate_manifests(
+@pytest.mark.parametrize(
+    ("pattern", "fixture_paths"),
+    [
+        pytest.param(
+            "fixtures/**/**/Cargo.toml",
+            ("fixtures/a/Cargo.toml", "fixtures/a/deep/Cargo.toml"),
+            id="adjacent-recursive-segments",
+        ),
+        pytest.param(
+            "**/foo/**/Cargo.toml",
+            ("foo/foo/Cargo.toml",),
+            id="nonadjacent-recursive-segments",
+        ),
+    ],
+)
+def test_recursive_globs_do_not_duplicate_manifests(
     tmp_path: pathlib.Path,
     write_fixture_manifest: _ManifestWriter,
+    pattern: str,
+    fixture_paths: tuple[str, ...],
 ) -> None:
-    """Adjacent ``**`` segments traverse each matching manifest once."""
-    shallow = write_fixture_manifest(
-        tmp_path, "fixtures/a/Cargo.toml", '[dependencies]\nalpha = "1.0.0"\n'
+    """Different ``**`` decompositions return each selected path once."""
+    expected = tuple(
+        sorted(
+            write_fixture_manifest(tmp_path, path, '[dependencies]\nalpha = "1.0.0"\n')
+            for path in fixture_paths
+        )
     )
-    nested = write_fixture_manifest(
-        tmp_path,
-        "fixtures/a/deep/Cargo.toml",
-        '[dependencies]\nalpha = "1.0.0"\n',
-    )
-
     matches = manifest_paths.expand_manifest_glob_candidates(
         tmp_path,
-        "fixtures/**/**/Cargo.toml",
+        pattern,
         error_type=bump_manifest_rewrites.ManifestRewriteError,
         label="Manifest rewrite",
     )
 
-    assert matches == (shallow, nested), (
-        "adjacent recursive segments must not duplicate matching paths"
-    )
+    assert matches == expected, "recursive glob segments must not duplicate paths"
 
 
 @pytest.mark.parametrize(

@@ -18,6 +18,7 @@ from . import manifest_fixtures as _manifest_fixtures
 from . import (
     metadata_fixtures as _metadata_fixtures,  # ruff: ignore[unused-import] - direct import keeps the metadata step module collected
 )
+from .cargo_journal import _cargo_update_args
 from .cli_run_types import CliRunResult
 
 if typ.TYPE_CHECKING:
@@ -285,11 +286,7 @@ def then_published_fixture_unchanged(
 @then("the bump made no Cargo lockfile update invocations")
 def then_no_cargo_lockfile_updates(cmd_mox: CmdMox) -> None:
     """Assert dry-run projection did not invoke Cargo lockfile updates."""
-    updates = [
-        invocation
-        for invocation in cmd_mox.journal
-        if invocation.command == "cargo::update"
-    ]
+    updates = _cargo_update_args(cmd_mox)
     assert not updates, f"unexpected Cargo updates: {updates!r}"
 
 

@@ -151,7 +151,7 @@ class _ManifestGlobTraversal:
     def collect(self) -> tuple[Path, ...]:
         """Return all matching candidates in stable path order."""
         self.visit(self.root, 0)
-        return tuple(sorted(self.matches))
+        return tuple(sorted(set(self.matches)))
 
     def visit_recursive(self, candidate: Path, index: int) -> None:
         """Match ``**`` without following directory symlinks, avoiding cycles."""

@@ -1,21 +1,12 @@
 """BDD steps for tracked bump lockfile behaviour."""
 
-import typing as typ
 from pathlib import Path
 
 from cmd_mox import CmdMox
 from pytest_bdd import given, parsers, then
 
+from .cargo_journal import _cargo_update_args
 from .cli_run_types import CliRunResult
-
-
-def _cargo_update_args(cmd_mox: CmdMox) -> list[tuple[str, ...]]:
-    """Collect Cargo update arguments from the command journal."""
-    return [
-        tuple(invocation.args)
-        for invocation in cmd_mox.journal
-        if invocation.command == "cargo::update"
-    ]
 
 
 @given(parsers.parse('a nested lockfile manifest is configured at "{manifest}"'))
@@ -97,12 +88,12 @@ def then_bump_refreshed_workspace_and_nested_lockfiles(
         (
             "--workspace",
             "--manifest-path",
-            str(workspace_directory / "Cargo.toml"),
+            str((workspace_directory / "Cargo.toml").resolve()),
         ),
         (
             "--workspace",
             "--manifest-path",
-            str(workspace_directory / "fixtures/minimal/Cargo.toml"),
+            str((workspace_directory / "fixtures/minimal/Cargo.toml").resolve()),
         ),
     ]
     assert update_args == expected_args, (
@@ -140,16 +131,12 @@ def then_bump_refreshed_root_and_configured_nested_lockfiles(
 
 @then("the bump command did not refresh tracked lockfiles")
 def then_bump_did_not_refresh_lockfiles(
-    cli_run: dict[str, typ.Any],
+    cli_run: CliRunResult,
     cmd_mox: CmdMox,
 ) -> None:
     """Assert the dry-run lockfile scenario completed without refresh."""
     assert cli_run["returncode"] == 0, (
         f"the dry-run lockfile bump must succeed; stderr:\n{cli_run['stderr']}"
     )
-    updates = [
-        invocation
-        for invocation in cmd_mox.journal
-        if invocation.command == "cargo::update"
-    ]
+    updates = _cargo_update_args(cmd_mox)
     assert not updates, f"dry run must not invoke Cargo update; got {updates!r}"
