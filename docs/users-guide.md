@@ -899,19 +899,14 @@ manifest while its contents remain unchanged; configured lockfile projection
 still runs without invoking Cargo.
 
 Each configured manifest write is atomic, but the batch is not. If a later
-write fails, or a manifest changes after planning, earlier fixture rewrites
-remain and lockfile regeneration is skipped. Member manifests already contain
-the target version, so planning may no longer have the earlier version needed
-to rewrite remaining string references for those crates. The recommended
-recovery is to restore the pre-bump working tree and rerun the complete
-`lading bump`, which reapplies manifest, documentation, README, and lockfile
-updates in order.
-
-For manual recovery, finish the remaining fixture edits and apply the skipped
-documentation and workspace README updates. Before committing, regenerate
-lockfiles by running `cargo update --workspace --manifest-path <manifest>` for
-the workspace root, all automatically discovered lockfile manifests, and each
-applicable `bump.lockfile_manifests` entry, including untracked fixture locks.
+write fails, or a manifest changes after planning, earlier fixture rewrites may
+remain and lockfile regeneration is skipped. Before reporting the failure,
+`lading bump` restores any workspace and member manifests it changed to their
+pre-bump contents. This preserves the original crate versions so rerunning the
+same bump can rewrite the remaining fixtures; already-updated fixture values
+are safe to process again. If the error also reports a workspace-manifest
+rollback failure, restore the named workspace and member manifests before
+retrying.
 
 For example, the `rstest-bdd` published GPUI fixture can opt into rewriting its
 dependency requirements and staged package patch paths:

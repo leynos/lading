@@ -292,14 +292,25 @@ def test_missing_rewrite_manifest_fails_before_any_workspace_write(
 def test_partial_write_failure_names_path_and_completed_count(
     tmp_path: pathlib.Path,
 ) -> None:
-    """A write failure reports its path and counts completed fixture writes."""
+    """A failed rewrite restores member versions so the command can be retried."""
     workspace = _make_workspace(tmp_path)
+    workspace_manifests = {
+        tmp_path / "Cargo.toml": (tmp_path / "Cargo.toml").read_bytes(),
+        **{
+            crate.manifest_path: crate.manifest_path.read_bytes()
+            for crate in workspace.crates
+        },
+    }
     fixtures = tuple(
         tmp_path / f"tests/fixtures/{name}/Cargo.toml" for name in ("first", "second")
     )
     for fixture in fixtures:
         fixture.parent.mkdir(parents=True)
-        fixture.write_text('[dependencies]\nalpha = "0.1.0"\n', encoding="utf-8")
+        fixture.write_text(
+            '[dependencies]\nalpha = "0.1.0"\n\n'
+            '[patch.crates-io]\nalpha = { path = "../alpha-0.1.0" }\n',
+            encoding="utf-8",
+        )
     second_original = fixtures[1].read_bytes()
     configuration = config_module.LadingConfig(
         bump=config_module.BumpConfig(
@@ -307,7 +318,12 @@ def test_partial_write_failure_names_path_and_completed_count(
                 ManifestRewriteConfig(
                     paths=tuple(
                         path.relative_to(tmp_path).as_posix() for path in fixtures
-                    )
+                    ),
+                    string_values=(
+                        StringValueRewriteConfig(
+                            table=("patch", "crates-io"), field="path"
+                        ),
+                    ),
                 ),
             )
         )
@@ -339,11 +355,20 @@ def test_partial_write_failure_names_path_and_completed_count(
             ),
         )
 
-    assert fixtures[0].read_text(encoding="utf-8").endswith('alpha = "1.2.3"\n'), (
-        "the first manifest should reflect its completed atomic write"
+    first_after_failure = fixtures[0].read_text(encoding="utf-8")
+    assert 'alpha = "1.2.3"' in first_after_failure, (
+        "the first fixture should retain its completed dependency rewrite"
+    )
+    assert "../alpha-1.2.3" in first_after_failure, (
+        "the first fixture should retain its completed string rewrite"
     )
     assert fixtures[1].read_bytes() == second_original, (
         "the failed manifest should retain its original bytes"
+    )
+    assert {
+        path: path.read_bytes() for path in workspace_manifests
+    } == workspace_manifests, (
+        "a failed fixture rewrite must restore the workspace's pre-bump versions"
     )
     _assert_partial_write_failure(failure.value, fixtures[1].resolve())
     _assert_single_rewrite_counter(
@@ -352,3 +377,22 @@ def test_partial_write_failure_names_path_and_completed_count(
     _assert_single_rewrite_duration(
         outcome="failed", dry_run="false", error_category="write"
     )
+
+    bump.run(
+        tmp_path,
+        "1.2.3",
+        options=bump.BumpOptions(
+            rebuild_lockfiles=False,
+            configuration=configuration,
+            workspace=workspace,
+        ),
+    )
+
+    for fixture in fixtures:
+        retried_text = fixture.read_text(encoding="utf-8")
+        assert 'alpha = "1.2.3"' in retried_text, (
+            f"retry should update dependencies in {fixture}"
+        )
+        assert "../alpha-1.2.3" in retried_text, (
+            f"retry should update staged package paths in {fixture}"
+        )
