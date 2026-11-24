@@ -38,7 +38,8 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
   completed plan for discovery-driven lockfile regeneration in the bump command.
 
 - [Record adapter compatibility policy](execplans/5-1-5-record-adapter-compatibility-policy.md)
-  - draft plan for roadmap 5.1.5, targeting cuprum beta2.
+  - completed plan for roadmap 5.1.5, recording the cuprum beta2 adapter
+  policy; the 5.2 implementation remains out of scope.
 
 ## Decision records
 

@@ -1,6 +1,6 @@
 # Record the adapter compatibility policy (5.1.5)
 
-Status: APPROVED — implementation in progress.
+Status: COMPLETE — M1 and M2 done; 5.2 out of scope.
 
 This ExecPlan is a living document. Keep Constraints, Tolerances, Risks,
 Progress, Surprises & discoveries, Decision log, Outcomes & retrospective,
@@ -222,6 +222,20 @@ policy, and the roadmap marks 5.1.5 complete with bounded evidence wording.
 Documentation only: no Python, Rust, dependency, lockfile, test, or workflow
 file changed. Gate outcomes and the A1–A6 discharges for this milestone are
 recorded under `Concrete steps and validation`.
+
+**Retrospective.** The plan's central bet — that measuring the pinned beta
+directly would beat reasoning from the assessment and the vendored guides — was
+right, and it paid three times. Four review findings were factual errors in
+this branch's own prose, not in the policy: the `None`-under-`REPLACE`
+behaviour, the `bind_executable()` trust rule, relative-target resolution, and
+absent-versus-empty `PATH`. Three of those came from probes that changed one
+variable without controlling the others, and each was caught only by a later
+review pass. The lesson for a future policy task of this shape is to write the
+probe with its negative control before writing the sentence the probe supports.
+
+Nothing here certifies the adapter. R1–R5, `CommandPreparationError`, the
+exact-path registration and the relay facade are all 5.2 work; this plan
+supplies the decisions they need so that work makes none of its own.
 
 ## Context and orientation
 
