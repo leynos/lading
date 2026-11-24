@@ -145,7 +145,11 @@ from lading.commands.bump_toml_dependencies import (
 that carries the workspace root with the selected paths. Iterate through
 `targets.paths`. Direct callers that assemble path lists must construct the
 record before calling `update_documentation_files`; this lets the updater
-enforce the workspace boundary for both configured and direct targets.
+enforce the workspace boundary for both configured and direct targets. Each
+entry is a final file path, not a workspace-relative path. Relative entries are
+resolved from the current working directory before the containment check, so
+build direct entries as `workspace_root / "README.md"`; the updater does not
+prefix the workspace root a second time.
 
 #### Before: tuple-based documentation targets
 

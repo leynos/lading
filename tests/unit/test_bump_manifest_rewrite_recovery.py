@@ -1,13 +1,11 @@
 """Recovery behavior after partial configured manifest rewrite failures."""
 
-import dataclasses as dc
 from pathlib import Path
 from unittest import mock
 
 import pytest
 from tomlkit import parse as parse_toml
 
-from lading import config as config_module
 from lading.commands import (
     bump,
     bump_manifest_rewrite_application,
@@ -18,75 +16,21 @@ from lading.commands.bump_manifest_rewrites import (
     ManifestRewriteError,
     ManifestRewriteWriteError,
 )
-from lading.config import ManifestRewriteConfig, StringValueRewriteConfig
 from lading.workspace import WorkspaceCrate, WorkspaceGraph
 from tests.helpers.manifest_rewrite_metrics import (
     manifest_rewrite_counter_value,
     manifest_rewrite_duration_stats,
 )
-from tests.helpers.workspace_builders import _make_workspace
+from tests.helpers.manifest_rewrite_recovery import (
+    _make_partial_write_failure_case,
+    _PartialWriteFailureCase,
+)
 
 pytestmark = pytest.mark.usefixtures("reset_process_metrics")
 
 
-@dc.dataclass(frozen=True, slots=True)
-class _PartialWriteFailureCase:
-    """Inputs and original bytes for a configured partial-write scenario."""
-
-    root: Path
-    workspace: WorkspaceGraph
-    configuration: config_module.LadingConfig
-    fixtures: tuple[Path, ...]
-    workspace_manifests: dict[Path, bytes]
-    second_fixture_original: bytes
-
-
 class _InjectedMemberManifestError(Exception):
     """Specific failure used to stop a bump after an earlier member write."""
-
-
-def _make_partial_write_failure_case(root: Path) -> _PartialWriteFailureCase:
-    """Create a workspace with two configured manifests and versioned paths."""
-    workspace = _make_workspace(root)
-    workspace_manifests = {
-        root / "Cargo.toml": (root / "Cargo.toml").read_bytes(),
-        **{
-            crate.manifest_path: crate.manifest_path.read_bytes()
-            for crate in workspace.crates
-        },
-    }
-    fixtures = tuple(
-        root / f"tests/fixtures/{name}/Cargo.toml" for name in ("first", "second")
-    )
-    for fixture in fixtures:
-        fixture.parent.mkdir(parents=True)
-        fixture.write_text(
-            '[dependencies]\nalpha = "0.1.0"\n\n'
-            '[patch.crates-io]\nalpha = { path = "../alpha-0.1.0" }\n',
-            encoding="utf-8",
-        )
-    configuration = config_module.LadingConfig(
-        bump=config_module.BumpConfig(
-            manifest_rewrites=(
-                ManifestRewriteConfig(
-                    paths=tuple(path.relative_to(root).as_posix() for path in fixtures),
-                    string_values=(
-                        StringValueRewriteConfig(
-                            table=("patch", "crates-io"), field="path"
-                        ),
-                    ),
-                ),
-            )
-        )
-    )
-    return _PartialWriteFailureCase(
-        root=root,
-        workspace=workspace,
-        configuration=configuration,
-        fixtures=fixtures,
-        workspace_manifests=workspace_manifests,
-        second_fixture_original=fixtures[1].read_bytes(),
-    )
 
 
 def _run_partial_write_failure(

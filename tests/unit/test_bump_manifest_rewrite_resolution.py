@@ -11,6 +11,7 @@ from lading.commands import (
     manifest_paths,
 )
 from lading.config import ManifestRewriteConfig, StringValueRewriteConfig
+from tests.helpers.cwd import chdir_for_test
 from tests.helpers.manifest_rewrites import (
     plan_fixture_rewrites,
 )
@@ -96,7 +97,7 @@ def test_relative_root_glob_candidates_are_resolved_once(
         "fixtures/demo/Cargo.toml",
         '[dependencies]\nalpha = "1.0.0"\n',
     )
-    monkeypatch.chdir(tmp_path.parent)
+    chdir_for_test(monkeypatch, tmp_path.parent)
     relative_root = pathlib.Path(tmp_path.name)
 
     matches = manifest_paths.expand_manifest_glob_candidates(

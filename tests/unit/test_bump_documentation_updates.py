@@ -12,6 +12,7 @@ from lading import config
 from lading.commands import bump, bump_docs, bump_pipeline
 from lading.commands.bump_readme import ReadmeTranspositionError
 from lading.exceptions import LadingError
+from tests.helpers.cwd import chdir_for_test
 from tests.helpers.path_normalization import normalized
 from tests.helpers.workspace_builders import (
     _build_workspace_with_internal_deps,
@@ -64,7 +65,7 @@ def test_documentation_targets_resolve_relative_workspace_root(
     """Glob resolution and containment use one canonical workspace root."""
     readme = tmp_path / "README.md"
     readme.write_text("# Fixture workspace\n", encoding="utf-8")
-    monkeypatch.chdir(tmp_path.parent)
+    chdir_for_test(monkeypatch, tmp_path.parent)
 
     targets = bump_docs.resolve_documentation_targets(
         pathlib.Path(tmp_path.name),
@@ -76,6 +77,31 @@ def test_documentation_targets_resolve_relative_workspace_root(
     )
     assert targets.paths == (readme.resolve(),), (
         "globbing from the canonical root should select relative-root files"
+    )
+
+
+def test_direct_documentation_target_resolves_relative_root_prefix_once(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A final path already prefixed with a relative root is not joined twice."""
+    chdir_for_test(monkeypatch, tmp_path.parent)
+    workspace_root = pathlib.Path(tmp_path.name)
+    readme = workspace_root / "README.md"
+    readme.write_text(
+        '```toml\n[dependencies]\nalpha = "0.1.0"\n```\n', encoding="utf-8"
+    )
+    targets = bump_docs.DocumentationTargets(workspace_root, (readme,))
+
+    changed = bump_docs.update_documentation_files(
+        targets, "1.2.3", {"alpha"}, dry_run=False
+    )
+
+    assert changed == {readme.resolve()}, (
+        "direct targets should report the canonical file path"
+    )
+    assert 'alpha = "1.2.3"' in readme.read_text(encoding="utf-8"), (
+        "the already-rooted relative path should update its intended file"
     )
 
 

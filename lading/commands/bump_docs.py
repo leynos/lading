@@ -63,7 +63,9 @@ class DocumentationTargets:
     workspace_root
         Workspace root against which every path must be checked.
     paths
-        Selected documentation files, in resolver order.
+        Final documentation paths, in resolver order. Relative paths are
+        interpreted from the current working directory and should normally be
+        assembled as ``workspace_root / relative_path``.
 
     Examples
     --------
@@ -146,7 +148,7 @@ def update_documentation_files(
     for candidate in documentation_targets.paths:
         doc_path = manifest_paths.resolve_workspace_path(
             documentation_targets.workspace_root,
-            candidate,
+            candidate.resolve(),
             error_type=LadingError,
             label="Documentation",
         )

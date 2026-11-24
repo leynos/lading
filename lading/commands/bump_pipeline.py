@@ -182,8 +182,6 @@ def _record_written_manifest_content(
     """Record the output needed to guard a later rollback."""
     if rewrite_stage is None:
         return
-    if not rewrite_stage.is_configured:
-        return
     written_text = result.written_text
     if written_text is None:
         return
