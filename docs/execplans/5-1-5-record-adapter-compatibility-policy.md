@@ -1,6 +1,6 @@
 # Record the adapter compatibility policy (5.1.5)
 
-Status: DRAFT — awaiting approval for implementation.
+Status: APPROVED — implementation in progress.
 
 This ExecPlan is a living document. Keep Constraints, Tolerances, Risks,
 Progress, Surprises & discoveries, Decision log, Outcomes & retrospective,
@@ -81,9 +81,14 @@ cross-platform certification.
   costs.
 - [x] (2026-10-20) Passed formatting, typechecking, lint, tests, Markdown
   spelling/lint, and Mermaid validation for the planning documents.
-- [ ] Commit, push, and open the draft planning pull request.
-- [ ] Obtain approval to execute this plan.
-- [ ] M1: reconcile evidence and record design policy plus ADR.
+- [x] (2026-11-24) Committed, pushed, and opened draft planning pull request
+  [#366](https://github.com/leynos/lading/pull/366).
+- [x] (2026-11-24) Obtained approval to execute this plan.
+- [x] (2026-11-24) Rebased onto `origin/main` at `0c1ad3f`, which merged
+  PR #364 and moved the pin to `cuprum==0.2.0b2`; ADRs moved to `docs/adrs/`.
+- [x] (2026-11-24) M1: recorded R1–R5 as design §7.6 and the decision as
+  ADR-012, linked from the design and `docs/contents.md`, and reconciled the
+  beta1 findings with measured beta2 behaviour in assessment §9.
 - [ ] M2: synchronize maintainer guidance, validate, and mark 5.1.5 done.
 
 ## Surprises & discoveries
@@ -102,6 +107,22 @@ supplied environment “overrides”, but the concrete production runner uses ex
 replacement after normalization. Cmd-mox intentionally composes an inherited
 environment before real passthrough; these are distinct boundaries.
 
+Measurement at implementation time added five findings the planning evidence
+did not contain. A per-call `EnvMode.REPLACE` discards ambient `env(...)`
+overlays as well as the parent environment, so the adapter needs no extra
+defence against a scope overlay. An absent `PATH` under `REPLACE` falls back to
+the platform default search path and still resolves a bare name, while an empty
+`PATH` does not; the two are not equivalent and the adapter must not synthesize
+either. A relative `PATH` entry is anchored to the child's `cwd` when one is
+given and to the parent's working directory otherwise, and a relative target
+follows the same rule and needs a `cwd` to resolve. `bind_executable()`
+preserves logical identity, reports `resolved_path`, and refuses to widen the
+allowlist, so the assessment's executable-identity gap is narrower than §6.4
+implied. Finally, a text facade that absorbs `BrokenPipeError` prevents cuprum's
+`BEST_EFFORT` policy from firing at all, so the ADR-007 event and a
+`relay_fallbacks` entry can be kept disjoint. All of it is recorded in
+assessment §9.
+
 ## Decision log
 
 - (2026-10-20) Plan a documentation-only implementation of 5.1.5. Runtime
@@ -115,20 +136,57 @@ environment before real passthrough; these are distinct boundaries.
   the task's existing relay contract, not an incremental migration convenience.
 - (2026-10-20) Reconcile certification wording during implementation without
   erasing dated 5.1.4 evidence or marking downstream migration complete.
+- (2026-11-24) Measure the pinned `cuprum==0.2.0b2` directly rather than
+  reasoning from the beta1 assessment or the vendored guides. Four findings
+  changed the policy text from what the plan sketched: a per-call
+  `EnvMode.REPLACE` discards ambient `env(...)` overlays as well as the parent
+  environment; an **absent** `PATH` falls back to the platform default search
+  path while an **empty** one does not; `bind_executable()` preserves identity
+  without widening authorization, so the executable-identity gap is narrower
+  than the assessment implied; and a text facade that absorbs `BrokenPipeError`
+  produces no `relay_fallbacks` entry, which fixes the division between the
+  ADR-007 event and the cuprum record.
+- (2026-11-24) Record `CommandPreparationError` as the one type this policy
+  requires without introducing it. Naming it in §7.6.1 and deferring the
+  definition to 5.2.1 keeps the plan documentation-only while making the
+  spawn-versus-policy distinction implementable. `bump_lockfile_regeneration`
+  classifies by cause and would label a preparation failure `cargo_exit`, so
+  the design records that obligation for the same commit.
+- (2026-11-24) Keep the relay facade even though beta2 offers native
+  `BrokenPipePolicy.BEST_EFFORT`. The two record different things -- a relay
+  decision versus an unabsorbed sink failure -- and the facade is what
+  preserves the encoding-fallback decision and its event. `BEST_EFFORT` is
+  selected as a guard that should not fire.
+- (2026-11-24) Record ADR-012 rather than folding the decision into §7.6. The
+  plan's tolerance allows a new ADR, and the rejected alternatives (overlay,
+  global mutation, exec shim) are the part a later maintainer is most likely to
+  re-propose.
 
 ## Outcomes & retrospective
 
 Planning has established a beta2-specific direction and identified stale beta1
-assumptions. No policy implementation, runtime migration, dependency bump, or
-release validation has been performed by this plan. The six expert perspectives
-completed review and their findings were incorporated. Planning gates passed on
-2026-10-20: `make fmt`, `make check-fmt`, `make typecheck`, `make lint`,
-`make test`, `make markdownlint`, and `make nixie`. Tests reported 1,332 passed
-and 30 skipped, with 106 snapshots passing. Logs are under
+assumptions. No runtime migration, dependency bump, or release validation has
+been performed by this plan. The six expert perspectives completed review and
+their findings were incorporated. Planning gates passed on 2026-10-20:
+`make fmt`, `make check-fmt`, `make typecheck`, `make lint`, `make test`,
+`make markdownlint`, and `make nixie`. Tests reported 1,332 passed and 30
+skipped, with 106 snapshots passing. Logs are under
 `/tmp/<gate>-lading-5-1-5.out` (the final formatting log uses
-`/tmp/fmt-lading-5-1-5-2.out`). These are baseline regression results, not
-beta2 adapter integration evidence. Implementation status remains DRAFT until
-explicit approval.
+`/tmp/fmt-lading-5-1-5-2.out`). These were baseline regression results, not
+beta2 adapter integration evidence.
+
+Implementation on 2026-11-24 rebased onto `origin/main` at `0c1ad3f`, which had
+already merged the beta2 adoption (PR #364), moved the pin to
+`cuprum==0.2.0b2`, and renamed `docs/adr/` to `docs/adrs/` with ADR-0010 and
+ADR-0011 allocated. ADR-012 is therefore the next free number rather than 010.
+The rebase changed which facts were available, not the plan's scope: the design
+gains §7.6 with R1–R5, ADR-012 records the decision and its rejected
+alternatives, assessment §9 reconciles measured beta2 behaviour with the beta1
+findings without rewriting them, the developer guide gains the internal adapter
+policy, and the roadmap marks 5.1.5 complete with bounded evidence wording.
+Documentation only: no Python, Rust, dependency, lockfile, test, or workflow
+file changed. Gate results for this milestone are recorded under
+`Concrete steps and validation`.
 
 ## Context and orientation
 

@@ -297,11 +297,14 @@ results, real-time relay, domain errors, and cmd-mox isolation.
 The [beta adoption assessment](cuprum-v0-2-0-beta1-adoption-assessment.md)
 defines the compatibility requirements and acceptance gates. 5.1.4 has since
 selected and validated the published beta on both dependency paths and migrated
-the release uploader, so the release artefact is certified and a release path
-runs on the beta. The pin has since moved to `0.2.0b2`. The production
-migration below remains open: the catalogue, the pathlib conversion, the
-source-level assessment, and the uploader are complete, and every other
-execution migration task is not.
+the release uploader, so the selected artefact runs on a release path and both
+of its distribution wheels were smoke-tested. The pin has since moved to
+`0.2.0b2`, which is the version those tests and 5.1.5's policy measurements
+cover. That evidence is bounded: it does not certify the production command
+migration, cross-platform behaviour, or a final cuprum 0.2.0 release, none of
+which has been performed. The production migration below remains open: the
+catalogue, the pathlib conversion, the source-level assessment, and the
+uploader are complete, and every other execution migration task is not.
 
 Scope includes the production runner and every caller, real cmd-mox
 passthrough, six test files importing `subprocess`, two plumbum test helpers,
@@ -347,7 +350,7 @@ production execution. See the assessment §§1-3 and §7.
     [ADR-006](adrs/adr-0006-align-cuprum-selection-across-dependency-paths.md).
   - Consequence: no final lading 0.x release until the pin moves to cuprum
     0.2.0 final (D8, and #286 for the release process).
-- [ ] 5.1.5. Record the adapter compatibility policy in the design document.
+- [x] 5.1.5. Record the adapter compatibility policy in the design document.
   - Preserve the existing `CommandRunner` tuple and exception contracts;
     separate catalogue rejection from actual spawn `OSError`.
   - Specify environment inheritance versus exact replacement, validated
@@ -357,9 +360,19 @@ production execution. See the assessment §§1-3 and §7.
     `EnvMode.REPLACE`, which replaces the beta1 plan's `os.execve` bootstrap,
     and broken-pipe relay is `BrokenPipePolicy.BEST_EFFORT`, so neither needs
     a compatibility shim. §7.5 of the design document records both.
-  - Success: the decision is recorded in `docs/lading-design.md` §7 and an
-    ADR where substantive; no global `os.environ` mutation or retained
-    subprocess backend is needed to implement it.
+  - Success met: the policy is recorded in
+    [design §7.6](lading-design.md#76-adapter-compatibility-policy-step-515)
+    as requirements R1 to R5, and the decision itself, with the rejected
+    overlay, global-mutation, and exec-shim alternatives, is
+    [ADR-012](adrs/adr-0012-record-command-runner-adapter-compatibility-policy.md).
+    No global `os.environ` mutation and no retained subprocess backend are
+    required. Evidence: measurement of `0.2.0b2` is recorded in
+    [assessment §9](cuprum-v0-2-0-beta1-adoption-assessment.md#9-addendum-adapter-policy-measurements-against-020b2);
+    maintainer guidance is in the
+    [developers' guide](developers-guide.md#the-cuprum-adapter-contract).
+  - This is a policy record only. The adapter, the executable-path
+    registration, and the relay facade are 5.2; nothing here is certified as
+    implemented or as cross-platform behaviour.
 
 ### 5.2. Route production and passthrough through one adapter
 

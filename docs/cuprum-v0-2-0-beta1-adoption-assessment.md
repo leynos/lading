@@ -544,6 +544,93 @@ publication, checking that `0.2.0b2` is the cuprum the isolated environment
 resolves. The beta1 findings remain the reference for the initial snapshot and
 for the still-deferred features.
 
+## 9. Addendum: adapter policy measurements against 0.2.0b2
+
+Added 2026-11-24, during roadmap 5.1.5. Sections 1 to 8 remain the record of
+their own dates; this addendum adds measurements that the adapter policy in
+[design §7.6](lading-design.md#76-adapter-compatibility-policy-step-515) and
+[ADR-012](adrs/adr-0012-record-command-runner-adapter-compatibility-policy.md)
+rely on. It corrects no earlier finding and rewrites none.
+
+**What was measured.** Against the pinned `cuprum==0.2.0b2`, on CPython 3.14
+and Linux, with throwaway probe scripts outside the repository: environment
+composition under both modes, resolution of bare, relative and absolute
+programs, `bind_executable()` identity and authorization, echo onto text-only
+sinks and sinks exposing a buffer, encoding failure, broken pipes under both
+policies, exit data, capture and echo bounds, and `run_sync()` inside a running
+loop. These are adapter-policy facts, not integration evidence for 5.2, and
+they are not a cross-platform claim.
+
+**Failure classification is not derivable from the exception hierarchy.**
+`UnknownProgramError` is a `LookupError`; `ForbiddenProgramError` is a
+`PermissionError`, and therefore an `OSError`; `ExecutableResolutionError` is a
+`RuntimeError`; `InvalidExecutableBindingError` is a `ValueError`. A launch
+failure is a plain `FileNotFoundError` or `PermissionError`. Because a
+catalogue or scope denial is an `OSError`, an adapter that wraps the call in
+`except OSError` reports policy rejection as a missing binary. Section 3's
+distinction -- catalogue rejection is not executable discovery -- therefore
+needs an explicit, ordered mapping, not a single handler.
+
+**Replacement composes exactly as `Popen(env=...)` does.** A parent sentinel
+and an ambient `env(...)` overlay were both absent from a child run with a
+per-call `EnvMode.REPLACE`, and `os.environ` in the parent was unchanged.
+`env=None` and `env={}` under `REPLACE` both gave the empty environment, so the
+inherit-means-`None` rule belongs to the adapter. With `LC_ALL=C`, `LANG=C` and
+`LANGUAGE=''` supplied, the child's key set was exactly the supplied keys plus
+those three; CPython's PEP 538 `LC_CTYPE` coercion adds a key only when no
+locale variable is present, so it does not appear under lading's normalization.
+This confirms section 8's answer and closes section 3.2 for the adapter.
+
+**Resolution follows the child environment.** A bare name resolved against the
+child's `PATH`; a relative `PATH` entry was anchored to the child's `cwd` when
+one was given, and to the parent process's working directory otherwise. An
+**absent** `PATH` fell back to the platform default search path and still
+resolved a bare name, while an **empty** `PATH` failed. A relative target
+resolved against `cwd` and failed without one. A symlinked binding reported the
+configured path, not its target. These distinctions are absent from section 4's
+table and are what design §7.6.3 records.
+
+**`bind_executable()` separates identity from authorization, and does not widen
+it.** Binding a program the active scope did not allow still raised
+`ForbiddenProgramError` before the resolver ran. A relative binding was
+rejected without `allow_relative=True`, and with it was anchored to the supplied
+`cwd`. `CommandResult.resolved_path` reported the bound file. Exact path
+identity held in the other direction too: a catalogue holding a different path
+with the same basename raised `UnknownProgramError`. Section 6.4's
+executable-identity gap is therefore narrower than the beta1 snapshot implied
+for the adapter's purposes: identity can be preserved, and only *authorization*
+of a resolved path needs the local-catalogue rule.
+
+**Echo is byte-first whenever a sink exposes `.buffer`.** A sink with a
+`buffer` attribute received raw bytes on that buffer and no text writes at all,
+so the text path -- and with it any encoding-fallback decision -- is bypassed.
+A text-only sink is the only sink that reaches the text path. Section 8's
+remaining-difference note is confirmed and is why the adapter's facade must not
+expose a buffer.
+
+**A text facade keeps the relay contract intact.** With a text-only sink,
+invalid UTF-8 was replaced, split multi-byte sequences were reassembled, CRLF
+and a final unterminated line were preserved, and a narrow-encoding sink
+recorded exactly one `UNICODE_ENCODE` fallback with full capture. Section 3.3's
+broken-pipe blocker is answered twice over: `BEST_EFFORT` recorded one
+`BROKEN_PIPE` fallback when the error escaped the sink, and a facade that
+absorbed the error produced no fallback at all, because cuprum never saw it.
+The two records are therefore distinguishable, which is what design §7.6.4
+fixes as the division of responsibility.
+
+**Bounds and data.** A non-zero exit returned as `CommandResult` data with no
+exception. With `max_echo_line_bytes=None` a 70,000-byte line was echoed in
+full and captured in full; with the default bound the capture stayed at 70,000
+bytes while the echo stopped at 65,534. `run_sync()` inside a running event
+loop raised `RuntimeError`, and `await run()` in the same loop succeeded, which
+is the constraint §7.6.5 records.
+
+**Not measured, and not claimed.** Windows or macOS behaviour, native-wheel
+parsing path parity, process-group and signal semantics under the adapter,
+timeouts and cancellation under lading's own workflows, and any behaviour of a
+beta after `0.2.0b2`. Those belong to roadmap 5.4.1 and need real integration
+evidence rather than a probe.
+
 [^1]: Inspected
       [lading revision](https://github.com/leynos/lading/tree/c0dda6821de1ac097ce89be96003a051aa11ac99)
     and [cuprum revision](https://github.com/leynos/cuprum/tree/861fe2f053645311482141f155baeaa70dca0299).
