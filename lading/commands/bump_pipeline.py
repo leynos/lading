@@ -188,6 +188,37 @@ def _record_written_manifest_content(
     rewrite_stage.written_manifest_contents[manifest_path] = written_text
 
 
+def _validate_member_manifest_before_update(
+    manifest_path: Path,
+    rewrite_stage: bump_pipeline_manifest_rewrites._ManifestRewriteStage | None,
+) -> None:
+    """Reject edits made after an earlier bump pass wrote this manifest."""
+    if rewrite_stage is None:
+        return
+    previously_written_text = rewrite_stage.written_manifest_contents.get(manifest_path)
+    if previously_written_text is None:
+        return
+    try:
+        current_text = manifest_path.read_text(encoding="utf-8", newline="")
+    except (OSError, UnicodeError) as exc:
+        message = (
+            f"Could not verify manifest after an earlier bump pass wrote it: "
+            f"{manifest_path}: {exc}"
+        )
+        raise bump_pipeline_manifest_rewrites.ManifestRewriteError(
+            message,
+            failed_path=manifest_path,
+        ) from exc
+    if current_text != previously_written_text:
+        message = (
+            f"Manifest changed after an earlier bump pass wrote it: {manifest_path}"
+        )
+        raise bump_pipeline_manifest_rewrites.ManifestRewriteError(
+            message,
+            failed_path=manifest_path,
+        )
+
+
 def _process_documentation_files(
     context: _BumpContext,
     target_version: str,
@@ -306,6 +337,7 @@ def _apply_crate_manifest_update(
         _log.debug("Skipping crate manifest update for excluded crate %r", crate.name)
         return _CrateManifestOutcome.SKIPPED
 
+    _validate_member_manifest_before_update(crate.manifest_path, rewrite_stage)
     crate_options = dc.replace(
         context.base_options,
         dependency_sections=_freeze_dependency_sections(dependency_sections),

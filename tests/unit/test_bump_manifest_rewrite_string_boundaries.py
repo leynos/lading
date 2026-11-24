@@ -131,6 +131,30 @@ def test_version_rewrite_does_not_match_inside_semver_prerelease(
     )
 
 
+def test_dot_prefixed_template_preserves_dotted_prerelease_components(
+    tmp_path: pathlib.Path,
+    write_fixture_manifest: _ManifestWriter,
+) -> None:
+    """A leading dot is included when checking the SemVer prefix."""
+    document = _rewrite_metadata_values(
+        tmp_path,
+        write_fixture_manifest,
+        _MetadataRewriteCase(
+            content=('[metadata]\nnested = "9.0.0-rc.1.0.0"\nstandalone = ".1.0.0"\n'),
+            template=".{version}",
+            pre_bump_version="1.0.0",
+            target_version="2.0.0",
+        ),
+    )
+
+    assert document["metadata"]["nested"] == "9.0.0-rc.1.0.0", (
+        "a dotted prerelease component must not be rewritten"
+    )
+    assert document["metadata"]["standalone"] == ".2.0.0", (
+        "a standalone dot-prefixed reference should still be rewritten"
+    )
+
+
 def test_prerelease_with_build_metadata_stays_intact(
     tmp_path: pathlib.Path,
     write_fixture_manifest: _ManifestWriter,

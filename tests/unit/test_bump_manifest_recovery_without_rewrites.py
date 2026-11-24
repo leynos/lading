@@ -7,6 +7,7 @@ import pytest
 
 from lading import config as config_module
 from lading.commands import bump, bump_manifests, bump_pipeline
+from lading.commands.bump_manifest_rewrites import ManifestRewriteWriteError
 from lading.workspace import WorkspaceCrate, WorkspaceDependency, WorkspaceGraph
 from tests.helpers.workspace_builders import _make_workspace
 
@@ -146,4 +147,67 @@ def test_root_package_rollback_keeps_first_manifest_baseline(
     )
     assert {path: path.read_bytes() for path in manifest_paths} == original_contents, (
         "rollback must restore the first text captured for the shared manifest"
+    )
+
+
+def test_root_package_member_pass_preserves_intervening_edit(
+    tmp_path: Path,
+) -> None:
+    """A member pass must not overwrite an edit after the workspace write."""
+    workspace, root_manifest = _make_root_package_workspace(tmp_path)
+    original_text = root_manifest.read_text(encoding="utf-8")
+    concurrent_edit = "\n# concurrent edit between bump passes\n"
+    configuration = config_module.LadingConfig(
+        bump=config_module.BumpConfig(rebuild_lockfiles=False)
+    )
+    original_update_manifest = bump_pipeline._update_manifest
+    inserted_edit = False
+
+    def write_workspace_then_edit(
+        manifest_path: Path,
+        selectors: tuple[tuple[str, ...], ...],
+        target_version: str,
+        options: bump.BumpOptions,
+    ) -> bump_manifests._ManifestUpdateResult:
+        """Insert an external edit after the first root manifest write."""
+        nonlocal inserted_edit
+        result = original_update_manifest(
+            manifest_path, selectors, target_version, options
+        )
+        if manifest_path == root_manifest and result.written_text is not None:
+            root_manifest.write_text(
+                result.written_text + concurrent_edit,
+                encoding="utf-8",
+            )
+            inserted_edit = True
+        return result
+
+    with (
+        mock.patch.object(
+            bump_pipeline,
+            "_update_manifest",
+            side_effect=write_workspace_then_edit,
+        ),
+        pytest.raises(
+            ManifestRewriteWriteError,
+            match="contents changed after this bump wrote the manifest",
+        ),
+    ):
+        bump.run(
+            tmp_path,
+            "1.2.3",
+            options=bump.BumpOptions(
+                rebuild_lockfiles=False,
+                configuration=configuration,
+                workspace=workspace,
+            ),
+        )
+
+    current_text = root_manifest.read_text(encoding="utf-8")
+    assert inserted_edit, "the concurrent edit must land between the two writes"
+    assert current_text.endswith(concurrent_edit), (
+        "rollback must preserve the intervening edit"
+    )
+    assert current_text != original_text, (
+        "the workspace-pass output must not be restored over a concurrent edit"
     )

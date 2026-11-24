@@ -15,6 +15,7 @@ Examples
 """
 
 import collections.abc as cabc
+import dataclasses as dc
 import logging
 import re
 import typing as typ
@@ -28,6 +29,15 @@ _log = logging.getLogger(__name__)
 
 if typ.TYPE_CHECKING:
     from lading.workspace import WorkspaceCrate
+
+
+@dc.dataclass(frozen=True, slots=True)
+class _ReadmeWriteDestination:
+    """Carry the path boundary and label for one README replacement."""
+
+    path: Path
+    workspace_root: Path
+    crate_name: str
 
 
 class ReadmeTranspositionError(LadingError):
@@ -204,25 +214,31 @@ def _resolve_crate_readme_destination(
 
 
 def _write_or_skip_readme(
-    target_readme: Path,
+    destination: _ReadmeWriteDestination,
     rewritten_text: str,
     *,
     dry_run: bool,
-    crate_name: str,
 ) -> Path | None:
     """Write the rewritten README, or skip when content is already current."""
     if (
-        target_readme.exists()
-        and target_readme.read_text(encoding="utf-8") == rewritten_text
+        destination.path.exists()
+        and destination.path.read_text(encoding="utf-8") == rewritten_text
     ):
-        _log.debug("README already up to date for crate %r; skipping", crate_name)
+        _log.debug(
+            "README already up to date for crate %r; skipping",
+            destination.crate_name,
+        )
         return None
     if not dry_run:
-        bump_toml_files.write_atomic_text(target_readme, rewritten_text)
-        _log.info("Transposed workspace README to %s", target_readme)
+        bump_toml_files.write_atomic_text(
+            destination.path,
+            rewritten_text,
+            workspace_root=destination.workspace_root,
+        )
+        _log.info("Transposed workspace README to %s", destination.path)
     else:
-        _log.info("Dry run: would transpose workspace README to %s", target_readme)
-    return target_readme
+        _log.info("Dry run: would transpose workspace README to %s", destination.path)
+    return destination.path
 
 
 def transpose_readme_to_crate(
@@ -270,10 +286,9 @@ def transpose_readme_to_crate(
         workspace_root, crate, source_text, rewritten_text
     )
     return _write_or_skip_readme(
-        target_readme,
+        _ReadmeWriteDestination(target_readme, workspace_root, crate.name),
         rewritten_text,
         dry_run=dry_run,
-        crate_name=crate.name,
     )
 
 

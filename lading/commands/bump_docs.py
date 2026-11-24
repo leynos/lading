@@ -164,7 +164,11 @@ def update_documentation_files(
             continue
         changed.add(doc_path)
         if not dry_run:
-            bump_toml_files.write_atomic_text(doc_path, updated_text)
+            bump_toml_files.write_atomic_text(
+                doc_path,
+                updated_text,
+                workspace_root=documentation_targets.workspace_root,
+            )
     return changed
 
 

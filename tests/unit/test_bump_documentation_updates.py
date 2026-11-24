@@ -58,6 +58,57 @@ def test_documentation_updates_reject_external_symlink_targets(
         )
 
 
+def test_documentation_write_rechecks_workspace_after_parent_symlink_swap(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A parent symlink inserted before writing cannot redirect a document."""
+    documentation_directory = tmp_path / "docs"
+    documentation_directory.mkdir()
+    document = documentation_directory / "guide.md"
+    original = '```toml\n[dependencies]\nalpha = "0.1.0"\n```\n'
+    document.write_text(original, encoding="utf-8")
+    archived_directory = tmp_path / "docs-archived"
+
+    with tempfile.TemporaryDirectory(dir=tmp_path.parent) as outside_directory:
+        outside_root = pathlib.Path(outside_directory)
+        outside_document = outside_root / "guide.md"
+        outside_document.write_text(original, encoding="utf-8")
+        write_atomic_text = bump_docs.bump_toml_files.write_atomic_text
+
+        def redirect_parent_before_write(
+            file_path: pathlib.Path,
+            content: str,
+            *,
+            workspace_root: pathlib.Path | None = None,
+        ) -> None:
+            """Replace the validated parent with a link to the outside file."""
+            documentation_directory.rename(archived_directory)
+            documentation_directory.symlink_to(outside_root, target_is_directory=True)
+            write_atomic_text(
+                file_path,
+                content,
+                workspace_root=workspace_root,
+            )
+
+        monkeypatch.setattr(
+            bump_docs.bump_toml_files,
+            "write_atomic_text",
+            redirect_parent_before_write,
+        )
+        with pytest.raises(PermissionError, match="within the workspace"):
+            bump_docs.update_documentation_files(
+                bump_docs.DocumentationTargets(tmp_path, (document,)),
+                "1.2.3",
+                {"alpha"},
+                dry_run=False,
+            )
+
+        assert outside_document.read_text(encoding="utf-8") == original, (
+            "a parent-directory symlink must not redirect the documentation write"
+        )
+
+
 def test_documentation_targets_resolve_relative_workspace_root(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,

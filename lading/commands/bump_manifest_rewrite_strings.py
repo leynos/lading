@@ -124,7 +124,7 @@ def _is_semver_component_match(
     return _is_semver_build_metadata_match(value, match_start) or (
         _is_semver_prerelease_match(
             value,
-            match_start + int(matched_text.startswith("-")),
+            match_start + int(matched_text.startswith(("-", "."))),
         )
     )
 
