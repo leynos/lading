@@ -142,7 +142,12 @@ def test_version_rewrite_does_not_match_inside_build_metadata(
     write_fixture_manifest(
         tmp_path,
         "fixture/Cargo.toml",
-        '[metadata]\nartifact = "9.0.0+1.2.3"\nfixture = "published-1.2.3"\n',
+        "[metadata]\n"
+        'artifact = "9.0.0+0.6.0-beta4"\n'
+        'tagged-build = "release-9.0.0+0.6.0-beta4"\n'
+        'tagged-build-prefix = "9.0.0+build-0.6.0-beta4"\n'
+        'plus-delimiter = "release+0.6.0-beta4"\n'
+        'fixture = "published-0.6.0-beta4"\n',
     )
     group = ManifestRewriteConfig(
         paths=("fixture/Cargo.toml",),
@@ -153,18 +158,27 @@ def test_version_rewrite_does_not_match_inside_build_metadata(
     )
     versions = manifest_rewrite_versions(
         names=frozenset({"alpha"}),
-        pre_bump_versions={"alpha": "1.2.3"},
-        target_version="2.0.0",
+        pre_bump_versions={"alpha": "0.6.0-beta4"},
+        target_version="0.6.0",
     )
 
     plans = plan_fixture_rewrites(tmp_path, (group,), versions=versions)
 
     assert len(plans) == 1, "the standalone version should still produce a plan"
     document = parse_toml(plans[0].new_text)
-    assert document["metadata"]["artifact"] == "9.0.0+1.2.3", (
+    assert document["metadata"]["artifact"] == "9.0.0+0.6.0-beta4", (
         "build metadata must not be mistaken for a standalone version"
     )
-    assert document["metadata"]["fixture"] == "published-2.0.0", (
+    assert document["metadata"]["tagged-build"] == "release-9.0.0+0.6.0-beta4", (
+        "a SemVer build suffix must shield its metadata from standalone rewrites"
+    )
+    assert document["metadata"]["tagged-build-prefix"] == ("9.0.0+build-0.6.0-beta4"), (
+        "a version later in SemVer build metadata must also remain unchanged"
+    )
+    assert document["metadata"]["plus-delimiter"] == "release+0.6.0", (
+        "a plus sign outside SemVer build metadata is a valid boundary"
+    )
+    assert document["metadata"]["fixture"] == "published-0.6.0", (
         "a hyphen before a standalone version remains a valid boundary"
     )
 

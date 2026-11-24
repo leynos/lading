@@ -5,6 +5,7 @@ import dataclasses as dc
 import pathlib
 
 import pytest
+from tomlkit import parse as parse_toml
 
 from lading.commands import bump_manifest_rewrites
 from lading.config import ManifestRewriteConfig, StringValueRewriteConfig
@@ -215,13 +216,10 @@ class _RewriteRetryScenario:
                 names=frozenset({"alpha", "beta"}),
                 pre_bump_versions={"alpha": "2.0.0", "beta": "1.0.0"},
                 target_version="2.0.0",
-                expected_error=(
-                    r"non-target version '0\.8\.0'.*one or more updated "
-                    r"workspace crates are already at '2\.0\.0'"
-                ),
+                expected_error=None,
                 expected_new_text=None,
             ),
-            id="version-only-mixed-retry-unrecoverable-version",
+            id="version-only-mixed-retry-leaves-unrelated-version-alone",
         ),
         pytest.param(
             _RewriteRetryScenario(
@@ -257,12 +255,10 @@ class _RewriteRetryScenario:
                 names=frozenset({"alpha", "beta"}),
                 pre_bump_versions={"alpha": "2.0.0", "beta": "2.0.0"},
                 target_version="2.0.0",
-                expected_error=(
-                    r"one or more updated workspace crates are already at '2\.0\.0'"
-                ),
+                expected_error=None,
                 expected_new_text=None,
             ),
-            id="version-only-unattributed-stale-rejection",
+            id="version-only-unattributed-version-is-not-rejected",
         ),
         pytest.param(
             _RewriteRetryScenario(
@@ -284,7 +280,7 @@ def test_string_rewrite_retry_staleness_contract(
     write_fixture_manifest: _ManifestWriter,
     scenario: _RewriteRetryScenario,
 ) -> None:
-    """Retried rewrites reject stale text and preserve exact target values."""
+    """Retry checks reject attributable stale text and preserve target values."""
     write_fixture_manifest(
         tmp_path,
         "fixtures/standalone/Cargo.toml",
@@ -349,4 +345,38 @@ def test_missing_string_table_skips_conflicting_template(
 
     assert not plan_fixture_rewrites(tmp_path, (group,), versions=versions), (
         "a missing TOML table must skip otherwise-conflicting renderings"
+    )
+
+
+def test_version_only_retry_preserves_unrelated_values_and_rewrites_known_version(
+    tmp_path: pathlib.Path,
+    write_fixture_manifest: _ManifestWriter,
+) -> None:
+    """A version-only rule rewrites known versions without rejecting others."""
+    write_fixture_manifest(
+        tmp_path,
+        "fixtures/standalone/Cargo.toml",
+        '[metadata]\nlegacy = "0.8.0"\ncurrent = "1.0.0"\n',
+    )
+    group = ManifestRewriteConfig(
+        paths=("fixtures/standalone/Cargo.toml",),
+        dependencies=False,
+        string_values=(
+            StringValueRewriteConfig(table=("metadata",), template="{version}"),
+        ),
+    )
+    versions = manifest_rewrite_versions(
+        names=frozenset({"alpha", "beta"}),
+        pre_bump_versions={"alpha": "2.0.0", "beta": "1.0.0"},
+        target_version="2.0.0",
+    )
+
+    (plan,) = plan_fixture_rewrites(tmp_path, (group,), versions=versions)
+
+    rewritten = parse_toml(plan.new_text)["metadata"]
+    assert rewritten["legacy"] == "0.8.0", (
+        "unrelated selected version values must remain unchanged"
+    )
+    assert rewritten["current"] == "2.0.0", (
+        "a selected version known from workspace metadata must be updated"
     )

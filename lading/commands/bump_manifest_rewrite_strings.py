@@ -18,13 +18,18 @@ if typ.TYPE_CHECKING:
     from lading.config import StringValueRewriteConfig
 
 _CRATE_NAME_CHARACTER: typ.Final[str] = r"A-Za-z0-9_-"
-_VERSION_PREFIX_CHARACTER: typ.Final[str] = r"A-Za-z0-9.+"
+_VERSION_PREFIX_CHARACTER: typ.Final[str] = r"A-Za-z0-9."
 _VERSION_SUFFIX_CHARACTER: typ.Final[str] = r"A-Za-z0-9.+-"
 _SEMVER_TEXT: typ.Final[str] = (
     r"\d+\.\d+\.\d+"
     r"(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
     r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
 )
+_SEMVER_BUILD_METADATA_PREFIX: typ.Final[re.Pattern[str]] = re.compile(
+    r"(?<![A-Za-z0-9.+])"
+    r"\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?\+$"
+)
+_BUILD_METADATA_CHARACTERS: typ.Final[re.Pattern[str]] = re.compile(r"[0-9A-Za-z.-]*")
 _LEADING_BOUNDARIES: typ.Final[tuple[tuple[str, str], ...]] = (
     ("{crate}", rf"(?<![{_CRATE_NAME_CHARACTER}])"),
     ("{version}", rf"(?<![{_VERSION_PREFIX_CHARACTER}])"),
@@ -41,7 +46,7 @@ def _raise_if_string_rewrite_is_stale(
     rule: StringValueRewriteConfig,
     versions: ManifestRewriteVersions,
 ) -> None:
-    """Reject selected fixture text that cannot be repaired after a partial bump."""
+    """Reject crate-specific text that cannot be repaired after a partial bump."""
     table = bump_toml.select_table(document, rule.table)
     if table is None:
         return
@@ -75,10 +80,12 @@ def _stale_string_references(
     template: str,
     versions: ManifestRewriteVersions,
 ) -> tuple[tuple[str | None, str], ...]:
-    """Find stale values that a retry cannot attribute to a selected crate."""
+    """Find stale values that a retry can attribute to a selected crate."""
     if _template_identifies_crate(template):
         return _stale_crate_renderings(values, template, versions)
-    return _stale_version_renderings(values, template, versions)
+    # A version-only template cannot distinguish an unrelated selected version
+    # from an unrecoverable reference left by a partial bump.
+    return ()
 
 
 def _stale_crate_renderings(
@@ -106,28 +113,6 @@ def _stale_crate_renderings(
     )
 
 
-def _stale_version_renderings(
-    values: cabc.Sequence[str],
-    template: str,
-    versions: ManifestRewriteVersions,
-) -> tuple[tuple[str | None, str], ...]:
-    """Find unlabelled stale versions once the target appears in the fixture."""
-    pre_bump_versions = {
-        versions.pre_bump_versions[crate_name]
-        for crate_name in versions.updated_crate_names
-    }
-    if versions.target_version not in pre_bump_versions:
-        return ()
-    recoverable_versions = pre_bump_versions - {versions.target_version}
-    return tuple(
-        (None, stale_version)
-        for _, stale_version in _versions_for_crate_not_at_target(
-            values, template, "", versions.target_version
-        )
-        if stale_version not in recoverable_versions
-    )
-
-
 def _template_identifies_crate(template: str) -> bool:
     """Return whether a rewrite template identifies the crate it names."""
     return any(
@@ -149,6 +134,7 @@ def _versions_for_crate_not_at_target(
         (match.group(), version)
         for value in values
         for match in pattern.finditer(value)
+        if not _is_semver_build_metadata_match(value, match.start())
         if match.group() != target_rendering
         for group_name in version_groups
         if (version := match.group(group_name)) is not None
@@ -210,7 +196,36 @@ def _compile_string_rewrite(
     matching_replacements = _matching_replacements(replacements, target_renderings)
     pattern = _string_replacement_pattern(rule.template, matching_replacements)
     return lambda value: pattern.sub(
-        lambda match: matching_replacements[match.group()], value
+        lambda match: _replacement_for_match(value, match, matching_replacements),
+        value,
+    )
+
+
+def _replacement_for_match(
+    value: str,
+    match: re.Match[str],
+    replacements: cabc.Mapping[str, str],
+) -> str:
+    """Replace a match unless it is a version inside SemVer build metadata."""
+    matched_text = match.group()
+    if _is_semver_build_metadata_match(value, match.start()):
+        return matched_text
+    return replacements[matched_text]
+
+
+def _is_semver_build_metadata_match(
+    value: str,
+    match_start: int,
+) -> bool:
+    """Identify a match anywhere inside a SemVer build metadata segment."""
+    separator = value.rfind("+", 0, match_start)
+    if separator < 0:
+        return False
+    semver_prefix = value[: separator + 1]
+    metadata_prefix = value[separator + 1 : match_start]
+    return (
+        _SEMVER_BUILD_METADATA_PREFIX.search(semver_prefix) is not None
+        and _BUILD_METADATA_CHARACTERS.fullmatch(metadata_prefix) is not None
     )
 
 
