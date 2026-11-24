@@ -630,6 +630,29 @@ run; no such file exists for this milestone.
 `git diff --cached --check` was clean, and `git diff --cached --name-only`
 contained no non-Markdown file, so the committed content is the gated content.
 
+### Hosted CI is unverified for this branch
+
+The local gates above are the only validation evidence this plan claims. No
+hosted CI result exists for any head of this branch, and that absence is
+recorded rather than glossed over.
+
+Every CI run created for the branch was either cancelled by a later push,
+because `.github/workflows/ci.yml` sets `cancel-in-progress` for pull requests,
+or left queued with no runner assigned. The run for the current head, created
+2026-11-24T20:11Z, was still queued more than two and a half hours later with
+`runner_name: ""` and zero steps executed. That is not a property of this
+change: `repos/leynos/lading/actions/runs` showed no job in progress anywhere
+in the repository, and the same stall affected `leynos/episodic`,
+`leynos/vtcode` and `leynos/cuprum`, while `www.githubstatus.com` reported
+Actions as "Normal". The non-Actions providers did complete and pass (CodeScene
+Code Health Review, Gecko Security Review).
+
+Consequences, stated plainly: a green local suite is not a hosted pass, and
+this plan does not treat it as one. Readiness and merge depend on that CI
+result arriving; until then the branch's validation is local-only. If the queue
+recovers, the run already created for head `017b16a` is the one to observe, and
+no further push is needed to produce it.
+
 ### Acceptance discharges (A1–A6)
 
 Each review note names the paragraph that states the requirement and the
