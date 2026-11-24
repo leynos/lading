@@ -199,8 +199,15 @@ two non-absolute forms resolve differently, and the difference is preserved
 rather than flattened: `Path` normalization means `sccache` and `./sccache`
 both arrive as the bare name and resolve on `PATH`, while `bin/sccache` keeps
 its separator and resolves against `cwd`. Both routes were measured with
-positive and negative controls. An unresolvable or non-executable value is a
-prepared failure, not a launch error.
+positive and negative controls.
+
+An unresolvable or non-executable wrapper keeps its existing classification,
+`CommandSpawnError`. It is a missing executable, `_spawn_process` already maps
+a launch `OSError` for one to that type, and `_query` chains it as the cause of
+`SccacheQueryError`; reclassifying it as a preparation failure would change
+that caller-visible cause for no contract gain. Catalogue membership, scope
+permission and cuprum binding-resolver failures stay distinct from it, and none
+of them may be reported as a missing executable.
 
 `bind_executable()` is the documented alternative and does not widen
 authorization; it does not authorize the bound file either, so authorization
