@@ -1202,11 +1202,14 @@ pipeline stage. It snapshots root and member manifest contents before writes,
 plans the rewrites, then applies them after member manifests. If application
 fails, it restores the changed workspace manifests so a retry retains the
 original crate-version map. The module uses `bump_toml_files` for snapshot
-reads and atomic restoration writes. `lading.commands.bump_pipeline` owns the
-overall pipeline order. Rewrite duration sums the planning and application
-intervals, including recovery on failure and excluding intervening stages.
-`BumpOptions.clock` supplies the monotonic clock; tests inject deterministic
-values.
+reads and atomic restoration writes. It also derives pre-bump crate versions
+from those snapshots, resolving `version.workspace = true` through
+`[workspace.package]`; string matching therefore follows the manifests even
+when a caller reuses a stale `WorkspaceGraph`. `lading.commands.bump_pipeline`
+owns the overall pipeline order. Rewrite duration sums the planning and
+application intervals, including recovery on failure and excluding intervening
+stages. `BumpOptions.clock` supplies the monotonic clock; tests inject
+deterministic values.
 
 `lading.commands.bump_requirement_bounds.excluding_rewritten_first_bound`
 reports a strict first comparator after the bump substitutes the target version.

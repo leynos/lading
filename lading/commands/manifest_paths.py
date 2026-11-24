@@ -210,7 +210,7 @@ class _ManifestGlobTraversal:
             if _is_manifest_directory(child):
                 self.visit(child, index)
             elif is_terminal_recursive and not self.directory_only:
-                self.record_if_present(child)
+                self.visit(child, index + 1)
 
     def visit_wildcard(self, candidate: Path, segment: str, index: int) -> None:
         """Match one wildcard path segment against each directory entry."""

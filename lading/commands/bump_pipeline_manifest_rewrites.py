@@ -11,6 +11,9 @@ import logging
 import typing as typ
 from pathlib import Path
 
+from tomlkit import parse as parse_toml
+from tomlkit.exceptions import TOMLKitError
+
 from lading.commands import (
     bump_manifest_rewrite_application,
     bump_manifest_rewrite_filesystem,
@@ -27,6 +30,8 @@ from lading.commands.bump_manifest_rewrite_model import (
 )
 
 if typ.TYPE_CHECKING:
+    from tomlkit.toml_document import TOMLDocument
+
     from lading.commands.bump_manifests import _BumpContext
 
 _log = logging.getLogger(__name__)
@@ -54,15 +59,15 @@ def _plan_non_member_manifest_rewrites(
         return _ManifestRewriteStage()
     clock = context.base_options.clock
     planning_started_at = clock()
-    pre_bump_versions = {
-        crate.name: crate.version for crate in context.workspace.crates
-    }
     member_manifest_paths = tuple(
         crate.manifest_path for crate in context.workspace.crates
     )
     try:
         workspace_manifest_snapshots = _read_workspace_manifest_snapshots(
             context.workspace_manifest, member_manifest_paths
+        )
+        pre_bump_versions = _pre_bump_versions_from_snapshots(
+            context, workspace_manifest_snapshots
         )
         sources = bump_manifest_rewrite_filesystem.read_manifest_rewrite_sources(
             context.root_path, rewrite_groups, member_manifest_paths
@@ -96,6 +101,62 @@ def _plan_non_member_manifest_rewrites(
         planning_duration_seconds=planning_duration,
         workspace_manifest_snapshots=workspace_manifest_snapshots,
     )
+
+
+def _pre_bump_versions_from_snapshots(
+    context: _BumpContext,
+    snapshots: cabc.Sequence[tuple[Path, str]],
+) -> dict[str, str]:
+    """Read current package versions from the same source snapshots as recovery."""
+    text_by_path = dict(snapshots)
+    workspace_document = _parse_manifest_snapshot(
+        context.workspace_manifest,
+        text_by_path[context.workspace_manifest],
+    )
+    workspace_table = workspace_document.get("workspace")
+    workspace_package = (
+        workspace_table.get("package")
+        if isinstance(workspace_table, cabc.Mapping)
+        else None
+    )
+    inherited_version = (
+        workspace_package.get("version")
+        if isinstance(workspace_package, cabc.Mapping)
+        else None
+    )
+    versions: dict[str, str] = {}
+    for crate in context.workspace.crates:
+        manifest_path = crate.manifest_path
+        document = _parse_manifest_snapshot(manifest_path, text_by_path[manifest_path])
+        package = document.get("package")
+        package_version = (
+            package.get("version") if isinstance(package, cabc.Mapping) else None
+        )
+        match package_version:
+            case str() as version:
+                versions[crate.name] = str(version)
+            case {"workspace": True}:
+                if not isinstance(inherited_version, str):
+                    message = (
+                        "Workspace-inherited package version is unavailable in "
+                        f"{context.workspace_manifest}"
+                    )
+                    raise ManifestRewriteError(
+                        message, failed_path=context.workspace_manifest
+                    )
+                versions[crate.name] = str(inherited_version)
+            case _:
+                versions[crate.name] = crate.version
+    return versions
+
+
+def _parse_manifest_snapshot(path: Path, content: str) -> TOMLDocument:
+    """Parse a captured manifest and retain its path in failures."""
+    try:
+        return parse_toml(content)
+    except TOMLKitError as exc:
+        message = f"Could not parse manifest snapshot {path}: {exc}"
+        raise ManifestRewriteError(message, failed_path=path) from exc
 
 
 def _read_workspace_manifest_snapshots(

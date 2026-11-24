@@ -358,3 +358,40 @@ def test_rewrite_failure_rolls_back_to_text_parsed_after_a_concurrent_edit(
         "rollback should restore the text parsed by this update, including edits "
         "that landed after planning"
     )
+
+
+def test_reused_workspace_graph_uses_current_manifest_versions(
+    tmp_path: Path,
+) -> None:
+    """String rewrites use source versions even when metadata is reused."""
+    case = _make_partial_write_failure_case(tmp_path)
+    alpha_manifest = next(
+        crate.manifest_path for crate in case.workspace.crates if crate.name == "alpha"
+    )
+    alpha_text = alpha_manifest.read_text(encoding="utf-8")
+    alpha_manifest.write_text(
+        alpha_text.replace('version = "0.1.0"', "version.workspace = true", 1),
+        encoding="utf-8",
+    )
+    assert "version.workspace = true" in alpha_manifest.read_text(encoding="utf-8"), (
+        "the fixture must exercise an inherited workspace version"
+    )
+    for target_version in ("1.2.3", "1.2.4"):
+        bump.run(
+            case.root,
+            target_version,
+            options=bump.BumpOptions(
+                rebuild_lockfiles=False,
+                configuration=case.configuration,
+                workspace=case.workspace,
+            ),
+        )
+
+    for fixture in case.fixtures:
+        text = fixture.read_text(encoding="utf-8")
+        assert 'alpha = "1.2.4"' in text, (
+            "dependency requirements should use the second target version"
+        )
+        assert "../alpha-1.2.4" in text, (
+            "string rewrites should use versions from manifests read this run"
+        )

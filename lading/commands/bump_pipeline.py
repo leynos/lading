@@ -138,8 +138,8 @@ def _process_workspace_manifest(
     )
     if result.was_changed:
         changed_manifests.add(context.workspace_manifest)
-        rewrite_stage.rollback_baselines[context.workspace_manifest] = (
-            result.original_text
+        rewrite_stage.rollback_baselines.setdefault(
+            context.workspace_manifest, result.original_text
         )
     _record_written_manifest_content(result, context.workspace_manifest, rewrite_stage)
 
@@ -317,7 +317,9 @@ def _apply_crate_manifest_update(
         crate_options,
     )
     if result.was_changed and rewrite_stage is not None:
-        rewrite_stage.rollback_baselines[crate.manifest_path] = result.original_text
+        rewrite_stage.rollback_baselines.setdefault(
+            crate.manifest_path, result.original_text
+        )
     _record_written_manifest_content(result, crate.manifest_path, rewrite_stage)
     if result.was_changed:
         _log.debug(

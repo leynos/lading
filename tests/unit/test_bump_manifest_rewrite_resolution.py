@@ -204,6 +204,28 @@ def test_recursive_globs_do_not_follow_directory_symlink_cycles(
     )
 
 
+def test_terminal_recursive_glob_rejects_escaping_symlinks(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A terminal ``**`` match still checks symlink containment."""
+    outside_directory = tmp_path.parent / f"{tmp_path.name}-outside"
+    outside_directory.mkdir()
+    escape = tmp_path / "fixtures" / "escape"
+    escape.parent.mkdir()
+    escape.symlink_to(outside_directory, target_is_directory=True)
+
+    with pytest.raises(
+        bump_manifest_rewrites.ManifestRewriteError,
+        match="stay within the workspace",
+    ):
+        manifest_paths.expand_manifest_glob_candidates(
+            tmp_path,
+            "fixtures/**",
+            error_type=bump_manifest_rewrites.ManifestRewriteError,
+            label="Manifest rewrite",
+        )
+
+
 def test_terminal_recursive_glob_includes_manifest_files(
     tmp_path: pathlib.Path,
     write_fixture_manifest: _ManifestWriter,
