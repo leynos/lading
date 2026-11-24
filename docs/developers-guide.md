@@ -2079,10 +2079,14 @@ short form a maintainer needs before touching the runner.
   `normalize_environment` and `c_locale_env`, then pass
   `ExecutionContext(env=..., env_mode=EnvMode.REPLACE)`. Never mutate
   `os.environ`.
-- **Authorization.** Pass the catalogue explicitly, use a narrow scope, and
-  register a resolved absolute path as an exact-path `Program` in a local
-  catalogue. A basename match does not authorize. `bind_executable()` is the
-  alternative when a logical name must survive, and it does not widen the
+- **Authorization.** Pass the catalogue explicitly and use a narrow scope.
+  Register a resolved executable path as an exact-path `Program` in the _same_
+  per-invocation catalogue the adapter activates and builds from: nested
+  catalogue scopes intersect, so a separate local catalogue would be denied. A
+  configured `RUSTC_WRAPPER` may be bare or relative, so resolve it against the
+  effective `PATH` and `cwd` and require an existing executable before
+  registering it. A basename match does not authorize. `bind_executable()` is
+  the alternative when a logical name must survive, and it does not widen the
   allowlist -- but it does not authorize the bound file either, so a binding
   must authorize that path separately. See design §7.6.3.
 - **Relay.** Select `capture=True`, the caller's `echo_stdout`,

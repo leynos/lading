@@ -180,10 +180,23 @@ the adapter as a replacement.
 ### Authorization
 
 Catalogue membership (at `sh.make`) and allowlist permission (at run) stay
-separate checks, and a per-call scope narrows rather than widens. A configured
-sccache path and a cmd-mox-resolved path are registered as exact-path `Program`
-entries in a local catalogue for that invocation; a matching basename does not
-authorize. `bind_executable()` is the documented alternative and does not widen
+separate checks, and a per-call scope narrows rather than widens: nested
+catalogue scopes intersect, so an inner catalogue cannot add a program the
+enclosing one lacks. A validated executable path and a cmd-mox-resolved path
+are therefore registered as exact-path `Program` entries in **one
+per-invocation catalogue** derived from `LADING_CATALOGUE`, which is the
+catalogue the adapter both activates and builds from. A separate local
+catalogue would be denied, because the two allowlists intersect rather than
+union. A matching basename does not authorize, since lookup is keyed by the
+whole `Program` string.
+
+A configured `RUSTC_WRAPPER` is not necessarily absolute -- `detect_wrapper`
+accepts a bare or relative name -- so the adapter resolves it against the
+effective child `PATH` and `cwd` first, requires an existing executable, and
+registers the resolved path. An unresolvable or non-executable value is a
+prepared failure, not a launch error.
+
+`bind_executable()` is the documented alternative and does not widen
 authorization; it does not authorize the bound file either, so authorization
 and resolution are not interchangeable. It is not selected because these
 callers have no stable logical name to preserve. Validation is not a sandbox,
@@ -215,10 +228,11 @@ invocation log record, one adapter, and no second generic runner abstraction.
   outcomes, and the missing-Cargo diagnostic keeps its meaning.
 - The environment contract is exact, so a caller that omits a variable can
   rely on it being absent. Requesting inheritance remains an explicit choice.
-- The adapter depends on two beta2 opt-ins -- `EnvMode.REPLACE` and
-  `BrokenPipePolicy.BEST_EFFORT` -- whose behaviour is pinned by
-  `tests/unit/test_cuprum_policies.py`. A later beta that changes either is a
-  design deviation, not an implementation detail.
+- The adapter depends on two beta2 opt-ins, `EnvMode.REPLACE` and
+  `BrokenPipePolicy.BEST_EFFORT`. Each is pinned by its own module:
+  `tests/unit/test_cuprum_policies.py` for the environment mode and
+  `tests/unit/test_cuprum_echo_policies.py` for the broken-pipe policy. A later
+  beta that changes either is a design deviation, not an implementation detail.
 - The relay has a deliberate no-buffer rule. A sink that exposes `.buffer`
   would silently move echo onto cuprum's byte path and lose the encoding
   fallback and its event, so the rule is a tested invariant rather than a

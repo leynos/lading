@@ -167,6 +167,24 @@ kept disjoint. All of it is recorded in assessment §9.
   file is absent. The lesson is to vary the controlled variable: the earlier
   probe changed the failure it observed without establishing which directory
   the OS had searched.
+- (2026-11-24) The hosted completeness assessment found five defects, all
+  confirmed by measurement, and the local probe habit above is why four of them
+  had survived. Two catalogues cannot be combined by nesting: their allowlists
+  intersect, so an exact-path `Program` registered in a separate local
+  catalogue is denied while `scoped(catalogue=LADING_CATALOGUE)` is active. The
+  policy now requires one per-invocation catalogue derived from
+  `LADING_CATALOGUE` that carries the exact paths, activated and built from
+  together. `RUSTC_WRAPPER` is not necessarily absolute -- `detect_wrapper`
+  accepts a bare or relative name and its tests pin the bare case -- so the
+  policy adds a resolution-and-validation step before registration. §7.5 and
+  roadmap 5.2.2 still said "do not wrap the sink", contradicting §7.6.4; both
+  now require the facade and keep `BEST_EFFORT` as the unfired guard. The
+  echo-memory claim attributed capture buffering to echo: with
+  `max_echo_line_bytes=None` cuprum builds no limiter and writes chunks
+  straight through, so only the capture buffer grows. Finally, the two opt-ins
+  are pinned by two modules, `test_cuprum_policies.py` for `EnvMode` and
+  `test_cuprum_echo_policies.py` for `BrokenPipePolicy`; the ADR and adjacent
+  guidance named only the first.
 - (2026-11-24) Record `CommandPreparationError` as the one type this policy
   requires without introducing it. Naming it in §7.6.1 and deferring the
   definition to 5.2.1 keeps the plan documentation-only while making the
@@ -236,6 +254,17 @@ probe with its negative control before writing the sentence the probe supports.
 Nothing here certifies the adapter. R1–R5, `CommandPreparationError`, the
 exact-path registration and the relay facade are all 5.2 work; this plan
 supplies the decisions they need so that work makes none of its own.
+
+The hosted completeness assessment earned its keep. It found five real defects
+that three local review passes and seven green gates had not: two catalogues
+cannot be unioned by nesting, so the "local catalogue" the policy described
+would have been denied; `RUSTC_WRAPPER` is not always absolute; §7.5 and
+roadmap 5.2.2 still contradicted §7.6.4 about wrapping the sink; the
+echo-memory claim described capture; and the ADR attributed both opt-ins to one
+test module. Each was reproduced before being fixed. The pattern is the same as
+the four earlier corrections -- a claim written from one observation without
+the control that would have falsified it -- and it is the reason the policy
+carries measurements rather than reasoning from the assessment.
 
 ## Context and orientation
 
@@ -592,17 +621,23 @@ and the assessment addendum.
   subsection and in ADR-012.
 - **A3 (R3: authorization and resolution).** Design §7.6.3. Measured: an
   absolute configured path ran when registered and was rejected when only a
-  same-basename different path was registered; a nested catalogue scope did not
-  widen an outer narrower allowlist; a relative `PATH` entry was anchored to
-  the child's `cwd` when supplied and to the parent's directory otherwise;
-  absent and empty `PATH` behaved differently; `./tool` resolved against `cwd`
-  when supplied and against the parent's directory otherwise, succeeding only
-  where the file existed; a symlinked binding reported the configured path.
-  `bind_executable()` preserved identity, did not widen authorization, and did
-  not narrow it to the bound file either: a permitted logical `Program` bound
-  to an unrelated executable ran it unchecked. The design states that asymmetry
-  and why exact-path registration ties authorization to the file. The
-  check-and-use race is stated as a limitation, not a guarantee.
+  same-basename different path was registered; nested catalogue scopes
+  intersect rather than union, so a separate local catalogue is denied while an
+  outer one lacking the path is active, which is why the policy requires one
+  per-invocation catalogue activated and built from together; an enclosing
+  narrower `ScopeConfig(allowlist=...)` is preserved; a relative `PATH` entry
+  was anchored to the child's `cwd` when supplied and to the parent's directory
+  otherwise; absent and empty `PATH` behaved differently; `./tool` resolved
+  against `cwd` when supplied and against the parent's directory otherwise,
+  succeeding only where the file existed; a symlinked binding reported the
+  configured path. `detect_wrapper` accepts a bare or relative `RUSTC_WRAPPER`,
+  so the design adds a resolve-then-register step rather than assuming an
+  absolute value. `bind_executable()` preserved identity, did not widen
+  authorization, and did not narrow it to the bound file either: a permitted
+  logical `Program` bound to an unrelated executable ran it unchecked. The
+  design states that asymmetry and why exact-path registration ties
+  authorization to the file. The check-and-use race is stated as a limitation,
+  not a guarantee.
 - **A4 (R4: relay and capture).** Design §7.6.4. Measured: a text sink that
   raised `UnicodeEncodeError` produced one fallback record with full capture;
   invalid UTF-8 was replaced, split sequences reassembled, and a final
@@ -610,7 +645,11 @@ and the assessment addendum.
   entirely, which is why the facade must not expose one; a facade that absorbed
   `BrokenPipeError` produced no `relay_fallbacks` entry while one that let it
   escape produced exactly one. The unbounded memory cost is stated rather than
-  claimed away.
+  claimed away, and is attributed to capture: with `max_echo_line_bytes=None`
+  cuprum builds no line limiter and writes chunks straight through, so the echo
+  path adds no buffering of its own. Both opt-ins' test homes are named
+  separately, since `test_cuprum_policies.py` covers `EnvMode` and
+  `test_cuprum_echo_policies.py` covers `BrokenPipePolicy`.
 - **A5 (R5: ownership, cmd-mox, one adapter).** Design §7.6.5. Domain error
   translation stays with `metadata` and `publish_execution`; cmd-mox keeps its
   IPC, namespacing, `PATH` filtering, `PWD`, stdin and reporting, with only the

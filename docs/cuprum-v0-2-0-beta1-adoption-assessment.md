@@ -516,16 +516,18 @@ session still closes, and the result records a `RelayFallback` carrying
 `EchoStream.STDOUT` and `EchoErrorCategory.BROKEN_PIPE`. The default remains
 `STRICT`, so a caller must opt in deliberately.
 
-**Evidence.** `tests/unit/test_cuprum_policies.py` pins both opt-ins. It
-composes lading's real `normalize_environment` and `c_locale_env` functions with
+**Evidence.** Two test modules pin the opt-ins, one per concern.
+`tests/unit/test_cuprum_policies.py` covers the environment: it composes
+lading's real `normalize_environment` and `c_locale_env` functions with
 `EnvMode.REPLACE` and asserts the child's environment key set is exactly the
 supplied keys plus the C-locale pins, with a parent sentinel and both Actions
 variables set first so inheritance would be visible; an `OVERLAY` counterpart
 asserts those variables do leak, which keeps the replacement test falsifiable.
-A second pair drives a text-only sink whose `write` raises `BrokenPipeError`:
-`BEST_EFFORT` yields exit 0, full capture of both streams, one fallback record,
-one write attempt, and a closed session, while `STRICT` raises. All four tests
-fail on the 0.1.x surface and pass on 0.2.0b2.
+`tests/unit/test_cuprum_echo_policies.py` covers the relay: it drives a
+text-only sink whose `write` raises `BrokenPipeError`, where `BEST_EFFORT`
+yields exit 0, full capture of both streams, one fallback record, one write
+attempt, and a closed session, while `STRICT` raises. All of them fail on the
+0.1.x surface and pass on 0.2.0b2.
 
 **Remaining gaps.** Nothing above changes the deferred features in §6.3 to
 §6.6; they are still absent from the released API. Within the two resolved

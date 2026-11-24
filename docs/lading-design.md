@@ -1123,13 +1123,17 @@ and returns the command result to the Lading caller._
    echoing a stream whose reader has gone away while capture and child reaping
    continue, which reproduces lading's relay policy. The default stays strict.
 3. The adapter therefore passes `c_locale_env(normalize_environment(...))` as
-   a `REPLACE` environment and selects `BEST_EFFORT` on the output options,
-   rather than wrapping the sink or bootstrapping an `os.execve` child. A sink
-   must still avoid exposing a raw `.buffer`, because cuprum writes raw bytes
-   to that attribute instead of taking the text path; lading's relay policy
-   keeps its UTF-8 replacement decoding for the text path.
+   a `REPLACE` environment and bootstraps no `os.execve` child. Echo still goes
+   through a text facade over `write_to_relay_sink`, as §7.6.4 requires: the
+   facade is what preserves the sticky binary fallback and emits the ADR-007
+   events, which `BEST_EFFORT` does not replace. `BEST_EFFORT` is selected as a
+   secondary guard that should stay unfired while the facade absorbs the error.
+   The facade must avoid exposing a raw `.buffer`, because cuprum writes raw
+   bytes to that attribute instead of taking the text path.
    `max_echo_line_bytes=None` is selected for current unbounded relay parity.
-   `tests/unit/test_cuprum_policies.py` pins both opt-ins.
+   The two opt-ins are pinned by `tests/unit/test_cuprum_policies.py`
+   (`EnvMode`) and `tests/unit/test_cuprum_echo_policies.py`
+   (`BrokenPipePolicy`).
 4. Cargo output continues to be relayed as it is produced, not buffered until
    completion, and recorded output remains complete.
 
@@ -1270,25 +1274,52 @@ Authorization has three separate surfaces, and the adapter keeps them separate.
 
 **Catalogue membership** is checked once, when `sh.make()` builds the command.
 The adapter passes the intended catalogue explicitly and activates the same one
-with `scoped(catalogue=LADING_CATALOGUE)`, so the builder resolves it without
-relying on the active scope.
+with `scoped(catalogue=...)`, so the builder resolves it without relying on the
+active scope.
 
 **Execution scope** is checked when the command runs, against the innermost
-allowlist. A catalogue scope narrows the allowlist to that catalogue's
-programs, and a nested catalogue scope does not widen an outer narrower one: a
-program excluded by an enclosing `scoped(ScopeConfig(allowlist=...))` is still
-denied inside an inner catalogue scope. The adapter therefore uses an
-appropriately narrow scope and does not assume that naming a catalogue grants
-permission.
+allowlist. A catalogue scope narrows the allowlist to exactly that catalogue's
+programs, and nested catalogue scopes intersect: a program in an inner
+catalogue but not in the enclosing one is still denied. Measured, with an outer
+catalogue holding both programmes and an inner one holding only the first: the
+first ran, the second raised `ForbiddenProgramError`, and reversing the nesting
+denied the second again. A narrower `scoped(ScopeConfig(allowlist=...))` is
+likewise preserved. The adapter therefore uses an appropriately narrow scope
+and never assumes that naming a catalogue grants permission.
 
-**Executable identity** is what actually runs. The configured sccache from
-`RUSTC_WRAPPER` and the path cmd-mox resolves for a passthrough directive are
-absolute paths, so the adapter registers the exact path as its own `Program` in
-a local, per-invocation catalogue and runs that. A matching basename is not
-enough: catalogue lookup is keyed by the whole `Program` string, so registering
-one path authorizes that path and not another executable of the same name. The
-local catalogue is not merged into `LADING_CATALOGUE`, and the adapter never
-permits all programs.
+**Executable identity** is what actually runs. The adapter registers the
+validated executable as an exact-path `Program`, and that registration must be
+in the _same_ catalogue it activates -- not in a separate local one. Two
+catalogues cannot be combined by nesting, because their allowlists intersect
+rather than union: an absolute-path `Program` registered only in an inner
+catalogue is denied while an outer catalogue that lacks it is active. So the
+adapter builds one per-invocation catalogue carrying the intended programmes
+plus each validated exact path, activates it, and builds from it.
+
+A matching basename is not enough. Catalogue lookup is keyed by the whole
+`Program` string, so registering one path authorizes that path and not another
+executable of the same name. The per-invocation catalogue is derived from
+`LADING_CATALOGUE` rather than replacing it, is scoped to one invocation, and
+the adapter never permits all programs.
+
+A configured `RUSTC_WRAPPER` is **not** always absolute, so it cannot be
+registered as it stands. `detect_wrapper` accepts any value whose basename
+starts with `sccache`, and its tests pin the bare-name case:
+`RUSTC_WRAPPER=sccache` returns the relative `Path("sccache")`, and a relative
+path or a `./`-prefixed value passes the same check. The adapter therefore
+resolves the value first, against the effective child environment described
+below and before any registration:
+
+- An absolute value is validated as it stands.
+- A bare name is resolved against the child `PATH`.
+- A relative path is resolved against the requested `cwd`.
+
+Resolution yields an absolute, existing, executable path, and _that_ is what
+gets registered. A value that does not resolve, or resolves to something that
+is not executable, is a prepared failure rather than a registered `Program`, so
+a missing compiler cache is reported as such instead of becoming a launch
+`OSError` or a misleading Cargo diagnostic. Registration always happens after
+resolution, never on the operator's raw string.
 
 Cuprum's `bind_executable()` is the alternative and is not selected for 5.2. It
 separates the logical program from the file executed and reports the file as
@@ -1372,11 +1403,15 @@ The division of records is fixed: the facade's ADR-007 event is the record of a
 relay decision, and a `CommandResult.relay_fallbacks` entry means the facade
 failed to absorb a sink failure. Emitting both for one decision is a defect.
 
-Complete capture and unbounded echo lines keep their current memory cost: a
-large output is retained in full, and a stream that never emits a newline is
-buffered as one line. This policy makes no bounded-memory claim and adds no
-truncation limit. It also promises no ordering between stdout and stderr; each
-stream is ordered with itself, and the two are relayed concurrently.
+Complete capture retains a stream's output in full, so a large output keeps its
+current memory cost. That is the capture path, and it is where the cost lives.
+The echo path is not additionally buffered: `max_echo_line_bytes=None` makes
+cuprum build no line limiter at all and write each chunk straight to the
+facade, so an unterminated line costs the facade nothing while it accumulates
+and only the capture buffer grows. This policy makes no bounded-memory claim
+and adds no truncation limit. It also promises no ordering between stdout and
+stderr; each stream is ordered with itself, and the two are relayed
+concurrently.
 
 #### 7.6.5. Caller and cmd-mox boundary (R5)
 

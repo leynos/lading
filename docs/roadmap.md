@@ -338,7 +338,8 @@ production execution. See the assessment §§1-3 and §7.
     in `scripts/upload_release_wheels.py`; each path carries its own lockfile.
   - The pin has since moved to `cuprum==0.2.0b2` on both paths, which resolved
     the 0.2.0-beta1 environment-replacement and broken-pipe blockers natively;
-    `tests/unit/test_cuprum_policies.py` pins both opt-ins.
+    `tests/unit/test_cuprum_policies.py` pins the environment mode and
+    `tests/unit/test_cuprum_echo_policies.py` the broken-pipe policy.
   - Moved the uploader's cuprum boundary into `scripts/release_gh.py`, which
     uses `scoped(catalogue=…)`, `sh.make(program, catalogue=…)`, and
     `run_sync(output=RunOutputOptions(capture=True))`, replacing the removed
@@ -396,12 +397,14 @@ and §7.
   - Requires 5.2.1.
   - Capture both streams, keep metadata stdout silent and stderr live, and
     select `max_echo_line_bytes=None` for current unbounded relay parity.
-  - Select `BrokenPipePolicy.BEST_EFFORT` for the relay contract instead of
-    building a broken-pipe-suppressing sink facade, and reuse the text path's
-    UTF-8 replacement decoding for narrow encodings; the binary fallback has
-    no production consumer, because cuprum bypasses any sink exposing a
-    `.buffer` to write raw bytes. Remove redundant pipe-draining threads once
-    cuprum owns draining.
+  - Echo through a text-only facade over `write_to_relay_sink` that absorbs
+    `BrokenPipeError`, keeps the sticky binary fallback for narrow encodings,
+    and emits the ADR-007 events; it must expose no `.buffer`, because cuprum
+    bypasses any sink that has one. Select
+    `BrokenPipePolicy.BEST_EFFORT` as the secondary guard that should stay
+    unfired while the facade absorbs the error. §7.6.4 of the design document
+    is the contract. Remove redundant pipe-draining threads once cuprum owns
+    draining.
   - Success: output arrives before exit, including partial lines; capture
     survives rejected sinks and lines over 64 KiB without truncation.
 - [ ] 5.2.3. Route every production caller through the cuprum adapter.
