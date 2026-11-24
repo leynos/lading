@@ -42,7 +42,6 @@ from lading.commands.bump_manifest_rewrite_model import (
     ManifestRewriteWriteError,
 )
 from lading.commands.bump_manifest_rewrite_strings import (
-    _raise_if_string_rewrite_is_stale,
     _rewrite_string_values,
 )
 
@@ -83,9 +82,10 @@ def plan_manifest_rewrites(
     ------
     ManifestRewriteError
         If any source is malformed TOML, a selected string rule lacks
-        pre-bump version metadata, a partial bump left a stale string reference,
-        or configured string templates have ambiguous renderings. No source is
-        written by this function.
+        pre-bump version metadata, or configured string templates have
+        ambiguous renderings. Unmatched selected strings are preserved because
+        they may be intentional historical values. No source is written by this
+        function.
     """
     plans: list[ManifestRewritePlan] = []
     for source in sources:
@@ -112,5 +112,4 @@ def _rewrite_manifest_document(
             document, versions.updated_crate_names, versions.target_version
         )
     for rule in source.string_values:
-        _raise_if_string_rewrite_is_stale(source.path, document, rule, versions)
         _rewrite_string_values(document, rule, versions, source.path)

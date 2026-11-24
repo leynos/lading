@@ -68,41 +68,6 @@ def update_string_values(
     return changed
 
 
-def selected_string_values(
-    table: _TableLike,
-    *,
-    field: str | None = None,
-) -> tuple[str, ...]:
-    """Return selected TOML strings without changing their containing table.
-
-    Parameters
-    ----------
-    table : _TableLike
-        TOML table whose values are inspected.
-    field : str or None, optional
-        When set, inspect this field in each inline or standard sub-table.
-        When omitted, inspect direct string values in ``table``.
-
-    Returns
-    -------
-    tuple[str, ...]
-        Selected strings in document order.
-
-    Examples
-    --------
-    >>> from tomlkit import parse
-    >>> table = parse('path = "alpha-1.0.0"')
-    >>> selected_string_values(table)
-    ('alpha-1.0.0',)
-    """
-    return tuple(
-        text
-        for key, entry in tuple(table.items())
-        if (target := _selected_value_target(table, key, entry, field)) is not None
-        if (text := bump_toml.value_as_string(target[2])) is not None
-    )
-
-
 def _selected_value_target(
     table: _TableLike,
     key: str,

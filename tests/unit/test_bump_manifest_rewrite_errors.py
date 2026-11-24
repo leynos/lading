@@ -6,7 +6,7 @@ import re
 import pytest
 
 from lading.commands import bump_manifest_rewrites
-from lading.config import ManifestRewriteConfig
+from lading.config import ManifestRewriteConfig, StringValueRewriteConfig
 from tests.helpers.manifest_rewrites import plan_fixture_rewrites
 
 
@@ -33,5 +33,30 @@ def test_wraps_toml_errors_with_manifest_path(
     with pytest.raises(
         bump_manifest_rewrites.ManifestRewriteError,
         match=re.escape(str(manifest.resolve())),
+    ):
+        plan_fixture_rewrites(tmp_path, (group,), versions)
+
+
+def test_selected_string_rule_requires_pre_bump_versions(
+    tmp_path: pathlib.Path,
+) -> None:
+    """String selectors fail when workspace source versions are unavailable."""
+    manifest = tmp_path / "fixture" / "Cargo.toml"
+    manifest.parent.mkdir()
+    manifest.write_text('[metadata]\npath = "alpha-1.0.0"\n', encoding="utf-8")
+    group = ManifestRewriteConfig(
+        paths=("fixture/Cargo.toml",),
+        dependencies=False,
+        string_values=(StringValueRewriteConfig(table=("metadata",)),),
+    )
+    versions = bump_manifest_rewrites.ManifestRewriteVersions(
+        updated_crate_names=frozenset({"alpha"}),
+        pre_bump_versions={},
+        target_version="2.0.0",
+    )
+
+    with pytest.raises(
+        bump_manifest_rewrites.ManifestRewriteError,
+        match=r"Pre-bump versions for workspace crate\(s\) 'alpha' are unavailable",
     ):
         plan_fixture_rewrites(tmp_path, (group,), versions)

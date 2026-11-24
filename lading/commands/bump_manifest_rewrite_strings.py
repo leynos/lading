@@ -2,7 +2,6 @@ r"""Compile selected TOML string rewrites for configured manifests."""
 
 import collections.abc as cabc
 import re
-import string as string_module
 import typing as typ
 from pathlib import Path
 
@@ -20,11 +19,6 @@ if typ.TYPE_CHECKING:
 _CRATE_NAME_CHARACTER: typ.Final[str] = r"A-Za-z0-9_-"
 _VERSION_PREFIX_CHARACTER: typ.Final[str] = r"A-Za-z0-9."
 _VERSION_SUFFIX_CHARACTER: typ.Final[str] = r"A-Za-z0-9.+-"
-_SEMVER_TEXT: typ.Final[str] = (
-    r"\d+\.\d+\.\d+"
-    r"(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
-    r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
-)
 _SEMVER_BUILD_METADATA_PREFIX: typ.Final[re.Pattern[str]] = re.compile(
     r"(?<![A-Za-z0-9.])"
     r"\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?\+$"
@@ -47,17 +41,11 @@ _TRAILING_BOUNDARIES: typ.Final[tuple[tuple[str, str], ...]] = (
 )
 
 
-def _raise_if_string_rewrite_is_stale(
+def _raise_if_pre_bump_versions_are_missing(
     manifest_path: Path,
-    document: TOMLDocument,
-    rule: StringValueRewriteConfig,
     versions: ManifestRewriteVersions,
 ) -> None:
-    """Reject crate-specific text that cannot be repaired after a partial bump."""
-    table = bump_toml.select_table(document, rule.table)
-    if table is None:
-        return
-    selected_values = bump_toml_strings.selected_string_values(table, field=rule.field)
+    """Require source versions before planning a selected rewrite rule."""
     missing_versions = tuple(
         sorted(
             crate_name
@@ -69,106 +57,6 @@ def _raise_if_string_rewrite_is_stale(
         raise ManifestRewriteError.pre_bump_versions_unavailable(
             missing_versions, manifest_path
         )
-    stale_references = _stale_string_references(
-        selected_values, rule.template, versions
-    )
-    if stale_references:
-        crate_name, stale_version = stale_references[0]
-        raise ManifestRewriteError.stale_template_reference(
-            crate_name,
-            stale_version,
-            versions.target_version,
-            manifest_path,
-        )
-
-
-def _stale_string_references(
-    values: cabc.Sequence[str],
-    template: str,
-    versions: ManifestRewriteVersions,
-) -> tuple[tuple[str | None, str], ...]:
-    """Find stale values that a retry can attribute to a selected crate."""
-    if _template_identifies_crate(template):
-        return _stale_crate_renderings(values, template, versions)
-    # A version-only template cannot distinguish an unrelated selected version
-    # from an unrecoverable reference left by a partial bump.
-    return ()
-
-
-def _stale_crate_renderings(
-    values: cabc.Sequence[str],
-    template: str,
-    versions: ManifestRewriteVersions,
-) -> tuple[tuple[str | None, str], ...]:
-    """Find stale crate-specific text after a crate has reached the target."""
-    known_renderings = {
-        template.format(crate=crate_name, version=version)
-        for crate_name in versions.updated_crate_names
-        for version in (
-            versions.pre_bump_versions[crate_name],
-            versions.target_version,
-        )
-    }
-    return tuple(
-        (crate_name, stale_version)
-        for crate_name in sorted(versions.updated_crate_names)
-        if versions.pre_bump_versions[crate_name] == versions.target_version
-        for matched_text, stale_version in _versions_for_crate_not_at_target(
-            values, template, crate_name, versions.target_version
-        )
-        if matched_text not in known_renderings
-    )
-
-
-def _template_identifies_crate(template: str) -> bool:
-    """Return whether a rewrite template identifies the crate it names."""
-    return any(
-        field_name == "crate"
-        for _, field_name, _, _ in string_module.Formatter().parse(template)
-    )
-
-
-def _versions_for_crate_not_at_target(
-    values: cabc.Sequence[str],
-    template: str,
-    crate_name: str,
-    target_version: str,
-) -> tuple[tuple[str, str], ...]:
-    """Find full stale matches and their versions for one crate template."""
-    pattern, version_groups = _stale_template_pattern(template, crate_name)
-    target_rendering = template.format(crate=crate_name, version=target_version)
-    return tuple(
-        (match.group(), version)
-        for value in values
-        for match in pattern.finditer(value)
-        if not _is_semver_component_match(value, match.start())
-        if match.group() != target_rendering
-        for group_name in version_groups
-        if (version := match.group(group_name)) is not None
-        if version != target_version
-    )
-
-
-def _stale_template_pattern(
-    template: str,
-    crate_name: str,
-) -> tuple[re.Pattern[str], tuple[str, ...]]:
-    """Compile a template matcher that captures each embedded version field."""
-    pieces: list[str] = []
-    version_groups: list[str] = []
-    for literal, field_name, _, _ in string_module.Formatter().parse(template):
-        pieces.append(re.escape(literal))
-        match field_name:
-            case "crate":
-                pieces.append(re.escape(crate_name))
-            case "version":
-                group_name = f"stale_version_{len(version_groups)}"
-                version_groups.append(group_name)
-                pieces.append(f"(?P<{group_name}>{_SEMVER_TEXT})")
-    prefix = _template_boundary(template, str.startswith, _LEADING_BOUNDARIES)
-    suffix = _template_boundary(template, str.endswith, _TRAILING_BOUNDARIES)
-    pattern = re.compile(f"{prefix}(?:{''.join(pieces)}){suffix}")
-    return pattern, tuple(version_groups)
 
 
 def _rewrite_string_values(
@@ -181,6 +69,7 @@ def _rewrite_string_values(
     table = bump_toml.select_table(document, rule.table)
     if table is None:
         return False
+    _raise_if_pre_bump_versions_are_missing(manifest_path, versions)
     replacement = _compile_string_rewrite(rule, versions, manifest_path)
     if replacement is None:
         return False

@@ -18,12 +18,6 @@ from lading.commands.bump_manifest_rewrites import ManifestRewriteError
             ),
             id="missing-pre-bump-version",
         ),
-        pytest.param(
-            ManifestRewriteError.stale_template_reference(
-                "alpha", "1.0.0", "2.0.0", Path("fixtures/Cargo.toml")
-            ),
-            id="stale-template-reference",
-        ),
     ],
 )
 def test_planning_errors_with_paths_are_not_reported_as_write_failures(

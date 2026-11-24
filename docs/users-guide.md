@@ -879,11 +879,11 @@ different target text, planning fails with the affected manifest path instead
 of choosing one replacement. Version-only selectors leave selected versions
 that do not match a workspace crate's pre-bump version unchanged, since the
 selector cannot attribute those values to a crate. A version-only selector also
-cannot identify a stale reference after a previous run has already updated the
-workspace manifests: that value is indistinguishable from an intentional
-version for another crate. Use a crate-qualified template such as the default
-`"{crate}-{version}"` when a fixture needs to identify stale references after a
-partial bump.
+cannot identify which unmatched version belongs to an updated crate. The same
+limit applies to crate-qualified templates. A value with that crate name but an
+unmatched version may be an intentional historical reference. Rewrites replace
+exact renderings made from the pre-bump workspace versions; unmatched selected
+text remains unchanged.
 
 The root manifest and all workspace-member manifests are skipped even when a
 configured glob selects them. Repeated groups selecting the same non-member
@@ -899,10 +899,11 @@ still runs without invoking Cargo.
 Each configured manifest write is atomic, but the batch is not. If a later
 write fails, or a manifest changes after planning, earlier fixture rewrites
 remain and lockfile regeneration is skipped. Member manifests already contain
-the target version, so a version-only selector may no longer have enough
-information to plan remaining string rewrites. The recommended recovery is to
-restore the pre-bump working tree and rerun the complete `lading bump`, which
-reapplies manifest, documentation, README, and lockfile updates in order.
+the target version, so planning may no longer have the earlier version needed
+to rewrite remaining string references for those crates. The recommended
+recovery is to restore the pre-bump working tree and rerun the complete
+`lading bump`, which reapplies manifest, documentation, README, and lockfile
+updates in order.
 
 For manual recovery, finish the remaining fixture edits and apply the skipped
 documentation and workspace README updates. Before committing, regenerate

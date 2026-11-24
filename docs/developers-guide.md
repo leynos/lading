@@ -1178,15 +1178,14 @@ rewrite policy. `lading.commands.bump_manifest_rewrites` plans dependency and
 string-value edits from those records. It parses supplied TOML text but does
 not access the filesystem. `lading.commands.bump_toml_strings` owns traversal
 of direct and named-field string values in parsed TOML tables through
-`selected_string_values` and `update_string_values`. It delegates value
-replacement and formatting preservation to `bump_toml`, and
-`bump_manifest_rewrite_strings` calls it. `lading.commands.bump_toml_types`
-owns the shared table-like type and runtime checks used by the TOML helpers.
-`bump_toml` and `bump_toml_dependencies` handle requirement composition,
-dependency aliases, and requirement replacement. `bump_docs_toml` reuses
-dependency traversal for top-level, workspace, and target-specific TOML tables.
-The rewrite planner parses supplied text with tomlkit directly;
-`bump_toml_files` owns manifest reads and atomic writes.
+`update_string_values`. It delegates value replacement and formatting
+preservation to `bump_toml`, and `bump_manifest_rewrite_strings` calls it.
+`lading.commands.bump_toml_types` owns the shared table-like type and runtime
+checks used by the TOML helpers. `bump_toml` and `bump_toml_dependencies`
+handle requirement composition, dependency aliases, and requirement replacement.
+`bump_docs_toml` reuses dependency traversal for top-level, workspace, and
+target-specific TOML tables. The rewrite planner parses supplied text with
+tomlkit directly; `bump_toml_files` owns manifest reads and atomic writes.
 `lading.commands.bump_manifest_rewrite_model` owns `ManifestRewritePlan`,
 `ManifestRewriteSource`, `ManifestRewriteVersions`, `ManifestRewriteError`, and
 `ManifestRewriteWriteError`; the records keep filesystem, planning, and
