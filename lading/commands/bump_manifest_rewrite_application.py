@@ -58,6 +58,7 @@ def _apply_manifest_rewrite(
     planned_writes: int,
 ) -> None:
     """Check one plan's source before atomically persisting its replacement."""
+    _validate_plan_destination(plan, completed_writes, planned_writes)
     current_text = _read_current_text(plan, completed_writes, planned_writes)
     if current_text != plan.original_text:
         message = f"Manifest rewrite target changed after planning: {plan.path}"
@@ -68,6 +69,38 @@ def _apply_manifest_rewrite(
             failed_path=plan.path,
         )
     _write_manifest_plan(plan, completed_writes, planned_writes)
+
+
+def _validate_plan_destination(
+    plan: ManifestRewritePlan,
+    completed_writes: int,
+    planned_writes: int,
+) -> None:
+    """Reject a destination that no longer resolves to its planned path."""
+    try:
+        resolved_path = plan.path.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        message = (
+            f"Could not resolve manifest rewrite target {plan.path} before writing: "
+            f"{exc}"
+        )
+        raise ManifestRewriteError(
+            message,
+            completed_writes=completed_writes,
+            planned_writes=planned_writes,
+            failed_path=plan.path,
+        ) from exc
+    if resolved_path != plan.path:
+        message = (
+            f"Manifest rewrite target no longer resolves to its planned path: "
+            f"{plan.path}"
+        )
+        raise ManifestRewriteError(
+            message,
+            completed_writes=completed_writes,
+            planned_writes=planned_writes,
+            failed_path=plan.path,
+        )
 
 
 def _read_current_text(

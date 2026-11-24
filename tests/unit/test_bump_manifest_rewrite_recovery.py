@@ -352,3 +352,65 @@ def test_rewrite_failure_preserves_member_manifest_edited_after_bump_write(
     assert "left the current contents in place" in str(failure.value), (
         "the rollback error must explain why the manifest was not restored"
     )
+
+
+def test_rewrite_failure_rolls_back_to_text_parsed_after_a_concurrent_edit(
+    tmp_path: Path,
+) -> None:
+    """Rollback keeps edits observed between planning and manifest update."""
+    case = _make_partial_write_failure_case(tmp_path)
+    beta_manifest = next(
+        crate.manifest_path for crate in case.workspace.crates if crate.name == "beta"
+    )
+    original_beta_text = case.workspace_manifests[beta_manifest].decode("utf-8")
+    concurrent_edit = "\n# edited after planning and before this manifest update\n"
+    parsed_beta_text = original_beta_text + concurrent_edit
+    original_update_manifest = bump_pipeline._update_manifest
+    write_atomic_text = bump_manifest_rewrite_application.write_atomic_text
+
+    def edit_beta_before_update(
+        manifest_path: Path,
+        selectors: tuple[tuple[str, ...], ...],
+        target_version: str,
+        options: bump.BumpOptions,
+    ) -> bump_manifests._ManifestUpdateResult:
+        """Insert an external edit before the selected manifest is parsed."""
+        if manifest_path == beta_manifest:
+            manifest_path.write_text(parsed_beta_text, encoding="utf-8")
+        return original_update_manifest(
+            manifest_path, selectors, target_version, options
+        )
+
+    def fail_second_fixture(path: Path, text: str) -> None:
+        """Let the first fixture write complete, then fail the second."""
+        if path == case.fixtures[1].resolve():
+            raise OSError
+        write_atomic_text(path, text)
+
+    with (
+        mock.patch.object(
+            bump_pipeline,
+            "_update_manifest",
+            side_effect=edit_beta_before_update,
+        ),
+        mock.patch.object(
+            bump_manifest_rewrite_application,
+            "write_atomic_text",
+            side_effect=fail_second_fixture,
+        ),
+        pytest.raises(ManifestRewriteError),
+    ):
+        bump.run(
+            case.root,
+            "1.2.3",
+            options=bump.BumpOptions(
+                rebuild_lockfiles=False,
+                configuration=case.configuration,
+                workspace=case.workspace,
+            ),
+        )
+
+    assert beta_manifest.read_text(encoding="utf-8") == parsed_beta_text, (
+        "rollback should restore the text parsed by this update, including edits "
+        "that landed after planning"
+    )

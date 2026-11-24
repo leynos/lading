@@ -96,22 +96,23 @@ def resolve_documentation_targets(
         retained for containment checks before updates.
 
     """
+    resolved_root = workspace_root.resolve()
     patterns = documentation.globs
     if not patterns:
-        return DocumentationTargets(workspace_root.resolve(), ())
+        return DocumentationTargets(resolved_root, ())
 
     resolved: set[Path] = set()
     for pattern in patterns:
-        for candidate in workspace_root.glob(pattern):
+        for candidate in resolved_root.glob(pattern):
             safe_candidate = manifest_paths.resolve_workspace_path(
-                workspace_root,
+                resolved_root,
                 candidate,
                 error_type=LadingError,
                 label="Documentation",
             )
             if safe_candidate.is_file():
                 resolved.add(safe_candidate)
-    return DocumentationTargets(workspace_root.resolve(), tuple(resolved))
+    return DocumentationTargets(resolved_root, tuple(resolved))
 
 
 def update_documentation_files(

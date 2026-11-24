@@ -674,6 +674,13 @@ full_name = [
 reason = "Retained public staging entry point for callers that cannot express block-scoped cleanup; it is documented in the users guide."
 
 [[tool.skylos.dead_code.entrypoints]]
+type = "function"
+full_name = [
+    "lading.commands.bump_toml_files.parse_manifest",
+]
+reason = "The v0.4.0 migration guide's file-helper example imports parse_manifest as a supported downstream API, and its example test verifies the import."
+
+[[tool.skylos.dead_code.entrypoints]]
 type = "parameter"
 full_name = [
     "lading.commands.publish_staging._handle_termination.frame",

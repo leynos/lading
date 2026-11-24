@@ -35,9 +35,14 @@ def parse_manifest(manifest_path: Path) -> TOMLDocument:
     >>> parse_manifest(path)["version"]
     '0.1.0'
     """
+    return _read_and_parse_manifest(manifest_path)[1]
+
+
+def _read_and_parse_manifest(manifest_path: Path) -> tuple[str, TOMLDocument]:
+    """Return the exact text and TOML document produced by one file read."""
     with manifest_path.open("r", encoding="utf-8", newline="") as handle:
         content = handle.read()
-    return parse_toml(content)
+    return content, parse_toml(content)
 
 
 def write_atomic_text(file_path: Path, content: str) -> None:

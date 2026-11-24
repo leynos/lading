@@ -905,10 +905,11 @@ remain and lockfile regeneration is skipped. Before reporting the failure,
 contents still match the exact text written by this bump. If another writer
 changed a manifest after the bump wrote it, rollback leaves those contents in
 place and reports the path. This avoids overwriting a concurrent edit. The
-other matching manifests are restored to their pre-bump contents, preserving
-the original crate versions for a retry. If rollback reports a manifest it left
-in place or could not restore, inspect and repair that named file before
-retrying.
+other matching manifests are restored to the exact text this bump parsed before
+updating each one. That preserves edits observed after planning and before an
+update, as well as the original crate versions when no such edit occurred. If
+rollback reports a manifest it left in place or could not restore, inspect and
+repair that named file before retrying.
 
 For example, the `rstest-bdd` published GPUI fixture can opt into rewriting its
 dependency requirements and staged package patch paths:

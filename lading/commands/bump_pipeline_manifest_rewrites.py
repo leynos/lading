@@ -41,6 +41,7 @@ class _ManifestRewriteStage:
     planning_duration_seconds: float = 0.0
     workspace_manifest_snapshots: tuple[tuple[Path, str], ...] = ()
     written_manifest_contents: dict[Path, str] = dc.field(default_factory=dict)
+    rollback_baselines: dict[Path, str] = dc.field(default_factory=dict)
 
 
 def _plan_non_member_manifest_rewrites(
@@ -139,9 +140,8 @@ def _apply_non_member_manifest_rewrites(
         )
     except ManifestRewriteError as rewrite_error:
         recovery_error = _restore_changed_workspace_manifests(
-            stage.workspace_manifest_snapshots,
+            stage,
             changed_manifests,
-            stage.written_manifest_contents,
             rewrite_error,
         )
         bump_manifest_rewrite_metrics.record_manifest_rewrite_metrics(
@@ -172,13 +172,13 @@ def _apply_non_member_manifest_rewrites(
 
 
 def _restore_changed_workspace_manifests(
-    snapshots: cabc.Sequence[tuple[Path, str]],
+    stage: _ManifestRewriteStage,
     changed_manifests: cabc.Collection[Path],
-    written_manifest_contents: cabc.Mapping[Path, str],
     failure: Exception,
 ) -> ManifestRewriteWriteError | None:
     """Restore only manifests that still contain this bump's written text."""
-    original_text_by_path = dict(snapshots)
+    original_text_by_path = dict(stage.workspace_manifest_snapshots)
+    original_text_by_path.update(stage.rollback_baselines)
     failures: list[tuple[Path, str]] = []
     changed_workspace_manifests = sorted(
         set(changed_manifests).intersection(original_text_by_path),
@@ -191,7 +191,7 @@ def _restore_changed_workspace_manifests(
         except (OSError, UnicodeError) as exc:
             failures.append((manifest_path, f"could not read before rollback: {exc}"))
             continue
-        if current_text != written_manifest_contents.get(manifest_path):
+        if current_text != stage.written_manifest_contents.get(manifest_path):
             concurrent_edit_detail = (
                 "contents changed after this bump wrote the manifest; "
                 "left the current contents in place"

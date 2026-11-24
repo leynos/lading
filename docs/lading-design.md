@@ -324,9 +324,10 @@ lading bump <new_version> [--dry-run]
    transposition, and lockfile regeneration. If application fails, restore a
    changed workspace or member manifest only when it still contains the exact
    text written by this run. Leave and report files changed by another writer;
-   restore the other matching manifests to their pre-bump contents so a retry
-   retains the original crate versions needed to finish stale fixture string
-   rewrites, including when earlier fixture writes succeeded.
+   restore the other matching manifests to the exact text this run parsed
+   before updating them. This retains edits observed after planning and the
+   original crate versions when no such edit occurs, allowing retries to finish
+   stale fixture string rewrites after earlier fixture writes succeeded.
 
 6. **Update Documentation Files:**
 
@@ -444,6 +445,10 @@ lading bump <new_version> [--dry-run]
   timing, metrics, and stage ordering; it plans every selected manifest before
   the workspace manifest stage writes, then applies plans after member
   manifests and before documentation, README transposition, and lockfile work.
+- `bump_toml_files` owns manifest parsing and atomic writes. Its internal
+  `_read_and_parse_manifest` operation returns the exact input text alongside
+  the parsed document from one read, so bump recovery can retain the source
+  used for the corresponding manifest update.
 - Changed non-member manifests appear in the existing manifest report
   category. Rewriting does not add lockfile targets; `bump.lockfile_manifests`
   continues to control additional lockfile regeneration.

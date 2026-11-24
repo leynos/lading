@@ -20,13 +20,17 @@ from tests.helpers.workspace_builders import _load_version
 def test_update_manifest_writes_when_changed(tmp_path: Path) -> None:
     """Applying a new version persists changes to disk."""
     manifest_path = tmp_path / "Cargo.toml"
-    manifest_path.write_text('[package]\nname = "demo"\nversion = "0.1.0"\n')
+    original = '[package]\nname = "demo"\nversion = "0.1.0"\n'
+    manifest_path.write_text(original, encoding="utf-8")
     result = bump_manifests._update_manifest(
         manifest_path, (("package",),), "1.0.0", bump.BumpOptions()
     )
     assert result.was_changed is True, "changing the version should report a change"
     assert result.written_text == manifest_path.read_text(encoding="utf-8"), (
         "the result should expose the exact text written for rollback checks"
+    )
+    assert result.original_text == original, (
+        "the result should preserve the exact source text used for its update"
     )
     assert _load_version(manifest_path, ("package",)) == "1.0.0", (
         "package version should be persisted to disk"

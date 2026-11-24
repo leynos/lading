@@ -57,6 +57,28 @@ def test_documentation_updates_reject_external_symlink_targets(
         )
 
 
+def test_documentation_targets_resolve_relative_workspace_root(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Glob resolution and containment use one canonical workspace root."""
+    readme = tmp_path / "README.md"
+    readme.write_text("# Fixture workspace\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path.parent)
+
+    targets = bump_docs.resolve_documentation_targets(
+        pathlib.Path(tmp_path.name),
+        config.DocumentationConfig(globs=("README.md",)),
+    )
+
+    assert targets.workspace_root == tmp_path.resolve(), (
+        "relative workspace roots should be canonicalized in the returned record"
+    )
+    assert targets.paths == (readme.resolve(),), (
+        "globbing from the canonical root should select relative-root files"
+    )
+
+
 @dc.dataclass(frozen=True, slots=True)
 class _ReadmeTransposeScenario:
     """Parameters for README transposition tests."""

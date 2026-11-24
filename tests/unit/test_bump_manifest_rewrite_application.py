@@ -1,6 +1,7 @@
 """Tests for applying configured non-member manifest rewrites."""
 
 import pathlib
+import tempfile
 
 import pytest
 
@@ -69,6 +70,38 @@ def test_application_rejects_manifest_changed_after_planning(
     assert manifest.read_text(encoding="utf-8") == (
         '[dependencies]\nalpha = "local-edit"\n'
     ), "application must not overwrite changes made after planning"
+
+
+def test_application_rejects_manifest_replaced_by_symlink_after_planning(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A symlink swapped in after planning cannot redirect an atomic write."""
+    manifest = tmp_path / "Cargo.toml"
+    original = '[dependencies]\nalpha = "1.0.0"\n'
+    manifest.write_text(original, encoding="utf-8")
+    plan = bump_manifest_rewrites.ManifestRewritePlan(
+        manifest.resolve(),
+        original,
+        '[dependencies]\nalpha = "2.0.0"\n',
+    )
+    with tempfile.TemporaryDirectory(dir=tmp_path.parent) as outside_directory:
+        outside = pathlib.Path(outside_directory) / "Cargo.toml"
+        outside.write_text(original, encoding="utf-8")
+        manifest.unlink()
+        manifest.symlink_to(outside)
+
+        with pytest.raises(
+            bump_manifest_rewrites.ManifestRewriteError,
+            match="no longer resolves to its planned path",
+        ) as failure:
+            bump_manifest_rewrites.apply_manifest_rewrites((plan,), dry_run=False)
+
+        assert failure.value.failed_path == plan.path, (
+            "the stale destination error should identify the planned manifest path"
+        )
+        assert outside.read_text(encoding="utf-8") == original, (
+            "application must not replace the symlink target outside the planned path"
+        )
 
 
 def test_manifest_rewrite_preserves_crlf_line_endings(

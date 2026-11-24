@@ -23,6 +23,7 @@ from lading.commands.bump_manifests import (
     _dependency_sections_for_crate,
     _determine_package_selectors,
     _freeze_dependency_sections,
+    _ManifestUpdateResult,
     _should_skip_crate_update,
     _update_manifest,
     _workspace_dependency_sections,
@@ -106,9 +107,8 @@ def _process_workspace_and_crate_manifests(
             raise
         rollback_error = (
             bump_pipeline_manifest_rewrites._restore_changed_workspace_manifests(
-                rewrite_stage.workspace_manifest_snapshots,
+                rewrite_stage,
                 changed_manifests,
-                rewrite_stage.written_manifest_contents,
                 stage_error,
             )
         )
@@ -138,10 +138,10 @@ def _process_workspace_manifest(
     )
     if result.was_changed:
         changed_manifests.add(context.workspace_manifest)
-    if result.written_text is not None:
-        rewrite_stage.written_manifest_contents[context.workspace_manifest] = (
-            result.written_text
+        rewrite_stage.rollback_baselines[context.workspace_manifest] = (
+            result.original_text
         )
+    _record_written_manifest_content(result, context.workspace_manifest, rewrite_stage)
 
 
 def _process_crate_manifests(
@@ -172,6 +172,22 @@ def _process_crate_manifests(
         skipped_count,
         updated_count,
     )
+
+
+def _record_written_manifest_content(
+    result: _ManifestUpdateResult,
+    manifest_path: Path,
+    rewrite_stage: bump_pipeline_manifest_rewrites._ManifestRewriteStage | None,
+) -> None:
+    """Record the output needed to guard a later rollback."""
+    if rewrite_stage is None:
+        return
+    if not rewrite_stage.is_configured:
+        return
+    written_text = result.written_text
+    if written_text is None:
+        return
+    rewrite_stage.written_manifest_contents[manifest_path] = written_text
 
 
 def _process_documentation_files(
@@ -302,10 +318,9 @@ def _apply_crate_manifest_update(
         target_version,
         crate_options,
     )
-    if result.written_text is not None and rewrite_stage is not None:
-        rewrite_stage.written_manifest_contents[crate.manifest_path] = (
-            result.written_text
-        )
+    if result.was_changed and rewrite_stage is not None:
+        rewrite_stage.rollback_baselines[crate.manifest_path] = result.original_text
+    _record_written_manifest_content(result, crate.manifest_path, rewrite_stage)
     if result.was_changed:
         _log.debug(
             "Updated crate manifest for crate %r: manifest=%s",
