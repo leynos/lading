@@ -46,12 +46,20 @@ class MarkdownExample:
 
 
 @dc.dataclass(frozen=True, slots=True)
+class _ContainerPath:
+    """Identify the list-item and blockquote ancestry of one token."""
+
+    list_item_path: tuple[int, ...]
+    blockquote_path: tuple[int, ...]
+
+
+@dc.dataclass(frozen=True, slots=True)
 class _IndexedMarker:
     """Identify a marker's source line and Markdown containers."""
 
     identifier: str
     level: int
-    list_item_path: tuple[int, ...]
+    container_path: _ContainerPath
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -60,7 +68,7 @@ class _MarkerLocation:
 
     line_number: int
     token_level: int
-    list_item_path: tuple[int, ...]
+    container_path: _ContainerPath
     document_name: str
 
 
@@ -80,7 +88,7 @@ class _MarkerContext:
     markers: dict[int, _IndexedMarker]
     source_lines: tuple[str, ...]
     document_name: str
-    list_item_paths: tuple[tuple[int, ...], ...]
+    container_paths: tuple[_ContainerPath, ...]
 
 
 def load_markdown_examples(path: Path) -> tuple[MarkdownExample, ...]:
@@ -120,7 +128,7 @@ def _parse_markdown_examples(
             marker_context,
             start_line,
             token.level,
-            marker_context.list_item_paths[token_index],
+            marker_context.container_paths[token_index],
         )
         language = _require_language(token.info, start_line, document_name)
         examples.append(
@@ -143,31 +151,32 @@ def _index_markers(
     """Index valid marker comments and reject missing or duplicate identifiers."""
     marker_index = _MarkerIndex(document_name)
     list_item_stack: list[int] = []
-    list_item_paths: list[tuple[int, ...]] = []
+    blockquote_stack: list[int] = []
+    container_paths: list[_ContainerPath] = []
     for token_index, token in enumerate(tokens):
+        if token.type == "blockquote_open":
+            blockquote_stack.append(token_index)
         if token.type == "list_item_open":
             list_item_stack.append(token_index)
-        list_item_path = tuple(list_item_stack)
-        list_item_paths.append(list_item_path)
-        _index_token_markers(
-            token,
-            marker_index,
-            list_item_path,
-        )
+        container_path = _ContainerPath(tuple(list_item_stack), tuple(blockquote_stack))
+        container_paths.append(container_path)
+        _index_token_markers(token, marker_index, container_path)
         if token.type == "list_item_close":
             list_item_stack.pop()
+        if token.type == "blockquote_close":
+            blockquote_stack.pop()
     return _MarkerContext(
         marker_index.markers,
         source_lines,
         document_name,
-        tuple(list_item_paths),
+        tuple(container_paths),
     )
 
 
 def _index_token_markers(
     token: Token,
     marker_index: _MarkerIndex,
-    list_item_path: tuple[int, ...],
+    container_path: _ContainerPath,
 ) -> None:
     """Index valid marker comments from one HTML block token."""
     if token.type != "html_block" or token.map is None:
@@ -180,7 +189,7 @@ def _index_token_markers(
             _MarkerLocation(
                 marker_line,
                 token.level,
-                list_item_path,
+                container_path,
                 marker_index.document_name,
             ),
         )
@@ -222,7 +231,7 @@ def _parse_marker_line(
             location.line_number + 1,
             "tested-example marker needs an identifier",
         )
-    return _IndexedMarker(match.group(1), location.token_level, location.list_item_path)
+    return _IndexedMarker(match.group(1), location.token_level, location.container_path)
 
 
 def _source_lines(token: Token, document_name: str) -> tuple[int, int]:
@@ -265,7 +274,7 @@ def _require_example_marker(
     context: _MarkerContext,
     fence_start: int,
     fence_level: int,
-    fence_list_item_path: tuple[int, ...],
+    fence_container_path: _ContainerPath,
 ) -> tuple[int, str]:
     """Return the nearest marker without intervening block content."""
     for line_gap in (_DIRECT_MARKER_GAP, _BLANK_LINE_MARKER_GAP):
@@ -275,7 +284,7 @@ def _require_example_marker(
             continue
         if marker.level != fence_level:
             continue
-        if marker.list_item_path != fence_list_item_path:
+        if marker.container_path != fence_container_path:
             continue
         if line_gap == _BLANK_LINE_MARKER_GAP and not _is_blank_container_line(
             context.source_lines[fence_start - 1]

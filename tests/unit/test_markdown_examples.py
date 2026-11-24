@@ -143,6 +143,18 @@ def test_loader_extracts_marked_fences_inside_blockquotes(tmp_path: Path) -> Non
     ], "a blockquote fence must retain its marker and source"
 
 
+def test_loader_rejects_marker_from_a_different_blockquote(tmp_path: Path) -> None:
+    """A separate blockquote cannot reuse an earlier quote's marker."""
+    document = _write_document(
+        tmp_path,
+        "> <!-- tested-example: first-quote -->\n\n"
+        "> ```python\n> print('second quote')\n> ```\n",
+    )
+
+    with pytest.raises(MarkdownExampleError, match="fenced example is unmarked"):
+        load_markdown_examples(document)
+
+
 def test_loader_extracts_marked_fences_inside_list_items(tmp_path: Path) -> None:
     """List indentation is removed as a CommonMark container prefix."""
     document = _write_document(
