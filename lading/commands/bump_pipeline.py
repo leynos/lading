@@ -65,8 +65,9 @@ def _run_pipeline(context: _BumpContext, target_version: str) -> BumpChanges:
     rewrite_stage = bump_pipeline_manifest_rewrites._plan_non_member_manifest_rewrites(
         context, target_version
     )
-    _process_workspace_manifest(context, target_version, changed_manifests)
-    _process_crate_manifests(context, target_version, changed_manifests)
+    _process_workspace_and_crate_manifests(
+        context, target_version, rewrite_stage, changed_manifests
+    )
     bump_pipeline_manifest_rewrites._apply_non_member_manifest_rewrites(
         context, rewrite_stage, changed_manifests
     )
@@ -84,6 +85,31 @@ def _run_pipeline(context: _BumpContext, target_version: str) -> BumpChanges:
             lockfiles=changed_lockfiles,
         ),
     )
+
+
+def _process_workspace_and_crate_manifests(
+    context: _BumpContext,
+    target_version: str,
+    rewrite_stage: bump_pipeline_manifest_rewrites._ManifestRewriteStage,
+    changed_manifests: set[Path],
+) -> None:
+    """Restore pre-bump manifests if a workspace manifest stage fails."""
+    try:
+        _process_workspace_manifest(context, target_version, changed_manifests)
+        _process_crate_manifests(context, target_version, changed_manifests)
+    except Exception as stage_error:
+        if context.base_options.dry_run:
+            raise
+        rollback_error = (
+            bump_pipeline_manifest_rewrites._restore_changed_workspace_manifests(
+                rewrite_stage.workspace_manifest_snapshots,
+                changed_manifests,
+                stage_error,
+            )
+        )
+        if rollback_error is not None:
+            raise rollback_error from stage_error
+        raise
 
 
 def _process_workspace_manifest(

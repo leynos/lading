@@ -1,24 +1,22 @@
 """Recovery behavior after partial configured manifest rewrite failures."""
 
 import dataclasses as dc
-import typing as typ
 from pathlib import Path
 from unittest import mock
 
 import pytest
+from tomlkit import parse as parse_toml
 
 from lading import config as config_module
-from lading.commands import bump, bump_manifest_rewrite_application
+from lading.commands import bump, bump_manifest_rewrite_application, bump_pipeline
 from lading.commands.bump_manifest_rewrites import ManifestRewriteError
 from lading.config import ManifestRewriteConfig, StringValueRewriteConfig
+from lading.workspace import WorkspaceCrate, WorkspaceGraph
 from tests.helpers.manifest_rewrite_metrics import (
     manifest_rewrite_counter_value,
     manifest_rewrite_duration_stats,
 )
 from tests.helpers.workspace_builders import _make_workspace
-
-if typ.TYPE_CHECKING:
-    from lading.workspace.models import WorkspaceGraph
 
 pytestmark = pytest.mark.usefixtures("reset_process_metrics")
 
@@ -33,6 +31,10 @@ class _PartialWriteFailureCase:
     fixtures: tuple[Path, ...]
     workspace_manifests: dict[Path, bytes]
     second_fixture_original: bytes
+
+
+class _InjectedMemberManifestError(Exception):
+    """Specific failure used to stop a bump after an earlier member write."""
 
 
 def _make_partial_write_failure_case(root: Path) -> _PartialWriteFailureCase:
@@ -142,6 +144,107 @@ def _assert_partial_write_state(
     )
 
 
+def _run_partial_case_bump(
+    case: _PartialWriteFailureCase,
+    workspace: WorkspaceGraph | None = None,
+) -> None:
+    """Apply the target bump and verify its dependency and path rewrites."""
+    bump.run(
+        case.root,
+        "1.2.3",
+        options=bump.BumpOptions(
+            rebuild_lockfiles=False,
+            configuration=case.configuration,
+            workspace=case.workspace if workspace is None else workspace,
+        ),
+    )
+    for fixture in case.fixtures:
+        retried_text = fixture.read_text(encoding="utf-8")
+        assert 'alpha = "1.2.3"' in retried_text, (
+            f"retry should update dependencies in {fixture}"
+        )
+        assert "../alpha-1.2.3" in retried_text, (
+            f"retry should update staged package paths in {fixture}"
+        )
+
+
+def _run_bump_with_member_failure(
+    case: _PartialWriteFailureCase,
+    failed_manifest: Path,
+) -> None:
+    """Raise while updating a later member after earlier writes complete."""
+    original_update_manifest = bump_pipeline._update_manifest
+
+    def fail_selected_manifest(
+        manifest_path: Path,
+        selectors: tuple[tuple[str, ...], ...],
+        target_version: str,
+        options: bump.BumpOptions,
+    ) -> bool:
+        """Inject a failure for the selected crate manifest."""
+        if manifest_path == failed_manifest:
+            raise _InjectedMemberManifestError
+        return original_update_manifest(
+            manifest_path, selectors, target_version, options
+        )
+
+    with (
+        mock.patch.object(
+            bump_pipeline,
+            "_update_manifest",
+            side_effect=fail_selected_manifest,
+        ),
+        pytest.raises(_InjectedMemberManifestError),
+    ):
+        bump.run(
+            case.root,
+            "1.2.3",
+            options=bump.BumpOptions(
+                rebuild_lockfiles=False,
+                configuration=case.configuration,
+                workspace=case.workspace,
+            ),
+        )
+
+
+def _refresh_workspace_versions(case: _PartialWriteFailureCase) -> WorkspaceGraph:
+    """Load package versions from disk to model a retry's fresh metadata."""
+    return WorkspaceGraph(
+        workspace_root=case.workspace.workspace_root,
+        crates=tuple(
+            WorkspaceCrate(
+                name=crate.name,
+                version=str(
+                    parse_toml(crate.manifest_path.read_text(encoding="utf-8"))[
+                        "package"
+                    ]["version"]
+                ),
+                manifest_path=crate.manifest_path,
+                root_path=crate.root_path,
+                publish=crate.publish,
+                readme_is_workspace=crate.readme_is_workspace,
+                dependencies=crate.dependencies,
+            )
+            for crate in case.workspace.crates
+        ),
+    )
+
+
+def _assert_member_failure_preserved_inputs(
+    case: _PartialWriteFailureCase,
+    fixture_originals: dict[Path, bytes],
+) -> None:
+    """Require failed member processing to preserve rewrite source versions."""
+    assert {
+        path: path.read_bytes() for path in case.workspace_manifests
+    } == case.workspace_manifests, (
+        "a member-stage failure must restore every changed workspace manifest"
+    )
+    assert {path: path.read_bytes() for path in case.fixtures} == fixture_originals, (
+        "the pending rewrite must remain untouched after a member failure"
+    )
+
+
 def test_partial_write_failure_restores_workspace_and_reports_progress(
     tmp_path: Path,
 ) -> None:
@@ -171,22 +274,18 @@ def test_partial_write_failure_can_be_retried(tmp_path: Path) -> None:
     case = _make_partial_write_failure_case(tmp_path)
     failure = _run_partial_write_failure(case)
     _assert_partial_write_state(case, failure)
+    _run_partial_case_bump(case)
 
-    bump.run(
-        case.root,
-        "1.2.3",
-        options=bump.BumpOptions(
-            rebuild_lockfiles=False,
-            configuration=case.configuration,
-            workspace=case.workspace,
-        ),
+
+def test_member_stage_failure_restores_versions_for_rewrite_retry(
+    tmp_path: Path,
+) -> None:
+    """A later member failure restores versions used by the pending rewrite."""
+    case = _make_partial_write_failure_case(tmp_path)
+    fixture_originals = {path: path.read_bytes() for path in case.fixtures}
+    beta_manifest = next(
+        crate.manifest_path for crate in case.workspace.crates if crate.name == "beta"
     )
-
-    for fixture in case.fixtures:
-        retried_text = fixture.read_text(encoding="utf-8")
-        assert 'alpha = "1.2.3"' in retried_text, (
-            f"retry should update dependencies in {fixture}"
-        )
-        assert "../alpha-1.2.3" in retried_text, (
-            f"retry should update staged package paths in {fixture}"
-        )
+    _run_bump_with_member_failure(case, beta_manifest)
+    _assert_member_failure_preserved_inputs(case, fixture_originals)
+    _run_partial_case_bump(case, _refresh_workspace_versions(case))

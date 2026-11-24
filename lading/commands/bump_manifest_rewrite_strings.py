@@ -28,7 +28,7 @@ _SEMVER_PRERELEASE_PREFIX: typ.Final[re.Pattern[str]] = re.compile(
     r"\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?-"
     r"|"
     r"\d+\.\d+\.\d+-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*\."
-    r")$"
+    r")\Z"
 )
 _SEMVER_IDENTIFIER_CHARACTERS: typ.Final[re.Pattern[str]] = re.compile(
     r"[0-9A-Za-z.-]*"

@@ -1,7 +1,7 @@
 """Coordinate configured non-member manifest rewrite stages.
 
 The pipeline plans these rewrites before any writes and applies them after
-workspace and member manifests. A failed application restores changed
+workspace and member manifests. A failed manifest stage restores changed
 workspace manifests so a retry still has the original crate versions.
 """
 
@@ -172,7 +172,7 @@ def _apply_non_member_manifest_rewrites(
 def _restore_changed_workspace_manifests(
     snapshots: cabc.Sequence[tuple[Path, str]],
     changed_manifests: cabc.Collection[Path],
-    rewrite_error: ManifestRewriteError,
+    failure: Exception,
 ) -> ManifestRewriteWriteError | None:
     """Restore pre-bump versions or describe any rollback write failures."""
     original_text_by_path = dict(snapshots)
@@ -194,13 +194,19 @@ def _restore_changed_workspace_manifests(
     failed_paths = ", ".join(str(path) for path, _error in failures)
     failure_details = "; ".join(str(error) for _path, error in failures)
     message = (
-        f"{rewrite_error}; workspace manifest rollback failed for "
+        f"{failure}; workspace manifest rollback failed for "
         f"{failed_paths}: {failure_details}"
     )
     failed_path = failures[0][0]
+    completed_writes = (
+        failure.completed_writes if isinstance(failure, ManifestRewriteError) else 0
+    )
+    planned_writes = (
+        failure.planned_writes if isinstance(failure, ManifestRewriteError) else 0
+    )
     return ManifestRewriteWriteError(
         message,
-        completed_writes=rewrite_error.completed_writes,
-        planned_writes=rewrite_error.planned_writes,
+        completed_writes=completed_writes,
+        planned_writes=planned_writes,
         failed_path=failed_path,
     )
