@@ -80,7 +80,7 @@ def test_application_rejects_manifest_replaced_by_symlink_after_planning(
     """A symlink swapped in after planning cannot redirect an atomic write."""
     manifest = tmp_path / "Cargo.toml"
     original = '[dependencies]\nalpha = "1.0.0"\n'
-    manifest.write_text(original, encoding="utf-8")
+    manifest.write_text(original, encoding="utf-8", newline="")
     plan = bump_manifest_rewrites.ManifestRewritePlan(
         manifest.resolve(),
         original,
@@ -160,14 +160,14 @@ def test_atomic_write_rechecks_containment_after_plan_source_read(
     """A final-component symlink swap cannot redirect a bounded write."""
     manifest = tmp_path / "Cargo.toml"
     original = '[dependencies]\nalpha = "1.0.0"\n'
-    manifest.write_text(original, encoding="utf-8")
+    manifest.write_text(original, encoding="utf-8", newline="")
     plan = bump_manifest_rewrites.ManifestRewritePlan(
         manifest.resolve(),
         original,
         '[dependencies]\nalpha = "2.0.0"\n',
     )
     outside = tmp_path.parent / f"{tmp_path.name}-outside-Cargo.toml"
-    outside.write_text(original, encoding="utf-8")
+    outside.write_text(original, encoding="utf-8", newline="")
     write_text = bump_manifest_rewrite_application.write_atomic_text
 
     def redirect_before_write(
@@ -198,7 +198,7 @@ def test_atomic_write_rechecks_containment_after_plan_source_read(
         assert failure.value.failed_path == plan.path, (
             "the bounded writer failure should identify the planned manifest"
         )
-        assert outside.read_text(encoding="utf-8") == original, (
+        assert outside.read_bytes() == original.encode("utf-8"), (
             "a redirected destination must not modify the outside file"
         )
         assert manifest.is_symlink(), "the racing symlink must not be replaced"
