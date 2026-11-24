@@ -185,6 +185,16 @@ kept disjoint. All of it is recorded in assessment §9.
   are pinned by two modules, `test_cuprum_policies.py` for `EnvMode` and
   `test_cuprum_echo_policies.py` for `BrokenPipePolicy`; the ADR and adjacent
   guidance named only the first.
+- (2026-11-24) A second assessment round caught the previous fix over-reaching.
+  `Path` normalization does collapse `./sccache` onto the bare name, but a
+  value with a separator such as `bin/sccache` keeps it, and the platform then
+  resolves it against `cwd`, not `PATH`. Controls in both directions confirmed
+  it: the path form failed when only `PATH` held the file and succeeded when
+  only `cwd` did, while the bare form showed the mirror image. The policy now
+  preserves both routes instead of flattening every non-absolute value onto
+  `PATH`. The lesson repeats the earlier one -- the previous probe varied one
+  case and generalized from it -- so this time each case has its own negative
+  control.
 - (2026-11-24) Record `CommandPreparationError` as the one type this policy
   requires without introducing it. Naming it in §7.6.1 and deferring the
   definition to 5.2.1 keeps the plan documentation-only while making the

@@ -71,9 +71,11 @@ blockers have native answers, so the decision is no longer hypothetical.
 - The child environment must be exactly what the caller composed. Callers
   deliberately omit credentials and CI variables, and an inherited value that
   reappears silently is a correctness and a security problem.
-- Authorization must name the file that runs. A configured `RUSTC_WRAPPER` and
-  a cmd-mox-resolved override are absolute paths, and a catalogue that
-  authorized a name rather than a path would authorize the wrong binary.
+- Authorization must name the file that runs. A cmd-mox-resolved override is an
+  absolute path, and a configured `RUSTC_WRAPPER` may be absolute, a bare name,
+  or a relative path, so it must be resolved to a file before it can be
+  authorized. A catalogue that authorized a name rather than a path would
+  authorize the wrong binary.
 - Live output, complete capture, and a failed parent sink must remain
   independent of each other, because an operator watching a build and a machine
   reading its result need different guarantees from the same run.
@@ -191,9 +193,13 @@ union. A matching basename does not authorize, since lookup is keyed by the
 whole `Program` string.
 
 A configured `RUSTC_WRAPPER` is not necessarily absolute -- `detect_wrapper`
-accepts a bare or relative name -- so the adapter resolves it against the
-effective child `PATH` and `cwd` first, requires an existing executable, and
-registers the resolved path. An unresolvable or non-executable value is a
+accepts a bare name or a relative path -- so the adapter resolves it to a file
+first, requires an existing executable, and registers the resolved path. The
+two non-absolute forms resolve differently, and the difference is preserved
+rather than flattened: `Path` normalization means `sccache` and `./sccache`
+both arrive as the bare name and resolve on `PATH`, while `bin/sccache` keeps
+its separator and resolves against `cwd`. Both routes were measured with
+positive and negative controls. An unresolvable or non-executable value is a
 prepared failure, not a launch error.
 
 `bind_executable()` is the documented alternative and does not widen

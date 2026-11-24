@@ -1039,13 +1039,13 @@ set and `subprocess_runner` otherwise, so the execution layer routes commands
 through cmd-mox IPC rather than spawning real processes:
 
 ```python
-from cuprum import Program, sh, scoped
-from lading.utils.commands import CARGO, GIT, LADING_CATALOGUE
+from cuprum import Program, ProgramCatalogue, sh, scoped
 
 def _invoke(
     program: Program,
     args: tuple[str, ...],
     *,
+    catalogue: ProgramCatalogue,
     cwd: Path | None = None,
 ) -> CommandResult:
     """Execute command, routing through cmd-mox when stub mode is enabled."""
@@ -1064,7 +1064,7 @@ def _invoke(
 ```
 
 This block is a sketch of the intended 5.2 end state rather than today's code.
-It builds from a `catalogue` parameter rather than `LADING_CATALOGUE` directly,
+It takes a `catalogue` argument rather than reaching for `LADING_CATALOGUE`,
 because a registered exact path is not in the shared catalogue and nesting
 cannot add it (§7.6.3). `lading/cli.py` does define `_select_runner()`, but it
 returns a `CommandRunner` and knows nothing about cuprum; the `_invoke` in
@@ -1312,25 +1312,34 @@ registered as it stands. `detect_wrapper` accepts any value whose basename
 starts with `sccache`, and its tests pin the bare-name case:
 `RUSTC_WRAPPER=sccache` returns `Path("sccache")`.
 
-That boundary has already lost a distinction the policy must not invent back.
-`detect_wrapper` returns a `Path`, and `_query` passes `str(wrapper)` to the
-runner, so `./sccache` arrives as `Path("sccache")` and reaches the runner as
-the string `sccache` -- indistinguishable from the bare name. Today's runner
-therefore `PATH`-resolves **both**; neither is treated as `cwd`-relative. The
-policy preserves exactly that: a non-absolute wrapper is resolved against the
-effective child `PATH`, and only an absolute value is used as written. It does
-not add a `cwd`-relative branch, because the operator's `./` prefix no longer
-exists by the time the adapter sees the value, and reading it as `cwd`-relative
-would both change current behaviour and silently ignore `PATH`.
+`detect_wrapper` returns a `Path` and `_query` passes `str(wrapper)` to the
+runner, so the exact string the operator wrote does not survive: `Path`
+normalizes, and the runner sees the normalized form. Which resolution applies
+therefore depends on what that form looks like, and two cases behave
+differently. Both were measured with positive and negative controls:
+
+- **No separator -- a bare name.** `RUSTC_WRAPPER=sccache` reaches the runner as
+  `sccache` and resolves on `PATH`. `./sccache` normalizes to the same string,
+  so it takes the same route and also resolves on `PATH`, not against `cwd`.
+- **A separator -- a relative path.** `RUSTC_WRAPPER=bin/sccache` keeps its
+  slash, and the platform resolves it against the working directory, not
+  `PATH`. Confirmed in both directions: a file under `PATH` alone did not
+  satisfy it, and a file under `cwd` did. A bare name showed the mirror image,
+  resolving from `PATH` and failing when only `cwd` held the file.
+
+The policy preserves both routes rather than flattening them, so an operator
+who names a relative path keeps the `cwd`-relative meaning they already have.
+The adapter resolves a non-absolute wrapper accordingly -- bare names against
+the effective child `PATH`, values containing a separator against the requested
+`cwd` -- and uses an absolute value as written. It does not "correct" a
+relative path to a `PATH` lookup, which would change current behaviour.
 
 Resolution yields an absolute, existing, executable path, and _that_ is what
 gets registered. A value that does not resolve, or resolves to something that
 is not executable, is a prepared failure rather than a registered `Program`, so
 a missing compiler cache is reported as such instead of becoming a launch
 `OSError` or a misleading Cargo diagnostic. Registration always happens after
-resolution, never on the operator's raw string. Preserving a `./` prefix as
-`cwd`-relative semantics would be a deliberate behaviour change, and is not
-made here.
+resolution, never on the operator's raw string.
 
 Cuprum's `bind_executable()` is the alternative and is not selected for 5.2. It
 separates the logical program from the file executed and reports the file as

@@ -2083,12 +2083,15 @@ short form a maintainer needs before touching the runner.
   Register a resolved executable path as an exact-path `Program` in the _same_
   per-invocation catalogue the adapter activates and builds from: nested
   catalogue scopes intersect, so a separate local catalogue would be denied. A
-  configured `RUSTC_WRAPPER` may be bare or relative, so resolve it against the
-  effective `PATH` and `cwd` and require an existing executable before
-  registering it. A basename match does not authorize. `bind_executable()` is
-  the alternative when a logical name must survive, and it does not widen the
-  allowlist -- but it does not authorize the bound file either, so a binding
-  must authorize that path separately. See design §7.6.3.
+  configured `RUSTC_WRAPPER` may be bare or relative, and the two resolve
+  differently: a bare name (including `./sccache`, which `Path` normalizes to
+  `sccache`) goes to `PATH`, while a value containing a separator such as
+  `bin/sccache` goes to `cwd`. Preserve that split, require an existing
+  executable, and register the resolved path. A basename match does not
+  authorize. `bind_executable()` is the alternative when a logical name must
+  survive, and it does not widen the allowlist -- but it does not authorize the
+  bound file either, so a binding must authorize that path separately. See
+  design §7.6.3.
 - **Relay.** Select `capture=True`, the caller's `echo_stdout`,
   `echo_stderr=True`, `max_echo_line_bytes=None`, and
   `BrokenPipePolicy.BEST_EFFORT`, and echo through a text-only facade over
