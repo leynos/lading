@@ -1233,7 +1233,10 @@ reproduction of `Popen(env=...)`:
   parent is unmodified.
 - `env={}` and `env=None` under `REPLACE` both produce the empty environment,
   so the `None`-means-inherit distinction is made by the adapter, not by
-  cuprum. Passing `None` through unchanged would inherit.
+  cuprum. Forwarding `None` unchanged would give the child an empty
+  environment, which is why the adapter composes the parent environment into an
+  explicit mapping before the call. `None` genuinely inherits only under the
+  default `OVERLAY`.
 - With the C-locale pins present, the child's key set is exactly the supplied
   keys plus those three. CPython adds `LC_CTYPE` only when the environment
   carries no locale variable at all (PEP 538), so it does not appear here.

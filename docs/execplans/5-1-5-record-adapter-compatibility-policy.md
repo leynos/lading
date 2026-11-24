@@ -89,7 +89,12 @@ cross-platform certification.
 - [x] (2026-11-24) M1: recorded R1–R5 as design §7.6 and the decision as
   ADR-012, linked from the design and `docs/contents.md`, and reconciled the
   beta1 findings with measured beta2 behaviour in assessment §9.
-- [ ] M2: synchronize maintainer guidance, validate, and mark 5.1.5 done.
+- [x] (2026-11-24) M2: added the internal adapter policy to the developer
+  guide, confirmed no users'-guide change is needed, corrected the roadmap's
+  certification wording, marked 5.1.5 done, and passed all seven gates.
+- [x] (2026-11-24) Local `coderabbit review --agent` assessment over the
+  milestone commit raised two findings; both were verified against source, both
+  were valid, and both are fixed in the follow-up commit (see the Decision log).
 
 ## Surprises & discoveries
 
@@ -161,6 +166,18 @@ assessment §9.
   plan's tolerance allows a new ADR, and the rejected alternatives (overlay,
   global mutation, exec shim) are the part a later maintainer is most likely to
   re-propose.
+- (2026-11-24) Fix two review findings rather than defending them. The first
+  was a real gap in this plan, not in the policy: it asserted gate results were
+  recorded in `Concrete steps and validation` before they were, and marked
+  5.1.5 done while M2 was still open. Both are now recorded. The second was a
+  false sentence in design §7.6.2 that contradicted the bullet above it and the
+  measurement in assessment §9 -- forwarding `None` under `REPLACE` yields an
+  empty environment, not inheritance. It now says what happens and names
+  `OVERLAY` as the only mode where `None` inherits.
+- (2026-11-24) Correct, rather than repeat, the earlier claim that the planning
+  logs remain available. They do not: this run wrote to the same `/tmp` paths.
+  The plan now separates the figures observed on 2026-10-20 from the logs that
+  exist today.
 
 ## Outcomes & retrospective
 
@@ -169,11 +186,13 @@ assumptions. No runtime migration, dependency bump, or release validation has
 been performed by this plan. The six expert perspectives completed review and
 their findings were incorporated. Planning gates passed on 2026-10-20:
 `make fmt`, `make check-fmt`, `make typecheck`, `make lint`, `make test`,
-`make markdownlint`, and `make nixie`. Tests reported 1,332 passed and 30
-skipped, with 106 snapshots passing. Logs are under
-`/tmp/<gate>-lading-5-1-5.out` (the final formatting log uses
-`/tmp/fmt-lading-5-1-5-2.out`). These were baseline regression results, not
-beta2 adapter integration evidence.
+`make markdownlint`, and `make nixie`, and tests then reported 1,332 passed and
+30 skipped with 106 snapshots passing. Those figures are recorded as observed
+on that date; their logs are no longer available, because the implementation
+run below reused the same `/tmp/<gate>-lading-5-1-5.out` paths and overwrote
+them. The implementation-run outcomes and their current logs are recorded under
+`Concrete steps and validation`. Both sets are regression baselines, not beta2
+adapter integration evidence.
 
 Implementation on 2026-11-24 rebased onto `origin/main` at `0c1ad3f`, which had
 already merged the beta2 adoption (PR #364), moved the pin to
@@ -185,8 +204,8 @@ alternatives, assessment §9 reconciles measured beta2 behaviour with the beta1
 findings without rewriting them, the developer guide gains the internal adapter
 policy, and the roadmap marks 5.1.5 complete with bounded evidence wording.
 Documentation only: no Python, Rust, dependency, lockfile, test, or workflow
-file changed. Gate results for this milestone are recorded under
-`Concrete steps and validation`.
+file changed. Gate outcomes and the A1–A6 discharges for this milestone are
+recorded under `Concrete steps and validation`.
 
 ## Context and orientation
 
@@ -491,6 +510,89 @@ Inspect both `git diff` and `git diff --cached`; the committed versions must
 match the gated content. Recheck Markdown after final prose changes. Run
 `git diff --check`, review the staged diff, and commit with a temporary message
 file and `git commit -F`. Record gate outcomes here, not just commands.
+
+### Recorded gate outcomes (2026-11-24)
+
+One `scrutineer` ran the seven gates sequentially against the staged candidate
+at commit `c33cea0`. All seven exited zero:
+
+| Gate                | Result                                                                                   | Log                                  |
+| ------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------ |
+| `make fmt`          | no-op on the second run; identical hashes across all seven files                         | `/tmp/fmt-lading-5-1-5.out`          |
+| `make check-fmt`    | 537 files already formatted                                                              | `/tmp/check-fmt-lading-5-1-5.out`    |
+| `make typecheck`    | `ty` reported all checks passed                                                          | `/tmp/typecheck-lading-5-1-5.out`    |
+| `make lint`         | ruff clean, interrogate 100%, pylint 10.00/10 twice, skylos and duplication gates passed | `/tmp/lint-lading-5-1-5.out`         |
+| `make test`         | 1412 passed, 30 skipped, 108 snapshots; contracts clean                                  | `/tmp/test-lading-5-1-5.out`         |
+| `make markdownlint` | spelling gate regenerated `typos.toml` byte-identically; 41 files, 0 issues              | `/tmp/markdownlint-lading-5-1-5.out` |
+| `make nixie`        | all diagrams validated                                                                   | `/tmp/nixie-lading-5-1-5.out`        |
+
+The first `fmt` run in this milestone reflowed prose and re-padded the new
+tables; that churn was inspected, found to be pure formatting, and is in the
+commit. The earlier planning logs used a `-2` suffix for a second formatting
+run; no such file exists for this milestone.
+
+`git status` showed exactly the seven intended Markdown paths,
+`git diff --cached --check` was clean, and `git diff --cached --name-only`
+contained no non-Markdown file, so the committed content is the gated content.
+
+### Acceptance discharges (A1–A6)
+
+Each review note names the paragraph that states the requirement and the
+measurement, where one exists, that supports it. All six are discharged; no
+case was left open and no contradiction was found between the design, the ADR,
+and the assessment addendum.
+
+- **A1 (R1: tuple, non-zero data, failure mapping).** Design §7.6.1 and ADR-012
+  "Result and failure classification" state the tuple result, that a non-zero
+  exit is data, and the ordered mapping. Measured: a child exiting 7 returned a
+  `CommandResult` with `exit_code == 7` and `ok == False`, not an exception;
+  catalogue rejection raised `UnknownProgramError`; a registered but absent
+  executable raised `FileNotFoundError`; `ForbiddenProgramError` was confirmed
+  to be an `OSError` subclass, which is why the mapping is ordered rather than
+  inferred. Every policy and resolution error is mapped to a lading-owned
+  failure with its cause retained, and the one new type is named and deferred
+  to 5.2.1 rather than introduced here.
+- **A2 (R2: inheritance, replacement, locale, cmd-mox).** Design §7.6.2.
+  Measured: `env=None` inherited under the default `OVERLAY`; a supplied
+  mapping and `{}` replaced under `REPLACE`; a parent sentinel and an ambient
+  scope overlay were both absent under `REPLACE` while `os.environ` was
+  unchanged; the child's key set was exactly the supplied keys plus `LC_ALL`,
+  `LANG` and `LANGUAGE`; absent and empty `PATH` were distinguished. The
+  cmd-mox composition boundary is stated as a separate step in the same
+  subsection and in ADR-012.
+- **A3 (R3: authorization and resolution).** Design §7.6.3. Measured: an
+  absolute configured path ran when registered and was rejected when only a
+  same-basename different path was registered; a nested catalogue scope did not
+  widen an outer narrower allowlist; a relative `PATH` entry was anchored to
+  the child's `cwd` when supplied and to the parent's directory otherwise;
+  absent and empty `PATH` behaved differently; `./tool` resolved under `cwd`
+  and failed without one; a symlinked binding reported the configured path.
+  `bind_executable()` preserved identity without widening authorization. The
+  check-and-use race is stated as a limitation, not a guarantee.
+- **A4 (R4: relay and capture).** Design §7.6.4. Measured: a text sink that
+  raised `UnicodeEncodeError` produced one fallback record with full capture;
+  invalid UTF-8 was replaced, split sequences reassembled, and a final
+  unterminated line preserved; a sink exposing `.buffer` bypassed the text path
+  entirely, which is why the facade must not expose one; a facade that absorbed
+  `BrokenPipeError` produced no `relay_fallbacks` entry while one that let it
+  escape produced exactly one. The unbounded memory cost is stated rather than
+  claimed away.
+- **A5 (R5: ownership, cmd-mox, one adapter).** Design §7.6.5. Domain error
+  translation stays with `metadata` and `publish_execution`; cmd-mox keeps its
+  IPC, namespacing, `PATH` filtering, `PWD`, stdin and reporting, with only the
+  real invocation moving; positional arguments, three stdin meanings, one log
+  record and one adapter are stated. `bump_lockfile_regeneration`'s cause-based
+  label is recorded as an obligation for 5.2.1.
+- **A6 (links, version, completion wording, checkbox).** Every cross-document
+  anchor was resolved programmatically after formatting: design §7.6,
+  assessment §9 and the developer-guide subsection each exist and resolve. The
+  ADR number is 012 because `origin/main` had already allocated 010 and 011.
+  The target version is stated as `cuprum==0.2.0b2` throughout. Completion
+  wording is bounded: roadmap 5.1.5 is `[x]` with evidence, 5.2 and later stay
+  open, and the phase preamble no longer claims certification.
+
+No string-presence test was used as semantic validation; each item above cites
+a paragraph and, where the claim is about cuprum, the measurement behind it.
 
 ## Idempotence and recovery
 
