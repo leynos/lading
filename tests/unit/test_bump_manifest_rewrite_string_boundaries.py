@@ -108,6 +108,40 @@ def test_version_rewrite_does_not_match_inside_semver_prerelease(
     )
 
 
+def test_separator_prefixed_version_rewrite_preserves_nested_prerelease(
+    tmp_path: pathlib.Path,
+    write_fixture_manifest: _ManifestWriter,
+) -> None:
+    """A template hyphen must not turn a prerelease identifier into a match."""
+    write_fixture_manifest(
+        tmp_path,
+        "fixture/Cargo.toml",
+        '[metadata]\nnested = "9.0.0-1.0.0"\nstandalone = "release-1.0.0"\n',
+    )
+    group = ManifestRewriteConfig(
+        paths=("fixture/Cargo.toml",),
+        dependencies=False,
+        string_values=(
+            StringValueRewriteConfig(table=("metadata",), template="-{version}"),
+        ),
+    )
+    versions = manifest_rewrite_versions(
+        names=frozenset({"alpha"}),
+        pre_bump_versions={"alpha": "1.0.0"},
+        target_version="2.0.0",
+    )
+
+    (plan,) = plan_fixture_rewrites(tmp_path, (group,), versions=versions)
+
+    document = parse_toml(plan.new_text)
+    assert document["metadata"]["nested"] == "9.0.0-1.0.0", (
+        "a version inside a SemVer prerelease must remain unchanged"
+    )
+    assert document["metadata"]["standalone"] == "release-2.0.0", (
+        "a hyphen-prefixed standalone version must still be rewritten"
+    )
+
+
 def test_plus_prefixed_version_template_preserves_build_metadata(
     tmp_path: pathlib.Path,
     write_fixture_manifest: _ManifestWriter,
