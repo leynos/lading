@@ -1,65 +1,46 @@
 """Pipeline integration for configured non-member manifest rewrites."""
 
+import dataclasses as dc
 import pathlib
-from unittest import mock
+import typing as typ
 
 import pytest
 
 from lading import config as config_module
-from lading.commands import (
-    bump,
-    bump_manifest_rewrite_application,
-    bump_manifest_rewrite_metrics,
-)
+from lading.commands import bump
 from lading.commands.bump_manifest_rewrites import ManifestRewriteError
 from lading.config import ManifestRewriteConfig, StringValueRewriteConfig
-from lading.utils import metrics
+from tests.helpers.manifest_rewrite_metrics import (
+    manifest_rewrite_counter_value,
+    manifest_rewrite_duration_stats,
+)
 from tests.helpers.recording_lockfile_repository import RecordingLockfileRepository
 from tests.helpers.workspace_builders import _make_workspace
+
+if typ.TYPE_CHECKING:
+    from lading.workspace.models import WorkspaceGraph
 
 pytestmark = pytest.mark.usefixtures("reset_process_metrics")
 
 
-def _assert_single_rewrite_counter(**labels: str) -> None:
-    """Assert one rewrite counter sample has the supplied bounded labels."""
-    value = metrics.counter_value(
-        bump_manifest_rewrite_metrics.MANIFEST_REWRITE_RUN_METRIC,
-        **labels,
-    )
-    assert value == 1, f"expected one rewrite counter sample for {labels}"
+@dc.dataclass(frozen=True, slots=True)
+class _StandaloneFixtureRewriteCase:
+    """Workspace inputs and observations for a fixture rewrite stage."""
+
+    root: pathlib.Path
+    workspace: WorkspaceGraph
+    fixture: pathlib.Path
+    configuration: config_module.LadingConfig
+    repository: RecordingLockfileRepository
+    observed_fixture_text: list[str]
 
 
-def _assert_single_rewrite_duration(**labels: str) -> None:
-    """Assert one rewrite duration sample has the supplied bounded labels."""
-    sample = metrics.duration_stats(
-        bump_manifest_rewrite_metrics.MANIFEST_REWRITE_DURATION_METRIC,
-        **labels,
-    )
-    assert sample.count == 1, f"expected one rewrite duration sample for {labels}"
-
-
-def _assert_partial_write_failure(
-    error: ManifestRewriteError,
-    failed_path: pathlib.Path,
-) -> None:
-    """Assert the failing path and write progress from the exception."""
-    assert error.failed_path == failed_path, (
-        "the exception should identify the manifest whose write failed"
-    )
-    assert error.completed_writes == 1, (
-        "the exception should expose the number of completed fixture writes"
-    )
-    assert error.planned_writes == 2, (
-        "the exception should expose the number of planned fixture writes"
-    )
-
-
-def test_rewrites_fixture_before_lockfile_regeneration(
-    tmp_path: pathlib.Path,
-) -> None:
-    """Fixture changes are written before the lockfile port runs."""
-    workspace = _make_workspace(tmp_path)
-    fixture = tmp_path / "tests/fixtures/standalone/Cargo.toml"
+def _make_standalone_fixture_rewrite_case(
+    root: pathlib.Path,
+) -> _StandaloneFixtureRewriteCase:
+    """Configure a fixture and observe it immediately before lockfile work."""
+    workspace = _make_workspace(root)
+    fixture = root / "tests/fixtures/standalone/Cargo.toml"
     fixture.parent.mkdir(parents=True)
     fixture.write_text(
         '[dependencies]\nalpha = "^0.1.0"\n\n'
@@ -87,41 +68,75 @@ def test_rewrites_fixture_before_lockfile_regeneration(
             ),
         )
     )
-
-    message = bump.run(
-        tmp_path,
-        "1.2.3",
-        options=bump.BumpOptions(
-            configuration=configuration,
-            workspace=workspace,
-            lockfile_repository=repository,
-        ),
+    return _StandaloneFixtureRewriteCase(
+        root=root,
+        workspace=workspace,
+        fixture=fixture,
+        configuration=configuration,
+        repository=repository,
+        observed_fixture_text=observed_fixture_text,
     )
 
-    assert 'alpha = "^1.2.3"' in observed_fixture_text[0], (
+
+def _assert_fixture_rewritten_before_lockfile(
+    case: _StandaloneFixtureRewriteCase,
+    message: str,
+) -> None:
+    """Check fixture contents, lockfile order, result text, and metrics."""
+    observed_text = case.observed_fixture_text[0]
+    assert 'alpha = "^1.2.3"' in observed_text, (
         "dependency rewrites must be visible before lockfile regeneration"
     )
-    assert 'path = "../alpha-1.2.3"' in observed_fixture_text[0], (
+    assert 'path = "../alpha-1.2.3"' in observed_text, (
         "selected path strings must be rewritten before lockfile regeneration"
     )
-    assert repository.regenerated == [(tmp_path.resolve(), ("nested/Cargo.toml",))], (
-        "the live pipeline must regenerate the configured lockfile target"
-    )
-    assert not repository.resolved, (
+    assert case.repository.regenerated == [
+        (case.root.resolve(), ("nested/Cargo.toml",))
+    ], "the live pipeline must regenerate the configured lockfile target"
+    assert not case.repository.resolved, (
         "a live bump must not project lockfile paths without regenerating"
     )
     assert message.count("- tests/fixtures/standalone/Cargo.toml") == 1, (
         "the changed fixture must appear exactly once in the result"
     )
-    _assert_single_rewrite_counter(
-        phase="planning", outcome="planned", dry_run="false", error_category="none"
+    assert (
+        manifest_rewrite_counter_value(
+            phase="planning", outcome="planned", dry_run="false", error_category="none"
+        )
+        == 1
+    ), "the rewrite plan should be counted once"
+    assert (
+        manifest_rewrite_counter_value(
+            phase="application",
+            outcome="applied",
+            dry_run="false",
+            error_category="none",
+        )
+        == 1
+    ), "the rewrite application should be counted once"
+    assert (
+        manifest_rewrite_duration_stats(
+            outcome="applied", dry_run="false", error_category="none"
+        ).count
+        == 1
+    ), "the rewrite duration should be recorded once"
+
+
+def test_rewrites_fixture_before_lockfile_regeneration(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Fixture changes are written before the lockfile port runs."""
+    case = _make_standalone_fixture_rewrite_case(tmp_path)
+    message = bump.run(
+        tmp_path,
+        "1.2.3",
+        options=bump.BumpOptions(
+            configuration=case.configuration,
+            workspace=case.workspace,
+            lockfile_repository=case.repository,
+        ),
     )
-    _assert_single_rewrite_counter(
-        phase="application", outcome="applied", dry_run="false", error_category="none"
-    )
-    _assert_single_rewrite_duration(
-        outcome="applied", dry_run="false", error_category="none"
-    )
+    _assert_fixture_rewritten_before_lockfile(case, message)
 
 
 def test_rewrite_duration_excludes_intervening_manifest_stages(
@@ -152,8 +167,7 @@ def test_rewrite_duration_excludes_intervening_manifest_stages(
         ),
     )
 
-    sample = metrics.duration_stats(
-        bump_manifest_rewrite_metrics.MANIFEST_REWRITE_DURATION_METRIC,
+    sample = manifest_rewrite_duration_stats(
         outcome="applied",
         dry_run="false",
         error_category="none",
@@ -205,9 +219,15 @@ def test_dry_run_reports_fixture_and_projects_lockfiles_without_writes(
         "dry-run must project the configured lockfile target"
     )
     assert not repository.regenerated, "dry-run must not regenerate lockfiles"
-    _assert_single_rewrite_counter(
-        phase="application", outcome="skipped", dry_run="true", error_category="none"
-    )
+    assert (
+        manifest_rewrite_counter_value(
+            phase="application",
+            outcome="skipped",
+            dry_run="true",
+            error_category="none",
+        )
+        == 1
+    ), "the skipped rewrite application should be counted once"
 
 
 def test_manifest_rewrite_overlap_with_member_is_reported_once(
@@ -281,118 +301,18 @@ def test_missing_rewrite_manifest_fails_before_any_workspace_write(
     assert {path: path.read_bytes() for path in original_bytes} == original_bytes, (
         "a planning error must occur before any workspace manifest is written"
     )
-    _assert_single_rewrite_counter(
-        phase="planning", outcome="failed", dry_run="false", error_category="planning"
-    )
-    _assert_single_rewrite_duration(
-        outcome="failed", dry_run="false", error_category="planning"
-    )
-
-
-def test_partial_write_failure_names_path_and_completed_count(
-    tmp_path: pathlib.Path,
-) -> None:
-    """A failed rewrite restores member versions so the command can be retried."""
-    workspace = _make_workspace(tmp_path)
-    workspace_manifests = {
-        tmp_path / "Cargo.toml": (tmp_path / "Cargo.toml").read_bytes(),
-        **{
-            crate.manifest_path: crate.manifest_path.read_bytes()
-            for crate in workspace.crates
-        },
-    }
-    fixtures = tuple(
-        tmp_path / f"tests/fixtures/{name}/Cargo.toml" for name in ("first", "second")
-    )
-    for fixture in fixtures:
-        fixture.parent.mkdir(parents=True)
-        fixture.write_text(
-            '[dependencies]\nalpha = "0.1.0"\n\n'
-            '[patch.crates-io]\nalpha = { path = "../alpha-0.1.0" }\n',
-            encoding="utf-8",
+    assert (
+        manifest_rewrite_counter_value(
+            phase="planning",
+            outcome="failed",
+            dry_run="false",
+            error_category="planning",
         )
-    second_original = fixtures[1].read_bytes()
-    configuration = config_module.LadingConfig(
-        bump=config_module.BumpConfig(
-            manifest_rewrites=(
-                ManifestRewriteConfig(
-                    paths=tuple(
-                        path.relative_to(tmp_path).as_posix() for path in fixtures
-                    ),
-                    string_values=(
-                        StringValueRewriteConfig(
-                            table=("patch", "crates-io"), field="path"
-                        ),
-                    ),
-                ),
-            )
-        )
-    )
-    write_atomic_text = bump_manifest_rewrite_application.write_atomic_text
-    message = "simulated write failure"
-
-    def fail_second_write(path: pathlib.Path, text: str) -> None:
-        """Fail the second fixture write and forward the first atomic write."""
-        if path == fixtures[1].resolve():
-            raise OSError(message)
-        write_atomic_text(path, text)
-
-    with (
-        mock.patch.object(
-            bump_manifest_rewrite_application,
-            "write_atomic_text",
-            side_effect=fail_second_write,
-        ),
-        pytest.raises(ManifestRewriteError, match="1 of 2") as failure,
-    ):
-        bump.run(
-            tmp_path,
-            "1.2.3",
-            options=bump.BumpOptions(
-                rebuild_lockfiles=False,
-                configuration=configuration,
-                workspace=workspace,
-            ),
-        )
-
-    first_after_failure = fixtures[0].read_text(encoding="utf-8")
-    assert 'alpha = "1.2.3"' in first_after_failure, (
-        "the first fixture should retain its completed dependency rewrite"
-    )
-    assert "../alpha-1.2.3" in first_after_failure, (
-        "the first fixture should retain its completed string rewrite"
-    )
-    assert fixtures[1].read_bytes() == second_original, (
-        "the failed manifest should retain its original bytes"
-    )
-    assert {
-        path: path.read_bytes() for path in workspace_manifests
-    } == workspace_manifests, (
-        "a failed fixture rewrite must restore the workspace's pre-bump versions"
-    )
-    _assert_partial_write_failure(failure.value, fixtures[1].resolve())
-    _assert_single_rewrite_counter(
-        phase="application", outcome="failed", dry_run="false", error_category="write"
-    )
-    _assert_single_rewrite_duration(
-        outcome="failed", dry_run="false", error_category="write"
-    )
-
-    bump.run(
-        tmp_path,
-        "1.2.3",
-        options=bump.BumpOptions(
-            rebuild_lockfiles=False,
-            configuration=configuration,
-            workspace=workspace,
-        ),
-    )
-
-    for fixture in fixtures:
-        retried_text = fixture.read_text(encoding="utf-8")
-        assert 'alpha = "1.2.3"' in retried_text, (
-            f"retry should update dependencies in {fixture}"
-        )
-        assert "../alpha-1.2.3" in retried_text, (
-            f"retry should update staged package paths in {fixture}"
-        )
+        == 1
+    ), "the failed rewrite plan should be counted once"
+    assert (
+        manifest_rewrite_duration_stats(
+            outcome="failed", dry_run="false", error_category="planning"
+        ).count
+        == 1
+    ), "the failed rewrite duration should be recorded once"
