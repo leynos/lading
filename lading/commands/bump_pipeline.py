@@ -95,8 +95,12 @@ def _process_workspace_and_crate_manifests(
 ) -> None:
     """Restore pre-bump manifests if a workspace manifest stage fails."""
     try:
-        _process_workspace_manifest(context, target_version, changed_manifests)
-        _process_crate_manifests(context, target_version, changed_manifests)
+        _process_workspace_manifest(
+            context, target_version, rewrite_stage, changed_manifests
+        )
+        _process_crate_manifests(
+            context, target_version, rewrite_stage, changed_manifests
+        )
     except Exception as stage_error:
         if context.base_options.dry_run:
             raise
@@ -104,6 +108,7 @@ def _process_workspace_and_crate_manifests(
             bump_pipeline_manifest_rewrites._restore_changed_workspace_manifests(
                 rewrite_stage.workspace_manifest_snapshots,
                 changed_manifests,
+                rewrite_stage.written_manifest_contents,
                 stage_error,
             )
         )
@@ -115,6 +120,7 @@ def _process_workspace_and_crate_manifests(
 def _process_workspace_manifest(
     context: _BumpContext,
     target_version: str,
+    rewrite_stage: bump_pipeline_manifest_rewrites._ManifestRewriteStage,
     changed_manifests: set[Path],
 ) -> None:
     """Update the workspace manifest when necessary."""
@@ -124,18 +130,24 @@ def _process_workspace_manifest(
         dependency_sections=_freeze_dependency_sections(dependency_sections),
         include_workspace_sections=True,
     )
-    if _update_manifest(
+    result = _update_manifest(
         context.workspace_manifest,
         _WORKSPACE_SELECTORS,
         target_version,
         workspace_options,
-    ):
+    )
+    if result.was_changed:
         changed_manifests.add(context.workspace_manifest)
+    if result.written_text is not None:
+        rewrite_stage.written_manifest_contents[context.workspace_manifest] = (
+            result.written_text
+        )
 
 
 def _process_crate_manifests(
     context: _BumpContext,
     target_version: str,
+    rewrite_stage: bump_pipeline_manifest_rewrites._ManifestRewriteStage,
     changed_manifests: set[Path],
 ) -> None:
     """Update member crate manifests for the workspace."""
@@ -144,7 +156,9 @@ def _process_crate_manifests(
     updated_count = 0
     for crate in context.workspace.crates:
         processed_count += 1
-        match _apply_crate_manifest_update(crate, target_version, context):
+        match _apply_crate_manifest_update(
+            crate, target_version, context, rewrite_stage
+        ):
             case _CrateManifestOutcome.SKIPPED:
                 skipped_count += 1
             case _CrateManifestOutcome.UPDATED:
@@ -264,6 +278,7 @@ def _apply_crate_manifest_update(
     crate: WorkspaceCrate,
     target_version: str,
     context: _BumpContext,
+    rewrite_stage: bump_pipeline_manifest_rewrites._ManifestRewriteStage | None = None,
 ) -> _CrateManifestOutcome:
     """Apply updates for ``crate`` and return the closed manifest outcome."""
     # These crate sets are derived once in `_initialize_bump_context`
@@ -281,13 +296,17 @@ def _apply_crate_manifest_update(
         context.base_options,
         dependency_sections=_freeze_dependency_sections(dependency_sections),
     )
-    was_updated = _update_manifest(
+    result = _update_manifest(
         crate.manifest_path,
         selectors,
         target_version,
         crate_options,
     )
-    if was_updated:
+    if result.written_text is not None and rewrite_stage is not None:
+        rewrite_stage.written_manifest_contents[crate.manifest_path] = (
+            result.written_text
+        )
+    if result.was_changed:
         _log.debug(
             "Updated crate manifest for crate %r: manifest=%s",
             crate.name,
@@ -307,6 +326,6 @@ def _apply_crate_manifest_update(
         )
     return (
         _CrateManifestOutcome.UPDATED
-        if was_updated
+        if result.was_changed
         else _CrateManifestOutcome.UNCHANGED
     )

@@ -50,6 +50,14 @@ _DEPENDENCY_SECTION_BY_KIND: typ.Final[dict[str | None, str]] = {
 
 
 @dc.dataclass(frozen=True, slots=True)
+class _ManifestUpdateResult:
+    """Describe whether a manifest changed and the exact text written."""
+
+    was_changed: bool
+    written_text: str | None = None
+
+
+@dc.dataclass(frozen=True, slots=True)
 class _BumpContext:
     """Initialisation context for bump operations.
 
@@ -99,7 +107,7 @@ def _update_manifest(
     selectors: tuple[tuple[str, ...], ...],
     target_version: str,
     options: BumpOptions,
-) -> bool:
+) -> _ManifestUpdateResult:
     """Apply ``target_version`` to each selected table and dependency section."""
     document = bump_toml_files.parse_manifest(manifest_path)
     changed = False
@@ -114,8 +122,10 @@ def _update_manifest(
             include_workspace_sections=options.include_workspace_sections,
         )
     if changed and not options.dry_run:
-        bump_toml_files.write_atomic_text(manifest_path, document.as_string())
-    return changed
+        updated_text = document.as_string()
+        bump_toml_files.write_atomic_text(manifest_path, updated_text)
+        return _ManifestUpdateResult(was_changed=True, written_text=updated_text)
+    return _ManifestUpdateResult(was_changed=changed)
 
 
 def _workspace_dependency_sections(

@@ -32,7 +32,7 @@ if typ.TYPE_CHECKING:
 _log = logging.getLogger(__name__)
 
 
-@dc.dataclass(frozen=True, slots=True)
+@dc.dataclass(slots=True)
 class _ManifestRewriteStage:
     """Configured rewrite plans, timing, and workspace recovery snapshots."""
 
@@ -40,6 +40,7 @@ class _ManifestRewriteStage:
     plans: tuple[bump_manifest_rewrites.ManifestRewritePlan, ...] = ()
     planning_duration_seconds: float = 0.0
     workspace_manifest_snapshots: tuple[tuple[Path, str], ...] = ()
+    written_manifest_contents: dict[Path, str] = dc.field(default_factory=dict)
 
 
 def _plan_non_member_manifest_rewrites(
@@ -140,6 +141,7 @@ def _apply_non_member_manifest_rewrites(
         recovery_error = _restore_changed_workspace_manifests(
             stage.workspace_manifest_snapshots,
             changed_manifests,
+            stage.written_manifest_contents,
             rewrite_error,
         )
         bump_manifest_rewrite_metrics.record_manifest_rewrite_metrics(
@@ -172,11 +174,12 @@ def _apply_non_member_manifest_rewrites(
 def _restore_changed_workspace_manifests(
     snapshots: cabc.Sequence[tuple[Path, str]],
     changed_manifests: cabc.Collection[Path],
+    written_manifest_contents: cabc.Mapping[Path, str],
     failure: Exception,
 ) -> ManifestRewriteWriteError | None:
-    """Restore pre-bump versions or describe any rollback write failures."""
+    """Restore only manifests that still contain this bump's written text."""
     original_text_by_path = dict(snapshots)
-    failures: list[tuple[Path, OSError | UnicodeError]] = []
+    failures: list[tuple[Path, str]] = []
     changed_workspace_manifests = sorted(
         set(changed_manifests).intersection(original_text_by_path),
         key=str,
@@ -184,15 +187,27 @@ def _restore_changed_workspace_manifests(
     )
     for manifest_path in changed_workspace_manifests:
         try:
+            current_text = manifest_path.read_text(encoding="utf-8", newline="")
+        except (OSError, UnicodeError) as exc:
+            failures.append((manifest_path, f"could not read before rollback: {exc}"))
+            continue
+        if current_text != written_manifest_contents.get(manifest_path):
+            concurrent_edit_detail = (
+                "contents changed after this bump wrote the manifest; "
+                "left the current contents in place"
+            )
+            failures.append((manifest_path, concurrent_edit_detail))
+            continue
+        try:
             bump_toml_files.write_atomic_text(
                 manifest_path, original_text_by_path[manifest_path]
             )
         except (OSError, UnicodeError) as exc:
-            failures.append((manifest_path, exc))
+            failures.append((manifest_path, f"could not restore original text: {exc}"))
     if not failures:
         return None
     failed_paths = ", ".join(str(path) for path, _error in failures)
-    failure_details = "; ".join(str(error) for _path, error in failures)
+    failure_details = "; ".join(f"{path}: {detail}" for path, detail in failures)
     message = (
         f"{failure}; workspace manifest rollback failed for "
         f"{failed_paths}: {failure_details}"

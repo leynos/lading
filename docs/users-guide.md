@@ -901,11 +901,13 @@ still runs without invoking Cargo.
 Each configured manifest write is atomic, but the batch is not. If a later
 write fails, or a manifest changes after planning, earlier fixture rewrites may
 remain and lockfile regeneration is skipped. Before reporting the failure,
-`lading bump` restores any workspace and member manifests it changed to their
-pre-bump contents. This preserves the original crate versions so rerunning the
-same bump can rewrite the remaining fixtures; already-updated fixture values
-are safe to process again. If the error also reports a workspace-manifest
-rollback failure, restore the named workspace and member manifests before
+`lading bump` restores a workspace or member manifest only when its current
+contents still match the exact text written by this bump. If another writer
+changed a manifest after the bump wrote it, rollback leaves those contents in
+place and reports the path. This avoids overwriting a concurrent edit. The
+other matching manifests are restored to their pre-bump contents, preserving
+the original crate versions for a retry. If rollback reports a manifest it left
+in place or could not restore, inspect and repair that named file before
 retrying.
 
 For example, the `rstest-bdd` published GPUI fixture can opt into rewriting its

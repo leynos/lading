@@ -3,6 +3,7 @@
 import ast
 import importlib
 import json
+import runpy
 import shlex
 import sys
 import tomllib
@@ -11,6 +12,7 @@ from pathlib import Path
 import pytest
 from cuprum import ExecutionContext, Program, ProgramCatalogue, scoped, sh
 
+from lading import config as config_module
 from tests.helpers.markdown_examples import MarkdownExample, load_markdown_examples
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -190,8 +192,10 @@ def test_after_import_examples_resolve_on_0_4_0(example_id: str) -> None:
                 assert callable(getattr(module, name)), f"{name} must be callable"
 
 
-def test_documentation_target_migration_examples_show_the_new_record() -> None:
-    """Migration examples cover iteration and direct updater construction."""
+def test_documentation_target_migration_examples_use_the_new_record(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The replacement example executes against the current documentation API."""
     examples = _examples_by_id()
     before = examples["v0-4-0-doc-targets-before"].source
     after = examples["v0-4-0-doc-targets-after"].source
@@ -206,6 +210,28 @@ def test_documentation_target_migration_examples_show_the_new_record() -> None:
     )
     assert "DocumentationTargets(workspace_root, paths)" in after, (
         "direct updater calls must construct the workspace-bound target record"
+    )
+    readme = tmp_path / "README.md"
+    readme.write_text(
+        '```toml\n[dependencies]\nmy-crate = "0.1.0"\n```\n',
+        encoding="utf-8",
+    )
+    namespace = {
+        "workspace_root": tmp_path,
+        "documentation": config_module.DocumentationConfig(globs=("README.md",)),
+        "target_version": "1.2.0",
+        "updated_crates": {"my-crate"},
+    }
+    example_script = tmp_path / "migration_example.py"
+    example_script.write_text(after, encoding="utf-8")
+
+    runpy.run_path(str(example_script), init_globals=namespace)
+
+    assert 'my-crate = "1.2.0"' in readme.read_text(encoding="utf-8"), (
+        "the documented after example must update the configured README"
+    )
+    assert capsys.readouterr().out == f"{readme}\n", (
+        "the documented iteration must print the resolved README path"
     )
 
 

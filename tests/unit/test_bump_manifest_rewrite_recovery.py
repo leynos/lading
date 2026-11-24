@@ -8,8 +8,16 @@ import pytest
 from tomlkit import parse as parse_toml
 
 from lading import config as config_module
-from lading.commands import bump, bump_manifest_rewrite_application, bump_pipeline
-from lading.commands.bump_manifest_rewrites import ManifestRewriteError
+from lading.commands import (
+    bump,
+    bump_manifest_rewrite_application,
+    bump_manifests,
+    bump_pipeline,
+)
+from lading.commands.bump_manifest_rewrites import (
+    ManifestRewriteError,
+    ManifestRewriteWriteError,
+)
 from lading.config import ManifestRewriteConfig, StringValueRewriteConfig
 from lading.workspace import WorkspaceCrate, WorkspaceGraph
 from tests.helpers.manifest_rewrite_metrics import (
@@ -180,12 +188,15 @@ def _run_bump_with_member_failure(
         selectors: tuple[tuple[str, ...], ...],
         target_version: str,
         options: bump.BumpOptions,
-    ) -> bool:
+    ) -> bump_manifests._ManifestUpdateResult:
         """Inject a failure for the selected crate manifest."""
         if manifest_path == failed_manifest:
             raise _InjectedMemberManifestError
         return original_update_manifest(
-            manifest_path, selectors, target_version, options
+            manifest_path,
+            selectors,
+            target_version,
+            options,
         )
 
     with (
@@ -289,3 +300,55 @@ def test_member_stage_failure_restores_versions_for_rewrite_retry(
     _run_bump_with_member_failure(case, beta_manifest)
     _assert_member_failure_preserved_inputs(case, fixture_originals)
     _run_partial_case_bump(case, _refresh_workspace_versions(case))
+
+
+def test_rewrite_failure_preserves_member_manifest_edited_after_bump_write(
+    tmp_path: Path,
+) -> None:
+    """Rollback leaves a member manifest changed by another writer in place."""
+    case = _make_partial_write_failure_case(tmp_path)
+    alpha_manifest = next(
+        crate.manifest_path for crate in case.workspace.crates if crate.name == "alpha"
+    )
+    concurrent_edit = "\n# edited while the bump was running\n"
+    write_atomic_text = bump_manifest_rewrite_application.write_atomic_text
+
+    def edit_member_then_fail_fixture(path: Path, text: str) -> None:
+        """Add an external edit after member writes, then fail fixture two."""
+        if path == case.fixtures[1].resolve():
+            with alpha_manifest.open("a", encoding="utf-8", newline="") as handle:
+                handle.write(concurrent_edit)
+            raise OSError
+        write_atomic_text(path, text)
+
+    with (
+        mock.patch.object(
+            bump_manifest_rewrite_application,
+            "write_atomic_text",
+            side_effect=edit_member_then_fail_fixture,
+        ),
+        pytest.raises(ManifestRewriteWriteError) as failure,
+    ):
+        bump.run(
+            case.root,
+            "1.2.3",
+            options=bump.BumpOptions(
+                rebuild_lockfiles=False,
+                configuration=case.configuration,
+                workspace=case.workspace,
+            ),
+        )
+
+    assert alpha_manifest.read_text(encoding="utf-8").endswith(concurrent_edit), (
+        "rollback must leave a concurrent edit in the member manifest intact"
+    )
+    assert (
+        case.workspace_manifests[case.root / "Cargo.toml"]
+        == (case.root / "Cargo.toml").read_bytes()
+    ), "unmodified-by-another-writer workspace manifests still roll back"
+    assert str(alpha_manifest) in str(failure.value), (
+        "the rollback error must identify the manifest it left in place"
+    )
+    assert "left the current contents in place" in str(failure.value), (
+        "the rollback error must explain why the manifest was not restored"
+    )

@@ -321,11 +321,12 @@ lading bump <new_version> [--dry-run]
 
 5. **Apply Configured Non-member Rewrites:** Apply the completed plans after
    workspace and member manifest updates, before documentation, README
-   transposition, and lockfile regeneration. If application fails, restore the
-   workspace and member manifests changed by this run to their pre-bump
-   contents. A retry then retains the original crate versions needed to finish
-   stale fixture string rewrites, including when earlier fixture writes
-   succeeded.
+   transposition, and lockfile regeneration. If application fails, restore a
+   changed workspace or member manifest only when it still contains the exact
+   text written by this run. Leave and report files changed by another writer;
+   restore the other matching manifests to their pre-bump contents so a retry
+   retains the original crate versions needed to finish stale fixture string
+   rewrites, including when earlier fixture writes succeeded.
 
 6. **Update Documentation Files:**
 
@@ -438,9 +439,10 @@ lading bump <new_version> [--dry-run]
 - `bump_pipeline_manifest_rewrites` owns planning and applying the configured
   rewrite stage. It snapshots workspace and member manifest text before any
   write and restores manifests changed by those stages if a configured rewrite
-  fails, preserving the source versions for a retry. `bump_pipeline` owns
-  overall timing, metrics, and stage ordering; it plans every selected manifest
-  before the workspace manifest stage writes, then applies plans after member
+  fails, but only while their content still matches the text written by this
+  run. It reports and preserves concurrent edits. `bump_pipeline` owns overall
+  timing, metrics, and stage ordering; it plans every selected manifest before
+  the workspace manifest stage writes, then applies plans after member
   manifests and before documentation, README transposition, and lockfile work.
 - Changed non-member manifests appear in the existing manifest report
   category. Rewriting does not add lockfile targets; `bump.lockfile_manifests`
