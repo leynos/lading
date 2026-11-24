@@ -170,6 +170,39 @@ def _resolve_crate_relative_path(workspace_root: Path, crate: WorkspaceCrate) ->
         raise ReadmeTranspositionError(message) from exc
 
 
+def _resolve_crate_readme_destination(
+    workspace_root: Path,
+    crate: WorkspaceCrate,
+    source_text: str,
+    rewritten_text: str,
+) -> Path:
+    """Return the crate-owned README after checking its resolved target."""
+    crate_root = manifest_paths.resolve_workspace_path(
+        workspace_root,
+        crate.root_path,
+        error_type=ReadmeTranspositionError,
+        label="README transposition",
+    )
+    target_readme = manifest_paths.resolve_workspace_path(
+        workspace_root,
+        crate.root_path / "README.md",
+        error_type=ReadmeTranspositionError,
+        label="README transposition",
+    )
+    crate_readme = crate_root / "README.md"
+    if target_readme != crate_readme:
+        message = (
+            "README transposition destination must resolve to the crate's own "
+            f"README: {crate.root_path / 'README.md'}"
+        )
+        raise ReadmeTranspositionError(message)
+    workspace_readme = (workspace_root / "README.md").resolve()
+    if target_readme == workspace_readme and rewritten_text != source_text:
+        message = "README transposition must not rewrite the workspace README"
+        raise ReadmeTranspositionError(message)
+    return target_readme
+
+
 def _write_or_skip_readme(
     target_readme: Path,
     rewritten_text: str,
@@ -233,30 +266,9 @@ def transpose_readme_to_crate(
     rewritten_text = rewrite_relative_links(
         source_text, compute_link_prefix(crate_relative_path)
     )[0]
-    crate_root = manifest_paths.resolve_workspace_path(
-        workspace_root,
-        crate.root_path,
-        error_type=ReadmeTranspositionError,
-        label="README transposition",
+    target_readme = _resolve_crate_readme_destination(
+        workspace_root, crate, source_text, rewritten_text
     )
-    target_readme = manifest_paths.resolve_workspace_path(
-        workspace_root,
-        crate.root_path / "README.md",
-        error_type=ReadmeTranspositionError,
-        label="README transposition",
-    )
-    crate_readme = crate_root / "README.md"
-    if target_readme != crate_readme:
-        message = (
-            "README transposition destination must resolve to the crate's own "
-            f"README: {crate.root_path / 'README.md'}"
-        )
-        raise ReadmeTranspositionError(message)
-    if target_readme == source_readme.resolve():
-        if rewritten_text == source_text:
-            return None
-        message = "README transposition must not rewrite the workspace README"
-        raise ReadmeTranspositionError(message)
     return _write_or_skip_readme(
         target_readme,
         rewritten_text,
