@@ -431,9 +431,10 @@ lading bump <new_version> [--dry-run]
   transposition. It resolves symlinks and returns the contained target;
   `resolve_manifest_candidate` composes that check with the `Cargo.toml`
   filename rule. Callers provide their domain error and retain their own
-  existence and file-type checks. Write callers pass the resolved target to
-  `write_atomic_text`, preserving internal symlinks without allowing them to
-  redirect writes outside the workspace.
+  existence and file-type checks. Documentation writes pass the resolved target
+  to `write_atomic_text`. README transposition also requires the resolved path
+  to be that crate's own `README.md`, so an internal link cannot redirect a
+  crate-specific rewrite into the workspace README.
 - `bump_pipeline_manifest_rewrites` owns planning and applying the configured
   rewrite stage. It snapshots workspace and member manifest text before any
   write and restores manifests changed by those stages if a configured rewrite

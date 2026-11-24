@@ -14,7 +14,8 @@ The command-line flags and existing `lading.toml` key syntax remain compatible
 with 0.3.x; this release adds the opt-in `bump.manifest_rewrites` key described
 above. Compound dependency requirement rewriting changes for workspace-member
 manifests and for non-member manifests selected by `bump.manifest_rewrites`.
-The documented Python API additions are additive.
+The Python API adds `DocumentationTargets` and changes the documentation
+helpers to carry workspace-bound paths; callers of those helpers must adapt.
 `BumpConfig.manifest_rewrites` is new, and `lading.config_manifest_rewrites` and
 `lading.config_validation` support its configuration. `BumpOptions.clock` adds
 an injectable rewrite timer, and
@@ -31,13 +32,14 @@ them.
 
 ## Impact at a glance
 
-| Change                   | Obligation         | Action                                                      |
-| ------------------------ | ------------------ | ----------------------------------------------------------- |
-| Python interpreter floor | Required           | Use Python 3.14 or later to install 0.4.0.                  |
-| Moved helper imports     | Required if called | Update imports if your code uses the moved helpers.         |
-| Diagnostic output stream | Required if called | Read stderr if scripts expect diagnostics on stdout.        |
-| Compound requirements    | Recommended        | Review and resolve warnings when bounds exclude the target. |
-| `bump.manifest_rewrites` | Optional           | Enable it for configured non-member manifests.              |
+| Change                   | Obligation         | Action                                                               |
+| ------------------------ | ------------------ | -------------------------------------------------------------------- |
+| Python interpreter floor | Required           | Use Python 3.14 or later to install 0.4.0.                           |
+| Moved helper imports     | Required if called | Update imports if your code uses the moved helpers.                  |
+| Diagnostic output stream | Required if called | Read stderr if scripts expect diagnostics on stdout.                 |
+| Compound requirements    | Recommended        | Review and resolve warnings when bounds exclude the target.          |
+| `bump.manifest_rewrites` | Optional           | Enable it for configured non-member manifests.                       |
+| Documentation helpers    | Required if called | Iterate `targets.paths`; pass `DocumentationTargets` to the updater. |
 
 _Table 1: Migration actions by change._
 
@@ -134,6 +136,49 @@ from lading.commands.bump_toml_dependencies import (
     update_dependency_sections,
     update_dependency_table,
     update_section,
+)
+```
+
+### Documentation target migration
+
+`resolve_documentation_targets` now returns a `DocumentationTargets` record
+that carries the workspace root with the selected paths. Iterate through
+`targets.paths`. Direct callers that assemble path lists must construct the
+record before calling `update_documentation_files`; this lets the updater
+enforce the workspace boundary for both configured and direct targets.
+
+#### Before: tuple-based documentation targets
+
+<!-- tested-example: v0-4-0-doc-targets-before -->
+
+```python
+targets = resolve_documentation_targets(workspace_root, documentation)
+for path in targets:
+    print(path)
+update_documentation_files(
+    targets, target_version, updated_crates, dry_run=False
+)
+```
+
+#### After: workspace-bound documentation targets
+
+<!-- tested-example: v0-4-0-doc-targets-after -->
+
+```python
+from lading.commands.bump_docs import (
+    DocumentationTargets,
+    resolve_documentation_targets,
+    update_documentation_files,
+)
+
+targets = resolve_documentation_targets(workspace_root, documentation)
+for path in targets.paths:
+    print(path)
+
+paths = (workspace_root / "README.md",)
+direct_targets = DocumentationTargets(workspace_root, paths)
+update_documentation_files(
+    direct_targets, target_version, updated_crates, dry_run=False
 )
 ```
 

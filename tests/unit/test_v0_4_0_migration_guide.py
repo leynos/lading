@@ -23,6 +23,8 @@ _EXPECTED_EXAMPLE_IDS = (
     "v0-4-0-helper-import-after",
     "v0-4-0-dependency-import-before",
     "v0-4-0-dependency-import-after",
+    "v0-4-0-doc-targets-before",
+    "v0-4-0-doc-targets-after",
     "v0-4-0-requires-python",
     "v0-4-0-python313-wheel-rejection",
 )
@@ -186,6 +188,25 @@ def test_after_import_examples_resolve_on_0_4_0(example_id: str) -> None:
             assert hasattr(module, name), f"{module_name} must expose {name}"
             if name != "DEPENDENCY_SECTIONS":
                 assert callable(getattr(module, name)), f"{name} must be callable"
+
+
+def test_documentation_target_migration_examples_show_the_new_record() -> None:
+    """Migration examples cover iteration and direct updater construction."""
+    examples = _examples_by_id()
+    before = examples["v0-4-0-doc-targets-before"].source
+    after = examples["v0-4-0-doc-targets-after"].source
+
+    ast.parse(before)
+    ast.parse(after)
+    assert "for path in targets:" in before, (
+        "the before example must show the former tuple iteration"
+    )
+    assert "for path in targets.paths:" in after, (
+        "the after example must iterate the record's paths"
+    )
+    assert "DocumentationTargets(workspace_root, paths)" in after, (
+        "direct updater calls must construct the workspace-bound target record"
+    )
 
 
 def test_requires_python_example_matches_project_metadata() -> None:

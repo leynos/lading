@@ -258,6 +258,26 @@ def test_transpose_readme_rejects_external_destination_symlink(
         )
 
 
+def test_transpose_readme_rejects_destination_symlink_to_workspace_readme(
+    tmp_path: Path,
+) -> None:
+    """A crate README cannot redirect transposition into its source README."""
+    crate = _make_crate(tmp_path)
+    source_readme = tmp_path / "README.md"
+    original = "# Project\n\nSee [Guide](docs/guide.md).\n"
+    source_readme.write_text(original, encoding="utf-8")
+    target_readme = crate.root_path / "README.md"
+    target_readme.symlink_to(source_readme)
+
+    with pytest.raises(ReadmeTranspositionError, match="crate's own README"):
+        bump_readme.transpose_readme_to_crate(tmp_path, crate, dry_run=False)
+
+    assert target_readme.is_symlink(), "the crate README link must remain intact"
+    assert source_readme.read_text(encoding="utf-8") == original, (
+        "transposition must preserve the workspace README source bytes"
+    )
+
+
 @given(parts=st.lists(_PATH_COMPONENT, min_size=1, max_size=8))
 @settings(max_examples=100)
 def test_compute_link_prefix_depth_matches_parts(parts: list[str]) -> None:

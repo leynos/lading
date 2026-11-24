@@ -222,9 +222,9 @@ def transpose_readme_to_crate(
     Raises
     ------
     ReadmeTranspositionError
-        If the workspace README is unavailable or the crate lies outside
-        ``workspace_root``, including when the destination README symlink
-        resolves outside the workspace.
+        If the workspace README is unavailable, the crate lies outside
+        ``workspace_root``, or the destination does not resolve to the crate's
+        own README.
     """
     _log.debug("Transposing workspace README into crate %r", crate.name)
     source_readme = workspace_root / "README.md"
@@ -233,12 +233,30 @@ def transpose_readme_to_crate(
     rewritten_text = rewrite_relative_links(
         source_text, compute_link_prefix(crate_relative_path)
     )[0]
+    crate_root = manifest_paths.resolve_workspace_path(
+        workspace_root,
+        crate.root_path,
+        error_type=ReadmeTranspositionError,
+        label="README transposition",
+    )
     target_readme = manifest_paths.resolve_workspace_path(
         workspace_root,
         crate.root_path / "README.md",
         error_type=ReadmeTranspositionError,
         label="README transposition",
     )
+    crate_readme = crate_root / "README.md"
+    if target_readme != crate_readme:
+        message = (
+            "README transposition destination must resolve to the crate's own "
+            f"README: {crate.root_path / 'README.md'}"
+        )
+        raise ReadmeTranspositionError(message)
+    if target_readme == source_readme.resolve():
+        if rewritten_text == source_text:
+            return None
+        message = "README transposition must not rewrite the workspace README"
+        raise ReadmeTranspositionError(message)
     return _write_or_skip_readme(
         target_readme,
         rewritten_text,

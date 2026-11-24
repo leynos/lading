@@ -26,8 +26,8 @@ def then_migration_guide_examples_load_completely(
     migration_guide_examples: tuple[MarkdownExample, ...],
 ) -> None:
     """Assert that the published guide's complete, multi-language set loaded."""
-    assert len(migration_guide_examples) == 9, (
-        "the migration guide's nine marked examples must all load"
+    assert len(migration_guide_examples) == 11, (
+        "the migration guide's eleven marked examples must all load"
     )
     assert {example.language for example in migration_guide_examples} == {
         "python",
