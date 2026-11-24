@@ -206,6 +206,7 @@ def _apply_non_member_manifest_rewrites(
             stage,
             changed_manifests,
             rewrite_error,
+            workspace_root=context.root_path,
         )
         bump_manifest_rewrite_metrics.record_manifest_rewrite_metrics(
             stage.planning_duration_seconds + clock() - application_started_at,
@@ -238,6 +239,8 @@ def _restore_changed_workspace_manifests(
     stage: _ManifestRewriteStage,
     changed_manifests: cabc.Collection[Path],
     failure: Exception,
+    *,
+    workspace_root: Path,
 ) -> ManifestRewriteWriteError | None:
     """Restore only manifests that still contain this bump's written text."""
     original_text_by_path = dict(stage.workspace_manifest_snapshots)
@@ -263,7 +266,9 @@ def _restore_changed_workspace_manifests(
             continue
         try:
             bump_toml_files.write_atomic_text(
-                manifest_path, original_text_by_path[manifest_path]
+                manifest_path,
+                original_text_by_path[manifest_path],
+                workspace_root=workspace_root,
             )
         except (OSError, UnicodeError) as exc:
             failures.append((manifest_path, f"could not restore original text: {exc}"))

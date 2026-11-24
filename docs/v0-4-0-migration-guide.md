@@ -43,6 +43,22 @@ them.
 
 _Table 1: Migration actions by change._
 
+## Migration checklist
+
+- [ ] Install Lading 0.4.0 with CPython 3.14 or later.
+- [ ] If tooling imports moved helpers, update those imports.
+- [ ] If tooling uses documentation helpers, iterate `targets.paths` and pass
+  `DocumentationTargets` to the updater.
+- [ ] If scripts consume diagnostics, read them from stderr; summaries remain
+  on stdout.
+- [ ] Review compound requirement warnings and resolve bounds that exclude the
+  target version.
+
+### Optional adoption
+
+- [ ] If a bump should update standalone manifests, configure
+  `bump.manifest_rewrites`; it is disabled by default.
+
 ## 1. Upgrading
 
 Upgrade the interpreter first, then the package, so that the installer's

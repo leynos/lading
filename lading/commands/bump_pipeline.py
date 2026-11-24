@@ -110,6 +110,7 @@ def _process_workspace_and_crate_manifests(
                 rewrite_stage,
                 changed_manifests,
                 stage_error,
+                workspace_root=context.root_path,
             )
         )
         if rollback_error is not None:

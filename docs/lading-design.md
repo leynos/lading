@@ -444,7 +444,9 @@ lading bump <new_version> [--dry-run]
   rewrite stage. It snapshots workspace and member manifest text before any
   write and restores manifests changed by those stages if a configured rewrite
   fails, but only while their content still matches the text written by this
-  run. It reports and preserves concurrent edits. `bump_pipeline` owns overall
+  run. Restoration writes use the same workspace-root boundary as forward
+  writes, so a changed symlink cannot redirect rollback outside the workspace.
+  It reports and preserves concurrent edits. `bump_pipeline` owns overall
   timing, metrics, and stage ordering; it plans every selected manifest before
   the workspace manifest stage writes, then applies plans after member
   manifests and before documentation, README transposition, and lockfile work.
