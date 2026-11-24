@@ -1,5 +1,7 @@
 """Workspace-bound rollback for configured manifest rewrites."""
 
+import collections.abc as cabc
+import dataclasses as dc
 from pathlib import Path
 from unittest import mock
 
@@ -10,77 +12,99 @@ from lading.commands import (
     bump_manifest_rewrite_application,
     bump_pipeline_manifest_rewrites,
 )
-from lading.commands.bump_manifest_rewrites import ManifestRewriteWriteError
-from tests.helpers.manifest_rewrite_recovery import _make_partial_write_failure_case
+from lading.commands.bump_manifest_rewrites import (
+    ManifestRewriteError,
+    ManifestRewriteWriteError,
+)
+from tests.helpers.manifest_rewrite_recovery import (
+    _make_partial_write_failure_case,
+    _PartialWriteFailureCase,
+)
+
+pytestmark = pytest.mark.usefixtures("reset_process_metrics")
 
 
-def test_rollback_does_not_follow_manifest_symlink_outside_workspace(
-    tmp_path: Path,
-) -> None:
-    """A swapped member path cannot redirect rollback outside the workspace."""
-    case = _make_partial_write_failure_case(tmp_path)
-    alpha_manifest = next(
-        crate.manifest_path for crate in case.workspace.crates if crate.name == "alpha"
-    )
-    outside_manifest = tmp_path.parent / f"{tmp_path.name}-outside-alpha.toml"
-    fixture_write = bump_manifest_rewrite_application.write_atomic_text
-    atomic_write = bump_pipeline_manifest_rewrites.bump_toml_files.write_atomic_text
-    symlink_swapped = False
-    outside_contents = b""
+@dc.dataclass(slots=True)
+class _RollbackProbeState:
+    """Track the symlink swap and outside bytes for one failure scenario."""
+
+    symlink_swapped: bool = False
+    outside_contents: bytes = b""
+
+
+@dc.dataclass(slots=True)
+class _RollbackProbe:
+    """Inject a fixture failure and inspect bounded workspace restoration."""
+
+    case: _PartialWriteFailureCase
+    alpha_manifest: Path
+    outside_manifest: Path
+    fixture_write: cabc.Callable[..., None]
+    atomic_write: cabc.Callable[..., None]
+    state: _RollbackProbeState = dc.field(default_factory=_RollbackProbeState)
 
     def fail_second_fixture(
+        self,
         path: Path,
         content: str,
         *,
         workspace_root: Path | None = None,
     ) -> None:
         """Swap a changed member path outside the workspace before failing."""
-        nonlocal outside_contents, symlink_swapped
-        if path == case.fixtures[1].resolve():
-            outside_contents = alpha_manifest.read_bytes()
-            outside_manifest.write_bytes(outside_contents)
-            alpha_manifest.unlink()
-            alpha_manifest.symlink_to(outside_manifest)
-            symlink_swapped = True
+        if path == self.case.fixtures[1].resolve():
+            self.state.outside_contents = self.alpha_manifest.read_bytes()
+            self.outside_manifest.write_bytes(self.state.outside_contents)
+            self.alpha_manifest.unlink()
+            self.alpha_manifest.symlink_to(self.outside_manifest)
+            self.state.symlink_swapped = True
             raise OSError
-        fixture_write(path, content, workspace_root=workspace_root)
+        self.fixture_write(path, content, workspace_root=workspace_root)
 
     def bounded_rollback_write(
+        self,
         path: Path,
         content: str,
         *,
         workspace_root: Path | None = None,
     ) -> None:
         """Forward rollback through the original bounded atomic writer."""
-        if symlink_swapped and path == alpha_manifest:
-            assert workspace_root == case.root, (
+        if self.state.symlink_swapped and path == self.alpha_manifest:
+            assert workspace_root == self.case.root, (
                 "rollback must revalidate the workspace boundary at write time"
             )
-        atomic_write(path, content, workspace_root=workspace_root)
+        self.atomic_write(path, content, workspace_root=workspace_root)
+
+
+def test_rollback_does_not_follow_member_path_swapped_outside_workspace(
+    tmp_path: Path,
+) -> None:
+    """A swapped member path cannot redirect rollback outside the workspace."""
+    case = _make_partial_write_failure_case(tmp_path)
+    alpha_manifest = _alpha_manifest_path(case)
+    outside_manifest = tmp_path.parent / f"{tmp_path.name}-outside-alpha.toml"
+    probe = _RollbackProbe(
+        case=case,
+        alpha_manifest=alpha_manifest,
+        outside_manifest=outside_manifest,
+        fixture_write=bump_manifest_rewrite_application.write_atomic_text,
+        atomic_write=bump_pipeline_manifest_rewrites.bump_toml_files.write_atomic_text,
+    )
 
     try:
         with (
             mock.patch.object(
                 bump_manifest_rewrite_application,
                 "write_atomic_text",
-                side_effect=fail_second_fixture,
+                side_effect=probe.fail_second_fixture,
             ),
             mock.patch.object(
                 bump_pipeline_manifest_rewrites.bump_toml_files,
                 "write_atomic_text",
-                side_effect=bounded_rollback_write,
+                side_effect=probe.bounded_rollback_write,
             ),
             pytest.raises(ManifestRewriteWriteError) as failure,
         ):
-            bump.run(
-                case.root,
-                "1.2.3",
-                options=bump.BumpOptions(
-                    rebuild_lockfiles=False,
-                    configuration=case.configuration,
-                    workspace=case.workspace,
-                ),
-            )
+            _run_bump(case)
 
         assert failure.value.failed_path == alpha_manifest, (
             "the rollback error should identify the member path rejected by the "
@@ -89,10 +113,82 @@ def test_rollback_does_not_follow_manifest_symlink_outside_workspace(
         assert alpha_manifest.is_symlink(), (
             "rollback must leave the changed link in place"
         )
-        assert outside_manifest.read_bytes() == outside_contents, (
+        assert outside_manifest.read_bytes() == probe.state.outside_contents, (
             "rollback must not overwrite the outside target"
         )
     finally:
         if alpha_manifest.is_symlink():
             alpha_manifest.unlink()
         outside_manifest.unlink(missing_ok=True)
+
+
+def test_rollback_restores_original_target_for_workspace_member_symlink(
+    tmp_path: Path,
+) -> None:
+    """Rollback restores the captured in-workspace target of a member link."""
+    case = _make_partial_write_failure_case(tmp_path)
+    alpha_manifest = _alpha_manifest_path(case)
+    original_contents = alpha_manifest.read_bytes()
+    target_manifest = alpha_manifest.parent / "manifest-target" / "Cargo.toml"
+    target_manifest.parent.mkdir()
+    alpha_manifest.replace(target_manifest)
+    alpha_manifest.symlink_to(target_manifest)
+
+    failure = _run_partial_write_failure(case)
+
+    assert failure.failed_path == case.fixtures[1].resolve(), (
+        "the original fixture failure should remain the reported error"
+    )
+    assert target_manifest.read_bytes() == original_contents, (
+        "rollback must restore the actual member manifest target"
+    )
+    assert alpha_manifest.is_symlink(), "the original member link should remain"
+
+
+def _alpha_manifest_path(case: _PartialWriteFailureCase) -> Path:
+    """Return the fixture workspace's alpha member manifest path."""
+    return next(
+        crate.manifest_path for crate in case.workspace.crates if crate.name == "alpha"
+    )
+
+
+def _run_bump(case: _PartialWriteFailureCase) -> None:
+    """Run the bump used by rollback containment scenarios."""
+    bump.run(
+        case.root,
+        "1.2.3",
+        options=bump.BumpOptions(
+            rebuild_lockfiles=False,
+            configuration=case.configuration,
+            workspace=case.workspace,
+        ),
+    )
+
+
+def _run_partial_write_failure(
+    case: _PartialWriteFailureCase,
+) -> ManifestRewriteError:
+    """Fail the second fixture write after the first one succeeds."""
+    fixture_write = bump_manifest_rewrite_application.write_atomic_text
+
+    def fail_second_fixture(
+        path: Path,
+        content: str,
+        *,
+        workspace_root: Path | None = None,
+    ) -> None:
+        """Let the first fixture write complete, then fail the second."""
+        if path == case.fixtures[1].resolve():
+            raise OSError
+        fixture_write(path, content, workspace_root=workspace_root)
+
+    with (
+        mock.patch.object(
+            bump_manifest_rewrite_application,
+            "write_atomic_text",
+            side_effect=fail_second_fixture,
+        ),
+        pytest.raises(ManifestRewriteError) as failure,
+    ):
+        _run_bump(case)
+    return failure.value

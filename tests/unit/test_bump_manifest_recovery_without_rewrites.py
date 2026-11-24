@@ -35,13 +35,13 @@ def _run_bump_with_member_failure(
         manifest_path: Path,
         selectors: tuple[tuple[str, ...], ...],
         target_version: str,
-        options: bump.BumpOptions,
+        update_context: bump_manifests._ManifestUpdateContext,
     ) -> bump_manifests._ManifestUpdateResult:
         """Fail one member after recording successful earlier updates."""
         if manifest_path == failed_manifest:
             raise _InjectedMemberManifestError
         result = original_update_manifest(
-            manifest_path, selectors, target_version, options
+            manifest_path, selectors, target_version, update_context
         )
         if result.was_changed:
             completed_updates.append(manifest_path)
@@ -167,12 +167,15 @@ def test_root_package_member_pass_preserves_intervening_edit(
         manifest_path: Path,
         selectors: tuple[tuple[str, ...], ...],
         target_version: str,
-        options: bump.BumpOptions,
+        update_context: bump_manifests._ManifestUpdateContext,
     ) -> bump_manifests._ManifestUpdateResult:
         """Insert an external edit after the first root manifest write."""
         nonlocal inserted_edit
         result = original_update_manifest(
-            manifest_path, selectors, target_version, options
+            manifest_path,
+            selectors,
+            target_version,
+            update_context,
         )
         if manifest_path == root_manifest and result.written_text is not None:
             root_manifest.write_text(

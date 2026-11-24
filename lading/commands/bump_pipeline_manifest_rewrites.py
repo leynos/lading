@@ -46,6 +46,7 @@ class _ManifestRewriteStage:
     planning_duration_seconds: float = 0.0
     workspace_manifest_snapshots: tuple[tuple[Path, str], ...] = ()
     written_manifest_contents: dict[Path, str] = dc.field(default_factory=dict)
+    written_manifest_destinations: dict[Path, Path] = dc.field(default_factory=dict)
     rollback_baselines: dict[Path, str] = dc.field(default_factory=dict)
 
 
@@ -242,7 +243,7 @@ def _restore_changed_workspace_manifests(
     *,
     workspace_root: Path,
 ) -> ManifestRewriteWriteError | None:
-    """Restore only manifests that still contain this bump's written text."""
+    """Restore only write destinations that still contain this bump's text."""
     original_text_by_path = dict(stage.workspace_manifest_snapshots)
     original_text_by_path.update(stage.rollback_baselines)
     failures: list[tuple[Path, str]] = []
@@ -252,8 +253,11 @@ def _restore_changed_workspace_manifests(
         reverse=True,
     )
     for manifest_path in changed_workspace_manifests:
+        write_destination = stage.written_manifest_destinations.get(
+            manifest_path, manifest_path
+        )
         try:
-            current_text = manifest_path.read_text(encoding="utf-8", newline="")
+            current_text = write_destination.read_text(encoding="utf-8", newline="")
         except (OSError, UnicodeError) as exc:
             failures.append((manifest_path, f"could not read before rollback: {exc}"))
             continue
@@ -266,7 +270,7 @@ def _restore_changed_workspace_manifests(
             continue
         try:
             bump_toml_files.write_atomic_text(
-                manifest_path,
+                write_destination,
                 original_text_by_path[manifest_path],
                 workspace_root=workspace_root,
             )

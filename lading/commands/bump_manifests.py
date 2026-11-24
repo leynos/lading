@@ -50,12 +50,21 @@ _DEPENDENCY_SECTION_BY_KIND: typ.Final[dict[str | None, str]] = {
 
 
 @dc.dataclass(frozen=True, slots=True)
+class _ManifestUpdateContext:
+    """Pair version-update options with the boundary for its file write."""
+
+    options: BumpOptions
+    workspace_root: Path | None = None
+
+
+@dc.dataclass(frozen=True, slots=True)
 class _ManifestUpdateResult:
-    """Describe the input and output text of one manifest update."""
+    """Describe source text, output text, and destination of one update."""
 
     was_changed: bool
     original_text: str
     written_text: str | None = None
+    write_destination: Path | None = None
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -107,9 +116,10 @@ def _update_manifest(
     manifest_path: Path,
     selectors: tuple[tuple[str, ...], ...],
     target_version: str,
-    options: BumpOptions,
+    update_context: _ManifestUpdateContext,
 ) -> _ManifestUpdateResult:
     """Apply ``target_version`` to each selected table and dependency section."""
+    options = update_context.options
     original_text, document = bump_toml_files._read_and_parse_manifest(manifest_path)
     changed = False
     for selector in selectors:
@@ -124,11 +134,17 @@ def _update_manifest(
         )
     if changed and not options.dry_run:
         updated_text = document.as_string()
-        bump_toml_files.write_atomic_text(manifest_path, updated_text)
+        write_destination = manifest_path.resolve(strict=True)
+        bump_toml_files.write_atomic_text(
+            write_destination,
+            updated_text,
+            workspace_root=update_context.workspace_root,
+        )
         return _ManifestUpdateResult(
             was_changed=True,
             original_text=original_text,
             written_text=updated_text,
+            write_destination=write_destination,
         )
     return _ManifestUpdateResult(was_changed=changed, original_text=original_text)
 

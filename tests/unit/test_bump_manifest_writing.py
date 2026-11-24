@@ -23,7 +23,10 @@ def test_update_manifest_writes_when_changed(tmp_path: Path) -> None:
     original = '[package]\nname = "demo"\nversion = "0.1.0"\n'
     manifest_path.write_text(original, encoding="utf-8")
     result = bump_manifests._update_manifest(
-        manifest_path, (("package",),), "1.0.0", bump.BumpOptions()
+        manifest_path,
+        (("package",),),
+        "1.0.0",
+        bump_manifests._ManifestUpdateContext(bump.BumpOptions()),
     )
     assert result.was_changed is True, "changing the version should report a change"
     assert result.written_text == manifest_path.read_text(encoding="utf-8"), (
@@ -44,7 +47,10 @@ def test_update_manifest_preserves_inline_comment(tmp_path: Path) -> None:
         '[package]\nversion = "0.1.0"  # keep me\n', encoding="utf-8"
     )
     result = bump_manifests._update_manifest(
-        manifest_path, (("package",),), "1.2.3", bump.BumpOptions()
+        manifest_path,
+        (("package",),),
+        "1.2.3",
+        bump_manifests._ManifestUpdateContext(bump.BumpOptions()),
     )
     assert result.was_changed is True, "rewriting the version should report a change"
     assert result.written_text is not None, "a persisted update should report its text"
@@ -62,7 +68,10 @@ def test_update_manifest_skips_when_unchanged(tmp_path: Path) -> None:
     original = '[package]\nname = "demo"\nversion = "0.1.0"\n'
     manifest_path.write_text(original)
     result = bump_manifests._update_manifest(
-        manifest_path, (("package",),), "0.1.0", bump.BumpOptions()
+        manifest_path,
+        (("package",),),
+        "0.1.0",
+        bump_manifests._ManifestUpdateContext(bump.BumpOptions()),
     )
     assert result.was_changed is False, (
         "an already-current version should report no change"

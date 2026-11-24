@@ -23,6 +23,7 @@ from lading.commands.bump_manifests import (
     _dependency_sections_for_crate,
     _determine_package_selectors,
     _freeze_dependency_sections,
+    _ManifestUpdateContext,
     _ManifestUpdateResult,
     _should_skip_crate_update,
     _update_manifest,
@@ -131,11 +132,15 @@ def _process_workspace_manifest(
         dependency_sections=_freeze_dependency_sections(dependency_sections),
         include_workspace_sections=True,
     )
+    update_context = _ManifestUpdateContext(
+        options=workspace_options,
+        workspace_root=context.root_path,
+    )
     result = _update_manifest(
         context.workspace_manifest,
         _WORKSPACE_SELECTORS,
         target_version,
-        workspace_options,
+        update_context,
     )
     if result.was_changed:
         changed_manifests.add(context.workspace_manifest)
@@ -180,13 +185,16 @@ def _record_written_manifest_content(
     manifest_path: Path,
     rewrite_stage: bump_pipeline_manifest_rewrites._ManifestRewriteStage | None,
 ) -> None:
-    """Record the output needed to guard a later rollback."""
+    """Record output text and destination needed to guard a later rollback."""
     if rewrite_stage is None:
         return
     written_text = result.written_text
     if written_text is None:
         return
     rewrite_stage.written_manifest_contents[manifest_path] = written_text
+    write_destination = result.write_destination
+    if write_destination is not None:
+        rewrite_stage.written_manifest_destinations[manifest_path] = write_destination
 
 
 def _validate_member_manifest_before_update(
@@ -343,11 +351,15 @@ def _apply_crate_manifest_update(
         context.base_options,
         dependency_sections=_freeze_dependency_sections(dependency_sections),
     )
+    update_context = _ManifestUpdateContext(
+        options=crate_options,
+        workspace_root=context.root_path,
+    )
     result = _update_manifest(
         crate.manifest_path,
         selectors,
         target_version,
-        crate_options,
+        update_context,
     )
     if result.was_changed and rewrite_stage is not None:
         rewrite_stage.rollback_baselines.setdefault(

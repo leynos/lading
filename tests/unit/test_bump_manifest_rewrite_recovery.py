@@ -136,7 +136,7 @@ def _run_bump_with_member_failure(
         manifest_path: Path,
         selectors: tuple[tuple[str, ...], ...],
         target_version: str,
-        options: bump.BumpOptions,
+        update_context: bump_manifests._ManifestUpdateContext,
     ) -> bump_manifests._ManifestUpdateResult:
         """Inject a failure for the selected crate manifest."""
         if manifest_path == failed_manifest:
@@ -145,7 +145,7 @@ def _run_bump_with_member_failure(
             manifest_path,
             selectors,
             target_version,
-            options,
+            update_context,
         )
 
     with (
@@ -326,13 +326,13 @@ def test_rewrite_failure_rolls_back_to_text_parsed_after_a_concurrent_edit(
         manifest_path: Path,
         selectors: tuple[tuple[str, ...], ...],
         target_version: str,
-        options: bump.BumpOptions,
+        update_context: bump_manifests._ManifestUpdateContext,
     ) -> bump_manifests._ManifestUpdateResult:
         """Insert an external edit before the selected manifest is parsed."""
         if manifest_path == beta_manifest:
             manifest_path.write_text(parsed_beta_text, encoding="utf-8")
         return original_update_manifest(
-            manifest_path, selectors, target_version, options
+            manifest_path, selectors, target_version, update_context
         )
 
     def fail_second_fixture(
