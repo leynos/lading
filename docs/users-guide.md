@@ -871,13 +871,19 @@ boundary, so versions anywhere in that metadata remain unchanged, including
 boundary after the match; one ending with `{version}` requires a boundary after
 the match that rejects letters, digits, periods, plus signs, and hyphens. An
 adjacent `.crate` extension or `-extra` suffix therefore blocks the match.
-These rules keep `rstest-bdd` from matching inside `rstest-bdd-harness` and
-prevent `0.6.0-beta4` matching the prefix of `0.6.0-beta40`. If distinct crates
-render the same old text but different target text, planning fails with the
-affected manifest path instead of choosing one replacement. Version-only
-selectors leave selected versions that do not match a workspace crate's
-pre-bump version unchanged, since the selector cannot attribute those values to
-a crate.
+Versions nested in another SemVer prerelease, such as `9.0.0-1.0.0` or
+`9.0.0-rc.alpha-1.0.0`, also remain unchanged. These rules keep `rstest-bdd`
+from matching inside `rstest-bdd-harness` and prevent `0.6.0-beta4` matching
+the prefix of `0.6.0-beta40`. If distinct crates render the same old text but
+different target text, planning fails with the affected manifest path instead
+of choosing one replacement. Version-only selectors leave selected versions
+that do not match a workspace crate's pre-bump version unchanged, since the
+selector cannot attribute those values to a crate. A version-only selector also
+cannot identify a stale reference after a previous run has already updated the
+workspace manifests: that value is indistinguishable from an intentional
+version for another crate. Use a crate-qualified template such as the default
+`"{crate}-{version}"` when a fixture needs to identify stale references after a
+partial bump.
 
 The root manifest and all workspace-member manifests are skipped even when a
 configured glob selects them. Repeated groups selecting the same non-member
@@ -893,9 +899,16 @@ still runs without invoking Cargo.
 Each configured manifest write is atomic, but the batch is not. If a later
 write fails, or a manifest changes after planning, earlier fixture rewrites
 remain and lockfile regeneration is skipped. Member manifests already contain
-the target version, so rerunning the bump may no longer have the old version
-needed to plan remaining string rewrites. Restore the pre-bump working tree
-before retrying, or manually finish the remaining fixture edits.
+the target version, so a version-only selector may no longer have enough
+information to plan remaining string rewrites. The recommended recovery is to
+restore the pre-bump working tree and rerun the complete `lading bump`, which
+reapplies manifest, documentation, README, and lockfile updates in order.
+
+For manual recovery, finish the remaining fixture edits and apply the skipped
+documentation and workspace README updates. Before committing, regenerate
+lockfiles by running `cargo update --workspace --manifest-path <manifest>` for
+the workspace root, all automatically discovered lockfile manifests, and each
+applicable `bump.lockfile_manifests` entry, including untracked fixture locks.
 
 For example, the `rstest-bdd` published GPUI fixture can opt into rewriting its
 dependency requirements and staged package patch paths:

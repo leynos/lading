@@ -16,15 +16,15 @@ from tests.helpers.markdown_examples import MarkdownExample, load_markdown_examp
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _GUIDE_PATH = _REPO_ROOT / "docs" / "v0-4-0-migration-guide.md"
 _EXPECTED_EXAMPLE_IDS = (
+    "v0-4-0-upgrade-uv",
+    "v0-4-0-upgrade-venv",
+    "v0-4-0-pin-before-floor",
     "v0-4-0-helper-import-before",
     "v0-4-0-helper-import-after",
     "v0-4-0-dependency-import-before",
     "v0-4-0-dependency-import-after",
     "v0-4-0-requires-python",
     "v0-4-0-python313-wheel-rejection",
-    "v0-4-0-upgrade-uv",
-    "v0-4-0-upgrade-venv",
-    "v0-4-0-pin-before-floor",
 )
 
 

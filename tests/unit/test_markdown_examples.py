@@ -166,6 +166,21 @@ def test_loader_extracts_marked_fences_inside_list_items(tmp_path: Path) -> None
     )
 
 
+def test_loader_rejects_marker_from_a_different_list_item(tmp_path: Path) -> None:
+    """A sibling list item's marker cannot authorize this item's fence."""
+    document = _write_document(
+        tmp_path,
+        "- First item:\n"
+        "  <!-- tested-example: previous-item -->\n"
+        "- ```python\n"
+        "  print('second item')\n"
+        "  ```\n",
+    )
+
+    with pytest.raises(MarkdownExampleError, match="unmarked"):
+        load_markdown_examples(document)
+
+
 def test_loader_stops_a_quoted_fence_at_its_container_boundary(
     tmp_path: Path,
 ) -> None:

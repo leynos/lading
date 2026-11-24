@@ -41,7 +41,45 @@ them.
 
 _Table 1: Migration actions by change._
 
-## Import migration
+## 1. Upgrading
+
+Upgrade the interpreter first, then the package, so that the installer's
+constraint is satisfied at the moment it is checked.
+
+<!-- tested-example: v0-4-0-upgrade-uv -->
+
+```bash
+# Substitute the tool that manages your interpreter.
+uv python install 3.14
+uv python pin 3.14
+
+# In the existing [project] table in pyproject.toml, set:
+# requires-python = ">=3.14"
+
+# Then move the package itself.
+uv add lading==0.4.0
+```
+
+A project using `pip` and a virtual environment follows the same order:
+
+<!-- tested-example: v0-4-0-upgrade-venv -->
+
+```bash
+python3.14 -m venv .venv
+.venv/bin/python -m pip install lading==0.4.0
+```
+
+If the interpreter cannot be moved yet, pin Lading below the floor and defer
+the upgrade. Nothing in 0.4.0 fixes a defect present in 0.3.1, so there is no
+correctness pressure to migrate before the interpreter is ready:
+
+<!-- tested-example: v0-4-0-pin-before-floor -->
+
+```bash
+uv add 'lading<0.4.0'
+```
+
+## 2. Import migration
 
 ### File helpers
 
@@ -110,15 +148,6 @@ files for direct download. Use PyPI for a normal package installation; choose
 the matching GitHub release to download an artefact directly. No project
 configuration changes are needed to move an existing install to PyPI.
 
-The release also changes how `lading bump` rewrites compound dependency
-requirements in workspace-member manifests and explicitly configured non-member
-manifests: the first comparator takes the target version, and later comparators
-remain verbatim. It warns when the rewritten first comparator is strict (`<` or
-`>`) or a later recognized comparison bound (`<`, `<=`, `=`, `>=` or `>`)
-excludes the target. Retained caret and tilde clauses, and unsupported forms,
-are not evaluated by this warning. See the
-[bump configuration reference](users-guide.md#bump).
-
 Subprocess output relays also emit additive, privacy-safe `INFO` decision
 events with the prefix `relay observability event:`. They describe relay
 fallback and disablement decisions without including child-process output. This
@@ -180,7 +209,7 @@ That refusal is the intended behaviour rather than a packaging accident. It
 replaces the alternative — installing successfully and then failing at import
 or during a run — with a message that names the constraint.
 
-## Command-line output streams
+## 3. Command-line output streams
 
 Lading constructs its command-line application with an explicit result action,
 so its own dispatcher owns printing and exit codes instead of delegating them
@@ -199,6 +228,17 @@ contract, including the exit-status table, is in
 the decision is recorded in
 [ADR-011](adrs/adr-0011-cyclopts-4-cli-result-and-diagnostic-boundary.md).
 
+## 4. Review compound dependency requirements
+
+The release changes how `lading bump` rewrites compound dependency requirements
+in workspace-member manifests and explicitly configured non-member manifests:
+the first comparator takes the target version, and later comparators remain
+verbatim. It warns when the rewritten first comparator is strict (`<` or `>`)
+or a later recognized comparison bound (`<`, `<=`, `=`, `>=` or `>`) excludes
+the target. Retained caret and tilde clauses, and unsupported forms, are not
+evaluated by this warning. Review the warnings and resolve any bounds that
+exclude the target. See the [bump configuration reference](users-guide.md#bump).
+
 ## Why the floor moved
 
 Lading's lint and typecheck gateways evaluate the source against a single
@@ -214,44 +254,6 @@ version nothing in the project verifies.
 guide records how the baseline is declared and mirrored;
 [Supported Python versions](users-guide.md#supported-python-versions) states
 the floor for users.
-
-## Upgrading
-
-Upgrade the interpreter first, then the package, so that the installer's
-constraint is satisfied at the moment it is checked.
-
-<!-- tested-example: v0-4-0-upgrade-uv -->
-
-```bash
-# Substitute the tool that manages your interpreter.
-uv python install 3.14
-uv python pin 3.14
-
-# In the existing [project] table in pyproject.toml, set:
-# requires-python = ">=3.14"
-
-# Then move the package itself.
-uv add lading==0.4.0
-```
-
-A project using `pip` and a virtual environment follows the same order:
-
-<!-- tested-example: v0-4-0-upgrade-venv -->
-
-```bash
-python3.14 -m venv .venv
-.venv/bin/python -m pip install lading==0.4.0
-```
-
-If the interpreter cannot be moved yet, pin Lading below the floor and defer
-the upgrade. Nothing in 0.4.0 fixes a defect present in 0.3.1, so there is no
-correctness pressure to migrate before the interpreter is ready:
-
-<!-- tested-example: v0-4-0-pin-before-floor -->
-
-```bash
-uv add 'lading<0.4.0'
-```
 
 ## Staying on 0.3.1
 

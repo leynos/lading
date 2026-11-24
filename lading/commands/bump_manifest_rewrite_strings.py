@@ -26,8 +26,15 @@ _SEMVER_TEXT: typ.Final[str] = (
     r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
 )
 _SEMVER_BUILD_METADATA_PREFIX: typ.Final[re.Pattern[str]] = re.compile(
-    r"(?<![A-Za-z0-9.+])"
+    r"(?<![A-Za-z0-9.])"
     r"\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?\+$"
+)
+_SEMVER_PRERELEASE_PREFIX: typ.Final[re.Pattern[str]] = re.compile(
+    r"(?<![A-Za-z0-9.])(?:"
+    r"\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?-"
+    r"|"
+    r"\d+\.\d+\.\d+-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*\."
+    r")$"
 )
 _BUILD_METADATA_CHARACTERS: typ.Final[re.Pattern[str]] = re.compile(r"[0-9A-Za-z.-]*")
 _LEADING_BOUNDARIES: typ.Final[tuple[tuple[str, str], ...]] = (
@@ -134,7 +141,7 @@ def _versions_for_crate_not_at_target(
         (match.group(), version)
         for value in values
         for match in pattern.finditer(value)
-        if not _is_semver_build_metadata_match(value, match.start())
+        if not _is_semver_component_match(value, match.start())
         if match.group() != target_rendering
         for group_name in version_groups
         if (version := match.group(group_name)) is not None
@@ -206,11 +213,18 @@ def _replacement_for_match(
     match: re.Match[str],
     replacements: cabc.Mapping[str, str],
 ) -> str:
-    """Replace a match unless it is a version inside SemVer build metadata."""
+    """Replace a match unless it is nested in a SemVer prerelease or build."""
     matched_text = match.group()
-    if _is_semver_build_metadata_match(value, match.start()):
+    if _is_semver_component_match(value, match.start()):
         return matched_text
     return replacements[matched_text]
+
+
+def _is_semver_component_match(value: str, match_start: int) -> bool:
+    """Identify a match inside a SemVer prerelease or build-metadata segment."""
+    return _is_semver_build_metadata_match(value, match_start) or (
+        _is_semver_prerelease_match(value, match_start)
+    )
 
 
 def _is_semver_build_metadata_match(
@@ -218,7 +232,7 @@ def _is_semver_build_metadata_match(
     match_start: int,
 ) -> bool:
     """Identify a match anywhere inside a SemVer build metadata segment."""
-    separator = value.rfind("+", 0, match_start)
+    separator = value.rfind("+", 0, match_start + 1)
     if separator < 0:
         return False
     semver_prefix = value[: separator + 1]
@@ -227,6 +241,11 @@ def _is_semver_build_metadata_match(
         _SEMVER_BUILD_METADATA_PREFIX.search(semver_prefix) is not None
         and _BUILD_METADATA_CHARACTERS.fullmatch(metadata_prefix) is not None
     )
+
+
+def _is_semver_prerelease_match(value: str, match_start: int) -> bool:
+    """Identify a match nested after a SemVer core's prerelease separator."""
+    return _SEMVER_PRERELEASE_PREFIX.search(value[:match_start]) is not None
 
 
 def _replacement_pairs(

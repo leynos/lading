@@ -46,12 +46,41 @@ class MarkdownExample:
 
 
 @dc.dataclass(frozen=True, slots=True)
+class _IndexedMarker:
+    """Identify a marker's source line and Markdown containers."""
+
+    identifier: str
+    level: int
+    list_item_path: tuple[int, ...]
+
+
+@dc.dataclass(frozen=True, slots=True)
+class _MarkerLocation:
+    """Carry source and container identity while parsing one marker line."""
+
+    line_number: int
+    token_level: int
+    list_item_path: tuple[int, ...]
+    document_name: str
+
+
+@dc.dataclass(slots=True)
+class _MarkerIndex:
+    """Collect marker metadata while the token stream is traversed."""
+
+    document_name: str
+    markers: dict[int, _IndexedMarker] = dc.field(default_factory=dict)
+    seen_identifiers: set[str] = dc.field(default_factory=set)
+
+
+@dc.dataclass(frozen=True, slots=True)
 class _MarkerContext:
     """Carry marker locations with the physical source needed to validate them."""
 
-    markers: dict[int, tuple[str, int]]
+    markers: dict[int, _IndexedMarker]
     source_lines: tuple[str, ...]
     document_name: str
+    list_item_paths: tuple[tuple[int, ...], ...]
 
 
 def load_markdown_examples(path: Path) -> tuple[MarkdownExample, ...]:
@@ -82,13 +111,16 @@ def _parse_markdown_examples(
     marker_context = _index_markers(tokens, tuple(document.split("\n")), document_name)
     examples: list[MarkdownExample] = []
     consumed_markers: set[int] = set()
-    for token in tokens:
+    for token_index, token in enumerate(tokens):
         if token.type != "fence":
             continue
         start_line, end_line = _source_lines(token, document_name)
         _require_explicit_fence_close(token, start_line, end_line, document_name)
         marker_line, identifier = _require_example_marker(
-            marker_context, start_line, token.level
+            marker_context,
+            start_line,
+            token.level,
+            marker_context.list_item_paths[token_index],
         )
         language = _require_language(token.info, start_line, document_name)
         examples.append(
@@ -109,56 +141,74 @@ def _index_markers(
     document_name: str,
 ) -> _MarkerContext:
     """Index valid marker comments and reject missing or duplicate identifiers."""
-    markers: dict[int, tuple[str, int]] = {}
-    seen_identifiers: set[str] = set()
-    for token in tokens:
-        _index_token_markers(token, markers, seen_identifiers, document_name)
-    return _MarkerContext(markers, source_lines, document_name)
+    marker_index = _MarkerIndex(document_name)
+    list_item_stack: list[int] = []
+    list_item_paths: list[tuple[int, ...]] = []
+    for token_index, token in enumerate(tokens):
+        if token.type == "list_item_open":
+            list_item_stack.append(token_index)
+        list_item_path = tuple(list_item_stack)
+        list_item_paths.append(list_item_path)
+        _index_token_markers(
+            token,
+            marker_index,
+            list_item_path,
+        )
+        if token.type == "list_item_close":
+            list_item_stack.pop()
+    return _MarkerContext(
+        marker_index.markers,
+        source_lines,
+        document_name,
+        tuple(list_item_paths),
+    )
 
 
 def _index_token_markers(
     token: Token,
-    markers: dict[int, tuple[str, int]],
-    seen_identifiers: set[str],
-    document_name: str,
+    marker_index: _MarkerIndex,
+    list_item_path: tuple[int, ...],
 ) -> None:
     """Index valid marker comments from one HTML block token."""
     if token.type != "html_block" or token.map is None:
         return
     start_line = token.map[0]
     for offset, line in enumerate(token.content.split("\n")):
+        marker_line = start_line + offset
         marker = _parse_marker_line(
-            line, start_line + offset, token.level, document_name
+            line,
+            _MarkerLocation(
+                marker_line,
+                token.level,
+                list_item_path,
+                marker_index.document_name,
+            ),
         )
         if marker is None:
             continue
-        _record_marker(markers, seen_identifiers, marker, document_name)
+        _record_marker(marker_index, marker_line, marker)
 
 
 def _record_marker(
-    markers: dict[int, tuple[str, int]],
-    seen_identifiers: set[str],
-    marker: tuple[int, str, int],
-    document_name: str,
+    marker_index: _MarkerIndex,
+    marker_line: int,
+    marker: _IndexedMarker,
 ) -> None:
     """Reject duplicate identifiers and add one marker to the index."""
-    line_number, identifier, level = marker
-    if identifier in seen_identifiers:
+    if marker.identifier in marker_index.seen_identifiers:
         raise MarkdownExampleError(
-            document_name,
-            line_number + 1,
-            f"duplicate tested-example identifier {identifier!r}",
+            marker_index.document_name,
+            marker_line + 1,
+            f"duplicate tested-example identifier {marker.identifier!r}",
         )
-    seen_identifiers.add(identifier)
-    markers[line_number] = (identifier, level)
+    marker_index.seen_identifiers.add(marker.identifier)
+    marker_index.markers[marker_line] = marker
 
 
 def _parse_marker_line(
     line: str,
-    line_number: int,
-    token_level: int,
-    document_name: str,
-) -> tuple[int, str, int] | None:
+    location: _MarkerLocation,
+) -> _IndexedMarker | None:
     """Return a parsed marker line, or ``None`` when the line is unrelated."""
     normalized_line = line.removesuffix("\r")
     indent = len(normalized_line) - len(normalized_line.lstrip(" "))
@@ -168,11 +218,11 @@ def _parse_marker_line(
     match = _MARKER_PATTERN.fullmatch(marker_text)
     if match is None:
         raise MarkdownExampleError(
-            document_name,
-            line_number + 1,
+            location.document_name,
+            location.line_number + 1,
             "tested-example marker needs an identifier",
         )
-    return line_number, match.group(1), token_level
+    return _IndexedMarker(match.group(1), location.token_level, location.list_item_path)
 
 
 def _source_lines(token: Token, document_name: str) -> tuple[int, int]:
@@ -215,18 +265,23 @@ def _require_example_marker(
     context: _MarkerContext,
     fence_start: int,
     fence_level: int,
+    fence_list_item_path: tuple[int, ...],
 ) -> tuple[int, str]:
     """Return the nearest marker without intervening block content."""
     for line_gap in (_DIRECT_MARKER_GAP, _BLANK_LINE_MARKER_GAP):
         marker_line = fence_start - line_gap
         marker = context.markers.get(marker_line)
-        if marker is None or marker[1] != fence_level:
+        if marker is None:
+            continue
+        if marker.level != fence_level:
+            continue
+        if marker.list_item_path != fence_list_item_path:
             continue
         if line_gap == _BLANK_LINE_MARKER_GAP and not _is_blank_container_line(
             context.source_lines[fence_start - 1]
         ):
             continue
-        return marker_line, marker[0]
+        return marker_line, marker.identifier
     raise MarkdownExampleError(
         context.document_name, fence_start + 1, "fenced example is unmarked"
     )
@@ -250,7 +305,7 @@ def _require_language(info: str, fence_start: int, document_name: str) -> str:
 
 
 def _check_markers_have_fences(
-    markers: dict[int, tuple[str, int]],
+    markers: dict[int, _IndexedMarker],
     document_name: str,
     consumed_markers: set[int],
 ) -> None:
@@ -258,7 +313,7 @@ def _check_markers_have_fences(
     dangling_markers = sorted(set(markers) - consumed_markers)
     if dangling_markers:
         line_index = dangling_markers[0]
-        identifier, _ = markers[line_index]
+        identifier = markers[line_index].identifier
         raise MarkdownExampleError(
             document_name,
             line_index + 1,
