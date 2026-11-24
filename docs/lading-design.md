@@ -1053,16 +1053,21 @@ def _invoke(
         # Route to cmd-mox IPC server for test isolation
         return _invoke_via_cmd_mox(program, args, cwd)
 
-    # Production path: use cuprum's scoped catalogue
-    with scoped(catalogue=LADING_CATALOGUE):
-        cmd_builder = sh.make(program, catalogue=LADING_CATALOGUE)
+    # Production path. `catalogue` is the per-invocation catalogue from
+    # §7.6.3: LADING_CATALOGUE's programmes plus any validated exact path.
+    # Activating it and building from it must name the same object, or a
+    # registered path would be denied by the enclosing allowlist.
+    with scoped(catalogue=catalogue):
+        cmd_builder = sh.make(program, catalogue=catalogue)
         cmd = cmd_builder(*args)
         return cmd.run_sync()
 ```
 
 This block is a sketch of the intended 5.2 end state rather than today's code.
-`lading/cli.py` does define `_select_runner()`, but it returns a
-`CommandRunner` and knows nothing about cuprum; the `_invoke` in
+It builds from a `catalogue` parameter rather than `LADING_CATALOGUE` directly,
+because a registered exact path is not in the shared catalogue and nesting
+cannot add it (§7.6.3). `lading/cli.py` does define `_select_runner()`, but it
+returns a `CommandRunner` and knows nothing about cuprum; the `_invoke` in
 `lading/commands/publish_execution.py:47` takes an argument vector and
 delegates to the subprocess runner. The released boundary is
 `lading/runtime/subprocess_runner.py`, as §7.2 and §7.5 record, and only the
@@ -1305,21 +1310,27 @@ the adapter never permits all programs.
 A configured `RUSTC_WRAPPER` is **not** always absolute, so it cannot be
 registered as it stands. `detect_wrapper` accepts any value whose basename
 starts with `sccache`, and its tests pin the bare-name case:
-`RUSTC_WRAPPER=sccache` returns the relative `Path("sccache")`, and a relative
-path or a `./`-prefixed value passes the same check. The adapter therefore
-resolves the value first, against the effective child environment described
-below and before any registration:
+`RUSTC_WRAPPER=sccache` returns `Path("sccache")`.
 
-- An absolute value is validated as it stands.
-- A bare name is resolved against the child `PATH`.
-- A relative path is resolved against the requested `cwd`.
+That boundary has already lost a distinction the policy must not invent back.
+`detect_wrapper` returns a `Path`, and `_query` passes `str(wrapper)` to the
+runner, so `./sccache` arrives as `Path("sccache")` and reaches the runner as
+the string `sccache` -- indistinguishable from the bare name. Today's runner
+therefore `PATH`-resolves **both**; neither is treated as `cwd`-relative. The
+policy preserves exactly that: a non-absolute wrapper is resolved against the
+effective child `PATH`, and only an absolute value is used as written. It does
+not add a `cwd`-relative branch, because the operator's `./` prefix no longer
+exists by the time the adapter sees the value, and reading it as `cwd`-relative
+would both change current behaviour and silently ignore `PATH`.
 
 Resolution yields an absolute, existing, executable path, and _that_ is what
 gets registered. A value that does not resolve, or resolves to something that
 is not executable, is a prepared failure rather than a registered `Program`, so
 a missing compiler cache is reported as such instead of becoming a launch
 `OSError` or a misleading Cargo diagnostic. Registration always happens after
-resolution, never on the operator's raw string.
+resolution, never on the operator's raw string. Preserving a `./` prefix as
+`cwd`-relative semantics would be a deliberate behaviour change, and is not
+made here.
 
 Cuprum's `bind_executable()` is the alternative and is not selected for 5.2. It
 separates the logical program from the file executed and reports the file as

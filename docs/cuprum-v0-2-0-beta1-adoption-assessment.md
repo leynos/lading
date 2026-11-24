@@ -552,7 +552,22 @@ Added 2026-11-24, during roadmap 5.1.5. Sections 1 to 8 remain the record of
 their own dates; this addendum adds measurements that the adapter policy in
 [design §7.6](lading-design.md#76-adapter-compatibility-policy-step-515) and
 [ADR-012](adrs/adr-0012-record-command-runner-adapter-compatibility-policy.md)
-rely on. It corrects no earlier finding and rewrites none.
+rely on. It rewrites no earlier text; the one conclusion it overturns is
+recorded as a supersession below rather than edited in place.
+
+**One §8 conclusion is superseded, deliberately recorded rather than edited.**
+Section 8's Table 6 lists the "stateful relay sink suppressing
+`BrokenPipeError`" as retired, and its "Remaining gaps" paragraph concludes
+that "the binary fallback has no consumer in the production runner". Both were
+written when `BEST_EFFORT` looked like a complete replacement. They are wrong
+for the adapter, on two counts. First, `BEST_EFFORT` does not preserve the
+encoding-fallback decision or its ADR-007 event, so the stateful sink is not
+retired after all: it is the text facade design §7.6.4 requires, with
+`BEST_EFFORT` demoted to a guard that should stay unfired. Second, the binary
+fallback does have a consumer: `lading.runtime.stream_relay` uses it whenever a
+parent text stream cannot encode decoded output, and the facade keeps that
+behaviour. Section 8's text is preserved as written, with this paragraph as its
+superseding record; the current requirement is design §7.6.4.
 
 **What was measured.** Against the pinned `cuprum==0.2.0b2`, on CPython 3.14
 and Linux, with throwaway probe scripts outside the repository: environment

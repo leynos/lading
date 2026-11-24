@@ -393,9 +393,11 @@ only the existing helper may use the underlying sink's binary fallback. Inspect
 `BrokenPipePolicy.BEST_EFFORT` for overlap so failure events are not emitted
 twice. Do not retain process spawning or pipe-draining threads merely to
 preserve relay. Make no total ordering promise across stdout and stderr.
-Complete capture and unbounded echo lines retain potentially unbounded memory
-costs for output and newline-free buffering; this policy makes no
-bounded-memory claim and introduces no new truncation limit.
+Complete capture retains a stream's output in full and therefore carries a
+potentially unbounded memory cost; this policy makes no bounded-memory claim
+and introduces no new truncation limit. The cost is capture's, not echo's: with
+`max_echo_line_bytes=None` cuprum builds no line limiter and writes each chunk
+straight through, so an unterminated line adds no buffering on the echo path.
 
 R5: keep arguments positional, leave command-specific construction in callers,
 and preserve stdin distinctions (inheritance, empty text, and supplied data).
@@ -572,8 +574,16 @@ file and `git commit -F`. Record gate outcomes here, not just commands.
 
 ### Recorded gate outcomes (2026-11-24)
 
-One `scrutineer` ran the seven gates sequentially against the staged candidate
-at commit `c33cea0`. All seven exited zero:
+The full seven-gate suite ran against `c33cea0`, the commit that first recorded
+the policy. Every later head was re-gated on its own content before being
+committed, each time with the six code-and-Markdown gates (`check-fmt`,
+`markdownlint`, `nixie`, `test`, `lint`, `typecheck`) plus `fmt` where prose
+changed; the fixes in `fc35b7a` and its successors were gated that way. The
+table below is the milestone record, not a claim that its logs describe a later
+head.
+
+At `c33cea0`, one `scrutineer` ran the gates sequentially against the staged
+candidate. All seven exited zero:
 
 | Gate                | Result                                                                                   | Log                                  |
 | ------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------ |
