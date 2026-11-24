@@ -23,7 +23,14 @@ type SandboxInput = tuple[str, str]
 #: ``mutants/`` receives these paths because they are declared in
 #: ``[tool.mutmut] also_copy`` in pyproject.toml.
 INPUT_CONSUMERS: tuple[SandboxInput, ...] = (
-    ("docs/", "tests/unit/test_users_guide.py reads docs/users-guide.md"),
+    (
+        "docs/",
+        (
+            "tests/unit/test_users_guide.py reads docs/users-guide.md; "
+            "tests/unit/test_v0_4_0_migration_guide.py reads "
+            "docs/v0-4-0-migration-guide.md"
+        ),
+    ),
     (
         "scripts/",
         (
