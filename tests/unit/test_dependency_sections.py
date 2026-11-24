@@ -8,6 +8,7 @@ and the snippet rewriting in ``bump_docs`` must stay in agreement with it.
 import typing as typ
 
 import hypothesis.strategies as st
+import pytest
 from hypothesis import given, settings
 from tomlkit import parse as parse_toml
 
@@ -78,42 +79,39 @@ def test_snippet_rewrite_visits_exactly_canonical_sections(
         assert table["other"] == "0.9.0", rendered
 
 
-def test_snippet_rewrite_updates_renamed_dependency_by_package_name() -> None:
-    """A renamed dependency is selected by its Cargo package name."""
-    document = parse_toml(
-        '[dependencies]\nrenamed = { package = "alpha", version = "1.0.0" }\n'
-    )
+@pytest.mark.parametrize(
+    ("manifest", "value_path"),
+    [
+        pytest.param(
+            '[dependencies]\nrenamed = { package = "alpha", version = "1.0.0" }\n',
+            ("dependencies", "renamed", "version"),
+            id="renamed-package",
+        ),
+        pytest.param(
+            '[workspace.dependencies]\nalpha = "1.0.0"\n',
+            ("workspace", "dependencies", "alpha"),
+            id="workspace-dependency",
+        ),
+        pytest.param(
+            '[target."cfg(unix)".dependencies]\nalpha = "1.0.0"\n',
+            ("target", "cfg(unix)", "dependencies", "alpha"),
+            id="target-dependency",
+        ),
+    ],
+)
+def test_snippet_rewrite_updates_dependency_shapes(
+    manifest: str, value_path: tuple[str, ...]
+) -> None:
+    """Snippet dependency forms share the same selected-version contract."""
+    document = parse_toml(manifest)
 
     changed = bump_docs.update_toml_snippet_dependencies(document, ("alpha",), "2.0.0")
 
-    assert changed, "the matching aliased dependency should be rewritten"
-    assert document["dependencies"]["renamed"]["version"] == "2.0.0", (
-        "the version should follow the package selected for the bump"
-    )
-
-
-def test_snippet_rewrite_updates_workspace_dependencies() -> None:
-    """Workspace dependency tables in TOML snippets are rewritten."""
-    document = parse_toml('[workspace.dependencies]\nalpha = "1.0.0"\n')
-
-    changed = bump_docs.update_toml_snippet_dependencies(document, ("alpha",), "2.0.0")
-
-    assert changed, "the workspace dependency should be rewritten"
-    assert document["workspace"]["dependencies"]["alpha"] == "2.0.0", (
-        "the workspace requirement should follow the target version"
-    )
-
-
-def test_snippet_rewrite_updates_target_dependencies() -> None:
-    """Target-specific dependency tables in TOML snippets are rewritten."""
-    document = parse_toml('[target."cfg(unix)".dependencies]\nalpha = "1.0.0"\n')
-
-    changed = bump_docs.update_toml_snippet_dependencies(document, ("alpha",), "2.0.0")
-
-    assert changed, "the target-specific dependency should be rewritten"
-    assert document["target"]["cfg(unix)"]["dependencies"]["alpha"] == "2.0.0", (
-        "the target-specific requirement should follow the target version"
-    )
+    assert changed, "the selected dependency should be rewritten"
+    value = document
+    for segment in value_path:
+        value = value[segment]
+    assert value == "2.0.0", "the selected dependency must follow the target version"
 
 
 def test_multi_section_manifest_rewrite_snapshot(

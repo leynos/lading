@@ -3,12 +3,15 @@
 import dataclasses as dc
 import logging
 import pathlib
+import tempfile
 import typing as typ
 
 import pytest
 
-from lading.commands import bump, bump_pipeline
+from lading import config
+from lading.commands import bump, bump_docs, bump_pipeline
 from lading.commands.bump_readme import ReadmeTranspositionError
+from lading.exceptions import LadingError
 from tests.helpers.path_normalization import normalized
 from tests.helpers.workspace_builders import (
     _build_workspace_with_internal_deps,
@@ -20,6 +23,38 @@ from tests.helpers.workspace_builders import (
 
 if typ.TYPE_CHECKING:
     from syrupy.assertion import SnapshotAssertion
+
+
+def test_documentation_updates_reject_external_symlink_targets(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Neither glob resolution nor direct updates may escape via a symlink."""
+    documentation_directory = tmp_path / "docs"
+    documentation_directory.mkdir()
+
+    with tempfile.TemporaryDirectory(dir=tmp_path.parent) as outside_directory:
+        outside_document = pathlib.Path(outside_directory) / "guide.md"
+        original = '```toml\n[dependencies]\nalpha = "0.1.0"\n```\n'
+        outside_document.write_text(original, encoding="utf-8")
+        link = documentation_directory / "guide.md"
+        link.symlink_to(outside_document)
+        documentation = config.DocumentationConfig(globs=("docs/*.md",))
+
+        with pytest.raises(LadingError, match="within the workspace"):
+            bump_docs.resolve_documentation_targets(tmp_path, documentation)
+
+        with pytest.raises(LadingError, match="within the workspace"):
+            bump_docs.update_documentation_files(
+                bump_docs.DocumentationTargets(tmp_path, (link,)),
+                "1.2.3",
+                {"alpha"},
+                dry_run=False,
+            )
+
+        assert link.is_symlink(), "the escaping documentation link must remain"
+        assert outside_document.read_text(encoding="utf-8") == original, (
+            "documentation updates must not overwrite a file outside the workspace"
+        )
 
 
 @dc.dataclass(frozen=True, slots=True)

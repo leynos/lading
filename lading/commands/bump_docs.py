@@ -19,42 +19,67 @@ Examples
 ...     targets = bump_docs.resolve_documentation_targets(
 ...         workspace, documentation
 ...     )
-...     [path.name for path in targets]
+...     [path.name for path in targets.paths]
 ['README.md']
 
 ``update_documentation_files(targets, "1.2.0", {"my-crate"}, dry_run=False)``
 then rewrites the version entries in those files and returns the ones it
-changed.
+changed. The targets retain their workspace root so direct callers receive the
+same containment checks as targets collected from configuration.
 """
 
 import collections.abc as cabc
+import dataclasses as dc
 import logging
 import re
 import typing as typ
+from pathlib import Path
 
 from markdown_it import MarkdownIt
 
-from lading.commands import bump_toml_files
+from lading.commands import bump_toml_files, manifest_paths
 from lading.commands.bump_docs_toml import (
     update_toml_snippet_dependencies as update_toml_snippet_dependencies,
 )
 from lading.commands.bump_docs_toml import (
     update_toml_snippet_versions as update_toml_snippet_versions,
 )
+from lading.exceptions import LadingError
 
 _LOGGER = logging.getLogger(__name__)
 
 if typ.TYPE_CHECKING:
-    from pathlib import Path
-
     from markdown_it.token import Token
 
     from lading import config as config_module
 
 
+@dc.dataclass(frozen=True, slots=True)
+class DocumentationTargets:
+    """Resolved documentation paths paired with their owning workspace.
+
+    Parameters
+    ----------
+    workspace_root
+        Workspace root against which every path must be checked.
+    paths
+        Selected documentation files, in resolver order.
+
+    Examples
+    --------
+    >>> from pathlib import Path
+    >>> targets = DocumentationTargets(Path("/workspace"), ())
+    >>> targets.paths
+    ()
+    """
+
+    workspace_root: Path
+    paths: tuple[Path, ...]
+
+
 def resolve_documentation_targets(
     workspace_root: Path, documentation: config_module.DocumentationConfig
-) -> tuple[Path, ...]:
+) -> DocumentationTargets:
     """Return documentation files that should be scanned for version updates.
 
     Parameters
@@ -66,24 +91,31 @@ def resolve_documentation_targets(
 
     Returns
     -------
-    tuple[Path, ...]
-        Paths to documentation files matching the configured patterns.
+    DocumentationTargets
+        Workspace-bound paths matching the configured patterns. The root is
+        retained for containment checks before updates.
 
     """
     patterns = documentation.globs
     if not patterns:
-        return ()
+        return DocumentationTargets(workspace_root.resolve(), ())
 
     resolved: set[Path] = set()
     for pattern in patterns:
         for candidate in workspace_root.glob(pattern):
-            if candidate.is_file():
-                resolved.add(candidate)
-    return tuple(resolved)
+            safe_candidate = manifest_paths.resolve_workspace_path(
+                workspace_root,
+                candidate,
+                error_type=LadingError,
+                label="Documentation",
+            )
+            if safe_candidate.is_file():
+                resolved.add(safe_candidate)
+    return DocumentationTargets(workspace_root.resolve(), tuple(resolved))
 
 
 def update_documentation_files(
-    documentation_paths: cabc.Iterable[Path],
+    documentation_targets: DocumentationTargets,
     target_version: str,
     updated_crates: cabc.Collection[str],
     *,
@@ -93,8 +125,8 @@ def update_documentation_files(
 
     Parameters
     ----------
-    documentation_paths
-        Paths to documentation files to process.
+    documentation_targets
+        Resolved documentation paths paired with the workspace boundary.
     target_version
         The version string to apply to matching entries.
     updated_crates
@@ -110,7 +142,13 @@ def update_documentation_files(
     """
     changed: set[Path] = set()
     dependency_targets = {name for name in updated_crates if name}
-    for doc_path in documentation_paths:
+    for candidate in documentation_targets.paths:
+        doc_path = manifest_paths.resolve_workspace_path(
+            documentation_targets.workspace_root,
+            candidate,
+            error_type=LadingError,
+            label="Documentation",
+        )
         try:
             original_text = doc_path.read_text(encoding="utf-8")
         except OSError as exc:

@@ -34,7 +34,7 @@ _SEMVER_IDENTIFIER_CHARACTERS: typ.Final[re.Pattern[str]] = re.compile(
     r"[0-9A-Za-z.-]*"
 )
 # A configured match may include the build-metadata separator itself.
-_SEMVER_MATCH_TEXT: typ.Final[re.Pattern[str]] = re.compile(r"[+-]?[0-9A-Za-z.-]+")
+_SEMVER_MATCH_TEXT: typ.Final[re.Pattern[str]] = re.compile(r"[+-]?[0-9A-Za-z.+-]+")
 _LEADING_BOUNDARIES: typ.Final[tuple[tuple[str, str], ...]] = (
     ("{crate}", rf"(?<![{_CRATE_NAME_CHARACTER}])"),
     ("{version}", rf"(?<![{_VERSION_PREFIX_CHARACTER}])"),

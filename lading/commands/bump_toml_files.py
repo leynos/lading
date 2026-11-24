@@ -35,7 +35,8 @@ def parse_manifest(manifest_path: Path) -> TOMLDocument:
     >>> parse_manifest(path)["version"]
     '0.1.0'
     """
-    content = manifest_path.read_text(encoding="utf-8")
+    with manifest_path.open("r", encoding="utf-8", newline="") as handle:
+        content = handle.read()
     return parse_toml(content)
 
 

@@ -1,12 +1,10 @@
-"""Share path expansion, containment, and filename checks for Cargo manifests.
+"""Share path expansion and workspace containment checks for bump targets.
 
 :func:`expand_manifest_glob_candidates` expands rewrite globs while propagating
-directory-scan errors. :func:`resolve_manifest_candidate` checks that a
-resolved candidate remains inside its workspace and is named ``Cargo.toml``.
-The lockfile path resolver in :mod:`lading.commands.bump_lockfile_paths` and
-the rewrite planner in :mod:`lading.commands.bump_manifest_rewrites` supply
-their own error types; each caller retains responsibility for existence and
-regular-file checks.
+directory-scan errors. :func:`resolve_workspace_path` checks that a resolved
+candidate remains inside its workspace. :func:`resolve_manifest_candidate`
+adds the Cargo manifest filename rule. Callers supply their own domain error
+types and retain responsibility for existence and regular-file checks.
 """
 
 import collections.abc as cabc
@@ -65,15 +63,66 @@ def resolve_manifest_candidate(
     >>> candidate.relative_to(root.resolve()).as_posix()
     'fixtures/demo/Cargo.toml'
     """  # ruff: ignore[docstring-extraneous-exception]  # error_type selects the raised subclass
-    candidate = (workspace_root / manifest).resolve()
-    try:
-        candidate.relative_to(workspace_root.resolve())
-    except ValueError as exc:
-        message = f"{label} path must stay within the workspace: {manifest}"
-        raise error_type(message) from exc
+    candidate = resolve_workspace_path(
+        workspace_root,
+        manifest,
+        error_type=error_type,
+        label=label,
+    )
     if candidate.name != "Cargo.toml":
         message = f"{label} path must point to a Cargo.toml file: {manifest}"
         raise error_type(message)
+    return candidate
+
+
+def resolve_workspace_path(
+    workspace_root: Path,
+    path: str | Path,
+    *,
+    error_type: type[LadingError],
+    label: str,
+) -> Path:
+    r"""Resolve one path and require its target to remain in the workspace.
+
+    Parameters
+    ----------
+    workspace_root : Path
+        Root directory that owns the candidate path.
+    path : str | Path
+        Workspace-relative or absolute candidate path. Symbolic links are
+        resolved before the containment check.
+    error_type : type[LadingError]
+        Domain error class used when the resolved target escapes the workspace.
+    label : str
+        Subject used to identify the path in an error message.
+
+    Returns
+    -------
+    Path
+        Resolved path contained by ``workspace_root``.
+
+    Raises
+    ------
+    LadingError
+        The requested ``error_type`` when the candidate leaves the workspace.
+
+    Examples
+    --------
+    >>> from lading.exceptions import LadingError
+    >>> from pathlib import Path
+    >>> root = Path("/workspace")
+    >>> candidate = resolve_workspace_path(
+    ...     root, "docs/README.md", error_type=LadingError, label="Documentation"
+    ... )
+    >>> candidate.relative_to(root.resolve()).as_posix()
+    'docs/README.md'
+    """  # ruff: ignore[docstring-extraneous-exception]  # error_type selects the raised subclass
+    candidate = (workspace_root / path).resolve()
+    try:
+        candidate.relative_to(workspace_root.resolve())
+    except ValueError as exc:
+        message = f"{label} path must stay within the workspace: {path}"
+        raise error_type(message) from exc
     return candidate
 
 

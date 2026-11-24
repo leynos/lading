@@ -21,7 +21,7 @@ import typing as typ
 from pathlib import Path
 from urllib.parse import urlparse
 
-from lading.commands import bump_toml_files
+from lading.commands import bump_toml_files, manifest_paths
 from lading.exceptions import LadingError
 
 _log = logging.getLogger(__name__)
@@ -223,7 +223,8 @@ def transpose_readme_to_crate(
     ------
     ReadmeTranspositionError
         If the workspace README is unavailable or the crate lies outside
-        ``workspace_root``.
+        ``workspace_root``, including when the destination README symlink
+        resolves outside the workspace.
     """
     _log.debug("Transposing workspace README into crate %r", crate.name)
     source_readme = workspace_root / "README.md"
@@ -232,8 +233,14 @@ def transpose_readme_to_crate(
     rewritten_text = rewrite_relative_links(
         source_text, compute_link_prefix(crate_relative_path)
     )[0]
-    return _write_or_skip_readme(
+    target_readme = manifest_paths.resolve_workspace_path(
+        workspace_root,
         crate.root_path / "README.md",
+        error_type=ReadmeTranspositionError,
+        label="README transposition",
+    )
+    return _write_or_skip_readme(
+        target_readme,
         rewritten_text,
         dry_run=dry_run,
         crate_name=crate.name,

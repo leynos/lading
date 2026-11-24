@@ -425,6 +425,15 @@ lading bump <new_version> [--dry-run]
   reference detection, and replacement conflict checks. Its private operations
   are called by the rewrite planner; they receive parsed TOML and version
   metadata, perform no file access, and do not update dependencies.
+- `manifest_paths.resolve_workspace_path` is the shared path boundary for bump
+  targets that must remain in the workspace before reads or writes. Its current
+  callers are configured manifest rewrites, documentation updates, and README
+  transposition. It resolves symlinks and returns the contained target;
+  `resolve_manifest_candidate` composes that check with the `Cargo.toml`
+  filename rule. Callers provide their domain error and retain their own
+  existence and file-type checks. Write callers pass the resolved target to
+  `write_atomic_text`, preserving internal symlinks without allowing them to
+  redirect writes outside the workspace.
 - `bump_pipeline_manifest_rewrites` owns planning and applying the configured
   rewrite stage. It snapshots workspace and member manifest text before any
   write and restores manifests changed by those stages if a configured rewrite

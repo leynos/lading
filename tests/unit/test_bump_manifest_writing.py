@@ -62,6 +62,20 @@ def test_update_manifest_skips_when_unchanged(tmp_path: Path) -> None:
     )
 
 
+def test_parse_manifest_preserves_crlf_when_rewritten(tmp_path: Path) -> None:
+    """Parsing and writing a manifest retain its CRLF line endings."""
+    manifest_path = tmp_path / "Cargo.toml"
+    manifest_path.write_bytes(b'[package]\r\nname = "demo"\r\nversion = "0.1.0"\r\n')
+
+    document = bump_toml_files.parse_manifest(manifest_path)
+    document["package"]["version"] = "1.0.0"
+    bump_toml_files.write_atomic_text(manifest_path, document.as_string())
+
+    assert manifest_path.read_bytes() == (
+        b'[package]\r\nname = "demo"\r\nversion = "1.0.0"\r\n'
+    ), "only the version should change in a CRLF manifest"
+
+
 def test_write_atomic_text_closes_descriptor_when_fchmod_fails(
     tmp_path: Path,
 ) -> None:

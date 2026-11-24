@@ -131,6 +131,33 @@ def test_version_rewrite_does_not_match_inside_semver_prerelease(
     )
 
 
+def test_prerelease_with_build_metadata_stays_intact(
+    tmp_path: pathlib.Path,
+    write_fixture_manifest: _ManifestWriter,
+) -> None:
+    """Build metadata does not disable nested prerelease detection."""
+    document = _rewrite_metadata_values(
+        tmp_path,
+        write_fixture_manifest,
+        _MetadataRewriteCase(
+            content=(
+                '[metadata]\nnested = "9.0.0-x.alpha-1.0.0+build"\n'
+                'standalone = "alpha-1.0.0+build"\n'
+            ),
+            template="{version}",
+            pre_bump_version="1.0.0+build",
+            target_version="2.0.0+build",
+        ),
+    )
+
+    assert document["metadata"]["nested"] == "9.0.0-x.alpha-1.0.0+build", (
+        "a version within prerelease text must remain intact with build metadata"
+    )
+    assert document["metadata"]["standalone"] == "alpha-2.0.0+build", (
+        "a standalone version with build metadata must still be rewritten"
+    )
+
+
 def test_newline_after_semver_prerelease_separator_does_not_hide_version(
     tmp_path: pathlib.Path,
     write_fixture_manifest: _ManifestWriter,
