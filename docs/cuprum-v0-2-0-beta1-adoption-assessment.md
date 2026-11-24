@@ -586,7 +586,10 @@ child's `PATH`; a relative `PATH` entry was anchored to the child's `cwd` when
 one was given, and to the parent process's working directory otherwise. An
 **absent** `PATH` fell back to the platform default search path and still
 resolved a bare name, while an **empty** `PATH` failed. A relative target
-resolved against `cwd` and failed without one. A symlinked binding reported the
+resolved against `cwd` when one was given and against the parent process's
+working directory otherwise -- it succeeded from a directory holding the file
+and failed with `FileNotFoundError` from one without, so the failure was the
+operating system's, not a cuprum refusal. A symlinked binding reported the
 configured path, not its target. These distinctions are absent from section 4's
 table and are what design §7.6.3 records.
 

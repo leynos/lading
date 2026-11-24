@@ -1314,8 +1314,10 @@ and its measured behaviour is part of this policy:
 - An absent `PATH` falls back to the platform's default search path, so a bare
   name may still resolve. An empty `PATH` does not, and the launch fails. The
   adapter never substitutes the parent's `PATH` for either.
-- A relative target such as `./tool` resolves against `cwd`, and fails when no
-  `cwd` is given.
+- A relative target such as `./tool` resolves against `cwd` when one is given,
+  and otherwise against the parent process's own working directory, exactly as
+  a bare name does. It succeeds when the file is there and fails at the
+  operating system level when it is not; cuprum itself does not reject it.
 - A bound relative path is rejected unless the binding opts into
   `allow_relative=True`; with it, the path is anchored to `cwd` when one is
   supplied and otherwise passed through unchanged.
