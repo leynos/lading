@@ -39,11 +39,16 @@ def _run_partial_write_failure(
     """Fail the second fixture write after allowing the first atomic write."""
     write_atomic_text = bump_manifest_rewrite_application.write_atomic_text
 
-    def fail_second_write(path: Path, text: str) -> None:
+    def fail_second_write(
+        path: Path,
+        text: str,
+        *,
+        workspace_root: Path | None = None,
+    ) -> None:
         """Fail the second fixture write and forward the first atomic write."""
         if path == case.fixtures[1].resolve():
             raise OSError
-        write_atomic_text(path, text)
+        write_atomic_text(path, text, workspace_root=workspace_root)
 
     with (
         mock.patch.object(
@@ -257,13 +262,18 @@ def test_rewrite_failure_preserves_member_manifest_edited_after_bump_write(
     concurrent_edit = "\n# edited while the bump was running\n"
     write_atomic_text = bump_manifest_rewrite_application.write_atomic_text
 
-    def edit_member_then_fail_fixture(path: Path, text: str) -> None:
+    def edit_member_then_fail_fixture(
+        path: Path,
+        text: str,
+        *,
+        workspace_root: Path | None = None,
+    ) -> None:
         """Add an external edit after member writes, then fail fixture two."""
         if path == case.fixtures[1].resolve():
             with alpha_manifest.open("a", encoding="utf-8", newline="") as handle:
                 handle.write(concurrent_edit)
             raise OSError
-        write_atomic_text(path, text)
+        write_atomic_text(path, text, workspace_root=workspace_root)
 
     with (
         mock.patch.object(
@@ -325,11 +335,16 @@ def test_rewrite_failure_rolls_back_to_text_parsed_after_a_concurrent_edit(
             manifest_path, selectors, target_version, options
         )
 
-    def fail_second_fixture(path: Path, text: str) -> None:
+    def fail_second_fixture(
+        path: Path,
+        text: str,
+        *,
+        workspace_root: Path | None = None,
+    ) -> None:
         """Let the first fixture write complete, then fail the second."""
         if path == case.fixtures[1].resolve():
             raise OSError
-        write_atomic_text(path, text)
+        write_atomic_text(path, text, workspace_root=workspace_root)
 
     with (
         mock.patch.object(

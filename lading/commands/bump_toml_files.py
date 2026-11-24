@@ -9,6 +9,9 @@ from pathlib import Path
 
 from tomlkit import parse as parse_toml
 
+from lading.commands import manifest_paths
+from lading.exceptions import LadingError
+
 if typ.TYPE_CHECKING:
     from tomlkit.toml_document import TOMLDocument
 
@@ -45,26 +48,38 @@ def _read_and_parse_manifest(manifest_path: Path) -> tuple[str, TOMLDocument]:
     return content, parse_toml(content)
 
 
-def write_atomic_text(file_path: Path, content: str) -> None:
+def write_atomic_text(
+    file_path: Path,
+    content: str,
+    *,
+    workspace_root: Path | None = None,
+) -> None:
     """Atomically replace a text file using UTF-8 without newline translation.
 
-    Symbolic-link paths are resolved before replacement, so the link remains
-    in place and its target receives the new content. Existing permission bits
-    are copied to the replacement.
+    Without ``workspace_root``, symbolic-link paths are resolved before
+    replacement, so the link remains in place and its target receives the new
+    content. Existing permission bits are copied to the replacement. When a
+    workspace root is supplied, the destination must still resolve to its
+    planned path inside that workspace.
 
     Parameters
     ----------
     file_path : Path
-        Destination file to replace. If this path is a symbolic link, its
-        existing target is replaced while the link itself is preserved.
+        Destination file to replace. Without ``workspace_root``, a symbolic
+        link is followed and its target is replaced while the link is preserved.
     content : str
         Text to write to the destination.
+    workspace_root : Path or None, optional
+        Workspace boundary for callers that must prevent a changed symlink from
+        redirecting the replacement. The destination must be a resolved path
+        beneath this root. Defaults to ``None``.
 
     Raises
     ------
     OSError
         If resolving the destination, creating or writing the temporary file,
-        preserving permissions, or replacing the destination fails.
+        preserving permissions, replacing the destination, or validating a
+        bounded destination fails.
 
     Examples
     --------
@@ -77,8 +92,11 @@ def write_atomic_text(file_path: Path, content: str) -> None:
     ...     destination.read_text(encoding="utf-8")
     "version = '1.0.0'"
     """  # ruff: ignore[docstring-extraneous-exception]  # filesystem calls propagate OSError
-    if file_path.is_symlink():
-        file_path = file_path.resolve(strict=True)
+    if workspace_root is None:
+        if file_path.is_symlink():
+            file_path = file_path.resolve(strict=True)
+    else:
+        file_path = _resolve_bounded_write_target(file_path, workspace_root)
     dirpath = file_path.parent
     existing_mode: int | None = None
     with suppress(FileNotFoundError):
@@ -98,6 +116,29 @@ def write_atomic_text(file_path: Path, content: str) -> None:
     finally:
         with suppress(FileNotFoundError):
             Path(tmp_path).unlink()
+
+
+def _resolve_bounded_write_target(file_path: Path, workspace_root: Path) -> Path:
+    """Resolve an in-workspace destination before creating its replacement."""
+    try:
+        resolved_path = manifest_paths.resolve_workspace_path(
+            workspace_root,
+            file_path,
+            error_type=LadingError,
+            label="Atomic write",
+        )
+    except LadingError as exc:
+        message = (
+            f"Atomic write destination must stay within the workspace: {file_path}"
+        )
+        raise PermissionError(message) from exc
+    if resolved_path != file_path:
+        message = (
+            "Atomic write destination no longer resolves to its planned path: "
+            f"{file_path}"
+        )
+        raise PermissionError(message)
+    return resolved_path
 
 
 def _set_file_mode(descriptor: int, mode: int) -> None:

@@ -107,10 +107,15 @@ def test_report_keeps_planned_path_if_parent_becomes_symlink(
     def rewrite_then_redirect(
         plans: cabc.Sequence[ManifestRewritePlan],
         *,
+        workspace_root: pathlib.Path,
         dry_run: bool,
     ) -> tuple[pathlib.Path, ...]:
         """Write the plan, then redirect its parent before reporting."""
-        rewritten_paths = apply_manifest_rewrites(plans, dry_run=dry_run)
+        rewritten_paths = apply_manifest_rewrites(
+            plans,
+            workspace_root=workspace_root,
+            dry_run=dry_run,
+        )
         configured_directory.rename(archived_directory)
         configured_directory.symlink_to(redirected_directory, target_is_directory=True)
         return rewritten_paths

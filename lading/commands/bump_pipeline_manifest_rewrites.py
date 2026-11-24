@@ -197,7 +197,9 @@ def _apply_non_member_manifest_rewrites(
     application_started_at = clock()
     try:
         rewritten_paths = bump_manifest_rewrite_application.apply_manifest_rewrites(
-            stage.plans, dry_run=dry_run
+            stage.plans,
+            workspace_root=context.root_path,
+            dry_run=dry_run,
         )
     except ManifestRewriteError as rewrite_error:
         recovery_error = _restore_changed_workspace_manifests(

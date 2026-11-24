@@ -5,7 +5,7 @@ import tempfile
 
 import pytest
 
-from lading.commands import bump_manifest_rewrites
+from lading.commands import bump_manifest_rewrite_application, bump_manifest_rewrites
 from lading.config import ManifestRewriteConfig
 from tests.helpers.manifest_rewrites import (
     manifest_rewrite_versions,
@@ -34,7 +34,7 @@ def test_unchanged_manifest_is_omitted_and_dry_run_does_not_write(
     )
 
     changed_paths = bump_manifest_rewrites.apply_manifest_rewrites(
-        (plan,), dry_run=True
+        (plan,), workspace_root=tmp_path, dry_run=True
     )
 
     assert changed_paths == (manifest.resolve(),), (
@@ -62,7 +62,9 @@ def test_application_rejects_manifest_changed_after_planning(
         bump_manifest_rewrites.ManifestRewriteError,
         match="changed after planning",
     ) as failure:
-        bump_manifest_rewrites.apply_manifest_rewrites((plan,), dry_run=False)
+        bump_manifest_rewrites.apply_manifest_rewrites(
+            (plan,), workspace_root=tmp_path, dry_run=False
+        )
 
     assert failure.value.failed_path == manifest, (
         "the error should identify the stale plan's target"
@@ -94,7 +96,9 @@ def test_application_rejects_manifest_replaced_by_symlink_after_planning(
             bump_manifest_rewrites.ManifestRewriteError,
             match="no longer resolves to its planned path",
         ) as failure:
-            bump_manifest_rewrites.apply_manifest_rewrites((plan,), dry_run=False)
+            bump_manifest_rewrites.apply_manifest_rewrites(
+                (plan,), workspace_root=tmp_path, dry_run=False
+            )
 
         assert failure.value.failed_path == plan.path, (
             "the stale destination error should identify the planned manifest path"
@@ -115,7 +119,9 @@ def test_manifest_rewrite_preserves_crlf_line_endings(
     groups = (ManifestRewriteConfig(paths=("fixtures/Cargo.toml",)),)
 
     (plan,) = plan_fixture_rewrites(tmp_path, groups)
-    bump_manifest_rewrites.apply_manifest_rewrites((plan,), dry_run=False)
+    bump_manifest_rewrites.apply_manifest_rewrites(
+        (plan,), workspace_root=tmp_path, dry_run=False
+    )
 
     assert manifest.read_bytes() == b'[dependencies]\r\nalpha = "2.0.0"\r\n', (
         "the rewritten manifest should retain CRLF line endings"
@@ -138,8 +144,63 @@ def test_application_detects_line_ending_only_source_change(
         bump_manifest_rewrites.ManifestRewriteError,
         match="changed after planning",
     ):
-        bump_manifest_rewrites.apply_manifest_rewrites(plans, dry_run=False)
+        bump_manifest_rewrites.apply_manifest_rewrites(
+            plans, workspace_root=tmp_path, dry_run=False
+        )
 
     assert manifest.read_bytes() == original.replace(b"\r\n", b"\n"), (
         "application should preserve the external line-ending edit"
     )
+
+
+def test_atomic_write_rechecks_containment_after_plan_source_read(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A final-component symlink swap cannot redirect a bounded write."""
+    manifest = tmp_path / "Cargo.toml"
+    original = '[dependencies]\nalpha = "1.0.0"\n'
+    manifest.write_text(original, encoding="utf-8")
+    plan = bump_manifest_rewrites.ManifestRewritePlan(
+        manifest.resolve(),
+        original,
+        '[dependencies]\nalpha = "2.0.0"\n',
+    )
+    outside = tmp_path.parent / f"{tmp_path.name}-outside-Cargo.toml"
+    outside.write_text(original, encoding="utf-8")
+    write_text = bump_manifest_rewrite_application.write_atomic_text
+
+    def redirect_before_write(
+        file_path: pathlib.Path,
+        content: str,
+        *,
+        workspace_root: pathlib.Path | None = None,
+    ) -> None:
+        """Swap the checked destination after the application source read."""
+        file_path.unlink()
+        file_path.symlink_to(outside)
+        write_text(file_path, content, workspace_root=workspace_root)
+
+    monkeypatch.setattr(
+        bump_manifest_rewrite_application,
+        "write_atomic_text",
+        redirect_before_write,
+    )
+    try:
+        with pytest.raises(
+            bump_manifest_rewrites.ManifestRewriteWriteError,
+            match="must stay within the workspace",
+        ) as failure:
+            bump_manifest_rewrites.apply_manifest_rewrites(
+                (plan,), workspace_root=tmp_path, dry_run=False
+            )
+
+        assert failure.value.failed_path == plan.path, (
+            "the bounded writer failure should identify the planned manifest"
+        )
+        assert outside.read_text(encoding="utf-8") == original, (
+            "a redirected destination must not modify the outside file"
+        )
+        assert manifest.is_symlink(), "the racing symlink must not be replaced"
+    finally:
+        outside.unlink(missing_ok=True)
