@@ -16,10 +16,12 @@ from lading.commands import (
     bump_toml,
     bump_toml_dependencies,
     bump_toml_files,
+    manifest_paths,
 )
 from lading.commands.bump_toml_dependency_updates import (
     update_dependency_sections_with_warnings,
 )
+from lading.exceptions import LadingError
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
@@ -120,7 +122,12 @@ def _update_manifest(
 ) -> _ManifestUpdateResult:
     """Apply ``target_version`` to each selected table and dependency section."""
     options = update_context.options
-    original_text, document = bump_toml_files._read_and_parse_manifest(manifest_path)
+    write_destination = _resolve_manifest_update_destination(
+        manifest_path, update_context
+    )
+    original_text, document = bump_toml_files._read_and_parse_manifest(
+        write_destination
+    )
     changed = False
     for selector in selectors:
         table = bump_toml.select_table(document, selector)
@@ -134,7 +141,15 @@ def _update_manifest(
         )
     if changed and not options.dry_run:
         updated_text = document.as_string()
-        write_destination = manifest_path.resolve(strict=True)
+        current_destination = _resolve_manifest_update_destination(
+            manifest_path, update_context
+        )
+        if current_destination != write_destination:
+            message = (
+                "Workspace manifest destination changed after it was read: "
+                f"{manifest_path}"
+            )
+            raise LadingError(message)
         bump_toml_files.write_atomic_text(
             write_destination,
             updated_text,
@@ -147,6 +162,22 @@ def _update_manifest(
             write_destination=write_destination,
         )
     return _ManifestUpdateResult(was_changed=changed, original_text=original_text)
+
+
+def _resolve_manifest_update_destination(
+    manifest_path: Path,
+    update_context: _ManifestUpdateContext,
+) -> Path:
+    """Resolve one update path under its optional workspace boundary."""
+    workspace_root = update_context.workspace_root
+    if workspace_root is None:
+        return manifest_path.resolve(strict=True)
+    return manifest_paths.resolve_workspace_path(
+        workspace_root,
+        manifest_path,
+        error_type=LadingError,
+        label="Workspace manifest",
+    )
 
 
 def _workspace_dependency_sections(

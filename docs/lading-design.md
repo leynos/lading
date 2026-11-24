@@ -452,7 +452,8 @@ lading bump <new_version> [--dry-run]
   manifest stage writes, then applies plans after member manifests and before
   documentation, README transposition, and lockfile work. It supplies
   `_ManifestUpdateContext` with the workspace boundary; member updates retain
-  their resolved write destination for bounded rollback.
+  their resolved write destination for bounded rollback and verify the alias
+  still resolves to that destination before writing.
 - `bump_toml_files` owns manifest parsing and atomic writes. Its internal
   `_read_and_parse_manifest` operation returns the exact input text alongside
   the parsed document from one read, so bump recovery can retain the source

@@ -2,6 +2,7 @@
 
 import errno
 import os
+import typing as typ
 from pathlib import Path
 from unittest import mock
 
@@ -14,7 +15,11 @@ from lading.commands import (
     bump_toml_dependencies,
     bump_toml_files,
 )
+from lading.exceptions import LadingError
 from tests.helpers.workspace_builders import _load_version
+
+if typ.TYPE_CHECKING:
+    from tomlkit.toml_document import TOMLDocument
 
 
 def test_update_manifest_writes_when_changed(tmp_path: Path) -> None:
@@ -60,6 +65,54 @@ def test_update_manifest_preserves_inline_comment(tmp_path: Path) -> None:
     assert document["package"]["version"] == "1.2.3", (
         "package version should be rewritten to the target"
     )
+
+
+def test_update_manifest_rejects_destination_changed_after_read(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A member path cannot redirect an update to another workspace manifest."""
+    manifest_path = tmp_path / "member" / "Cargo.toml"
+    other_manifest = tmp_path / "other" / "Cargo.toml"
+    manifest_path.parent.mkdir()
+    other_manifest.parent.mkdir()
+    manifest_path.write_text(
+        '[package]\nname = "demo"\nversion = "0.1.0"\n',
+        encoding="utf-8",
+        newline="",
+    )
+    other_original = b'[package]\nname = "other"\nversion = "0.5.0"\n'
+    other_manifest.write_bytes(other_original)
+    read_manifest = bump_manifests.bump_toml_files._read_and_parse_manifest
+
+    def swap_alias_after_read(path: Path) -> tuple[str, TOMLDocument]:
+        """Replace the selected path after its captured target is read."""
+        result = read_manifest(path)
+        if path == manifest_path:
+            manifest_path.unlink()
+            manifest_path.symlink_to(other_manifest)
+        return result
+
+    monkeypatch.setattr(
+        bump_manifests.bump_toml_files,
+        "_read_and_parse_manifest",
+        swap_alias_after_read,
+    )
+    with pytest.raises(LadingError, match="destination changed after it was read"):
+        bump_manifests._update_manifest(
+            manifest_path,
+            (("package",),),
+            "1.0.0",
+            bump_manifests._ManifestUpdateContext(
+                options=bump.BumpOptions(),
+                workspace_root=tmp_path,
+            ),
+        )
+
+    assert other_manifest.read_bytes() == other_original, (
+        "a path changed after reading must not update its new target"
+    )
+    assert manifest_path.is_symlink(), "the concurrent path replacement should remain"
 
 
 def test_update_manifest_skips_when_unchanged(tmp_path: Path) -> None:

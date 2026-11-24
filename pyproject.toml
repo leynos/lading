@@ -618,6 +618,9 @@ reason = "Two single-statement rejection calls differing only in the expected-ty
 # The dead-code gate is the installed `df12-skylos` command from
 # df12-python-lints. `roots` limits liveness analysis to production sources and
 # the exclusion keeps the test tree out of the liveness graph.
+[[tool.duplication_gate.allow]]
+members = ["lading/commands/bump_manifests.py", "lading/commands/publish.py"]
+reason = "Keep the type-only imports in lading/commands/bump_manifests.py and lading/commands/publish.py local. Each command needs distinct types; extracting a shared typing module would couple unrelated command layers."
 [tool.df12_skylos]
 roots = ["lading"]
 python = "3.14"
