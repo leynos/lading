@@ -1039,7 +1039,7 @@ set and `subprocess_runner` otherwise, so the execution layer routes commands
 through cmd-mox IPC rather than spawning real processes:
 
 ```python
-from cuprum import Program, ProgramCatalogue, sh, scoped
+from cuprum import ExecutionContext, Program, ProgramCatalogue, sh, scoped
 
 def _invoke(
     program: Program,
@@ -1057,10 +1057,13 @@ def _invoke(
     # §7.6.3: LADING_CATALOGUE's programmes plus any validated exact path.
     # Activating it and building from it must name the same object, or a
     # registered path would be denied by the enclosing allowlist.
+    # `cwd` travels in the execution context. It is a reserved builder
+    # keyword: passing it to the builder raises TypeError, because older
+    # cuprum serialized it into a `--cwd=` flag instead.
     with scoped(catalogue=catalogue):
         cmd_builder = sh.make(program, catalogue=catalogue)
         cmd = cmd_builder(*args)
-        return cmd.run_sync()
+        return cmd.run_sync(context=ExecutionContext(cwd=cwd))
 ```
 
 This block is a sketch of the intended 5.2 end state rather than today's code.
@@ -1335,11 +1338,18 @@ the effective child `PATH`, values containing a separator against the requested
 relative path to a `PATH` lookup, which would change current behaviour.
 
 Resolution yields an absolute, existing, executable path, and _that_ is what
-gets registered. A value that does not resolve, or resolves to something that
-is not executable, is a prepared failure rather than a registered `Program`, so
-a missing compiler cache is reported as such instead of becoming a launch
-`OSError` or a misleading Cargo diagnostic. Registration always happens after
-resolution, never on the operator's raw string.
+gets registered. Registration always happens after resolution, never on the
+operator's raw string.
+
+A wrapper that does not resolve, or that resolves to something not executable,
+keeps today's classification: `CommandSpawnError`. It is a missing executable,
+and `lading/runtime/subprocess_runner.py` already maps the launch `OSError` for
+one to `CommandSpawnError`; reclassifying it as a preparation failure would
+change the chained cause an existing caller sees, for no contract gain. Only
+catalogue membership, scope permission and resolver failure are preparation
+errors. The distinction this policy adds is the other one: a missing wrapper is
+never a catalogue or scope denial, so it never produces the misleading
+missing-Cargo diagnostic.
 
 Cuprum's `bind_executable()` is the alternative and is not selected for 5.2. It
 separates the logical program from the file executed and reports the file as

@@ -195,6 +195,16 @@ kept disjoint. All of it is recorded in assessment §9.
   `PATH`. The lesson repeats the earlier one -- the previous probe varied one
   case and generalized from it -- so this time each case has its own negative
   control.
+- (2026-11-24) A fourth round found two contract-level defects, both worth
+  keeping. The §7.4 sketch discarded `cwd` in its production branch, so a
+  caller passing a working directory would silently run elsewhere; it now passes
+  `ExecutionContext(cwd=cwd)`, which is also the only correct route, since
+  `cwd` is a reserved builder keyword that raises `TypeError` rather than
+  serializing. And §7.6.3 had classified an unresolvable wrapper as a
+  preparation failure, which would have changed the exception an existing
+  caller sees: a missing wrapper is a `CommandSpawnError` today, and the parity
+  requirement keeps it one. Only catalogue, scope and resolver failures are
+  preparation errors; a missing wrapper is a missing executable.
 - (2026-11-24) Record `CommandPreparationError` as the one type this policy
   requires without introducing it. Naming it in §7.6.1 and deferring the
   definition to 5.2.1 keeps the plan documentation-only while making the
@@ -473,13 +483,19 @@ retains chained spawn failure. A2 checks `{}` versus `None`, absent versus
 empty values, the C locale, scope overlays, and cmd-mox's composition boundary.
 A3 checks configured absolute paths, same-basename rejection, narrow scope,
 different parent/child PATH values, omitted versus empty PATH, relative targets
-under cwd, and symlinks. A1 also verifies each policy/resolution error maps to
-a lading-owned failure with a retained cause. A4 checks complete capture with
-failed write/flush, encoding fallback, and no raw buffer. A5 checks domain
-ownership and cmd-mox responsibilities. A6 checks all links, target version,
-completion wording, and the roadmap checkbox. Discharge these with reviewer
-notes identifying the design/ADR paragraphs; any missing or contradictory case
-leaves the corresponding item open.
+under cwd, and symlinks. Its downstream 5.2 test coverage must also pin the two
+`RUSTC_WRAPPER` routes separately, each with its own negative control: a bare
+name (and `./name`, which normalizes onto it) resolving from `PATH` and failing
+when only `cwd` holds the file, and a value with a separator such as
+`bin/sccache` resolving from `cwd` and failing when only `PATH` holds it. A
+missing or non-executable wrapper stays a `CommandSpawnError`, not a
+preparation failure, so that case needs its own assertion too. A1 also verifies
+each policy/resolution error maps to a lading-owned failure with a retained
+cause. A4 checks complete capture with failed write/flush, encoding fallback,
+and no raw buffer. A5 checks domain ownership and cmd-mox responsibilities. A6
+checks all links, target version, completion wording, and the roadmap checkbox.
+Discharge these with reviewer notes identifying the design/ADR paragraphs; any
+missing or contradictory case leaves the corresponding item open.
 
 External assumptions are beta2's documented modes/result/error interfaces,
 Python environment/exec semantics, and the operating system's process API. They
