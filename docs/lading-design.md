@@ -1315,12 +1315,16 @@ and its measured behaviour is part of this policy:
   name may still resolve. An empty `PATH` does not, and the launch fails. The
   adapter never substitutes the parent's `PATH` for either.
 - A relative target such as `./tool` resolves against `cwd` when one is given,
-  and otherwise against the parent process's own working directory, exactly as
-  a bare name does. It succeeds when the file is there and fails at the
-  operating system level when it is not; cuprum itself does not reject it.
+  and otherwise against the parent process's own working directory. That is a
+  different mechanism from the `PATH` search a bare name uses, and it is not a
+  substitute for one. The target succeeds when the file is there and fails at
+  the operating system level when it is not; cuprum itself does not reject it.
 - A bound relative path is rejected unless the binding opts into
-  `allow_relative=True`; with it, the path is anchored to `cwd` when one is
-  supplied and otherwise passed through unchanged.
+  `allow_relative=True`. With it, a `cwd` anchors the binding and
+  `resolved_path` reports the anchored file; without one the path is passed
+  through unchanged, so the platform resolves it -- a bare name on `PATH`, a
+  path with a separator against the parent's own directory. Prefer an absolute
+  binding whenever the same file must run regardless of where execution starts.
 - A symlink is reported as the configured path, not its target. Following the
   link is the operating system's job.
 
