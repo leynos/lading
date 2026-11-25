@@ -36,6 +36,69 @@ def test_recursive_globs_do_not_follow_directory_symlink_cycles(
     )
 
 
+def test_recursive_glob_skips_directory_junctions(
+    tmp_path: pathlib.Path,
+    write_fixture_manifest: _ManifestWriter,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No-follow recursion skips junctions while retaining real directories."""
+    manifest = write_fixture_manifest(
+        tmp_path,
+        "fixtures/real/Cargo.toml",
+        '[dependencies]\nalpha = "1.0.0"\n',
+    )
+    junction = manifest.parent.parent / "junction"
+    junction.mkdir()
+    original_is_junction = pathlib.Path.is_junction
+    monkeypatch.setattr(
+        pathlib.Path,
+        "is_junction",
+        lambda path: path == junction or original_is_junction(path),
+    )
+
+    matches = manifest_paths.expand_manifest_glob_candidates(
+        tmp_path,
+        "fixtures/**/Cargo.toml",
+        error_type=bump_manifest_rewrites.ManifestRewriteError,
+        label="Manifest rewrite",
+    )
+
+    assert matches == (manifest,), (
+        "recursive traversal must skip the simulated junction directory"
+    )
+
+
+def test_explicit_glob_path_through_junction_keeps_containment_check(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A selected junction path is followed and rejected when it escapes."""
+    workspace_root = tmp_path / "workspace"
+    junction = workspace_root / "fixtures" / "external"
+    junction.parent.mkdir(parents=True)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "Cargo.toml").write_text('[package]\nname = "outside"\n')
+    junction.symlink_to(outside, target_is_directory=True)
+    original_is_junction = pathlib.Path.is_junction
+    monkeypatch.setattr(
+        pathlib.Path,
+        "is_junction",
+        lambda path: path == junction or original_is_junction(path),
+    )
+
+    with pytest.raises(
+        bump_manifest_rewrites.ManifestRewriteError,
+        match="stay within the workspace",
+    ):
+        manifest_paths.expand_manifest_glob_candidates(
+            workspace_root,
+            "fixtures/external/Cargo.toml",
+            error_type=bump_manifest_rewrites.ManifestRewriteError,
+            label="Manifest rewrite",
+        )
+
+
 def test_terminal_recursive_glob_rejects_escaping_symlinks(
     tmp_path: pathlib.Path,
 ) -> None:

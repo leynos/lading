@@ -182,7 +182,7 @@ def test_write_atomic_text_closes_descriptor_when_fchmod_fails(
     assert manifest_path.read_text(encoding="utf-8") == "original", (
         "a failed replacement must leave the target content unchanged"
     )
-    assert not list(tmp_path.glob("Cargo.toml.*")), (
+    assert not list(tmp_path.glob(".lading-*")), (
         "a failed replacement must remove its temporary file"
     )
 
@@ -321,7 +321,7 @@ def test_bounded_write_revalidates_before_path_fallback_replacement(
     assert manifest_path.read_text(encoding="utf-8") == "original", (
         "a failed final check must leave the destination unchanged"
     )
-    assert not list(manifest_path.parent.glob("Cargo.toml.*")), (
+    assert not list(manifest_path.parent.glob(".lading-*")), (
         "a failed final check must remove its temporary file"
     )
 

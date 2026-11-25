@@ -123,22 +123,112 @@ def _write_path_based_atomic_text(
     existing_mode: int | None = None
     with suppress(FileNotFoundError):
         existing_mode = stat.S_IMODE(file_path.stat().st_mode)
-    fd, tmp_path = tempfile.mkstemp(
-        dir=dirpath,
-        prefix=f"{file_path.name}.",
-        text=True,
-    )
+
+    temporary_directory, directory_fd = _open_temporary_parent_directory(dirpath)
+    temporary_name: str | None = None
+    temporary_path: Path | None = None
+    primary_error: BaseException | None = None
     try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
+        if directory_fd is None:
+            descriptor, temporary_path_value = tempfile.mkstemp(
+                dir=dirpath,
+                prefix=".lading-",
+                text=True,
+            )
+            replacement_path = Path(temporary_path_value)
+            temporary_path = replacement_path
+            temporary_name = temporary_path.name
+        else:
+            descriptor, temporary_name = _create_bounded_temporary_file(
+                directory_fd, file_path.name
+            )
+            replacement_path = temporary_directory / temporary_name
+            temporary_path = replacement_path
+
+        handle = _open_temporary_text_file(descriptor)
+        with handle:
             if existing_mode is not None:
                 _set_file_mode(handle.fileno(), existing_mode)
             handle.write(content)
         if workspace_root is not None:
             _resolve_bounded_write_target(file_path, workspace_root)
-        Path(tmp_path).replace(file_path)
+        replacement_path.replace(file_path)
+    except BaseException as error:
+        primary_error = error
+        if temporary_name is not None and temporary_path is not None:
+            _cleanup_path_based_temporary_file(
+                temporary_name, temporary_path, directory_fd, error
+            )
+        raise
     finally:
-        with suppress(FileNotFoundError):
-            Path(tmp_path).unlink()
+        if directory_fd is not None:
+            _close_descriptor(directory_fd, primary_error)
+
+
+def _open_temporary_parent_directory(directory: Path) -> tuple[Path, int | None]:
+    """Pin a temporary file's parent when descriptor-relative cleanup exists."""
+    resolved_directory = directory.resolve(strict=True)
+    if not _supports_stable_temporary_cleanup():
+        return resolved_directory, None
+    flags = os.O_RDONLY | os.O_DIRECTORY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    try:
+        return resolved_directory, os.open(resolved_directory, flags)
+    except OSError:
+        return resolved_directory, None
+
+
+def _supports_stable_temporary_cleanup() -> bool:
+    """Check whether temporary files can be created and removed by directory fd."""
+    return (
+        hasattr(os, "O_DIRECTORY")
+        and os.open in os.supports_dir_fd
+        and os.unlink in os.supports_dir_fd
+    )
+
+
+def _open_temporary_text_file(descriptor: int) -> typ.TextIO:
+    """Transfer a temporary descriptor to a text handle, closing on failure."""
+    try:
+        return os.fdopen(descriptor, "w", encoding="utf-8", newline="")
+    except BaseException as error:
+        _close_descriptor(descriptor, error)
+        raise
+
+
+def _cleanup_path_based_temporary_file(
+    temporary_name: str,
+    temporary_path: Path,
+    directory_fd: int | None,
+    primary_error: BaseException,
+) -> None:
+    """Remove a failed replacement's temporary file without masking its error."""
+    try:
+        if directory_fd is None:
+            temporary_path.unlink()
+        else:
+            os.unlink(temporary_name, dir_fd=directory_fd)
+    except OSError as cleanup_error:
+        primary_error.add_note(
+            f"Could not remove temporary file {temporary_name!r}: {cleanup_error}"
+        )
+
+
+def _close_descriptor(
+    descriptor: int, primary_error: BaseException | None = None
+) -> None:
+    """Close an owned descriptor, attaching close failures to an active error."""
+    try:
+        os.close(descriptor)
+    except OSError as close_error:
+        if primary_error is None:
+            raise
+        primary_error.add_note(
+            f"Could not close descriptor {descriptor}: {close_error}"
+        )
 
 
 def _resolve_bounded_write_target(file_path: Path, workspace_root: Path) -> Path:
@@ -267,19 +357,21 @@ def _existing_file_mode(directory_fd: int, filename: str) -> int | None:
     return stat.S_IMODE(metadata.st_mode)
 
 
-def _create_bounded_temporary_file(directory_fd: int, prefix: str) -> tuple[int, str]:
+def _create_bounded_temporary_file(
+    directory_fd: int, destination_name: str
+) -> tuple[int, str]:
     """Create a unique temporary file relative to an already-open directory."""
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
     if hasattr(os, "O_CLOEXEC"):
         flags |= os.O_CLOEXEC
     for _attempt in range(100):
-        temporary_name = f"{prefix}.{secrets.token_hex(8)}"
+        temporary_name = f".lading-{secrets.token_hex(8)}"
         try:
             descriptor = os.open(temporary_name, flags, 0o600, dir_fd=directory_fd)
         except FileExistsError:
             continue
         return descriptor, temporary_name
-    message = f"Could not allocate a temporary file for {prefix}"
+    message = f"Could not allocate a temporary file for {destination_name}"
     raise FileExistsError(message)
 
 

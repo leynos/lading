@@ -8,6 +8,7 @@ before updating the corresponding dependency entries.
 """
 
 import collections.abc as cabc
+import dataclasses as dc
 import logging
 import typing as typ
 
@@ -27,6 +28,14 @@ if typ.TYPE_CHECKING:
     from lading.commands.bump_toml_types import _TableLike
 
 _LOGGER = logging.getLogger(__name__)
+
+
+@dc.dataclass(frozen=True, slots=True)
+class _DependencySectionSelection:
+    """Describe crate-identity and optional manifest-key selection."""
+
+    names: frozenset[str]
+    match_manifest_keys: bool
 
 
 def update_dependency_table_with_warnings(
@@ -92,14 +101,30 @@ def update_matching_dependency_section(
     bool
         ``True`` when a matching dependency requirement changed.
     """
+    selection = _DependencySectionSelection(
+        names=frozenset(updated_crate_names),
+        match_manifest_keys=False,
+    )
+    return _update_selected_dependency_section(
+        document, path, selection, target_version
+    )
+
+
+def _update_selected_dependency_section(
+    document: TOMLDocument,
+    path: tuple[str, ...],
+    selection: _DependencySectionSelection,
+    target_version: str,
+) -> bool:
+    """Apply the selection's key and package identity rules to one section."""
     table = bump_toml.select_table(document, path)
     if table is None:
         return False
     matching_names = {
         name
         for name, entry in tuple(table.items())
-        if bump_toml_dependencies.dependency_target_name(name, entry)
-        in updated_crate_names
+        if (selection.match_manifest_keys and name in selection.names)
+        or bump_toml_dependencies.dependency_target_name(name, entry) in selection.names
     }
     if not matching_names:
         return False
@@ -132,29 +157,20 @@ def update_dependency_sections_with_warnings(
     bool
         ``True`` when at least one requirement changed.
     """
-    if section_scope == "direct":
-        warnings = bump_toml_dependency_warnings.collect_dependency_section_warnings(
-            document, dependency_sections, target_version
-        )
-        _log_warnings(warnings)
-        return bump_toml_dependencies.update_dependency_sections(
-            document, dependency_sections, target_version
-        )
-
     changed = False
     for section, package_names in dependency_sections.items():
         if section_scope in {"direct", "both"}:
-            direct_table = bump_toml.select_table(document, (section,))
-            if direct_table is not None:
-                changed |= update_dependency_table_with_warnings(
-                    direct_table, package_names, target_version
-                )
-        workspace_table = (
-            bump_toml.select_table(document, ("workspace", section))
-            if section_scope in {"workspace", "both"}
-            else None
-        )
-        if workspace_table is not None:
+            selection = _DependencySectionSelection(
+                names=frozenset(package_names),
+                match_manifest_keys=True,
+            )
+            changed |= _update_selected_dependency_section(
+                document,
+                (section,),
+                selection,
+                target_version,
+            )
+        if section_scope in {"workspace", "both"}:
             changed |= update_matching_dependency_section(
                 document,
                 ("workspace", section),

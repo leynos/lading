@@ -263,6 +263,20 @@ def test_python313_rejection_example_states_the_package_constraint() -> None:
     )
 
 
+def test_migration_checklist_follows_tasks_and_unaffected_behaviour() -> None:
+    """The checklist follows every numbered task and unaffected behaviour."""
+    guide = _GUIDE_PATH.read_text(encoding="utf-8")
+
+    last_task = guide.index("## 4. Review compound dependency requirements")
+    unaffected = guide.index("## What does not need to change")
+    checklist = guide.index("## Migration checklist")
+    optional_adoption = guide.index("### Optional adoption")
+
+    assert last_task < unaffected < checklist < optional_adoption, (
+        "required tasks and unaffected behaviour must precede the checklist"
+    )
+
+
 def test_uv_upgrade_updates_project_floor_before_adding_package() -> None:
     """The project metadata floor must be raised before resolving 0.4.0."""
     example = _examples_by_id()["v0-4-0-upgrade-uv"]

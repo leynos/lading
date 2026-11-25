@@ -131,3 +131,28 @@ def test_direct_dependency_update_uses_the_selected_manifest_key() -> None:
     assert document["dependencies"]["alpha-core"]["version"] == "2.0.0", (
         "direct dependency sections should match the manifest's alias key"
     )
+
+
+def test_both_scope_matches_a_direct_alias_by_package_name() -> None:
+    """Direct and workspace aliases both follow the selected package identity."""
+    document = parse_toml(
+        "[dependencies]\n"
+        'local-alpha = { package = "alpha", version = ">=1.0.0, <2" }\n\n'
+        "[workspace.dependencies]\n"
+        'alpha-core = { package = "alpha", version = ">=1.0.0, <2" }\n'
+    )
+
+    changed = bump_toml_dependency_updates.update_dependency_sections_with_warnings(
+        document,
+        {"dependencies": {"alpha"}},
+        "1.5.0",
+        section_scope="both",
+    )
+
+    assert changed, "both selected sections should update package aliases"
+    assert document["dependencies"]["local-alpha"]["version"] == ">=1.5.0, <2", (
+        "direct aliases should match by their package field"
+    )
+    assert document["workspace"]["dependencies"]["alpha-core"]["version"] == (
+        ">=1.5.0, <2"
+    ), "workspace aliases should retain the same package requirement"

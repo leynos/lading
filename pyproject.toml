@@ -684,6 +684,34 @@ full_name = [
 reason = "The v0.4.0 migration guide's file-helper example imports parse_manifest as a supported downstream API, and its example test verifies the import."
 
 [[tool.skylos.dead_code.entrypoints]]
+type = "function"
+full_name = [
+    "lading.commands.bump_toml_dependencies.update_dependency_sections",
+]
+reason = "The v0.4.0 migration guide documents this downstream import, exercised by test_after_import_examples_resolve_on_0_4_0."
+
+[[tool.skylos.dead_code.entrypoints]]
+type = "function"
+full_name = [
+    "lading.commands.bump_toml_dependency_warnings.collect_dependency_section_warnings",
+]
+reason = "The developers guide documents this no-mutation query, exercised by test_dependency_update_warns_when_bound_excludes_target."
+
+[[tool.skylos.dead_code.entrypoints]]
+type = "function"
+full_name = [
+    "lading.commands.bump_toml_dependency_warnings._selected_section_warnings",
+]
+reason = "collect_dependency_section_warnings calls this selector to inspect the selected TOML tables."
+
+[[tool.skylos.dead_code.entrypoints]]
+type = "function"
+full_name = [
+    "lading.commands.bump_toml_dependency_warnings._selected_dependency_section_paths",
+]
+reason = "collect_dependency_section_warnings calls this helper to choose direct and workspace table paths."
+
+[[tool.skylos.dead_code.entrypoints]]
 type = "parameter"
 full_name = [
     "lading.commands.publish_staging._handle_termination.frame",

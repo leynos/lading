@@ -287,6 +287,8 @@ def _manifest_directory_entries(directory: Path) -> tuple[Path, ...]:
 def _is_manifest_directory(path: Path, *, follow_symlinks: bool = False) -> bool:
     """Check directory status with optional final-component symlink following."""
     try:
+        if not follow_symlinks and path.is_junction():
+            return False
         metadata = path.stat() if follow_symlinks else path.lstat()
         return stat.S_ISDIR(metadata.st_mode)
     except FileNotFoundError, NotADirectoryError:
