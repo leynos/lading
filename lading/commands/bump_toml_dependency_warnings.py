@@ -53,7 +53,8 @@ def collect_dependency_bound_warnings(
     Returns
     -------
     tuple[RequirementBoundWarning, ...]
-        Structured warnings for preserved comparators that reject the target.
+        Structured warnings for rewritten or retained comparators that reject
+        the target.
 
     Examples
     --------

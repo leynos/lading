@@ -283,6 +283,62 @@ def test_recursive_globs_do_not_duplicate_manifests(
     assert matches == expected, "recursive glob segments must not duplicate paths"
 
 
+def test_recursive_glob_handles_deep_directory_chains(
+    tmp_path: pathlib.Path,
+    write_fixture_manifest: _ManifestWriter,
+) -> None:
+    """A deep workspace tree does not consume Python call-stack depth."""
+    relative_path = "/".join((*(("a",) * 600), "Cargo.toml"))
+    manifest = write_fixture_manifest(
+        tmp_path, relative_path, '[dependencies]\nalpha = "1.0.0"\n'
+    )
+
+    matches = manifest_paths.expand_manifest_glob_candidates(
+        tmp_path,
+        "**/Cargo.toml",
+        error_type=bump_manifest_rewrites.ManifestRewriteError,
+        label="Manifest rewrite",
+    )
+
+    assert matches == (manifest.resolve(),), (
+        "recursive traversal should find the manifest beyond recursion depth"
+    )
+
+
+def test_recursive_glob_skips_repeated_candidate_pattern_states(
+    tmp_path: pathlib.Path,
+    write_fixture_manifest: _ManifestWriter,
+) -> None:
+    """Repeated recursive decompositions scan each state only once."""
+    relative_path = "/".join((*(("a",) * 20), "Cargo.toml"))
+    manifest = write_fixture_manifest(
+        tmp_path, relative_path, '[dependencies]\nalpha = "1.0.0"\n'
+    )
+    pattern = "/".join((*(("**", "a") * 10), "**", "Cargo.toml"))
+    directory_reads = 0
+
+    def read_directory(directory: pathlib.Path) -> tuple[pathlib.Path, ...]:
+        """Count scans while preserving the resolver's normal directory order."""
+        nonlocal directory_reads
+        directory_reads += 1
+        return tuple(sorted(directory.iterdir()))
+
+    traversal = manifest_paths._ManifestGlobTraversal(
+        workspace_root=tmp_path,
+        pattern=pattern,
+        error_type=bump_manifest_rewrites.ManifestRewriteError,
+        label="Manifest rewrite",
+        directory_reader=read_directory,
+    )
+
+    assert traversal.collect() == (manifest.resolve(),), (
+        "overlapping recursive segments must retain the matching manifest"
+    )
+    assert directory_reads < 1_000, (
+        "the same lexical path and pattern index should not be scanned twice"
+    )
+
+
 @pytest.mark.parametrize(
     ("configured_path", "message"),
     [

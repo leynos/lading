@@ -101,6 +101,12 @@ def test_manifest_rewrite_template_allows_escaped_placeholder_text() -> None:
             id="padded_path",
         ),
         pytest.param(
+            {"manifest_rewrites": [{"paths": ["fixtures/bad" + chr(0)]}]},
+            "bump.manifest_rewrites[0].paths[0] must be a safe "
+            "workspace-relative path.",
+            id="nul_path",
+        ),
+        pytest.param(
             {"manifest_rewrites": [{"paths": ["/workspace/Cargo.toml"]}]},
             "bump.manifest_rewrites[0].paths[0] must be a safe "
             "workspace-relative path.",

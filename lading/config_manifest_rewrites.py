@@ -163,6 +163,20 @@ class ManifestRewriteConfig:
         )
 
 
+def parse_manifest_rewrite_configs(
+    mapping: cabc.Mapping[str, typ.Any],
+) -> tuple[ManifestRewriteConfig, ...]:
+    """Parse the optional rewrite-group array from the ``bump`` table."""
+    if "manifest_rewrites" not in mapping:
+        return ()
+    field_name = "bump.manifest_rewrites"
+    return _parse_config_records(
+        mapping["manifest_rewrites"],
+        field_name,
+        ManifestRewriteConfig.from_mapping,
+    )
+
+
 def _manifest_rewrite_paths(
     mapping: cabc.Mapping[str, typ.Any], field_name: str
 ) -> tuple[str, ...]:
@@ -171,7 +185,9 @@ def _manifest_rewrite_paths(
     paths = _required_rewrite_segments(mapping.get("paths"), field, "path")
     for index, path in enumerate(paths):
         candidates = (pathlib.Path(path), pathlib.PureWindowsPath(path))
-        if any(candidate.anchor or ".." in candidate.parts for candidate in candidates):
+        if chr(0) in path or any(
+            candidate.anchor or ".." in candidate.parts for candidate in candidates
+        ):
             message = f"{field}[{index}] must be a safe workspace-relative path."
             raise ConfigurationError(message)
     return paths
@@ -227,17 +243,28 @@ def _manifest_rewrite_string_values(
     if "string_values" not in mapping:
         return ()
     field = f"{field_name}.string_values"
-    raw_values = toml_coerce.expect_sequence(
-        mapping["string_values"], field, error=ConfigurationError
+    return _parse_config_records(
+        mapping["string_values"], field, StringValueRewriteConfig.from_mapping
+    )
+
+
+def _parse_config_records[Record](
+    value: object,
+    field_name: str,
+    parser: cabc.Callable[[cabc.Mapping[str, typ.Any], str], Record],
+) -> tuple[Record, ...]:
+    """Parse a strict indexed array of validated configuration records."""
+    raw_records = toml_coerce.expect_sequence(
+        value, field_name, error=ConfigurationError
     )
     return tuple(
-        StringValueRewriteConfig.from_mapping(
+        parser(
             toml_coerce.expect_mapping(
-                raw_value, f"{field}[{index}]", error=ConfigurationError
+                raw_record, f"{field_name}[{index}]", error=ConfigurationError
             ),
-            f"{field}[{index}]",
+            f"{field_name}[{index}]",
         )
-        for index, raw_value in enumerate(raw_values)
+        for index, raw_record in enumerate(raw_records)
     )
 
 

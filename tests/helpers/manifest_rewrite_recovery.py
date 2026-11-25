@@ -1,5 +1,6 @@
 """Shared setup for configured manifest rewrite recovery tests."""
 
+import collections.abc as cabc
 import dataclasses as dc
 import typing as typ
 from pathlib import Path
@@ -10,6 +11,18 @@ from tests.helpers.workspace_builders import _make_workspace
 
 if typ.TYPE_CHECKING:
     from lading.workspace import WorkspaceGraph
+
+
+class _InjectedMemberManifestError(Exception):
+    """Specific failure used to stop a bump after an earlier member write."""
+
+
+class _InjectedFixtureWriteError(OSError):
+    """Specific fixture-write failure used to exercise rollback handling."""
+
+    def __init__(self) -> None:
+        """Set a stable message for the injected I/O failure."""
+        super().__init__("injected second fixture write failure")
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -66,3 +79,27 @@ def _make_partial_write_failure_case(root: Path) -> _PartialWriteFailureCase:
         workspace_manifests=workspace_manifests,
         second_fixture_original=fixtures[1].read_bytes(),
     )
+
+
+def _second_fixture_write_failure(
+    case: _PartialWriteFailureCase,
+    real_write: cabc.Callable[..., None],
+    *,
+    before_failure: cabc.Callable[[Path], None] | None = None,
+) -> cabc.Callable[..., None]:
+    """Build a writer that forwards fixture one and fails fixture two."""
+
+    def fail_second_fixture(
+        path: Path,
+        content: str,
+        *,
+        workspace_root: Path | None = None,
+    ) -> None:
+        """Inject the selected failure while forwarding earlier writes."""
+        if path == case.fixtures[1].resolve():
+            if before_failure is not None:
+                before_failure(path)
+            raise _InjectedFixtureWriteError
+        real_write(path, content, workspace_root=workspace_root)
+
+    return fail_second_fixture

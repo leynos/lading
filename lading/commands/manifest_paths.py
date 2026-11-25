@@ -199,35 +199,64 @@ class _ManifestGlobTraversal:
 
     def collect(self) -> tuple[Path, ...]:
         """Return all matching candidates in stable path order."""
-        self.visit(self.root, 0)
+        worklist = [(self.root, 0)]
+        visited: set[tuple[Path, int]] = set()
+        while worklist:
+            candidate, index = worklist.pop()
+            state = (candidate, index)
+            if state in visited:
+                continue
+            visited.add(state)
+            self.check_containment(candidate)
+            if index == len(self.segments):
+                self.record_if_present(candidate)
+                continue
+
+            segment = self.segments[index]
+            if segment == "**":
+                worklist.append((candidate, index + 1))
+                self.enqueue_recursive_children(worklist, candidate, index)
+            elif glob.has_magic(segment):
+                self.enqueue_wildcard_children(worklist, candidate, segment, index + 1)
+            else:
+                self.enqueue_candidate(worklist, candidate / segment, index + 1)
         return tuple(sorted(set(self.matches)))
 
-    def visit_recursive(self, candidate: Path, index: int) -> None:
-        """Match ``**`` without following directory symlinks, avoiding cycles."""
-        self.visit(candidate, index + 1)
+    def enqueue_recursive_children(
+        self, worklist: list[tuple[Path, int]], candidate: Path, index: int
+    ) -> None:
+        """Queue ``**`` descendants without following directory symlinks."""
         is_terminal_recursive = index == len(self.segments) - 1
         for child in self.directory_reader(candidate):
             if _is_manifest_directory(child):
-                self.visit(child, index)
+                worklist.append((child, index))
             elif is_terminal_recursive and not self.directory_only:
-                self.visit(child, index + 1)
+                worklist.append((child, index + 1))
 
-    def visit_wildcard(self, candidate: Path, segment: str, index: int) -> None:
-        """Match one wildcard path segment against each directory entry."""
+    def enqueue_wildcard_children(
+        self,
+        worklist: list[tuple[Path, int]],
+        candidate: Path,
+        segment: str,
+        index: int,
+    ) -> None:
+        """Queue entries matching one wildcard path segment."""
         for child in self.directory_reader(candidate):
             if fnmatch.fnmatch(child.name, segment):
-                self.visit_candidate(child, index + 1)
+                self.enqueue_candidate(worklist, child, index)
 
-    def visit_candidate(self, candidate: Path, index: int) -> None:
+    def enqueue_candidate(
+        self, worklist: list[tuple[Path, int]], candidate: Path, index: int
+    ) -> None:
         """Skip non-directories when another pattern segment needs traversal."""
         if index < len(self.segments) and not _is_manifest_directory(
             candidate, follow_symlinks=True
         ):
             return
-        self.visit(candidate, index)
+        worklist.append((candidate, index))
 
-    def visit(self, candidate: Path, index: int) -> None:
-        """Walk one pattern segment while enforcing the workspace boundary."""
+    def check_containment(self, candidate: Path) -> None:
+        """Enforce the workspace boundary for each lexical traversal state."""
         try:
             candidate.resolve().relative_to(self.root)
         except ValueError as exc:
@@ -235,21 +264,6 @@ class _ManifestGlobTraversal:
                 f"{self.label} path must stay within the workspace: {self.pattern}"
             )
             raise self.error_type(message) from exc
-
-        if index == len(self.segments):
-            self.record_if_present(candidate)
-            return
-
-        segment = self.segments[index]
-        if segment == "**":
-            self.visit_recursive(candidate, index)
-            return
-
-        if glob.has_magic(segment):
-            self.visit_wildcard(candidate, segment, index)
-            return
-
-        self.visit_candidate(candidate / segment, index + 1)
 
     def record_if_present(self, candidate: Path) -> None:
         """Record a candidate that still exists after traversal."""

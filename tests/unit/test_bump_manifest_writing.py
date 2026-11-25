@@ -26,7 +26,7 @@ def test_update_manifest_writes_when_changed(tmp_path: Path) -> None:
     """Applying a new version persists changes to disk."""
     manifest_path = tmp_path / "Cargo.toml"
     original = '[package]\nname = "demo"\nversion = "0.1.0"\n'
-    manifest_path.write_text(original, encoding="utf-8")
+    manifest_path.write_text(original, encoding="utf-8", newline="")
     result = bump_manifests._update_manifest(
         manifest_path,
         (("package",),),
@@ -34,7 +34,9 @@ def test_update_manifest_writes_when_changed(tmp_path: Path) -> None:
         bump_manifests._ManifestUpdateContext(bump.BumpOptions()),
     )
     assert result.was_changed is True, "changing the version should report a change"
-    assert result.written_text == manifest_path.read_text(encoding="utf-8"), (
+    with manifest_path.open("r", encoding="utf-8", newline="") as handle:
+        written_text = handle.read()
+    assert result.written_text == written_text, (
         "the result should expose the exact text written for rollback checks"
     )
     assert result.original_text == original, (
@@ -201,6 +203,48 @@ def test_write_atomic_text_preserves_symbolic_link(tmp_path: Path) -> None:
     assert target.read_text(encoding="utf-8") == "replacement", (
         "the target content must be updated through the symlink"
     )
+
+
+def test_bounded_write_keeps_the_open_parent_when_its_path_is_swapped(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A parent-path swap cannot redirect a bounded write through a symlink."""
+    workspace_root = tmp_path / "workspace"
+    parent = workspace_root / "nested"
+    parent.mkdir(parents=True)
+    manifest = parent / "Cargo.toml"
+    manifest.write_text("original", encoding="utf-8")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    outside_manifest = outside / "Cargo.toml"
+    outside_manifest.write_text("outside", encoding="utf-8")
+    moved_parent = workspace_root / "moved-parent"
+    create_temporary_file = bump_toml_files._create_bounded_temporary_file
+
+    def swap_parent_then_create(directory_fd: int, prefix: str) -> tuple[int, str]:
+        """Replace the parent path after the writer has opened its directory."""
+        parent.rename(moved_parent)
+        parent.symlink_to(outside, target_is_directory=True)
+        return create_temporary_file(directory_fd, prefix)
+
+    monkeypatch.setattr(
+        bump_toml_files,
+        "_create_bounded_temporary_file",
+        swap_parent_then_create,
+    )
+
+    bump_toml_files.write_atomic_text(
+        manifest, "replacement", workspace_root=workspace_root
+    )
+
+    assert outside_manifest.read_text(encoding="utf-8") == "outside", (
+        "the swapped symlink target must not receive the replacement"
+    )
+    assert (moved_parent / "Cargo.toml").read_text(encoding="utf-8") == (
+        "replacement"
+    ), "replacement must use the already-verified directory handle"
+    assert parent.is_symlink(), "the concurrently installed symlink must remain"
 
 
 @pytest.mark.parametrize(

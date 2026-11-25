@@ -135,6 +135,7 @@ def _process_workspace_manifest(
     update_context = _ManifestUpdateContext(
         options=workspace_options,
         workspace_root=context.root_path,
+        workspace_declarations_only=True,
     )
     result = _update_manifest(
         context.workspace_manifest,

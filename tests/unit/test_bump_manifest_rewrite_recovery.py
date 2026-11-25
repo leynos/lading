@@ -1,5 +1,6 @@
 """Recovery behavior after partial configured manifest rewrite failures."""
 
+import collections.abc as cabc
 from pathlib import Path
 from unittest import mock
 
@@ -22,39 +23,31 @@ from tests.helpers.manifest_rewrite_metrics import (
     manifest_rewrite_duration_stats,
 )
 from tests.helpers.manifest_rewrite_recovery import (
+    _InjectedMemberManifestError,
     _make_partial_write_failure_case,
     _PartialWriteFailureCase,
+    _second_fixture_write_failure,
 )
 
 pytestmark = pytest.mark.usefixtures("reset_process_metrics")
 
 
-class _InjectedMemberManifestError(Exception):
-    """Specific failure used to stop a bump after an earlier member write."""
-
-
 def _run_partial_write_failure(
     case: _PartialWriteFailureCase,
+    *,
+    before_failure: cabc.Callable[[Path], None] | None = None,
 ) -> ManifestRewriteError:
     """Fail the second fixture write after allowing the first atomic write."""
     write_atomic_text = bump_manifest_rewrite_application.write_atomic_text
-
-    def fail_second_write(
-        path: Path,
-        text: str,
-        *,
-        workspace_root: Path | None = None,
-    ) -> None:
-        """Fail the second fixture write and forward the first atomic write."""
-        if path == case.fixtures[1].resolve():
-            raise OSError
-        write_atomic_text(path, text, workspace_root=workspace_root)
+    failure_injector = _second_fixture_write_failure(
+        case, write_atomic_text, before_failure=before_failure
+    )
 
     with (
         mock.patch.object(
             bump_manifest_rewrite_application,
             "write_atomic_text",
-            side_effect=fail_second_write,
+            side_effect=failure_injector,
         ),
         pytest.raises(ManifestRewriteError, match="1 of 2") as failure,
     ):
@@ -260,26 +253,24 @@ def test_rewrite_failure_preserves_member_manifest_edited_after_bump_write(
         crate.manifest_path for crate in case.workspace.crates if crate.name == "alpha"
     )
     concurrent_edit = "\n# edited while the bump was running\n"
+    contents_after_concurrent_edit: list[bytes] = []
     write_atomic_text = bump_manifest_rewrite_application.write_atomic_text
 
-    def edit_member_then_fail_fixture(
-        path: Path,
-        text: str,
-        *,
-        workspace_root: Path | None = None,
-    ) -> None:
-        """Add an external edit after member writes, then fail fixture two."""
-        if path == case.fixtures[1].resolve():
-            with alpha_manifest.open("a", encoding="utf-8", newline="") as handle:
-                handle.write(concurrent_edit)
-            raise OSError
-        write_atomic_text(path, text, workspace_root=workspace_root)
+    def append_concurrent_edit(_path: Path) -> None:
+        """Record the complete member contents after another writer edits it."""
+        with alpha_manifest.open("a", encoding="utf-8", newline="") as handle:
+            handle.write(concurrent_edit)
+        contents_after_concurrent_edit.append(alpha_manifest.read_bytes())
+
+    failure_injector = _second_fixture_write_failure(
+        case, write_atomic_text, before_failure=append_concurrent_edit
+    )
 
     with (
         mock.patch.object(
             bump_manifest_rewrite_application,
             "write_atomic_text",
-            side_effect=edit_member_then_fail_fixture,
+            side_effect=failure_injector,
         ),
         pytest.raises(ManifestRewriteWriteError) as failure,
     ):
@@ -293,7 +284,10 @@ def test_rewrite_failure_preserves_member_manifest_edited_after_bump_write(
             ),
         )
 
-    assert alpha_manifest.read_text(encoding="utf-8").endswith(concurrent_edit), (
+    assert len(contents_after_concurrent_edit) == 1, (
+        "the concurrent edit should be captured when the fixture write fails"
+    )
+    assert alpha_manifest.read_bytes() == contents_after_concurrent_edit[0], (
         "rollback must leave a concurrent edit in the member manifest intact"
     )
     assert (
@@ -335,16 +329,7 @@ def test_rewrite_failure_rolls_back_to_text_parsed_after_a_concurrent_edit(
             manifest_path, selectors, target_version, update_context
         )
 
-    def fail_second_fixture(
-        path: Path,
-        text: str,
-        *,
-        workspace_root: Path | None = None,
-    ) -> None:
-        """Let the first fixture write complete, then fail the second."""
-        if path == case.fixtures[1].resolve():
-            raise OSError
-        write_atomic_text(path, text, workspace_root=workspace_root)
+    failure_injector = _second_fixture_write_failure(case, write_atomic_text)
 
     with (
         mock.patch.object(
@@ -355,7 +340,7 @@ def test_rewrite_failure_rolls_back_to_text_parsed_after_a_concurrent_edit(
         mock.patch.object(
             bump_manifest_rewrite_application,
             "write_atomic_text",
-            side_effect=fail_second_fixture,
+            side_effect=failure_injector,
         ),
         pytest.raises(ManifestRewriteError),
     ):

@@ -111,7 +111,7 @@ def update_dependency_sections_with_warnings(
     dependency_sections: cabc.Mapping[str, cabc.Collection[str]],
     target_version: str,
     *,
-    include_workspace_sections: bool = False,
+    section_scope: typ.Literal["direct", "workspace", "both"] = "direct",
 ) -> bool:
     """Log selected comparator warnings, then update matching sections.
 
@@ -123,27 +123,40 @@ def update_dependency_sections_with_warnings(
         Section names and dependency keys selected for rewriting.
     target_version : str
         Version to assign while preserving each requirement's operator.
-    include_workspace_sections : bool, optional
-        Also update matching ``[workspace.<section>]`` tables.
+    section_scope : Literal["direct", "workspace", "both"], optional
+        Dependency table locations to update: direct sections, workspace
+        sections, or both.
 
     Returns
     -------
     bool
         ``True`` when at least one requirement changed.
     """
-    warnings = bump_toml_dependency_warnings.collect_dependency_section_warnings(
-        document,
-        dependency_sections,
-        target_version,
-        include_workspace_sections=include_workspace_sections,
-    )
-    _log_warnings(warnings)
-    return bump_toml_dependencies.update_dependency_sections(
-        document,
-        dependency_sections,
-        target_version,
-        include_workspace_sections=include_workspace_sections,
-    )
+    if section_scope == "direct":
+        warnings = bump_toml_dependency_warnings.collect_dependency_section_warnings(
+            document, dependency_sections, target_version
+        )
+        _log_warnings(warnings)
+        return bump_toml_dependencies.update_dependency_sections(
+            document, dependency_sections, target_version
+        )
+
+    changed = False
+    for section, package_names in dependency_sections.items():
+        if section_scope in {"direct", "both"}:
+            changed |= update_matching_dependency_section(
+                document, (section,), package_names, target_version
+            )
+        workspace_table = (
+            bump_toml.select_table(document, ("workspace", section))
+            if section_scope in {"workspace", "both"}
+            else None
+        )
+        if workspace_table is not None:
+            changed |= update_dependency_table_with_warnings(
+                workspace_table, package_names, target_version
+            )
+    return changed
 
 
 def _log_warnings(

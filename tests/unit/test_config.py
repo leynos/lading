@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from lading import config as config_module
+from lading import config_publish_preflight as publish_preflight_config
 
 
 def _write_config(tmp_path: Path, body: str) -> Path:
@@ -269,39 +270,39 @@ def test_string_tuple_and_matrix_validation() -> None:
     assert config_module._string_tuple(["a", "b"], "field") == ("a", "b"), (
         "a list of strings must convert to an equivalent tuple"
     )
-    assert config_module._string_matrix([["a", "b"]], "matrix") == (("a", "b"),), (
-        "a list of string lists must convert to a tuple of tuples"
-    )
+    assert publish_preflight_config._string_matrix([["a", "b"]], "matrix") == (
+        ("a", "b"),
+    ), "a list of string lists must convert to a tuple of tuples"
     with pytest.raises(config_module.ConfigurationError):
         config_module._string_tuple(123, "field")
     with pytest.raises(config_module.ConfigurationError):
-        config_module._string_matrix("oops", "matrix")
+        publish_preflight_config._string_matrix("oops", "matrix")
     with pytest.raises(config_module.ConfigurationError):
-        config_module._string_matrix([1], "matrix")
+        publish_preflight_config._string_matrix([1], "matrix")
 
 
 def test_string_mapping_and_optional_mapping_validation() -> None:
     """Mapping helpers should normalize values and reject invalid structures."""
     mapping = {"alpha": "one"}
-    assert config_module._string_mapping(mapping, "table") == (("alpha", "one"),), (
-        "a string mapping must convert to an ordered tuple of pairs"
-    )
+    assert publish_preflight_config._string_mapping(mapping, "table") == (
+        ("alpha", "one"),
+    ), "a string mapping must convert to an ordered tuple of pairs"
     with pytest.raises(config_module.ConfigurationError):
-        config_module._string_mapping("oops", "table")
+        publish_preflight_config._string_mapping("oops", "table")
     with pytest.raises(config_module.ConfigurationError):
         config_module._optional_mapping(["not", "mapping"], "table")
 
 
 def test_integer_and_boolean_normalization() -> None:
     """Numeric and boolean helpers should enforce allowed shapes."""
-    assert config_module._non_negative_int(None, "lines", 3) == 3, (
+    assert publish_preflight_config._non_negative_int(None, "lines", 3) == 3, (
         "an absent value must fall back to the supplied default"
     )
-    assert config_module._non_negative_int("7", "lines", 0) == 7, (
+    assert publish_preflight_config._non_negative_int("7", "lines", 0) == 7, (
         "a numeric string must be parsed into an integer"
     )
     with pytest.raises(config_module.ConfigurationError):
-        config_module._non_negative_int(-1, "lines", 0)
+        publish_preflight_config._non_negative_int(-1, "lines", 0)
     assert config_module._boolean(None, "flag") is False, (
         "an absent boolean must default to False"
     )
@@ -314,19 +315,19 @@ def test_integer_and_boolean_normalization() -> None:
 
 def test_strip_patches_rejects_true_and_unknown_values() -> None:
     """Only specific values should be accepted for publish.strip_patches."""
-    assert config_module._strip_patches(None) == "per-crate", (
+    assert publish_preflight_config._strip_patches(None) == "per-crate", (
         "an absent strip_patches must default to per-crate"
     )
-    assert config_module._strip_patches(value=False) is False, (
+    assert publish_preflight_config._strip_patches(value=False) is False, (
         "strip_patches = false must be preserved rather than coerced"
     )
-    assert config_module._strip_patches("all") == "all", (
+    assert publish_preflight_config._strip_patches("all") == "all", (
         'the supported mode "all" must pass through unchanged'
     )
     with pytest.raises(config_module.ConfigurationError):
-        config_module._strip_patches(value=True)
+        publish_preflight_config._strip_patches(value=True)
     with pytest.raises(config_module.ConfigurationError):
-        config_module._strip_patches("unexpected")
+        publish_preflight_config._strip_patches("unexpected")
     with pytest.raises(config_module.ConfigurationNotLoadedError):
         config_module.current_configuration()
 

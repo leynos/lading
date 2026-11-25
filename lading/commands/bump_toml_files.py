@@ -1,6 +1,7 @@
 """Read manifests and atomically write TOML files."""
 
 import os
+import secrets
 import stat
 import tempfile
 import typing as typ
@@ -33,9 +34,10 @@ def parse_manifest(manifest_path: Path) -> TOMLDocument:
     --------
     >>> import tempfile
     >>> from pathlib import Path
-    >>> path = Path(tempfile.mkdtemp()) / "Cargo.toml"
-    >>> _ = path.write_text('version = "0.1.0"', encoding="utf-8")
-    >>> parse_manifest(path)["version"]
+    >>> with tempfile.TemporaryDirectory() as directory:
+    ...     path = Path(directory) / "Cargo.toml"
+    ...     _ = path.write_text('version = "0.1.0"', encoding="utf-8")
+    ...     parse_manifest(path)["version"]
     '0.1.0'
     """
     return _read_and_parse_manifest(manifest_path)[1]
@@ -60,7 +62,9 @@ def write_atomic_text(
     replacement, so the link remains in place and its target receives the new
     content. Existing permission bits are copied to the replacement. When a
     workspace root is supplied, the destination must still resolve to its
-    planned path inside that workspace.
+    planned path inside that workspace. Bounded replacements use no-follow,
+    directory-relative operations and fail closed when the platform cannot
+    provide them.
 
     Parameters
     ----------
@@ -97,6 +101,9 @@ def write_atomic_text(
             file_path = file_path.resolve(strict=True)
     else:
         file_path = _resolve_bounded_write_target(file_path, workspace_root)
+        _write_bounded_atomic_text(file_path, content, workspace_root.resolve())
+        return
+
     dirpath = file_path.parent
     existing_mode: int | None = None
     with suppress(FileNotFoundError):
@@ -109,8 +116,7 @@ def write_atomic_text(
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
             if existing_mode is not None:
-                with suppress(AttributeError):
-                    _set_file_mode(handle.fileno(), existing_mode)
+                _set_file_mode(handle.fileno(), existing_mode)
             handle.write(content)
         Path(tmp_path).replace(file_path)
     finally:
@@ -141,6 +147,132 @@ def _resolve_bounded_write_target(file_path: Path, workspace_root: Path) -> Path
     return resolved_path
 
 
+def _write_bounded_atomic_text(
+    file_path: Path, content: str, workspace_root: Path
+) -> None:
+    """Replace an in-workspace file relative to its opened parent directory."""
+    if not _supports_bounded_directory_operations():
+        message = "Atomic write cannot guarantee workspace containment on this platform"
+        raise PermissionError(message)
+
+    relative_path = file_path.relative_to(workspace_root)
+    directory_fd = _open_workspace_parent_directory(
+        workspace_root, relative_path.parent
+    )
+    temporary_name: str | None = None
+    try:
+        existing_mode = _existing_file_mode(directory_fd, file_path.name)
+        temporary_fd, temporary_name = _create_bounded_temporary_file(
+            directory_fd, file_path.name
+        )
+        try:
+            handle = os.fdopen(temporary_fd, "w", encoding="utf-8", newline="")
+        except BaseException:
+            os.close(temporary_fd)
+            raise
+        with handle:
+            if existing_mode is not None:
+                _set_file_mode(handle.fileno(), existing_mode)
+            handle.write(content)
+        os.rename(
+            temporary_name,
+            relative_path.name,
+            src_dir_fd=directory_fd,
+            dst_dir_fd=directory_fd,
+        )
+        temporary_name = None
+    finally:
+        if temporary_name is not None:
+            with suppress(FileNotFoundError):
+                os.unlink(temporary_name, dir_fd=directory_fd)
+        os.close(directory_fd)
+
+
+def _supports_bounded_directory_operations() -> bool:
+    """Check whether this platform supports the required descriptor APIs."""
+    required = (os.open, os.stat, os.unlink, os.rename)
+    return (
+        hasattr(os, "O_DIRECTORY")
+        and hasattr(os, "O_NOFOLLOW")
+        and all(operation in os.supports_dir_fd for operation in required)
+        and os.stat in os.supports_follow_symlinks
+    )
+
+
+def _open_directory_chain(directory: Path) -> int:
+    """Open a directory path one no-follow component at a time."""
+    flags = _no_follow_directory_flags()
+    current_fd = os.open(directory.anchor, flags)
+    return _open_directory_components(current_fd, directory.parts[1:])
+
+
+def _open_directory_components(current_fd: int, components: tuple[str, ...]) -> int:
+    """Descend from an open directory while closing each prior descriptor."""
+    flags = _no_follow_directory_flags()
+    transferred = False
+    try:
+        for component in components:
+            next_fd = os.open(component, flags, dir_fd=current_fd)
+            previous_fd = current_fd
+            current_fd = next_fd
+            try:
+                os.close(previous_fd)
+            except BaseException:
+                with suppress(OSError):
+                    os.close(current_fd)
+                current_fd = previous_fd
+                raise
+        transferred = True
+        return current_fd
+    finally:
+        if not transferred:
+            os.close(current_fd)
+
+
+def _open_workspace_parent_directory(
+    workspace_root: Path, relative_parent: Path
+) -> int:
+    """Open a manifest parent beneath a pinned workspace directory handle."""
+    current_fd = _open_directory_chain(workspace_root)
+    return _open_directory_components(current_fd, relative_parent.parts)
+
+
+def _no_follow_directory_flags() -> int:
+    """Return flags that require one real directory component."""
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    return flags
+
+
+def _existing_file_mode(directory_fd: int, filename: str) -> int | None:
+    """Read the destination mode without following a symlink."""
+    try:
+        metadata = os.stat(filename, dir_fd=directory_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return None
+    if stat.S_ISLNK(metadata.st_mode):
+        message = "Atomic write destination changed to a symbolic link"
+        raise PermissionError(message)
+    return stat.S_IMODE(metadata.st_mode)
+
+
+def _create_bounded_temporary_file(directory_fd: int, prefix: str) -> tuple[int, str]:
+    """Create a unique temporary file relative to an already-open directory."""
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    for _attempt in range(100):
+        temporary_name = f"{prefix}.{secrets.token_hex(8)}"
+        try:
+            descriptor = os.open(temporary_name, flags, 0o600, dir_fd=directory_fd)
+        except FileExistsError:
+            continue
+        return descriptor, temporary_name
+    message = f"Could not allocate a temporary file for {prefix}"
+    raise FileExistsError(message)
+
+
 def _set_file_mode(descriptor: int, mode: int) -> None:
     """Apply existing mode bits to the temporary file descriptor."""
-    os.fchmod(descriptor, mode)  # not on Windows
+    os.fchmod(descriptor, mode)

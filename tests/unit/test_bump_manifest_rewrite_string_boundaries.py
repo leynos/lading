@@ -131,83 +131,6 @@ def test_version_rewrite_does_not_match_inside_semver_prerelease(
     )
 
 
-def test_dot_prefixed_template_preserves_dotted_prerelease_components(
-    tmp_path: pathlib.Path,
-    write_fixture_manifest: _ManifestWriter,
-) -> None:
-    """A leading dot is included when checking the SemVer prefix."""
-    document = _rewrite_metadata_values(
-        tmp_path,
-        write_fixture_manifest,
-        _MetadataRewriteCase(
-            content=('[metadata]\nnested = "9.0.0-rc.1.0.0"\nstandalone = ".1.0.0"\n'),
-            template=".{version}",
-            pre_bump_version="1.0.0",
-            target_version="2.0.0",
-        ),
-    )
-
-    assert document["metadata"]["nested"] == "9.0.0-rc.1.0.0", (
-        "a dotted prerelease component must not be rewritten"
-    )
-    assert document["metadata"]["standalone"] == ".2.0.0", (
-        "a standalone dot-prefixed reference should still be rewritten"
-    )
-
-
-def test_prerelease_with_build_metadata_stays_intact(
-    tmp_path: pathlib.Path,
-    write_fixture_manifest: _ManifestWriter,
-) -> None:
-    """Build metadata does not disable nested prerelease detection."""
-    document = _rewrite_metadata_values(
-        tmp_path,
-        write_fixture_manifest,
-        _MetadataRewriteCase(
-            content=(
-                '[metadata]\nnested = "9.0.0-x.alpha-1.0.0+build"\n'
-                'standalone = "alpha-1.0.0+build"\n'
-            ),
-            template="{version}",
-            pre_bump_version="1.0.0+build",
-            target_version="2.0.0+build",
-        ),
-    )
-
-    assert document["metadata"]["nested"] == "9.0.0-x.alpha-1.0.0+build", (
-        "a version within prerelease text must remain intact with build metadata"
-    )
-    assert document["metadata"]["standalone"] == "alpha-2.0.0+build", (
-        "a standalone version with build metadata must still be rewritten"
-    )
-
-
-def test_newline_after_semver_prerelease_separator_does_not_hide_version(
-    tmp_path: pathlib.Path,
-    write_fixture_manifest: _ManifestWriter,
-) -> None:
-    """A final newline cannot make a following version part of a prerelease."""
-    document = _rewrite_metadata_values(
-        tmp_path,
-        write_fixture_manifest,
-        _MetadataRewriteCase(
-            content=(
-                '[metadata]\nnewline = "2.0.0-\\n1.0.0"\nnested = "2.0.0-1.0.0"\n'
-            ),
-            template="{version}",
-            pre_bump_version="1.0.0",
-            target_version="3.0.0",
-        ),
-    )
-
-    assert document["metadata"]["newline"] == "2.0.0-\n3.0.0", (
-        "a version after a newline is outside the preceding prerelease"
-    )
-    assert document["metadata"]["nested"] == "2.0.0-1.0.0", (
-        "a version within a SemVer prerelease must remain unchanged"
-    )
-
-
 @pytest.mark.parametrize(
     "case",
     [
@@ -257,6 +180,52 @@ def test_newline_after_semver_prerelease_separator_does_not_hide_version(
             ),
             id="crate-qualified-dotted-prerelease",
         ),
+        pytest.param(
+            _MetadataRewriteCase(
+                content=(
+                    '[metadata]\nnested = "9.0.0-rc.1.0.0"\nstandalone = ".1.0.0"\n'
+                ),
+                template=".{version}",
+                pre_bump_version="1.0.0",
+                target_version="2.0.0",
+                expected_values=(
+                    ("nested", "9.0.0-rc.1.0.0"),
+                    ("standalone", ".2.0.0"),
+                ),
+            ),
+            id="dot-prefixed-template",
+        ),
+        pytest.param(
+            _MetadataRewriteCase(
+                content=(
+                    '[metadata]\nnested = "9.0.0-x.alpha-1.0.0+build"\n'
+                    'standalone = "alpha-1.0.0+build"\n'
+                ),
+                template="{version}",
+                pre_bump_version="1.0.0+build",
+                target_version="2.0.0+build",
+                expected_values=(
+                    ("nested", "9.0.0-x.alpha-1.0.0+build"),
+                    ("standalone", "alpha-2.0.0+build"),
+                ),
+            ),
+            id="prerelease-with-build-metadata",
+        ),
+        pytest.param(
+            _MetadataRewriteCase(
+                content=(
+                    '[metadata]\nnewline = "2.0.0-\\n1.0.0"\nnested = "2.0.0-1.0.0"\n'
+                ),
+                template="{version}",
+                pre_bump_version="1.0.0",
+                target_version="3.0.0",
+                expected_values=(
+                    ("newline", "2.0.0-\n3.0.0"),
+                    ("nested", "2.0.0-1.0.0"),
+                ),
+            ),
+            id="newline-after-prerelease-separator",
+        ),
     ],
 )
 def test_templates_preserve_semver_component_boundaries(
@@ -266,11 +235,10 @@ def test_templates_preserve_semver_component_boundaries(
 ) -> None:
     """Template separators must not rewrite nested SemVer components."""
     document = _rewrite_metadata_values(tmp_path, write_fixture_manifest, case)
-    assert {
-        key: document["metadata"][key] for key, _expected_value in case.expected_values
-    } == dict(case.expected_values), (
-        "configured templates must preserve existing SemVer components"
-    )
+    for key, expected_value in case.expected_values:
+        assert document["metadata"][key] == expected_value, (
+            f"configured template boundary case changed metadata field {key!r}"
+        )
 
 
 def test_crate_path_rewrite_can_cross_semver_metadata_boundary(

@@ -57,6 +57,7 @@ class _ManifestUpdateContext:
 
     options: BumpOptions
     workspace_root: Path | None = None
+    workspace_declarations_only: bool = False
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -137,7 +138,13 @@ def _update_manifest(
             document,
             options.dependency_sections,
             target_version,
-            include_workspace_sections=options.include_workspace_sections,
+            section_scope=(
+                "workspace"
+                if update_context.workspace_declarations_only
+                else "both"
+                if options.include_workspace_sections
+                else "direct"
+            ),
         )
     if changed and not options.dry_run:
         updated_text = document.as_string()

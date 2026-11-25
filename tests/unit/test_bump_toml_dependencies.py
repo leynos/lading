@@ -3,7 +3,11 @@
 import pytest
 from tomlkit import parse as parse_toml
 
-from lading.commands import bump_toml_dependencies, bump_toml_dependency_warnings
+from lading.commands import (
+    bump_toml_dependencies,
+    bump_toml_dependency_updates,
+    bump_toml_dependency_warnings,
+)
 
 
 @pytest.mark.parametrize(
@@ -83,3 +87,28 @@ def test_dependency_target_name_uses_package_alias_and_table_keys(
         bump_toml_dependencies.dependency_target_name(name, document["entry"])
         == expected
     ), "dependency identity should follow its package field or key"
+
+
+def test_workspace_update_does_not_rewrite_local_alias_for_another_package() -> None:
+    """Direct aliases match package identity while workspace declarations update."""
+    document = parse_toml(
+        "[dependencies]\n"
+        'alpha = { package = "external", version = "1.0.0" }\n\n'
+        "[workspace.dependencies]\n"
+        'alpha = "1.0.0"\n'
+    )
+
+    changed = bump_toml_dependency_updates.update_dependency_sections_with_warnings(
+        document,
+        {"dependencies": {"alpha"}},
+        "2.0.0",
+        section_scope="both",
+    )
+
+    assert changed, "the workspace dependency declaration should be updated"
+    assert document["dependencies"]["alpha"]["version"] == "1.0.0", (
+        "a local alias naming another package must keep its original requirement"
+    )
+    assert document["workspace"]["dependencies"]["alpha"] == "2.0.0", (
+        "the matching workspace dependency declaration should receive the target"
+    )

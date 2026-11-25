@@ -19,6 +19,7 @@ from lading.commands.bump_manifest_rewrites import (
 from tests.helpers.manifest_rewrite_recovery import (
     _make_partial_write_failure_case,
     _PartialWriteFailureCase,
+    _second_fixture_write_failure,
 )
 
 pytestmark = pytest.mark.usefixtures("reset_process_metrics")
@@ -43,22 +44,13 @@ class _RollbackProbe:
     atomic_write: cabc.Callable[..., None]
     state: _RollbackProbeState = dc.field(default_factory=_RollbackProbeState)
 
-    def fail_second_fixture(
-        self,
-        path: Path,
-        content: str,
-        *,
-        workspace_root: Path | None = None,
-    ) -> None:
-        """Swap a changed member path outside the workspace before failing."""
-        if path == self.case.fixtures[1].resolve():
-            self.state.outside_contents = self.alpha_manifest.read_bytes()
-            self.outside_manifest.write_bytes(self.state.outside_contents)
-            self.alpha_manifest.unlink()
-            self.alpha_manifest.symlink_to(self.outside_manifest)
-            self.state.symlink_swapped = True
-            raise OSError
-        self.fixture_write(path, content, workspace_root=workspace_root)
+    def swap_member_path_outside(self, _path: Path) -> None:
+        """Swap the already-updated member path outside before fixture failure."""
+        self.state.outside_contents = self.alpha_manifest.read_bytes()
+        self.outside_manifest.write_bytes(self.state.outside_contents)
+        self.alpha_manifest.unlink()
+        self.alpha_manifest.symlink_to(self.outside_manifest)
+        self.state.symlink_swapped = True
 
     def bounded_rollback_write(
         self,
@@ -89,13 +81,18 @@ def test_rollback_does_not_follow_member_path_swapped_outside_workspace(
         fixture_write=bump_manifest_rewrite_application.write_atomic_text,
         atomic_write=bump_pipeline_manifest_rewrites.bump_toml_files.write_atomic_text,
     )
+    failure_injector = _second_fixture_write_failure(
+        case,
+        probe.fixture_write,
+        before_failure=probe.swap_member_path_outside,
+    )
 
     try:
         with (
             mock.patch.object(
                 bump_manifest_rewrite_application,
                 "write_atomic_text",
-                side_effect=probe.fail_second_fixture,
+                side_effect=failure_injector,
             ),
             mock.patch.object(
                 bump_pipeline_manifest_rewrites.bump_toml_files,
@@ -134,7 +131,13 @@ def test_rollback_restores_original_target_for_workspace_member_symlink(
     alpha_manifest.replace(target_manifest)
     alpha_manifest.symlink_to(target_manifest)
 
-    failure = _run_partial_write_failure(case)
+    def assert_member_was_bumped(_path: Path) -> None:
+        """Check the linked target changed before the injected fixture failure."""
+        assert b'version = "1.2.3"' in target_manifest.read_bytes(), (
+            "the linked member target must be bumped before rollback is exercised"
+        )
+
+    failure = _run_partial_write_failure(case, before_failure=assert_member_was_bumped)
 
     assert failure.failed_path == case.fixtures[1].resolve(), (
         "the original fixture failure should remain the reported error"
@@ -167,26 +170,20 @@ def _run_bump(case: _PartialWriteFailureCase) -> None:
 
 def _run_partial_write_failure(
     case: _PartialWriteFailureCase,
+    *,
+    before_failure: cabc.Callable[[Path], None] | None = None,
 ) -> ManifestRewriteError:
     """Fail the second fixture write after the first one succeeds."""
     fixture_write = bump_manifest_rewrite_application.write_atomic_text
-
-    def fail_second_fixture(
-        path: Path,
-        content: str,
-        *,
-        workspace_root: Path | None = None,
-    ) -> None:
-        """Let the first fixture write complete, then fail the second."""
-        if path == case.fixtures[1].resolve():
-            raise OSError
-        fixture_write(path, content, workspace_root=workspace_root)
+    failure_injector = _second_fixture_write_failure(
+        case, fixture_write, before_failure=before_failure
+    )
 
     with (
         mock.patch.object(
             bump_manifest_rewrite_application,
             "write_atomic_text",
-            side_effect=fail_second_fixture,
+            side_effect=failure_injector,
         ),
         pytest.raises(ManifestRewriteError) as failure,
     ):

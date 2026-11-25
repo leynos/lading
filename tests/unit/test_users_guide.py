@@ -5,6 +5,7 @@ import typing as typ
 from pathlib import Path
 
 from lading import config as config_module
+from lading import config_publish_preflight as publish_preflight_config
 from tests.helpers.markdown_examples import load_markdown_examples
 
 if typ.TYPE_CHECKING:
@@ -27,8 +28,8 @@ def test_users_guide_documents_all_supported_config_keys() -> None:
 
     supported_keys = set(config_module.BUMP_TOML_KEYS) - {"documentation"}
     supported_keys.update(config_module.BUMP_DOCUMENTATION_TOML_KEYS)
-    supported_keys.update(config_module.PUBLISH_TOML_KEYS)
-    supported_keys.update(config_module.PREFLIGHT_TOML_KEYS)
+    supported_keys.update(publish_preflight_config.PUBLISH_TOML_KEYS)
+    supported_keys.update(publish_preflight_config.PREFLIGHT_TOML_KEYS)
 
     required_terms = (
         "[bump]",

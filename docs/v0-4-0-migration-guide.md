@@ -204,8 +204,8 @@ update_documentation_files(
 
 `ConfigurationError` and `ConfigurationNotLoadedError` now live in
 `lading.exceptions` and remain importable from `lading.config`. An environment
-already running 3.14 that only reads successful output needs no action beyond
-the version bump itself.
+already running 3.14 needs no adaptation if it uses neither the changed APIs
+described above nor the new diagnostic stream and only reads successful output.
 
 When 0.4.0 is released, its tagged build will also be published to PyPI as a
 source distribution and pure-Python wheel. GitHub Releases will retain both
