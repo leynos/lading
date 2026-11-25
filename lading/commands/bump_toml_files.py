@@ -281,11 +281,7 @@ def _write_bounded_atomic_text(
         temporary_fd, temporary_name = _create_bounded_temporary_file(
             directory_fd, file_path.name
         )
-        handle = _open_temporary_text_file(temporary_fd)
-        with handle:
-            if existing_mode is not None:
-                _set_file_mode(handle.fileno(), existing_mode)
-            handle.write(content)
+        _write_temporary_content(temporary_fd, content, existing_mode)
         os.rename(
             temporary_name,
             relative_path.name,
