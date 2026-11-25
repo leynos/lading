@@ -333,3 +333,17 @@ configured.
 
 - [ ] If a bump should update standalone manifests, configure
   `bump.manifest_rewrites`; it is disabled by default.
+
+## Common errors and fixes
+
+Python appends the installed module's file path in parentheses to each
+`ImportError`; that path varies by environment.
+
+- **Error:**
+  `ImportError: cannot import name 'parse_manifest' from 'lading.commands.bump_toml'`
+  - **Fix:** import `parse_manifest` and `write_atomic_text` from
+    `lading.commands.bump_toml_files`.
+- **Error:**
+  `ImportError: cannot import name 'DEPENDENCY_SECTIONS' from 'lading.commands.bump_toml'`
+  - **Fix:** import the dependency helpers from
+    `lading.commands.bump_toml_dependencies`.
