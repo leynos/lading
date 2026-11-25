@@ -180,3 +180,46 @@ def test_both_scope_matches_a_direct_alias_by_package_name() -> None:
     assert document["workspace"]["dependencies"]["alpha-core"]["version"] == (
         ">=1.5.0, <2"
     ), "workspace aliases should retain the same package requirement"
+
+
+def test_both_scope_matches_a_direct_alias_by_manifest_key() -> None:
+    """Combined updates retain direct-key matching for member selections."""
+    document = parse_toml(
+        '[dependencies]\nrenamed = { package = "alpha", version = "1.0.0" }\n'
+    )
+
+    changed = bump_toml_dependency_updates.update_dependency_sections_with_warnings(
+        document,
+        {"dependencies": {"renamed"}},
+        "2.0.0",
+        section_scope="both",
+    )
+
+    assert changed, "combined scope should update the selected direct alias key"
+    assert document["dependencies"]["renamed"]["version"] == "2.0.0", (
+        "the manifest key remains a valid direct-section selector in both scope"
+    )
+
+
+def test_both_scope_prefers_a_direct_key_over_another_package_alias() -> None:
+    """A selected key must not also select a colliding package identity."""
+    document = parse_toml(
+        "[dependencies]\n"
+        'alpha = { package = "beta", version = "1.0.0" }\n'
+        'renamed = { package = "alpha", version = "1.0.0" }\n'
+    )
+
+    changed = bump_toml_dependency_updates.update_dependency_sections_with_warnings(
+        document,
+        {"dependencies": {"alpha"}},
+        "2.0.0",
+        section_scope="both",
+    )
+
+    assert changed, "the matching direct key should be updated"
+    assert document["dependencies"]["alpha"]["version"] == "2.0.0", (
+        "the selected manifest key should receive the target version"
+    )
+    assert document["dependencies"]["renamed"]["version"] == "1.0.0", (
+        "a colliding package identity must not widen a direct-key selection"
+    )

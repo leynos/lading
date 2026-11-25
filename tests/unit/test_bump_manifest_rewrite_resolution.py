@@ -59,6 +59,32 @@ def test_resolves_globs_deduplicates_and_merges_groups(
     )
 
 
+def test_existing_path_with_glob_metacharacters_is_treated_as_literal(
+    tmp_path: pathlib.Path,
+    write_fixture_manifest: _ManifestWriter,
+) -> None:
+    """An existing bracketed path takes precedence over glob expansion."""
+    literal = write_fixture_manifest(
+        tmp_path,
+        "fixtures/[dev]/Cargo.toml",
+        '[dependencies]\nalpha = "1.0.0"\n',
+    )
+    write_fixture_manifest(
+        tmp_path,
+        "fixtures/d/Cargo.toml",
+        '[dependencies]\nalpha = "1.0.0"\n',
+    )
+
+    plans = plan_fixture_rewrites(
+        tmp_path,
+        (ManifestRewriteConfig(paths=("fixtures/[dev]/Cargo.toml",)),),
+    )
+
+    assert [plan.path for plan in plans] == [literal.resolve()], (
+        "glob metacharacters in an existing manifest path must not select siblings"
+    )
+
+
 def test_glob_skips_symlinked_files_before_traversing_remaining_segments(
     tmp_path: pathlib.Path,
     write_fixture_manifest: _ManifestWriter,

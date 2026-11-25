@@ -841,7 +841,8 @@ Each group accepts these fields:
   Absolute or drive/rooted paths, parent-directory segments, and leading or
   trailing whitespace are rejected. Globs must match at least one file. Every
   match must resolve inside the workspace, name a `Cargo.toml` file, and refer
-  to a regular file.
+  to a regular file. An existing path is treated literally even when its name
+  contains glob metacharacters; otherwise, those characters expand as a glob.
 - `dependencies`: boolean, default `true`. Matching Cargo dependency
   requirements are updated by package name. When a dependency table sets
   `package`, that value is authoritative; otherwise the dependency key supplies

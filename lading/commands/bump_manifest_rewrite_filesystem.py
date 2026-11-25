@@ -136,6 +136,19 @@ def _expand_path(workspace_root: Path, configured_path: str) -> tuple[Path, ...]
     """Expand a glob or return its single literal candidate."""
     if not glob.has_magic(configured_path):
         return (Path(configured_path),)
+    literal_candidate = workspace_root / configured_path
+    try:
+        literal_candidate.lstat()
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        message = (
+            "Could not inspect literal manifest rewrite path "
+            f"{configured_path!r}: {exc}"
+        )
+        raise ManifestRewriteError(message) from exc
+    else:
+        return (literal_candidate,)
     try:
         matches = manifest_paths.expand_manifest_glob_candidates(
             workspace_root,

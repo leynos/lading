@@ -107,7 +107,22 @@ class DocumentationConfig:
 
 @dc.dataclass(frozen=True, slots=True)
 class BumpConfig:
-    """Settings for the ``bump`` command."""
+    """Settings for the ``bump`` command.
+
+    Attributes
+    ----------
+    exclude : tuple[str, ...]
+        Workspace crate names omitted from the bump.
+    lockfile_manifests : tuple[str, ...]
+        Additional manifests whose tracked lockfiles may be regenerated.
+    rebuild_lockfiles : bool
+        Whether to regenerate selected lockfiles after manifest changes.
+    documentation : DocumentationConfig
+        Documentation files whose version references are updated.
+    manifest_rewrites : tuple[ManifestRewriteConfig, ...]
+        Allowlisted non-member manifests and rewrite rules. An empty tuple
+        disables configured non-member manifest rewrites.
+    """
 
     exclude: tuple[str, ...] = ()
     lockfile_manifests: tuple[str, ...] = ()

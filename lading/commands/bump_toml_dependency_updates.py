@@ -32,10 +32,11 @@ _LOGGER = logging.getLogger(__name__)
 
 @dc.dataclass(frozen=True, slots=True)
 class _DependencySectionSelection:
-    """Describe crate-identity and optional manifest-key selection."""
+    """Describe dependency identity and manifest-key selection independently."""
 
     names: frozenset[str]
     match_manifest_keys: bool
+    match_package_names: bool
 
 
 def update_dependency_table_with_warnings(
@@ -104,6 +105,7 @@ def update_matching_dependency_section(
     selection = _DependencySectionSelection(
         names=frozenset(updated_crate_names),
         match_manifest_keys=False,
+        match_package_names=True,
     )
     return _update_selected_dependency_section(
         document, path, selection, target_version
@@ -120,19 +122,30 @@ def _update_selected_dependency_section(
     table = bump_toml.select_table(document, path)
     if table is None:
         return False
-    matching_names = {
-        name
-        for name, entry in tuple(table.items())
-        if (
-            name in selection.names
-            if selection.match_manifest_keys
-            else bump_toml_dependencies.dependency_target_name(name, entry)
-            in selection.names
-        )
-    }
+    matching_names = _matching_dependency_names(table, selection)
     if not matching_names:
         return False
     return update_dependency_table_with_warnings(table, matching_names, target_version)
+
+
+def _matching_dependency_names(
+    table: _TableLike,
+    selection: _DependencySectionSelection,
+) -> set[str]:
+    """Select keys first, then use package identity for unmatched names."""
+    unmatched_names = set(selection.names)
+    matching_names: set[str] = set()
+    if selection.match_manifest_keys:
+        matching_names.update(unmatched_names.intersection(table))
+        unmatched_names.difference_update(matching_names)
+    if selection.match_package_names and unmatched_names:
+        matching_names.update(
+            name
+            for name, entry in tuple(table.items())
+            if bump_toml_dependencies.dependency_target_name(name, entry)
+            in unmatched_names
+        )
+    return matching_names
 
 
 def update_dependency_sections_with_warnings(
@@ -154,7 +167,9 @@ def update_dependency_sections_with_warnings(
         Version to assign while preserving each requirement's operator.
     section_scope : Literal["direct", "workspace", "both"], optional
         Dependency table locations to update: direct sections, workspace
-        sections, or both.
+        sections, or both. In combined scope, direct sections match manifest
+        keys first, then package identities for names without a key match;
+        workspace sections match package identities.
 
     Returns
     -------
@@ -166,7 +181,8 @@ def update_dependency_sections_with_warnings(
         if section_scope in {"direct", "both"}:
             selection = _DependencySectionSelection(
                 names=frozenset(package_names),
-                match_manifest_keys=section_scope == "direct",
+                match_manifest_keys=True,
+                match_package_names=section_scope == "both",
             )
             changed |= _update_selected_dependency_section(
                 document,
