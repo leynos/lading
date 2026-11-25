@@ -1039,7 +1039,14 @@ set and `subprocess_runner` otherwise, so the execution layer routes commands
 through cmd-mox IPC rather than spawning real processes:
 
 ```python
-from cuprum import ExecutionContext, Program, ProgramCatalogue, sh, scoped
+from cuprum import (
+    ExecutionContext,
+    Program,
+    ProgramCatalogue,
+    current_context,
+    sh,
+    scoped,
+)
 
 def _invoke(
     program: Program,
@@ -1061,6 +1068,14 @@ def _invoke(
     # keyword: passing it to the builder raises TypeError, because older
     # cuprum serialized it into a `--cwd=` flag instead.
     with scoped(catalogue=catalogue):
+        # §7.6.3: an inherited binding would run a file the allowlist never
+        # authorized, so refuse any binding of the program about to run --
+        # including one naming the registered path. Measured: the lookup
+        # returns the inherited binding, and None when there is none.
+        if current_context().executable_binding(program) is not None:
+            raise CommandPreparationError(
+                f"{program} is bound by an enclosing scope; refusing to run it"
+            )
         cmd_builder = sh.make(program, catalogue=catalogue)
         cmd = cmd_builder(*args)
         return cmd.run_sync(context=ExecutionContext(cwd=cwd))

@@ -14,7 +14,9 @@ must be able to implement the later execution migration without guessing how
 results, failures, environments, executable authorization, or relay behave.
 Success for 5.1.5 is a coherent design §7, a substantive architectural decision
 record (ADR), and maintainer guidance. It is not an implemented adapter or a
-certified release artefact. This pull request supplies the plan only.
+certified release artefact. This pull request delivers that documentation --
+design §7.6, ADR-012, the assessment addendum, the maintainer guidance and the
+roadmap entry -- and not the adapter itself, which is 5.2.
 
 ## Constraints
 
@@ -253,6 +255,18 @@ All of it is recorded in assessment §9.
   two sources of truth still agree. Design §7.6.3 and the 5.2 test
   specification now match ADR-012, and the test covers the same-path binding as
   well as the different-file one.
+- (2026-11-25) The next round found the rule stated in prose but not in the
+  production sketch, which was the one place an implementer would copy from:
+  the sketch entered the catalogue scope and ran the command with no binding
+  guard, so a reader following it could execute a file the allowlist never
+  authorized. It now calls `current_context().executable_binding(program)` and
+  refuses when that is not `None`, which is exactly the rule §7.6.3 states.
+  Verified the lookup reports an inherited same-program binding and returns
+  `None` otherwise. The same round caught two stale self-descriptions in this
+  plan: the purpose section still said the PR "supplies the plan only" after it
+  had delivered the design, ADR and guidance, and the artefacts note still
+  instructed a draft PR with an open roadmap checkbox. Both are corrected, the
+  second as recorded history rather than live instruction.
 - (2026-11-24) Record `CommandPreparationError` as the one type this policy
   requires without introducing it. Naming it in §7.6.1 and deferring the
   definition to 5.2.1 keeps the plan documentation-only while making the
@@ -814,13 +828,15 @@ unrun or failed checks, bypass compiler admission, or use `/tmp` for builds.
 
 ## Artefacts and notes
 
-The planning branch is `5-1-5-record-adapter-compatibility-policy`; its
-upstream must be `origin/5-1-5-record-adapter-compatibility-policy` after
-publication. The draft PR title is
-`Plan: Record adapter compatibility policy (5.1.5)`. Link this plan through
-that branch in the PR summary and append the session link in a final
-`## References` section. Preserve draft state. The roadmap checkbox remains
-open in the planning PR.
+The branch is `5-1-5-record-adapter-compatibility-policy`, tracking
+`origin/5-1-5-record-adapter-compatibility-policy`. This section described the
+planning-only stage and is kept as history: it asked for a draft PR titled
+`Plan: Record adapter compatibility policy (5.1.5)`, with the session link in a
+final `## References` section and the roadmap checkbox left open. All of that
+was true of the planning PR and was superseded by implementation: the title's
+`Plan:` prefix was dropped, the PR became ready once validation and the
+assessment cleared, and roadmap 5.1.5 is checked. Do not reinstate the draft
+state or the open checkbox from this note.
 
 Revision note (2026-10-20): initial plan incorporates repository reconnaissance
 and beta2 research. Native replacement supersedes the beta1 shim assumption;
