@@ -242,6 +242,17 @@ All of it is recorded in assessment §9.
   distribution-wheel smoke to `0.2.0b2` when the recorded smoke in the 5.1.4
   plan used `0.2.0b1`; the 5.1.5 measurements do cover `0.2.0b2` but are
   probes, not a wheel smoke. Both are now stated as measured.
+- (2026-11-25) The resumed review caught the two documents disagreeing about the
+  rule it had just produced: the ADR refused any binding of the program about
+  to run, while the design refused only a binding to a different file, so an
+  implementer following the design could accept a run the ADR forbids. The
+  instruction was to make the design match the accepted ADR, and the stricter
+  rule is also the better one: a binding that names the registered path today
+  can change without the adapter noticing, so refusing every binding keeps the
+  decision with registration instead of making the adapter adjudicate whether
+  two sources of truth still agree. Design §7.6.3 and the 5.2 test
+  specification now match ADR-012, and the test covers the same-path binding as
+  well as the different-file one.
 - (2026-11-24) Record `CommandPreparationError` as the one type this policy
   requires without introducing it. Naming it in §7.6.1 and deferring the
   definition to 5.2.1 keeps the plan documentation-only while making the
@@ -542,11 +553,12 @@ boundary.
 
 The binding-inheritance case also needs a test, because it is the one way the
 exact-path rule can be defeated. With the registered exact path authorized, an
-enclosing `bind_executable` of that same `Program` to a different file must
-make the adapter refuse the run rather than execute the bound file; the control
-pairs it with the unbound case, which runs the registered file, and with a
-binding of an unrelated `Program`, which must have no effect. Measured on the
-pinned cuprum: bound-same-program ran `/usr/bin/echo` and reported it as
+enclosing `bind_executable` of that same `Program` must make the adapter refuse
+the run rather than execute the bound file, whichever file the binding names --
+including one equal to the registered path, so the test covers both. The
+controls are the unbound case, which runs the registered file, and a binding of
+an unrelated `Program`, which must have no effect. Measured on the pinned
+cuprum: bound-same-program ran `/usr/bin/echo` and reported it as
 `resolved_path`, while both controls behaved as required.
 
 A1 also verifies each policy/resolution error maps to a lading-owned failure

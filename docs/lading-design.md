@@ -1375,10 +1375,14 @@ _different_ `Program` had no effect, so the exposure is specific to a binding
 that names the registered path itself.
 
 The adapter must therefore not let that configuration run. It rejects a scope
-in which the program it is about to execute is already bound to a different
-file, rather than trusting registration to have settled the question; the
-alternative -- accepting the run and reporting the bound file -- would execute
-an unauthorized binary behind an authorization check that passed. This is a 5.2
+in which the program it is about to execute is already bound, whichever file
+the binding names, rather than trusting registration to have settled the
+question; the alternative -- accepting the run and reporting the bound file --
+would execute an unauthorized binary behind an authorization check that passed.
+Refusing every binding, rather than only one that names a different file, keeps
+the decision with registration: a binding that happens to name the registered
+path today can be changed without the adapter noticing, and the adapter should
+not be the place that decides two sources of truth still agree. This is a 5.2
 implementation obligation, recorded here because it is the one way the
 exact-path rule can be defeated without any code in this policy changing.
 
