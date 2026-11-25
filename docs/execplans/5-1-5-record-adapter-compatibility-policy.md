@@ -205,6 +205,17 @@ kept disjoint. All of it is recorded in assessment §9.
   caller sees: a missing wrapper is a `CommandSpawnError` today, and the parity
   requirement keeps it one. Only catalogue, scope and resolver failures are
   preparation errors; a missing wrapper is a missing executable.
+- (2026-11-25) The final assessment round corrected an empty-`PATH` claim, and
+  it is the sharpest instance of the pattern running through this plan's
+  reviews. The text said an empty `PATH` makes a bare-name launch fail. It does
+  not: POSIX reads the empty entry as the child's working directory, so the
+  name resolves from `cwd` and fails only when absent. Re-measured on the
+  pinned cuprum, CPython 3.14, in both directions, with a plain `subprocess`
+  control agreeing. The earlier probe had used an empty `PATH` with the tool
+  absent from `cwd`, which showed a failure for the wrong reason -- the same
+  one-sided-probe error as the relative-target and `bind_executable()` cases.
+  The design, the assessment addendum, the A3 discharge and the 5.2 test
+  specification now all carry the corrected rule and both controls.
 - (2026-11-24) Record `CommandPreparationError` as the one type this policy
   requires without introducing it. Naming it in §7.6.1 and deferring the
   definition to 5.2.1 keeps the plan documentation-only while making the
@@ -489,11 +500,15 @@ name (and `./name`, which normalizes onto it) resolving from `PATH` and failing
 when only `cwd` holds the file, and a value with a separator such as
 `bin/sccache` resolving from `cwd` and failing when only `PATH` holds it. A
 missing or non-executable wrapper stays a `CommandSpawnError`, not a
-preparation failure, so that case needs its own assertion too. A1 also verifies
-each policy/resolution error maps to a lading-owned failure with a retained
-cause. A4 checks complete capture with failed write/flush, encoding fallback,
-and no raw buffer. A5 checks domain ownership and cmd-mox responsibilities. A6
-checks all links, target version, completion wording, and the roadmap checkbox.
+preparation failure, so that case needs its own assertion too. Empty `PATH`
+needs both of its own controls as well, because it is neither "search nothing"
+nor the same as an absent `PATH`: a bare name present in the child `cwd` must
+resolve under `PATH=""`, and must raise `FileNotFoundError` under the same
+`PATH=""` when only `PATH` holds the file elsewhere. A1 also verifies each
+policy/resolution error maps to a lading-owned failure with a retained cause.
+A4 checks complete capture with failed write/flush, encoding fallback, and no
+raw buffer. A5 checks domain ownership and cmd-mox responsibilities. A6 checks
+all links, target version, completion wording, and the roadmap checkbox.
 Discharge these with reviewer notes identifying the design/ADR paragraphs; any
 missing or contradictory case leaves the corresponding item open.
 
@@ -689,17 +704,19 @@ and the assessment addendum.
   per-invocation catalogue activated and built from together; an enclosing
   narrower `ScopeConfig(allowlist=...)` is preserved; a relative `PATH` entry
   was anchored to the child's `cwd` when supplied and to the parent's directory
-  otherwise; absent and empty `PATH` behaved differently; `./tool` resolved
-  against `cwd` when supplied and against the parent's directory otherwise,
-  succeeding only where the file existed; a symlinked binding reported the
-  configured path. `detect_wrapper` accepts a bare or relative `RUSTC_WRAPPER`,
-  so the design adds a resolve-then-register step rather than assuming an
-  absolute value. `bind_executable()` preserved identity, did not widen
-  authorization, and did not narrow it to the bound file either: a permitted
-  logical `Program` bound to an unrelated executable ran it unchecked. The
-  design states that asymmetry and why exact-path registration ties
-  authorization to the file. The check-and-use race is stated as a limitation,
-  not a guarantee.
+  otherwise; an absent `PATH` fell back to the platform default search path,
+  while an empty `PATH` was initially recorded as a failure and is not one --
+  re-measured, it resolves a bare name from the child's `cwd` and fails only
+  when the file is absent, in both directions; `./tool` resolved against `cwd`
+  when supplied and against the parent's directory otherwise, succeeding only
+  where the file existed; a symlinked binding reported the configured path.
+  `detect_wrapper` accepts a bare or relative `RUSTC_WRAPPER`, so the design
+  adds a resolve-then-register step rather than assuming an absolute value.
+  `bind_executable()` preserved identity, did not widen authorization, and did
+  not narrow it to the bound file either: a permitted logical `Program` bound
+  to an unrelated executable ran it unchecked. The design states that asymmetry
+  and why exact-path registration ties authorization to the file. The
+  check-and-use race is stated as a limitation, not a guarantee.
 - **A4 (R4: relay and capture).** Design §7.6.4. Measured: a text sink that
   raised `UnicodeEncodeError` produced one fallback record with full capture;
   invalid UTF-8 was replaced, split sequences reassembled, and a final

@@ -602,13 +602,19 @@ This confirms section 8's answer and closes section 3.2 for the adapter.
 child's `PATH`; a relative `PATH` entry was anchored to the child's `cwd` when
 one was given, and to the parent process's working directory otherwise. An
 **absent** `PATH` fell back to the platform default search path and still
-resolved a bare name, while an **empty** `PATH` failed. A relative target
-resolved against `cwd` when one was given and against the parent process's
-working directory otherwise -- it succeeded from a directory holding the file
-and failed with `FileNotFoundError` from one without, so the failure was the
-operating system's, not a cuprum refusal. A symlinked binding reported the
-configured path, not its target. These distinctions are absent from section 4's
-table and are what design §7.6.3 records.
+resolved a bare name. An **empty** `PATH` was initially recorded here as a
+failure, and that was wrong: POSIX reads its empty entry as the child's working
+directory, so a bare name resolves from `cwd`. Re-measured on the pinned
+cuprum, CPython 3.14, in both directions — `PATH=""` ran an executable present
+in the child's `cwd` and raised `FileNotFoundError` when it was absent,
+matching a plain `subprocess` control. An empty `PATH` therefore restricts
+lookup to `cwd`; it does not forbid lookup. A relative target resolved against
+`cwd` when one was given and against the parent process's working directory
+otherwise -- it succeeded from a directory holding the file and failed with
+`FileNotFoundError` from one without, so the failure was the operating
+system's, not a cuprum refusal. A symlinked binding reported the configured
+path, not its target. These distinctions are absent from section 4's table and
+are what design §7.6.3 records.
 
 **`bind_executable()` separates identity from authorization, and widens it in
 neither direction.** Binding a program the active scope did not allow still

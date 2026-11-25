@@ -1372,9 +1372,17 @@ and its measured behaviour is part of this policy:
 - A bare name resolves against the child's `PATH` and the requested `cwd`.
 - A relative `PATH` entry is anchored to the child's `cwd` when one is given,
   and otherwise to the parent process's own working directory.
-- An absent `PATH` falls back to the platform's default search path, so a bare
-  name may still resolve. An empty `PATH` does not, and the launch fails. The
-  adapter never substitutes the parent's `PATH` for either.
+- An **absent** `PATH` falls back to the platform's default search path, so a
+  bare name may still resolve even though the caller supplied no `PATH` at all.
+- An **empty** `PATH` is not the same thing and is not a "search nothing"
+  instruction. POSIX treats its single empty entry as the child's working
+  directory, so a bare name resolves from `cwd` and fails only when the file is
+  not there. Measured on the pinned cuprum, CPython 3.14: `PATH=""` with the
+  executable in the child's `cwd` ran it, and the same `PATH` without it raised
+  `FileNotFoundError`. Both directions match a plain `subprocess` control, so
+  this is the platform's rule rather than a cuprum behaviour. The adapter never
+  substitutes the parent's `PATH` for either case, and it does not treat an
+  empty `PATH` as a way to forbid lookup.
 - A relative target such as `./tool` resolves against `cwd` when one is given,
   and otherwise against the parent process's own working directory. That is a
   different mechanism from the `PATH` search a bare name uses, and it is not a
