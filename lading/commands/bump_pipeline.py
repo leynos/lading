@@ -82,6 +82,10 @@ def _process_workspace_and_crate_manifests(
 ) -> None:
     """Restore pre-bump manifests if a workspace manifest stage fails."""
     try:
+        if rewrite_stage.is_configured:
+            bump_pipeline_manifest_rewrites.validate_pre_bump_versions(
+                context, rewrite_stage
+            )
         _process_workspace_manifest(
             context, target_version, rewrite_stage, changed_manifests
         )
@@ -109,6 +113,10 @@ def _restore_manifest_stage_after_failure(
     """Restore completed manifest writes unless this is a dry run."""
     if context.base_options.dry_run:
         return None
+    if not isinstance(stage_error, Exception):
+        bump_pipeline_manifest_recovery.record_completed_rewrites_for_interruption(
+            rewrite_stage, changed_manifests, stage_error
+        )
     rollback_error = bump_pipeline_manifest_recovery.restore_changed_manifests(
         rewrite_stage,
         changed_manifests,
@@ -142,7 +150,13 @@ def _process_workspace_manifest(
         workspace_declarations_only=True,
         manifest_entry=context.root_path / "Cargo.toml",
         expected_destination=context.workspace_manifest,
+        expected_version_values=rewrite_stage.expected_version_values.get(
+            context.workspace_manifest, ()
+        ),
         before_write=bump_pipeline_manifest_recovery.manifest_write_recorder(
+            rewrite_stage
+        ),
+        after_write=bump_pipeline_manifest_recovery.manifest_write_completion_recorder(
             rewrite_stage
         ),
     )

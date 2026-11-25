@@ -14,6 +14,7 @@ from lading.commands.bump_manifest_rewrites import (
     ManifestRewriteWriteError,
 )
 from lading.commands.bump_toml_files import write_atomic_text
+from lading.workspace import WorkspaceCrate, WorkspaceGraph
 from tests.helpers.manifest_rewrite_recovery import (
     _make_partial_write_failure_case,
     _PartialWriteFailureCase,
@@ -55,13 +56,19 @@ class _RollbackProbe:
         content: str,
         *,
         workspace_root: Path | None = None,
+        expected_current_text: str | None = None,
     ) -> None:
         """Forward rollback through the original bounded atomic writer."""
         if self.state.symlink_swapped and path == self.alpha_manifest:
             assert workspace_root == self.case.root, (
                 "rollback must revalidate the workspace boundary at write time"
             )
-        self.atomic_write(path, content, workspace_root=workspace_root)
+        self.atomic_write(
+            path,
+            content,
+            workspace_root=workspace_root,
+            expected_current_text=expected_current_text,
+        )
 
 
 def test_rollback_does_not_follow_member_path_swapped_outside_workspace(
@@ -119,6 +126,28 @@ def test_rollback_restores_original_target_for_workspace_member_symlink(
     target_manifest.parent.mkdir()
     alpha_manifest.replace(target_manifest)
     alpha_manifest.symlink_to(target_manifest)
+    # Workspace discovery resolves Cargo metadata's manifest_path symlink.
+    discovered_crates = tuple(
+        WorkspaceCrate(
+            name=crate.name,
+            version=crate.version,
+            manifest_path=(
+                target_manifest if crate.name == "alpha" else crate.manifest_path
+            ),
+            root_path=crate.root_path,
+            publish=crate.publish,
+            readme_is_workspace=crate.readme_is_workspace,
+            dependencies=crate.dependencies,
+        )
+        for crate in case.workspace.crates
+    )
+    case = dc.replace(
+        case,
+        workspace=WorkspaceGraph(
+            workspace_root=case.workspace.workspace_root,
+            crates=discovered_crates,
+        ),
+    )
 
     def assert_member_was_bumped(_path: Path) -> None:
         """Check the linked target changed before the injected fixture failure."""

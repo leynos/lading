@@ -99,13 +99,19 @@ def _second_fixture_write_failure(
         content: str,
         *,
         workspace_root: Path | None = None,
+        expected_current_text: str | None = None,
     ) -> None:
         """Inject the selected failure while forwarding earlier writes."""
         if path == case.fixtures[1].resolve():
             if before_failure is not None:
                 before_failure(path)
             raise _InjectedFixtureWriteError
-        real_write(path, content, workspace_root=workspace_root)
+        real_write(
+            path,
+            content,
+            workspace_root=workspace_root,
+            expected_current_text=expected_current_text,
+        )
 
     return fail_second_fixture
 

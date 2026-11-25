@@ -19,7 +19,18 @@ if typ.TYPE_CHECKING:
 def manifest_write_recorder(
     rewrite_stage: _ManifestRewriteStage,
 ) -> cabc.Callable[[Path, str, str, Path], None]:
-    """Register expected text before an atomic write can be interrupted."""
+    """Return the pre-replacement callback for one atomic manifest write.
+
+    The caller must invoke this callback after preparing the replacement and
+    immediately before calling the atomic writer. It registers the baseline and
+    pending output; it does not claim that the replacement completed.
+
+    Returns
+    -------
+    Callable
+        A callback accepting the manifest path, original text, planned text,
+        and resolved write destination.
+    """
 
     def record_write(
         manifest_path: Path,
@@ -29,13 +40,25 @@ def manifest_write_recorder(
     ) -> None:
         """Keep the rollback baseline and expected output for one write."""
         rewrite_stage.rollback_baselines.setdefault(manifest_path, original_text)
-        rewrite_stage.written_manifest_contents[manifest_path] = written_text
-        rewrite_stage.written_manifest_content_history.setdefault(
-            manifest_path, set()
-        ).add(written_text)
+        rewrite_stage.pending_manifest_contents[manifest_path] = written_text
         rewrite_stage.written_manifest_destinations[manifest_path] = write_destination
 
     return record_write
+
+
+def manifest_write_completion_recorder(
+    rewrite_stage: _ManifestRewriteStage,
+) -> cabc.Callable[[Path], None]:
+    """Return the post-replacement callback that confirms a completed write."""
+
+    def record_completion(manifest_path: Path) -> None:
+        """Promote the pending output only after the atomic writer returns."""
+        if manifest_path in rewrite_stage.pending_manifest_contents:
+            rewrite_stage.written_manifest_contents[manifest_path] = (
+                rewrite_stage.pending_manifest_contents.pop(manifest_path)
+            )
+
+    return record_completion
 
 
 def validate_member_manifest_before_update(
@@ -103,25 +126,32 @@ def record_completed_rewrites_for_interruption(
     changed_manifests: set[Path],
     interruption: BaseException,
 ) -> None:
-    """Record planned outputs already present so interruption recovery can undo them."""
-    for plan in stage.plans:
+    """Record only completed writes and the single pending atomic write.
+
+    Completed fixture writes are known from their post-write callbacks. The
+    pending write is inspected because interruption may have arrived after the
+    atomic replace but before that callback. Unattempted plans are never read or
+    attributed to this bump.
+    """
+    rewrite_paths = {plan.path for plan in stage.plans}
+    changed_manifests.update(
+        rewrite_paths.intersection(stage.written_manifest_contents)
+    )
+    for manifest_path, pending_text in tuple(stage.pending_manifest_contents.items()):
         try:
-            current_text = plan.path.read_text(encoding="utf-8", newline="")
+            current_text = manifest_path.read_text(encoding="utf-8", newline="")
         except (OSError, UnicodeError) as exc:
             interruption.add_note(
-                f"Could not inspect manifest rewrite target {plan.path} "
+                f"Could not inspect manifest rewrite target {manifest_path} "
                 f"during interruption recovery: {exc}"
             )
             continue
-        if current_text != plan.new_text:
+        if current_text != pending_text:
             continue
-        stage.rollback_baselines.setdefault(plan.path, plan.original_text)
-        stage.written_manifest_contents[plan.path] = plan.new_text
-        stage.written_manifest_content_history.setdefault(plan.path, set()).add(
-            plan.new_text
+        stage.written_manifest_contents[manifest_path] = (
+            stage.pending_manifest_contents.pop(manifest_path)
         )
-        stage.written_manifest_destinations[plan.path] = plan.path
-        changed_manifests.add(plan.path)
+        changed_manifests.add(manifest_path)
 
 
 def restore_changed_manifests(
@@ -135,7 +165,8 @@ def restore_changed_manifests(
     original_text_by_path = dict(stage.workspace_manifest_snapshots)
     original_text_by_path.update(stage.rollback_baselines)
     failures: list[tuple[Path, str]] = []
-    registered_manifests = set(stage.written_manifest_contents)
+    non_member_paths = {plan.path for plan in stage.plans}
+    registered_manifests = set(stage.written_manifest_contents) - non_member_paths
     rollback_candidates = (set(changed_manifests) | registered_manifests).intersection(
         original_text_by_path
     )
@@ -212,13 +243,8 @@ def _restore_one_manifest(
         return f"could not read before rollback: {exc}"
     if current_text == original_text:
         return None
-    expected_contents = stage.written_manifest_content_history.get(
-        manifest_path,
-        {stage.written_manifest_contents[manifest_path]}
-        if manifest_path in stage.written_manifest_contents
-        else set(),
-    )
-    if current_text not in expected_contents:
+    expected_text = stage.written_manifest_contents.get(manifest_path)
+    if current_text != expected_text:
         return (
             "contents changed after this bump wrote the manifest; "
             "left the current contents in place"
@@ -228,6 +254,7 @@ def _restore_one_manifest(
             write_destination,
             original_text,
             workspace_root=workspace_root,
+            expected_current_text=current_text,
         )
     except (OSError, UnicodeError) as exc:
         return f"could not restore original text: {exc}"

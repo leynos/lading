@@ -12,7 +12,6 @@ from tomlkit import parse as parse_toml
 from lading.commands import (
     bump,
     bump_manifests,
-    bump_toml_dependencies,
     bump_toml_files,
 )
 from lading.exceptions import LadingError
@@ -337,71 +336,4 @@ def test_bounded_write_revalidates_before_path_fallback_replacement(
     )
     assert not list(manifest_path.parent.glob(".lading-*")), (
         "a failed final check must remove its temporary file"
-    )
-
-
-@pytest.mark.parametrize(
-    ("include_workspace_sections", "expected_workspace_alpha"),
-    [(True, "^1.0.0"), (False, "^0.1.0")],
-    ids=["with_workspace_flag", "without_workspace_flag"],
-)
-def test_update_dependency_sections_workspace_flag(
-    *,
-    include_workspace_sections: bool,
-    expected_workspace_alpha: str,
-) -> None:
-    """[workspace.dependencies] updates only when the flag is set."""
-    document = parse_toml(
-        '[dependencies]\nalpha = "0.1.0"\n\n'
-        '[workspace.dependencies]\nalpha = "^0.1.0"\n'
-    )
-    changed = bump_toml_dependencies.update_dependency_sections(
-        document,
-        {"dependencies": ("alpha",)},
-        "1.0.0",
-        include_workspace_sections=include_workspace_sections,
-    )
-    assert changed is True, "updating [dependencies] should report a change"
-    assert document["dependencies"]["alpha"].value == "1.0.0", (
-        "[dependencies] alpha should always be rewritten"
-    )
-    assert (
-        document["workspace"]["dependencies"]["alpha"].value == expected_workspace_alpha
-    ), "[workspace.dependencies] alpha should update only with the workspace flag"
-
-
-def test_update_dependency_sections_workspace_only() -> None:
-    """When only workspace sections exist, they are updated with the flag."""
-    document = parse_toml('[workspace.dependencies]\nalpha = "0.1.0"\n')
-    changed = bump_toml_dependencies.update_dependency_sections(
-        document,
-        {"dependencies": ("alpha",)},
-        "2.0.0",
-        include_workspace_sections=True,
-    )
-    assert changed is True, "updating a workspace-only section should report a change"
-    assert document["workspace"]["dependencies"]["alpha"].value == "2.0.0", (
-        "[workspace.dependencies] alpha should be rewritten to the target"
-    )
-
-
-def test_update_dependency_sections_workspace_dev_and_build() -> None:
-    """Workspace dev-dependencies and build-dependencies are updated."""
-    document = parse_toml(
-        '[workspace.dev-dependencies]\nalpha = "~0.1.0"\n\n'
-        '[workspace.build-dependencies]\nbeta = { version = "0.1.0" }\n'
-    )
-    changed = bump_toml_dependencies.update_dependency_sections(
-        document,
-        {"dev-dependencies": ("alpha",), "build-dependencies": ("beta",)},
-        "3.0.0",
-        include_workspace_sections=True,
-    )
-    assert changed is True, "updating dev/build sections should report a change"
-    assert document["workspace"]["dev-dependencies"]["alpha"].value == "~3.0.0", (
-        "[workspace.dev-dependencies] alpha should be rewritten"
-    )
-    build_deps = document["workspace"]["build-dependencies"]
-    assert build_deps["beta"]["version"].value == "3.0.0", (
-        "[workspace.build-dependencies] beta.version should be rewritten"
     )

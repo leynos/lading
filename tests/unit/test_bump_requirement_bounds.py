@@ -58,6 +58,7 @@ def test_numeric_prerelease_comparison_avoids_integer_conversion() -> None:
         ("<2.*", "1.9.0", ()),
         ("<2.3.*", "2.3.0", ("<2.3.*",)),
         ("<2.x", "2.0.0", ("<2.x",)),
+        ("<2.*.*", "2.0.0", ("<2.*.*",)),
     ],
 )
 def test_retained_wildcard_precision_uses_the_numeric_prefix(

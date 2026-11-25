@@ -1194,25 +1194,34 @@ application boundaries independent. The CLI logs structured completed/planned
 progress only for `ManifestRewriteWriteError` failures.
 `lading.commands.bump_manifest_rewrite_application` re-reads each manifest
 before writing and rejects a stale plan if its content changed. It then writes
-atomically. A write failure carries its path and completed and planned counts;
-the CLI reports it in one structured error event.
+atomically with the planned source text as a final replacement precondition. A
+write failure carries its path and completed and planned counts; the CLI
+reports it in one structured error event.
 `lading.commands.bump_manifest_rewrite_metrics` records bounded outcome
 counters and rewrite-only duration observations.
 `lading.commands.bump_pipeline_manifest_rewrites` owns the configured rewrite
 pipeline stage. It snapshots root and member manifest contents before writes,
-plans the rewrites, then applies them after member manifests. If application
-fails, it restores a workspace or member manifest only while its current
-contents still match the text written by this run. A concurrent edit is
-preserved and reported; the original crate-version map is then not guaranteed.
-Inspect and repair every reported recovery path before retrying. The module uses
-`bump_toml_files` for snapshot reads and atomic restoration writes. It also
-derives pre-bump crate versions from those snapshots, resolving
-`version.workspace = true` through `[workspace.package]`; string matching
-therefore follows the manifests even when a caller reuses a stale
+plans the rewrites, then applies them after member manifests. Before the first
+write it revalidates effective crate versions, including
+`version.workspace = true` values resolved through `[workspace.package]`, while
+allowing unrelated edits. If application fails, it restores a workspace or
+member manifest only while its current contents still match the latest text
+written by this run. A changed file is preserved and reported. Inspect and
+repair every reported recovery path before retrying. The module uses
+`bump_toml_files` for snapshot reads and conditional atomic restoration writes.
+`bump_workspace_write_lock` coordinates workspace-bounded writes from Lading
+processes using a per-workspace advisory lock in the user cache. External tools
+may ignore that lock and race the final comparison. The module derives pre-bump
+crate versions from the snapshots, so string matching does not rely on a stale
 `WorkspaceGraph`. `lading.commands.bump_pipeline` owns the overall pipeline
 order. Rewrite duration sums the planning and application intervals, including
 recovery on failure and excluding intervening stages. `BumpOptions.clock`
 supplies the monotonic clock; tests inject deterministic values.
+
+`lading.utils.file_lock` provides the platform-specific non-blocking exclusive
+file-lock primitives used by `staging_lock` and `bump_workspace_write_lock`.
+Callers own lock-file placement, lifetime, and failure policy; the utility only
+selects the OS locking operation.
 
 `lading.commands.bump_requirement_bounds.excluding_rewritten_first_bound`
 reports a strict first comparator after the bump substitutes the target version.

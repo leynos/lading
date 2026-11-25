@@ -298,7 +298,7 @@ def test_propagates_directory_scan_failures_during_glob_expansion(
         """Raise a permission error when traversal reaches the denied directory."""
         if path == denied_directory:
             raise PermissionError
-        return tuple(sorted(path.iterdir()))
+        return tuple(sorted(path.iterdir(), reverse=True))
 
     traversal = manifest_paths._ManifestGlobTraversal(
         workspace_root=tmp_path,
@@ -310,3 +310,7 @@ def test_propagates_directory_scan_failures_during_glob_expansion(
 
     with pytest.raises(PermissionError):
         traversal.collect()
+
+    assert traversal.matches == [(tmp_path / "fixtures/a/deep/Cargo.toml").resolve()], (
+        "a valid earlier result must be collected before the later scan failure"
+    )

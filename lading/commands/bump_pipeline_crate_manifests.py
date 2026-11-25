@@ -111,14 +111,26 @@ def _prepare_crate_manifest_update(
         else None,
         expected_destination=context.workspace_manifest
         if is_workspace_manifest
-        else None,
+        else crate.manifest_path,
         expected_text=(
             rewrite_stage.expected_manifest_contents.get(manifest_path)
             if rewrite_stage is not None
             else None
         ),
+        expected_version_values=(
+            rewrite_stage.expected_version_values.get(manifest_path, ())
+            if rewrite_stage is not None and not is_workspace_manifest
+            else ()
+        ),
         before_write=(
             bump_pipeline_manifest_recovery.manifest_write_recorder(rewrite_stage)
+            if rewrite_stage is not None
+            else None
+        ),
+        after_write=(
+            bump_pipeline_manifest_recovery.manifest_write_completion_recorder(
+                rewrite_stage
+            )
             if rewrite_stage is not None
             else None
         ),

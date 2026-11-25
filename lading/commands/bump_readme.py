@@ -285,6 +285,8 @@ def transpose_readme_to_crate(
     target_readme = _resolve_crate_readme_destination(
         workspace_root, crate, source_text, rewritten_text
     )
+    if target_readme == source_readme.resolve() and rewritten_text == source_text:
+        return None
     return _write_or_skip_readme(
         _ReadmeWriteDestination(target_readme, workspace_root, crate.name),
         rewritten_text,

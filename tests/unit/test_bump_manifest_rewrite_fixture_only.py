@@ -14,6 +14,9 @@ from tests.helpers.recording_lockfile_repository import RecordingLockfileReposit
 from tests.helpers.workspace_builders import _make_workspace
 
 if typ.TYPE_CHECKING:
+    from lading.commands.bump_manifest_rewrite_application import (
+        _ManifestRewriteWriteCallbacks,
+    )
     from lading.commands.bump_manifest_rewrite_model import ManifestRewritePlan
 
 pytestmark = pytest.mark.usefixtures("reset_process_metrics")
@@ -109,12 +112,14 @@ def test_report_keeps_planned_path_if_parent_becomes_symlink(
         *,
         workspace_root: pathlib.Path,
         dry_run: bool,
+        write_callbacks: _ManifestRewriteWriteCallbacks | None = None,
     ) -> tuple[pathlib.Path, ...]:
         """Write the plan, then redirect its parent before reporting."""
         rewritten_paths = apply_manifest_rewrites(
             plans,
             workspace_root=workspace_root,
             dry_run=dry_run,
+            write_callbacks=write_callbacks,
         )
         configured_directory.rename(archived_directory)
         configured_directory.symlink_to(redirected_directory, target_is_directory=True)

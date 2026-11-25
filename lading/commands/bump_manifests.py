@@ -63,7 +63,9 @@ class _ManifestUpdateContext:
     manifest_entry: Path | None = None
     expected_destination: Path | None = None
     expected_text: str | None = None
+    expected_version_values: tuple[tuple[tuple[str, ...], str], ...] = ()
     before_write: cabc.Callable[[Path, str, str, Path], None] | None = None
+    after_write: cabc.Callable[[Path], None] | None = None
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -153,6 +155,7 @@ def _update_manifest(
             f"Manifest changed between workspace and member update: {manifest_path}"
         )
         raise LadingError(message)
+    _validate_expected_version_values(document, update_context, manifest_path)
     changed = _apply_manifest_version_and_dependency_updates(
         document, selectors, target_version, update_context
     )
@@ -167,6 +170,22 @@ def _update_manifest(
             update_context,
         )
     return _ManifestUpdateResult(was_changed=changed, original_text=original_text)
+
+
+def _validate_expected_version_values(
+    document: TOMLDocument,
+    update_context: _ManifestUpdateContext,
+    manifest_path: Path,
+) -> None:
+    """Reject stale planned package versions while allowing unrelated edits."""
+    for selector, expected_version in update_context.expected_version_values:
+        table = bump_toml.select_table(document, selector)
+        if table is None or table.get("version") != expected_version:
+            message = (
+                "Manifest package version changed between rewrite planning and "
+                f"bump update: {manifest_path}"
+            )
+            raise LadingError(message)
 
 
 def _persist_manifest_update(
@@ -195,7 +214,12 @@ def _persist_manifest_update(
         prepared.write_destination,
         updated_text,
         workspace_root=update_context.workspace_root,
+        expected_current_text=prepared.original_text
+        if update_context.workspace_root is not None
+        else None,
     )
+    if update_context.after_write is not None:
+        update_context.after_write(prepared.manifest_path)
     return _ManifestUpdateResult(
         was_changed=True,
         original_text=prepared.original_text,

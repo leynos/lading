@@ -1,7 +1,6 @@
 """Read manifests and atomically write TOML files."""
 
 import os
-import secrets
 import stat
 import tempfile
 import typing as typ
@@ -10,7 +9,23 @@ from pathlib import Path
 
 from tomlkit import parse as parse_toml
 
-from lading.commands import bump_toml_temporary_cleanup, manifest_paths
+from lading.commands import (
+    bump_toml_temporary_cleanup,
+    bump_workspace_write_lock,
+    manifest_paths,
+)
+from lading.commands.bump_toml_bounded_filesystem import (
+    create_temporary_file as _create_bounded_temporary_file,
+)
+from lading.commands.bump_toml_bounded_filesystem import (
+    existing_file_mode as _existing_file_mode,
+)
+from lading.commands.bump_toml_bounded_filesystem import (
+    open_workspace_parent_directory as _open_workspace_parent_directory,
+)
+from lading.commands.bump_toml_bounded_filesystem import (
+    set_file_mode as _set_file_mode,
+)
 from lading.exceptions import LadingError
 
 if typ.TYPE_CHECKING:
@@ -55,6 +70,7 @@ def write_atomic_text(
     content: str,
     *,
     workspace_root: Path | None = None,
+    expected_current_text: str | None = None,
 ) -> None:
     """Atomically replace a text file using UTF-8 without newline translation.
 
@@ -65,7 +81,10 @@ def write_atomic_text(
     planned path inside that workspace. Platforms with directory-relative
     operations replace relative to a pinned, no-follow directory descriptor.
     Other platforms revalidate the resolved destination immediately before the
-    path-based atomic replacement.
+    path-based atomic replacement. When ``expected_current_text`` is provided,
+    replacement proceeds only if the current UTF-8 text still equals that
+    value. Workspace-bounded writes serialize with other Lading writes through
+    an advisory lock; other tools can ignore that lock and race the final check.
 
     Parameters
     ----------
@@ -80,6 +99,10 @@ def write_atomic_text(
         beneath this root. Platforms with directory-relative operations pin the
         parent while replacing; other platforms revalidate the path immediately
         before replacement. Defaults to ``None``.
+    expected_current_text : str or None, optional
+        Exact text expected immediately before replacement. Requires a workspace
+        root so comparison and replacement can run under its Lading write lock.
+        Defaults to ``None``.
 
     Raises
     ------
@@ -89,6 +112,8 @@ def write_atomic_text(
         bounded destination fails. Bounded writes use descriptor-relative
         replacement where the operating system supports it and path-based
         replacement with final containment validation otherwise.
+    ValueError
+        If ``expected_current_text`` is provided without ``workspace_root``.
 
     Examples
     --------
@@ -101,22 +126,39 @@ def write_atomic_text(
     ...     destination.read_text(encoding="utf-8")
     "version = '1.0.0'"
     """  # ruff: ignore[docstring-extraneous-exception]  # filesystem calls propagate OSError
+    if expected_current_text is not None and workspace_root is None:
+        message = "expected_current_text requires workspace_root"
+        raise ValueError(message)
     if workspace_root is None:
         if file_path.is_symlink():
             file_path = file_path.resolve(strict=True)
-        _write_path_based_atomic_text(file_path, content)
+        _write_path_based_atomic_text(file_path, content, None, expected_current_text)
         return
 
-    bounded_workspace_root = workspace_root.resolve()
-    file_path = _resolve_bounded_write_target(file_path, bounded_workspace_root)
-    if _supports_bounded_directory_operations():
-        _write_bounded_atomic_text(file_path, content, bounded_workspace_root)
-        return
-    _write_path_based_atomic_text(file_path, content, bounded_workspace_root)
+    with bump_workspace_write_lock.workspace_write_lock(workspace_root):
+        bounded_workspace_root = workspace_root.resolve()
+        file_path = _resolve_bounded_write_target(file_path, bounded_workspace_root)
+        if _supports_bounded_directory_operations():
+            _write_bounded_atomic_text(
+                file_path,
+                content,
+                bounded_workspace_root,
+                expected_current_text,
+            )
+            return
+        _write_path_based_atomic_text(
+            file_path,
+            content,
+            bounded_workspace_root,
+            expected_current_text,
+        )
 
 
 def _write_path_based_atomic_text(
-    file_path: Path, content: str, workspace_root: Path | None = None
+    file_path: Path,
+    content: str,
+    workspace_root: Path | None = None,
+    expected_current_text: str | None = None,
 ) -> None:
     """Replace by a temporary path and optionally revalidate containment."""
     dirpath = file_path.parent
@@ -137,7 +179,9 @@ def _write_path_based_atomic_text(
         )
         temporary_path = replacement_path
         _write_temporary_content(descriptor, content, existing_mode)
-        _replace_path_based_destination(replacement_path, file_path, workspace_root)
+        _replace_path_based_destination(
+            replacement_path, file_path, workspace_root, expected_current_text
+        )
     except BaseException as error:
         primary_error = error
         if temporary_name is not None and temporary_path is not None:
@@ -188,11 +232,28 @@ def _replace_path_based_destination(
     temporary_path: Path,
     file_path: Path,
     workspace_root: Path | None,
+    expected_current_text: str | None,
 ) -> None:
     """Validate a bounded destination and atomically replace it."""
     if workspace_root is not None:
         _resolve_bounded_write_target(file_path, workspace_root)
+    if expected_current_text is not None:
+        _validate_expected_current_text(file_path, expected_current_text)
     temporary_path.replace(file_path)
+
+
+def _validate_expected_current_text(file_path: Path, expected_text: str) -> None:
+    """Reject replacement when the destination changed after it was read."""
+    try:
+        current_text = file_path.read_text(encoding="utf-8", newline="")
+    except FileNotFoundError as exc:
+        message = (
+            f"Atomic write destination disappeared before replacement: {file_path}"
+        )
+        raise PermissionError(message) from exc
+    if current_text != expected_text:
+        message = f"Atomic write destination changed before replacement: {file_path}"
+        raise PermissionError(message)
 
 
 def _open_temporary_parent_directory(directory: Path) -> tuple[Path, int | None]:
@@ -267,7 +328,10 @@ def _resolve_bounded_write_target(file_path: Path, workspace_root: Path) -> Path
 
 
 def _write_bounded_atomic_text(
-    file_path: Path, content: str, workspace_root: Path
+    file_path: Path,
+    content: str,
+    workspace_root: Path,
+    expected_current_text: str | None = None,
 ) -> None:
     """Replace an in-workspace file relative to its opened parent directory."""
     relative_path = file_path.relative_to(workspace_root)
@@ -282,6 +346,10 @@ def _write_bounded_atomic_text(
             directory_fd, file_path.name
         )
         _write_temporary_content(temporary_fd, content, existing_mode)
+        if expected_current_text is not None:
+            _validate_expected_bounded_text(
+                directory_fd, file_path.name, expected_current_text
+            )
         os.rename(
             temporary_name,
             relative_path.name,
@@ -302,6 +370,19 @@ def _write_bounded_atomic_text(
             _close_descriptor(directory_fd, primary_error)
 
 
+def _validate_expected_bounded_text(
+    directory_fd: int,
+    filename: str,
+    expected_text: str,
+) -> None:
+    """Compare exact UTF-8 text through the pinned parent directory handle."""
+    descriptor = os.open(filename, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory_fd)
+    with os.fdopen(descriptor, "r", encoding="utf-8", newline="") as handle:
+        if handle.read() != expected_text:
+            message = f"Atomic write destination changed before replacement: {filename}"
+            raise PermissionError(message)
+
+
 def _supports_bounded_directory_operations() -> bool:
     """Check whether this platform supports the required descriptor APIs."""
     required = (os.open, os.stat, os.unlink, os.rename)
@@ -311,79 +392,3 @@ def _supports_bounded_directory_operations() -> bool:
         and all(operation in os.supports_dir_fd for operation in required)
         and os.stat in os.supports_follow_symlinks
     )
-
-
-def _open_directory_chain(directory: Path) -> int:
-    """Open a directory path one no-follow component at a time."""
-    flags = _no_follow_directory_flags()
-    current_fd = os.open(directory.anchor, flags)
-    return _open_directory_components(current_fd, directory.parts[1:])
-
-
-def _open_directory_components(current_fd: int, components: tuple[str, ...]) -> int:
-    """Descend from an open directory while closing each prior descriptor."""
-    flags = _no_follow_directory_flags()
-    transferred = False
-    try:
-        for component in components:
-            next_fd = os.open(component, flags, dir_fd=current_fd)
-            previous_fd = current_fd
-            current_fd = next_fd
-            os.close(previous_fd)
-        transferred = True
-        return current_fd
-    finally:
-        if not transferred:
-            with suppress(OSError):
-                os.close(current_fd)
-
-
-def _open_workspace_parent_directory(
-    workspace_root: Path, relative_parent: Path
-) -> int:
-    """Open a manifest parent beneath a pinned workspace directory handle."""
-    current_fd = _open_directory_chain(workspace_root)
-    return _open_directory_components(current_fd, relative_parent.parts)
-
-
-def _no_follow_directory_flags() -> int:
-    """Return flags that require one real directory component."""
-    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
-    if hasattr(os, "O_CLOEXEC"):
-        flags |= os.O_CLOEXEC
-    return flags
-
-
-def _existing_file_mode(directory_fd: int, filename: str) -> int | None:
-    """Read the destination mode without following a symlink."""
-    try:
-        metadata = os.stat(filename, dir_fd=directory_fd, follow_symlinks=False)
-    except FileNotFoundError:
-        return None
-    if stat.S_ISLNK(metadata.st_mode):
-        message = "Atomic write destination changed to a symbolic link"
-        raise PermissionError(message)
-    return stat.S_IMODE(metadata.st_mode)
-
-
-def _create_bounded_temporary_file(
-    directory_fd: int, destination_name: str
-) -> tuple[int, str]:
-    """Create a unique temporary file relative to an already-open directory."""
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-    if hasattr(os, "O_CLOEXEC"):
-        flags |= os.O_CLOEXEC
-    for _attempt in range(100):
-        temporary_name = f".lading-{secrets.token_hex(8)}"
-        try:
-            descriptor = os.open(temporary_name, flags, 0o600, dir_fd=directory_fd)
-        except FileExistsError:
-            continue
-        return descriptor, temporary_name
-    message = f"Could not allocate a temporary file for {destination_name}"
-    raise FileExistsError(message)
-
-
-def _set_file_mode(descriptor: int, mode: int) -> None:
-    """Apply existing mode bits to the temporary file descriptor."""
-    os.fchmod(descriptor, mode)

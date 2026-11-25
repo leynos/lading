@@ -8,6 +8,7 @@ import pytest
 from lading.commands import (
     bump,
     bump_manifest_rewrite_application,
+    bump_manifest_rewrites,
     bump_manifests,
     bump_pipeline,
     bump_pipeline_crate_manifests,
@@ -15,7 +16,10 @@ from lading.commands import (
     bump_pipeline_manifest_rewrites,
 )
 from lading.commands.bump_manifest_rewrites import ManifestRewriteError
+from lading.utils import file_lock
 from tests.helpers.manifest_rewrite_recovery import _make_partial_write_failure_case
+
+WORKSPACE_LOCK_ERROR = "workspace lock unavailable"
 
 
 def test_member_interruption_restores_completed_manifest_writes(
@@ -115,11 +119,17 @@ def test_non_member_interruption_restores_completed_rewrites_and_members(
         content: str,
         *,
         workspace_root: Path | None = None,
+        expected_current_text: str | None = None,
     ) -> None:
         """Write the first fixture, then interrupt before the second one."""
         if path == case.fixtures[1].resolve():
             raise KeyboardInterrupt
-        write_atomic_text(path, content, workspace_root=workspace_root)
+        write_atomic_text(
+            path,
+            content,
+            workspace_root=workspace_root,
+            expected_current_text=expected_current_text,
+        )
         completed_fixture_writes.append(path)
 
     with (
@@ -150,4 +160,114 @@ def test_non_member_interruption_restores_completed_rewrites_and_members(
         path: path.read_bytes() for path in case.workspace_manifests
     } == case.workspace_manifests, (
         "interruption recovery must restore member manifests written earlier"
+    )
+
+
+def test_interruption_does_not_claim_an_unattempted_matching_plan(
+    tmp_path: Path,
+) -> None:
+    """Only a completed or in-progress write can be attributed to this bump."""
+    completed_path = tmp_path / "fixtures/completed/Cargo.toml"
+    unattempted_path = tmp_path / "fixtures/unattempted/Cargo.toml"
+    completed_path.parent.mkdir(parents=True)
+    unattempted_path.parent.mkdir(parents=True)
+    original = "original"
+    completed_output = "completed output"
+    external_output = "same as planned output"
+    completed_path.write_text(completed_output, encoding="utf-8")
+    unattempted_path.write_text(external_output, encoding="utf-8")
+    stage = bump_pipeline_manifest_rewrites._ManifestRewriteStage(
+        plans=(
+            bump_manifest_rewrites.ManifestRewritePlan(
+                completed_path, original, completed_output
+            ),
+            bump_manifest_rewrites.ManifestRewritePlan(
+                unattempted_path, original, external_output
+            ),
+        ),
+        written_manifest_contents={completed_path: completed_output},
+        written_manifest_destinations={completed_path: completed_path},
+        rollback_baselines={
+            completed_path: original,
+            unattempted_path: original,
+        },
+    )
+    changed_manifests: set[Path] = set()
+
+    bump_pipeline_manifest_recovery.record_completed_rewrites_for_interruption(
+        stage, changed_manifests, KeyboardInterrupt()
+    )
+    rollback_error = bump_pipeline_manifest_recovery.restore_changed_manifests(
+        stage,
+        changed_manifests,
+        RuntimeError("interrupted"),
+        workspace_root=tmp_path,
+    )
+
+    assert rollback_error is None, "the known completed write should be restored"
+    assert completed_path.read_text(encoding="utf-8") == original, (
+        "the completed fixture write must be restored"
+    )
+    assert unattempted_path.read_text(encoding="utf-8") == external_output, (
+        "an unattempted path matching its planned output must remain untouched"
+    )
+
+
+def test_rollback_rejects_a_superseded_completed_output(
+    tmp_path: Path,
+) -> None:
+    """Only the latest completed output is eligible for automatic rollback."""
+    manifest = tmp_path / "Cargo.toml"
+    manifest.write_text("older output", encoding="utf-8")
+    stage = bump_pipeline_manifest_rewrites._ManifestRewriteStage(
+        written_manifest_contents={manifest: "latest output"},
+        written_manifest_destinations={manifest: manifest},
+        rollback_baselines={manifest: "original"},
+    )
+
+    rollback_error = bump_pipeline_manifest_recovery.restore_changed_manifests(
+        stage,
+        set(),
+        RuntimeError("later stage failed"),
+        workspace_root=tmp_path,
+    )
+
+    assert rollback_error is not None, "a superseded output must be reported"
+    assert manifest.read_text(encoding="utf-8") == "older output", (
+        "rollback must preserve text that is not the latest completed output"
+    )
+
+
+def test_rollback_leaves_output_when_workspace_lock_is_unavailable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Recovery reports a lock failure without replacing the current output."""
+    manifest = tmp_path / "Cargo.toml"
+    manifest.write_text("latest output", encoding="utf-8")
+    stage = bump_pipeline_manifest_rewrites._ManifestRewriteStage(
+        written_manifest_contents={manifest: "latest output"},
+        written_manifest_destinations={manifest: manifest},
+        rollback_baselines={manifest: "original"},
+    )
+
+    def fail_lock(_handle: object, *, locked: bool) -> None:
+        """Prevent recovery from claiming the workspace write lock."""
+        assert locked, "the write lock should be acquired before recovery"
+        raise PermissionError(WORKSPACE_LOCK_ERROR)
+
+    monkeypatch.setattr(file_lock, "set_exclusive_lock", fail_lock)
+    rollback_error = bump_pipeline_manifest_recovery.restore_changed_manifests(
+        stage,
+        set(),
+        RuntimeError("later stage failed"),
+        workspace_root=tmp_path,
+    )
+
+    assert rollback_error is not None, "the refused recovery must be reported"
+    assert "workspace lock unavailable" in str(rollback_error), (
+        "the recovery error should retain the lock acquisition failure"
+    )
+    assert manifest.read_text(encoding="utf-8") == "latest output", (
+        "recovery must leave the file unchanged when it cannot hold the lock"
     )

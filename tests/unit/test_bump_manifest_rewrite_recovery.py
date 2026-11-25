@@ -370,12 +370,11 @@ def test_reused_workspace_graph_uses_current_manifest_versions(
                 workspace=case.workspace,
             ),
         )
-
-    for fixture in case.fixtures:
-        text = fixture.read_text(encoding="utf-8")
-        assert 'alpha = "1.2.4"' in text, (
-            "dependency requirements should use the second target version"
-        )
-        assert "../alpha-1.2.4" in text, (
-            "string rewrites should use versions from manifests read this run"
-        )
+        for fixture in case.fixtures:
+            text = fixture.read_text(encoding="utf-8")
+            assert f'alpha = "{target_version}"' in text, (
+                f"dependency requirements should use {target_version} after this bump"
+            )
+            assert f"../alpha-{target_version}" in text, (
+                "string rewrites should use versions from manifests read this run"
+            )

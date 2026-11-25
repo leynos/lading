@@ -907,14 +907,19 @@ Each configured manifest write is atomic, but the batch is not. If a later
 write fails, or a manifest changes after planning, earlier fixture rewrites may
 remain and lockfile regeneration is skipped. Before reporting the failure,
 `lading bump` restores a workspace or member manifest only when its current
-contents still match the exact text written by this bump. If another writer
-changed a manifest after the bump wrote it, rollback leaves those contents in
-place and reports the path. This avoids overwriting a concurrent edit. The
-other matching manifests are restored to the exact text this bump parsed before
-updating each one. That preserves edits observed after planning and before an
-update, as well as the original crate versions when no such edit occurred. If
-rollback reports a manifest it left in place or could not restore, inspect and
-repair that named file before retrying.
+contents still match the latest text written by this bump. Workspace-bounded
+writes use a per-workspace advisory lock shared by Lading writers and compare
+the expected text immediately before replacement. If another Lading write holds
+the lock, the bump fails before replacing a file. If another writer changed a
+manifest, rollback leaves the changed contents in place and reports the path.
+Editors and tools that ignore advisory locks can still race after the final
+comparison, so this protection covers cooperating Lading processes and edits
+visible at that check. Other matching manifests are restored to the exact text
+this bump parsed before updating each one. The source crate versions used for
+fixture plans are checked again before the first write, including versions
+inherited from `[workspace.package]`; unrelated manifest edits remain allowed.
+If rollback reports a manifest it left in place or could not restore, inspect
+and repair that named file before retrying.
 
 For example, the `rstest-bdd` published GPUI fixture can opt into rewriting its
 dependency requirements and staged package patch paths:

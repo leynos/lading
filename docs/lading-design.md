@@ -457,6 +457,14 @@ lading bump <new_version> [--dry-run]
   `_ManifestUpdateContext` with the workspace boundary; member updates retain
   their resolved write destination for bounded rollback and verify the alias
   still resolves to that destination before writing.
+- `bump_workspace_write_lock.workspace_write_lock` provides a per-workspace
+  advisory lock for each bounded Lading replacement. The lock is stored in the
+  user's cache directory, is acquired without waiting, and is released when the
+  write exits. `bump_toml_files.write_atomic_text` performs conditional content
+  comparison immediately before replacement when the caller supplies the
+  expected source text. This coordinates Lading processes and refuses a write
+  when a lock is unavailable; editors that ignore advisory locks can still race
+  the final comparison.
 - `bump_toml_files` owns manifest parsing and atomic writes. Its internal
   `_read_and_parse_manifest` operation returns the exact input text alongside
   the parsed document from one read, so bump recovery can retain the source
@@ -770,9 +778,9 @@ to do.
 
 Every automatically created staging tree therefore carries a
 `.lading-staging-lock` file, which its publisher opens and holds under an
-exclusive, non-blocking lock for the tree's whole life: `fcntl.flock` on POSIX,
-`msvcrt.locking` on Windows, both behind the single `staging_lock` module so
-callers do not choose a platform.
+exclusive, non-blocking lock for the tree's whole life. The shared
+`lading.utils.file_lock` module selects `fcntl.flock` on POSIX and
+`msvcrt.locking` on Windows; `staging_lock` owns the staging-tree lifecycle.
 
 The claim is a kernel-held lock rather than a marker file recording a process
 identifier, because a marker fails in both directions that matter here. A

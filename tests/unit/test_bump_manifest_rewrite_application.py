@@ -246,11 +246,17 @@ def test_atomic_write_rechecks_containment_after_plan_source_read(
         content: str,
         *,
         workspace_root: pathlib.Path | None = None,
+        expected_current_text: str | None = None,
     ) -> None:
         """Swap the checked destination after the application source read."""
         file_path.unlink()
         file_path.symlink_to(outside)
-        write_text(file_path, content, workspace_root=workspace_root)
+        write_text(
+            file_path,
+            content,
+            workspace_root=workspace_root,
+            expected_current_text=expected_current_text,
+        )
 
     monkeypatch.setattr(
         bump_manifest_rewrite_application,

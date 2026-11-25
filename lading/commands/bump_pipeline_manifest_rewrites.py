@@ -45,11 +45,13 @@ class _ManifestRewriteStage:
     plans: tuple[bump_manifest_rewrites.ManifestRewritePlan, ...] = ()
     planning_duration_seconds: float = 0.0
     workspace_manifest_snapshots: tuple[tuple[Path, str], ...] = ()
+    pre_bump_versions: dict[str, str] = dc.field(default_factory=dict)
+    expected_version_values: dict[Path, tuple[tuple[tuple[str, ...], str], ...]] = (
+        dc.field(default_factory=dict)
+    )
     expected_manifest_contents: dict[Path, str] = dc.field(default_factory=dict)
     written_manifest_contents: dict[Path, str] = dc.field(default_factory=dict)
-    written_manifest_content_history: dict[Path, set[str]] = dc.field(
-        default_factory=dict
-    )
+    pending_manifest_contents: dict[Path, str] = dc.field(default_factory=dict)
     written_manifest_destinations: dict[Path, Path] = dc.field(default_factory=dict)
     rollback_baselines: dict[Path, str] = dc.field(default_factory=dict)
 
@@ -105,6 +107,10 @@ def _plan_non_member_manifest_rewrites(
         plans=plans,
         planning_duration_seconds=planning_duration,
         workspace_manifest_snapshots=workspace_manifest_snapshots,
+        pre_bump_versions=pre_bump_versions,
+        expected_version_values=_expected_version_values_from_snapshots(
+            workspace_manifest_snapshots
+        ),
     )
 
 
@@ -153,6 +159,63 @@ def _pre_bump_versions_from_snapshots(
             case _:
                 versions[crate.name] = crate.version
     return versions
+
+
+def _expected_version_values_from_snapshots(
+    snapshots: cabc.Sequence[tuple[Path, str]],
+) -> dict[Path, tuple[tuple[tuple[str, ...], str], ...]]:
+    """Capture direct package version selectors for optimistic validation."""
+    values_by_path: dict[Path, tuple[tuple[tuple[str, ...], str], ...]] = {}
+    for manifest_path, content in snapshots:
+        document = _parse_manifest_snapshot(manifest_path, content)
+        expected: list[tuple[tuple[str, ...], str]] = []
+        package = document.get("package")
+        if isinstance(package, cabc.Mapping) and isinstance(
+            package.get("version"), str
+        ):
+            expected.append((("package",), str(package["version"])))
+        workspace = document.get("workspace")
+        workspace_package = (
+            workspace.get("package") if isinstance(workspace, cabc.Mapping) else None
+        )
+        if isinstance(workspace_package, cabc.Mapping) and isinstance(
+            workspace_package.get("version"), str
+        ):
+            expected.append((
+                ("workspace", "package"),
+                str(workspace_package["version"]),
+            ))
+        values_by_path[manifest_path] = tuple(expected)
+    return values_by_path
+
+
+def validate_pre_bump_versions(
+    context: _BumpContext,
+    stage: _ManifestRewriteStage,
+) -> None:
+    """Ensure source versions used by fixture plans remain current before writes."""
+    current_snapshots = _read_workspace_manifest_snapshots(
+        context.workspace_manifest,
+        tuple(crate.manifest_path for crate in context.workspace.crates),
+    )
+    current_versions = _pre_bump_versions_from_snapshots(context, current_snapshots)
+    if current_versions == stage.pre_bump_versions:
+        return
+    changed_crate = next(
+        name
+        for name, expected in stage.pre_bump_versions.items()
+        if current_versions.get(name) != expected
+    )
+    manifest_path = next(
+        crate.manifest_path
+        for crate in context.workspace.crates
+        if crate.name == changed_crate
+    )
+    message = (
+        "Workspace crate version changed after manifest rewrite planning: "
+        f"{manifest_path}"
+    )
+    raise ManifestRewriteError(message, failed_path=manifest_path)
 
 
 def _parse_manifest_snapshot(path: Path, content: str) -> TOMLDocument:
@@ -205,6 +268,18 @@ def _apply_non_member_manifest_rewrites(
             stage.plans,
             workspace_root=context.root_path,
             dry_run=dry_run,
+            write_callbacks=(
+                bump_manifest_rewrite_application._ManifestRewriteWriteCallbacks(
+                    before_write=(
+                        bump_pipeline_manifest_recovery.manifest_write_recorder(stage)
+                    ),
+                    after_write=(
+                        bump_pipeline_manifest_recovery.manifest_write_completion_recorder(
+                            stage
+                        )
+                    ),
+                )
+            ),
         )
     except BaseException as rewrite_error:
         if _should_recover_manifest_rewrite_failure(rewrite_error, dry_run=dry_run):

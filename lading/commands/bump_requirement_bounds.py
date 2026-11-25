@@ -18,7 +18,7 @@ import typing as typ
 
 _VERSION_PATTERN: typ.Final[re.Pattern[str]] = re.compile(
     r"(?P<core>(?:0|[1-9][0-9]*)(?:\.(?:0|[1-9][0-9]*)){0,2})"
-    r"(?P<wildcard>\.(?:\*|x|X))?"
+    r"(?P<wildcard>(?:\.(?:\*|x|X))+)?"
     r"(?:-(?P<prerelease>[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?"
     r"(?:\+(?P<build>[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?"
 )
