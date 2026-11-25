@@ -101,17 +101,24 @@ def write_atomic_text(
     ...     destination.read_text(encoding="utf-8")
     "version = '1.0.0'"
     """  # ruff: ignore[docstring-extraneous-exception]  # filesystem calls propagate OSError
-    bounded_workspace_root: Path | None = None
     if workspace_root is None:
         if file_path.is_symlink():
             file_path = file_path.resolve(strict=True)
-    else:
-        bounded_workspace_root = workspace_root.resolve()
-        file_path = _resolve_bounded_write_target(file_path, bounded_workspace_root)
-        if _supports_bounded_directory_operations():
-            _write_bounded_atomic_text(file_path, content, bounded_workspace_root)
-            return
+        _write_path_based_atomic_text(file_path, content)
+        return
 
+    bounded_workspace_root = workspace_root.resolve()
+    file_path = _resolve_bounded_write_target(file_path, bounded_workspace_root)
+    if _supports_bounded_directory_operations():
+        _write_bounded_atomic_text(file_path, content, bounded_workspace_root)
+        return
+    _write_path_based_atomic_text(file_path, content, bounded_workspace_root)
+
+
+def _write_path_based_atomic_text(
+    file_path: Path, content: str, workspace_root: Path | None = None
+) -> None:
+    """Replace by a temporary path and optionally revalidate containment."""
     dirpath = file_path.parent
     existing_mode: int | None = None
     with suppress(FileNotFoundError):
@@ -126,8 +133,8 @@ def write_atomic_text(
             if existing_mode is not None:
                 _set_file_mode(handle.fileno(), existing_mode)
             handle.write(content)
-        if bounded_workspace_root is not None:
-            _resolve_bounded_write_target(file_path, bounded_workspace_root)
+        if workspace_root is not None:
+            _resolve_bounded_write_target(file_path, workspace_root)
         Path(tmp_path).replace(file_path)
     finally:
         with suppress(FileNotFoundError):
