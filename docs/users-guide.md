@@ -861,32 +861,36 @@ Each group accepts these fields:
 
 The default template is `"{crate}-{version}"`. It may use only `{crate}` and
 `{version}`, and must include `{version}`. Format specifications, conversions,
-positional fields, and unknown placeholders are configuration errors. The old
-version comes from workspace metadata; the new version is the requested bump
-version. A template starting with `{crate}` requires a crate-name boundary
-before the match; one starting with `{version}` requires a boundary before the
-version that rejects letters, digits, and periods while allowing plus signs and
-hyphens. A plus sign that starts SemVer build metadata is not treated as a
-boundary, so versions anywhere in that metadata remain unchanged, including
-`9.0.0+build-1.2.3`. A template ending with `{crate}` requires a crate-name
-boundary after the match; one ending with `{version}` requires a boundary after
-the match that rejects letters, digits, periods, plus signs, and hyphens. An
-adjacent `.crate` extension or `-extra` suffix therefore blocks the match.
-Versions nested in another SemVer prerelease, such as `9.0.0-1.0.0` or
-`9.0.0-rc.alpha-1.0.0`, also remain unchanged. These rules keep `rstest-bdd`
-from matching inside `rstest-bdd-harness` and prevent `0.6.0-beta4` matching
-the prefix of `0.6.0-beta40`. SemVer protection applies only when the complete
-configured rendering consists of SemVer identifier characters; a slash in a
-staged path keeps that rendering eligible for rewriting. If distinct crates
-render the same old text but different target text, planning fails with the
-affected manifest path instead of choosing one replacement. Version-only
-selectors leave selected versions that do not match a workspace crate's
-pre-bump version unchanged, since the selector cannot attribute those values to
-a crate. A version-only selector also cannot identify which unmatched version
-belongs to an updated crate. The same limit applies to crate-qualified
-templates. A value with that crate name but an unmatched version may be an
-intentional historical reference. Rewrites replace exact renderings made from
-the pre-bump workspace versions; unmatched selected text remains unchanged.
+positional fields, and unknown placeholders are configuration errors. Before
+rewriting, lading snapshots the root and member manifests. It reads old
+versions from literal member `[package].version` entries or resolves
+`version.workspace = true` through `[workspace.package].version`. The workspace
+graph version is a fallback only when a member has no literal or inherited
+version. The new version is the requested bump version. A template starting with
+`{crate}` requires a crate-name boundary before the match; one starting with
+`{version}` requires a boundary before the version that rejects letters,
+digits, and periods while allowing plus signs and hyphens. A plus sign that
+starts SemVer build metadata is not treated as a boundary, so versions anywhere
+in that metadata remain unchanged, including `9.0.0+build-1.2.3`. A template
+ending with `{crate}` requires a crate-name boundary after the match; one
+ending with `{version}` requires a boundary after the match that rejects
+letters, digits, periods, plus signs, and hyphens. An adjacent `.crate`
+extension or `-extra` suffix therefore blocks the match. Versions nested in
+another SemVer prerelease, such as `9.0.0-1.0.0` or `9.0.0-rc.alpha-1.0.0`,
+also remain unchanged. These rules keep `rstest-bdd` from matching inside
+`rstest-bdd-harness` and prevent `0.6.0-beta4` matching the prefix of
+`0.6.0-beta40`. SemVer protection applies only when the complete configured
+rendering consists of SemVer identifier characters; a slash in a staged path
+keeps that rendering eligible for rewriting. If distinct crates render the same
+old text but different target text, planning fails with the affected manifest
+path instead of choosing one replacement. Version-only selectors leave selected
+versions that do not match a workspace crate's pre-bump version unchanged,
+since the selector cannot attribute those values to a crate. A version-only
+selector also cannot identify which unmatched version belongs to an updated
+crate. The same limit applies to crate-qualified templates. A value with that
+crate name but an unmatched version may be an intentional historical reference.
+Rewrites replace exact renderings made from the pre-bump workspace versions;
+unmatched selected text remains unchanged.
 
 The root manifest and all workspace-member manifests are skipped even when a
 configured glob selects them. Repeated groups selecting the same non-member

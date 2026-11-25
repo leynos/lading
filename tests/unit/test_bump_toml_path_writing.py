@@ -1,6 +1,7 @@
 """Exercise temporary-file naming and cleanup in atomic path writes."""
 
 import os
+import stat
 from pathlib import Path
 
 import pytest
@@ -199,7 +200,10 @@ def test_path_fallback_retries_cleanup_after_readonly_temporary_file(
         """Allow the retry only after cleanup clears the read-only state."""
         _ = follow_symlinks
         if path.name.startswith(".lading-"):
-            chmodded_temporaries.add(path)
+            if mode & stat.S_IWUSR:
+                chmodded_temporaries.add(path)
+            else:
+                chmodded_temporaries.discard(path)
         original_chmod(path, mode)
 
     monkeypatch.setattr(Path, "unlink", simulate_readonly_unlink)
