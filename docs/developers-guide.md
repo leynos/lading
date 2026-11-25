@@ -1214,13 +1214,16 @@ conditional atomic restoration writes. `bump_workspace_write_lock` coordinates
 workspace-bounded writes from Lading processes using a per-workspace advisory
 lock in the user cache. External tools may ignore that lock and race the final
 comparison. Workspace-bounded writes require directory-relative no-follow
-operations; unsupported platforms fail before creating a temporary file rather
-than using an unpinned path fallback. The module derives pre-bump crate
-versions from the snapshots, so string matching does not rely on a stale
-`WorkspaceGraph`. `lading.commands.bump_pipeline` owns the overall pipeline
-order. Rewrite duration sums the planning and application intervals, including
-recovery on failure and excluding intervening stages. `BumpOptions.clock`
-supplies the monotonic clock; tests inject deterministic values.
+operations. Non-dry-run `lading bump` checks this capability at command entry
+and fails with `LadingError` before loading Cargo workspace metadata when it is
+unavailable. Windows currently lacks the required operations; dry runs remain
+available. The atomic writer repeats the check before replacement and never
+uses an unpinned path fallback. The module derives pre-bump crate versions from
+the snapshots, so string matching does not rely on a stale `WorkspaceGraph`.
+`lading.commands.bump_pipeline` owns the overall pipeline order. Rewrite
+duration sums the planning and application intervals, including recovery on
+failure and excluding intervening stages. `BumpOptions.clock` supplies the
+monotonic clock; tests inject deterministic values.
 
 `lading.utils.file_lock` provides the platform-specific non-blocking exclusive
 file-lock primitives used by `staging_lock` and `bump_workspace_write_lock`.

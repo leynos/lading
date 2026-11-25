@@ -61,6 +61,26 @@ def _read_and_parse_manifest(manifest_path: Path) -> tuple[str, TOMLDocument]:
     return content, parse_toml(content)
 
 
+def require_workspace_bounded_write_support() -> None:
+    """Fail clearly when safe workspace-bounded writes are unavailable.
+
+    Raises
+    ------
+    LadingError
+        If the platform lacks directory-relative, no-follow operations.
+
+    Examples
+    --------
+    >>> require_workspace_bounded_write_support()  # doctest: +SKIP
+    """
+    if not _supports_bounded_directory_operations():
+        message = (
+            "lading bump cannot write manifests on this platform; workspace-"
+            "bounded writes require descriptor-relative no-follow operations"
+        )
+        raise LadingError(message)
+
+
 def write_atomic_text(
     file_path: Path,
     content: str,

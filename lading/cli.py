@@ -77,6 +77,7 @@ from .commands.bump_manifest_rewrites import (
     ManifestRewriteError,
     ManifestRewriteWriteError,
 )
+from .commands.bump_toml_files import require_workspace_bounded_write_support
 from .commands.publish_skip import SkipPreflightDecision, SkipPreflightSource
 from .runtime import CommandRunner, subprocess_runner
 from .utils import metrics, normalize_workspace_root
@@ -556,6 +557,8 @@ def bump(
     >>> "Dry run; would update version to 1.2.3 in" in summary  # doctest: +SKIP
     True
     """
+    if not dry_run:
+        require_workspace_bounded_write_support()
     resolved = normalize_workspace_root(workspace_root)
     return _run_with_context(
         resolved,

@@ -7,8 +7,11 @@ import pytest
 
 from lading.commands import (
     bump,
+    bump_manifest_rewrite_application,
     bump_manifests,
+    bump_pipeline_manifest_restore,
     bump_pipeline_manifest_rewrites,
+    bump_toml_files,
 )
 from lading.commands.bump_manifest_rewrites import ManifestRewriteError
 from lading.exceptions import LadingError
@@ -20,6 +23,40 @@ if typ.TYPE_CHECKING:
     from lading.commands.bump_pipeline_manifest_rewrites import (
         _ManifestRewriteStage,
     )
+
+
+def _record_workspace_write_attempts(
+    monkeypatch: pytest.MonkeyPatch,
+    root_path: Path,
+) -> list[Path]:
+    """Record atomic writes made inside one workspace."""
+    write_attempts: list[Path] = []
+    original_writer = bump_toml_files.write_atomic_text
+
+    def record_write(
+        path: Path,
+        content: str,
+        *,
+        workspace_root: Path | None = None,
+        expected_current_text: str | None = None,
+    ) -> None:
+        """Record a workspace write and preserve the atomic writer behaviour."""
+        if path.is_relative_to(root_path):
+            write_attempts.append(path)
+        original_writer(
+            path,
+            content,
+            workspace_root=workspace_root,
+            expected_current_text=expected_current_text,
+        )
+
+    for module in (
+        bump_toml_files,
+        bump_manifest_rewrite_application,
+        bump_pipeline_manifest_restore,
+    ):
+        monkeypatch.setattr(module, "write_atomic_text", record_write)
+    return write_attempts
 
 
 def test_changed_inherited_source_version_aborts_before_workspace_writes(
@@ -51,6 +88,7 @@ def test_changed_inherited_source_version_aborts_before_workspace_writes(
 
     original_fixture = {path: path.read_bytes() for path in case.fixtures}
     repository = RecordingLockfileRepository()
+    write_attempts = _record_workspace_write_attempts(monkeypatch, case.root)
     monkeypatch.setattr(
         bump_pipeline_manifest_rewrites,
         "_plan_non_member_manifest_rewrites",
@@ -81,11 +119,13 @@ def test_changed_inherited_source_version_aborts_before_workspace_writes(
     assert {path: path.read_bytes() for path in case.fixtures} == original_fixture, (
         "the stale fixture plan must not be applied"
     )
+    assert not write_attempts, "stale version validation must precede all writes"
     assert not repository.regenerated, "a stale plan must stop before lockfile work"
 
 
 def test_missing_package_version_before_planning_conflicts_with_discovery(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A missing source version cannot mask stale workspace discovery data."""
     case = _make_partial_write_failure_case(tmp_path)
@@ -94,6 +134,7 @@ def test_missing_package_version_before_planning_conflicts_with_discovery(
     root_original = case.workspace_manifests[case.root / "Cargo.toml"]
     fixture_original = {path: path.read_bytes() for path in case.fixtures}
     repository = RecordingLockfileRepository()
+    write_attempts = _record_workspace_write_attempts(monkeypatch, case.root)
 
     with pytest.raises(ManifestRewriteError, match="workspace discovery"):
         bump.run(
@@ -116,6 +157,7 @@ def test_missing_package_version_before_planning_conflicts_with_discovery(
     assert {path: path.read_bytes() for path in case.fixtures} == fixture_original, (
         "rewrite planning must not use a missing version as cached metadata"
     )
+    assert not write_attempts, "planning conflicts must precede all writes"
     assert not repository.regenerated, "a planning mismatch must stop lockfile work"
 
 
@@ -129,6 +171,7 @@ def test_removed_package_version_after_planning_rejects_stale_fixture_plan(
     original_alpha = alpha_manifest.read_bytes()
     fixture_original = {path: path.read_bytes() for path in case.fixtures}
     repository = RecordingLockfileRepository()
+    write_attempts = _record_workspace_write_attempts(monkeypatch, case.root)
     original_plan = bump_pipeline_manifest_rewrites._plan_non_member_manifest_rewrites
 
     def plan_then_remove_version(
@@ -170,6 +213,7 @@ def test_removed_package_version_after_planning_rejects_stale_fixture_plan(
     assert alpha_manifest.read_bytes() != original_alpha, (
         "the test must retain the external package version removal"
     )
+    assert not write_attempts, "stale version validation must precede all writes"
     assert {path: path.read_bytes() for path in case.fixtures} == fixture_original, (
         "fixture rewrites must not use cached metadata after the source is removed"
     )

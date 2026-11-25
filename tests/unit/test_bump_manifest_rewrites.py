@@ -1,8 +1,11 @@
 """Tests for configured non-member manifest rewrites."""
 
+import builtins
 import collections.abc as cabc
+import os
 import pathlib
 import typing as typ
+from unittest import mock
 
 import pytest
 from tomlkit import parse as parse_toml
@@ -309,9 +312,31 @@ def test_planner_rewrites_supplied_text_without_filesystem_access() -> None:
         string_values=(),
     )
 
-    (plan,) = bump_manifest_rewrites.plan_manifest_rewrites(
-        (source,), manifest_rewrite_versions()
-    )
+    with (
+        mock.patch.object(
+            pathlib.Path,
+            "open",
+            side_effect=_reject_filesystem_access,
+        ),
+        mock.patch.object(
+            pathlib.Path,
+            "stat",
+            side_effect=_reject_filesystem_access,
+        ),
+        mock.patch.object(
+            pathlib.Path,
+            "resolve",
+            side_effect=_reject_filesystem_access,
+        ),
+        mock.patch.object(os, "open", side_effect=_reject_filesystem_access),
+        mock.patch.object(builtins, "open", side_effect=_reject_filesystem_access),
+        mock.patch.object(os, "stat", side_effect=_reject_filesystem_access),
+        mock.patch.object(os, "scandir", side_effect=_reject_filesystem_access),
+        mock.patch.object(os, "unlink", side_effect=_reject_filesystem_access),
+    ):
+        (plan,) = bump_manifest_rewrites.plan_manifest_rewrites(
+            (source,), manifest_rewrite_versions()
+        )
 
     assert plan.path is unopened_path, (
         "the planner should preserve the supplied source identity"
@@ -322,3 +347,9 @@ def test_planner_rewrites_supplied_text_without_filesystem_access() -> None:
     assert plan.new_text == '[dependencies]\nalpha = "2.0.0"\n', (
         "the planner should use only supplied text and version metadata"
     )
+
+
+def _reject_filesystem_access(*_args: object, **_kwargs: object) -> typ.NoReturn:
+    """Fail a planner test if it attempts any filesystem operation."""
+    message = "The rewrite planner attempted filesystem access"
+    raise AssertionError(message)

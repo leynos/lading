@@ -269,3 +269,26 @@ def test_rewrite_planning_logs_collected_comparator_warning(
     assert "Cargo comparator(s) <0.6.0" in caplog.text, (
         "the planning boundary should log the returned comparator warning"
     )
+
+
+def test_rewrite_warnings_follow_dependency_table_order(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Multiple bound warnings use the manifest's stable dependency order."""
+    document = parse_toml(
+        '[dependencies]\nbeta = ">=1.0.0, <1.5.0"\nalpha = ">=1.0.0, <1.2.0"\n'
+    )
+    caplog.set_level(logging.WARNING)
+
+    bump_manifest_rewrite_dependencies.rewrite_dependency_requirements(
+        document, {"alpha", "beta"}, "2.0.0"
+    )
+
+    warning_messages = [record.getMessage() for record in caplog.records]
+    assert len(warning_messages) == 2, "both selected bounds should be reported"
+    assert "<1.5.0" in warning_messages[0], (
+        "the first warning should follow the first TOML dependency"
+    )
+    assert "<1.2.0" in warning_messages[1], (
+        "the second warning should follow the second TOML dependency"
+    )

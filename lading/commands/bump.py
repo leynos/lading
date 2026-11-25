@@ -15,7 +15,12 @@ import typing as typ
 from pathlib import Path
 
 from lading import config as config_module
-from lading.commands import bump_lockfiles, bump_manifests, bump_pipeline
+from lading.commands import (
+    bump_lockfiles,
+    bump_manifests,
+    bump_pipeline,
+    bump_toml_files,
+)
 from lading.commands.bump_output import _format_result_message
 from lading.utils import normalize_workspace_root
 
@@ -116,7 +121,10 @@ def run(
     ... )
     'Dry run; would update version to 1.2.0 in ...'
     """
-    context = _initialize_bump_context(workspace_root, options)
+    resolved_options = BumpOptions() if options is None else options
+    if not resolved_options.dry_run:
+        bump_toml_files.require_workspace_bounded_write_support()
+    context = _initialize_bump_context(workspace_root, resolved_options)
     LOGGER.debug(
         "Bump context initialised: %d excluded crate(s), %d to update",
         len(context.excluded),

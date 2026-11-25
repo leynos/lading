@@ -925,9 +925,12 @@ If rollback reports a manifest it left in place or could not restore, inspect
 and repair that named file before retrying.
 
 Workspace-bounded atomic writes require operating-system support for
-directory-relative no-follow file operations. On platforms without that support,
-`lading bump` stops before creating a temporary file instead of using a
-path-based fallback that could escape the workspace.
+directory-relative no-follow file operations. On platforms without that
+support, non-dry-run `lading bump` reports that the platform is unsupported at
+command entry, before loading Cargo workspace metadata or changing files.
+Windows currently lacks the required operations. Dry runs remain available. The
+writer also checks this capability at each bounded replacement and never uses
+an unpinned path fallback.
 
 For example, the `rstest-bdd` published GPUI fixture can opt into rewriting its
 dependency requirements and staged package patch paths:

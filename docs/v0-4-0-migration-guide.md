@@ -191,8 +191,9 @@ update_documentation_files(
 `lading.exceptions` and remain importable from `lading.config`. An environment
 already running 3.14 needs no interpreter-floor adaptation. When using
 `lading bump`, run it on a platform that supports directory-relative file
-operations and no-follow opens for bounded manifest writes. The command fails
-closed before writing if those operations are unavailable.
+operations and no-follow opens for bounded manifest writes. A non-dry-run bump
+checks this at command entry and fails with a clear error if those operations
+are unavailable; Windows currently lacks them. Dry runs remain available.
 
 When 0.4.0 is released, its tagged build will also be published to PyPI as a
 source distribution and pure-Python wheel. GitHub Releases will retain both

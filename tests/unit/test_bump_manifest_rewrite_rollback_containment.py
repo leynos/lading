@@ -106,6 +106,9 @@ def test_rollback_does_not_follow_member_path_swapped_outside_workspace(
         assert alpha_manifest.is_symlink(), (
             "rollback must leave the changed link in place"
         )
+        assert alpha_manifest.readlink() == outside_manifest, (
+            "rollback must not retarget the changed link"
+        )
         assert outside_manifest.read_bytes() == probe.state.outside_contents, (
             "rollback must not overwrite the outside target"
         )

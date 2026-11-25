@@ -131,7 +131,7 @@ def _update_selected_dependency_section(
 def _matching_dependency_names(
     table: _TableLike,
     selection: _DependencySectionSelection,
-) -> set[str]:
+) -> tuple[str, ...]:
     """Select keys first, then use package identity for unmatched names."""
     unmatched_names = set(selection.names)
     matching_names: set[str] = set()
@@ -145,7 +145,7 @@ def _matching_dependency_names(
             if bump_toml_dependencies.dependency_target_name(name, entry)
             in unmatched_names
         )
-    return matching_names
+    return tuple(name for name in table if name in matching_names)
 
 
 def update_dependency_sections_with_warnings(
