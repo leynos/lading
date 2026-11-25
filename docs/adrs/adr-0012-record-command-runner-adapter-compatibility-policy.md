@@ -192,6 +192,17 @@ catalogue would be denied, because the two allowlists intersect rather than
 union. A matching basename does not authorize, since lookup is keyed by the
 whole `Program` string.
 
+Exact-path registration ties authorization to the registered string, but not
+unconditionally: an enclosing `bind_executable` of the _same_ `Program` is
+inherited by the adapter's scope and makes the run execute a different file
+while the allowlist still authorizes the registered path. Measured, with all
+three arms: the bound-same-program case ran `/usr/bin/echo` and reported it as
+`resolved_path`, while the unbound control and a binding of an unrelated
+`Program` both ran the registered file. The adapter therefore refuses a scope
+that has already bound the program it is about to execute, rather than
+accepting a run that would execute an unauthorized binary behind a passing
+authorization check.
+
 A configured `RUSTC_WRAPPER` is not necessarily absolute -- `detect_wrapper`
 accepts a bare name or a relative path -- so the adapter resolves it to a file
 first, requires an existing executable, and registers the resolved path. The

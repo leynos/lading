@@ -1359,12 +1359,28 @@ the resolver runs. It does not narrow it to the bound file either, and that
 asymmetry is the part a future binding must not inherit. Measured: a scope
 permitting only the logical `Program`, bound to an unrelated executable, ran
 that executable with no check on it at all. Authorization named the program;
-resolution named the file. Exact-path registration is preferred here precisely
-because it ties the two together -- the path registered is the path authorized
--- and these callers have no stable logical name to preserve anyway. A future
-binding must keep that tie by authorizing the bound path separately, exactly as
-exact-path registration does, rather than assuming the binding vouches for the
-file it names.
+resolution named the file. Exact-path registration is preferred here because
+these callers have no stable logical name to preserve, and because it keeps
+authorization and execution on the same string.
+
+That tie is not unconditional, and the exception has to be stated rather than
+assumed away. An enclosing scope that binds the _same_ `Program` is inherited
+by the adapter's scope, because the adapter sets no bindings and the merge
+keeps the parent layer, so the run executes the bound file while the allowlist
+still authorizes the registered path. Measured, with a registered
+`/tmp/bindtest/legit` and an enclosing `bind_executable` of the same `Program`
+to `/usr/bin/echo`: the child ran `/usr/bin/echo` and `resolved_path` reported
+it, while the unbound control ran the registered file. A binding for a
+_different_ `Program` had no effect, so the exposure is specific to a binding
+that names the registered path itself.
+
+The adapter must therefore not let that configuration run. It rejects a scope
+in which the program it is about to execute is already bound to a different
+file, rather than trusting registration to have settled the question; the
+alternative -- accepting the run and reporting the bound file -- would execute
+an unauthorized binary behind an authorization check that passed. This is a 5.2
+implementation obligation, recorded here because it is the one way the
+exact-path rule can be defeated without any code in this policy changing.
 
 Resolution of a bare name against the effective child environment is cuprum's,
 and its measured behaviour is part of this policy:

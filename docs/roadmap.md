@@ -298,9 +298,10 @@ The [beta adoption assessment](cuprum-v0-2-0-beta1-adoption-assessment.md)
 defines the compatibility requirements and acceptance gates. 5.1.4 has since
 selected and validated the published beta on both dependency paths and migrated
 the release uploader, so the selected artefact runs on a release path and both
-of its distribution wheels were smoke-tested. The pin has since moved to
-`0.2.0b2`, which is the version those tests and 5.1.5's policy measurements
-cover. That evidence is bounded: it does not certify the production command
+of its distribution wheels were smoke-tested against `0.2.0b1`. The pin has
+since moved to `0.2.0b2`, which the recorded wheel smoke does not cover; the
+5.1.5 policy measurements do cover `0.2.0b2`, but they are probes, not a wheel
+smoke. That evidence is bounded: it does not certify the production command
 migration, cross-platform behaviour, or a final cuprum 0.2.0 release, none of
 which has been performed. The production migration below remains open: the
 catalogue, the pathlib conversion, the source-level assessment, and the

@@ -229,6 +229,19 @@ All of it is recorded in assessment §9.
   control needed an explicit non-empty `PATH` excluding `cwd`, since an empty
   `PATH` would resolve from `cwd` and make it pass vacuously. Writing the
   assertion and the control together is what surfaced all three.
+- (2026-11-25) The formal review found two more, both real. An enclosing
+  `bind_executable` of the same `Program` is inherited by the adapter's scope
+  and overrides exact-path registration: measured, a registered
+  `/tmp/bindtest/legit` with an enclosing binding of that same `Program` ran
+  `/usr/bin/echo` and reported it, while the unbound control and a binding of a
+  different `Program` both ran the registered file. The policy had claimed the
+  registered path is the executed path without qualification. It now states the
+  exception and requires the adapter to refuse that configuration, because
+  accepting it would execute an unauthorized binary behind a passing
+  authorization check. Separately, the roadmap attributed the
+  distribution-wheel smoke to `0.2.0b2` when the recorded smoke in the 5.1.4
+  plan used `0.2.0b1`; the 5.1.5 measurements do cover `0.2.0b2` but are
+  probes, not a wheel smoke. Both are now stated as measured.
 - (2026-11-24) Record `CommandPreparationError` as the one type this policy
   requires without introducing it. Naming it in §7.6.1 and deferring the
   definition to 5.2.1 keeps the plan documentation-only while making the
@@ -526,6 +539,15 @@ actually searches. That case reaches the adapter as `CommandSpawnError` with
 the launch error chained, per §7.6.1; a raw `FileNotFoundError` assertion
 belongs only to a direct cuprum or `subprocess` probe, not to the adapter
 boundary.
+
+The binding-inheritance case also needs a test, because it is the one way the
+exact-path rule can be defeated. With the registered exact path authorized, an
+enclosing `bind_executable` of that same `Program` to a different file must
+make the adapter refuse the run rather than execute the bound file; the control
+pairs it with the unbound case, which runs the registered file, and with a
+binding of an unrelated `Program`, which must have no effect. Measured on the
+pinned cuprum: bound-same-program ran `/usr/bin/echo` and reported it as
+`resolved_path`, while both controls behaved as required.
 
 A1 also verifies each policy/resolution error maps to a lading-owned failure
 with a retained cause. A4 checks complete capture with failed write/flush,
