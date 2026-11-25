@@ -103,18 +103,19 @@ def _process_workspace_and_crate_manifests(
         _process_crate_manifests(
             context, target_version, rewrite_stage, changed_manifests
         )
-    except Exception as stage_error:
+    except BaseException as stage_error:
         if context.base_options.dry_run:
             raise
-        rollback_error = (
-            bump_pipeline_manifest_rewrites._restore_changed_workspace_manifests(
-                rewrite_stage,
-                changed_manifests,
-                stage_error,
-                workspace_root=context.root_path,
-            )
+        rollback_error = bump_pipeline_manifest_rewrites._restore_changed_manifests(
+            rewrite_stage,
+            changed_manifests,
+            stage_error,
+            workspace_root=context.root_path,
         )
         if rollback_error is not None:
+            if not isinstance(stage_error, Exception):
+                stage_error.add_note(str(rollback_error))
+                raise
             raise rollback_error from stage_error
         raise
 

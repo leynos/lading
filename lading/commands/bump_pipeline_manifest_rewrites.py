@@ -2,7 +2,7 @@
 
 The pipeline plans these rewrites before any writes and applies them after
 workspace and member manifests. A failed manifest stage restores changed
-workspace manifests so a retry still has the original crate versions.
+manifests so a retry still has the original crate versions.
 """
 
 import collections.abc as cabc
@@ -202,8 +202,17 @@ def _apply_non_member_manifest_rewrites(
             workspace_root=context.root_path,
             dry_run=dry_run,
         )
-    except ManifestRewriteError as rewrite_error:
-        recovery_error = _restore_changed_workspace_manifests(
+    except BaseException as rewrite_error:
+        interrupted = not isinstance(rewrite_error, Exception)
+        if not isinstance(rewrite_error, ManifestRewriteError) and not interrupted:
+            raise
+        if interrupted and dry_run:
+            raise
+        if interrupted:
+            _record_completed_rewrites_for_interruption(
+                stage, changed_manifests, rewrite_error
+            )
+        recovery_error = _restore_changed_manifests(
             stage,
             changed_manifests,
             rewrite_error,
@@ -219,6 +228,9 @@ def _apply_non_member_manifest_rewrites(
             ),
         )
         if recovery_error is not None:
+            if interrupted:
+                rewrite_error.add_note(str(recovery_error))
+                raise
             raise recovery_error from rewrite_error
         raise
     # The resolver already canonicalized these paths; resolving after a write
@@ -236,14 +248,37 @@ def _apply_non_member_manifest_rewrites(
     )
 
 
-def _restore_changed_workspace_manifests(
+def _record_completed_rewrites_for_interruption(
+    stage: _ManifestRewriteStage,
+    changed_manifests: set[Path],
+    interruption: BaseException,
+) -> None:
+    """Record planned outputs already present so interruption recovery can undo them."""
+    for plan in stage.plans:
+        try:
+            current_text = plan.path.read_text(encoding="utf-8", newline="")
+        except (OSError, UnicodeError) as exc:
+            interruption.add_note(
+                f"Could not inspect manifest rewrite target {plan.path} "
+                f"during interruption recovery: {exc}"
+            )
+            continue
+        if current_text != plan.new_text:
+            continue
+        stage.rollback_baselines.setdefault(plan.path, plan.original_text)
+        stage.written_manifest_contents[plan.path] = plan.new_text
+        stage.written_manifest_destinations[plan.path] = plan.path
+        changed_manifests.add(plan.path)
+
+
+def _restore_changed_manifests(
     stage: _ManifestRewriteStage,
     changed_manifests: cabc.Collection[Path],
-    failure: Exception,
+    failure: BaseException,
     *,
     workspace_root: Path,
 ) -> ManifestRewriteWriteError | None:
-    """Restore only write destinations that still contain this bump's text."""
+    """Restore manifests that still contain this bump's text."""
     original_text_by_path = dict(stage.workspace_manifest_snapshots)
     original_text_by_path.update(stage.rollback_baselines)
     failures: list[tuple[Path, str]] = []
@@ -280,8 +315,9 @@ def _restore_changed_workspace_manifests(
         return None
     failed_paths = ", ".join(str(path) for path, _error in failures)
     failure_details = "; ".join(f"{path}: {detail}" for path, detail in failures)
+    failure_summary = str(failure) or type(failure).__name__
     message = (
-        f"{failure}; workspace manifest rollback failed for "
+        f"{failure_summary}; manifest rollback failed for "
         f"{failed_paths}: {failure_details}"
     )
     failed_path = failures[0][0]

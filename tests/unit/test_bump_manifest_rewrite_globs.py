@@ -47,8 +47,12 @@ def test_recursive_glob_skips_directory_junctions(
         "fixtures/real/Cargo.toml",
         '[dependencies]\nalpha = "1.0.0"\n',
     )
+    write_fixture_manifest(
+        tmp_path,
+        "fixtures/junction/Cargo.toml",
+        '[dependencies]\nalpha = "1.0.0"\n',
+    )
     junction = manifest.parent.parent / "junction"
-    junction.mkdir()
     original_is_junction = pathlib.Path.is_junction
     monkeypatch.setattr(
         pathlib.Path,
