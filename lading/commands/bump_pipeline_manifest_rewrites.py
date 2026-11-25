@@ -26,6 +26,7 @@ from lading.commands.bump_manifest_rewrite_metrics import (
 )
 from lading.commands.bump_manifest_rewrite_model import (
     ManifestRewriteError,
+    ManifestRewriteWriteError,
 )
 
 if typ.TYPE_CHECKING:
@@ -205,35 +206,21 @@ def _apply_non_member_manifest_rewrites(
             dry_run=dry_run,
         )
     except BaseException as rewrite_error:
-        interrupted = not isinstance(rewrite_error, Exception)
-        if not isinstance(rewrite_error, ManifestRewriteError) and not interrupted:
-            raise
-        if interrupted and dry_run:
-            raise
-        if interrupted:
-            bump_pipeline_manifest_recovery.record_completed_rewrites_for_interruption(
-                stage, changed_manifests, rewrite_error
+        if _should_recover_manifest_rewrite_failure(rewrite_error, dry_run=dry_run):
+            recovery_error = _recover_failed_manifest_rewrite_application(
+                context,
+                stage,
+                changed_manifests,
+                rewrite_error,
             )
-        recovery_error = bump_pipeline_manifest_recovery.restore_changed_manifests(
-            stage,
-            changed_manifests,
-            rewrite_error,
-            workspace_root=context.root_path,
-        )
-        bump_manifest_rewrite_metrics.record_manifest_rewrite_metrics(
-            stage.planning_duration_seconds + clock() - application_started_at,
-            ManifestRewriteMetricLabels(
-                phase="application",
-                outcome="failed",
+            _record_failed_manifest_rewrite_metric(
+                stage,
+                application_started_at,
+                clock,
                 dry_run=dry_run,
-                error_category="write",
-            ),
-        )
-        if recovery_error is not None:
-            if interrupted:
-                rewrite_error.add_note(str(recovery_error))
-                raise
-            raise recovery_error from rewrite_error
+            )
+            if recovery_error is not None:
+                raise recovery_error from rewrite_error
         raise
     # The resolver already canonicalized these paths; resolving after a write
     # could follow a replaced symlink and report a different manifest.
@@ -246,5 +233,59 @@ def _apply_non_member_manifest_rewrites(
             outcome=outcome,
             dry_run=dry_run,
             error_category="none",
+        ),
+    )
+
+
+def _should_recover_manifest_rewrite_failure(
+    rewrite_error: BaseException,
+    *,
+    dry_run: bool,
+) -> bool:
+    """Select handled write failures while preserving dry-run interrupts."""
+    return isinstance(rewrite_error, ManifestRewriteError) or (
+        not isinstance(rewrite_error, Exception) and not dry_run
+    )
+
+
+def _recover_failed_manifest_rewrite_application(
+    context: _BumpContext,
+    stage: _ManifestRewriteStage,
+    changed_manifests: set[Path],
+    rewrite_error: BaseException,
+) -> ManifestRewriteWriteError | None:
+    """Restore outputs after a handled manifest rewrite failure."""
+    interrupted = not isinstance(rewrite_error, Exception)
+    if interrupted:
+        bump_pipeline_manifest_recovery.record_completed_rewrites_for_interruption(
+            stage, changed_manifests, rewrite_error
+        )
+    recovery_error = bump_pipeline_manifest_recovery.restore_changed_manifests(
+        stage,
+        changed_manifests,
+        rewrite_error,
+        workspace_root=context.root_path,
+    )
+    if recovery_error is not None and interrupted:
+        rewrite_error.add_note(str(recovery_error))
+        return None
+    return recovery_error
+
+
+def _record_failed_manifest_rewrite_metric(
+    stage: _ManifestRewriteStage,
+    application_started_at: float,
+    clock: cabc.Callable[[], float],
+    *,
+    dry_run: bool,
+) -> None:
+    """Record the failed duration of a handled rewrite application."""
+    bump_manifest_rewrite_metrics.record_manifest_rewrite_metrics(
+        stage.planning_duration_seconds + clock() - application_started_at,
+        ManifestRewriteMetricLabels(
+            phase="application",
+            outcome="failed",
+            dry_run=dry_run,
+            error_category="write",
         ),
     )

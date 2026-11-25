@@ -129,30 +129,15 @@ def _write_path_based_atomic_text(
     temporary_path: Path | None = None
     primary_error: BaseException | None = None
     try:
-        if directory_fd is None:
-            descriptor, temporary_path_value = tempfile.mkstemp(
-                dir=dirpath,
-                prefix=".lading-",
-                text=True,
-            )
-            replacement_path = Path(temporary_path_value)
-            temporary_path = replacement_path
-            temporary_name = temporary_path.name
-        else:
-            descriptor, temporary_name = _create_bounded_temporary_file(
-                directory_fd, file_path.name
-            )
-            replacement_path = temporary_directory / temporary_name
-            temporary_path = replacement_path
-
-        handle = _open_temporary_text_file(descriptor)
-        with handle:
-            if existing_mode is not None:
-                _set_file_mode(handle.fileno(), existing_mode)
-            handle.write(content)
-        if workspace_root is not None:
-            _resolve_bounded_write_target(file_path, workspace_root)
-        replacement_path.replace(file_path)
+        descriptor, temporary_name, replacement_path = _create_path_based_temporary(
+            dirpath,
+            file_path.name,
+            temporary_directory,
+            directory_fd,
+        )
+        temporary_path = replacement_path
+        _write_temporary_content(descriptor, content, existing_mode)
+        _replace_path_based_destination(replacement_path, file_path, workspace_root)
     except BaseException as error:
         primary_error = error
         if temporary_name is not None and temporary_path is not None:
@@ -163,6 +148,51 @@ def _write_path_based_atomic_text(
     finally:
         if directory_fd is not None:
             _close_descriptor(directory_fd, primary_error)
+
+
+def _create_path_based_temporary(
+    directory: Path,
+    destination_name: str,
+    temporary_directory: Path,
+    directory_fd: int | None,
+) -> tuple[int, str, Path]:
+    """Create a temporary replacement and return its descriptor and path."""
+    if directory_fd is None:
+        descriptor, temporary_path_value = tempfile.mkstemp(
+            dir=directory,
+            prefix=".lading-",
+            text=True,
+        )
+        temporary_path = Path(temporary_path_value)
+        return descriptor, temporary_path.name, temporary_path
+    descriptor, temporary_name = _create_bounded_temporary_file(
+        directory_fd, destination_name
+    )
+    return descriptor, temporary_name, temporary_directory / temporary_name
+
+
+def _write_temporary_content(
+    descriptor: int,
+    content: str,
+    existing_mode: int | None,
+) -> None:
+    """Write the replacement text while preserving an existing mode."""
+    handle = _open_temporary_text_file(descriptor)
+    with handle:
+        if existing_mode is not None:
+            _set_file_mode(handle.fileno(), existing_mode)
+        handle.write(content)
+
+
+def _replace_path_based_destination(
+    temporary_path: Path,
+    file_path: Path,
+    workspace_root: Path | None,
+) -> None:
+    """Validate a bounded destination and atomically replace it."""
+    if workspace_root is not None:
+        _resolve_bounded_write_target(file_path, workspace_root)
+    temporary_path.replace(file_path)
 
 
 def _open_temporary_parent_directory(directory: Path) -> tuple[Path, int | None]:

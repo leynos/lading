@@ -1,5 +1,7 @@
 """Test TOML dependency mutation, target selection, and warning collection."""
 
+import typing as typ
+
 import pytest
 from tomlkit import parse as parse_toml
 
@@ -133,8 +135,11 @@ def test_direct_dependency_update_uses_the_selected_manifest_key() -> None:
     )
 
 
-def test_direct_dependency_update_does_not_match_another_entry_package_name() -> None:
-    """A selected manifest key must not select a different package alias."""
+@pytest.mark.parametrize("section_scope", ["direct", "both"])
+def test_direct_key_does_not_select_another_package_alias(
+    section_scope: typ.Literal["direct", "both"],
+) -> None:
+    """A selected key must not widen selection to another package alias."""
     document = parse_toml(
         "[dependencies]\n"
         'alpha = { package = "beta", version = "1.0.0" }\n'
@@ -145,7 +150,7 @@ def test_direct_dependency_update_does_not_match_another_entry_package_name() ->
         document,
         {"dependencies": {"alpha"}},
         "2.0.0",
-        section_scope="direct",
+        section_scope=section_scope,
     )
 
     assert changed, "the selected direct manifest key should be updated"
@@ -198,28 +203,4 @@ def test_both_scope_matches_a_direct_alias_by_manifest_key() -> None:
     assert changed, "combined scope should update the selected direct alias key"
     assert document["dependencies"]["renamed"]["version"] == "2.0.0", (
         "the manifest key remains a valid direct-section selector in both scope"
-    )
-
-
-def test_both_scope_prefers_a_direct_key_over_another_package_alias() -> None:
-    """A selected key must not also select a colliding package identity."""
-    document = parse_toml(
-        "[dependencies]\n"
-        'alpha = { package = "beta", version = "1.0.0" }\n'
-        'renamed = { package = "alpha", version = "1.0.0" }\n'
-    )
-
-    changed = bump_toml_dependency_updates.update_dependency_sections_with_warnings(
-        document,
-        {"dependencies": {"alpha"}},
-        "2.0.0",
-        section_scope="both",
-    )
-
-    assert changed, "the matching direct key should be updated"
-    assert document["dependencies"]["alpha"]["version"] == "2.0.0", (
-        "the selected manifest key should receive the target version"
-    )
-    assert document["dependencies"]["renamed"]["version"] == "1.0.0", (
-        "a colliding package identity must not widen a direct-key selection"
     )

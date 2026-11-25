@@ -35,6 +35,7 @@ from lading.commands.bump_output import BumpChanges
 if typ.TYPE_CHECKING:
     from pathlib import Path
 
+    from lading.commands.bump_manifest_rewrite_model import ManifestRewriteWriteError
     from lading.commands.bump_manifests import _BumpContext
     from lading.workspace import WorkspaceCrate
 
@@ -105,20 +106,38 @@ def _process_workspace_and_crate_manifests(
             context, target_version, rewrite_stage, changed_manifests
         )
     except BaseException as stage_error:
-        if context.base_options.dry_run:
-            raise
-        rollback_error = bump_pipeline_manifest_recovery.restore_changed_manifests(
+        rollback_error = _restore_manifest_stage_after_failure(
+            context,
             rewrite_stage,
             changed_manifests,
             stage_error,
-            workspace_root=context.root_path,
         )
         if rollback_error is not None:
-            if not isinstance(stage_error, Exception):
-                stage_error.add_note(str(rollback_error))
-                raise
             raise rollback_error from stage_error
         raise
+
+
+def _restore_manifest_stage_after_failure(
+    context: _BumpContext,
+    rewrite_stage: bump_pipeline_manifest_rewrites._ManifestRewriteStage,
+    changed_manifests: set[Path],
+    stage_error: BaseException,
+) -> ManifestRewriteWriteError | None:
+    """Restore completed manifest writes unless this is a dry run."""
+    if context.base_options.dry_run:
+        return None
+    rollback_error = bump_pipeline_manifest_recovery.restore_changed_manifests(
+        rewrite_stage,
+        changed_manifests,
+        stage_error,
+        workspace_root=context.root_path,
+    )
+    if rollback_error is None:
+        return None
+    if not isinstance(stage_error, Exception):
+        stage_error.add_note(str(rollback_error))
+        return None
+    return rollback_error
 
 
 def _process_workspace_manifest(

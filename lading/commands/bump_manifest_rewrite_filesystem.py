@@ -137,18 +137,31 @@ def _expand_path(workspace_root: Path, configured_path: str) -> tuple[Path, ...]
     if not glob.has_magic(configured_path):
         return (Path(configured_path),)
     literal_candidate = workspace_root / configured_path
+    if _is_existing_literal_candidate(literal_candidate, configured_path):
+        return (literal_candidate,)
+    return _expand_manifest_rewrite_glob(workspace_root, configured_path)
+
+
+def _is_existing_literal_candidate(candidate: Path, configured_path: str) -> bool:
+    """Keep an existing path literal even when its name contains glob syntax."""
     try:
-        literal_candidate.lstat()
+        candidate.lstat()
     except FileNotFoundError:
-        pass
+        return False
     except OSError as exc:
         message = (
             "Could not inspect literal manifest rewrite path "
             f"{configured_path!r}: {exc}"
         )
         raise ManifestRewriteError(message) from exc
-    else:
-        return (literal_candidate,)
+    return True
+
+
+def _expand_manifest_rewrite_glob(
+    workspace_root: Path,
+    configured_path: str,
+) -> tuple[Path, ...]:
+    """Expand a configured glob and reject an empty result."""
     try:
         matches = manifest_paths.expand_manifest_glob_candidates(
             workspace_root,

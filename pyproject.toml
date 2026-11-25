@@ -621,6 +621,9 @@ reason = "Two single-statement rejection calls differing only in the expected-ty
 [[tool.duplication_gate.allow]]
 members = ["lading/commands/bump_manifests.py", "lading/commands/publish.py"]
 reason = "Keep the type-only imports in lading/commands/bump_manifests.py and lading/commands/publish.py local. Each command needs distinct types; extracting a shared typing module would couple unrelated command layers."
+[[tool.duplication_gate.allow]]
+members = ["lading/commands/bump_manifest_rewrite_filesystem.py::_is_existing_literal_candidate", "scripts/format_markdown.py::_present"]
+reason = "Keep the manifest resolver and PEP 723 formatter presence probes separate: callers preserve distinct domain errors, and importing application utilities would couple the standalone formatter to the lading package."
 [tool.df12_skylos]
 roots = ["lading"]
 python = "3.14"

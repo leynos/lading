@@ -1,5 +1,7 @@
 """Exercise temporary-file naming and cleanup in atomic path writes."""
 
+import collections.abc as cabc
+import functools
 import os
 import stat
 from pathlib import Path
@@ -7,6 +9,65 @@ from pathlib import Path
 import pytest
 
 from lading.commands import bump_toml_files
+
+
+class _ReadOnlyTemporaryFilesystem:
+    """Simulate Windows-style refusal to remove read-only temporaries."""
+
+    def __init__(
+        self,
+        original_unlink: cabc.Callable[..., None],
+        original_chmod: cabc.Callable[..., None],
+        readonly_error_message: str,
+    ) -> None:
+        """Keep original operations and state for the simulated filesystem."""
+        self.original_unlink = original_unlink
+        self.original_chmod = original_chmod
+        self.readonly_error_message = readonly_error_message
+        self.chmodded_temporaries: set[Path] = set()
+        self.unlink_attempts: list[tuple[Path, bool]] = []
+
+    def __get__(
+        self,
+        instance: Path | None,
+        _owner: type[Path],
+    ) -> cabc.Callable[..., None] | _ReadOnlyTemporaryFilesystem:
+        """Bind a Path instance to the simulated unlink operation."""
+        if instance is None:
+            return self
+        return functools.partial(self.unlink, instance)
+
+    def unlink(self, path: Path, *, missing_ok: bool = False) -> None:
+        """Reject unlink until the temporary has its owner-write bit."""
+        if path.name.startswith(".lading-"):
+            self._record_unlink_attempt(path)
+        self.original_unlink(path, missing_ok=missing_ok)
+
+    def chmod(
+        self,
+        path: Path,
+        mode: int,
+        *,
+        follow_symlinks: bool = True,
+    ) -> None:
+        """Track owner writability before forwarding the requested mode."""
+        if path.name.startswith(".lading-"):
+            self._record_writable_mode(path, mode)
+        self.original_chmod(path, mode, follow_symlinks=follow_symlinks)
+
+    def _record_unlink_attempt(self, path: Path) -> None:
+        """Capture a temporary unlink and enforce its simulated mode."""
+        is_writable = path in self.chmodded_temporaries
+        self.unlink_attempts.append((path, is_writable))
+        if not is_writable:
+            raise PermissionError(self.readonly_error_message)
+
+    def _record_writable_mode(self, path: Path, mode: int) -> None:
+        """Track the owner-write bit supplied to chmod."""
+        if mode & stat.S_IWUSR:
+            self.chmodded_temporaries.add(path)
+        else:
+            self.chmodded_temporaries.discard(path)
 
 
 def test_path_fallback_uses_short_temporary_name_for_long_destination(
@@ -176,38 +237,14 @@ def test_path_fallback_retries_cleanup_after_readonly_temporary_file(
     monkeypatch.setattr(
         bump_toml_files, "_resolve_bounded_write_target", reject_replacement
     )
-    original_unlink = Path.unlink
-    original_chmod = os.chmod
-    chmodded_temporaries: set[Path] = set()
-    unlink_attempts: list[tuple[Path, bool]] = []
     readonly_error_message = "read-only temporary"
-
-    def simulate_readonly_unlink(path: Path, *, missing_ok: bool = False) -> None:
-        """Emulate Windows refusing to unlink a read-only temporary file."""
-        if path.name.startswith(".lading-"):
-            is_writable = path in chmodded_temporaries
-            unlink_attempts.append((path, is_writable))
-            if path not in chmodded_temporaries:
-                raise PermissionError(readonly_error_message)
-        original_unlink(path, missing_ok=missing_ok)
-
-    def record_writable_mode(
-        path: Path,
-        mode: int,
-        *,
-        follow_symlinks: bool = True,
-    ) -> None:
-        """Allow the retry only after cleanup clears the read-only state."""
-        _ = follow_symlinks
-        if path.name.startswith(".lading-"):
-            if mode & stat.S_IWUSR:
-                chmodded_temporaries.add(path)
-            else:
-                chmodded_temporaries.discard(path)
-        original_chmod(path, mode)
-
-    monkeypatch.setattr(Path, "unlink", simulate_readonly_unlink)
-    monkeypatch.setattr(os, "chmod", record_writable_mode)
+    readonly_filesystem = _ReadOnlyTemporaryFilesystem(
+        Path.unlink,
+        os.chmod,
+        readonly_error_message,
+    )
+    monkeypatch.setattr(Path, "unlink", readonly_filesystem)
+    monkeypatch.setattr(os, "chmod", readonly_filesystem.chmod)
 
     with pytest.raises(PermissionError, match=replacement_error_message):
         bump_toml_files._write_path_based_atomic_text(
@@ -216,12 +253,12 @@ def test_path_fallback_retries_cleanup_after_readonly_temporary_file(
             workspace_root=tmp_path,
         )
 
-    assert len(unlink_attempts) == 2, (
+    assert len(readonly_filesystem.unlink_attempts) == 2, (
         "cleanup should retry unlink after making the temporary writable"
     )
-    assert [is_writable for _path, is_writable in unlink_attempts] == [False, True], (
-        "the retry must follow a writable-mode change"
-    )
+    assert [
+        is_writable for _path, is_writable in readonly_filesystem.unlink_attempts
+    ] == [False, True], "the retry must follow a writable-mode change"
     assert not list(tmp_path.glob(".lading-*")), (
         "the writable retry should remove the temporary file"
     )

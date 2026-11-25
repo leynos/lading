@@ -52,6 +52,19 @@ def _examples_by_id() -> dict[str, MarkdownExample]:
     }
 
 
+def _heading_index(
+    headings: list[tuple[int, str]],
+    level: int,
+    title_prefix: str,
+) -> int:
+    """Find a heading by level and case-insensitive title prefix."""
+    return next(
+        index
+        for index, (heading_level, title) in enumerate(headings)
+        if heading_level == level and title.casefold().startswith(title_prefix)
+    )
+
+
 def _imports_for_example(
     example: MarkdownExample,
 ) -> tuple[tuple[str, tuple[str, ...]], ...]:
@@ -275,26 +288,10 @@ def test_migration_checklist_follows_tasks_and_unaffected_behaviour() -> None:
         for index, token in enumerate(tokens)
         if token.type == "heading_open"
     ]
-    last_task = next(
-        index
-        for index, (level, title) in enumerate(headings)
-        if level == 2 and title.startswith("4.")
-    )
-    unaffected = next(
-        index
-        for index, (level, title) in enumerate(headings)
-        if level == 2 and title.casefold().startswith("what does not need to change")
-    )
-    checklist = next(
-        index
-        for index, (level, title) in enumerate(headings)
-        if level == 2 and title.casefold().startswith("migration checklist")
-    )
-    optional_adoption = next(
-        index
-        for index, (level, title) in enumerate(headings)
-        if level == 3 and title.casefold().startswith("optional adoption")
-    )
+    last_task = _heading_index(headings, 2, "4.")
+    unaffected = _heading_index(headings, 2, "what does not need to change")
+    checklist = _heading_index(headings, 2, "migration checklist")
+    optional_adoption = _heading_index(headings, 3, "optional adoption")
 
     assert last_task < unaffected < checklist < optional_adoption, (
         "required tasks and unaffected behaviour must precede the checklist"

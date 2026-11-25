@@ -48,24 +48,41 @@ def validate_member_manifest_before_update(
     previously_written_text = rewrite_stage.written_manifest_contents.get(manifest_path)
     if previously_written_text is None:
         return
+    _validate_member_manifest_destination(manifest_path, rewrite_stage)
+    _validate_member_manifest_contents(manifest_path, previously_written_text)
+
+
+def _validate_member_manifest_destination(
+    manifest_path: Path,
+    rewrite_stage: _ManifestRewriteStage,
+) -> None:
+    """Verify that the manifest still resolves to its recorded destination."""
     previous_destination = rewrite_stage.written_manifest_destinations.get(
         manifest_path
     )
-    if previous_destination is not None:
-        try:
-            current_destination = manifest_path.resolve(strict=True)
-        except (OSError, RuntimeError) as exc:
-            message = (
-                f"Could not verify manifest destination after an earlier bump pass "
-                f"wrote it: {manifest_path}: {exc}"
-            )
-            raise ManifestRewriteError(message, failed_path=manifest_path) from exc
-        if current_destination != previous_destination:
-            message = (
-                f"Manifest destination changed after an earlier bump pass wrote it: "
-                f"{manifest_path}"
-            )
-            raise ManifestRewriteError(message, failed_path=manifest_path)
+    if previous_destination is None:
+        return
+    try:
+        current_destination = manifest_path.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        message = (
+            f"Could not verify manifest destination after an earlier bump pass "
+            f"wrote it: {manifest_path}: {exc}"
+        )
+        raise ManifestRewriteError(message, failed_path=manifest_path) from exc
+    if current_destination != previous_destination:
+        message = (
+            f"Manifest destination changed after an earlier bump pass wrote it: "
+            f"{manifest_path}"
+        )
+        raise ManifestRewriteError(message, failed_path=manifest_path)
+
+
+def _validate_member_manifest_contents(
+    manifest_path: Path,
+    previously_written_text: str,
+) -> None:
+    """Reject content changes made after an earlier bump pass wrote the file."""
     try:
         current_text = manifest_path.read_text(encoding="utf-8", newline="")
     except (OSError, UnicodeError) as exc:
@@ -122,6 +139,23 @@ def restore_changed_manifests(
     rollback_candidates = (set(changed_manifests) | registered_manifests).intersection(
         original_text_by_path
     )
+    failures = _restore_rollback_candidates(
+        rollback_candidates,
+        original_text_by_path,
+        stage,
+        workspace_root,
+    )
+    return _manifest_rollback_error(failures, failure)
+
+
+def _restore_rollback_candidates(
+    rollback_candidates: cabc.Collection[Path],
+    original_text_by_path: cabc.Mapping[Path, str],
+    stage: _ManifestRewriteStage,
+    workspace_root: Path,
+) -> list[tuple[Path, str]]:
+    """Restore each candidate and collect files that could not be restored."""
+    failures: list[tuple[Path, str]] = []
     for manifest_path in sorted(rollback_candidates, key=str, reverse=True):
         detail = _restore_one_manifest(
             manifest_path,
@@ -131,6 +165,14 @@ def restore_changed_manifests(
         )
         if detail is not None:
             failures.append((manifest_path, detail))
+    return failures
+
+
+def _manifest_rollback_error(
+    failures: list[tuple[Path, str]],
+    failure: BaseException,
+) -> ManifestRewriteWriteError | None:
+    """Describe restoration failures while retaining rewrite progress."""
     if not failures:
         return None
     failed_paths = ", ".join(str(path) for path, _error in failures)
