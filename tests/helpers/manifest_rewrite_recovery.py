@@ -4,8 +4,13 @@ import collections.abc as cabc
 import dataclasses as dc
 import typing as typ
 from pathlib import Path
+from unittest import mock
+
+import pytest
 
 from lading import config as config_module
+from lading.commands import bump, bump_manifest_rewrite_application
+from lading.commands.bump_manifest_rewrites import ManifestRewriteError
 from lading.config import ManifestRewriteConfig, StringValueRewriteConfig
 from tests.helpers.workspace_builders import _make_workspace
 
@@ -103,3 +108,33 @@ def _second_fixture_write_failure(
         real_write(path, content, workspace_root=workspace_root)
 
     return fail_second_fixture
+
+
+def _run_partial_write_failure(
+    case: _PartialWriteFailureCase,
+    *,
+    before_failure: cabc.Callable[[Path], None] | None = None,
+) -> ManifestRewriteError:
+    """Run a bump whose second fixture write fails after fixture one."""
+    write_atomic_text = bump_manifest_rewrite_application.write_atomic_text
+    failure_injector = _second_fixture_write_failure(
+        case, write_atomic_text, before_failure=before_failure
+    )
+    with (
+        mock.patch.object(
+            bump_manifest_rewrite_application,
+            "write_atomic_text",
+            side_effect=failure_injector,
+        ),
+        pytest.raises(ManifestRewriteError) as failure,
+    ):
+        bump.run(
+            case.root,
+            "1.2.3",
+            options=bump.BumpOptions(
+                rebuild_lockfiles=False,
+                configuration=case.configuration,
+                workspace=case.workspace,
+            ),
+        )
+    return failure.value

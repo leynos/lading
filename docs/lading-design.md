@@ -436,10 +436,13 @@ lading bump <new_version> [--dry-run]
   existence and file-type checks. Documentation, README, and configured
   manifest rewrite writes pass the workspace root to the atomic writer, which
   repeats containment checks immediately before selecting the replacement
-  target. Configured manifest rewrites also require the planned path to remain
-  unchanged. README transposition requires the resolved path to be that crate's
-  own `README.md`, so an internal link cannot redirect a crate-specific rewrite
-  into the workspace README.
+  target. Where the operating system supports directory-relative no-follow
+  operations, the writer pins the parent directory while replacing; on other
+  platforms it revalidates containment immediately before a path-based atomic
+  replacement. Configured manifest rewrites also require the planned path to
+  remain unchanged. README transposition requires the resolved path to be that
+  crate's own `README.md`, so an internal link cannot redirect a crate-specific
+  rewrite into the workspace README.
 - `bump_pipeline_manifest_rewrites` owns planning and applying the configured
   rewrite stage. It snapshots workspace and member manifest text before any
   write and restores manifests changed by those stages if a configured rewrite

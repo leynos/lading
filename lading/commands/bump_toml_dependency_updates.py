@@ -144,17 +144,22 @@ def update_dependency_sections_with_warnings(
     changed = False
     for section, package_names in dependency_sections.items():
         if section_scope in {"direct", "both"}:
-            changed |= update_matching_dependency_section(
-                document, (section,), package_names, target_version
-            )
+            direct_table = bump_toml.select_table(document, (section,))
+            if direct_table is not None:
+                changed |= update_dependency_table_with_warnings(
+                    direct_table, package_names, target_version
+                )
         workspace_table = (
             bump_toml.select_table(document, ("workspace", section))
             if section_scope in {"workspace", "both"}
             else None
         )
         if workspace_table is not None:
-            changed |= update_dependency_table_with_warnings(
-                workspace_table, package_names, target_version
+            changed |= update_matching_dependency_section(
+                document,
+                ("workspace", section),
+                package_names,
+                target_version,
             )
     return changed
 

@@ -1,7 +1,6 @@
 """Tests for applying configured non-member manifest rewrites."""
 
 import pathlib
-import tempfile
 
 import pytest
 
@@ -78,7 +77,9 @@ def test_application_rejects_manifest_replaced_by_symlink_after_planning(
     tmp_path: pathlib.Path,
 ) -> None:
     """A symlink swapped in after planning cannot redirect an atomic write."""
-    manifest = tmp_path / "Cargo.toml"
+    workspace_root = tmp_path / "workspace"
+    manifest = workspace_root / "Cargo.toml"
+    manifest.parent.mkdir(parents=True)
     original = '[dependencies]\nalpha = "1.0.0"\n'
     manifest.write_text(original, encoding="utf-8", newline="")
     plan = bump_manifest_rewrites.ManifestRewritePlan(
@@ -86,26 +87,26 @@ def test_application_rejects_manifest_replaced_by_symlink_after_planning(
         original,
         '[dependencies]\nalpha = "2.0.0"\n',
     )
-    with tempfile.TemporaryDirectory(dir=tmp_path.parent) as outside_directory:
-        outside = pathlib.Path(outside_directory) / "Cargo.toml"
-        outside.write_text(original, encoding="utf-8")
-        manifest.unlink()
-        manifest.symlink_to(outside)
+    outside = tmp_path / "outside" / "Cargo.toml"
+    outside.parent.mkdir()
+    outside.write_text(original, encoding="utf-8")
+    manifest.unlink()
+    manifest.symlink_to(outside)
 
-        with pytest.raises(
-            bump_manifest_rewrites.ManifestRewriteError,
-            match="no longer resolves to its planned path",
-        ) as failure:
-            bump_manifest_rewrites.apply_manifest_rewrites(
-                (plan,), workspace_root=tmp_path, dry_run=False
-            )
+    with pytest.raises(
+        bump_manifest_rewrites.ManifestRewriteError,
+        match="no longer resolves to its planned path",
+    ) as failure:
+        bump_manifest_rewrites.apply_manifest_rewrites(
+            (plan,), workspace_root=workspace_root, dry_run=False
+        )
 
-        assert failure.value.failed_path == plan.path, (
-            "the stale destination error should identify the planned manifest path"
-        )
-        assert outside.read_text(encoding="utf-8") == original, (
-            "application must not replace the symlink target outside the planned path"
-        )
+    assert failure.value.failed_path == plan.path, (
+        "the stale destination error should identify the planned manifest path"
+    )
+    assert outside.read_text(encoding="utf-8") == original, (
+        "application must not replace the symlink target outside the planned path"
+    )
 
 
 def test_manifest_rewrite_preserves_crlf_line_endings(
@@ -158,7 +159,9 @@ def test_atomic_write_rechecks_containment_after_plan_source_read(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A final-component symlink swap cannot redirect a bounded write."""
-    manifest = tmp_path / "Cargo.toml"
+    workspace_root = tmp_path / "workspace"
+    manifest = workspace_root / "Cargo.toml"
+    manifest.parent.mkdir(parents=True)
     original = '[dependencies]\nalpha = "1.0.0"\n'
     manifest.write_text(original, encoding="utf-8", newline="")
     plan = bump_manifest_rewrites.ManifestRewritePlan(
@@ -166,7 +169,7 @@ def test_atomic_write_rechecks_containment_after_plan_source_read(
         original,
         '[dependencies]\nalpha = "2.0.0"\n',
     )
-    outside = tmp_path.parent / f"{tmp_path.name}-outside-Cargo.toml"
+    outside = tmp_path / "outside-Cargo.toml"
     outside.write_text(original, encoding="utf-8", newline="")
     write_text = bump_manifest_rewrite_application.write_atomic_text
 
@@ -192,7 +195,7 @@ def test_atomic_write_rechecks_containment_after_plan_source_read(
             match="must stay within the workspace",
         ) as failure:
             bump_manifest_rewrites.apply_manifest_rewrites(
-                (plan,), workspace_root=tmp_path, dry_run=False
+                (plan,), workspace_root=workspace_root, dry_run=False
             )
 
         assert failure.value.failed_path == plan.path, (

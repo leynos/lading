@@ -210,6 +210,9 @@ def test_bounded_write_keeps_the_open_parent_when_its_path_is_swapped(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A parent-path swap cannot redirect a bounded write through a symlink."""
+    if not bump_toml_files._supports_bounded_directory_operations():
+        pytest.skip("directory-relative replacement is unavailable on this platform")
+
     workspace_root = tmp_path / "workspace"
     parent = workspace_root / "nested"
     parent.mkdir(parents=True)
@@ -245,6 +248,82 @@ def test_bounded_write_keeps_the_open_parent_when_its_path_is_swapped(
         "replacement"
     ), "replacement must use the already-verified directory handle"
     assert parent.is_symlink(), "the concurrently installed symlink must remain"
+
+
+def test_bounded_write_uses_path_fallback_without_directory_operations(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Bounded writes remain available when descriptor-relative calls are absent."""
+    workspace_root = tmp_path / "workspace"
+    manifest_path = workspace_root / "fixtures" / "Cargo.toml"
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_text("original", encoding="utf-8")
+    monkeypatch.setattr(
+        bump_toml_files,
+        "_supports_bounded_directory_operations",
+        lambda: False,
+    )
+
+    bump_toml_files.write_atomic_text(
+        manifest_path,
+        "replacement",
+        workspace_root=workspace_root,
+    )
+
+    assert manifest_path.read_text(encoding="utf-8") == "replacement", (
+        "the portable bounded-write fallback should replace the selected file"
+    )
+
+
+def test_bounded_write_revalidates_before_path_fallback_replacement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed final containment check prevents the fallback replacement."""
+    workspace_root = tmp_path / "workspace"
+    manifest_path = workspace_root / "fixtures" / "Cargo.toml"
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_text("original", encoding="utf-8")
+    monkeypatch.setattr(
+        bump_toml_files,
+        "_supports_bounded_directory_operations",
+        lambda: False,
+    )
+    resolve_target = bump_toml_files._resolve_bounded_write_target
+    validation_count = 0
+    failure_message = "write denied"
+
+    def reject_final_validation(path: Path, root: Path) -> Path:
+        """Reject the second check, which runs immediately before replacement."""
+        nonlocal validation_count
+        validation_count += 1
+        if validation_count == 2:
+            raise PermissionError(failure_message)
+        return resolve_target(path, root)
+
+    monkeypatch.setattr(
+        bump_toml_files,
+        "_resolve_bounded_write_target",
+        reject_final_validation,
+    )
+
+    with pytest.raises(PermissionError, match=failure_message):
+        bump_toml_files.write_atomic_text(
+            manifest_path,
+            "replacement",
+            workspace_root=workspace_root,
+        )
+
+    assert validation_count == 2, (
+        "the writer must revalidate immediately before replace"
+    )
+    assert manifest_path.read_text(encoding="utf-8") == "original", (
+        "a failed final check must leave the destination unchanged"
+    )
+    assert not list(manifest_path.parent.glob("Cargo.toml.*")), (
+        "a failed final check must remove its temporary file"
+    )
 
 
 @pytest.mark.parametrize(

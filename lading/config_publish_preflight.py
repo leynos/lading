@@ -170,7 +170,7 @@ def _strip_patches(value: object) -> StripPatchesSetting:
     """Normalize the ``publish.strip_patches`` value."""
     if value is None:
         return "per-crate"
-    if value in {"all", "per-crate"}:
+    if isinstance(value, str) and value in {"all", "per-crate"}:
         return typ.cast("StripPatchesSetting", value)
     if value is False:
         return False

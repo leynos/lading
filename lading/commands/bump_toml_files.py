@@ -62,9 +62,10 @@ def write_atomic_text(
     replacement, so the link remains in place and its target receives the new
     content. Existing permission bits are copied to the replacement. When a
     workspace root is supplied, the destination must still resolve to its
-    planned path inside that workspace. Bounded replacements use no-follow,
-    directory-relative operations and fail closed when the platform cannot
-    provide them.
+    planned path inside that workspace. Platforms with directory-relative
+    operations replace relative to a pinned, no-follow directory descriptor.
+    Other platforms revalidate the resolved destination immediately before the
+    path-based atomic replacement.
 
     Parameters
     ----------
@@ -76,14 +77,18 @@ def write_atomic_text(
     workspace_root : Path or None, optional
         Workspace boundary for callers that must prevent a changed symlink from
         redirecting the replacement. The destination must be a resolved path
-        beneath this root. Defaults to ``None``.
+        beneath this root. Platforms with directory-relative operations pin the
+        parent while replacing; other platforms revalidate the path immediately
+        before replacement. Defaults to ``None``.
 
     Raises
     ------
     OSError
         If resolving the destination, creating or writing the temporary file,
         preserving permissions, replacing the destination, or validating a
-        bounded destination fails.
+        bounded destination fails. Bounded writes use descriptor-relative
+        replacement where the operating system supports it and path-based
+        replacement with final containment validation otherwise.
 
     Examples
     --------
@@ -96,13 +101,16 @@ def write_atomic_text(
     ...     destination.read_text(encoding="utf-8")
     "version = '1.0.0'"
     """  # ruff: ignore[docstring-extraneous-exception]  # filesystem calls propagate OSError
+    bounded_workspace_root: Path | None = None
     if workspace_root is None:
         if file_path.is_symlink():
             file_path = file_path.resolve(strict=True)
     else:
-        file_path = _resolve_bounded_write_target(file_path, workspace_root)
-        _write_bounded_atomic_text(file_path, content, workspace_root.resolve())
-        return
+        bounded_workspace_root = workspace_root.resolve()
+        file_path = _resolve_bounded_write_target(file_path, bounded_workspace_root)
+        if _supports_bounded_directory_operations():
+            _write_bounded_atomic_text(file_path, content, bounded_workspace_root)
+            return
 
     dirpath = file_path.parent
     existing_mode: int | None = None
@@ -118,6 +126,8 @@ def write_atomic_text(
             if existing_mode is not None:
                 _set_file_mode(handle.fileno(), existing_mode)
             handle.write(content)
+        if bounded_workspace_root is not None:
+            _resolve_bounded_write_target(file_path, bounded_workspace_root)
         Path(tmp_path).replace(file_path)
     finally:
         with suppress(FileNotFoundError):
@@ -151,10 +161,6 @@ def _write_bounded_atomic_text(
     file_path: Path, content: str, workspace_root: Path
 ) -> None:
     """Replace an in-workspace file relative to its opened parent directory."""
-    if not _supports_bounded_directory_operations():
-        message = "Atomic write cannot guarantee workspace containment on this platform"
-        raise PermissionError(message)
-
     relative_path = file_path.relative_to(workspace_root)
     directory_fd = _open_workspace_parent_directory(
         workspace_root, relative_path.parent
@@ -182,10 +188,12 @@ def _write_bounded_atomic_text(
         )
         temporary_name = None
     finally:
-        if temporary_name is not None:
-            with suppress(FileNotFoundError):
-                os.unlink(temporary_name, dir_fd=directory_fd)
-        os.close(directory_fd)
+        try:
+            if temporary_name is not None:
+                with suppress(FileNotFoundError):
+                    os.unlink(temporary_name, dir_fd=directory_fd)
+        finally:
+            os.close(directory_fd)
 
 
 def _supports_bounded_directory_operations() -> bool:
@@ -215,18 +223,13 @@ def _open_directory_components(current_fd: int, components: tuple[str, ...]) -> 
             next_fd = os.open(component, flags, dir_fd=current_fd)
             previous_fd = current_fd
             current_fd = next_fd
-            try:
-                os.close(previous_fd)
-            except BaseException:
-                with suppress(OSError):
-                    os.close(current_fd)
-                current_fd = previous_fd
-                raise
+            os.close(previous_fd)
         transferred = True
         return current_fd
     finally:
         if not transferred:
-            os.close(current_fd)
+            with suppress(OSError):
+                os.close(current_fd)
 
 
 def _open_workspace_parent_directory(

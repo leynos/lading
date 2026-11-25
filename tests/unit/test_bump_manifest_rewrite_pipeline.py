@@ -271,9 +271,13 @@ def test_missing_rewrite_manifest_fails_before_any_workspace_write(
     fixture.parent.mkdir(parents=True)
     fixture.write_text('[dependencies]\nalpha = "0.1.0"\n', encoding="utf-8")
     root_manifest = tmp_path / "Cargo.toml"
-    member_manifest = tmp_path / "crates/alpha/Cargo.toml"
     original_bytes = {
-        path: path.read_bytes() for path in (root_manifest, member_manifest, fixture)
+        root_manifest: root_manifest.read_bytes(),
+        fixture: fixture.read_bytes(),
+        **{
+            crate.manifest_path: crate.manifest_path.read_bytes()
+            for crate in workspace.crates
+        },
     }
     configuration = config_module.LadingConfig(
         bump=config_module.BumpConfig(

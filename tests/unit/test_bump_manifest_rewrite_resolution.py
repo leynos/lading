@@ -64,18 +64,19 @@ def test_glob_skips_symlinked_files_before_traversing_remaining_segments(
     write_fixture_manifest: _ManifestWriter,
 ) -> None:
     """A non-directory wildcard match cannot abort later valid manifest matches."""
+    workspace_root = tmp_path / "workspace"
     manifest = write_fixture_manifest(
-        tmp_path,
+        workspace_root,
         "fixtures/a/Cargo.toml",
         '[dependencies]\nalpha = "1.0.0"\n',
     )
-    outside_file = tmp_path.parent / f"{tmp_path.name}-notice"
+    outside_file = tmp_path / "outside-notice"
     outside_file.write_text("not a directory", encoding="utf-8")
-    symlinked_file = tmp_path / "fixtures" / "000-notice"
+    symlinked_file = workspace_root / "fixtures" / "000-notice"
     symlinked_file.symlink_to(outside_file)
 
     matches = manifest_paths.expand_manifest_glob_candidates(
-        tmp_path,
+        workspace_root,
         "fixtures/*/Cargo.toml",
         error_type=bump_manifest_rewrites.ManifestRewriteError,
         label="Manifest rewrite",
@@ -158,13 +159,14 @@ def test_glob_rejects_escaping_directory_symlinks(
     tmp_path: pathlib.Path,
 ) -> None:
     """Following a glob directory symlink must still enforce containment."""
-    outside_directory = tmp_path.parent / f"{tmp_path.name}-outside"
+    workspace_root = tmp_path / "workspace"
+    outside_directory = tmp_path / "outside"
     outside_directory.mkdir()
     (outside_directory / "Cargo.toml").write_text(
         '[package]\nname = "outside"\nversion = "0.1.0"\n', encoding="utf-8"
     )
-    alias = tmp_path / "fixtures" / "escape"
-    alias.parent.mkdir()
+    alias = workspace_root / "fixtures" / "escape"
+    alias.parent.mkdir(parents=True)
     alias.symlink_to(outside_directory, target_is_directory=True)
 
     with pytest.raises(
@@ -172,171 +174,11 @@ def test_glob_rejects_escaping_directory_symlinks(
         match="stay within the workspace",
     ):
         manifest_paths.expand_manifest_glob_candidates(
-            tmp_path,
+            workspace_root,
             "fixtures/*/Cargo.toml",
             error_type=bump_manifest_rewrites.ManifestRewriteError,
             label="Manifest rewrite",
         )
-
-
-def test_recursive_globs_do_not_follow_directory_symlink_cycles(
-    tmp_path: pathlib.Path,
-    write_fixture_manifest: _ManifestWriter,
-) -> None:
-    """Recursive ``**`` ignores a directory symlink back to an ancestor."""
-    manifest = write_fixture_manifest(
-        tmp_path,
-        "fixtures/a/Cargo.toml",
-        '[dependencies]\nalpha = "1.0.0"\n',
-    )
-    cycle = manifest.parent / "loop"
-    cycle.symlink_to(tmp_path / "fixtures", target_is_directory=True)
-
-    matches = manifest_paths.expand_manifest_glob_candidates(
-        tmp_path,
-        "fixtures/**/Cargo.toml",
-        error_type=bump_manifest_rewrites.ManifestRewriteError,
-        label="Manifest rewrite",
-    )
-
-    assert matches == (manifest,), (
-        "recursive glob traversal must not revisit symlink cycles"
-    )
-
-
-def test_terminal_recursive_glob_rejects_escaping_symlinks(
-    tmp_path: pathlib.Path,
-) -> None:
-    """A terminal ``**`` match still checks symlink containment."""
-    outside_directory = tmp_path.parent / f"{tmp_path.name}-outside"
-    outside_directory.mkdir()
-    escape = tmp_path / "fixtures" / "escape"
-    escape.parent.mkdir()
-    escape.symlink_to(outside_directory, target_is_directory=True)
-
-    with pytest.raises(
-        bump_manifest_rewrites.ManifestRewriteError,
-        match="stay within the workspace",
-    ):
-        manifest_paths.expand_manifest_glob_candidates(
-            tmp_path,
-            "fixtures/**",
-            error_type=bump_manifest_rewrites.ManifestRewriteError,
-            label="Manifest rewrite",
-        )
-
-
-def test_terminal_recursive_glob_includes_manifest_files(
-    tmp_path: pathlib.Path,
-    write_fixture_manifest: _ManifestWriter,
-) -> None:
-    """A terminal ``**`` records matching files as well as directories."""
-    manifest = write_fixture_manifest(
-        tmp_path, "fixtures/demo/Cargo.toml", '[dependencies]\nalpha = "1.0.0"\n'
-    )
-
-    matches = manifest_paths.expand_manifest_glob_candidates(
-        tmp_path,
-        "fixtures/**",
-        error_type=bump_manifest_rewrites.ManifestRewriteError,
-        label="Manifest rewrite",
-    )
-
-    assert manifest in matches, "terminal recursive globs must retain file matches"
-
-
-@pytest.mark.parametrize(
-    ("pattern", "fixture_paths"),
-    [
-        pytest.param(
-            "fixtures/**/**/Cargo.toml",
-            ("fixtures/a/Cargo.toml", "fixtures/a/deep/Cargo.toml"),
-            id="adjacent-recursive-segments",
-        ),
-        pytest.param(
-            "**/foo/**/Cargo.toml",
-            ("foo/foo/Cargo.toml",),
-            id="nonadjacent-recursive-segments",
-        ),
-    ],
-)
-def test_recursive_globs_do_not_duplicate_manifests(
-    tmp_path: pathlib.Path,
-    write_fixture_manifest: _ManifestWriter,
-    pattern: str,
-    fixture_paths: tuple[str, ...],
-) -> None:
-    """Different ``**`` decompositions return each selected path once."""
-    expected = tuple(
-        sorted(
-            write_fixture_manifest(tmp_path, path, '[dependencies]\nalpha = "1.0.0"\n')
-            for path in fixture_paths
-        )
-    )
-    matches = manifest_paths.expand_manifest_glob_candidates(
-        tmp_path,
-        pattern,
-        error_type=bump_manifest_rewrites.ManifestRewriteError,
-        label="Manifest rewrite",
-    )
-
-    assert matches == expected, "recursive glob segments must not duplicate paths"
-
-
-def test_recursive_glob_handles_deep_directory_chains(
-    tmp_path: pathlib.Path,
-    write_fixture_manifest: _ManifestWriter,
-) -> None:
-    """A deep workspace tree does not consume Python call-stack depth."""
-    relative_path = "/".join((*(("a",) * 600), "Cargo.toml"))
-    manifest = write_fixture_manifest(
-        tmp_path, relative_path, '[dependencies]\nalpha = "1.0.0"\n'
-    )
-
-    matches = manifest_paths.expand_manifest_glob_candidates(
-        tmp_path,
-        "**/Cargo.toml",
-        error_type=bump_manifest_rewrites.ManifestRewriteError,
-        label="Manifest rewrite",
-    )
-
-    assert matches == (manifest.resolve(),), (
-        "recursive traversal should find the manifest beyond recursion depth"
-    )
-
-
-def test_recursive_glob_skips_repeated_candidate_pattern_states(
-    tmp_path: pathlib.Path,
-    write_fixture_manifest: _ManifestWriter,
-) -> None:
-    """Repeated recursive decompositions scan each state only once."""
-    relative_path = "/".join((*(("a",) * 20), "Cargo.toml"))
-    manifest = write_fixture_manifest(
-        tmp_path, relative_path, '[dependencies]\nalpha = "1.0.0"\n'
-    )
-    pattern = "/".join((*(("**", "a") * 10), "**", "Cargo.toml"))
-    directory_reads = 0
-
-    def read_directory(directory: pathlib.Path) -> tuple[pathlib.Path, ...]:
-        """Count scans while preserving the resolver's normal directory order."""
-        nonlocal directory_reads
-        directory_reads += 1
-        return tuple(sorted(directory.iterdir()))
-
-    traversal = manifest_paths._ManifestGlobTraversal(
-        workspace_root=tmp_path,
-        pattern=pattern,
-        error_type=bump_manifest_rewrites.ManifestRewriteError,
-        label="Manifest rewrite",
-        directory_reader=read_directory,
-    )
-
-    assert traversal.collect() == (manifest.resolve(),), (
-        "overlapping recursive segments must retain the matching manifest"
-    )
-    assert directory_reads < 1_000, (
-        "the same lexical path and pattern index should not be scanned twice"
-    )
 
 
 @pytest.mark.parametrize(

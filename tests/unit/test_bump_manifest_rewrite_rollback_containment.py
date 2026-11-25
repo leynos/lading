@@ -8,18 +8,15 @@ from unittest import mock
 import pytest
 
 from lading.commands import (
-    bump,
-    bump_manifest_rewrite_application,
     bump_pipeline_manifest_rewrites,
 )
 from lading.commands.bump_manifest_rewrites import (
-    ManifestRewriteError,
     ManifestRewriteWriteError,
 )
 from tests.helpers.manifest_rewrite_recovery import (
     _make_partial_write_failure_case,
     _PartialWriteFailureCase,
-    _second_fixture_write_failure,
+    _run_partial_write_failure,
 )
 
 pytestmark = pytest.mark.usefixtures("reset_process_metrics")
@@ -40,7 +37,6 @@ class _RollbackProbe:
     case: _PartialWriteFailureCase
     alpha_manifest: Path
     outside_manifest: Path
-    fixture_write: cabc.Callable[..., None]
     atomic_write: cabc.Callable[..., None]
     state: _RollbackProbeState = dc.field(default_factory=_RollbackProbeState)
 
@@ -71,39 +67,31 @@ def test_rollback_does_not_follow_member_path_swapped_outside_workspace(
     tmp_path: Path,
 ) -> None:
     """A swapped member path cannot redirect rollback outside the workspace."""
-    case = _make_partial_write_failure_case(tmp_path)
+    case = _make_partial_write_failure_case(tmp_path / "workspace")
     alpha_manifest = _alpha_manifest_path(case)
-    outside_manifest = tmp_path.parent / f"{tmp_path.name}-outside-alpha.toml"
+    outside_manifest = tmp_path / "outside-alpha.toml"
     probe = _RollbackProbe(
         case=case,
         alpha_manifest=alpha_manifest,
         outside_manifest=outside_manifest,
-        fixture_write=bump_manifest_rewrite_application.write_atomic_text,
         atomic_write=bump_pipeline_manifest_rewrites.bump_toml_files.write_atomic_text,
-    )
-    failure_injector = _second_fixture_write_failure(
-        case,
-        probe.fixture_write,
-        before_failure=probe.swap_member_path_outside,
     )
 
     try:
-        with (
-            mock.patch.object(
-                bump_manifest_rewrite_application,
-                "write_atomic_text",
-                side_effect=failure_injector,
-            ),
-            mock.patch.object(
-                bump_pipeline_manifest_rewrites.bump_toml_files,
-                "write_atomic_text",
-                side_effect=probe.bounded_rollback_write,
-            ),
-            pytest.raises(ManifestRewriteWriteError) as failure,
+        with mock.patch.object(
+            bump_pipeline_manifest_rewrites.bump_toml_files,
+            "write_atomic_text",
+            side_effect=probe.bounded_rollback_write,
         ):
-            _run_bump(case)
+            failure = _run_partial_write_failure(
+                case,
+                before_failure=probe.swap_member_path_outside,
+            )
 
-        assert failure.value.failed_path == alpha_manifest, (
+        assert isinstance(failure, ManifestRewriteWriteError), (
+            "the fixture write failure should become a rollback error"
+        )
+        assert failure.failed_path == alpha_manifest, (
             "the rollback error should identify the member path rejected by the "
             "workspace boundary"
         )
@@ -153,39 +141,3 @@ def _alpha_manifest_path(case: _PartialWriteFailureCase) -> Path:
     return next(
         crate.manifest_path for crate in case.workspace.crates if crate.name == "alpha"
     )
-
-
-def _run_bump(case: _PartialWriteFailureCase) -> None:
-    """Run the bump used by rollback containment scenarios."""
-    bump.run(
-        case.root,
-        "1.2.3",
-        options=bump.BumpOptions(
-            rebuild_lockfiles=False,
-            configuration=case.configuration,
-            workspace=case.workspace,
-        ),
-    )
-
-
-def _run_partial_write_failure(
-    case: _PartialWriteFailureCase,
-    *,
-    before_failure: cabc.Callable[[Path], None] | None = None,
-) -> ManifestRewriteError:
-    """Fail the second fixture write after the first one succeeds."""
-    fixture_write = bump_manifest_rewrite_application.write_atomic_text
-    failure_injector = _second_fixture_write_failure(
-        case, fixture_write, before_failure=before_failure
-    )
-
-    with (
-        mock.patch.object(
-            bump_manifest_rewrite_application,
-            "write_atomic_text",
-            side_effect=failure_injector,
-        ),
-        pytest.raises(ManifestRewriteError) as failure,
-    ):
-        _run_bump(case)
-    return failure.value

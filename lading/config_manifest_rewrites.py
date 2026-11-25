@@ -166,7 +166,25 @@ class ManifestRewriteConfig:
 def parse_manifest_rewrite_configs(
     mapping: cabc.Mapping[str, typ.Any],
 ) -> tuple[ManifestRewriteConfig, ...]:
-    """Parse the optional rewrite-group array from the ``bump`` table."""
+    """Parse configured manifest rewrite groups from the ``bump`` table.
+
+    Parameters
+    ----------
+    mapping : Mapping[str, Any]
+        Parsed ``bump`` table. An absent ``manifest_rewrites`` key selects the
+        empty configuration.
+
+    Returns
+    -------
+    tuple[ManifestRewriteConfig, ...]
+        Validated rewrite groups, or an empty tuple when the key is absent.
+
+    Raises
+    ------
+    ConfigurationError
+        If a rewrite group is invalid. The message identifies its indexed
+        configuration field.
+    """  # ruff: ignore[docstring-extraneous-exception]  # delegated record validators raise it
     if "manifest_rewrites" not in mapping:
         return ()
     field_name = "bump.manifest_rewrites"
@@ -184,13 +202,20 @@ def _manifest_rewrite_paths(
     field = f"{field_name}.paths"
     paths = _required_rewrite_segments(mapping.get("paths"), field, "path")
     for index, path in enumerate(paths):
-        candidates = (pathlib.Path(path), pathlib.PureWindowsPath(path))
-        if chr(0) in path or any(
-            candidate.anchor or ".." in candidate.parts for candidate in candidates
-        ):
+        if not _is_safe_workspace_relative_path(path):
             message = f"{field}[{index}] must be a safe workspace-relative path."
             raise ConfigurationError(message)
     return paths
+
+
+def _is_safe_workspace_relative_path(path: str) -> bool:
+    """Reject NULs, anchored paths, and parent traversal on either platform."""
+    if chr(0) in path:
+        return False
+    candidates = (pathlib.Path(path), pathlib.PureWindowsPath(path))
+    if any(candidate.anchor for candidate in candidates):
+        return False
+    return not any(".." in candidate.parts for candidate in candidates)
 
 
 def _required_rewrite_segments(

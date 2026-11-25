@@ -1,6 +1,5 @@
 """Recovery behavior after partial configured manifest rewrite failures."""
 
-import collections.abc as cabc
 from pathlib import Path
 from unittest import mock
 
@@ -26,41 +25,11 @@ from tests.helpers.manifest_rewrite_recovery import (
     _InjectedMemberManifestError,
     _make_partial_write_failure_case,
     _PartialWriteFailureCase,
+    _run_partial_write_failure,
     _second_fixture_write_failure,
 )
 
 pytestmark = pytest.mark.usefixtures("reset_process_metrics")
-
-
-def _run_partial_write_failure(
-    case: _PartialWriteFailureCase,
-    *,
-    before_failure: cabc.Callable[[Path], None] | None = None,
-) -> ManifestRewriteError:
-    """Fail the second fixture write after allowing the first atomic write."""
-    write_atomic_text = bump_manifest_rewrite_application.write_atomic_text
-    failure_injector = _second_fixture_write_failure(
-        case, write_atomic_text, before_failure=before_failure
-    )
-
-    with (
-        mock.patch.object(
-            bump_manifest_rewrite_application,
-            "write_atomic_text",
-            side_effect=failure_injector,
-        ),
-        pytest.raises(ManifestRewriteError, match="1 of 2") as failure,
-    ):
-        bump.run(
-            case.root,
-            "1.2.3",
-            options=bump.BumpOptions(
-                rebuild_lockfiles=False,
-                configuration=case.configuration,
-                workspace=case.workspace,
-            ),
-        )
-    return failure.value
 
 
 def _assert_partial_write_state(
@@ -314,7 +283,6 @@ def test_rewrite_failure_rolls_back_to_text_parsed_after_a_concurrent_edit(
     concurrent_edit = "\n# edited after planning and before this manifest update\n"
     parsed_beta_text = original_beta_text + concurrent_edit
     original_update_manifest = bump_pipeline._update_manifest
-    write_atomic_text = bump_manifest_rewrite_application.write_atomic_text
 
     def edit_beta_before_update(
         manifest_path: Path,
@@ -329,30 +297,22 @@ def test_rewrite_failure_rolls_back_to_text_parsed_after_a_concurrent_edit(
             manifest_path, selectors, target_version, update_context
         )
 
-    failure_injector = _second_fixture_write_failure(case, write_atomic_text)
-
-    with (
-        mock.patch.object(
-            bump_pipeline,
-            "_update_manifest",
-            side_effect=edit_beta_before_update,
-        ),
-        mock.patch.object(
-            bump_manifest_rewrite_application,
-            "write_atomic_text",
-            side_effect=failure_injector,
-        ),
-        pytest.raises(ManifestRewriteError),
+    with mock.patch.object(
+        bump_pipeline,
+        "_update_manifest",
+        side_effect=edit_beta_before_update,
     ):
-        bump.run(
-            case.root,
-            "1.2.3",
-            options=bump.BumpOptions(
-                rebuild_lockfiles=False,
-                configuration=case.configuration,
-                workspace=case.workspace,
-            ),
-        )
+        failure = _run_partial_write_failure(case)
+
+    assert isinstance(failure, ManifestRewriteWriteError), (
+        "the injected second fixture write must produce a write failure"
+    )
+    assert failure.failed_path == case.fixtures[1].resolve(), (
+        "the error must identify the second fixture manifest"
+    )
+    assert failure.completed_writes == 1, (
+        "the error must report the first fixture as the only completed write"
+    )
 
     assert beta_manifest.read_text(encoding="utf-8") == parsed_beta_text, (
         "rollback should restore the text parsed by this update, including edits "

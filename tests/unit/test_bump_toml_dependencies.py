@@ -90,25 +90,44 @@ def test_dependency_target_name_uses_package_alias_and_table_keys(
 
 
 def test_workspace_update_does_not_rewrite_local_alias_for_another_package() -> None:
-    """Direct aliases match package identity while workspace declarations update."""
+    """Workspace declarations match package identity rather than alias keys."""
     document = parse_toml(
         "[dependencies]\n"
         'alpha = { package = "external", version = "1.0.0" }\n\n'
         "[workspace.dependencies]\n"
-        'alpha = "1.0.0"\n'
+        'alpha-core = { package = "alpha", version = "1.0.0" }\n'
     )
 
     changed = bump_toml_dependency_updates.update_dependency_sections_with_warnings(
         document,
         {"dependencies": {"alpha"}},
         "2.0.0",
-        section_scope="both",
+        section_scope="workspace",
     )
 
     assert changed, "the workspace dependency declaration should be updated"
     assert document["dependencies"]["alpha"]["version"] == "1.0.0", (
         "a local alias naming another package must keep its original requirement"
     )
-    assert document["workspace"]["dependencies"]["alpha"] == "2.0.0", (
-        "the matching workspace dependency declaration should receive the target"
+    assert document["workspace"]["dependencies"]["alpha-core"]["version"] == (
+        "2.0.0"
+    ), "workspace aliases should match the selected crate by package identity"
+
+
+def test_direct_dependency_update_uses_the_selected_manifest_key() -> None:
+    """A selected dependency alias updates even when its package name differs."""
+    document = parse_toml(
+        '[dependencies]\nalpha-core = { package = "alpha", version = "1.0.0" }\n'
+    )
+
+    changed = bump_toml_dependency_updates.update_dependency_sections_with_warnings(
+        document,
+        {"dependencies": {"alpha-core"}},
+        "2.0.0",
+        section_scope="both",
+    )
+
+    assert changed, "the selected alias should be updated"
+    assert document["dependencies"]["alpha-core"]["version"] == "2.0.0", (
+        "direct dependency sections should match the manifest's alias key"
     )
