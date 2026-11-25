@@ -123,8 +123,12 @@ def _update_selected_dependency_section(
     matching_names = {
         name
         for name, entry in tuple(table.items())
-        if (selection.match_manifest_keys and name in selection.names)
-        or bump_toml_dependencies.dependency_target_name(name, entry) in selection.names
+        if (
+            name in selection.names
+            if selection.match_manifest_keys
+            else bump_toml_dependencies.dependency_target_name(name, entry)
+            in selection.names
+        )
     }
     if not matching_names:
         return False
@@ -162,7 +166,7 @@ def update_dependency_sections_with_warnings(
         if section_scope in {"direct", "both"}:
             selection = _DependencySectionSelection(
                 names=frozenset(package_names),
-                match_manifest_keys=True,
+                match_manifest_keys=section_scope == "direct",
             )
             changed |= _update_selected_dependency_section(
                 document,

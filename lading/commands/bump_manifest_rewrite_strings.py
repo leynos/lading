@@ -1,5 +1,6 @@
 r"""Compile selected TOML string rewrites for configured manifests."""
 
+import bisect
 import collections.abc as cabc
 import re
 import typing as typ
@@ -19,19 +20,10 @@ if typ.TYPE_CHECKING:
 _CRATE_NAME_CHARACTER: typ.Final[str] = r"A-Za-z0-9_-"
 _VERSION_PREFIX_CHARACTER: typ.Final[str] = r"A-Za-z0-9."
 _VERSION_SUFFIX_CHARACTER: typ.Final[str] = r"A-Za-z0-9.+-"
-_SEMVER_BUILD_METADATA_PREFIX: typ.Final[re.Pattern[str]] = re.compile(
-    r"(?<![A-Za-z0-9.])"
-    r"\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?\+$"
-)
-_SEMVER_PRERELEASE_PREFIX: typ.Final[re.Pattern[str]] = re.compile(
-    r"(?<![A-Za-z0-9.])(?:"
-    r"\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?-"
-    r"|"
-    r"\d+\.\d+\.\d+-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*\."
-    r")\Z"
-)
-_SEMVER_IDENTIFIER_CHARACTERS: typ.Final[re.Pattern[str]] = re.compile(
-    r"[0-9A-Za-z.-]*"
+_SEMVER_COMPONENT_SUFFIXES: typ.Final[re.Pattern[str]] = re.compile(
+    r"(?<![A-Za-z0-9.])\d+\.\d+\.\d+"
+    r"(?P<prerelease>-(?:[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?)?"
+    r"(?P<build>\+(?:[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?)?"
 )
 # A configured match may include the build-metadata separator itself.
 _SEMVER_MATCH_TEXT: typ.Final[re.Pattern[str]] = re.compile(r"[+-]?[0-9A-Za-z.+-]+")
@@ -95,59 +87,59 @@ def _compile_string_rewrite(
     )
     matching_replacements = _matching_replacements(replacements, target_renderings)
     pattern = _string_replacement_pattern(rule.template, matching_replacements)
-    return lambda value: pattern.sub(
-        lambda match: _replacement_for_match(value, match, matching_replacements),
+    return lambda value: _rewrite_string_value(value, pattern, matching_replacements)
+
+
+def _rewrite_string_value(
+    value: str,
+    pattern: re.Pattern[str],
+    replacements: cabc.Mapping[str, str],
+) -> str:
+    """Rewrite once using SemVer ranges calculated for this source value."""
+    protected_ranges = _semver_component_ranges(value)
+    range_starts = tuple(start for start, _end in protected_ranges)
+    return pattern.sub(
+        lambda match: _replacement_for_match(
+            match, replacements, protected_ranges, range_starts
+        ),
         value,
     )
 
 
 def _replacement_for_match(
-    value: str,
     match: re.Match[str],
     replacements: cabc.Mapping[str, str],
+    protected_ranges: tuple[tuple[int, int], ...],
+    range_starts: tuple[int, ...],
 ) -> str:
     """Replace a match unless it is nested in a SemVer prerelease or build."""
     matched_text = match.group()
     if _SEMVER_MATCH_TEXT.fullmatch(matched_text) is not None and (
-        _is_semver_component_match(value, match.start(), matched_text)
+        _is_semver_component_match(match.start(), protected_ranges, range_starts)
     ):
         return matched_text
     return replacements[matched_text]
 
 
+def _semver_component_ranges(value: str) -> tuple[tuple[int, int], ...]:
+    """Return prerelease and build-metadata ranges in a source value."""
+    ranges: list[tuple[int, int]] = []
+    for match in _SEMVER_COMPONENT_SUFFIXES.finditer(value):
+        for component in ("prerelease", "build"):
+            start, end = match.span(component)
+            if start >= 0:
+                ranges.append((start, end))
+    return tuple(ranges)
+
+
 def _is_semver_component_match(
-    value: str,
     match_start: int,
-    matched_text: str,
+    protected_ranges: tuple[tuple[int, int], ...],
+    range_starts: tuple[int, ...],
 ) -> bool:
-    """Identify a match inside a SemVer prerelease or build-metadata segment."""
-    return _is_semver_build_metadata_match(value, match_start) or (
-        _is_semver_prerelease_match(
-            value,
-            match_start + int(matched_text.startswith(("-", "."))),
-        )
-    )
-
-
-def _is_semver_build_metadata_match(
-    value: str,
-    match_start: int,
-) -> bool:
-    """Identify a match anywhere inside a SemVer build metadata segment."""
-    separator = value.rfind("+", 0, match_start + 1)
-    if separator < 0:
-        return False
-    semver_prefix = value[: separator + 1]
-    metadata_prefix = value[separator + 1 : match_start]
-    return (
-        _SEMVER_BUILD_METADATA_PREFIX.search(semver_prefix) is not None
-        and _SEMVER_IDENTIFIER_CHARACTERS.fullmatch(metadata_prefix) is not None
-    )
-
-
-def _is_semver_prerelease_match(value: str, match_start: int) -> bool:
-    """Identify a match nested after a SemVer core's prerelease separator."""
-    return _SEMVER_PRERELEASE_PREFIX.search(value[:match_start]) is not None
+    """Check a match start against the precomputed SemVer component ranges."""
+    range_index = bisect.bisect_right(range_starts, match_start) - 1
+    return range_index >= 0 and match_start < protected_ranges[range_index][1]
 
 
 def _replacement_pairs(

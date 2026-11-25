@@ -328,7 +328,7 @@ def test_strip_patches_rejects_true_and_unknown_values() -> None:
         publish_preflight_config._strip_patches(value=True)
     with pytest.raises(config_module.ConfigurationError):
         publish_preflight_config._strip_patches("unexpected")
-    for value in ([], {}):
+    for value in (0, 1, [], {}):
         with pytest.raises(config_module.ConfigurationError):
             publish_preflight_config._strip_patches(value)
     with pytest.raises(config_module.ConfigurationNotLoadedError):

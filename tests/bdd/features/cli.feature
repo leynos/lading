@@ -28,6 +28,7 @@ Feature: Lading CLI scaffolding
   Scenario: Dry-run previews prerelease rewrites in the configured GPUI fixture
     Given a workspace directory with configuration
     And cargo metadata describes the rstest-bdd workspace and published fixture
+    And the workspace has tracked Cargo.lock files
     When I invoke lading bump 0.6.0 with that workspace using --dry-run
     Then the bump command reports a dry-run plan for "0.6.0"
     And the CLI output lists manifest path "- tests/fixtures/published-gpui-e2e/Cargo.toml"

@@ -176,7 +176,7 @@ def _initialize_bump_context(
         configuration=configuration,
         workspace=workspace,
         base_options=base_options,
-        workspace_manifest=root_path / "Cargo.toml",
+        workspace_manifest=(root_path / "Cargo.toml").resolve(),
         excluded=excluded,
         updated_crate_names=updated_crate_names,
     )

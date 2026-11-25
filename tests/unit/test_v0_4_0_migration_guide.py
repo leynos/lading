@@ -11,8 +11,10 @@ from pathlib import Path
 
 import pytest
 from cuprum import ExecutionContext, Program, ProgramCatalogue, scoped, sh
+from markdown_it import MarkdownIt
 
 from lading import config as config_module
+from lading.commands import bump_docs
 from tests.helpers.markdown_examples import MarkdownExample, load_markdown_examples
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -202,15 +204,6 @@ def test_documentation_target_migration_examples_use_the_new_record(
 
     ast.parse(before)
     ast.parse(after)
-    assert "for path in targets:" in before, (
-        "the before example must show the former tuple iteration"
-    )
-    assert "for path in targets.paths:" in after, (
-        "the after example must iterate the record's paths"
-    )
-    assert "DocumentationTargets(workspace_root, paths)" in after, (
-        "direct updater calls must construct the workspace-bound target record"
-    )
     readme = tmp_path / "README.md"
     readme.write_text(
         '```toml\n[dependencies]\nmy-crate = "0.1.0"\n```\n',
@@ -222,6 +215,16 @@ def test_documentation_target_migration_examples_use_the_new_record(
         "target_version": "1.2.0",
         "updated_crates": {"my-crate"},
     }
+    before_script = tmp_path / "migration_example_before.py"
+    before_script.write_text(before, encoding="utf-8")
+    before_namespace = namespace | {
+        "resolve_documentation_targets": bump_docs.resolve_documentation_targets,
+        "update_documentation_files": bump_docs.update_documentation_files,
+        "dry_run": False,
+    }
+    with pytest.raises(TypeError):
+        runpy.run_path(str(before_script), init_globals=before_namespace)
+
     example_script = tmp_path / "migration_example.py"
     example_script.write_text(after, encoding="utf-8")
 
@@ -266,11 +269,32 @@ def test_python313_rejection_example_states_the_package_constraint() -> None:
 def test_migration_checklist_follows_tasks_and_unaffected_behaviour() -> None:
     """The checklist follows every numbered task and unaffected behaviour."""
     guide = _GUIDE_PATH.read_text(encoding="utf-8")
-
-    last_task = guide.index("## 4. Review compound dependency requirements")
-    unaffected = guide.index("## What does not need to change")
-    checklist = guide.index("## Migration checklist")
-    optional_adoption = guide.index("### Optional adoption")
+    tokens = MarkdownIt("commonmark").parse(guide)
+    headings = [
+        (int(token.tag[1:]), tokens[index + 1].content)
+        for index, token in enumerate(tokens)
+        if token.type == "heading_open"
+    ]
+    last_task = next(
+        index
+        for index, (level, title) in enumerate(headings)
+        if level == 2 and title.startswith("4.")
+    )
+    unaffected = next(
+        index
+        for index, (level, title) in enumerate(headings)
+        if level == 2 and title.casefold().startswith("what does not need to change")
+    )
+    checklist = next(
+        index
+        for index, (level, title) in enumerate(headings)
+        if level == 2 and title.casefold().startswith("migration checklist")
+    )
+    optional_adoption = next(
+        index
+        for index, (level, title) in enumerate(headings)
+        if level == 3 and title.casefold().startswith("optional adoption")
+    )
 
     assert last_task < unaffected < checklist < optional_adoption, (
         "required tasks and unaffected behaviour must precede the checklist"
@@ -280,9 +304,23 @@ def test_migration_checklist_follows_tasks_and_unaffected_behaviour() -> None:
 def test_uv_upgrade_updates_project_floor_before_adding_package() -> None:
     """The project metadata floor must be raised before resolving 0.4.0."""
     example = _examples_by_id()["v0-4-0-upgrade-uv"]
-
-    floor_update = example.source.index('# requires-python = ">=3.14"')
-    package_add = example.source.index("uv add lading==0.4.0")
+    lines = example.source.splitlines()
+    floor_update = next(
+        index
+        for index, line in enumerate(lines)
+        if line.lstrip().startswith("#")
+        and line.lstrip()[1:].lstrip().startswith("requires-python")
+    )
+    assert (
+        tomllib.loads(lines[floor_update].lstrip()[1:].strip())["requires-python"]
+        == ">=3.14"
+    ), "the documented project floor must be Python 3.14"
+    package_add = next(
+        index
+        for index, line in enumerate(lines)
+        if (arguments := shlex.split(line, comments=True))[:2] == ["uv", "add"]
+        and "lading==0.4.0" in arguments
+    )
 
     assert floor_update < package_add, (
         "the Python metadata floor must be updated before the package is added"

@@ -33,7 +33,17 @@ PREFLIGHT_TOML_KEYS: typ.Final[frozenset[str]] = frozenset({
 
 @dc.dataclass(frozen=True, slots=True)
 class PublishConfig:
-    """Settings for the ``publish`` command."""
+    """Settings for the ``publish`` command.
+
+    Attributes
+    ----------
+    exclude : tuple[str, ...]
+        Crate names omitted from publication.
+    order : tuple[str, ...]
+        Preferred ordering for publishable crates.
+    strip_patches : StripPatchesSetting
+        Strategy for removing workspace-only patch entries.
+    """
 
     exclude: tuple[str, ...] = ()
     order: tuple[str, ...] = ()
@@ -78,7 +88,15 @@ class PublishConfig:
 
 @dc.dataclass(frozen=True, slots=True)
 class CompiletestExtern:
-    """Describe a compiletest extern crate override."""
+    """Describe a compiletest extern crate override.
+
+    Attributes
+    ----------
+    crate : str
+        Crate name used by compiletest.
+    path : str
+        Filesystem path to the crate's compiled library.
+    """
 
     crate: str
     path: str
@@ -93,6 +111,24 @@ class PreflightConfig:
     working-tree cleanliness guard runs when ``--forbid-dirty`` is enabled,
     and the lockfile freshness guard always runs. Skipping pre-flight therefore
     does not disable either requested guard.
+
+    Attributes
+    ----------
+    skip : bool
+        Whether to omit compilation-heavy pre-flight commands.
+    test_exclude : tuple[str, ...]
+        Test package names excluded from pre-flight execution.
+    unit_tests_only : bool
+        Whether cargo test runs only unit tests.
+    aux_build : tuple[tuple[str, ...], ...]
+        Additional command argument vectors to run before Cargo checks.
+    compiletest_externs : tuple[CompiletestExtern, ...]
+        Compiletest extern overrides produced from the
+        ``compiletest_extern`` mapping.
+    env_overrides : tuple[tuple[str, str], ...]
+        Environment name-value pairs supplied to pre-flight commands.
+    stderr_tail_lines : int
+        Maximum number of stderr lines retained in failure diagnostics.
     """
 
     skip: bool = False
@@ -172,17 +208,19 @@ class PreflightConfig:
 
 def _strip_patches(value: object) -> StripPatchesSetting:
     """Normalize the ``publish.strip_patches`` value."""
-    if value is None:
-        return "per-crate"
-    if isinstance(value, str) and value in {"all", "per-crate"}:
-        return typ.cast("StripPatchesSetting", value)
-    if value is False:
-        return False
-    if value is True:
-        message = "publish.strip_patches may be 'all', 'per-crate', or false."
-        raise ConfigurationError(message)
-    message = "publish.strip_patches must be 'all', 'per-crate', or false."
-    raise ConfigurationError(message)
+    match value:
+        case None:
+            return "per-crate"
+        case False:
+            return False
+        case True:
+            message = "publish.strip_patches may be 'all', 'per-crate', or false."
+            raise ConfigurationError(message)
+        case "all" | "per-crate":
+            return typ.cast("StripPatchesSetting", value)
+        case _:
+            message = "publish.strip_patches must be 'all', 'per-crate', or false."
+            raise ConfigurationError(message)
 
 
 # Coercion helpers local to publish pre-flight configuration; the shared

@@ -124,12 +124,36 @@ def test_direct_dependency_update_uses_the_selected_manifest_key() -> None:
         document,
         {"dependencies": {"alpha-core"}},
         "2.0.0",
-        section_scope="both",
+        section_scope="direct",
     )
 
     assert changed, "the selected alias should be updated"
     assert document["dependencies"]["alpha-core"]["version"] == "2.0.0", (
         "direct dependency sections should match the manifest's alias key"
+    )
+
+
+def test_direct_dependency_update_does_not_match_another_entry_package_name() -> None:
+    """A selected manifest key must not select a different package alias."""
+    document = parse_toml(
+        "[dependencies]\n"
+        'alpha = { package = "beta", version = "1.0.0" }\n'
+        'renamed = { package = "alpha", version = "1.0.0" }\n'
+    )
+
+    changed = bump_toml_dependency_updates.update_dependency_sections_with_warnings(
+        document,
+        {"dependencies": {"alpha"}},
+        "2.0.0",
+        section_scope="direct",
+    )
+
+    assert changed, "the selected direct manifest key should be updated"
+    assert document["dependencies"]["alpha"]["version"] == "2.0.0", (
+        "the selected manifest key should receive the target version"
+    )
+    assert document["dependencies"]["renamed"]["version"] == "1.0.0", (
+        "a different alias must not be selected by its package identity"
     )
 
 

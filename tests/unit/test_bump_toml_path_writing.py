@@ -259,6 +259,9 @@ def test_bounded_writer_keeps_write_error_when_temporary_cleanup_fails(
             original_unlink(path, dir_fd=dir_fd)
 
     monkeypatch.setattr(os, "unlink", reject_temporary_unlink)
+    monkeypatch.setattr(
+        bump_toml_files, "_supports_bounded_directory_operations", lambda: True
+    )
 
     with pytest.raises(OSError, match=write_error_message) as failure:
         bump_toml_files.write_atomic_text(
