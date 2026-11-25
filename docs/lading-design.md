@@ -1380,9 +1380,12 @@ and its measured behaviour is part of this policy:
   not there. Measured on the pinned cuprum, CPython 3.14: `PATH=""` with the
   executable in the child's `cwd` ran it, and the same `PATH` without it raised
   `FileNotFoundError`. Both directions match a plain `subprocess` control, so
-  this is the platform's rule rather than a cuprum behaviour. The adapter never
-  substitutes the parent's `PATH` for either case, and it does not treat an
-  empty `PATH` as a way to forbid lookup.
+  this is the platform's rule rather than a cuprum behaviour. At the adapter
+  boundary that miss is a launch failure and follows the mapping in §7.6.1: it
+  surfaces as `CommandSpawnError` with the `FileNotFoundError` chained, not as
+  a bare `FileNotFoundError`. The adapter never substitutes the parent's `PATH`
+  for either case, and it does not treat an empty `PATH` as a way to forbid
+  lookup.
 - A relative target such as `./tool` resolves against `cwd` when one is given,
   and otherwise against the parent process's own working directory. That is a
   different mechanism from the `PATH` search a bare name uses, and it is not a

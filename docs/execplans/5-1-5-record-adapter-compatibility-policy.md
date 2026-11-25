@@ -116,18 +116,20 @@ Measurement at implementation time added five findings the planning evidence
 did not contain. A per-call `EnvMode.REPLACE` discards ambient `env(...)`
 overlays as well as the parent environment, so the adapter needs no extra
 defence against a scope overlay. An absent `PATH` under `REPLACE` falls back to
-the platform default search path and still resolves a bare name, while an empty
-`PATH` does not; the two are not equivalent and the adapter must not synthesize
-either. A relative `PATH` entry is anchored to the child's `cwd` when one is
-given and to the parent's working directory otherwise, and a relative target
-follows the same rule rather than being refused when `cwd` is omitted.
-`bind_executable()` preserves logical identity, reports `resolved_path`, and
-refuses to widen the allowlist, so the assessment's executable-identity gap is
-narrower than §6.4 implied -- but it does not authorize the bound file either,
-which is why exact-path registration is what the adapter uses. Finally, a text
-facade that absorbs `BrokenPipeError` prevents cuprum's `BEST_EFFORT` policy
-from firing at all, so the ADR-007 event and a `relay_fallbacks` entry can be
-kept disjoint. All of it is recorded in assessment §9.
+the platform default search path and still resolves a bare name; an empty
+`PATH` also resolves one, but only from the child's `cwd`, because POSIX reads
+the empty entry as that directory. The two cases are not equivalent, and
+neither is a way to forbid lookup, so the adapter must not synthesize either. A
+relative `PATH` entry is anchored to the child's `cwd` when one is given and to
+the parent's working directory otherwise, and a relative target follows the
+same rule rather than being refused when `cwd` is omitted. `bind_executable()`
+preserves logical identity, reports `resolved_path`, and refuses to widen the
+allowlist, so the assessment's executable-identity gap is narrower than §6.4
+implied -- but it does not authorize the bound file either, which is why
+exact-path registration is what the adapter uses. Finally, a text facade that
+absorbs `BrokenPipeError` prevents cuprum's `BEST_EFFORT` policy from firing at
+all, so the ADR-007 event and a `relay_fallbacks` entry can be kept disjoint.
+All of it is recorded in assessment §9.
 
 ## Decision log
 
@@ -216,6 +218,17 @@ kept disjoint. All of it is recorded in assessment §9.
   one-sided-probe error as the relative-target and `bind_executable()` cases.
   The design, the assessment addendum, the A3 discharge and the 5.2 test
   specification now all carry the corrected rule and both controls.
+- (2026-11-25) A further round caught two flaws in the test specification I
+  wrote for that correction, both of which would have produced tests that pass
+  for the wrong reason. The empty-`PATH` negative control asserted a raw
+  `FileNotFoundError` at the adapter boundary, where §7.6.1 requires
+  `CommandSpawnError` with the cause chained; the raw type belongs only to a
+  direct cuprum or `subprocess` probe. It also said "when only `PATH` holds the
+  file", which is incoherent when `PATH` is empty — the control now puts the
+  executable in a directory an empty `PATH` does not search. And the bare-name
+  control needed an explicit non-empty `PATH` excluding `cwd`, since an empty
+  `PATH` would resolve from `cwd` and make it pass vacuously. Writing the
+  assertion and the control together is what surfaced all three.
 - (2026-11-24) Record `CommandPreparationError` as the one type this policy
   requires without introducing it. Naming it in §7.6.1 and deferring the
   definition to 5.2.1 keeps the plan documentation-only while making the
@@ -496,21 +509,31 @@ A3 checks configured absolute paths, same-basename rejection, narrow scope,
 different parent/child PATH values, omitted versus empty PATH, relative targets
 under cwd, and symlinks. Its downstream 5.2 test coverage must also pin the two
 `RUSTC_WRAPPER` routes separately, each with its own negative control: a bare
-name (and `./name`, which normalizes onto it) resolving from `PATH` and failing
-when only `cwd` holds the file, and a value with a separator such as
-`bin/sccache` resolving from `cwd` and failing when only `PATH` holds it. A
+name (and `./name`, which normalizes onto it) resolving from a non-empty `PATH`
+that excludes `cwd`, and failing when only `cwd` holds the file; and a value
+with a separator such as `bin/sccache` resolving from `cwd` and failing when
+only `PATH` holds it. The non-empty `PATH` matters, because an empty `PATH`
+would resolve from `cwd` and make that control pass for the wrong reason. A
 missing or non-executable wrapper stays a `CommandSpawnError`, not a
-preparation failure, so that case needs its own assertion too. Empty `PATH`
-needs both of its own controls as well, because it is neither "search nothing"
-nor the same as an absent `PATH`: a bare name present in the child `cwd` must
-resolve under `PATH=""`, and must raise `FileNotFoundError` under the same
-`PATH=""` when only `PATH` holds the file elsewhere. A1 also verifies each
-policy/resolution error maps to a lading-owned failure with a retained cause.
-A4 checks complete capture with failed write/flush, encoding fallback, and no
-raw buffer. A5 checks domain ownership and cmd-mox responsibilities. A6 checks
-all links, target version, completion wording, and the roadmap checkbox.
-Discharge these with reviewer notes identifying the design/ADR paragraphs; any
-missing or contradictory case leaves the corresponding item open.
+preparation failure, so that case needs its own assertion too.
+
+Empty `PATH` needs both of its own controls as well, because it is neither
+"search nothing" nor the same as an absent `PATH`. A bare name present in the
+child `cwd` must resolve under `PATH=""`. The negative control keeps `PATH=""`
+and puts the executable in a separate directory that `PATH` does not name, so
+the file exists on the machine but not in the directory an empty `PATH`
+actually searches. That case reaches the adapter as `CommandSpawnError` with
+the launch error chained, per §7.6.1; a raw `FileNotFoundError` assertion
+belongs only to a direct cuprum or `subprocess` probe, not to the adapter
+boundary.
+
+A1 also verifies each policy/resolution error maps to a lading-owned failure
+with a retained cause. A4 checks complete capture with failed write/flush,
+encoding fallback, and no raw buffer. A5 checks domain ownership and cmd-mox
+responsibilities. A6 checks all links, target version, completion wording, and
+the roadmap checkbox. Discharge these with reviewer notes identifying the
+design/ADR paragraphs; any missing or contradictory case leaves the
+corresponding item open.
 
 External assumptions are beta2's documented modes/result/error interfaces,
 Python environment/exec semantics, and the operating system's process API. They
