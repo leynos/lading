@@ -1,15 +1,25 @@
 """Rollback member manifest writes when no fixture rewrites are configured."""
 
+import typing as typ
 from pathlib import Path
 from unittest import mock
 
 import pytest
 
 from lading import config as config_module
-from lading.commands import bump, bump_manifests, bump_pipeline
+from lading.commands import (
+    bump,
+    bump_manifests,
+    bump_pipeline,
+    bump_pipeline_crate_manifests,
+)
 from lading.commands.bump_manifest_rewrites import ManifestRewriteWriteError
+from lading.exceptions import LadingError
 from lading.workspace import WorkspaceCrate, WorkspaceDependency, WorkspaceGraph
 from tests.helpers.workspace_builders import _make_workspace
+
+if typ.TYPE_CHECKING:
+    from lading.commands.bump_output import BumpChanges
 
 
 class _InjectedMemberManifestError(Exception):
@@ -50,6 +60,11 @@ def _run_bump_with_member_failure(
     with (
         mock.patch.object(
             bump_pipeline, "_update_manifest", side_effect=fail_selected_update
+        ),
+        mock.patch.object(
+            bump_pipeline_crate_manifests,
+            "_update_manifest",
+            side_effect=fail_selected_update,
         ),
         pytest.raises(_InjectedMemberManifestError),
     ):
@@ -153,7 +168,7 @@ def test_root_package_rollback_keeps_first_manifest_baseline(
 def test_root_package_member_pass_preserves_intervening_edit(
     tmp_path: Path,
 ) -> None:
-    """A member pass must not overwrite an edit after the workspace write."""
+    """The member read rejects an edit made after its pre-update check."""
     workspace, root_manifest = _make_root_package_workspace(tmp_path)
     original_text = root_manifest.read_text(encoding="utf-8")
     concurrent_edit = "\n# concurrent edit between bump passes\n"
@@ -162,6 +177,7 @@ def test_root_package_member_pass_preserves_intervening_edit(
     )
     original_update_manifest = bump_pipeline._update_manifest
     inserted_edit = False
+    root_updates = 0
 
     def write_workspace_then_edit(
         manifest_path: Path,
@@ -169,25 +185,31 @@ def test_root_package_member_pass_preserves_intervening_edit(
         target_version: str,
         update_context: bump_manifests._ManifestUpdateContext,
     ) -> bump_manifests._ManifestUpdateResult:
-        """Insert an external edit after the first root manifest write."""
-        nonlocal inserted_edit
-        result = original_update_manifest(
+        """Insert an edit after member validation but before the root read."""
+        nonlocal inserted_edit, root_updates
+        if manifest_path == root_manifest:
+            root_updates += 1
+            if root_updates == 2:
+                root_manifest.write_text(
+                    root_manifest.read_text(encoding="utf-8") + concurrent_edit,
+                    encoding="utf-8",
+                )
+                inserted_edit = True
+        return original_update_manifest(
             manifest_path,
             selectors,
             target_version,
             update_context,
         )
-        if manifest_path == root_manifest and result.written_text is not None:
-            root_manifest.write_text(
-                result.written_text + concurrent_edit,
-                encoding="utf-8",
-            )
-            inserted_edit = True
-        return result
 
     with (
         mock.patch.object(
             bump_pipeline,
+            "_update_manifest",
+            side_effect=write_workspace_then_edit,
+        ),
+        mock.patch.object(
+            bump_pipeline_crate_manifests,
             "_update_manifest",
             side_effect=write_workspace_then_edit,
         ),
@@ -212,5 +234,52 @@ def test_root_package_member_pass_preserves_intervening_edit(
         "rollback must preserve the intervening edit"
     )
     assert current_text != original_text, (
-        "the workspace-pass output must not be restored over a concurrent edit"
+        "rollback must leave the workspace-pass output and concurrent edit in place"
+    )
+
+
+def test_workspace_manifest_rejects_retargeted_root_entry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A root manifest symlink cannot redirect the workspace update."""
+    workspace = _make_workspace(tmp_path)
+    manifest_entry = tmp_path / "Cargo.toml"
+    original_destination = tmp_path / "workspace.toml"
+    manifest_entry.rename(original_destination)
+    manifest_entry.symlink_to(original_destination.name)
+    alternate_destination = tmp_path / "alternate.toml"
+    alternate_destination.write_bytes(original_destination.read_bytes())
+    original_bytes = original_destination.read_bytes()
+    alternate_bytes = alternate_destination.read_bytes()
+    configuration = config_module.LadingConfig(
+        bump=config_module.BumpConfig(rebuild_lockfiles=False)
+    )
+    original_run_pipeline = bump_pipeline._run_pipeline
+
+    def retarget_before_pipeline(
+        context: bump_manifests._BumpContext,
+        target_version: str,
+    ) -> BumpChanges:
+        """Retarget the root manifest after its destination was recorded."""
+        manifest_entry.unlink()
+        manifest_entry.symlink_to(alternate_destination.name)
+        return original_run_pipeline(context, target_version)
+
+    monkeypatch.setattr(bump_pipeline, "_run_pipeline", retarget_before_pipeline)
+    with pytest.raises(LadingError, match="destination changed after bump context"):
+        bump.run(
+            tmp_path,
+            "1.2.3",
+            options=bump.BumpOptions(
+                configuration=configuration,
+                workspace=workspace,
+            ),
+        )
+
+    assert original_destination.read_bytes() == original_bytes, (
+        "the recorded root target must remain unchanged after symlink retargeting"
+    )
+    assert alternate_destination.read_bytes() == alternate_bytes, (
+        "the alternate target must not receive a workspace manifest update"
     )

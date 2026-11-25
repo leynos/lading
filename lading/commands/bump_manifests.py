@@ -26,6 +26,8 @@ from lading.exceptions import LadingError
 if typ.TYPE_CHECKING:
     from pathlib import Path
 
+    from tomlkit.toml_document import TOMLDocument
+
     from lading.commands.bump import BumpOptions
     from lading.config import LadingConfig
     from lading.workspace import WorkspaceCrate, WorkspaceGraph
@@ -58,6 +60,9 @@ class _ManifestUpdateContext:
     options: BumpOptions
     workspace_root: Path | None = None
     workspace_declarations_only: bool = False
+    manifest_entry: Path | None = None
+    expected_destination: Path | None = None
+    expected_text: str | None = None
     before_write: cabc.Callable[[Path, str, str, Path], None] | None = None
 
 
@@ -69,6 +74,16 @@ class _ManifestUpdateResult:
     original_text: str
     written_text: str | None = None
     write_destination: Path | None = None
+
+
+@dc.dataclass(frozen=True, slots=True)
+class _PreparedManifestUpdate:
+    """Capture the parsed source and destination for one manifest write."""
+
+    manifest_path: Path
+    write_destination: Path
+    original_text: str
+    document: TOMLDocument
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -130,10 +145,77 @@ def _update_manifest(
     original_text, document = bump_toml_files._read_and_parse_manifest(
         write_destination
     )
+    if (
+        update_context.expected_text is not None
+        and original_text != update_context.expected_text
+    ):
+        message = (
+            f"Manifest changed between workspace and member update: {manifest_path}"
+        )
+        raise LadingError(message)
+    changed = _apply_manifest_version_and_dependency_updates(
+        document, selectors, target_version, update_context
+    )
+    if changed and not options.dry_run:
+        return _persist_manifest_update(
+            _PreparedManifestUpdate(
+                manifest_path=manifest_path,
+                write_destination=write_destination,
+                original_text=original_text,
+                document=document,
+            ),
+            update_context,
+        )
+    return _ManifestUpdateResult(was_changed=changed, original_text=original_text)
+
+
+def _persist_manifest_update(
+    prepared: _PreparedManifestUpdate,
+    update_context: _ManifestUpdateContext,
+) -> _ManifestUpdateResult:
+    """Persist the prepared TOML document and describe its write."""
+    updated_text = prepared.document.as_string()
+    current_destination = _resolve_manifest_update_destination(
+        prepared.manifest_path, update_context
+    )
+    if current_destination != prepared.write_destination:
+        message = (
+            "Workspace manifest destination changed after it was read: "
+            f"{prepared.manifest_path}"
+        )
+        raise LadingError(message)
+    if update_context.before_write is not None:
+        update_context.before_write(
+            prepared.manifest_path,
+            prepared.original_text,
+            updated_text,
+            prepared.write_destination,
+        )
+    bump_toml_files.write_atomic_text(
+        prepared.write_destination,
+        updated_text,
+        workspace_root=update_context.workspace_root,
+    )
+    return _ManifestUpdateResult(
+        was_changed=True,
+        original_text=prepared.original_text,
+        written_text=updated_text,
+        write_destination=prepared.write_destination,
+    )
+
+
+def _apply_manifest_version_and_dependency_updates(
+    document: TOMLDocument,
+    selectors: tuple[tuple[str, ...], ...],
+    target_version: str,
+    update_context: _ManifestUpdateContext,
+) -> bool:
+    """Apply selected package and dependency version changes to a document."""
     changed = False
     for selector in selectors:
         table = bump_toml.select_table(document, selector)
         changed |= bump_toml.assign_version(table, target_version)
+    options = update_context.options
     if options.dependency_sections:
         changed |= update_dependency_sections_with_warnings(
             document,
@@ -147,36 +229,7 @@ def _update_manifest(
                 else "direct"
             ),
         )
-    if changed and not options.dry_run:
-        updated_text = document.as_string()
-        current_destination = _resolve_manifest_update_destination(
-            manifest_path, update_context
-        )
-        if current_destination != write_destination:
-            message = (
-                "Workspace manifest destination changed after it was read: "
-                f"{manifest_path}"
-            )
-            raise LadingError(message)
-        if update_context.before_write is not None:
-            update_context.before_write(
-                manifest_path,
-                original_text,
-                updated_text,
-                write_destination,
-            )
-        bump_toml_files.write_atomic_text(
-            write_destination,
-            updated_text,
-            workspace_root=update_context.workspace_root,
-        )
-        return _ManifestUpdateResult(
-            was_changed=True,
-            original_text=original_text,
-            written_text=updated_text,
-            write_destination=write_destination,
-        )
-    return _ManifestUpdateResult(was_changed=changed, original_text=original_text)
+    return changed
 
 
 def _resolve_manifest_update_destination(
@@ -185,14 +238,24 @@ def _resolve_manifest_update_destination(
 ) -> Path:
     """Resolve one update path under its optional workspace boundary."""
     workspace_root = update_context.workspace_root
+    resolution_path = update_context.manifest_entry or manifest_path
     if workspace_root is None:
-        return manifest_path.resolve(strict=True)
-    return manifest_paths.resolve_workspace_path(
-        workspace_root,
-        manifest_path,
-        error_type=LadingError,
-        label="Workspace manifest",
-    )
+        destination = resolution_path.resolve(strict=True)
+    else:
+        destination = manifest_paths.resolve_workspace_path(
+            workspace_root,
+            resolution_path,
+            error_type=LadingError,
+            label="Workspace manifest",
+        )
+    expected_destination = update_context.expected_destination
+    if expected_destination is not None and destination != expected_destination:
+        message = (
+            "Workspace manifest destination changed after bump context "
+            f"initialisation: {manifest_path}"
+        )
+        raise LadingError(message)
+    return destination
 
 
 def _workspace_dependency_sections(

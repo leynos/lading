@@ -45,6 +45,7 @@ class _ManifestRewriteStage:
     plans: tuple[bump_manifest_rewrites.ManifestRewritePlan, ...] = ()
     planning_duration_seconds: float = 0.0
     workspace_manifest_snapshots: tuple[tuple[Path, str], ...] = ()
+    expected_manifest_contents: dict[Path, str] = dc.field(default_factory=dict)
     written_manifest_contents: dict[Path, str] = dc.field(default_factory=dict)
     written_manifest_content_history: dict[Path, set[str]] = dc.field(
         default_factory=dict

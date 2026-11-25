@@ -620,7 +620,7 @@ reason = "Two single-statement rejection calls differing only in the expected-ty
 # the exclusion keeps the test tree out of the liveness graph.
 [[tool.duplication_gate.allow]]
 members = ["lading/commands/bump_manifests.py", "lading/commands/publish.py"]
-reason = "Keep the type-only imports in lading/commands/bump_manifests.py and lading/commands/publish.py local. Each command needs distinct types; extracting a shared typing module would couple unrelated command layers."
+reason = "Keep the type-only imports in lading/commands/bump_manifests.py and lading/commands/publish.py local. Each command needs distinct types; extracting a shared typing module would couple unrelated command layers. NOTE: This family-wide exception suppresses future executable duplication in either file too, so those files need manual duplication review."
 [[tool.duplication_gate.allow]]
 members = ["lading/commands/bump_manifest_rewrite_filesystem.py::_is_existing_literal_candidate", "scripts/format_markdown.py::_present"]
 reason = "Keep the manifest resolver and PEP 723 formatter presence probes separate: callers preserve distinct domain errors, and importing application utilities would couple the standalone formatter to the lading package."
@@ -699,20 +699,6 @@ full_name = [
     "lading.commands.bump_toml_dependency_warnings.collect_dependency_section_warnings",
 ]
 reason = "The developers guide documents this no-mutation query, exercised by test_dependency_update_warns_when_bound_excludes_target."
-
-[[tool.skylos.dead_code.entrypoints]]
-type = "function"
-full_name = [
-    "lading.commands.bump_toml_dependency_warnings._selected_section_warnings",
-]
-reason = "collect_dependency_section_warnings calls this selector to inspect the selected TOML tables."
-
-[[tool.skylos.dead_code.entrypoints]]
-type = "function"
-full_name = [
-    "lading.commands.bump_toml_dependency_warnings._selected_dependency_section_paths",
-]
-reason = "collect_dependency_section_warnings calls this helper to choose direct and workspace table paths."
 
 [[tool.skylos.dead_code.entrypoints]]
 type = "parameter"

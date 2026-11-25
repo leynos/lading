@@ -10,6 +10,7 @@ from lading.commands import (
     bump_manifest_rewrite_application,
     bump_manifests,
     bump_pipeline,
+    bump_pipeline_crate_manifests,
     bump_pipeline_manifest_recovery,
     bump_pipeline_manifest_rewrites,
 )
@@ -47,7 +48,7 @@ def test_member_interruption_restores_completed_manifest_writes(
 
     with (
         mock.patch.object(
-            bump_pipeline,
+            bump_pipeline_crate_manifests,
             "_update_manifest",
             side_effect=interrupt_selected_manifest,
         ),

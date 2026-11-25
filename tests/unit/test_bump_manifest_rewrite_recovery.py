@@ -11,6 +11,7 @@ from lading.commands import (
     bump_manifest_rewrite_application,
     bump_manifests,
     bump_pipeline,
+    bump_pipeline_crate_manifests,
 )
 from lading.commands.bump_manifest_rewrites import (
     ManifestRewriteError,
@@ -112,7 +113,7 @@ def _run_bump_with_member_failure(
 
     with (
         mock.patch.object(
-            bump_pipeline,
+            bump_pipeline_crate_manifests,
             "_update_manifest",
             side_effect=fail_selected_manifest,
         ),
@@ -298,7 +299,7 @@ def test_rewrite_failure_rolls_back_to_text_parsed_after_a_concurrent_edit(
         )
 
     with mock.patch.object(
-        bump_pipeline,
+        bump_pipeline_crate_manifests,
         "_update_manifest",
         side_effect=edit_beta_before_update,
     ):

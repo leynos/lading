@@ -8,25 +8,21 @@ the first write and applied between member manifests and later stages.
 
 import collections.abc as cabc
 import dataclasses as dc
-import enum
 import logging
 import typing as typ
 
 from lading.commands import (
     bump_docs,
     bump_lockfiles,
+    bump_pipeline_crate_manifests,
     bump_pipeline_manifest_recovery,
     bump_pipeline_manifest_rewrites,
     bump_readme,
 )
 from lading.commands.bump_manifests import (
     _WORKSPACE_SELECTORS,
-    _dependency_sections_for_crate,
-    _determine_package_selectors,
     _freeze_dependency_sections,
     _ManifestUpdateContext,
-    _ManifestUpdateResult,
-    _should_skip_crate_update,
     _update_manifest,
     _workspace_dependency_sections,
 )
@@ -37,21 +33,8 @@ if typ.TYPE_CHECKING:
 
     from lading.commands.bump_manifest_rewrite_model import ManifestRewriteWriteError
     from lading.commands.bump_manifests import _BumpContext
-    from lading.workspace import WorkspaceCrate
 
 _log = logging.getLogger(__name__)
-
-
-class _CrateManifestOutcome(enum.Enum):
-    """Closed outcome of processing a single crate manifest.
-
-    Replaces a two-boolean record so the skipped/updated/unchanged states are
-    mutually exclusive and the ``both true`` state is unrepresentable.
-    """
-
-    SKIPPED = enum.auto()
-    UPDATED = enum.auto()
-    UNCHANGED = enum.auto()
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -157,6 +140,8 @@ def _process_workspace_manifest(
         options=workspace_options,
         workspace_root=context.root_path,
         workspace_declarations_only=True,
+        manifest_entry=context.root_path / "Cargo.toml",
+        expected_destination=context.workspace_manifest,
         before_write=bump_pipeline_manifest_recovery.manifest_write_recorder(
             rewrite_stage
         ),
@@ -167,12 +152,11 @@ def _process_workspace_manifest(
         target_version,
         update_context,
     )
+    rewrite_stage.expected_manifest_contents[context.workspace_manifest] = (
+        result.written_text if result.written_text is not None else result.original_text
+    )
     if result.was_changed:
         changed_manifests.add(context.workspace_manifest)
-        rewrite_stage.rollback_baselines.setdefault(
-            context.workspace_manifest, result.original_text
-        )
-    _record_written_manifest_content(result, context.workspace_manifest, rewrite_stage)
 
 
 def _process_crate_manifests(
@@ -187,15 +171,15 @@ def _process_crate_manifests(
     updated_count = 0
     for crate in context.workspace.crates:
         processed_count += 1
-        match _apply_crate_manifest_update(
+        match bump_pipeline_crate_manifests._apply_crate_manifest_update(
             crate, target_version, context, rewrite_stage
         ):
-            case _CrateManifestOutcome.SKIPPED:
+            case bump_pipeline_crate_manifests._CrateManifestOutcome.SKIPPED:
                 skipped_count += 1
-            case _CrateManifestOutcome.UPDATED:
+            case bump_pipeline_crate_manifests._CrateManifestOutcome.UPDATED:
                 changed_manifests.add(crate.manifest_path)
                 updated_count += 1
-            case _CrateManifestOutcome.UNCHANGED:
+            case bump_pipeline_crate_manifests._CrateManifestOutcome.UNCHANGED:
                 pass
     _log.debug(
         "Crate manifest processing complete: %d processed, %d skipped, %d updated",
@@ -203,26 +187,6 @@ def _process_crate_manifests(
         skipped_count,
         updated_count,
     )
-
-
-def _record_written_manifest_content(
-    result: _ManifestUpdateResult,
-    manifest_path: Path,
-    rewrite_stage: bump_pipeline_manifest_rewrites._ManifestRewriteStage | None,
-) -> None:
-    """Record output text and destination needed to guard a later rollback."""
-    if rewrite_stage is None:
-        return
-    written_text = result.written_text
-    if written_text is None:
-        return
-    rewrite_stage.written_manifest_contents[manifest_path] = written_text
-    rewrite_stage.written_manifest_content_history.setdefault(manifest_path, set()).add(
-        written_text
-    )
-    write_destination = result.write_destination
-    if write_destination is not None:
-        rewrite_stage.written_manifest_destinations[manifest_path] = write_destination
 
 
 def _process_documentation_files(
@@ -322,74 +286,4 @@ def _prepare_sorted_changes(
         documents=ordered_documents,
         transposed_readmes=ordered_readmes,
         lockfiles=ordered_lockfiles,
-    )
-
-
-def _apply_crate_manifest_update(
-    crate: WorkspaceCrate,
-    target_version: str,
-    context: _BumpContext,
-    rewrite_stage: bump_pipeline_manifest_rewrites._ManifestRewriteStage | None = None,
-) -> _CrateManifestOutcome:
-    """Apply updates for ``crate`` and return the closed manifest outcome."""
-    # These crate sets are derived once in `_initialize_bump_context`
-    # (issue #97); per-crate processing must not recompute them.
-    selectors = _determine_package_selectors(crate.name, context.excluded)
-    dependency_sections = _dependency_sections_for_crate(
-        crate, context.updated_crate_names
-    )
-
-    if _should_skip_crate_update(selectors, dependency_sections):
-        _log.debug("Skipping crate manifest update for excluded crate %r", crate.name)
-        return _CrateManifestOutcome.SKIPPED
-
-    bump_pipeline_manifest_recovery.validate_member_manifest_before_update(
-        crate.manifest_path, rewrite_stage
-    )
-    crate_options = dc.replace(
-        context.base_options,
-        dependency_sections=_freeze_dependency_sections(dependency_sections),
-    )
-    update_context = _ManifestUpdateContext(
-        options=crate_options,
-        workspace_root=context.root_path,
-        before_write=(
-            bump_pipeline_manifest_recovery.manifest_write_recorder(rewrite_stage)
-            if rewrite_stage is not None
-            else None
-        ),
-    )
-    result = _update_manifest(
-        crate.manifest_path,
-        selectors,
-        target_version,
-        update_context,
-    )
-    if result.was_changed and rewrite_stage is not None:
-        rewrite_stage.rollback_baselines.setdefault(
-            crate.manifest_path, result.original_text
-        )
-    _record_written_manifest_content(result, crate.manifest_path, rewrite_stage)
-    if result.was_changed:
-        _log.debug(
-            "Updated crate manifest for crate %r: manifest=%s",
-            crate.name,
-            crate.manifest_path,
-        )
-        if not crate_options.dry_run:
-            _log.debug(
-                "Wrote crate manifest for crate %r: manifest=%s",
-                crate.name,
-                crate.manifest_path,
-            )
-    else:
-        _log.debug(
-            "Crate manifest already up to date for crate %r: manifest=%s",
-            crate.name,
-            crate.manifest_path,
-        )
-    return (
-        _CrateManifestOutcome.UPDATED
-        if result.was_changed
-        else _CrateManifestOutcome.UNCHANGED
     )

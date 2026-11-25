@@ -119,45 +119,20 @@ def collect_dependency_section_warnings(
     tuple[RequirementBoundWarning, ...]
         Warning data for selected comparators that reject ``target_version``.
     """
-    warnings = (
-        warning
+    selected_tables = (
+        (bump_toml.select_table(document, path), names)
         for section, names in dependency_sections.items()
         if names
-        for warning in _selected_section_warnings(
-            document,
-            _selected_dependency_section_paths(
-                section, include_workspace_sections=include_workspace_sections
-            ),
-            names,
-            target_version,
+        for path in (
+            ((section,), ("workspace", section))
+            if include_workspace_sections
+            else ((section,),)
         )
     )
-    return tuple(warnings)
-
-
-def _selected_section_warnings(
-    document: TOMLDocument,
-    paths: cabc.Sequence[tuple[str, ...]],
-    names: cabc.Collection[str],
-    target_version: str,
-) -> tuple[RequirementBoundWarning, ...]:
-    """Collect warnings from the existing dependency tables in ``paths``."""
     warnings = (
         warning
-        for path in paths
-        if (table := bump_toml.select_table(document, path)) is not None
+        for table, names in selected_tables
+        if table is not None
         for warning in collect_dependency_bound_warnings(table, names, target_version)
     )
     return tuple(warnings)
-
-
-def _selected_dependency_section_paths(
-    section: str,
-    *,
-    include_workspace_sections: bool,
-) -> tuple[tuple[str, ...], ...]:
-    """Return direct and optional workspace paths for one section."""
-    direct = (section,)
-    if not include_workspace_sections:
-        return (direct,)
-    return direct, ("workspace", section)

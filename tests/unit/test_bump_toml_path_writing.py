@@ -132,6 +132,7 @@ def test_path_fallback_cleans_temp_from_parent_moved_during_validation(
     outside = tmp_path / "outside"
     outside.mkdir()
     (outside / "Cargo.toml").write_text("outside", encoding="utf-8")
+    outside_original = (outside / "Cargo.toml").read_bytes()
     monkeypatch.setattr(
         bump_toml_files,
         "_supports_bounded_directory_operations",
@@ -168,6 +169,9 @@ def test_path_fallback_cleans_temp_from_parent_moved_during_validation(
     )
     assert (moved_parent / "Cargo.toml").read_text(encoding="utf-8") == "original", (
         "a failed final check must leave the moved destination unchanged"
+    )
+    assert (outside / "Cargo.toml").read_bytes() == outside_original, (
+        "a failed final check must leave the redirected outside file unchanged"
     )
 
 
