@@ -27,14 +27,16 @@ from lading.config_publish_preflight import (
 from lading.config_publish_preflight import (
     PreflightConfig,
     PublishConfig,
-    _boolean,
-    _optional_mapping,
-    _string_tuple,
 )
 from lading.config_publish_preflight import (
     StripPatchesSetting as StripPatchesSetting,
 )
-from lading.config_validation import validate_mapping_keys
+from lading.config_validation import (
+    _boolean,
+    _optional_mapping,
+    _string_tuple,
+    validate_mapping_keys,
+)
 from lading.exceptions import ConfigurationError, ConfigurationNotLoadedError
 from lading.utils import normalize_workspace_root
 

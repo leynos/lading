@@ -1162,8 +1162,9 @@ spans are preserved verbatim.
 ### Configured non-member manifest rewrites
 
 `lading.config_manifest_rewrites` owns the immutable records and strict schema
-for `bump.manifest_rewrites`. It uses `lading.config_validation` for shared
-mapping-key and selector-segment validation.
+for `bump.manifest_rewrites`. `lading.config_validation` provides shared TOML
+coercion, mapping-key validation, and selector-segment validation for
+configuration records.
 
 `lading.commands.manifest_paths.resolve_manifest_candidate` owns the shared
 workspace-containment and `Cargo.toml` filename check. The lockfile path module

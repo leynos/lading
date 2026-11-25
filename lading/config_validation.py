@@ -1,14 +1,24 @@
-"""Share strict key and selector-segment checks across configuration records.
+"""Share TOML coercion and validation across configuration records.
 
-:func:`validate_mapping_keys` is used by :mod:`lading.config` and
-:mod:`lading.config_manifest_rewrites`; :func:`validate_segments` validates
-the literal TOML selectors in the rewrite schema. Both helpers raise
-:class:`lading.exceptions.ConfigurationError` with the relevant field path.
+The private coercers bind shared TOML conversions to
+:class:`lading.exceptions.ConfigurationError` for :mod:`lading.config` and
+:mod:`lading.config_publish_preflight`. :func:`validate_mapping_keys` serves
+those parsers and :mod:`lading.config_manifest_rewrites`; :func:`validate_segments`
+validates literal selectors in the rewrite schema. Validation errors retain
+the relevant field path.
 """
 
 import collections.abc as cabc
+import functools
 
+from lading import toml_coerce
 from lading.exceptions import ConfigurationError
+
+_boolean = functools.partial(toml_coerce.boolean, error=ConfigurationError)
+_optional_mapping = functools.partial(
+    toml_coerce.optional_mapping, error=ConfigurationError
+)
+_string_tuple = functools.partial(toml_coerce.string_tuple, error=ConfigurationError)
 
 
 def validate_mapping_keys(

@@ -6,7 +6,11 @@ import functools
 import typing as typ
 
 from lading import toml_coerce
-from lading.config_validation import validate_mapping_keys
+from lading.config_validation import (
+    _boolean,
+    _string_tuple,
+    validate_mapping_keys,
+)
 from lading.exceptions import ConfigurationError
 
 StripPatchesSetting = typ.Literal["all", "per-crate"] | bool
@@ -86,9 +90,9 @@ class PreflightConfig:
 
     ``skip`` suppresses only the compilation-heavy part of the pre-flight: the
     auxiliary build commands, ``cargo check``, and ``cargo test``. The
-    working-tree cleanliness guard and the lockfile freshness guard cost
-    nothing and always run, so a skipped pre-flight never weakens the
-    publication guarantees those two checks provide.
+    working-tree cleanliness guard runs when ``--forbid-dirty`` is enabled,
+    and the lockfile freshness guard always runs. Skipping pre-flight therefore
+    does not disable either requested guard.
     """
 
     skip: bool = False
@@ -181,17 +185,12 @@ def _strip_patches(value: object) -> StripPatchesSetting:
     raise ConfigurationError(message)
 
 
-# Coercion helpers bound to the configuration error type; the shared
+# Coercion helpers local to publish pre-flight configuration; the shared
 # implementations live in lading.toml_coerce (issue #108).
-_string_tuple = functools.partial(toml_coerce.string_tuple, error=ConfigurationError)
 _string_matrix = functools.partial(toml_coerce.string_matrix, error=ConfigurationError)
 _string_mapping = functools.partial(
     toml_coerce.string_mapping, error=ConfigurationError
 )
-_boolean = functools.partial(toml_coerce.boolean, error=ConfigurationError)
 _non_negative_int = functools.partial(
     toml_coerce.non_negative_int, error=ConfigurationError
-)
-_optional_mapping = functools.partial(
-    toml_coerce.optional_mapping, error=ConfigurationError
 )
