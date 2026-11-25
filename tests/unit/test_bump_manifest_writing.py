@@ -292,6 +292,7 @@ def test_bounded_write_revalidates_before_path_fallback_replacement(
     )
     resolve_target = bump_toml_files._resolve_bounded_write_target
     validation_count = 0
+    temporary_files_at_failure: list[Path] = []
     failure_message = "write denied"
 
     def reject_final_validation(path: Path, root: Path) -> Path:
@@ -299,6 +300,13 @@ def test_bounded_write_revalidates_before_path_fallback_replacement(
         nonlocal validation_count
         validation_count += 1
         if validation_count == 2:
+            temporary_files_at_failure.extend(manifest_path.parent.glob(".lading-*"))
+            assert len(temporary_files_at_failure) == 1, (
+                "the final validation must fail after creating one temporary file"
+            )
+            assert temporary_files_at_failure[0].is_file(), (
+                "the temporary replacement must exist when final validation fails"
+            )
             raise PermissionError(failure_message)
         return resolve_target(path, root)
 
@@ -317,6 +325,12 @@ def test_bounded_write_revalidates_before_path_fallback_replacement(
 
     assert validation_count == 2, (
         "the writer must revalidate immediately before replace"
+    )
+    assert len(temporary_files_at_failure) == 1, (
+        "the test must observe the temporary file at final validation"
+    )
+    assert not temporary_files_at_failure[0].exists(), (
+        "the rejected replacement's temporary file must be removed"
     )
     assert manifest_path.read_text(encoding="utf-8") == "original", (
         "a failed final check must leave the destination unchanged"

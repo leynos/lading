@@ -95,14 +95,14 @@ class _RewriteRetryScenario:
         pytest.param(
             _RewriteRetryScenario(
                 value_key="path",
-                current_value="alpha-2.0.0-src-src",
-                template="{crate}-{version}-src",
+                current_value="alpha-2.0.0-src",
+                template="{crate}-{version}",
                 names=frozenset({"alpha"}),
                 pre_bump_versions={"alpha": "2.0.0"},
-                target_version="2.0.0",
+                target_version="3.0.0",
                 expected_new_text=None,
             ),
-            id="partial-target-rendering-is-not-rewritten",
+            id="version-followed-by-hyphen-is-not-rewritten",
         ),
         pytest.param(
             _RewriteRetryScenario(

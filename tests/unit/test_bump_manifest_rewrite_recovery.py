@@ -86,6 +86,22 @@ def _run_partial_case_bump(
         assert "../alpha-1.2.3" in retried_text, (
             f"retry should update staged package paths in {fixture}"
         )
+    for manifest_path in case.workspace_manifests:
+        document = parse_toml(manifest_path.read_text(encoding="utf-8"))
+        package = document.get("package")
+        workspace_package = document.get("workspace", {}).get("package")
+        assert package is not None or workspace_package is not None, (
+            f"the on-disk manifest should declare a package version: {manifest_path}"
+        )
+        if package is not None:
+            assert package["version"] == "1.2.3", (
+                f"retry should bump the on-disk package version in {manifest_path}"
+            )
+        if workspace_package is not None:
+            assert workspace_package["version"] == "1.2.3", (
+                "retry should bump the on-disk workspace package version in "
+                f"{manifest_path}"
+            )
 
 
 def _run_bump_with_member_failure(
@@ -94,6 +110,9 @@ def _run_bump_with_member_failure(
 ) -> None:
     """Raise while updating a later member after earlier writes complete."""
     original_update_manifest = bump_pipeline._update_manifest
+    alpha_manifest = next(
+        crate.manifest_path for crate in case.workspace.crates if crate.name == "alpha"
+    )
 
     def fail_selected_manifest(
         manifest_path: Path,
@@ -103,6 +122,10 @@ def _run_bump_with_member_failure(
     ) -> bump_manifests._ManifestUpdateResult:
         """Inject a failure for the selected crate manifest."""
         if manifest_path == failed_manifest:
+            alpha_text = alpha_manifest.read_text(encoding="utf-8")
+            assert parse_toml(alpha_text)["package"]["version"] == "1.2.3", (
+                "alpha must be updated before the later member failure"
+            )
             raise _InjectedMemberManifestError
         return original_update_manifest(
             manifest_path,

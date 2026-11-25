@@ -16,7 +16,7 @@ from lading.commands import (
 from lading.commands.bump_manifest_rewrites import ManifestRewriteWriteError
 from lading.exceptions import LadingError
 from lading.workspace import WorkspaceCrate, WorkspaceDependency, WorkspaceGraph
-from tests.helpers.workspace_builders import _make_workspace
+from tests.helpers.workspace_builders import _load_version, _make_workspace
 
 if typ.TYPE_CHECKING:
     from lading.commands.bump_output import BumpChanges
@@ -170,7 +170,6 @@ def test_root_package_member_pass_preserves_intervening_edit(
 ) -> None:
     """The member read rejects an edit made after its pre-update check."""
     workspace, root_manifest = _make_root_package_workspace(tmp_path)
-    original_text = root_manifest.read_text(encoding="utf-8")
     concurrent_edit = "\n# concurrent edit between bump passes\n"
     configuration = config_module.LadingConfig(
         bump=config_module.BumpConfig(rebuild_lockfiles=False)
@@ -233,8 +232,8 @@ def test_root_package_member_pass_preserves_intervening_edit(
     assert current_text.endswith(concurrent_edit), (
         "rollback must preserve the intervening edit"
     )
-    assert current_text != original_text, (
-        "rollback must leave the workspace-pass output and concurrent edit in place"
+    assert _load_version(root_manifest, ("workspace", "package")) == "1.2.3", (
+        "rollback must preserve the workspace-pass version alongside the edit"
     )
 
 
