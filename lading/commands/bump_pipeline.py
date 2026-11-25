@@ -15,6 +15,7 @@ import typing as typ
 from lading.commands import (
     bump_docs,
     bump_lockfiles,
+    bump_pipeline_manifest_recovery,
     bump_pipeline_manifest_rewrites,
     bump_readme,
 )
@@ -106,7 +107,7 @@ def _process_workspace_and_crate_manifests(
     except BaseException as stage_error:
         if context.base_options.dry_run:
             raise
-        rollback_error = bump_pipeline_manifest_rewrites._restore_changed_manifests(
+        rollback_error = bump_pipeline_manifest_recovery.restore_changed_manifests(
             rewrite_stage,
             changed_manifests,
             stage_error,
@@ -137,6 +138,9 @@ def _process_workspace_manifest(
         options=workspace_options,
         workspace_root=context.root_path,
         workspace_declarations_only=True,
+        before_write=bump_pipeline_manifest_recovery.manifest_write_recorder(
+            rewrite_stage
+        ),
     )
     result = _update_manifest(
         context.workspace_manifest,
@@ -194,40 +198,12 @@ def _record_written_manifest_content(
     if written_text is None:
         return
     rewrite_stage.written_manifest_contents[manifest_path] = written_text
+    rewrite_stage.written_manifest_content_history.setdefault(manifest_path, set()).add(
+        written_text
+    )
     write_destination = result.write_destination
     if write_destination is not None:
         rewrite_stage.written_manifest_destinations[manifest_path] = write_destination
-
-
-def _validate_member_manifest_before_update(
-    manifest_path: Path,
-    rewrite_stage: bump_pipeline_manifest_rewrites._ManifestRewriteStage | None,
-) -> None:
-    """Reject edits made after an earlier bump pass wrote this manifest."""
-    if rewrite_stage is None:
-        return
-    previously_written_text = rewrite_stage.written_manifest_contents.get(manifest_path)
-    if previously_written_text is None:
-        return
-    try:
-        current_text = manifest_path.read_text(encoding="utf-8", newline="")
-    except (OSError, UnicodeError) as exc:
-        message = (
-            f"Could not verify manifest after an earlier bump pass wrote it: "
-            f"{manifest_path}: {exc}"
-        )
-        raise bump_pipeline_manifest_rewrites.ManifestRewriteError(
-            message,
-            failed_path=manifest_path,
-        ) from exc
-    if current_text != previously_written_text:
-        message = (
-            f"Manifest changed after an earlier bump pass wrote it: {manifest_path}"
-        )
-        raise bump_pipeline_manifest_rewrites.ManifestRewriteError(
-            message,
-            failed_path=manifest_path,
-        )
 
 
 def _process_documentation_files(
@@ -348,7 +324,9 @@ def _apply_crate_manifest_update(
         _log.debug("Skipping crate manifest update for excluded crate %r", crate.name)
         return _CrateManifestOutcome.SKIPPED
 
-    _validate_member_manifest_before_update(crate.manifest_path, rewrite_stage)
+    bump_pipeline_manifest_recovery.validate_member_manifest_before_update(
+        crate.manifest_path, rewrite_stage
+    )
     crate_options = dc.replace(
         context.base_options,
         dependency_sections=_freeze_dependency_sections(dependency_sections),
@@ -356,6 +334,11 @@ def _apply_crate_manifest_update(
     update_context = _ManifestUpdateContext(
         options=crate_options,
         workspace_root=context.root_path,
+        before_write=(
+            bump_pipeline_manifest_recovery.manifest_write_recorder(rewrite_stage)
+            if rewrite_stage is not None
+            else None
+        ),
     )
     result = _update_manifest(
         crate.manifest_path,

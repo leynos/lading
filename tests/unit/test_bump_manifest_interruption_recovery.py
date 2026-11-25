@@ -10,7 +10,10 @@ from lading.commands import (
     bump_manifest_rewrite_application,
     bump_manifests,
     bump_pipeline,
+    bump_pipeline_manifest_recovery,
+    bump_pipeline_manifest_rewrites,
 )
+from lading.commands.bump_manifest_rewrites import ManifestRewriteError
 from tests.helpers.manifest_rewrite_recovery import _make_partial_write_failure_case
 
 
@@ -20,9 +23,9 @@ def test_member_interruption_restores_completed_manifest_writes(
     """An interrupt during member updates restores earlier successful writes."""
     case = _make_partial_write_failure_case(tmp_path)
     fixture_originals = {path: path.read_bytes() for path in case.fixtures}
-    failed_manifest = case.workspace.crates[-1].manifest_path
+    interrupted_manifest = case.workspace.crates[0].manifest_path
     original_update_manifest = bump_pipeline._update_manifest
-    completed_member_writes: list[Path] = []
+    interrupted_after_write: list[Path] = []
 
     def interrupt_selected_manifest(
         manifest_path: Path,
@@ -30,17 +33,16 @@ def test_member_interruption_restores_completed_manifest_writes(
         target_version: str,
         update_context: bump_manifests._ManifestUpdateContext,
     ) -> bump_manifests._ManifestUpdateResult:
-        """Interrupt after earlier members have had a chance to update."""
-        if manifest_path == failed_manifest:
-            raise KeyboardInterrupt
+        """Interrupt after the first crate write but before its caller resumes."""
         result = original_update_manifest(
             manifest_path,
             selectors,
             target_version,
             update_context,
         )
-        if result.was_changed:
-            completed_member_writes.append(manifest_path)
+        if manifest_path == interrupted_manifest and result.was_changed:
+            interrupted_after_write.append(manifest_path)
+            raise KeyboardInterrupt
         return result
 
     with (
@@ -61,8 +63,8 @@ def test_member_interruption_restores_completed_manifest_writes(
             ),
         )
 
-    assert case.workspace.crates[0].manifest_path in completed_member_writes, (
-        "the first member must be changed before the injected interruption"
+    assert interrupted_after_write == [interrupted_manifest], (
+        "the interruption must follow an atomic write and precede caller bookkeeping"
     )
     assert {
         path: path.read_bytes() for path in case.workspace_manifests
@@ -72,6 +74,30 @@ def test_member_interruption_restores_completed_manifest_writes(
     assert {path: path.read_bytes() for path in case.fixtures} == fixture_originals, (
         "member interruption must leave not-yet-applied fixture rewrites untouched"
     )
+
+
+def test_member_update_rejects_a_changed_symlink_destination(
+    tmp_path: Path,
+) -> None:
+    """Repeated updates cannot follow a symlink redirected after an earlier write."""
+    original_destination = tmp_path / "original.toml"
+    redirected_destination = tmp_path / "redirected.toml"
+    manifest_path = tmp_path / "Cargo.toml"
+    previous_output = '[package]\nname = "alpha"\nversion = "1.2.3"\n'
+    original_destination.write_text(previous_output, encoding="utf-8")
+    redirected_destination.write_text(previous_output, encoding="utf-8")
+    manifest_path.symlink_to(original_destination)
+    stage = bump_pipeline_manifest_rewrites._ManifestRewriteStage(
+        written_manifest_contents={manifest_path: previous_output},
+        written_manifest_destinations={manifest_path: original_destination.resolve()},
+    )
+    manifest_path.unlink()
+    manifest_path.symlink_to(redirected_destination)
+
+    with pytest.raises(ManifestRewriteError, match="destination changed"):
+        bump_pipeline_manifest_recovery.validate_member_manifest_before_update(
+            manifest_path, stage
+        )
 
 
 def test_non_member_interruption_restores_completed_rewrites_and_members(

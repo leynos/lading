@@ -19,14 +19,13 @@ from lading.commands import (
     bump_manifest_rewrite_filesystem,
     bump_manifest_rewrite_metrics,
     bump_manifest_rewrites,
-    bump_toml_files,
+    bump_pipeline_manifest_recovery,
 )
 from lading.commands.bump_manifest_rewrite_metrics import (
     ManifestRewriteMetricLabels,
 )
 from lading.commands.bump_manifest_rewrite_model import (
     ManifestRewriteError,
-    ManifestRewriteWriteError,
 )
 
 if typ.TYPE_CHECKING:
@@ -46,6 +45,9 @@ class _ManifestRewriteStage:
     planning_duration_seconds: float = 0.0
     workspace_manifest_snapshots: tuple[tuple[Path, str], ...] = ()
     written_manifest_contents: dict[Path, str] = dc.field(default_factory=dict)
+    written_manifest_content_history: dict[Path, set[str]] = dc.field(
+        default_factory=dict
+    )
     written_manifest_destinations: dict[Path, Path] = dc.field(default_factory=dict)
     rollback_baselines: dict[Path, str] = dc.field(default_factory=dict)
 
@@ -209,10 +211,10 @@ def _apply_non_member_manifest_rewrites(
         if interrupted and dry_run:
             raise
         if interrupted:
-            _record_completed_rewrites_for_interruption(
+            bump_pipeline_manifest_recovery.record_completed_rewrites_for_interruption(
                 stage, changed_manifests, rewrite_error
             )
-        recovery_error = _restore_changed_manifests(
+        recovery_error = bump_pipeline_manifest_recovery.restore_changed_manifests(
             stage,
             changed_manifests,
             rewrite_error,
@@ -245,91 +247,4 @@ def _apply_non_member_manifest_rewrites(
             dry_run=dry_run,
             error_category="none",
         ),
-    )
-
-
-def _record_completed_rewrites_for_interruption(
-    stage: _ManifestRewriteStage,
-    changed_manifests: set[Path],
-    interruption: BaseException,
-) -> None:
-    """Record planned outputs already present so interruption recovery can undo them."""
-    for plan in stage.plans:
-        try:
-            current_text = plan.path.read_text(encoding="utf-8", newline="")
-        except (OSError, UnicodeError) as exc:
-            interruption.add_note(
-                f"Could not inspect manifest rewrite target {plan.path} "
-                f"during interruption recovery: {exc}"
-            )
-            continue
-        if current_text != plan.new_text:
-            continue
-        stage.rollback_baselines.setdefault(plan.path, plan.original_text)
-        stage.written_manifest_contents[plan.path] = plan.new_text
-        stage.written_manifest_destinations[plan.path] = plan.path
-        changed_manifests.add(plan.path)
-
-
-def _restore_changed_manifests(
-    stage: _ManifestRewriteStage,
-    changed_manifests: cabc.Collection[Path],
-    failure: BaseException,
-    *,
-    workspace_root: Path,
-) -> ManifestRewriteWriteError | None:
-    """Restore manifests that still contain this bump's text."""
-    original_text_by_path = dict(stage.workspace_manifest_snapshots)
-    original_text_by_path.update(stage.rollback_baselines)
-    failures: list[tuple[Path, str]] = []
-    changed_workspace_manifests = sorted(
-        set(changed_manifests).intersection(original_text_by_path),
-        key=str,
-        reverse=True,
-    )
-    for manifest_path in changed_workspace_manifests:
-        write_destination = stage.written_manifest_destinations.get(
-            manifest_path, manifest_path
-        )
-        try:
-            current_text = write_destination.read_text(encoding="utf-8", newline="")
-        except (OSError, UnicodeError) as exc:
-            failures.append((manifest_path, f"could not read before rollback: {exc}"))
-            continue
-        if current_text != stage.written_manifest_contents.get(manifest_path):
-            concurrent_edit_detail = (
-                "contents changed after this bump wrote the manifest; "
-                "left the current contents in place"
-            )
-            failures.append((manifest_path, concurrent_edit_detail))
-            continue
-        try:
-            bump_toml_files.write_atomic_text(
-                write_destination,
-                original_text_by_path[manifest_path],
-                workspace_root=workspace_root,
-            )
-        except (OSError, UnicodeError) as exc:
-            failures.append((manifest_path, f"could not restore original text: {exc}"))
-    if not failures:
-        return None
-    failed_paths = ", ".join(str(path) for path, _error in failures)
-    failure_details = "; ".join(f"{path}: {detail}" for path, detail in failures)
-    failure_summary = str(failure) or type(failure).__name__
-    message = (
-        f"{failure_summary}; manifest rollback failed for "
-        f"{failed_paths}: {failure_details}"
-    )
-    failed_path = failures[0][0]
-    completed_writes = (
-        failure.completed_writes if isinstance(failure, ManifestRewriteError) else 0
-    )
-    planned_writes = (
-        failure.planned_writes if isinstance(failure, ManifestRewriteError) else 0
-    )
-    return ManifestRewriteWriteError(
-        message,
-        completed_writes=completed_writes,
-        planned_writes=planned_writes,
-        failed_path=failed_path,
     )

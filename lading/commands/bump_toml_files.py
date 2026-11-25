@@ -10,7 +10,7 @@ from pathlib import Path
 
 from tomlkit import parse as parse_toml
 
-from lading.commands import manifest_paths
+from lading.commands import bump_toml_temporary_cleanup, manifest_paths
 from lading.exceptions import LadingError
 
 if typ.TYPE_CHECKING:
@@ -156,7 +156,7 @@ def _write_path_based_atomic_text(
     except BaseException as error:
         primary_error = error
         if temporary_name is not None and temporary_path is not None:
-            _cleanup_path_based_temporary_file(
+            bump_toml_temporary_cleanup.cleanup_path_based_temporary_file(
                 temporary_name, temporary_path, directory_fd, error
             )
         raise
@@ -197,24 +197,6 @@ def _open_temporary_text_file(descriptor: int) -> typ.TextIO:
     except BaseException as error:
         _close_descriptor(descriptor, error)
         raise
-
-
-def _cleanup_path_based_temporary_file(
-    temporary_name: str,
-    temporary_path: Path,
-    directory_fd: int | None,
-    primary_error: BaseException,
-) -> None:
-    """Remove a failed replacement's temporary file without masking its error."""
-    try:
-        if directory_fd is None:
-            temporary_path.unlink()
-        else:
-            os.unlink(temporary_name, dir_fd=directory_fd)
-    except OSError as cleanup_error:
-        primary_error.add_note(
-            f"Could not remove temporary file {temporary_name!r}: {cleanup_error}"
-        )
 
 
 def _close_descriptor(
@@ -263,16 +245,13 @@ def _write_bounded_atomic_text(
         workspace_root, relative_path.parent
     )
     temporary_name: str | None = None
+    primary_error: BaseException | None = None
     try:
         existing_mode = _existing_file_mode(directory_fd, file_path.name)
         temporary_fd, temporary_name = _create_bounded_temporary_file(
             directory_fd, file_path.name
         )
-        try:
-            handle = os.fdopen(temporary_fd, "w", encoding="utf-8", newline="")
-        except BaseException:
-            os.close(temporary_fd)
-            raise
+        handle = _open_temporary_text_file(temporary_fd)
         with handle:
             if existing_mode is not None:
                 _set_file_mode(handle.fileno(), existing_mode)
@@ -284,13 +263,17 @@ def _write_bounded_atomic_text(
             dst_dir_fd=directory_fd,
         )
         temporary_name = None
+    except BaseException as error:
+        primary_error = error
+        raise
     finally:
         try:
             if temporary_name is not None:
-                with suppress(FileNotFoundError):
-                    os.unlink(temporary_name, dir_fd=directory_fd)
+                bump_toml_temporary_cleanup.cleanup_bounded_temporary_file(
+                    temporary_name, directory_fd, primary_error
+                )
         finally:
-            os.close(directory_fd)
+            _close_descriptor(directory_fd, primary_error)
 
 
 def _supports_bounded_directory_operations() -> bool:

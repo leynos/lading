@@ -58,6 +58,7 @@ class _ManifestUpdateContext:
     options: BumpOptions
     workspace_root: Path | None = None
     workspace_declarations_only: bool = False
+    before_write: cabc.Callable[[Path, str, str, Path], None] | None = None
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -157,6 +158,13 @@ def _update_manifest(
                 f"{manifest_path}"
             )
             raise LadingError(message)
+        if update_context.before_write is not None:
+            update_context.before_write(
+                manifest_path,
+                original_text,
+                updated_text,
+                write_destination,
+            )
         bump_toml_files.write_atomic_text(
             write_destination,
             updated_text,
