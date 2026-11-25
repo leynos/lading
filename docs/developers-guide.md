@@ -140,6 +140,10 @@ edit generated entries by hand.
 `typos-config-builder` release the gate runs (currently `v0.1.3`). Raise it
 together with the regenerated `typos.toml`, never on its own.
 
+The builder requires Python 3.14, so the `Makefile` runs it with
+`uv tool run --python 3.14`. `uv` downloads that interpreter when it is
+missing; environments that forbid downloads must provide Python 3.14.
+
 ## Development invocation
 
 The console script resolves to `lading.cli.main`. During development, the
