@@ -561,10 +561,11 @@ reason = "Shared declaration scaffolding rather than shared logic. The matched r
 [[tool.duplication_gate.allow]]
 members = [
     "lading/commands/bump_manifests.py",
+    "lading/commands/bump_pipeline_manifest_sources.py",
     "lading/commands/publish_plan.py",
     "lading/testing/toml_utils.py",
 ]
-reason = "Type-checking import blocks, each listing the types that module alone needs in the conventional grouped order. Merging them would create a shared typing module every command imports, which is the cross-layer coupling these blocks exist to avoid; the repetition is the import graph staying local."
+reason = "These type-checking import blocks name distinct module-local type sets. bump_manifests, publish_plan, and toml_utils belong to separate command and testing layers; bump_pipeline_manifest_sources imports its context and stage types without runtime cycles. A shared typing module would couple their import graphs."
 
 [[tool.duplication_gate.allow]]
 members = [

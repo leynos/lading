@@ -51,11 +51,14 @@ def _unlink_readonly_temporary(temporary_path: Path) -> None:
         return
     except OSError as first_cleanup_error:
         try:
-            temporary_path.chmod(stat.S_IREAD | stat.S_IWRITE)
+            temporary_path.chmod(
+                stat.S_IREAD | stat.S_IWRITE,
+                follow_symlinks=False,
+            )
             temporary_path.unlink()
         except FileNotFoundError:
             return
-        except OSError as retry_error:
+        except (NotImplementedError, OSError) as retry_error:
             message = f"{first_cleanup_error}; writable retry failed: {retry_error}"
             raise OSError(message) from retry_error
 

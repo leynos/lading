@@ -81,6 +81,7 @@ def test_documentation_write_rechecks_workspace_after_parent_symlink_swap(
             content: str,
             *,
             workspace_root: pathlib.Path | None = None,
+            expected_current_text: str | None = None,
         ) -> None:
             """Replace the validated parent with a link to the outside file."""
             documentation_directory.rename(archived_directory)
@@ -89,6 +90,7 @@ def test_documentation_write_rechecks_workspace_after_parent_symlink_swap(
                 file_path,
                 content,
                 workspace_root=workspace_root,
+                expected_current_text=expected_current_text,
             )
 
         monkeypatch.setattr(
@@ -107,6 +109,95 @@ def test_documentation_write_rechecks_workspace_after_parent_symlink_swap(
         assert outside_document.read_text(encoding="utf-8") == original, (
             "a parent-directory symlink must not redirect the documentation write"
         )
+
+
+def test_documentation_write_rejects_a_concurrent_edit(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A newer documentation edit survives the stale rewrite attempt."""
+    document = tmp_path / "guide.md"
+    original = '```toml\n[dependencies]\nalpha = "0.1.0"\n```\n'
+    concurrent_edit = "A newer edit from another writer.\n"
+    document.write_text(original, encoding="utf-8", newline="")
+    write_atomic_text = bump_docs.bump_toml_files.write_atomic_text
+
+    def edit_before_write(
+        file_path: pathlib.Path,
+        content: str,
+        *,
+        workspace_root: pathlib.Path | None = None,
+        expected_current_text: str | None = None,
+    ) -> None:
+        """Install a concurrent edit before the bounded comparison."""
+        file_path.write_text(concurrent_edit, encoding="utf-8", newline="")
+        write_atomic_text(
+            file_path,
+            content,
+            workspace_root=workspace_root,
+            expected_current_text=expected_current_text,
+        )
+
+    monkeypatch.setattr(
+        bump_docs.bump_toml_files, "write_atomic_text", edit_before_write
+    )
+    with pytest.raises(PermissionError, match="changed before replacement"):
+        bump_docs.update_documentation_files(
+            bump_docs.DocumentationTargets(tmp_path, (document,)),
+            "1.2.3",
+            {"alpha"},
+            dry_run=False,
+        )
+
+    assert document.read_text(encoding="utf-8") == concurrent_edit, (
+        "the stale documentation rewrite must not overwrite a concurrent edit"
+    )
+
+
+def test_documentation_rewrite_preserves_crlf_bytes(tmp_path: pathlib.Path) -> None:
+    """A changed CRLF document passes its exact-source check and keeps CRLF."""
+    document = tmp_path / "guide.md"
+    original = b'```toml\r\n[dependencies]\r\nalpha = "0.1.0"\r\n```\r\n'
+    document.write_bytes(original)
+
+    changed = bump_docs.update_documentation_files(
+        bump_docs.DocumentationTargets(tmp_path, (document,)),
+        "1.2.3",
+        {"alpha"},
+        dry_run=False,
+    )
+
+    assert changed == {document.resolve()}, (
+        "the CRLF document should be reported as rewritten"
+    )
+    assert document.read_bytes() == (
+        b'```toml\r\n[dependencies]\r\nalpha = "1.2.3"\r\n```\r\n'
+    ), "the changed document must retain its exact CRLF convention"
+
+
+def test_rewrite_keeps_an_eof_opening_fence_on_its_own_line(
+    tmp_path: pathlib.Path,
+) -> None:
+    """An EOF-terminated empty fence stays separate from its generated close."""
+    document = tmp_path / "guide.md"
+    document.write_text(
+        '```toml\n[dependencies]\nalpha = "0.1.0"\n```\n\n```toml',
+        encoding="utf-8",
+        newline="",
+    )
+
+    bump_docs.update_documentation_files(
+        bump_docs.DocumentationTargets(tmp_path, (document,)),
+        "1.2.3",
+        {"alpha"},
+        dry_run=False,
+    )
+
+    text = document.read_text(encoding="utf-8")
+    assert 'alpha = "1.2.3"' in text, "the preceding TOML fence should be rewritten"
+    assert text.endswith("```toml\n```\n"), (
+        "the generated closing marker must begin on a separate line"
+    )
 
 
 def test_documentation_targets_resolve_relative_workspace_root(

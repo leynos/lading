@@ -134,6 +134,40 @@ def test_string_rewrites_protect_complete_target_renderings(
         )
 
 
+def test_string_selectors_do_not_cascade_over_values_written_by_prior_rules(
+    tmp_path: pathlib.Path,
+    write_fixture_manifest: _ManifestWriter,
+) -> None:
+    """Every selector sees source text, not a previous selector's output."""
+    write_fixture_manifest(
+        tmp_path,
+        "fixture/Cargo.toml",
+        '[metadata]\nartifact = "alpha-1.0.0"\n',
+    )
+    group = ManifestRewriteConfig(
+        paths=("fixture/Cargo.toml",),
+        dependencies=False,
+        string_values=(
+            StringValueRewriteConfig(table=("metadata",)),
+            StringValueRewriteConfig(
+                table=("metadata",), template="{crate}-1{version}"
+            ),
+        ),
+    )
+    versions = manifest_rewrite_versions(
+        names=frozenset({"alpha"}),
+        pre_bump_versions={"alpha": "1.0.0"},
+        target_version="11.0.0",
+    )
+
+    (plan,) = plan_fixture_rewrites(tmp_path, (group,), versions=versions)
+
+    document = parse_toml(plan.new_text)
+    assert document["metadata"]["artifact"] == "alpha-11.0.0", (
+        "the second selector must not match the first selector's new rendering"
+    )
+
+
 def test_rejects_ambiguous_string_template_replacements(
     tmp_path: pathlib.Path,
     write_fixture_manifest: _ManifestWriter,

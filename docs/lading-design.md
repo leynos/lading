@@ -436,22 +436,25 @@ lading bump <new_version> [--dry-run]
   existence and file-type checks. Documentation, README, and configured
   manifest rewrite writes pass the workspace root to the atomic writer, which
   repeats containment checks immediately before selecting the replacement
-  target. Where the operating system supports directory-relative no-follow
-  operations, the writer pins the parent directory while replacing; on other
-  platforms it revalidates containment immediately before a path-based atomic
-  replacement. Configured manifest rewrites also require the planned path to
-  remain unchanged. README transposition requires the resolved path to be that
-  crate's own `README.md`, so an internal link cannot redirect a crate-specific
-  rewrite into the workspace README.
+  target. Bounded atomic writes require directory-relative no-follow operations
+  and pin the parent directory while replacing; if the platform lacks those
+  operations, the writer fails before creating a temporary file. Configured
+  manifest rewrites also require the planned path to remain unchanged. README
+  transposition requires the resolved path to be that crate's own `README.md`,
+  so an internal link cannot redirect a crate-specific rewrite into the
+  workspace README.
+- `bump_pipeline_manifest_sources` snapshots workspace and member manifest
+  text before writes, derives effective package versions, and revalidates those
+  versions before the first write. It performs no writes.
 - `bump_pipeline_manifest_rewrites` owns planning and applying the configured
-  rewrite stage. It snapshots workspace and member manifest text before any
-  write and restores manifests changed by those stages if a configured rewrite
-  fails, but only while their content still matches the text written by this
-  run. Restoration writes use the same workspace-root boundary as forward
-  writes, using the destination resolved before the member write so a changed
-  symlink cannot redirect rollback outside the workspace. It reports and
-  preserves concurrent edits. `bump_pipeline` owns overall timing, metrics, and
-  stage ordering; it plans every selected manifest before the workspace
+  rewrite stage. It restores manifests changed by those stages if a configured
+  rewrite fails, but only while their content still matches the text written by
+  this run. Pending writes are reconciled after ordinary failures as well as
+  interrupts. Restoration writes use the same workspace-root boundary as
+  forward writes, using the destination resolved before the member write so a
+  changed symlink cannot redirect rollback outside the workspace. It reports
+  and preserves concurrent edits. `bump_pipeline` owns overall timing, metrics,
+  and stage ordering; it plans every selected manifest before the workspace
   manifest stage writes, then applies plans after member manifests and before
   documentation, README transposition, and lockfile work. It supplies
   `_ManifestUpdateContext` with the workspace boundary; member updates retain

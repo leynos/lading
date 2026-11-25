@@ -207,10 +207,22 @@ def _resolve_crate_readme_destination(
         )
         raise ReadmeTranspositionError(message)
     workspace_readme = (workspace_root / "README.md").resolve()
+    _reject_changed_workspace_readme(
+        target_readme, workspace_readme, source_text, rewritten_text
+    )
+    return target_readme
+
+
+def _reject_changed_workspace_readme(
+    target_readme: Path,
+    workspace_readme: Path,
+    source_text: str,
+    rewritten_text: str,
+) -> None:
+    """Prevent link transposition from replacing the workspace-owned README."""
     if target_readme == workspace_readme and rewritten_text != source_text:
         message = "README transposition must not rewrite the workspace README"
         raise ReadmeTranspositionError(message)
-    return target_readme
 
 
 def _write_or_skip_readme(

@@ -1,5 +1,7 @@
 """Ensure Ctrl-C restores completed manifest writes in a version bump."""
 
+import typing as typ
+from collections import UserDict
 from pathlib import Path
 from unittest import mock
 
@@ -10,8 +12,6 @@ from lading.commands import (
     bump_manifest_rewrite_application,
     bump_manifest_rewrites,
     bump_manifests,
-    bump_pipeline,
-    bump_pipeline_crate_manifests,
     bump_pipeline_manifest_recovery,
     bump_pipeline_manifest_rewrites,
 )
@@ -29,7 +29,7 @@ def test_member_interruption_restores_completed_manifest_writes(
     case = _make_partial_write_failure_case(tmp_path)
     fixture_originals = {path: path.read_bytes() for path in case.fixtures}
     interrupted_manifest = case.workspace.crates[0].manifest_path
-    original_update_manifest = bump_pipeline._update_manifest
+    original_update_manifest = bump_manifests._update_manifest
     interrupted_after_write: list[Path] = []
 
     def interrupt_selected_manifest(
@@ -52,7 +52,7 @@ def test_member_interruption_restores_completed_manifest_writes(
 
     with (
         mock.patch.object(
-            bump_pipeline_crate_manifests,
+            bump_manifests,
             "_update_manifest",
             side_effect=interrupt_selected_manifest,
         ),
@@ -78,6 +78,38 @@ def test_member_interruption_restores_completed_manifest_writes(
     )
     assert {path: path.read_bytes() for path in case.fixtures} == fixture_originals, (
         "member interruption must leave not-yet-applied fixture rewrites untouched"
+    )
+
+
+def test_completion_callback_keeps_record_when_pending_pop_is_interrupted(
+    tmp_path: Path,
+) -> None:
+    """An interrupt during pending removal retains the completed write record."""
+    manifest_path = tmp_path / "Cargo.toml"
+    pending_contents = UserDict({manifest_path: "written text"})
+    stage = bump_pipeline_manifest_rewrites._ManifestRewriteStage(
+        pending_manifest_contents=typ.cast("dict[Path, str]", pending_contents)
+    )
+    original_pop = pending_contents.pop
+
+    def interrupt_after_pop(key: Path, default: str | None = None) -> str | None:
+        """Remove the pending value, then raise as a signal could."""
+        original_pop(key, default)
+        raise KeyboardInterrupt
+
+    callback = bump_pipeline_manifest_recovery.manifest_write_completion_recorder(stage)
+
+    with (
+        mock.patch.object(pending_contents, "pop", side_effect=interrupt_after_pop),
+        pytest.raises(KeyboardInterrupt),
+    ):
+        callback(manifest_path)
+
+    assert stage.written_manifest_contents == {manifest_path: "written text"}, (
+        "the completed output must be recorded before pending state is removed"
+    )
+    assert manifest_path not in stage.pending_manifest_contents, (
+        "the simulated interrupted pop must have removed the pending value"
     )
 
 

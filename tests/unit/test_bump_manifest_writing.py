@@ -9,12 +9,15 @@ from unittest import mock
 import pytest
 from tomlkit import parse as parse_toml
 
+from lading import config as config_module
 from lading.commands import (
     bump,
     bump_manifests,
+    bump_pipeline_crate_manifests,
     bump_toml_files,
 )
 from lading.exceptions import LadingError
+from lading.workspace import WorkspaceCrate, WorkspaceDependency, WorkspaceGraph
 from tests.helpers.workspace_builders import _load_version
 
 if typ.TYPE_CHECKING:
@@ -44,6 +47,95 @@ def test_update_manifest_writes_when_changed(tmp_path: Path) -> None:
     assert _load_version(manifest_path, ("package",)) == "1.0.0", (
         "package version should be persisted to disk"
     )
+
+
+@pytest.mark.parametrize(
+    ("workspace_only", "include_workspace", "expected_scope"),
+    [
+        (True, True, "workspace"),
+        (False, True, "both"),
+        (False, False, "direct"),
+    ],
+)
+def test_dependency_section_scope_preserves_update_precedence(
+    *,
+    workspace_only: bool,
+    include_workspace: bool,
+    expected_scope: typ.Literal["direct", "workspace", "both"],
+) -> None:
+    """Workspace-only updates take precedence over the broad option."""
+    context = bump_manifests._ManifestUpdateContext(
+        options=bump.BumpOptions(include_workspace_sections=include_workspace),
+        workspace_declarations_only=workspace_only,
+    )
+
+    assert bump_manifests._select_dependency_section_scope(context) == expected_scope, (
+        "the dependency selector must preserve the existing scope precedence"
+    )
+
+
+def test_member_dependency_alias_does_not_select_excluded_workspace_package(
+    tmp_path: Path,
+) -> None:
+    """A member alias must not become a package selector for workspace entries."""
+    from tests.helpers.workspace_builders import _make_workspace
+
+    workspace = _make_workspace(tmp_path)
+    member_path = tmp_path / "crates" / "holder" / "Cargo.toml"
+    member_path.parent.mkdir(parents=True)
+    member_path.write_text(
+        '[package]\nname = "holder"\nversion = "0.1.0"\n\n'
+        "[dependencies]\n"
+        'beta = { package = "alpha", version = "0.1.0" }\n\n'
+        "[workspace.dependencies]\n"
+        'beta-source = { package = "beta", version = "0.1.0" }\n',
+        encoding="utf-8",
+    )
+    holder = WorkspaceCrate(
+        name="holder",
+        version="0.1.0",
+        manifest_path=member_path,
+        root_path=member_path.parent,
+        publish=True,
+        readme_is_workspace=False,
+        dependencies=(
+            WorkspaceDependency(
+                package_id="alpha",
+                name="alpha",
+                manifest_name="beta",
+            ),
+        ),
+    )
+    workspace = WorkspaceGraph(
+        workspace_root=workspace.workspace_root,
+        crates=(*workspace.crates, holder),
+    )
+    configuration = config_module.LadingConfig(
+        bump=config_module.BumpConfig(exclude=("beta",))
+    )
+    context = bump._initialize_bump_context(
+        tmp_path,
+        bump.BumpOptions(
+            configuration=configuration,
+            workspace=workspace,
+            include_workspace_sections=True,
+        ),
+    )
+
+    outcome = bump_pipeline_crate_manifests._apply_crate_manifest_update(
+        holder, "1.2.3", context
+    )
+
+    document = parse_toml(member_path.read_text(encoding="utf-8"))
+    assert outcome is bump_pipeline_crate_manifests._CrateManifestOutcome.UPDATED, (
+        "the selected member alias should still be updated"
+    )
+    assert document["dependencies"]["beta"]["version"] == "1.2.3", (
+        "the alias key should receive the selected package's target version"
+    )
+    assert document["workspace"]["dependencies"]["beta-source"]["version"] == (
+        "0.1.0"
+    ), "the alias key must not update a workspace dependency for excluded beta"
 
 
 def test_update_manifest_preserves_inline_comment(tmp_path: Path) -> None:
@@ -249,11 +341,11 @@ def test_bounded_write_keeps_the_open_parent_when_its_path_is_swapped(
     assert parent.is_symlink(), "the concurrently installed symlink must remain"
 
 
-def test_bounded_write_uses_path_fallback_without_directory_operations(
+def test_bounded_write_fails_closed_without_directory_operations(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Bounded writes remain available when descriptor-relative calls are absent."""
+    """Bounded writes do not fall back to an unpinned path replacement."""
     workspace_root = tmp_path / "workspace"
     manifest_path = workspace_root / "fixtures" / "Cargo.toml"
     manifest_path.parent.mkdir(parents=True)
@@ -264,76 +356,16 @@ def test_bounded_write_uses_path_fallback_without_directory_operations(
         lambda: False,
     )
 
-    bump_toml_files.write_atomic_text(
-        manifest_path,
-        "replacement",
-        workspace_root=workspace_root,
-    )
-
-    assert manifest_path.read_text(encoding="utf-8") == "replacement", (
-        "the portable bounded-write fallback should replace the selected file"
-    )
-
-
-def test_bounded_write_revalidates_before_path_fallback_replacement(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A failed final containment check prevents the fallback replacement."""
-    workspace_root = tmp_path / "workspace"
-    manifest_path = workspace_root / "fixtures" / "Cargo.toml"
-    manifest_path.parent.mkdir(parents=True)
-    manifest_path.write_text("original", encoding="utf-8")
-    monkeypatch.setattr(
-        bump_toml_files,
-        "_supports_bounded_directory_operations",
-        lambda: False,
-    )
-    resolve_target = bump_toml_files._resolve_bounded_write_target
-    validation_count = 0
-    temporary_files_at_failure: list[Path] = []
-    failure_message = "write denied"
-
-    def reject_final_validation(path: Path, root: Path) -> Path:
-        """Reject the second check, which runs immediately before replacement."""
-        nonlocal validation_count
-        validation_count += 1
-        if validation_count == 2:
-            temporary_files_at_failure.extend(manifest_path.parent.glob(".lading-*"))
-            assert len(temporary_files_at_failure) == 1, (
-                "the final validation must fail after creating one temporary file"
-            )
-            assert temporary_files_at_failure[0].is_file(), (
-                "the temporary replacement must exist when final validation fails"
-            )
-            raise PermissionError(failure_message)
-        return resolve_target(path, root)
-
-    monkeypatch.setattr(
-        bump_toml_files,
-        "_resolve_bounded_write_target",
-        reject_final_validation,
-    )
-
-    with pytest.raises(PermissionError, match=failure_message):
+    with pytest.raises(PermissionError, match="require descriptor-relative"):
         bump_toml_files.write_atomic_text(
             manifest_path,
             "replacement",
             workspace_root=workspace_root,
         )
 
-    assert validation_count == 2, (
-        "the writer must revalidate immediately before replace"
-    )
-    assert len(temporary_files_at_failure) == 1, (
-        "the test must observe the temporary file at final validation"
-    )
-    assert not temporary_files_at_failure[0].exists(), (
-        "the rejected replacement's temporary file must be removed"
-    )
     assert manifest_path.read_text(encoding="utf-8") == "original", (
-        "a failed final check must leave the destination unchanged"
+        "an unsupported bounded write must leave the destination unchanged"
     )
     assert not list(manifest_path.parent.glob(".lading-*")), (
-        "a failed final check must remove its temporary file"
+        "an unsupported bounded write must fail before creating a temporary"
     )

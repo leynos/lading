@@ -245,15 +245,20 @@ def _apply_manifest_version_and_dependency_updates(
             document,
             options.dependency_sections,
             target_version,
-            section_scope=(
-                "workspace"
-                if update_context.workspace_declarations_only
-                else "both"
-                if options.include_workspace_sections
-                else "direct"
-            ),
+            section_scope=_select_dependency_section_scope(update_context),
         )
     return changed
+
+
+def _select_dependency_section_scope(
+    update_context: _ManifestUpdateContext,
+) -> typ.Literal["direct", "workspace", "both"]:
+    """Choose which dependency-table locations this manifest update rewrites."""
+    if update_context.workspace_declarations_only:
+        return "workspace"
+    if update_context.options.include_workspace_sections:
+        return "both"
+    return "direct"
 
 
 def _resolve_manifest_update_destination(
@@ -272,14 +277,27 @@ def _resolve_manifest_update_destination(
             error_type=LadingError,
             label="Workspace manifest",
         )
-    expected_destination = update_context.expected_destination
-    if expected_destination is not None and destination != expected_destination:
-        message = (
-            "Workspace manifest destination changed after bump context "
-            f"initialisation: {manifest_path}"
-        )
-        raise LadingError(message)
+    _validate_expected_manifest_destination(
+        destination,
+        update_context.expected_destination,
+        manifest_path,
+    )
     return destination
+
+
+def _validate_expected_manifest_destination(
+    destination: Path,
+    expected_destination: Path | None,
+    manifest_path: Path,
+) -> None:
+    """Reject a manifest path retargeted after bump context initialization."""
+    if expected_destination is None or destination == expected_destination:
+        return
+    message = (
+        "Workspace manifest destination changed after bump context "
+        f"initialisation: {manifest_path}"
+    )
+    raise LadingError(message)
 
 
 def _workspace_dependency_sections(

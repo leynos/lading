@@ -15,16 +15,12 @@ from lading.commands import (
     manifest_paths,
 )
 from lading.commands.bump_toml_bounded_filesystem import (
-    create_temporary_file as _create_bounded_temporary_file,
+    _create_temporary_file as _create_bounded_temporary_file,
 )
 from lading.commands.bump_toml_bounded_filesystem import (
-    existing_file_mode as _existing_file_mode,
-)
-from lading.commands.bump_toml_bounded_filesystem import (
-    open_workspace_parent_directory as _open_workspace_parent_directory,
-)
-from lading.commands.bump_toml_bounded_filesystem import (
-    set_file_mode as _set_file_mode,
+    _existing_file_mode,
+    _open_workspace_parent_directory,
+    _set_file_mode,
 )
 from lading.exceptions import LadingError
 
@@ -72,19 +68,15 @@ def write_atomic_text(
     workspace_root: Path | None = None,
     expected_current_text: str | None = None,
 ) -> None:
-    """Atomically replace a text file using UTF-8 without newline translation.
+    """Atomically replace UTF-8 text while preserving existing permission bits.
 
-    Without ``workspace_root``, symbolic-link paths are resolved before
-    replacement, so the link remains in place and its target receives the new
-    content. Existing permission bits are copied to the replacement. When a
-    workspace root is supplied, the destination must still resolve to its
-    planned path inside that workspace. Platforms with directory-relative
-    operations replace relative to a pinned, no-follow directory descriptor.
-    Other platforms revalidate the resolved destination immediately before the
-    path-based atomic replacement. When ``expected_current_text`` is provided,
-    replacement proceeds only if the current UTF-8 text still equals that
-    value. Workspace-bounded writes serialize with other Lading writes through
-    an advisory lock; other tools can ignore that lock and race the final check.
+    Without ``workspace_root``, a symbolic-link destination is followed. A
+    bounded write requires descriptor-relative no-follow operations; the writer
+    fails before creating a temporary file if the platform lacks them. Bounded
+    writes resolve the destination within the workspace and replace it relative
+    to a pinned parent directory. ``expected_current_text`` adds a final exact
+    text check. Lading writes share an advisory workspace lock, which external
+    tools may ignore.
 
     Parameters
     ----------
@@ -94,24 +86,20 @@ def write_atomic_text(
     content : str
         Text to write to the destination.
     workspace_root : Path or None, optional
-        Workspace boundary for callers that must prevent a changed symlink from
-        redirecting the replacement. The destination must be a resolved path
-        beneath this root. Platforms with directory-relative operations pin the
-        parent while replacing; other platforms revalidate the path immediately
-        before replacement. Defaults to ``None``.
+        Workspace boundary for the destination. Bounded replacement requires
+        directory-relative operations that pin the parent without following
+        symbolic links. Defaults to ``None``.
     expected_current_text : str or None, optional
-        Exact text expected immediately before replacement. Requires a workspace
-        root so comparison and replacement can run under its Lading write lock.
-        Defaults to ``None``.
+        Exact text expected immediately before replacement. Requires
+        ``workspace_root``. Defaults to ``None``.
 
     Raises
     ------
     OSError
         If resolving the destination, creating or writing the temporary file,
         preserving permissions, replacing the destination, or validating a
-        bounded destination fails. Bounded writes use descriptor-relative
-        replacement where the operating system supports it and path-based
-        replacement with final containment validation otherwise.
+        bounded destination fails. This includes platforms without the
+        descriptor-relative operations required for bounded replacement.
     ValueError
         If ``expected_current_text`` is provided without ``workspace_root``.
 
@@ -130,23 +118,37 @@ def write_atomic_text(
         message = "expected_current_text requires workspace_root"
         raise ValueError(message)
     if workspace_root is None:
-        if file_path.is_symlink():
-            file_path = file_path.resolve(strict=True)
-        _write_path_based_atomic_text(file_path, content, None, expected_current_text)
+        _write_unbounded_atomic_text(file_path, content)
         return
+    _write_workspace_bounded_atomic_text(
+        file_path, content, workspace_root, expected_current_text
+    )
 
+
+def _write_unbounded_atomic_text(file_path: Path, content: str) -> None:
+    """Follow symbolic links and replace a path without a workspace boundary."""
+    if file_path.is_symlink():
+        file_path = file_path.resolve(strict=True)
+    _write_path_based_atomic_text(file_path, content)
+
+
+def _write_workspace_bounded_atomic_text(
+    file_path: Path,
+    content: str,
+    workspace_root: Path,
+    expected_current_text: str | None,
+) -> None:
+    """Replace an in-workspace file using a pinned directory descriptor."""
+    if not _supports_bounded_directory_operations():
+        message = (
+            "Workspace-bounded atomic writes require descriptor-relative "
+            "directory operations"
+        )
+        raise PermissionError(message)
     with bump_workspace_write_lock.workspace_write_lock(workspace_root):
         bounded_workspace_root = workspace_root.resolve()
         file_path = _resolve_bounded_write_target(file_path, bounded_workspace_root)
-        if _supports_bounded_directory_operations():
-            _write_bounded_atomic_text(
-                file_path,
-                content,
-                bounded_workspace_root,
-                expected_current_text,
-            )
-            return
-        _write_path_based_atomic_text(
+        _write_bounded_atomic_text(
             file_path,
             content,
             bounded_workspace_root,
@@ -157,10 +159,8 @@ def write_atomic_text(
 def _write_path_based_atomic_text(
     file_path: Path,
     content: str,
-    workspace_root: Path | None = None,
-    expected_current_text: str | None = None,
 ) -> None:
-    """Replace by a temporary path and optionally revalidate containment."""
+    """Replace an unbounded destination through a temporary path."""
     dirpath = file_path.parent
     existing_mode: int | None = None
     with suppress(FileNotFoundError):
@@ -179,9 +179,7 @@ def _write_path_based_atomic_text(
         )
         temporary_path = replacement_path
         _write_temporary_content(descriptor, content, existing_mode)
-        _replace_path_based_destination(
-            replacement_path, file_path, workspace_root, expected_current_text
-        )
+        replacement_path.replace(file_path)
     except BaseException as error:
         primary_error = error
         if temporary_name is not None and temporary_path is not None:
@@ -226,34 +224,6 @@ def _write_temporary_content(
         if existing_mode is not None:
             _set_file_mode(handle.fileno(), existing_mode)
         handle.write(content)
-
-
-def _replace_path_based_destination(
-    temporary_path: Path,
-    file_path: Path,
-    workspace_root: Path | None,
-    expected_current_text: str | None,
-) -> None:
-    """Validate a bounded destination and atomically replace it."""
-    if workspace_root is not None:
-        _resolve_bounded_write_target(file_path, workspace_root)
-    if expected_current_text is not None:
-        _validate_expected_current_text(file_path, expected_current_text)
-    temporary_path.replace(file_path)
-
-
-def _validate_expected_current_text(file_path: Path, expected_text: str) -> None:
-    """Reject replacement when the destination changed after it was read."""
-    try:
-        current_text = file_path.read_text(encoding="utf-8", newline="")
-    except FileNotFoundError as exc:
-        message = (
-            f"Atomic write destination disappeared before replacement: {file_path}"
-        )
-        raise PermissionError(message) from exc
-    if current_text != expected_text:
-        message = f"Atomic write destination changed before replacement: {file_path}"
-        raise PermissionError(message)
 
 
 def _open_temporary_parent_directory(directory: Path) -> tuple[Path, int | None]:
@@ -306,6 +276,7 @@ def _close_descriptor(
 
 def _resolve_bounded_write_target(file_path: Path, workspace_root: Path) -> Path:
     """Resolve an in-workspace destination before creating its replacement."""
+    planned_path = (workspace_root / file_path).absolute()
     try:
         resolved_path = manifest_paths.resolve_workspace_path(
             workspace_root,
@@ -318,7 +289,7 @@ def _resolve_bounded_write_target(file_path: Path, workspace_root: Path) -> Path
             f"Atomic write destination must stay within the workspace: {file_path}"
         )
         raise PermissionError(message) from exc
-    if resolved_path != file_path:
+    if resolved_path != planned_path:
         message = (
             "Atomic write destination no longer resolves to its planned path: "
             f"{file_path}"
@@ -376,8 +347,12 @@ def _validate_expected_bounded_text(
     expected_text: str,
 ) -> None:
     """Compare exact UTF-8 text through the pinned parent directory handle."""
-    descriptor = os.open(filename, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory_fd)
+    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
+    descriptor = os.open(filename, flags, dir_fd=directory_fd)
     with os.fdopen(descriptor, "r", encoding="utf-8", newline="") as handle:
+        if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+            message = f"Atomic write destination is not a regular file: {filename}"
+            raise PermissionError(message)
         if handle.read() != expected_text:
             message = f"Atomic write destination changed before replacement: {filename}"
             raise PermissionError(message)
@@ -389,6 +364,7 @@ def _supports_bounded_directory_operations() -> bool:
     return (
         hasattr(os, "O_DIRECTORY")
         and hasattr(os, "O_NOFOLLOW")
+        and hasattr(os, "O_NONBLOCK")
         and all(operation in os.supports_dir_fd for operation in required)
         and os.stat in os.supports_follow_symlinks
     )

@@ -15,6 +15,7 @@ from lading.commands.bump_manifest_rewrite_model import (
 if typ.TYPE_CHECKING:
     from tomlkit.toml_document import TOMLDocument
 
+    from lading.commands.bump_toml_types import _TableLike
     from lading.config import StringValueRewriteConfig
 
 _CRATE_NAME_CHARACTER: typ.Final[str] = r"A-Za-z0-9_-"
@@ -57,11 +58,34 @@ def _raise_if_pre_bump_versions_are_missing(
 
 def _rewrite_string_values(
     document: TOMLDocument,
+    rules: cabc.Sequence[StringValueRewriteConfig],
+    versions: ManifestRewriteVersions,
+    manifest_path: Path,
+) -> bool:
+    """Apply rules against one snapshot of the selected source string values."""
+    if len(rules) == 1:
+        return _rewrite_one_string_rule(document, rules[0], versions, manifest_path)
+
+    targets: dict[tuple[int, str], tuple[_TableLike, str, object, set[str]]] = {}
+    for rule in rules:
+        table = bump_toml.select_table(document, rule.table)
+        if table is None:
+            continue
+        _raise_if_pre_bump_versions_are_missing(manifest_path, versions)
+        replacement = _compile_string_rewrite(rule, versions, manifest_path)
+        if replacement is None:
+            continue
+        _collect_replacements_for_rule(table, rule, replacement, targets)
+    return _apply_snapshot_replacements(targets, manifest_path)
+
+
+def _rewrite_one_string_rule(
+    document: TOMLDocument,
     rule: StringValueRewriteConfig,
     versions: ManifestRewriteVersions,
     manifest_path: Path,
 ) -> bool:
-    """Apply one bounded replacement rule to its selected TOML table."""
+    """Use the shared table updater when only one selector can run."""
     table = bump_toml.select_table(document, rule.table)
     if table is None:
         return False
@@ -70,6 +94,51 @@ def _rewrite_string_values(
     if replacement is None:
         return False
     return bump_toml_strings.update_string_values(table, replacement, field=rule.field)
+
+
+def _collect_replacements_for_rule(
+    table: _TableLike,
+    rule: StringValueRewriteConfig,
+    replacement: cabc.Callable[[str], str],
+    targets: dict[tuple[int, str], tuple[_TableLike, str, object, set[str]]],
+) -> None:
+    """Collect one rule's output without mutating its source values."""
+    for container, key, value in bump_toml_strings._selected_string_value_targets(
+        table, rule.field
+    ):
+        current = bump_toml.value_as_string(value)
+        if current is None:
+            continue
+        replacement_text = replacement(current)
+        if replacement_text == current:
+            continue
+        target_key = (id(container), key)
+        target = targets.get(target_key)
+        if target is None:
+            targets[target_key] = (container, key, value, {replacement_text})
+        else:
+            target[3].add(replacement_text)
+
+
+def _apply_snapshot_replacements(
+    targets: cabc.Mapping[tuple[int, str], tuple[_TableLike, str, object, set[str]]],
+    manifest_path: Path,
+) -> bool:
+    """Commit agreed outputs and reject overlapping rules with different text."""
+    changed = False
+    for container, key, value, replacements in targets.values():
+        if len(replacements) != 1:
+            message = (
+                "Configured string rewrite selectors produce conflicting "
+                f"replacements for one TOML value in {manifest_path}"
+            )
+            raise ManifestRewriteError(message, failed_path=manifest_path)
+        replacement_text = next(iter(replacements))
+        if bump_toml_strings._replace_selected_string_value(
+            container, key, value, replacement_text
+        ):
+            changed = True
+    return changed
 
 
 def _compile_string_rewrite(

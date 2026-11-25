@@ -11,15 +11,13 @@ import logging
 import typing as typ
 from pathlib import Path
 
-from tomlkit import parse as parse_toml
-from tomlkit.exceptions import TOMLKitError
-
 from lading.commands import (
     bump_manifest_rewrite_application,
     bump_manifest_rewrite_filesystem,
     bump_manifest_rewrite_metrics,
     bump_manifest_rewrites,
     bump_pipeline_manifest_recovery,
+    bump_pipeline_manifest_sources,
 )
 from lading.commands.bump_manifest_rewrite_metrics import (
     ManifestRewriteMetricLabels,
@@ -30,8 +28,6 @@ from lading.commands.bump_manifest_rewrite_model import (
 )
 
 if typ.TYPE_CHECKING:
-    from tomlkit.toml_document import TOMLDocument
-
     from lading.commands.bump_manifests import _BumpContext
 
 _log = logging.getLogger(__name__)
@@ -70,11 +66,15 @@ def _plan_non_member_manifest_rewrites(
         crate.manifest_path for crate in context.workspace.crates
     )
     try:
-        workspace_manifest_snapshots = _read_workspace_manifest_snapshots(
-            context.workspace_manifest, member_manifest_paths
+        workspace_manifest_snapshots = (
+            bump_pipeline_manifest_sources._read_workspace_manifest_snapshots(
+                context.workspace_manifest, member_manifest_paths
+            )
         )
-        pre_bump_versions = _pre_bump_versions_from_snapshots(
-            context, workspace_manifest_snapshots
+        pre_bump_versions = (
+            bump_pipeline_manifest_sources._pre_bump_versions_from_snapshots(
+                context, workspace_manifest_snapshots
+            )
         )
         sources = bump_manifest_rewrite_filesystem.read_manifest_rewrite_sources(
             context.root_path, rewrite_groups, member_manifest_paths
@@ -108,143 +108,12 @@ def _plan_non_member_manifest_rewrites(
         planning_duration_seconds=planning_duration,
         workspace_manifest_snapshots=workspace_manifest_snapshots,
         pre_bump_versions=pre_bump_versions,
-        expected_version_values=_expected_version_values_from_snapshots(
-            workspace_manifest_snapshots
+        expected_version_values=(
+            bump_pipeline_manifest_sources._expected_version_values_from_snapshots(
+                workspace_manifest_snapshots
+            )
         ),
     )
-
-
-def _pre_bump_versions_from_snapshots(
-    context: _BumpContext,
-    snapshots: cabc.Sequence[tuple[Path, str]],
-) -> dict[str, str]:
-    """Read current package versions from the same source snapshots as recovery."""
-    text_by_path = dict(snapshots)
-    workspace_document = _parse_manifest_snapshot(
-        context.workspace_manifest,
-        text_by_path[context.workspace_manifest],
-    )
-    workspace_table = workspace_document.get("workspace")
-    workspace_package = (
-        workspace_table.get("package")
-        if isinstance(workspace_table, cabc.Mapping)
-        else None
-    )
-    inherited_version = (
-        workspace_package.get("version")
-        if isinstance(workspace_package, cabc.Mapping)
-        else None
-    )
-    versions: dict[str, str] = {}
-    for crate in context.workspace.crates:
-        manifest_path = crate.manifest_path
-        document = _parse_manifest_snapshot(manifest_path, text_by_path[manifest_path])
-        package = document.get("package")
-        package_version = (
-            package.get("version") if isinstance(package, cabc.Mapping) else None
-        )
-        match package_version:
-            case str() as version:
-                versions[crate.name] = str(version)
-            case {"workspace": True}:
-                if not isinstance(inherited_version, str):
-                    message = (
-                        "Workspace-inherited package version is unavailable in "
-                        f"{context.workspace_manifest}"
-                    )
-                    raise ManifestRewriteError(
-                        message, failed_path=context.workspace_manifest
-                    )
-                versions[crate.name] = str(inherited_version)
-            case _:
-                versions[crate.name] = crate.version
-    return versions
-
-
-def _expected_version_values_from_snapshots(
-    snapshots: cabc.Sequence[tuple[Path, str]],
-) -> dict[Path, tuple[tuple[tuple[str, ...], str], ...]]:
-    """Capture direct package version selectors for optimistic validation."""
-    values_by_path: dict[Path, tuple[tuple[tuple[str, ...], str], ...]] = {}
-    for manifest_path, content in snapshots:
-        document = _parse_manifest_snapshot(manifest_path, content)
-        expected: list[tuple[tuple[str, ...], str]] = []
-        package = document.get("package")
-        if isinstance(package, cabc.Mapping) and isinstance(
-            package.get("version"), str
-        ):
-            expected.append((("package",), str(package["version"])))
-        workspace = document.get("workspace")
-        workspace_package = (
-            workspace.get("package") if isinstance(workspace, cabc.Mapping) else None
-        )
-        if isinstance(workspace_package, cabc.Mapping) and isinstance(
-            workspace_package.get("version"), str
-        ):
-            expected.append((
-                ("workspace", "package"),
-                str(workspace_package["version"]),
-            ))
-        values_by_path[manifest_path] = tuple(expected)
-    return values_by_path
-
-
-def validate_pre_bump_versions(
-    context: _BumpContext,
-    stage: _ManifestRewriteStage,
-) -> None:
-    """Ensure source versions used by fixture plans remain current before writes."""
-    current_snapshots = _read_workspace_manifest_snapshots(
-        context.workspace_manifest,
-        tuple(crate.manifest_path for crate in context.workspace.crates),
-    )
-    current_versions = _pre_bump_versions_from_snapshots(context, current_snapshots)
-    if current_versions == stage.pre_bump_versions:
-        return
-    changed_crate = next(
-        name
-        for name, expected in stage.pre_bump_versions.items()
-        if current_versions.get(name) != expected
-    )
-    manifest_path = next(
-        crate.manifest_path
-        for crate in context.workspace.crates
-        if crate.name == changed_crate
-    )
-    message = (
-        "Workspace crate version changed after manifest rewrite planning: "
-        f"{manifest_path}"
-    )
-    raise ManifestRewriteError(message, failed_path=manifest_path)
-
-
-def _parse_manifest_snapshot(path: Path, content: str) -> TOMLDocument:
-    """Parse a captured manifest and retain its path in failures."""
-    try:
-        return parse_toml(content)
-    except TOMLKitError as exc:
-        message = f"Could not parse manifest snapshot {path}: {exc}"
-        raise ManifestRewriteError(message, failed_path=path) from exc
-
-
-def _read_workspace_manifest_snapshots(
-    workspace_manifest: Path,
-    member_manifest_paths: cabc.Collection[Path],
-) -> tuple[tuple[Path, str], ...]:
-    """Read original workspace and member text for failed-stage recovery."""
-    paths = dict.fromkeys((workspace_manifest, *member_manifest_paths))
-    snapshots: list[tuple[Path, str]] = []
-    for manifest_path in paths:
-        try:
-            content = manifest_path.read_text(encoding="utf-8", newline="")
-        except (OSError, UnicodeError) as exc:
-            message = (
-                "Could not snapshot workspace manifest for rewrite recovery "
-                f"{manifest_path}: {exc}"
-            )
-            raise ManifestRewriteError(message, failed_path=manifest_path) from exc
-        snapshots.append((manifest_path, content))
-    return tuple(snapshots)
 
 
 def _apply_non_member_manifest_rewrites(
@@ -332,8 +201,8 @@ def _recover_failed_manifest_rewrite_application(
 ) -> ManifestRewriteWriteError | None:
     """Restore outputs after a handled manifest rewrite failure."""
     interrupted = not isinstance(rewrite_error, Exception)
-    if interrupted:
-        bump_pipeline_manifest_recovery.record_completed_rewrites_for_interruption(
+    if not context.base_options.dry_run:
+        bump_pipeline_manifest_recovery.reconcile_manifest_writes_for_failure(
             stage, changed_manifests, rewrite_error
         )
     recovery_error = bump_pipeline_manifest_recovery.restore_changed_manifests(

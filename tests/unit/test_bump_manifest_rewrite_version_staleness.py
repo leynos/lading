@@ -8,7 +8,6 @@ import pytest
 from lading.commands import (
     bump,
     bump_manifests,
-    bump_pipeline_crate_manifests,
     bump_pipeline_manifest_rewrites,
 )
 from lading.commands.bump_manifest_rewrites import ManifestRewriteError
@@ -66,7 +65,7 @@ def test_changed_inherited_source_version_aborts_before_workspace_writes(
             case.root,
             "1.2.3",
             options=bump.BumpOptions(
-                rebuild_lockfiles=False,
+                rebuild_lockfiles=True,
                 configuration=case.configuration,
                 workspace=case.workspace,
                 lockfile_repository=repository,
@@ -85,6 +84,98 @@ def test_changed_inherited_source_version_aborts_before_workspace_writes(
     assert not repository.regenerated, "a stale plan must stop before lockfile work"
 
 
+def test_missing_package_version_before_planning_conflicts_with_discovery(
+    tmp_path: Path,
+) -> None:
+    """A missing source version cannot mask stale workspace discovery data."""
+    case = _make_partial_write_failure_case(tmp_path)
+    alpha_manifest = tmp_path / "crates/alpha/Cargo.toml"
+    alpha_manifest.write_text('[package]\nname = "alpha"\n', encoding="utf-8")
+    root_original = case.workspace_manifests[case.root / "Cargo.toml"]
+    fixture_original = {path: path.read_bytes() for path in case.fixtures}
+    repository = RecordingLockfileRepository()
+
+    with pytest.raises(ManifestRewriteError, match="workspace discovery"):
+        bump.run(
+            case.root,
+            "1.2.3",
+            options=bump.BumpOptions(
+                rebuild_lockfiles=True,
+                configuration=case.configuration,
+                workspace=case.workspace,
+                lockfile_repository=repository,
+            ),
+        )
+
+    assert (case.root / "Cargo.toml").read_bytes() == root_original, (
+        "the mismatch must fail before the workspace manifest is written"
+    )
+    assert (
+        alpha_manifest.read_text(encoding="utf-8") == '[package]\nname = "alpha"\n'
+    ), "the externally removed version must remain in place"
+    assert {path: path.read_bytes() for path in case.fixtures} == fixture_original, (
+        "rewrite planning must not use a missing version as cached metadata"
+    )
+    assert not repository.regenerated, "a planning mismatch must stop lockfile work"
+
+
+def test_removed_package_version_after_planning_rejects_stale_fixture_plan(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A removed source version cannot fall back to cached workspace metadata."""
+    case = _make_partial_write_failure_case(tmp_path)
+    alpha_manifest = tmp_path / "crates/alpha/Cargo.toml"
+    original_alpha = alpha_manifest.read_bytes()
+    fixture_original = {path: path.read_bytes() for path in case.fixtures}
+    repository = RecordingLockfileRepository()
+    original_plan = bump_pipeline_manifest_rewrites._plan_non_member_manifest_rewrites
+
+    def plan_then_remove_version(
+        context: _BumpContext,
+        target_version: str,
+    ) -> _ManifestRewriteStage:
+        """Remove a package version after its fixture rewrite plan is captured."""
+        stage = original_plan(context, target_version)
+        alpha_manifest.write_text('[package]\nname = "alpha"\n', encoding="utf-8")
+        return stage
+
+    monkeypatch.setattr(
+        bump_pipeline_manifest_rewrites,
+        "_plan_non_member_manifest_rewrites",
+        plan_then_remove_version,
+    )
+
+    with pytest.raises(
+        ManifestRewriteError,
+        match="changed after manifest rewrite planning",
+    ):
+        bump.run(
+            case.root,
+            "1.2.3",
+            options=bump.BumpOptions(
+                rebuild_lockfiles=True,
+                configuration=case.configuration,
+                workspace=case.workspace,
+                lockfile_repository=repository,
+            ),
+        )
+
+    assert (
+        alpha_manifest.read_text(encoding="utf-8") == '[package]\nname = "alpha"\n'
+    ), "the externally removed version must remain in place"
+    assert (case.root / "Cargo.toml").read_bytes() == case.workspace_manifests[
+        case.root / "Cargo.toml"
+    ], "stale source detection must happen before workspace writes"
+    assert alpha_manifest.read_bytes() != original_alpha, (
+        "the test must retain the external package version removal"
+    )
+    assert {path: path.read_bytes() for path in case.fixtures} == fixture_original, (
+        "fixture rewrites must not use cached metadata after the source is removed"
+    )
+    assert not repository.regenerated, "a planning mismatch must stop lockfile work"
+
+
 def test_changed_member_version_is_rejected_before_its_manifest_update(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -93,7 +184,7 @@ def test_changed_member_version_is_rejected_before_its_manifest_update(
     case = _make_partial_write_failure_case(tmp_path)
     alpha_manifest = tmp_path / "crates/alpha/Cargo.toml"
     fixture_original = {path: path.read_bytes() for path in case.fixtures}
-    original_update = bump_pipeline_crate_manifests._update_manifest
+    original_update = bump_manifests._update_manifest
     repository = RecordingLockfileRepository()
 
     def edit_alpha_before_update(
@@ -110,16 +201,14 @@ def test_changed_member_version_is_rejected_before_its_manifest_update(
             )
         return original_update(manifest_path, selectors, target_version, update_context)
 
-    monkeypatch.setattr(
-        bump_pipeline_crate_manifests, "_update_manifest", edit_alpha_before_update
-    )
+    monkeypatch.setattr(bump_manifests, "_update_manifest", edit_alpha_before_update)
 
     with pytest.raises(LadingError, match="package version changed"):
         bump.run(
             case.root,
             "1.2.3",
             options=bump.BumpOptions(
-                rebuild_lockfiles=False,
+                rebuild_lockfiles=True,
                 configuration=case.configuration,
                 workspace=case.workspace,
                 lockfile_repository=repository,

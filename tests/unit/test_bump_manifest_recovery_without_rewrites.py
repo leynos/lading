@@ -11,7 +11,6 @@ from lading.commands import (
     bump,
     bump_manifests,
     bump_pipeline,
-    bump_pipeline_crate_manifests,
 )
 from lading.commands.bump_manifest_rewrites import ManifestRewriteWriteError
 from lading.exceptions import LadingError
@@ -39,7 +38,7 @@ def _run_bump_with_member_failure(
 ) -> tuple[Path, ...]:
     """Fail a selected member update and return paths written before it."""
     completed_updates: list[Path] = []
-    original_update_manifest = bump_pipeline._update_manifest
+    original_update_manifest = bump_manifests._update_manifest
 
     def fail_selected_update(
         manifest_path: Path,
@@ -59,12 +58,7 @@ def _run_bump_with_member_failure(
 
     with (
         mock.patch.object(
-            bump_pipeline, "_update_manifest", side_effect=fail_selected_update
-        ),
-        mock.patch.object(
-            bump_pipeline_crate_manifests,
-            "_update_manifest",
-            side_effect=fail_selected_update,
+            bump_manifests, "_update_manifest", side_effect=fail_selected_update
         ),
         pytest.raises(_InjectedMemberManifestError),
     ):
@@ -174,7 +168,7 @@ def test_root_package_member_pass_preserves_intervening_edit(
     configuration = config_module.LadingConfig(
         bump=config_module.BumpConfig(rebuild_lockfiles=False)
     )
-    original_update_manifest = bump_pipeline._update_manifest
+    original_update_manifest = bump_manifests._update_manifest
     inserted_edit = False
     root_updates = 0
 
@@ -203,12 +197,7 @@ def test_root_package_member_pass_preserves_intervening_edit(
 
     with (
         mock.patch.object(
-            bump_pipeline,
-            "_update_manifest",
-            side_effect=write_workspace_then_edit,
-        ),
-        mock.patch.object(
-            bump_pipeline_crate_manifests,
+            bump_manifests,
             "_update_manifest",
             side_effect=write_workspace_then_edit,
         ),

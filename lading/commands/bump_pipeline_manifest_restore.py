@@ -1,0 +1,146 @@
+"""Restore manifest files after a failed bump pipeline.
+
+This adapter is called only from the bump recovery coordinator. It uses the
+coordinator's recorded outputs to restore unchanged writes through the bounded
+workspace writer; it does not discover manifests or choose recovery policy.
+"""
+
+import collections.abc as cabc
+import typing as typ
+from pathlib import Path
+
+from lading.commands.bump_manifest_rewrite_model import (
+    ManifestRewriteError,
+    ManifestRewriteWriteError,
+)
+from lading.commands.bump_toml_files import write_atomic_text
+
+if typ.TYPE_CHECKING:
+    from lading.commands.bump_pipeline_manifest_rewrites import (
+        _ManifestRewriteStage,
+    )
+
+
+def restore_changed_manifests(
+    stage: _ManifestRewriteStage,
+    changed_manifests: cabc.Collection[Path],
+    failure: BaseException,
+    *,
+    workspace_root: Path,
+) -> ManifestRewriteWriteError | None:
+    """Restore manifests that still contain one of this bump's outputs.
+
+    Parameters
+    ----------
+    stage
+        Stage containing rollback baselines and completed output identities.
+    changed_manifests
+        Paths confirmed or conservatively attributed to this bump.
+    failure
+        Primary error to which restoration details are attached.
+    workspace_root
+        Root used to confine each bounded restoration write.
+
+    Returns
+    -------
+    ManifestRewriteWriteError or None
+        An aggregate restoration error when any candidate could not safely be
+        restored; otherwise ``None``. The stage maps are read as evidence and
+        are not cleared by this function.
+    """
+    original_text_by_path = dict(stage.workspace_manifest_snapshots)
+    original_text_by_path.update(stage.rollback_baselines)
+    non_member_paths = {plan.path for plan in stage.plans}
+    registered_manifests = set(stage.written_manifest_contents) - non_member_paths
+    rollback_candidates = (set(changed_manifests) | registered_manifests).intersection(
+        original_text_by_path
+    )
+    failures = _restore_rollback_candidates(
+        rollback_candidates,
+        original_text_by_path,
+        stage,
+        workspace_root,
+    )
+    return _manifest_rollback_error(failures, failure)
+
+
+def _restore_rollback_candidates(
+    rollback_candidates: cabc.Collection[Path],
+    original_text_by_path: cabc.Mapping[Path, str],
+    stage: _ManifestRewriteStage,
+    workspace_root: Path,
+) -> list[tuple[Path, str]]:
+    """Restore each candidate and collect files that could not be restored."""
+    failures: list[tuple[Path, str]] = []
+    for manifest_path in sorted(rollback_candidates, key=str, reverse=True):
+        detail = _restore_one_manifest(
+            manifest_path,
+            original_text_by_path[manifest_path],
+            stage,
+            workspace_root,
+        )
+        if detail is not None:
+            failures.append((manifest_path, detail))
+    return failures
+
+
+def _manifest_rollback_error(
+    failures: list[tuple[Path, str]],
+    failure: BaseException,
+) -> ManifestRewriteWriteError | None:
+    """Describe restoration failures while retaining rewrite progress."""
+    if not failures:
+        return None
+    failed_paths = ", ".join(str(path) for path, _error in failures)
+    failure_details = "; ".join(f"{path}: {detail}" for path, detail in failures)
+    failure_summary = str(failure) or type(failure).__name__
+    message = (
+        f"{failure_summary}; manifest rollback failed for "
+        f"{failed_paths}: {failure_details}"
+    )
+    completed_writes = (
+        failure.completed_writes if isinstance(failure, ManifestRewriteError) else 0
+    )
+    planned_writes = (
+        failure.planned_writes if isinstance(failure, ManifestRewriteError) else 0
+    )
+    return ManifestRewriteWriteError(
+        message,
+        completed_writes=completed_writes,
+        planned_writes=planned_writes,
+        failed_path=failures[0][0],
+    )
+
+
+def _restore_one_manifest(
+    manifest_path: Path,
+    original_text: str,
+    stage: _ManifestRewriteStage,
+    workspace_root: Path,
+) -> str | None:
+    """Restore one unchanged bump output and return any recovery failure."""
+    write_destination = stage.written_manifest_destinations.get(
+        manifest_path, manifest_path
+    )
+    try:
+        current_text = write_destination.read_text(encoding="utf-8", newline="")
+    except (OSError, UnicodeError) as exc:
+        return f"could not read before rollback: {exc}"
+    if current_text == original_text:
+        return None
+    expected_text = stage.written_manifest_contents.get(manifest_path)
+    if current_text != expected_text:
+        return (
+            "contents changed after this bump wrote the manifest; "
+            "left the current contents in place"
+        )
+    try:
+        write_atomic_text(
+            write_destination,
+            original_text,
+            workspace_root=workspace_root,
+            expected_current_text=current_text,
+        )
+    except (OSError, UnicodeError) as exc:
+        return f"could not restore original text: {exc}"
+    return None

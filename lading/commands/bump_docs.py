@@ -37,7 +37,7 @@ from pathlib import Path
 
 from markdown_it import MarkdownIt
 
-from lading.commands import bump_toml_files, manifest_paths
+from lading.commands import bump_docs_fence_lines, bump_toml_files, manifest_paths
 from lading.commands.bump_docs_toml import (
     update_toml_snippet_dependencies as update_toml_snippet_dependencies,
 )
@@ -142,6 +142,12 @@ def update_documentation_files(
     set[Path]
         Paths to documentation files that were (or would be) modified.
 
+    Notes
+    -----
+    A bounded write rejects a file changed after it was read. The resulting
+    ``PermissionError`` stops the bump and preserves the concurrent edit;
+    earlier documentation files updated in this call remain updated.
+
     """
     changed: set[Path] = set()
     dependency_targets = {name for name in updated_crates if name}
@@ -153,7 +159,8 @@ def update_documentation_files(
             label="Documentation",
         )
         try:
-            original_text = doc_path.read_text(encoding="utf-8")
+            with doc_path.open("r", encoding="utf-8", newline="") as handle:
+                original_text = handle.read()
         except OSError as exc:
             _LOGGER.warning("Skipping %s: %s", doc_path, exc)
             continue
@@ -168,6 +175,7 @@ def update_documentation_files(
                 doc_path,
                 updated_text,
                 workspace_root=documentation_targets.workspace_root,
+                expected_current_text=original_text,
             )
     return changed
 
@@ -305,7 +313,8 @@ def render_fence(
     if token.map is None:
         message = "Fence token missing map data"
         raise ValueError(message)
-    start, _ = token.map
+    token_map = token.map
+    start = token_map[0]
     fence_marker = token.markup or "```"
     indent = extract_fence_indent(lines[start], fence_marker)
     info = token.info or language
@@ -314,10 +323,19 @@ def render_fence(
     suffix_match = re.search(r"(\r?\n+)$", original_body)
     suffix = suffix_match.group(1) if suffix_match else ""
     body_text = new_body.rstrip("\r\n") + suffix
+    opening_ending, body_text, closing_ending = (
+        bump_docs_fence_lines.preserve_fence_line_endings(
+            lines, token_map, fence_marker, body_text
+        )
+    )
     indented_body = "".join(
         f"{indent}{line}" for line in body_text.splitlines(keepends=True)
     )
-    return f"{indent}{fence_marker}{info}\n{indented_body}{indent}{fence_marker}\n"
+    return (
+        f"{indent}{fence_marker}{info}{opening_ending}"
+        f"{indented_body}{indent}{fence_marker}"
+        f"{closing_ending}"
+    )
 
 
 def extract_fence_indent(line: str, fence_marker: str) -> str:

@@ -61,11 +61,23 @@ def update_string_values(
     'alpha-2.0.0'
     """
     changed = False
-    for key, entry in tuple(table.items()):
-        target = _selected_value_target(table, key, entry, field)
-        if target is not None and _replace_value(*target, replacement):
+    for container, key, value in _selected_string_value_targets(table, field):
+        if _replace_value(container, key, value, replacement):
             changed = True
     return changed
+
+
+def _selected_string_value_targets(
+    table: _TableLike,
+    field: str | None,
+) -> tuple[tuple[_TableLike, str, object], ...]:
+    """Return mutable destinations for the strings selected in ``table``."""
+    targets: list[tuple[_TableLike, str, object]] = []
+    for key, entry in tuple(table.items()):
+        target = _selected_value_target(table, key, entry, field)
+        if target is not None:
+            targets.append(target)
+    return tuple(targets)
 
 
 def _selected_value_target(
@@ -92,8 +104,18 @@ def _replace_value(
     current = bump_toml.value_as_string(value)
     if current is None:
         return False
+    return _replace_selected_string_value(container, key, value, replacement(current))
+
+
+def _replace_selected_string_value(
+    container: _TableLike,
+    key: str,
+    value: object,
+    replacement_text: str,
+) -> bool:
+    """Replace one selected string while retaining its TOML style and trivia."""
     replacement_item = bump_toml.prepare_string_value_replacement(
-        value, replacement(current)
+        value, replacement_text
     )
     if replacement_item is None:
         return False

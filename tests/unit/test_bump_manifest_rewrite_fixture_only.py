@@ -5,6 +5,7 @@ import pathlib
 import typing as typ
 from unittest import mock
 
+import msgspec
 import pytest
 
 from lading import config as config_module
@@ -38,6 +39,13 @@ def test_fixture_only_change_triggers_lockfile_regeneration(
         assert updated != original, f"expected a version field in {manifest_path}"
         manifest_path.write_text(updated, encoding="utf-8")
         unchanged_manifest_bytes[manifest_path] = manifest_path.read_bytes()
+    workspace = msgspec.structs.replace(
+        workspace,
+        crates=tuple(
+            msgspec.structs.replace(crate, version="1.2.3")
+            for crate in workspace.crates
+        ),
+    )
 
     fixture = tmp_path / "tests/fixtures/standalone/Cargo.toml"
     fixture.parent.mkdir(parents=True)

@@ -1,10 +1,9 @@
 """Exercise temporary-file naming and cleanup in atomic path writes."""
 
-import collections.abc as cabc
-import functools
 import os
 import stat
 from pathlib import Path
+from unittest import mock
 
 import pytest
 
@@ -12,58 +11,40 @@ from lading.commands import bump_toml_files
 
 
 class _ReadOnlyTemporaryFilesystem:
-    """Simulate Windows-style refusal to remove read-only temporaries."""
+    """Simulate read-only temporary cleanup through patched filesystem calls."""
 
-    def __init__(
-        self,
-        original_unlink: cabc.Callable[..., None],
-        original_chmod: cabc.Callable[..., None],
-        readonly_error_message: str,
-    ) -> None:
-        """Keep original operations and state for the simulated filesystem."""
-        self.original_unlink = original_unlink
-        self.original_chmod = original_chmod
+    def __init__(self, readonly_error_message: str) -> None:
+        """Capture original operations and prepare simulated filesystem state."""
+        self.original_unlink = Path.unlink
+        self.original_chmod = os.chmod
         self.readonly_error_message = readonly_error_message
         self.chmodded_temporaries: set[Path] = set()
         self.unlink_attempts: list[tuple[Path, bool]] = []
 
-    def __get__(
-        self,
-        instance: Path | None,
-        _owner: type[Path],
-    ) -> cabc.Callable[..., None] | _ReadOnlyTemporaryFilesystem:
-        """Bind a Path instance to the simulated unlink operation."""
-        if instance is None:
-            return self
-        return functools.partial(self.unlink, instance)
-
     def unlink(self, path: Path, *, missing_ok: bool = False) -> None:
-        """Reject unlink until the temporary has its owner-write bit."""
+        """Reject unlink until chmod has made a temporary writable."""
         if path.name.startswith(".lading-"):
-            self._record_unlink_attempt(path)
+            is_writable = path in self.chmodded_temporaries
+            self.unlink_attempts.append((path, is_writable))
+            if not is_writable:
+                raise PermissionError(self.readonly_error_message)
         self.original_unlink(path, missing_ok=missing_ok)
 
     def chmod(
         self,
-        path: Path,
+        path: str | os.PathLike[str],
         mode: int,
         *,
         follow_symlinks: bool = True,
     ) -> None:
-        """Track owner writability before forwarding the requested mode."""
-        if path.name.startswith(".lading-"):
-            self._record_writable_mode(path, mode)
+        """Track temporary permissions and forward chmod to the real filesystem."""
+        temporary_path = Path(path)
+        if temporary_path.name.startswith(".lading-"):
+            self._record_temporary_mode(temporary_path, mode)
         self.original_chmod(path, mode, follow_symlinks=follow_symlinks)
 
-    def _record_unlink_attempt(self, path: Path) -> None:
-        """Capture a temporary unlink and enforce its simulated mode."""
-        is_writable = path in self.chmodded_temporaries
-        self.unlink_attempts.append((path, is_writable))
-        if not is_writable:
-            raise PermissionError(self.readonly_error_message)
-
-    def _record_writable_mode(self, path: Path, mode: int) -> None:
-        """Track the owner-write bit supplied to chmod."""
+    def _record_temporary_mode(self, path: Path, mode: int) -> None:
+        """Record whether the temporary currently has its owner-write bit."""
         if mode & stat.S_IWUSR:
             self.chmodded_temporaries.add(path)
         else:
@@ -116,11 +97,31 @@ def test_bounded_writer_uses_short_temporary_name_for_long_destination(
     )
 
 
-def test_path_fallback_cleans_temp_from_parent_moved_during_validation(
+def test_bounded_writer_accepts_workspace_relative_destination(
+    tmp_path: Path,
+) -> None:
+    """A relative destination resolves from the workspace root."""
+    if not bump_toml_files._supports_bounded_directory_operations():
+        pytest.skip("descriptor-relative replacement is unavailable on this platform")
+    destination = tmp_path / "Cargo.toml"
+    destination.write_text("original", encoding="utf-8")
+
+    bump_toml_files.write_atomic_text(
+        Path("Cargo.toml"),
+        "replacement",
+        workspace_root=tmp_path,
+    )
+
+    assert destination.read_text(encoding="utf-8") == "replacement", (
+        "bounded writes must accept workspace-relative destinations"
+    )
+
+
+def test_path_fallback_cleans_temp_from_parent_moved_during_write(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Cleanup uses the pinned directory after the parent path is redirected."""
+    """Cleanup uses the pinned directory after its path is redirected."""
     if not bump_toml_files._supports_stable_temporary_cleanup():
         pytest.skip("stable directory-relative cleanup is unavailable on this platform")
     workspace_root = tmp_path / "workspace"
@@ -133,37 +134,24 @@ def test_path_fallback_cleans_temp_from_parent_moved_during_validation(
     outside.mkdir()
     (outside / "Cargo.toml").write_text("outside", encoding="utf-8")
     outside_original = (outside / "Cargo.toml").read_bytes()
-    monkeypatch.setattr(
-        bump_toml_files,
-        "_supports_bounded_directory_operations",
-        lambda: False,
-    )
-    resolve_target = bump_toml_files._resolve_bounded_write_target
-    validation_count = 0
+    failure_message = "simulated write failure"
+    write_content = bump_toml_files._write_temporary_content
 
-    def move_parent_before_final_check(path: Path, root: Path) -> Path:
-        """Move the parent after temp creation, then run normal containment."""
-        nonlocal validation_count
-        validation_count += 1
-        if validation_count == 2:
-            parent.rename(moved_parent)
-            parent.symlink_to(outside, target_is_directory=True)
-        return resolve_target(path, root)
+    def redirect_parent_then_fail(
+        descriptor: int, content: str, existing_mode: int | None
+    ) -> None:
+        """Move the parent after temp creation and fail the simulated write."""
+        write_content(descriptor, content, existing_mode)
+        parent.rename(moved_parent)
+        parent.symlink_to(outside, target_is_directory=True)
+        raise OSError(failure_message)
 
     monkeypatch.setattr(
-        bump_toml_files,
-        "_resolve_bounded_write_target",
-        move_parent_before_final_check,
+        bump_toml_files, "_write_temporary_content", redirect_parent_then_fail
     )
 
-    with pytest.raises(PermissionError, match="within the workspace"):
-        bump_toml_files.write_atomic_text(
-            manifest,
-            "replacement",
-            workspace_root=workspace_root,
-        )
-
-    assert validation_count == 2, "the final check must run after temp creation"
+    with pytest.raises(OSError, match=failure_message):
+        bump_toml_files._write_path_based_atomic_text(manifest, "replacement")
     assert not list(moved_parent.glob(".lading-*")), (
         "cleanup must unlink from the directory that created the temporary file"
     )
@@ -179,7 +167,7 @@ def test_path_fallback_reports_cleanup_failure_without_masking_write_error(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Path cleanup failures are notes on the original replacement error."""
+    """Path cleanup failures are notes on the original write error."""
     destination = tmp_path / "Cargo.toml"
     destination.write_text("original", encoding="utf-8")
     monkeypatch.setattr(
@@ -189,11 +177,16 @@ def test_path_fallback_reports_cleanup_failure_without_masking_write_error(
     )
     write_error_message = "write denied"
 
-    def reject_target(_path: Path, _root: Path) -> Path:
-        """Fail validation after the temporary file has been written."""
+    write_content = bump_toml_files._write_temporary_content
+
+    def reject_content(
+        descriptor: int, content: str, existing_mode: int | None
+    ) -> None:
+        """Fail after writing the temporary so cleanup is exercised."""
+        write_content(descriptor, content, existing_mode)
         raise PermissionError(write_error_message)
 
-    monkeypatch.setattr(bump_toml_files, "_resolve_bounded_write_target", reject_target)
+    monkeypatch.setattr(bump_toml_files, "_write_temporary_content", reject_content)
     original_unlink = Path.unlink
     cleanup_error_message = "cleanup denied"
 
@@ -209,7 +202,6 @@ def test_path_fallback_reports_cleanup_failure_without_masking_write_error(
         bump_toml_files._write_path_based_atomic_text(
             destination,
             "replacement",
-            workspace_root=tmp_path,
         )
 
     assert any("cleanup denied" in note for note in failure.value.__notes__), (
@@ -234,27 +226,29 @@ def test_path_fallback_retries_cleanup_after_readonly_temporary_file(
     )
     replacement_error_message = "replacement rejected"
 
-    def reject_replacement(_path: Path, _root: Path) -> Path:
-        """Fail after the temporary file has been written."""
+    write_content = bump_toml_files._write_temporary_content
+
+    def reject_content(
+        descriptor: int, content: str, existing_mode: int | None
+    ) -> None:
+        """Fail after writing the temporary so cleanup is exercised."""
+        write_content(descriptor, content, existing_mode)
         raise PermissionError(replacement_error_message)
 
-    monkeypatch.setattr(
-        bump_toml_files, "_resolve_bounded_write_target", reject_replacement
-    )
+    monkeypatch.setattr(bump_toml_files, "_write_temporary_content", reject_content)
     readonly_error_message = "read-only temporary"
-    readonly_filesystem = _ReadOnlyTemporaryFilesystem(
-        Path.unlink,
-        os.chmod,
-        readonly_error_message,
-    )
-    monkeypatch.setattr(Path, "unlink", readonly_filesystem)
-    monkeypatch.setattr(os, "chmod", readonly_filesystem.chmod)
+    readonly_filesystem = _ReadOnlyTemporaryFilesystem(readonly_error_message)
 
-    with pytest.raises(PermissionError, match=replacement_error_message):
+    with (
+        mock.patch.object(
+            Path, "unlink", autospec=True, side_effect=readonly_filesystem.unlink
+        ),
+        mock.patch.object(os, "chmod", side_effect=readonly_filesystem.chmod),
+        pytest.raises(PermissionError, match=replacement_error_message),
+    ):
         bump_toml_files._write_path_based_atomic_text(
             destination,
             "replacement",
-            workspace_root=tmp_path,
         )
 
     assert len(readonly_filesystem.unlink_attempts) == 2, (
@@ -268,6 +262,45 @@ def test_path_fallback_retries_cleanup_after_readonly_temporary_file(
     )
     assert destination.read_text(encoding="utf-8") == "original", (
         "a failed replacement must preserve the original destination"
+    )
+
+
+def test_path_cleanup_does_not_change_a_symlink_target_mode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed unlink cannot make a substituted link target writable."""
+    target = tmp_path / "outside.toml"
+    target.write_text("outside", encoding="utf-8")
+    target.chmod(stat.S_IREAD)
+    original_mode = stat.S_IMODE(target.stat().st_mode)
+    temporary_path = tmp_path / ".lading-temporary"
+    temporary_path.symlink_to(target)
+    original_unlink = Path.unlink
+
+    def reject_temporary_unlink(path: Path, *, missing_ok: bool = False) -> None:
+        """Force cleanup to enter its writable retry for the substituted link."""
+        if path == temporary_path:
+            readonly_error_message = "simulated read-only temporary"
+            raise PermissionError(readonly_error_message)
+        original_unlink(path, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", reject_temporary_unlink)
+    primary_error = OSError("replacement failed")
+
+    bump_toml_files.bump_toml_temporary_cleanup.cleanup_path_based_temporary_file(
+        temporary_path.name,
+        temporary_path,
+        None,
+        primary_error,
+    )
+
+    assert temporary_path.is_symlink(), "failed cleanup must leave the link in place"
+    assert stat.S_IMODE(target.stat().st_mode) == original_mode, (
+        "cleanup must not change the linked target's permission bits"
+    )
+    assert any("writable retry failed" in note for note in primary_error.__notes__), (
+        "the safe no-follow retry failure should be recorded on the write error"
     )
 
 

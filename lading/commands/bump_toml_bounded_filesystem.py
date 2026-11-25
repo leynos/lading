@@ -7,16 +7,32 @@ from contextlib import suppress
 from pathlib import Path
 
 
-def open_directory_chain(directory: Path) -> int:
+def _open_directory_chain(directory: Path) -> int:
     """Open a directory path one no-follow component at a time."""
-    flags = no_follow_directory_flags()
+    flags = _no_follow_directory_flags()
     current_fd = os.open(directory.anchor, flags)
-    return open_directory_components(current_fd, directory.parts[1:])
+    return _open_directory_components(current_fd, directory.parts[1:])
 
 
-def open_directory_components(current_fd: int, components: tuple[str, ...]) -> int:
-    """Descend from an open directory while closing each prior descriptor."""
-    flags = no_follow_directory_flags()
+def _open_directory_components(current_fd: int, components: tuple[str, ...]) -> int:
+    """Descend and consume ``current_fd`` on both success and failure.
+
+    Callers that require confinement must supply only relative path components
+    without ``..``; absolute components also bypass the directory descriptor.
+
+    Parameters
+    ----------
+    current_fd : int
+        Owned directory descriptor, consumed on every return path.
+    components : tuple[str, ...]
+        Directory names to open beneath ``current_fd``.
+
+    Returns
+    -------
+    int
+        Owned descriptor for the final directory, transferred to the caller.
+    """
+    flags = _no_follow_directory_flags()
     transferred = False
     try:
         for component in components:
@@ -32,13 +48,15 @@ def open_directory_components(current_fd: int, components: tuple[str, ...]) -> i
                 os.close(current_fd)
 
 
-def open_workspace_parent_directory(workspace_root: Path, relative_parent: Path) -> int:
+def _open_workspace_parent_directory(
+    workspace_root: Path, relative_parent: Path
+) -> int:
     """Open a manifest parent beneath a pinned workspace directory handle."""
-    current_fd = open_directory_chain(workspace_root)
-    return open_directory_components(current_fd, relative_parent.parts)
+    current_fd = _open_directory_chain(workspace_root)
+    return _open_directory_components(current_fd, relative_parent.parts)
 
 
-def no_follow_directory_flags() -> int:
+def _no_follow_directory_flags() -> int:
     """Return flags that require one real directory component."""
     flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
     if hasattr(os, "O_CLOEXEC"):
@@ -46,7 +64,7 @@ def no_follow_directory_flags() -> int:
     return flags
 
 
-def existing_file_mode(directory_fd: int, filename: str) -> int | None:
+def _existing_file_mode(directory_fd: int, filename: str) -> int | None:
     """Read the destination mode without following a symlink."""
     try:
         metadata = os.stat(filename, dir_fd=directory_fd, follow_symlinks=False)
@@ -58,7 +76,7 @@ def existing_file_mode(directory_fd: int, filename: str) -> int | None:
     return stat.S_IMODE(metadata.st_mode)
 
 
-def create_temporary_file(directory_fd: int, destination_name: str) -> tuple[int, str]:
+def _create_temporary_file(directory_fd: int, destination_name: str) -> tuple[int, str]:
     """Create a unique temporary file relative to an already-open directory."""
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
     if hasattr(os, "O_CLOEXEC"):
@@ -74,6 +92,6 @@ def create_temporary_file(directory_fd: int, destination_name: str) -> tuple[int
     raise FileExistsError(message)
 
 
-def set_file_mode(descriptor: int, mode: int) -> None:
+def _set_file_mode(descriptor: int, mode: int) -> None:
     """Apply existing mode bits to the temporary file descriptor."""
     os.fchmod(descriptor, mode)

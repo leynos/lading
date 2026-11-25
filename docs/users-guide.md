@@ -890,7 +890,10 @@ selector also cannot identify which unmatched version belongs to an updated
 crate. The same limit applies to crate-qualified templates. A value with that
 crate name but an unmatched version may be an intentional historical reference.
 Rewrites replace exact renderings made from the pre-bump workspace versions;
-unmatched selected text remains unchanged.
+each selector reads values as they stood before the string rewrite pass, so
+selectors do not cascade into text written by earlier selectors. Unmatched
+selected text remains unchanged. If overlapping selectors produce different
+replacements for the same value, planning fails with the manifest path.
 
 The root manifest and all workspace-member manifests are skipped even when a
 configured glob selects them. Repeated groups selecting the same non-member
@@ -920,6 +923,11 @@ fixture plans are checked again before the first write, including versions
 inherited from `[workspace.package]`; unrelated manifest edits remain allowed.
 If rollback reports a manifest it left in place or could not restore, inspect
 and repair that named file before retrying.
+
+Workspace-bounded atomic writes require operating-system support for
+directory-relative no-follow file operations. On platforms without that support,
+`lading bump` stops before creating a temporary file instead of using a
+path-based fallback that could escape the workspace.
 
 For example, the `rstest-bdd` published GPUI fixture can opt into rewriting its
 dependency requirements and staged package patch paths:

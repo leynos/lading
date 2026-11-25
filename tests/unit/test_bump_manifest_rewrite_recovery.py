@@ -10,8 +10,6 @@ from lading.commands import (
     bump,
     bump_manifest_rewrite_application,
     bump_manifests,
-    bump_pipeline,
-    bump_pipeline_crate_manifests,
 )
 from lading.commands.bump_manifest_rewrites import (
     ManifestRewriteError,
@@ -109,7 +107,7 @@ def _run_bump_with_member_failure(
     failed_manifest: Path,
 ) -> None:
     """Raise while updating a later member after earlier writes complete."""
-    original_update_manifest = bump_pipeline._update_manifest
+    original_update_manifest = bump_manifests._update_manifest
     alpha_manifest = next(
         crate.manifest_path for crate in case.workspace.crates if crate.name == "alpha"
     )
@@ -136,9 +134,7 @@ def _run_bump_with_member_failure(
 
     with (
         mock.patch.object(
-            bump_pipeline_crate_manifests,
-            "_update_manifest",
-            side_effect=fail_selected_manifest,
+            bump_manifests, "_update_manifest", side_effect=fail_selected_manifest
         ),
         pytest.raises(_InjectedMemberManifestError),
     ):
@@ -306,7 +302,7 @@ def test_rewrite_failure_rolls_back_to_text_parsed_after_a_concurrent_edit(
     original_beta_text = case.workspace_manifests[beta_manifest].decode("utf-8")
     concurrent_edit = "\n# edited after planning and before this manifest update\n"
     parsed_beta_text = original_beta_text + concurrent_edit
-    original_update_manifest = bump_pipeline._update_manifest
+    original_update_manifest = bump_manifests._update_manifest
 
     def edit_beta_before_update(
         manifest_path: Path,
@@ -322,9 +318,7 @@ def test_rewrite_failure_rolls_back_to_text_parsed_after_a_concurrent_edit(
         )
 
     with mock.patch.object(
-        bump_pipeline_crate_manifests,
-        "_update_manifest",
-        side_effect=edit_beta_before_update,
+        bump_manifests, "_update_manifest", side_effect=edit_beta_before_update
     ):
         failure = _run_partial_write_failure(case)
 
@@ -344,10 +338,10 @@ def test_rewrite_failure_rolls_back_to_text_parsed_after_a_concurrent_edit(
     )
 
 
-def test_reused_workspace_graph_uses_current_manifest_versions(
+def test_reused_workspace_graph_rejects_versions_changed_after_discovery(
     tmp_path: Path,
 ) -> None:
-    """String rewrites use source versions even when metadata is reused."""
+    """A stale workspace graph cannot authorize rewrites from different sources."""
     case = _make_partial_write_failure_case(tmp_path)
     alpha_manifest = next(
         crate.manifest_path for crate in case.workspace.crates if crate.name == "alpha"
@@ -360,21 +354,32 @@ def test_reused_workspace_graph_uses_current_manifest_versions(
     assert "version.workspace = true" in alpha_manifest.read_text(encoding="utf-8"), (
         "the fixture must exercise an inherited workspace version"
     )
-    for target_version in ("1.2.3", "1.2.4"):
+    bump.run(
+        case.root,
+        "1.2.3",
+        options=bump.BumpOptions(
+            rebuild_lockfiles=False,
+            configuration=case.configuration,
+            workspace=case.workspace,
+        ),
+    )
+    bumped_workspace = {path: path.read_bytes() for path in case.workspace_manifests}
+    bumped_fixtures = {path: path.read_bytes() for path in case.fixtures}
+
+    with pytest.raises(ManifestRewriteError, match="workspace discovery"):
         bump.run(
             case.root,
-            target_version,
+            "1.2.4",
             options=bump.BumpOptions(
                 rebuild_lockfiles=False,
                 configuration=case.configuration,
                 workspace=case.workspace,
             ),
         )
-        for fixture in case.fixtures:
-            text = fixture.read_text(encoding="utf-8")
-            assert f'alpha = "{target_version}"' in text, (
-                f"dependency requirements should use {target_version} after this bump"
-            )
-            assert f"../alpha-{target_version}" in text, (
-                "string rewrites should use versions from manifests read this run"
-            )
+
+    assert {path: path.read_bytes() for path in case.workspace_manifests} == (
+        bumped_workspace
+    ), "a stale graph must be rejected before changing workspace manifests"
+    assert {path: path.read_bytes() for path in case.fixtures} == bumped_fixtures, (
+        "a stale graph must not plan fixture strings from another source version"
+    )

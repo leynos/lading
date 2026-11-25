@@ -8,7 +8,7 @@ from unittest import mock
 import pytest
 
 from lading.commands import (
-    bump_pipeline_manifest_recovery,
+    bump_pipeline_manifest_restore,
 )
 from lading.commands.bump_manifest_rewrites import (
     ManifestRewriteWriteError,
@@ -87,7 +87,7 @@ def test_rollback_does_not_follow_member_path_swapped_outside_workspace(
 
     try:
         with mock.patch.object(
-            bump_pipeline_manifest_recovery,
+            bump_pipeline_manifest_restore,
             "write_atomic_text",
             side_effect=probe.bounded_rollback_write,
         ):

@@ -111,5 +111,4 @@ def _rewrite_manifest_document(
         rewrite_dependency_requirements(
             document, versions.updated_crate_names, versions.target_version
         )
-    for rule in source.string_values:
-        _rewrite_string_values(document, rule, versions, source.path)
+    _rewrite_string_values(document, source.string_values, versions, source.path)

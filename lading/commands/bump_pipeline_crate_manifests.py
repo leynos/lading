@@ -7,6 +7,7 @@ import typing as typ
 from pathlib import Path
 
 from lading.commands import (
+    bump_manifests,
     bump_pipeline_manifest_recovery,
     bump_pipeline_manifest_rewrites,
 )
@@ -16,7 +17,6 @@ from lading.commands.bump_manifests import (
     _freeze_dependency_sections,
     _ManifestUpdateContext,
     _should_skip_crate_update,
-    _update_manifest,
 )
 
 if typ.TYPE_CHECKING:
@@ -59,7 +59,7 @@ def _apply_crate_manifest_update(
     manifest_path, update_context = _prepare_crate_manifest_update(
         crate, crate_options, context, rewrite_stage
     )
-    result = _update_manifest(
+    result = bump_manifests._update_manifest(
         manifest_path,
         selectors,
         target_version,
@@ -104,7 +104,10 @@ def _prepare_crate_manifest_update(
         manifest_path, rewrite_stage
     )
     update_context = _ManifestUpdateContext(
-        options=options,
+        # Workspace declarations are updated once from package identities by
+        # the workspace-manifest stage. Manifest aliases must not also select
+        # workspace package names during this direct-dependency pass.
+        options=dc.replace(options, include_workspace_sections=False),
         workspace_root=context.root_path,
         manifest_entry=(context.root_path / "Cargo.toml")
         if is_workspace_manifest

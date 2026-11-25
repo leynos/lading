@@ -32,14 +32,15 @@ them.
 
 ## Impact at a glance
 
-| Change                   | Obligation         | Action                                                               |
-| ------------------------ | ------------------ | -------------------------------------------------------------------- |
-| Python interpreter floor | Required           | Use Python 3.14 or later to install 0.4.0.                           |
-| Moved helper imports     | Required if called | Update imports if your code uses the moved helpers.                  |
-| Diagnostic output stream | Required if called | Read stderr if scripts expect diagnostics on stdout.                 |
-| Compound requirements    | Recommended        | Review and resolve warnings when bounds exclude the target.          |
-| `bump.manifest_rewrites` | Optional           | Enable it for configured non-member manifests.                       |
-| Documentation helpers    | Required if called | Iterate `targets.paths`; pass `DocumentationTargets` to the updater. |
+| Change                       | Obligation         | Action                                                               |
+| ---------------------------- | ------------------ | -------------------------------------------------------------------- |
+| Python interpreter floor     | Required           | Use Python 3.14 or later to install 0.4.0.                           |
+| Moved helper imports         | Required if called | Update imports if your code uses the moved helpers.                  |
+| Diagnostic output stream     | Required if called | Read stderr if scripts expect diagnostics on stdout.                 |
+| Compound requirements        | Recommended        | Review and resolve warnings when bounds exclude the target.          |
+| `bump.manifest_rewrites`     | Optional           | Enable it for configured non-member manifests.                       |
+| Bounded `lading bump` writes | Required when used | Use a platform supporting directory-relative no-follow operations.   |
+| Documentation helpers        | Required if called | Iterate `targets.paths`; pass `DocumentationTargets` to the updater. |
 
 _Table 1: Migration actions by change._
 
@@ -188,8 +189,10 @@ update_documentation_files(
 
 `ConfigurationError` and `ConfigurationNotLoadedError` now live in
 `lading.exceptions` and remain importable from `lading.config`. An environment
-already running 3.14 needs no adaptation if it uses neither the changed APIs
-described above nor the new diagnostic stream and only reads successful output.
+already running 3.14 needs no interpreter-floor adaptation. When using
+`lading bump`, run it on a platform that supports directory-relative file
+operations and no-follow opens for bounded manifest writes. The command fails
+closed before writing if those operations are unavailable.
 
 When 0.4.0 is released, its tagged build will also be published to PyPI as a
 source distribution and pure-Python wheel. GitHub Releases will retain both
@@ -326,6 +329,8 @@ configured.
   `DocumentationTargets` to the updater.
 - [ ] If scripts consume diagnostics, read them from stderr; summaries remain
   on stdout.
+- [ ] Run `lading bump` on a platform supporting directory-relative file
+  operations and no-follow opens; bounded writes fail closed otherwise.
 - [ ] Review compound requirement warnings and resolve bounds that exclude the
   target version.
 

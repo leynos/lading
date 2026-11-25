@@ -14,16 +14,17 @@ import typing as typ
 from lading.commands import (
     bump_docs,
     bump_lockfiles,
+    bump_manifests,
     bump_pipeline_crate_manifests,
     bump_pipeline_manifest_recovery,
     bump_pipeline_manifest_rewrites,
+    bump_pipeline_manifest_sources,
     bump_readme,
 )
 from lading.commands.bump_manifests import (
     _WORKSPACE_SELECTORS,
     _freeze_dependency_sections,
     _ManifestUpdateContext,
-    _update_manifest,
     _workspace_dependency_sections,
 )
 from lading.commands.bump_output import BumpChanges
@@ -83,7 +84,7 @@ def _process_workspace_and_crate_manifests(
     """Restore pre-bump manifests if a workspace manifest stage fails."""
     try:
         if rewrite_stage.is_configured:
-            bump_pipeline_manifest_rewrites.validate_pre_bump_versions(
+            bump_pipeline_manifest_sources._validate_pre_bump_versions(
                 context, rewrite_stage
             )
         _process_workspace_manifest(
@@ -113,10 +114,9 @@ def _restore_manifest_stage_after_failure(
     """Restore completed manifest writes unless this is a dry run."""
     if context.base_options.dry_run:
         return None
-    if not isinstance(stage_error, Exception):
-        bump_pipeline_manifest_recovery.record_completed_rewrites_for_interruption(
-            rewrite_stage, changed_manifests, stage_error
-        )
+    bump_pipeline_manifest_recovery.reconcile_manifest_writes_for_failure(
+        rewrite_stage, changed_manifests, stage_error
+    )
     rollback_error = bump_pipeline_manifest_recovery.restore_changed_manifests(
         rewrite_stage,
         changed_manifests,
@@ -160,7 +160,7 @@ def _process_workspace_manifest(
             rewrite_stage
         ),
     )
-    result = _update_manifest(
+    result = bump_manifests._update_manifest(
         context.workspace_manifest,
         _WORKSPACE_SELECTORS,
         target_version,

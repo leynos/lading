@@ -4,11 +4,8 @@ import collections.abc as cabc
 import typing as typ
 from pathlib import Path
 
-from lading.commands.bump_manifest_rewrite_model import (
-    ManifestRewriteError,
-    ManifestRewriteWriteError,
-)
-from lading.commands.bump_toml_files import write_atomic_text
+from lading.commands import bump_pipeline_manifest_restore
+from lading.commands.bump_manifest_rewrite_model import ManifestRewriteError
 
 if typ.TYPE_CHECKING:
     from lading.commands.bump_pipeline_manifest_rewrites import (
@@ -25,11 +22,26 @@ def manifest_write_recorder(
     immediately before calling the atomic writer. It registers the baseline and
     pending output; it does not claim that the replacement completed.
 
+    Parameters
+    ----------
+    rewrite_stage
+        Stage whose baseline, pending-output and resolved-destination maps are
+        populated by the returned callback.
+
     Returns
     -------
     Callable
         A callback accepting the manifest path, original text, planned text,
         and resolved write destination.
+
+    Notes
+    -----
+    The callback key must be the same resolved manifest ``Path`` used by every
+    later recovery callback. Invoke it after the replacement has been prepared
+    and immediately before the atomic writer. It preserves the first source in
+    ``rollback_baselines`` and records the pending output in
+    ``pending_manifest_contents`` plus the destination in
+    ``written_manifest_destinations``.
     """
 
     def record_write(
@@ -49,14 +61,33 @@ def manifest_write_recorder(
 def manifest_write_completion_recorder(
     rewrite_stage: _ManifestRewriteStage,
 ) -> cabc.Callable[[Path], None]:
-    """Return the post-replacement callback that confirms a completed write."""
+    """Return the post-replacement callback that confirms a completed write.
+
+    Parameters
+    ----------
+    rewrite_stage
+        Stage whose pending and completed output maps are updated.
+
+    Returns
+    -------
+    Callable
+        A callback accepting the same manifest path identity passed to
+        :func:`manifest_write_recorder`.
+
+    Notes
+    -----
+    Invoke the callback immediately after the atomic writer returns
+    successfully. It copies the pending text to ``written_manifest_contents``
+    before removing it from ``pending_manifest_contents`` so an interruption
+    cannot erase the only recovery record.
+    """
 
     def record_completion(manifest_path: Path) -> None:
         """Promote the pending output only after the atomic writer returns."""
         if manifest_path in rewrite_stage.pending_manifest_contents:
-            rewrite_stage.written_manifest_contents[manifest_path] = (
-                rewrite_stage.pending_manifest_contents.pop(manifest_path)
-            )
+            pending_text = rewrite_stage.pending_manifest_contents[manifest_path]
+            rewrite_stage.written_manifest_contents[manifest_path] = pending_text
+            rewrite_stage.pending_manifest_contents.pop(manifest_path)
 
     return record_completion
 
@@ -65,7 +96,22 @@ def validate_member_manifest_before_update(
     manifest_path: Path,
     rewrite_stage: _ManifestRewriteStage | None,
 ) -> None:
-    """Reject edits or destination changes after an earlier bump write."""
+    """Reject edits or destination changes after an earlier bump write.
+
+    Parameters
+    ----------
+    manifest_path
+        Manifest identity used as the key by the earlier write callbacks.
+    rewrite_stage
+        Recovery stage whose completed-output and destination maps are checked.
+        ``None`` means no earlier rewrite stage was configured.
+
+    Notes
+    -----
+    This query mutates no stage mappings. When the path has a completed write,
+    it verifies both its resolved destination and its exact UTF-8 contents.
+    Validation either succeeds or raises ``ManifestRewriteError``.
+    """
     if rewrite_stage is None:
         return
     previously_written_text = rewrite_stage.written_manifest_contents.get(manifest_path)
@@ -126,32 +172,121 @@ def record_completed_rewrites_for_interruption(
     changed_manifests: set[Path],
     interruption: BaseException,
 ) -> None:
-    """Record only completed writes and the single pending atomic write.
+    """Record completed writes and inspect the pending atomic write.
 
+    Parameters
+    ----------
+    stage
+        Rewrite stage whose completed and pending output maps are reconciled.
+    changed_manifests
+        Mutable path set to which confirmed completed rewrite paths are added.
+    interruption
+        Active ``BaseException`` that recovery will re-raise after rollback.
+
+    Notes
+    -----
     Completed fixture writes are known from their post-write callbacks. The
-    pending write is inspected because interruption may have arrived after the
+    pending write is inspected because an exception may have arrived after the
     atomic replace but before that callback. Unattempted plans are never read or
-    attributed to this bump.
+    attributed to this bump. Reconciliation may move matching entries from
+    ``pending_manifest_contents`` to ``written_manifest_contents`` and adds
+    confirmed paths to ``changed_manifests`` in place.
     """
     rewrite_paths = {plan.path for plan in stage.plans}
     changed_manifests.update(
         rewrite_paths.intersection(stage.written_manifest_contents)
     )
+    reconcile_pending_manifest_rewrites(stage, changed_manifests, interruption)
+
+
+def reconcile_pending_manifest_rewrites(
+    stage: _ManifestRewriteStage,
+    changed_manifests: set[Path],
+    failure: BaseException,
+) -> None:
+    """Record only pending replacements that reached their planned content.
+
+    Parameters
+    ----------
+    stage
+        Stage whose pending and completed output maps are reconciled.
+    changed_manifests
+        Mutable path set to which verified pending writes are added.
+    failure
+        Active error that receives a note if a pending path cannot be inspected.
+
+    Notes
+    -----
+    A pending entry moves to ``written_manifest_contents`` only when a fresh
+    read matches the planned output exactly. The entry is then removed from
+    ``pending_manifest_contents``; mismatched or unreadable entries stay pending.
+    Verified paths are added to ``changed_manifests`` in place.
+    """
     for manifest_path, pending_text in tuple(stage.pending_manifest_contents.items()):
         try:
             current_text = manifest_path.read_text(encoding="utf-8", newline="")
         except (OSError, UnicodeError) as exc:
-            interruption.add_note(
+            failure.add_note(
                 f"Could not inspect manifest rewrite target {manifest_path} "
-                f"during interruption recovery: {exc}"
+                f"during recovery: {exc}"
             )
             continue
         if current_text != pending_text:
+            _report_unrecognized_pending_contents(
+                manifest_path,
+                current_text,
+                stage,
+                failure,
+            )
             continue
-        stage.written_manifest_contents[manifest_path] = (
-            stage.pending_manifest_contents.pop(manifest_path)
-        )
+        stage.written_manifest_contents[manifest_path] = pending_text
+        stage.pending_manifest_contents.pop(manifest_path)
         changed_manifests.add(manifest_path)
+
+
+def _report_unrecognized_pending_contents(
+    manifest_path: Path,
+    current_text: str,
+    stage: _ManifestRewriteStage,
+    failure: BaseException,
+) -> None:
+    """Attach a diagnostic when pending contents differ from both known texts."""
+    baseline_text = stage.rollback_baselines.get(manifest_path)
+    if current_text == baseline_text:
+        return
+    failure.add_note(
+        "Manifest changed while a rewrite was pending; leaving its "
+        f"current contents in place: {manifest_path}"
+    )
+
+
+def reconcile_manifest_writes_for_failure(
+    stage: _ManifestRewriteStage,
+    changed_manifests: set[Path],
+    failure: BaseException,
+) -> None:
+    """Reconcile pending writes after errors and completed writes on interrupt.
+
+    Parameters
+    ----------
+    stage
+        Stage containing the pending and completed output maps.
+    changed_manifests
+        Mutable path set updated with confirmed writes.
+    failure
+        Failure being recovered. Ordinary ``Exception`` values trigger a read
+        of pending outputs; other ``BaseException`` values use callback-confirmed
+        writes and inspect the active pending write.
+
+    Notes
+    -----
+    This function may move verified paths from ``pending_manifest_contents``
+    into ``written_manifest_contents`` and add them to ``changed_manifests``.
+    """
+    if isinstance(failure, Exception):
+        reconcile_pending_manifest_rewrites(stage, changed_manifests, failure)
+        return
+    record_completed_rewrites_for_interruption(stage, changed_manifests, failure)
 
 
 def restore_changed_manifests(
@@ -160,102 +295,36 @@ def restore_changed_manifests(
     failure: BaseException,
     *,
     workspace_root: Path,
-) -> ManifestRewriteWriteError | None:
-    """Restore manifests that still contain one of this bump's outputs."""
-    original_text_by_path = dict(stage.workspace_manifest_snapshots)
-    original_text_by_path.update(stage.rollback_baselines)
-    failures: list[tuple[Path, str]] = []
-    non_member_paths = {plan.path for plan in stage.plans}
-    registered_manifests = set(stage.written_manifest_contents) - non_member_paths
-    rollback_candidates = (set(changed_manifests) | registered_manifests).intersection(
-        original_text_by_path
-    )
-    failures = _restore_rollback_candidates(
-        rollback_candidates,
-        original_text_by_path,
+) -> bump_pipeline_manifest_restore.ManifestRewriteWriteError | None:
+    """Restore manifests that still contain one of this bump's outputs.
+
+    Parameters
+    ----------
+    stage
+        Stage containing rollback baselines and completed output identities.
+    changed_manifests
+        Paths confirmed or conservatively attributed to this bump.
+    failure
+        Primary error to which restoration details are attached.
+    workspace_root
+        Root used to confine each bounded restoration write.
+
+    Notes
+    -----
+    The restoration adapter reads ``workspace_manifest_snapshots``,
+    ``rollback_baselines``, ``written_manifest_contents`` and
+    ``written_manifest_destinations`` as evidence. It does not clear or mutate
+    those mappings.
+
+    Returns
+    -------
+    ManifestRewriteWriteError or None
+        An aggregate restoration error when any candidate could not safely be
+        restored; otherwise ``None``.
+    """
+    return bump_pipeline_manifest_restore.restore_changed_manifests(
         stage,
-        workspace_root,
+        changed_manifests,
+        failure,
+        workspace_root=workspace_root,
     )
-    return _manifest_rollback_error(failures, failure)
-
-
-def _restore_rollback_candidates(
-    rollback_candidates: cabc.Collection[Path],
-    original_text_by_path: cabc.Mapping[Path, str],
-    stage: _ManifestRewriteStage,
-    workspace_root: Path,
-) -> list[tuple[Path, str]]:
-    """Restore each candidate and collect files that could not be restored."""
-    failures: list[tuple[Path, str]] = []
-    for manifest_path in sorted(rollback_candidates, key=str, reverse=True):
-        detail = _restore_one_manifest(
-            manifest_path,
-            original_text_by_path[manifest_path],
-            stage,
-            workspace_root,
-        )
-        if detail is not None:
-            failures.append((manifest_path, detail))
-    return failures
-
-
-def _manifest_rollback_error(
-    failures: list[tuple[Path, str]],
-    failure: BaseException,
-) -> ManifestRewriteWriteError | None:
-    """Describe restoration failures while retaining rewrite progress."""
-    if not failures:
-        return None
-    failed_paths = ", ".join(str(path) for path, _error in failures)
-    failure_details = "; ".join(f"{path}: {detail}" for path, detail in failures)
-    failure_summary = str(failure) or type(failure).__name__
-    message = (
-        f"{failure_summary}; manifest rollback failed for "
-        f"{failed_paths}: {failure_details}"
-    )
-    completed_writes = (
-        failure.completed_writes if isinstance(failure, ManifestRewriteError) else 0
-    )
-    planned_writes = (
-        failure.planned_writes if isinstance(failure, ManifestRewriteError) else 0
-    )
-    return ManifestRewriteWriteError(
-        message,
-        completed_writes=completed_writes,
-        planned_writes=planned_writes,
-        failed_path=failures[0][0],
-    )
-
-
-def _restore_one_manifest(
-    manifest_path: Path,
-    original_text: str,
-    stage: _ManifestRewriteStage,
-    workspace_root: Path,
-) -> str | None:
-    """Restore one unchanged bump output and return any recovery failure."""
-    write_destination = stage.written_manifest_destinations.get(
-        manifest_path, manifest_path
-    )
-    try:
-        current_text = write_destination.read_text(encoding="utf-8", newline="")
-    except (OSError, UnicodeError) as exc:
-        return f"could not read before rollback: {exc}"
-    if current_text == original_text:
-        return None
-    expected_text = stage.written_manifest_contents.get(manifest_path)
-    if current_text != expected_text:
-        return (
-            "contents changed after this bump wrote the manifest; "
-            "left the current contents in place"
-        )
-    try:
-        write_atomic_text(
-            write_destination,
-            original_text,
-            workspace_root=workspace_root,
-            expected_current_text=current_text,
-        )
-    except (OSError, UnicodeError) as exc:
-        return f"could not restore original text: {exc}"
-    return None
