@@ -196,8 +196,8 @@ def render_fence(
     continuation = _continuation_indent(prefix)
     ending = _line_ending(opener) or "\n"
     closer = lines[end - 1] if end > start + 1 else ""
-    if not _is_closing_fence(closer, prefix, marker):
-        closer = f"{prefix}{marker}{ending}"
+    if not _is_closing_fence(closer, continuation, marker):
+        closer = f"{continuation}{marker}{ending}"
     body_text = new_body.rstrip("\r\n")
     rendered = "".join(
         f"{continuation}{line}{ending}" for line in body_text.split("\n")
@@ -206,6 +206,7 @@ def render_fence(
 
 
 _QUOTE_PREFIX: typ.Final[re.Pattern[str]] = re.compile(r"^(?: {0,3}> ?)+")
+_LIST_PREFIX: typ.Final[re.Pattern[str]] = re.compile(r"^ *(?:[-+*]|\d{1,9}[.)])[ \t]+")
 
 
 def _continuation_indent(prefix: str) -> str:
@@ -213,13 +214,16 @@ def _continuation_indent(prefix: str) -> str:
 
     Block-quote markers are repeated. A list marker is replaced by spaces of
     the same width so the body stays in the list item without another bullet,
-    while any enclosing block quote is preserved.
+    while any enclosing or following block quote is preserved.
 
     Returns
     -------
     str
         The prefix to place before each transformed body line.
     """
+    list_marker = _LIST_PREFIX.match(prefix)
+    if list_marker is not None:
+        return f"{' ' * list_marker.end()}{prefix[list_marker.end() :]}"
     quote = _QUOTE_PREFIX.match(prefix)
     quoted = quote.group(0) if quote else ""
     rest = prefix[len(quoted) :]

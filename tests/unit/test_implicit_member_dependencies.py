@@ -219,3 +219,67 @@ def test_a_member_workspace_pointer_to_the_root_is_accepted(
     assert {crate.name for crate in graph.crates} == {"app"}, (
         "a correct member pointer must not reject the workspace"
     )
+
+
+def test_a_whitespace_member_workspace_pointer_is_rejected(
+    tmp_path: Path,
+) -> None:
+    """A pointer of a single space names a directory and must be checked."""
+    root = tmp_path.resolve()
+    write_workspace(root)
+    (root / "app" / "Cargo.toml").write_text(
+        '[package]\nname = "app"\nversion = "0.1.0"\n\nworkspace = " "\n',
+        encoding="utf-8",
+    )
+    runner = runner_for(payload(root, ("app",)))
+
+    with pytest.raises(BumpPreflightError) as excinfo:
+        load_bump_workspace(root, runner=typ.cast("CommandRunner", runner))
+
+    assert "workspace manifest points at" in str(excinfo.value), (
+        "a whitespace pointer must be treated as a path"
+    )
+    assert not runner.metadata_calls(), "the pointer must be rejected before Cargo runs"
+
+
+def test_a_pointer_reached_in_the_finishing_pass_is_validated(
+    tmp_path: Path,
+) -> None:
+    """A workspace dependency discovered late still has its pointer checked."""
+    root = tmp_path.resolve()
+    (root / "Cargo.toml").write_text(
+        '[workspace]\nmembers = ["app"]\n\n'
+        "[workspace.dependencies]\n"
+        'a = { path = "a" }\n'
+        'b = { path = "b" }\n',
+        encoding="utf-8",
+    )
+    (root / "app").mkdir(parents=True)
+    (root / "app" / "Cargo.toml").write_text(
+        '[package]\nname = "app"\nversion = "0.1.0"\n\n'
+        "[dependencies]\na = { workspace = true }\n",
+        encoding="utf-8",
+    )
+    (root / "a").mkdir()
+    (root / "a" / "Cargo.toml").write_text(
+        '[package]\nname = "a"\nversion = "0.1.0"\n\n'
+        "[dependencies]\nb = { workspace = true }\n",
+        encoding="utf-8",
+    )
+    (root / "b").mkdir()
+    (root / "b" / "Cargo.toml").write_text(
+        '[package]\nname = "b"\nversion = "0.1.0"\n\nworkspace = "../trap"\n',
+        encoding="utf-8",
+    )
+    trap = root / "trap"
+    trap.mkdir()
+    make_fifo(trap / "Cargo.toml")
+    runner = runner_for(payload(root, ("app", "a", "b")))
+
+    with pytest.raises(BumpPreflightError) as excinfo:
+        load_bump_workspace(root, runner=typ.cast("CommandRunner", runner))
+
+    assert str(trap) in str(excinfo.value), (
+        "the late-discovered member pointer must be checked"
+    )
+    assert not runner.metadata_calls(), "the pointer must be rejected before Cargo runs"

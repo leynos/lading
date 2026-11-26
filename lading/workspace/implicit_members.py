@@ -18,7 +18,6 @@ one is safer than blocking on it.
 import collections.abc as cabc
 import dataclasses as dc
 import os
-import stat
 import typing as typ
 from pathlib import Path
 
@@ -28,10 +27,9 @@ from tomlkit.exceptions import TOMLKitError
 from lading.utils.confinement import (
     BumpPreflightError,
     BumpTargetExaminationError,
-    UnsafeBumpTargetError,
     confine_relative_path,
-    is_link_like,
 )
+from lading.workspace.implicit_paths import resolve_dependency
 
 __all__ = [
     "read_manifest_text",
@@ -138,6 +136,7 @@ def _finish_workspace_dependencies(
         while frontier:
             parts = frontier.pop()
             document = _parse_manifest(discovery.root, parts)
+            require_workspace_pointer(discovery.root, parts, document)
             discovery.inherited.update(_inherited_names(document))
             frontier.extend(discovery.dependency_parts(parts, document))
 
@@ -191,7 +190,7 @@ class _Discovery:
         discovered: list[tuple[str, ...]],
     ) -> None:
         """Record one dependency path that has not been scheduled yet."""
-        resolved = _resolve_dependency(self.root, base_parts, raw)
+        resolved = resolve_dependency(self.root, base_parts, raw)
         if resolved is None or resolved in self.seen:
             return
         self.seen.add(resolved)
@@ -228,7 +227,7 @@ def require_workspace_pointer(
     if not isinstance(package, cabc.Mapping):
         return
     pointer = package.get("workspace")
-    if not isinstance(pointer, str) or not pointer.strip():
+    if not isinstance(pointer, str):
         return
     target = Path(pointer)
     if not target.is_absolute():
@@ -374,87 +373,3 @@ def _specification_path(specification: object) -> str | None:
         return None
     path = specification.get("path")
     return path if isinstance(path, str) else None
-
-
-def _resolve_dependency(
-    root: Path,
-    base_parts: tuple[str, ...],
-    raw: str,
-) -> tuple[str, ...] | None:
-    """Return the in-workspace components of a path dependency, or ``None``.
-
-    Two spellings matter. The declared spelling receives the component checks,
-    and the absolute lexical destination is what Cargo actually opens:
-    redundant steps such as ``a/../dep`` are removed before lookup, so a
-    missing ``a`` must not hide ``dep``, and a path that leaves the root and
-    returns to it is still an in-workspace member.
-
-    Returns
-    -------
-    tuple[str, ...] | None
-        The dependency's directory components below ``root``, or ``None`` when
-        it lies outside the workspace or names something that is not a
-        directory.
-    """
-    candidate = Path(raw)
-    if candidate.is_absolute():
-        absolute = candidate
-        declared = None
-    else:
-        absolute = root.joinpath(*base_parts, candidate)
-        declared = _walk_components(root, base_parts, candidate.parts, raw)
-    effective = _effective_components(root, absolute, raw)
-    return effective or declared
-
-
-def _effective_components(
-    root: Path,
-    absolute: Path,
-    raw: str,
-) -> tuple[str, ...] | None:
-    """Return the components Cargo looks up after lexical normalization."""
-    normalised = Path(os.path.normpath(absolute))
-    try:
-        relative = normalised.relative_to(root)
-    except ValueError:
-        return None
-    return _walk_components(root, (), relative.parts, raw)
-
-
-def _walk_components(
-    root: Path,
-    start_parts: tuple[str, ...],
-    components: cabc.Iterable[str],
-    raw: str,
-) -> tuple[str, ...] | None:
-    """Walk dependency components, rejecting links and workspace escapes."""
-    parts = list(start_parts)
-    # ``Path.parts`` never contains ``""`` or ``"."``, so no such component
-    # needs handling here.
-    for component in components:
-        if component == "..":
-            if not parts:
-                return None
-            parts.pop()
-            continue
-        status = _lstat_dependency(root.joinpath(*parts, component), raw)
-        if status is None:
-            return None
-        if is_link_like(status):
-            message = f"path dependency traverses a symlink: {raw}"
-            raise UnsafeBumpTargetError(message)
-        if not stat.S_ISDIR(status.st_mode):
-            return None
-        parts.append(component)
-    return tuple(parts)
-
-
-def _lstat_dependency(candidate: Path, raw: str) -> os.stat_result | None:
-    """Return the ``lstat`` result, or ``None`` when the path is absent."""
-    try:
-        return os.lstat(candidate)
-    except FileNotFoundError:
-        return None
-    except OSError as exc:
-        message = f"cannot examine path dependency {raw}: {exc}"
-        raise BumpTargetExaminationError(message) from exc

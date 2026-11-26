@@ -311,3 +311,23 @@ def test_regeneration_rejects_a_changed_cargo_environment(tmp_path: Path) -> Non
     assert runner.cargo_update_calls() == [], (
         "regeneration must not reach Cargo with a stale plan"
     )
+
+
+def test_repair_commands_quote_manifest_paths(tmp_path: Path) -> None:
+    """A manifest path containing spaces stays one shell argument."""
+    root = tmp_path.resolve()
+    manifest = root / "release workspace" / "Cargo.toml"
+    plan = LockfilePlan(
+        root=root,
+        manifests=(manifest,),
+        lockfiles=(root / "Cargo.lock",),
+        environ={"CARGO_HOME": "one"},
+    )
+    runner = RecordingRunner(metadata_root=root)
+
+    with pytest.raises(LockfileRegenerationError) as excinfo:
+        regenerate_planned(plan, runner=runner, environ={"CARGO_HOME": "two"})
+
+    assert f"'{manifest}'" in str(excinfo.value), (
+        "the repair command must quote a manifest path containing spaces"
+    )

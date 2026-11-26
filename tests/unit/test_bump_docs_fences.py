@@ -102,3 +102,35 @@ def test_an_unclosed_fence_does_not_reuse_a_body_line_as_its_closer() -> None:
     )
     assert " # ```rust\n" in updated, "the body line must keep its text"
     assert updated.endswith("```\n"), "a closing fence must be added once"
+
+
+def test_a_quoted_list_fence_keeps_its_closing_fence() -> None:
+    """A quoted list item's closer uses the continuation prefix."""
+    text = '> - ```toml\n>   [dependencies]\n>   alpha = "0.1.0"\n>   ```\n'
+
+    updated, changed = bump_docs_fences.rewrite_markdown_toml_fences(
+        text, ("alpha",), "1.2.3"
+    )
+
+    assert changed, "the dependency version must be rewritten"
+    assert updated.endswith(">   ```\n"), (
+        "the closer must keep its container prefix and close the fence"
+    )
+    parsed = MarkdownIt("commonmark").parse(updated)
+    assert [token.type for token in parsed].count("fence") == 1, (
+        "the rewrite must leave exactly one fenced block"
+    )
+
+
+def test_a_quote_after_a_list_marker_is_preserved() -> None:
+    """A list marker followed by a block quote keeps the quote markers."""
+    text = '- > ```toml\n  > [dependencies]\n  > alpha = "0.1.0"\n  > ```\n'
+
+    updated, changed = bump_docs_fences.rewrite_markdown_toml_fences(
+        text, ("alpha",), "1.2.3"
+    )
+
+    assert changed, "the dependency version must be rewritten"
+    assert "  > [dependencies]" in updated, (
+        "the block quote after the list marker must be preserved"
+    )

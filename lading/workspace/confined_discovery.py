@@ -16,6 +16,7 @@ Publish keeps its existing discovery path; this module is bump-only.
 """
 
 import collections.abc as cabc
+import dataclasses as dc
 import os
 import typing as typ
 from pathlib import Path, PurePosixPath
@@ -32,6 +33,7 @@ from lading.utils.confinement import (
     MatchExpectation,
     MissingBumpTargetError,
     UnmatchedPolicy,
+    UnsafeBumpTargetError,
     confine_relative_path,
     establish_workspace_root,
     expand_confined_glob,
@@ -158,22 +160,60 @@ def _expand_member_patterns(
         nothing, a matched directory is not a real directory, or a matched
         member has no regular ``Cargo.toml``.
     """  # ruff: ignore[docstring-extraneous-exception]  # raised by expand_confined_glob
-    excluded = _expand_exclusions(root, excludes)
+    excluded = _expand_exclusions(excludes)
     declared: dict[tuple[str, ...], str] = {}
     for index, pattern in enumerate(members):
         key = f"{_MEMBERS_KEY}[{index}]"
+        if not _is_root_member(pattern):
+            _reject_hidden_wildcard(pattern, key=key)
         is_glob = bool(_GLOB_METACHARACTERS.intersection(pattern))
-        matches = _member_matches(root, pattern, key=key)
-        for match in matches:
-            if is_glob and _is_excluded(match.parts, excluded):
-                _examine_excluded_member(root, match, key=key)
-                continue
-            _require_member_manifest(root, match, key=key, pattern=pattern)
-            declared[match.parts] = pattern
+        declarations = _MemberDeclarations(root=root, pattern=pattern, key=key)
+        for match in _member_matches(root, pattern, key=key):
+            excluded_match = is_glob and _is_excluded(match.parts, excluded)
+            declarations.declare(match, is_excluded=excluded_match)
+        declared.update(declarations.declared)
     return declared
 
 
+@dc.dataclass(slots=True)
+class _MemberDeclarations:
+    """Accumulate the matches of one member pattern."""
+
+    root: Path
+    pattern: str
+    key: str
+    declared: dict[tuple[str, ...], str] = dc.field(default_factory=dict)
+
+    def declare(self, match: ConfinedPath, *, is_excluded: bool) -> None:
+        """Record one match, or examine an excluded one and skip it."""
+        if is_excluded:
+            _examine_excluded_member(self.root, match, key=self.key)
+            return
+        _require_member_manifest(self.root, match, key=self.key, pattern=self.pattern)
+        self.declared[match.parts] = self.pattern
+
+
 _GLOB_METACHARACTERS: typ.Final[frozenset[str]] = frozenset("*?[")
+
+
+def _reject_hidden_wildcard(pattern: str, *, key: str) -> None:
+    """Reject a member component that starts with ``.`` and holds a wildcard.
+
+    Cargo's glob crate can turn such a component into ``..``; Cargo would then
+    open a manifest outside the workspace before the reported-member check.
+
+    Raises
+    ------
+    UnsafeBumpTargetError
+        If a component combines a leading dot with a wildcard.
+    """
+    for part in validate_relative_pattern(pattern, key=key):
+        if part.startswith(".") and _GLOB_METACHARACTERS.intersection(part):
+            message = (
+                f"{key}: member pattern component must not combine a leading "
+                f"dot with a wildcard: {part!r}"
+            )
+            raise UnsafeBumpTargetError(message)
 
 
 def _examine_excluded_member(
@@ -268,7 +308,6 @@ def _is_excluded(
 
 
 def _expand_exclusions(
-    root: Path,
     excludes: cabc.Sequence[str],
 ) -> set[tuple[str, ...]]:
     """Return the literal directory components excluded from the member set.
@@ -283,7 +322,6 @@ def _expand_exclusions(
     set[tuple[str, ...]]
         Excluded directory component tuples.
     """
-    del root
     return {
         validate_relative_pattern(pattern, key=f"{_EXCLUDES_KEY}[{index}]")
         for index, pattern in enumerate(excludes)

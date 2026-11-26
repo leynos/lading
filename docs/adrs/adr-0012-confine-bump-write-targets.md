@@ -195,6 +195,16 @@ Path dependencies outside the workspace are not members and remain Cargo's
 responsibility. A missing dependency manifest fails the preflight, which Cargo
 would also reject.
 
+### 2026-11-23: Hidden wildcards and universal workspace pointers
+
+A member pattern component that begins with `.` and contains a wildcard is
+rejected before Cargo runs. Cargo's glob crate can turn such a component into
+`..`, and Cargo would then treat an external directory as an explicit member
+before the reported-member check. `package.workspace` pointers are validated in
+every parsed manifest, including whitespace-only pointers and manifests reached
+through workspace-dependency inheritance, because Cargo's inheritance loader
+follows them while loading package fields.
+
 ### 2026-11-23: Injected crate roots and workspace pointers
 
 An injected crate's `root_path` must be the directory containing its validated

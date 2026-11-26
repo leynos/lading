@@ -230,7 +230,7 @@ def _require_unchanged_environment(
             "each planned lockfile with:"
         )
         commands = "\n".join(
-            f"  cargo update --workspace --manifest-path {manifest}"
+            f"  cargo update --workspace --manifest-path {shlex.quote(str(manifest))}"
             for manifest in plan.manifests
         )
         message = f"{settings}\n{commands}"

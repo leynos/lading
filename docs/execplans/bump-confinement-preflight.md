@@ -555,6 +555,14 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
   Cargo; `graph_relative_manifest` rejects `..`. The stale-lockfile message now
   names the repair command instead of an ineffective rerun, and the migration
   guide records the required port members and the qualified override rule.
+- [x] 2026-11-23: Fifteenth CodeRabbit review cleared. Member components that
+  combine a leading dot with a wildcard are rejected before Cargo, because
+  Cargo's glob crate can turn them into `..`. Workspace pointers are validated
+  in every parsed manifest, including the finishing pass and whitespace-only
+  pointers, and the dependency traversal moved to `implicit_paths`. Example
+  fences handle quotes before and after list markers, respect the established
+  list indentation, and reject unmarked fences inside quoted lists. Repair
+  commands quote manifest paths.
 - [ ] EP-M5 release: tag and release `v0.4.0b1` after review convergence, then
   record the tag commit on issue #409.
 
@@ -681,7 +689,13 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
 - Example fences track the list container's indentation separately from the
   opener's own indentation, so only a container-relative closing fence ends an
   example. A marker on a list continuation line inherits the enclosing list's
-  content indentation.
+  content indentation, and block quotes before or after a list marker are
+  preserved when the body is re-rendered.
+- A member component that begins with `.` and contains a wildcard is rejected.
+  Cargo's glob crate can turn such a component into `..`, and Cargo would then
+  open a manifest outside the workspace before the reported-member check.
+- Every parsed manifest's `package.workspace` pointer is checked, including
+  whitespace-only pointers and manifests reached in the finishing pass.
 - Cargo include paths are lexically normalized before probing. An experiment
   with the installed Cargo and an isolated `CARGO_HOME` showed that an optional
   `missing/../shared.toml` still loads when `missing` is absent, because Cargo

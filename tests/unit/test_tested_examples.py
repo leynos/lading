@@ -240,3 +240,30 @@ def test_loader_rejects_a_body_line_that_ends_the_list(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="unterminated"):
         load_tested_examples(path)
+
+
+def test_loader_rejects_an_unmarked_fence_inside_a_quoted_list(
+    tmp_path: Path,
+) -> None:
+    """A fence inside a quoted ordered list is still an unmarked fence."""
+    path = _write(
+        tmp_path,
+        "> 10. Example\n>     ~~~python\n>     print(1)\n>     ~~~\n",
+    )
+
+    with pytest.raises(ValueError, match="unmarked fenced example"):
+        load_tested_examples(path)
+
+
+def test_loader_uses_the_established_list_indentation(tmp_path: Path) -> None:
+    """Extra marker indentation does not widen the list's content indentation."""
+    path = _write(
+        tmp_path,
+        "- Item\n    <!-- tested-example: extra -->\n  ```python\n  print(1)\n  ```\n",
+    )
+
+    example = load_tested_examples(path)["extra"]
+
+    assert example.body == "print(1)", (
+        "the fence must be read relative to the list's content indentation"
+    )

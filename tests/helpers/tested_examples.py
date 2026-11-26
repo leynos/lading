@@ -94,10 +94,12 @@ def load_tested_examples(path: Path) -> dict[str, MarkedExample]:
 
 def _list_context(raw: str, current: int) -> int:
     """Return the content indentation of the enclosing list item, if any."""
-    match = _LIST_ITEM.match(raw)
+    depth = _quote_depth(raw)
+    content = _strip_quotes(raw, depth) or ""
+    match = _LIST_ITEM.match(content)
     if match is not None:
         return match.end()
-    if raw.strip() and not raw.startswith((" ", "\t")):
+    if content.strip() and not content.startswith((" ", "\t")):
         return 0
     return current
 
@@ -144,12 +146,10 @@ def _marker_at(
     depth = _quote_depth(raw)
     content = _strip_quotes(raw, depth) or ""
     list_item = _LIST_ITEM.match(content)
-    if list_item is not None:
-        marker_text = content[list_item.end() :].strip()
-        container_indent = list_item.end()
-    else:
-        marker_text = content.strip()
-        container_indent = max(list_indent, _indentation(raw)) if list_indent else 0
+    marker_text = (
+        content[list_item.end() :] if list_item is not None else content
+    ).strip()
+    container_indent = list_indent
     if not marker_text.startswith("<!-- tested-example:"):
         return None
     match = _MARKER.match(marker_text)

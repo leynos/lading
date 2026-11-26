@@ -178,3 +178,28 @@ def test_a_symlinked_member_branch_is_rejected_before_cargo(
         "the diagnostic must identify the symlinked member branch"
     )
     assert not runner.calls, "the symlinked branch must be rejected before Cargo runs"
+
+
+def test_a_dot_prefixed_wildcard_member_is_rejected(tmp_path: Path) -> None:
+    """A component combining a leading dot with a wildcard is rejected."""
+    _prepare_workspace(tmp_path, [".?/target"], [], options=WorkspaceShape())
+    runner = _RecordingRunner(payload=_payload(tmp_path, []))
+
+    with pytest.raises(UnsafeBumpTargetError) as excinfo:
+        load_bump_workspace(tmp_path, runner=typ.cast("CommandRunner", runner))
+
+    assert "leading dot" in str(excinfo.value), (
+        "the diagnostic must explain the rejected component"
+    )
+    assert not runner.calls, "the pattern must be rejected before Cargo runs"
+
+
+def test_a_dot_prefixed_literal_member_is_accepted(tmp_path: Path) -> None:
+    """A dot-prefixed name without a wildcard is an ordinary member."""
+    _prepare_workspace(tmp_path, ["crates/.hidden/target"], [".hidden/target"])
+
+    graph, _runner = _load(tmp_path, _payload(tmp_path, [".hidden/target"]))
+
+    assert [crate.name for crate in graph.crates] == ["target"], (
+        "a literal dot-prefixed member must be accepted"
+    )

@@ -635,6 +635,9 @@ reason = "Import preamble only: both modules open with the same stdlib block bec
 [[tool.duplication_gate.allow]]
 members = ["lading/commands/bump_lockfile_config.py", "lading/workspace/implicit_members.py"]
 reason = "Import preamble only: both modules parse TOML configuration or manifests with tomlkit and classify files with os/stat, so their stdlib and tomlkit preamble coincides. The module responsibilities, functions and data differ; sharing the preamble would add a common imports module for no behavioural gain."
+[[tool.duplication_gate.allow]]
+members = ["lading/commands/bump_lockfile_planning.py", "lading/workspace/confined_discovery.py"]
+reason = "Import preamble only: both modules use os, pathlib and collections.abc while resolving confined workspace paths, so their stdlib preamble coincides. Their responsibilities, imports of confinement helpers and functions differ; sharing the block would add a common imports module without behavioural value."
 [tool.df12_skylos]
 roots = ["lading"]
 python = "3.14"
