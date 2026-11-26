@@ -220,3 +220,23 @@ def test_loader_reads_a_marker_on_a_list_continuation_line(
     assert example.body == "print(1)", (
         "the continuation-line container indentation must be honoured"
     )
+
+
+def test_loader_ignores_an_indented_literal_fence(tmp_path: Path) -> None:
+    """A four-space delimiter is literal code, not an unmarked fence."""
+    path = _write(tmp_path, "    ```python\n    print(1)\n    ```\n")
+
+    assert not load_tested_examples(path), (
+        "an indented literal delimiter must not be treated as a fence"
+    )
+
+
+def test_loader_rejects_a_body_line_that_ends_the_list(tmp_path: Path) -> None:
+    """An outdented line ends the list container and leaves the fence unclosed."""
+    path = _write(
+        tmp_path,
+        "- <!-- tested-example: sample -->\n  ```python\n  print(1)\noutside\n```\n",
+    )
+
+    with pytest.raises(ValueError, match="unterminated"):
+        load_tested_examples(path)

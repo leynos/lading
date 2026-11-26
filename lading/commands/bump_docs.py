@@ -128,12 +128,12 @@ def prepare_documentation_updates(
         for match in matches:
             if match.parts in seen:
                 continue
+            seen.add(match.parts)
             text = request.read_source(match)
             updated_text, changed = rewrite_markdown_toml_fences(
                 text, dependency_targets, request.target_version
             )
             if not changed:
                 continue
-            seen.add(match.parts)
             updates.append((match, updated_text))
     return tuple(updates)

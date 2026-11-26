@@ -202,7 +202,7 @@ manifest, because README adoption uses that path as the destination. A
 `package.workspace` pointer in the requested root manifest is checked before
 Cargo runs: a pointer that names a different workspace is rejected with the
 `--workspace-root` suggestion, so Cargo never opens an unvalidated manifest
-through it. Cargo include paths are probed with their `..` components intact,
+through it. Cargo include paths are lexically normalized before probing,
 matching Cargo's own optional-include handling.
 
 ### 2026-11-23: Configuration grammar, environment binding and fence containers

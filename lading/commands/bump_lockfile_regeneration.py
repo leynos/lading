@@ -223,13 +223,17 @@ def _require_unchanged_environment(
         if current.get(name) != plan.environ.get(name)
     ]
     if changed:
-        message = (
-            "Cargo environment changed after lockfile planning: "
-            + ", ".join(changed)
-            + "; the manifests may already carry the target version, so a "
-            "same-version rerun would skip regeneration. Repair each lockfile "
-            "with cargo update --workspace --manifest-path <manifest>."
+        settings = (
+            f"Restore the validated Cargo settings ({', '.join(changed)}) and "
+            f"run from {plan.root}; the manifests may already carry the target "
+            "version, so a same-version rerun would skip regeneration. Repair "
+            "each planned lockfile with:"
         )
+        commands = "\n".join(
+            f"  cargo update --workspace --manifest-path {manifest}"
+            for manifest in plan.manifests
+        )
+        message = f"{settings}\n{commands}"
         raise LockfileRegenerationError(message)
 
 

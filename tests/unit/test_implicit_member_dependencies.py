@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from lading.utils.confinement import UnsafeBumpTargetError
+from lading.utils.confinement import BumpPreflightError, UnsafeBumpTargetError
 from lading.workspace.confined_discovery import load_bump_workspace
 from tests.unit.implicit_member_helpers import (
     load,
@@ -174,4 +174,48 @@ def test_two_level_workspace_inheritance_is_resolved(tmp_path: Path) -> None:
     )
     assert not runner.metadata_calls(), (
         "the second-level dependency must be rejected before Cargo runs"
+    )
+
+
+def test_a_member_workspace_pointer_to_another_root_is_rejected(
+    tmp_path: Path,
+) -> None:
+    """A member that points at another workspace root is rejected before Cargo."""
+    root = tmp_path.resolve()
+    write_workspace(root)
+    (root / "app" / "Cargo.toml").write_text(
+        '[package]\nname = "app"\nversion.workspace = true\n\nworkspace = "../trap"\n',
+        encoding="utf-8",
+    )
+    trap = root / "trap"
+    trap.mkdir()
+    make_fifo(trap / "Cargo.toml")
+    runner = runner_for(payload(root, ("app",)))
+
+    with pytest.raises(BumpPreflightError) as excinfo:
+        load_bump_workspace(root, runner=typ.cast("CommandRunner", runner))
+
+    assert str(trap) in str(excinfo.value), (
+        "the diagnostic must name the pointer's target root"
+    )
+    assert not runner.metadata_calls(), (
+        "the member pointer must be rejected before Cargo runs"
+    )
+
+
+def test_a_member_workspace_pointer_to_the_root_is_accepted(
+    tmp_path: Path,
+) -> None:
+    """A member that correctly names the workspace root is accepted."""
+    root = tmp_path.resolve()
+    write_workspace(root)
+    (root / "app" / "Cargo.toml").write_text(
+        '[package]\nname = "app"\nversion = "0.1.0"\n\nworkspace = ".."\n',
+        encoding="utf-8",
+    )
+
+    graph = load(root, payload(root, ("app",)))
+
+    assert {crate.name for crate in graph.crates} == {"app"}, (
+        "a correct member pointer must not reject the workspace"
     )

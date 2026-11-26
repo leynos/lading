@@ -196,7 +196,7 @@ def render_fence(
     continuation = _continuation_indent(prefix)
     ending = _line_ending(opener) or "\n"
     closer = lines[end - 1] if end > start + 1 else ""
-    if marker not in closer:
+    if not _is_closing_fence(closer, prefix, marker):
         closer = f"{prefix}{marker}{ending}"
     body_text = new_body.rstrip("\r\n")
     rendered = "".join(
@@ -205,21 +205,46 @@ def render_fence(
     return opener + rendered + closer
 
 
+_QUOTE_PREFIX: typ.Final[re.Pattern[str]] = re.compile(r"^(?: {0,3}> ?)+")
+
+
 def _continuation_indent(prefix: str) -> str:
     """Return the indentation a transformed body line needs.
 
-    A block-quote marker is repeated; a list marker is replaced by spaces of the
-    same width so the body stays in the list item without another bullet.
+    Block-quote markers are repeated. A list marker is replaced by spaces of
+    the same width so the body stays in the list item without another bullet,
+    while any enclosing block quote is preserved.
 
     Returns
     -------
     str
         The prefix to place before each transformed body line.
     """
-    stripped = prefix.strip()
-    if not stripped or set(stripped) == {">"}:
+    quote = _QUOTE_PREFIX.match(prefix)
+    quoted = quote.group(0) if quote else ""
+    rest = prefix[len(quoted) :]
+    if not rest.strip():
         return prefix
-    return " " * len(prefix)
+    return f"{quoted}{' ' * len(rest)}"
+
+
+def _is_closing_fence(line: str, prefix: str, marker: str) -> bool:
+    """Return whether ``line`` is a closing fence for ``marker``.
+
+    Only the fence character, a run at least as long as the opener, and
+    trailing whitespace are accepted; a body line that merely mentions the
+    marker is not a closer.
+
+    Returns
+    -------
+    bool
+        Whether ``line`` closes the fence.
+    """
+    content = line[len(prefix) :] if line.startswith(prefix) else line.lstrip()
+    stripped = content.strip()
+    character = marker[0]
+    run = len(stripped) - len(stripped.lstrip(character))
+    return run >= len(marker) and stripped == character * run
 
 
 def _line_ending(line: str) -> str:

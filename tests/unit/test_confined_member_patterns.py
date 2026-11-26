@@ -158,3 +158,23 @@ def test_a_whitespace_member_name_is_not_the_root(tmp_path: Path) -> None:
     assert {crate.name for crate in graph.crates} == {"spaced"}, (
         "the spaced directory must be the declared member, not the root"
     )
+
+
+def test_a_symlinked_member_branch_is_rejected_before_cargo(
+    tmp_path: Path,
+) -> None:
+    """A symlinked branch of a member ``**`` pattern is rejected."""
+    _prepare_workspace(tmp_path, ["crates/**/pkg"], [])
+    outside = tmp_path.parent / "outside-409"
+    outside.mkdir(exist_ok=True)
+    (tmp_path / "crates").mkdir(exist_ok=True)
+    (tmp_path / "crates" / "link").symlink_to(outside, target_is_directory=True)
+    runner = _RecordingRunner(payload=_payload(tmp_path, []))
+
+    with pytest.raises(UnsafeBumpTargetError) as excinfo:
+        load_bump_workspace(tmp_path, runner=typ.cast("CommandRunner", runner))
+
+    assert "symlink" in str(excinfo.value), (
+        "the diagnostic must identify the symlinked member branch"
+    )
+    assert not runner.calls, "the symlinked branch must be rejected before Cargo runs"

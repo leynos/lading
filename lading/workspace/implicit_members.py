@@ -33,7 +33,11 @@ from lading.utils.confinement import (
     is_link_like,
 )
 
-__all__ = ["read_manifest_text", "validate_implicit_member_manifests"]
+__all__ = [
+    "read_manifest_text",
+    "require_workspace_pointer",
+    "validate_implicit_member_manifests",
+]
 
 _ROOT_MANIFEST = "Cargo.toml"
 _DEPENDENCY_TABLES: typ.Final[tuple[tuple[str, ...], ...]] = (
@@ -107,6 +111,7 @@ def validate_implicit_member_manifests(
     while frontier:
         parts = frontier.pop()
         document = _parse_manifest(root, parts)
+        require_workspace_pointer(root, parts, document)
         if not parts:
             root_document = document
         discovery.inherited.update(_inherited_names(document))
@@ -191,6 +196,51 @@ class _Discovery:
             return
         self.seen.add(resolved)
         discovered.append(resolved)
+
+
+def require_workspace_pointer(
+    root: Path,
+    base_parts: tuple[str, ...],
+    document: cabc.Mapping[str, typ.Any],
+) -> None:
+    """Reject a ``package.workspace`` pointer that names a different root.
+
+    Cargo follows the pointer and reads the target workspace's manifests, so
+    the requested root must already be that workspace. Rejecting the pointer
+    before the metadata call keeps Cargo from opening an unvalidated file.
+
+    Parameters
+    ----------
+    root : Path
+        Canonical workspace root.
+    base_parts : tuple[str, ...]
+        Directory of the manifest that declares the pointer, relative to
+        ``root``.
+    document : cabc.Mapping[str, typ.Any]
+        Parsed manifest document.
+
+    Raises
+    ------
+    BumpPreflightError
+        If the pointer names a root other than ``root``.
+    """
+    package = document.get("package")
+    if not isinstance(package, cabc.Mapping):
+        return
+    pointer = package.get("workspace")
+    if not isinstance(pointer, str) or not pointer.strip():
+        return
+    target = Path(pointer)
+    if not target.is_absolute():
+        target = root.joinpath(*base_parts, target)
+    normalised = Path(os.path.normpath(target))
+    if normalised != root:
+        message = (
+            f"workspace manifest points at {normalised}, not {root}; pass "
+            f"--workspace-root {normalised} so the requested root is the "
+            "workspace Cargo reports"
+        )
+        raise BumpPreflightError(message)
 
 
 def _parse_manifest(

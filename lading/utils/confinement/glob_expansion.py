@@ -51,6 +51,7 @@ class _Expansion:
     expect: MatchExpectation
     unmatched: UnmatchedPolicy
     link_predicate: LinkPredicate
+    reject_intermediate_links: bool = False
     found: set[tuple[str, ...]] = dc.field(default_factory=set)
     matched_any: bool = False
     _pending: list[tuple[tuple[str, ...], tuple[str, ...]]] = dc.field(
@@ -147,19 +148,36 @@ class _Expansion:
             # ``**`` matches the current directory as zero levels of descent.
             self._pending.append((remaining[1:], prefix))
         for name, result in self._iter_entries(prefix, "*"):
-            if self.link_predicate(result):
-                if is_final:
-                    self._reject_match(
-                        prefix, name, "symlinked pattern match is not permitted"
-                    )
-                # An intermediate symlink cannot be traversed, so it contributes
-                # no match. Raising here would reject unrelated links, such as
-                # an image symlink under a documentation tree.
+            if self._link_handled(result, prefix, name, is_final=is_final):
                 continue
             if stat.S_ISDIR(result.st_mode):
                 self._pending.append((remaining, (*prefix, name)))
             elif is_final:
                 self._consider_final(result, (*prefix, name))
+
+    def _link_handled(
+        self,
+        result: os.stat_result,
+        prefix: tuple[str, ...],
+        name: str,
+        *,
+        is_final: bool,
+    ) -> bool:
+        """Return whether ``result`` is a link, rejecting it when required."""
+        if not self.link_predicate(result):
+            return False
+        if is_final:
+            self._reject_match(prefix, name, "symlinked pattern match is not permitted")
+        if self.reject_intermediate_links:
+            self._reject_match(
+                prefix,
+                name,
+                "symlinked directory is not permitted in a member pattern",
+            )
+        # Otherwise an intermediate symlink cannot be traversed, so it
+        # contributes no match. Raising here would reject unrelated links,
+        # such as an image symlink under a documentation tree.
+        return True
 
     def _consider_current_directory(self, prefix: tuple[str, ...]) -> None:
         """Apply the final expectation to the directory ``prefix`` itself."""

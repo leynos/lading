@@ -277,3 +277,6 @@ def test_a_broken_dependency_manifest_is_rejected(
     assert expected in str(excinfo.value), (
         "the diagnostic must explain the broken dependency manifest"
     )
+    assert not runner.metadata_calls(), (
+        "the broken manifest must be rejected before Cargo runs"
+    )

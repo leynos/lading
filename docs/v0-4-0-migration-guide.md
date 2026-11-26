@@ -62,7 +62,8 @@ workspace that relied on any of the following now fails with exit status 1 and a
   `resolver.lockfile-path` in a Cargo configuration file, including a file
   pulled in through that configuration's `include` entries. This applies when
   lockfile regeneration is enabled; `--no-rebuild-lockfiles` checks neither
-  route. Unset the variable or remove the setting.
+  route. Unset the variable and remove the setting from every configuration
+  file Cargo would read.
 
 Configured lockfile manifests are resolved to the effective workspace root
 Cargo reports. A manifest that belongs to the outer workspace now reports the

@@ -547,8 +547,8 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
   the port and migration docs state the required members and repair-command
   working directory.
 - [x] 2026-11-23: Thirteenth CodeRabbit review cleared. Cargo include paths
-  keep their `..` components until the probe (verified against Cargo: an
-  optional `missing/../shared.toml` still loads when `missing` is absent). The
+  are lexically normalized before probing; a real-Cargo experiment showed an
+  optional `missing/../shared.toml` still loads when `missing` is absent. The
   fence renderer preserves unchanged fences, list markers and closer lines, and
   splits source lines only on CR, LF and CRLF. Injected crates must have a root
   containing their manifest; `package.workspace` pointers are checked before
@@ -682,10 +682,10 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
   opener's own indentation, so only a container-relative closing fence ends an
   example. A marker on a list continuation line inherits the enclosing list's
   content indentation.
-- Cargo include paths are probed with their `..` components intact: Cargo does
-  not collapse them before deciding whether an optional include exists, so a
-  path whose leading directory is missing is skipped. This was verified against
-  the installed Cargo with an isolated `CARGO_HOME`.
+- Cargo include paths are lexically normalized before probing. An experiment
+  with the installed Cargo and an isolated `CARGO_HOME` showed that an optional
+  `missing/../shared.toml` still loads when `missing` is absent, because Cargo
+  removes the redundant step before the existence check.
 
 ## Outcomes & retrospective
 

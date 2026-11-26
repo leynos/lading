@@ -10,6 +10,7 @@ plan does not name.
 import collections.abc as cabc
 import dataclasses as dc
 import os
+import stat
 import typing as typ
 from pathlib import Path
 
@@ -110,9 +111,21 @@ def _config_files(directory: Path) -> list[Path]:
     """
     for name in (_CONFIG_NAME, _CONFIG_TOML_NAME):
         candidate = directory / name
-        if candidate.is_file():
+        if _is_regular_file(candidate):
             return [candidate]
     return []
+
+
+def _is_regular_file(path: Path) -> bool:
+    """Return whether ``path`` is a regular file, preserving examination errors."""
+    try:
+        status = path.stat()
+    except FileNotFoundError:
+        return False
+    except OSError as exc:
+        message = f"cannot examine Cargo configuration {path}: {exc}"
+        raise BumpPreflightError(message) from exc
+    return stat.S_ISREG(status.st_mode)
 
 
 def _effective_setting(
@@ -141,7 +154,7 @@ def _included_setting(
     """Return the last setting declared by the file's includes."""
     setting: _PathSetting | None = None
     for include_path, optional in _include_entries(document, config_path):
-        if not include_path.is_file():
+        if not _is_regular_file(include_path):
             if optional:
                 continue
             # Reading a missing file raises the standard diagnostic.

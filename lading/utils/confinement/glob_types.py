@@ -46,8 +46,13 @@ class GlobOptions:
         Whether a pattern that matches nothing is an error.
     link_predicate : LinkPredicate
         Predicate identifying symlinks and junctions.
+    reject_intermediate_links : bool
+        Reject a symlink met while expanding ``**``. Member patterns need this
+        because Cargo's own glob expansion follows the link and could read an
+        external manifest; documentation patterns ignore unrelated links.
     """
 
     expect: MatchExpectation = MatchExpectation.REGULAR_FILE
     unmatched: UnmatchedPolicy = UnmatchedPolicy.IGNORE
     link_predicate: LinkPredicate = is_link_like
+    reject_intermediate_links: bool = False

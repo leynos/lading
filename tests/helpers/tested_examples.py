@@ -75,8 +75,8 @@ def load_tested_examples(path: Path) -> dict[str, MarkedExample]:
     list_indent = 0
     while index < len(lines):
         raw = lines[index]
-        _reject_unmarked_fence(raw, path, index)
         list_indent = _list_context(raw, list_indent)
+        _reject_unmarked_fence(raw, path, index, list_indent)
         marker = _marker_at(raw, path, index, list_indent)
         if marker is None:
             index += 1
@@ -102,9 +102,34 @@ def _list_context(raw: str, current: int) -> int:
     return current
 
 
-def _reject_unmarked_fence(raw: str, path: Path, index: int) -> None:
-    """Raise when ``raw`` opens a fence that no marker introduces."""
-    if _fence_delimiter(_without_container(raw.strip())) is not None:
+def _reject_unmarked_fence(
+    raw: str,
+    path: Path,
+    index: int,
+    list_indent: int,
+) -> None:
+    """Raise when ``raw`` opens a fence that no marker introduces.
+
+    A delimiter indented beyond its container's limit is literal code, not a
+    fence, so it is left alone.
+
+    Raises
+    ------
+    ValueError
+        If the line opens a fence that no marker introduces.
+    """
+    depth = _quote_depth(raw)
+    content = _strip_quotes(raw, depth) or ""
+    list_item = _LIST_ITEM.match(content)
+    if list_item is not None:
+        base = list_item.end()
+        remainder = content[base:]
+    else:
+        base = list_indent
+        remainder = content
+    if _indentation(remainder) > base + _MAX_FENCE_INDENT:
+        return
+    if _fence_delimiter(remainder.strip()) is not None:
         message = f"{path}:{index + 1}: unmarked fenced example"
         raise ValueError(message)
 
@@ -266,6 +291,9 @@ def _read_fence_body(
         content = _strip_quotes(lines[index], fence.depth)
         if content is None:
             break
+        if _ends_list_container(fence, content):
+            # An outdented line ends the list container, and with it the fence.
+            break
         if _closes_fence(
             content,
             fence.character,
@@ -278,6 +306,13 @@ def _read_fence_body(
         f"{fence.path}:{start}: tested-example {fence.identifier!r} is unterminated"
     )
     raise ValueError(message)
+
+
+def _ends_list_container(fence: _MarkedFence, content: str) -> bool:
+    """Return whether ``content`` is outdented from ``fence``'s list container."""
+    if not content.strip() or not fence.container_indent:
+        return False
+    return _indentation(content) < fence.container_indent
 
 
 def _closes_fence(
