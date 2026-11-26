@@ -90,6 +90,8 @@ from .cli_options import (
 )
 from .commands import publish_staging as publish_staging
 from .runtime import CommandRunner, subprocess_runner
+from .runtime.redacting_runner import redacting_runner
+from .runtime.redaction import registry_token_values
 from .utils import normalize_workspace_root
 from .utils.confinement import BumpPreflightError as BumpPreflightError
 from .workspace import (
@@ -130,7 +132,10 @@ def _select_runner() -> CommandRunner:
             )
             raise SystemExit(message) from exc
         return typ.cast("CommandRunner", module.cmd_mox_runner)
-    return subprocess_runner
+    # Read here, at the composition root, so no other module touches the
+    # ambient environment. Without a token the plain runner is used unchanged.
+    secrets = registry_token_values(os.environ)
+    return redacting_runner(secrets) if secrets else subprocess_runner
 
 
 type WorkspaceLoader = cabc.Callable[[Path], WorkspaceGraph]
@@ -347,6 +352,12 @@ def publish(
     )
 
 
+def _cargo_home(environment: cabc.Mapping[str, str]) -> Path:
+    """Return Cargo's home directory: ``CARGO_HOME``, else ``~/.cargo``."""
+    configured = environment.get("CARGO_HOME")
+    return Path(configured) if configured else Path.home() / ".cargo"
+
+
 def _publish_options(
     flags: PublishFlags, command_runner: CommandRunner
 ) -> commands.publish.PublishOptions:
@@ -375,6 +386,7 @@ def _publish_options(
         # Read here, at the composition root, so the publish command stays
         # free of ambient state. Only an expectation run consults it.
         default_registry=os.environ.get(CARGO_REGISTRY_DEFAULT_ENV_VAR),
+        cargo_home=_cargo_home(os.environ),
         command_runner=command_runner,
     )
 

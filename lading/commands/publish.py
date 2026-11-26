@@ -11,10 +11,12 @@ per-crate execution to :mod:`lading.commands.publish_pipeline`; the latter uses
 import dataclasses as dc
 import logging
 import typing as typ
+from functools import partial
 from pathlib import Path
 
 from lading import config as config_module
 from lading.commands import (
+    publish_cargo_config,
     publish_digests,
     publish_pipeline,
     publish_preflight,
@@ -82,6 +84,10 @@ class PublishOptions:
         Registry Cargo publishes to when a crate names none, as read from
         ``CARGO_REGISTRY_DEFAULT`` by the command-line entry point. Only
         consulted with ``expect_digests``, which supports crates.io alone.
+    cargo_home : Path | None
+        Cargo's home directory, whose ``config.toml`` can also set the default
+        registry. Resolved by the command-line entry point; only consulted with
+        ``expect_digests``.
     published_digest_fetcher : PublishedDigestFetcher | None
         Optional replacement for the crates.io archive download, so tests
         never reach the network. Only used with ``expect_digests``.
@@ -101,6 +107,7 @@ class PublishOptions:
     skip_preflight: SkipPreflightDecision | None = None
     expect_digests: Path | None = None
     default_registry: str | None = None
+    cargo_home: Path | None = None
     published_digest_fetcher: publish_registry.PublishedDigestFetcher | None = None
 
 
@@ -117,15 +124,24 @@ def _ensure_configuration(
 
 
 def _ensure_workspace(
-    workspace: WorkspaceGraph | None, workspace_root: Path
+    workspace: WorkspaceGraph | None, workspace_root: Path, *, locked: bool = False
 ) -> WorkspaceGraph:
-    """Return the workspace graph rooted at ``workspace_root``."""
+    """Return the workspace graph rooted at ``workspace_root``.
+
+    ``locked`` makes discovery fail on a stale lockfile rather than update it.
+
+    Returns
+    -------
+    WorkspaceGraph
+        ``workspace`` when given, otherwise the discovered graph.
+    """
     if workspace is not None:
         return workspace
     from lading.workspace import WorkspaceModelError, load_workspace
 
+    discover = partial(load_workspace, locked=True) if locked else load_workspace
     try:
-        return load_workspace(workspace_root)
+        return discover(workspace_root)
     except FileNotFoundError as exc:  # pragma: no cover - defensive
         message = f"Workspace root not found: {workspace_root}"
         raise WorkspaceModelError(message) from exc
@@ -141,8 +157,6 @@ def _validate_publication_options(options: PublishOptions) -> None:
         )
         LOGGER.error(message)
         raise PublishPreflightError(message)
-    if options.expect_digests is not None:
-        publish_digests.require_crates_io_default(options.default_registry)
     if options.allow_unpublished_workspace_deps:
         LOGGER.info(
             "Allowing unpublished workspace dependencies during dry-run publish"
@@ -161,6 +175,18 @@ def _preflight_request(
         runner=runner,
         skip=options.skip_preflight,
     )
+
+
+def _require_crates_io(options: PublishOptions, workspace_root: Path) -> None:
+    """Refuse digests when Cargo's effective default registry is not crates.io."""
+    if options.expect_digests is not None:
+        publish_digests.require_crates_io_default(
+            publish_cargo_config.effective_default_registry(
+                workspace_root,
+                cargo_home=options.cargo_home,
+                env_default=options.default_registry,
+            )
+        )
 
 
 def _load_expected_digests(
@@ -235,10 +261,14 @@ class _Planning:
     workspace: WorkspaceGraph | None
     configuration: config_module.LadingConfig
     workspace_root: Path
+    # Discovery must not update Cargo.lock when digests are expected.
+    locked: bool = False
 
     def plan(self) -> PublishPlan:
         """Plan publication for the workspace (discovering it when needed)."""
-        workspace = _ensure_workspace(self.workspace, self.workspace_root)
+        workspace = _ensure_workspace(
+            self.workspace, self.workspace_root, locked=self.locked
+        )
         return plan_publication(
             workspace, self.configuration, workspace_root=self.workspace_root
         )
@@ -296,6 +326,7 @@ def run(
     LOGGER.info("Starting publish workflow for workspace %s", root_path)
     effective_options = PublishOptions() if options is None else options
     _validate_publication_options(effective_options)
+    _require_crates_io(effective_options, root_path)
     active_configuration = _ensure_configuration(
         configuration or effective_options.configuration, root_path
     )
@@ -307,6 +338,7 @@ def run(
         workspace or effective_options.workspace,
         active_configuration,
         root_path,
+        locked=expected_digests is not None,
     )
     # With digests, the plan is needed to validate them, and that must happen
     # before the pre-flight, whose auxiliary builds can package crates.

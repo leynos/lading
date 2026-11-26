@@ -818,11 +818,13 @@ records an outcome for it:
    for that crate or any crate after it, and the error names the crate, the
    expected digest, and the actual digest. In a dry run the same check applies
    to every archive that is packaged.
-3. **After a successful live publish.** `cargo publish` writes the archive it
-   uploads to the target directory's `package` folder, and lading compares that
-   file too. The upload cannot be undone, so a difference is reported as an
-   error saying the uploaded bytes differ from the expectation, which makes the
-   run fail loudly.
+3. **After a successful `cargo publish`.** `cargo publish` packages the crate
+   again and writes the archive it uses to the target directory's `package`
+   folder, and lading compares that file too. After a live publish the upload
+   cannot be undone, so a difference is reported as an error saying the
+   uploaded bytes differ from the expectation, which makes the run fail loudly.
+   After `cargo publish --dry-run` a difference is a mismatch, reported before
+   any live upload is attempted.
 4. **Dry runs that cannot package.** When `--allow-unpublished-workspace-deps`
    downgrades a failed `cargo package` to a warning because a sibling version
    is not yet published, there is no archive to compare. That crate is reported
@@ -847,14 +849,18 @@ against a fixed lockfile: a lockfile that no longer matches the manifests now
 fails the run instead of being updated in the staged tree. Without
 `--expect-digests`, neither flag is passed and behaviour is unchanged.
 
-Only crates.io is supported, because the comparison in step 2 downloads from
-it. Lading refuses `--expect-digests` early, with a clear error, when
-`CARGO_REGISTRY_DEFAULT` names any registry other than `crates-io`, or when a
-publishable crate's `publish` key lists registries without `crates-io`. Those
-checks cannot see Cargo configuration, so lading also passes
-`--registry crates-io` to both `cargo package` and `cargo publish`: a
-`[registry] default` in `.cargo/config.toml` or in Cargo home cannot send the
-upload anywhere lading cannot compare against.
+Only crates.io is supported, because the comparison in step 1 downloads from
+it. Lading refuses `--expect-digests` early, with a clear error and before it
+stages anything, when the effective default registry is not `crates-io`. It
+follows Cargo's own order to find it: `CARGO_REGISTRY_DEFAULT`, then
+`[registry] default` in `.cargo/config.toml` (or the legacy `.cargo/config`) in
+the workspace root and each ancestor directory, nearest first, then
+`config.toml` in `$CARGO_HOME` (default `~/.cargo`). It also refuses when a
+publishable crate's `publish` key lists registries without `crates-io`. A
+configuration file that exists but cannot be read is an error, not a guess. As
+defence in depth, lading also passes `--registry crates-io` to both
+`cargo package` and `cargo publish`, so nothing it failed to see can send the
+upload elsewhere.
 
 Workspace discovery runs `cargo metadata --locked` for the same reason as the
 `--locked` flags above, so a stale `Cargo.lock` stops the run before anything
@@ -865,6 +871,14 @@ checkout and one built by lading in its staged copy normally agree, but lading
 does not promise it: if they differ, the run stops at the first crate with the
 mismatch error rather than uploading either. `--keep-staging` retains lading's
 own archive under the staged workspace's target directory for comparison.
+
+Lading hides the exact values of `CARGO_REGISTRY_TOKEN` and of any
+`CARGO_REGISTRIES_<NAME>_TOKEN` it was started with from everything it relays
+or captures from a subprocess. If the pre-flight builds, a build script, or
+Cargo print one, it appears as `<redacted>` on the console, in the logs, and in
+error messages. Only those exact values are replaced, not patterns, so a
+credential that reaches the output in a changed form, such as encoded, is not
+caught.
 
 A workflow that records digests in one job and publishes in another:
 

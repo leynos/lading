@@ -156,3 +156,55 @@ def test_discovery_is_locked_only_when_digests_are_expected(
         assert "--locked was passed" in capsys.readouterr().err, (
             "the stale-lockfile failure must reach the operator"
         )
+
+
+def test_cargo_home_is_read_from_the_environment(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    captured_options: dict[str, publish_command.PublishOptions],
+) -> None:
+    """The composition root resolves Cargo home from ``CARGO_HOME``."""
+    monkeypatch.setenv("CARGO_HOME", str(tmp_path / "cargo-home"))
+
+    assert _publish(tmp_path, "--expect-digests", "digests.txt") == 0, (
+        "publish must succeed with the stubbed run"
+    )
+
+    assert captured_options["options"].cargo_home == tmp_path / "cargo-home", (
+        "CARGO_HOME must name Cargo's home"
+    )
+
+
+def test_cargo_home_defaults_to_the_dot_cargo_directory(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    captured_options: dict[str, publish_command.PublishOptions],
+) -> None:
+    """Without ``CARGO_HOME``, Cargo's home is ``~/.cargo``."""
+    monkeypatch.delenv("CARGO_HOME", raising=False)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
+
+    assert _publish(tmp_path, "--expect-digests", "digests.txt") == 0, (
+        "publish must succeed with the stubbed run"
+    )
+
+    assert captured_options["options"].cargo_home == tmp_path / "home" / ".cargo", (
+        "the default Cargo home is ~/.cargo"
+    )
+
+
+@pytest.mark.parametrize("has_token", [True, False], ids=["token", "no_token"])
+def test_runner_hides_tokens_only_when_one_is_set(
+    monkeypatch: pytest.MonkeyPatch, *, has_token: bool
+) -> None:
+    """A registry token in the environment selects the redacting runner."""
+    monkeypatch.delenv("LADING_USE_CMD_MOX_STUB", raising=False)
+    monkeypatch.delenv("CARGO_REGISTRY_TOKEN", raising=False)
+    if has_token:
+        monkeypatch.setenv("CARGO_REGISTRY_TOKEN", "some-token-value")
+
+    runner = cli._select_runner()
+
+    assert (runner is cli.subprocess_runner) is not has_token, (
+        "the plain runner is used exactly when there is no token to hide"
+    )

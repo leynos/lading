@@ -13,7 +13,7 @@ import time
 import typing as typ
 
 from lading.commands import publish_failures
-from lading.commands.publish_archive_check import PACKAGED, UPLOADED
+from lading.commands.publish_archive_check import DRY_RUN_PUBLISH, PACKAGED, UPLOADED
 from lading.commands.publish_errors import PublishPreflightError
 from lading.commands.publish_execution import (
     _CargoInvocation,
@@ -231,15 +231,16 @@ def _handle_publish_result(
     LOGGER.info(
         success_message, crate.name, state.position(crate), result.elapsed_seconds
     )
-    if options.live and options.verifier is not None:
-        # The upload cannot be undone, so a difference here fails the run
-        # loudly rather than being repaired.
+    if options.verifier is not None:
+        # `cargo publish` packages again, live or not. A live difference cannot
+        # be undone, so it fails the run loudly; a dry-run one is refused
+        # before the real upload is attempted.
         options.verifier.check_archive(
             crate,
             _resolve_staged_crate_root(
                 crate, state.plan, state.preparation.staging_root
             ),
-            UPLOADED,
+            UPLOADED if options.live else DRY_RUN_PUBLISH,
         )
 
 

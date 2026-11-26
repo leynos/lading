@@ -1881,7 +1881,17 @@ check missed), `check_archive` with `PACKAGED` after `cargo package`,
 `UPLOADED` after a successful live publish. It asks `cargo metadata --no-deps`
 for the target directory once per crate root, through the command runner, and
 records one `CrateOutcome` per crate for the summary and the
-`publish.archive_check` counter. `publish_registry` is the injectable
+`publish.archive_check` counter.
+`publish_cargo_config.effective_default_registry` follows Cargo's own order
+(`CARGO_REGISTRY_DEFAULT`, `.cargo/config.toml` from the workspace root up
+through its ancestors, then Cargo home) so `run()` can refuse an alternate
+default before anything is staged; the environment value and Cargo home arrive
+as `PublishOptions.default_registry` and `cargo_home`, resolved by `lading.cli`.
+`lading.runtime.redaction` and `redacting_runner` keep exact registry-token
+values out of relayed and captured output: `lading.cli._select_runner` collects
+them from the environment and, only when there are any, returns a runner whose
+pipes are wrapped in `RedactingReader`; `env_redaction` is the older key-based
+masking for logged environment overrides. `publish_registry` is the injectable
 `PublishedDigestFetcher` port; `fetch_crates_io_digest` streams the archive from
 `static.crates.io` through a size cap and bounded retries, and tests
 substitute a fake. The new errors (`ExpectedDigestsError`,

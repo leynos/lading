@@ -143,6 +143,15 @@ PACKAGED = ArchivePhase(
     matches_detail="packaged archive matches",
     differs_detail="packaged archive differs",
 )
+DRY_RUN_PUBLISH = ArchivePhase(
+    error_cls=ArchiveMismatchError,
+    differs_message=(
+        "The archive cargo publish --dry-run packaged for crate {crate} differs "
+        "from the digest expected in {source}"
+    ),
+    matches_detail="dry-run publish archive matches",
+    differs_detail="dry-run publish archive differs",
+)
 UPLOADED = ArchivePhase(
     error_cls=UploadedArchiveMismatchError,
     differs_message=(
@@ -255,14 +264,16 @@ class ArchiveVerifier:
         """Require the archive Cargo wrote for ``crate`` to match its digest.
 
         ``phase`` says whether it is the archive ``cargo package`` just wrote
-        (:data:`PACKAGED`, refused before anything is uploaded) or the one
-        ``cargo publish`` uploaded (:data:`UPLOADED`, which cannot be undone so
-        the run fails loudly).
+        (:data:`PACKAGED`, refused before anything is uploaded), the one
+        ``cargo publish --dry-run`` packaged again (:data:`DRY_RUN_PUBLISH`),
+        or the one ``cargo publish`` uploaded (:data:`UPLOADED`, which cannot
+        be undone so the run fails loudly).
 
         Raises
         ------
         ArchiveMismatchError
-            For :data:`PACKAGED` when the digest differs.
+            For :data:`PACKAGED` or :data:`DRY_RUN_PUBLISH` when the digest
+            differs.
         UploadedArchiveMismatchError
             For :data:`UPLOADED` when the digest differs.
         ArchiveUnavailableError
@@ -278,6 +289,11 @@ class ArchiveVerifier:
             )
             message = f"{summary} ({comparison.describe()})"
             raise phase.error_cls(message)
+        if self._outcome_of(crate) is ArchiveOutcome.UNVERIFIED:
+            # A dry run that could not package the crate keeps saying so: a
+            # later archive matching does not undo that it went unchecked
+            # where the failure was downgraded.
+            return
         self._record(crate, ArchiveOutcome.VERIFIED, phase.matches_detail)
 
     def mark_unverified(self, crate: WorkspaceCrate, reason: str) -> None:

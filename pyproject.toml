@@ -743,6 +743,13 @@ full_name = [
 ]
 reason = "The verifier raises ArchiveUnavailableError when an archive cannot be located or compared, and builds a _Comparison for every digest check; the dead-code scan does not resolve either through the verifier's entry-point methods."
 
+[[tool.skylos.dead_code.entrypoints]]
+type = "method"
+full_name = [
+    "lading.runtime.redaction.RedactingReader.read",
+]
+reason = "relay_stream reads the wrapped pipe through the file-like read method that guard_stream's RedactingReader stands in for."
+
 [tool.setuptools.packages.find]
 include = [
     "lading",

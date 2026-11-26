@@ -84,8 +84,16 @@ with one `<64 hex digits>  <name>-<version>.crate` entry per line.
 - **Registry.** Only crates.io is supported. The option is refused when
   `CARGO_REGISTRY_DEFAULT` names another registry or a publishable crate's
   `publish` key omits `crates-io`; `WorkspaceCrate.registries` carries that
-  key. Both cargo commands also receive `--registry crates-io`, so a registry
-  chosen only through Cargo configuration cannot redirect the run.
+  key. The effective default registry is found in Cargo's own order
+  (`CARGO_REGISTRY_DEFAULT`, `.cargo/config.toml` in the workspace root and its
+  ancestors, then Cargo home) and refused before staging when it is not
+  crates.io. Both cargo commands also receive `--registry crates-io` as defence
+  in depth.
+- **Dry-run publish.** `cargo publish --dry-run` packages again, so its
+  archive is compared too and a difference is a mismatch.
+- **Credentials.** Exact values of `CARGO_REGISTRY_TOKEN` and
+  `CARGO_REGISTRIES_<NAME>_TOKEN` are replaced in subprocess output where it is
+  relayed, so logs and errors built from it stay clean.
 
 The verifier rides on `_PublishExecutionOptions` rather than on the pipeline
 state, so `--locked` follows from its presence and the helper signatures keep

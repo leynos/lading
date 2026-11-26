@@ -8,6 +8,7 @@ import pytest
 
 from lading import cli
 from lading.runtime import subprocess_runner
+from lading.runtime.env_redaction import redact_environment
 from lading.testing import cmd_mox_runner
 from lading.testing.cmd_mox_runner import normalize_cmd_mox_command
 
@@ -38,7 +39,7 @@ def test_redact_environment_masks_sensitive_keys() -> None:
         sensitive_key: "example-token",
         "harmless": "value",
     }
-    redacted = execution._redact_environment(payload)
+    redacted = redact_environment(payload)
     assert redacted[sensitive_key] == "<redacted>", (
         "token-like environment values must be redacted"
     )

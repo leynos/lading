@@ -13,6 +13,8 @@ from pathlib import Path
 from lading.exceptions import LadingError
 from lading.utils.process import c_locale_env, log_command_invocation
 
+from .env_redaction import redact_environment
+from .redaction import guard_stream
 from .stream_relay import TextSink as _TextSink
 from .stream_relay import format_thread_name as _format_thread_name
 from .stream_relay import write_to_relay_sink as _write_to_relay_sink
@@ -21,16 +23,6 @@ if typ.TYPE_CHECKING:
     from .relay_events import StreamName
 
 _LOGGER = logging.getLogger(__name__)
-_ENV_REDACTION_TOKENS = (
-    "TOKEN",
-    "AUTH",
-    "BEARER",
-    "PASS",
-    "CRED",
-    "PASSPHRASE",
-    "SECRET",
-    "KEY",
-)
 _STREAM_CHUNK_SIZE = 4096
 
 
@@ -53,6 +45,7 @@ class SubprocessContext:
     env: cabc.Mapping[str, object] | None = None
     stdin_data: str | None = None
     echo_stdout: bool = True
+    secrets: tuple[str, ...] = ()
 
 
 def subprocess_runner(
@@ -219,7 +212,7 @@ def invoke_via_subprocess(
         threading.Thread(
             target=relay_stream,
             args=(
-                process.stdout,
+                guard_stream(process.stdout, context.secrets),
                 sys.stdout if context.echo_stdout else None,
                 stdout_chunks,
                 "stdout",
@@ -229,7 +222,12 @@ def invoke_via_subprocess(
         ),
         threading.Thread(
             target=relay_stream,
-            args=(process.stderr, sys.stderr, stderr_chunks, "stderr"),
+            args=(
+                guard_stream(process.stderr, context.secrets),
+                sys.stderr,
+                stderr_chunks,
+                "stderr",
+            ),
             name=_format_thread_name(program, "stderr"),
             daemon=True,
         ),
@@ -389,19 +387,5 @@ def _log_subprocess_environment(env: cabc.Mapping[str, object] | None) -> None:
     """Log redacted environment overrides for subprocess execution."""
     if not env:
         return
-    redacted = _redact_environment(env)
+    redacted = redact_environment(env)
     _LOGGER.debug("Subprocess environment overrides: %s", redacted)
-
-
-def _redact_environment(env: cabc.Mapping[str, object]) -> dict[str, str]:
-    """Return ``env`` with sensitive values replaced by placeholders."""
-    redacted: dict[str, str] = {}
-    for key, value in env.items():
-        redacted[key] = "<redacted>" if _should_redact_env_key(key) else str(value)
-    return dict(sorted(redacted.items()))
-
-
-def _should_redact_env_key(key: str) -> bool:
-    """Return True when ``key`` likely contains secret material."""
-    upper_key = key.upper()
-    return any(token in upper_key for token in _ENV_REDACTION_TOKENS)

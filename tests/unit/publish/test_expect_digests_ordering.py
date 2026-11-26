@@ -5,10 +5,13 @@ the registry pin on both cargo commands, the published-version check before
 packaging, validation before the pre-flight, and what a failed run reports.
 """
 
+import dataclasses as dc
 import logging
 
 import pytest
 
+from lading import config as config_module
+from lading.commands import publish, publish_preflight
 from lading.commands.publish_errors import (
     ArchiveMismatchError,
     ExpectedDigestsError,
@@ -207,4 +210,64 @@ def test_identical_published_check_does_not_overwrite_unverified(
 
     assert "- beta 0.1.0: unverified" in summary, (
         "an identical published archive must not turn unverified into verified"
+    )
+
+
+def test_dry_run_publish_archive_is_checked_against_the_expectation(
+    digest_rig: PublishRig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``cargo publish --dry-run`` packages again, so its archive is compared."""
+    digest_rig.cargo.uploaded["beta"] = OTHER_ARCHIVE
+
+    with pytest.raises(ArchiveMismatchError, match=r"dry-run.*beta 0\.1\.0 differs"):
+        digest_rig.run(monkeypatch, expect_digests=digest_rig.digests_file())
+
+    assert digest_rig.cargo.crates_run("package") == ["alpha", "beta", "gamma"], (
+        "packaging matched, so the dry run reaches the publish phase"
+    )
+    assert digest_rig.cargo.crates_run("publish") == ["alpha", "beta"], (
+        "gamma's dry-run publish must not run after beta's mismatch"
+    )
+
+
+def test_unfetched_workspace_is_discovered_locked_when_digests_are_expected(
+    digest_rig: PublishRig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Programmatic discovery inside ``run`` honours the locked mode too."""
+    seen: list[dict[str, object]] = []
+
+    def discover(_root: object, **kwargs: object) -> object:
+        """Record how discovery was asked for and return the rig's workspace."""
+        seen.append(kwargs)
+        return digest_rig.workspace()
+
+    monkeypatch.setattr("lading.workspace.load_workspace", discover)
+    monkeypatch.setattr(
+        publish_preflight, "_run_preflight_checks", lambda *_a, **_k: None
+    )
+
+    def run(**option_fields: object) -> None:
+        """Run publish without supplying a workspace graph."""
+        options = dc.replace(
+            publish.PublishOptions(
+                build_directory=digest_rig.build_directory,
+                command_runner=digest_rig.cargo,
+                published_digest_fetcher=digest_rig.registry,
+            ),
+            **option_fields,
+        )
+        publish.run(
+            digest_rig.root,
+            config_module.LadingConfig(
+                publish=config_module.PublishConfig(strip_patches="all")
+            ),
+            None,
+            options=options,
+        )
+
+    run(expect_digests=digest_rig.digests_file())
+    run()
+
+    assert seen == [{"locked": True}, {}], (
+        "discovery must be locked exactly when digests are expected"
     )
