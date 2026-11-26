@@ -51,25 +51,56 @@ _ACTIVE: contextvars.ContextVar[tuple[str, ...]] = contextvars.ContextVar(
 )
 
 
+def _overlaps_marker(secret: str) -> bool:
+    """Whether ``secret`` could appear in output through the marker itself.
+
+    True when the secret lies inside the marker, contains it, or starts with a
+    proper suffix or ends with a proper prefix of it (so the marker plus
+    adjacent text could spell it).
+
+    Returns
+    -------
+    bool
+        Whether the secret overlaps the marker.
+    """
+    marker = REDACTED
+    inner = range(1, len(marker))
+    return (
+        secret in marker
+        or marker in secret
+        or any(secret.startswith(marker[-size:]) for size in inner)
+        or any(secret.endswith(marker[:size]) for size in inner)
+    )
+
+
 def ordered_secrets(values: cabc.Iterable[str]) -> tuple[str, ...]:
-    """Return the distinct non-empty ``values``, longest first then alphabetical.
+    """Return the usable secrets, longest first then alphabetical.
 
     Combine every group of secrets through this before replacing, so the longest
-    value wins wherever one contains another.
+    value wins wherever one contains another. Empty values are dropped, and so
+    are values that overlap the replacement marker (see below).
+
+    A value that is, is inside, or could be spelled with the marker cannot be
+    hidden by replacing it with the marker: the output would still show it, and
+    it cannot be told apart from the marker. Such a value is never a real
+    registry token, which is long and drawn from a token alphabet, so it is
+    ignored rather than letting the invariant "no honoured secret appears in
+    the output" fail.
 
     Returns
     -------
     tuple[str, ...]
-        The ordered, deduplicated values.
+        The ordered, deduplicated, usable values.
 
     Examples
     --------
     >>> ordered_secrets(["ab", "", "abc", "ab"])
     ('abc', 'ab')
+    >>> ordered_secrets(["redacted", "<redacted>", "ed>x", "real-token"])
+    ('real-token',)
     """
-    return tuple(
-        sorted({v for v in values if v}, key=lambda value: (-len(value), value))
-    )
+    usable = {v for v in values if v and not _overlaps_marker(v)}
+    return tuple(sorted(usable, key=lambda value: (-len(value), value)))
 
 
 def registry_token_values(environ: cabc.Mapping[str, object]) -> tuple[str, ...]:
@@ -182,7 +213,7 @@ class SecretRedactor:
         """Remember ``secrets`` and start with nothing held back."""
         self._secrets = tuple(secrets)
         self._pattern = _pattern(self._secrets)
-        longest = max((len(secret) for secret in secrets), default=0)
+        longest = max((len(secret) for secret in ordered_secrets(secrets)), default=0)
         self._hold = max(longest - 1, 0)
         self._pending = ""
 

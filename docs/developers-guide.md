@@ -1912,16 +1912,18 @@ environment and the credentials file (`runtime.credentials`) for a
 digest-checked run only; `_select_runner` then returns `redacting_runner`,
 while a run without the option always gets the plain `subprocess_runner`.
 `redact_text` replaces, left to right, the longest secret starting at each
-position, so the result does not depend on the order secrets are given in, and
-`SecretRedactor` reproduces it exactly for any chunking by keeping the tail raw
-until later input settles it (a Hypothesis property checks the equivalence).
-The runner captures each stream raw and filters only the mirrored text
-(`stream_relay.relay_decoded` with a `RelayCapture`). Messages built from
-captured output are redacted centrally: `use_secrets` activates the values for
-the run and `command_detail` and `append_detail` (and so `with_detail` and the
-metadata error) call `redact_active`. The spawn error, the logged command line
-and the debug environment log redact by value too. As a backstop, `use_secrets`
-sanitizes an exception that propagates out of its scope
+position, so the result does not depend on the order secrets are given in (a
+value that is, is inside, or could be spelled with the replacement marker is
+ignored, since the marker would still show it), and `SecretRedactor` reproduces
+it exactly for any chunking by keeping the tail raw until later input settles
+it (a Hypothesis property checks the equivalence). The runner captures each
+stream raw and filters only the mirrored text (`stream_relay.relay_decoded`
+with a `RelayCapture`). Messages built from captured output are redacted
+centrally: `use_secrets` activates the values for the run and `command_detail`
+and `append_detail` (and so `with_detail` and the metadata error) call
+`redact_active`. The spawn error, the logged command line and the debug
+environment log redact by value too. As a backstop, `use_secrets` sanitizes an
+exception that propagates out of its scope
 (`lading.utils.exception_redaction.sanitize_exception`: strings at any depth of
 `args` and attributes, notes and the whole cause and context chain, in place,
 (containers that contain themselves terminate; any traversal failure falls back
