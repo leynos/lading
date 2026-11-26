@@ -73,11 +73,12 @@ discovery now runs `cargo metadata --no-deps`, which leaves a missing or stale
 lockfile untouched.
 
 A same-version rerun makes no manifest changes and therefore skips lockfile
-regeneration. Repair a single failed manifest with
-`cargo update --workspace --manifest-path <manifest>`; a multi-manifest failure
-also prints that repair command for each listed manifest. Run the command from
-the workspace root, or pass an absolute manifest path, because a relative path
-resolves against the shell's current directory.
+regeneration, but an enabled rebuild still validates every configured lockfile
+manifest and destination before any file is written. Repair a single failed
+manifest with `cargo update --workspace --manifest-path <manifest>`; a
+multi-manifest failure also prints that repair command for each listed
+manifest. Run the command from the workspace root, or pass an absolute manifest
+path, because a relative path resolves against the shell's current directory.
 
 The guarantee is validation before mutation. A failure during an actual write
 or Cargo invocation is not rolled back, and a concurrent process that changes a

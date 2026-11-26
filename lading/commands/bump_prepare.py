@@ -10,7 +10,7 @@ import collections.abc as cabc
 import dataclasses as dc
 import logging
 import typing as typ
-from pathlib import Path, PurePosixPath
+from pathlib import PurePosixPath
 
 from tomlkit.exceptions import TOMLKitError
 
@@ -233,23 +233,33 @@ def prepare_readmes(context: _BumpContext, builder: PlanBuilder) -> None:
         context.root_path, read_source=builder.read
     )
     for crate in opted_in:
-        _prepare_readme(context.root_path, crate, source_text, builder)
+        _prepare_readme(context, crate, source_text, builder)
     _log.debug("Prepared %d README write(s)", len(opted_in))
 
 
 def _prepare_readme(
-    root_path: Path,
+    context: _BumpContext,
     crate: WorkspaceCrate,
     source_text: str,
     builder: PlanBuilder,
 ) -> None:
     """Prepare one crate's adopted README."""
-    content = bump_readme.prepare_readme_content(root_path, crate, source_text)
     key = f"workspace member {crate.name!r} README"
-    relative_crate = bump_readme.resolve_crate_relative_path(root_path, crate)
+    relative_crate = graph_relative_manifest(
+        context.root_path,
+        context.workspace.workspace_root,
+        crate.root_path,
+        key=key,
+    )
+    content = bump_readme.prepare_readme_content(
+        context.root_path,
+        crate,
+        source_text,
+        crate_relative_path=relative_crate,
+    )
     pattern = PurePosixPath(relative_crate.as_posix(), "README.md").as_posix()
     destination = confine_relative_path(
-        root_path,
+        context.root_path,
         pattern,
         key=key,
         options=ConfineOptions(may_create=True),

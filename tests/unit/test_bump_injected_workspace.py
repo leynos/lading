@@ -17,7 +17,11 @@ from lading.workspace.graph_paths import graph_relative_manifest
 from tests.helpers.workspace_builders import _make_config
 
 
-def _crate(manifest: Path) -> WorkspaceCrate:
+def _crate(
+    manifest: Path,
+    *,
+    readme_is_workspace: bool = False,
+) -> WorkspaceCrate:
     """Return a minimal workspace crate whose manifest is ``manifest``."""
     return WorkspaceCrate(
         name="alpha",
@@ -25,7 +29,7 @@ def _crate(manifest: Path) -> WorkspaceCrate:
         manifest_path=manifest,
         root_path=manifest.parent,
         publish=True,
-        readme_is_workspace=False,
+        readme_is_workspace=readme_is_workspace,
         dependencies=(),
     )
 
@@ -70,28 +74,12 @@ def test_injected_graph_rejects_a_misnamed_member_manifest(tmp_path: Path) -> No
     )
 
 
-def test_injected_graph_accepts_an_aliased_root_spelling(tmp_path: Path) -> None:
-    """A graph that spells its root through a symlink alias still confines."""
-    real = tmp_path.resolve() / "real"
-    real.mkdir()
-    alias = tmp_path.resolve() / "alias"
-    alias.symlink_to(real, target_is_directory=True)
-    (real / "Cargo.toml").write_text("[workspace]\nmembers = []\n", encoding="utf-8")
-    manifest = real / "crates" / "alpha" / "Cargo.toml"
-    manifest.parent.mkdir(parents=True)
-    manifest.write_text('version = "0.1.0"\n', encoding="utf-8")
-    graph = WorkspaceGraph(
-        workspace_root=alias,
-        crates=(_crate(alias / "crates" / "alpha" / "Cargo.toml"),),
-    )
-
-    _initialize(real, graph)
-
-
-def test_manifest_preparation_accepts_an_aliased_root_spelling(
+def _alias_workspace(
     tmp_path: Path,
-) -> None:
-    """Preparation rebases an alias-spelled manifest like validation does."""
+    *,
+    readme_is_workspace: bool,
+) -> tuple[Path, WorkspaceGraph]:
+    """Create a real workspace plus a graph that spells its root via an alias."""
     real = tmp_path.resolve() / "real"
     real.mkdir()
     alias = tmp_path.resolve() / "alias"
@@ -101,13 +89,35 @@ def test_manifest_preparation_accepts_an_aliased_root_spelling(
     )
     manifest = real / "crates" / "alpha" / "Cargo.toml"
     manifest.parent.mkdir(parents=True)
+    readme_line = "readme.workspace = true\n" if readme_is_workspace else ""
     manifest.write_text(
-        '[package]\nname = "alpha"\nversion = "0.1.0"\n', encoding="utf-8"
+        '[package]\nname = "alpha"\nversion = "0.1.0"\n' + readme_line,
+        encoding="utf-8",
     )
     graph = WorkspaceGraph(
         workspace_root=alias,
-        crates=(_crate(alias / "crates" / "alpha" / "Cargo.toml"),),
+        crates=(
+            _crate(
+                alias / "crates" / "alpha" / "Cargo.toml",
+                readme_is_workspace=readme_is_workspace,
+            ),
+        ),
     )
+    return real, graph
+
+
+def test_injected_graph_accepts_an_aliased_root_spelling(tmp_path: Path) -> None:
+    """A graph that spells its root through a symlink alias still confines."""
+    real, graph = _alias_workspace(tmp_path, readme_is_workspace=False)
+
+    _initialize(real, graph)
+
+
+def test_manifest_preparation_accepts_an_aliased_root_spelling(
+    tmp_path: Path,
+) -> None:
+    """Preparation rebases an alias-spelled manifest like validation does."""
+    real, graph = _alias_workspace(tmp_path, readme_is_workspace=False)
     context = bump._initialize_bump_context(
         real, bump.BumpOptions(configuration=_make_config(), workspace=graph)
     )
@@ -119,6 +129,25 @@ def test_manifest_preparation_accepts_an_aliased_root_spelling(
     assert "crates/alpha/Cargo.toml" in [
         proposal.path.display for proposal in plan.proposals
     ], "the alias-spelled member manifest must be prepared"
+
+
+def test_readme_preparation_accepts_an_aliased_root_spelling(
+    tmp_path: Path,
+) -> None:
+    """A README-adopting crate spelled through the alias is still prepared."""
+    real, graph = _alias_workspace(tmp_path, readme_is_workspace=True)
+    (real / "README.md").write_text("# Workspace README\n", encoding="utf-8")
+    context = bump._initialize_bump_context(
+        real, bump.BumpOptions(configuration=_make_config(), workspace=graph)
+    )
+    builder = PlanBuilder(root=real)
+
+    bump_prepare.prepare_readmes(context, builder)
+
+    plan = builder.build(target_version="1.2.3", lockfiles=None)
+    assert "crates/alpha/README.md" in [
+        proposal.path.display for proposal in plan.proposals
+    ], "the alias-spelled crate README must be prepared beneath the real root"
 
 
 def test_injected_crate_root_must_contain_its_manifest(tmp_path: Path) -> None:

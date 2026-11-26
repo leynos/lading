@@ -207,6 +207,8 @@ def prepare_readme_content(
     workspace_root: Path,
     crate: WorkspaceCrate,
     source_text: str,
+    *,
+    crate_relative_path: Path | None = None,
 ) -> str:
     """Return the workspace README rewritten for ``crate``.
 
@@ -218,6 +220,10 @@ def prepare_readme_content(
         Crate that adopts the workspace README.
     source_text : str
         Workspace README text, including any proposed rewrite.
+    crate_relative_path : Path | None, optional
+        The crate directory relative to ``workspace_root``. Supply this when
+        the crate's ``root_path`` may be spelled through a symlink alias of the
+        root; ``None`` derives it from ``crate.root_path``.
 
     Returns
     -------
@@ -227,12 +233,15 @@ def prepare_readme_content(
     Raises
     ------
     ReadmeTranspositionError
-        If the crate lies outside ``workspace_root``.
+        If the crate lies outside ``workspace_root`` and no relative path is
+        supplied.
     """
-    crate_relative_path = resolve_crate_relative_path(workspace_root, crate)
-    return rewrite_relative_links(
-        source_text, compute_link_prefix(crate_relative_path)
-    )[0]
+    relative = (
+        resolve_crate_relative_path(workspace_root, crate)
+        if crate_relative_path is None
+        else crate_relative_path
+    )
+    return rewrite_relative_links(source_text, compute_link_prefix(relative))[0]
 
 
 _MISSING_SOURCE_MESSAGE = (

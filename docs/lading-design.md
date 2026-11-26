@@ -433,10 +433,13 @@ configured and git-discovered manifests, asks Cargo with
 returns an immutable `LockfilePlan` of deduplicated destinations;
 `regenerate_planned` consumes that plan without rediscovery. Both
 `plan_lockfiles` and `regenerate_planned` are required members of the injected
-`LockfileRepository`: bump calls them whenever lockfile regeneration is enabled
-and a manifest changes. The established `resolve_lockfile_paths` and
-`regenerate_lockfiles` methods remain for callers that supply a manifest tuple
-directly, but they alone no longer satisfy `BumpOptions.lockfile_repository`.
+`LockfileRepository`: bump calls `plan_lockfiles` whenever lockfile
+regeneration is enabled, because planning is read-only and must reject an
+invalid configured manifest before any write, and calls `regenerate_planned`
+only when a manifest change makes regeneration necessary. The established
+`resolve_lockfile_paths` and `regenerate_lockfiles` methods remain for callers
+that supply a manifest tuple directly, but they alone no longer satisfy
+`BumpOptions.lockfile_repository`.
 
 The façade keeps the port, adapter, and established public imports in one
 boundary while cohesive helper modules hold the implementation:

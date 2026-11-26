@@ -57,15 +57,28 @@ def _plan_lockfiles(
     context: _BumpContext,
     builder: PlanBuilder,
 ) -> LockfilePlan | None:
-    """Plan lockfiles when regeneration is enabled and a manifest changes."""
+    """Validate lockfile destinations when regeneration is enabled.
+
+    Planning is read-only, so it runs whenever regeneration is enabled: an
+    invalid configured manifest must be rejected before any write, even when
+    no manifest changes and regeneration will therefore be skipped. The plan
+    reaches the commit phase only when a manifest changed.
+
+    Returns
+    -------
+    LockfilePlan | None
+        The validated plan, or ``None`` when regeneration is disabled or no
+        manifest changes.
+    """
     if context.base_options.rebuild_lockfiles is not True:
         return None
-    if not builder.has_changes(WriteCategory.MANIFEST):
-        return None
     repository = _lockfile_repository(context)
-    return repository.plan_lockfiles(
+    plan = repository.plan_lockfiles(
         context.root_path, context.configuration.bump.lockfile_manifests
     )
+    if not builder.has_changes(WriteCategory.MANIFEST):
+        return None
+    return plan
 
 
 def _planned_lockfiles(plan: BumpPlan) -> tuple[Path, ...]:

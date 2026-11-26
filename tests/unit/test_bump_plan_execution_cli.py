@@ -14,7 +14,7 @@ from tests.helpers.bump_cli_workspace import (
 )
 from tests.helpers.fs_snapshot import changed_paths, snapshot_tree
 from tests.helpers.recording_runner import RecordingCommandRunner
-from tests.unit.bump_cli_harness import CliSeams, run_bump
+from tests.unit.bump_cli_harness import CliSeams, RunOptions, run_bump
 
 if typ.TYPE_CHECKING:
     import pytest
@@ -85,7 +85,7 @@ def test_dry_run_reports_the_plan_without_writing(
         workspace,
         runner,
         CliSeams(monkeypatch, capsys),
-        extra_args=("--dry-run",),
+        options=RunOptions(extra_args=("--dry-run",)),
     )
 
     assert exit_code == 0, f"a dry run must succeed; stderr:\n{stderr}"

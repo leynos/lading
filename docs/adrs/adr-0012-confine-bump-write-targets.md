@@ -269,6 +269,23 @@ own drive or root is rejected, and the hidden-wildcard rejection is limited to
 components whose literal prefix is `.` or `..`, because only those can reach a
 parent directory.
 
+### 2026-11-27: Lockfile validation without a manifest change
+
+Lockfile planning is read-only, so it runs whenever regeneration is enabled,
+not only when a manifest changes. A configured destination that escapes the
+workspace is therefore rejected before any write even on a same-version run
+that would rewrite an outdated documentation file and skip regeneration.
+`regenerate_planned` remains gated on a manifest change, and
+`--no-rebuild-lockfiles` still skips both planning and regeneration because the
+run will not touch a lockfile.
+
+### 2026-11-27: README adoption through an injected alias
+
+An injected graph may spell its root through a symlink alias. README
+preparation now derives the crate directory with `graph_relative_manifest`, the
+same rebasing manifest preparation uses, so an opted-in crate is confined
+beneath the canonical root instead of being refused as outside it.
+
 ## Alternatives considered
 
 - **Resolve once and check containment.** `Path.resolve()` follows the links it

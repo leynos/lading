@@ -24,6 +24,7 @@ from tests.helpers.bump_cli_workspace import (
 from tests.helpers.recording_runner import RecordingCommandRunner
 from tests.unit.bump_cli_harness import (
     CliSeams,
+    RunOptions,
     assert_rejected,
     outside_sentinel,
     run_bump,
@@ -89,13 +90,25 @@ def test_bump_rejects_an_unsafe_member_pattern_before_cargo(
     )
 
 
-def _missing_literal_member(workspace: CliWorkspace, tmp_path: Path) -> str:
-    """Declare a literal member that names no directory."""
+def _declare_members(workspace: CliWorkspace, *patterns: str) -> None:
+    """Rewrite the root manifest to declare ``patterns`` as its members."""
+    literal = ", ".join(json.dumps(pattern) for pattern in patterns)
     (workspace.root / "Cargo.toml").write_text(
-        '[workspace]\nmembers = ["crates/alpha", "crates/missing"]\n\n'
+        f"[workspace]\nmembers = [{literal}]\n\n"
         '[workspace.package]\nversion = "0.1.0"\n',
         encoding="utf-8",
     )
+
+
+def _symlink_member(workspace: CliWorkspace, name: str, target: Path) -> None:
+    """Create ``crates/<name>`` as a directory symlink to ``target``."""
+    (workspace.root / "crates" / name).symlink_to(target, target_is_directory=True)
+
+
+def _missing_literal_member(workspace: CliWorkspace, tmp_path: Path) -> str:
+    """Declare a literal member that names no directory."""
+    del tmp_path
+    _declare_members(workspace, "crates/alpha", "crates/missing")
     return "crates/missing"
 
 
@@ -104,14 +117,8 @@ def _symlinked_member(
     tmp_path: Path,
 ) -> str:
     """Declare a member directory that is a symlink."""
-    (workspace.root / "crates" / "linked").symlink_to(
-        tmp_path / "outside", target_is_directory=True
-    )
-    (workspace.root / "Cargo.toml").write_text(
-        '[workspace]\nmembers = ["crates/alpha", "crates/linked"]\n\n'
-        '[workspace.package]\nversion = "0.1.0"\n',
-        encoding="utf-8",
-    )
+    _symlink_member(workspace, "linked", tmp_path / "outside")
+    _declare_members(workspace, "crates/alpha", "crates/linked")
     return "crates/linked"
 
 
@@ -277,6 +284,87 @@ def test_bump_reports_an_unreadable_documentation_target(
     )
 
 
+def _documented_version(version: str) -> str:
+    """Return a TOML fence documenting ``alpha`` at ``version``."""
+    return f'```toml\n[dependencies]\nalpha = "{version}"\n```\n'
+
+
+@pytest.mark.parametrize("lockfile_manifest", _ESCAPING_LOCKFILES)
+def test_bump_rejects_an_invalid_lockfile_manifest_on_a_same_version_run(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: MonkeyPatch,
+    lockfile_manifest: str,
+) -> None:
+    """An invalid destination is rejected even when no manifest changes.
+
+    Lockfile planning is read-only, so the configured manifest is validated
+    whenever regeneration is enabled. A same-version run still rewrites an
+    outdated documentation file, and that write must not happen before the
+    invalid destination is refused.
+    """
+    outside_sentinel(tmp_path)
+    workspace = create_cli_workspace(
+        tmp_path / "workspace",
+        options=WorkspaceOptions(
+            documentation_globs=("docs/*.md",),
+            lockfile_manifests=(lockfile_manifest,),
+        ),
+    )
+    docs = workspace.root / "docs"
+    docs.mkdir()
+    (docs / "guide.md").write_text(_documented_version("0.1.0"), encoding="utf-8")
+    runner = RecordingCommandRunner(
+        metadata=workspace.metadata,
+        metadata_by_manifest=lambda manifest: {"workspace_root": str(tmp_path)},
+    )
+
+    assert_rejected(
+        workspace=workspace,
+        runner=runner,
+        run=lambda: run_bump(
+            workspace,
+            runner,
+            CliSeams(monkeypatch, capsys),
+            options=RunOptions(target_version="0.1.0"),
+        ),
+        expected=lockfile_manifest,
+    )
+    assert (docs / "guide.md").read_text(encoding="utf-8") == _documented_version(
+        "0.1.0"
+    ), "the outdated documentation file must not be rewritten"
+    assert runner.update_calls() == [], (
+        "an invalid lockfile plan must not run cargo update"
+    )
+
+
+def test_bump_skips_lockfile_validation_when_regeneration_is_disabled(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """``--no-rebuild-lockfiles`` keeps an invalid destination out of scope."""
+    outside_sentinel(tmp_path)
+    workspace = create_cli_workspace(
+        tmp_path / "workspace",
+        options=WorkspaceOptions(lockfile_manifests=("../outside/Cargo.toml",)),
+    )
+    runner = RecordingCommandRunner(metadata=workspace.metadata)
+
+    exit_code, stdout, stderr = run_bump(
+        workspace,
+        runner,
+        CliSeams(monkeypatch, capsys),
+        options=RunOptions(extra_args=("--no-rebuild-lockfiles",)),
+    )
+
+    assert exit_code == 0, f"the disabled rebuild must succeed; stderr:\n{stderr}"
+    assert "Updated version to 1.2.3" in stdout, (
+        "the bump must report the applied version"
+    )
+    assert runner.update_calls() == [], "a disabled rebuild must never run cargo update"
+
+
 @pytest.mark.parametrize("lockfile_manifest", _ESCAPING_LOCKFILES)
 def test_bump_rejects_an_invalid_lockfile_manifest_before_any_write(
     tmp_path: Path,
@@ -379,4 +467,76 @@ def test_bump_rejects_hard_linked_documentation_targets(
         runner=runner,
         run=lambda: run_bump(workspace, runner, CliSeams(monkeypatch, capsys)),
         expected="hard-linked target",
+    )
+
+
+def _final_manifest_symlink(workspace: CliWorkspace, tmp_path: Path) -> str:
+    """Replace a member manifest with a symlink to an external manifest."""
+    outside = tmp_path / "outside"
+    outside.mkdir(exist_ok=True)
+    external = outside / "Cargo.toml"
+    external.write_text(
+        '[package]\nname = "alpha"\nversion = "0.1.0"\n', encoding="utf-8"
+    )
+    manifest = workspace.root / "crates" / "alpha" / "Cargo.toml"
+    manifest.unlink()
+    manifest.symlink_to(external)
+    return "crates/alpha/Cargo.toml"
+
+
+def _dangling_member_link(workspace: CliWorkspace, tmp_path: Path) -> str:
+    """Point a declared member at a directory that does not exist."""
+    _symlink_member(workspace, "dangling", tmp_path / "missing")
+    _declare_members(workspace, "crates/alpha", "crates/dangling")
+    return "crates/dangling"
+
+
+def _in_root_alias(workspace: CliWorkspace, tmp_path: Path) -> str:
+    """Add an in-root symlink alias beside the real member directory."""
+    del tmp_path
+    _symlink_member(workspace, "alias", workspace.root / "crates" / "alpha")
+    _declare_members(workspace, "crates/alpha", "crates/alias")
+    return "crates/alias"
+
+
+def _unmatched_member_glob(workspace: CliWorkspace, tmp_path: Path) -> str:
+    """Declare a member glob that matches nothing."""
+    del tmp_path
+    _declare_members(workspace, "crates/alpha", "plugins/*")
+    return "plugins/*"
+
+
+@pytest.mark.parametrize(
+    ("prepare", "expected"),
+    [
+        pytest.param(
+            _final_manifest_symlink, "crates/alpha/Cargo.toml", id="final-symlink"
+        ),
+        pytest.param(_dangling_member_link, "crates/dangling", id="dangling-link"),
+        pytest.param(_in_root_alias, "crates/alias", id="in-root-alias"),
+        pytest.param(_unmatched_member_glob, "plugins/*", id="unmatched-glob"),
+    ],
+)
+def test_bump_rejects_a_linked_or_unmatched_member_before_cargo(
+    tmp_path: Path,
+    seams: CliSeams,
+    prepare: cabc.Callable[[CliWorkspace, Path], str],
+    expected: str,
+) -> None:
+    """A symlinked, dangling, aliased or unmatched member is a rejected plan."""
+    outside_sentinel(tmp_path)
+    workspace = create_cli_workspace(tmp_path / "workspace")
+    assert prepare(workspace, tmp_path) == expected, (
+        "the fixture must name the rejected member"
+    )
+    runner = RecordingCommandRunner(metadata=workspace.metadata)
+
+    assert_rejected(
+        workspace=workspace,
+        runner=runner,
+        run=lambda: run_bump(workspace, runner, seams),
+        expected=expected,
+    )
+    assert runner.metadata_calls() == [], (
+        "the member must be rejected before Cargo runs"
     )

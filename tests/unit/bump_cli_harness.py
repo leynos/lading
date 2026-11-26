@@ -41,6 +41,22 @@ def outside_sentinel(tmp_path: Path) -> Path:
 
 
 @dc.dataclass(frozen=True, slots=True)
+class RunOptions:
+    """Optional arguments for one bump invocation.
+
+    Attributes
+    ----------
+    extra_args : cabc.Sequence[str]
+        Additional bump arguments, such as ``--dry-run``.
+    target_version : str
+        Version argument for the invocation.
+    """
+
+    extra_args: cabc.Sequence[str] = ()
+    target_version: str = "1.2.3"
+
+
+@dc.dataclass(frozen=True, slots=True)
 class CliSeams:
     """The pytest fixtures a bump invocation needs.
 
@@ -61,7 +77,7 @@ def run_bump(
     runner: RecordingCommandRunner,
     seams: CliSeams,
     *,
-    extra_args: cabc.Sequence[str] = (),
+    options: RunOptions | None = None,
 ) -> tuple[int, str, str]:
     """Run ``lading bump`` in process and return status, stdout, and stderr.
 
@@ -76,22 +92,23 @@ def run_bump(
         Runner to install for this invocation.
     seams : CliSeams
         Monkeypatch and capture fixtures, bundled to keep the call site small.
-    extra_args : cabc.Sequence[str], optional
-        Additional bump arguments, such as ``--dry-run``.
+    options : RunOptions | None, optional
+        Additional arguments and the version, or ``None`` for the defaults.
 
     Returns
     -------
     tuple[int, str, str]
         Exit status, stdout, and stderr.
     """
+    invocation = options or RunOptions()
     runner.install(seams.monkeypatch)
     seams.capsys.readouterr()
     exit_code = cli.main([
         "--workspace-root",
         str(workspace.root),
         "bump",
-        "1.2.3",
-        *extra_args,
+        invocation.target_version,
+        *invocation.extra_args,
     ])
     captured = seams.capsys.readouterr()
     return exit_code, captured.out, captured.err
@@ -143,4 +160,10 @@ def assert_rejected(
     assert runner.update_calls() == [], "a rejected plan must not run cargo update"
 
 
-__all__ = ["CliSeams", "assert_rejected", "outside_sentinel", "run_bump"]
+__all__ = [
+    "CliSeams",
+    "RunOptions",
+    "assert_rejected",
+    "outside_sentinel",
+    "run_bump",
+]

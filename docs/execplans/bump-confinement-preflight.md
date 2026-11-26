@@ -126,8 +126,10 @@ guarantee.
 
 ## Constraints
 
-- No new runtime dependency is required. Use `os.lstat`, `os.scandir`,
-  `fnmatch`, `pathlib`, and `stat` from the standard library.
+- No new runtime dependency is required beyond `tomlkit`, recorded in the
+  decision log: Cargo accepts TOML 1.1 syntax that `tomllib` rejects. The rest
+  of the policy uses `os.lstat`, `os.scandir`, `fnmatch`, `pathlib`, and `stat`
+  from the standard library.
 - Publish discovery and publish behaviour must not change. Only the bump path
   gains the confined loader and `--no-deps` metadata call.
 - Existing public APIs and behaviour that tests pin (output format, change
@@ -575,6 +577,17 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
   symlink rejection no longer probes existence, and the lockfile port documents
   its required members and failure points. Command tests now record each atomic
   write, so the exactly-once assertions observe the write itself.
+- [x] 2026-11-27: Seventeenth review round cleared from the ExecPlan and
+  original-issue assessments. Lockfile planning now runs whenever regeneration
+  is enabled, so a same-version run still validates configured destinations
+  before rewriting an outdated documentation file; regeneration stays gated on
+  a manifest change and `--no-rebuild-lockfiles` keeps its exception. README
+  adoption rebases an alias-spelled crate root through
+  `graph_relative_manifest`, and command-level rejection cases now cover a
+  final-manifest symlink, a dangling member link, an in-root alias, and an
+  unmatched member glob. Member-pattern declaration moved to
+  `member_declarations.py`, bringing `confined_discovery.py` within the plan's
+  400-line limit.
 - [ ] EP-M5 release: tag and release `v0.4.0b1` after review convergence, then
   record the tag commit on issue #409.
 
@@ -731,6 +744,18 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
 - The exactly-once command tests record each atomic write through a spy that
   calls the real writer, so the assertion observes the write rather than
   inferring it from file content.
+- Lockfile planning is read-only, so it runs whenever regeneration is enabled,
+  not only when a manifest changes. Validation-before-mutation then holds for a
+  same-version run that rewrites an outdated documentation file; regeneration
+  remains gated, and `--no-rebuild-lockfiles` keeps its documented exception.
+- README preparation derives the crate directory through
+  `graph_relative_manifest`, as manifest preparation does, so an injected graph
+  spelled through a root alias is confined beneath the canonical root.
+- `tomlkit` is a new runtime dependency, a deviation from the original
+  constraint that no new dependency was needed. Cargo accepts TOML 1.1 syntax
+  such as multiline inline tables, which `tomllib` rejects, and a configuration
+  Cargo can read must not abort the preflight. It is declared as
+  `tomlkit>=0.15,<0.16` in `pyproject.toml`, and `uv.lock` records it.
 
 ## Outcomes & retrospective
 
@@ -755,3 +780,6 @@ here and on issue #409 once the release tag is pushed.
 - 2026-11-26: Recorded the sixteenth-review decisions on fence containers,
   non-regular includes, root-lookup errors, Windows components, hidden
   wildcards, and observing the write itself.
+- 2026-11-27: Recorded the assessment decisions on lockfile validation without
+  a manifest change, README adoption through an injected alias, and the
+  `tomlkit` dependency deviation.

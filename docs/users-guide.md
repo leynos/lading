@@ -349,11 +349,12 @@ workspace crates.
 Before writing anything, `lading bump` builds and validates the complete write
 plan: the workspace manifest, every member manifest, configured documentation,
 and adopted README destinations. When lockfile regeneration is enabled, the
-plan also validates lockfile manifests and destinations;
-`--no-rebuild-lockfiles` leaves configured lockfile entries unvalidated because
-the run will not touch them. Discovery runs `cargo metadata --no-deps`, which
-reports workspace members without resolving dependencies; a missing or stale
-`Cargo.lock` is left untouched.
+plan also validates lockfile manifests and destinations, even when no manifest
+changes and regeneration will therefore be skipped; `--no-rebuild-lockfiles`
+leaves configured lockfile entries unvalidated because the run will not touch
+them. Discovery runs `cargo metadata --no-deps`, which reports workspace
+members without resolving dependencies; a missing or stale `Cargo.lock` is left
+untouched.
 
 The member and exclusion patterns in the root manifest are validated lexically.
 Absolute, rooted, drive-qualified, UNC, and parent-traversing patterns are

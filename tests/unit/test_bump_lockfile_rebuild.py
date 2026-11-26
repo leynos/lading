@@ -183,21 +183,40 @@ def test_run_reports_lockfiles_in_dry_run(
     )
 
 
+@dc.dataclass(frozen=True, slots=True)
+class _SkipCase:
+    """One input and the lockfile calls it must produce."""
+
+    rebuild_lockfiles: bool
+    version: str
+    expected_calls: tuple[str, ...]
+
+
 @pytest.mark.parametrize(
-    ("rebuild_lockfiles", "version"),
+    "case",
     [
-        pytest.param(False, "1.2.3", id="disabled"),
-        pytest.param(True, "0.1.0", id="versions_already_match"),
+        pytest.param(
+            _SkipCase(rebuild_lockfiles=False, version="1.2.3", expected_calls=()),
+            id="disabled",
+        ),
+        pytest.param(
+            _SkipCase(
+                rebuild_lockfiles=True, version="0.1.0", expected_calls=("plan",)
+            ),
+            id="versions_already_match",
+        ),
     ],
 )
 def test_run_skips_lockfile_rebuild(
     tmp_path: pathlib.Path,
-    version: str,
+    case: _SkipCase,
     snapshot: SnapshotAssertion,
-    *,
-    rebuild_lockfiles: bool,
 ) -> None:
-    """No lockfile work happens when disabled or when no manifest changes."""
+    """A disabled rebuild does nothing; an unchanged version still validates.
+
+    Planning is read-only, so the configured manifests are validated even when
+    no manifest changes. Regeneration stays gated on a manifest change.
+    """
     workspace = _make_workspace(tmp_path)
     repository = _RecordingRepository(
         lockfiles=(), manifest_path=tmp_path / "Cargo.toml"
@@ -205,17 +224,18 @@ def test_run_skips_lockfile_rebuild(
 
     message = bump.run(
         tmp_path,
-        version,
+        case.version,
         options=bump.BumpOptions(
-            rebuild_lockfiles=rebuild_lockfiles,
+            rebuild_lockfiles=case.rebuild_lockfiles,
             configuration=_make_config(),
             workspace=workspace,
             lockfile_repository=repository,
         ),
     )
 
-    assert not repository.calls, (
-        "a skipped lockfile rebuild must not reach the repository"
+    assert [call[0] for call in repository.calls] == list(case.expected_calls), (
+        "a disabled rebuild must do no lockfile work, and an unchanged version "
+        "must plan (validate) without regenerating"
     )
     assert message == snapshot, (
         "a skipped lockfile rebuild must leave the bump summary unchanged"
