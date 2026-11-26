@@ -803,19 +803,21 @@ uploads anything, and refuses to continue when:
 With the option set, lading then checks each crate's archive at four points and
 records an outcome for it:
 
-1. **After `cargo package`.** The archive Cargo wrote in the staged workspace is
-   hashed and compared. A difference stops the run before `cargo publish` runs
-   for that crate or any crate after it, and the error names the crate, the
-   expected digest, and the actual digest. In a dry run the same check applies
-   to every archive that is packaged.
-2. **Before `cargo publish`, when the version is already on crates.io.** Lading
+1. **Before packaging, when the version is already on crates.io.** Lading
    downloads the published archive from `static.crates.io` and compares it. An
    identical archive means a previous run of the same release got this far, so
    lading logs that the identical archive is already published and skips the
    crate. A different archive fails the run as a conflict, naming both digests;
    a published version cannot be replaced, so the remedy is a new version.
-   Either way `cargo publish` does not run for that crate, so a rerun of an
-   interrupted release resumes safely.
+   Either way neither `cargo package` nor `cargo publish` runs for that crate,
+   so the published bytes decide whatever a local build would produce, and a
+   rerun of an interrupted release resumes safely. A dry run looks the version
+   up once, before packaging, and skips both of that crate's dry-run steps.
+2. **After `cargo package`.** The archive Cargo wrote in the staged workspace is
+   hashed and compared. A difference stops the run before `cargo publish` runs
+   for that crate or any crate after it, and the error names the crate, the
+   expected digest, and the actual digest. In a dry run the same check applies
+   to every archive that is packaged.
 3. **After a successful live publish.** `cargo publish` writes the archive it
    uploads to the target directory's `package` folder, and lading compares that
    file too. The upload cannot be undone, so a difference is reported as an
@@ -846,11 +848,17 @@ fails the run instead of being updated in the staged tree. Without
 `--expect-digests`, neither flag is passed and behaviour is unchanged.
 
 Only crates.io is supported, because the comparison in step 2 downloads from
-it. Lading refuses `--expect-digests` when `CARGO_REGISTRY_DEFAULT` names any
-registry other than `crates-io`, or when a publishable crate's `publish` key
-lists registries without `crates-io`. A registry selected only through
-`.cargo/config.toml` is not detected, so keep that out of a release that uses
-the option.
+it. Lading refuses `--expect-digests` early, with a clear error, when
+`CARGO_REGISTRY_DEFAULT` names any registry other than `crates-io`, or when a
+publishable crate's `publish` key lists registries without `crates-io`. Those
+checks cannot see Cargo configuration, so lading also passes
+`--registry crates-io` to both `cargo package` and `cargo publish`: a
+`[registry] default` in `.cargo/config.toml` or in Cargo home cannot send the
+upload anywhere lading cannot compare against.
+
+Workspace discovery runs `cargo metadata --locked` for the same reason as the
+`--locked` flags above, so a stale `Cargo.lock` stops the run before anything
+else happens rather than being updated first.
 
 The digests describe archives built from one commit. A package built in a
 checkout and one built by lading in its staged copy normally agree, but lading
@@ -866,6 +874,7 @@ jobs:
     runs-on: ubuntu-latest   # no registry credential
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
       - run: cargo package --locked --workspace
       - run: |
           cd target/package
@@ -879,18 +888,34 @@ jobs:
     needs: package
     runs-on: ubuntu-latest
     permissions:
-      id-token: write         # Trusted Publishing
+      contents: read
+      id-token: write         # lets the job request an OIDC token
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
       - uses: actions/download-artifact@v4
         with:
           name: digests
+      # Installed before the token exists, so nothing it installs sees it.
+      - run: python -m pip install lading
+      # Exchanges the OIDC token for a short-lived crates.io token. The crate
+      # must have a Trusted Publishing configuration for this workflow.
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+      # The token reaches this step, and only this step.
       - run: lading publish --live --expect-digests digests.txt
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
 ```
 
 The `publish` job is the only one that holds a credential, and it refuses to
-upload anything the `package` job did not record. The packaging commands are an
-illustration: use whatever produces the archives your release uploads.
+upload anything the `package` job did not record. The token is exchanged after
+lading is installed and is exposed to the `lading publish` step alone, but that
+step still runs the pre-flight builds and Cargo's verification build with the
+token in their environment; `--skip-preflight` removes the first of these. The
+packaging commands are an illustration, and the action tags should be pinned to
+commit hashes in a real workflow: use whatever produces the archives your
+release uploads.
 
 #### Dry-run limitations with unpublished workspace dependencies
 

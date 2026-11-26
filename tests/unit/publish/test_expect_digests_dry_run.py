@@ -31,8 +31,20 @@ def test_dry_run_checks_every_packaged_archive_and_runs_locked(
         assert f"- {name} 0.1.0: verified" in summary, f"{name} must be checked"
     dry_runs = digest_rig.cargo.subcommands("publish")
     assert (
-        dry_runs == [("cargo", "publish", "--allow-dirty", "--locked", "--dry-run")] * 3
-    ), "the dry-run publish keeps its flags and gains --locked"
+        dry_runs
+        == [
+            (
+                "cargo",
+                "publish",
+                "--allow-dirty",
+                "--locked",
+                "--registry",
+                "crates-io",
+                "--dry-run",
+            )
+        ]
+        * 3
+    ), "the dry-run publish gains --locked and --registry crates-io"
     assert digest_rig.registry.requests == [
         ("alpha", "0.1.0"),
         ("beta", "0.1.0"),

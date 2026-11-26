@@ -21,6 +21,7 @@ import importlib
 import os
 import typing as typ
 from contextlib import AbstractContextManager, nullcontext
+from functools import partial
 from pathlib import Path
 
 from cyclopts import Parameter
@@ -144,6 +145,7 @@ def _run_with_context(
     *,
     command_runner: CommandRunner | None = None,
     workspace_loader: WorkspaceLoader | None = None,
+    locked: bool = False,
 ) -> str:
     """Execute ``runner`` with configuration and workspace data.
 
@@ -158,6 +160,10 @@ def _run_with_context(
     workspace_loader : WorkspaceLoader | None
         Workspace discovery function. ``None`` uses :func:`load_workspace`;
         bump passes the confined, read-only loader.
+    locked : bool
+        Makes the default discovery run ``cargo metadata --locked`` so a stale
+        lockfile fails rather than being updated before a command that depends
+        on a fixed lockfile (``publish --expect-digests``) begins.
 
     Returns
     -------
@@ -173,7 +179,11 @@ def _run_with_context(
         # the command; an already-active configuration needs no new scope.
         configuration = config.load_configuration(workspace_root)
         configuration_scope = config.use_configuration(configuration)
-    loader = load_workspace if workspace_loader is None else workspace_loader
+    loader = (
+        partial(load_workspace, locked=locked)
+        if workspace_loader is None
+        else workspace_loader
+    )
     with configuration_scope, metadata_module.use_command_runner(active_runner):
         workspace_model = loader(workspace_root)
         return runner(workspace_root, configuration, workspace_model, active_runner)
@@ -333,6 +343,7 @@ def publish(
             workspace,
             options=_publish_options(flags, command_runner),
         ),
+        locked=flags.expect_digests is not None,
     )
 
 

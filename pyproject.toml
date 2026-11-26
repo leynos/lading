@@ -713,6 +713,8 @@ reason = "signal.signal invokes this handler with the interrupted frame; the par
 type = "method"
 full_name = [
     "lading.commands.publish_archive_check.ArchiveVerifier.check_archive",
+    "lading.commands.publish_archive_check.ArchiveVerifier.is_already_published",
+    "lading.commands.publish_archive_check.ArchiveVerifier._outcome_of",
     "lading.commands.publish_archive_check.ArchiveVerifier.mark_unverified",
     "lading.commands.publish_archive_check.ArchiveVerifier.resolve_published",
     "lading.commands.publish_archive_check.ArchiveVerifier.confirm_already_published",

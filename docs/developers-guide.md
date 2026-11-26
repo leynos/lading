@@ -1603,8 +1603,9 @@ defaults are:
   in the publish log and labels the `publish.preflight` metric.
 - `expect_digests=None` — a `sha256sum`-format file of expected archive digests
   (`--expect-digests`); a relative path resolves against the workspace root.
-  Setting it turns on archive verification, `--locked` for both cargo commands,
-  and the crates.io-only restriction (issue #419).
+  Setting it turns on archive verification, `--locked --registry crates-io` for
+  both cargo commands, locked workspace discovery, and the crates.io-only
+  restriction (issue #419).
 - `default_registry=None` — the value of `CARGO_REGISTRY_DEFAULT`, read once by
   `lading.cli` so the publish command stays free of ambient state. It is only
   consulted with `expect_digests`.
@@ -1871,13 +1872,15 @@ implement `--expect-digests` (issue
 `require_crates_io_default` and `require_crates_io_crates` refuse another
 registry, and `sha256_file` hashes an archive in bounded chunks.
 `publish_archive_check` owns `ArchiveVerifier`, which `run()` builds after
-validating the plan and the pipeline calls at four points: `check_archive` with
-`PACKAGED` after `cargo package`, `mark_unverified` when a dry run downgrades
-packaging, `resolve_published` before `cargo publish` (and
-`confirm_already_published` when Cargo reports a version the first check
-missed), and `check_archive` with `UPLOADED` after a successful live publish.
-It asks `cargo metadata --no-deps` for the target directory once, through the
-command runner, and records one `CrateOutcome` per crate for the summary and the
+validating the plan (before the pre-flight) and the pipeline calls at four
+points: `resolve_published` before packaging (`is_already_published` lets the
+dry-run publish phase skip what the packaging phase found, and
+`confirm_already_published` handles a version Cargo reports that the first
+check missed), `check_archive` with `PACKAGED` after `cargo package`,
+`mark_unverified` when a dry run downgrades packaging, and `check_archive` with
+`UPLOADED` after a successful live publish. It asks `cargo metadata --no-deps`
+for the target directory once per crate root, through the command runner, and
+records one `CrateOutcome` per crate for the summary and the
 `publish.archive_check` counter. `publish_registry` is the injectable
 `PublishedDigestFetcher` port; `fetch_crates_io_digest` streams the archive from
 `static.crates.io` through a size cap and bounded retries, and tests
@@ -1957,14 +1960,14 @@ line that was never parsed. Resolving an _absent_ flag against
 forwarded to every `cargo package` and `cargo publish` invocation within a
 single `lading publish` run. Its fields are:
 
-| Field                              | Type                      | Default | Purpose                                                                     |
-| ---------------------------------- | ------------------------- | ------- | --------------------------------------------------------------------------- |
-| `live`                             | `bool`                    | —       | When `True`, omits `--dry-run` from `cargo publish`.                        |
-| `allow_dirty`                      | `bool`                    | —       | Passes `--allow-dirty` to both cargo subcommands.                           |
-| `allow_unpublished_workspace_deps` | `bool`                    | `False` | Dry-run-only override; see `allow_unpublished_workspace_deps` above.        |
-| `sccache_stats`                    | `bool`                    | `False` | Query sccache around every cargo build and log per-crate cache lines.       |
-| `sccache_stats_json`               | `Path \| None`            | `None`  | Write the sccache report here; implies `sccache_stats`.                     |
-| `verifier`                         | `ArchiveVerifier \| None` | `None`  | Set by `--expect-digests`; its presence also adds `--locked` (`is_locked`). |
+| Field                              | Type                      | Default | Purpose                                                                                          |
+| ---------------------------------- | ------------------------- | ------- | ------------------------------------------------------------------------------------------------ |
+| `live`                             | `bool`                    | —       | When `True`, omits `--dry-run` from `cargo publish`.                                             |
+| `allow_dirty`                      | `bool`                    | —       | Passes `--allow-dirty` to both cargo subcommands.                                                |
+| `allow_unpublished_workspace_deps` | `bool`                    | `False` | Dry-run-only override; see `allow_unpublished_workspace_deps` above.                             |
+| `sccache_stats`                    | `bool`                    | `False` | Query sccache around every cargo build and log per-crate cache lines.                            |
+| `sccache_stats_json`               | `Path \| None`            | `None`  | Write the sccache report here; implies `sccache_stats`.                                          |
+| `verifier`                         | `ArchiveVerifier \| None` | `None`  | Set by `--expect-digests`; its presence also adds `--locked --registry crates-io` (`is_locked`). |
 
 The dataclass is an internal implementation detail; callers interact with the
 public `PublishOptions` dataclass, which `run()` converts before dispatching.

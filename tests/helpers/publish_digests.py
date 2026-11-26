@@ -82,6 +82,12 @@ class FakeCargo:
         What ``cargo publish`` writes when it differs from ``packaged``.
     target_name : str
         The target directory's name, beside the staged crates.
+    crate_targets : dict[str, str]
+        Per-crate target directory names that override ``target_name``, as a
+        crate's own ``.cargo/config.toml`` would.
+    stray_archives : dict[str, dict[str, bytes]]
+        Extra ``{file name: bytes}`` archives ``cargo package`` leaves in a
+        crate's target directory, standing in for stale files from elsewhere.
     failing : dict[tuple[str, str], tuple[int, str]]
         ``(subcommand, crate name)`` pairs that exit non-zero, with the exit
         code and stderr they produce.
@@ -92,6 +98,8 @@ class FakeCargo:
     packaged: dict[str, bytes] = dc.field(default_factory=dict)
     uploaded: dict[str, bytes] = dc.field(default_factory=dict)
     target_name: str = "target"
+    crate_targets: dict[str, str] = dc.field(default_factory=dict)
+    stray_archives: dict[str, dict[str, bytes]] = dc.field(default_factory=dict)
     failing: dict[tuple[str, str], tuple[int, str]] = dc.field(default_factory=dict)
     calls: list[tuple[tuple[str, ...], str]] = dc.field(default_factory=list)
 
@@ -111,11 +119,23 @@ class FakeCargo:
             if command[:2] == ("cargo", subcommand)
         ]
 
+    def _target(self, directory: Path) -> Path:
+        """Return the target directory Cargo reports for the crate in ``directory``."""
+        name = self.crate_targets.get(directory.name, self.target_name)
+        return directory.parent / name
+
+    def _write_strays(self, directory: Path) -> None:
+        """Leave the crate's configured stray archives beside its own."""
+        package_dir = self._target(directory) / "package"
+        package_dir.mkdir(parents=True, exist_ok=True)
+        for filename, payload in self.stray_archives.get(directory.name, {}).items():
+            (package_dir / filename).write_bytes(payload)
+
     def _write(self, directory: Path, payload: bytes | None) -> None:
         """Write ``payload`` as the crate's archive under the target directory."""
         if payload is None:
             return
-        package_dir = directory.parent / self.target_name / "package"
+        package_dir = self._target(directory) / "package"
         package_dir.mkdir(parents=True, exist_ok=True)
         (package_dir / f"{directory.name}-0.1.0.crate").write_bytes(payload)
 
@@ -140,10 +160,11 @@ class FakeCargo:
             return exit_code, "", stderr
         match subcommand:
             case "metadata":
-                target = str(cwd.parent / self.target_name)
+                target = str(self._target(cwd))
                 return 0, json.dumps({"target_directory": target}), ""
             case "package":
                 self._write(cwd, self.packaged.get(cwd.name))
+                self._write_strays(cwd)
             case "publish":
                 self._write(
                     cwd, self.uploaded.get(cwd.name, self.packaged.get(cwd.name))
@@ -245,6 +266,8 @@ class PublishRig:
     def run(
         self,
         monkeypatch: pytest.MonkeyPatch,
+        *,
+        preflight: cabc.Callable[..., None] | None = None,
         **overrides: object,
     ) -> str:
         """Run ``lading publish`` in process and return its summary.
@@ -252,7 +275,7 @@ class PublishRig:
         ``overrides`` are :class:`~lading.commands.publish.PublishOptions`
         fields; the fake cargo, fake registry and build directory are wired in
         unless overridden. The pre-flight is replaced by a no-op, because it is
-        not what these runs exercise.
+        not what these runs exercise unless ``preflight`` supplies a recorder.
 
         Returns
         -------
@@ -260,7 +283,9 @@ class PublishRig:
             The publish summary.
         """
         monkeypatch.setattr(
-            publish_preflight, "_run_preflight_checks", lambda *_a, **_k: None
+            publish_preflight,
+            "_run_preflight_checks",
+            preflight if preflight is not None else lambda *_a, **_k: None,
         )
         wired = publish.PublishOptions(
             build_directory=self.build_directory,

@@ -64,7 +64,7 @@ def test_archive_is_found_in_the_workspace_target_directory(
         "the archive must be where cargo reported its target directory"
     )
     assert not (staged / "target").exists(), "nothing may assume target/"
-    assert len(digest_rig.cargo.subcommands("metadata")) == 1, (
+    assert len(digest_rig.cargo.subcommands("metadata")) == len(LIVE_ORDER), (
         "Cargo is asked once per run"
     )
 
@@ -312,7 +312,7 @@ def test_each_outcome_is_counted(
     assert (
         metrics.counter_value(ARCHIVE_CHECK_METRIC, outcome="already_published") == 1
     ), "alpha must be counted as already published"
-    assert metrics.counter_value(ARCHIVE_CHECK_METRIC, outcome="verified") == 5, (
-        "alpha is verified once as packaged before it is found published; beta "
-        "and gamma are verified twice each: once packaged, once uploaded"
+    assert metrics.counter_value(ARCHIVE_CHECK_METRIC, outcome="verified") == 4, (
+        "alpha is skipped before packaging, so only beta and gamma are "
+        "verified, twice each: once packaged, once uploaded"
     )

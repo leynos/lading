@@ -40,7 +40,7 @@ def captured_options(
         return "publish"
 
     monkeypatch.setattr(publish_command, "run", fake_run)
-    monkeypatch.setattr(cli, "load_workspace", lambda _: graph)
+    monkeypatch.setattr(cli, "load_workspace", lambda _, **__: graph)
     return captured
 
 
@@ -97,3 +97,64 @@ def test_option_appears_in_the_help(capsys: pytest.CaptureFixture[str]) -> None:
     assert "--expect-digests" in capsys.readouterr().out, (
         "the option must be documented in help"
     )
+
+
+def _stale_lockfile_runner(
+    commands: list[tuple[str, ...]],
+) -> cabc.Callable[..., tuple[int, str, str]]:
+    """Return a runner whose ``cargo metadata`` fails like a stale lockfile."""
+
+    def runner(
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
+    ) -> tuple[int, str, str]:
+        """Record the command; refuse to update the lock when ``--locked``."""
+        del cwd, env, echo_stdout
+        commands.append(tuple(command))
+        if "--locked" in command:
+            return (
+                101,
+                "",
+                "error: the lock file needs to be updated but --locked was passed",
+            )
+        return 101, "", "error: unrelated metadata failure"
+
+    return runner
+
+
+@pytest.mark.parametrize(
+    ("extra_args", "is_locked"),
+    [
+        (("--expect-digests", "digests.txt"), True),
+        ((), False),
+    ],
+    ids=["with_digests", "without_digests"],
+)
+def test_discovery_is_locked_only_when_digests_are_expected(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    extra_args: tuple[str, ...],
+    *,
+    is_locked: bool,
+) -> None:
+    """A stale lockfile stops discovery instead of being updated first."""
+    commands: list[tuple[str, ...]] = []
+    monkeypatch.setattr(cli, "_select_runner", lambda: _stale_lockfile_runner(commands))
+
+    assert _publish(tmp_path, *extra_args) == 1, "discovery must fail in both cases"
+
+    assert commands, "workspace discovery must have run cargo metadata"
+    assert all(command[:2] == ("cargo", "metadata") for command in commands), (
+        "only workspace discovery may run before the failure"
+    )
+    assert all(("--locked" in command) is is_locked for command in commands), (
+        "--locked must be passed to discovery exactly when digests are expected"
+    )
+    if is_locked:
+        assert "--locked was passed" in capsys.readouterr().err, (
+            "the stale-lockfile failure must reach the operator"
+        )

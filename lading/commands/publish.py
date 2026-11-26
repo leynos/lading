@@ -176,12 +176,12 @@ def _load_expected_digests(
 
 def _archive_verifier(
     expected: publish_digests.ExpectedDigests | None,
-    plan: PublishPlan,
+    plan: PublishPlan | None,
     options: PublishOptions,
     runner: CommandRunner,
 ) -> ArchiveVerifier | None:
     """Check the digests against the plan and build the run's verifier."""
-    if expected is not None:
+    if expected is not None and plan is not None:
         publish_digests.validate_against_plan(expected, plan)
         publish_digests.require_crates_io_crates(plan)
         if options.published_digest_fetcher is None:
@@ -228,6 +228,43 @@ def _render_summary(
     return f"{plan_message}\n\n" + "\n".join(lines)
 
 
+@dc.dataclass(frozen=True, slots=True)
+class _Planning:
+    """What it takes to plan publication, so it can be done at either point."""
+
+    workspace: WorkspaceGraph | None
+    configuration: config_module.LadingConfig
+    workspace_root: Path
+
+    def plan(self) -> PublishPlan:
+        """Plan publication for the workspace (discovering it when needed)."""
+        workspace = _ensure_workspace(self.workspace, self.workspace_root)
+        return plan_publication(
+            workspace, self.configuration, workspace_root=self.workspace_root
+        )
+
+
+def _dispatch_reporting(
+    plan: PublishPlan,
+    preparation: publish_staging.PublishPreparation,
+    options: publish_pipeline._PublishExecutionOptions,
+    runner: CommandRunner,
+) -> None:
+    """Dispatch publication, logging the archive checks if it fails.
+
+    A failed run returns no summary, so the outcomes decided before the
+    failure would otherwise be visible only as scattered log lines.
+    """
+    try:
+        publish_pipeline._dispatch_publication(
+            plan, preparation, options=options, runner=runner
+        )
+    except PublishPreflightError:
+        if options.verifier is not None:
+            LOGGER.exception("\n".join(options.verifier.summary_lines()))
+        raise
+
+
 def run(
     workspace_root: Path,
     configuration: config_module.LadingConfig | None = None,
@@ -266,30 +303,33 @@ def run(
     # Read before the pre-flight, which builds the workspace: a typo in the
     # digest file should cost seconds, not a verify build.
     expected_digests = _load_expected_digests(effective_options, root_path)
+    planning = _Planning(
+        workspace or effective_options.workspace,
+        active_configuration,
+        root_path,
+    )
+    # With digests, the plan is needed to validate them, and that must happen
+    # before the pre-flight, whose auxiliary builds can package crates.
+    plan = None if expected_digests is None else planning.plan()
+    verifier = _archive_verifier(
+        expected_digests, plan, effective_options, command_runner
+    )
     publish_preflight._run_preflight_checks(
         root_path,
         _preflight_request(effective_options, active_configuration, command_runner),
     )
-    active_workspace = _ensure_workspace(
-        workspace or effective_options.workspace, root_path
-    )
-    plan = plan_publication(
-        active_workspace, active_configuration, workspace_root=root_path
-    )
-    verifier = _archive_verifier(
-        expected_digests, plan, effective_options, command_runner
-    )
+    plan = plan or planning.plan()
     # The staged tree lives no longer than this block: a publish that raises
     # or is interrupted must not leave its copy of the workspace behind.
     with publish_staging.staged_workspace(plan, options=effective_options) as staged:
         _apply_strip_patch_strategy(
             staged.staging_root, plan, active_configuration.publish.strip_patches
         )
-        publish_pipeline._dispatch_publication(
+        _dispatch_reporting(
             plan,
             staged.preparation,
-            options=_execution_options(effective_options, verifier),
-            runner=command_runner,
+            _execution_options(effective_options, verifier),
+            command_runner,
         )
         plan_message = format_plan(
             plan, strip_patches=active_configuration.publish.strip_patches

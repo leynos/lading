@@ -128,7 +128,7 @@ def _run(
     expecting: bool,
 ) -> None:
     """Run the publish and keep its summary or its publish error."""
-    overrides: dict[str, object] = {"live": live}
+    overrides: dict[str, typ.Any] = {"live": live}
     if expecting:
         overrides["expect_digests"] = scenario.rig.digests_file(scenario.recorded)
         overrides["default_registry"] = scenario.default_registry

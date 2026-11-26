@@ -773,12 +773,13 @@ _Figure 2: Publish pre-flight sequence from checks through crate publication._
 3. **Verify archives against expected digests (optional):** With
    `--expect-digests PATH`, Lading reads a `sha256sum`-format file before it
    runs the pre-flight and checks it against the plan before staging. It then
-   compares each crate's archive after `cargo package` (refusing the crate and
-   every later one on a difference), compares an already-published version
-   downloaded from crates.io before `cargo publish` (skipping an identical
-   archive, failing a different one as a conflict), and compares the archive
+   compares an already-published version downloaded from crates.io before
+   packaging (skipping an identical archive, failing a different one as a
+   conflict), compares each crate's archive after `cargo package` (refusing the
+   crate and every later one on a difference), and compares the archive
    `cargo publish` wrote after a successful live upload. Both cargo commands
-   run with `--locked`. The `ArchiveVerifier` owns these steps and the
+   run with `--locked --registry crates-io`, and workspace discovery runs
+   `cargo metadata --locked`. The `ArchiveVerifier` owns these steps and the
    per-crate outcomes shown in the publish summary; the crates.io download is
    an injectable port. See
    [ADR-013](adrs/adr-0013-verify-archives-against-expected-digests.md).

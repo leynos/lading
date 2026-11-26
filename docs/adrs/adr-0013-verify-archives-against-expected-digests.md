@@ -58,16 +58,19 @@ with one `<64 hex digits>  <name>-<version>.crate` entry per line.
   publishable crate needs exactly one entry and no entry may name an archive
   outside the plan. The checks live in `lading.commands.publish_digests`.
 - **Three comparison points.** `ArchiveVerifier` in
-  `lading.commands.publish_archive_check` compares the archive after
-  `cargo package` (refusing the crate and every later one on a difference), the
-  already-published archive before `cargo publish` (skipping an identical one,
-  failing a different one as a conflict), and the archive `cargo publish` wrote
-  after a successful live upload (failing loudly, since the upload cannot be
-  undone).
+  `lading.commands.publish_archive_check` compares the already-published
+  archive before packaging (skipping an identical version without packaging it,
+  failing a different one as a conflict, so the published bytes decide whatever
+  a local build would produce), the archive after `cargo package` (refusing the
+  crate and every later one on a difference), and the archive `cargo publish`
+  wrote after a successful live upload (failing loudly, since the upload cannot
+  be undone).
 - **Locked builds.** When digests are given, both cargo commands receive
-  `--locked`, because a digest only means something against a fixed lockfile.
-- **Locating the archive.** The staged workspace's target directory comes from
-  `cargo metadata`, not from an assumed `target/`.
+  `--locked` and workspace discovery runs `cargo metadata --locked`, because a
+  digest only means something against a fixed lockfile.
+- **Locating the archive.** Each crate's target directory comes from
+  `cargo metadata` run in that crate, not from an assumed `target/` or another
+  crate's directory.
 - **Published archives.** The comparison downloads
   `https://static.crates.io/crates/<name>/<name>-<version>.crate` through an
   injectable `PublishedDigestFetcher` port, hashing the stream with a size
@@ -81,7 +84,8 @@ with one `<64 hex digits>  <name>-<version>.crate` entry per line.
 - **Registry.** Only crates.io is supported. The option is refused when
   `CARGO_REGISTRY_DEFAULT` names another registry or a publishable crate's
   `publish` key omits `crates-io`; `WorkspaceCrate.registries` carries that
-  key. A registry chosen only through `.cargo/config.toml` is not detected.
+  key. Both cargo commands also receive `--registry crates-io`, so a registry
+  chosen only through Cargo configuration cannot redirect the run.
 
 The verifier rides on `_PublishExecutionOptions` rather than on the pipeline
 state, so `--locked` follows from its presence and the helper signatures keep

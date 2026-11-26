@@ -105,11 +105,14 @@ def _metadata_command(
     *,
     no_deps: bool,
     manifest_path: Path | None = None,
+    locked: bool = False,
 ) -> tuple[str, ...]:
     """Return the ``cargo metadata`` argument tuple for the supplied options."""
     args = list(_CARGO_METADATA_NO_DEPS_ARGS if no_deps else _CARGO_METADATA_ARGS)
     if manifest_path is not None:
         args.extend(("--manifest-path", str(manifest_path)))
+    if locked:
+        args.append("--locked")
     return (_CARGO_PROGRAM, *args)
 
 
@@ -119,11 +122,14 @@ def _invoke_cargo_metadata(
     *,
     no_deps: bool,
     manifest_path: Path | None = None,
+    locked: bool = False,
 ) -> tuple[int, str, str]:
     """Run ``cargo metadata`` and return (exit_code, stdout, stderr) as text."""
     try:
         exit_code, stdout, stderr = command_runner(
-            _metadata_command(no_deps=no_deps, manifest_path=manifest_path),
+            _metadata_command(
+                no_deps=no_deps, manifest_path=manifest_path, locked=locked
+            ),
             cwd=root_path,
             echo_stdout=False,
         )
@@ -155,6 +161,7 @@ def load_cargo_metadata(
     runner: CommandRunner | None = None,
     no_deps: bool = False,
     manifest_path: Path | None = None,
+    locked: bool = False,
 ) -> cabc.Mapping[str, typ.Any]:
     """Execute ``cargo metadata`` and parse the resulting JSON payload.
 
@@ -172,6 +179,9 @@ def load_cargo_metadata(
         Pass ``--manifest-path`` so Cargo resolves the workspace containing a
         specific manifest. Lockfile planning uses this to learn the effective
         workspace root of each configured or discovered manifest.
+    locked : bool
+        Whether to pass ``--locked``, so discovery fails rather than updating a
+        stale ``Cargo.lock``. ``lading publish --expect-digests`` sets it.
 
     Returns
     -------
@@ -199,7 +209,11 @@ def load_cargo_metadata(
     root_path = normalize_workspace_root(workspace_root)
     command_runner = _active_command_runner(runner)
     exit_code, stdout_text, stderr_text = _invoke_cargo_metadata(
-        command_runner, root_path, no_deps=no_deps, manifest_path=manifest_path
+        command_runner,
+        root_path,
+        no_deps=no_deps,
+        manifest_path=manifest_path,
+        locked=locked,
     )
     if exit_code != 0:
         raise CargoMetadataInvocationError(exit_code, stdout_text, stderr_text)

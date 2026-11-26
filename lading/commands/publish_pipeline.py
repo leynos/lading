@@ -113,7 +113,11 @@ def _cargo_flags(options: _PublishExecutionOptions) -> tuple[str, ...]:
     """Return the flags ``cargo package`` and ``cargo publish`` share."""
     return (
         *(("--allow-dirty",) if options.allow_dirty else ()),
-        *(("--locked",) if options.is_locked else ()),
+        # With digests, a digest only means something against a fixed lockfile
+        # and a fixed registry. `--registry crates-io` stops Cargo's own
+        # configuration (`[registry] default`) from sending the upload, or the
+        # dependency resolution, anywhere lading cannot compare against.
+        *(("--locked", "--registry", "crates-io") if options.is_locked else ()),
     )
 
 
@@ -138,9 +142,16 @@ def _package_crate(
     *,
     runner: CommandRunner,
 ) -> None:
-    """Package one publishable crate using the staged workspace."""
+    """Package one publishable crate using the staged workspace.
+
+    Under ``--expect-digests`` a version already on crates.io is compared first
+    and, when identical, not packaged at all: its published bytes are what
+    matter, whatever a local build would produce.
+    """
     plan = state.plan
     options = state.options
+    if options.verifier is not None and options.verifier.resolve_published(crate):
+        return
     package_args = _cargo_flags(options)
     crate_root = _resolve_staged_crate_root(crate, plan, state.preparation.staging_root)
     position = state.position(crate)
@@ -183,9 +194,9 @@ def _publish_crate(
     options = state.options
     publish_args = (*_cargo_flags(options), *(() if options.live else ("--dry-run",)))
     crate_root = _resolve_staged_crate_root(crate, plan, state.preparation.staging_root)
-    if options.verifier is not None and options.verifier.resolve_published(crate):
-        # The identical archive is already on crates.io, so there is nothing
-        # to upload and the rerun of an interrupted release resumes safely.
+    if options.verifier is not None and options.verifier.is_already_published(crate):
+        # Found identical on crates.io before packaging: nothing to upload, so
+        # a rerun of an interrupted release resumes safely.
         return
     LOGGER.info(
         "Running cargo publish%s for crate %s (%s)",

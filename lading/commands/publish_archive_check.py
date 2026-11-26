@@ -159,8 +159,8 @@ class ArchiveVerifier:
     """Compare crate archives with the caller's expected digests.
 
     One instance serves one publish run. It remembers each crate's outcome so
-    the summary can report them, and the workspace's Cargo target directory so
-    ``cargo metadata`` is asked once.
+    the summary can report them, and each crate root's Cargo target
+    directory so ``cargo metadata`` is asked once per crate.
 
     Parameters
     ----------
@@ -181,7 +181,7 @@ class ArchiveVerifier:
         publish_registry.fetch_crates_io_digest
     )
     _outcomes: dict[str, CrateOutcome] = dc.field(default_factory=dict, init=False)
-    _target_directory: Path | None = dc.field(default=None, init=False)
+    _target_directories: dict[Path, Path] = dc.field(default_factory=dict, init=False)
 
     def _record(
         self, crate: WorkspaceCrate, outcome: ArchiveOutcome, detail: str
@@ -201,10 +201,22 @@ class ArchiveVerifier:
         )
 
     def _target(self, crate_root: Path) -> Path:
-        """Return the workspace's Cargo target directory, asking Cargo once."""
-        if self._target_directory is None:
-            self._target_directory = self._ask_cargo_for_target(crate_root)
-        return self._target_directory
+        """Return ``crate_root``'s Cargo target directory, asking Cargo once.
+
+        Keyed by crate root, not shared: a crate can carry its own
+        ``.cargo/config.toml`` and so its own ``build.target-dir``, and reading
+        another crate's directory could match a stale archive.
+
+        Returns
+        -------
+        Path
+            The directory Cargo writes ``package/<name>-<version>.crate`` under.
+        """
+        if crate_root not in self._target_directories:
+            self._target_directories[crate_root] = self._ask_cargo_for_target(
+                crate_root
+            )
+        return self._target_directories[crate_root]
 
     def _ask_cargo_for_target(self, crate_root: Path) -> Path:
         """Run ``cargo metadata`` in ``crate_root`` and read ``target_directory``."""
@@ -299,12 +311,31 @@ class ArchiveVerifier:
                 "published version cannot be replaced; release a new version"
             )
             raise PublishedArchiveConflictError(message)
+        if self._outcome_of(crate) is ArchiveOutcome.UNVERIFIED:
+            # Nothing was compared locally and that is what the summary must
+            # keep saying; the published bytes match, but they are not the
+            # archive this run packaged.
+            LOGGER.info(
+                "Crate %s %s is already published with the expected archive",
+                crate.name,
+                crate.version,
+            )
+            return True
         self._record(
             crate,
             ArchiveOutcome.ALREADY_PUBLISHED,
             "skipping cargo publish",
         )
         return True
+
+    def _outcome_of(self, crate: WorkspaceCrate) -> ArchiveOutcome | None:
+        """Return the outcome decided so far for ``crate``, if any."""
+        decided = self._outcomes.get(crate.name)
+        return None if decided is None else decided.outcome
+
+    def is_already_published(self, crate: WorkspaceCrate) -> bool:
+        """Whether ``resolve_published`` found the identical archive on crates.io."""
+        return self._outcome_of(crate) is ArchiveOutcome.ALREADY_PUBLISHED
 
     def confirm_already_published(self, crate: WorkspaceCrate) -> None:
         """Compare a version Cargo says exists, when the pre-publish check missed it.
