@@ -2060,6 +2060,13 @@ responsibilities live in dedicated modules, imported by their original homes:
   validation, and public compatibility aliases for CLI annotations (re-exported
   by `cli`). Runtime CLI signatures keep their `Annotated` metadata inline
   because Cyclopts does not unwrap PEP 695 aliases while constructing options.
+- `lading.cli_app` — the shared `cyclopts.App` instance, imported by both the
+  command adapters in `cli` and the process entry point.
+- `lading.cli_helpers` — workspace-override parsing, tri-state flag labelling,
+  dispatch-token recording, and logging setup (re-exported by `cli`).
+- `lading.cli_entrypoint` — process startup, configuration loading, dispatch,
+  and translation of preflight and workspace failures into exit codes (imported
+  by `cli`).
 
 ### In-process metrics (`lading.utils.metrics`)
 

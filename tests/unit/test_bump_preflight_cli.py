@@ -289,6 +289,38 @@ def _documented_version(version: str) -> str:
     return f'```toml\n[dependencies]\nalpha = "{version}"\n```\n'
 
 
+def test_a_same_version_run_rewrites_outdated_documentation(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """Control: the valid plan the rejection withholds does rewrite the file."""
+    outside_sentinel(tmp_path)
+    workspace = create_cli_workspace(
+        tmp_path / "workspace",
+        options=WorkspaceOptions(documentation_globs=("docs/*.md",)),
+    )
+    docs = workspace.root / "docs"
+    docs.mkdir()
+    (docs / "guide.md").write_text(_documented_version("0.0.9"), encoding="utf-8")
+    runner = RecordingCommandRunner(metadata=workspace.metadata)
+
+    exit_code, stdout, stderr = run_bump(
+        workspace,
+        runner,
+        CliSeams(monkeypatch, capsys),
+        options=RunOptions(target_version="0.1.0"),
+    )
+
+    assert exit_code == 0, f"the valid plan must succeed; stderr:\n{stderr}"
+    assert "Updated version to 0.1.0" in stdout, (
+        "the run must report the applied version"
+    )
+    assert (docs / "guide.md").read_text(encoding="utf-8") == _documented_version(
+        "0.1.0"
+    ), "the control must show the documentation rewrite actually happens"
+
+
 @pytest.mark.parametrize("lockfile_manifest", _ESCAPING_LOCKFILES)
 def test_bump_rejects_an_invalid_lockfile_manifest_on_a_same_version_run(
     tmp_path: Path,

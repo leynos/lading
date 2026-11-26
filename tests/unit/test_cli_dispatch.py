@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from lading import cli
+from lading import cli, cli_entrypoint
 from lading import config as config_module
 from lading.commands import bump as bump_command
 from lading.commands import publish as publish_command
@@ -345,7 +345,7 @@ def test_dispatch_and_print_owns_results_and_exit_codes(
             raise outcome
         return outcome
 
-    monkeypatch.setattr(cli, "app", fake_app)
+    monkeypatch.setattr(cli_entrypoint, "app", fake_app)
     tokens = ("bump", "1.2.3")
 
     status = cli._dispatch_and_print(tokens)

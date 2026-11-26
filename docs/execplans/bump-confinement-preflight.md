@@ -588,6 +588,12 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
   unmatched member glob. Member-pattern declaration moved to
   `member_declarations.py`, bringing `confined_discovery.py` within the plan's
   400-line limit.
+- [x] 2026-11-27: Second assessment round cleared. The same-version lockfile
+  test now documents an older version, and a control test proves the valid plan
+  would rewrite that file, so the rejection is shown to withhold a pending
+  write. The command-line composition root was split into `cli_app`,
+  `cli_helpers`, and `cli_entrypoint`, bringing `lading/cli.py` from 734 to 351
+  lines; the dispatch and app test seams moved to the modules that own them.
 - [ ] EP-M5 release: tag and release `v0.4.0b1` after review convergence, then
   record the tag commit on issue #409.
 
@@ -751,6 +757,11 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
 - README preparation derives the crate directory through
   `graph_relative_manifest`, as manifest preparation does, so an injected graph
   spelled through a root alias is confined beneath the canonical root.
+- The command-line composition root exceeded the plan's 400-line limit once
+  bump discovery selection was added to it. Rather than leave the limit unmet,
+  the shared app, pure helpers, and process entry point moved into `cli_app.py`,
+  `cli_helpers.py`, and `cli_entrypoint.py`; the command adapters and the
+  patched runner and workspace-loader seams remain in `cli.py`.
 - `tomlkit` is a new runtime dependency, a deviation from the original
   constraint that no new dependency was needed. Cargo accepts TOML 1.1 syntax
   such as multiline inline tables, which `tomllib` rejects, and a configuration
@@ -782,4 +793,5 @@ here and on issue #409 once the release tag is pushed.
   wildcards, and observing the write itself.
 - 2026-11-27: Recorded the assessment decisions on lockfile validation without
   a manifest change, README adoption through an injected alias, and the
-  `tomlkit` dependency deviation.
+  `tomlkit` dependency deviation. Recorded the same-version control fixture and
+  the `cli.py` split that follows the 400-line constraint.

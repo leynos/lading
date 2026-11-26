@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from lading import cli
+from lading import cli, cli_entrypoint
 from lading import config as config_module
 from lading.commands import bump as bump_command
 from lading.commands import publish as publish_command
@@ -62,7 +62,7 @@ def test_main_handles_exceptions(
         """Raise the parametrised exception in place of dispatching the command."""
         raise case.exception
 
-    monkeypatch.setattr(cli, "_dispatch_and_print", boom)
+    monkeypatch.setattr(cli_entrypoint, "_dispatch_and_print", boom)
     exit_code = cli.main(["bump", "1.2.3", "--workspace-root", str(tmp_path)])
     assert exit_code == case.expected_exit_code, (
         f"expected exit code {case.expected_exit_code}, got {exit_code}"

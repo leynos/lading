@@ -572,7 +572,7 @@ reason = "Type-checking import blocks, each listing the types that module alone 
 
 [[tool.duplication_gate.allow]]
 members = [
-    "lading/cli.py",
+    "lading/cli_helpers.py",
     "lading/runtime/subprocess_runner.py",
     "lading/toml_coerce/_mappings.py",
 ]
