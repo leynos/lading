@@ -168,6 +168,43 @@ def _declared_length(response: _Response) -> int | None:
     return int(raw) if raw is not None and str(raw).isdigit() else None
 
 
+def _limit_socket_wait(response: _Response, seconds: float) -> None:
+    """Make the next blocking read on ``response`` wait at most ``seconds``.
+
+    A buffered ``read(n)`` can loop over several ``recv`` calls and so outlive
+    any single timeout, so the budget is applied to the socket before every
+    read, and reads use ``read1`` (one underlying read). The socket is reached
+    through the response's file object; a response without one (a test double)
+    is left alone.
+    """
+    sock = getattr(getattr(getattr(response, "fp", None), "raw", None), "_sock", None)
+    if sock is not None:
+        sock.settimeout(seconds)
+
+
+def _read_chunk(response: _Response, deadline: _Deadline) -> bytes:
+    """Read at most one chunk, never waiting past the deadline.
+
+    Returns
+    -------
+    bytes
+        The next chunk, or ``b""`` at the end of the body.
+
+    Raises
+    ------
+    TimeoutError
+        If the read timed out while budget remained (a retryable stall).
+    """
+    deadline.check()
+    _limit_socket_wait(response, deadline.remaining())
+    read = getattr(response, "read1", response.read)
+    try:
+        return read(_READ_CHUNK_BYTES)
+    except TimeoutError:
+        deadline.check()  # Raises when the timeout was the budget running out.
+        raise
+
+
 def _hash_response(response: _Response, *, url: str, deadline: _Deadline) -> str:
     """Hash ``response`` as it streams, within the size cap and the time budget.
 
@@ -186,8 +223,7 @@ def _hash_response(response: _Response, *, url: str, deadline: _Deadline) -> str
     """
     digest = hashlib.sha256()
     total = 0
-    while chunk := response.read(_READ_CHUNK_BYTES):
-        deadline.check()
+    while chunk := _read_chunk(response, deadline):
         total += len(chunk)
         if total > _MAX_ARCHIVE_BYTES:
             message = f"Published archive at {url} exceeds {_MAX_ARCHIVE_BYTES} bytes"
@@ -273,7 +309,8 @@ class _Retry:
             _ATTEMPTS,
             error,
         )
-        self.transport.sleep(_RETRY_DELAY_SECONDS)
+        # Never wait longer than the budget has left.
+        self.transport.sleep(min(_RETRY_DELAY_SECONDS, self.deadline.remaining()))
         return True
 
 
@@ -287,10 +324,17 @@ def _attempt(url: str, transport: FetchTransport, deadline: _Deadline) -> str | 
     timeout = min(_REQUEST_TIMEOUT_SECONDS, deadline.remaining())
     try:
         with transport.opener(request, timeout=timeout) as response:
+            deadline.check()  # Connecting and reading headers used the budget too.
             return _hash_response(response, url=url, deadline=deadline)
     except urllib.error.HTTPError as error:
         if error.code == http.HTTPStatus.NOT_FOUND:
             return None
+        raise
+    except OSError as error:
+        # A timeout while connecting or reading headers that spent the budget is
+        # the budget expiring, whatever urllib wrapped it in; it is never a 404.
+        if not isinstance(error, _BudgetExhaustedError):
+            deadline.check()
         raise
 
 

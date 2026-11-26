@@ -4,6 +4,7 @@ import contextlib
 import email.message
 import http.client
 import io
+import types
 import typing as typ
 import urllib.error
 import urllib.request
@@ -245,3 +246,167 @@ def test_retry_waits_count_against_the_budget(
         fetch_crates_io_digest("a", "1.0.0", transport=transport)
 
     assert len(script.requests) == 2, "the third attempt would exceed the budget"
+
+
+class _Clock:
+    """A settable monotonic clock."""
+
+    def __init__(self) -> None:
+        """Start at zero, having been read no times."""
+        self.now = 0.0
+        self.reads = 0
+
+    def __call__(self) -> float:
+        """Return the current time, counting the read."""
+        self.reads += 1
+        return self.now
+
+
+class _SlowSocket:
+    """A socket double: each read waits ``delays`` seconds unless cut short."""
+
+    def __init__(self, clock: _Clock, delays: list[float]) -> None:
+        """Wait ``delays[i]`` for the ``i``-th read."""
+        self.clock = clock
+        self.delays = delays
+        self.timeouts: list[float] = []
+        self.timeout = 0.0
+
+    def settimeout(self, seconds: float) -> None:
+        """Record the wait the next read may take at most."""
+        self.timeouts.append(seconds)
+        self.timeout = seconds
+
+
+class _SlowBody:
+    """A response whose reads each take a scripted time, like a slow trickle."""
+
+    def __init__(self, sock: _SlowSocket) -> None:
+        """Expose ``sock`` where HTTPResponse keeps it (``fp.raw._sock``)."""
+        self.fp = types.SimpleNamespace(raw=types.SimpleNamespace(_sock=sock))
+        self._sock = sock
+        self.reads = 0
+
+    def read1(self, size: int = -1) -> bytes:
+        """Return one byte after the scripted delay, or time out when cut short."""
+        del size
+        delay = self._sock.delays[self.reads]
+        self.reads += 1
+        if delay > self._sock.timeout:
+            self._sock.clock.now += self._sock.timeout
+            message = "timed out"
+            raise TimeoutError(message)
+        self._sock.clock.now += delay
+        return b"x"
+
+    def read(self, size: int = -1) -> bytes:
+        """Fail: a buffered read must never be used."""
+        del size
+        message = "read() could outlive the budget; read1() must be used"
+        raise AssertionError(message)
+
+
+def _body_transport(clock: _Clock, body: _SlowBody) -> FetchTransport:
+    """Return a transport serving ``body`` and recording nothing else."""
+
+    @contextlib.contextmanager
+    def opener(
+        request: urllib.request.Request, /, *, timeout: float
+    ) -> cabc.Generator[_SlowBody]:
+        """Open the scripted body."""
+        del request, timeout
+        yield body
+
+    return FetchTransport(opener=opener, sleep=lambda _s: None, clock=clock)
+
+
+def test_the_budget_fires_in_the_middle_of_a_slow_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A single read that would outlast the budget is cut off at the budget."""
+    monkeypatch.setattr(publish_registry, "_TOTAL_BUDGET_SECONDS", 5.0)
+    clock = _Clock()
+    sock = _SlowSocket(clock, delays=[1.0, 100.0])
+    transport = _body_transport(clock, _SlowBody(sock))
+
+    with pytest.raises(PublishedArchiveUnavailableError, match="time budget"):
+        fetch_crates_io_digest("a", "1.0.0", transport=transport)
+
+    assert sock.timeouts[:2] == [5.0, 4.0], (
+        "each read must be limited to what the budget has left at that moment"
+    )
+    assert clock.now == pytest.approx(5.0), (
+        "the stalled read must stop at the budget, not run its full 100 seconds"
+    )
+
+
+def test_expiry_while_connecting_is_a_timeout_not_a_404_or_a_digest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A connect or header phase that spends the budget fails as a timeout."""
+    monkeypatch.setattr(publish_registry, "_TOTAL_BUDGET_SECONDS", 5.0)
+    clock = _Clock()
+    asked: list[float] = []
+
+    @contextlib.contextmanager
+    def opener(
+        request: urllib.request.Request, /, *, timeout: float
+    ) -> cabc.Generator[io.BytesIO]:
+        """Spend the whole budget before any response arrives."""
+        del request
+        asked.append(timeout)
+        clock.now += 5.0
+        raise urllib.error.URLError(TimeoutError("timed out"))
+        yield io.BytesIO()  # pragma: no cover - unreachable by design
+
+    transport = FetchTransport(opener=opener, sleep=lambda _s: None, clock=clock)
+
+    with pytest.raises(PublishedArchiveUnavailableError, match="time budget"):
+        fetch_crates_io_digest("a", "1.0.0", transport=transport)
+
+    assert asked == [5.0], "the open must be given the remaining budget, once"
+
+
+def test_an_open_that_returns_after_the_deadline_is_not_trusted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Headers that arrive late never turn into a digest."""
+    monkeypatch.setattr(publish_registry, "_TOTAL_BUDGET_SECONDS", 5.0)
+    clock = _Clock()
+
+    @contextlib.contextmanager
+    def opener(
+        request: urllib.request.Request, /, *, timeout: float
+    ) -> cabc.Generator[io.BytesIO]:
+        """Return a complete body, but only after the budget is gone."""
+        del request, timeout
+        clock.now += 6.0
+        yield io.BytesIO(PLAIN_ARCHIVE)
+
+    transport = FetchTransport(opener=opener, sleep=lambda _s: None, clock=clock)
+
+    with pytest.raises(PublishedArchiveUnavailableError, match="time budget"):
+        fetch_crates_io_digest("a", "1.0.0", transport=transport)
+
+
+def test_a_retry_wait_is_clamped_to_the_remaining_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The pause between attempts never exceeds what the budget has left."""
+    monkeypatch.setattr(publish_registry, "_TOTAL_BUDGET_SECONDS", 2.5)
+    monkeypatch.setattr(publish_registry, "_RETRY_DELAY_SECONDS", 2.0)
+    clock = _Clock()
+    script = _Script(_http_error(503), PLAIN_ARCHIVE)
+    waits: list[float] = []
+
+    def sleep(seconds: float) -> None:
+        """Record the wait and spend it."""
+        waits.append(seconds)
+        clock.now += seconds
+
+    transport = FetchTransport(opener=script._open, sleep=sleep, clock=clock)
+
+    result = fetch_crates_io_digest("a", "1.0.0", transport=transport)
+
+    assert result == digest(PLAIN_ARCHIVE), "the retry within the budget succeeds"
+    assert all(wait <= 2.5 for wait in waits), "no wait may exceed the budget"
