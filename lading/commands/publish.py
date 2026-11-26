@@ -14,7 +14,13 @@ import typing as typ
 from pathlib import Path
 
 from lading import config as config_module
-from lading.commands import publish_pipeline, publish_preflight, publish_staging
+from lading.commands import (
+    publish_digests,
+    publish_pipeline,
+    publish_preflight,
+    publish_staging,
+)
+from lading.commands.publish_archive_check import ArchiveVerifier
 from lading.commands.publish_errors import PublishPreflightError
 from lading.commands.publish_manifest import _apply_strip_patch_strategy
 from lading.commands.publish_plan import PublishPlanError as PublishPlanError
@@ -22,6 +28,9 @@ from lading.commands.publish_plan import format_plan, plan_publication
 from lading.utils.path import normalize_workspace_root
 
 if typ.TYPE_CHECKING:
+    from lading.commands.publish_digests import ExpectedDigests
+    from lading.commands.publish_plan import PublishPlan
+    from lading.commands.publish_registry import PublishedDigestFetcher
     from lading.commands.publish_skip import SkipPreflightDecision
     from lading.config import LadingConfig
     from lading.runtime import CommandRunner
@@ -67,6 +76,18 @@ class PublishOptions:
         Optional explicit decision, with its provenance, about skipping the
         preflight auxiliary builds and the cargo check/test pair. When
         ``None``, the ``[preflight] skip`` setting decides.
+    expect_digests : Path | None
+        Optional ``sha256sum``-format file of expected archive digests
+        (``--expect-digests``). A relative path resolves against the workspace
+        root. When set, every archive is checked against it before upload,
+        ``--locked`` is passed to cargo, and the run is limited to crates.io.
+    default_registry : str | None
+        Registry Cargo publishes to when a crate names none, as read from
+        ``CARGO_REGISTRY_DEFAULT`` by the command-line entry point. Only
+        consulted with ``expect_digests``, which supports crates.io alone.
+    published_digest_fetcher : PublishedDigestFetcher | None
+        Optional replacement for the crates.io archive download, so tests
+        never reach the network. Only used with ``expect_digests``.
     """
 
     allow_dirty: bool = True
@@ -81,6 +102,9 @@ class PublishOptions:
     sccache_stats: bool = False
     sccache_stats_json: Path | None = None
     skip_preflight: SkipPreflightDecision | None = None
+    expect_digests: Path | None = None
+    default_registry: str | None = None
+    published_digest_fetcher: PublishedDigestFetcher | None = None
 
 
 def _ensure_configuration(
@@ -120,6 +144,8 @@ def _validate_publication_options(options: PublishOptions) -> None:
         )
         LOGGER.error(message)
         raise PublishPreflightError(message)
+    if options.expect_digests is not None:
+        publish_digests.require_crates_io_default(options.default_registry)
     if options.allow_unpublished_workspace_deps:
         LOGGER.info(
             "Allowing unpublished workspace dependencies during dry-run publish"
@@ -138,6 +164,33 @@ def _preflight_request(
         runner=runner,
         skip=options.skip_preflight,
     )
+
+
+def _load_expected_digests(
+    options: PublishOptions, workspace_root: Path
+) -> ExpectedDigests | None:
+    """Read the ``--expect-digests`` file, if one was given, before any work."""
+    if options.expect_digests is None:
+        return None
+    return publish_digests.load_expected_digests(
+        workspace_root / options.expect_digests
+    )
+
+
+def _archive_verifier(
+    expected: ExpectedDigests | None,
+    plan: PublishPlan,
+    options: PublishOptions,
+    runner: CommandRunner,
+) -> ArchiveVerifier | None:
+    """Check the digests against the plan and build the run's verifier."""
+    if expected is not None:
+        publish_digests.validate_against_plan(expected, plan)
+        publish_digests.require_crates_io_crates(plan)
+        if options.published_digest_fetcher is None:
+            return ArchiveVerifier(expected, runner)
+        return ArchiveVerifier(expected, runner, options.published_digest_fetcher)
+    return None
 
 
 def run(
@@ -175,6 +228,9 @@ def run(
         configuration or effective_options.configuration, root_path
     )
     command_runner = effective_options.command_runner or publish_pipeline._invoke
+    # Read before the pre-flight, which builds the workspace: a typo in the
+    # digest file should cost seconds, not a verify build.
+    expected_digests = _load_expected_digests(effective_options, root_path)
     publish_preflight._run_preflight_checks(
         root_path,
         _preflight_request(effective_options, active_configuration, command_runner),
@@ -184,6 +240,9 @@ def run(
     )
     plan = plan_publication(
         active_workspace, active_configuration, workspace_root=root_path
+    )
+    verifier = _archive_verifier(
+        expected_digests, plan, effective_options, command_runner
     )
     # The staged tree lives no longer than this block: a publish that raises
     # or is interrupted must not leave its copy of the workspace behind.
@@ -197,9 +256,13 @@ def run(
             allow_unpublished_workspace_deps=effective_options.allow_unpublished_workspace_deps,
             sccache_stats=effective_options.sccache_stats,
             sccache_stats_json=effective_options.sccache_stats_json,
+            verifier=verifier,
         )
         publish_pipeline._dispatch_publication(
-            plan, staged.preparation, options=execution_options, runner=command_runner
+            plan,
+            staged.preparation,
+            options=execution_options,
+            runner=command_runner,
         )
         plan_message = format_plan(
             plan, strip_patches=active_configuration.publish.strip_patches
@@ -210,5 +273,7 @@ def run(
     summary_lines = publish_staging._format_preparation_summary(
         staged.preparation, retained=staged.retained
     )
+    if verifier is not None:
+        summary_lines = (*summary_lines, "", *verifier.summary_lines())
     LOGGER.info("Publish workflow completed successfully for workspace %s", root_path)
     return f"{plan_message}\n\n" + "\n".join(summary_lines)

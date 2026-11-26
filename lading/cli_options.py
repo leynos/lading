@@ -113,6 +113,20 @@ SCCACHE_STATS_JSON_PARAMETER = Parameter(
 )
 
 
+EXPECT_DIGESTS_PARAMETER = Parameter(
+    name="expect-digests",
+    help=(
+        "Refuse to upload an archive that differs from the SHA-256 digests in "
+        "this sha256sum-format file ('<64 hex digits>  <name>-<version>.crate' "
+        "per line). Every publishable crate needs exactly one entry. Each "
+        "archive is checked after cargo package and before cargo publish, "
+        "again after a live publish, and against the archive already on "
+        "crates.io when the version is published. Implies --locked for both "
+        "cargo commands and supports crates.io only. A relative path "
+        "resolves against the workspace root."
+    ),
+)
+
 CLEAN_LOCATION_PARAMETER = Parameter(
     name="location",
     help=(
@@ -161,6 +175,8 @@ class PublishFlags:
     True
     >>> PublishFlags().keep_staging
     False
+    >>> PublishFlags().expect_digests is None
+    True
     """
 
     forbid_dirty: typ.Annotated[bool, FORBID_DIRTY_PARAMETER] = False
@@ -172,6 +188,7 @@ class PublishFlags:
     sccache_stats: typ.Annotated[bool, SCCACHE_STATS_PARAMETER] = False
     sccache_stats_json: typ.Annotated[Path | None, SCCACHE_STATS_JSON_PARAMETER] = None
     keep_staging: typ.Annotated[bool, KEEP_STAGING_PARAMETER] = False
+    expect_digests: typ.Annotated[Path | None, EXPECT_DIGESTS_PARAMETER] = None
 
 
 # These aliases remain public for integrations that import CLI annotations.
@@ -190,11 +207,13 @@ type AllowUnpublishedWorkspaceDepsFlag = typ.Annotated[
 type SkipPreflightFlag = typ.Annotated[bool | None, SKIP_PREFLIGHT_PARAMETER]
 type SccacheStatsFlag = typ.Annotated[bool, SCCACHE_STATS_PARAMETER]
 type SccacheStatsJsonOption = typ.Annotated[Path | None, SCCACHE_STATS_JSON_PARAMETER]
+type ExpectDigestsOption = typ.Annotated[Path | None, EXPECT_DIGESTS_PARAMETER]
 
 
 __all__ = [
     "ALLOW_UNPUBLISHED_WORKSPACE_DEPS_PARAMETER",
     "DRY_RUN_PARAMETER",
+    "EXPECT_DIGESTS_PARAMETER",
     "FORBID_DIRTY_PARAMETER",
     "LIVE_PARAMETER",
     "REBUILD_LOCKFILES_PARAMETER",
@@ -210,6 +229,7 @@ __all__ = [
     "WORKSPACE_ROOT_REQUIRED_MESSAGE",
     "AllowUnpublishedWorkspaceDepsFlag",
     "DryRunFlag",
+    "ExpectDigestsOption",
     "ForbidDirtyFlag",
     "LiveFlag",
     "PublishFlags",

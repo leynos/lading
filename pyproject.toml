@@ -709,6 +709,40 @@ full_name = [
 ]
 reason = "signal.signal invokes this handler with the interrupted frame; the parameter is required by the handler protocol and explicitly discarded."
 
+[[tool.skylos.dead_code.entrypoints]]
+type = "method"
+full_name = [
+    "lading.commands.publish_archive_check.ArchiveVerifier.check_packaged",
+    "lading.commands.publish_archive_check.ArchiveVerifier.mark_unverified",
+    "lading.commands.publish_archive_check.ArchiveVerifier.resolve_published",
+    "lading.commands.publish_archive_check.ArchiveVerifier.confirm_already_published",
+    "lading.commands.publish_archive_check.ArchiveVerifier.check_uploaded",
+    "lading.commands.publish_archive_check.ArchiveVerifier.summary_lines",
+    "lading.commands.publish_archive_check.ArchiveVerifier._target",
+    "lading.commands.publish_archive_check.ArchiveVerifier._ask_cargo_for_target",
+    "lading.commands.publish_archive_check.ArchiveVerifier._archive_path",
+    "lading.commands.publish_archive_check.ArchiveVerifier._digest_archive",
+    "lading.commands.publish_archive_check.ArchiveVerifier._require_match",
+    "lading.commands.publish_digests.ExpectedDigests.digest_for_filename",
+    "lading.commands.publish_digests.ExpectedDigests.digest_for",
+]
+reason = "publish_pipeline and publish.run call these through the optional `_PublishExecutionOptions.verifier` attribute, which the dead-code scan does not resolve to the class."
+
+[[tool.skylos.dead_code.entrypoints]]
+type = "method"
+full_name = [
+    "lading.commands.publish_archive_check._Comparison.describe",
+]
+reason = "The verifier's _require_match and resolve_published format their mismatch messages with it."
+
+[[tool.skylos.dead_code.entrypoints]]
+type = "class"
+full_name = [
+    "lading.commands.publish_archive_check.ArchiveUnavailableError",
+    "lading.commands.publish_archive_check._Comparison",
+]
+reason = "The verifier raises ArchiveUnavailableError when an archive cannot be located or compared, and builds a _Comparison for every digest check; the dead-code scan does not resolve either through the verifier's entry-point methods."
+
 [tool.setuptools.packages.find]
 include = [
     "lading",

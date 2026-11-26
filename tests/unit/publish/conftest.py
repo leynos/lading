@@ -20,6 +20,7 @@ from lading.commands.publish_preflight import (
     _run_preflight_checks as _real_preflight,
 )
 from lading.workspace import WorkspaceCrate, WorkspaceDependency, WorkspaceGraph
+from tests.helpers.publish_digests import PublishRig
 
 if typ.TYPE_CHECKING:
     import collections.abc as cabc
@@ -286,6 +287,12 @@ def disable_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
         "_invoke",
         lambda *_args, **_kwargs: (0, "", ""),
     )
+
+
+@pytest.fixture
+def digest_rig(tmp_path: Path) -> PublishRig:
+    """Provide a workspace whose archives all match their recorded digests."""
+    return PublishRig.create(tmp_path)
 
 
 @pytest.fixture

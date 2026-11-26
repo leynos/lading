@@ -62,6 +62,7 @@ pytest_plugins = (
     "tests.bdd.steps.test_publish_given_steps",
     "tests.bdd.steps.test_publish_when_steps",
     "tests.bdd.steps.test_publish_diagnostics_then_steps",
+    "tests.bdd.steps.test_publish_digest_steps",
     "tests.bdd.steps.test_publish_invocation_order_then_steps",
     "tests.bdd.steps.test_publish_plan_then_steps",
     "tests.bdd.steps.test_publish_preflight_then_steps",

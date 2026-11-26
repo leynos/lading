@@ -61,6 +61,9 @@ from .cli_options import (
     DryRunFlag as DryRunFlag,
 )
 from .cli_options import (
+    ExpectDigestsOption as ExpectDigestsOption,
+)
+from .cli_options import (
     ForbidDirtyFlag as ForbidDirtyFlag,
 )
 from .cli_options import (
@@ -98,6 +101,10 @@ from .workspace import (
 )
 from .workspace import metadata as metadata_module
 
+# Cargo's own variable naming the registry `cargo publish` targets by default.
+# `--expect-digests` can only compare against crates.io, so it is read to refuse
+# a run that would publish elsewhere.
+CARGO_REGISTRY_DEFAULT_ENV_VAR = "CARGO_REGISTRY_DEFAULT"
 _CMD_MOX_STUB_ENV = "LADING_USE_CMD_MOX_STUB"
 _CMD_MOX_TRUTHY_VALUES = frozenset({"1", "true", "yes", "on"})
 
@@ -301,7 +308,9 @@ def publish(
         measurement, resolved by the publish command), and
         ``--keep-staging``, which retains the staged workspace copy and logs
         where it was left. The copy is removed when the publish ends unless
-        that flag is given (issue #269).
+        that flag is given (issue #269). ``--expect-digests PATH`` names a
+        ``sha256sum``-format file; every archive is then checked against it
+        before upload, and cargo runs with ``--locked`` (issue #419).
 
     Returns
     -------
@@ -351,6 +360,10 @@ def _publish_options(
         # --keep-staging is the negative of the option it sets: retaining the
         # staged copy is the exception, so the flag names the exception.
         cleanup=not flags.keep_staging,
+        expect_digests=flags.expect_digests,
+        # Read here, at the composition root, so the publish command stays
+        # free of ambient state. Only an expectation run consults it.
+        default_registry=os.environ.get(CARGO_REGISTRY_DEFAULT_ENV_VAR),
         command_runner=command_runner,
     )
 

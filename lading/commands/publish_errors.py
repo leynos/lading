@@ -71,7 +71,41 @@ class PublishError(PublishPreflightError):
     """
 
 
+class ExpectedDigestsError(PublishPreflightError):
+    """Raise when the ``--expect-digests`` file cannot be used for this run.
+
+    The file is unreadable, malformed, or disagrees with the publish plan.
+    Lading raises it before it stages, packages, or uploads anything.
+    """
+
+
+class ArchiveMismatchError(PublishPreflightError):
+    """Raise when a packaged archive differs from its expected digest.
+
+    Raised after ``cargo package`` and before ``cargo publish`` for the crate,
+    so nothing has been uploaded for it or for any later crate.
+    """
+
+
+class UploadedArchiveMismatchError(PublishError):
+    """Raise when the archive ``cargo publish`` uploaded differs from expectation.
+
+    The upload cannot be undone; the error exists so the run fails loudly.
+    """
+
+
+class PublishedArchiveConflictError(PublishError):
+    """Raise when the archive already on the registry differs from expectation.
+
+    The version is taken, so the only recovery is a new version.
+    """
+
+
 __all__ = [
+    "ArchiveMismatchError",
+    "ExpectedDigestsError",
     "PublishError",
     "PublishPreflightError",
+    "PublishedArchiveConflictError",
+    "UploadedArchiveMismatchError",
 ]
