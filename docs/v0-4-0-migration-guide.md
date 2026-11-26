@@ -39,9 +39,11 @@ dependency requirement in the same fence still moves when it names a bumped
 crate; see
 [section 6](#6-review-documentation-snippets-for-over-broad-rewriting).
 
-`lading publish` also gains the optional `--expect-digests PATH`, which refuses
-to upload an archive that differs from a `sha256sum`-format file and passes
-`--locked` to cargo. Nothing changes unless it is given; see
+`lading publish` also gains the optional `--expect-digests PATH`, which checks
+each archive against a `sha256sum`-format file (refusing a packaged archive
+that differs before publication, and detecting a difference in the uploaded
+archive only after the upload) and passes `--locked` to cargo. Nothing changes
+unless it is given; see
 [Publishing only the archives you have already checked](users-guide.md#publishing-only-the-archives-you-have-already-checked).
 
 The number is derived rather than announced: 0.3.1 is the most recent release,

@@ -773,8 +773,10 @@ not name an `sccache` binary, or an sccache query fails part-way through,
 `cargo publish` packages a crate again and uploads the result, so nothing ties
 the uploaded bytes to archives checked earlier. A release workflow that
 packages in a job with no registry credential, records each archive's SHA-256,
-and publishes from a second job that holds one can close that gap with
-`--expect-digests`:
+and publishes from a second job that holds one can narrow that gap with
+`--expect-digests`, which checks the packaged archive before publication and
+detects a difference in the archive `cargo publish` uploads only after the
+upload, when it cannot be undone:
 
 ```bash
 lading publish --live --expect-digests digests.txt
@@ -1486,11 +1488,13 @@ without editing the command line it invokes. See
 
 ### `--expect-digests`
 
-`lading publish --expect-digests PATH` refuses to upload an archive whose
-SHA-256 differs from the `sha256sum`-format file at `PATH`, passes `--locked` to
-`cargo package` and `cargo publish`, compares an already-published version
-with the file instead of silently skipping it, and supports crates.io only. A
-relative `PATH` resolves against the workspace root. See
+`lading publish --expect-digests PATH` checks each archive's SHA-256 against the
+`sha256sum`-format file at `PATH`: a packaged archive that differs is refused
+before publication, and a difference in the archive `cargo publish` uploads is
+detected only after the upload. It passes `--locked` to `cargo package` and
+`cargo publish`, compares an already-published version with the file instead of
+silently skipping it, and supports crates.io only. A relative `PATH` resolves
+against the workspace root. See
 [Publishing only the archives you have already checked](#publishing-only-the-archives-you-have-already-checked).
 
 ### `--sccache-stats` and `--sccache-stats-json`
