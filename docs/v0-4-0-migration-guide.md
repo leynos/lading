@@ -44,7 +44,7 @@ each archive against a `sha256sum`-format file (refusing a packaged archive
 that differs before publication, and detecting a difference in the uploaded
 archive only after the upload) and passes `--locked` to cargo. Nothing changes
 unless it is given; see
-[Publishing only the archives you have already checked](users-guide.md#publishing-only-the-archives-you-have-already-checked).
+[Checking archives against recorded digests](users-guide.md#checking-archives-against-recorded-digests).
 
 The number is derived rather than announced: 0.3.1 is the most recent release,
 and a breaking change under pre-1.0 semantic versioning advances the minor

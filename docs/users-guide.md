@@ -768,7 +768,7 @@ The instrumentation never fails a run. When `RUSTC_WRAPPER` is unset or does
 not name an `sccache` binary, or an sccache query fails part-way through,
 `lading publish` logs a WARNING, stops querying, and carries on.
 
-#### Publishing only the archives you have already checked
+#### Checking archives against recorded digests
 
 `cargo publish` packages a crate again and uploads the result, so nothing ties
 the uploaded bytes to archives checked earlier. A release workflow that
@@ -949,11 +949,16 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
 ```
 
-The `publish` job is the only one that holds a credential, and it refuses to
-upload anything the `package` job did not record. The token is exchanged after
-lading is installed and is exposed to the `lading publish` step alone, but that
-step still runs the pre-flight builds and Cargo's verification build with the
-token in their environment; `--skip-preflight` removes the first of these. The
+The `publish` job is the only one that holds a credential. Lading checks the
+`cargo package` archive against what the `package` job recorded before
+publishing it (in a dry run, the archive `cargo publish --dry-run` packages as
+well), and skips a version whose identical archive is already on crates.io. It
+cannot check the archive `cargo publish` packages again for the real upload
+until that upload has happened: a difference introduced then is detected only
+after the upload, when it cannot be undone. The token is exchanged after lading
+is installed and is exposed to the `lading publish` step alone, but that step
+still runs the pre-flight builds and Cargo's verification build with the token
+in their environment; `--skip-preflight` removes the first of these. The
 packaging commands are an illustration, and the action tags should be pinned to
 commit hashes in a real workflow: use whatever produces the archives your
 release uploads.
@@ -1495,7 +1500,7 @@ detected only after the upload. It passes `--locked` to `cargo package` and
 `cargo publish`, compares an already-published version with the file instead of
 silently skipping it, and supports crates.io only. A relative `PATH` resolves
 against the workspace root. See
-[Publishing only the archives you have already checked](#publishing-only-the-archives-you-have-already-checked).
+[Checking archives against recorded digests](#checking-archives-against-recorded-digests).
 
 ### `--sccache-stats` and `--sccache-stats-json`
 
