@@ -112,13 +112,14 @@ packages the file named by `license-file`, even when it is dot-named and
 `include` does not name it. A file that Git ignores whose name does not start
 with a dot is packaged unless the manifest's `include` list or `stage_exclude`
 keeps it out. Without `include`, a Git-ignored settings file is therefore
-packaged. To exclude one, either narrow `include` so it omits the file, or
-remove it with `stage_exclude`; audit such files in a publishable crate before
-relying on the default. Setting `include` makes Cargo ignore `exclude`
-entirely, so preserve the exclusion behaviour with negated patterns in the new
-list instead of copying entries across: an existing `exclude = ["secret.env"]`
-becomes `include = ["**", "!secret.env"]`. Because the source checkout still
-applies Git-aware selection, check the file list on the staged tree: run
+packaged unless the manifest's `exclude` list keeps it out. To exclude one,
+either narrow `include` so it omits the file, or remove it with
+`stage_exclude`; audit such files in a publishable crate before relying on the
+default. Setting `include` makes Cargo ignore `exclude` entirely, so preserve
+the exclusion behaviour with negated patterns in the new list instead of
+copying entries across: an existing `exclude = ["secret.env"]` becomes
+`include = ["**", "!secret.env"]`. Because the source checkout still applies
+Git-aware selection, check the file list on the staged tree: run
 `lading publish --keep-staging` in dry-run mode, which logs the retained path,
 and run `cargo package --list` in that staged crate. To keep the old Git-aware
 selection, including gitignore handling and VCS provenance, set
