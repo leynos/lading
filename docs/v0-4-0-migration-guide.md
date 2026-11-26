@@ -5,9 +5,9 @@ also makes the command-line boundary explicit: diagnostics that an earlier
 dependency rendered on stdout are now written to stderr, and command summaries
 are printed once, unwrapped and without colour. Existing flags and
 `lading.toml` keys keep their meaning; the release adds the opt-in
-`[[bump.manifest_rewrites]]` allowlist and additive Python modules. An
-environment already running 3.14 that only reads successful output needs no
-action beyond the version bump itself.
+`[[bump.manifest_rewrites]]` allowlist, the opt-in `--expect-digests` publish
+option, and additive Python modules. An environment already running 3.14 that
+only reads successful output needs no action beyond the version bump itself.
 
 When 0.4.0 is released, its tagged build will also be published to PyPI as a
 source distribution and pure-Python wheel. GitHub Releases will retain both
@@ -38,6 +38,11 @@ needs its published snippets reviewed. Only the package version is retained: a
 dependency requirement in the same fence still moves when it names a bumped
 crate; see
 [section 6](#6-review-documentation-snippets-for-over-broad-rewriting).
+
+`lading publish` also gains the optional `--expect-digests PATH`, which refuses
+to upload an archive that differs from a `sha256sum`-format file and passes
+`--locked` to cargo. Nothing changes unless it is given; see
+[Publishing only the archives you have already checked](users-guide.md#publishing-only-the-archives-you-have-already-checked).
 
 The number is derived rather than announced: 0.3.1 is the most recent release,
 and a breaking change under pre-1.0 semantic versioning advances the minor

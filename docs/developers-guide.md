@@ -1601,6 +1601,16 @@ defaults are:
   already verified the workspace passes a
   `SkipPreflightDecision(skip=True, source=...)`, whose source names the input
   in the publish log and labels the `publish.preflight` metric.
+- `expect_digests=None` — a `sha256sum`-format file of expected archive digests
+  (`--expect-digests`); a relative path resolves against the workspace root.
+  Setting it turns on archive verification, `--locked` for both cargo commands,
+  and the crates.io-only restriction (issue #419).
+- `default_registry=None` — the value of `CARGO_REGISTRY_DEFAULT`, read once by
+  `lading.cli` so the publish command stays free of ambient state. It is only
+  consulted with `expect_digests`.
+- `published_digest_fetcher=None` — replaces the crates.io download used to
+  compare an already-published version. Tests pass a fake so nothing reaches
+  the network.
 
 Additional parameters `configuration`, `workspace`, and `command_runner` allow
 dependency injection for testing and are typically left unset.
@@ -1847,6 +1857,34 @@ instances, applies crate-name canonicalization, and decides whether an index
 miss is out-of-plan and fatal, in-plan but still fatal, or in-plan and
 downgraded by `allow_unpublished_workspace_deps` during dry-run publication.
 
+`publish_digests.py`, `publish_archive_check.py`, and `publish_registry.py`
+implement `--expect-digests` (issue
+[#419](https://github.com/leynos/lading/issues/419); [ADR-012](adrs/adr-0012-verify-archives-against-expected-digests.md)).
+`publish_digests` is the pure half: `parse_digest_text`,
+`load_expected_digests` and `validate_against_plan` turn the file into
+`ExpectedDigests` and reject it before anything is staged,
+`require_crates_io_default` and `require_crates_io_crates` refuse another
+registry, and `sha256_file` hashes an archive in bounded chunks.
+`publish_archive_check` owns `ArchiveVerifier`, which `run()` builds after
+validating the plan and the pipeline calls at four points: `check_packaged`
+after `cargo package`, `mark_unverified` when a dry run downgrades packaging,
+`resolve_published` before `cargo publish` (and `confirm_already_published`
+when Cargo reports a version the first check missed), and `check_uploaded`
+after a successful live publish. It asks `cargo metadata --no-deps` for the
+target directory once, through the command runner, and records one
+`CrateOutcome` per crate for the summary and the `publish.archive_check`
+counter. `publish_registry` is the injectable `PublishedDigestFetcher` port;
+`fetch_crates_io_digest` streams the archive from `static.crates.io` through a
+size cap and bounded retries, and tests substitute a fake. The new errors
+(`ExpectedDigestsError`, `ArchiveMismatchError`, `UploadedArchiveMismatchError`,
+`PublishedArchiveConflictError`) live in `publish_errors`;
+`ArchiveUnavailableError` and `PublishedArchiveUnavailableError` sit beside the
+code that raises them. `tests/helpers/publish_digests.py` provides `FakeCargo`,
+`FakeRegistry`, and `PublishRig`, which drive `publish.run` in process without
+a subprocess or socket; the behavioural scenarios in
+`tests/bdd/features/publish_expect_digests.feature` use them because a download
+cannot be injected into the CLI subprocess the other publish scenarios run.
+
 `publish_sccache_stats.py`, `publish_sccache_report.py`, and
 `publish_sccache.py` implement the opt-in compiler-cache instrumentation (issue
 [#252](https://github.com/leynos/lading/issues/252)).
@@ -1913,13 +1951,14 @@ line that was never parsed. Resolving an _absent_ flag against
 forwarded to every `cargo package` and `cargo publish` invocation within a
 single `lading publish` run. Its fields are:
 
-| Field                              | Type           | Default | Purpose                                                               |
-| ---------------------------------- | -------------- | ------- | --------------------------------------------------------------------- |
-| `live`                             | `bool`         | —       | When `True`, omits `--dry-run` from `cargo publish`.                  |
-| `allow_dirty`                      | `bool`         | —       | Passes `--allow-dirty` to both cargo subcommands.                     |
-| `allow_unpublished_workspace_deps` | `bool`         | `False` | Dry-run-only override; see `allow_unpublished_workspace_deps` above.  |
-| `sccache_stats`                    | `bool`         | `False` | Query sccache around every cargo build and log per-crate cache lines. |
-| `sccache_stats_json`               | `Path \| None` | `None`  | Write the sccache report here; implies `sccache_stats`.               |
+| Field                              | Type                      | Default | Purpose                                                                     |
+| ---------------------------------- | ------------------------- | ------- | --------------------------------------------------------------------------- |
+| `live`                             | `bool`                    | —       | When `True`, omits `--dry-run` from `cargo publish`.                        |
+| `allow_dirty`                      | `bool`                    | —       | Passes `--allow-dirty` to both cargo subcommands.                           |
+| `allow_unpublished_workspace_deps` | `bool`                    | `False` | Dry-run-only override; see `allow_unpublished_workspace_deps` above.        |
+| `sccache_stats`                    | `bool`                    | `False` | Query sccache around every cargo build and log per-crate cache lines.       |
+| `sccache_stats_json`               | `Path \| None`            | `None`  | Write the sccache report here; implies `sccache_stats`.                     |
+| `verifier`                         | `ArchiveVerifier \| None` | `None`  | Set by `--expect-digests`; its presence also adds `--locked` (`is_locked`). |
 
 The dataclass is an internal implementation detail; callers interact with the
 public `PublishOptions` dataclass, which `run()` converts before dispatching.
@@ -2187,6 +2226,7 @@ Defined metrics:
 | `lockfile.validate`              | `outcome`                     | One increment per `validate_lockfile_freshness` call; `outcome` is `fresh`, `stale`, or `failed`.                                                                                                                                                |
 | `lockfile.validate.duration`     | (none)                        | Duration observation around each `cargo metadata --locked` probe.                                                                                                                                                                                |
 | `publish.cargo.duration`         | `subcommand`, `crate`         | One duration observation per `cargo package` or `cargo publish` invocation in the publish pipeline, successful or not (issue #251).                                                                                                              |
+| `publish.archive_check`          | `outcome`                     | `ArchiveVerifier` decides an archive outcome under `--expect-digests`; `outcome` is `verified`, `already_published`, `conflict`, `mismatch`, or `unverified` (issue #419).                                                                       |
 | `publish.sccache.query`          | `outcome`                     | One increment per sccache statistics query while instrumentation is on (`--sccache-stats`, or a `--sccache-stats-json` path, which implies it); `outcome` is `success` or `failure` (issue [#252](https://github.com/leynos/lading/issues/252)). |
 
 Duration metrics aggregate a count and total seconds per label set via
