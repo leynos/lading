@@ -750,6 +750,13 @@ full_name = [
 ]
 reason = "relay_decoded flushes the held-back tail through its optional redactor at end of stream, which the dead-code scan does not resolve."
 
+[[tool.skylos.dead_code.entrypoints]]
+type = "method"
+full_name = [
+    "lading.commands.publish_registry._Retry.wait_for_next",
+]
+reason = "fetch_crates_io_digest decides each retry through it; the dead-code scan does not resolve the call on the constructed value."
+
 [tool.setuptools.packages.find]
 include = [
     "lading",

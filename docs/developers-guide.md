@@ -1925,13 +1925,16 @@ Every runner logs through `subprocess_runner.run_logged`, so the
 `env_redaction` is the older key-based masking for logged environment overrides.
 `publish_registry` is the injectable `PublishedDigestFetcher` port;
 `fetch_crates_io_digest` streams the archive from `static.crates.io` through a
-size cap and bounded retries, and tests substitute a fake. The new errors
-(`ExpectedDigestsError`, `ArchiveMismatchError`, `UploadedArchiveMismatchError`,
-`PublishedArchiveConflictError`) live in `publish_errors`;
-`ArchiveUnavailableError` and `PublishedArchiveUnavailableError` sit beside the
-code that raises them. `tests/helpers/publish_digests.py` provides `FakeCargo`,
-`FakeRegistry`, and `PublishRig`, which drive `publish.run` in process without
-a subprocess or socket; the behavioural scenarios in
+size cap, one 180 s time budget covering connecting, reads and retry waits, a
+`Content-Length` check and bounded retries (a short or interrupted body,
+including `IncompleteRead`, is retried), and tests substitute a fake. The new
+errors (`ExpectedDigestsError`, `ArchiveMismatchError`,
+`UploadedArchiveMismatchError`, `PublishedArchiveConflictError`) live in
+`publish_errors`; `ArchiveUnavailableError` and
+`PublishedArchiveUnavailableError` sit beside the code that raises them.
+`tests/helpers/publish_digests.py` provides `FakeCargo`, `FakeRegistry`, and
+`PublishRig`, which drive `publish.run` in process without a subprocess or
+socket; the behavioural scenarios in
 `tests/bdd/features/publish_expect_digests.feature` use them because a download
 cannot be injected into the CLI subprocess the other publish scenarios run.
 

@@ -2,6 +2,7 @@
 
 import contextlib
 import email.message
+import http.client
 import io
 import typing as typ
 import urllib.error
@@ -137,3 +138,110 @@ def test_oversized_response_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
 
     with pytest.raises(PublishedArchiveUnavailableError, match="exceeds 16 bytes"):
         fetch_crates_io_digest("a", "1.0.0", transport=script.transport())
+
+
+class _Body(io.BytesIO):
+    """A response body that states a ``Content-Length``."""
+
+    def __init__(self, payload: bytes, declared: int) -> None:
+        """Serve ``payload`` while claiming ``declared`` bytes."""
+        super().__init__(payload)
+        self.headers = {"Content-Length": str(declared)}
+
+
+def test_incomplete_read_is_retried_then_succeeds() -> None:
+    """A connection cut mid-body is a transient failure like any other."""
+    script = _Script(http.client.IncompleteRead(b"par", 10), PLAIN_ARCHIVE)
+
+    result = fetch_crates_io_digest("a", "1.0.0", transport=script.transport())
+
+    assert result == digest(PLAIN_ARCHIVE), "the retry must return the full digest"
+    assert len(script.sleeps) == 1, "one pause after the failed attempt"
+
+
+def test_exhausted_incomplete_reads_keep_the_last_one_as_the_cause() -> None:
+    """After the final attempt the failure is reported with its cause."""
+    script = _Script(*[http.client.IncompleteRead(b"", 5)] * 3)
+
+    with pytest.raises(PublishedArchiveUnavailableError) as excinfo:
+        fetch_crates_io_digest("a", "1.0.0", transport=script.transport())
+
+    assert isinstance(excinfo.value.__cause__, http.client.IncompleteRead), (
+        "the final IncompleteRead must be the cause"
+    )
+
+
+def test_a_short_body_against_content_length_is_retried() -> None:
+    """A body shorter than ``Content-Length`` is never trusted."""
+
+    class _Serve(_Script):
+        """Serve a truncated body first, then a complete one."""
+
+        @contextlib.contextmanager
+        def _open(
+            self, request: urllib.request.Request, *, timeout: float
+        ) -> cabc.Generator[io.BytesIO]:
+            """Replay the next step as a body with a declared length."""
+            del timeout
+            self.requests.append(request)
+            step = typ.cast("bytes", self._steps.pop(0))
+            yield _Body(step, len(PLAIN_ARCHIVE))
+
+    script = _Serve(PLAIN_ARCHIVE[:5], PLAIN_ARCHIVE)
+
+    result = fetch_crates_io_digest("a", "1.0.0", transport=script.transport())
+
+    assert result == digest(PLAIN_ARCHIVE), "only the complete body is accepted"
+    assert len(script.requests) == 2, "the truncated body must have been retried"
+
+
+def test_total_time_budget_bounds_a_slow_trickle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Steady delivery cannot extend the one deadline for the whole lookup."""
+    monkeypatch.setattr(publish_registry, "_TOTAL_BUDGET_SECONDS", 5.0)
+    now = [0.0]
+
+    class _Trickle(io.RawIOBase):
+        """Deliver one byte per read, each costing a second."""
+
+        def read(self, size: int = -1) -> bytes:
+            """Advance the clock and return one byte."""
+            now[0] += 1.0
+            return b"x"
+
+    @contextlib.contextmanager
+    def opener(
+        request: urllib.request.Request, *, timeout: float
+    ) -> cabc.Generator[_Trickle]:
+        """Open a body that never ends."""
+        del request, timeout
+        yield _Trickle()
+
+    transport = FetchTransport(
+        opener=opener, sleep=lambda _s: None, clock=lambda: now[0]
+    )
+
+    with pytest.raises(PublishedArchiveUnavailableError, match="time budget"):
+        fetch_crates_io_digest("a", "1.0.0", transport=transport)
+
+
+def test_retry_waits_count_against_the_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A retry that would outlive the budget is not attempted."""
+    monkeypatch.setattr(publish_registry, "_TOTAL_BUDGET_SECONDS", 3.0)
+    script = _Script(*[_http_error(503)] * 3)
+    now = [0.0]
+
+    def sleep(seconds: float) -> None:
+        """Advance the clock by the wait."""
+        now[0] += seconds
+        script.sleeps.append(seconds)
+
+    transport = FetchTransport(opener=script._open, sleep=sleep, clock=lambda: now[0])
+
+    with pytest.raises(PublishedArchiveUnavailableError):
+        fetch_crates_io_digest("a", "1.0.0", transport=transport)
+
+    assert len(script.requests) == 2, "the third attempt would exceed the budget"

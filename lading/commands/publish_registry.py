@@ -27,6 +27,7 @@ import contextlib
 import dataclasses as dc
 import hashlib
 import http
+import http.client
 import logging
 import re
 import time
@@ -41,6 +42,9 @@ LOGGER = logging.getLogger(__name__)
 _ARCHIVE_HOST = "https://static.crates.io/crates"
 _USER_AGENT = "lading"
 _REQUEST_TIMEOUT_SECONDS = 60.0
+# One budget for the whole lookup: connecting, every read, the waits between
+# retries, and closing. Steady trickling bytes cannot stretch it.
+_TOTAL_BUDGET_SECONDS = 180.0
 _ATTEMPTS = 3
 _RETRY_DELAY_SECONDS = 2.0
 _READ_CHUNK_BYTES = 1024 * 1024
@@ -123,16 +127,76 @@ def crates_io_archive_url(name: str, version: str) -> str:
     return f"{_ARCHIVE_HOST}/{name}/{name}-{version}.crate"
 
 
-def _hash_response(response: _Response, *, url: str) -> str:
-    """Hash ``response`` as it streams, refusing a body over the size cap."""
+class _BudgetExhaustedError(OSError):
+    """Raised when the lookup's total time budget has run out."""
+
+
+@dc.dataclass(slots=True)
+class _Deadline:
+    """The single time budget a lookup shares across its attempts."""
+
+    clock: cabc.Callable[[], float]
+    expires_at: float
+
+    def remaining(self) -> float:
+        """Return the seconds left, never negative."""
+        return max(0.0, self.expires_at - self.clock())
+
+    def check(self) -> None:
+        """Raise when no time is left.
+
+        Raises
+        ------
+        _BudgetExhaustedError
+            If the budget has run out.
+        """
+        if self.remaining() <= 0.0:
+            message = f"the {_TOTAL_BUDGET_SECONDS:.0f}s time budget is exhausted"
+            raise _BudgetExhaustedError(message)
+
+
+def _declared_length(response: _Response) -> int | None:
+    """Return the response's ``Content-Length``, when it states a valid one.
+
+    Returns
+    -------
+    int | None
+        The declared length, or ``None`` when absent or not a number.
+    """
+    headers = getattr(response, "headers", None)
+    raw = None if headers is None else headers.get("Content-Length")
+    return int(raw) if raw is not None and str(raw).isdigit() else None
+
+
+def _hash_response(response: _Response, *, url: str, deadline: _Deadline) -> str:
+    """Hash ``response`` as it streams, within the size cap and the time budget.
+
+    Returns
+    -------
+    str
+        The lowercase hex SHA-256 of the whole body.
+
+    Raises
+    ------
+    PublishedArchiveUnavailableError
+        If the body exceeds the size cap.
+    http.client.IncompleteRead
+        If fewer bytes arrived than ``Content-Length`` promised, so the caller
+        retries rather than trusting a truncated archive.
+    """
     digest = hashlib.sha256()
     total = 0
     while chunk := response.read(_READ_CHUNK_BYTES):
+        deadline.check()
         total += len(chunk)
         if total > _MAX_ARCHIVE_BYTES:
             message = f"Published archive at {url} exceeds {_MAX_ARCHIVE_BYTES} bytes"
             raise PublishedArchiveUnavailableError(message)
         digest.update(chunk)
+    declared = _declared_length(response)
+    if declared is not None and total < declared:
+        nothing_received_back = b""
+        raise http.client.IncompleteRead(nothing_received_back, declared - total)
     return digest.hexdigest()
 
 
@@ -146,12 +210,15 @@ class FetchTransport:
         Opens a request; tests substitute a fake so nothing touches the network.
     sleep : Callable[[float], None]
         Waits between retries; tests substitute a recorder.
+    clock : Callable[[], float]
+        Monotonic clock the total time budget is measured with.
     """
 
     # The URL handed to it is always built by `crates_io_archive_url`: a fixed
     # https host plus a validated name and version.
     opener: _Opener = urllib.request.urlopen  # ruff: ignore[suspicious-url-open-usage] -- fixed https host
     sleep: cabc.Callable[[float], None] = time.sleep
+    clock: cabc.Callable[[], float] = time.monotonic
 
 
 def _unavailable(
@@ -165,20 +232,62 @@ def _unavailable(
 
 def _is_retryable(error: BaseException) -> bool:
     """Whether ``error`` is a transient failure worth another attempt."""
-    if isinstance(error, urllib.error.HTTPError):
-        return error.code in _RETRYABLE_STATUSES
-    return isinstance(error, OSError)
+    match error:
+        case _BudgetExhaustedError():
+            result = False
+        case urllib.error.HTTPError():
+            result = error.code in _RETRYABLE_STATUSES
+        case OSError() | http.client.IncompleteRead():
+            result = True
+        case _:
+            result = False
+    return result
 
 
-def _attempt(url: str, transport: FetchTransport) -> str | None:
+@dc.dataclass(frozen=True, slots=True)
+class _Retry:
+    """What a retry decision needs: where we are in the attempts and the budget."""
+
+    url: str
+    attempt: int
+    deadline: _Deadline
+    transport: FetchTransport
+
+    def wait_for_next(self, error: BaseException) -> bool:
+        """Log and wait before the next attempt, if one is allowed.
+
+        Returns
+        -------
+        bool
+            ``False`` when attempts or the time budget are spent.
+        """
+        if (
+            self.attempt >= _ATTEMPTS
+            or self.deadline.remaining() <= _RETRY_DELAY_SECONDS
+        ):
+            return False
+        LOGGER.warning(
+            "Fetching %s failed on attempt %d of %d (%s); retrying",
+            self.url,
+            self.attempt,
+            _ATTEMPTS,
+            error,
+        )
+        self.transport.sleep(_RETRY_DELAY_SECONDS)
+        return True
+
+
+def _attempt(url: str, transport: FetchTransport, deadline: _Deadline) -> str | None:
     """Make one request; return the digest, or ``None`` for a 404."""
+    deadline.check()
     # The URL comes from `crates_io_archive_url`: a fixed https host.
     request = urllib.request.Request(  # ruff: ignore[suspicious-url-open-usage] -- fixed https host
         url, headers={"User-Agent": _USER_AGENT}
     )
+    timeout = min(_REQUEST_TIMEOUT_SECONDS, deadline.remaining())
     try:
-        with transport.opener(request, timeout=_REQUEST_TIMEOUT_SECONDS) as response:
-            return _hash_response(response, url=url)
+        with transport.opener(request, timeout=timeout) as response:
+            return _hash_response(response, url=url, deadline=deadline)
     except urllib.error.HTTPError as error:
         if error.code == http.HTTPStatus.NOT_FOUND:
             return None
@@ -217,21 +326,15 @@ def fetch_crates_io_digest(
     """  # ruff: ignore[docstring-missing-exception, docstring-extraneous-exception]  # raised through _unavailable and the URL builder
     url = crates_io_archive_url(name, version)
     active = FetchTransport() if transport is None else transport
-    failure: OSError | None = None
+    deadline = _Deadline(active.clock, active.clock() + _TOTAL_BUDGET_SECONDS)
+    failure: BaseException | None = None
     for attempt in range(1, _ATTEMPTS + 1):
         try:
-            return _attempt(url, active)
-        except OSError as error:
+            return _attempt(url, active, deadline)
+        except (OSError, http.client.IncompleteRead) as error:
             if not _is_retryable(error):
                 raise _unavailable(url, error) from error
             failure = error
-            if attempt < _ATTEMPTS:
-                LOGGER.warning(
-                    "Fetching %s failed on attempt %d of %d (%s); retrying",
-                    url,
-                    attempt,
-                    _ATTEMPTS,
-                    error,
-                )
-                active.sleep(_RETRY_DELAY_SECONDS)
+            if not _Retry(url, attempt, deadline, active).wait_for_next(error):
+                break
     raise _unavailable(url, failure) from failure
