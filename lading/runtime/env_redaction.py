@@ -12,6 +12,11 @@ Examples
 """
 
 import collections.abc as cabc
+import logging
+
+from lading.utils.redaction import REDACTED, redact_text
+
+_LOGGER = logging.getLogger("lading.runtime.subprocess_runner")
 
 _ENV_REDACTION_TOKENS = (
     "TOKEN",
@@ -25,8 +30,14 @@ _ENV_REDACTION_TOKENS = (
 )
 
 
-def redact_environment(env: cabc.Mapping[str, object]) -> dict[str, str]:
+def redact_environment(
+    env: cabc.Mapping[str, object], secrets: cabc.Sequence[str] = ()
+) -> dict[str, str]:
     """Return ``env`` with sensitive values replaced by placeholders.
+
+    A value is hidden when its *name* looks secret, and also when it contains
+    one of the known ``secrets``, so a token copied into an innocuous variable
+    (``MIRROR_URL``) is hidden as well.
 
     Returns
     -------
@@ -35,8 +46,22 @@ def redact_environment(env: cabc.Mapping[str, object]) -> dict[str, str]:
     """
     redacted: dict[str, str] = {}
     for key, value in env.items():
-        redacted[key] = "<redacted>" if _should_redact_env_key(key) else str(value)
+        redacted[key] = (
+            REDACTED
+            if _should_redact_env_key(key)
+            else redact_text(str(value), secrets)
+        )
     return dict(sorted(redacted.items()))
+
+
+def log_subprocess_environment(
+    env: cabc.Mapping[str, object] | None, secrets: cabc.Sequence[str] = ()
+) -> None:
+    """Log redacted environment overrides for subprocess execution."""
+    if env:
+        _LOGGER.debug(
+            "Subprocess environment overrides: %s", redact_environment(env, secrets)
+        )
 
 
 def _should_redact_env_key(key: str) -> bool:

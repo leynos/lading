@@ -181,8 +181,9 @@ def _preflight_request(
         configuration=configuration,
         runner=runner,
         skip=options.skip_preflight,
-        secrets=()
-        if options.cargo_environment is None
+        # `None` leaves the pre-flight exactly as it was without digests.
+        secrets=None
+        if options.expect_digests is None or options.cargo_environment is None
         else options.cargo_environment.secrets,
     )
 
@@ -306,6 +307,23 @@ def run(
     LOGGER.info("Starting publish workflow for workspace %s", root_path)
     effective_options = PublishOptions() if options is None else options
     _validate_publication_options(effective_options)
+    with publish_digest_run.hidden_secrets(effective_options):
+        return _publish(root_path, configuration, workspace, effective_options)
+
+
+def _publish(
+    root_path: Path,
+    configuration: config_module.LadingConfig | None,
+    workspace: WorkspaceGraph | None,
+    effective_options: PublishOptions,
+) -> str:
+    """Plan, stage, and execute publication; see :func:`run`.
+
+    Returns
+    -------
+    str
+        Human-readable publication plan and staged-workspace summary.
+    """
     active_configuration = _ensure_configuration(
         configuration or effective_options.configuration, root_path
     )

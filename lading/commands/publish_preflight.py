@@ -46,9 +46,9 @@ from lading.commands.publish_errors import PublishPreflightError
 from lading.commands.publish_execution import _invoke
 from lading.commands.publish_lockfile_preflight import _validate_lockfile_freshness
 from lading.commands.publish_skip import SkipPreflightDecision, resolve_skip_preflight
-from lading.runtime.redaction import redact_text, registry_token_values
 from lading.utils import metrics
 from lading.utils.process import append_detail, command_detail, with_detail
+from lading.utils.redaction import redact_text, registry_token_values, use_secrets
 
 if typ.TYPE_CHECKING:
     from lading.commands.lockfile_repository import LockfileInspectionRepository
@@ -272,10 +272,26 @@ class PreflightRequest:
     runner: CommandRunner | None = None
     clock: cabc.Callable[[], float] = time.perf_counter
     skip: SkipPreflightDecision | None = None
-    secrets: tuple[str, ...] = ()
+    secrets: tuple[str, ...] | None = None
 
 
-def _run_preflight_checks(
+def _run_preflight_checks(workspace_root: Path, request: PreflightRequest) -> None:
+    """Run the pre-flight, hiding known and override-supplied registry tokens.
+
+    With ``request.secrets`` set (a digest-checked run), messages built from
+    captured output also hide any registry token the pre-flight's own
+    environment overrides carry. See :func:`_run_checks` for the checks.
+    """
+    if request.secrets is None:
+        _run_checks(workspace_root, request)
+        return
+    overrides = request.configuration.preflight.env_overrides
+    hidden = (*request.secrets, *registry_token_values(dict(overrides)))
+    with use_secrets(hidden):
+        _run_checks(workspace_root, request)
+
+
+def _run_checks(
     workspace_root: Path,
     request: PreflightRequest,
 ) -> None:
@@ -324,7 +340,7 @@ def _run_preflight_checks(
         _run_aux_build_commands(
             workspace_root,
             preflight_config.aux_build,
-            context=_AuxBuildContext(command_runner, base_env, request.secrets),
+            context=_AuxBuildContext(command_runner, base_env, request.secrets or ()),
         )
         _validate_lockfile_freshness(
             workspace_root,

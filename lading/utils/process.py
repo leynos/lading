@@ -41,6 +41,8 @@ import os
 import shlex
 import typing as typ
 
+from lading.utils.redaction import redact_active
+
 if typ.TYPE_CHECKING:
     from logging import Logger as LoggerType
     from pathlib import Path as PathType
@@ -117,7 +119,7 @@ def command_detail(stdout: str, stderr: str) -> str:
     >>> command_detail("", "")
     ''
     """
-    return stderr.strip() or stdout.strip()
+    return redact_active(stderr.strip() or stdout.strip())
 
 
 def append_detail(message: str, detail: str, *, separator: str = ": ") -> str:
@@ -152,7 +154,7 @@ def append_detail(message: str, detail: str, *, separator: str = ": ") -> str:
     """
     if not detail:
         return message
-    return f"{message}{separator}{detail}"
+    return redact_active(f"{message}{separator}{detail}")
 
 
 def with_detail(

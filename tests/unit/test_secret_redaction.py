@@ -1,20 +1,26 @@
 """Tests for keeping registry credentials out of subprocess output."""
 
-import io
+import json
 import logging
 import sys
+import traceback
 import typing as typ
 
 import pytest
 
+from lading.commands.publish_cargo_config import CargoEnvironment
 from lading.commands.publish_errors import PublishPreflightError
+from lading.runtime import CommandSpawnError
+from lading.runtime.env_redaction import log_subprocess_environment
 from lading.runtime.redacting_runner import redacting_runner
-from lading.runtime.redaction import (
+from lading.utils.process import append_detail, command_detail, with_detail
+from lading.utils.redaction import (
     REDACTED,
-    RedactingReader,
-    guard_stream,
+    SecretRedactor,
     registry_token_values,
+    use_secrets,
 )
+from lading.workspace.metadata import CargoMetadataInvocationError
 from tests.helpers.publish_digests import PublishRig
 
 if typ.TYPE_CHECKING:
@@ -42,23 +48,19 @@ def test_only_registry_token_variables_are_collected() -> None:
 
 @pytest.mark.parametrize("chunk_size", [1, 2, 3, 5, 7, 64])
 def test_secret_split_across_reads_is_still_replaced(chunk_size: int) -> None:
-    """A value straddling two pipe reads cannot slip through."""
-    source = io.BytesIO(f"before {_LEAK} after {_LEAK}!".encode())
-    reader = RedactingReader(source, (_LEAK,))
+    """A value straddling two chunks cannot slip through."""
+    text = f"before {_LEAK} after {_LEAK}!"
+    redactor = SecretRedactor((_LEAK,))
 
-    output = b"".join(iter(lambda: reader.read(chunk_size), b""))
-
-    assert output.decode() == f"before {REDACTED} after {REDACTED}!", (
-        "every occurrence must be replaced whatever the read size"
+    shown = "".join(
+        redactor.feed(text[start : start + chunk_size])
+        for start in range(0, len(text), chunk_size)
     )
+    shown += redactor.flush()
 
-
-def test_stream_without_secrets_is_not_wrapped() -> None:
-    """With nothing to hide the original stream is used untouched."""
-    source = io.BytesIO(b"x")
-
-    assert guard_stream(source, ()) is source, "no secrets, no wrapper"
-    assert guard_stream(None, (_LEAK,)) is None, "a missing stream stays missing"
+    assert shown == f"before {REDACTED} after {REDACTED}!", (
+        "every occurrence must be replaced whatever the chunk size"
+    )
 
 
 def _printing_command(exit_code: int) -> list[str]:
@@ -71,33 +73,89 @@ def _printing_command(exit_code: int) -> list[str]:
     return [sys.executable, "-c", script]
 
 
-def test_runner_hides_the_token_from_relay_and_capture(
+def test_runner_hides_the_token_from_the_relay_but_captures_it_raw(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """A child printing the token reaches neither the mirror nor the capture."""
+    """What lading shows is redacted; what it parses is exactly what was written."""
     runner = redacting_runner((_LEAK,))
 
     exit_code, stdout, stderr = runner(_printing_command(0))
 
     mirrored = capsys.readouterr()
     assert exit_code == 0, "the child must have run"
-    for text in (stdout, stderr, mirrored.out, mirrored.err):
-        assert _LEAK not in text, "the token must not appear anywhere"
-    assert REDACTED in stdout, "the capture must say something was redacted"
-    assert REDACTED in mirrored.err, "the relayed stderr must say so too"
+    assert _LEAK in stdout, "the captured stdout must be raw"
+    assert _LEAK in stderr, "the captured stderr must be raw"
+    for shown in (mirrored.out, mirrored.err):
+        assert _LEAK not in shown, "the relay must not show the token"
+        assert REDACTED in shown, "the relay must show the redaction"
 
 
-def test_token_in_a_call_environment_is_hidden_too() -> None:
-    """A token passed through ``env`` is redacted without being pre-registered."""
+def test_token_in_a_call_environment_is_hidden_from_the_relay(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A token passed through ``env`` is hidden without being pre-registered."""
     runner = redacting_runner(())
 
-    _code, stdout, _stderr = runner(
-        _printing_command(0),
-        env={"CARGO_REGISTRY_TOKEN": _LEAK},
-        echo_stdout=False,
+    runner(_printing_command(0), env={"CARGO_REGISTRY_TOKEN": _LEAK})
+
+    assert _LEAK not in capsys.readouterr().out, "the call's own value must be hidden"
+
+
+def test_captured_metadata_parses_even_when_it_contains_a_secret_value(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Redaction must not alter the data lading parses."""
+    document = json.dumps({"target_directory": f"/work/{_LEAK}/target"})
+    script = f"print({document!r})"
+    runner = redacting_runner((_LEAK,))
+
+    _code, stdout, _stderr = runner([sys.executable, "-c", script])
+
+    assert json.loads(stdout)["target_directory"] == f"/work/{_LEAK}/target", (
+        "the captured JSON must be exactly what the child wrote"
+    )
+    assert _LEAK not in capsys.readouterr().out, "yet the relay must still hide it"
+
+
+def test_debug_environment_log_hides_a_token_copied_into_another_variable(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Masking by value catches a token in an innocuously named variable."""
+    caplog.set_level(logging.DEBUG)
+
+    log_subprocess_environment(
+        {"CARGO_REGISTRY_TOKEN": _LEAK, "MIRROR_URL": f"https://mirror/{_LEAK}/x"},
+        (_LEAK,),
     )
 
-    assert _LEAK not in stdout, "the call's own token value must be hidden"
+    assert "MIRROR_URL" in caplog.text, "the variable itself must still be logged"
+    assert _LEAK not in caplog.text, "neither variable may show the value"
+
+
+def test_spawn_failure_hides_a_token_in_the_program_and_its_cause() -> None:
+    """A token in an executable path does not leak through a spawn error."""
+    runner = redacting_runner((_LEAK,))
+
+    with pytest.raises(CommandSpawnError) as excinfo:
+        runner([f"/definitely/missing/{_LEAK}/tool"], echo_stdout=False)
+
+    rendered = "".join(traceback.format_exception(excinfo.value))
+    assert _LEAK not in str(excinfo.value), "the message must be clean"
+    assert _LEAK not in str(excinfo.value.reason), "the recorded cause must be clean"
+    assert _LEAK not in rendered, "the chained traceback must be clean"
+    assert REDACTED in str(excinfo.value), "the redaction must be visible"
+
+
+def test_spawn_failure_without_a_secret_keeps_the_original_cause() -> None:
+    """Nothing to hide means the error is exactly what it was."""
+    runner = redacting_runner((_LEAK,))
+
+    with pytest.raises(CommandSpawnError) as excinfo:
+        runner(["/definitely/missing/tool"], echo_stdout=False)
+
+    assert isinstance(excinfo.value.__cause__, FileNotFoundError), (
+        "the original operating system error must stay chained"
+    )
 
 
 def test_failure_message_and_logs_never_contain_the_token(
@@ -109,6 +167,7 @@ def test_failure_message_and_logs_never_contain_the_token(
     """A cargo failure that printed the token raises a clean error."""
     caplog.set_level(logging.DEBUG)
     rig = PublishRig.create(tmp_path)
+    environment = CargoEnvironment(None, None, (_LEAK,))
     real = redacting_runner((_LEAK,))
     ran: list[str] = []
 
@@ -124,7 +183,12 @@ def test_failure_message_and_logs_never_contain_the_token(
         return real(_printing_command(1), cwd=cwd, env=env, echo_stdout=echo_stdout)
 
     with pytest.raises(PublishPreflightError) as excinfo:
-        rig.run(monkeypatch, command_runner=runner)
+        rig.run(
+            monkeypatch,
+            command_runner=runner,
+            expect_digests=rig.digests_file(),
+            environment=environment,
+        )
 
     seen = capsys.readouterr()
     assert ran, "the pipeline must have run the stand-in"
@@ -132,3 +196,19 @@ def test_failure_message_and_logs_never_contain_the_token(
     assert REDACTED in str(excinfo.value), "the error must show the redaction"
     assert _LEAK not in caplog.text, "no log record may carry the token"
     assert _LEAK not in seen.out + seen.err, "no relayed stream may carry it"
+
+
+def test_failure_formatters_hide_active_secrets_in_one_place() -> None:
+    """Every message built from captured output goes through the shared helpers."""
+    with use_secrets((_LEAK,)):
+        detail = command_detail("", f"boom {_LEAK}")
+        combined = with_detail("failed", f"out {_LEAK}", "")
+        appended = append_detail(f"cmd --token={_LEAK}", "x")
+        metadata = str(CargoMetadataInvocationError(101, "", f"bad {_LEAK}"))
+
+    for text in (detail, combined, appended, metadata):
+        assert _LEAK not in text, "no shared formatter may quote the secret"
+        assert REDACTED in text, "each must show the redaction"
+    assert _LEAK in command_detail("", f"boom {_LEAK}"), (
+        "outside a digest-checked run nothing is altered"
+    )

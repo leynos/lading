@@ -11,7 +11,7 @@ from lading.commands.publish_cargo_config import CargoEnvironment
 from lading.runtime import subprocess_runner
 from lading.runtime.credentials import credential_file_tokens
 from lading.runtime.redacting_runner import redacting_runner
-from lading.runtime.redaction import REDACTED
+from lading.utils.redaction import REDACTED
 
 if typ.TYPE_CHECKING:
     import collections.abc as cabc
@@ -96,25 +96,27 @@ def test_credentials_file_value_is_hidden_from_relayed_output(
     )
     environment = cli._cargo_environment({"CARGO_HOME": str(tmp_path)})
 
-    _code, stdout, _stderr = redacting_runner(environment.secrets)(_echoing(_FROM_FILE))
+    redacting_runner(environment.secrets)(_echoing(_FROM_FILE))
 
-    assert _FROM_FILE not in stdout + capsys.readouterr().out, (
-        "the credentials-file value must be hidden"
+    assert _FROM_FILE not in capsys.readouterr().out, (
+        "the credentials-file value must be hidden from the relay"
     )
 
 
-def test_override_supplied_token_is_hidden_without_any_ambient_value() -> None:
+def test_override_supplied_token_is_hidden_without_any_ambient_value(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """A pre-flight override token needs no matching process environment."""
     runner = redacting_runner(())
 
-    _code, stdout, _stderr = runner(
+    runner(
         _echoing(_FROM_OVERRIDE),
         env={"CARGO_REGISTRIES_INTERNAL_TOKEN": _FROM_OVERRIDE},
-        echo_stdout=False,
     )
 
-    assert _FROM_OVERRIDE not in stdout, "the override's value must be hidden"
-    assert REDACTED in stdout, "and its place must show the redaction"
+    shown = capsys.readouterr().out
+    assert _FROM_OVERRIDE not in shown, "the override's value must be hidden"
+    assert REDACTED in shown, "and its place must show the redaction"
 
 
 def test_digest_checked_runs_always_select_the_redacting_runner(
@@ -131,7 +133,7 @@ def test_digest_checked_runs_always_select_the_redacting_runner(
 
 
 def test_programmatic_default_runner_redacts_when_digests_are_expected(
-    tmp_path: Path,
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """``publish.run`` wraps its own default runner without reading the environment."""
     environment = CargoEnvironment(None, None, (_FROM_NAMED,))
@@ -139,11 +141,11 @@ def test_programmatic_default_runner_redacts_when_digests_are_expected(
         expect_digests=tmp_path / "digests.txt", cargo_environment=environment
     )
 
-    _code, stdout, _stderr = publish_digest_run.command_runner(checked)(
-        _echoing(_FROM_NAMED), echo_stdout=False
-    )
+    publish_digest_run.command_runner(checked)(_echoing(_FROM_NAMED))
 
-    assert _FROM_NAMED not in stdout, "the default runner must hide the secret"
+    assert _FROM_NAMED not in capsys.readouterr().out, (
+        "the default runner must hide the secret from the relay"
+    )
     assert publish_digest_run.command_runner(publish.PublishOptions()) is (
         publish_pipeline._invoke
     ), "without digests the default runner is unchanged"

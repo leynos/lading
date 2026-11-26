@@ -11,13 +11,20 @@ Typical use is to derive deterministic thread names with
 :func:`write_to_relay_sink` while relaying a subprocess stream.
 """
 
+import codecs
+import dataclasses as dc
+import logging
 import re
 import typing as typ
 from pathlib import Path
 
+from lading.utils.redaction import SecretRedactor
+
 from .relay_events import StreamName, emit_relay_event
 
 _THREAD_NAME_PATTERN = re.compile(r"[^A-Za-z0-9_.-]+")
+_LOGGER = logging.getLogger(__name__)
+_STREAM_CHUNK_SIZE = 4096
 
 
 class TextSink(typ.Protocol):
@@ -162,3 +169,85 @@ def _write_to_text_sink(
         emit_relay_event("relay_mirror", stream, "text_to_binary", "unicode_encode")
         return _write_to_binary_sink(sink, selected_binary_sink, stream, payload)
     return sink, None
+
+
+@dc.dataclass(frozen=True, slots=True)
+class RelayCapture:
+    """Where a relayed stream's text is captured, and what is hidden from view.
+
+    Attributes
+    ----------
+    buffer : list[str]
+        Receives every decoded chunk exactly as the child wrote it. Callers
+        parse this, so it is never redacted.
+    stream : StreamName
+        ``"stdout"`` or ``"stderr"`` label for the relayed child stream.
+    secrets : tuple[str, ...]
+        Exact values to replace in the *mirrored* text only.
+    """
+
+    buffer: list[str]
+    stream: StreamName
+    secrets: tuple[str, ...] = ()
+
+
+def _shown(redactor: SecretRedactor | None, text: str, *, final: bool = False) -> str:
+    """Return the part of ``text`` safe to mirror, flushing the tail when ``final``."""
+    if redactor is None:
+        return text
+    return redactor.feed(text) + (redactor.flush() if final else "")
+
+
+def relay_decoded(
+    source: typ.IO[bytes] | None, sink: TextSink | None, capture: RelayCapture
+) -> None:
+    """Forward ``source`` into ``sink`` while capturing it unchanged.
+
+    Captured text is raw; only the mirrored text has ``capture.secrets``
+    replaced, so lading can parse what it captured and still never show a
+    credential.
+
+    Raises
+    ------
+    OSError
+        If reading or closing the source stream fails.
+    ValueError
+        If a stream operation occurs on a closed stream.
+    """  # ruff: ignore[docstring-extraneous-exception] -- raised by _relay_open
+    if source is not None:
+        _relay_open(source, sink, capture)
+
+
+def _relay_open(
+    source: typ.IO[bytes], sink: TextSink | None, capture: RelayCapture
+) -> None:
+    """Relay one open stream; see :func:`relay_decoded`."""
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+    redactor = SecretRedactor(capture.secrets) if capture.secrets else None
+    active_sink = sink
+    binary_sink: typ.BinaryIO | None = None
+    try:
+        try:
+            while chunk := source.read(_STREAM_CHUNK_SIZE):
+                text = decoder.decode(chunk)
+                if text:
+                    capture.buffer.append(text)
+                active_sink, binary_sink = write_to_relay_sink(
+                    active_sink, binary_sink, capture.stream, _shown(redactor, text)
+                )
+            tail = decoder.decode(b"", final=True)
+            if tail:
+                capture.buffer.append(tail)
+            active_sink, binary_sink = write_to_relay_sink(
+                active_sink,
+                binary_sink,
+                capture.stream,
+                _shown(redactor, tail, final=True),
+            )
+        finally:
+            source.close()
+    except OSError, ValueError:  # pragma: no cover - defensive logging guard
+        # Log first, then re-raise into threading.excepthook; join() may still
+        # leave a partial buffer, which is preferable to hiding stream corruption.
+        _LOGGER.exception("Stream relay thread failed")
+        raise

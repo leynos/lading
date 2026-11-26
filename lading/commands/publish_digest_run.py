@@ -8,6 +8,7 @@ readable outline of the run, and so this module can be tested apart from it.
 """
 
 import collections.abc as cabc
+import contextlib
 import typing as typ
 
 from lading.commands import publish_cargo_config, publish_digests, publish_pipeline
@@ -15,6 +16,7 @@ from lading.commands.publish_archive_check import ArchiveVerifier
 from lading.commands.publish_execution import redacting_invoke
 from lading.commands.publish_staging import _resolve_staged_crate_root
 from lading.runtime.redacting_runner import redacting_runner
+from lading.utils.redaction import use_secrets
 
 if typ.TYPE_CHECKING:
     import pathlib
@@ -133,3 +135,18 @@ def archive_verifier(
     if options.published_digest_fetcher is None:
         return ArchiveVerifier(expected, runner)
     return ArchiveVerifier(expected, runner, options.published_digest_fetcher)
+
+
+def hidden_secrets(options: PublishOptions) -> contextlib.AbstractContextManager[None]:
+    """Hide the caller's registry tokens from shown messages for a digest run.
+
+    Returns
+    -------
+    contextlib.AbstractContextManager[None]
+        A scope that redacts the known secrets in every message built from
+        captured output, or a no-op when digests are not expected.
+    """
+    environment = options.cargo_environment
+    if options.expect_digests is None or environment is None:
+        return contextlib.nullcontext()
+    return use_secrets(environment.secrets)

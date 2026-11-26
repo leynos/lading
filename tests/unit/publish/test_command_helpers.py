@@ -9,6 +9,7 @@ import pytest
 from lading import cli
 from lading.runtime import subprocess_runner
 from lading.runtime.env_redaction import redact_environment
+from lading.runtime.stream_relay import RelayCapture, relay_decoded
 from lading.testing import cmd_mox_runner
 from lading.testing.cmd_mox_runner import normalize_cmd_mox_command
 
@@ -48,13 +49,13 @@ def test_redact_environment_masks_sensitive_keys() -> None:
     )
 
 
-def test_relay_stream_forwards_and_decodes_bytes() -> None:
+def test_relay_decoded_forwards_and_decodes_bytes() -> None:
     """Relay helper should decode bytes and echo them into sinks."""
     source = io.BytesIO(b"alpha")
     sink = io.StringIO()
     buffer: list[str] = []
 
-    execution.relay_stream(source, sink, buffer, "stdout")
+    relay_decoded(source, sink, RelayCapture(buffer, "stdout"))
 
     assert buffer == ["alpha"], "decoded lines must be appended to the buffer"
     assert sink.getvalue() == "alpha", "relayed bytes must reach the sink verbatim"

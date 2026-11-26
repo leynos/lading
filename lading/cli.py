@@ -93,9 +93,9 @@ from .commands.publish_cargo_config import CargoEnvironment
 from .runtime import CommandRunner, subprocess_runner
 from .runtime.credentials import credential_file_tokens
 from .runtime.redacting_runner import redacting_runner
-from .runtime.redaction import registry_token_values
 from .utils import normalize_workspace_root
 from .utils.confinement import BumpPreflightError as BumpPreflightError
+from .utils.redaction import registry_token_values, use_secrets
 from .workspace import (
     WorkspaceGraph,
     load_bump_workspace,
@@ -126,11 +126,11 @@ def _select_runner(secrets: cabc.Sequence[str] | None = None) -> CommandRunner:
     Parameters
     ----------
     secrets : cabc.Sequence[str] | None
-        ``None`` hides only the registry tokens already in the process
-        environment, and only when there are any, so an ordinary run is
-        unchanged. A sequence, even an empty one, always selects the redacting
-        runner and adds its values, which is what ``--expect-digests`` needs:
-        tokens can also arrive later, through a call's environment overrides.
+        ``None`` selects the plain runner, so a run without
+        ``--expect-digests`` is unchanged even with a token in the environment.
+        A sequence, even an empty one, selects the redacting runner, which is
+        what ``--expect-digests`` needs: tokens can also arrive later, through a
+        call's environment overrides.
 
     Returns
     -------
@@ -157,10 +157,9 @@ def _select_runner(secrets: cabc.Sequence[str] | None = None) -> CommandRunner:
         return typ.cast("CommandRunner", module.cmd_mox_runner)
     # Read here, at the composition root, so no other module touches the
     # ambient environment. Without a token the plain runner is used unchanged.
-    hidden = (*registry_token_values(os.environ), *(secrets or ()))
-    if secrets is None and not hidden:
-        return subprocess_runner
-    return redacting_runner(hidden)
+    # Without digests the plain runner is used whatever the environment holds,
+    # exactly as before the option existed.
+    return subprocess_runner if secrets is None else redacting_runner(secrets)
 
 
 type WorkspaceLoader = cabc.Callable[[Path], WorkspaceGraph]
@@ -203,6 +202,7 @@ def _run_with_context(
     """
     secrets = None if environment is None else environment.secrets
     active_runner = command_runner or _select_runner(secrets)
+    hidden = nullcontext() if secrets is None else use_secrets(secrets)
     configuration_scope: AbstractContextManager[object] = nullcontext()
     try:
         configuration = config.current_configuration()
@@ -216,7 +216,7 @@ def _run_with_context(
         if workspace_loader is None
         else workspace_loader
     )
-    with configuration_scope, metadata_module.use_command_runner(active_runner):
+    with configuration_scope, hidden, metadata_module.use_command_runner(active_runner):
         workspace_model = loader(workspace_root)
         return runner(workspace_root, configuration, workspace_model, active_runner)
 

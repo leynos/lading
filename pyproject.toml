@@ -746,9 +746,9 @@ reason = "The verifier raises ArchiveUnavailableError when an archive cannot be 
 [[tool.skylos.dead_code.entrypoints]]
 type = "method"
 full_name = [
-    "lading.runtime.redaction.RedactingReader.read",
+    "lading.utils.redaction.SecretRedactor.flush",
 ]
-reason = "relay_stream reads the wrapped pipe through the file-like read method that guard_stream's RedactingReader stands in for."
+reason = "relay_decoded flushes the held-back tail through its optional redactor at end of stream, which the dead-code scan does not resolve."
 
 [tool.setuptools.packages.find]
 include = [

@@ -205,18 +205,13 @@ def test_cargo_home_defaults_to_the_dot_cargo_directory(
     )
 
 
-@pytest.mark.parametrize("has_token", [True, False], ids=["token", "no_token"])
-def test_runner_hides_tokens_only_when_one_is_set(
-    monkeypatch: pytest.MonkeyPatch, *, has_token: bool
+def test_runner_without_digests_is_the_plain_one_even_with_a_token(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A registry token in the environment selects the redacting runner."""
+    """Requirement 8: no option, no redaction, whatever the environment holds."""
     monkeypatch.delenv("LADING_USE_CMD_MOX_STUB", raising=False)
-    monkeypatch.delenv("CARGO_REGISTRY_TOKEN", raising=False)
-    if has_token:
-        monkeypatch.setenv("CARGO_REGISTRY_TOKEN", "some-token-value")
+    monkeypatch.setenv("CARGO_REGISTRY_TOKEN", "some-token-value")
 
-    runner = cli._select_runner()
-
-    assert (runner is cli.subprocess_runner) is not has_token, (
-        "the plain runner is used exactly when there is no token to hide"
+    assert cli._select_runner() is cli.subprocess_runner, (
+        "the plain runner must be used exactly as before the option existed"
     )

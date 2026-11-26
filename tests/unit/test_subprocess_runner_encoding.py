@@ -8,7 +8,9 @@ from importlib import import_module
 from hypothesis import given
 from hypothesis import strategies as st
 
-from lading.runtime.subprocess_runner import relay_stream, write_to_sink
+from lading.runtime import stream_relay
+from lading.runtime.stream_relay import RelayCapture, relay_decoded
+from lading.runtime.subprocess_runner import write_to_sink
 from tests.helpers.relay_sinks import _Cp1252Sink, _TextOnlyCp1252Sink
 
 if typ.TYPE_CHECKING:
@@ -51,7 +53,7 @@ class TestSubprocessRunnerEncoding:
             is None
         ), "text-only sink should disable mirroring"
 
-    def test_relay_stream_preserves_unicode_capture_after_binary_fallback(
+    def test_relay_decoded_preserves_unicode_capture_after_binary_fallback(
         self,
     ) -> None:
         """Mirroring through a binary fallback must not truncate captured output."""
@@ -60,7 +62,7 @@ class TestSubprocessRunnerEncoding:
         sink = _Cp1252Sink()
         captured: list[str] = []
 
-        relay_stream(source, sink, captured, "stdout")
+        relay_decoded(source, sink, RelayCapture(captured, "stdout"))
 
         assert "".join(captured) == payload, (
             "relay capture should preserve the complete Unicode payload"
@@ -69,17 +71,15 @@ class TestSubprocessRunnerEncoding:
             "relay should mirror exact UTF-8 bytes"
         )
 
-    def test_relay_stream_keeps_binary_mode_after_encoding_fallback(self) -> None:
+    def test_relay_decoded_keeps_binary_mode_after_encoding_fallback(self) -> None:
         """Relay chunks after fallback should bypass the text sink."""
         initial_prefix = "initial é\n"
         initial_chunk = initial_prefix + "a" * (
-            subprocess_runner_module._STREAM_CHUNK_SIZE
-            - len(initial_prefix.encode("utf-8"))
+            stream_relay._STREAM_CHUNK_SIZE - len(initial_prefix.encode("utf-8"))
         )
         fallback_prefix = "ś\n"
         fallback_chunk = fallback_prefix + "b" * (
-            subprocess_runner_module._STREAM_CHUNK_SIZE
-            - len(fallback_prefix.encode("utf-8"))
+            stream_relay._STREAM_CHUNK_SIZE - len(fallback_prefix.encode("utf-8"))
         )
         final_chunk = "later é\n"
         payload = initial_chunk + fallback_chunk + final_chunk
@@ -87,7 +87,7 @@ class TestSubprocessRunnerEncoding:
         sink = _Cp1252Sink()
         captured: list[str] = []
 
-        relay_stream(source, sink, captured, "stdout")
+        relay_decoded(source, sink, RelayCapture(captured, "stdout"))
 
         expected_bytes = (
             initial_chunk.encode("cp1252")
@@ -143,19 +143,19 @@ class TestSubprocessRunnerEncoding:
         )
 
     @given(payload=_UNICODE_TEXT)
-    def test_relay_stream_preserves_unicode_across_binary_transition(
+    def test_relay_decoded_preserves_unicode_across_binary_transition(
         self,
         payload: str,
     ) -> None:
         """Large relay input should capture and mirror arbitrary Unicode exactly."""
-        initial_chunk = "a" * subprocess_runner_module._STREAM_CHUNK_SIZE
+        initial_chunk = "a" * stream_relay._STREAM_CHUNK_SIZE
         remainder = f"{payload}ślater é\n"
         expected_payload = initial_chunk + remainder
         source = io.BytesIO(expected_payload.encode("utf-8"))
         sink = _Cp1252Sink()
         captured: list[str] = []
 
-        relay_stream(source, sink, captured, "stdout")
+        relay_decoded(source, sink, RelayCapture(captured, "stdout"))
 
         assert "".join(captured) == expected_payload, (
             "relay capture should preserve arbitrary Unicode across chunks"

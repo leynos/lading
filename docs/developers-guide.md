@@ -1892,19 +1892,24 @@ extensionless file winning, from a start directory up through its ancestors,
 then Cargo home); `refuse_alternate_default` applies it to the workspace root
 and to each publishable crate's root before anything is staged. The inputs
 arrive as `PublishOptions.cargo_environment`, a `CargoEnvironment` resolved by
-`lading.cli`. `lading.runtime.redaction` and `redacting_runner` keep exact
-registry-token values out of relayed and captured output:
-`lading.cli._select_runner` collects them from the environment (and, with
-digests, the credentials file via `runtime.credentials`) and returns a runner
-whose pipes are wrapped in `RedactingReader`, always for a digest-checked run
-and otherwise only when a token is set. Every runner logs through
-`subprocess_runner.run_logged`, so the `Running external command` line is
-identical with or without redaction; `env_redaction` is the older key-based
-masking for logged environment overrides. `publish_registry` is the injectable
-`PublishedDigestFetcher` port; `fetch_crates_io_digest` streams the archive from
-`static.crates.io` through a size cap and bounded retries, and tests
-substitute a fake. The new errors (`ExpectedDigestsError`,
-`ArchiveMismatchError`, `UploadedArchiveMismatchError`,
+`lading.cli`. `lading.utils.redaction` and `redacting_runner` keep exact
+registry-token values out of what lading shows, never out of what it parses.
+`lading.cli` collects the values from the environment and the credentials file
+(`runtime.credentials`) for a digest-checked run only; `_select_runner` then
+returns `redacting_runner`, while a run without the option always gets the plain
+`subprocess_runner`. The runner captures each stream raw and filters only the
+mirrored text (`stream_relay.relay_decoded` with a `RelayCapture`). Messages
+built from captured output are redacted centrally: `use_secrets` activates the
+values for the run and `command_detail` and `append_detail` (and so
+`with_detail` and the metadata error) call `redact_active`. The spawn error,
+the logged command line and the debug environment log redact by value too.
+Every runner logs through `subprocess_runner.run_logged`, so the
+`Running external command` line is identical with or without redaction;
+`env_redaction` is the older key-based masking for logged environment overrides.
+`publish_registry` is the injectable `PublishedDigestFetcher` port;
+`fetch_crates_io_digest` streams the archive from `static.crates.io` through a
+size cap and bounded retries, and tests substitute a fake. The new errors
+(`ExpectedDigestsError`, `ArchiveMismatchError`, `UploadedArchiveMismatchError`,
 `PublishedArchiveConflictError`) live in `publish_errors`;
 `ArchiveUnavailableError` and `PublishedArchiveUnavailableError` sit beside the
 code that raises them. `tests/helpers/publish_digests.py` provides `FakeCargo`,
@@ -2305,7 +2310,7 @@ safe name used by relay threads.
 payload and returns the updated `(sink, binary_sink)` pair. Callers must retain
 both returned values as the active sink state for the next chunk. The required
 `stream: StreamName` argument is `"stdout"` or `"stderr"` and identifies the
-child pipe. `relay_stream(source, sink, buffer, stream)` and
+child pipe. `relay_decoded(source, sink, capture)` and
 `write_to_sink(sink, payload, stream)` take the same stream label.
 
 Before a fallback, payloads use the text sink's normal encoding. If that write

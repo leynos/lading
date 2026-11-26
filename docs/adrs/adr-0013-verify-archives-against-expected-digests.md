@@ -97,11 +97,14 @@ with one `<64 hex digits>  <name>-<version>.crate` entry per line.
   archive is compared too and a difference is a mismatch.
 - **Credentials.** With digests, exact values of `CARGO_REGISTRY_TOKEN`,
   `CARGO_REGISTRIES_<NAME>_TOKEN` (from the environment or a pre-flight
-  override) and the tokens in Cargo's credentials file are replaced in
-  subprocess output where it is read and in the logged command line, so logs
-  and errors built from it stay clean. The limit: credentials an external Cargo
-  credential provider supplies never pass through lading, so they cannot be
-  redacted, and only exact values are replaced.
+  override) and the tokens in Cargo's credentials file are replaced in what
+  lading shows: the mirrored subprocess output, the logged command line and
+  environment, spawn errors, and messages built from captured output through
+  the shared failure formatters. Captured streams stay raw because lading
+  parses them, and without the option the plain runner is used as before. The
+  limit: credentials an external Cargo credential provider supplies never pass
+  through lading, so they cannot be redacted, and only exact values are
+  replaced.
 
 The verifier rides on `_PublishExecutionOptions` rather than on the pipeline
 state, so `--locked` follows from its presence and the helper signatures keep
