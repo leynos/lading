@@ -40,7 +40,7 @@ __all__ = [
 
 _ROOT_MANIFEST_PARTS: typ.Final[tuple[str, ...]] = ("Cargo.toml",)
 
-type _ProposalKey = tuple[str, int, int] | tuple[str, str]
+type _ProposalKey = tuple[str, int, int] | tuple[str, int, int, str] | tuple[str, str]
 
 
 class WriteCategory(enum.Enum):
@@ -128,9 +128,11 @@ class PlanBuilder:
         An existing target is identified by its device and inode, so two
         spellings that name the same file compose even on a case-insensitive
         filesystem whose path comparison is case-preserving, such as macOS
-        APFS. An absent target has no inode yet, so it falls back to the
-        normalized native path: Windows still merges case-only spellings,
-        while a case-sensitive volume keeps distinct files distinct.
+        APFS. An absent target has no inode yet, so it is identified by its
+        parent's device and inode plus its normalized name. Distinct parents
+        therefore stay distinct even when Windows lowercases their paths for a
+        case-sensitive directory, and Windows still merges case-only spellings
+        of the same future file.
 
         Returns
         -------
@@ -139,9 +141,24 @@ class PlanBuilder:
         """
         try:
             status = path.path.stat()
+        except FileNotFoundError:
+            return self._absent_key(path)
         except OSError:
             return ("path", os.path.normcase(str(path.path)))
         return ("file", status.st_dev, status.st_ino)
+
+    def _absent_key(self, path: ConfinedPath) -> _ProposalKey:
+        """Return the identity of a target that does not exist yet."""
+        try:
+            parent = path.path.parent.stat()
+        except OSError:
+            return ("path", os.path.normcase(str(path.path)))
+        return (
+            "absent",
+            parent.st_dev,
+            parent.st_ino,
+            os.path.normcase(path.path.name),
+        )
 
     def read(self, path: ConfinedPath) -> str | None:
         """Return the current content of ``path`` honouring earlier proposals.
@@ -193,6 +210,10 @@ class PlanBuilder:
         """
         key = self._key(path)
         if key in self._contents:
+            if content == self._contents[key]:
+                # A later stage adopted the pending text unchanged, so the
+                # plan must not claim another category for it.
+                return
             original = self._original.get(key)
             if content == original:
                 # A later stage restored the file's pre-bump content, so the
@@ -319,7 +340,7 @@ def changes_from_plan(
     return BumpChanges(
         manifests=_paths_for(plan, WriteCategory.MANIFEST),
         documents=_paths_for(plan, WriteCategory.DOCUMENTATION),
-        transposed_readmes=_paths_for(plan, WriteCategory.README),
+        transposed_readmes=tuple(sorted(_paths_for(plan, WriteCategory.README))),
         lockfiles=tuple(lockfiles),
     )
 

@@ -175,6 +175,9 @@ def test_a_nested_implicit_member_is_validated(tmp_path: Path) -> None:
     assert "regular file" in str(excinfo.value), (
         "a nested implicit member must be inspected"
     )
+    assert not runner.metadata_calls(), (
+        "the nested member must be rejected before Cargo runs"
+    )
 
 
 def test_an_absolute_dependency_outside_the_workspace_is_skipped(

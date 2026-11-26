@@ -168,3 +168,19 @@ def test_loader_accepts_a_fence_inside_a_list_item(tmp_path: Path) -> None:
     assert example.body == "print(1)", (
         "the list container indentation must not become body text"
     )
+
+
+def test_loader_accepts_a_closing_fence_indented_within_the_container(
+    tmp_path: Path,
+) -> None:
+    """A list item's closing fence may sit deeper than its opening fence."""
+    path = _write(
+        tmp_path,
+        "- <!-- tested-example: list -->\n  ```python\n  print(1)\n    ```\n",
+    )
+
+    example = load_tested_examples(path)["list"]
+
+    assert example.body == "print(1)", (
+        "the closing fence must close the list-contained example"
+    )

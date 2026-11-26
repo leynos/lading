@@ -140,7 +140,10 @@ def test_overlapping_documentation_and_readme_target_is_reported_twice(
         options=WorkspaceOptions(
             readme_workspace=True,
             documentation_globs=("README.md", "crates/*/README.md"),
-            workspace_readme='```toml\n[dependencies]\nalpha = "0.1.0"\n```\n',
+            workspace_readme=(
+                '```toml\n[dependencies]\nalpha = "0.1.0"\n```\n\n'
+                "See [the guide](../guide.md).\n"
+            ),
         ),
     )
     crate_readme = workspace.root / "crates" / "alpha" / "README.md"
@@ -162,4 +165,40 @@ def test_overlapping_documentation_and_readme_target_is_reported_twice(
     )
     assert 'alpha = "1.2.3"' in crate_readme.read_text(encoding="utf-8"), (
         "the adopted README must compose from the documentation rewrite"
+    )
+
+
+def test_an_unchanged_readme_adoption_is_not_reported(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """An adoption that copies the already-rewritten text adds no category."""
+    workspace = create_cli_workspace(
+        tmp_path / "workspace",
+        options=WorkspaceOptions(
+            readme_workspace=True,
+            documentation_globs=("README.md", "crates/*/README.md"),
+            workspace_readme='```toml\n[dependencies]\nalpha = "0.1.0"\n```\n',
+        ),
+    )
+    crate_readme = workspace.root / "crates" / "alpha" / "README.md"
+    crate_readme.write_text(
+        '```toml\n[dependencies]\nalpha = "0.1.0"\n```\n', encoding="utf-8"
+    )
+    runner = RecordingCommandRunner(metadata=workspace.metadata)
+
+    exit_code, stdout, stderr = run_bump(
+        workspace, runner, CliSeams(monkeypatch, capsys)
+    )
+
+    assert exit_code == 0, f"the overlapping targets must succeed; stderr:\n{stderr}"
+    assert "- crates/alpha/README.md (documentation)" in stdout, (
+        "the documentation category must be reported"
+    )
+    assert "- crates/alpha/README.md (readme)" not in stdout, (
+        "an adoption that changes no text must not be reported"
+    )
+    assert 'alpha = "1.2.3"' in crate_readme.read_text(encoding="utf-8"), (
+        "the documentation rewrite must still be written"
     )

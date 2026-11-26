@@ -252,18 +252,14 @@ def _closes_fence(
 
     GitHub-flavoured Markdown permits at most three leading spaces relative to
     the container. A fence opened inside a list item already carries the list
-    item's indentation, so that indentation is the base for the limit.
+    item's indentation, so the opener's indentation is the base for the limit.
 
     Returns
     -------
     bool
         Whether ``line`` closes the fence.
     """
-    allowed = (
-        opener_indent + _MAX_FENCE_INDENT
-        if opener_indent > _MAX_FENCE_INDENT
-        else _MAX_FENCE_INDENT
-    )
+    allowed = opener_indent + _MAX_FENCE_INDENT
     if _indentation(line) > allowed:
         return False
     stripped = line.strip()

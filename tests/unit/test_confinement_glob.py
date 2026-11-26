@@ -266,3 +266,34 @@ def test_a_trailing_backslash_is_a_filename_character_on_posix(
     assert [match.display for match in matches] == ["docs/guide.md\\"], (
         "a documentation pattern ending in a backslash must select the file"
     )
+
+
+def test_a_deep_tree_does_not_exhaust_the_call_stack(tmp_path: Path) -> None:
+    """Recursive expansion uses a worklist rather than Python recursion."""
+    root = tmp_path / "workspace"
+    current = root
+    for _ in range(600):
+        current /= "d"
+    current.mkdir(parents=True)
+    (current / "leaf.md").write_text("", encoding="utf-8")
+
+    matches = expand_confined_glob(root, "**/*.md", key="globs")
+
+    assert [match.display for match in matches] == [
+        "/".join(["d"] * 600 + ["leaf.md"])
+    ], "a deep tree must yield the leaf without a recursion error"
+
+
+def test_adjacent_recursive_components_are_collapsed(tmp_path: Path) -> None:
+    """Repeated ``**`` components select each directory only once."""
+    root = tmp_path / "workspace"
+    (root / "docs" / "nested").mkdir(parents=True)
+    (root / "docs" / "guide.md").write_text("", encoding="utf-8")
+    (root / "docs" / "nested" / "deep.md").write_text("", encoding="utf-8")
+
+    collapsed = expand_confined_glob(root, "docs/**/*.md", key="globs")
+    repeated = expand_confined_glob(root, "docs/**/**/**/*.md", key="globs")
+
+    assert [match.display for match in repeated] == [
+        match.display for match in collapsed
+    ], "adjacent recursive components must select the same files"

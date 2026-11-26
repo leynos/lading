@@ -241,7 +241,25 @@ _MISSING_SOURCE_MESSAGE = (
 
 
 def resolve_crate_relative_path(workspace_root: Path, crate: WorkspaceCrate) -> Path:
-    """Return the crate path relative to the workspace root."""
+    """Return the crate's path relative to the workspace root.
+
+    Parameters
+    ----------
+    workspace_root : Path
+        Canonical workspace root.
+    crate : WorkspaceCrate
+        Crate whose README location is being computed.
+
+    Returns
+    -------
+    Path
+        The crate directory relative to ``workspace_root``.
+
+    Raises
+    ------
+    ReadmeTranspositionError
+        If the crate directory lies outside ``workspace_root``.
+    """
     try:
         return crate.root_path.relative_to(workspace_root)
     except ValueError as exc:
@@ -310,10 +328,7 @@ def transpose_readme_to_crate(
     _log.debug("Transposing workspace README into crate %r", crate.name)
     source_readme = workspace_root / "README.md"
     source_text = _load_source_text(source_readme, _source_text)
-    crate_relative_path = resolve_crate_relative_path(workspace_root, crate)
-    rewritten_text = rewrite_relative_links(
-        source_text, compute_link_prefix(crate_relative_path)
-    )[0]
+    rewritten_text = prepare_readme_content(workspace_root, crate, source_text)
     return _write_or_skip_readme(
         crate.root_path / "README.md",
         rewritten_text,

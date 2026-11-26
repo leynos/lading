@@ -139,3 +139,39 @@ def test_a_version_only_dependency_is_ignored(tmp_path: Path) -> None:
     assert {crate.name for crate in graph.crates} == {"app"}, (
         "a version-only dependency must not be inspected as a path dependency"
     )
+
+
+def test_two_level_workspace_inheritance_is_resolved(tmp_path: Path) -> None:
+    """An implicit member that inherits another workspace dependency is followed."""
+    root = tmp_path.resolve()
+    (root / "Cargo.toml").write_text(
+        '[workspace]\nmembers = ["app"]\n\n'
+        "[workspace.dependencies]\n"
+        'a = { path = "a" }\n'
+        'b = { path = "b" }\n',
+        encoding="utf-8",
+    )
+    (root / "app").mkdir(parents=True)
+    (root / "app" / "Cargo.toml").write_text(
+        '[package]\nname = "app"\nversion = "0.1.0"\n\n'
+        "[dependencies]\na = { workspace = true }\n",
+        encoding="utf-8",
+    )
+    (root / "a").mkdir()
+    (root / "a" / "Cargo.toml").write_text(
+        '[package]\nname = "a"\nversion = "0.1.0"\n\n'
+        "[dependencies]\nb = { workspace = true }\n",
+        encoding="utf-8",
+    )
+    make_fifo(root / "b" / "Cargo.toml")
+    runner = runner_for(payload(root, ("app", "a", "b")))
+
+    with pytest.raises(UnsafeBumpTargetError) as excinfo:
+        load_bump_workspace(root, runner=typ.cast("CommandRunner", runner))
+
+    assert "regular file" in str(excinfo.value), (
+        "the second-level inherited dependency must be inspected"
+    )
+    assert not runner.metadata_calls(), (
+        "the second-level dependency must be rejected before Cargo runs"
+    )

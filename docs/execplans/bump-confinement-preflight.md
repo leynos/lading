@@ -306,15 +306,16 @@ issue; the release version and commit are recorded.
 - A glob member pattern that matches nothing is an error naming the pattern.
 - A member pattern match that is a regular file is ignored, as Cargo does; a
   matched special file is an error.
-- A glob member match beneath an excluded directory is excluded, matching
-  Cargo's descendant semantics; an explicitly listed member keeps Cargo's
-  precedence.
+- An exclusion is a literal path prefix and is not expanded as a glob; a glob
+  member match beneath an excluded directory is excluded, while a wildcard in
+  `[workspace].exclude` names a literal directory. An explicitly listed member
+  keeps Cargo's precedence.
 - A member directory without a regular `Cargo.toml` is an error naming the
   directory.
 - A documentation glob that matches nothing is a no-op.
 - A documentation glob matching a directory ignores that directory.
-- `[workspace].exclude` entries are validated lexically and expanded, but an
-  exclusion that matches nothing is not an error; exclusions are filters.
+- `[workspace].exclude` entries are validated lexically and treated as
+  literal path prefixes; an exclusion that names no directory is not an error.
 - Configured lockfile manifests are validated whenever lockfile regeneration is
   enabled for the run. A disabled rebuild ignores them, as before.
 

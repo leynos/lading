@@ -304,3 +304,51 @@ def test_plan_builder_drops_a_proposal_that_restores_the_original(
     assert not builder.has_changes(WriteCategory.DOCUMENTATION), (
         "the restored path must not retain a change category"
     )
+
+
+def test_distinct_missing_destinations_keep_distinct_identities(
+    tmp_path: Path,
+) -> None:
+    """Two absent READMEs under different parents are separate writes."""
+    root = tmp_path.resolve()
+    (root / "crates" / "Foo").mkdir(parents=True)
+    (root / "crates" / "foo").mkdir()
+    builder = PlanBuilder(root=root)
+
+    builder.propose(
+        _confined(root, "crates/Foo/README.md"), "upper\n", WriteCategory.README
+    )
+    builder.propose(
+        _confined(root, "crates/foo/README.md"), "lower\n", WriteCategory.README
+    )
+
+    plan = builder.build(target_version="1.2.3", lockfiles=None)
+    assert [proposal.path.display for proposal in plan.proposals] == [
+        "crates/Foo/README.md",
+        "crates/foo/README.md",
+    ], "distinct missing destinations must remain distinct proposals"
+
+
+def test_readme_report_order_is_sorted_by_path(tmp_path: Path) -> None:
+    """The README report is sorted by path, not by commit rank."""
+    root = tmp_path.resolve()
+    for relative in ("crates/a", "crates/z"):
+        (root / relative).mkdir(parents=True)
+    builder = PlanBuilder(root=root)
+    builder.propose(
+        _confined(root, "crates/z/README.md"), "z\n", WriteCategory.DOCUMENTATION
+    )
+    builder.propose(
+        _confined(root, "crates/z/README.md"), "z adapted\n", WriteCategory.README
+    )
+    builder.propose(
+        _confined(root, "crates/a/README.md"), "a adopted\n", WriteCategory.README
+    )
+    plan = builder.build(target_version="1.2.3", lockfiles=None)
+
+    changes = changes_from_plan(plan)
+
+    assert [path.as_posix() for path in changes.transposed_readmes] == [
+        str(root / "crates/a/README.md"),
+        str(root / "crates/z/README.md"),
+    ], "the README report must be sorted by path"

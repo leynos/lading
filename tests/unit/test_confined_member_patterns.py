@@ -14,6 +14,7 @@ import pytest
 from lading.utils.confinement import MissingBumpTargetError
 from lading.workspace.confined_discovery import load_bump_workspace
 from tests.unit.test_confined_discovery import (
+    WorkspaceShape,
     _payload,
     _prepare_workspace,
     _RecordingRunner,
@@ -35,7 +36,12 @@ def _load(
 
 def test_a_wildcard_exclusion_is_literal(tmp_path: Path) -> None:
     """Cargo does not expand wildcards in ``exclude`` entries."""
-    _prepare_workspace(tmp_path, ["crates/*"], ["live"])
+    _prepare_workspace(
+        tmp_path,
+        ["crates/*"],
+        ["live"],
+        options=WorkspaceShape(excludes=("crates/*",)),
+    )
     (tmp_path / "crates" / "retired").mkdir()
     runner = _RecordingRunner(payload=_payload(tmp_path, ["live"]))
 

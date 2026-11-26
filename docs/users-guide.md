@@ -357,12 +357,14 @@ reports workspace members without resolving dependencies; a missing or stale
 
 The member and exclusion patterns in the root manifest are validated lexically.
 Absolute, rooted, drive-qualified, UNC, and parent-traversing patterns are
-rejected under both POSIX and Windows spellings. Patterns are then expanded
-without following symlinks. A literal member that does not exist, a glob that
-matches nothing, or a matched directory without a regular `Cargo.toml` fails
-the run and names the pattern. A documentation glob that matches nothing is a
-no-op, and a directory matched by a documentation glob is ignored. An exclusion
-that matches nothing is not an error; exclusions are filters.
+rejected under both POSIX and Windows spellings. Member patterns are then
+expanded without following symlinks. A literal member that does not exist, a
+glob that matches nothing, or a matched directory without a regular
+`Cargo.toml` fails the run and names the pattern. A documentation glob that
+matches nothing is a no-op, and a directory matched by a documentation glob is
+ignored. An exclusion is a literal path prefix, not a glob: Cargo does not
+expand wildcards in `[workspace].exclude`, so an exclusion that names no
+directory simply filters nothing.
 
 Within the workspace, every path component below the canonical root is
 inspected with `lstat` before anything is resolved. Symlinked ancestors, final

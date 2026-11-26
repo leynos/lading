@@ -32,6 +32,16 @@ __all__ = ["_GLOB_METACHARACTERS", "_Expansion"]
 _GLOB_METACHARACTERS: typ.Final[frozenset[str]] = frozenset("*?[")
 
 
+def _collapse_recursive(parts: tuple[str, ...]) -> tuple[str, ...]:
+    """Collapse adjacent recursive components into one."""
+    collapsed: list[str] = []
+    for part in parts:
+        repeated = part == "**" and collapsed[-1:] == ["**"]
+        if not repeated:
+            collapsed.append(part)
+    return tuple(collapsed)
+
+
 @dc.dataclass(slots=True)
 class _Expansion:
     """State for one recursive, non-following pattern expansion."""
@@ -43,11 +53,31 @@ class _Expansion:
     link_predicate: LinkPredicate
     found: set[tuple[str, ...]] = dc.field(default_factory=set)
     matched_any: bool = False
+    _pending: list[tuple[tuple[str, ...], tuple[str, ...]]] = dc.field(
+        default_factory=list
+    )
 
     def expand(self, remaining: tuple[str, ...], prefix: tuple[str, ...]) -> None:
         """Expand ``remaining`` starting from the directory ``prefix``.
 
-        Every caller passes at least one component: a final component selects
+        Descent uses an explicit worklist rather than the Python call stack, so
+        a deep tree cannot exhaust recursion depth while its paths are valid.
+        Adjacent recursive components are collapsed first: they select the same
+        directories and would otherwise rescan them combinatorially.
+        """
+        self._pending.append((_collapse_recursive(remaining), prefix))
+        while self._pending:
+            current, start = self._pending.pop()
+            self._expand_one(current, start)
+
+    def _expand_one(
+        self,
+        remaining: tuple[str, ...],
+        prefix: tuple[str, ...],
+    ) -> None:
+        """Expand one worklist entry.
+
+        Every entry carries at least one component: a final component selects
         through :meth:`_consider_final`, and the directory itself is handled by
         :meth:`_consider_current_directory`.
         """
@@ -109,7 +139,7 @@ class _Expansion:
             self._consider_current_directory(prefix)
         else:
             # ``**`` matches the current directory as zero levels of descent.
-            self.expand(remaining[1:], prefix)
+            self._pending.append((remaining[1:], prefix))
         for name, result in self._iter_entries(prefix, "*"):
             if self.link_predicate(result):
                 if is_final:
@@ -121,7 +151,7 @@ class _Expansion:
                 # an image symlink under a documentation tree.
                 continue
             if stat.S_ISDIR(result.st_mode):
-                self.expand(remaining, (*prefix, name))
+                self._pending.append((remaining, (*prefix, name)))
             elif is_final:
                 self._consider_final(result, (*prefix, name))
 
@@ -186,7 +216,7 @@ class _Expansion:
         if not rest:
             self._consider_final(result, (*prefix, name))
         elif stat.S_ISDIR(result.st_mode):
-            self.expand(rest, (*prefix, name))
+            self._pending.append((rest, (*prefix, name)))
         elif not stat.S_ISREG(result.st_mode):
             self._reject_match(prefix, name, "matched a special file")
 

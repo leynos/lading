@@ -103,11 +103,38 @@ def validate_implicit_member_manifests(
         seen=set(frontier),
         inherited=set(),
     )
+    root_document: cabc.Mapping[str, typ.Any] | None = None
     while frontier:
         parts = frontier.pop()
         document = _parse_manifest(root, parts)
+        if not parts:
+            root_document = document
         discovery.inherited.update(_inherited_names(document))
         frontier.extend(discovery.dependency_parts(parts, document))
+    if root_document is None:  # pragma: no cover - the root is always queued
+        root_document = _parse_manifest(root, ())
+    _finish_workspace_dependencies(discovery, root_document)
+
+
+def _finish_workspace_dependencies(
+    discovery: _Discovery,
+    root_document: cabc.Mapping[str, typ.Any],
+) -> None:
+    """Follow workspace dependencies inherited after the root was read.
+
+    An implicit member discovered late can inherit a workspace dependency that
+    was not known when the root's table was first scanned. Re-resolve the
+    table until no newly inherited path remains.
+    """
+    while True:
+        frontier = discovery.workspace_dependency_parts(root_document)
+        if not frontier:
+            return
+        while frontier:
+            parts = frontier.pop()
+            document = _parse_manifest(discovery.root, parts)
+            discovery.inherited.update(_inherited_names(document))
+            frontier.extend(discovery.dependency_parts(parts, document))
 
 
 def _initial_frontier(
@@ -137,12 +164,33 @@ class _Discovery:
         """Return newly discovered in-workspace dependency directories."""
         discovered: list[tuple[str, ...]] = []
         for raw in _path_dependencies(document, inherited=self.inherited):
-            resolved = _resolve_dependency(self.root, parts, raw)
-            if resolved is None or resolved in self.seen:
-                continue
-            self.seen.add(resolved)
-            discovered.append(resolved)
+            self._enqueue(raw, parts, discovered)
         return discovered
+
+    def workspace_dependency_parts(
+        self,
+        root_document: cabc.Mapping[str, typ.Any],
+    ) -> list[tuple[str, ...]]:
+        """Return newly inherited workspace dependency directories."""
+        discovered: list[tuple[str, ...]] = []
+        workspace = root_document.get("workspace")
+        if isinstance(workspace, cabc.Mapping):
+            for raw in _workspace_paths(workspace, self.inherited):
+                self._enqueue(raw, (), discovered)
+        return discovered
+
+    def _enqueue(
+        self,
+        raw: str,
+        base_parts: tuple[str, ...],
+        discovered: list[tuple[str, ...]],
+    ) -> None:
+        """Record one dependency path that has not been scheduled yet."""
+        resolved = _resolve_dependency(self.root, base_parts, raw)
+        if resolved is None or resolved in self.seen:
+            return
+        self.seen.add(resolved)
+        discovered.append(resolved)
 
 
 def _parse_manifest(
