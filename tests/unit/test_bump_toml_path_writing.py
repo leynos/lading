@@ -74,6 +74,52 @@ def test_path_fallback_uses_short_temporary_name_for_long_destination(
     )
 
 
+def test_path_fallback_pins_resolved_parent_before_reading_mode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A parent symlink changed after the mode read cannot redirect the write."""
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    first_destination = first / "Cargo.toml"
+    second_destination = second / "Cargo.toml"
+    first_destination.write_text("first", encoding="utf-8")
+    first_destination.chmod(0o640)
+    second_destination.write_text("second", encoding="utf-8")
+    link = tmp_path / "link"
+    try:
+        link.symlink_to(first, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"symbolic links are unavailable: {exc}")
+    original_open_parent = bump_toml_files._open_temporary_parent_directory
+
+    def swap_parent_before_pinning(directory: Path) -> tuple[Path, int | None]:
+        """Redirect the parent symlink after the destination mode is read."""
+        link.unlink()
+        link.symlink_to(second, target_is_directory=True)
+        return original_open_parent(directory)
+
+    monkeypatch.setattr(
+        bump_toml_files,
+        "_open_temporary_parent_directory",
+        swap_parent_before_pinning,
+    )
+
+    bump_toml_files.write_atomic_text(link / "Cargo.toml", "replacement")
+
+    assert first_destination.read_text(encoding="utf-8") == "replacement", (
+        "the resolved destination must receive the replacement"
+    )
+    assert second_destination.read_text(encoding="utf-8") == "second", (
+        "a later parent symlink change must not redirect the replacement"
+    )
+    assert stat.S_IMODE(first_destination.stat().st_mode) == 0o640, (
+        "permissions must come from the destination that is replaced"
+    )
+
+
 def test_bounded_writer_uses_short_temporary_name_for_long_destination(
     tmp_path: Path,
 ) -> None:

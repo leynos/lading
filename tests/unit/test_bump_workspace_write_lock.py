@@ -69,6 +69,23 @@ def test_lock_directory_reports_unavailable_home_directory(
         bump_workspace_write_lock._workspace_lock_directory()
 
 
+def test_lock_directory_requires_a_passwd_entry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A numeric UID without an account entry reports the requirement."""
+    if os.name == "nt":
+        pytest.skip("Windows resolves its state directory from Path.home()")
+
+    def unavailable_account_home(_user_id: int) -> None:
+        """Simulate a container UID with no passwd entry."""
+        raise KeyError(HOME_UNAVAILABLE)
+
+    monkeypatch.setattr(pwd, "getpwuid", unavailable_account_home)
+
+    with pytest.raises(PermissionError, match="no passwd entry"):
+        bump_workspace_write_lock._workspace_lock_directory()
+
+
 def test_workspace_lock_key_uses_filesystem_identity(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -114,6 +131,34 @@ def test_workspace_lock_key_uses_filesystem_identity(
             bump_workspace_write_lock._workspace_identity(second)
         )
     ), "aliases of one directory must acquire the same lock"
+
+
+def test_workspace_lock_reuses_resolved_alias(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An unresolved alias of a held workspace lock must not deadlock."""
+    monkeypatch.setattr(
+        bump_workspace_write_lock,
+        "_workspace_lock_directory",
+        lambda: tmp_path / "locks",
+    )
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    alias = tmp_path / "workspace-link"
+    try:
+        alias.symlink_to(workspace_root, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"symbolic links are unavailable: {exc}")
+
+    with (
+        bump_workspace_write_lock.workspace_write_lock(workspace_root),
+        bump_workspace_write_lock.workspace_write_lock(alias) as inner,
+        bump_workspace_write_lock.workspace_write_lock(
+            workspace_root.resolve()
+        ) as resolved,
+    ):
+        assert inner == resolved, "resolved aliases must reuse the held lock"
 
 
 def test_workspace_write_lock_preserves_write_error_when_unlock_fails(

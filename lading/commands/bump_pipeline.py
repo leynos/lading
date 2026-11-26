@@ -20,6 +20,7 @@ from lading.commands import (
     bump_pipeline_manifest_rewrites,
     bump_pipeline_manifest_sources,
     bump_readme,
+    bump_workspace_write_lock,
 )
 from lading.commands.bump_manifests import (
     _WORKSPACE_SELECTORS,
@@ -48,6 +49,25 @@ class _BumpAuxiliaryChanges:
 
 
 def _run_pipeline(context: _BumpContext, target_version: str) -> BumpChanges:
+    """Run one bump under the workspace lock and return its ordered changes.
+
+    A live run holds the lock from planning until the last stage completes, so
+    a concurrent bump cannot plan from a half-applied workspace or accept a
+    version that this run then rolls back. Dry runs write nothing and do not
+    take the lock.
+
+    Returns
+    -------
+    BumpChanges
+        Ordered changes produced by the completed stages.
+    """
+    if context.base_options.dry_run:
+        return _run_pipeline_stages(context, target_version)
+    with bump_workspace_write_lock.workspace_write_lock(context.root_path):
+        return _run_pipeline_stages(context, target_version)
+
+
+def _run_pipeline_stages(context: _BumpContext, target_version: str) -> BumpChanges:
     """Run update stages and return their ordered changes."""
     changed_manifests: set[Path] = set()
     rewrite_stage = bump_pipeline_manifest_rewrites._plan_non_member_manifest_rewrites(

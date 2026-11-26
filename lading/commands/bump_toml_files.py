@@ -156,22 +156,11 @@ def write_atomic_text(
         message = "expected_current_identity requires workspace_root"
         raise ValueError(message)
     if workspace_root is None:
-        _write_unbounded_atomic_text(file_path, content, write_status)
+        _write_path_based_atomic_text(file_path, content, write_status)
         return
     _write_workspace_bounded_atomic_text(
         file_path, content, workspace_root, write_options
     )
-
-
-def _write_unbounded_atomic_text(
-    file_path: Path,
-    content: str,
-    write_status: bump_toml_write_options.AtomicWriteStatus | None,
-) -> None:
-    """Follow symbolic links and replace a path without a workspace boundary."""
-    if file_path.is_symlink():
-        file_path = file_path.resolve(strict=True)
-    _write_path_based_atomic_text(file_path, content, write_status)
 
 
 def _write_workspace_bounded_atomic_text(
@@ -206,10 +195,11 @@ def _write_path_based_atomic_text(
     write_status: bump_toml_write_options.AtomicWriteStatus | None = None,
 ) -> None:
     """Replace an unbounded destination through a temporary path."""
-    dirpath = file_path.parent
+    destination = _resolve_unbounded_write_destination(file_path)
+    dirpath = destination.parent
     existing_mode: int | None = None
     with suppress(FileNotFoundError):
-        existing_mode = stat.S_IMODE(file_path.stat().st_mode)
+        existing_mode = stat.S_IMODE(destination.stat().st_mode)
 
     temporary_directory, directory_fd = _open_temporary_parent_directory(dirpath)
     temporary_name: str | None = None
@@ -218,7 +208,7 @@ def _write_path_based_atomic_text(
     try:
         descriptor, temporary_name, replacement_path = _create_path_based_temporary(
             dirpath,
-            file_path.name,
+            destination.name,
             temporary_directory,
             directory_fd,
         )
@@ -228,7 +218,7 @@ def _write_path_based_atomic_text(
         )
         if write_status is not None:
             write_status.replacement_identity = replacement_identity
-        replacement_path.replace(file_path)
+        replacement_path.replace(destination)
         temporary_name = None
         temporary_path = None
         if write_status is not None:
@@ -243,6 +233,14 @@ def _write_path_based_atomic_text(
     finally:
         if directory_fd is not None:
             _close_descriptor(directory_fd, primary_error)
+
+
+def _resolve_unbounded_write_destination(file_path: Path) -> Path:
+    """Resolve the parent and final link once before inspecting or replacing."""
+    destination = file_path.parent.resolve(strict=True) / file_path.name
+    if destination.is_symlink():
+        destination = destination.resolve(strict=True)
+    return destination
 
 
 def _create_path_based_temporary(

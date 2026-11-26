@@ -913,23 +913,30 @@ remain and lockfile regeneration is skipped. Before reporting the failure,
 filesystem identity and contents still match the latest output written by this
 bump. Workspace-bounded writes use a per-workspace advisory lock shared by
 Lading writers and compare the expected text and file identity immediately
-before replacement. Locks for the same operating-system user live in a stable
-state directory, independent of each process's `XDG_CACHE_HOME`. If another
-Lading write holds the lock, the bump fails before replacing a file. If another
-writer changed a manifest, rollback leaves the changed file in place and
-reports the path, including when a later write has identical contents. Editors
-and tools that ignore advisory locks can still race after the final comparison,
-so this protection covers cooperating Lading processes and edits visible at
-that check. Other matching manifests are restored to the exact text this bump
-parsed before updating each one. The source crate versions used for fixture
-plans are checked again before the first write, including versions inherited
-from `[workspace.package]`; unrelated manifest edits remain allowed. If
-rollback reports a manifest it left in place or could not restore, inspect and
-repair that named file before retrying. If a fixture batch fails after earlier
-fixture rewrites completed and those files remain changed after recovery, the
-error also names those manifests. Inspect and repair them before retrying
-because their version references may remain at the requested target while
-workspace manifests have been restored to their pre-bump versions.
+before replacement. A live run holds that lock from rewrite planning until its
+last stage finishes, including any rollback, so a second Lading bump or write
+for the same workspace fails before changing a manifest instead of planning
+from, or rolling back, another run's accepted versions. Locks for the same
+operating-system user live in a stable state directory derived from that user's
+passwd entry, independent of each process's `HOME` and `XDG_CACHE_HOME`. A
+POSIX host must therefore provide a passwd entry for the account that runs
+`lading bump`; a container invoked with a numeric UID and no account entry must
+add one before bumping. If another Lading write holds the lock, the bump fails
+before replacing a file. If another writer changed a manifest, rollback leaves
+the changed file in place and reports the path, including when a later write
+has identical contents. Editors and tools that ignore advisory locks can still
+race after the final comparison, so this protection covers cooperating Lading
+processes and edits visible at that check. Other matching manifests are
+restored to the exact text this bump parsed before updating each one. The
+source crate versions used for fixture plans are checked again before the first
+write, including versions inherited from `[workspace.package]`; unrelated
+manifest edits remain allowed. If rollback reports a manifest it left in place
+or could not restore, inspect and repair that named file before retrying. If a
+fixture batch fails after earlier fixture rewrites completed and those files
+remain changed after recovery, the error also names those manifests. Inspect
+and repair them before retrying because their version references may remain at
+the requested target while workspace manifests have been restored to their
+pre-bump versions.
 
 Workspace-bounded atomic writes require operating-system support for
 directory-relative no-follow file operations. On platforms without that

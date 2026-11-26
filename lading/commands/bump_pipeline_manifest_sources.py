@@ -16,6 +16,7 @@ if typ.TYPE_CHECKING:
     from lading.commands.bump_pipeline_manifest_rewrites import (
         _ManifestRewriteStage,
     )
+    from lading.workspace.models import WorkspaceCrate
 
 
 def _read_workspace_manifest_snapshots(
@@ -68,16 +69,31 @@ def _manifest_versions_from_snapshots(
         text_by_path[context.workspace_manifest],
     )
     inherited_version = _workspace_inherited_version(workspace_document)
-    return {
-        crate.name: _crate_manifest_version(
-            _parse_manifest_snapshot(
-                crate.manifest_path, text_by_path[crate.manifest_path]
-            ),
-            inherited_version,
-            context.workspace_manifest,
+    versions: dict[str, str] = {}
+    for crate in context.workspace.crates:
+        document = _parse_manifest_snapshot(
+            crate.manifest_path, text_by_path[crate.manifest_path]
         )
-        for crate in context.workspace.crates
-    }
+        _validate_captured_package_name(crate, document)
+        versions[crate.name] = _crate_manifest_version(
+            document, inherited_version, context.workspace_manifest
+        )
+    return versions
+
+
+def _validate_captured_package_name(
+    crate: WorkspaceCrate,
+    document: TOMLDocument,
+) -> None:
+    """Require the captured package name to match workspace discovery."""
+    package = document.get("package")
+    captured_name = package.get("name") if isinstance(package, cabc.Mapping) else None
+    if captured_name == crate.name:
+        return
+    message = (
+        f"Manifest package name differs from workspace discovery: {crate.manifest_path}"
+    )
+    raise ManifestRewriteError(message, failed_path=crate.manifest_path)
 
 
 def _workspace_inherited_version(document: TOMLDocument) -> str | None:

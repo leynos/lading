@@ -24,6 +24,9 @@ if typ.TYPE_CHECKING:
 
 _log = logging.getLogger(__name__)
 
+#: Windows rejects a glob metacharacter in a filename with this ``winerror``.
+_WINDOWS_INVALID_NAME_WINERROR = 123
+
 
 @dc.dataclass(slots=True)
 class _RewriteSelection:
@@ -149,6 +152,11 @@ def _is_existing_literal_candidate(candidate: Path, configured_path: str) -> boo
     except FileNotFoundError:
         return False
     except OSError as exc:
+        # Windows reports a filename containing a glob metacharacter as
+        # ERROR_INVALID_NAME, which CPython maps to EINVAL. No literal file can
+        # carry that character, so the pattern must reach glob expansion.
+        if getattr(exc, "winerror", None) == _WINDOWS_INVALID_NAME_WINERROR:
+            return False
         message = (
             "Could not inspect literal manifest rewrite path "
             f"{configured_path!r}: {exc}"

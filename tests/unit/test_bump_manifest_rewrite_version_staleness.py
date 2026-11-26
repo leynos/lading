@@ -90,6 +90,66 @@ def test_changed_inherited_source_version_aborts_before_workspace_writes(
     assert not repository.regenerated, "a stale plan must stop before lockfile work"
 
 
+def test_renamed_member_package_is_rejected_before_any_write(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A member renamed after planning cannot feed a cached fixture plan."""
+    case = _make_partial_write_failure_case(tmp_path)
+    alpha_manifest = tmp_path / "crates/alpha/Cargo.toml"
+    renamed_text = '[package]\nname = "renamed-alpha"\nversion = "0.1.0"\n'
+    fixture_original = {path: path.read_bytes() for path in case.fixtures}
+    repository = RecordingLockfileRepository()
+    write_attempts = record_workspace_write_attempts(monkeypatch, case.root)
+    original_plan = bump_pipeline_manifest_rewrites._plan_non_member_manifest_rewrites
+
+    def plan_then_rename_package(
+        context: _BumpContext,
+        target_version: str,
+    ) -> _ManifestRewriteStage:
+        """Rename the member package after capturing its rewrite plan."""
+        stage = original_plan(context, target_version)
+        alpha_manifest.write_text(renamed_text, encoding="utf-8")
+        return stage
+
+    with (
+        mock.patch.object(
+            bump_pipeline_manifest_rewrites,
+            "_plan_non_member_manifest_rewrites",
+            side_effect=plan_then_rename_package,
+        ),
+        pytest.raises(
+            ManifestRewriteError,
+            match="package name differs from workspace discovery",
+        ) as failure,
+    ):
+        bump.run(
+            case.root,
+            "1.2.3",
+            options=bump.BumpOptions(
+                rebuild_lockfiles=True,
+                configuration=case.configuration,
+                workspace=case.workspace,
+                lockfile_repository=repository,
+            ),
+        )
+
+    assert failure.value.failed_path == alpha_manifest.resolve(), (
+        "the renamed manifest must be named in the failure"
+    )
+    assert alpha_manifest.read_text(encoding="utf-8") == renamed_text, (
+        "the external rename must remain in place"
+    )
+    assert (case.root / "Cargo.toml").read_bytes() == case.workspace_manifests[
+        case.root / "Cargo.toml"
+    ], "name validation must run before the workspace manifest is written"
+    assert {path: path.read_bytes() for path in case.fixtures} == fixture_original, (
+        "rewrite plans must not use a manifest renamed after discovery"
+    )
+    assert not write_attempts, "name validation must precede all writes"
+    assert not repository.regenerated, "a renamed member must stop lockfile work"
+
+
 def test_missing_package_version_before_planning_conflicts_with_discovery(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

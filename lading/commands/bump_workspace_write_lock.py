@@ -36,9 +36,9 @@ def workspace_write_lock(
     Parameters
     ----------
     resolved_workspace_root
-        Absolute workspace path resolved before lock acquisition. Keeping this
-        identity stable prevents a changed symlink from selecting a different
-        lock key during the write.
+        Absolute workspace path. It is resolved again here so an unresolved
+        alias of a held lock still reuses that lock instead of acquiring a
+        second handle on the same lock file and deadlocking.
 
     Yields
     ------
@@ -48,7 +48,8 @@ def workspace_write_lock(
         identity before replacing a file.
 
     """
-    root_key = str(resolved_workspace_root)
+    workspace_root = resolved_workspace_root.resolve()
+    root_key = str(workspace_root)
     held_locks = _held_workspace_locks()
     held_lock = held_locks.get(root_key)
     if held_lock is not None:
@@ -56,7 +57,7 @@ def workspace_write_lock(
             yield identity
         return
     with _acquire_workspace_write_lock(
-        resolved_workspace_root, root_key, held_locks
+        workspace_root, root_key, held_locks
     ) as identity:
         yield identity
 
@@ -172,7 +173,13 @@ def _workspace_lock_directory() -> Path:
     else:
         try:
             home_directory = Path(pwd.getpwuid(os.getuid()).pw_dir)
-        except (KeyError, OSError) as exc:
+        except KeyError as exc:
+            message = (
+                "Cannot locate a stable per-user workspace write lock directory: "
+                "the current user has no passwd entry"
+            )
+            raise PermissionError(message) from exc
+        except OSError as exc:
             message = "Cannot locate a stable per-user workspace write lock directory"
             raise PermissionError(message) from exc
         if not home_directory.is_absolute():
