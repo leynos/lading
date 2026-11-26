@@ -10,13 +10,17 @@ from lading.commands.bump_manifest_rewrite_model import (
     ManifestRewriteWriteError,
 )
 from lading.commands.bump_toml_files import write_atomic_text
+from lading.commands.bump_toml_write_options import (
+    AtomicWriteOptions,
+    AtomicWriteStatus,
+)
 
 
 @dc.dataclass(frozen=True, slots=True)
 class _ManifestRewriteWriteCallbacks:
     """Callbacks that journal the start and completion of a rewrite write."""
 
-    before_write: cabc.Callable[[Path, str, str, Path], None] | None = None
+    before_write: cabc.Callable[[Path, str, str, Path], AtomicWriteStatus] | None = None
     after_write: cabc.Callable[[Path], None] | None = None
 
 
@@ -152,27 +156,71 @@ def _write_manifest_plan(
     write_callbacks: _ManifestRewriteWriteCallbacks | None,
 ) -> None:
     """Atomically write a plan or raise a progress-aware rewrite error."""
+    write_status = AtomicWriteStatus()
     try:
         if write_callbacks is not None and write_callbacks.before_write is not None:
-            write_callbacks.before_write(
+            write_status = write_callbacks.before_write(
                 plan.path, plan.original_text, plan.new_text, plan.path
             )
         write_atomic_text(
             plan.path,
             plan.new_text,
-            workspace_root=workspace_root,
-            expected_current_text=plan.original_text,
+            AtomicWriteOptions(
+                workspace_root=workspace_root,
+                expected_current_text=plan.original_text,
+                status=write_status,
+            ),
         )
-        if write_callbacks is not None and write_callbacks.after_write is not None:
-            write_callbacks.after_write(plan.path)
     except (OSError, UnicodeError) as exc:
-        message = (
-            f"Could not write manifest rewrite target {plan.path} after "
-            f"{progress.completed} of {progress.planned} write(s): {exc}"
+        replacement_completed = (
+            write_status is not None and write_status.replacement_completed
+        )
+        completed_writes = progress.completed + int(replacement_completed)
+        message = _manifest_write_failure_message(
+            plan.path,
+            progress,
+            exc,
+            replacement_completed=replacement_completed,
         )
         raise ManifestRewriteWriteError(
             message,
-            completed_writes=progress.completed,
+            completed_writes=completed_writes,
             planned_writes=progress.planned,
             failed_path=plan.path,
         ) from exc
+    if write_callbacks is not None and write_callbacks.after_write is not None:
+        try:
+            write_callbacks.after_write(plan.path)
+        except (OSError, UnicodeError) as exc:
+            completed_writes = progress.completed + 1
+            message = (
+                f"Manifest rewrite target {plan.path} was written, but its "
+                f"completion callback failed after {completed_writes} of "
+                f"{progress.planned} write(s): {exc}"
+            )
+            raise ManifestRewriteWriteError(
+                message,
+                completed_writes=completed_writes,
+                planned_writes=progress.planned,
+                failed_path=plan.path,
+            ) from exc
+
+
+def _manifest_write_failure_message(
+    manifest_path: Path,
+    progress: _ManifestRewriteProgress,
+    error: BaseException,
+    *,
+    replacement_completed: bool,
+) -> str:
+    """Describe a write error without misreporting a completed replacement."""
+    if replacement_completed:
+        return (
+            f"Manifest rewrite target {manifest_path} was replaced, but a later "
+            f"write operation failed after {progress.completed + 1} of "
+            f"{progress.planned} write(s): {error}"
+        )
+    return (
+        f"Could not write manifest rewrite target {manifest_path} after "
+        f"{progress.completed} of {progress.planned} write(s): {error}"
+    )

@@ -86,18 +86,21 @@ def test_manifest_rewrite_write_failure_is_reported_once(
         planned_writes=2,
         failed_path=Path("tests/fixtures/standalone/Cargo.toml"),
     )
+    error.add_note("Inspect the completed fixture before retrying")
 
     with caplog.at_level(logging.ERROR, logger=cli.__name__):
         cli._print_expected_command_error(error)
 
     assert len(caplog.records) == 1, "the CLI should report the failure only once"
     message = caplog.records[0].getMessage()
-    assert "manifest_rewrite failed:" in message, "the event should have a stable label"
-    assert "completed=1 planned=2" in message, (
-        "the event should report completed and planned writes"
+    expected_message = (
+        "manifest_rewrite failed: "
+        f"path={error.failed_path} completed=1 planned=2 "
+        f"error_category=write: {error}\n"
+        "  Inspect the completed fixture before retrying"
     )
-    assert str(error.failed_path) in message, (
-        "the event should identify the failed path"
+    assert message == expected_message, (
+        "the structured CLI event should preserve the path, progress and recovery note"
     )
     captured = capsys.readouterr()
     assert not captured.out, "the structured log must not be duplicated on stdout"
@@ -111,8 +114,7 @@ def test_manifest_rewrite_write_failure_is_visible_when_errors_are_disabled(
     """CRITICAL-only logging still prints write failures to standard error."""
     failed_path = Path("tests/fixtures/standalone/Cargo.toml")
     error = ManifestRewriteWriteError(
-        f"Could not write manifest rewrite target {failed_path} after 1 of 2 "
-        "write(s): permission denied",
+        "Could not write selected fixture manifest: permission denied",
         completed_writes=1,
         planned_writes=2,
         failed_path=failed_path,
@@ -131,8 +133,8 @@ def test_manifest_rewrite_write_failure_is_visible_when_errors_are_disabled(
         "the CLI should print a fallback error message"
     )
     assert str(failed_path) in message, "the fallback should identify the failed path"
-    assert "after 1 of 2 write(s)" in message, (
-        "the fallback should preserve the completed and planned write count"
+    assert "completed=1 planned=2" in message, (
+        "the fallback should preserve structured write progress"
     )
 
 

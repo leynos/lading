@@ -33,10 +33,12 @@ def preserve_fence_line_endings(
     start, end = token_map
     opening_ending = _line_ending(lines[start])
     closing_line = lines[end - 1]
-    body_ending = _first_line_ending(lines[start + 1 : end - 1], opening_ending)
+    is_closed = end - 1 > start and _is_closing_fence(closing_line, fence_marker)
+    body_end = end - 1 if is_closed else end
+    body_ending = _first_line_ending(lines[start + 1 : body_end], opening_ending)
     body_text = _replace_line_endings(body_text, body_ending)
     closing_ending = _line_ending(closing_line)
-    if _is_closing_fence(closing_line, fence_marker):
+    if is_closed:
         return opening_ending, body_text, closing_ending
     return _close_unterminated_fence(
         opening_ending,
@@ -89,4 +91,9 @@ def _is_closing_fence(line: str, fence_marker: str) -> bool:
     if indentation > _MAX_FENCE_INDENT:
         return False
     marker_length = len(candidate) - len(candidate.lstrip(fence_marker[0]))
-    return marker_length >= len(fence_marker) and not candidate[marker_length:].strip()
+    suffix = candidate[marker_length:]
+    if suffix.endswith("\r\n"):
+        suffix = suffix[:-2]
+    elif suffix.endswith(("\r", "\n")):
+        suffix = suffix[:-1]
+    return marker_length >= len(fence_marker) and not suffix.strip(" \t")

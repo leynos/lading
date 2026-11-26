@@ -57,7 +57,7 @@ def _run_pipeline(context: _BumpContext, target_version: str) -> BumpChanges:
         context, target_version, rewrite_stage, changed_manifests
     )
     bump_pipeline_manifest_rewrites._apply_non_member_manifest_rewrites(
-        context, rewrite_stage, changed_manifests
+        context, target_version, rewrite_stage, changed_manifests
     )
     changed_documents = _process_documentation_files(context, target_version)
     changed_readmes = _process_readme_transposition(
@@ -93,6 +93,14 @@ def _process_workspace_and_crate_manifests(
         _process_crate_manifests(
             context, target_version, rewrite_stage, changed_manifests
         )
+        if rewrite_stage.is_configured:
+            bump_pipeline_manifest_sources._validate_post_bump_versions(
+                context, rewrite_stage, target_version
+            )
+            for manifest_path in tuple(rewrite_stage.written_manifest_contents):
+                bump_pipeline_manifest_recovery.validate_member_manifest_before_update(
+                    manifest_path, rewrite_stage
+                )
     except BaseException as stage_error:
         rollback_error = _restore_manifest_stage_after_failure(
             context,
@@ -101,6 +109,8 @@ def _process_workspace_and_crate_manifests(
             stage_error,
         )
         if rollback_error is not None:
+            for note in getattr(stage_error, "__notes__", ()):
+                rollback_error.add_note(note)
             raise rollback_error from stage_error
         raise
 
@@ -191,7 +201,9 @@ def _process_crate_manifests(
             case bump_pipeline_crate_manifests._CrateManifestOutcome.SKIPPED:
                 skipped_count += 1
             case bump_pipeline_crate_manifests._CrateManifestOutcome.UPDATED:
-                changed_manifests.add(crate.manifest_path)
+                changed_manifests.add(
+                    bump_pipeline_crate_manifests._manifest_destination(crate, context)
+                )
                 updated_count += 1
             case bump_pipeline_crate_manifests._CrateManifestOutcome.UNCHANGED:
                 pass

@@ -37,7 +37,12 @@ from pathlib import Path
 
 from markdown_it import MarkdownIt
 
-from lading.commands import bump_docs_fence_lines, bump_toml_files, manifest_paths
+from lading.commands import (
+    bump_docs_fence_lines,
+    bump_toml_files,
+    bump_toml_write_options,
+    manifest_paths,
+)
 from lading.commands.bump_docs_toml import (
     update_toml_snippet_dependencies as update_toml_snippet_dependencies,
 )
@@ -174,8 +179,10 @@ def update_documentation_files(
             bump_toml_files.write_atomic_text(
                 doc_path,
                 updated_text,
-                workspace_root=documentation_targets.workspace_root,
-                expected_current_text=original_text,
+                bump_toml_write_options.AtomicWriteOptions(
+                    workspace_root=documentation_targets.workspace_root,
+                    expected_current_text=original_text,
+                ),
             )
     return changed
 

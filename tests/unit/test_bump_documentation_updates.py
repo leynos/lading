@@ -7,9 +7,10 @@ import tempfile
 import typing as typ
 
 import pytest
+from markdown_it import MarkdownIt
 
 from lading import config
-from lading.commands import bump, bump_docs, bump_pipeline
+from lading.commands import bump, bump_docs, bump_docs_fence_lines, bump_pipeline
 from lading.commands.bump_readme import ReadmeTranspositionError
 from lading.exceptions import LadingError
 from tests.helpers.cwd import chdir_for_test
@@ -24,6 +25,8 @@ from tests.helpers.workspace_builders import (
 
 if typ.TYPE_CHECKING:
     from syrupy.assertion import SnapshotAssertion
+
+    from lading.commands.bump_toml_write_options import AtomicWriteOptions
 
 
 def test_documentation_updates_reject_external_symlink_targets(
@@ -63,6 +66,7 @@ def test_documentation_write_rechecks_workspace_after_parent_symlink_swap(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A parent symlink inserted before writing cannot redirect a document."""
+    _require_bounded_write_support()
     documentation_directory = tmp_path / "docs"
     documentation_directory.mkdir()
     document = documentation_directory / "guide.md"
@@ -79,9 +83,7 @@ def test_documentation_write_rechecks_workspace_after_parent_symlink_swap(
         def redirect_parent_before_write(
             file_path: pathlib.Path,
             content: str,
-            *,
-            workspace_root: pathlib.Path | None = None,
-            expected_current_text: str | None = None,
+            write_options: AtomicWriteOptions | None = None,
         ) -> None:
             """Replace the validated parent with a link to the outside file."""
             documentation_directory.rename(archived_directory)
@@ -89,8 +91,7 @@ def test_documentation_write_rechecks_workspace_after_parent_symlink_swap(
             write_atomic_text(
                 file_path,
                 content,
-                workspace_root=workspace_root,
-                expected_current_text=expected_current_text,
+                write_options,
             )
 
         monkeypatch.setattr(
@@ -116,6 +117,7 @@ def test_documentation_write_rejects_a_concurrent_edit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A newer documentation edit survives the stale rewrite attempt."""
+    _require_bounded_write_support()
     document = tmp_path / "guide.md"
     original = '```toml\n[dependencies]\nalpha = "0.1.0"\n```\n'
     concurrent_edit = "A newer edit from another writer.\n"
@@ -125,17 +127,14 @@ def test_documentation_write_rejects_a_concurrent_edit(
     def edit_before_write(
         file_path: pathlib.Path,
         content: str,
-        *,
-        workspace_root: pathlib.Path | None = None,
-        expected_current_text: str | None = None,
+        write_options: AtomicWriteOptions | None = None,
     ) -> None:
         """Install a concurrent edit before the bounded comparison."""
         file_path.write_text(concurrent_edit, encoding="utf-8", newline="")
         write_atomic_text(
             file_path,
             content,
-            workspace_root=workspace_root,
-            expected_current_text=expected_current_text,
+            write_options,
         )
 
     monkeypatch.setattr(
@@ -156,6 +155,7 @@ def test_documentation_write_rejects_a_concurrent_edit(
 
 def test_documentation_rewrite_preserves_crlf_bytes(tmp_path: pathlib.Path) -> None:
     """A changed CRLF document passes its exact-source check and keeps CRLF."""
+    _require_bounded_write_support()
     document = tmp_path / "guide.md"
     original = b'```toml\r\n[dependencies]\r\nalpha = "0.1.0"\r\n```\r\n'
     document.write_bytes(original)
@@ -179,6 +179,7 @@ def test_rewrite_keeps_an_eof_opening_fence_on_its_own_line(
     tmp_path: pathlib.Path,
 ) -> None:
     """An EOF-terminated empty fence stays separate from its generated close."""
+    _require_bounded_write_support()
     document = tmp_path / "guide.md"
     document.write_text(
         '```toml\n[dependencies]\nalpha = "0.1.0"\n```\n\n```toml',
@@ -198,6 +199,34 @@ def test_rewrite_keeps_an_eof_opening_fence_on_its_own_line(
     assert text.endswith("```toml\n```\n"), (
         "the generated closing marker must begin on a separate line"
     )
+
+
+def test_render_bare_eof_fence_keeps_opening_and_closing_separate() -> None:
+    """A bare unterminated fence remains valid when the caller adds its info."""
+    lines = ["```"]
+    token = MarkdownIt("commonmark").parse("```")[0]
+
+    rendered = bump_docs.render_fence(token, lines, "toml", lambda body: body)
+
+    assert rendered == "```toml\n```\n", (
+        "the supplied language and closing marker must not merge with the opener"
+    )
+
+
+def test_unterminated_fence_uses_final_body_line_ending() -> None:
+    """An unterminated fence's last body line contributes its CRLF style."""
+    opening, body, closing = bump_docs_fence_lines.preserve_fence_line_endings(
+        ["```toml\n", 'version = "0.1.0"\r\n'],
+        [0, 2],
+        "```",
+        'version = "1.2.3"',
+    )
+
+    assert (opening, body, closing) == (
+        "\n",
+        'version = "1.2.3"\r\n',
+        "\r\n",
+    ), "the final body and generated fence closer must retain CRLF"
 
 
 def test_documentation_targets_resolve_relative_workspace_root(
@@ -227,6 +256,7 @@ def test_direct_documentation_target_resolves_relative_root_prefix_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A final path already prefixed with a relative root is not joined twice."""
+    _require_bounded_write_support()
     chdir_for_test(monkeypatch, tmp_path.parent)
     workspace_root = pathlib.Path(tmp_path.name)
     readme = workspace_root / "README.md"
@@ -245,6 +275,12 @@ def test_direct_documentation_target_resolves_relative_root_prefix_once(
     assert 'alpha = "1.2.3"' in readme.read_text(encoding="utf-8"), (
         "the already-rooted relative path should update its intended file"
     )
+
+
+def _require_bounded_write_support() -> None:
+    """Skip filesystem-write cases when safe descriptor writes are unavailable."""
+    if not bump_docs.bump_toml_files._supports_bounded_directory_operations():
+        pytest.skip("workspace-bounded writes are unavailable on this platform")
 
 
 @dc.dataclass(frozen=True, slots=True)

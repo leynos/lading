@@ -625,6 +625,9 @@ reason = "Keep the type-only imports in lading/commands/bump_manifests.py and la
 [[tool.duplication_gate.allow]]
 members = ["lading/commands/bump_manifest_rewrite_filesystem.py::_is_existing_literal_candidate", "scripts/format_markdown.py::_present"]
 reason = "Keep the manifest resolver and PEP 723 formatter presence probes separate: callers preserve distinct domain errors, and importing application utilities would couple the standalone formatter to the lading package."
+[[tool.duplication_gate.allow]]
+members = ["lading/commands/bump_manifest_rewrite_application.py", "lading/commands/bump_pipeline_manifest_restore.py"]
+reason = "These separate application and recovery contracts each import the atomic writer and its options; extracting an import-only helper would add indirection and couple distinct ownership boundaries."
 [tool.df12_skylos]
 roots = ["lading"]
 python = "3.14"

@@ -4,6 +4,7 @@ import pathlib
 import re
 
 import pytest
+from tomlkit.exceptions import TOMLKitError
 
 from lading.commands import bump_manifest_rewrites
 from lading.config import ManifestRewriteConfig, StringValueRewriteConfig
@@ -33,8 +34,12 @@ def test_wraps_toml_errors_with_manifest_path(
     with pytest.raises(
         bump_manifest_rewrites.ManifestRewriteError,
         match=re.escape(str(manifest.resolve())),
-    ):
+    ) as failure:
         plan_fixture_rewrites(tmp_path, (group,), versions)
+
+    assert isinstance(failure.value.__cause__, TOMLKitError), (
+        "the manifest error should preserve the TOML parser exception as its cause"
+    )
 
 
 def test_selected_string_rule_requires_pre_bump_versions(

@@ -414,22 +414,35 @@ def _print_expected_command_error(
     error: ManifestRewriteError | WorkspaceModelError,
 ) -> None:
     """Report one expected domain failure with its event or error label."""
+    details = _exception_notes(error)
     match error:
         case ManifestRewriteWriteError(failed_path=Path() as failed_path):
             LOGGER.error(
                 "manifest_rewrite failed: path=%s completed=%d planned=%d "
-                "error_category=write: %s",
+                "error_category=write: %s%s",
                 failed_path,
                 error.completed_writes,
                 error.planned_writes,
                 error,
+                details,
             )
             if not LOGGER.isEnabledFor(logging.ERROR):
-                print(f"Manifest rewrite error: {error}", file=sys.stderr)
+                print(
+                    "Manifest rewrite error: "
+                    f"path={failed_path} completed={error.completed_writes} "
+                    f"planned={error.planned_writes}: {error}{details}",
+                    file=sys.stderr,
+                )
         case ManifestRewriteError():
-            print(f"Manifest rewrite error: {error}", file=sys.stderr)
+            print(f"Manifest rewrite error: {error}{details}", file=sys.stderr)
         case WorkspaceModelError():
-            print(f"Workspace error: {error}", file=sys.stderr)
+            print(f"Workspace error: {error}{details}", file=sys.stderr)
+
+
+def _exception_notes(error: BaseException) -> str:
+    """Format operator-facing notes attached during failure recovery."""
+    notes = getattr(error, "__notes__", ())
+    return "".join(f"\n  {note}" for note in notes)
 
 
 def main(argv: cabc.Sequence[str] | None = None) -> int:
@@ -490,11 +503,12 @@ def main(argv: cabc.Sequence[str] | None = None) -> int:
                     return 1
         finally:
             app.config = previous_config
-    except KeyboardInterrupt:
+    except KeyboardInterrupt as exc:
         print("\nOperation cancelled by user.", file=sys.stderr)
+        print(_exception_notes(exc), end="", file=sys.stderr)
         return 130
     except Exception as exc:  # ruff: ignore[blind-except] - fallback guard for CLI entry point
-        print(f"Unexpected error: {exc}", file=sys.stderr)
+        print(f"Unexpected error: {exc}{_exception_notes(exc)}", file=sys.stderr)
         return 1
 
 

@@ -9,12 +9,17 @@ from unittest import mock
 import pytest
 
 from lading import config as config_module
-from lading.commands import bump, bump_manifest_rewrite_application
+from lading.commands import (
+    bump,
+    bump_manifest_rewrite_application,
+    bump_toml_files,
+)
 from lading.commands.bump_manifest_rewrites import ManifestRewriteError
 from lading.config import ManifestRewriteConfig, StringValueRewriteConfig
 from tests.helpers.workspace_builders import _make_workspace
 
 if typ.TYPE_CHECKING:
+    from lading.commands.bump_toml_write_options import AtomicWriteOptions
     from lading.workspace import WorkspaceGraph
 
 
@@ -97,9 +102,7 @@ def _second_fixture_write_failure(
     def fail_second_fixture(
         path: Path,
         content: str,
-        *,
-        workspace_root: Path | None = None,
-        expected_current_text: str | None = None,
+        write_options: AtomicWriteOptions | None = None,
     ) -> None:
         """Inject the selected failure while forwarding earlier writes."""
         if path == case.fixtures[1].resolve():
@@ -109,8 +112,7 @@ def _second_fixture_write_failure(
         real_write(
             path,
             content,
-            workspace_root=workspace_root,
-            expected_current_text=expected_current_text,
+            write_options,
         )
 
     return fail_second_fixture
@@ -122,6 +124,8 @@ def _run_partial_write_failure(
     before_failure: cabc.Callable[[Path], None] | None = None,
 ) -> ManifestRewriteError:
     """Run a bump whose second fixture write fails after fixture one."""
+    if not bump_toml_files._supports_bounded_directory_operations():
+        pytest.skip("workspace-bounded atomic writes are unavailable")
     write_atomic_text = bump_manifest_rewrite_application.write_atomic_text
     failure_injector = _second_fixture_write_failure(
         case, write_atomic_text, before_failure=before_failure

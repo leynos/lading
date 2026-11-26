@@ -2,20 +2,20 @@
 
 import typing as typ
 from pathlib import Path
+from unittest import mock
 
 import pytest
 
 from lading.commands import (
     bump,
-    bump_manifest_rewrite_application,
     bump_manifests,
-    bump_pipeline_manifest_restore,
+    bump_pipeline,
     bump_pipeline_manifest_rewrites,
-    bump_toml_files,
 )
 from lading.commands.bump_manifest_rewrites import ManifestRewriteError
 from lading.exceptions import LadingError
 from tests.helpers.manifest_rewrite_recovery import _make_partial_write_failure_case
+from tests.helpers.manifest_rewrite_writes import record_workspace_write_attempts
 from tests.helpers.recording_lockfile_repository import RecordingLockfileRepository
 
 if typ.TYPE_CHECKING:
@@ -23,40 +23,6 @@ if typ.TYPE_CHECKING:
     from lading.commands.bump_pipeline_manifest_rewrites import (
         _ManifestRewriteStage,
     )
-
-
-def _record_workspace_write_attempts(
-    monkeypatch: pytest.MonkeyPatch,
-    root_path: Path,
-) -> list[Path]:
-    """Record atomic writes made inside one workspace."""
-    write_attempts: list[Path] = []
-    original_writer = bump_toml_files.write_atomic_text
-
-    def record_write(
-        path: Path,
-        content: str,
-        *,
-        workspace_root: Path | None = None,
-        expected_current_text: str | None = None,
-    ) -> None:
-        """Record a workspace write and preserve the atomic writer behaviour."""
-        if path.is_relative_to(root_path):
-            write_attempts.append(path)
-        original_writer(
-            path,
-            content,
-            workspace_root=workspace_root,
-            expected_current_text=expected_current_text,
-        )
-
-    for module in (
-        bump_toml_files,
-        bump_manifest_rewrite_application,
-        bump_pipeline_manifest_restore,
-    ):
-        monkeypatch.setattr(module, "write_atomic_text", record_write)
-    return write_attempts
 
 
 def test_changed_inherited_source_version_aborts_before_workspace_writes(
@@ -88,16 +54,17 @@ def test_changed_inherited_source_version_aborts_before_workspace_writes(
 
     original_fixture = {path: path.read_bytes() for path in case.fixtures}
     repository = RecordingLockfileRepository()
-    write_attempts = _record_workspace_write_attempts(monkeypatch, case.root)
-    monkeypatch.setattr(
-        bump_pipeline_manifest_rewrites,
-        "_plan_non_member_manifest_rewrites",
-        plan_then_change_source,
-    )
-
-    with pytest.raises(
-        ManifestRewriteError,
-        match="changed after manifest rewrite planning",
+    write_attempts = record_workspace_write_attempts(monkeypatch, case.root)
+    with (
+        mock.patch.object(
+            bump_pipeline_manifest_rewrites,
+            "_plan_non_member_manifest_rewrites",
+            side_effect=plan_then_change_source,
+        ),
+        pytest.raises(
+            ManifestRewriteError,
+            match="changed after manifest rewrite planning",
+        ),
     ):
         bump.run(
             case.root,
@@ -134,7 +101,7 @@ def test_missing_package_version_before_planning_conflicts_with_discovery(
     root_original = case.workspace_manifests[case.root / "Cargo.toml"]
     fixture_original = {path: path.read_bytes() for path in case.fixtures}
     repository = RecordingLockfileRepository()
-    write_attempts = _record_workspace_write_attempts(monkeypatch, case.root)
+    write_attempts = record_workspace_write_attempts(monkeypatch, case.root)
 
     with pytest.raises(ManifestRewriteError, match="workspace discovery"):
         bump.run(
@@ -171,7 +138,7 @@ def test_removed_package_version_after_planning_rejects_stale_fixture_plan(
     original_alpha = alpha_manifest.read_bytes()
     fixture_original = {path: path.read_bytes() for path in case.fixtures}
     repository = RecordingLockfileRepository()
-    write_attempts = _record_workspace_write_attempts(monkeypatch, case.root)
+    write_attempts = record_workspace_write_attempts(monkeypatch, case.root)
     original_plan = bump_pipeline_manifest_rewrites._plan_non_member_manifest_rewrites
 
     def plan_then_remove_version(
@@ -183,15 +150,16 @@ def test_removed_package_version_after_planning_rejects_stale_fixture_plan(
         alpha_manifest.write_text('[package]\nname = "alpha"\n', encoding="utf-8")
         return stage
 
-    monkeypatch.setattr(
-        bump_pipeline_manifest_rewrites,
-        "_plan_non_member_manifest_rewrites",
-        plan_then_remove_version,
-    )
-
-    with pytest.raises(
-        ManifestRewriteError,
-        match="changed after manifest rewrite planning",
+    with (
+        mock.patch.object(
+            bump_pipeline_manifest_rewrites,
+            "_plan_non_member_manifest_rewrites",
+            side_effect=plan_then_remove_version,
+        ),
+        pytest.raises(
+            ManifestRewriteError,
+            match="changed after manifest rewrite planning",
+        ),
     ):
         bump.run(
             case.root,
@@ -245,9 +213,12 @@ def test_changed_member_version_is_rejected_before_its_manifest_update(
             )
         return original_update(manifest_path, selectors, target_version, update_context)
 
-    monkeypatch.setattr(bump_manifests, "_update_manifest", edit_alpha_before_update)
-
-    with pytest.raises(LadingError, match="package version changed"):
+    with (
+        mock.patch.object(
+            bump_manifests, "_update_manifest", side_effect=edit_alpha_before_update
+        ),
+        pytest.raises(LadingError, match="package version changed"),
+    ):
         bump.run(
             case.root,
             "1.2.3",
@@ -272,35 +243,68 @@ def test_changed_member_version_is_rejected_before_its_manifest_update(
     assert not repository.regenerated, "a changed source must stop lockfile work"
 
 
-def test_member_destination_is_pinned_to_workspace_discovery(
+def test_member_version_is_rechecked_before_fixture_rewrite(
     tmp_path: Path,
 ) -> None:
-    """A member symlink retargeted after discovery is rejected before writing."""
+    """A member version edit after its write prevents cached fixture plans."""
     case = _make_partial_write_failure_case(tmp_path)
     alpha_manifest = tmp_path / "crates/alpha/Cargo.toml"
-    redirected_manifest = tmp_path / "crates/redirected/Cargo.toml"
-    redirected_manifest.parent.mkdir(parents=True)
-    redirected_manifest.write_bytes(alpha_manifest.read_bytes())
-    alpha_manifest.unlink()
-    alpha_manifest.symlink_to(redirected_manifest)
-    redirected_original = redirected_manifest.read_bytes()
-    root_original = case.workspace_manifests[case.root / "Cargo.toml"]
+    beta_manifest = tmp_path / "crates/beta/Cargo.toml"
+    fixture_original = {path: path.read_bytes() for path in case.fixtures}
+    original_members = {
+        path: case.workspace_manifests[path] for path in (alpha_manifest, beta_manifest)
+    }
+    original_crate_stage = bump_pipeline._process_crate_manifests
+    repository = RecordingLockfileRepository()
 
-    with pytest.raises(LadingError, match="destination changed after bump context"):
+    def edit_member_after_updates(
+        context: _BumpContext,
+        target_version: str,
+        stage: _ManifestRewriteStage,
+        changed_manifests: set[Path],
+    ) -> None:
+        """Change alpha only after all normal member writes have succeeded."""
+        original_crate_stage(context, target_version, stage, changed_manifests)
+        assert 'version = "1.2.3"' in alpha_manifest.read_text(encoding="utf-8"), (
+            "alpha must be bumped before the external version edit"
+        )
+        assert 'version = "1.2.3"' in beta_manifest.read_text(encoding="utf-8"), (
+            "beta must be bumped before fixture-stage validation"
+        )
+        alpha_manifest.write_text(
+            '[package]\nname = "alpha"\nversion = "0.2.0"\n',
+            encoding="utf-8",
+        )
+
+    with (
+        mock.patch.object(
+            bump_pipeline,
+            "_process_crate_manifests",
+            side_effect=edit_member_after_updates,
+        ),
+        pytest.raises(ManifestRewriteError, match="changed after member manifest"),
+    ):
         bump.run(
             case.root,
             "1.2.3",
             options=bump.BumpOptions(
-                rebuild_lockfiles=False,
+                rebuild_lockfiles=True,
                 configuration=case.configuration,
                 workspace=case.workspace,
+                lockfile_repository=repository,
             ),
         )
 
-    assert alpha_manifest.is_symlink(), "the changed member alias must remain"
-    assert redirected_manifest.read_bytes() == redirected_original, (
-        "the retargeted member file must not receive the bump"
+    assert 'version = "0.2.0"' in alpha_manifest.read_text(encoding="utf-8"), (
+        "the external package version edit must remain in place"
     )
-    assert (case.root / "Cargo.toml").read_bytes() == root_original, (
-        "the prior workspace update must roll back after destination rejection"
+    assert beta_manifest.read_bytes() == original_members[beta_manifest], (
+        "uncontested member writes must roll back after stale-version detection"
     )
+    assert (case.root / "Cargo.toml").read_bytes() == case.workspace_manifests[
+        case.root / "Cargo.toml"
+    ], "the workspace write must roll back before fixture application"
+    assert {path: path.read_bytes() for path in case.fixtures} == fixture_original, (
+        "fixture rewrites must not use a stale post-bump member version"
+    )
+    assert not repository.regenerated, "stale members must stop lockfile work"

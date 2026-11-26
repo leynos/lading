@@ -36,6 +36,28 @@ def test_recursive_globs_do_not_follow_directory_symlink_cycles(
     )
 
 
+def test_wildcard_matching_can_use_platform_case_insensitive_semantics(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Path-segment matching follows pathlib's configured case behaviour."""
+    unusual_directory = tmp_path / chr(0x17F)
+    unusual_directory.mkdir()
+    manifest = unusual_directory / "Cargo.toml"
+    manifest.write_text('[package]\nname = "fixture"\n', encoding="utf-8")
+    traversal = manifest_paths._ManifestGlobTraversal(
+        workspace_root=tmp_path,
+        pattern="[a-z]/Cargo.toml",
+        error_type=bump_manifest_rewrites.ManifestRewriteError,
+        label="Manifest rewrite",
+        directory_reader=lambda path: tuple(sorted(path.iterdir())),
+        case_sensitive=False,
+    )
+
+    assert traversal.collect() == (manifest,), (
+        "wildcard matching should use the platform-aware Path glob semantics"
+    )
+
+
 def test_recursive_glob_skips_directory_junctions(
     tmp_path: pathlib.Path,
     write_fixture_manifest: _ManifestWriter,
@@ -72,11 +94,10 @@ def test_recursive_glob_skips_directory_junctions(
     )
 
 
-def test_explicit_glob_path_through_junction_keeps_containment_check(
+def test_explicit_manifest_path_through_symlink_keeps_containment_check(
     tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A selected junction path is followed and rejected when it escapes."""
+    """A literal manifest path through an escaping symlink is rejected."""
     workspace_root = tmp_path / "workspace"
     junction = workspace_root / "fixtures" / "external"
     junction.parent.mkdir(parents=True)
@@ -84,12 +105,6 @@ def test_explicit_glob_path_through_junction_keeps_containment_check(
     outside.mkdir()
     (outside / "Cargo.toml").write_text('[package]\nname = "outside"\n')
     junction.symlink_to(outside, target_is_directory=True)
-    original_is_junction = pathlib.Path.is_junction
-    monkeypatch.setattr(
-        pathlib.Path,
-        "is_junction",
-        lambda path: path == junction or original_is_junction(path),
-    )
 
     with pytest.raises(
         bump_manifest_rewrites.ManifestRewriteError,
@@ -101,6 +116,27 @@ def test_explicit_glob_path_through_junction_keeps_containment_check(
             error_type=bump_manifest_rewrites.ManifestRewriteError,
             label="Manifest rewrite",
         )
+
+
+def test_directory_glob_keeps_contained_directory_symlink(
+    tmp_path: pathlib.Path,
+) -> None:
+    """An explicit directory glob may select a contained directory symlink."""
+    target = tmp_path / "fixtures" / "demo"
+    target.mkdir(parents=True)
+    link = target.parent / "demo-link"
+    link.symlink_to(target, target_is_directory=True)
+
+    matches = manifest_paths.expand_manifest_glob_candidates(
+        tmp_path,
+        "fixtures/demo-*/",
+        error_type=bump_manifest_rewrites.ManifestRewriteError,
+        label="Manifest rewrite",
+    )
+
+    assert matches == (link,), (
+        "directory-only globs should follow explicit contained directory links"
+    )
 
 
 def test_terminal_recursive_glob_rejects_escaping_symlinks(

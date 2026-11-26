@@ -61,7 +61,9 @@ def update_string_values(
     'alpha-2.0.0'
     """
     changed = False
-    for container, key, value in _selected_string_value_targets(table, field):
+    for _location, container, key, value in _selected_string_value_targets(
+        table, field
+    ):
         if _replace_value(container, key, value, replacement):
             changed = True
     return changed
@@ -70,13 +72,18 @@ def update_string_values(
 def _selected_string_value_targets(
     table: _TableLike,
     field: str | None,
-) -> tuple[tuple[_TableLike, str, object], ...]:
+    *,
+    table_path: tuple[str, ...] = (),
+) -> tuple[tuple[tuple[str, ...], _TableLike, str, object], ...]:
     """Return mutable destinations for the strings selected in ``table``."""
-    targets: list[tuple[_TableLike, str, object]] = []
+    targets: list[tuple[tuple[str, ...], _TableLike, str, object]] = []
     for key, entry in tuple(table.items()):
         target = _selected_value_target(table, key, entry, field)
         if target is not None:
-            targets.append(target)
+            location = (
+                (*table_path, key) if field is None else (*table_path, key, field)
+            )
+            targets.append((location, *target))
     return tuple(targets)
 
 

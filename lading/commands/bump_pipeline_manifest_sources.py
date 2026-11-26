@@ -191,6 +191,88 @@ def _validate_pre_bump_versions(
     raise ManifestRewriteError(message, failed_path=manifest_path)
 
 
+def _validate_post_bump_versions(
+    context: _BumpContext,
+    stage: _ManifestRewriteStage,
+    target_version: str,
+) -> None:
+    """Confirm member package versions before applying cached fixture plans."""
+    _validate_workspace_manifest_entry(context)
+    current_snapshots = _read_workspace_manifest_snapshots(
+        context.workspace_manifest,
+        tuple(crate.manifest_path for crate in context.workspace.crates),
+    )
+    current_versions = _manifest_versions_from_snapshots(context, current_snapshots)
+    original_text_by_path = dict(stage.workspace_manifest_snapshots)
+    workspace_version_is_updated = any(
+        selector == ("workspace", "package")
+        for selector, _version in stage.expected_version_values.get(
+            context.workspace_manifest, ()
+        )
+    )
+    should_apply_version_updates = not context.base_options.dry_run
+    expected_versions: dict[str, str] = {}
+    for crate in context.workspace.crates:
+        document = _parse_manifest_snapshot(
+            crate.manifest_path,
+            original_text_by_path[crate.manifest_path],
+        )
+        package = document.get("package")
+        version = package.get("version") if isinstance(package, cabc.Mapping) else None
+        direct_version_is_updated = (
+            should_apply_version_updates
+            and isinstance(package, cabc.Mapping)
+            and (version is None or isinstance(version, str))
+            and (
+                crate.manifest_path == context.workspace_manifest
+                or crate.name in context.updated_crate_names
+            )
+        )
+        inherited_version_is_updated = (
+            should_apply_version_updates
+            and isinstance(version, cabc.Mapping)
+            and version.get("workspace") is True
+            and workspace_version_is_updated
+        )
+        expected_versions[crate.name] = (
+            target_version
+            if direct_version_is_updated or inherited_version_is_updated
+            else stage.pre_bump_versions[crate.name]
+        )
+    if current_versions == expected_versions:
+        return
+    changed_crate = next(
+        name
+        for name, expected in expected_versions.items()
+        if current_versions.get(name) != expected
+    )
+    manifest_path = next(
+        crate.manifest_path
+        for crate in context.workspace.crates
+        if crate.name == changed_crate
+    )
+    message = (
+        "Workspace crate version changed after member manifest updates: "
+        f"{manifest_path}"
+    )
+    raise ManifestRewriteError(message, failed_path=manifest_path)
+
+
+def _validate_workspace_manifest_entry(context: _BumpContext) -> None:
+    """Ensure the root manifest entry still names the discovered workspace file."""
+    root_manifest = context.root_path / "Cargo.toml"
+    try:
+        current_destination = root_manifest.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        message = f"Could not resolve workspace root manifest {root_manifest}: {exc}"
+        raise ManifestRewriteError(message, failed_path=root_manifest) from exc
+    if current_destination != context.workspace_manifest:
+        message = (
+            f"Workspace root manifest destination changed during bump: {root_manifest}"
+        )
+        raise ManifestRewriteError(message, failed_path=root_manifest)
+
+
 def _parse_manifest_snapshot(path: Path, content: str) -> TOMLDocument:
     """Parse a captured manifest and retain its path in failures."""
     try:

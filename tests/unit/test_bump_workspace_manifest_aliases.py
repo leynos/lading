@@ -2,10 +2,11 @@
 
 from pathlib import Path
 
+import pytest
 from tomlkit import parse as parse_toml
 
 from lading import config
-from lading.commands import bump, bump_pipeline_crate_manifests
+from lading.commands import bump, bump_pipeline_crate_manifests, bump_toml_files
 from lading.workspace import WorkspaceCrate, WorkspaceDependency
 from tests.helpers.workspace_builders import _make_workspace
 
@@ -14,6 +15,8 @@ def test_root_manifest_alias_does_not_select_excluded_workspace_package(
     tmp_path: Path,
 ) -> None:
     """An alias key must not match a different workspace package identity."""
+    if not bump_toml_files._supports_bounded_directory_operations():
+        pytest.skip("the bounded atomic writer is unavailable")
     workspace = _make_workspace(tmp_path)
     root_manifest = tmp_path / "Cargo.toml"
     root_manifest.write_text(
@@ -26,6 +29,12 @@ def test_root_manifest_alias_does_not_select_excluded_workspace_package(
         'beta = { package = "alpha", version = "0.1.0" }\n',
         encoding="utf-8",
     )
+    resolved_root_manifest = tmp_path / "Cargo.real.toml"
+    root_manifest.rename(resolved_root_manifest)
+    try:
+        root_manifest.symlink_to(resolved_root_manifest)
+    except OSError as exc:
+        pytest.skip(f"symbolic links are unavailable: {exc}")
     configuration = config.LadingConfig(bump=config.BumpConfig(exclude=("beta",)))
     context = bump._initialize_bump_context(
         tmp_path,
@@ -50,6 +59,11 @@ def test_root_manifest_alias_does_not_select_excluded_workspace_package(
             ),
         ),
     )
+
+    assert (
+        bump_pipeline_crate_manifests._manifest_destination(root_crate, context)
+        == context.workspace_manifest
+    ), "a root manifest alias must resolve to the canonical workspace path"
 
     outcome = bump_pipeline_crate_manifests._apply_crate_manifest_update(
         root_crate, "1.2.3", context

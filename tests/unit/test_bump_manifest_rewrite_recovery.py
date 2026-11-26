@@ -8,8 +8,10 @@ from tomlkit import parse as parse_toml
 
 from lading.commands import (
     bump,
-    bump_manifest_rewrite_application,
     bump_manifests,
+    bump_pipeline,
+    bump_pipeline_manifest_rewrites,
+    bump_toml_files,
 )
 from lading.commands.bump_manifest_rewrites import (
     ManifestRewriteError,
@@ -25,7 +27,6 @@ from tests.helpers.manifest_rewrite_recovery import (
     _make_partial_write_failure_case,
     _PartialWriteFailureCase,
     _run_partial_write_failure,
-    _second_fixture_write_failure,
 )
 
 pytestmark = pytest.mark.usefixtures("reset_process_metrics")
@@ -59,6 +60,54 @@ def _assert_partial_write_state(
     )
     assert error.planned_writes == 2, (
         "the exception should expose the number of planned fixture writes"
+    )
+    completed_rewrite_notes = getattr(error, "__notes__", ())
+    assert any(
+        str(case.fixtures[0].resolve()) in note for note in completed_rewrite_notes
+    ), "the failure should identify completed fixture rewrites that need inspection"
+
+
+def test_member_rollback_error_keeps_recovery_notes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The raised rollback error retains operator guidance from stage recovery."""
+    stage_error = RuntimeError("member stage failed")
+    rollback_error = ManifestRewriteWriteError("manifest rollback failed")
+    context = mock.Mock()
+    context.base_options.dry_run = False
+
+    def restore_with_note(
+        *_args: object, **_kwargs: object
+    ) -> ManifestRewriteWriteError:
+        """Model recovery that cannot restore a workspace manifest."""
+        stage_error.add_note("Inspect Cargo.toml before retrying")
+        return rollback_error
+
+    monkeypatch.setattr(
+        bump_pipeline,
+        "_process_workspace_manifest",
+        mock.Mock(side_effect=stage_error),
+    )
+    monkeypatch.setattr(
+        bump_pipeline,
+        "_restore_manifest_stage_after_failure",
+        restore_with_note,
+    )
+
+    with pytest.raises(ManifestRewriteWriteError) as raised:
+        bump_pipeline._process_workspace_and_crate_manifests(
+            context,
+            "1.2.3",
+            bump_pipeline_manifest_rewrites._ManifestRewriteStage(),
+            set(),
+        )
+
+    assert raised.value is rollback_error, "the recovery failure should remain primary"
+    assert raised.value.__cause__ is stage_error, (
+        "the original stage error is the cause"
+    )
+    assert raised.value.__notes__ == ["Inspect Cargo.toml before retrying"], (
+        "operator guidance from the stage error must appear on the raised error"
     )
 
 
@@ -211,6 +260,43 @@ def test_partial_write_failure_restores_workspace_and_reports_progress(
     ), "the failed rewrite duration should be recorded once"
 
 
+def test_fixture_write_failure_observes_bumped_member_source(
+    tmp_path: Path,
+) -> None:
+    """The second fixture failure follows completed member writes."""
+    case = _make_partial_write_failure_case(tmp_path)
+    beta_manifest = next(
+        crate.manifest_path for crate in case.workspace.crates if crate.name == "beta"
+    )
+    observed_failure_paths: list[Path] = []
+    with beta_manifest.open("a", encoding="utf-8", newline="") as handle:
+        handle.write("# retained beta comment\n")
+    case.workspace_manifests[beta_manifest] = beta_manifest.read_bytes()
+
+    def assert_beta_was_bumped(_path: Path) -> None:
+        """Check beta's updated version and preserved comment before failure."""
+        observed_failure_paths.append(_path)
+        beta_text = beta_manifest.read_text(encoding="utf-8")
+        assert parse_toml(beta_text)["package"]["version"] == "1.2.3", (
+            "beta must be bumped before the second fixture write"
+        )
+        assert "# retained beta comment" in beta_text, (
+            "member TOML formatting must preserve the comment before rollback"
+        )
+
+    failure = _run_partial_write_failure(case, before_failure=assert_beta_was_bumped)
+
+    assert isinstance(failure, ManifestRewriteWriteError), (
+        "the injected fixture failure should remain a write error"
+    )
+    assert observed_failure_paths == [case.fixtures[1].resolve()], (
+        "the bumped beta observation must run once before the second fixture fails"
+    )
+    assert beta_manifest.read_bytes() == case.workspace_manifests[beta_manifest], (
+        "rollback should restore the member version while retaining its comment"
+    )
+
+
 def test_partial_write_failure_can_be_retried(tmp_path: Path) -> None:
     """Restored workspace versions let the same bump finish on retry."""
     case = _make_partial_write_failure_case(tmp_path)
@@ -223,6 +309,8 @@ def test_member_stage_failure_restores_versions_for_rewrite_retry(
     tmp_path: Path,
 ) -> None:
     """A later member failure restores versions used by the pending rewrite."""
+    if not bump_toml_files._supports_bounded_directory_operations():
+        pytest.skip("workspace-bounded atomic writes are unavailable")
     case = _make_partial_write_failure_case(tmp_path)
     fixture_originals = {path: path.read_bytes() for path in case.fixtures}
     beta_manifest = next(
@@ -243,7 +331,6 @@ def test_rewrite_failure_preserves_member_manifest_edited_after_bump_write(
     )
     concurrent_edit = "\n# edited while the bump was running\n"
     contents_after_concurrent_edit: list[bytes] = []
-    write_atomic_text = bump_manifest_rewrite_application.write_atomic_text
 
     def append_concurrent_edit(_path: Path) -> None:
         """Record the complete member contents after another writer edits it."""
@@ -251,27 +338,10 @@ def test_rewrite_failure_preserves_member_manifest_edited_after_bump_write(
             handle.write(concurrent_edit)
         contents_after_concurrent_edit.append(alpha_manifest.read_bytes())
 
-    failure_injector = _second_fixture_write_failure(
-        case, write_atomic_text, before_failure=append_concurrent_edit
+    failure = _run_partial_write_failure(
+        case,
+        before_failure=append_concurrent_edit,
     )
-
-    with (
-        mock.patch.object(
-            bump_manifest_rewrite_application,
-            "write_atomic_text",
-            side_effect=failure_injector,
-        ),
-        pytest.raises(ManifestRewriteWriteError) as failure,
-    ):
-        bump.run(
-            case.root,
-            "1.2.3",
-            options=bump.BumpOptions(
-                rebuild_lockfiles=False,
-                configuration=case.configuration,
-                workspace=case.workspace,
-            ),
-        )
 
     assert len(contents_after_concurrent_edit) == 1, (
         "the concurrent edit should be captured when the fixture write fails"
@@ -283,58 +353,14 @@ def test_rewrite_failure_preserves_member_manifest_edited_after_bump_write(
         case.workspace_manifests[case.root / "Cargo.toml"]
         == (case.root / "Cargo.toml").read_bytes()
     ), "unmodified-by-another-writer workspace manifests still roll back"
-    assert str(alpha_manifest) in str(failure.value), (
+    assert isinstance(failure, ManifestRewriteWriteError), (
+        "the injected fixture failure should remain a write error"
+    )
+    assert str(alpha_manifest) in str(failure), (
         "the rollback error must identify the manifest it left in place"
     )
-    assert "left the current contents in place" in str(failure.value), (
+    assert "left the current contents in place" in str(failure), (
         "the rollback error must explain why the manifest was not restored"
-    )
-
-
-def test_rewrite_failure_rolls_back_to_text_parsed_after_a_concurrent_edit(
-    tmp_path: Path,
-) -> None:
-    """Rollback keeps edits observed between planning and manifest update."""
-    case = _make_partial_write_failure_case(tmp_path)
-    beta_manifest = next(
-        crate.manifest_path for crate in case.workspace.crates if crate.name == "beta"
-    )
-    original_beta_text = case.workspace_manifests[beta_manifest].decode("utf-8")
-    concurrent_edit = "\n# edited after planning and before this manifest update\n"
-    parsed_beta_text = original_beta_text + concurrent_edit
-    original_update_manifest = bump_manifests._update_manifest
-
-    def edit_beta_before_update(
-        manifest_path: Path,
-        selectors: tuple[tuple[str, ...], ...],
-        target_version: str,
-        update_context: bump_manifests._ManifestUpdateContext,
-    ) -> bump_manifests._ManifestUpdateResult:
-        """Insert an external edit before the selected manifest is parsed."""
-        if manifest_path == beta_manifest:
-            manifest_path.write_text(parsed_beta_text, encoding="utf-8")
-        return original_update_manifest(
-            manifest_path, selectors, target_version, update_context
-        )
-
-    with mock.patch.object(
-        bump_manifests, "_update_manifest", side_effect=edit_beta_before_update
-    ):
-        failure = _run_partial_write_failure(case)
-
-    assert isinstance(failure, ManifestRewriteWriteError), (
-        "the injected second fixture write must produce a write failure"
-    )
-    assert failure.failed_path == case.fixtures[1].resolve(), (
-        "the error must identify the second fixture manifest"
-    )
-    assert failure.completed_writes == 1, (
-        "the error must report the first fixture as the only completed write"
-    )
-
-    assert beta_manifest.read_text(encoding="utf-8") == parsed_beta_text, (
-        "rollback should restore the text parsed by this update, including edits "
-        "that landed after planning"
     )
 
 
@@ -342,6 +368,8 @@ def test_reused_workspace_graph_rejects_versions_changed_after_discovery(
     tmp_path: Path,
 ) -> None:
     """A stale workspace graph cannot authorize rewrites from different sources."""
+    if not bump_toml_files._supports_bounded_directory_operations():
+        pytest.skip("workspace-bounded atomic writes are unavailable")
     case = _make_partial_write_failure_case(tmp_path)
     alpha_manifest = next(
         crate.manifest_path for crate in case.workspace.crates if crate.name == "alpha"

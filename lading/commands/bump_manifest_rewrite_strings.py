@@ -1,12 +1,12 @@
 r"""Compile selected TOML string rewrites for configured manifests."""
 
-import bisect
 import collections.abc as cabc
+import dataclasses as dc
 import re
 import typing as typ
 from pathlib import Path
 
-from lading.commands import bump_toml, bump_toml_strings
+from lading.commands import bump_manifest_rewrite_semver, bump_toml, bump_toml_strings
 from lading.commands.bump_manifest_rewrite_model import (
     ManifestRewriteError,
     ManifestRewriteVersions,
@@ -21,21 +21,26 @@ if typ.TYPE_CHECKING:
 _CRATE_NAME_CHARACTER: typ.Final[str] = r"A-Za-z0-9_-"
 _VERSION_PREFIX_CHARACTER: typ.Final[str] = r"A-Za-z0-9."
 _VERSION_SUFFIX_CHARACTER: typ.Final[str] = r"A-Za-z0-9.+-"
-_SEMVER_COMPONENT_SUFFIXES: typ.Final[re.Pattern[str]] = re.compile(
-    r"(?<![A-Za-z0-9.])\d+\.\d+\.\d+"
-    r"(?P<prerelease>-(?:[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?)?"
-    r"(?P<build>\+(?:[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?)?"
-)
-# A configured match may include the build-metadata separator itself.
-_SEMVER_MATCH_TEXT: typ.Final[re.Pattern[str]] = re.compile(r"[+-]?[0-9A-Za-z.+-]+")
 _LEADING_BOUNDARIES: typ.Final[tuple[tuple[str, str], ...]] = (
     ("{crate}", rf"(?<![{_CRATE_NAME_CHARACTER}])"),
     ("{version}", rf"(?<![{_VERSION_PREFIX_CHARACTER}])"),
 )
+
+
 _TRAILING_BOUNDARIES: typ.Final[tuple[tuple[str, str], ...]] = (
     ("{version}", rf"(?![{_VERSION_SUFFIX_CHARACTER}])"),
     ("{crate}", rf"(?![{_CRATE_NAME_CHARACTER}])"),
 )
+
+
+@dc.dataclass(frozen=True, slots=True)
+class _StringRewriteMatchContext:
+    """Keep rendered matches and source SemVer ranges together."""
+
+    replacements: cabc.Mapping[str, str]
+    version_offsets: cabc.Mapping[str, tuple[int, ...]]
+    protected_ranges: tuple[tuple[int, int], ...]
+    range_starts: tuple[int, ...]
 
 
 def _raise_if_pre_bump_versions_are_missing(
@@ -66,7 +71,7 @@ def _rewrite_string_values(
     if len(rules) == 1:
         return _rewrite_one_string_rule(document, rules[0], versions, manifest_path)
 
-    targets: dict[tuple[int, str], tuple[_TableLike, str, object, set[str]]] = {}
+    targets: dict[tuple[str, ...], tuple[_TableLike, str, object, set[str]]] = {}
     for rule in rules:
         table = bump_toml.select_table(document, rule.table)
         if table is None:
@@ -100,11 +105,16 @@ def _collect_replacements_for_rule(
     table: _TableLike,
     rule: StringValueRewriteConfig,
     replacement: cabc.Callable[[str], str],
-    targets: dict[tuple[int, str], tuple[_TableLike, str, object, set[str]]],
+    targets: dict[tuple[str, ...], tuple[_TableLike, str, object, set[str]]],
 ) -> None:
     """Collect one rule's output without mutating its source values."""
-    for container, key, value in bump_toml_strings._selected_string_value_targets(
-        table, rule.field
+    for (
+        location,
+        container,
+        key,
+        value,
+    ) in bump_toml_strings._selected_string_value_targets(
+        table, rule.field, table_path=rule.table
     ):
         current = bump_toml.value_as_string(value)
         if current is None:
@@ -112,16 +122,15 @@ def _collect_replacements_for_rule(
         replacement_text = replacement(current)
         if replacement_text == current:
             continue
-        target_key = (id(container), key)
-        target = targets.get(target_key)
+        target = targets.get(location)
         if target is None:
-            targets[target_key] = (container, key, value, {replacement_text})
+            targets[location] = (container, key, value, {replacement_text})
         else:
             target[3].add(replacement_text)
 
 
 def _apply_snapshot_replacements(
-    targets: cabc.Mapping[tuple[int, str], tuple[_TableLike, str, object, set[str]]],
+    targets: cabc.Mapping[tuple[str, ...], tuple[_TableLike, str, object, set[str]]],
     manifest_path: Path,
 ) -> bool:
     """Commit agreed outputs and reject overlapping rules with different text."""
@@ -147,7 +156,9 @@ def _compile_string_rewrite(
     manifest_path: Path,
 ) -> cabc.Callable[[str], str] | None:
     """Build a one-pass replacement callable for the configured template."""
-    replacements, replacement_pairs = _replacement_pairs(rule, versions, manifest_path)
+    replacements, replacement_pairs, version_offsets = _replacement_pairs(
+        rule, versions, manifest_path
+    )
     if not replacements:
         return None
     target_renderings = _target_renderings(rule, versions)
@@ -155,76 +166,72 @@ def _compile_string_rewrite(
         target_renderings, replacement_pairs, manifest_path
     )
     matching_replacements = _matching_replacements(replacements, target_renderings)
+    version_offsets.update(_target_version_offsets(rule, versions))
     pattern = _string_replacement_pattern(rule.template, matching_replacements)
-    return lambda value: _rewrite_string_value(value, pattern, matching_replacements)
+    return lambda value: _rewrite_string_value(
+        value, pattern, matching_replacements, version_offsets
+    )
 
 
 def _rewrite_string_value(
     value: str,
     pattern: re.Pattern[str],
     replacements: cabc.Mapping[str, str],
+    version_offsets: cabc.Mapping[str, tuple[int, ...]],
 ) -> str:
     """Rewrite once using SemVer ranges calculated for this source value."""
-    protected_ranges = _semver_component_ranges(value)
+    protected_ranges = bump_manifest_rewrite_semver.component_ranges(value)
     range_starts = tuple(start for start, _end in protected_ranges)
+    match_context = _StringRewriteMatchContext(
+        replacements=replacements,
+        version_offsets=version_offsets,
+        protected_ranges=protected_ranges,
+        range_starts=range_starts,
+    )
     return pattern.sub(
-        lambda match: _replacement_for_match(
-            match, replacements, protected_ranges, range_starts
-        ),
+        lambda match: _replacement_for_match(match, match_context),
         value,
     )
 
 
 def _replacement_for_match(
     match: re.Match[str],
-    replacements: cabc.Mapping[str, str],
-    protected_ranges: tuple[tuple[int, int], ...],
-    range_starts: tuple[int, ...],
+    context: _StringRewriteMatchContext,
 ) -> str:
     """Replace a match unless it is nested in a SemVer prerelease or build."""
     matched_text = match.group()
-    if _SEMVER_MATCH_TEXT.fullmatch(matched_text) is not None and (
-        _is_semver_component_match(match.start(), protected_ranges, range_starts)
+    if any(
+        bump_manifest_rewrite_semver.is_component_match(
+            match.start() + version_offset,
+            context.protected_ranges,
+            context.range_starts,
+        )
+        for version_offset in context.version_offsets[matched_text]
     ):
         return matched_text
-    return replacements[matched_text]
-
-
-def _semver_component_ranges(value: str) -> tuple[tuple[int, int], ...]:
-    """Return prerelease and build-metadata ranges in a source value."""
-    ranges: list[tuple[int, int]] = []
-    for match in _SEMVER_COMPONENT_SUFFIXES.finditer(value):
-        for component in ("prerelease", "build"):
-            start, end = match.span(component)
-            if start >= 0:
-                ranges.append((start, end))
-    return tuple(ranges)
-
-
-def _is_semver_component_match(
-    match_start: int,
-    protected_ranges: tuple[tuple[int, int], ...],
-    range_starts: tuple[int, ...],
-) -> bool:
-    """Check a match start against the precomputed SemVer component ranges."""
-    range_index = bisect.bisect_right(range_starts, match_start) - 1
-    return range_index >= 0 and match_start < protected_ranges[range_index][1]
+    return context.replacements[matched_text]
 
 
 def _replacement_pairs(
     rule: StringValueRewriteConfig,
     versions: ManifestRewriteVersions,
     manifest_path: Path,
-) -> tuple[dict[str, str], dict[str, tuple[str, str]]]:
+) -> tuple[dict[str, str], dict[str, tuple[str, str]], dict[str, tuple[int, ...]]]:
     """Render old and target text while rejecting ambiguous old renderings."""
     replacements: dict[str, str] = {}
     replacement_pairs: dict[str, tuple[str, str]] = {}
+    version_offsets: dict[str, set[int]] = {}
     for crate_name in sorted(versions.updated_crate_names):
         old_version = versions.pre_bump_versions.get(crate_name)
         if old_version is None:
             continue
         old_text, new_text = _render_replacement(
             rule, versions, crate_name, old_version
+        )
+        version_offsets.setdefault(old_text, set()).update(
+            bump_manifest_rewrite_semver.version_placeholder_offsets(
+                rule.template, crate_name, old_version
+            )
         )
         previous_pair = replacement_pairs.get(old_text)
         if previous_pair is not None and previous_pair[0] != new_text:
@@ -237,7 +244,32 @@ def _replacement_pairs(
         replacement_pairs.setdefault(old_text, (new_text, crate_name))
         if old_text != new_text:
             replacements[old_text] = new_text
-    return replacements, replacement_pairs
+    return (
+        replacements,
+        replacement_pairs,
+        {
+            rendering: tuple(sorted(offsets))
+            for rendering, offsets in version_offsets.items()
+        },
+    )
+
+
+def _target_version_offsets(
+    rule: StringValueRewriteConfig,
+    versions: ManifestRewriteVersions,
+) -> dict[str, tuple[int, ...]]:
+    """Return target-rendering offsets used to protect already-bumped text."""
+    offsets: dict[str, set[int]] = {}
+    for crate_name in sorted(versions.updated_crate_names):
+        rendering = rule.template.format(
+            crate=crate_name, version=versions.target_version
+        )
+        offsets.setdefault(rendering, set()).update(
+            bump_manifest_rewrite_semver.version_placeholder_offsets(
+                rule.template, crate_name, versions.target_version
+            )
+        )
+    return {rendering: tuple(sorted(values)) for rendering, values in offsets.items()}
 
 
 def _render_replacement(

@@ -22,7 +22,7 @@ import typing as typ
 from pathlib import Path
 from urllib.parse import urlparse
 
-from lading.commands import bump_toml_files, manifest_paths
+from lading.commands import bump_toml_files, bump_toml_write_options, manifest_paths
 from lading.exceptions import LadingError
 
 _log = logging.getLogger(__name__)
@@ -245,7 +245,9 @@ def _write_or_skip_readme(
         bump_toml_files.write_atomic_text(
             destination.path,
             rewritten_text,
-            workspace_root=destination.workspace_root,
+            bump_toml_write_options.AtomicWriteOptions(
+                workspace_root=destination.workspace_root
+            ),
         )
         _log.info("Transposed workspace README to %s", destination.path)
     else:

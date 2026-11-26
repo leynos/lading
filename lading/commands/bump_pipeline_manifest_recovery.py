@@ -4,8 +4,12 @@ import collections.abc as cabc
 import typing as typ
 from pathlib import Path
 
-from lading.commands import bump_pipeline_manifest_restore
+from lading.commands import (
+    bump_pipeline_manifest_restore,
+    bump_toml_write_options,
+)
 from lading.commands.bump_manifest_rewrite_model import ManifestRewriteError
+from lading.commands.bump_toml_bounded_filesystem import _read_bounded_regular_text
 
 if typ.TYPE_CHECKING:
     from lading.commands.bump_pipeline_manifest_rewrites import (
@@ -15,7 +19,7 @@ if typ.TYPE_CHECKING:
 
 def manifest_write_recorder(
     rewrite_stage: _ManifestRewriteStage,
-) -> cabc.Callable[[Path, str, str, Path], None]:
+) -> cabc.Callable[[Path, str, str, Path], bump_toml_write_options.AtomicWriteStatus]:
     """Return the pre-replacement callback for one atomic manifest write.
 
     The caller must invoke this callback after preparing the replacement and
@@ -32,7 +36,7 @@ def manifest_write_recorder(
     -------
     Callable
         A callback accepting the manifest path, original text, planned text,
-        and resolved write destination.
+        and resolved write destination, then returning its replacement status.
 
     Notes
     -----
@@ -49,11 +53,14 @@ def manifest_write_recorder(
         original_text: str,
         written_text: str,
         write_destination: Path,
-    ) -> None:
-        """Keep the rollback baseline and expected output for one write."""
+    ) -> bump_toml_write_options.AtomicWriteStatus:
+        """Keep recovery state and create a status for one atomic replacement."""
         rewrite_stage.rollback_baselines.setdefault(manifest_path, original_text)
         rewrite_stage.pending_manifest_contents[manifest_path] = written_text
         rewrite_stage.written_manifest_destinations[manifest_path] = write_destination
+        status = bump_toml_write_options.AtomicWriteStatus()
+        rewrite_stage.pending_write_statuses[manifest_path] = status
+        return status
 
     return record_write
 
@@ -87,7 +94,13 @@ def manifest_write_completion_recorder(
         if manifest_path in rewrite_stage.pending_manifest_contents:
             pending_text = rewrite_stage.pending_manifest_contents[manifest_path]
             rewrite_stage.written_manifest_contents[manifest_path] = pending_text
+            status = rewrite_stage.pending_write_statuses.get(manifest_path)
+            if status is not None and status.replacement_identity is not None:
+                rewrite_stage.written_manifest_identities[manifest_path] = (
+                    status.replacement_identity
+                )
             rewrite_stage.pending_manifest_contents.pop(manifest_path)
+            rewrite_stage.pending_write_statuses.pop(manifest_path, None)
 
     return record_completion
 
@@ -109,8 +122,8 @@ def validate_member_manifest_before_update(
     Notes
     -----
     This query mutates no stage mappings. When the path has a completed write,
-    it verifies both its resolved destination and its exact UTF-8 contents.
-    Validation either succeeds or raises ``ManifestRewriteError``.
+    it verifies its resolved destination, replacement identity and exact UTF-8
+    contents. Validation either succeeds or raises ``ManifestRewriteError``.
     """
     if rewrite_stage is None:
         return
@@ -118,7 +131,12 @@ def validate_member_manifest_before_update(
     if previously_written_text is None:
         return
     _validate_member_manifest_destination(manifest_path, rewrite_stage)
-    _validate_member_manifest_contents(manifest_path, previously_written_text)
+    _validate_member_manifest_contents(
+        manifest_path,
+        previously_written_text,
+        rewrite_stage.written_manifest_identities.get(manifest_path),
+        rewrite_stage.workspace_root or manifest_path.parent,
+    )
 
 
 def _validate_member_manifest_destination(
@@ -150,16 +168,28 @@ def _validate_member_manifest_destination(
 def _validate_member_manifest_contents(
     manifest_path: Path,
     previously_written_text: str,
+    previously_written_identity: bump_toml_write_options.AtomicWriteIdentity | None,
+    workspace_root: Path,
 ) -> None:
-    """Reject content changes made after an earlier bump pass wrote the file."""
+    """Reject replacement or content changes since the earlier bump write."""
     try:
-        current_text = manifest_path.read_text(encoding="utf-8", newline="")
+        current_text, current_identity = _read_bounded_regular_text(
+            manifest_path, workspace_root
+        )
     except (OSError, UnicodeError) as exc:
         message = (
             f"Could not verify manifest after an earlier bump pass wrote it: "
             f"{manifest_path}: {exc}"
         )
         raise ManifestRewriteError(message, failed_path=manifest_path) from exc
+    if previously_written_identity is None or current_identity != (
+        previously_written_identity
+    ):
+        message = (
+            "Manifest replacement identity changed after an earlier bump pass "
+            f"wrote it: {manifest_path}"
+        )
+        raise ManifestRewriteError(message, failed_path=manifest_path)
     if current_text != previously_written_text:
         message = (
             f"Manifest changed after an earlier bump pass wrote it: {manifest_path}"
@@ -217,42 +247,79 @@ def reconcile_pending_manifest_rewrites(
 
     Notes
     -----
-    A pending entry moves to ``written_manifest_contents`` only when a fresh
-    read matches the planned output exactly. The entry is then removed from
-    ``pending_manifest_contents``; mismatched or unreadable entries stay pending.
-    Verified paths are added to ``changed_manifests`` in place.
+    Pending writes are confirmed only when identity and contents match. Others
+    stay pending; confirmed paths update ``changed_manifests``.
     """
     for manifest_path, pending_text in tuple(stage.pending_manifest_contents.items()):
+        status = stage.pending_write_statuses.get(manifest_path)
         try:
-            current_text = manifest_path.read_text(encoding="utf-8", newline="")
+            workspace_root = stage.workspace_root or manifest_path.parent
+            current_text, current_identity = _read_bounded_regular_text(
+                manifest_path, workspace_root
+            )
         except (OSError, UnicodeError) as exc:
             failure.add_note(
                 f"Could not inspect manifest rewrite target {manifest_path} "
                 f"during recovery: {exc}"
             )
             continue
+        if status is None or status.replacement_identity is None:
+            if current_text not in {
+                stage.rollback_baselines.get(manifest_path),
+                pending_text,
+            }:
+                _report_unrecognized_pending_contents(
+                    manifest_path,
+                    (current_text, current_identity),
+                    stage,
+                    failure,
+                )
+            continue
+        if status.replacement_identity != current_identity:
+            if current_text == pending_text:
+                failure.add_note(
+                    "Manifest replacement identity changed while a rewrite was "
+                    f"pending; leaving its current contents in place: {manifest_path}"
+                )
+            else:
+                _report_unrecognized_pending_contents(
+                    manifest_path,
+                    (current_text, current_identity),
+                    stage,
+                    failure,
+                )
+            continue
         if current_text != pending_text:
             _report_unrecognized_pending_contents(
                 manifest_path,
-                current_text,
+                (current_text, current_identity),
                 stage,
                 failure,
             )
             continue
         stage.written_manifest_contents[manifest_path] = pending_text
+        stage.written_manifest_identities[manifest_path] = current_identity
         stage.pending_manifest_contents.pop(manifest_path)
+        stage.pending_write_statuses.pop(manifest_path, None)
         changed_manifests.add(manifest_path)
 
 
 def _report_unrecognized_pending_contents(
     manifest_path: Path,
-    current_text: str,
+    current_output: tuple[str, bump_toml_write_options.AtomicWriteIdentity],
     stage: _ManifestRewriteStage,
     failure: BaseException,
 ) -> None:
     """Attach a diagnostic when pending contents differ from both known texts."""
+    current_text = current_output[0]
     baseline_text = stage.rollback_baselines.get(manifest_path)
+    completed_output = (
+        stage.written_manifest_contents.get(manifest_path),
+        stage.written_manifest_identities.get(manifest_path),
+    )
     if current_text == baseline_text:
+        return
+    if current_output == completed_output:
         return
     failure.add_note(
         "Manifest changed while a rewrite was pending; leaving its "
@@ -280,8 +347,8 @@ def reconcile_manifest_writes_for_failure(
 
     Notes
     -----
-    This function may move verified paths from ``pending_manifest_contents``
-    into ``written_manifest_contents`` and add them to ``changed_manifests``.
+    Errors reconcile pending reads; interrupts trust callbacks and inspect the
+    active write.
     """
     if isinstance(failure, Exception):
         reconcile_pending_manifest_rewrites(stage, changed_manifests, failure)

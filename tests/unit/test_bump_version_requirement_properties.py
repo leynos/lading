@@ -65,6 +65,24 @@ def _bound_version(draw: st.DrawFn) -> _Version:
 
 
 @st.composite
+def _target_with_related_bound(draw: st.DrawFn) -> tuple[_Version, _Version]:
+    """Generate equality, same-core prerelease, and adjacent-version pairs."""
+    target = draw(_full_version())
+    relation = draw(st.sampled_from(("equal", "prerelease", "adjacent")))
+    if relation == "equal":
+        return target, target
+    if relation == "prerelease":
+        if target.prerelease:
+            return target, _Version(target.core, 3, (), ".".join(map(str, target.core)))
+        prerelease = ("alpha",)
+        text = f"{'.'.join(map(str, target.core))}-alpha"
+        return target, _Version(target.core, 3, prerelease, text)
+    adjacent_core = (*target.core[:2], target.core[2] + 1)
+    adjacent_text = ".".join(map(str, adjacent_core))
+    return target, _Version(adjacent_core, 3, (), adjacent_text)
+
+
+@st.composite
 def _comparator(draw: st.DrawFn) -> tuple[_ComparatorOperator, str, _Version]:
     """Generate a comparator with surrounding whitespace and its oracle data."""
     operator = draw(st.sampled_from(("<", "<=", ">", ">=", "=")))
@@ -158,6 +176,28 @@ def test_excluding_retained_bounds_matches_cargo_reference(
     assert actual == expected, (
         f"Cargo comparator evaluation for target {target.text!r} should be "
         f"{expected!r}, got {actual!r}"
+    )
+
+
+@given(
+    pair=_target_with_related_bound(),
+    operator=st.sampled_from(("<", "<=", ">", ">=", "=")),
+)
+def test_excluding_bounds_handles_versions_related_to_target(
+    pair: tuple[_Version, _Version],
+    operator: _ComparatorOperator,
+) -> None:
+    """Related semantic versions exercise equality and prerelease edges."""
+    target, bound = pair
+    comparator = f"{operator}{bound.text}"
+    requirement = f">=0.1.0, {comparator}"
+    expected = () if _accepts_target(target, operator, bound) else (comparator,)
+
+    actual = excluding_retained_bounds(requirement, target.text)
+
+    assert actual == expected, (
+        f"target {target.text!r} against related bound {comparator!r} should "
+        f"produce {expected!r}, got {actual!r}"
     )
 
 

@@ -18,6 +18,8 @@ from lading.commands import (
     bump_manifest_rewrites,
     bump_pipeline_manifest_recovery,
     bump_pipeline_manifest_sources,
+    bump_toml_write_options,
+    bump_workspace_write_lock,
 )
 from lading.commands.bump_manifest_rewrite_metrics import (
     ManifestRewriteMetricLabels,
@@ -38,6 +40,7 @@ class _ManifestRewriteStage:
     """Configured rewrite plans, timing, and workspace recovery snapshots."""
 
     is_configured: bool = False
+    workspace_root: Path | None = None
     plans: tuple[bump_manifest_rewrites.ManifestRewritePlan, ...] = ()
     planning_duration_seconds: float = 0.0
     workspace_manifest_snapshots: tuple[tuple[Path, str], ...] = ()
@@ -47,7 +50,13 @@ class _ManifestRewriteStage:
     )
     expected_manifest_contents: dict[Path, str] = dc.field(default_factory=dict)
     written_manifest_contents: dict[Path, str] = dc.field(default_factory=dict)
+    written_manifest_identities: dict[
+        Path, bump_toml_write_options.AtomicWriteIdentity
+    ] = dc.field(default_factory=dict)
     pending_manifest_contents: dict[Path, str] = dc.field(default_factory=dict)
+    pending_write_statuses: dict[Path, bump_toml_write_options.AtomicWriteStatus] = (
+        dc.field(default_factory=dict)
+    )
     written_manifest_destinations: dict[Path, Path] = dc.field(default_factory=dict)
     rollback_baselines: dict[Path, str] = dc.field(default_factory=dict)
 
@@ -104,6 +113,7 @@ def _plan_non_member_manifest_rewrites(
     )
     return _ManifestRewriteStage(
         is_configured=True,
+        workspace_root=context.root_path,
         plans=plans,
         planning_duration_seconds=planning_duration,
         workspace_manifest_snapshots=workspace_manifest_snapshots,
@@ -118,6 +128,7 @@ def _plan_non_member_manifest_rewrites(
 
 def _apply_non_member_manifest_rewrites(
     context: _BumpContext,
+    target_version: str,
     stage: _ManifestRewriteStage,
     changed_manifests: set[Path],
 ) -> None:
@@ -133,23 +144,14 @@ def _apply_non_member_manifest_rewrites(
     )
     application_started_at = clock()
     try:
-        rewritten_paths = bump_manifest_rewrite_application.apply_manifest_rewrites(
-            stage.plans,
-            workspace_root=context.root_path,
-            dry_run=dry_run,
-            write_callbacks=(
-                bump_manifest_rewrite_application._ManifestRewriteWriteCallbacks(
-                    before_write=(
-                        bump_pipeline_manifest_recovery.manifest_write_recorder(stage)
-                    ),
-                    after_write=(
-                        bump_pipeline_manifest_recovery.manifest_write_completion_recorder(
-                            stage
-                        )
-                    ),
-                )
-            ),
-        )
+        if dry_run:
+            rewritten_paths = _apply_rewrite_plans(context, stage, dry_run=True)
+        elif not stage.plans:
+            rewritten_paths = _apply_rewrite_plans(context, stage, dry_run=False)
+        else:
+            rewritten_paths = _apply_rewrites_under_workspace_lock(
+                context, target_version, stage
+            )
     except BaseException as rewrite_error:
         if _should_recover_manifest_rewrite_failure(rewrite_error, dry_run=dry_run):
             recovery_error = _recover_failed_manifest_rewrite_application(
@@ -180,6 +182,54 @@ def _apply_non_member_manifest_rewrites(
             error_category="none",
         ),
     )
+
+
+def _apply_rewrite_plans(
+    context: _BumpContext,
+    stage: _ManifestRewriteStage,
+    *,
+    dry_run: bool,
+) -> tuple[Path, ...]:
+    """Apply cached plans with the write callbacks owned by this stage."""
+    return bump_manifest_rewrite_application.apply_manifest_rewrites(
+        stage.plans,
+        workspace_root=stage.workspace_root or context.root_path,
+        dry_run=dry_run,
+        write_callbacks=(
+            bump_manifest_rewrite_application._ManifestRewriteWriteCallbacks(
+                before_write=(
+                    bump_pipeline_manifest_recovery.manifest_write_recorder(stage)
+                ),
+                after_write=(
+                    bump_pipeline_manifest_recovery.manifest_write_completion_recorder(
+                        stage
+                    )
+                ),
+            )
+        ),
+    )
+
+
+def _apply_rewrites_under_workspace_lock(
+    context: _BumpContext,
+    target_version: str,
+    stage: _ManifestRewriteStage,
+) -> tuple[Path, ...]:
+    """Revalidate source versions and write fixtures under one workspace lock."""
+    workspace_root = stage.workspace_root or context.root_path
+    try:
+        with bump_workspace_write_lock.workspace_write_lock(workspace_root):
+            bump_pipeline_manifest_sources._validate_post_bump_versions(
+                context, stage, target_version
+            )
+            return _apply_rewrite_plans(context, stage, dry_run=False)
+    except OSError as exc:
+        failed_path = stage.plans[0].path if stage.plans else None
+        message = (
+            "Could not coordinate configured manifest rewrites with workspace "
+            f"writes: {exc}"
+        )
+        raise ManifestRewriteError(message, failed_path=failed_path) from exc
 
 
 def _should_recover_manifest_rewrite_failure(
@@ -214,6 +264,9 @@ def _recover_failed_manifest_rewrite_application(
     if recovery_error is not None and interrupted:
         rewrite_error.add_note(str(recovery_error))
         return None
+    if recovery_error is not None:
+        for note in getattr(rewrite_error, "__notes__", ()):
+            recovery_error.add_note(note)
     return recovery_error
 
 

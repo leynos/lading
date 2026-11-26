@@ -113,6 +113,22 @@ def test_dependency_update_warns_when_bound_excludes_target(
     assert not caplog.records, "TOML mutation helpers must not log warnings"
 
 
+def test_dependency_bound_warnings_follow_manifest_order() -> None:
+    """A set-like selection cannot make warning order depend on hash order."""
+    document = parse_toml(
+        '[dependencies]\nzeta = ">=1.0.0, <1.5.0"\nalpha = ">=1.0.0, <1.8.0"\n'
+    )
+
+    warnings = bump_toml_dependency_warnings.collect_dependency_bound_warnings(
+        document["dependencies"], ("alpha", "zeta"), "2.0.0"
+    )
+
+    assert [warning.excluded_bounds for warning in warnings] == [
+        ("<1.5.0",),
+        ("<1.8.0",),
+    ], "warnings should follow dependency order in the source manifest"
+
+
 def test_dependency_update_does_not_warn_when_target_satisfies_bounds(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -199,6 +215,36 @@ def test_direct_dependency_update_uses_the_selected_manifest_key() -> None:
     assert changed, "the selected alias should be updated"
     assert document["dependencies"]["alpha-core"]["version"] == "2.0.0", (
         "direct dependency sections should match the manifest's alias key"
+    )
+
+
+def test_direct_dependency_update_rewrites_target_qualified_local_alias() -> None:
+    """Target dependencies use the same manifest-key rule as direct tables."""
+    document = parse_toml(
+        "[target.'cfg(unix)'.dependencies]\n"
+        'alpha-core = { package = "alpha", path = "../alpha", version = "^1.0.0" }\n\n'
+        "[target.'cfg(windows)'.dependencies]\n"
+        'alpha = { package = "beta", path = "../beta", version = "1.0.0" }\n'
+    )
+
+    changed = bump_toml_dependency_updates.update_dependency_sections_with_warnings(
+        document,
+        {"dependencies": {"alpha-core"}},
+        "2.0.0",
+        section_scope="direct",
+    )
+
+    unix_dependencies = document["target"]["cfg(unix)"]["dependencies"]
+    windows_dependencies = document["target"]["cfg(windows)"]["dependencies"]
+    assert changed, "the target-qualified local dependency should be updated"
+    assert unix_dependencies["alpha-core"]["version"] == "^2.0.0", (
+        "target-qualified dependency aliases should retain their requirement operator"
+    )
+    assert unix_dependencies["alpha-core"]["package"] == "alpha", (
+        "the package identity of the renamed local dependency must be preserved"
+    )
+    assert windows_dependencies["alpha"]["version"] == "1.0.0", (
+        "an unselected target dependency must remain unchanged"
     )
 
 

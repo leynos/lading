@@ -445,7 +445,11 @@ lading bump <new_version> [--dry-run]
   workspace README.
 - `bump_pipeline_manifest_sources` snapshots workspace and member manifest
   text before writes, derives effective package versions, and revalidates those
-  versions before the first write. It performs no writes.
+  versions before the first write and before applying cached fixture plans. The
+  later check also confirms that the root `Cargo.toml` entry still resolves to
+  the discovered workspace manifest. The pipeline repeats this later check
+  under the workspace write lock immediately before fixture application. The
+  source module performs no writes.
 - `bump_pipeline_manifest_rewrites` owns planning and applying the configured
   rewrite stage. It restores manifests changed by those stages if a configured
   rewrite fails, but only while their content still matches the text written by
@@ -461,13 +465,23 @@ lading bump <new_version> [--dry-run]
   their resolved write destination for bounded rollback and verify the alias
   still resolves to that destination before writing.
 - `bump_workspace_write_lock.workspace_write_lock` provides a per-workspace
-  advisory lock for each bounded Lading replacement. The lock is stored in the
-  user's cache directory, is acquired without waiting, and is released when the
-  write exits. `bump_toml_files.write_atomic_text` performs conditional content
-  comparison immediately before replacement when the caller supplies the
-  expected source text. This coordinates Lading processes and refuses a write
-  when a lock is unavailable; editors that ignore advisory locks can still race
-  the final comparison.
+  advisory lock for bounded Lading replacements and the complete non-member
+  rewrite stage. The stage holds it across the final version check and all
+  configured fixture writes; nested atomic writes reuse the same thread's lock.
+  The lock coordinates Lading processes running as the same operating-system
+  user. Processes running as another user, editors and tools that ignore it are
+  outside its guarantee. It lives in a stable per-user state directory so
+  process-specific `XDG_CACHE_HOME` values do not split the lock identity. It
+  is acquired without waiting and released when the outer operation exits.
+  Bounded writers verify the opened workspace directory still matches the
+  identity used for lock selection. `bump_toml_files` records replacement
+  completion and the temporary file's filesystem identity when it is atomically
+  installed. Manifest recovery uses both that identity and the written text to
+  distinguish this run's output from a later write with identical contents.
+  `write_atomic_text` checks the expected source text and identity immediately
+  before replacement when the caller supplies them. This coordinates Lading
+  processes and refuses a write when a lock is unavailable; editors that ignore
+  advisory locks can still race the final comparison.
 - `bump_toml_files` owns manifest parsing and atomic writes. Its internal
   `_read_and_parse_manifest` operation returns the exact input text alongside
   the parsed document from one read, so bump recovery can retain the source

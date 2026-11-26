@@ -86,6 +86,16 @@ def _apply_crate_manifest_update(
     return _CrateManifestOutcome.UNCHANGED
 
 
+def _manifest_destination(crate: WorkspaceCrate, context: _BumpContext) -> Path:
+    """Return the canonical member destination selected by the bump context."""
+    if crate.manifest_path in {
+        context.workspace_manifest,
+        context.root_path / "Cargo.toml",
+    }:
+        return context.workspace_manifest
+    return crate.manifest_path
+
+
 def _prepare_crate_manifest_update(
     crate: WorkspaceCrate,
     options: BumpOptions,
@@ -93,13 +103,10 @@ def _prepare_crate_manifest_update(
     rewrite_stage: bump_pipeline_manifest_rewrites._ManifestRewriteStage | None,
 ) -> tuple[Path, _ManifestUpdateContext]:
     """Validate and prepare the member manifest destination and write context."""
-    is_workspace_manifest = crate.manifest_path in {
-        context.workspace_manifest,
-        context.root_path / "Cargo.toml",
-    }
-    manifest_path = (
-        context.workspace_manifest if is_workspace_manifest else crate.manifest_path
+    is_workspace_manifest = _manifest_destination(crate, context) == (
+        context.workspace_manifest
     )
+    manifest_path = _manifest_destination(crate, context)
     bump_pipeline_manifest_recovery.validate_member_manifest_before_update(
         manifest_path, rewrite_stage
     )
@@ -117,6 +124,11 @@ def _prepare_crate_manifest_update(
         else crate.manifest_path,
         expected_text=(
             rewrite_stage.expected_manifest_contents.get(manifest_path)
+            if rewrite_stage is not None
+            else None
+        ),
+        expected_current_identity=(
+            rewrite_stage.written_manifest_identities.get(manifest_path)
             if rewrite_stage is not None
             else None
         ),

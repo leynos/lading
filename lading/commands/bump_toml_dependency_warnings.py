@@ -66,7 +66,8 @@ def collect_dependency_bound_warnings(
     """
     warnings = (
         _dependency_bound_warning(table, name, target_version)
-        for name in dependency_names
+        for name in table
+        if name in dependency_names
     )
     return tuple(warning for warning in warnings if warning is not None)
 

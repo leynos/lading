@@ -2,7 +2,36 @@
 
 import os
 import stat
+import typing as typ
 from pathlib import Path
+
+
+def _supports_stable_temporary_cleanup() -> bool:
+    """Check whether temporary files can be created and removed by directory fd."""
+    return (
+        hasattr(os, "O_DIRECTORY")
+        and os.open in os.supports_dir_fd
+        and os.unlink in os.supports_dir_fd
+    )
+
+
+def _open_temporary_text_file(descriptor: int) -> typ.TextIO:
+    """Wrap a descriptor without transferring its ownership."""
+    return os.fdopen(descriptor, "w", encoding="utf-8", newline="", closefd=False)
+
+
+def _close_descriptor(
+    descriptor: int, primary_error: BaseException | None = None
+) -> None:
+    """Close an owned temporary descriptor without masking a write error."""
+    try:
+        os.close(descriptor)
+    except OSError as close_error:
+        if primary_error is None:
+            raise
+        primary_error.add_note(
+            f"Could not close descriptor {descriptor}: {close_error}"
+        )
 
 
 def cleanup_path_based_temporary_file(

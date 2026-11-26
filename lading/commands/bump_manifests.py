@@ -16,6 +16,7 @@ from lading.commands import (
     bump_toml,
     bump_toml_dependencies,
     bump_toml_files,
+    bump_toml_write_options,
     manifest_paths,
 )
 from lading.commands.bump_toml_dependency_updates import (
@@ -63,8 +64,12 @@ class _ManifestUpdateContext:
     manifest_entry: Path | None = None
     expected_destination: Path | None = None
     expected_text: str | None = None
+    expected_current_identity: bump_toml_write_options.AtomicWriteIdentity | None = None
     expected_version_values: tuple[tuple[tuple[str, ...], str], ...] = ()
-    before_write: cabc.Callable[[Path, str, str, Path], None] | None = None
+    before_write: (
+        cabc.Callable[[Path, str, str, Path], bump_toml_write_options.AtomicWriteStatus]
+        | None
+    ) = None
     after_write: cabc.Callable[[Path], None] | None = None
 
 
@@ -203,8 +208,9 @@ def _persist_manifest_update(
             f"{prepared.manifest_path}"
         )
         raise LadingError(message)
+    write_status = None
     if update_context.before_write is not None:
-        update_context.before_write(
+        write_status = update_context.before_write(
             prepared.manifest_path,
             prepared.original_text,
             updated_text,
@@ -213,10 +219,14 @@ def _persist_manifest_update(
     bump_toml_files.write_atomic_text(
         prepared.write_destination,
         updated_text,
-        workspace_root=update_context.workspace_root,
-        expected_current_text=prepared.original_text
-        if update_context.workspace_root is not None
-        else None,
+        bump_toml_write_options.AtomicWriteOptions(
+            workspace_root=update_context.workspace_root,
+            expected_current_text=prepared.original_text
+            if update_context.workspace_root is not None
+            else None,
+            expected_current_identity=update_context.expected_current_identity,
+            status=write_status,
+        ),
     )
     if update_context.after_write is not None:
         update_context.after_write(prepared.manifest_path)

@@ -2,6 +2,7 @@
 
 import collections.abc as cabc
 import dataclasses as dc
+import typing as typ
 from pathlib import Path
 from unittest import mock
 
@@ -20,6 +21,9 @@ from tests.helpers.manifest_rewrite_recovery import (
     _PartialWriteFailureCase,
     _run_partial_write_failure,
 )
+
+if typ.TYPE_CHECKING:
+    from lading.commands.bump_toml_write_options import AtomicWriteOptions
 
 pytestmark = pytest.mark.usefixtures("reset_process_metrics")
 
@@ -54,21 +58,30 @@ class _RollbackProbe:
         self,
         path: Path,
         content: str,
-        *,
-        workspace_root: Path | None = None,
-        expected_current_text: str | None = None,
+        write_options: AtomicWriteOptions | None = None,
     ) -> None:
         """Forward rollback through the original bounded atomic writer."""
+        assert write_options is not None, "rollback must supply its write boundary"
         if self.state.symlink_swapped and path == self.alpha_manifest:
-            assert workspace_root == self.case.root, (
+            assert write_options.workspace_root == self.case.root, (
                 "rollback must revalidate the workspace boundary at write time"
             )
         self.atomic_write(
             path,
             content,
-            workspace_root=workspace_root,
-            expected_current_text=expected_current_text,
+            write_options,
         )
+
+    def retarget_during_rollback_write(
+        self,
+        path: Path,
+        content: str,
+        write_options: AtomicWriteOptions | None = None,
+    ) -> None:
+        """Swap the member destination immediately before rollback writes."""
+        if path == self.alpha_manifest and not self.state.symlink_swapped:
+            self.swap_member_path_outside(path)
+        self.bounded_rollback_write(path, content, write_options)
 
 
 def test_rollback_does_not_follow_member_path_swapped_outside_workspace(
@@ -111,6 +124,50 @@ def test_rollback_does_not_follow_member_path_swapped_outside_workspace(
         )
         assert outside_manifest.read_bytes() == probe.state.outside_contents, (
             "rollback must not overwrite the outside target"
+        )
+    finally:
+        if alpha_manifest.is_symlink():
+            alpha_manifest.unlink()
+        outside_manifest.unlink(missing_ok=True)
+
+
+def test_rollback_revalidates_member_boundary_at_writer_time(
+    tmp_path: Path,
+) -> None:
+    """A retarget immediately before the write cannot escape the workspace."""
+    case = _make_partial_write_failure_case(tmp_path / "workspace")
+    alpha_manifest = _alpha_manifest_path(case)
+    outside_manifest = tmp_path / "outside-alpha.toml"
+    probe = _RollbackProbe(
+        case=case,
+        alpha_manifest=alpha_manifest,
+        outside_manifest=outside_manifest,
+        atomic_write=write_atomic_text,
+    )
+
+    try:
+        with mock.patch.object(
+            bump_pipeline_manifest_restore,
+            "write_atomic_text",
+            side_effect=probe.retarget_during_rollback_write,
+        ):
+            failure = _run_partial_write_failure(case)
+
+        assert isinstance(failure, ManifestRewriteWriteError), (
+            "the fixture write failure should become a rollback error"
+        )
+        assert probe.state.symlink_swapped, (
+            "the rollback writer callback must retarget the member path"
+        )
+        assert failure.failed_path == alpha_manifest, (
+            "the write-time workspace boundary should identify alpha"
+        )
+        assert alpha_manifest.is_symlink(), "the changed link must remain in place"
+        assert alpha_manifest.readlink() == outside_manifest, (
+            "rollback must not retarget the changed link"
+        )
+        assert outside_manifest.read_bytes() == probe.state.outside_contents, (
+            "the bounded writer must leave the outside target unchanged"
         )
     finally:
         if alpha_manifest.is_symlink():
@@ -167,6 +224,9 @@ def test_rollback_restores_original_target_for_workspace_member_symlink(
         "rollback must restore the actual member manifest target"
     )
     assert alpha_manifest.is_symlink(), "the original member link should remain"
+    assert alpha_manifest.readlink() == target_manifest, (
+        "rollback must preserve the symlink's original target"
+    )
 
 
 def _alpha_manifest_path(case: _PartialWriteFailureCase) -> Path:

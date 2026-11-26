@@ -283,11 +283,17 @@ def test_trailing_slash_glob_does_not_select_regular_manifest_files(
         plan_fixture_rewrites(tmp_path, (group,))
 
 
+@pytest.mark.parametrize(
+    "scan_error",
+    [PermissionError, FileNotFoundError, NotADirectoryError],
+    ids=["permission-denied", "directory-moved", "replaced-by-file"],
+)
 def test_propagates_directory_scan_failures_during_glob_expansion(
     tmp_path: pathlib.Path,
     write_fixture_manifest: _ManifestWriter,
+    scan_error: type[OSError],
 ) -> None:
-    """A partial glob result must not hide an unreadable selected subtree."""
+    """A partial result must not hide errors scanning an admitted directory."""
     write_fixture_manifest(
         tmp_path, "fixtures/a/deep/Cargo.toml", '[dependencies]\nalpha = "1.0.0"\n'
     )
@@ -295,9 +301,9 @@ def test_propagates_directory_scan_failures_during_glob_expansion(
     denied_directory.mkdir(parents=True)
 
     def read_directory(path: pathlib.Path) -> tuple[pathlib.Path, ...]:
-        """Raise a permission error when traversal reaches the denied directory."""
+        """Raise the selected scan failure after the path has been admitted."""
         if path == denied_directory:
-            raise PermissionError
+            raise scan_error
         return tuple(sorted(path.iterdir(), reverse=True))
 
     traversal = manifest_paths._ManifestGlobTraversal(
@@ -308,7 +314,7 @@ def test_propagates_directory_scan_failures_during_glob_expansion(
         directory_reader=read_directory,
     )
 
-    with pytest.raises(PermissionError):
+    with pytest.raises(scan_error):
         traversal.collect()
 
     assert traversal.matches == [(tmp_path / "fixtures/a/deep/Cargo.toml").resolve()], (

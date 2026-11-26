@@ -9,7 +9,11 @@ import msgspec
 import pytest
 
 from lading import config as config_module
-from lading.commands import bump, bump_manifest_rewrite_application
+from lading.commands import (
+    bump,
+    bump_manifest_rewrite_application,
+    bump_toml_files,
+)
 from lading.config import ManifestRewriteConfig
 from tests.helpers.recording_lockfile_repository import RecordingLockfileRepository
 from tests.helpers.workspace_builders import _make_workspace
@@ -27,6 +31,8 @@ def test_fixture_only_change_triggers_lockfile_regeneration(
     tmp_path: pathlib.Path,
 ) -> None:
     """A rewritten fixture alone opens the lockfile regeneration gate."""
+    if not bump_toml_files._supports_bounded_directory_operations():
+        pytest.skip("the bounded atomic writer is unavailable")
     workspace = _make_workspace(tmp_path)
     root_manifest = tmp_path / "Cargo.toml"
     member_manifests = tuple(
@@ -99,6 +105,8 @@ def test_report_keeps_planned_path_if_parent_becomes_symlink(
     tmp_path: pathlib.Path,
 ) -> None:
     """Reporting does not re-resolve a manifest after its write completes."""
+    if not bump_toml_files._supports_bounded_directory_operations():
+        pytest.skip("the bounded atomic writer is unavailable")
     workspace = _make_workspace(tmp_path)
     configured_directory = tmp_path / "tests/fixtures/configured"
     configured_directory.mkdir(parents=True)
@@ -137,7 +145,7 @@ def test_report_keeps_planned_path_if_parent_becomes_symlink(
         bump_manifest_rewrite_application,
         "apply_manifest_rewrites",
         side_effect=rewrite_then_redirect,
-    ):
+    ) as patched_apply:
         message = bump.run(
             tmp_path,
             "1.2.3",
@@ -148,6 +156,12 @@ def test_report_keeps_planned_path_if_parent_becomes_symlink(
             ),
         )
 
+    assert patched_apply.call_count == 1, (
+        "the test must exercise the injected rewrite-and-redirect hook"
+    )
+    assert configured_directory.is_symlink(), (
+        "the injected hook must replace the configured directory with a symlink"
+    )
     assert f"- {configured_path}" in message, (
         "the report must identify the path selected and rewritten during planning"
     )

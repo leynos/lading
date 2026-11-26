@@ -11,6 +11,7 @@ from lading.commands import (
     bump,
     bump_manifests,
     bump_pipeline,
+    bump_toml_files,
 )
 from lading.commands.bump_manifest_rewrites import ManifestRewriteWriteError
 from lading.exceptions import LadingError
@@ -110,6 +111,8 @@ def test_member_failure_restores_writes_without_rewrite_configuration(
     tmp_path: Path,
 ) -> None:
     """An unconfigured stage still records outputs needed for rollback."""
+    if not bump_toml_files._supports_bounded_directory_operations():
+        pytest.skip("the bounded atomic writer is unavailable")
     workspace = _make_workspace(tmp_path)
     member_manifests = _manifest_paths_by_name(workspace)
     manifest_paths = (tmp_path / "Cargo.toml", *member_manifests.values())
@@ -137,6 +140,8 @@ def test_root_package_rollback_keeps_first_manifest_baseline(
     tmp_path: Path,
 ) -> None:
     """The package pass cannot replace the earlier workspace baseline."""
+    if not bump_toml_files._supports_bounded_directory_operations():
+        pytest.skip("the bounded atomic writer is unavailable")
     workspace, root_manifest = _make_root_package_workspace(tmp_path)
     member_manifests = _manifest_paths_by_name(workspace)
     manifest_paths = (root_manifest, *member_manifests.values())
@@ -163,6 +168,8 @@ def test_root_package_member_pass_preserves_intervening_edit(
     tmp_path: Path,
 ) -> None:
     """The member read rejects an edit made after its pre-update check."""
+    if not bump_toml_files._supports_bounded_directory_operations():
+        pytest.skip("the bounded atomic writer is unavailable")
     workspace, root_manifest = _make_root_package_workspace(tmp_path)
     concurrent_edit = "\n# concurrent edit between bump passes\n"
     configuration = config_module.LadingConfig(
@@ -226,11 +233,75 @@ def test_root_package_member_pass_preserves_intervening_edit(
     )
 
 
+def test_root_package_member_write_rejects_identical_file_replacement(
+    tmp_path: Path,
+) -> None:
+    """The second root write cannot overwrite a byte-identical replacement."""
+    if not bump_toml_files._supports_bounded_directory_operations():
+        pytest.skip("workspace-bounded atomic writes are unavailable")
+    workspace, root_manifest = _make_root_package_workspace(tmp_path)
+    configuration = config_module.LadingConfig(
+        bump=config_module.BumpConfig(rebuild_lockfiles=False)
+    )
+    original_write = bump_toml_files.write_atomic_text
+    root_write_count = 0
+    replaced_contents: bytes | None = None
+
+    def replace_root_before_second_write(
+        path: Path,
+        content: str,
+        write_options: bump_manifests.bump_toml_write_options.AtomicWriteOptions
+        | None = None,
+    ) -> None:
+        """Replace the member-pass source after its identity check."""
+        nonlocal root_write_count, replaced_contents
+        if path == root_manifest:
+            root_write_count += 1
+            if root_write_count == 2:
+                replaced_contents = path.read_bytes()
+                external_copy = path.with_name("Cargo.external.toml")
+                external_copy.write_bytes(replaced_contents)
+                external_copy.replace(path)
+        original_write(path, content, write_options)
+
+    with (
+        mock.patch.object(
+            bump_toml_files,
+            "write_atomic_text",
+            side_effect=replace_root_before_second_write,
+        ),
+        pytest.raises(ManifestRewriteWriteError, match="identity changed"),
+    ):
+        bump.run(
+            tmp_path,
+            "1.2.3",
+            options=bump.BumpOptions(
+                rebuild_lockfiles=False,
+                configuration=configuration,
+                workspace=workspace,
+            ),
+        )
+
+    assert root_write_count == 2, "the replacement must land before the second write"
+    assert replaced_contents is not None, "the external replacement must be captured"
+    assert root_manifest.read_bytes() == replaced_contents, (
+        "the failed member update and rollback must preserve the replacement"
+    )
+    assert _load_version(root_manifest, ("workspace", "package")) == "1.2.3", (
+        "the byte-identical replacement should retain the completed workspace pass"
+    )
+    assert (
+        b'alpha-renamed = { package = "alpha", version = "0.1.0" }' in replaced_contents
+    ), "the rejected member pass must leave its dependency requirement unchanged"
+
+
 def test_workspace_manifest_rejects_retargeted_root_entry(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A root manifest symlink cannot redirect the workspace update."""
+    if not bump_toml_files._supports_bounded_directory_operations():
+        pytest.skip("workspace-bounded atomic writes are unavailable")
     workspace = _make_workspace(tmp_path)
     manifest_entry = tmp_path / "Cargo.toml"
     original_destination = tmp_path / "workspace.toml"

@@ -73,8 +73,9 @@ python3.14 -m venv .venv
 ```
 
 If the interpreter cannot be moved yet, pin Lading below the floor and defer
-the upgrade. Nothing in 0.4.0 fixes a defect present in 0.3.1, so there is no
-correctness pressure to migrate before the interpreter is ready:
+the upgrade. Workspaces affected by versioned non-member path dependencies can
+also benefit from 0.4.0's configured manifest rewrite workflow once the
+affected manifests are listed in `bump.manifest_rewrites`:
 
 <!-- tested-example: v0-4-0-pin-before-floor -->
 

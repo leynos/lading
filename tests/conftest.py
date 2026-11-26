@@ -191,9 +191,16 @@ def write_fixture_manifest() -> cabc.Callable[[Path, str, str], Path]:
 
     Examples
     --------
-    >>> def test_fixture_manifest(tmp_path, write_fixture_manifest):  # doctest: +SKIP
-    ...     path = write_fixture_manifest(tmp_path, "fixture/Cargo.toml", "[package]")
-    ...     assert path.read_text() == "[package]"
+    This example needs pytest's ``tmp_path`` fixture, so it is illustrative
+    rather than a runnable doctest:
+
+    .. code-block:: python
+
+        def test_fixture_manifest(tmp_path, write_fixture_manifest):
+            path = write_fixture_manifest(
+                tmp_path, "fixture/Cargo.toml", "[package]"
+            )
+            assert path.read_text() == "[package]"
     """
 
     def write(root: Path, relative_path: str, content: str) -> Path:

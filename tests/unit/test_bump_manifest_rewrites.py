@@ -1,11 +1,8 @@
 """Tests for configured non-member manifest rewrites."""
 
-import builtins
 import collections.abc as cabc
-import os
 import pathlib
 import typing as typ
-from unittest import mock
 
 import pytest
 from tomlkit import parse as parse_toml
@@ -18,6 +15,7 @@ from tests.helpers.manifest_rewrites import (
 )
 
 type _ManifestWriter = cabc.Callable[[pathlib.Path, str, str], pathlib.Path]
+
 
 if typ.TYPE_CHECKING:
     from syrupy.assertion import SnapshotAssertion
@@ -265,6 +263,9 @@ def test_direct_string_values_and_missing_selectors_are_noops(
         "direct string values must be rewritten when no field is selected"
     )
     assert "number = 42" in plan.new_text, "non-string values must remain unchanged"
+    assert parse_toml(plan.new_text)["metadata"]["number"] == 42, (
+        "the selected non-string value must retain its parsed integer type"
+    )
     assert manifest.read_text(encoding="utf-8") == plan.original_text, (
         "planning must not write the selected manifest"
     )
@@ -302,54 +303,33 @@ def test_rewrites_direct_and_nested_inline_string_tables(
     )
 
 
-def test_planner_rewrites_supplied_text_without_filesystem_access() -> None:
-    """The rewrite policy consumes source text without opening its path."""
-    unopened_path = pathlib.PurePath("unopened/Cargo.toml")
-    source = bump_manifest_rewrites.ManifestRewriteSource(
-        path=typ.cast("pathlib.Path", unopened_path),
-        content='[dependencies]\nalpha = "1.0.0"\n',
-        dependencies=True,
-        string_values=(),
+def test_conflicting_rules_use_toml_locations_for_out_of_order_tables(
+    tmp_path: pathlib.Path,
+    write_fixture_manifest: _ManifestWriter,
+) -> None:
+    """Distinct TOML proxy wrappers cannot hide one conflicting value."""
+    original = (
+        '[meta.first]\ntag = "alpha-1.0.0 lib-alpha-1.0.0"\n'
+        "[intervening]\nvalue = true\n[meta]\n"
+    )
+    write_fixture_manifest(tmp_path, "fixture/Cargo.toml", original)
+    group = ManifestRewriteConfig(
+        paths=("fixture/Cargo.toml",),
+        dependencies=False,
+        string_values=(
+            StringValueRewriteConfig(
+                table=("meta",), field="tag", template="{crate}-{version}"
+            ),
+            StringValueRewriteConfig(
+                table=("meta",),
+                field="tag",
+                template="lib-{crate}-{version}",
+            ),
+        ),
     )
 
-    with (
-        mock.patch.object(
-            pathlib.Path,
-            "open",
-            side_effect=_reject_filesystem_access,
-        ),
-        mock.patch.object(
-            pathlib.Path,
-            "stat",
-            side_effect=_reject_filesystem_access,
-        ),
-        mock.patch.object(
-            pathlib.Path,
-            "resolve",
-            side_effect=_reject_filesystem_access,
-        ),
-        mock.patch.object(os, "open", side_effect=_reject_filesystem_access),
-        mock.patch.object(builtins, "open", side_effect=_reject_filesystem_access),
-        mock.patch.object(os, "stat", side_effect=_reject_filesystem_access),
-        mock.patch.object(os, "scandir", side_effect=_reject_filesystem_access),
-        mock.patch.object(os, "unlink", side_effect=_reject_filesystem_access),
+    with pytest.raises(
+        bump_manifest_rewrites.ManifestRewriteError,
+        match="conflicting replacements for one TOML value",
     ):
-        (plan,) = bump_manifest_rewrites.plan_manifest_rewrites(
-            (source,), manifest_rewrite_versions()
-        )
-
-    assert plan.path is unopened_path, (
-        "the planner should preserve the supplied source identity"
-    )
-    assert not hasattr(unopened_path, "read_text"), (
-        "the supplied path must be incapable of filesystem reads"
-    )
-    assert plan.new_text == '[dependencies]\nalpha = "2.0.0"\n', (
-        "the planner should use only supplied text and version metadata"
-    )
-
-
-def _reject_filesystem_access(*_args: object, **_kwargs: object) -> typ.NoReturn:
-    """Fail a planner test if it attempts any filesystem operation."""
-    message = "The rewrite planner attempted filesystem access"
-    raise AssertionError(message)
+        plan_fixture_rewrites(tmp_path, (group,))

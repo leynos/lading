@@ -15,6 +15,7 @@ from lading.commands import (
     bump_manifests,
     bump_pipeline_crate_manifests,
     bump_toml_files,
+    bump_toml_write_options,
 )
 from lading.exceptions import LadingError
 from lading.workspace import WorkspaceCrate, WorkspaceDependency, WorkspaceGraph
@@ -78,6 +79,8 @@ def test_member_dependency_alias_does_not_select_excluded_workspace_package(
     tmp_path: Path,
 ) -> None:
     """A member alias must not become a package selector for workspace entries."""
+    if not bump_toml_files._supports_bounded_directory_operations():
+        pytest.skip("the bounded atomic writer is unavailable")
     from tests.helpers.workspace_builders import _make_workspace
 
     workspace = _make_workspace(tmp_path)
@@ -329,7 +332,9 @@ def test_bounded_write_keeps_the_open_parent_when_its_path_is_swapped(
     )
 
     bump_toml_files.write_atomic_text(
-        manifest, "replacement", workspace_root=workspace_root
+        manifest,
+        "replacement",
+        bump_toml_write_options.AtomicWriteOptions(workspace_root=workspace_root),
     )
 
     assert outside_manifest.read_text(encoding="utf-8") == "outside", (
@@ -360,7 +365,7 @@ def test_bounded_write_fails_closed_without_directory_operations(
         bump_toml_files.write_atomic_text(
             manifest_path,
             "replacement",
-            workspace_root=workspace_root,
+            bump_toml_write_options.AtomicWriteOptions(workspace_root=workspace_root),
         )
 
     assert manifest_path.read_text(encoding="utf-8") == "original", (

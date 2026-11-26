@@ -7,7 +7,7 @@ from unittest import mock
 
 import pytest
 
-from lading.commands import bump_toml_files
+from lading.commands import bump_toml_files, bump_toml_write_options
 
 
 class _ReadOnlyTemporaryFilesystem:
@@ -86,7 +86,7 @@ def test_bounded_writer_uses_short_temporary_name_for_long_destination(
     bump_toml_files.write_atomic_text(
         destination,
         "replacement",
-        workspace_root=tmp_path,
+        bump_toml_write_options.AtomicWriteOptions(workspace_root=tmp_path),
     )
 
     assert destination.read_text(encoding="utf-8") == "replacement", (
@@ -109,7 +109,7 @@ def test_bounded_writer_accepts_workspace_relative_destination(
     bump_toml_files.write_atomic_text(
         Path("Cargo.toml"),
         "replacement",
-        workspace_root=tmp_path,
+        bump_toml_write_options.AtomicWriteOptions(workspace_root=tmp_path),
     )
 
     assert destination.read_text(encoding="utf-8") == "replacement", (
@@ -275,7 +275,10 @@ def test_path_cleanup_does_not_change_a_symlink_target_mode(
     target.chmod(stat.S_IREAD)
     original_mode = stat.S_IMODE(target.stat().st_mode)
     temporary_path = tmp_path / ".lading-temporary"
-    temporary_path.symlink_to(target)
+    try:
+        temporary_path.symlink_to(target)
+    except OSError as exc:
+        pytest.skip(f"symbolic links are unavailable: {exc}")
     original_unlink = Path.unlink
 
     def reject_temporary_unlink(path: Path, *, missing_ok: bool = False) -> None:
@@ -345,7 +348,7 @@ def test_bounded_writer_keeps_write_error_when_temporary_cleanup_fails(
         bump_toml_files.write_atomic_text(
             destination,
             "replacement",
-            workspace_root=tmp_path,
+            bump_toml_write_options.AtomicWriteOptions(workspace_root=tmp_path),
         )
 
     assert any(cleanup_error_message in note for note in failure.value.__notes__), (

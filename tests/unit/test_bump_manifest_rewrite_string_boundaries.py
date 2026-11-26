@@ -99,6 +99,34 @@ def test_version_rewrite_does_not_match_inside_build_metadata(
     )
 
 
+def test_crate_version_template_preserves_semver_metadata_with_trailing_path(
+    tmp_path: pathlib.Path,
+    write_fixture_manifest: _ManifestWriter,
+) -> None:
+    """A path delimiter outside the template cannot expose build metadata."""
+    document = _rewrite_metadata_values(
+        tmp_path,
+        write_fixture_manifest,
+        _MetadataRewriteCase(
+            content=(
+                "[metadata]\n"
+                'nested = "9.8.7+alpha-1.2.3/"\n'
+                'standalone = "alpha-1.2.3/"\n'
+            ),
+            template="{crate}-{version}/",
+            pre_bump_version="1.2.3",
+            target_version="2.0.0",
+        ),
+    )
+
+    assert document["metadata"]["nested"] == "9.8.7+alpha-1.2.3/", (
+        "the version placeholder inside SemVer build metadata must stay intact"
+    )
+    assert document["metadata"]["standalone"] == "alpha-2.0.0/", (
+        "the same configured template must rewrite a standalone staged path"
+    )
+
+
 def test_version_rewrite_does_not_match_inside_semver_prerelease(
     tmp_path: pathlib.Path,
     write_fixture_manifest: _ManifestWriter,

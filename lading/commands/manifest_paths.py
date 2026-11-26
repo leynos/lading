@@ -9,7 +9,6 @@ types and retain responsibility for existence and regular-file checks.
 
 import collections.abc as cabc
 import dataclasses as dc
-import fnmatch
 import glob
 import os
 import stat
@@ -179,6 +178,7 @@ class _ManifestGlobTraversal:
     error_type: type[LadingError]
     label: str
     directory_reader: cabc.Callable[[Path], tuple[Path, ...]]
+    case_sensitive: bool | None = None
     root: Path = dc.field(init=False)
     segments: tuple[str, ...] = dc.field(init=False)
     directory_only: bool = dc.field(init=False)
@@ -242,7 +242,10 @@ class _ManifestGlobTraversal:
     ) -> None:
         """Queue entries matching one wildcard path segment."""
         for child in self.directory_reader(candidate):
-            if fnmatch.fnmatch(child.name, segment):
+            if Path(child.name).full_match(
+                segment,
+                case_sensitive=self.case_sensitive,
+            ):
                 self.enqueue_candidate(worklist, child, index)
 
     def enqueue_candidate(
@@ -268,7 +271,9 @@ class _ManifestGlobTraversal:
     def record_if_present(self, candidate: Path) -> None:
         """Record a candidate that still exists after traversal."""
         try:
-            candidate_stat = candidate.lstat()
+            candidate_stat = (
+                candidate.stat() if self.directory_only else candidate.lstat()
+            )
         except FileNotFoundError, NotADirectoryError:
             return
         if self.directory_only and not stat.S_ISDIR(candidate_stat.st_mode):
@@ -277,11 +282,8 @@ class _ManifestGlobTraversal:
 
 
 def _manifest_directory_entries(directory: Path) -> tuple[Path, ...]:
-    """List one directory, treating vanished or non-directory paths as no match."""
-    try:
-        return tuple(sorted(directory.iterdir()))
-    except FileNotFoundError, NotADirectoryError:
-        return ()
+    """List one queued directory, propagating failures from the filesystem scan."""
+    return tuple(sorted(directory.iterdir()))
 
 
 def _is_manifest_directory(path: Path, *, follow_symlinks: bool = False) -> bool:

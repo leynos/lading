@@ -211,6 +211,8 @@ def test_documentation_target_migration_examples_use_the_new_record(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The replacement example executes against the current documentation API."""
+    if not bump_docs.bump_toml_files._supports_bounded_directory_operations():
+        pytest.skip("workspace-bounded atomic writes are unavailable")
     examples = _examples_by_id()
     before = examples["v0-4-0-doc-targets-before"].source
     after = examples["v0-4-0-doc-targets-after"].source

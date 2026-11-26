@@ -910,19 +910,26 @@ Each configured manifest write is atomic, but the batch is not. If a later
 write fails, or a manifest changes after planning, earlier fixture rewrites may
 remain and lockfile regeneration is skipped. Before reporting the failure,
 `lading bump` restores a workspace or member manifest only when its current
-contents still match the latest text written by this bump. Workspace-bounded
-writes use a per-workspace advisory lock shared by Lading writers and compare
-the expected text immediately before replacement. If another Lading write holds
-the lock, the bump fails before replacing a file. If another writer changed a
-manifest, rollback leaves the changed contents in place and reports the path.
-Editors and tools that ignore advisory locks can still race after the final
-comparison, so this protection covers cooperating Lading processes and edits
-visible at that check. Other matching manifests are restored to the exact text
-this bump parsed before updating each one. The source crate versions used for
-fixture plans are checked again before the first write, including versions
-inherited from `[workspace.package]`; unrelated manifest edits remain allowed.
-If rollback reports a manifest it left in place or could not restore, inspect
-and repair that named file before retrying.
+filesystem identity and contents still match the latest output written by this
+bump. Workspace-bounded writes use a per-workspace advisory lock shared by
+Lading writers and compare the expected text and file identity immediately
+before replacement. Locks for the same operating-system user live in a stable
+state directory, independent of each process's `XDG_CACHE_HOME`. If another
+Lading write holds the lock, the bump fails before replacing a file. If another
+writer changed a manifest, rollback leaves the changed file in place and
+reports the path, including when a later write has identical contents. Editors
+and tools that ignore advisory locks can still race after the final comparison,
+so this protection covers cooperating Lading processes and edits visible at
+that check. Other matching manifests are restored to the exact text this bump
+parsed before updating each one. The source crate versions used for fixture
+plans are checked again before the first write, including versions inherited
+from `[workspace.package]`; unrelated manifest edits remain allowed. If
+rollback reports a manifest it left in place or could not restore, inspect and
+repair that named file before retrying. If a fixture batch fails after earlier
+fixture rewrites completed and those files remain changed after recovery, the
+error also names those manifests. Inspect and repair them before retrying
+because their version references may remain at the requested target while
+workspace manifests have been restored to their pre-bump versions.
 
 Workspace-bounded atomic writes require operating-system support for
 directory-relative no-follow file operations. On platforms without that

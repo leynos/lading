@@ -19,7 +19,8 @@ class ManifestRewriteError(LadingError):
     message : str
         The operator-facing explanation of the rewrite failure.
     completed_writes : int, optional
-        Number of manifests written before a write failure. Defaults to zero.
+        Number of manifests persisted before or by a write failure. Defaults
+        to zero.
     planned_writes : int, optional
         Number of manifests in the write plan. Defaults to zero.
     failed_path : Path or None, optional

@@ -14,10 +14,14 @@ from lading.commands import (
     bump_manifests,
     bump_pipeline_manifest_recovery,
     bump_pipeline_manifest_rewrites,
+    bump_toml_files,
 )
 from lading.commands.bump_manifest_rewrites import ManifestRewriteError
-from lading.utils import file_lock
+from lading.commands.bump_toml_bounded_filesystem import _read_bounded_regular_text
 from tests.helpers.manifest_rewrite_recovery import _make_partial_write_failure_case
+
+if typ.TYPE_CHECKING:
+    from lading.commands.bump_toml_write_options import AtomicWriteOptions
 
 WORKSPACE_LOCK_ERROR = "workspace lock unavailable"
 
@@ -26,6 +30,8 @@ def test_member_interruption_restores_completed_manifest_writes(
     tmp_path: Path,
 ) -> None:
     """An interrupt during member updates restores earlier successful writes."""
+    if not bump_toml_files._supports_bounded_directory_operations():
+        pytest.skip("the bounded atomic writer is unavailable")
     case = _make_partial_write_failure_case(tmp_path)
     fixture_originals = {path: path.read_bytes() for path in case.fixtures}
     interrupted_manifest = case.workspace.crates[0].manifest_path
@@ -78,6 +84,38 @@ def test_member_interruption_restores_completed_manifest_writes(
     )
     assert {path: path.read_bytes() for path in case.fixtures} == fixture_originals, (
         "member interruption must leave not-yet-applied fixture rewrites untouched"
+    )
+
+
+def test_pending_recovery_recognizes_prior_completed_output_identity(
+    tmp_path: Path,
+) -> None:
+    """A prior output with the same identity is not an unknown edit."""
+    if not bump_toml_files._supports_bounded_directory_operations():
+        pytest.skip("the bounded atomic writer is unavailable")
+    manifest = tmp_path / "Cargo.toml"
+    baseline = "original text"
+    completed_output = "first pass output"
+    pending_output = "second pass output"
+    manifest.write_text(completed_output, encoding="utf-8")
+    identity = _read_bounded_regular_text(manifest, tmp_path)[1]
+    stage = bump_pipeline_manifest_rewrites._ManifestRewriteStage(
+        rollback_baselines={manifest: baseline},
+        written_manifest_contents={manifest: completed_output},
+        written_manifest_identities={manifest: identity},
+        pending_manifest_contents={manifest: pending_output},
+    )
+    failure = RuntimeError("second pass failed before writing")
+
+    bump_pipeline_manifest_recovery.reconcile_pending_manifest_rewrites(
+        stage, set(), failure
+    )
+
+    assert not getattr(failure, "__notes__", []), (
+        "a confirmed output from the earlier pass must not be reported as an edit"
+    )
+    assert stage.pending_manifest_contents == {manifest: pending_output}, (
+        "recovery must leave the unattempted second-pass write pending"
     )
 
 
@@ -141,6 +179,8 @@ def test_non_member_interruption_restores_completed_rewrites_and_members(
     tmp_path: Path,
 ) -> None:
     """An interrupt during fixture application rolls back completed writes."""
+    if not bump_toml_files._supports_bounded_directory_operations():
+        pytest.skip("the bounded atomic writer is unavailable")
     case = _make_partial_write_failure_case(tmp_path)
     fixture_originals = {path: path.read_bytes() for path in case.fixtures}
     write_atomic_text = bump_manifest_rewrite_application.write_atomic_text
@@ -149,9 +189,7 @@ def test_non_member_interruption_restores_completed_rewrites_and_members(
     def interrupt_second_fixture(
         path: Path,
         content: str,
-        *,
-        workspace_root: Path | None = None,
-        expected_current_text: str | None = None,
+        write_options: AtomicWriteOptions | None = None,
     ) -> None:
         """Write the first fixture, then interrupt before the second one."""
         if path == case.fixtures[1].resolve():
@@ -159,8 +197,7 @@ def test_non_member_interruption_restores_completed_rewrites_and_members(
         write_atomic_text(
             path,
             content,
-            workspace_root=workspace_root,
-            expected_current_text=expected_current_text,
+            write_options,
         )
         completed_fixture_writes.append(path)
 
@@ -170,7 +207,7 @@ def test_non_member_interruption_restores_completed_rewrites_and_members(
             "write_atomic_text",
             side_effect=interrupt_second_fixture,
         ),
-        pytest.raises(KeyboardInterrupt),
+        pytest.raises(KeyboardInterrupt) as interruption,
     ):
         bump.run(
             case.root,
@@ -188,6 +225,10 @@ def test_non_member_interruption_restores_completed_rewrites_and_members(
     assert {path: path.read_bytes() for path in case.fixtures} == fixture_originals, (
         "interruption recovery must restore every completed fixture rewrite"
     )
+    assert not any(
+        str(case.fixtures[0].resolve()) in note
+        for note in getattr(interruption.value, "__notes__", ())
+    ), "a successfully restored fixture must not be reported as still changed"
     assert {
         path: path.read_bytes() for path in case.workspace_manifests
     } == case.workspace_manifests, (
@@ -199,6 +240,8 @@ def test_interruption_does_not_claim_an_unattempted_matching_plan(
     tmp_path: Path,
 ) -> None:
     """Only a completed or in-progress write can be attributed to this bump."""
+    if not bump_toml_files._supports_bounded_directory_operations():
+        pytest.skip("the bounded atomic writer is unavailable")
     completed_path = tmp_path / "fixtures/completed/Cargo.toml"
     unattempted_path = tmp_path / "fixtures/unattempted/Cargo.toml"
     completed_path.parent.mkdir(parents=True)
@@ -218,6 +261,9 @@ def test_interruption_does_not_claim_an_unattempted_matching_plan(
             ),
         ),
         written_manifest_contents={completed_path: completed_output},
+        written_manifest_identities={
+            completed_path: _read_bounded_regular_text(completed_path, tmp_path)[1]
+        },
         written_manifest_destinations={completed_path: completed_path},
         rollback_baselines={
             completed_path: original,
@@ -242,64 +288,4 @@ def test_interruption_does_not_claim_an_unattempted_matching_plan(
     )
     assert unattempted_path.read_text(encoding="utf-8") == external_output, (
         "an unattempted path matching its planned output must remain untouched"
-    )
-
-
-def test_rollback_rejects_a_superseded_completed_output(
-    tmp_path: Path,
-) -> None:
-    """Only the latest completed output is eligible for automatic rollback."""
-    manifest = tmp_path / "Cargo.toml"
-    manifest.write_text("older output", encoding="utf-8")
-    stage = bump_pipeline_manifest_rewrites._ManifestRewriteStage(
-        written_manifest_contents={manifest: "latest output"},
-        written_manifest_destinations={manifest: manifest},
-        rollback_baselines={manifest: "original"},
-    )
-
-    rollback_error = bump_pipeline_manifest_recovery.restore_changed_manifests(
-        stage,
-        set(),
-        RuntimeError("later stage failed"),
-        workspace_root=tmp_path,
-    )
-
-    assert rollback_error is not None, "a superseded output must be reported"
-    assert manifest.read_text(encoding="utf-8") == "older output", (
-        "rollback must preserve text that is not the latest completed output"
-    )
-
-
-def test_rollback_leaves_output_when_workspace_lock_is_unavailable(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Recovery reports a lock failure without replacing the current output."""
-    manifest = tmp_path / "Cargo.toml"
-    manifest.write_text("latest output", encoding="utf-8")
-    stage = bump_pipeline_manifest_rewrites._ManifestRewriteStage(
-        written_manifest_contents={manifest: "latest output"},
-        written_manifest_destinations={manifest: manifest},
-        rollback_baselines={manifest: "original"},
-    )
-
-    def fail_lock(_handle: object, *, locked: bool) -> None:
-        """Prevent recovery from claiming the workspace write lock."""
-        assert locked, "the write lock should be acquired before recovery"
-        raise PermissionError(WORKSPACE_LOCK_ERROR)
-
-    monkeypatch.setattr(file_lock, "set_exclusive_lock", fail_lock)
-    rollback_error = bump_pipeline_manifest_recovery.restore_changed_manifests(
-        stage,
-        set(),
-        RuntimeError("later stage failed"),
-        workspace_root=tmp_path,
-    )
-
-    assert rollback_error is not None, "the refused recovery must be reported"
-    assert "workspace lock unavailable" in str(rollback_error), (
-        "the recovery error should retain the lock acquisition failure"
-    )
-    assert manifest.read_text(encoding="utf-8") == "latest output", (
-        "recovery must leave the file unchanged when it cannot hold the lock"
     )

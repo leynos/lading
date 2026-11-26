@@ -184,9 +184,9 @@ def update_dependency_sections_with_warnings(
                 match_manifest_keys=True,
                 match_package_names=section_scope == "both",
             )
-            changed |= _update_selected_dependency_section(
+            changed |= _update_direct_dependency_sections(
                 document,
-                (section,),
+                section,
                 selection,
                 target_version,
             )
@@ -197,6 +197,31 @@ def update_dependency_sections_with_warnings(
                 package_names,
                 target_version,
             )
+    return changed
+
+
+def _update_direct_dependency_sections(
+    document: TOMLDocument,
+    section: str,
+    selection: _DependencySectionSelection,
+    target_version: str,
+) -> bool:
+    """Update a direct section and its target-qualified counterparts."""
+    changed = _update_selected_dependency_section(
+        document, (section,), selection, target_version
+    )
+    targets = bump_toml.select_table(document, ("target",))
+    if targets is None:
+        return changed
+    for selector in tuple(targets):
+        if not isinstance(selector, str):
+            continue
+        changed |= _update_selected_dependency_section(
+            document,
+            ("target", selector, section),
+            selection,
+            target_version,
+        )
     return changed
 
 
