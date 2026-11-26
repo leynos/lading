@@ -23,6 +23,7 @@ _CONTAINER_MARKERS: typ.Final[re.Pattern[str]] = re.compile(
     r"^(?:(?:>\s?)|(?:[-+*]|\d{1,9}[.)])\s+)+"
 )
 _QUOTE_TOKEN: typ.Final[re.Pattern[str]] = re.compile(r"^ {0,3}> ?")
+_LIST_MARKER: typ.Final[re.Pattern[str]] = re.compile(r"^(?:[-+*]|\d{1,9}[.)])\s+")
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -97,7 +98,8 @@ def _reject_unmarked_fence(raw: str, path: Path, index: int) -> None:
 def _marker_at(raw: str, path: Path, index: int) -> _MarkerContext | None:
     """Return the marker on ``raw``, or ``None`` when it carries none."""
     depth = _quote_depth(raw)
-    marker_text = (_strip_quotes(raw, depth) or "").strip()
+    content = _strip_quotes(raw, depth) or ""
+    marker_text = _LIST_MARKER.sub("", content).strip()
     if not marker_text.startswith("<!-- tested-example:"):
         return None
     match = _MARKER.match(marker_text)

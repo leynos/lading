@@ -156,13 +156,11 @@ def test_loader_reads_a_marked_example_in_a_block_quote(tmp_path: Path) -> None:
     )
 
 
-def test_loader_accepts_a_closing_fence_at_the_list_indentation(
-    tmp_path: Path,
-) -> None:
-    """A fence opened inside a list item closes at the same indentation."""
+def test_loader_accepts_a_fence_inside_a_list_item(tmp_path: Path) -> None:
+    """A marker and fence inside a list item keep the container context."""
     path = _write(
         tmp_path,
-        "<!-- tested-example: list -->\n    ```python\n    print(1)\n    ```\n",
+        "- <!-- tested-example: list -->\n  ```python\n  print(1)\n  ```\n",
     )
 
     example = load_tested_examples(path)["list"]

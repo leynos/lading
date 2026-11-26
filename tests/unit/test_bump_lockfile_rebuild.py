@@ -49,7 +49,7 @@ class _RecordingRepository:
         self.calls.append(("plan", (workspace_root, tuple(lockfile_manifests))))
         return LockfilePlan(
             root=workspace_root,
-            manifests=(workspace_root / "Cargo.toml",),
+            manifests=(workspace_root / "Cargo.toml",) * len(self.lockfiles),
             lockfiles=self.lockfiles,
         )
 

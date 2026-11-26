@@ -7,6 +7,7 @@ package root.
 
 import dataclasses as dc
 import os
+import stat
 from pathlib import Path
 
 from lading.utils.confinement.errors import (
@@ -49,7 +50,12 @@ def establish_workspace_root(value: Path | str | None) -> Path:
     """  # ruff: ignore[docstring-extraneous-exception]  # raised by helpers
     candidate = _candidate_root(value)
     resolved = _resolve_root(candidate)
-    if not resolved.is_dir():
+    try:
+        status = resolved.stat()
+    except OSError as exc:
+        message = f"Cannot examine workspace root {candidate}: {exc}"
+        raise BumpTargetExaminationError(message) from exc
+    if not stat.S_ISDIR(status.st_mode):
         message = f"Workspace root is not a directory: {candidate}"
         raise UnsafeBumpTargetError(message)
     return resolved
@@ -176,9 +182,14 @@ def prove_containment(
             # real, resolvable directory.
             canonical_parent = Path(os.path.realpath(candidate.parent, strict=True))
             canonical_candidate = canonical_parent / candidate.name
-            # ``exists`` follows links, so a dangling final symlink would look
-            # absent here. ``lexists`` sends it to the strict resolution below.
-            if os.path.lexists(candidate):
+            try:
+                os.lstat(candidate)
+            except FileNotFoundError:
+                # Only a genuinely absent final component may be created.
+                pass
+            else:
+                # A dangling final symlink reaches strict resolution here and
+                # is reported rather than looking absent.
                 canonical_candidate = Path(os.path.realpath(candidate, strict=True))
         else:
             canonical_candidate = Path(os.path.realpath(candidate, strict=True))

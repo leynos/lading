@@ -42,6 +42,7 @@ class _Expansion:
     unmatched: UnmatchedPolicy
     link_predicate: LinkPredicate
     found: set[tuple[str, ...]] = dc.field(default_factory=set)
+    matched_any: bool = False
 
     def expand(self, remaining: tuple[str, ...], prefix: tuple[str, ...]) -> None:
         """Expand ``remaining`` starting from the directory ``prefix``.
@@ -214,16 +215,30 @@ class _Expansion:
         wants_regular = self.expect is MatchExpectation.REGULAR_FILE
         selected = is_regular if wants_regular else is_directory
         if selected:
-            if wants_regular:
-                self._reject_hard_link(result, matched_parts)
-            self.found.add(matched_parts)
+            self._select(result, matched_parts, wants_regular=wants_regular)
             return
         ignored = is_directory if wants_regular else is_regular
         if ignored:
+            if not wants_regular and is_regular:
+                # A member glob that matches only regular files has matched
+                # something; the unmatched policy must not reject the pattern.
+                self.matched_any = True
             return
         self._reject_match(
             matched_parts[:-1], matched_parts[-1], "matched a special file"
         )
+
+    def _select(
+        self,
+        result: os.stat_result,
+        matched_parts: tuple[str, ...],
+        *,
+        wants_regular: bool,
+    ) -> None:
+        """Record one selected match, rejecting hard-linked regular files."""
+        if wants_regular:
+            self._reject_hard_link(result, matched_parts)
+        self.found.add(matched_parts)
 
     def _reject_hard_link(
         self,

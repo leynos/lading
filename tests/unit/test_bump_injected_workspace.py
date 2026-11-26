@@ -66,3 +66,21 @@ def test_injected_graph_rejects_a_misnamed_member_manifest(tmp_path: Path) -> No
     assert "must be named Cargo.toml" in str(excinfo.value), (
         "the diagnostic must name the required manifest filename"
     )
+
+
+def test_injected_graph_accepts_an_aliased_root_spelling(tmp_path: Path) -> None:
+    """A graph that spells its root through a symlink alias still confines."""
+    real = tmp_path.resolve() / "real"
+    real.mkdir()
+    alias = tmp_path.resolve() / "alias"
+    alias.symlink_to(real, target_is_directory=True)
+    (real / "Cargo.toml").write_text("[workspace]\nmembers = []\n", encoding="utf-8")
+    manifest = real / "crates" / "alpha" / "Cargo.toml"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text('version = "0.1.0"\n', encoding="utf-8")
+    graph = WorkspaceGraph(
+        workspace_root=alias,
+        crates=(_crate(alias / "crates" / "alpha" / "Cargo.toml"),),
+    )
+
+    _initialize(real, graph)

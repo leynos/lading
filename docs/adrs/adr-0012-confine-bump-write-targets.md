@@ -195,6 +195,19 @@ Path dependencies outside the workspace are not members and remain Cargo's
 responsibility. A missing dependency manifest fails the preflight, which Cargo
 would also reject.
 
+### 2026-11-23: Literal exclusions and implicit dependency shapes
+
+Cargo treats `[workspace].exclude` entries as literal path prefixes; a wildcard
+character names a directory with that character rather than matching a family.
+Discovery now follows that rule, so an exclusion no longer skips the manifest
+check for a directory Cargo keeps as a member. The implicit-member walk also
+follows the legacy `dev_dependencies` and `build_dependencies` spellings,
+follows `[workspace.dependencies]` paths only when a member inherits them, and
+checks the normalized path Cargo actually opens as well as the declared
+spelling. The metadata payload checks moved to
+`lading/workspace/metadata_validation.py` to keep the TOML and glob policy in
+one module and the metadata schema in another.
+
 ### 2026-11-23: Effective workspace-root manifests and dangling links
 
 Lockfile planning now confines the `Cargo.toml` of each effective workspace

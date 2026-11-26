@@ -214,12 +214,39 @@ def _validate_injected_workspace(root_path: Path, workspace: WorkspaceGraph) -> 
             f"requested workspace root {root_path}"
         )
         raise BumpPreflightError(message)
+    graph_spelling = workspace.workspace_root
     for crate in workspace.crates:
         key = f"workspace member {crate.name!r} manifest"
-        relative = relative_to_root(
-            root_path, crate.manifest_path, key=key, label="manifest"
+        relative = _graph_relative_manifest(
+            root_path, graph_spelling, crate.manifest_path, key=key
         )
         if relative.name != "Cargo.toml":
             message = f"{key} must be named Cargo.toml: {crate.manifest_path}"
             raise UnsafeBumpTargetError(message)
         confine_relative_path(root_path, relative.as_posix(), key=key)
+
+
+def _graph_relative_manifest(
+    root_path: Path,
+    graph_spelling: Path,
+    manifest_path: Path,
+    *,
+    key: str,
+) -> Path:
+    """Return ``manifest_path`` relative to the canonical root.
+
+    An injected graph may name its root through a symlink alias while the
+    confinement root is canonical, so the manifest is made relative to the
+    spelling the caller used. The suffix is then confined beneath the canonical
+    root, which still rejects ``..`` components and symlinked members.
+
+    Returns
+    -------
+    Path
+        The manifest path relative to the canonical workspace root.
+    """
+    try:
+        return manifest_path.relative_to(graph_spelling)
+    except ValueError:
+        pass
+    return relative_to_root(root_path, manifest_path, key=key, label="manifest")

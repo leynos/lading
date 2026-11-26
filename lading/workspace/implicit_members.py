@@ -16,6 +16,7 @@ one is safer than blocking on it.
 """
 
 import collections.abc as cabc
+import dataclasses as dc
 import os
 import stat
 import typing as typ
@@ -35,10 +36,10 @@ from lading.utils.confinement import (
 __all__ = ["read_manifest_text", "validate_implicit_member_manifests"]
 
 _ROOT_MANIFEST = "Cargo.toml"
-_DEPENDENCY_TABLES: typ.Final[tuple[str, ...]] = (
-    "dependencies",
-    "dev-dependencies",
-    "build-dependencies",
+_DEPENDENCY_TABLES: typ.Final[tuple[tuple[str, ...], ...]] = (
+    ("dependencies",),
+    ("dev-dependencies", "dev_dependencies"),
+    ("build-dependencies", "build_dependencies"),
 )
 
 
@@ -97,10 +98,16 @@ def validate_implicit_member_manifests(
         symlinked component.
     """  # ruff: ignore[docstring-extraneous-exception]  # raised by helpers
     frontier = _initial_frontier(member_parts)
-    seen = set(frontier)
+    discovery = _Discovery(
+        root=root,
+        seen=set(frontier),
+        inherited=set(),
+    )
     while frontier:
         parts = frontier.pop()
-        frontier.extend(_dependency_parts(root, parts, seen))
+        document = _parse_manifest(root, parts)
+        discovery.inherited.update(_inherited_names(document))
+        frontier.extend(discovery.dependency_parts(parts, document))
 
 
 def _initial_frontier(
@@ -114,20 +121,28 @@ def _initial_frontier(
     return frontier
 
 
-def _dependency_parts(
-    root: Path,
-    parts: tuple[str, ...],
-    seen: set[tuple[str, ...]],
-) -> list[tuple[str, ...]]:
-    """Return newly discovered in-workspace dependency directories."""
-    discovered: list[tuple[str, ...]] = []
-    for raw in _path_dependencies(_parse_manifest(root, parts)):
-        resolved = _resolve_dependency(root, parts, raw)
-        if resolved is None or resolved in seen:
-            continue
-        seen.add(resolved)
-        discovered.append(resolved)
-    return discovered
+@dc.dataclass(slots=True)
+class _Discovery:
+    """State threaded through implicit-member discovery."""
+
+    root: Path
+    seen: set[tuple[str, ...]]
+    inherited: set[str]
+
+    def dependency_parts(
+        self,
+        parts: tuple[str, ...],
+        document: cabc.Mapping[str, typ.Any],
+    ) -> list[tuple[str, ...]]:
+        """Return newly discovered in-workspace dependency directories."""
+        discovered: list[tuple[str, ...]] = []
+        for raw in _path_dependencies(document, inherited=self.inherited):
+            resolved = _resolve_dependency(self.root, parts, raw)
+            if resolved is None or resolved in self.seen:
+                continue
+            self.seen.add(resolved)
+            discovered.append(resolved)
+        return discovered
 
 
 def _parse_manifest(
@@ -148,28 +163,102 @@ def _parse_manifest(
 
 def _path_dependencies(
     document: cabc.Mapping[str, typ.Any],
+    *,
+    inherited: cabc.Set[str],
 ) -> cabc.Iterator[str]:
-    """Yield each path dependency declared by one manifest."""
+    """Yield each path dependency the manifest's package actually declares.
+
+    A ``[workspace.dependencies]`` entry only becomes a member when the package
+    inherits it with ``workspace = true``; an unused entry never makes Cargo
+    open the target manifest, so it is not followed.
+
+    Yields
+    ------
+    str
+        Each declared dependency path, in declaration order.
+    """
     yield from _table_paths(document, _DEPENDENCY_TABLES)
+    for target in _target_tables(document):
+        yield from _table_paths(target, _DEPENDENCY_TABLES)
+    workspace = document.get("workspace")
+    if isinstance(workspace, cabc.Mapping):
+        yield from _workspace_paths(workspace, inherited)
+
+
+def _inherited_names(
+    document: cabc.Mapping[str, typ.Any],
+) -> frozenset[str]:
+    """Return the ``[workspace.dependencies]`` names this package inherits."""
+    names: set[str] = set()
+    tables = [document, *_target_tables(document)]
+    for table in tables:
+        for spellings in _DEPENDENCY_TABLES:
+            dependencies = _first_table(table, spellings)
+            if dependencies is not None:
+                names.update(_inheriting_names(dependencies))
+    return frozenset(names)
+
+
+def _target_tables(
+    document: cabc.Mapping[str, typ.Any],
+) -> cabc.Iterator[cabc.Mapping[str, typ.Any]]:
+    """Yield each ``[target.'cfg(...)']`` mapping."""
     targets = document.get("target")
     if isinstance(targets, cabc.Mapping):
         for target in targets.values():
             if isinstance(target, cabc.Mapping):
-                yield from _table_paths(target, _DEPENDENCY_TABLES)
-    workspace = document.get("workspace")
-    if isinstance(workspace, cabc.Mapping):
-        yield from _table_paths(workspace, ("dependencies",))
+                yield typ.cast("cabc.Mapping[str, typ.Any]", target)
+
+
+def _inheriting_names(
+    table: cabc.Mapping[str, typ.Any],
+) -> cabc.Iterator[str]:
+    """Yield dependency names declared with ``workspace = true``."""
+    for name, specification in table.items():
+        if (
+            isinstance(specification, cabc.Mapping)
+            and specification.get("workspace") is True
+        ):
+            yield name
+
+
+def _workspace_paths(
+    workspace: cabc.Mapping[str, typ.Any],
+    inherited: cabc.Set[str],
+) -> cabc.Iterator[str]:
+    """Yield the paths of inherited ``[workspace.dependencies]`` entries."""
+    table = workspace.get("dependencies")
+    if not isinstance(table, cabc.Mapping):
+        return
+    for name, specification in table.items():
+        if name not in inherited:
+            continue
+        path = _specification_path(specification)
+        if path is not None:
+            yield path
 
 
 def _table_paths(
     mapping: cabc.Mapping[str, typ.Any],
-    names: cabc.Iterable[str],
+    names: cabc.Iterable[tuple[str, ...]],
 ) -> cabc.Iterator[str]:
-    """Yield ``path`` values from the named dependency tables."""
-    for name in names:
+    """Yield ``path`` values from the first declared spelling of each table."""
+    for spellings in names:
+        table = _first_table(mapping, spellings)
+        if table is not None:
+            yield from _specification_paths(table)
+
+
+def _first_table(
+    mapping: cabc.Mapping[str, typ.Any],
+    spellings: cabc.Iterable[str],
+) -> cabc.Mapping[str, typ.Any] | None:
+    """Return the first table present under any accepted spelling."""
+    for name in spellings:
         table = mapping.get(name)
         if isinstance(table, cabc.Mapping):
-            yield from _specification_paths(table)
+            return typ.cast("cabc.Mapping[str, typ.Any]", table)
+    return None
 
 
 def _specification_paths(
@@ -194,15 +283,52 @@ def _resolve_dependency(
     base_parts: tuple[str, ...],
     raw: str,
 ) -> tuple[str, ...] | None:
-    """Return a path dependency's in-workspace components, or ``None``."""
+    """Return the in-workspace components of a path dependency, or ``None``.
+
+    Two spellings matter. The declared spelling receives the component checks,
+    and the normalised path is what Cargo actually opens: redundant steps such
+    as ``a/../dep`` are removed before lookup, so a missing ``a`` must not hide
+    ``dep`` from the preflight.
+
+    Returns
+    -------
+    tuple[str, ...] | None
+        The dependency's directory components below ``root``, or ``None`` when
+        it lies outside the workspace or names something that is not a
+        directory.
+    """
     candidate = Path(raw)
     if candidate.is_absolute():
         try:
             relative = candidate.relative_to(root)
         except ValueError:
             return None
-        return _walk_components(root, (), relative.parts, raw)
-    return _walk_components(root, base_parts, candidate.parts, raw)
+        start: tuple[str, ...] = ()
+        components = relative.parts
+    else:
+        start = base_parts
+        components = candidate.parts
+    declared = _walk_components(root, start, components, raw)
+    effective = _normalised_parts(start, components)
+    if effective is None:
+        return declared
+    return _walk_components(root, (), effective, raw) or declared
+
+
+def _normalised_parts(
+    base_parts: tuple[str, ...],
+    components: cabc.Sequence[str],
+) -> tuple[str, ...] | None:
+    """Return the components Cargo looks up after removing redundant steps."""
+    parts = list(base_parts)
+    for component in components:
+        if component == "..":
+            if not parts:
+                return None
+            parts.pop()
+            continue
+        parts.append(component)
+    return tuple(parts)
 
 
 def _walk_components(

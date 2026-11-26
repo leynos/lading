@@ -95,10 +95,15 @@ def expand_confined_glob(
         link_predicate=policy.link_predicate,
     )
     expansion.expand(parts, prefix=())
-    if not expansion.found and policy.unmatched is UnmatchedPolicy.ERROR:
+    if policy.unmatched is UnmatchedPolicy.ERROR and not _matched(expansion):
         message = f"{key}: pattern matched nothing: {pattern!r}"
         raise MissingBumpTargetError(message)
     return _contained_matches(root, key, expansion.found)
+
+
+def _matched(expansion: _Expansion) -> bool:
+    """Return whether the expansion matched a candidate of any kind."""
+    return bool(expansion.found) or expansion.matched_any
 
 
 def _is_directory_selector(

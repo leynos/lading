@@ -34,7 +34,7 @@ from lading.utils.confinement import (
     confine_relative_path,
     establish_workspace_root,
     expand_confined_glob,
-    relative_to_root,
+    validate_relative_pattern,
 )
 from lading.workspace.graph_build import build_workspace_graph
 from lading.workspace.implicit_members import (
@@ -42,10 +42,11 @@ from lading.workspace.implicit_members import (
     validate_implicit_member_manifests,
 )
 from lading.workspace.metadata import load_cargo_metadata
-from lading.workspace.models import WorkspaceGraph, WorkspaceModelError
+from lading.workspace.metadata_validation import validate_reported_member_manifests
 
 if typ.TYPE_CHECKING:  # pragma: no cover - import-time typing aids only
     from lading.runtime import CommandRunner
+    from lading.workspace.models import WorkspaceGraph
 
 __all__ = ["load_bump_workspace"]
 
@@ -101,7 +102,7 @@ def load_bump_workspace(
     validate_implicit_member_manifests(root, declared)
     metadata = load_cargo_metadata(root, runner=runner, no_deps=True)
     _require_cargo_workspace_root(root, metadata)
-    reported = _validate_reported_member_manifests(root, metadata)
+    reported = validate_reported_member_manifests(root, metadata)
     _cross_check_declared_members(declared, reported)
     return build_workspace_graph(metadata)
 
@@ -192,9 +193,20 @@ def _member_matches(
 
 
 def _is_root_member(pattern: str) -> bool:
-    """Return whether ``pattern`` explicitly names the workspace root."""
-    stripped = pattern.strip()
-    return stripped in {".", "./", ".\\"}
+    """Return whether ``pattern`` explicitly names the workspace root.
+
+    Whitespace is significant: ``" . "`` names a directory whose name contains
+    spaces, while ``"."`` and ``"./"`` name the root itself. ``Path`` collapses
+    dot components but preserves everything else.
+
+    Returns
+    -------
+    bool
+        ``True`` when the pattern leaves no component below the root.
+    """
+    if not pattern.strip():
+        return False
+    return Path(pattern).parts == ()
 
 
 def _is_excluded(
@@ -223,20 +235,23 @@ def _expand_exclusions(
     root: Path,
     excludes: cabc.Sequence[str],
 ) -> set[tuple[str, ...]]:
-    """Return the directory components excluded from the member set."""
-    excluded: set[tuple[str, ...]] = set()
-    for index, pattern in enumerate(excludes):
-        matches = expand_confined_glob(
-            root,
-            pattern,
-            key=f"{_EXCLUDES_KEY}[{index}]",
-            options=GlobOptions(
-                expect=MatchExpectation.DIRECTORY,
-                unmatched=UnmatchedPolicy.IGNORE,
-            ),
-        )
-        excluded.update(match.parts for match in matches)
-    return excluded
+    """Return the literal directory components excluded from the member set.
+
+    Cargo treats ``exclude`` entries as literal path prefixes and does not
+    expand wildcards there, so a wildcard character names a directory with that
+    character in its name. No filesystem access is needed: an exclusion may
+    name a directory that does not exist.
+
+    Returns
+    -------
+    set[tuple[str, ...]]
+        Excluded directory component tuples.
+    """
+    del root
+    return {
+        validate_relative_pattern(pattern, key=f"{_EXCLUDES_KEY}[{index}]")
+        for index, pattern in enumerate(excludes)
+    }
 
 
 def _require_member_manifest(
@@ -275,126 +290,6 @@ def _require_cargo_workspace_root(
             "that directory) so both agree"
         )
         raise BumpPreflightError(message)
-
-
-def _validate_reported_member_manifests(
-    root: Path,
-    metadata: cabc.Mapping[str, typ.Any],
-) -> set[tuple[str, ...]]:
-    """Validate every Cargo-reported member manifest.
-
-    Returns
-    -------
-    set[tuple[str, ...]]
-        The parent directory components of each validated manifest, so the
-        result is comparable with the declared member directories.
-
-    Raises
-    ------
-    BumpPreflightError
-        If the metadata payload is malformed.
-    WorkspaceModelError
-        If a member identifier is missing from the package list.
-    """  # ruff: ignore[docstring-extraneous-exception]  # raised by helpers
-    packages_by_id = _packages_by_id(metadata)
-    member_ids = _metadata_sequence(
-        metadata.get("workspace_members"), "workspace_members"
-    )
-    return {
-        _reported_member(root, packages_by_id, member_id) for member_id in member_ids
-    }
-
-
-def _packages_by_id(
-    metadata: cabc.Mapping[str, typ.Any],
-) -> dict[str, cabc.Mapping[str, typ.Any]]:
-    """Return the metadata package entries keyed by identifier."""
-    packages = _metadata_sequence(metadata.get("packages"), "packages")
-    packages_by_id: dict[str, cabc.Mapping[str, typ.Any]] = {}
-    for package in packages:
-        package_mapping = _metadata_mapping(package, "packages[]")
-        package_id = package_mapping.get("id")
-        if not isinstance(package_id, str):
-            message = "cargo metadata package id must be a string"
-            raise BumpPreflightError(message)
-        packages_by_id[package_id] = package_mapping
-    return packages_by_id
-
-
-def _reported_member(
-    root: Path,
-    packages_by_id: cabc.Mapping[str, cabc.Mapping[str, typ.Any]],
-    member_id: object,
-) -> tuple[str, ...]:
-    """Return one reported member's validated manifest directory."""
-    if not isinstance(member_id, str):
-        message = "cargo metadata workspace_members entries must be strings"
-        raise BumpPreflightError(message)
-    package = packages_by_id.get(member_id)
-    if package is None:
-        message = f"workspace member {member_id!r} missing from package list"
-        raise WorkspaceModelError(message)
-    return _validate_member_manifest(root, package, member_id)
-
-
-def _metadata_sequence(value: object, field: str) -> cabc.Sequence[object]:
-    """Return ``value`` as a metadata sequence, rejecting a malformed payload."""
-    if isinstance(value, str | bytes) or not isinstance(value, cabc.Sequence):
-        message = f"cargo metadata {field} must be a sequence"
-        raise BumpPreflightError(message)
-    return value
-
-
-def _metadata_mapping(value: object, field: str) -> cabc.Mapping[str, typ.Any]:
-    """Return ``value`` as a metadata mapping, rejecting a malformed payload."""
-    if not isinstance(value, cabc.Mapping):
-        message = f"cargo metadata {field} entries must be mappings"
-        raise BumpPreflightError(message)
-    return typ.cast("cabc.Mapping[str, typ.Any]", value)
-
-
-def _validate_member_manifest(
-    root: Path,
-    package: cabc.Mapping[str, typ.Any],
-    member_id: str,
-) -> tuple[str, ...]:
-    """Return the confined directory components of one member's manifest.
-
-    Parameters
-    ----------
-    root : Path
-        Canonical workspace root.
-    package : cabc.Mapping[str, typ.Any]
-        One ``cargo metadata`` package entry.
-    member_id : str
-        Package identifier used in diagnostics.
-
-    Returns
-    -------
-    tuple[str, ...]
-        The member directory's components below the workspace root.
-
-    Raises
-    ------
-    WorkspaceModelError
-        If the package's ``manifest_path`` is not a path.
-    BumpPreflightError
-        If the manifest is not named ``Cargo.toml``.
-    UnsafeBumpTargetError
-        If the manifest escapes the workspace or a component is a symlink.
-    """  # ruff: ignore[docstring-extraneous-exception]  # raised by the shared helpers
-    manifest_value = package.get("manifest_path")
-    if not isinstance(manifest_value, str | os.PathLike):
-        message = f"workspace member {member_id!r} manifest_path must be a path"
-        raise WorkspaceModelError(message)
-    manifest_path = Path(manifest_value).expanduser()
-    key = f"workspace member {member_id!r} manifest"
-    relative = relative_to_root(root, manifest_path, key=key, label="manifest")
-    if relative.name != _ROOT_MANIFEST:
-        message = f"{key} must be named {_ROOT_MANIFEST}: {manifest_path}"
-        raise BumpPreflightError(message)
-    confined = confine_relative_path(root, relative.as_posix(), key=key)
-    return confined.parts[:-1]
 
 
 def _cross_check_declared_members(

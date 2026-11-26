@@ -140,9 +140,6 @@ def assert_rejected(
     assert sentinel.read_text(encoding="utf-8") == "external\n", (
         "the sentinel text must be untouched"
     )
-    assert not (workspace.root / "Cargo.lock").exists(), (
-        "a rejected plan must not create a lockfile"
-    )
     assert runner.update_calls() == [], "a rejected plan must not run cargo update"
 
 

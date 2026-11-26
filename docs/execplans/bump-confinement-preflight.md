@@ -525,6 +525,14 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
   `glob_expansion` and `glob`, complexity was extracted from the config,
   planning, discovery, root and example helpers, duplicated test families were
   parametrized, and one import-preamble duplication exception was recorded.
+- [x] 2026-11-23: Tenth CodeRabbit review cleared. Exclusions follow Cargo's
+  literal-prefix rule, legacy `dev_dependencies`/`build_dependencies` tables
+  are followed, workspace dependency paths are followed only when a member
+  inherits them, the Cargo-normalized dependency path is checked, the metadata
+  payload validation moved to `metadata_validation.py`, an injected graph may
+  spell its root through a symlink alias, example markers work inside list
+  items, and the rejection harness tolerates an existing lockfile. The review's
+  `uv.lock` finding was already satisfied: the lock records `lading 0.4.0b1`.
 - [ ] EP-M5 release: tag and release `v0.4.0b1` after review convergence, then
   record the tag commit on issue #409.
 
@@ -622,8 +630,21 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
   scan engine. Splitting keeps each module under the CodeScene complexity
   threshold without widening any public import.
 - `relative_to_root` keeps `..` components, so `prove_containment` also tests
-  presence with `lexists`: a dangling final link must reach strict resolution
+  presence with `lstat`: a dangling final link must reach strict resolution
   rather than look absent.
+- Cargo treats `[workspace].exclude` entries as literal path prefixes and does
+  not expand wildcards there. The preflight now follows Cargo, so a wildcard
+  exclude does not skip a real directory's manifest check.
+- Cargo reads legacy `dev_dependencies` and `build_dependencies` spellings from
+  pre-2024 editions, so the implicit-member walk follows the first declared
+  spelling of each table.
+- A `[workspace.dependencies]` path is followed only when a member inherits the
+  dependency with `workspace = true`; an unused entry never makes Cargo open
+  the target manifest.
+- Cargo removes redundant steps before a path lookup, so the preflight checks
+  both the declared spelling and the normalized path.
+- The metadata payload schema checks live in `metadata_validation.py`; the
+  discovery module keeps the TOML and glob policy.
 
 ## Outcomes & retrospective
 
