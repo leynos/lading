@@ -300,7 +300,7 @@ class ArchiveVerifier:
         self._record(
             crate,
             ArchiveOutcome.ALREADY_PUBLISHED,
-            "the identical archive is already published; skipping cargo publish",
+            "skipping cargo publish",
         )
         return True
 
