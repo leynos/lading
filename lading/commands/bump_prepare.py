@@ -31,8 +31,8 @@ from lading.utils.confinement import (
     ConfinedPath,
     ConfineOptions,
     confine_relative_path,
-    relative_to_root,
 )
+from lading.workspace.graph_paths import graph_relative_manifest
 
 if typ.TYPE_CHECKING:  # pragma: no cover - import-time typing aids only
     from lading.commands.bump_manifests import _BumpContext
@@ -128,8 +128,11 @@ def _request_for_crate(
 ) -> tuple[_ManifestRequest, bool]:
     """Return the request for ``crate``'s manifest and whether it is new."""
     key = f"workspace member {crate.name!r} manifest"
-    relative = relative_to_root(
-        context.root_path, crate.manifest_path, key=key, label="manifest"
+    relative = graph_relative_manifest(
+        context.root_path,
+        context.workspace.workspace_root,
+        crate.manifest_path,
+        key=key,
     )
     confined = confine_relative_path(context.root_path, relative.as_posix(), key=key)
     existing = requests_by_parts.get(confined.parts)

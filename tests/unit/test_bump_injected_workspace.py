@@ -9,7 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from lading.commands import bump
+from lading.commands import bump, bump_prepare
+from lading.commands.bump_plan import PlanBuilder
 from lading.utils.confinement import BumpPreflightError, UnsafeBumpTargetError
 from lading.workspace import WorkspaceCrate, WorkspaceGraph
 from tests.helpers.workspace_builders import _make_config
@@ -84,3 +85,36 @@ def test_injected_graph_accepts_an_aliased_root_spelling(tmp_path: Path) -> None
     )
 
     _initialize(real, graph)
+
+
+def test_manifest_preparation_accepts_an_aliased_root_spelling(
+    tmp_path: Path,
+) -> None:
+    """Preparation rebases an alias-spelled manifest like validation does."""
+    real = tmp_path.resolve() / "real"
+    real.mkdir()
+    alias = tmp_path.resolve() / "alias"
+    alias.symlink_to(real, target_is_directory=True)
+    (real / "Cargo.toml").write_text(
+        '[workspace]\nmembers = ["crates/alpha"]\n', encoding="utf-8"
+    )
+    manifest = real / "crates" / "alpha" / "Cargo.toml"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(
+        '[package]\nname = "alpha"\nversion = "0.1.0"\n', encoding="utf-8"
+    )
+    graph = WorkspaceGraph(
+        workspace_root=alias,
+        crates=(_crate(alias / "crates" / "alpha" / "Cargo.toml"),),
+    )
+    context = bump._initialize_bump_context(
+        real, bump.BumpOptions(configuration=_make_config(), workspace=graph)
+    )
+    builder = PlanBuilder(root=real)
+
+    bump_prepare.prepare_manifests(context, "1.2.3", builder)
+
+    plan = builder.build(target_version="1.2.3", lockfiles=None)
+    assert "crates/alpha/Cargo.toml" in [
+        proposal.path.display for proposal in plan.proposals
+    ], "the alias-spelled member manifest must be prepared"

@@ -19,7 +19,6 @@ from pathlib import Path, PurePosixPath
 
 from lading.commands.bump_lockfile_config import configured_lockfile_override
 from lading.commands.bump_lockfile_manifests import merge_discovered_manifests
-from lading.commands.bump_lockfile_paths import LockfileRegenerationError
 from lading.utils.confinement import (
     BumpPreflightError,
     ConfinedPath,
@@ -52,11 +51,16 @@ class LockfilePlan:
         Effective workspace-root manifests to pass to ``cargo update``.
     lockfiles : tuple[Path, ...]
         Corresponding ``Cargo.lock`` destinations, in the same order.
+    environ : cabc.Mapping[str, str] | None
+        Snapshot of the Cargo-relevant environment used to validate the plan,
+        or ``None`` for a plan built without an environment. Regeneration
+        refuses to run when the live environment differs.
     """
 
     root: Path
     manifests: tuple[Path, ...]
     lockfiles: tuple[Path, ...]
+    environ: cabc.Mapping[str, str] | None = None
 
 
 def reject_lockfile_override(
@@ -130,22 +134,21 @@ def plan_lockfiles(
     Raises
     ------
     BumpPreflightError
-        If a manifest is unsafe or missing, Cargo reports an unexpected
-        workspace root, or a lockfile-path override is set.
+        If a manifest is unsafe, missing, or not named ``Cargo.toml``, Cargo
+        reports an unexpected workspace root, or a lockfile-path override is
+        set.
     BumpTargetExaminationError
         If a configured manifest or Cargo query cannot be examined.
-    LockfileRegenerationError
-        If a merged manifest is not named ``Cargo.toml``.
     """  # ruff: ignore[docstring-extraneous-exception]  # delegated to the helpers
-    reject_lockfile_override(
-        os.environ if environ is None else environ,
-        workspace_root,
-    )
+    environment = os.environ if environ is None else environ
+    reject_lockfile_override(environment, workspace_root)
     merged = merge_discovered_manifests(
         workspace_root, lockfile_manifests, runner=runner
     )
     validated = _validated_manifests(workspace_root, merged)
-    return _resolve_destinations(workspace_root, validated, runner=runner)
+    return _resolve_destinations(
+        workspace_root, validated, runner=runner, environ=environment
+    )
 
 
 def _validated_manifests(
@@ -166,7 +169,7 @@ def _validated_manifests(
             message = (
                 f"Lockfile manifest path must point to a Cargo.toml file: {pattern}"
             )
-            raise LockfileRegenerationError(message)
+            raise BumpPreflightError(message)
         if confined.parts in seen:
             continue
         seen.add(confined.parts)
@@ -179,6 +182,7 @@ def _resolve_destinations(
     manifests: cabc.Sequence[ConfinedPath],
     *,
     runner: CommandRunner | None,
+    environ: cabc.Mapping[str, str],
 ) -> LockfilePlan:
     """Map each manifest to its effective workspace root and lockfile."""
     destinations: dict[tuple[str, ...], tuple[Path, Path]] = {}
@@ -191,7 +195,12 @@ def _resolve_destinations(
         )
     workspace_manifests = tuple(entry[0] for entry in destinations.values())
     lockfiles = tuple(entry[1] for entry in destinations.values())
-    return LockfilePlan(root=root, manifests=workspace_manifests, lockfiles=lockfiles)
+    return LockfilePlan(
+        root=root,
+        manifests=workspace_manifests,
+        lockfiles=lockfiles,
+        environ=dict(environ),
+    )
 
 
 def _effective_workspace_root(

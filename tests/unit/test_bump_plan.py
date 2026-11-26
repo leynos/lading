@@ -312,7 +312,13 @@ def test_distinct_missing_destinations_keep_distinct_identities(
     """Two absent READMEs under different parents are separate writes."""
     root = tmp_path.resolve()
     (root / "crates" / "Foo").mkdir(parents=True)
-    (root / "crates" / "foo").mkdir()
+    lower = root / "crates" / "foo"
+    try:
+        lower.mkdir()
+    except FileExistsError:
+        pytest.skip("the filesystem is case-insensitive")
+    if lower.resolve() == (root / "crates" / "Foo").resolve():
+        pytest.skip("the filesystem is case-insensitive")
     builder = PlanBuilder(root=root)
 
     builder.propose(
@@ -349,6 +355,6 @@ def test_readme_report_order_is_sorted_by_path(tmp_path: Path) -> None:
     changes = changes_from_plan(plan)
 
     assert [path.as_posix() for path in changes.transposed_readmes] == [
-        str(root / "crates/a/README.md"),
-        str(root / "crates/z/README.md"),
+        (root / "crates/a/README.md").as_posix(),
+        (root / "crates/z/README.md").as_posix(),
     ], "the README report must be sorted by path"

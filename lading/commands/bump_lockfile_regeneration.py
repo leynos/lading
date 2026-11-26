@@ -21,6 +21,7 @@ regenerate_lockfiles(
 import collections.abc as cabc
 import dataclasses as dc
 import logging
+import os
 import shlex
 import time
 import typing as typ
@@ -149,6 +150,7 @@ def regenerate_planned(
     *,
     runner: CommandRunner | None = None,
     clock: cabc.Callable[[], float] = time.perf_counter,
+    environ: cabc.Mapping[str, str] | None = None,
 ) -> tuple[Path, ...]:
     """Regenerate the lockfiles named by a validated plan.
 
@@ -171,10 +173,12 @@ def regenerate_planned(
     Raises
     ------
     LockfileRegenerationError
-        After every manifest has been attempted, if any ``cargo update``
-        failed. A lone failure re-raises the original cargo error unchanged;
-        multiple failures raise one aggregated error listing each manifest and
-        its repair command.
+        If the Cargo-relevant environment differs from the environment the plan
+        was validated against, or after every manifest has been attempted, if
+        any ``cargo update`` failed. When only one manifest was attempted, its
+        original cargo error is re-raised unchanged; when more than one was
+        attempted, one aggregated error lists each manifest and its repair
+        command.
 
     Notes
     -----
@@ -183,6 +187,7 @@ def regenerate_planned(
     manifest fails. Validation happened before the first write; an error here
     is an execution failure, not a rejected plan.
     """  # ruff: ignore[docstring-extraneous-exception]  # raised after attempt-all aggregation
+    _require_unchanged_environment(plan, environ)
     command_runner = subprocess_runner if runner is None else runner
     started_at = clock()
     try:
@@ -196,6 +201,35 @@ def regenerate_planned(
     finally:
         metrics.observe_duration(REGENERATE_DURATION_METRIC, clock() - started_at)
     return plan.lockfiles
+
+
+_ENVIRONMENT_KEYS: typ.Final[tuple[str, ...]] = (
+    "CARGO_HOME",
+    "CARGO_RESOLVER_LOCKFILE_PATH",
+)
+
+
+def _require_unchanged_environment(
+    plan: LockfilePlan,
+    environ: cabc.Mapping[str, str] | None,
+) -> None:
+    """Refuse regeneration when the Cargo environment changed after planning."""
+    if plan.environ is None:
+        return
+    current = os.environ if environ is None else environ
+    changed = [
+        name
+        for name in _ENVIRONMENT_KEYS
+        if current.get(name) != plan.environ.get(name)
+    ]
+    if changed:
+        message = (
+            "Cargo environment changed after lockfile planning: "
+            + ", ".join(changed)
+            + "; re-run the bump so the plan is validated against the current "
+            "environment"
+        )
+        raise LockfileRegenerationError(message)
 
 
 def _collect_lockfile_results(

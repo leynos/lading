@@ -56,6 +56,9 @@ class _Expansion:
     _pending: list[tuple[tuple[str, ...], tuple[str, ...]]] = dc.field(
         default_factory=list
     )
+    _visited: set[tuple[tuple[str, ...], tuple[str, ...]]] = dc.field(
+        default_factory=set
+    )
 
     def expand(self, remaining: tuple[str, ...], prefix: tuple[str, ...]) -> None:
         """Expand ``remaining`` starting from the directory ``prefix``.
@@ -67,8 +70,11 @@ class _Expansion:
         """
         self._pending.append((_collapse_recursive(remaining), prefix))
         while self._pending:
-            current, start = self._pending.pop()
-            self._expand_one(current, start)
+            state = self._pending.pop()
+            if state in self._visited:
+                continue
+            self._visited.add(state)
+            self._expand_one(*state)
 
     def _expand_one(
         self,

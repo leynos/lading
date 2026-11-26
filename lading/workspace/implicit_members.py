@@ -334,9 +334,10 @@ def _resolve_dependency(
     """Return the in-workspace components of a path dependency, or ``None``.
 
     Two spellings matter. The declared spelling receives the component checks,
-    and the normalised path is what Cargo actually opens: redundant steps such
-    as ``a/../dep`` are removed before lookup, so a missing ``a`` must not hide
-    ``dep`` from the preflight.
+    and the absolute lexical destination is what Cargo actually opens:
+    redundant steps such as ``a/../dep`` are removed before lookup, so a
+    missing ``a`` must not hide ``dep``, and a path that leaves the root and
+    returns to it is still an in-workspace member.
 
     Returns
     -------
@@ -347,36 +348,27 @@ def _resolve_dependency(
     """
     candidate = Path(raw)
     if candidate.is_absolute():
-        try:
-            relative = candidate.relative_to(root)
-        except ValueError:
-            return None
-        start: tuple[str, ...] = ()
-        components = relative.parts
+        absolute = candidate
+        declared = None
     else:
-        start = base_parts
-        components = candidate.parts
-    declared = _walk_components(root, start, components, raw)
-    effective = _normalised_parts(start, components)
-    if effective is None:
-        return declared
-    return _walk_components(root, (), effective, raw) or declared
+        absolute = root.joinpath(*base_parts, candidate)
+        declared = _walk_components(root, base_parts, candidate.parts, raw)
+    effective = _effective_components(root, absolute, raw)
+    return effective or declared
 
 
-def _normalised_parts(
-    base_parts: tuple[str, ...],
-    components: cabc.Sequence[str],
+def _effective_components(
+    root: Path,
+    absolute: Path,
+    raw: str,
 ) -> tuple[str, ...] | None:
-    """Return the components Cargo looks up after removing redundant steps."""
-    parts = list(base_parts)
-    for component in components:
-        if component == "..":
-            if not parts:
-                return None
-            parts.pop()
-            continue
-        parts.append(component)
-    return tuple(parts)
+    """Return the components Cargo looks up after lexical normalization."""
+    normalised = Path(os.path.normpath(absolute))
+    try:
+        relative = normalised.relative_to(root)
+    except ValueError:
+        return None
+    return _walk_components(root, (), relative.parts, raw)
 
 
 def _walk_components(

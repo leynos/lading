@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from lading.commands.bump_lockfile_paths import LockfileRegenerationError
 from lading.commands.bump_lockfile_planning import LockfilePlan, plan_lockfiles
 from lading.commands.bump_lockfile_regeneration import regenerate_planned
 from lading.utils.confinement import (
@@ -284,4 +285,22 @@ def test_plan_rejects_a_symlinked_effective_root_manifest(tmp_path: Path) -> Non
 
     assert "symlink" in str(excinfo.value), (
         "the diagnostic must identify the symlinked root manifest"
+    )
+
+
+def test_regeneration_rejects_a_changed_cargo_environment(tmp_path: Path) -> None:
+    """A changed CARGO_HOME invalidates the validated plan."""
+    root = tmp_path.resolve()
+    write_workspace(root)
+    runner = RecordingRunner(metadata_root=root)
+    plan = plan_lockfiles(root, (), runner=runner, environ={"CARGO_HOME": "one"})
+
+    with pytest.raises(LockfileRegenerationError) as excinfo:
+        regenerate_planned(plan, runner=runner, environ={"CARGO_HOME": "two"})
+
+    assert "CARGO_HOME" in str(excinfo.value), (
+        "the diagnostic must name the changed environment variable"
+    )
+    assert runner.cargo_update_calls() == [], (
+        "regeneration must not reach Cargo with a stale plan"
     )

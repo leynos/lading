@@ -195,6 +195,18 @@ Path dependencies outside the workspace are not members and remain Cargo's
 responsibility. A missing dependency manifest fails the preflight, which Cargo
 would also reject.
 
+### 2026-11-23: Configuration grammar, environment binding and fence containers
+
+Cargo configuration is parsed with `tomlkit`, because Cargo accepts TOML 1.1
+syntax such as multiline inline tables and Python 3.14's `tomllib` rejects it.
+Include paths are lexically normalized before probing, matching Cargo's removal
+of redundant `..` steps. A `LockfilePlan` records the Cargo-relevant
+environment it was validated against, and regeneration refuses to run when
+`CARGO_HOME` or `CARGO_RESOLVER_LOCKFILE_PATH` changed. An excluded glob match
+has its manifest confined when one already exists, but a missing manifest is
+not an error. Example fences track the list container's indentation separately
+from the opener's own indentation.
+
 ### 2026-11-23: Literal exclusions and implicit dependency shapes
 
 Cargo treats `[workspace].exclude` entries as literal path prefixes; a wildcard

@@ -9,9 +9,12 @@ plan does not name.
 
 import collections.abc as cabc
 import dataclasses as dc
-import tomllib
+import os
 import typing as typ
 from pathlib import Path
+
+from tomlkit import parse as parse_toml
+from tomlkit.exceptions import TOMLKitError
 
 from lading.utils.confinement import BumpPreflightError
 
@@ -203,10 +206,12 @@ def _include_path(path_text: str, config_path: Path) -> Path:
         )
         raise BumpPreflightError(message)
     candidate = Path(path_text)
-    if candidate.is_absolute():
-        return candidate
-    # Cargo resolves an include path against the file that includes it.
-    return config_path.parent / candidate
+    if not candidate.is_absolute():
+        # Cargo resolves an include path against the file that includes it.
+        candidate = config_path.parent / candidate
+    # Cargo removes ``..`` components lexically before probing the path, so a
+    # missing intermediate directory must not hide the file it resolves to.
+    return Path(os.path.normpath(candidate))
 
 
 def _declared_path(document: cabc.Mapping[str, typ.Any]) -> str | None:
@@ -222,10 +227,24 @@ def _declared_path(document: cabc.Mapping[str, typ.Any]) -> str | None:
 
 
 def _load(config_path: Path) -> cabc.Mapping[str, typ.Any]:
-    """Return the parsed configuration file, reporting read failures."""
+    """Return the parsed configuration file, reporting read failures.
+
+    ``tomlkit`` is used rather than :mod:`tomllib` because Cargo accepts TOML
+    1.1 syntax such as multiline inline tables, which Python 3.14's reader
+    rejects. A configuration file Cargo can read must not abort the preflight.
+
+    Returns
+    -------
+    cabc.Mapping[str, typ.Any]
+        The parsed configuration document.
+
+    Raises
+    ------
+    BumpPreflightError
+        If the file cannot be read, decoded, or parsed as TOML.
+    """
     try:
-        with config_path.open("rb") as handle:
-            return tomllib.load(handle)
-    except (OSError, tomllib.TOMLDecodeError) as exc:
+        return parse_toml(config_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, TOMLKitError) as exc:
         message = f"cannot read Cargo configuration {config_path}: {exc}"
         raise BumpPreflightError(message) from exc

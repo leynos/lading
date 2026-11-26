@@ -99,6 +99,7 @@ def _marker_at(raw: str, path: Path, index: int) -> _MarkerContext | None:
     """Return the marker on ``raw``, or ``None`` when it carries none."""
     depth = _quote_depth(raw)
     content = _strip_quotes(raw, depth) or ""
+    list_marker = _LIST_MARKER.match(content)
     marker_text = _LIST_MARKER.sub("", content).strip()
     if not marker_text.startswith("<!-- tested-example:"):
         return None
@@ -106,7 +107,12 @@ def _marker_at(raw: str, path: Path, index: int) -> _MarkerContext | None:
     if match is None:
         message = f"{path}:{index + 1}: malformed tested-example marker"
         raise ValueError(message)
-    return _MarkerContext(path=path, identifier=match.group(1), depth=depth)
+    return _MarkerContext(
+        path=path,
+        identifier=match.group(1),
+        depth=depth,
+        container_indent=list_marker.end() if list_marker else 0,
+    )
 
 
 def _read_marked_example(
@@ -133,6 +139,7 @@ def _read_marked_example(
         length=length,
         indent=_indentation(opener),
         depth=marker.depth,
+        container_indent=marker.container_indent,
     )
     body, fence_end = _read_fence_body(lines, fence_start + 1, marked_fence)
     example = MarkedExample(
@@ -181,11 +188,12 @@ def _fence_delimiter(line: str) -> tuple[str, int] | None:
 
 @dc.dataclass(frozen=True, slots=True)
 class _MarkerContext:
-    """The marker that opened an example and its container depth."""
+    """The marker that opened an example and its container context."""
 
     path: Path
     identifier: str
     depth: int
+    container_indent: int
 
 
 def _next_fence_line(
@@ -220,6 +228,7 @@ class _MarkedFence:
     length: int
     indent: int
     depth: int
+    container_indent: int
 
 
 def _read_fence_body(
@@ -233,7 +242,12 @@ def _read_fence_body(
         content = _strip_quotes(lines[index], fence.depth)
         if content is None:
             break
-        if _closes_fence(content, fence.character, fence.length, fence.indent):
+        if _closes_fence(
+            content,
+            fence.character,
+            fence.length,
+            fence.container_indent,
+        ):
             return body, index
         body.append(_dedent(content, fence.indent))
     message = (
@@ -246,20 +260,21 @@ def _closes_fence(
     line: str,
     character: str,
     length: int,
-    opener_indent: int,
+    container_indent: int,
 ) -> bool:
     """Return whether ``line`` closes a fence of ``character`` and ``length``.
 
     GitHub-flavoured Markdown permits at most three leading spaces relative to
-    the container. A fence opened inside a list item already carries the list
-    item's indentation, so the opener's indentation is the base for the limit.
+    the container. A list item's marker sets the container indentation; a
+    top-level fence has none, so its opener's own indentation does not extend
+    the limit.
 
     Returns
     -------
     bool
         Whether ``line`` closes the fence.
     """
-    allowed = opener_indent + _MAX_FENCE_INDENT
+    allowed = container_indent + _MAX_FENCE_INDENT
     if _indentation(line) > allowed:
         return False
     stripped = line.strip()

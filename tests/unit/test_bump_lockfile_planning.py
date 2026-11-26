@@ -9,7 +9,6 @@ from pathlib import Path
 
 import pytest
 
-from lading.commands.bump_lockfile_paths import LockfileRegenerationError
 from lading.commands.bump_lockfile_planning import plan_lockfiles
 from lading.utils.confinement import (
     BumpPreflightError,
@@ -188,7 +187,7 @@ def test_plan_rejects_a_manifest_not_named_cargo_toml(tmp_path: Path) -> None:
     write_package(root, "fixtures/nested/other.toml", standalone=True)
     runner = RecordingRunner(metadata_root=root)
 
-    with pytest.raises(LockfileRegenerationError) as excinfo:
+    with pytest.raises(BumpPreflightError) as excinfo:
         plan_lockfiles(root, ("fixtures/nested/other.toml",), runner=runner, environ={})
 
     assert "Cargo.toml" in str(excinfo.value), (

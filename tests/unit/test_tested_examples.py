@@ -184,3 +184,19 @@ def test_loader_accepts_a_closing_fence_indented_within_the_container(
     assert example.body == "print(1)", (
         "the closing fence must close the list-contained example"
     )
+
+
+def test_loader_keeps_an_over_indented_delimiter_as_body_text(
+    tmp_path: Path,
+) -> None:
+    """A four-space delimiter in a two-space top-level example is body text."""
+    path = _write(
+        tmp_path,
+        "<!-- tested-example: top -->\n  ```python\n  print(1)\n    ```\n  ```\n",
+    )
+
+    example = load_tested_examples(path)["top"]
+
+    assert example.body == "print(1)\n  ```", (
+        "only a fence indented within the container may close the example"
+    )

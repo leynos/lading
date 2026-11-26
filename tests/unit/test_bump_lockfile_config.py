@@ -218,3 +218,39 @@ def test_the_repository_checks_the_inherited_environment(
     assert "CARGO_RESOLVER_LOCKFILE_PATH" in str(excinfo.value), (
         "the inherited environment override must be rejected"
     )
+
+
+def test_a_multiline_inline_table_is_accepted(tmp_path: Path) -> None:
+    """Cargo's TOML 1.1 syntax must not abort the preflight."""
+    root = tmp_path.resolve()
+    write_workspace(root)
+    _write_config(
+        root,
+        '[env]\nFOO = {\n  value = "bar",\n  force = true,\n}\n',
+    )
+    runner = RecordingRunner(metadata_root=root)
+
+    plan = plan_lockfiles(root, (), runner=runner, environ={})
+
+    assert plan.lockfiles == (root / "Cargo.lock",), (
+        "a configuration file Cargo can read must not be rejected"
+    )
+
+
+def test_an_include_path_is_normalized_before_probing(tmp_path: Path) -> None:
+    """``missing/../redirect.toml`` resolves to the file Cargo loads."""
+    root = tmp_path.resolve()
+    write_workspace(root)
+    _write_config(
+        root,
+        'include = [{ path = "missing/../redirect.toml", optional = true }]\n',
+    )
+    redirect = _write_redirect(root / ".cargo" / "redirect.toml")
+    runner = RecordingRunner(metadata_root=root)
+
+    with pytest.raises(BumpPreflightError) as excinfo:
+        plan_lockfiles(root, (), runner=runner, environ={})
+
+    assert str(redirect) in str(excinfo.value), (
+        "the normalized include target must be inspected"
+    )

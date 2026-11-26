@@ -534,6 +534,18 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
   spell its root through a symlink alias, example markers work inside list
   items, and the rejection harness tolerates an existing lockfile. The review's
   `uv.lock` finding was already satisfied: the lock records `lading 0.4.0b1`.
+- [x] 2026-11-23: Twelfth CodeRabbit review cleared. Cargo configuration is
+  read with `tomlkit`, so TOML 1.1 multiline inline tables do not abort the
+  preflight; include paths are lexically normalized before probing. Lockfile
+  plans record their validated environment and regeneration refuses a changed
+  one. Excluded glob matches still have an existing manifest checked. Implicit
+  dependencies are resolved by their absolute lexical destination, workspace
+  dependencies are re-resolved to closure, and preparation rebases
+  alias-spelled manifests like validation. Glob traversal deduplicates state
+  pairs, and example fences use the list container's indentation. The fence
+  processor moved to `bump_docs_fences`, discovery test setup is shared, and
+  the port and migration docs state the required members and repair-command
+  working directory.
 - [ ] EP-M5 release: tag and release `v0.4.0b1` after review convergence, then
   record the tag commit on issue #409.
 
@@ -646,6 +658,20 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
   both the declared spelling and the normalized path.
 - The metadata payload schema checks live in `metadata_validation.py`; the
   discovery module keeps the TOML and glob policy.
+- Cargo configuration is parsed with `tomlkit` rather than `tomllib`: Cargo
+  accepts TOML 1.1 syntax such as multiline inline tables, which Python 3.14's
+  reader rejects. A configuration Cargo can read must not abort the preflight.
+- Include paths are lexically normalized before probing, matching Cargo's
+  `..` removal; symlinks are still not resolved.
+- `LockfilePlan` records the Cargo-relevant environment it was validated
+  against, and regeneration refuses to run when `CARGO_HOME` or the override
+  variable changed.
+- An excluded glob match's manifest is confined when it already exists, but a
+  missing manifest is not an error: Cargo may parse an existing one when an
+  explicit member covers the directory.
+- Example fences track the list container's indentation separately from the
+  opener's own indentation, so only a container-relative closing fence ends an
+  example.
 
 ## Outcomes & retrospective
 

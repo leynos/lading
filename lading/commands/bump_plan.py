@@ -312,7 +312,9 @@ def commit_plan(plan: BumpPlan) -> None:
     Each file is replaced atomically and independently. A failure part-way
     through leaves earlier writes in place; this function deliberately offers
     no rollback, because validation-before-mutation is the guarantee this
-    workflow provides.
+    workflow provides. The guarantee applies to the paths as validated: a
+    concurrent process that replaces a validated parent with a symlink after
+    validation is not defended against.
     """
     for proposal in plan.proposals:
         bump_toml.write_atomic_text(proposal.path.path, proposal.content)

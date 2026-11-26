@@ -5,8 +5,6 @@ before the graph is built; these examples exercise the rejection paths.
 """
 
 import collections.abc as cabc
-import dataclasses as dc
-import json
 import typing as typ
 from pathlib import Path
 
@@ -17,85 +15,20 @@ from lading.utils.confinement import (
     BumpTargetExaminationError,
     UnsafeBumpTargetError,
 )
-from lading.workspace import WorkspaceGraph, WorkspaceModelError
+from lading.workspace import WorkspaceModelError
 from lading.workspace.confined_discovery import load_bump_workspace
+from tests.unit.confined_discovery_helpers import (
+    RecordingRunner as _RecordingRunner,
+)
+from tests.unit.confined_discovery_helpers import (
+    payload as _payload,
+)
+from tests.unit.confined_discovery_helpers import (
+    prepare_workspace as _prepare_workspace,
+)
 
 if typ.TYPE_CHECKING:
     from lading.runtime import CommandRunner
-
-
-@dc.dataclass(slots=True)
-class _RecordingRunner:
-    """Command runner that records invocations and returns one metadata payload."""
-
-    payload: dict[str, typ.Any]
-    calls: list[tuple[str, ...]] = dc.field(default_factory=list)
-
-    def __call__(
-        self,
-        command: cabc.Sequence[str],
-        *,
-        cwd: object | None = None,
-        env: object | None = None,
-        echo_stdout: bool = True,
-    ) -> tuple[int, str, str]:
-        """Record ``command`` and return the configured metadata payload."""
-        del cwd, env, echo_stdout
-        self.calls.append(tuple(command))
-        return 0, json.dumps(self.payload), ""
-
-
-def _load(root: Path, payload: dict[str, typ.Any]) -> WorkspaceGraph:
-    """Load the workspace with a runner that returns ``payload``."""
-    runner = _RecordingRunner(payload=payload)
-    return load_bump_workspace(root, runner=typ.cast("CommandRunner", runner))
-
-
-def _prepare_workspace(
-    root: Path,
-    members: cabc.Sequence[str],
-    names: cabc.Sequence[str],
-    *,
-    excludes: cabc.Sequence[str] = (),
-) -> None:
-    """Write a workspace manifest and one manifest per named crate."""
-    root.mkdir(parents=True, exist_ok=True)
-    members_literal = ", ".join(f'"{member}"' for member in members)
-    excludes_literal = ", ".join(f'"{entry}"' for entry in excludes)
-    root.joinpath("Cargo.toml").write_text(
-        f"[workspace]\nmembers = [{members_literal}]\n"
-        + (f"exclude = [{excludes_literal}]\n" if excludes else ""),
-        encoding="utf-8",
-    )
-    for name in names:
-        manifest = root / "crates" / name / "Cargo.toml"
-        manifest.parent.mkdir(parents=True, exist_ok=True)
-        manifest.write_text(
-            f'[package]\nname = "{name}"\nversion = "0.1.0"\n',
-            encoding="utf-8",
-        )
-
-
-def _payload(root: Path, names: cabc.Sequence[str]) -> dict[str, typ.Any]:
-    """Return a valid metadata payload for the named crates."""
-    packages = []
-    members = []
-    for name in names:
-        manifest = root / "crates" / name / "Cargo.toml"
-        packages.append({
-            "id": f"{name}-id",
-            "name": name,
-            "version": "0.1.0",
-            "manifest_path": str(manifest),
-            "dependencies": [],
-            "publish": None,
-        })
-        members.append(f"{name}-id")
-    return {
-        "workspace_root": str(root),
-        "packages": packages,
-        "workspace_members": members,
-    }
 
 
 def test_load_bump_workspace_rejects_a_foreign_workspace_root(

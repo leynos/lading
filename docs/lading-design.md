@@ -431,9 +431,12 @@ mapping. The port exposes two pairs of operations. `plan_lockfiles` validates
 configured and git-discovered manifests, asks Cargo with
 `--no-deps --manifest-path` for each manifest's effective workspace root, and
 returns an immutable `LockfilePlan` of deduplicated destinations;
-`regenerate_planned` consumes that plan without rediscovery. The established
-`resolve_lockfile_paths` and `regenerate_lockfiles` methods remain for callers
-that supply a manifest tuple directly.
+`regenerate_planned` consumes that plan without rediscovery. Both
+`plan_lockfiles` and `regenerate_planned` are required members of the injected
+`LockfileRepository`: bump calls them whenever lockfile regeneration is enabled
+and a manifest changes. The established `resolve_lockfile_paths` and
+`regenerate_lockfiles` methods remain for callers that supply a manifest tuple
+directly, but they alone no longer satisfy `BumpOptions.lockfile_repository`.
 
 The façade keeps the port, adapter, and established public imports in one
 boundary while cohesive helper modules hold the implementation:
@@ -445,8 +448,11 @@ boundary while cohesive helper modules hold the implementation:
 substitutes `CargoLockfileRepository` bound to the default subprocess runner,
 and the CLI binds the adapter at the composition root. This keeps the bump
 domain free of a raw `CommandRunner` (issue #82). A non-empty
-`CARGO_RESOLVER_LOCKFILE_PATH` is rejected during planning because Cargo would
-write a lockfile the validated plan does not name.
+`CARGO_RESOLVER_LOCKFILE_PATH`, a `resolver.lockfile-path` in Cargo
+configuration, and Cargo's `include`d configuration files are checked during
+planning because Cargo would otherwise write a lockfile the validated plan does
+not name. The plan records the environment it was validated against, and
+regeneration refuses to run if `CARGO_HOME` or the override variable changed.
 
 ## 4. `publish` Subcommand Design
 

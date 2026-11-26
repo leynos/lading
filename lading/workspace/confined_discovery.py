@@ -26,6 +26,7 @@ from tomlkit.exceptions import TOMLKitError
 from lading import toml_coerce
 from lading.utils.confinement import (
     BumpPreflightError,
+    BumpTargetExaminationError,
     ConfinedPath,
     GlobOptions,
     MatchExpectation,
@@ -163,6 +164,7 @@ def _expand_member_patterns(
         matches = _member_matches(root, pattern, key=key)
         for match in matches:
             if is_glob and _is_excluded(match.parts, excluded):
+                _examine_excluded_member(root, match, key=key)
                 continue
             _require_member_manifest(root, match, key=key, pattern=pattern)
             declared[match.parts] = pattern
@@ -170,6 +172,37 @@ def _expand_member_patterns(
 
 
 _GLOB_METACHARACTERS: typ.Final[frozenset[str]] = frozenset("*?[")
+
+
+def _examine_excluded_member(
+    root: Path,
+    match: ConfinedPath,
+    *,
+    key: str,
+) -> None:
+    """Validate an excluded match's manifest when one already exists.
+
+    Cargo still parses an excluded directory's manifest when an explicit member
+    covers it, so a symlink or special file there must be rejected before the
+    metadata call. An excluded directory without a manifest is not an error.
+
+    Raises
+    ------
+    BumpTargetExaminationError
+        If the manifest cannot be examined.
+    UnsafeBumpTargetError
+        If the manifest is a symlink or is not a regular file.
+    """  # ruff: ignore[docstring-extraneous-exception]  # raised by confinement
+    manifest = match.path / _ROOT_MANIFEST
+    try:
+        os.lstat(manifest)
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        message = f"{key}: cannot examine {match.display}: {exc}"
+        raise BumpTargetExaminationError(message) from exc
+    pattern = PurePosixPath(*match.parts, _ROOT_MANIFEST).as_posix()
+    confine_relative_path(root, pattern, key=key)
 
 
 def _member_matches(
