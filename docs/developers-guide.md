@@ -1903,7 +1903,11 @@ built from captured output are redacted centrally: `use_secrets` activates the
 values for the run and `command_detail` and `append_detail` (and so
 `with_detail` and the metadata error) call `redact_active`. The spawn error,
 the logged command line and the debug environment log redact by value too. As a
-backstop, `use_secrets` also installs `RedactingFilter` on the root log handlers
+backstop, `use_secrets` sanitizes an exception that propagates out of its scope
+(`sanitize_exception`: message, text attributes, notes and the cause and
+context chain, in place, with a redacted `LadingError` as the fallback),
+`publish.run` opens the scope before it logs or validates anything, and
+`use_secrets` also installs `RedactingFilter` on the root log handlers
 (`protect_handler` covers handlers configured later), and
 `lading.cli_environment` prints errors and summaries through `redact_active`,
 so a message built without any redaction is still hidden where it leaves lading

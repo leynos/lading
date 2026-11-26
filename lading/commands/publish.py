@@ -303,16 +303,15 @@ def run(
     str
         Human-readable publication plan and staged-workspace summary.
     """
-    root_path = normalize_workspace_root(workspace_root)
-    LOGGER.info("Starting publish workflow for workspace %s", root_path)
     effective_options = PublishOptions() if options is None else options
-    _validate_publication_options(effective_options)
+    # Opened before anything is logged or validated: the start log, the option
+    # checks and every error leaving this function are inside the scope.
     with publish_digest_run.hidden_secrets(effective_options):
-        return _publish(root_path, configuration, workspace, effective_options)
+        return _publish(workspace_root, configuration, workspace, effective_options)
 
 
 def _publish(
-    root_path: Path,
+    workspace_root: Path,
     configuration: config_module.LadingConfig | None,
     workspace: WorkspaceGraph | None,
     effective_options: PublishOptions,
@@ -324,6 +323,9 @@ def _publish(
     str
         Human-readable publication plan and staged-workspace summary.
     """
+    root_path = normalize_workspace_root(workspace_root)
+    LOGGER.info("Starting publish workflow for workspace %s", root_path)
+    _validate_publication_options(effective_options)
     active_configuration = _ensure_configuration(
         configuration or effective_options.configuration, root_path
     )

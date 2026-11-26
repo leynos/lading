@@ -143,6 +143,72 @@ class RedactingFilter(logging.Filter):
         return True
 
 
+_TEXT_ATTRIBUTES = ("strerror", "filename", "filename2")
+
+
+def _redact_text_attributes(exc: BaseException, secrets: cabc.Sequence[str]) -> None:
+    """Redact the string attributes ``exc`` may render itself from, and its notes."""
+    for name in (*_TEXT_ATTRIBUTES, *vars(exc)):
+        value = getattr(exc, name, None)
+        if isinstance(value, str):
+            setattr(exc, name, redact_text(value, secrets))
+    notes = getattr(exc, "__notes__", None)
+    if notes:
+        exc.__notes__ = [redact_text(str(note), secrets) for note in notes]
+
+
+def _nested_exceptions(exc: BaseException) -> list[BaseException]:
+    """Return exceptions held in ``exc``'s attributes, plus its cause and context."""
+    held = [value for value in vars(exc).values() if isinstance(value, BaseException)]
+    return [*held, *(e for e in (exc.__cause__, exc.__context__) if e is not None)]
+
+
+def _sanitize_in_place(
+    exc: BaseException, secrets: cabc.Sequence[str], seen: set[int]
+) -> None:
+    """Redact ``exc``'s message, text attributes, notes and chain in place."""
+    if id(exc) in seen:
+        return
+    seen.add(id(exc))
+    exc.args = tuple(
+        redact_text(arg, secrets) if isinstance(arg, str) else arg for arg in exc.args
+    )
+    _redact_text_attributes(exc, secrets)
+    for other in _nested_exceptions(exc):
+        _sanitize_in_place(other, secrets, seen)
+
+
+def sanitize_exception(exc: Exception, secrets: cabc.Sequence[str]) -> Exception:
+    """Hide ``secrets`` from ``exc`` and everything chained to it.
+
+    The exception is rewritten in place, so its type and its non-sensitive
+    attributes are exactly what callers expect. When the type renders itself
+    from something this cannot reach (so ``str(exc)`` still shows a secret), a
+    redacted :class:`~lading.exceptions.LadingError` replaces it, chained to
+    nothing.
+
+    Returns
+    -------
+    Exception
+        ``exc`` itself, or the replacement.
+
+    Examples
+    --------
+    >>> error = ValueError("token hunter2")
+    >>> sanitize_exception(error, ("hunter2",)) is error
+    True
+    >>> str(error)
+    'token <redacted>'
+    """
+    _sanitize_in_place(exc, secrets, set())
+    shown = str(exc)
+    if redact_text(shown, secrets) == shown:
+        return exc
+    from lading.exceptions import LadingError
+
+    return LadingError(redact_text(shown, secrets))
+
+
 @contextlib.contextmanager
 def use_secrets(secrets: cabc.Iterable[str]) -> cabc.Generator[None]:
     """Hide ``secrets`` (in addition to any already active) from shown output.
@@ -150,7 +216,8 @@ def use_secrets(secrets: cabc.Iterable[str]) -> cabc.Generator[None]:
     For the duration of the block the secrets are replaced by
     :func:`redact_active`, and a :class:`RedactingFilter` is installed on the
     root logger's handlers. Both are removed afterwards, so nothing changes for
-    a run that never activates any.
+    a run that never activates any. An exception that propagates out of the block
+    is sanitized first (see :func:`sanitize_exception`).
     """
     combined = _longest_first((*_ACTIVE.get(), *secrets))
     token = _ACTIVE.set(combined)
@@ -160,6 +227,13 @@ def use_secrets(secrets: cabc.Iterable[str]) -> cabc.Generator[None]:
     _LIVE.append(redaction)
     try:
         yield
+    except Exception as exc:
+        # An exception leaving the scope is a sink too: it reaches callers, logs
+        # and tracebacks after the scope has ended.
+        safe = sanitize_exception(exc, combined)
+        if safe is exc:
+            raise
+        raise safe from None
     finally:
         _LIVE.remove(redaction)
         redaction.detach_all()

@@ -22,7 +22,8 @@ All notable changes to `lading` are recorded here. The format follows
   `cargo publish --dry-run` packages is compared too, and exact registry token
   values (from the environment, pre-flight overrides and Cargo's credentials
   file) are hidden from what lading shows (never from what it parses), at the
-  log handlers and error printer as well as where messages are built
+  log handlers, the error printer and the exceptions leaving a digest-checked
+  run as well as where messages are built
   ([#419](https://github.com/leynos/lading/issues/419); [ADR-013](docs/adrs/adr-0013-verify-archives-against-expected-digests.md)).
 - `WorkspaceCrate.registries` carries the registries named by a manifest's
   `publish` key, or `None` when the key does not restrict them.
