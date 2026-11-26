@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from lading import cli
+from lading import cli, cli_environment
 from lading.commands import publish as publish_command
 
 if typ.TYPE_CHECKING:
@@ -22,7 +22,7 @@ def captured_options(
     make_crate: cabc.Callable[..., WorkspaceCrate],
 ) -> dict[str, publish_command.PublishOptions]:
     """Stub the publish command and collect the options the CLI hands it."""
-    monkeypatch.delenv(cli.CARGO_REGISTRY_DEFAULT_ENV_VAR, raising=False)
+    monkeypatch.delenv(cli_environment.CARGO_REGISTRY_DEFAULT_ENV_VAR, raising=False)
     root = tmp_path.resolve()
     graph = make_workspace(root, make_crate(root, "crate"))
     captured: dict[str, publish_command.PublishOptions] = {}
@@ -89,7 +89,7 @@ def test_default_registry_is_read_from_the_cargo_variable(
     captured_options: dict[str, publish_command.PublishOptions],
 ) -> None:
     """The composition root passes ``CARGO_REGISTRY_DEFAULT`` through."""
-    monkeypatch.setenv(cli.CARGO_REGISTRY_DEFAULT_ENV_VAR, "internal")
+    monkeypatch.setenv(cli_environment.CARGO_REGISTRY_DEFAULT_ENV_VAR, "internal")
 
     assert _publish(tmp_path, "--expect-digests", "digests.txt") == 0, (
         "publish must succeed with the stubbed run"

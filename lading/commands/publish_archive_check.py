@@ -47,6 +47,7 @@ from lading.commands.publish_errors import (
     UploadedArchiveMismatchError,
 )
 from lading.utils import metrics
+from lading.utils.process import command_detail
 
 if typ.TYPE_CHECKING:
     from lading.runtime import CommandRunner
@@ -240,7 +241,7 @@ class ArchiveVerifier:
             message = (
                 "Cannot find the Cargo target directory to locate the packaged "
                 f"archive (cargo metadata exited {exit_code}): "
-                f"{(stderr or stdout).strip()[:200]}"
+                f"{command_detail(stdout, stderr)[:200]}"
             )
             raise ArchiveUnavailableError(message) from exc
 

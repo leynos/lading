@@ -10,6 +10,7 @@ import sys
 
 from . import config
 from .cli_app import app
+from .cli_environment import hidden_for, print_error
 from .cli_helpers import (
     _configure_logging,
     _extract_workspace_override,
@@ -20,6 +21,7 @@ from .commands import publish_staging
 from .commands.bump_manifest_rewrite_model import ManifestRewriteError
 from .utils import metrics, normalize_workspace_root
 from .utils.confinement import BumpPreflightError
+from .utils.redaction import redact_active
 from .workspace import WorkspaceModelError
 
 
@@ -33,7 +35,7 @@ def _dispatch_and_print(tokens: cabc.Sequence[str]) -> int:
             return 0
         if isinstance(code, int):
             return code
-        print(code, file=sys.stderr)
+        print_error(str(code))
         return 1
     match result:
         case None:
@@ -45,7 +47,7 @@ def _dispatch_and_print(tokens: cabc.Sequence[str]) -> int:
         case int():
             status = result
         case _:
-            print(result)
+            print(redact_active(str(result)))
             status = 0
     return status
 
@@ -70,9 +72,20 @@ def main(argv: cabc.Sequence[str] | None = None) -> int:
     >>> main(["bump", "1.2.3", "--dry-run"])  # doctest: +SKIP
     0
     """
+    tokens = list(sys.argv[1:] if argv is None else argv)
+    with hidden_for(tokens):
+        return _main(tokens)
+
+
+def _main(argv: cabc.Sequence[str]) -> int:
+    """Run the command line for ``argv``; see :func:`main`.
+
+    Returns
+    -------
+    int
+        The process exit code.
+    """
     try:
-        if argv is None:
-            argv = sys.argv[1:]
         _configure_logging()
         # Flush the accumulated metrics summary when this CLI process exits.
         # Registered here in bootstrap so the lifecycle is explicit rather than
@@ -92,7 +105,7 @@ def main(argv: cabc.Sequence[str] | None = None) -> int:
         try:
             configuration = config.load_from_loader(config_loader)
         except config.ConfigurationError as exc:
-            print(f"Configuration error: {exc}", file=sys.stderr)
+            print_error(f"Configuration error: {exc}")
             return 1
         app.config = (config_loader,)
         try:
@@ -105,10 +118,10 @@ def main(argv: cabc.Sequence[str] | None = None) -> int:
         finally:
             app.config = previous_config
     except KeyboardInterrupt:
-        print("\nOperation cancelled by user.", file=sys.stderr)
+        print_error("\nOperation cancelled by user.")
         return 130
     except Exception as exc:  # ruff: ignore[blind-except] - fallback guard for CLI entry point
-        print(f"Unexpected error: {exc}", file=sys.stderr)
+        print_error(f"Unexpected error: {exc}")
         return 1
 
 
@@ -151,8 +164,8 @@ def _dispatch_with_diagnostics(remaining: cabc.Sequence[str]) -> int:
     except BumpPreflightError as exc:
         # A rejected write plan is a validation failure, not an unexpected
         # error: it exits before any workspace file was touched (issue #409).
-        print(f"Preflight error: {exc}", file=sys.stderr)
+        print_error(f"Preflight error: {exc}")
         return 1
     except WorkspaceModelError as exc:
-        print(f"Workspace error: {exc}", file=sys.stderr)
+        print_error(f"Workspace error: {exc}")
         return 1

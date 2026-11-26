@@ -27,6 +27,7 @@ from pathlib import Path
 from cyclopts import Parameter
 
 from . import commands, config
+from .cli_environment import cargo_environment
 from .cli_app import app as _shared_app
 from .cli_app import create_app
 from .cli_entrypoint import _dispatch_and_print as _dispatch_and_print
@@ -89,13 +90,11 @@ from .cli_options import (
     WorkspaceRootOption as WorkspaceRootOption,
 )
 from .commands import publish_staging as publish_staging
-from .commands.publish_cargo_config import CargoEnvironment
 from .runtime import CommandRunner, subprocess_runner
-from .runtime.credentials import credential_file_tokens
 from .runtime.redacting_runner import redacting_runner
 from .utils import normalize_workspace_root
 from .utils.confinement import BumpPreflightError as BumpPreflightError
-from .utils.redaction import registry_token_values, use_secrets
+from .utils.redaction import use_secrets
 from .workspace import (
     WorkspaceGraph,
     load_bump_workspace,
@@ -106,10 +105,9 @@ from .workspace import (
 )
 from .workspace import metadata as metadata_module
 
-# Cargo's own variable naming the registry `cargo publish` targets by default.
-# `--expect-digests` can only compare against crates.io, so it is read to refuse
-# a run that would publish elsewhere.
-CARGO_REGISTRY_DEFAULT_ENV_VAR = "CARGO_REGISTRY_DEFAULT"
+if typ.TYPE_CHECKING:
+    from .commands.publish_cargo_config import CargoEnvironment
+
 _CMD_MOX_STUB_ENV = "LADING_USE_CMD_MOX_STUB"
 _CMD_MOX_TRUTHY_VALUES = frozenset({"1", "true", "yes", "on"})
 
@@ -370,7 +368,7 @@ def publish(
     is_checked = flags.expect_digests is not None
     # Resolved only when digests are expected, so an ordinary publish neither
     # reads Cargo's credentials file nor changes behaviour.
-    environment = _cargo_environment(os.environ) if is_checked else None
+    environment = cargo_environment(os.environ) if is_checked else None
     return _run_with_context(
         resolved,
         lambda root, configuration, workspace, command_runner: commands.publish.run(
@@ -380,33 +378,6 @@ def publish(
             options=_publish_options(flags, command_runner, environment),
         ),
         environment=environment,
-    )
-
-
-def _cargo_home(environment: cabc.Mapping[str, str]) -> Path:
-    """Return Cargo's home directory: ``CARGO_HOME``, else ``~/.cargo``."""
-    configured = environment.get("CARGO_HOME")
-    return Path(configured) if configured else Path.home() / ".cargo"
-
-
-def _cargo_environment(environment: cabc.Mapping[str, str]) -> CargoEnvironment:
-    """Resolve the Cargo environment a digest-checked publish depends on.
-
-    Read here, at the composition root, so no other module touches the ambient
-    environment: the default registry, Cargo's home, and every registry token
-    value from the environment or the credentials file.
-
-    Returns
-    -------
-    CargoEnvironment
-        The resolved environment.
-    """
-    cargo_home = _cargo_home(environment)
-    secrets = {*registry_token_values(environment), *credential_file_tokens(cargo_home)}
-    return CargoEnvironment(
-        default_registry=environment.get(CARGO_REGISTRY_DEFAULT_ENV_VAR),
-        cargo_home=cargo_home,
-        secrets=tuple(sorted(secrets, key=lambda value: (-len(value), value))),
     )
 
 

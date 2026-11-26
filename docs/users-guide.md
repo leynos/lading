@@ -880,20 +880,22 @@ own archive under the staged workspace's target directory for comparison.
 
 With `--expect-digests`, lading always hides the exact values of
 `CARGO_REGISTRY_TOKEN` and `CARGO_REGISTRIES_<NAME>_TOKEN` from everything it
-relays from a subprocess to the console, the command line and the debug
-environment log it writes, the spawn errors it raises, the failure messages it
-builds from captured output, the arguments quoted in a failed auxiliary
-pre-flight command's error, and the output of the workspace discovery a
-programmatic caller triggers. What lading parses, such as `cargo metadata`
-JSON, is captured exactly as written and never altered. Without
-`--expect-digests` none of this applies and lading behaves as before, even with
-a token in its environment. The values come from lading's environment, from the
-same variables in a pre-flight `env_overrides` entry, and from the
-`registry.token` and `registries.<name>.token` keys of
-`$CARGO_HOME/credentials.toml` (or the legacy `credentials`). If the pre-flight
-builds, a build script, or Cargo print one, it appears as `<redacted>` on the
-console, in the logs, and in error messages. An unreadable credentials file
-adds no values and logs a warning that does not quote it.
+relays from a subprocess to the console, every log record and error lading
+prints (a filter on the log handlers and the error printer catch what a
+specific formatter missed), the command line and the debug environment log it
+writes, the spawn errors it raises, the failure messages it builds from
+captured output, the arguments quoted in a failed auxiliary pre-flight
+command's error, and the output of the workspace discovery a programmatic
+caller triggers. What lading parses, such as `cargo metadata` JSON, is captured
+exactly as written and never altered. Without `--expect-digests` none of this
+applies and lading behaves as before, even with a token in its environment. The
+values come from lading's environment, from the same variables in a pre-flight
+`env_overrides` entry, and from the `registry.token` and
+`registries.<name>.token` keys of `$CARGO_HOME/credentials.toml` (or the legacy
+`credentials`). If the pre-flight builds, a build script, or Cargo print one,
+it appears as `<redacted>` on the console, in the logs, and in error messages.
+An unreadable credentials file adds no values and logs a warning that does not
+quote it.
 
 The limits are plain. Only those exact values are replaced, not patterns, so a
 credential that reaches the output in a changed form, such as encoded, is not

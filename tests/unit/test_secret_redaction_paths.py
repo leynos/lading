@@ -5,7 +5,7 @@ import sys
 import typing as typ
 from pathlib import Path
 
-from lading import cli
+from lading import cli, cli_environment
 from lading.commands import publish, publish_digest_run, publish_pipeline
 from lading.commands.publish_cargo_config import CargoEnvironment
 from lading.runtime import subprocess_runner
@@ -74,7 +74,7 @@ def test_composition_root_collects_environment_and_file_tokens(tmp_path: Path) -
         tmp_path, "credentials.toml", f'[registry]\ntoken = "{_FROM_FILE}"\n'
     )
 
-    environment = cli._cargo_environment({
+    environment = cli_environment.cargo_environment({
         "CARGO_HOME": str(tmp_path),
         "CARGO_REGISTRY_TOKEN": _FROM_OVERRIDE,
         "CARGO_REGISTRY_DEFAULT": "crates-io",
@@ -94,7 +94,7 @@ def test_credentials_file_value_is_hidden_from_relayed_output(
     _write_credentials(
         tmp_path, "credentials.toml", f'[registry]\ntoken = "{_FROM_FILE}"\n'
     )
-    environment = cli._cargo_environment({"CARGO_HOME": str(tmp_path)})
+    environment = cli_environment.cargo_environment({"CARGO_HOME": str(tmp_path)})
 
     redacting_runner(environment.secrets)(_echoing(_FROM_FILE))
 

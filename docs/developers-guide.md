@@ -1902,14 +1902,19 @@ mirrored text (`stream_relay.relay_decoded` with a `RelayCapture`). Messages
 built from captured output are redacted centrally: `use_secrets` activates the
 values for the run and `command_detail` and `append_detail` (and so
 `with_detail` and the metadata error) call `redact_active`. The spawn error,
-the logged command line and the debug environment log redact by value too.
-Every runner logs through `subprocess_runner.run_logged`, so the
-`Running external command` line is identical with or without redaction;
-`env_redaction` is the older key-based masking for logged environment overrides.
-`publish_registry` is the injectable `PublishedDigestFetcher` port;
-`fetch_crates_io_digest` streams the archive from `static.crates.io` through a
-size cap and bounded retries, and tests substitute a fake. The new errors
-(`ExpectedDigestsError`, `ArchiveMismatchError`, `UploadedArchiveMismatchError`,
+the logged command line and the debug environment log redact by value too. As a
+backstop, `use_secrets` also installs `RedactingFilter` on the root log handlers
+(`protect_handler` covers handlers configured later), and
+`lading.cli_environment` prints errors and summaries through `redact_active`,
+so a message built without any redaction is still hidden where it leaves lading
+for a digest-checked run. Every runner logs through
+`subprocess_runner.run_logged`, so the `Running external command` line is
+identical with or without redaction; `env_redaction` is the older key-based
+masking for logged environment overrides. `publish_registry` is the injectable
+`PublishedDigestFetcher` port; `fetch_crates_io_digest` streams the archive from
+`static.crates.io` through a size cap and bounded retries, and tests
+substitute a fake. The new errors (`ExpectedDigestsError`,
+`ArchiveMismatchError`, `UploadedArchiveMismatchError`,
 `PublishedArchiveConflictError`) live in `publish_errors`;
 `ArchiveUnavailableError` and `PublishedArchiveUnavailableError` sit beside the
 code that raises them. `tests/helpers/publish_digests.py` provides `FakeCargo`,

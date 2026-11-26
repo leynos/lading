@@ -1,15 +1,21 @@
-r"""A command runner that hides registry credentials from subprocess output.
+r"""A command runner that hides registry credentials from what it relays.
 
 :func:`redacting_runner` wraps the production subprocess adapter with the secret
-values the command-line entry point read from its environment. It is used only
-when there is something to hide, so a run without a registry token takes the
-unwrapped path and behaves exactly as before.
+values the command-line entry point resolved. It is selected only for a
+digest-checked run (``--expect-digests``); every other run uses the plain
+runner, whatever the environment holds.
+
+The secrets are hidden from what lading *shows*: the mirrored console output,
+the logged command line and environment, and spawn errors. The captured streams
+it returns are exactly what the child wrote, because lading parses them (for
+example ``cargo metadata`` JSON). Messages that embed captured output are
+redacted where they are built, through :func:`lading.utils.redaction.redact_active`.
 
 Examples
 --------
 >>> runner = redacting_runner(("s3cret",))
 >>> runner(["echo", "token s3cret"], echo_stdout=False)  # doctest: +SKIP
-(0, 'token <redacted>\\n', '')
+(0, 'token s3cret\\n', '')
 """
 
 import collections.abc as cabc
@@ -24,7 +30,7 @@ if typ.TYPE_CHECKING:
 
 
 def redacting_runner(secrets: cabc.Sequence[str]) -> CommandRunner:
-    """Return a runner whose relayed and captured output never shows ``secrets``.
+    """Return a runner whose relayed output and logs never show ``secrets``.
 
     Parameters
     ----------
@@ -36,7 +42,9 @@ def redacting_runner(secrets: cabc.Sequence[str]) -> CommandRunner:
     Returns
     -------
     CommandRunner
-        A runner with the subprocess adapter's behaviour, minus the secrets.
+        A runner with the subprocess adapter's behaviour, except that the
+        console mirror, logged command line and spawn errors hide the secrets.
+        The captured streams it returns are unaltered.
     """
 
     def run(
