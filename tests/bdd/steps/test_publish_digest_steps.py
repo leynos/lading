@@ -6,6 +6,14 @@ through the CLI subprocess the other publish scenarios use. The reason is the
 second seam: crates.io downloads cannot be injected into a child process, and
 no scenario may touch the network. The CLI wiring of the option itself is
 covered in ``tests/unit/test_cli_expect_digests.py``.
+
+Subprocess coverage lives in ``tests/e2e/test_publish_expect_digests_cli.py``,
+which runs the real ``lading`` process with a stubbed ``cargo`` on ``PATH`` for:
+a malformed digest file, a missing entry, an extra entry, a non-crates.io
+``CARGO_REGISTRY_DEFAULT``, a mismatch that stops a dry run before any publish,
+and an identical published archive skipped in a live run. These in-process
+scenarios keep the remaining registry and upload cases (the mismatch after
+upload, the conflict, locked builds, unverified downgrades).
 """
 
 import dataclasses as dc

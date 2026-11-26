@@ -1950,9 +1950,13 @@ errors (`ExpectedDigestsError`, `ArchiveMismatchError`,
 `UploadedArchiveMismatchError`, `PublishedArchiveConflictError`) live in
 `publish_errors`; `ArchiveUnavailableError` and
 `PublishedArchiveUnavailableError` sit beside the code that raises them.
-`tests/helpers/publish_digests.py` provides `FakeCargo`, `FakeRegistry`, and
-`PublishRig`, which drive `publish.run` in process without a subprocess or
-socket; the behavioural scenarios in
+`tests/e2e/test_publish_expect_digests_cli.py` covers the option through the
+real `lading` process, with a stub `cargo` (`tests/e2e/helpers/stub_cargo.py`)
+on `PATH` and a loopback server standing in for the archive host (the process
+is started through a launcher that points the downloader at it, so nothing
+reaches crates.io). `tests/helpers/publish_digests.py` provides `FakeCargo`,
+`FakeRegistry`, and `PublishRig`, which drive `publish.run` in process without
+a subprocess or socket; the behavioural scenarios in
 `tests/bdd/features/publish_expect_digests.feature` use them because a download
 cannot be injected into the CLI subprocess the other publish scenarios run.
 
