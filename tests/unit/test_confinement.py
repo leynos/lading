@@ -193,15 +193,15 @@ def test_confine_relative_path_rejects_an_in_root_alias(tmp_path: Path) -> None:
 
 
 def test_confine_relative_path_rejects_a_dangling_link(tmp_path: Path) -> None:
-    """Reject a symlink whose target does not exist."""
+    """Reject a symlink whose target does not exist without probing it."""
     root = tmp_path / "workspace"
     root.mkdir()
     (root / "dangling").symlink_to(root / "missing")
     with pytest.raises(UnsafeBumpTargetError) as excinfo:
         confine_relative_path(root, "dangling/README.md", key="docs")
-    assert "dangling link" in str(excinfo.value), (
-        "a dangling symlink must be distinguished from a plain missing path"
-    )
+    message = str(excinfo.value)
+    assert "symlink" in message, "a dangling symlink must be rejected as a symlink"
+    assert "dangling/README.md" in message, "the diagnostic must name the rejected path"
 
 
 def test_confine_relative_path_rejects_a_non_directory_ancestor(

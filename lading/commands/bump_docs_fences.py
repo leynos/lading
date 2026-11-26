@@ -221,15 +221,24 @@ def _continuation_indent(prefix: str) -> str:
     str
         The prefix to place before each transformed body line.
     """
-    list_marker = _LIST_PREFIX.match(prefix)
-    if list_marker is not None:
-        return f"{' ' * list_marker.end()}{prefix[list_marker.end() :]}"
-    quote = _QUOTE_PREFIX.match(prefix)
-    quoted = quote.group(0) if quote else ""
-    rest = prefix[len(quoted) :]
+    result: list[str] = []
+    rest = prefix
+    while rest:
+        quote = _QUOTE_PREFIX.match(rest)
+        if quote is not None:
+            result.append(quote.group(0))
+            rest = rest[quote.end() :]
+            continue
+        list_marker = _LIST_PREFIX.match(rest)
+        if list_marker is not None:
+            result.append(" " * list_marker.end())
+            rest = rest[list_marker.end() :]
+            continue
+        break
     if not rest.strip():
-        return prefix
-    return f"{quoted}{' ' * len(rest)}"
+        result.append(rest)
+        return "".join(result)
+    return f"{''.join(result)}{' ' * len(rest)}"
 
 
 def _is_closing_fence(line: str, prefix: str, marker: str) -> bool:

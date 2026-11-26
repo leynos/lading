@@ -65,7 +65,7 @@ def _candidate_root(value: Path | str | None) -> Path:
     """Return the unexpanded candidate root, reporting expansion failures."""
     try:
         return Path.cwd() if value is None else Path(value).expanduser()
-    except RuntimeError as exc:
+    except (RuntimeError, OSError) as exc:
         message = f"Cannot expand workspace root {value!r}: {exc}"
         raise BumpTargetExaminationError(message) from exc
 

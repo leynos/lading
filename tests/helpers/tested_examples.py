@@ -72,10 +72,10 @@ def load_tested_examples(path: Path) -> dict[str, MarkedExample]:
     lines = path.read_text(encoding="utf-8").splitlines()
     examples: dict[str, MarkedExample] = {}
     index = 0
-    list_indent = 0
+    list_levels: list[int] = []
     while index < len(lines):
         raw = lines[index]
-        list_indent = _list_context(raw, list_indent)
+        list_indent = _list_context(raw, list_levels)
         _reject_unmarked_fence(raw, path, index, list_indent)
         marker = _marker_at(raw, path, index, list_indent)
         if marker is None:
@@ -92,16 +92,32 @@ def load_tested_examples(path: Path) -> dict[str, MarkedExample]:
     return examples
 
 
-def _list_context(raw: str, current: int) -> int:
-    """Return the content indentation of the enclosing list item, if any."""
+def _list_context(raw: str, levels: list[int]) -> int:
+    """Return the content indentation of the enclosing list item, if any.
+
+    ``levels`` holds the content indentation of each open list level. An
+    outdented line closes deeper levels, restoring the matching ancestor.
+
+    Returns
+    -------
+    int
+        The content indentation of the enclosing list item, or ``0`` outside a
+        list.
+    """
     depth = _quote_depth(raw)
     content = _strip_quotes(raw, depth) or ""
     match = _LIST_ITEM.match(content)
     if match is not None:
-        return match.end()
-    if content.strip() and not content.startswith((" ", "\t")):
-        return 0
-    return current
+        indent = match.end()
+        while levels and levels[-1] >= indent:
+            levels.pop()
+        levels.append(indent)
+        return indent
+    if content.strip():
+        indentation = _indentation(content)
+        while levels and levels[-1] > indentation:
+            levels.pop()
+    return levels[-1] if levels else 0
 
 
 def _reject_unmarked_fence(
@@ -255,16 +271,29 @@ def _next_fence_line(
         content = _strip_quotes(lines[index], marker.depth)
         if content is None:
             break
-        stripped = content.strip()
-        if not stripped:
+        if not content.strip():
             continue
-        if _fence_delimiter(stripped) is not None:
+        if _opens_fence(content, marker):
             return index
         break
     message = (
         f"{marker.path}:{start}: tested-example {marker.identifier!r} has no fence"
     )
     raise ValueError(message)
+
+
+def _opens_fence(content: str, marker: _MarkerContext) -> bool:
+    """Return whether ``content`` opens a fence the marker can use.
+
+    Returns
+    -------
+    bool
+        ``True`` for a fence delimiter indented no further than the marker's
+        container allows.
+    """
+    if _fence_delimiter(content.strip()) is None:
+        return False
+    return _indentation(content) <= marker.container_indent + _MAX_FENCE_INDENT
 
 
 @dc.dataclass(frozen=True, slots=True)

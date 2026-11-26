@@ -82,18 +82,32 @@ def _cargo_config_paths(
     paths: list[Path] = []
     for directory in (workspace_root, *workspace_root.parents):
         paths.extend(_config_files(directory / ".cargo"))
-    cargo_home = environ.get("CARGO_HOME")
-    if cargo_home:
-        home = Path(cargo_home)
-        if not home.is_absolute():
-            # Cargo joins a relative CARGO_HOME to its working directory and
-            # does not expand ``~``, so neither does this check. The bump run
-            # gives Cargo the workspace root as its working directory.
-            home = workspace_root / home
-    else:
-        home = Path.home() / ".cargo"
-    paths.extend(_config_files(home))
+    paths.extend(_config_files(_cargo_home(workspace_root, environ)))
     return tuple(dict.fromkeys(paths))
+
+
+def _cargo_home(
+    workspace_root: Path,
+    environ: cabc.Mapping[str, str],
+) -> Path:
+    """Return the Cargo home directory as Cargo resolves it.
+
+    Returns
+    -------
+    Path
+        ``CARGO_HOME`` when set, joined to the workspace root when relative,
+        otherwise the invoking user's ``~/.cargo``.
+    """
+    cargo_home = environ.get("CARGO_HOME")
+    if not cargo_home:
+        return Path.home() / ".cargo"
+    home = Path(cargo_home)
+    if home.is_absolute():
+        return home
+    # Cargo joins a relative CARGO_HOME to its working directory and does not
+    # expand ``~``, so neither does this check. The bump run gives Cargo the
+    # workspace root as its working directory.
+    return workspace_root / home
 
 
 def _config_files(directory: Path) -> list[Path]:
@@ -116,16 +130,43 @@ def _config_files(directory: Path) -> list[Path]:
     return []
 
 
-def _is_regular_file(path: Path) -> bool:
-    """Return whether ``path`` is a regular file, preserving examination errors."""
+def _examine(path: Path) -> os.stat_result | None:
+    """Return ``path``'s status, or ``None`` when it does not exist.
+
+    Returns
+    -------
+    os.stat_result | None
+        The status, or ``None`` for a missing file.
+
+    Raises
+    ------
+    BumpPreflightError
+        If the file cannot be examined for any other reason.
+    """
     try:
-        status = path.stat()
+        return path.stat()
     except FileNotFoundError:
-        return False
+        return None
     except OSError as exc:
         message = f"cannot examine Cargo configuration {path}: {exc}"
         raise BumpPreflightError(message) from exc
-    return stat.S_ISREG(status.st_mode)
+
+
+def _is_regular_file(path: Path) -> bool:
+    """Return whether ``path`` is a regular file, preserving examination errors."""
+    status = _examine(path)
+    return status is not None and stat.S_ISREG(status.st_mode)
+
+
+def _include_exists(path: Path) -> bool:
+    """Return whether an include target exists, rejecting a non-regular file."""
+    status = _examine(path)
+    if status is None:
+        return False
+    if not stat.S_ISREG(status.st_mode):
+        message = f"included Cargo configuration is not a regular file: {path}"
+        raise BumpPreflightError(message)
+    return True
 
 
 def _effective_setting(
@@ -154,7 +195,7 @@ def _included_setting(
     """Return the last setting declared by the file's includes."""
     setting: _PathSetting | None = None
     for include_path, optional in _include_entries(document, config_path):
-        if not _is_regular_file(include_path):
+        if not _include_exists(include_path):
             if optional:
                 continue
             # Reading a missing file raises the standard diagnostic.

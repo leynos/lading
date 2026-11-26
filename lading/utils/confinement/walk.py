@@ -284,16 +284,13 @@ class _ConfinementWalk:
         """Reject a symlink or junction at any component of a confined path."""
         if not self.options.link_predicate(result):
             return
-        dangling = "" if candidate.exists() else " (dangling link)"
         component = display_relative(self.root, candidate)
         if component == display:
-            message = (
-                f"{self.key}: symlinked target is not permitted: {display}{dangling}"
-            )
+            message = f"{self.key}: symlinked target is not permitted: {display}"
         else:
             message = (
                 f"{self.key}: symlinked path component is not permitted: "
-                f"{component} (target {display}){dangling}"
+                f"{component} (target {display})"
             )
         raise UnsafeBumpTargetError(message)
 

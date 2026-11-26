@@ -267,3 +267,34 @@ def test_loader_uses_the_established_list_indentation(tmp_path: Path) -> None:
     assert example.body == "print(1)", (
         "the fence must be read relative to the list's content indentation"
     )
+
+
+def test_loader_rejects_an_over_indented_opening_fence(tmp_path: Path) -> None:
+    """A four-space opener is literal code, so the marker has no fence."""
+    path = _write(
+        tmp_path,
+        "<!-- tested-example: demo -->\n    ~~~python\n    print(1)\n~~~\n",
+    )
+
+    with pytest.raises(ValueError, match="has no fence"):
+        load_tested_examples(path)
+
+
+def test_loader_restores_the_outer_list_indentation(tmp_path: Path) -> None:
+    """A nested list closes before an outer-list example continues."""
+    path = _write(
+        tmp_path,
+        "- outer\n"
+        "  - inner\n"
+        "\n"
+        "  <!-- tested-example: outer -->\n"
+        "  ~~~python\n"
+        "  print(1)\n"
+        "  ~~~\n",
+    )
+
+    example = load_tested_examples(path)["outer"]
+
+    assert example.body == "print(1)", (
+        "the example must continue in the outer list after the nested item"
+    )

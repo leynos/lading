@@ -257,6 +257,18 @@ through `link`, so a metadata path could be validated against a different file
 from the one the graph builder reads. Preserving `..` lets the lexical
 validator reject the path.
 
+### 2026-11-26: Fence containers, non-regular includes and Windows components
+
+A re-rendered example body continues at the enclosing list container's
+indentation: nested list markers become spaces, block quote markers are kept,
+and an opener indented beyond its container is rejected. A Cargo configuration
+include must be a regular file before it is opened; a FIFO would otherwise
+block the preflight. Workspace-root expansion reports a vanished working
+directory as an examination error. A Windows pattern component that carries its
+own drive or root is rejected, and the hidden-wildcard rejection is limited to
+components whose literal prefix is `.` or `..`, because only those can reach a
+parent directory.
+
 ## Alternatives considered
 
 - **Resolve once and check containment.** `Path.resolve()` follows the links it

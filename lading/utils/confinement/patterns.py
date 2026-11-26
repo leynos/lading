@@ -52,6 +52,15 @@ def validate_relative_pattern(pattern: str, *, key: str) -> tuple[str, ...]:
     _reject_rooted_pattern(pattern, key)
     _reject_parent_traversal(pattern, key)
     parts = _native_parts(pattern)
+    if os.sep == "\\":
+        for part in parts:
+            component = PureWindowsPath(part)
+            if component.drive or component.root:
+                message = (
+                    f"{key}: pattern component must not carry its own drive "
+                    f"or root: {part!r}"
+                )
+                raise UnsafeBumpTargetError(message)
     if not parts:
         message = (
             f"{key}: pattern must name a path below the workspace root: {pattern!r}"

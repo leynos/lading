@@ -5,6 +5,7 @@ item's marker and continuation indentation when it changes, and align its line
 splicing with MarkdownIt's own line boundaries.
 """
 
+import pytest
 from markdown_it import MarkdownIt
 
 from lading.commands import bump_docs_fences
@@ -68,21 +69,37 @@ def test_line_splicing_ignores_non_markdown_separators() -> None:
     )
 
 
-def test_a_block_quoted_list_fence_keeps_its_quote() -> None:
-    """Only the list marker becomes indentation; the quote stays."""
-    text = '> - ```toml\n>   [dependencies]\n>   alpha = "0.1.0"\n>   ```\n'
-
+@pytest.mark.parametrize(
+    ("text", "continuation"),
+    [
+        pytest.param(
+            '> - ```toml\n>   [dependencies]\n>   alpha = "0.1.0"\n>   ```\n',
+            "> - ```toml\n>   ",
+            id="block-quoted-list",
+        ),
+        pytest.param(
+            '- - ```toml\n    [dependencies]\n    alpha = "0.1.0"\n    ```\n',
+            "- - ```toml\n    ",
+            id="nested-list",
+        ),
+    ],
+)
+def test_a_container_fence_keeps_its_continuation_indentation(
+    text: str,
+    continuation: str,
+) -> None:
+    """Only the list marker becomes indentation; the container prefix stays."""
     updated, changed = bump_docs_fences.rewrite_markdown_toml_fences(
         text, ("alpha",), "1.2.3"
     )
 
     assert changed, "the dependency version must be rewritten"
-    assert updated.startswith("> - ```toml\n>   "), (
-        "the quote must survive and the list marker must not repeat"
+    assert updated.startswith(continuation), (
+        "the container prefix must survive and the list marker must not repeat"
     )
     parsed = MarkdownIt("commonmark").parse(updated)
     fences = [token for token in parsed if token.type == "fence"]
-    assert fences, "the rewritten TOML must remain a fenced block in the quote"
+    assert len(fences) == 1, "the rewrite must remain one fenced block"
     assert 'alpha = "1.2.3"' in fences[0].content, (
         "the fence must carry the rewritten dependency version"
     )

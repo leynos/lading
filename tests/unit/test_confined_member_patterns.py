@@ -188,7 +188,7 @@ def test_a_dot_prefixed_wildcard_member_is_rejected(tmp_path: Path) -> None:
     with pytest.raises(UnsafeBumpTargetError) as excinfo:
         load_bump_workspace(tmp_path, runner=typ.cast("CommandRunner", runner))
 
-    assert "leading dot" in str(excinfo.value), (
+    assert "can select" in str(excinfo.value), (
         "the diagnostic must explain the rejected component"
     )
     assert not runner.calls, "the pattern must be rejected before Cargo runs"
@@ -202,4 +202,16 @@ def test_a_dot_prefixed_literal_member_is_accepted(tmp_path: Path) -> None:
 
     assert [crate.name for crate in graph.crates] == ["target"], (
         "a literal dot-prefixed member must be accepted"
+    )
+
+
+def test_a_dot_prefixed_fixed_wildcard_member_is_accepted(tmp_path: Path) -> None:
+    """A fixed prefix that rules out the dot entries is accepted."""
+    _prepare_workspace(tmp_path, ["crates/.hidden-*"], [".hidden-app"])
+    (tmp_path / "crates" / ".hidden-app").mkdir(exist_ok=True)
+
+    graph, _runner = _load(tmp_path, _payload(tmp_path, [".hidden-app"]))
+
+    assert {crate.name for crate in graph.crates} == {".hidden-app"}, (
+        "a hidden prefix that cannot select '.' or '..' must be accepted"
     )

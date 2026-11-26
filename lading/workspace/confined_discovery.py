@@ -17,6 +17,7 @@ Publish keeps its existing discovery path; this module is bump-only.
 
 import collections.abc as cabc
 import dataclasses as dc
+import itertools
 import os
 import typing as typ
 from pathlib import Path, PurePosixPath
@@ -208,12 +209,30 @@ def _reject_hidden_wildcard(pattern: str, *, key: str) -> None:
         If a component combines a leading dot with a wildcard.
     """
     for part in validate_relative_pattern(pattern, key=key):
-        if part.startswith(".") and _GLOB_METACHARACTERS.intersection(part):
-            message = (
-                f"{key}: member pattern component must not combine a leading "
-                f"dot with a wildcard: {part!r}"
-            )
-            raise UnsafeBumpTargetError(message)
+        literal = _parent_selector(part)
+        if literal is None:
+            continue
+        message = f"{key}: member pattern component can select {literal!r}: {part!r}"
+        raise UnsafeBumpTargetError(message)
+
+
+def _parent_selector(part: str) -> str | None:
+    """Return ``.`` or ``..`` when ``part`` can select a parent directory.
+
+    Returns
+    -------
+    str | None
+        The literal prefix that names a parent directory, or ``None`` when the
+        component cannot reach one.
+    """
+    if not part.startswith(".") or not _GLOB_METACHARACTERS.intersection(part):
+        return None
+    literal = "".join(
+        itertools.takewhile(
+            lambda character: character not in _GLOB_METACHARACTERS, part
+        )
+    )
+    return literal if literal in {".", ".."} else None
 
 
 def _examine_excluded_member(

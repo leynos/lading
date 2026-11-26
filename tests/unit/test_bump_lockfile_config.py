@@ -5,6 +5,7 @@ preflight must follow those includes before it decides whether Cargo could
 write a lockfile the validated plan does not name.
 """
 
+import os
 from pathlib import Path
 
 import pytest
@@ -253,4 +254,28 @@ def test_an_include_path_is_normalized_before_probing(tmp_path: Path) -> None:
 
     assert str(redirect) in str(excinfo.value), (
         "the normalized include target must be inspected"
+    )
+
+
+def test_a_non_regular_include_is_rejected_without_opening_it(
+    tmp_path: Path,
+) -> None:
+    """A FIFO include is rejected rather than blocking on a read."""
+    root = tmp_path.resolve()
+    write_workspace(root)
+    _write_config(root, 'include = ["pipe.toml"]\n')
+    pipe = root / ".cargo" / "pipe.toml"
+    if not hasattr(os, "mkfifo"):
+        pytest.skip("os.mkfifo is unavailable on this platform")
+    try:
+        os.mkfifo(pipe)
+    except OSError as exc:  # pragma: no cover - capability
+        pytest.skip(f"cannot create a FIFO here: {exc}")
+    runner = RecordingRunner(metadata_root=root)
+
+    with pytest.raises(BumpPreflightError) as excinfo:
+        plan_lockfiles(root, (), runner=runner, environ={})
+
+    assert "not a regular file" in str(excinfo.value), (
+        "the diagnostic must reject the non-regular include"
     )

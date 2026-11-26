@@ -166,3 +166,37 @@ def test_prove_containment_rejects_a_dangling_final_symlink(
     assert "cannot resolve target" in str(excinfo.value), (
         "the diagnostic must name the unresolvable link"
     )
+
+
+def test_establish_workspace_root_reports_an_unreadable_current_directory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A removed current directory is a preflight examination error."""
+
+    def failing_cwd() -> Path:
+        """Raise the failure a removed working directory produces."""
+        message = "current directory is gone"
+        raise FileNotFoundError(message)
+
+    monkeypatch.setattr(Path, "cwd", failing_cwd)
+
+    with pytest.raises(BumpTargetExaminationError) as excinfo:
+        establish_workspace_root(None)
+
+    assert "Cannot expand workspace root" in str(excinfo.value), (
+        "the diagnostic must name the failed current-directory lookup"
+    )
+
+
+def test_validate_relative_pattern_rejects_a_windows_component_with_a_drive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A later component that carries its own drive is rejected on Windows."""
+    monkeypatch.setattr(patterns_module.os, "sep", "\\")
+
+    with pytest.raises(UnsafeBumpTargetError) as excinfo:
+        patterns_module.validate_relative_pattern("docs/C:evil.md", key="k")
+
+    assert "drive or root" in str(excinfo.value), (
+        "the diagnostic must explain the component's own drive"
+    )

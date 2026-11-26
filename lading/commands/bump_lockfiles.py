@@ -98,7 +98,10 @@ class CargoLockfileRepository:
         Raises
         ------
         LockfileRegenerationError
-            After every manifest is attempted, if any ``cargo update`` failed.
+            Before the first attempt if the Cargo environment changed since
+            planning, or after every manifest is attempted if any
+            ``cargo update`` failed. Manifests may already carry the target
+            version when either failure occurs.
         """
         return regenerate_planned(plan, runner=self.runner)
 
@@ -224,6 +227,14 @@ class LockfileRepository(typ.Protocol):
     The bump domain depends on this protocol rather than on a command
     runner, keeping execution infrastructure out of the public bump options
     (issue #82).
+
+    ``plan_lockfiles`` and ``regenerate_planned`` are required members. When
+    lockfile regeneration is enabled and a manifest changes, bump calls
+    ``plan_lockfiles`` before the first write and ``regenerate_planned`` with
+    the resulting plan after the manifests are written. The older
+    ``resolve_lockfile_paths`` and ``regenerate_lockfiles`` methods remain for
+    callers that supply a manifest tuple directly, but an adapter that
+    implements only those does not satisfy ``BumpOptions.lockfile_repository``.
     """
 
     def resolve_lockfile_paths(
@@ -298,7 +309,10 @@ class LockfileRepository(typ.Protocol):
         Raises
         ------
         LockfileRegenerationError
-            After every manifest is attempted, if any ``cargo update`` failed.
+            Before the first attempt if the Cargo environment changed since
+            planning, or after every manifest is attempted if any
+            ``cargo update`` failed. Manifests may already carry the target
+            version when either failure occurs.
         """
 
     def regenerate_lockfiles(

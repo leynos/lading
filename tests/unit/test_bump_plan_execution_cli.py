@@ -7,6 +7,7 @@ dry-run, root-member, and overlapping-target behaviour of the committed plan.
 import typing as typ
 from pathlib import Path
 
+from lading.commands import bump_toml
 from tests.helpers.bump_cli_workspace import (
     WorkspaceOptions,
     create_cli_workspace,
@@ -98,6 +99,20 @@ def test_dry_run_reports_the_plan_without_writing(
     assert runner.update_calls() == [], "a dry run must not regenerate lockfiles"
 
 
+def _record_writes(monkeypatch: MonkeyPatch) -> list[Path]:
+    """Record each atomic write while preserving the real write."""
+    writes: list[Path] = []
+    real_write = bump_toml.write_atomic_text
+
+    def record(path: Path, content: str) -> None:
+        """Record one write and then perform it."""
+        writes.append(path)
+        real_write(path, content)
+
+    monkeypatch.setattr(bump_toml, "write_atomic_text", record)
+    return writes
+
+
 def test_root_member_manifest_is_written_once(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -109,12 +124,16 @@ def test_root_member_manifest_is_written_once(
         options=WorkspaceOptions(members=(), root_package=True),
     )
     runner = RecordingCommandRunner(metadata=workspace.metadata)
+    writes = _record_writes(monkeypatch)
 
     exit_code, stdout, stderr = run_bump(
         workspace, runner, CliSeams(monkeypatch, capsys)
     )
 
     assert exit_code == 0, f"a root-member bump must succeed; stderr:\n{stderr}"
+    assert writes.count(workspace.root / "Cargo.toml") == 1, (
+        "the root member manifest must be written exactly once"
+    )
     root_text = (workspace.root / "Cargo.toml").read_text(encoding="utf-8")
     assert root_text.count('version = "1.2.3"') == 2, (
         "both the package and workspace.package versions must be updated"
@@ -151,12 +170,16 @@ def test_overlapping_documentation_and_readme_target_is_reported_twice(
         '```toml\n[dependencies]\nalpha = "0.1.0"\n```\n', encoding="utf-8"
     )
     runner = RecordingCommandRunner(metadata=workspace.metadata)
+    writes = _record_writes(monkeypatch)
 
     exit_code, stdout, stderr = run_bump(
         workspace, runner, CliSeams(monkeypatch, capsys)
     )
 
     assert exit_code == 0, f"the overlapping targets must succeed; stderr:\n{stderr}"
+    assert writes.count(crate_readme) == 1, (
+        "the overlapping target must be written exactly once"
+    )
     assert "- crates/alpha/README.md (documentation)" in stdout, (
         "the documentation category must be reported"
     )
@@ -187,12 +210,16 @@ def test_an_unchanged_readme_adoption_is_not_reported(
         '```toml\n[dependencies]\nalpha = "0.1.0"\n```\n', encoding="utf-8"
     )
     runner = RecordingCommandRunner(metadata=workspace.metadata)
+    writes = _record_writes(monkeypatch)
 
     exit_code, stdout, stderr = run_bump(
         workspace, runner, CliSeams(monkeypatch, capsys)
     )
 
     assert exit_code == 0, f"the overlapping targets must succeed; stderr:\n{stderr}"
+    assert writes.count(crate_readme) == 1, (
+        "the overlapping target must be written exactly once"
+    )
     assert "- crates/alpha/README.md (documentation)" in stdout, (
         "the documentation category must be reported"
     )

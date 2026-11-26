@@ -563,6 +563,18 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
   fences handle quotes before and after list markers, respect the established
   list indentation, and reject unmarked fences inside quoted lists. Repair
   commands quote manifest paths.
+- [x] 2026-11-26: Sixteenth CodeRabbit review cleared. Example fences restore
+  the enclosing list's indentation for later siblings, reject an opener
+  indented beyond its container, and convert nested list markers inside a
+  re-rendered body to continuation spaces while preserving block quotes. A
+  Cargo configuration include must be a regular file before it is opened, and
+  the workspace root lookup maps a vanished working directory to an examination
+  error. Windows glob components may not carry their own drive or root, and the
+  hidden-wildcard rejection is limited to a literal `.` or `..` prefix. A glob
+  match whose platform reports no link count is re-examined with `lstat`, the
+  symlink rejection no longer probes existence, and the lockfile port documents
+  its required members and failure points. Command tests now record each atomic
+  write, so the exactly-once assertions observe the write itself.
 - [ ] EP-M5 release: tag and release `v0.4.0b1` after review convergence, then
   record the tag commit on issue #409.
 
@@ -701,6 +713,25 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
   `missing/../shared.toml` still loads when `missing` is absent, because Cargo
   removes the redundant step before the existence check.
 
+- An example fence's continuation indentation is the enclosing list container's
+  indentation, so a nested list marker inside a re-rendered body becomes spaces
+  while a block quote marker is preserved. An opener indented beyond its
+  container is rejected rather than accepted as unmarked content.
+- A Cargo configuration include that exists but is not a regular file is
+  rejected before it is opened, matching the manifest rule: reading a FIFO
+  would block the preflight.
+- Workspace-root expansion maps a vanished or unreadable working directory to a
+  preflight examination error instead of escaping as an `OSError`.
+- A Windows pattern component that carries its own drive or root is rejected
+  even when the whole pattern looks relative, because `Path` would otherwise
+  discard the validated prefix.
+- The hidden-wildcard rejection applies only when the literal prefix is `.` or
+  `..`; a component such as `.github/*` cannot become a parent traversal and is
+  accepted.
+- The exactly-once command tests record each atomic write through a spy that
+  calls the real writer, so the assertion observes the write rather than
+  inferring it from file content.
+
 ## Outcomes & retrospective
 
 Implementation and documentation are complete. The first fixed version is
@@ -721,3 +752,6 @@ here and on issue #409 once the release tag is pushed.
 - 2026-11-23: Recorded the seventh-review decisions on literal `CARGO_HOME`,
   environment binding, parent-component preservation, and deferred
   stale-lockfile detection.
+- 2026-11-26: Recorded the sixteenth-review decisions on fence containers,
+  non-regular includes, root-lookup errors, Windows components, hidden
+  wildcards, and observing the write itself.

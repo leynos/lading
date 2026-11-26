@@ -300,7 +300,17 @@ class _Expansion:
         matched_parts: tuple[str, ...],
     ) -> None:
         """Reject a selected regular file with more than one hard link."""
-        if result.st_nlink > 1:
+        link_count = result.st_nlink
+        if not link_count:
+            # Windows reports a zero link count from ``DirEntry.stat``, so the
+            # real count comes from a no-follow lstat of the selected path.
+            try:
+                link_count = os.lstat(self.root.joinpath(*matched_parts)).st_nlink
+            except OSError as exc:
+                display = PurePosixPath(*matched_parts).as_posix()
+                message = f"{self.key}: cannot examine target {display}: {exc}"
+                raise BumpTargetExaminationError(message) from exc
+        if link_count > 1:
             # A write through one name would leave the other names stale, so
             # hard-linked files follow the single-target walk's policy.
             self._reject_match(
