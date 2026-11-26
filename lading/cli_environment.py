@@ -51,10 +51,26 @@ def _hidden_digest_run() -> cabc.Generator[None]:
     environment already names are therefore active before that read, and the
     file's own are added once it has been read.
     """
-    with use_secrets(registry_token_values(os.environ)):
-        environment = cargo_environment(os.environ)
-        with use_secrets(environment.secrets):
-            yield
+    environment = hidden_environment(os.environ)
+    with use_secrets(environment.secrets):
+        yield
+
+
+def hidden_environment(environ: cabc.Mapping[str, str]) -> CargoEnvironment:
+    """Resolve the Cargo environment with the environment's tokens already hidden.
+
+    Reading the credentials file can warn about it, quoting a path that may hold
+    a token, so the values the environment names are activated first. This is
+    for callers outside :func:`hidden_for`'s scope, such as ``publish`` called
+    directly.
+
+    Returns
+    -------
+    CargoEnvironment
+        The resolved environment.
+    """
+    with use_secrets(registry_token_values(environ)):
+        return cargo_environment(environ)
 
 
 def print_error(message: str) -> None:

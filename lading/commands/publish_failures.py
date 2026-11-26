@@ -127,6 +127,10 @@ def _handle_publish_failure(
         _handle_index_missing_version(
             lookup_failure, plan=state.plan, options=state.options
         )
+        if state.options.verifier is not None:
+            state.options.verifier.mark_unverified(
+                crate, "cargo publish --dry-run was downgraded to a warning"
+            )
         return
     message = _format_cargo_failure_message(
         "publish", crate.name, result.exit_code, result.streams

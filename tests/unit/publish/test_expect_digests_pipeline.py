@@ -10,6 +10,7 @@ from lading.commands.publish_archive_check import (
     ARCHIVE_CHECK_METRIC,
     ArchiveUnavailableError,
 )
+from lading.commands.publish_cargo_config import CargoEnvironment
 from lading.commands.publish_errors import (
     ArchiveMismatchError,
     ExpectedDigestsError,
@@ -201,9 +202,18 @@ def test_digest_file_that_disagrees_with_the_plan_fails_before_staging(
     assert not digest_rig.build_directory.exists(), "nothing may have been staged"
 
 
-@pytest.mark.parametrize("problem", ["malformed", "unreadable"])
+@pytest.mark.parametrize(
+    ("problem", "diagnostic"),
+    [
+        ("malformed", "Malformed digest entries"),
+        ("unreadable", "Cannot read expected digests"),
+    ],
+)
 def test_unusable_digest_file_fails_before_anything_else(
-    digest_rig: PublishRig, monkeypatch: pytest.MonkeyPatch, problem: str
+    digest_rig: PublishRig,
+    monkeypatch: pytest.MonkeyPatch,
+    problem: str,
+    diagnostic: str,
 ) -> None:
     """A malformed or missing file is reported before the pre-flight even runs."""
     path = digest_rig.root / "digests.txt"
@@ -219,7 +229,9 @@ def test_unusable_digest_file_fails_before_anything_else(
         _preflight_must_not_run,
     )
     # The rig replaces the pre-flight with a no-op, so call the command directly.
-    with pytest.raises(ExpectedDigestsError):
+    # A resolved Cargo environment is required with digests; without one `run`
+    # would stop for that reason before it ever read the file.
+    with pytest.raises(ExpectedDigestsError, match=diagnostic):
         publish.run(
             digest_rig.root,
             None,
@@ -228,6 +240,7 @@ def test_unusable_digest_file_fails_before_anything_else(
                 build_directory=digest_rig.build_directory,
                 command_runner=digest_rig.cargo,
                 expect_digests=path,
+                cargo_environment=CargoEnvironment(None, None),
             ),
         )
 

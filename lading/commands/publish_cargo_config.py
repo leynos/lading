@@ -88,7 +88,9 @@ def _candidate_files(start: Path, cargo_home: Path | None) -> list[Path]:
     """Return Cargo's config files for a run in ``start``, highest precedence first."""
     locations = [directory / ".cargo" for directory in (start, *start.parents)]
     if cargo_home is not None:
-        locations.append(cargo_home)
+        # Cargo resolves a relative CARGO_HOME against the directory it runs in
+        # (so each start differs); an absolute one is unaffected by the join.
+        locations.append(start / cargo_home)
     return [file for location in locations if (file := _config_in(location))]
 
 

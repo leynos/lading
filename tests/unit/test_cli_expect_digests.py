@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from lading import cli, cli_environment
+from lading.cli_options import PublishFlags
 from lading.commands import publish as publish_command
 
 if typ.TYPE_CHECKING:
@@ -218,28 +219,56 @@ def test_runner_without_digests_is_the_plain_one_even_with_a_token(
     )
 
 
+def _unreadable_credentials_home(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, leak: str
+) -> None:
+    """Point Cargo home at a path holding ``leak``, with an unreadable file."""
+    home = tmp_path / f"cargo-{leak}"
+    home.mkdir()
+    (home / "credentials.toml").write_text("[registry\n", encoding="utf-8")
+    monkeypatch.setenv("CARGO_HOME", str(home))
+    monkeypatch.setenv("CARGO_REGISTRY_TOKEN", leak)
+
+
+def _assert_warning_hides(caplog: pytest.LogCaptureFixture, leak: str) -> None:
+    """Assert the credentials-file warning was logged without ``leak``."""
+    assert "Ignoring unreadable Cargo credentials file" in caplog.text, (
+        "the warning must still be reported"
+    )
+    assert leak not in caplog.text, "the token in the path must be hidden"
+
+
 def test_credentials_file_warning_is_redacted_before_its_tokens_are_known(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
     captured_options: dict[str, publish_command.PublishOptions],
 ) -> None:
-    """A token in the Cargo home path is hidden from the unreadable-file warning."""
-    leak = "home-credential-12ab34cd56ef"
-    home = tmp_path / f"cargo-{leak}"
-    home.mkdir()
-    (home / "credentials.toml").write_text("[registry\n", encoding="utf-8")
-    monkeypatch.setenv("CARGO_HOME", str(home))
-    monkeypatch.setenv("CARGO_REGISTRY_TOKEN", leak)
+    """A token in the Cargo home path is hidden through ``cli.main``."""
+    _unreadable_credentials_home(monkeypatch, tmp_path, "home-credential-12ab34cd56ef")
     caplog.set_level(logging.WARNING)
 
     assert _publish(tmp_path, "--expect-digests", "digests.txt") == 0, (
         "publish must succeed with the stubbed run"
     )
 
-    seen = caplog.text
-    assert "Ignoring unreadable Cargo credentials file" in seen, (
-        "the warning must still be reported"
+    _assert_warning_hides(caplog, "home-credential-12ab34cd56ef")
+    assert captured_options, "the stubbed publish must have run"
+
+
+def test_direct_publish_hides_the_token_before_reading_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    captured_options: dict[str, publish_command.PublishOptions],
+) -> None:
+    """Calling ``cli.publish`` directly redacts the credentials-file warning too."""
+    _unreadable_credentials_home(
+        monkeypatch, tmp_path, "direct-credential-98fe76dc54ba"
     )
-    assert leak not in seen, "the token in the path must be hidden"
+    caplog.set_level(logging.WARNING)
+
+    cli.publish(tmp_path, flags=PublishFlags(expect_digests=Path("digests.txt")))
+
+    _assert_warning_hides(caplog, "direct-credential-98fe76dc54ba")
     assert captured_options, "the stubbed publish must have run"

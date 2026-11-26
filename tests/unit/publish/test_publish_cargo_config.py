@@ -9,6 +9,7 @@ from lading.commands import publish
 from lading.commands.publish_cargo_config import (
     CargoEnvironment,
     effective_default_registry,
+    refuse_alternate_default_at,
 )
 from lading.commands.publish_errors import ExpectedDigestsError
 
@@ -213,3 +214,46 @@ def test_alternate_default_only_above_the_staging_root_is_refused_after_staging(
         )
 
     assert not digest_rig.cargo.calls, "nothing may be packaged or published"
+
+
+def test_relative_cargo_home_is_resolved_against_each_invocation_directory(
+    tmp_path: Path,
+) -> None:
+    """The original and staged paths each read their own relative Cargo home."""
+    original = tmp_path / "checkout" / "ws"
+    staged = tmp_path / "staging" / "ws"
+    for directory in (original, staged):
+        (directory / "chome").mkdir(parents=True)
+    (staged / "chome" / "config.toml").write_text(
+        _default("internal"), encoding="utf-8"
+    )
+    relative_home = Path("chome")
+
+    assert (
+        effective_default_registry(original, cargo_home=relative_home, env_default=None)
+        is None
+    ), "the checkout's Cargo home has no alternate default"
+    assert (
+        effective_default_registry(staged, cargo_home=relative_home, env_default=None)
+        == "internal"
+    ), "the staged invocation directory's Cargo home must be read"
+    with pytest.raises(ExpectedDigestsError, match="staged crate"):
+        refuse_alternate_default_at(
+            [("staged crate alpha", staged)], CargoEnvironment(None, relative_home)
+        )
+
+
+def test_an_absolute_cargo_home_is_read_wherever_the_invocation_is(
+    tmp_path: Path,
+) -> None:
+    """An absolute Cargo home does not move with the invocation directory."""
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.toml").write_text(_default("internal"), encoding="utf-8")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+
+    assert (
+        effective_default_registry(elsewhere, cargo_home=home, env_default=None)
+        == "internal"
+    ), "the absolute home must apply from any directory"

@@ -27,12 +27,12 @@ from pathlib import Path
 from cyclopts import Parameter
 
 from . import commands, config
-from .cli_environment import cargo_environment
 from .cli_app import app as _shared_app
 from .cli_app import create_app
 from .cli_entrypoint import _dispatch_and_print as _dispatch_and_print
 from .cli_entrypoint import _dispatch_with_diagnostics as _dispatch_with_diagnostics
 from .cli_entrypoint import main as main
+from .cli_environment import hidden_environment
 from .cli_helpers import _LADING_HANDLER_NAME as _LADING_HANDLER_NAME
 from .cli_helpers import LOG_LEVEL_ENV_VAR as LOG_LEVEL_ENV_VAR
 from .cli_helpers import _configure_logging as _configure_logging
@@ -368,7 +368,7 @@ def publish(
     is_checked = flags.expect_digests is not None
     # Resolved only when digests are expected, so an ordinary publish neither
     # reads Cargo's credentials file nor changes behaviour.
-    environment = cargo_environment(os.environ) if is_checked else None
+    environment = hidden_environment(os.environ) if is_checked else None
     return _run_with_context(
         resolved,
         lambda root, configuration, workspace, command_runner: commands.publish.run(

@@ -151,3 +151,21 @@ def test_crate_limited_to_another_registry_is_refused(
             publish_digests.require_crates_io_crates(plan)
     else:
         publish_digests.require_crates_io_crates(plan)
+
+
+def test_publish_dry_run_downgrade_marks_the_crate_unverified(
+    digest_rig: PublishRig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A downgraded ``cargo publish --dry-run`` cannot leave a crate verified."""
+    digest_rig.cargo.failing["publish", "beta"] = (101, INDEX_MISSING_STDERR_BETA)
+
+    summary = digest_rig.run(
+        monkeypatch,
+        expect_digests=digest_rig.digests_file(),
+        allow_unpublished_workspace_deps=True,
+    )
+
+    assert "- beta 0.1.0: unverified" in summary, (
+        "the downgraded publish step must be reported unverified"
+    )
+    assert "- alpha 0.1.0: verified" in summary, "its siblings are unaffected"
